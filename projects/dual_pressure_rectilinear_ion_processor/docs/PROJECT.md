@@ -30,7 +30,8 @@ HS1截面仍为未标定示例值。原解析规定电场已退役，活动生�
 | 完整出生源 | [source](../config/source.json) |
 | 数值与验收 | [numerics](../config/numerics.json)、[acceptance](../config/acceptance.json) |
 | 来源及假设 | [geometry_sources](../config/geometry_sources.json)、[source_parameter_sources](../config/source_parameter_sources.json) |
-| 坐标、执行和诊断 | [coordinate_transform](../config/coordinate_transform.json)、[execution_profiles](../config/execution_profiles.json)、[diagnostics](../config/diagnostics.json) |
+| 坐标与诊断 | [coordinate_transform](../config/coordinate_transform.json)、[diagnostics](../config/diagnostics.json) |
+| 公共执行能力与内部预算 | [execution_profiles](../config/execution_profiles.json)、[runtime_profiles](../config/runtime_profiles.json)，两者职责分开 |
 
 来源文件解释尺寸与假设，不是第二份可调真值。声明式候选由同一入口消费完整外部配置，缺失字段失败关闭；
 任何改动生成新run，不缩放旧出口速度或改写封存结果充当新工况。
@@ -123,6 +124,10 @@ HS1截面仍为未标定示例值。原解析规定电场已退役，活动生�
 默认诊断保留全部母群、损失、分时空间云、相空间、冷却能量及引出后结果；同时刻云和逐粒子穿面集合分开。
 原生Fly完成事实、科学终态与性能验收分别校验。配置、源和实际代码依赖由运行冻结，
 新飞行不继承来源场的粒子结果或GUI资格。
+
+新run冻结`inputs/runtime_profiles.json`中的内部资源与保留预算；公开`execution_profiles.json`只供执行规划。
+历史GUI重放通过显式`allow_legacy`读取原冻结`inputs/execution_profiles.json`的旧预算格式，
+不改历史字节；两份预算并存或把新公开执行合同当预算均拒绝。普通新运行不走历史兼容入口。
 
 ## 开放动作与关闭条件
 

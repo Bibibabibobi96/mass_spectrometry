@@ -47,6 +47,7 @@
 | 职责 | 入口 |
 |---|---|
 | 身份、结构变体与发现能力 | [project.json](../config/project.json) |
+| 变体极数、电极数与物理设计校验 | [家族合同](../config/contracts/family_contract.json)、[项目设计Schema](../config/contracts/design_profiles.schema.json)、[设计解析器](../runtime/design_profile.py) |
 | 具名设计与typed电气模式 | [design_profiles.json](../config/design_profiles.json)、[operating_modes.json](../config/operating_modes.json) |
 | 完整runtime与粒子源绑定 | [runtime_profiles.json](../config/runtime_profiles.json)、[particle_source_profiles.json](../config/particle_source_profiles.json) |
 | 三变体传输数值注册表 | [COMSOL](../config/comsol_solver_numerics.json)、[SIMION](../config/simion_solver_numerics.json) |

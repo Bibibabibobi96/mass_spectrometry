@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/design_profile_sources.schema.json",
+  "title": "Generic sources of a governed design profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request", "variables", "envelope"],
+  "properties": {
+    "request": {
+      "type": "object", "required": ["identity"],
+      "properties": {"identity": {"$ref": "#/$defs/identity"}}
+    },
+    "variables": {
+      "type": "object", "required": ["schema_version", "role", "project_id", "family_id", "variables"],
+      "properties": {
+        "schema_version": {"type": "integer", "minimum": 1},
+        "role": {"const": "project_design_variable_catalog"},
+        "project_id": {"$ref": "#/$defs/identifier"}, "family_id": {"$ref": "#/$defs/identifier"},
+        "variables": {"type": "array", "items": {
+          "type": "object", "required": ["variable_id", "json_pointer", "unit", "minimum", "maximum"],
+          "properties": {
+            "variable_id": {"$ref": "#/$defs/identifier"},
+            "json_pointer": {"type": "string", "pattern": "^/(?:[^~/]|~[01])+(?:/(?:[^~/]|~[01])+)*$"},
+            "unit": {"type": "string", "minLength": 1},
+            "minimum": {"type": "number"}, "maximum": {"type": "number"}
+          }
+        }}
+      }
+    },
+    "envelope": {
+      "type": "object", "required": ["schema_version", "role", "project_id", "family_id", "reference"],
+      "properties": {
+        "schema_version": {"type": "integer", "minimum": 1}, "role": {"const": "project_optimization_envelope"},
+        "project_id": {"$ref": "#/$defs/identifier"}, "family_id": {"$ref": "#/$defs/identifier"},
+        "reference": {
+          "type": "object", "required": ["design_request", "design_request_sha256"],
+          "properties": {
+            "design_request": {"$ref": "design_profiles.schema.json#/$defs/path"},
+            "design_request_sha256": {"$ref": "design_profiles.schema.json#/$defs/sha256"}
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {"$ref": "design_profiles.schema.json#/$defs/identifier"},
+    "identity": {
+      "type": "object", "required": ["project_id", "family_id"],
+      "properties": {"project_id": {"$ref": "#/$defs/identifier"}, "family_id": {"$ref": "#/$defs/identifier"}}
+    }
+  }
+}

@@ -87,12 +87,13 @@ def consistent_profile_identity(
 
 
 def validate_structural_variants(
-    descriptor: dict[str, Any], profiles: list[dict[str, Any]], path: Path
+    descriptor: dict[str, Any], profiles: list[dict[str, Any]] | None, path: Path
 ) -> None:
-    """Bind each design to one declared structure without sharing its qualification."""
+    """Validate structural identity and capability ownership without device physics."""
     variants = descriptor.get("structural_variants", [])
     if not variants:
-        consistent_profile_identity([item["identity"] for item in profiles], path)
+        if profiles is not None:
+            consistent_profile_identity([item["identity"] for item in profiles], path)
         return
     by_id = {item["variant_id"]: item for item in variants}
     if len(by_id) != len(variants):
@@ -104,24 +105,16 @@ def validate_structural_variants(
         if not declared.issubset(capability_ids) or assigned.intersection(declared):
             raise ContractError(f"{path}: structural variant capability ownership differs")
         assigned.update(declared)
-        if variant["electrode_count"] != 2 * variant["radial_order_n"]:
-            raise ContractError(f"{path}: structural variant electrode count differs")
     if assigned != capability_ids:
         raise ContractError(f"{path}: capabilities require one structural variant owner")
+    if profiles is None:
+        return
     seen: set[str] = set()
     for profile in profiles:
         variant_id = profile.get("structural_variant_id")
         variant = by_id.get(variant_id)
         if variant is None:
             raise ContractError(f"{path}: design profile has no declared structural variant")
-        expected = {
-            "project_id": descriptor["project_id"],
-            "family_id": descriptor["family_id"],
-            "radial_order_n": variant["radial_order_n"],
-            "electrode_count": variant["electrode_count"],
-        }
-        if profile["identity"] != expected:
-            raise ContractError(f"{path}: design profile structural identity differs")
         seen.add(variant_id)
     if seen != set(by_id):
         raise ContractError(f"{path}: structural variant has no design profile")
@@ -150,11 +143,13 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
             if not mode_path.is_file():
                 raise ContractError(f"{path}: capability {capability_id!r} references missing mode {mode_path}")
 
+    validate_structural_variants(descriptor, None, path)
+
     for role, relative in descriptor["contracts"].items():
         if relative is not None and not (project_root / relative).is_file():
             raise ContractError(f"{path}: {role} contract is missing: {relative}")
 
-    multipole_profile_identity: dict[str, Any] | None = None
+    profile_identity: dict[str, Any] | None = None
     profiles_relative = descriptor["contracts"].get("design_profiles")
     if profiles_relative is not None:
         profiles_path = project_root / profiles_relative
@@ -193,11 +188,12 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
                 ):
                     raise ContractError(f"{profiles_path}: stale design profile source {label!r}")
             request = load_json(project_root / profile["design_request"])
-            validate_schema(request, "multipole_design_request.schema.json")
             variables = load_json(project_root / profile["design_variables"])
             envelope = load_json(project_root / profile["optimization_envelope"])
-            validate_schema(variables, "design_variable_catalog.schema.json")
-            validate_schema(envelope, "optimization_envelope.schema.json")
+            validate_schema(
+                {"request": request, "variables": variables, "envelope": envelope},
+                "design_profile_sources.schema.json",
+            )
             if descriptor.get("structural_variants"):
                 variant_variable_ids.setdefault(profile["structural_variant_id"], set()).update(
                     item["variable_id"] for item in variables["variables"]
@@ -207,13 +203,21 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
                 or variables["family_id"] != descriptor["family_id"]
                 or envelope["project_id"] != descriptor["project_id"]
                 or envelope["family_id"] != descriptor["family_id"]
+                or profile["identity"]["project_id"] != descriptor["project_id"]
+                or profile["identity"]["family_id"] != descriptor["family_id"]
             ):
                 raise ContractError(f"{profiles_path}: profile governance identity differs")
+            if envelope["reference"]["design_request"] != profile["design_request"]:
+                raise ContractError(f"{profiles_path}: profile envelope request path differs")
             if envelope["reference"]["design_request_sha256"] != repository_text_sha256(
                 project_root / profile["design_request"]
             ):
                 raise ContractError(f"{profiles_path}: profile envelope request hash is stale")
+            variable_ids: set[str] = set()
             for variable in variables["variables"]:
+                if variable["variable_id"] in variable_ids or variable["minimum"] > variable["maximum"]:
+                    raise ContractError(f"{profiles_path}: duplicate variable or invalid bounds")
+                variable_ids.add(variable["variable_id"])
                 try:
                     current = pointer_value(request, variable["json_pointer"])
                 except (KeyError, TypeError) as exc:
@@ -227,10 +231,6 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
             if request["identity"] != profile["identity"]:
                 raise ContractError(f"{profiles_path}: profile request identity differs")
             profile_identities.append(profile["identity"])
-            if request["geometry_mm"]["enclosure"]["role"] != profile["topology"]["enclosure_role"]:
-                raise ContractError(f"{profiles_path}: profile enclosure topology differs")
-            if request["segmentation"]["strategy"] != profile["topology"]["segmentation_strategy"]:
-                raise ContractError(f"{profiles_path}: profile segmentation topology differs")
         validate_structural_variants(descriptor, profiles["profiles"], profiles_path)
         for variant in descriptor.get("structural_variants", []):
             declared = {
@@ -242,7 +242,7 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
             if missing:
                 raise ContractError(f"{profiles_path}: structural variant capability variables are unsupported: {sorted(missing)}")
         if not descriptor.get("structural_variants"):
-            multipole_profile_identity = consistent_profile_identity(
+            profile_identity = consistent_profile_identity(
                 profile_identities, profiles_path
             )
 
@@ -294,12 +294,12 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
             if catalog["family_id"] != descriptor["family_id"]:
                 raise ContractError(f"{variables_path}: family_id differs from project descriptor")
             reference = None
-            if multipole_profile_identity is None:
+            if profile_identity is None:
                 raise ContractError(
                     f"{variables_path}: multipole design variables require "
                     "a consistent design profile identity"
                 )
-            expected_identity = multipole_profile_identity
+            expected_identity = profile_identity
             if (
                 expected_identity["project_id"] != descriptor["project_id"]
                 or expected_identity["family_id"] != descriptor["family_id"]
@@ -307,8 +307,6 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
                 raise ContractError(
                     f"{variables_path}: design profile identity differs from project descriptor"
                 )
-            if expected_identity["electrode_count"] != 2 * expected_identity["radial_order_n"]:
-                raise ContractError(f"{variables_path}: electrode_count must equal twice radial_order_n")
         else:
             raise ContractError(f"{variables_path}: unsupported optimization strategy")
         catalog_ids: set[str] = set()

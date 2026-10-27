@@ -12,7 +12,8 @@
 
 | 对象 | 唯一入口与边界 |
 |---|---|
-| 身份、API、变体和具名几何profile | [component_contract.json](../config/component_contract.json) |
+| 公共发现、结构变体与能力 | [project.json](../config/project.json)，二区／三区分别登记，不能隐式代选 |
+| 器件API、变体和具名几何profile | [component_contract.json](../config/component_contract.json) |
 | 机械端口与物理电极视图 | [assembly_interface.py](../analysis/assembly_interface.py)，消费同一冻结请求和现有几何编译器 |
 | 组件焦点实验 | [two_zone_component_focus_campaign.json](../config/two_zone_component_focus_campaign.json) |
 | 二区／三区及有符号源理论 | [理论导航](theory/README.md) |

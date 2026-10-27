@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mass-spectrometry.local/schemas/design_profiles.schema.json",
-  "title": "Governed multipole design profile registry",
+  "title": "Project design profile registry",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -21,16 +21,16 @@
   },
   "properties": {
     "schema_version": {
-      "const": 2
+      "const": 3
     },
     "role": {
-      "const": "multipole_design_profile_registry"
+      "const": "project_design_profile_registry"
     },
     "project_id": {
       "$ref": "#/$defs/identifier"
     },
     "family_id": {
-      "const": "rf_multipole_ion_optics"
+      "$ref": "#/$defs/identifier"
     },
     "operating_mode_registry": {
       "$ref": "#/$defs/path"
@@ -50,8 +50,7 @@
           "design_variables",
           "optimization_envelope",
           "sha256",
-          "identity",
-          "topology"
+          "identity"
         ],
         "properties": {
           "design_profile_id": {
@@ -59,9 +58,6 @@
           },
           "mode_id": {
             "$ref": "#/$defs/identifier"
-          },
-          "enclosure_model": {
-            "$ref": "multipole_design_request.schema.json#/$defs/enclosure/oneOf/0/properties/model"
           },
           "design_request": {
             "$ref": "#/$defs/path"
@@ -94,63 +90,32 @@
           },
           "identity": {
             "type": "object",
-            "additionalProperties": false,
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            },
             "required": [
               "project_id",
-              "family_id",
-              "radial_order_n",
-              "electrode_count"
+              "family_id"
             ],
             "properties": {
               "project_id": {
                 "$ref": "#/$defs/identifier"
               },
               "family_id": {
-                "const": "rf_multipole_ion_optics"
-              },
-              "radial_order_n": {
-                "type": "integer",
-                "minimum": 2
-              },
-              "electrode_count": {
-                "type": "integer",
-                "minimum": 4
-              }
-            }
-          },
-          "topology": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "enclosure_role",
-              "segmentation_strategy",
-              "axial_drive_topology"
-            ],
-            "properties": {
-              "enclosure_role": {
-                "enum": [
-                  "full_length_grounded_shield",
-                  "downstream_local_reference_enclosure"
-                ]
-              },
-              "segmentation_strategy": {
-                "enum": [
-                  "off",
-                  "uniform",
-                  "explicit"
-                ]
-              },
-              "axial_drive_topology": {
-                "enum": [
-                  "none",
-                  "segmented_rod_axial_acceleration",
-                  "exit_aperture_plate_potential_step"
-                ]
+                "$ref": "#/$defs/identifier"
               }
             }
           },
           "structural_variant_id": {
             "$ref": "#/$defs/identifier"
+          },
+          "project_options": {
+            "type": "object",
+            "description": "Opaque project-owned compilation options; validated by the project resolver."
           }
         }
       }

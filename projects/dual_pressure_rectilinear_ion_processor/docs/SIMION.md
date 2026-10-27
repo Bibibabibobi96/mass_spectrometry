@@ -37,7 +37,7 @@
 
 前一解析场workflow未形成运行证据，已删除无生产消费者的解析场及其专用测试；旧curvature/offset仅在历史解释中保留。
 不得将历史解析场输出或普通GUI静态电势显示混为原生动态场证据。旧0.2 mm场族的15组原生响应Refine完成（15.47 s），当前0.1 mm场族已求解；旧场不自动继承资格，当前恢复与结果边界见PROJECT。
-RF波形复用`common/multipole/simion_rf_drive.lua`，所有阶段使用唯一绝对instrument time。
+RF波形复用[`common/simion/rf_drive.lua`](../../../common/simion/rf_drive.lua)，所有阶段使用唯一绝对instrument time。
 LP浮动屏蔽件电极14平时与LP common-mode同步，引出脉冲时消费原生电压配置中的相对偏置；
 当前跟随Pull的−900 V修正及条件对照见PROJECT。HP屏蔽件电极15与HP common-mode同步；
 屏蔽件与接地外边界的关系由原生几何统一派生，避免4 kV抬升把离子云暴露于未经声明的近地泄漏场。
@@ -114,9 +114,10 @@ Pull与LP shield的狭缝是实体cutout，狭缝几何本身不是独立单位�
 不得通过旧oaTOF或多极杆入口偷偷覆盖科学参数。终态发布run_config、summary和manifest，
 保留canonical粒子事件、必要日志与轻量图。
 
-项目专用[执行合同](../config/execution_profiles.json)的`native_functional`绑定
-`native_electrode_functional`、唯一runner及五份相对输入路径，不复制物理标量。该合同使用项目专用role，
-由项目编译器校验；不冒充公共通用execution profile格式。
+公共[执行登记](../config/execution_profiles.json)使用统一`project_execution_profiles`格式；
+`native_functional`只登记当前固定功能源、指标和公开runner，完整适用范围见[项目入口](../README.md#阅读与执行)。
+内部资源、保留与容量声明由[运行预算](../config/runtime_profiles.json)维护，新run冻结为
+`inputs/runtime_profiles.json`。旧GUI来源按显式历史读取路径消费原冻结预算，不把公开执行登记当预算。
 保留原生电极场与工作台供GUI审查的运行使用`solver_review`；实际保留合同随运行冻结。
 N100和独立GUI准备的字节承诺分别消费本次冻结profile的`committed_new_bytes`与
 `gui_preparation_committed_new_bytes`，实际承诺与准入结果写入run；不将旧尺寸场族的体积当作新几何的实际占用。

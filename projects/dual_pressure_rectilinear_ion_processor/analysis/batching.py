@@ -38,6 +38,25 @@ def _write(path: Path, value: dict) -> None:
     path.write_text(json.dumps(value, indent=2, allow_nan=False)+"\n", encoding="utf-8")
 
 
+def frozen_runtime_profile(run: Path, *, allow_legacy: bool = False) -> dict:
+    """Select one private budget; legacy names are read only for historical replay."""
+    path = run / "inputs/runtime_profiles.json"
+    legacy = run / "inputs/execution_profiles.json"
+    if path.is_file() and legacy.is_file():
+        raise ValueError("ambiguous frozen runtime profile contracts")
+    role = "ion_processor_runtime_profiles"
+    if not path.is_file() and allow_legacy:
+        path, role = legacy, "ion_processor_execution_profiles"
+    registry = _read(path)
+    if (registry.get("schema_version") != 1 or registry.get("role") != role
+            or registry.get("project_id") != "dual_pressure_rectilinear_ion_processor"):
+        raise ValueError("frozen runtime profile identity differs")
+    matches = [item for item in registry["profiles"] if item["profile_id"] == "native_functional"]
+    if len(matches) != 1:
+        raise ValueError("exactly one frozen native_functional runtime profile is required")
+    return matches[0]
+
+
 def publish_manifest(run: Path, status: str) -> dict:
     """Pass arbitrarily many worker outputs directly to the public Python API.
 
@@ -64,7 +83,7 @@ def prepare_request(run: Path) -> dict:
     """Describe the real one-instance native loading identity without CPU limits."""
     c = _read(run/"inputs/resolved_model.json")
     _archive_policy(run)
-    profile = _read(run/"inputs/execution_profiles.json")["profiles"][0]
+    profile = frozen_runtime_profile(run)
     retain = profile["retain_batch_trajectories"]
     if not isinstance(retain, bool):
         raise ValueError("retain_batch_trajectories must be boolean")
@@ -121,7 +140,7 @@ def materialize_batches(run: Path, batch_plan: Path) -> dict:
     from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import lua_literal
     run = run.resolve()
     c = _read(run/"inputs/resolved_model.json")
-    retain = _read(run/"inputs/execution_profiles.json")["profiles"][0]["retain_batch_trajectories"]
+    retain = frozen_runtime_profile(run)["retain_batch_trajectories"]
     if not isinstance(retain, bool):
         raise ValueError("retain_batch_trajectories must be boolean")
     plan = _read(batch_plan)
@@ -208,11 +227,7 @@ def _csv(path: Path, fields: list[str], rows: list[dict]) -> None:
 
 
 def _archive_policy(run: Path) -> bool:
-    profiles = _read(run/"inputs/execution_profiles.json")["profiles"]
-    matches = [profile for profile in profiles if profile["profile_id"] == "native_functional"]
-    if len(matches) != 1:
-        raise ValueError("exactly one frozen native_functional execution profile is required")
-    enabled = matches[0]["archive_merged_worker_csv"]
+    enabled = frozen_runtime_profile(run)["archive_merged_worker_csv"]
     if not isinstance(enabled, bool):
         raise ValueError("archive_merged_worker_csv must be boolean")
     return enabled

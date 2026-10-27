@@ -1001,9 +1001,9 @@ class MultipoleMechanicalProfileTest(unittest.TestCase):
     def test_unknown_model_rejected_by_profile_schema_and_compiler(self):
         profile = self.profile()
         registry = json.loads(profile["profiles_path"].read_text(encoding="utf-8-sig"))
-        registry["profiles"][-1]["enclosure_model"] = "invented_model"
+        registry["profiles"][-1]["project_options"]["enclosure_model"] = "invented_model"
         with self.assertRaises(ContractError):
-            validate_schema(registry, "design_profiles.schema.json")
+            validate_schema(registry, REPO_ROOT / "projects/rf_multipole_ion_optics/config/contracts/design_profiles.schema.json")
         with self.assertRaises(MultipoleDesignCompileError):
             compile_governed_design_request_file(
                 profile["paths"]["design_request"], profile["paths"]["design_variables"],
@@ -1093,8 +1093,8 @@ class MultipoleGovernanceSchemaTest(unittest.TestCase):
                     encoding="utf-8",
                 )
                 profiles = {
-                    "schema_version": 2,
-                    "role": "multipole_design_profile_registry",
+                    "schema_version": 3,
+                    "role": "project_design_profile_registry",
                     "project_id": project_id,
                     "family_id": "rf_multipole_ion_optics",
                     "profiles": [
@@ -1131,6 +1131,8 @@ class MultipoleGovernanceSchemaTest(unittest.TestCase):
                         }
                     ],
                 }
+                for profile in profiles["profiles"]:
+                    profile["project_options"] = {"topology": profile.pop("topology")}
                 (config / "design_profiles.json").write_text(
                     json.dumps(profiles, indent=2) + "\n",
                     encoding="utf-8",

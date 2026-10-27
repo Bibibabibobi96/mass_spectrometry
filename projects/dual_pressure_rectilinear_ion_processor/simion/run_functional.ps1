@@ -85,9 +85,13 @@ $workspaceRoot=Split-Path -Parent $repoRoot
 $python=Join-Path $repoRoot '.venv/Scripts/python.exe'
 if(-not $SimionExe){$SimionExe=Join-Path $env:ProgramFiles 'SIMION-2020/simion.exe'}
 if(-not(Test-Path -LiteralPath $SimionExe)){throw 'SIMION 2020 executable missing'}
-$profile=(Get-Content (Join-Path $projectRoot 'config/execution_profiles.json') -Raw|ConvertFrom-Json).profiles[0]
+$runtimeRegistry=Get-Content (Join-Path $projectRoot 'config/runtime_profiles.json') -Raw|ConvertFrom-Json
+if($runtimeRegistry.role-ne'ion_processor_runtime_profiles'-or$runtimeRegistry.project_id-ne'dual_pressure_rectilinear_ion_processor'-or$runtimeRegistry.schema_version-ne1){throw 'Runtime profile identity differs'}
+$profiles=@($runtimeRegistry.profiles|Where-Object{$_.profile_id-eq'native_functional'})
+if($profiles.Count-ne1){throw 'Exactly one native_functional runtime profile is required'}
+$profile=$profiles[0]
 $configurationRoot=if($ConfigurationDirectory){(Resolve-Path -LiteralPath $ConfigurationDirectory).Path}else{Join-Path $projectRoot 'config'}
-if($profile.retain_batch_trajectories-isnot[bool]){throw 'Execution profile retain_batch_trajectories must be boolean'}
+if($profile.retain_batch_trajectories-isnot[bool]){throw 'Runtime profile retain_batch_trajectories must be boolean'}
 if($profile.native_field_query_memory_bytes-isnot[long]-and$profile.native_field_query_memory_bytes-isnot[int]){throw 'Native query memory declaration must be integer bytes'}
 if($profile.native_field_query_memory_bytes-le0){throw 'Native query memory declaration must be positive'}
 $retainBatchTrajectories=[int]$profile.retain_batch_trajectories
@@ -113,10 +117,10 @@ try {
  if($InjectedSource){$prepareArguments+=@('--injected-source',$InjectedSource)}
  & $python @prepareArguments
  if($LASTEXITCODE-ne0){throw 'Input preparation failed'}
- Copy-VerifiedRunInput (Join-Path $projectRoot 'config/execution_profiles.json') (Join-Path $package.input_dir 'execution_profiles.json')|Out-Null
+ Copy-VerifiedRunInput (Join-Path $projectRoot 'config/runtime_profiles.json') (Join-Path $package.input_dir 'runtime_profiles.json')|Out-Null
  $profile.limits.transient_run_directory_bytes=$committedNewBytes
  $config=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
- $config.inputs.execution_profiles=Join-Path $package.input_dir 'execution_profiles.json'
+ $config.inputs.runtime_profiles=Join-Path $package.input_dir 'runtime_profiles.json'
  Write-RunJson -Path $package.run_config -Value $config
  $resolvedSource=(Get-Content (Join-Path $package.input_dir 'resolved_model.json') -Raw|ConvertFrom-Json).source
  if($InjectedSource-and$resolvedSource.particle_count-eq0){

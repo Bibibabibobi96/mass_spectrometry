@@ -15,6 +15,18 @@
     "design_variables": null,
     "optimization_envelope": null
   },
+  "structural_variants": [
+    {
+      "variant_id": "two_zone",
+      "display_name": "二区正交加速器",
+      "capability_ids": ["two_zone_orthogonal_acceleration"]
+    },
+    {
+      "variant_id": "three_zone",
+      "display_name": "三区正交加速器",
+      "capability_ids": ["three_zone_orthogonal_acceleration"]
+    }
+  ],
   "capabilities": [
     {
       "capability_id": "two_zone_orthogonal_acceleration",

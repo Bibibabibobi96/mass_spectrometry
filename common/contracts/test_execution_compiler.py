@@ -47,6 +47,46 @@ class ExecutionCompilerTests(unittest.TestCase):
             "evidence_contract_path": "C:/data/evidence.json",
         }
 
+    def ion_processor_request(self):
+        request = self.approved_functional_rf_request()
+        request["target"] = {
+            "family_id": "rf_ion_accumulation_and_pulsed_extraction",
+            "preferred_project_id": "dual_pressure_rectilinear_ion_processor",
+            "function": "ion_capture_cooling_and_extraction", "mode": "native_electrode_functional",
+        }
+        request["operating_points"] = [{"mass": {"value": 524, "unit": "Da"}, "charge_state": 1}]
+        request["objectives"] = [{"metric": "extraction_fraction", "operator": "maximize", "value": None, "unit": "1", "tolerance": None}]
+        request["design_variables"] = []
+        request["constraints"] = []
+        request["required_outputs"] = ["simulation_results", "simion_model", "validation_report", "interface_state"]
+        return request
+
+    def test_ion_processor_existing_functional_runner_is_discoverable_without_budget_bindings(self):
+        result = self.compile_request(self.ion_processor_request())
+        self.assertEqual(result["status"], "EXECUTION_READY")
+        self.assertEqual(result["profile_id"], "native_functional")
+        self.assertEqual([item["step_id"] for item in result["commands"]], ["static_gate", "native_run"])
+        command = result["commands"][1]
+        self.assertTrue(command["argv"][4].replace("\\", "/").endswith("/simion/run_functional.ps1"))
+        self.assertEqual(command["argv"][command["argv"].index("-RunId") + 1], command["run_id"])
+        self.assertEqual(command["argv"][-2:], ["-SourceProfile", "functional"])
+        self.assertTrue(any("Prototype" in message for message in result["limitations"]))
+
+    def test_ion_processor_profile_rejects_unregistered_physics_and_higher_qualification(self):
+        for mass, charge in ((500, 1), (524, -1)):
+            request = self.ion_processor_request()
+            request["operating_points"] = [{"mass": {"value": mass, "unit": "Da"}, "charge_state": charge}]
+            result = self.compile_request(request)
+            self.assertEqual(result["status"], "NEEDS_IMPLEMENTATION")
+            self.assertFalse(result["safe_to_execute"])
+        for level in ("static", "candidate", "formal"):
+            request = self.ion_processor_request()
+            request["evidence_level"] = level
+            with self.assertRaisesRegex(ValueError, "NEEDS_PROJECT_COMPLETION"):
+                self.compile_request(request)
+        with self.assertRaisesRegex(ValueError, "Unexpected runtime bindings"):
+            self.compile_request(self.ion_processor_request(), {"configuration_directory": "unregistered"})
+
     def test_approved_functional_rf_plan_is_execution_ready(self):
         result = self.compile_request(
             self.approved_functional_rf_request(), self.functional_bindings(),

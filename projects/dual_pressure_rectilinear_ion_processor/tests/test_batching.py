@@ -41,11 +41,32 @@ class BatchingTests(unittest.TestCase):
         for name in ("processor.lua","collision_hs1.lua","native_drive.lua","simion_rf_drive.lua","voltage_waveforms.lua","extraction_force_audit.lua","processor.iob"):
             (self.run/"simion"/name).write_bytes(b"inert frozen control "+name.encode())
         self.save_config()
-        functional.write_json(self.run/"inputs/execution_profiles.json",functional.read_json(PROJECT/"config/execution_profiles.json"))
+        functional.write_json(self.run/"inputs/runtime_profiles.json",functional.read_json(PROJECT/"config/runtime_profiles.json"))
         functional.write_json(self.run/"run_config.json",dict(inputs={}))
 
     def save_config(self) -> None:
         functional.write_json(self.run/"inputs/resolved_model.json",self.config)
+
+    def test_runtime_budget_identity_is_explicit_and_legacy_is_replay_only(self) -> None:
+        current = self.run / "inputs/runtime_profiles.json"
+        registry = functional.read_json(current)
+        expected = registry["profiles"][0]
+        self.assertEqual(batching.frozen_runtime_profile(self.run), expected)
+        legacy = self.run / "inputs/execution_profiles.json"
+        registry["role"] = "ion_processor_execution_profiles"
+        functional.write_json(legacy, registry)
+        with self.assertRaisesRegex(ValueError, "ambiguous"):
+            batching.frozen_runtime_profile(self.run, allow_legacy=True)
+        current.unlink()
+        with self.assertRaises(FileNotFoundError):
+            batching.frozen_runtime_profile(self.run)
+        original = legacy.read_bytes()
+        self.assertEqual(batching.frozen_runtime_profile(self.run, allow_legacy=True), expected)
+        self.assertEqual(legacy.read_bytes(), original)
+        registry["role"] = "project_execution_profiles"
+        functional.write_json(legacy, registry)
+        with self.assertRaisesRegex(ValueError, "identity differs"):
+            batching.frozen_runtime_profile(self.run, allow_legacy=True)
 
     def publishable_config(self) -> None:
         functional.write_json(self.run/"run_config.json", dict(
@@ -162,9 +183,9 @@ class BatchingTests(unittest.TestCase):
         text=(self.run/"simion_batch_0001/frozen_config.lua").read_text()
         self.assertIn('["retain_trajectories"]=false', text)
         self.assertIn('["native_timing"]='+functional.lua_literal(self.config["native_timing"]),text)
-        profile=functional.read_json(self.run/"inputs/execution_profiles.json")
+        profile=functional.read_json(self.run/"inputs/runtime_profiles.json")
         profile["profiles"][0]["retain_batch_trajectories"]=True
-        functional.write_json(self.run/"inputs/execution_profiles.json",profile)
+        functional.write_json(self.run/"inputs/runtime_profiles.json",profile)
         after=batching.prepare_request(self.run)
         self.assertNotEqual(before["case_input_sha256"],after["case_input_sha256"])
         self.assertNotEqual(before["field_loading_policy_id"],after["field_loading_policy_id"])
@@ -437,9 +458,9 @@ class BatchingTests(unittest.TestCase):
         self.assertFalse(list((self.run/"results").glob("merged_worker_csv_batch_*_archive_plan.json")))
 
     def test_worker_archive_false_flag_preserves_plain_worker_csv(self) -> None:
-        profile = functional.read_json(self.run/"inputs/execution_profiles.json")
+        profile = functional.read_json(self.run/"inputs/runtime_profiles.json")
         profile["profiles"][0]["archive_merged_worker_csv"] = False
-        functional.write_json(self.run/"inputs/execution_profiles.json", profile)
+        functional.write_json(self.run/"inputs/runtime_profiles.json", profile)
         _,complete=self.planning();plan=self.materialize(complete);self.populate(plan)
         batching.merge_batches(self.run,self.run/"results/batches.json")
         self.assertFalse(list((self.run/"results").glob("merged_worker_csv_batch_*.zip")))
@@ -507,14 +528,14 @@ class BatchingTests(unittest.TestCase):
         self.assertFalse((self.run/"results/merged_worker_csv_archive_receipt.json").exists())
 
     def test_worker_archive_policy_requires_explicit_frozen_boolean(self) -> None:
-        profile = functional.read_json(self.run/"inputs/execution_profiles.json")
+        profile = functional.read_json(self.run/"inputs/runtime_profiles.json")
         for value in (None, "true", 1):
             profile["profiles"][0]["archive_merged_worker_csv"] = value
-            functional.write_json(self.run/"inputs/execution_profiles.json", profile)
+            functional.write_json(self.run/"inputs/runtime_profiles.json", profile)
             with self.subTest(value=value), self.assertRaisesRegex(ValueError, "must be boolean"):
                 batching.prepare_request(self.run)
         del profile["profiles"][0]["archive_merged_worker_csv"]
-        functional.write_json(self.run/"inputs/execution_profiles.json", profile)
+        functional.write_json(self.run/"inputs/runtime_profiles.json", profile)
         with self.assertRaises(KeyError):
             batching.prepare_request(self.run)
 

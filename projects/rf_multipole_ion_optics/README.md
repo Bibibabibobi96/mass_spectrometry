@@ -10,8 +10,8 @@
 1. 仓库根[README](../../README.md)与[执行规则](../../AGENTS.md)。
 2. [项目状态](docs/PROJECT.md)：当前事实、各变体资格、限制和开放任务的唯一正文。
 3. 选择下表中的变体入口；涉及物理解释时读[理论索引](docs/theory/index.md)。
-4. 实现与运行查[多极杆实现说明](docs/IMPLEMENTATION.md)；四极专属workflow另读
-   [COMSOL说明](docs/COMSOL.md)或[SIMION说明](docs/SIMION.md)。
+4. 实现与运行查[多极杆实现说明](docs/IMPLEMENTATION.md)；按所用求解器查
+   [COMSOL说明](docs/COMSOL.md)或[SIMION说明](docs/SIMION.md)，各workflow分别声明变体范围。
 5. 仅在追溯旧结论、run或资格身份时读[历史索引](docs/history/README.md)。
 
 ## 设计变体
@@ -30,7 +30,8 @@
 
 [project.json](config/project.json)声明项目身份与结构变体；[设计注册表](config/design_profiles.json)、
 [runtime注册表](config/runtime_profiles.json)、[粒子源注册表](config/particle_source_profiles.json)
-分别绑定设计、完整运行与源。精确参数和路径只由机器合同维护，完整路由见
+分别绑定设计、完整运行与源。极数与物理结构映射归[家族合同](config/contracts/family_contract.json)，
+由项目设计解析器校验；公共发现合同只登记变体身份与能力。精确参数和路径只由机器合同维护，完整路由见
 [PROJECT的机器权威表](docs/PROJECT.md#机器权威)。
 
 选择具名设计或runtime profile时必须显式带结构变体前缀，例如`octupole_no_acceleration_full_length`；不存在默认极数。

@@ -13,6 +13,7 @@ from projects.rf_multipole_ion_optics.core.compile_design_request import (
     apply_typed_operating_mode,
     compile_governed_design_request_file,
 )
+from projects.rf_multipole_ion_optics.core.family_contract import load_family_contract
 
 
 def _inside(root: Path, relative: str) -> Path:
@@ -22,6 +23,37 @@ def _inside(root: Path, relative: str) -> Path:
     if not path.is_file():
         raise ContractError(f"design profile file is missing: {path}")
     return path
+
+
+def validate_design_profile_structures(
+    descriptor: dict[str, Any], profiles: list[dict[str, Any]], project_root: Path,
+) -> None:
+    """Keep pole counts in the project contract, separate from public discovery."""
+    family = load_family_contract(project_root / "config/contracts/family_contract.json")
+    structures = family["structural_variants"]
+    declared = {item["variant_id"] for item in descriptor["structural_variants"]}
+    if set(structures) != declared:
+        raise ContractError("multipole physical structures differ from declared structural variants")
+    for identity in structures.values():
+        if (type(identity.get("radial_order_n")) is not int
+                or type(identity.get("electrode_count")) is not int
+                or identity["radial_order_n"] not in family["supported_radial_orders"]
+                or identity["electrode_count"] != 2 * identity["radial_order_n"]):
+            raise ContractError("multipole structural identity has an invalid pole count")
+    seen = set()
+    for profile in profiles:
+        variant = profile.get("structural_variant_id")
+        if variant not in structures:
+            raise ContractError("design profile has no declared structural variant")
+        expected = {
+            "project_id": descriptor["project_id"], "family_id": descriptor["family_id"],
+            **structures[variant],
+        }
+        if profile["identity"] != expected:
+            raise ContractError("design profile structural identity differs")
+        seen.add(variant)
+    if seen != declared:
+        raise ContractError("structural variant has no design profile")
 
 
 def resolve_design_profile(
@@ -48,9 +80,10 @@ def resolve_design_profile(
         raise ContractError("project does not register governed design profiles")
     profiles_path = _inside(project_root, profiles_relative)
     profiles = json.loads(profiles_path.read_text(encoding="utf-8-sig"))
-    validate_schema(profiles, "design_profiles.schema.json")
+    validate_schema(profiles, project_root / "config/contracts/design_profiles.schema.json")
     if profiles["project_id"] != project_id or profiles["family_id"] != descriptor["family_id"]:
         raise ContractError("design profile registry identity differs")
+    validate_design_profile_structures(descriptor, profiles["profiles"], project_root)
     selected = [item for item in profiles["profiles"] if item["design_profile_id"] == design_profile_id]
     if len(selected) != 1:
         raise ContractError(f"design profile is not unique: {design_profile_id!r}")
@@ -64,6 +97,10 @@ def resolve_design_profile(
         if repository_text_sha256(path) != profile["sha256"][label]:
             raise ContractError(f"design profile hash is stale: {label}")
     request = json.loads(paths["design_request"].read_text(encoding="utf-8-sig"))
+    validate_schema(request, "multipole_design_request.schema.json")
+    validate_schema(json.loads(paths["design_variables"].read_text(encoding="utf-8-sig")), "design_variable_catalog.schema.json")
+    validate_schema(json.loads(paths["optimization_envelope"].read_text(encoding="utf-8-sig")), "optimization_envelope.schema.json")
+    options = profile["project_options"]
     resolved_design = None
     mode_id = profile.get("mode_id")
     if mode_id is not None:
@@ -80,7 +117,7 @@ def resolve_design_profile(
         modes = json.loads(modes_path.read_text(encoding="utf-8-sig"))
         request = apply_typed_operating_mode(request, modes, mode_id)
         paths["operating_mode_registry"] = modes_path
-    if mode_id is not None or profile.get("enclosure_model") is not None:
+    if mode_id is not None or options.get("enclosure_model") is not None:
         resolved_design = compile_governed_design_request_file(
             paths["design_request"],
             paths["design_variables"],
@@ -89,16 +126,16 @@ def resolve_design_profile(
             provenance_root=repo_root,
             operating_mode_registry_path=paths.get("operating_mode_registry"),
             mode_id=mode_id,
-            enclosure_model=profile.get("enclosure_model"),
+            enclosure_model=options.get("enclosure_model"),
             repository_text_sources=True,
         )
     if request["identity"] != profile["identity"]:
         raise ContractError("design request identity differs from design profile")
-    if request["geometry_mm"]["enclosure"]["role"] != profile["topology"]["enclosure_role"]:
+    if request["geometry_mm"]["enclosure"]["role"] != options["topology"]["enclosure_role"]:
         raise ContractError("design request enclosure role differs from design profile")
-    if request["segmentation"]["strategy"] != profile["topology"]["segmentation_strategy"]:
+    if request["segmentation"]["strategy"] != options["topology"]["segmentation_strategy"]:
         raise ContractError("design request segmentation differs from design profile")
-    if request["axial_drive"]["topology"] != profile["topology"]["axial_drive_topology"]:
+    if request["axial_drive"]["topology"] != options["topology"]["axial_drive_topology"]:
         raise ContractError("design request axial-drive topology differs from design profile")
     result = {
         "project_root": project_root,

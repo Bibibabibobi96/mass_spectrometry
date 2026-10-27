@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "mode_id": "native_electrode_functional",
+  "role": "ion_processor_functional_mode",
+  "source_profile": "functional",
+  "inputs": {
+    "baseline": "config/baseline.json",
+    "numerics": "config/numerics.json",
+    "source": "config/source.json",
+    "acceptance": "config/acceptance.json",
+    "native_operating_point": "config/native_operating_point.json"
+  },
+  "runtime_profile_id": "native_functional",
+  "runtime_profiles": "config/runtime_profiles.json"
+}

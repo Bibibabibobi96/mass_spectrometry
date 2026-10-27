@@ -31,10 +31,9 @@ try {
  $lease=Enter-HostExecutionLease -Role GATE -Stage prepare
  & $PythonExe -c 'import sys; from pathlib import Path; from projects.dual_pressure_rectilinear_ion_processor.analysis.gui_replay import validate_baseline_for_private_gui; validate_baseline_for_private_gui(Path(sys.argv[1]))' $sourceRun
  if($LASTEXITCODE-ne0){throw 'Baseline lightweight consumer projection or retirement verification failed'}
- $profileRegistry=Get-Content -LiteralPath (Join-Path $sourceRun 'inputs/execution_profiles.json') -Raw -Encoding UTF8|ConvertFrom-Json
- $profiles=@($profileRegistry.profiles|Where-Object{$_.profile_id-eq'native_functional'})
- if($profiles.Count-ne1){throw 'Baseline must freeze exactly one native_functional execution profile'}
- $profile=$profiles[0]
+ $profileJson=& $PythonExe -c 'import json,sys; from pathlib import Path; from projects.dual_pressure_rectilinear_ion_processor.analysis.batching import frozen_runtime_profile; print(json.dumps(frozen_runtime_profile(Path(sys.argv[1]),allow_legacy=True)))' $sourceRun
+ if($LASTEXITCODE-ne0){throw 'Baseline frozen runtime profile is invalid'}
+ $profile=$profileJson|ConvertFrom-Json
  if(($profile.native_field_query_memory_bytes-isnot[long]-and$profile.native_field_query_memory_bytes-isnot[int])-or$profile.native_field_query_memory_bytes-le0){throw 'Native query memory declaration must be positive integer bytes'}
  if($profile.retention_class-ne'solver_review'){throw 'GUI native evidence requires baseline solver_review retention'}
  # This reservation covers preparation only; no Fly/trajectory growth is included.

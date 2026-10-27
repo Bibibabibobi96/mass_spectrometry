@@ -18,6 +18,11 @@
     "group_negative": "common_mode - dc_amplitude - rf_waveform"
   },
   "supported_radial_orders": [2, 3, 4],
+  "structural_variants": {
+    "quadrupole": {"radial_order_n": 2, "electrode_count": 4},
+    "hexapole": {"radial_order_n": 3, "electrode_count": 6},
+    "octupole": {"radial_order_n": 4, "electrode_count": 8}
+  },
   "canonical_units": {
     "length": "mm",
     "frequency": "Hz",

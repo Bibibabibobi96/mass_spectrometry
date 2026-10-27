@@ -15,7 +15,7 @@
     "resolved": null,
     "analysis": "config/acceptance.json",
     "interface": null,
-    "execution": null,
+    "execution": "config/execution_profiles.json",
     "design_variables": null,
     "optimization_envelope": null
   },
@@ -24,7 +24,7 @@
       "capability_id": "native_electrode_functional_transport",
       "function": "ion_capture_cooling_and_extraction",
       "status": "prototype",
-      "modes": [],
+      "modes": ["native_electrode_functional"],
       "metrics": [
         "capture_fraction",
         "extraction_fraction",
@@ -45,7 +45,8 @@
     "Native N100 functional baseline and user GUI confirmation are recorded; full spatial and whole-flight time-step convergence remain unqualified",
     "Ion-neutral collision cross section is an uncalibrated placeholder, not a measured N2/524amu value",
     "No fragmentation, space charge, gas-flow solution or manufacturer CAD qualification",
-    "COMSOL projection and real upstream multipole handoff remain future work",
-    "Analytical prescribed-field code is an unrun reference control, not the production field workflow"
+    "COMSOL projection remains unimplemented; measured upstream multipole admission and downstream MR state/clock handoff exist, but their original performance gates did not pass",
+    "Analytical prescribed-field workflow is retired; the active functional workflow uses native solid-electrode fields",
+    "Public execution planning covers only the existing 524 Da/+1 functional source and fixed configuration; custom, exploration and upstream-injected workflows retain their project-specific entrypoints"
   ]
 }

@@ -233,7 +233,7 @@ class AdmissionTests(unittest.TestCase):
         functional.write_json(consumer/"inputs/resolved_model.json", config)
         (consumer/"simion/processor.iob").write_bytes(b"inert native workbench fixture")
         (consumer/"simion/processor.lua").write_text("-- inert copied program")
-        functional.write_json(consumer/"inputs/execution_profiles.json", functional.read_json(PROJECT/"config/execution_profiles.json"))
+        functional.write_json(consumer/"inputs/runtime_profiles.json", functional.read_json(PROJECT/"config/runtime_profiles.json"))
         batch = dict(index=1, particle_id_min=1, particle_id_max=2, simion_particle_id_offset=0, count=2)
         plan = consumer/"inputs/batch_plan.json"
         functional.write_json(plan, dict(particle_count=2, batches=[batch]))

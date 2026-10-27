@@ -24,14 +24,16 @@ if($baseline-eq$run){throw 'GUI replay cannot finalize its baseline run'}
 . (Join-Path $repoRoot 'common/require_powershell7.ps1')
 . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
 if(-not $PythonExe){$PythonExe=Join-Path $repoRoot '.venv/Scripts/python.exe'}
-$profiles=@((Get-Content -LiteralPath (Join-Path $run 'inputs/execution_profiles.json') -Raw -Encoding UTF8|ConvertFrom-Json).profiles|Where-Object{$_.profile_id-eq'native_functional'})
-if($profiles.Count-ne1-or$profiles[0].retention_class-ne'solver_review'){throw 'Replay requires the frozen solver_review profile'}
 $capacity=$null;$lease=$null;$published=$false;$accepted=$false
 $savedPythonPath=$env:PYTHONPATH;$env:PYTHONPATH=$repoRoot
 Push-Location $repoRoot
 try {
+ $profileJson=& $PythonExe -c 'import json,sys; from pathlib import Path; from projects.dual_pressure_rectilinear_ion_processor.analysis.batching import frozen_runtime_profile; print(json.dumps(frozen_runtime_profile(Path(sys.argv[1]),allow_legacy=True)))' $run
+ if($LASTEXITCODE-ne0){throw 'Replay frozen runtime profile is invalid'}
+ $profile=$profileJson|ConvertFrom-Json
+ if($profile.retention_class-ne'solver_review'){throw 'Replay requires the frozen solver_review profile'}
  $protectedPaths=@($baseline)
- $committed=$profiles[0].committed_new_bytes
+ $committed=$profile.committed_new_bytes
  $guiBudget=Join-Path $run 'inputs/gui_execution_budget.json'
  if(Test-Path -LiteralPath $guiBudget){$committed=(Get-Content $guiBudget -Raw|ConvertFrom-Json).committed_new_bytes}
  $resident=[long](Get-ChildItem -LiteralPath $run -Recurse -File|Measure-Object -Property Length -Sum).Sum

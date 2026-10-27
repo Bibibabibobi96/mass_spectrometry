@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/rf-multipole/schemas/design_profiles.schema.json",
+  "title": "RF multipole design profile physics",
+  "allOf": [
+    {
+      "$ref": "https://mass-spectrometry.local/schemas/design_profiles.schema.json"
+    },
+    {
+      "properties": {
+        "family_id": {
+          "const": "rf_multipole_ion_optics"
+        },
+        "profiles": {
+          "items": {
+            "required": [
+              "structural_variant_id",
+              "project_options"
+            ],
+            "properties": {
+              "identity": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "project_id",
+                  "family_id",
+                  "radial_order_n",
+                  "electrode_count"
+                ],
+                "properties": {
+                  "project_id": {
+                    "$ref": "#/$defs/identifier"
+                  },
+                  "family_id": {
+                    "const": "rf_multipole_ion_optics"
+                  },
+                  "radial_order_n": {
+                    "type": "integer",
+                    "minimum": 2
+                  },
+                  "electrode_count": {
+                    "type": "integer",
+                    "minimum": 4
+                  }
+                }
+              },
+              "project_options": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "topology"
+                ],
+                "properties": {
+                  "topology": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "enclosure_role",
+                      "segmentation_strategy",
+                      "axial_drive_topology"
+                    ],
+                    "properties": {
+                      "enclosure_role": {
+                        "enum": [
+                          "full_length_grounded_shield",
+                          "downstream_local_reference_enclosure"
+                        ]
+                      },
+                      "segmentation_strategy": {
+                        "enum": [
+                          "off",
+                          "uniform",
+                          "explicit"
+                        ]
+                      },
+                      "axial_drive_topology": {
+                        "enum": [
+                          "none",
+                          "segmented_rod_axial_acceleration",
+                          "exit_aperture_plate_potential_step"
+                        ]
+                      }
+                    }
+                  },
+                  "enclosure_model": {
+                    "$ref": "https://mass-spectrometry.local/schemas/multipole_design_request.schema.json#/$defs/enclosure/oneOf/0/properties/model"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+    }
+  }
+}

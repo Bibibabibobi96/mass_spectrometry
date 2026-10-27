@@ -12,11 +12,11 @@
     },
     {
       "descriptor": "projects/dual_pressure_rectilinear_ion_processor/config/project.json",
-      "sha256": "2F5FD5999CADFF4207229237147A004C09A79B839C4D7EDCAB29E672DDD42210"
+      "sha256": "58781C4579C73024AB81F4E6DF2097F3E812026B4D2B5AC0FC502156C397DEF0"
     },
     {
       "descriptor": "projects/orthogonal_accelerator/config/project.json",
-      "sha256": "A2F1620FBDAE8949A70AB75F89AF73DC76F18569DE98047275651ED471573637"
+      "sha256": "7A8D56D7CFDA992D30B34D39CB51A88EDAD38EAB28A36746571D2E51C7FD567A"
     },
     {
       "descriptor": "projects/parallel_mirror_dual_stripe_mr_tof/config/project.json",
@@ -24,7 +24,7 @@
     },
     {
       "descriptor": "projects/rf_multipole_ion_optics/config/project.json",
-      "sha256": "5F72D39706260BB592AB71D1C98C33E33763ED06CE69F17583023BE2A53592F1"
+      "sha256": "C47EE31157AE94884BD42822D92DC39DE1887F85B24B3EAC0B0F77F0CABD5C75"
     },
     {
       "descriptor": "projects/single_reflection_oa_tof_mass_analyzer/config/project.json",
@@ -190,7 +190,7 @@
         "resolved": null,
         "analysis": "config/acceptance.json",
         "interface": null,
-        "execution": null,
+        "execution": "config/execution_profiles.json",
         "design_variables": null,
         "optimization_envelope": null
       },
@@ -199,7 +199,9 @@
           "capability_id": "native_electrode_functional_transport",
           "function": "ion_capture_cooling_and_extraction",
           "status": "prototype",
-          "modes": [],
+          "modes": [
+            "native_electrode_functional"
+          ],
           "metrics": [
             "capture_fraction",
             "extraction_fraction",
@@ -220,8 +222,9 @@
         "Native N100 functional baseline and user GUI confirmation are recorded; full spatial and whole-flight time-step convergence remain unqualified",
         "Ion-neutral collision cross section is an uncalibrated placeholder, not a measured N2/524amu value",
         "No fragmentation, space charge, gas-flow solution or manufacturer CAD qualification",
-        "COMSOL projection and real upstream multipole handoff remain future work",
-        "Analytical prescribed-field code is an unrun reference control, not the production field workflow"
+        "COMSOL projection remains unimplemented; measured upstream multipole admission and downstream MR state/clock handoff exist, but their original performance gates did not pass",
+        "Analytical prescribed-field workflow is retired; the active functional workflow uses native solid-electrode fields",
+        "Public execution planning covers only the existing 524 Da/+1 functional source and fixed configuration; custom, exploration and upstream-injected workflows retain their project-specific entrypoints"
       ]
     },
     {
@@ -246,6 +249,22 @@
         "design_variables": null,
         "optimization_envelope": null
       },
+      "structural_variants": [
+        {
+          "variant_id": "two_zone",
+          "display_name": "二区正交加速器",
+          "capability_ids": [
+            "two_zone_orthogonal_acceleration"
+          ]
+        },
+        {
+          "variant_id": "three_zone",
+          "display_name": "三区正交加速器",
+          "capability_ids": [
+            "three_zone_orthogonal_acceleration"
+          ]
+        }
+      ],
       "capabilities": [
         {
           "capability_id": "two_zone_orthogonal_acceleration",
@@ -377,8 +396,6 @@
         {
           "variant_id": "quadrupole",
           "display_name": "四极杆",
-          "radial_order_n": 2,
-          "electrode_count": 4,
           "capability_ids": [
             "quadrupole_ion_transport",
             "quadrupole_collision_cooling",
@@ -388,8 +405,6 @@
         {
           "variant_id": "hexapole",
           "display_name": "六极杆",
-          "radial_order_n": 3,
-          "electrode_count": 6,
           "capability_ids": [
             "hexapole_ideal_transport",
             "hexapole_round_rod_l2_transport",
@@ -399,8 +414,6 @@
         {
           "variant_id": "octupole",
           "display_name": "八极杆",
-          "radial_order_n": 4,
-          "electrode_count": 8,
           "capability_ids": [
             "octupole_ideal_transport",
             "octupole_round_rod_l2_transport",

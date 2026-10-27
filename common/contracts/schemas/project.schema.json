@@ -238,6 +238,7 @@
     },
     "structural_variants": {
       "type": "array",
+      "description": "Structural identity and capability ownership only; physical constraints belong to project contracts.",
       "minItems": 1,
       "items": {
         "type": "object",
@@ -245,8 +246,6 @@
         "required": [
           "variant_id",
           "display_name",
-          "radial_order_n",
-          "electrode_count",
           "capability_ids"
         ],
         "properties": {
@@ -256,14 +255,6 @@
           "display_name": {
             "type": "string",
             "minLength": 1
-          },
-          "radial_order_n": {
-            "type": "integer",
-            "minimum": 2
-          },
-          "electrode_count": {
-            "type": "integer",
-            "minimum": 4
           },
           "capability_ids": {
             "type": "array",

@@ -154,7 +154,8 @@ class GuiReplayPlanTests(unittest.TestCase):
         self.assertNotIn("extraction_force_audit",copied)
 
     def test_gui_limits_match_legacy_budget_without_copying_derived_budget(self) -> None:
-        profile = json.loads((Path(__file__).resolve().parents[1]/"config/execution_profiles.json").read_text(encoding="utf-8"))
+        profile = json.loads((Path(__file__).resolve().parents[1]/"config/runtime_profiles.json").read_text(encoding="utf-8"))
+        profile["role"] = "ion_processor_execution_profiles"
         profile["profiles"][0]["limits"]["transient_run_directory_sample_interval_seconds"] = 17
         profile_path = self.baseline/"inputs/execution_profiles.json"
         profile_path.write_text(json.dumps(profile), encoding="utf-8")

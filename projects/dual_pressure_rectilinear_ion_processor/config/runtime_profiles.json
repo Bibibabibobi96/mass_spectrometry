@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "role": "ion_processor_runtime_profiles",
+  "project_id": "dual_pressure_rectilinear_ion_processor",
+  "profiles": [
+    {
+      "profile_id": "native_functional",
+      "retention_class": "solver_review",
+      "retention_reason": "Retain native electrode field and workbench for GUI review of the functional model",
+      "retain_batch_trajectories": false,
+      "archive_merged_worker_csv": true,
+      "native_field_query_memory_bytes": 4294967296,
+      "native_field_query_memory_basis": "r17 results/potential_audit_resource_usage.json measured 3154186240 bytes peak; 4GiB declaration provides margin for this same 24.3M-node native query, without qualifying historical physics. Worker concurrency remains public live planning.",
+      "committed_new_bytes": 3900000000,
+      "gui_preparation_committed_new_bytes": 3345000000,
+      "gui_preparation_capacity_basis": "Measured104840 GUI3437619349B minus copied baseline samples99807954B =3337811395B. New preparation references verified immutable canonical baseline samples, keeps private fullfield/runtime and complete100source, and reserves3345000000B withabout7.2MBmargin for same2141x141x81grid; manualFlygrowth excluded.",
+      "limits": {
+        "transient_run_directory_bytes": 3900000000,
+        "transient_run_directory_sample_interval_seconds": 30
+      },
+      "capacity_estimate_basis": "Retains the measured 3.329GB native field plus canonical samples, byte-exact worker ZIP, and all 15-electrode passive force/collision step evidence. The 3.9GB disk declaration adds 370MB to the previous measured-based 3.53GB envelope for dense extraction audit tables and plots; validate actual first-control usage before follow-up. No live RAM safety reserve is introduced; public scheduling remains measured."
+    }
+  ]
+}

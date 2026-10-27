@@ -1,6 +1,6 @@
 {
-  "schema_version": 2,
-  "role": "multipole_design_profile_registry",
+  "schema_version": 3,
+  "role": "project_design_profile_registry",
   "project_id": "rf_multipole_ion_optics",
   "family_id": "rf_multipole_ion_optics",
   "operating_mode_registry": "config/operating_modes.json",
@@ -21,12 +21,14 @@
         "radial_order_n": 2,
         "electrode_count": 4
       },
-      "topology": {
-        "enclosure_role": "downstream_local_reference_enclosure",
-        "segmentation_strategy": "off",
-        "axial_drive_topology": "none"
-      },
-      "structural_variant_id": "quadrupole"
+      "structural_variant_id": "quadrupole",
+      "project_options": {
+        "topology": {
+          "enclosure_role": "downstream_local_reference_enclosure",
+          "segmentation_strategy": "off",
+          "axial_drive_topology": "none"
+        }
+      }
     },
     {
       "design_profile_id": "quadrupole_interface_readiness",
@@ -44,12 +46,14 @@
         "radial_order_n": 2,
         "electrode_count": 4
       },
-      "topology": {
-        "enclosure_role": "downstream_local_reference_enclosure",
-        "segmentation_strategy": "off",
-        "axial_drive_topology": "none"
-      },
-      "structural_variant_id": "quadrupole"
+      "structural_variant_id": "quadrupole",
+      "project_options": {
+        "topology": {
+          "enclosure_role": "downstream_local_reference_enclosure",
+          "segmentation_strategy": "off",
+          "axial_drive_topology": "none"
+        }
+      }
     },
     {
       "design_profile_id": "quadrupole_mass_filter_reference",
@@ -67,12 +71,14 @@
         "radial_order_n": 2,
         "electrode_count": 4
       },
-      "topology": {
-        "enclosure_role": "downstream_local_reference_enclosure",
-        "segmentation_strategy": "off",
-        "axial_drive_topology": "none"
-      },
-      "structural_variant_id": "quadrupole"
+      "structural_variant_id": "quadrupole",
+      "project_options": {
+        "topology": {
+          "enclosure_role": "downstream_local_reference_enclosure",
+          "segmentation_strategy": "off",
+          "axial_drive_topology": "none"
+        }
+      }
     },
     {
       "design_profile_id": "quadrupole_explicit_axial_reference",
@@ -90,12 +96,14 @@
         "radial_order_n": 2,
         "electrode_count": 4
       },
-      "topology": {
-        "enclosure_role": "downstream_local_reference_enclosure",
-        "segmentation_strategy": "explicit",
-        "axial_drive_topology": "segmented_rod_axial_acceleration"
-      },
-      "structural_variant_id": "quadrupole"
+      "structural_variant_id": "quadrupole",
+      "project_options": {
+        "topology": {
+          "enclosure_role": "downstream_local_reference_enclosure",
+          "segmentation_strategy": "explicit",
+          "axial_drive_topology": "segmented_rod_axial_acceleration"
+        }
+      }
     },
     {
       "design_profile_id": "quadrupole_exit_aperture_plate_acceleration_reference",
@@ -113,12 +121,14 @@
         "radial_order_n": 2,
         "electrode_count": 4
       },
-      "topology": {
-        "enclosure_role": "downstream_local_reference_enclosure",
-        "segmentation_strategy": "off",
-        "axial_drive_topology": "exit_aperture_plate_potential_step"
-      },
-      "structural_variant_id": "quadrupole"
+      "structural_variant_id": "quadrupole",
+      "project_options": {
+        "topology": {
+          "enclosure_role": "downstream_local_reference_enclosure",
+          "segmentation_strategy": "off",
+          "axial_drive_topology": "exit_aperture_plate_potential_step"
+        }
+      }
     },
     {
       "design_profile_id": "quadrupole_no_acceleration_full_length",
@@ -137,12 +147,14 @@
         "radial_order_n": 2,
         "electrode_count": 4
       },
-      "topology": {
-        "enclosure_role": "full_length_grounded_shield",
-        "segmentation_strategy": "uniform",
-        "axial_drive_topology": "none"
-      },
-      "structural_variant_id": "quadrupole"
+      "structural_variant_id": "quadrupole",
+      "project_options": {
+        "topology": {
+          "enclosure_role": "full_length_grounded_shield",
+          "segmentation_strategy": "uniform",
+          "axial_drive_topology": "none"
+        }
+      }
     },
     {
       "design_profile_id": "quadrupole_segmented_rod_axial_acceleration",
@@ -161,12 +173,14 @@
         "radial_order_n": 2,
         "electrode_count": 4
       },
-      "topology": {
-        "enclosure_role": "full_length_grounded_shield",
-        "segmentation_strategy": "uniform",
-        "axial_drive_topology": "segmented_rod_axial_acceleration"
-      },
-      "structural_variant_id": "quadrupole"
+      "structural_variant_id": "quadrupole",
+      "project_options": {
+        "topology": {
+          "enclosure_role": "full_length_grounded_shield",
+          "segmentation_strategy": "uniform",
+          "axial_drive_topology": "segmented_rod_axial_acceleration"
+        }
+      }
     },
     {
       "design_profile_id": "quadrupole_exit_aperture_plate_acceleration",
@@ -185,12 +199,14 @@
         "radial_order_n": 2,
         "electrode_count": 4
       },
-      "topology": {
-        "enclosure_role": "full_length_grounded_shield",
-        "segmentation_strategy": "uniform",
-        "axial_drive_topology": "exit_aperture_plate_potential_step"
-      },
-      "structural_variant_id": "quadrupole"
+      "structural_variant_id": "quadrupole",
+      "project_options": {
+        "topology": {
+          "enclosure_role": "full_length_grounded_shield",
+          "segmentation_strategy": "uniform",
+          "axial_drive_topology": "exit_aperture_plate_potential_step"
+        }
+      }
     },
     {
       "design_profile_id": "hexapole_no_acceleration_full_length",
@@ -209,12 +225,14 @@
         "radial_order_n": 3,
         "electrode_count": 6
       },
-      "topology": {
-        "enclosure_role": "full_length_grounded_shield",
-        "segmentation_strategy": "uniform",
-        "axial_drive_topology": "none"
-      },
-      "structural_variant_id": "hexapole"
+      "structural_variant_id": "hexapole",
+      "project_options": {
+        "topology": {
+          "enclosure_role": "full_length_grounded_shield",
+          "segmentation_strategy": "uniform",
+          "axial_drive_topology": "none"
+        }
+      }
     },
     {
       "design_profile_id": "hexapole_segmented_rod_axial_acceleration",
@@ -233,12 +251,14 @@
         "radial_order_n": 3,
         "electrode_count": 6
       },
-      "topology": {
-        "enclosure_role": "full_length_grounded_shield",
-        "segmentation_strategy": "uniform",
-        "axial_drive_topology": "segmented_rod_axial_acceleration"
-      },
-      "structural_variant_id": "hexapole"
+      "structural_variant_id": "hexapole",
+      "project_options": {
+        "topology": {
+          "enclosure_role": "full_length_grounded_shield",
+          "segmentation_strategy": "uniform",
+          "axial_drive_topology": "segmented_rod_axial_acceleration"
+        }
+      }
     },
     {
       "design_profile_id": "hexapole_exit_aperture_plate_acceleration",
@@ -257,12 +277,14 @@
         "radial_order_n": 3,
         "electrode_count": 6
       },
-      "topology": {
-        "enclosure_role": "full_length_grounded_shield",
-        "segmentation_strategy": "uniform",
-        "axial_drive_topology": "exit_aperture_plate_potential_step"
-      },
-      "structural_variant_id": "hexapole"
+      "structural_variant_id": "hexapole",
+      "project_options": {
+        "topology": {
+          "enclosure_role": "full_length_grounded_shield",
+          "segmentation_strategy": "uniform",
+          "axial_drive_topology": "exit_aperture_plate_potential_step"
+        }
+      }
     },
     {
       "design_profile_id": "octupole_no_acceleration_full_length",
@@ -281,12 +303,14 @@
         "radial_order_n": 4,
         "electrode_count": 8
       },
-      "topology": {
-        "enclosure_role": "full_length_grounded_shield",
-        "segmentation_strategy": "uniform",
-        "axial_drive_topology": "none"
-      },
-      "structural_variant_id": "octupole"
+      "structural_variant_id": "octupole",
+      "project_options": {
+        "topology": {
+          "enclosure_role": "full_length_grounded_shield",
+          "segmentation_strategy": "uniform",
+          "axial_drive_topology": "none"
+        }
+      }
     },
     {
       "design_profile_id": "octupole_segmented_rod_axial_acceleration",
@@ -305,12 +329,14 @@
         "radial_order_n": 4,
         "electrode_count": 8
       },
-      "topology": {
-        "enclosure_role": "full_length_grounded_shield",
-        "segmentation_strategy": "uniform",
-        "axial_drive_topology": "segmented_rod_axial_acceleration"
-      },
-      "structural_variant_id": "octupole"
+      "structural_variant_id": "octupole",
+      "project_options": {
+        "topology": {
+          "enclosure_role": "full_length_grounded_shield",
+          "segmentation_strategy": "uniform",
+          "axial_drive_topology": "segmented_rod_axial_acceleration"
+        }
+      }
     },
     {
       "design_profile_id": "octupole_exit_aperture_plate_acceleration",
@@ -329,12 +355,14 @@
         "radial_order_n": 4,
         "electrode_count": 8
       },
-      "topology": {
-        "enclosure_role": "full_length_grounded_shield",
-        "segmentation_strategy": "uniform",
-        "axial_drive_topology": "exit_aperture_plate_potential_step"
-      },
-      "structural_variant_id": "octupole"
+      "structural_variant_id": "octupole",
+      "project_options": {
+        "topology": {
+          "enclosure_role": "full_length_grounded_shield",
+          "segmentation_strategy": "uniform",
+          "axial_drive_topology": "exit_aperture_plate_potential_step"
+        }
+      }
     },
     {
       "design_profile_id": "octupole_through_exit_no_acceleration",
@@ -353,12 +381,14 @@
         "radial_order_n": 4,
         "electrode_count": 8
       },
-      "topology": {
-        "enclosure_role": "full_length_grounded_shield",
-        "segmentation_strategy": "uniform",
-        "axial_drive_topology": "none"
-      },
-      "structural_variant_id": "octupole"
+      "structural_variant_id": "octupole",
+      "project_options": {
+        "topology": {
+          "enclosure_role": "full_length_grounded_shield",
+          "segmentation_strategy": "uniform",
+          "axial_drive_topology": "none"
+        }
+      }
     },
     {
       "design_profile_id": "octupole_through_entrance_exit_no_acceleration",
@@ -377,13 +407,15 @@
         "radial_order_n": 4,
         "electrode_count": 8
       },
-      "topology": {
-        "enclosure_role": "full_length_grounded_shield",
-        "segmentation_strategy": "uniform",
-        "axial_drive_topology": "none"
-      },
-      "enclosure_model": "cylindrical_grounded_shield_through_entrance_exit_v1",
-      "structural_variant_id": "octupole"
+      "structural_variant_id": "octupole",
+      "project_options": {
+        "topology": {
+          "enclosure_role": "full_length_grounded_shield",
+          "segmentation_strategy": "uniform",
+          "axial_drive_topology": "none"
+        },
+        "enclosure_model": "cylindrical_grounded_shield_through_entrance_exit_v1"
+      }
     }
   ],
   "operating_mode_registry_sha256": "7C3B04C79A6C8EE5332A78EC93F4119FF72345F6AFEAF9E01E70E64B10D12125"

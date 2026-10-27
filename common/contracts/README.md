@@ -555,8 +555,13 @@ Euler顺序或器件参数反写到公共刚体语义。供应商局部坐标映
 项目目录存在就假定能力已经完成。
 
 `target.structural_variant_id`显式选择项目描述符声明的结构变体，并仅使用该变体的能力、指标和资格等级。
-同一功能存在多个结构候选而未指定时返回`NEEDS_CLARIFICATION`，不会按成熟度代选极数；未知变体返回
+同一功能存在多个结构候选而未指定时返回`NEEDS_CLARIFICATION`，不会按成熟度或某个目标指标代选结构；未知变体返回
 `UNSUPPORTED`，不回退其他变体。没有结构变体的既有项目仍按原功能合同校验。
+公共变体登记只定义`variant_id`、`display_name`和`capability_ids`及能力归属，不要求每种器件提供多极杆字段。
+OA的二区／三区和RF的四／六／八极使用同一选择语义；极数、区数与设计身份的一致性由所属项目合同校验。
+具名设计注册使用`design_profiles.schema.json`的v3 `project_design_profile_registry`：公共层验证来源身份、
+变量指针与范围、包络引用和能力归属；项目编译选项放在`project_options`并由项目schema与解析器验证。
+物理请求、拓扑和单位仍由提供者解释，通用登记通过不表示任意项目已具备参数编译或求解能力。
 显式`target.mode`先在所选结构内筛选对应能力，再判断其成熟度；未知模式不能回退同结构的其他能力。
 
 ```powershell
@@ -572,6 +577,8 @@ Euler顺序或器件参数反写到公共刚体语义。供应商局部坐标映
 ## 执行dry-run
 
 各项目在`config/execution_profiles.json`中声明现有入口实际支持的工况、目标指标、变量、约束、产物和命令链。
+该文件使用统一`project_execution_profiles`合同，供公共编译器发现已有入口；资源预算和项目运行配置由
+项目的runtime配置持有，不冒充公开执行能力。具体profile的物种、输入、目标与资格限制仍查项目入口和合同。
 执行编译器只生成命令预览，没有执行开关：
 
 ```powershell

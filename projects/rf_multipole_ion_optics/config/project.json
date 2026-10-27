@@ -25,8 +25,6 @@
     {
       "variant_id": "quadrupole",
       "display_name": "四极杆",
-      "radial_order_n": 2,
-      "electrode_count": 4,
       "capability_ids": [
         "quadrupole_ion_transport",
         "quadrupole_collision_cooling",
@@ -36,8 +34,6 @@
     {
       "variant_id": "hexapole",
       "display_name": "六极杆",
-      "radial_order_n": 3,
-      "electrode_count": 6,
       "capability_ids": [
         "hexapole_ideal_transport",
         "hexapole_round_rod_l2_transport",
@@ -47,8 +43,6 @@
     {
       "variant_id": "octupole",
       "display_name": "八极杆",
-      "radial_order_n": 4,
-      "electrode_count": 8,
       "capability_ids": [
         "octupole_ideal_transport",
         "octupole_round_rod_l2_transport",

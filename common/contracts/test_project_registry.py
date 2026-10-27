@@ -51,6 +51,72 @@ def pending_location(current: str, retired: str, suffix: str) -> dict:
 
 
 class ProjectRegistryTests(unittest.TestCase):
+    def test_nonmultipole_profiles_register_without_pole_counts_or_rf_geometry(self) -> None:
+        descriptor = load_json(REPO_ROOT / "projects/orthogonal_accelerator/config/project.json")
+        descriptor["contracts"]["interface"] = None
+        descriptor["contracts"]["design_profiles"] = "config/design_profiles.json"
+        identity = {key: descriptor[key] for key in ("project_id", "family_id")}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "projects" / descriptor["project_id"]
+            config = project / "config"
+            config.mkdir(parents=True)
+            profiles = {"schema_version": 3, "role": "project_design_profile_registry", **identity, "profiles": []}
+            for variant in descriptor["structural_variants"]:
+                name = variant["variant_id"]
+                request = {"identity": identity, "gap_mm": 5}
+                variables = {"schema_version": 1, "role": "project_design_variable_catalog", **identity,
+                             "variables": [{"variable_id": "gap", "json_pointer": "/gap_mm", "unit": "mm", "minimum": 1, "maximum": 10}]}
+                request_path = config / f"{name}_request.json"
+                request_path.write_text(json.dumps(request), encoding="utf-8")
+                envelope = {"schema_version": 1, "role": "project_optimization_envelope", **identity,
+                            "reference": {"design_request": request_path.relative_to(project).as_posix(),
+                                          "design_request_sha256": repository_text_sha256(request_path)}}
+                documents = {"design_request": request, "design_variables": variables, "optimization_envelope": envelope}
+                sources = {"design_request": request_path}
+                for label in ("design_variables", "optimization_envelope"):
+                    sources[label] = config / f"{name}_{label}.json"
+                    sources[label].write_text(json.dumps(documents[label]), encoding="utf-8")
+                profiles["profiles"].append({
+                    "design_profile_id": name, "structural_variant_id": name, "identity": identity,
+                    **{label: path.relative_to(project).as_posix() for label, path in sources.items()},
+                    "sha256": {label: repository_text_sha256(path) for label, path in sources.items()},
+                })
+            for capability in descriptor["capabilities"]:
+                capability["design_variables"] = ["gap"]
+            (config / "project.json").write_text(json.dumps(descriptor), encoding="utf-8")
+            (config / "design_profiles.json").write_text(json.dumps(profiles), encoding="utf-8")
+            registered = build_registry(root)
+            self.assertEqual(registered["projects"], [descriptor])
+            self.assertNotIn("radial_order_n", json.dumps(profiles))
+            self.assertNotIn("electrode_count", json.dumps(profiles))
+            self.assertTrue(all(set(profile["identity"]) == {"project_id", "family_id"} for profile in profiles["profiles"]))
+
+    def test_nonmultipole_structures_validate_ownership_without_design_profiles(self) -> None:
+        path = REPO_ROOT / "projects/orthogonal_accelerator/config/project.json"
+        descriptor = load_json(path)
+        validate_descriptor(descriptor, path, REPO_ROOT)
+        for change, message in (("duplicate", "duplicate structural variant"),
+                                ("shared", "capability ownership"),
+                                ("missing", "one structural variant owner")):
+            with self.subTest(change=change):
+                changed = copy.deepcopy(descriptor)
+                variants = changed["structural_variants"]
+                if change == "duplicate":
+                    variants[1]["variant_id"] = variants[0]["variant_id"]
+                elif change == "shared":
+                    variants[1]["capability_ids"] += variants[0]["capability_ids"]
+                else:
+                    variants.pop()
+                with self.assertRaisesRegex(ContractError, message):
+                    validate_descriptor(changed, path, REPO_ROOT)
+
+    def test_public_structure_schema_does_not_accept_project_physics(self) -> None:
+        descriptor = load_json(REPO_ROOT / "projects/rf_multipole_ion_optics/config/project.json")
+        descriptor["structural_variants"][0]["electrode_count"] = 4
+        with self.assertRaises(ContractError):
+            validate_schema(descriptor, "project.schema.json")
+
     def test_registry_and_multipole_profile_hashes_are_lf_crlf_equivalent(
         self,
     ) -> None:

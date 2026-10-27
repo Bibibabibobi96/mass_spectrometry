@@ -13,6 +13,9 @@
 4. 项目身份：[`config/project.json`](config/project.json)；器件API语义：
    [`config/component_contract.json`](config/component_contract.json)。
 
+公共设计请求用`target.structural_variant_id`显式选择`two_zone`或`three_zone`；未选择时返回
+`NEEDS_CLARIFICATION`，不会依据目标指标代选。能力声明、器件接口和各变体证据分别校验。
+
 独立二区计算入口是`python -m projects.orthogonal_accelerator.analysis.accelerator_time_focus`，
 接受显式输入合同，`--self-test`只验证解析参考。轻量验证入口为`verify_project.ps1`，不启动商业求解器。
 该门禁还使用显式`-LuaExe`或本机 SIMION 2020 所附 Lua 检查构建参数合同；没有Lua时明确跳过该项。

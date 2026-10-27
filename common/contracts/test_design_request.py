@@ -36,6 +36,41 @@ class DesignRequestTests(unittest.TestCase):
         rf = load_json(HERE / "examples" / "rf_quadrupole_transport.example.json")
         self.assertEqual(self.status(rf), "READY")
 
+    def accelerator_request(self, variant=None, metric="axial_flight_time"):
+        request = copy.deepcopy(self.request)
+        request["target"] = {
+            "family_id": "orthogonal_pulsed_accelerators",
+            "preferred_project_id": "orthogonal_accelerator",
+            "function": "orthogonal_acceleration", "mode": None,
+        }
+        if variant is not None:
+            request["target"]["structural_variant_id"] = variant
+        request["objectives"] = [{"metric": metric, "operator": "minimize", "value": None, "unit": "us", "tolerance": None}]
+        request["constraints"] = []
+        request["design_variables"] = []
+        request["evidence_level"] = "plan"
+        return request
+
+    def test_accelerator_requires_structure_even_when_metric_exists_only_in_three_zone(self):
+        result = validate_request(self.accelerator_request(), self.registry)
+        self.assertEqual(result["status"], "NEEDS_CLARIFICATION")
+        self.assertIsNone(result["selected_capability_id"])
+        self.assertIn("structural_variant_id", result["messages"][0])
+
+    def test_accelerator_variants_own_their_metrics_and_do_not_inherit_qualification(self):
+        for variant, metric in (("two_zone", "first_time_focus_distance"), ("three_zone", "axial_flight_time")):
+            with self.subTest(variant=variant):
+                request = self.accelerator_request(variant, metric)
+                result = validate_request(request, self.registry)
+                self.assertEqual(result["status"], "READY")
+                self.assertEqual(result["selected_capability_id"], variant + "_orthogonal_acceleration")
+                request["evidence_level"] = "static"
+                self.assertEqual(self.status(request), "NEEDS_PROJECT_COMPLETION")
+        result = validate_request(self.accelerator_request("two_zone"), self.registry)
+        self.assertEqual(result["status"], "NEEDS_PROJECT_COMPLETION")
+        self.assertIn("Unsupported metrics: axial_flight_time", result["messages"])
+        self.assertEqual(self.status(self.accelerator_request("four_zone")), "UNSUPPORTED")
+
     def test_mass_without_unit_needs_clarification(self):
         request = copy.deepcopy(self.request)
         del request["operating_points"][0]["mass"]["unit"]

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -68,6 +69,19 @@ class TypedOperatingModeTests(unittest.TestCase):
             (
                 REPO_ROOT / "projects" / PROJECT_ID / "config" / "project.json"
             ).read_text(encoding="utf-8")
+        )
+        descriptor["structural_variants"] = [
+            row for row in descriptor["structural_variants"] if row["variant_id"] == "hexapole"
+        ]
+        capability_ids = set(descriptor["structural_variants"][0]["capability_ids"])
+        descriptor["capabilities"] = [row for row in descriptor["capabilities"] if row["capability_id"] in capability_ids]
+        family = json.loads((REPO_ROOT / "projects" / PROJECT_ID / "config/contracts/family_contract.json").read_text(encoding="utf-8"))
+        family["structural_variants"] = {"hexapole": family["structural_variants"]["hexapole"]}
+        (config / "contracts").mkdir()
+        (config / "contracts/family_contract.json").write_text(json.dumps(family), encoding="utf-8")
+        shutil.copyfile(
+            REPO_ROOT / "projects" / PROJECT_ID / "config/contracts/design_profiles.schema.json",
+            config / "contracts/design_profiles.schema.json",
         )
         (config / "project.json").write_text(
             json.dumps(descriptor), encoding="utf-8"
@@ -175,8 +189,8 @@ class TypedOperatingModeTests(unittest.TestCase):
             "optimization_envelope": repository_text_sha256(envelope_path),
         }
         profiles = {
-            "schema_version": 2,
-            "role": "multipole_design_profile_registry",
+            "schema_version": 3,
+            "role": "project_design_profile_registry",
             "project_id": PROJECT_ID,
             "family_id": "rf_multipole_ion_optics",
             "operating_mode_registry": "config/operating_modes.json",
@@ -184,6 +198,7 @@ class TypedOperatingModeTests(unittest.TestCase):
             "profiles": [
                 {
                     "design_profile_id": f"{mode['mode_id']}_profile",
+                    "structural_variant_id": "hexapole",
                     "mode_id": mode["mode_id"],
                     "design_request": "config/requests/mechanical_base.json",
                     "design_variables": "config/design_variables.json",
@@ -199,6 +214,8 @@ class TypedOperatingModeTests(unittest.TestCase):
                 for mode in operating_modes()["modes"]
             ],
         }
+        for profile in profiles["profiles"]:
+            profile["project_options"] = {"topology": profile.pop("topology")}
         validate_schema(profiles, "design_profiles.schema.json")
         (config / "design_profiles.json").write_text(
             json.dumps(profiles), encoding="utf-8"
@@ -374,8 +391,8 @@ class TypedOperatingModeTests(unittest.TestCase):
         ):
             apply_typed_operating_mode(base, operating_modes(), "unknown")
         profiles = {
-            "schema_version": 2,
-            "role": "multipole_design_profile_registry",
+            "schema_version": 3,
+            "role": "project_design_profile_registry",
             "project_id": PROJECT_ID,
             "family_id": "rf_multipole_ion_optics",
             "profiles": [],

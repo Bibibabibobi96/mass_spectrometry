@@ -135,7 +135,7 @@ class ThreeModeDesignConfigurationTests(unittest.TestCase):
         model = "cylindrical_grounded_shield_through_entrance_exit_v1"
         self.assertEqual(dual["paths"], single["paths"])
         self.assertEqual(dual["profile"]["mode_id"], MODE_IDS[0])
-        self.assertEqual(dual["profile"]["enclosure_model"], model)
+        self.assertEqual(dual["profile"]["project_options"]["enclosure_model"], model)
         resolved = dual["resolved_design"]
         self.assertEqual(resolved["governance"]["enclosure_model"], model)
         expected_geometry = json.loads(json.dumps(single["resolved_design"]["geometry_mm"]))

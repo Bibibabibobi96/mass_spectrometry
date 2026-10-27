@@ -6,6 +6,10 @@ import copy
 import hashlib
 import json
 from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
 import unittest
 
 from common.contracts.build_project_registry import validate_descriptor, validate_structural_variants
@@ -14,7 +18,9 @@ from projects.rf_multipole_ion_optics.core.compile_design_request import (
     MultipoleDesignCompileError,
     compile_governed_design_request_file,
 )
-from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
+from projects.rf_multipole_ion_optics.runtime.design_profile import (
+    resolve_design_profile, validate_design_profile_structures,
+)
 from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_runtime_profile
 
 
@@ -57,18 +63,46 @@ class MultipoleStructuralVariantTests(unittest.TestCase):
         self.descriptor = load(PROJECT_ROOT / "config/project.json")
         self.profiles = load(PROJECT_ROOT / "config/design_profiles.json")["profiles"]
 
+    def test_isolated_frozen_resolver_includes_public_and_project_schema_resources(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ignore = shutil.ignore_patterns("__pycache__", "test_*.py", "fixtures", "examples")
+            for relative in ("common/contracts", f"projects/{PROJECT_ID}/core", f"projects/{PROJECT_ID}/config"):
+                shutil.copytree(REPO_ROOT / relative, root / relative, ignore=ignore)
+            runtime = root / "projects" / PROJECT_ID / "runtime"
+            runtime.mkdir()
+            shutil.copyfile(PROJECT_ROOT / "runtime/design_profile.py", runtime / "design_profile.py")
+            for variant in ("quadrupole", "hexapole", "octupole"):
+                relative = f"projects/{PROJECT_ID}/variants/{variant}/config"
+                shutil.copytree(REPO_ROOT / relative, root / relative, ignore=ignore)
+            (root / "config").mkdir()
+            shutil.copyfile(REPO_ROOT / "config/project_registry.json", root / "config/project_registry.json")
+            code = (
+                "import sys; from pathlib import Path; sys.path.insert(0,sys.argv[1]); "
+                "from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile; "
+                "results=[resolve_design_profile(Path(sys.argv[1]),'rf_multipole_ion_optics',v+'_no_acceleration_full_length') "
+                "for v in ('quadrupole','hexapole','octupole')]; "
+                "assert [r['resolved_design']['identity']['electrode_count'] for r in results]==[4,6,8]; "
+                "print('FROZEN_DESIGN_PROFILE=PASS STRUCTURES=3')"
+            )
+            result = subprocess.run([sys.executable, "-I", "-B", "-c", code, str(root)],
+                                    cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("FROZEN_DESIGN_PROFILE=PASS", result.stdout)
+
     def test_all_structures_are_discoverable_and_bound_to_their_own_capabilities(self) -> None:
         validate_structural_variants(self.descriptor, self.profiles, PROJECT_ROOT)
         self.assertEqual(
-            {(v["variant_id"], v["electrode_count"]) for v in self.descriptor["structural_variants"]},
-            {("quadrupole", 4), ("hexapole", 6), ("octupole", 8)},
+            {v["variant_id"] for v in self.descriptor["structural_variants"]},
+            {"quadrupole", "hexapole", "octupole"},
         )
+        validate_design_profile_structures(self.descriptor, self.profiles, PROJECT_ROOT)
 
     def test_wrong_pole_count_and_undeclared_structure_fail_closed(self) -> None:
         changed = copy.deepcopy(self.profiles)
         changed[0]["identity"]["electrode_count"] = 8
         with self.assertRaisesRegex(ContractError, "structural identity"):
-            validate_structural_variants(self.descriptor, changed, PROJECT_ROOT)
+            validate_design_profile_structures(self.descriptor, changed, PROJECT_ROOT)
         changed[0]["structural_variant_id"] = "undeclared"
         with self.assertRaisesRegex(ContractError, "declared structural variant"):
             validate_structural_variants(self.descriptor, changed, PROJECT_ROOT)

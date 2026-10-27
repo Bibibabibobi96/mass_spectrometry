@@ -24,7 +24,10 @@ class ComponentContractTest(unittest.TestCase):
         self.assertEqual(api["project_id"], descriptor["project_id"])
         variants = {row["variant_id"]: row for row in api["structural_variants"]}
         self.assertEqual(set(variants), {"two_zone", "three_zone"})
+        public_variants = {row["variant_id"]: row for row in descriptor["structural_variants"]}
+        self.assertEqual(set(public_variants), set(variants))
         for variant, count in (("two_zone", 2), ("three_zone", 3)):
+            self.assertEqual(public_variants[variant]["capability_ids"], [variant + "_orthogonal_acceleration"])
             self.assertEqual(variants[variant]["field_region_count"], count)
             self.assertEqual(len(variants[variant]["primary_electrode_roles"]), count + 1)
         for relative in api["implementation_modules"]:

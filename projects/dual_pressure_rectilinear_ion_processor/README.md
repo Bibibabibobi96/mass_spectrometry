@@ -9,13 +9,17 @@
 - [SIMION 实施](docs/SIMION.md)：软件入口、官方依据和运行边界。
 - 科学输入：[baseline](config/baseline.json)、[原生电压](config/native_operating_point.json)、[释放](config/source.json)、[验收](config/acceptance.json)。
 - 来源与诊断：[尺寸来源](config/geometry_sources.json)、[全过程诊断](config/diagnostics.json)、[原生场诊断](config/field_diagnostics.json)。
-- 执行输入：[numerics](config/numerics.json)、[execution profile](config/execution_profiles.json)、[项目身份](config/project.json)。
+- 执行输入：[numerics](config/numerics.json)、[公共执行登记](config/execution_profiles.json)、[内部运行预算](config/runtime_profiles.json)、[项目身份](config/project.json)。
 - 仓库规则：[根入口](../../README.md)。
 
 生产入口为[`simion/run_functional.ps1`](simion/run_functional.ps1)，准备与分析由
 [`analysis/functional.py`](analysis/functional.py)承担。按任务查[执行与验收边界](docs/SIMION.md#执行与验收边界)、
 [原生场复用与分批](docs/SIMION.md#自动分批与单工作台重放)或[GUI准备](docs/SIMION.md#gui准备与批处理区别)。
 [`verify_project.ps1`](verify_project.ps1)只执行轻量测试；真实功能及用户确认结论由PROJECT维护。
+
+公共规划的`native_functional`只支持固定524 Da／+1功能源及capture/extraction fraction指标，证据请求限`plan`。
+它通过现有静态门禁和`run_functional.ps1`执行，不接受设计变量、真实上游状态或私有预算的隐式绑定；
+完整配置边界见[公共执行登记](config/execution_profiles.json)，科学资格仍按PROJECT判断。
 
 ## 所有权
 
