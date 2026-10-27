@@ -136,7 +136,7 @@ Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`�
 [`history/20260802__reflectron-midgrid-campaign-authorization.md`](history/20260802__reflectron-midgrid-campaign-authorization.md)。
 
 历史2.2 mm源宽候选仅验证变量合同、理论闭合和run-local PA重构，不改变本项目Formal；
-旧连接证据查[已退役集成记录](../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/20261024__legacy-family-retirement.md)，
+旧连接证据查[已退役集成记录](../../../integrations/docs/history/20261024__legacy-family-retirement.md)，
 新装配状态查[统一集成状态](../../../integrations/docs/INTEGRATION.md)。三区真实PA及源敏感性的有效范围见
 [完成快照](history/20260823__three-zone-completed-results-snapshot.md)，不继承为当前Formal。
 理想源的[残差／束宽](history/20260827__ideal-source-residual-and-width-comparison.md)与

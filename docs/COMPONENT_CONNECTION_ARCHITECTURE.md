@@ -340,7 +340,7 @@ profile显式选择一种物理模式：
 
 公共 API 和验证边界见[公共连接层](../common/integration/README.md)。
 RF 多极杆→oaTOF 的活动模式、实例布局、电极映射、当前诊断和开放任务见
-[integration入口](../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/README.md)。
+[统一集成入口](../integrations/README.md)。
 
 ## 扩展门禁
 

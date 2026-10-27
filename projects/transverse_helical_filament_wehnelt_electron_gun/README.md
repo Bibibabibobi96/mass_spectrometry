@@ -13,7 +13,7 @@
 | 生成唯一 MATLAB 输入 | [resolve_contract.py](analysis/resolve_contract.py) → [resolved_model.json](config/resolved_model.json) |
 | 项目发现与可执行能力 | [project.json](config/project.json)、[execution_profiles.json](config/execution_profiles.json) |
 | 静态检查 | [verify_project.ps1](verify_project.ps1) |
-| 选型及旧谱系 | 下方历史索引；[旧脚本目录说明](legacy/README.md) |
+| 选型及旧谱系 | [历史索引](docs/history/README.md) |
 
 ## 执行与产物
 

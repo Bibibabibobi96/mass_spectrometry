@@ -35,7 +35,7 @@ N=1只允许使用`terminal_handoff_smoke_source_particle_id`明确登记的一�
 [冻结状态沿革](../../history/20260911__publication-status-consolidation.md#stage_c3_j3_real_field_contract)。
 
 历史 N=100 campaign 由
-[固定脉冲导数合同](../../../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/20261024__legacy-family-retirement/paper1_c3_j3_s1_fixed_pulse_derivative_n100.json)
+[固定脉冲导数合同](../../../../../integrations/docs/history/20261024__legacy-family-retirement/paper1_c3_j3_s1_fixed_pulse_derivative_n100.json)
 绑定；该只读合同保留原步长、容差和粒子选择，不恢复旧执行入口。后续新运行须沿当前工作流显式准备输入，并满足本页门槛。
 
 ## 结论格式

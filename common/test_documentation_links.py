@@ -68,7 +68,6 @@ class PowerShellHistoryScopeTests(unittest.TestCase):
                 ('docs/history', 'docs/AUDITS.md', 'history/'),
                 ('integrations/docs/history', 'integrations/docs/history/README.md', ''),
                 ('projects/p/docs/history', 'projects/p/docs/history/README.md', ''),
-                ('integrations/legacy/docs/history', 'integrations/legacy/docs/HISTORY.md', 'history/'),
             )
             for history, index, prefix in scopes:
                 folder = root / history
@@ -109,6 +108,47 @@ class PowerShellHistoryScopeTests(unittest.TestCase):
 
 
 class MarkdownNavigationTests(unittest.TestCase):
+    def test_staged_history_rename_requires_unchanged_head_bytes(self):
+        with tempfile.TemporaryDirectory(prefix='documentation_gate_test_') as directory:
+            root = Path(directory)
+            subprocess.run(['git', 'init', '--quiet', str(root)], check=True, cwd=root, timeout=30)
+            original = root / 'integrations/old/docs/history/snapshot.md'
+            original.parent.mkdir(parents=True)
+            content = b'# Frozen\nDOC_STATUS: ARCHIVED_READ_ONLY\n[old](../retired.md)\n'
+            original.write_bytes(content)
+            (root / '.gitattributes').write_text('* -text\n', encoding='utf-8')
+            subprocess.run(['git', '-C', str(root), 'add', '.'], check=True, cwd=root, timeout=30)
+            subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+                            'commit', '--quiet', '-m', 'Freeze history'], check=True, cwd=root, timeout=30)
+            moved = root / 'integrations/docs/history/snapshot.md'
+            moved.parent.mkdir(parents=True)
+            original.rename(moved)
+            subprocess.run(['git', '-C', str(root), 'add', '-A'], check=True, cwd=root, timeout=30)
+            self.assertEqual(migrated_history(root), ({moved.relative_to(root).as_posix()}, []))
+            self.assertFalse(inspect_repository(root)['errors'])
+            moved.write_bytes(content + b'changed\n')
+            verified, errors = migrated_history(root)
+            self.assertFalse(verified)
+            self.assertIn('differs from its HEAD source bytes', errors[0])
+            self.assertTrue(inspect_repository(root)['errors'])
+
+    def test_staged_active_document_move_does_not_gain_history_exemption(self):
+        with tempfile.TemporaryDirectory(prefix='documentation_gate_test_') as directory:
+            root = Path(directory)
+            subprocess.run(['git', 'init', '--quiet', str(root)], check=True, cwd=root, timeout=30)
+            original = root / 'guide.md'
+            original.write_bytes(b'# Guide\n[bad](missing.md)\n')
+            (root / '.gitattributes').write_text('* -text\n', encoding='utf-8')
+            subprocess.run(['git', '-C', str(root), 'add', '.'], check=True, cwd=root, timeout=30)
+            subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+                            'commit', '--quiet', '-m', 'Add guide'], check=True, cwd=root, timeout=30)
+            moved = root / 'docs/history/snapshot.md'
+            moved.parent.mkdir(parents=True)
+            original.rename(moved)
+            subprocess.run(['git', '-C', str(root), 'add', '-A'], check=True, cwd=root, timeout=30)
+            self.assertEqual(migrated_history(root), (set(), []))
+            self.assertTrue(inspect_repository(root)['errors'])
+
     def test_retired_project_move_requires_exact_git_bytes_and_complete_inventory(self):
         with tempfile.TemporaryDirectory(prefix='documentation_gate_test_') as directory:
             root = Path(directory)

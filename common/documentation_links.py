@@ -42,14 +42,49 @@ def document_kind(path: Path) -> str:
     return "implementation-or-support"
 
 
+def _staged_history_moves(root: Path) -> tuple[set[str], list[str]]:
+    """Keep exact staged history renames frozen before their destination enters HEAD."""
+    listing = subprocess.run(
+        ["git", "-C", str(root), "diff", "--cached", "--name-status", "-z",
+         "--find-renames=100%", "--diff-filter=R"],
+        check=True, capture_output=True, cwd=root, timeout=30,
+    ).stdout.split(b"\0")
+    moves = [(source.decode("utf-8"), target.decode("utf-8"))
+             for status, source, target in zip(listing[::3], listing[1::3], listing[2::3])
+             if status == b"R100" and is_history(Path(source.decode("utf-8")))
+             and is_history(Path(target.decode("utf-8")))]
+    if not moves:
+        return set(), []
+    tree = subprocess.run(
+        ["git", "-C", str(root), "ls-tree", "-rz", "HEAD"],
+        check=True, capture_output=True, cwd=root, timeout=30,
+    ).stdout
+    source_blobs = {}
+    for record in tree.split(b"\0"):
+        if record:
+            metadata, path = record.split(b"\t", 1)
+            source_blobs[path.decode("utf-8")] = metadata.split()[2].decode("ascii")
+    verified, errors = set(), []
+    for source, target in moves:
+        try:
+            content = (root / target).read_bytes()
+            blob = hashlib.sha1(b"blob " + str(len(content)).encode("ascii") + b"\0" + content).hexdigest()
+            if blob != source_blobs.get(source):
+                raise ValueError("staged history move differs from its HEAD source bytes")
+            verified.add(target)
+        except (OSError, ValueError) as error:
+            errors.append(f"{target}: {error}")
+    return verified, errors
+
+
 def migrated_history(root: Path) -> tuple[set[str], list[str]]:
-    """Verify retired project records against their fixed Git source and exact bytes.
+    """Verify staged history moves and retired project archives against Git bytes.
 
     A move does not make old relative links current guidance. The maintained
     parent index supplies both the relocated record and its original Git context.
     Only verified records retain the existing-history diagnostic treatment.
     """
-    verified, errors = set(), []
+    verified, errors = _staged_history_moves(root)
     for directory in root.glob("projects/*/docs/history/retired_projects"):
         manifest_path = directory / "migration_manifest.json"
         label = manifest_path.relative_to(root).as_posix()

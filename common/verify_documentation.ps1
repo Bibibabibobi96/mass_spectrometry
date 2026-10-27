@@ -273,16 +273,6 @@ $historyScopes = @(
         IndexLabel = "$($_.Name)/docs/history/README.md"
         IndexPrefix = ''
     }
-}) + @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'integrations') -Directory | ForEach-Object {
-    $candidate = Join-Path $_.FullName 'docs\history'
-    if (-not (Test-Path -LiteralPath $candidate -PathType Container)) { return }
-    $integrationPath = $_.FullName
-    [pscustomobject]@{
-        Directory = Get-Item -LiteralPath $candidate
-        IndexPath = Join-Path $integrationPath 'docs\HISTORY.md'
-        IndexLabel = "$($_.Name)/docs/HISTORY.md"
-        IndexPrefix = 'history/'
-    }
 })
 foreach ($historyScope in $historyScopes) {
     $historyDir = $historyScope.Directory
