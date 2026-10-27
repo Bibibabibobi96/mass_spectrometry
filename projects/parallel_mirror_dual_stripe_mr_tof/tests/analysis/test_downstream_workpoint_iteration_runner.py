@@ -30,6 +30,9 @@ param($Source,$Root,$Repo,$RealPython,$Scenario)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
 $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Complete-StagedTrial'},$true);Invoke-Expression $node.Extent.Text
+$transport=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-WorkpointControllerRequest'},$true)
+Invoke-Expression ($transport.Extent.Text.Replace('function Invoke-WorkpointControllerRequest','function Invoke-RealControllerRequest'))
+function Invoke-WorkpointControllerRequest {param($Request,$Python,$RepoRoot) Invoke-RealControllerRequest -Request $Request -Python $RealPython -RepoRoot $Repo}
 $repoRoot=$Repo;$python='Invoke-TestPython';$frozenContract=Join-Path $Root 'contract.json';$package=@{result_dir=$Root}
 $child=Join-Path $Root 'child.json';$anchor=Join-Path $Root 'anchor.json';$mat=Join-Path $Root 'mat.json'
 $pending=Get-Content (Join-Path $Root 'pending.json') -Raw|ConvertFrom-Json -AsHashtable -Depth 100
@@ -39,7 +42,7 @@ $history=@{decisions=@()};$lineage=@{children=@()}
 function Get-ManifestOutputPath {param($ManifestPath,$FileName)$mat}
 function Write-RunJson {param($Path,$Depth,$Value)$Value|ConvertTo-Json -Depth $Depth|Set-Content -LiteralPath $Path -Encoding UTF8}
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation)&$Operation}
-function Invoke-PreclosureDecision {param($Stage,$Anchor,$Columns,$OutputPath)@{status='needs_stencil';next_action='measure_stencil';full_workpoint_qualified=$false;maximum_scaled_abs_residual=2.}}
+function Invoke-PreclosureDecision {param($Stage,$Anchor,$Columns,$OutputPath,$Context)@{status='needs_stencil';next_action='measure_stencil';full_workpoint_qualified=$false;maximum_scaled_abs_residual=2.}}
 function Invoke-TestPython {
  param([Parameter(ValueFromRemainingArguments=$true)][object[]]$Arguments)
  $script:argumentChars=($Arguments|ForEach-Object{([string]$_).Length}|Measure-Object -Sum).Sum
@@ -54,7 +57,7 @@ function Invoke-TestPython {
  & $RealPython @Arguments
 }
 $failure=$null
-try{Complete-StagedTrial -State $state -History $history -Lineage $lineage -Pending $pending -Loop @{minimum_relative_improvement=.01} -Tiers @() -ControllerPolicyPath (Join-Path $Root 'policy.json')}catch{$failure=$_.Exception.Message}
+try{Complete-StagedTrial -Context @{repo_root=$repoRoot;python=$python;contract_path=$frozenContract;result_directory=$package.result_dir;prepared_staged=$false;target_authority_path=''} -State $state -History $history -Lineage $lineage -Pending $pending -Loop @{minimum_relative_improvement=.01} -Tiers @() -ControllerPolicyPath (Join-Path $Root 'policy.json')}catch{$failure=$_.Exception.Message}
 @{failure=$failure;argument_characters=$script:argumentChars;input_path=$script:inputPath;expected_bytes=$script:expectedBytes;expected_sha=$script:expectedSha;state=$state;history=$history;lineage=$lineage}|ConvertTo-Json -Depth 100|Set-Content (Join-Path $Root 'result.json')
 '''
         for scenario in ('short','large','missing','changed'):
@@ -62,7 +65,7 @@ try{Complete-StagedTrial -State $state -History $history -Lineage $lineage -Pend
                 root=Path(directory)
                 decision=dict(status='proposed',next_action='run_S_candidate',maximum_scaled_abs_residual=4.,backtrack_multiplier=.5,
                     next_voltages_v=record['voltages_v'],predicted_physical_acceptance_residuals=copy.deepcopy(record['physical_acceptance_residuals']),
-                    frozen_geometry_evidence='x'*200_000 if scenario!='short' else 'short')
+                    unicode_evidence_label='阶段候选核验', frozen_geometry_evidence='x'*200_000 if scenario!='short' else 'short')
                 key=list(decision['predicted_physical_acceptance_residuals'])[-1]
                 decision['predicted_physical_acceptance_residuals'][key]+=.02
                 expected=assess_staged_prediction(decision,baseline,current,contract,dict(policy,path=str(root/'policy.json')))
@@ -498,6 +501,9 @@ try{Invoke-CenterTrial -Arguments $arguments -StagedPending $pending -Bootstrap 
 param($Source,$Root,$BuildMode)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
+$handoffParameter=$ast.ParamBlock.Parameters|Where-Object{$_.Name.VariablePath.UserPath-eq'PrismHandoffReplayManifest'}
+$PrismHandoffReplayManifest=$handoffParameter.DefaultValue.SafeGetValue()
+if($PrismHandoffReplayManifest-cne''){throw 'Prepared fixture requires the actual empty public handoff default'}
 foreach($name in @('Invoke-PreparedOriginalStagedWorkflow','New-CenterTrialArguments')){
  $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
  Invoke-Expression $node.Extent.Text
@@ -539,6 +545,7 @@ function mock-python {
 }
 function Invoke-StagedWorkpointBootstrap {
  param($Bootstrap,$BootstrapPath)
+ if($controllerContext.prism_handoff_replay_manifest-cne$PrismHandoffReplayManifest){throw 'Prepared Context lost the public parameter default'}
  if($Bootstrap.source_projection-ne'measured_exit_centroid'-or$Bootstrap.Contains('stage_state')){throw 'Not a fresh measured P anchor'}
  if((Get-Content $frozenPreparedTargetAuthorityPath -Raw).Trim()-ne'{}'){throw 'Target not frozen'}
  if($fieldProviderRequest.source_binding_path-ne'baseline-binding'){throw 'Wrong fixed rebuild authority'}
@@ -638,8 +645,8 @@ $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
 $normal=$ast.Find({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Complete-StagedTrial'-and$n.Extent.Text.Contains('-Pending $state.pending_trial')},$true)
 if($null-eq$normal){throw 'Normal candidate completion call is missing'}
-$ControllerPolicyPath='sealed-policy.json';$state=@{pending_trial=@{}};$pending=$state.pending_trial;$history=@{};$lineage=@{};$loop=@{};$tiers=@()
-function Complete-StagedTrial {param($State,$History,$Lineage,$Pending,$Loop,$Tiers,$ControllerPolicyPath)$script:captured=$ControllerPolicyPath}
+$controllerContext=@{};$ControllerPolicyPath='sealed-policy.json';$state=@{pending_trial=@{}};$pending=$state.pending_trial;$history=@{};$lineage=@{};$loop=@{};$tiers=@()
+function Complete-StagedTrial {param($State,$History,$Lineage,$Pending,$Loop,$Tiers,$ControllerPolicyPath,$Context)$script:captured=$ControllerPolicyPath}
 Invoke-Expression $normal.Extent.Text
 if($script:captured-ne$ControllerPolicyPath){throw 'Normal candidate completion omitted prediction authority'}
 $resumed=$ast.Find({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Complete-StagedTrial'-and$n.Extent.Text.Contains('-Pending $pending')-and$n.Extent.Text.Contains('-ControllerPolicyPath')},$true)
@@ -656,24 +663,84 @@ if($script:captured-ne$ControllerPolicyPath){throw 'Resumed candidate completion
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("COMPLETION_POLICY_TRANSPORT=PASS", result.stdout)
 
+    def test_staged_handoff_context_rebinds_to_frozen_input_before_decision(self):
+        script = r'''
+param($Source,$Root)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
+$freeze=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Extent.Text.StartsWith('if($PrismHandoffReplayManifest)')-and$n.Extent.Text.Contains("'prism_handoff_replay_manifest.json'")},$true)
+$helper=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-PreclosureDecision'},$true)
+Invoke-Expression $helper.Extent.Text
+$inputs=Join-Path $Root 'inputs';New-Item -ItemType Directory $inputs|Out-Null
+$original=Join-Path $Root 'original.json';'{"marker":"frozen"}'|Set-Content $original
+$PrismHandoffReplayManifest=$original;$package=@{input_dir=$inputs}
+$controllerContext=@{repo_root=$Root;python='Invoke-MockController';contract_path='contract.json';prepared_staged=$false;prism_handoff_replay_manifest=$original}
+function Copy-VerifiedRunInput {param($Source,$Destination)Copy-Item -LiteralPath $Source -Destination $Destination;return $Destination}
+function Invoke-RunToolRootContext {param($RepoRoot,$Operation)&$Operation}
+function Invoke-MockController {
+ param([Parameter(ValueFromRemainingArguments=$true)][object[]]$Arguments)
+ $handoff=$Arguments[[array]::IndexOf($Arguments,'--prism-handoff-replay-manifest')+1]
+ if($handoff-ne(Join-Path $inputs 'prism_handoff_replay_manifest.json')){throw 'Decision read unfrozen handoff path'}
+ if((Get-Content $handoff -Raw|ConvertFrom-Json).marker-ne'frozen'){throw 'Decision read changed external authority'}
+ '{}'|Set-Content $Arguments[[array]::IndexOf($Arguments,'--output')+1]
+ $global:LASTEXITCODE=0
+}
+Invoke-Expression $freeze.Extent.Text
+'{"marker":"changed"}'|Set-Content $original
+Invoke-PreclosureDecision -Context $controllerContext -Stage stripe_preclosure -Anchor child -Columns @{} -OutputPath (Join-Path $Root 'decision.json')|Out-Null
+'FROZEN_HANDOFF_CONTEXT=PASS'
+'''
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / 'handoff.ps1'
+            path.write_text(script, encoding='utf-8')
+            result = subprocess.run(['pwsh', '-NoProfile', '-File', str(path),
+                str(PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1'), str(root)],
+                cwd=PROJECT.parents[1], capture_output=True, text=True, encoding='utf-8', timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('FROZEN_HANDOFF_CONTEXT=PASS', result.stdout)
+
     def test_accepted_staged_candidate_quality_controls_next_step_factor(self):
         script = r'''
-param($Source,$Root,$Quality)
+param($Source,$Root,$Quality,$Repo,$RealPython)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
 $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Complete-StagedTrial'},$true);Invoke-Expression $node.Extent.Text
-$child=Join-Path $Root 'child.json';@{status='success';run_id='child'}|ConvertTo-Json|Set-Content $child
+$transport=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-WorkpointControllerRequest'},$true)
+Invoke-Expression ($transport.Extent.Text.Replace('function Invoke-WorkpointControllerRequest','function Invoke-RealControllerRequest'))
+function Invoke-WorkpointControllerRequest {param($Request,$Python,$RepoRoot) Invoke-RealControllerRequest -Request $Request -Python $RealPython -RepoRoot $Repo}
+foreach($name in @('Invoke-PreclosureDecision','Assert-StagedComposeProviderReference')){
+ $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true);Invoke-Expression $node.Extent.Text
+}
+$child=Join-Path $Root 'child.json';@{status='success';run_id='parent-stage-003'}|ConvertTo-Json|Set-Content $child
 $mat=Join-Path $Root 'mat.json';@{stripe_biases_v=@(-27.,0.);prism_voltages_v=@(190.,-190.)}|ConvertTo-Json|Set-Content $mat
 function Get-ManifestOutputPath {param($ManifestPath,$FileName)$mat}
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation)& $Operation}
-function Invoke-MockPython {param([Parameter(ValueFromRemainingArguments=$true)][object[]]$Arguments)$global:LASTEXITCODE=0;@{status=$Quality}|ConvertTo-Json -Compress}
+function Invoke-MockPython {
+ param([Parameter(ValueFromRemainingArguments=$true)][object[]]$Arguments)
+ $global:LASTEXITCODE=0
+ if($Arguments-contains'--control-stage'){
+  foreach($pair in @(@('--contract','contract.json'),@('--prepared-target-authority','target.json'),@('--prepared-initial-proposal','proposal.json'),@('--prism-handoff-replay-manifest','handoff.json'))){
+   $index=[array]::IndexOf($Arguments,$pair[0]);if($index-lt0-or$Arguments[$index+1]-ne$pair[1]){throw 'Decision read ambient authority instead of Context'}
+  }
+  $output=$Arguments[[array]::IndexOf($Arguments,'--output')+1]
+  @{status='needs_stencil';next_action='measure_stencil';full_workpoint_qualified=$false;maximum_scaled_abs_residual=2.}|ConvertTo-Json|Set-Content $output
+  return
+ }
+ @{status=$Quality}|ConvertTo-Json -Compress
+}
 function Write-RunJson {param($Path,$Depth,$Value)$Value|ConvertTo-Json -Depth $Depth|Set-Content $Path}
-function Invoke-PreclosureDecision {param($Stage,$Anchor,$Columns,$OutputPath)@{status='needs_stencil';next_action='measure_stencil';full_workpoint_qualified=$false;maximum_scaled_abs_residual=2.}}
-$repoRoot=$Root;$python='Invoke-MockPython';$frozenContract='contract.json';$package=@{result_dir=$Root}
+$context=@{repo_root=$Root;python='Invoke-MockPython';contract_path='contract.json';result_directory=$Root;prepared_staged=$true;target_authority_path='target.json';initial_proposal_path='proposal.json';prism_handoff_replay_manifest='handoff.json';run_id='parent';artifact_root=$Root;prepared_field_build_mode='composition'}
+$script:preparedStagedMode=$false;$script:frozenPreparedTargetAuthorityPath='wrong-target';$script:frozenPreparedInitialProposalPath='wrong-proposal'
+$script:PrismHandoffReplayManifest='wrong-handoff';$script:RunId='wrong-parent';$script:artifactRoot='wrong-artifact-root'
+$provider=Join-Path $Root 'runs/parent-stage-003-field';New-Item -ItemType Directory -Path $provider -Force|Out-Null
+$providerManifest=Join-Path $provider 'run_manifest.json';'{}'|Set-Content $providerManifest
+$request=Join-Path $provider 'request.json';'{}'|Set-Content $request
+$reference=@{parent_run_id='parent';child_run_id='parent-stage-003';operation='compose';provider_run=$provider;provider_manifest=$providerManifest;request_path=$request;provider_manifest_sha256=(Get-FileHash $providerManifest).Hash.ToLowerInvariant();request_sha256=(Get-FileHash $request).Hash.ToLowerInvariant()}
 $state=@{stage='stripe_preclosure';anchor_manifest='anchor';flight_count=3;candidate_count=1;columns=@{};attempts=@();step_factor=.5;completion_attempted=$false}
-$pending=@{child_manifest=$child;child_run_id='child';anchor_manifest='anchor';stage='stripe_preclosure';voltages_v=@(-27.,0.,190.,-190.);decision=@{status='proposed';next_action='run_S_candidate';maximum_scaled_abs_residual=4.;backtrack_multiplier=.5}}
+$pending=@{provider_reference=$reference;child_manifest=$child;child_run_id='parent-stage-003';anchor_manifest='anchor';stage='stripe_preclosure';voltages_v=@(-27.,0.,190.,-190.);decision=@{status='proposed';next_action='run_S_candidate';maximum_scaled_abs_residual=4.;backtrack_multiplier=.5}}
 $state.pending_trial=$pending;$history=@{decisions=@()};$lineage=@{children=@()}
-Complete-StagedTrial -State $state -History $history -Lineage $lineage -Pending $pending -Loop @{minimum_relative_improvement=.01} -Tiers @() -ControllerPolicyPath 'policy.json'
+Complete-StagedTrial -Context $context -State $state -History $history -Lineage $lineage -Pending $pending -Loop @{minimum_relative_improvement=.01} -Tiers @() -ControllerPolicyPath 'policy.json'
 @{factor=$state.step_factor;anchor=$state.anchor_manifest;quality=$state.prediction_assessment.status;history_quality=$history.decisions[0].prediction_assessment.status;flight=$state.flight_count;candidate=$state.candidate_count}|ConvertTo-Json -Compress
 '''
         with TemporaryDirectory() as temporary:
@@ -682,7 +749,7 @@ Complete-StagedTrial -State $state -History $history -Lineage $lineage -Pending 
             path.write_text(script)
             for quality, factor in (("trusted", 1.), ("poor", .25), ("unmeasured", 1.)):
                 result = subprocess.run(["pwsh", "-NoProfile", "-File", str(path),
-                    str(PROJECT / "analysis/run_downstream_workpoint_iteration.ps1"), str(root), quality],
+                    str(PROJECT / "analysis/run_downstream_workpoint_iteration.ps1"), str(root), quality, str(PROJECT.parents[1]), sys.executable],
                     cwd=PROJECT.parents[1], capture_output=True, text=True, encoding="utf-8", timeout=30)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 value = json.loads(result.stdout)
@@ -794,13 +861,16 @@ try{Invoke-Expression $node.Extent.Text}catch{$errorText=$_.Exception.Message}
     def _restore_saved_checkpoint(self, scenario):
         """Exercise saved-state restore and normal pending consumption without a solver."""
         script = r'''
-param($Source,$Root,$Scenario)
+param($Source,$Root,$Scenario,$Repo,$RealPython)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
 foreach($name in @('Get-ActiveStripeAxisIndices','Get-StagedColumnAxisIndices','Assert-ActiveStripeVoltages','Restore-StagedWorkpointChildren','Complete-StagedTrial','Invoke-StagedWorkpointBootstrap')){
  $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
  Invoke-Expression $node.Extent.Text
 }
+$transport=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-WorkpointControllerRequest'},$true)
+Invoke-Expression ($transport.Extent.Text.Replace('function Invoke-WorkpointControllerRequest','function Invoke-RealControllerRequest'))
+function Invoke-WorkpointControllerRequest {param($Request,$Python,$RepoRoot) Invoke-RealControllerRequest -Request $Request -Python $RealPython -RepoRoot $Repo}
 $seedManifest=Join-Path $Root 'seed.json';'{}'|Set-Content $seedManifest
 $policyPath=Join-Path $Root 'old-policy.json';'{"trusted_advance_multiplier":0.5}'|Set-Content $policyPath
 $futurePolicy=Join-Path $Root 'future-policy.json';'{"trusted_advance_multiplier":1.0}'|Set-Content $futurePolicy
@@ -808,6 +878,7 @@ $artifactRoot=$Root;$repoRoot=$Root;$RunId='new';$python='Invoke-IdentityFixture
 $trialArtifactRoot=$artifactRoot
 $PrismHandoffReplayManifest='';$PriorPrismDecisionManifest='';$stripeSeedColumns=@{}
 $package=@{result_dir=$Root};$frozenContract=Join-Path $Root 'contract.json'
+$controllerContext=@{repo_root=$repoRoot;python=$python;contract_path=$frozenContract;result_directory=$Root;prepared_staged=$false;target_authority_path=''}
 @{downstream_fixed_grid_workpoint_profile=@{active_stripe_axes=@('stripe_1_voltage_v','stripe_2_voltage_v');automatic_iteration=@{maximum_iterations=8;minimum_relative_improvement=.1;maximum_consecutive_non_improving_iterations=3};jacobian_relative_step_tiers=@{coarse=.01;medium=.0025;fine=.0005}}}|ConvertTo-Json -Depth 10|Set-Content $frozenContract
 $childDir=New-Item -ItemType Directory (Join-Path $Root 'child')
 $child=Join-Path $childDir 'run_manifest.json';@{run_id='child';status='success'}|ConvertTo-Json|Set-Content $child
@@ -907,7 +978,7 @@ function Invoke-StagedPreclosureDecision {param($State,$OutputPath,$ControllerPo
  $script:futurePolicies+=,$ControllerPolicyPath
  return @{status='terminal';terminal_reason='stop_fixture';full_workpoint_qualified=$false}
 }
-function Invoke-PreclosureDecision {param($Stage,$Anchor,$Columns,$OutputPath)
+function Invoke-PreclosureDecision {param($Stage,$Anchor,$Columns,$OutputPath,$Context)
  $script:consumptions++
  if($Scenario-eq'joint_p_rejected'){return @{status='stage_required';next_action='prism_preclosure';full_workpoint_qualified=$false;maximum_scaled_abs_residual=2.}}
  return @{status='terminal';next_action='stop_preclosure';terminal_reason='success';full_workpoint_qualified=$true;maximum_scaled_abs_residual=0.}
@@ -937,7 +1008,7 @@ try{
             path.write_text(script, encoding="utf-8")
             result = subprocess.run([
                 "pwsh", "-NoProfile", "-File", str(path),
-                str(PROJECT / "analysis/run_downstream_workpoint_iteration.ps1"), temporary, scenario,
+                str(PROJECT / "analysis/run_downstream_workpoint_iteration.ps1"), temporary, scenario, str(PROJECT.parents[1]), sys.executable,
             ], cwd=PROJECT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             return json.loads((root / "output.json").read_text(encoding="utf-8-sig"))
@@ -1236,6 +1307,7 @@ $fixture=Get-Content (Join-Path $Root 'fixture.json') -Raw|ConvertFrom-Json -AsH
 $script:preparedStagedMode=[bool]$fixture.measured
 $script:PreparedFieldBuildMode=if($fixture.explicit_refine){$fixture.operation}else{'composition'}
 $RunId='parent';$project='parallel_mirror_dual_stripe_mr_tof';$artifactRoot=$Root;$artifactWorkspaceRoot=$Root;$repoRoot=$Root;$python='mock'
+$controllerContext=@{run_id=$RunId;artifact_root=$artifactRoot;prepared_staged=$script:preparedStagedMode;prepared_field_build_mode=$script:PreparedFieldBuildMode}
 $trialArtifactRoot=$artifactRoot
 $staticFieldMode=$true;$staticBindingMode='native_static_pa'
 $package=@{input_dir=(Join-Path $Root 'inputs');result_dir=(Join-Path $Root 'results');artifact_run_dir=(Join-Path $Root 'runs/parent')}
@@ -1254,7 +1326,7 @@ function Exit-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session)
 function Save-NativeWorkflowCheckpoint {param($Reason,$WorkflowOutcome)}
 function Get-ManifestOutputPath {param($ManifestPath,$FileName)$script:events+='freeze_light';return $ManifestPath}
 function Invoke-PreclosureDecision {
- param($Stage,$Anchor,$Columns,$OutputPath)
+ param($Stage,$Anchor,$Columns,$OutputPath,$Context)
  if($Anchor.EndsWith('parent-stage-009/run_manifest.json')-or$Anchor.EndsWith('parent-stage-009\run_manifest.json')){
   if($fixture.restored-eq'unknown'){return @{}}
   return @{full_workpoint_qualified=($fixture.restored-eq'best')}
@@ -2052,7 +2124,7 @@ $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitio
 Invoke-Expression $node.Extent.Text
 $python='python';$repoRoot=$Root;$artifactRoot=$Root;$artifactWorkspaceRoot=$Root
 $trialArtifactRoot=$artifactRoot
-$project='parallel_mirror_dual_stripe_mr_tof';$frozenContract='frozen-contract.json';$controllerSource='frozen-controller.py'
+$project='parallel_mirror_dual_stripe_mr_tof';$frozenContract='frozen-contract.json';$controllerSource='frozen-controller.py';$controllerStateSource='frozen-controller-state.py'
 $script:statuses=@();$script:retentions=0
 function New-RunPackage {
  param($Python,$RepoRoot,$ArtifactRoot,$RunId,$Project,$Mode,$Software,
@@ -2095,6 +2167,7 @@ $dir=(Get-ChildItem -LiteralPath $Root -Directory|Select-Object -First 1).FullNa
                 self.assertEqual(result["config"]["inputs"], {
                     "baseline_manifest": "measured-anchor.json", "workpoint_contract": "frozen-contract.json",
                     "controller_source": "frozen-controller.py", "p1_child_manifest": "p1-flight.json",
+                    "controller_state_source": "frozen-controller-state.py",
                     "p2_child_manifest": "p2-flight.json"})
                 self.assertEqual(result["decision"]["anchor_manifest"], "measured-anchor.json")
                 self.assertEqual([s["status"] for s in result["statuses"]],
@@ -2110,7 +2183,7 @@ $dir=(Get-ChildItem -LiteralPath $Root -Directory|Select-Object -First 1).FullNa
                            single_stripe_refinement_mode=None,prepared_build_mode=None,provider_capacity_block=False):
         """Execute the production AST functions; mock only flights and CLI I/O."""
         script = r"""
-param($Source,$Root)
+param($Source,$Root,$RealPython,$RealRepo)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
 foreach($name in @('Get-ActiveStripeAxisIndices','Get-StagedColumnAxisIndices','Assert-ActiveStripeVoltages','Get-RelativeVoltageStencilSteps','Invoke-PreclosureDecision','Invoke-StagedPreclosureDecision','Complete-StagedTrial','Reset-StagedSLocalModel','Restore-StagedWorkpointChildren','Import-StagedStripeColumns','Invoke-StagedWorkpointBootstrap')){
@@ -2130,6 +2203,7 @@ $package=@{result_dir=$Root};$seedManifest=Join-Path $Root 'seed.json';'{}'|Set-
 $PrismHandoffReplayManifest=[string]$fixture.replay_manifest
 $PriorPrismDecisionManifest=[string]$fixture.initial_model
 $frozenContract=Join-Path $Root 'contract.json'
+$controllerContext=@{repo_root=$repoRoot;python=$python;contract_path=$frozenContract;result_directory=$Root;prepared_staged=$script:preparedStagedMode;target_authority_path=$frozenPreparedTargetAuthorityPath;initial_proposal_path=$frozenPreparedInitialProposalPath;prism_handoff_replay_manifest=$PrismHandoffReplayManifest;run_id=$RunId;artifact_root=$artifactRoot;prepared_field_build_mode=$PreparedFieldBuildMode}
 $policyPath=''
 if($fixture.controller_policy){
  $policyPath=Join-Path $Root 'policy.json'
@@ -2145,6 +2219,9 @@ if($fixture.single_stripe_refinement_mode){
  $contract.downstream_fixed_grid_workpoint_profile.single_stripe_refinement_mode=$fixture.single_stripe_refinement_mode
  $contract|ConvertTo-Json -Depth 10|Set-Content $frozenContract
 }
+$transport=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-WorkpointControllerRequest'},$true)
+Invoke-Expression ($transport.Extent.Text.Replace('function Invoke-WorkpointControllerRequest','function Invoke-RealControllerRequest'))
+function Invoke-WorkpointControllerRequest {param($Request,$Python,$RepoRoot) Invoke-RealControllerRequest -Request $Request -Python $RealPython -RepoRoot $RealRepo}
 function Invoke-RunToolRootContext {param($RepoRoot,[scriptblock]$Operation)& $Operation}
 function Write-RunJson {param($Path,$Depth,$Value)$Value|ConvertTo-Json -Depth $Depth|Set-Content $Path}
 function Save-WorkpointBootstrap {
@@ -2152,7 +2229,7 @@ function Save-WorkpointBootstrap {
  $script:saves+=,($Bootstrap|ConvertTo-Json -Depth 100|ConvertFrom-Json -AsHashtable)
 }
 function Reclaim-StagedComposeProviders {param($State,$Lineage)}
-function Assert-StagedComposeProviderReference {param($Reference,$ChildRunId) return $Reference}
+function Assert-StagedComposeProviderReference {param($Reference,$ChildRunId,$Context) return $Reference}
 function Publish-StagedPrismModel {
  param($State,$Decision)
  $script:models+=,@{anchor=$State.anchor_manifest;columns=($State.columns|ConvertTo-Json|ConvertFrom-Json -AsHashtable);decision=$Decision}
@@ -2255,7 +2332,7 @@ if(-not$failure-and$script:queue.Count-ne0){throw 'Unconsumed controller decisio
             fixture.write_text(script, encoding="utf-8")
             result = subprocess.run(
                 ["pwsh", "-NoProfile", "-File", str(fixture),
-                 str(PROJECT / "analysis/run_downstream_workpoint_iteration.ps1"), temporary],
+                 str(PROJECT / "analysis/run_downstream_workpoint_iteration.ps1"), temporary, sys.executable, str(PROJECT.parents[1])],
                 cwd=PROJECT, capture_output=True, text=True, encoding="utf-8",
                 errors="replace", timeout=40,
             )
@@ -3160,21 +3237,12 @@ Write-Output 'RECOVERY_ANCHOR_BINDING=PASS'
         self.assertIn("[int]$state.trigger.iteration", source)
         self.assertIn("[int]$state.recovery_round", source)
         self.assertIn("$directionLabel=if($direction-eq1){'p'}else{'n'}", source)
-        self.assertIn('[int]$stored.trigger.iteration-eq[int]$Decision.iteration', source)
-        self.assertIn('[string]$stored.trigger.reason-eq[string]$Decision.recovery_state.model_invalid_reason', source)
 
     def test_recovery_handoffs_renew_parent_capacity_session(self):
         source = (PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1').read_text(encoding='utf-8-sig')
         self.assertEqual(source.count('$recoveryCapacity=Update-ArtifactWorkflowCapacitySession'), 2)
         self.assertEqual(source.count('$capacitySession=$recoveryCapacity.session'), 2)
         self.assertEqual(source.count('$protectionReceipts += $recoveryCapacityPath'), 2)
-
-    def test_repeat_recovery_starts_at_persisted_fine_relative_tier(self):
-        source = (PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1').read_text(encoding='utf-8-sig')
-        self.assertIn("if([int]$state.recovery_policy_version-lt7)", source)
-        self.assertIn("$_.Contains('recovery_resume_proposal')", source)
-        self.assertIn("jacobian_relative_step_tiers.fine", source)
-        self.assertIn("refresh_independent_s_columns_at_persisted_fine_relative_tier", source)
 
     def test_physical_gate_reverse_fallback_resume_and_voltage_binding(self):
         script = r"""

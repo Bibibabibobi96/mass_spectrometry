@@ -1,9 +1,9 @@
 # MR-TOF SIMION 实施说明
 
 本页说明 SIMION 入口、输入和独立验收；当前工作点、资格、运行证据及开放任务见
-[项目状态](../docs/PROJECT.md)，其他软件入口见[项目导航](../README.md)。
-输入版本见[输入权威](../docs/PROJECT.md#输入权威与物理定义)，当前执行顺序见
-[开放动作与关闭条件](../docs/PROJECT.md#开放动作与关闭条件)。
+[项目状态](PROJECT.md)，其他软件入口见[项目导航](../README.md)。
+输入版本见[输入权威](PROJECT.md#输入权威与物理定义)，当前执行顺序见
+[开放动作与关闭条件](PROJECT.md#开放动作与关闭条件)。
 命令从仓库根 `simulation_repo/` 执行；尖括号为必须替换的占位路径。
 工具版本、商业执行及资源准入统一遵守[操作指南](../../../docs/OPERATIONS.md)。
 
@@ -15,16 +15,76 @@
 | 跨项目OA／IP准备和联合执行 | [统一集成入口](../../../integrations/README.md)；本页保留MR提供者及局部科学操作 |
 | 选择 native 或 COMSOL 场消费 | [场输入与碰撞](#场输入与碰撞) |
 | 构建 native bank、重载 IOB 或保留 GUI | [构建与独立验收](#构建与独立验收) |
-| 发布源、完整飞行和 P/S 调节 | [源与运行入口](#源与运行入口) |
+| 发布源、完整飞行和 P/S 调节 | [源与运行入口](#源与运行入口)；[实测源分阶段控制](#实测源的分阶段ps控制) |
 | 断点续接或 N>1 批次恢复 | [恢复与资源](#恢复与资源) |
 | 解释返回、碰撞及峰宽结果 | [事件与分析](#事件与分析) |
 | 追溯旧工作台、结果和迁移过程 | [历史与来源](#历史与来源) |
 
 ## 输入与装配
 
+### 加速器选择与接口准备
+
+MR拥有分析器设计、匹配目标、场消费合同和P/S控制；跨项目装配、接口准备与联合飞行由
+[integrations](../../../integrations/README.md)拥有。初始设计不启动求场或Fly；Finalize绑定实际新源、场并保存／重载IOB，仍不Fly。
+源表、运行FLY2和工作台必须在实际绑定阶段一致生成；设计收据不替代执行资格。当前支持范围与实际资格只查下表状态入口。
+
+| 任务 | 权威入口 | MR侧须提供或核对 |
+|---|---|---|
+| OA／IP接口设计及实际场／IOB绑定 | [接口准备与绑定](../../../integrations/docs/INTEGRATION.md#oaip接口准备与绑定)、[execute.ps1](../../../integrations/workflows/accelerator_interface/execute.ps1) | 显式provider、原始封存MR参考run；IP使用当前schema 3 matching request。Finalize消费设计阶段冻结输入，准备不等于Fly |
+| 已准备IP→MR飞行、整批恢复或重新分析 | [联合飞行与分析](../../../integrations/docs/INTEGRATION.md#已准备ipmr联合飞行)、[prepared_joint入口](../../../integrations/workflows/prepared_joint/execute.ps1) | 已完成准备包、冻结轨迹合同；结果保留源ID、仪器clock和完整母群 |
+| OA→MR完整飞行 | [OA→MR入口](../../../integrations/workflows/oa_mr/execute.ps1)及上述集成状态 | 冻结CompositionPlan及显式局部范围，OA receipt、源与MR科学合同 |
+
+[accelerator_interfaces.json](../config/accelerator_interfaces.json)只声明MR支持的provider选择与依赖，
+[IP依赖](../config/ion_processor_dependency.json)冻结producer代码与源身份；
+[匹配请求示例](../config/ion_processor_matching_request.json)供显式作者输入，不从MR锚点反推位姿。
+几何与实测六维状态使用同一直接位姿，源变换只应用一次：位置旋转平移，速度只旋转，能量与绝对时间保持。
+能量差应报告；需调压时由提供者重新求场／实测，不能在导入CSV中补加能量。
+`preserve_measured_workpoint`保留来源抬升电压，`provider_voltage_and_geometry`派生候选；
+两者均须核验实际源、候选配置、时序和场身份，设计收据不授予物理匹配或时间聚焦资格。
+替换OA后的场必须来自新装配，不能混用旧OA父场、中央层或镜边界。
+IP采用`state_handoff`，继承实测状态与到达时刻，后段为RF为零、提取脉冲保持的静态场；
+它不代表同一Fly内连续积分捕获／冷却到MR。完整母群包含上游未交接ID，不能以交接数替代分母。
+
+### MR几何与OA提供者合同
+
+[候选合同](../config/simion_candidate_two_zone.json)提供 MR 物理输入和机械约束，
+[resolved_geometry.py](../analysis/resolved_geometry.py)生成求解器无关的毫米几何；
+[native_system_geometry.py](../analysis/native_system_geometry.py)及
+[native_corridor_geometry.py](../analysis/native_corridor_geometry.py)只派生 SIMION 副本。
+GEM、PA、IOB 和 GUI 不持有下一轮可调几何真值；旧 PA 不因源码修复自动恢复有效性。
+
+坐标固定为 `z` 快速反射、`y` 慢漂移、`x` 横向聚焦。`z=0` 是中央注入／第一时间焦点
+交接面，不代表最终质量焦点或必然的空间束腰。活动完整返回使用静态 P1/P2 和关于
+`z=0` 的非重合镜像去回程；离子在 `z>0` 沿 `-z` 命中朝 `+z` 的探测面。
+首次安全离开加速器后禁止重入；回程不进入 P1，不切换棱镜电压。
+
+四块 Stripe 的物理电压分组为 `(11,12)→S1`、`(13,14)→S2`，曲线来自合同 B-spline。
+Stripe、中央接地件和棱镜屏蔽由完整实体扣除有限槽，保留真实端部连接材料；
+不能另加桥接盒或因离散化改变孔槽。接地件使用物理 ID18/20，旧拆分 ID19/21 已退役。
+`geometry_receipt` 绑定 resolved 几何、单位、坐标、电极 ID 和孔槽。
+
+加速器局部理论、几何、PA 和电压由独立 OA provider 拥有；MR 通过
+[accelerator_dependency.json](../config/accelerator_dependency.json)及
+[OA提供者入口](../../orthogonal_accelerator/simion/run_component_focus_workflow.ps1)消费统一
+`mrtof_runtime_receipt.json`。出口、grid1、repeller 沿更大的 `+z` 排列，出射沿项目 `-z`。
+组件验收直接调用该入口，显式传入本项目现有的
+`-RequestPath config/accelerator_component_request_n100.json`与
+`-ReleaseSpecPath config/accelerator_component_release_n100.json`（路径相对本项目根或使用绝对路径）。
+OA PA 以 `x=0` 为镜像面，只存半域；实例原点必须保留镜像面，重载检查 `3dplanar[x]`。
+
+`-AcceleratorProviderReceiptPath`传OA发布run的`results/mrtof_runtime_receipt.json`，
+不是某次MR飞行`simion/`中的冻结副本：入口由收据位置定位原owner的manifest、plan及resolved campaign。
+两份收据即使字节相同，也不能把MR副本的目录身份当成OA owner；子运行自行冻结消费副本。
+`-BunchSourceReceiptPath`同样传原源发布run的receipt，绑定其CSV/Fly2；不传其他飞行中的收据副本。
+
+加速器全局 y 由 `accelerator.focus_y_anchor.project_y_mm` 决定。装配读取 provider 的
+实际 PA 原点及实体包络，并与 resolved Prism2 屏蔽件、Stripe 检查净间隙；
+数值 PA 包络可为优先级而重叠，导体实体不得相交。位姿不属于独立 PA 的生成输入时，
+只新建飞行身份并重新评估残差，不据此重建 corridor family。
+
 ### IP到P1的局部距离对照
 
-`analysis/run_ip_prism_distance_study.ps1 -RunId <new-run> -ContractPath <experiment.json>`
+`projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_ip_prism_distance_study.ps1 -RunId <new-run> -ContractPath <experiment.json>`
 只求解IP出口与第一Prism的小域静电场，并在合同的`p1_exit`面停止，不进入镜组或整机闭合。
 合同显式冻结五份封存来源（几何、电压、实测出口、完整母群、提取时序）、距离列表、局部盒／网格、
 Refine精度、最大积分步长、观测面和容量承诺。`analysis/ip_prism_distance_study.py`验证并准备输入；
@@ -96,7 +156,7 @@ version 3删除未执行的作者`limits`目录限额字段：旧运行保存该
 未出生、上游未交接或已终止的粒子只有状态，不外推位置。居中显示不改变轨迹，也不证明冷却或聚焦。
 局部重启不验证上游源对新场的反馈，也不授予完整MR分辨率或数值收敛资格。
 
-跨运行的实体孔比较接口已有纯记录测试及C设计粗网格实体实飞对照，当前科学结果与圆孔碰撞表示限制见PROJECT。
+跨运行的实体孔比较接口、科学结果与圆孔碰撞表示限制见[项目状态](PROJECT.md)。
 接口复用同一Python入口的`prepare --contract <comparison.json>`及`analyze`，
 作者role为`ip_prism_recorded_aperture_comparison`，在新建分析run中消费已封存的无孔和实体孔案例；
 不通过上述原生模拟PowerShell入口，不求场、不Fly。每项`comparisons`明确`comparison_id`、
@@ -133,67 +193,63 @@ Workbench保存会同时写伴随文件，driver按公共实现恢复并核验�
 公共大文件复制验证目标SHA，不硬链接或回写来源；容量会话在复制前进入，实际小文件与所需PA总量
 超过作者承诺时拒绝复制。装配复用公共调度，按最大场完整正式观测决定并发，仅执行`assemble`。
 准备成功只证明独立文件装配完成；无`--programs`、粒子或Q覆盖参数的原生重放仍需另行验证，不能以准备状态代替。
-当前B／C／D交付已完成三次独立默认重放，完整CSV逐字段与字节一致；具名来源、全部损失及边界见PROJECT。
+各交付的默认重放、具名来源、全部损失及资格边界见[项目状态](PROJECT.md)。
 该证明不等同于GUI人工显示验收，也不自动授予以后修改的交付；每次改变控制、场或粒子后应重新验证。
 
-### 加速器选择与接口准备
 
-跨项目准备包由`instrument_assembly`拥有，独立入口为[统一准备工作流](../../../integrations/workflows/accelerator_interface/execute.ps1)。
-`-AcceleratorProvider orthogonal_accelerator`保留默认OA需求准备；
-`-AcceleratorProvider dual_pressure_rectilinear_ion_processor`选择IP的实测出口和MR匹配需求。
-选择映射由[accelerator_interfaces.json](../config/accelerator_interfaces.json)拥有，
-不会改写既有OA运行器的默认值。两条初始准备路径均不启动求场或联合飞行。
+## 场输入与碰撞
 
-```powershell
-# 两者共用一个入口；ReferenceMrRunPath必须是所选MR工作点的原始封存run目录。
-& ./integrations/workflows/accelerator_interface/execute.ps1 `
-  -AcceleratorProvider orthogonal_accelerator -ReferenceMrRunPath '<reference-MR-run>'
-& ./integrations/workflows/accelerator_interface/execute.ps1 `
-  -AcceleratorProvider dual_pressure_rectilinear_ion_processor `
-  -ReferenceMrRunPath '<reference-MR-run>' -IonProcessorRunPath '<complete-IP-run>' `
-  -MatchingRequestPath '<explicit-schema-2-request.json>'
-```
+完整飞行复用四个 Workbench 角色，优先级为
+`global_fallback → native_corridor → accelerator → detector`。
+保存后必须重载并用实际重叠区 `wb:find_at` 检查，不能只相信合同表或显示顺序。
 
-IP路径由版本化[依赖](../config/ion_processor_dependency.json)冻结producer代码与实际源身份，
-使用公共component_particle_state v1保留逐ID六维状态、仪器绝对时间、谱系和完整母群census。
-IP设计必须显式选择schema 2请求；它以路径引用root配方，冻结时建立身份，不从MR锚点反推位姿。
-几何与源共用该直接native位姿；源表示转换合成后只应用一次，位置旋转并平移，速度只旋转，能量和到达时间保持。
-[MR匹配需求示例](../config/ion_processor_matching_request.json)从所选冻结MR运行读取实际轴向出口能量，
-允许IP调节原生电压、几何和时序；修改后必须重新求场／实测验收，不在导入CSV中补加能量。
-重放已有实测工作点时，所选请求的
-`policies.energy_adjustment="preserve_measured_workpoint"`保持来源抬升电压并报告与MR目标的差值。
-`provider_voltage_and_geometry`策略仍派生候选电压；finalize只消费设计阶段冻结的请求和配方，不重新选择活动输入或再次派生抬升。
-保留策略仍须通过实际源与候选配置的完整身份检查，不能替代几何、时序或场一致性验证。
+| 消费方式 | 场的来源 | 输入与限制 |
+|---|---|---|
+| native Fast Adjust | 已发布全走廊 response-bank，加独立 OA/detector PA | `-NativeCorridorBankRunPath` 与 `-NativeSystemRuntimeBundlePath` 配套；电压表按实际 bank 通道映射 |
+| native 静态父／局域 PA | 固定工作电压的原生 Refine 场，通过有序局窗消费 | `-FieldBindingPath`；完整数值身份与独立碰撞角色绑定，不能对已裁剪 PA 重求原问题 |
+| COMSOL 标量场 | 已封存标量 V、valid mask 及有序局窗，通过原生 `field_array` 消费 | `-FieldBindingPath`；完整电压、几何、网格及装配身份必须相符，不可只改 Fast Adjust 代替更新外场 |
 
-输出`results/accelerator_interface_preparation.json`、IP分支的`results/mrtof_handoff/`及`results/joint_flight/`供审阅。
-后者包括`assembly/`的新GEM／数值场计划及器件候选配置，以及参考materialization和数值合同。
-设计阶段保留实测handoff作为来源依据，源程序、FLY2及工作台运行文件由后续finalize绑定新实测源与新场时生成。
-`provider_execution_recipe.json`指向原IP的`run_functional.ps1 -ConfigurationDirectory`，后续可通过原公共调度器
-自动并发验证候选N100，参数和默认基线隔离。准备阶段仅以SIMION 2020附带的普通`lua.exe`计算原电压时序，不调用求解器。
+native 路径中 corridor 承担可调分析器场，global fallback 提供低优先级完整几何。
+COMSOL 路径使用独立碰撞 PA；其电极标签、Workbench 场查询和事件 `ion_volts`
+不代表实际 COMSOL 电势。外场、碰撞几何和 detector 命中必须分别验证。
 
-`build_native_corridor_iob.lua --measured-source <workbench_build.lua>`实现IP的四个角色
-`global_fallback → native_corridor → ion_processor_collision → detector`；旧OA四角色协议保持。
-局部碰撞网格对照可在原四角色后追加显式`analyzer_collision_patch`，使用已有五实例种子；
-它在完整盒内接管碰撞判定，包括真空，实际电场仍由同一标量场回调提供。
-独立IP细碰撞PA避免0.5/1/1 mm背景网格漏掉薄辅助电极；细网格0.05/0.10/0.05 mm覆盖完整15电极。
-场输入必须全部来自替换OA后的新装配，不能混用旧OA的父场、中央层或镜边界。
-全域碰撞GEM保留金属，移除数值边界接地面；网格表达不等于数值收敛资格。
-先以候选配置重新求场／验证IP出口，再发布新的实测交接源，并求解封存全部新场和核验IOB重载优先级后，方可绑定真实资产。
-设计收据不授权飞行。已有新实测N100与新场后，沿同一入口执行：
+原生静态 provider 请求通过 `numerical_contract_path` 引用实际数值合同；停止值唯一来自
+`simion.numerical_profiles.native_static_field.refine.convergence_v`，父场与局域场各执行一次 Refine。
+加载、封存投影及同电压复用同时核对该数值身份；改变停止配置不能继续静默复用旧默认 PA。
+该`refine`对象可显式声明Boolean `skipped_point`，沿父场CLI和局域`pa:refine`贯通，
+并以`refine_skipped_point`纳入场／响应身份；省略时保留安装版默认，显式策略不与省略策略混用。
+finalize的`-ContractPath`可显式运输这一Boolean策略变化，在`native_refine_change`记录前后解析身份，
+随后核对实际新场的全部层与所选执行合同一致。省略、true和false保持不同身份；
+convergence、网格与其余物理／数值字段不在这项允许变化内，不能把旧场绑定到新策略。
+依据为SIMION 2020安装手册`docs/simion.chm::/lua_simion.pas.html`、`refine --help`及
+[官方高级Refine选项](https://simion.com/info/calculation_time.html)（2026-10-19查阅）；
+该受支持选项是数值诊断控制，不代表已证明能消除NaN或达到场精度。
+新Refine标量场发布binding前自动逐块核验全部节点的有限性和合法电压编码，
+保存`results/pa_payload_validation.json`；原生日志完成或很小的Delta不能替代这项检查。
+场描述文件按原字节冻结并核验原owner，不以JSON重新排版替代其封存身份。
+复用场不重复扫描；组合路径沿用已有逐块检查，碰撞占据数组仍走独立格式边界。
+当前接线与数值资格分别见 PROJECT，配置可执行不代表其精度已经验证。
 
-```powershell
-& ./integrations/workflows/accelerator_interface/execute.ps1 `
-  -FinalizeJointWorkbench -AcceleratorProvider dual_pressure_rectilinear_ion_processor `
-  -PreparedInterfaceRunPath '<prepared-design-run>' -JointFieldRunPath '<new-IP-assembly-field-run>' `
-  -IonProcessorRunPath '<new-complete-IP-run>' -ReferenceMrRunPath '<same-reference-MR-run>'
-```
+历史算子祖先与当前实际消费PA分开验证：只有已完成、精确匹配公共退役收据且受原manifest绑定的历史标量／surface允许缺席。
+读取器保留其原封存identity、几何、电压和完整算子来源；当前运行真正加载的PA仍逐项核验，不能用历史退役收据豁免。
+历史binding原件及run-local冻结副本分别按各自实际owner的inputs／outputs封存记录校验bytes与SHA，随后要求完整JSON字典等价；
+CRLF／LF等序列化差异须先通过各自字节身份，再比较完整JSON；不能冒用另一文件的record，也不能忽略身份。
+该来源校验已完成真实退役后严格复验，算子及种子frozen_problem身份保持；后续运行manifest冻结所消费的来源投影。
+IP完整五层普通场、已物化场及纯响应的历史证明可以递归经过混合owner的细场扩域／响应复用。
+每个退役owner仍须有精确五组scalar／surface的十项删除身份与有效公共收据，保留的元数据逐项核验；
+读取器按新细场owner定位扩域声明，不把其旧parent owner当作整个声明的owner。
+这条路径不允许用已退役响应参与新的PA组合，也不适用于OA局部载荷退役。
+这只维持非活动算子祖先的可追溯性；引用已退役PA的历史IOB须重新物化，不能据此宣称仍可直接重放。
 
-该模式重新导出实测源、绑定全部新PA，调用SIMION CLI保存／重载IOB并检查三处实际重叠优先级；不执行Fly。
-需要让新IOB复现积分步长对照时，同一finalize入口接受`-ContractPath`：冻结所选合同和历史参考，
-复用prepared trial的数值／预算校验，生成一致的参考与实际runtime；源、场、Q及物理定义保持原权威。
-场描述文件按原字节冻结，既有加载器继续核验其原owner封存，不以JSON重新排版产生另一种副本。
-它保留原设计电压，不从新出口再次自动派生抬升。配置／场身份检查不代表能量或时间聚焦验收。
-用户要求只报告能量差，`centroid_match_accepted=null`，六维匹配与时间聚焦均不赋予资格。
+探测器 GEM 使用 ID25 建立物质掩码；[build_component_pa.lua](../simion/build_component_pa.lua)
+在 `INITIALIZE=0` 时置零电势并保留电极标志，不把 ID25 当成 25 V。
+该数值终止面不等同于已验证的物理探测器，原生终止与事件面须逐次核对。
+
+### 局部数值域、碰撞与消费表示
+
+以下是MR原生场提供者的请求合同，入口为
+[run_native_static_field_provider.ps1](../simion/run_native_static_field_provider.ps1)；
+跨项目Finalize和飞行仍由[接口准备与绑定](../../../integrations/docs/INTEGRATION.md#oaip接口准备与绑定)负责。
 
 同一公共`run_native_static_field_provider.ps1`还接受ordinary IP细窗下游扩域请求：
 在既有schema 1 provider request中声明
@@ -214,41 +270,6 @@ IP设计必须显式选择schema 2请求；它以路径引用root配方，冻结
 几何、完整求解网格、父链、实际停止条件和全部纯激励电压。新fine以旧纯响应parent作Dirichlet边界，
 其余四层保持旧owner；碰撞资产继承扩域ordinary场，不重建碰撞PA。新basis的source authority来自
 扩域ordinary，`response_level_reuse`由新fine owner封存；最终仍须通过完整算子校验，且禁止直接Fly。
-联合实测源飞行由直属`prepared_joint`工作流消费已完成的联合准备包；
-普通OA飞行主体已迁至[直属OA→MR入口](../../../integrations/workflows/oa_mr/execute.ps1)，旧trial入口已删除。
-两种新owner飞行均尚未完成真实运行验证，历史飞行不替代迁移验收：
-
-```powershell
-& ./integrations/workflows/prepared_joint/execute.ps1 `
-  -PreparedJointWorkbenchRunPath '<completed-joint-workbench-preparation-run>' `
-  -ContractPath '<same-frozen-trajectory-contract-with-explicit-recording>' -RunId '<new-run-id>'
-```
-
-该参数组允许增加轨迹观测配置，或通过原预算校验器显式增大累计候选上限。
-同源、同场积分诊断也可在新`ContractPath`中只改变当前默认trajectory profile的`maximum_step_us`；
-profile选择、trajectory quality、超时及其他科学字段保持。编译器将解析值写入实际master／batch sidecar，
-以其SHA绑定调度case，记录原数值、所选profile及步长差异，不以CLI覆盖第二份数值权威。
-准备收据分别记录原准备合同和实际执行合同身份，不能同时改变源、场、电压或积分设置。公共调度器先观测正式首批，再自动重规划；
-每批独立FLY2和局部序号共享原instrument epoch，输出保留原始ID，合并不施加OA offset。
-镜场可按冻结数值合同已有`stored_xmax_mm`派生显式`memory_consumer_crop`；源PA完整尺寸、
-消费尺寸及完整插值halo均记录在本次收据。使用官方`pa:crop(...,false)`仅裁进程内的非Workbench镜场对象，
-保留原active box、原点、实际pitch及fractional表面，不保存或Refine源PA；二次加载须复用裁后对象。
-该消费范围不成为新的求解边界。指定`-TrajectoryEquivalenceReferenceRunPath`时，冻结已验证参考运行的首批记录，
-在终态前比较同ID的全部事件和轨迹观测；这是消费表示验证，不代表Prism物理匹配。
-依据为[官方PA API兼容记录](https://simion.com/info/lua_simion.pas.html)的8.1.1.22起crop表面信息保留／persist参数，
-及本项目已实测的`crop_native_static_field.lua`路径（SIMION 2020，2026-10-16查阅）；不采用较新版本专有能力。
-完整母群包括上游未交接粒子，不能用交接数替代初始母群分母。默认后处理产生Prism相空间、
-自动分时空间云、母群与损失图及逐损失原始行证据；没有到达某观察面时报告缺失，不补造轨迹。
-候选场重建的builder从独立`measured_source/source.fly2`读取粒子定义，在保存IOB后恢复运行用`joint.fly2`，
-避免`wb:save`以种子定义覆写同名文件。原批次合并收据绑定实际Fly使用的FLY2、逐批收据、日志及完整ID覆盖；
-默认诊断沿该收据验证逐粒子出生时间，只在内存中组合发射证据，不改写已冻结的准备输入。
-
-默认还输出`loss_acceptance.csv`及英文`loss_acceptance`组合图：全母群连接原交接六维状态、
-速度计算的各方向能量、首缺记录阶段、连续几何接触候选和拓扑终止；无上游交接态时留空。
-碰撞投影含IP原生电极及检测器，提前接触检测器仍受原完整返回事件判据约束。
-`mirror_domain_samples.csv`与`mirror_x_boundary_crossings.csv`保存实际细镜窗口内外采样及每次有符号x边界
-跨越前后状态。它们是记录和数值域证据，不把跨界本身当作电场跳变，也不复用质心容差作为整束接受度门槛。
-几何图是轮廓投影，孔不以白填充擦除其他部件，有限方向孔的投影不冒充真实布尔截面。
 
 碰撞离散的局部修正沿同一`run_native_static_field_provider.ps1`声明`collision_overlay_update`：
 指定`box_mm`、`pitch_mm`及金属／真空、盒内外的`priority_probes`，不与改压或几何请求混合。
@@ -260,16 +281,171 @@ profile选择、trajectory quality、超时及其他科学字段保持。编译�
 [GEM接口](https://simion.com/info/gem_geometry_file.html)，实际版本为SIMION 2020；这是基于官方接口的项目局部碰撞表示，
 其适用范围由同源步长对照及修正后的真实飞行证据分别限定。
 
-IP分支采用`state_handoff`，继承实测六维状态和到达时刻，后段采用RF为零、提取脉冲保持的静态装配场。
-这不是同一Fly内连续积分捕获／冷却到MR。分析入口为`measured_component_analysis.analyze_measured_component`，
-以原始ID和全部母群闭合；不能再套OA批次offset恢复ID。z=0观察面不自动作为接地端口或时间焦点。
-需要检测峰宽与时间等效分辨率时，在原`peak_analysis`中保持公共KDE的方法、settings和定义，
-声明`time_basis="instrument_arrival_minus_common_extraction_pulse_us"`及`common_time_reference`：
-它包含源的`clock_epoch_id`、原生`native_timing.json`的标准文件记录`timing`和`field="pulse_start_us"`。
-准备与实飞入口校验该记录的字节、SHA、epoch及脉冲先于全部交接时刻；所有检测命中减去同一个脉冲时刻，
-不逐离子减交接时刻，也不把捕获／冷却等待计入TOF分子。默认诊断在`results/diagnostics/population/`
-输出`detector_peak_samples.csv`、可计算时的`detector_peak_spectrum.csv`、英文PNG／SVG与metadata。
-R仅表示检测幸存子群的时间等效值，和母群／交接群透过率同时报告；少于三命中或零方差时明确不可计算。
+`build_native_corridor_iob.lua --measured-source <workbench_build.lua>`实现IP的四个角色
+`global_fallback → native_corridor → ion_processor_collision → detector`；旧OA四角色协议保持。
+局部碰撞网格对照可在原四角色后追加显式`analyzer_collision_patch`，使用已有五实例种子；
+它在完整盒内接管碰撞判定，包括真空，实际电场仍由同一标量场回调提供。
+独立IP细碰撞PA避免0.5/1/1 mm背景网格漏掉薄辅助电极；细网格0.05/0.10/0.05 mm覆盖完整15电极。
+场输入必须全部来自替换OA后的新装配，不能混用旧OA的父场、中央层或镜边界。
+全域碰撞GEM保留金属，移除数值边界接地面；网格表达不等于数值收敛资格。
+
+镜场可按冻结数值合同已有`stored_xmax_mm`派生显式`memory_consumer_crop`；源PA完整尺寸、
+消费尺寸及完整插值halo均记录在本次收据。使用官方`pa:crop(...,false)`仅裁进程内的非Workbench镜场对象，
+保留原active box、原点、实际pitch及fractional表面，不保存或Refine源PA；二次加载须复用裁后对象。
+该消费范围不成为新的求解边界。指定`-TrajectoryEquivalenceReferenceRunPath`时，冻结已验证参考运行的首批记录，
+在终态前比较同ID的全部事件和轨迹观测；这是消费表示验证，不代表Prism物理匹配。
+依据为[官方PA API兼容记录](https://simion.com/info/lua_simion.pas.html)的8.1.1.22起crop表面信息保留／persist参数，
+及本项目已实测的`crop_native_static_field.lua`路径（SIMION 2020，2026-10-16查阅）；不采用较新版本专有能力。
+
+普通PA长度依据SIMION 2020安装包官方`lib/python/SIMION/PA.py`的load/save实现核对（Pulsar Physics，
+2026-10-16查阅）：单位网格mode −1使用32字节头，非单位网格mode −2另存三个double间距，头长56字节。
+场编译器据此预测节点载荷长度，保留严格长度核验；不因检测器单位网格而放宽格式检查。
+
+### COMSOL 标量、响应组合与固定点物化
+
+普通冻结标量消费、响应组合和固定点物化分别核验，当前证据与资格见
+[电场表示与数值资格](PROJECT.md#电场表示与数值资格)；旧mesh3试验不能替代会聚mesh1/mesh2资格。
+以下模块及runner接线随项目源码统一纳管；实际运行还须具备显式冻结的本机场资产。
+复用命令前按冻结候选确认资产、模块和实际参数，不从源码可用推定物理资格。
+`analysis/static_field_binding.py`解析已封存场，`simion/scalar_field_adapter.lua`只在有效支撑内查询。
+局窗按有序列表、包含边界、首个匹配窗口接管；必须保留梯度支撑 halo。
+窗内未知值不回退基场、不补零；覆盖越界、未知 mask 或非有限值是数值失败。
+
+普通`-FieldBindingPath`消费以冻结场的完整电压为权威；省略`-Stripe1VoltageV/-Stripe2VoltageV`时，
+当前工作区入口先取该场的S值，再检查接地线性Stripe条件，不提前采用旧Stripe种子的偏压。
+显式S参数须成对提供且与场权威相符；这一缺省行为不放开改压，也不修改其他电压、源或观察定义。
+
+| 能力 | 与普通固定场消费的区别／资格 |
+|---|---|
+| 冻结标量场消费 | 读取既有V/mask及局窗，使用原trial真实飞行；成功终态不代表轨迹闭合 |
+| 变压provider与响应组合 | 分别生产新电压场、或组合已验证增量；须有对应几何、离散和实际电压范围的独立证据 |
+| 固定点物化 | 将选定组合表示保存为新标量PA；计划生成不等于物化已执行，物化成功也不授FEM／性能资格 |
+
+电极仿射组合在既有binding内声明基场、单因素增量及目标电压；
+系数由实际电压差派生，逐项保持网格、mask、sheet、窗口和固定物理身份。
+场线性不代表轨迹线性；新电压必须通过同一完整飞行入口检验。
+固定点物化复用公共 standalone composer，输出新标量 PA，保留原 mask 和所有局窗。
+两种组合表示均明确标为探索性；实际对照、速度、内存及资格见
+[电场表示与数值资格](PROJECT.md#电场表示与数值资格)，不由文件存在推定。
+
+已准备联合包的数值对照沿直属入口的`-ContractPath`声明，准备收据分别绑定原准备合同与执行合同。
+只允许已实现的轨迹观测、累计候选预算或当前默认profile的`maximum_step_us`变化；
+源、场、电压、profile选择、trajectory quality、超时及其余科学字段保持，不能借诊断改动重定义原问题。
+编译结果写入实际master／batch sidecar并由SHA绑定，记录前后数值，不另加CLI数值权威。
+
+以下命令只验证／解析 binding，或生成物化计划；不会运行 COMSOL、SIMION 或写 PA。
+物化计划必须由受管运行执行和封存，再消费其 manifest；不得覆盖输入 PA。
+
+```powershell
+.\.venv\Scripts\python.exe -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding --binding '<binding.json>'
+.\.venv\Scripts\python.exe -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding `
+  --binding '<response-binding.json>' --composition-plan '<run>/inputs/composition-plan.json' `
+  --composition-output-directory '<run>/simion'
+```
+
+同模块支持配对查询请求：`--compare-binding`、`--samples`、`--sampling-request`、
+`--comparison-output` 必须成组提供，不能与物化计划混用；它只生成请求，不提供实际场对照。
+GUI 对等不能由 `efield_adjust` 回调推定，最终交付仍须满足实际所用表示的独立验收。
+
+## 构建与独立验收
+
+[run_native_corridor_response_bank.ps1](../simion/run_native_corridor_response_bank.ps1)组织 native bank
+生成，调用公共 PA transaction 完成 Refine、inventory、封存和发布。
+底层 transaction 编排见 [run_native_corridor_qualification.ps1](../simion/run_native_corridor_qualification.ps1)。
+[native_corridor_identity.py](../analysis/native_corridor_identity.py)定义项目 family 身份；
+物理到局部 ID 映射和响应数量来自冻结 plan，不在本文固定某次 bank 的数量。
+
+响应成员遵守原生 Fast Adjust 的 `10000 V` 参考归一化，不能把 1 V 文件当原生 `.paN`。
+发布前在精确私有 family 上验证非零电压表及关闭／重开，最终 inventory 绑定持久字节和验证证据。
+公共 transaction 是 payload、scratch、发布指针和容量账本的唯一 owner；
+项目不维护第二份 PA 生命周期。缓存命中不得再做 GEM、Refine 或大 PA 复制。
+
+原生响应固定点物化使用项目内的
+[`standalone_pa_composition.py`](../analysis/standalone_pa_composition.py)，尚未取得跨项目公共化资格。
+它按有界float64块组合普通`.pa`，保留电极标志，要求网格及fractional伴随数据一致；
+不Refine、不读取原生family、不修改输入。新PA及sidecar关闭前各执行一次`flush()`和`os.fsync()`；
+刷新失败由owner保留私有残留并失败收尾，不返回成功或重试。
+[Python 3.11官方说明](https://docs.python.org/3.11/library/os.html#os.fsync)要求先刷新Python流，
+Windows使用`_commit`（查阅2026-10-13）；这不保证硬件缓存持久化或场精度，发布仍由公共manifest负责。
+
+[build_native_corridor_iob.lua](../simion/build_native_corridor_iob.lua)仅装配已封存四角色，
+检查位姿、网格、对称性及真实重叠优先级。先保存 IOB，再做 Fast Adjust，
+避免 Workbench 保存尝试回写脏 PA；日志中的保存错误即使进程 exit0 也判失败。
+原生电压更新一次提交完整通道表，不逐区合成或保存 published PA。
+
+`-RetainGuiWorkbench` 在共享 native runtime checkpoint 语境下保留
+`simion/gui_workbench/` 的 IOB、Fly2、Lua 和小型收据，飞行后绑定稳定只读 PA。
+没有要求的共享 checkpoint 时不得为 GUI 重建整套 family；实际模式限制以入口校验为准。
+GUI 重载通过只证明装配可检查，不能代替场精度、飞行或性能资格。
+候选场builder从独立`measured_source/source.fly2`读取粒子定义，保存IOB后恢复运行用`joint.fly2`，
+避免`wb:save`覆写同名文件。批次合并收据绑定实际FLY2、逐批收据、日志及ID覆盖；
+后处理只在内存组合发射证据并核验出生时间，不改写冻结准备输入。
+
+[单中心步长对照](../analysis/run_single_center_timestep_convergence.ps1)要求三份 success
+run 的几何、PA、电压、源、程序、脉冲和自然回程身份相同，仅最大 trajectory step 不同。
+分析报告目标 K、回程转折及 detector 的相空间差，不自行设置通过阈值。
+静态入口 [verify_project.ps1](../verify_project.ps1) 不启动商业软件；真实 SIMION、
+GUI 重载及正式资格属于不同验证层，不能互相替代。
+
+## 源与运行入口
+
+所有入口消费本次冻结合同、源及 PA／field 身份；参数全集见各脚本 `param`。
+下面标为飞行、建场或调焦的入口会运行商业软件；分析、源发布及计划生成不运行 SIMION。
+
+| 任务 | 入口 | 必需输入与输出范围 |
+|---|---|---|
+| OA 组件验收 | [OA提供者入口](../../orthogonal_accelerator/simion/run_component_focus_workflow.ps1) | 显式使用本项目现有request／release；provider receipt不授予整机资格 |
+| N=1 或 N>1 OA→MR完整飞行 | [直属oa_mr/execute.ps1](../../../integrations/workflows/oa_mr/execute.ps1) | 冻结装配plan、几何、镜、Stripe、OA receipt、P1/P2电压及一种场消费输入；资格见集成状态 |
+| 束团源发布 | [run_publish_bunch_source.ps1](../analysis/run_publish_bunch_source.ps1) | `-SourceDefinitionPath`、`-GeometryContractPath`、`-AcceleratorProviderReceiptPath`；发布 CSV/Fly2/receipt |
+| P/S 四列单步审计 | [run_downstream_fixed_grid_workpoint.ps1](../analysis/run_downstream_fixed_grid_workpoint.ps1) | baseline 与四个独立单轴扰动 manifest，输出有界电压提议 |
+| P/S 自动重闭合 | [run_downstream_workpoint_iteration.ps1](../analysis/run_downstream_workpoint_iteration.ps1) | 唯一初始工作点、seed 或 continuation；独立 child 飞行及控制器记录 |
+| native 束团筛选 | [run_native_corridor_bunch_screening.ps1](../analysis/run_native_corridor_bunch_screening.ps1) | 同一 checkpoint、冻结静态 cohort；受控小样本不提供正式峰宽 |
+| native Candidate／TE1 链 | [run_native_candidate_chain.ps1](../analysis/run_native_candidate_chain.ps1) | 已接受中心工作点、common 源及相同前缀的 baseline/调焦比较 |
+| K/y campaign | [run_native_candidate_campaign.ps1](../analysis/run_native_candidate_campaign.ps1) | [工况表](../config/native_candidate_campaign_k_y_scan.json)；发布统一 comparison |
+| 源 z／能量／末段时序分析 | [run_source_z_energy_timing_diagnostic.ps1](../analysis/run_source_z_energy_timing_diagnostic.ps1) | 完整 success flight；只读诊断，无新飞行 |
+| 固定关断时钟冻结 | [run_freeze_bunch_pulse_schedule.ps1](../analysis/run_freeze_bunch_pulse_schedule.ps1) | 同源完整静态 pilot，发布 schedule；不证明脉冲已真实执行 |
+
+P/S 单步审计的五个 manifest 参数为 `-BaselineManifest`、`-Stripe1PerturbationManifest`、
+`-Stripe2PerturbationManifest`、`-Prism1PerturbationManifest`、`-Prism2PerturbationManifest`。
+单轴场与轨迹须按该入口合同保持共同冻结问题；边界、尺度、信赖步及停机规则由
+`downstream_fixed_grid_workpoint_profile` 派生，不从命令行另设一套数值。
+提议不是通过资格，必须真实飞行检验。
+
+自动迭代的 `-InitialWorkpointManifest`、`-SeedTrialManifest`、`-ContinuationRunManifest`
+三选一。native 模式使用 bank/bundle；COMSOL 模式使用 `-FieldProviderRequestPath` 和冻结
+`-CenterSourceReceiptPath`，不得混入 native family/checkpoint 或 OA pulse。
+同目标已完成场可通过 `-CompletedFieldProviderManifest` 显式复用；
+`-ResponseFieldBindingPath` 声明探索性 S 响应，不能据此外推其他未声明电压。
+静态 seed 分阶段提取 P 前闭合、同锚 S 响应及完整返回；阶段通过不等于整机通过，
+下游缺事件不补零，不把旧轨迹 Jacobian 当新锚点已验证导数。
+
+native Candidate 链的受控焦点对及回退区间只供导数，不混入正式体积源峰宽。
+实际 cohort、收集门槛和有限回退规则来自冻结合同；达到退出条件即停止该工况。
+同一母队列前缀比较收集率、TOF 和 FWHM，不删损失、不去趋势、不凭单次最佳结果晋升。
+活动任务的样本、TE1 范围及源参数见
+[OA真实源与束团证据](PROJECT.md#oa真实源与束团证据)，不从历史配置推定。
+
+解析电压链使用 [run_target_operating_point_chain.ps1](../analysis/run_target_operating_point_chain.ps1)，
+从同一合同串接镜 exact-K 与双 Stripe 反演。P1/P2 分段射击继续使用
+[coverage](../analysis/run_two_prism_segmented_coverage.ps1)、
+[continuation](../analysis/run_two_prism_segmented_continuation.ps1)：continuation 只追踪
+冻结的单一事件签名，理论覆盖点不能直接称为真实三维工作点。
+
+### 控制器职责与普通S恢复策略
+
+[downstream_workpoint_iteration.py](../analysis/downstream_workpoint_iteration.py)拥有物理残差、模型和有界提议；
+[workpoint_controller_state.py](../analysis/workpoint_controller_state.py)统一计算电压档位、候选接受／回退、
+档位复位及局部模型恢复状态转移。PowerShell负责身份验证、实际执行、冻结输入与检查点发布，不复制这些决策公式。
+`Complete-StagedTrial`及其决策／provider核验helper显式接收Context；合同、目标、proposal、handoff、
+run与artifact路径取自本次上下文，handoff复制后重绑冻结副本，不从同名脚本全局变量补取。
+
+普通S局部模型恢复使用[local_model_recovery_policy.json](../config/local_model_recovery_policy.json)，
+默认3轮、12探针预算；可由`-LocalModelRecoveryPolicyPath`显式选择经校验的策略，并冻结到本次run inputs。
+步长与coarse／medium／fine的缩减比例仍由科学合同的`jacobian_relative_step_tiers`派生，
+探针、预算和已接受锚点按检查点延续。该策略不用于下述prepared P/S分阶段控制；后者的候选预算和停止边界来自其冻结合同。
+恢复版本与显式导入规则见[恢复与资源](#恢复与资源)。
+
+### 实测源的分阶段P/S控制
 
 更换实测源或数值场后，源专属工程目标可由`measured_component_source.author_measured_centroid_prism_target`
 消费已核验的同场birth／clean电势审计及控制投影，保留MR设计Ws并用原L0模型自洽反解fast／slow参考。
@@ -329,226 +505,6 @@ Python先核对冻结字节数与SHA再执行原校验，避免完整几何使Wi
 按真实`compose`或`refine`身份沿原公共owner退役；准入、依赖或活动TTL拒绝时保存容量／生命周期检查点，
 保留原保护与原始轨迹证据，不私自删除PA。最终完整闭合与N100验证仍为后续独立资格步骤。
 
-官方接口依据（Pulsar Physics，SIMION在线说明／2020附带Lua，2026-10-16查阅）：
-[Time](https://simion.com/info/time.html)定义TOB、绝对TOF及粒子年龄；
-[User Programming Tricks](https://simion.com/docs/advanced_class/11-user_programming_tricks.pdf)的保留变量表限制TOF写入阶段。
-本实现以FLY2保留逐离子TOB，在initialize只设置支持的初态／TOB，不写TOF；普通Lua回调测试不替代SIMION真实载入验收。
-Workbench实际API沿现有装配入口复用，实际新包的重载证据按具名run收据查询。
-实测源helper只接受显式ordinal并返回初态，保留变量的读写在Workbench的`segment.initialize`中执行；
-普通`loadfile`模块不能假设继承Workbench环境。官方[Lua Variables](https://simion.com/info/lua_scope.html)说明环境隔离，
-[变更记录](https://simion.com/info/changes.html)的8.0.4手册L-31条及本机SIMION 2020
-`examples/collision_hs1/README.html`、`test2.lua`区分`simion.import`与普通加载（2026-10-16查阅）。
-这里采用显式参数的纯数据模块，不让普通模块直接读写`ion_*`；在线页的较新标题不扩展为新版功能资格。
-
-普通PA长度依据SIMION 2020安装包官方`lib/python/SIMION/PA.py`的load/save实现核对（Pulsar Physics，
-2026-10-16查阅）：单位网格mode −1使用32字节头，非单位网格mode −2另存三个double间距，头长56字节。
-场编译器据此预测节点载荷长度，保留严格长度核验；不因检测器单位网格而放宽格式检查。
-
-[候选合同](../config/simion_candidate_two_zone.json)提供 MR 物理输入和机械约束，
-[resolved_geometry.py](../analysis/resolved_geometry.py)生成求解器无关的毫米几何；
-[native_system_geometry.py](../analysis/native_system_geometry.py)及
-[native_corridor_geometry.py](../analysis/native_corridor_geometry.py)只派生 SIMION 副本。
-GEM、PA、IOB 和 GUI 不持有下一轮可调几何真值；旧 PA 不因源码修复自动恢复有效性。
-
-坐标固定为 `z` 快速反射、`y` 慢漂移、`x` 横向聚焦。`z=0` 是中央注入／第一时间焦点
-交接面，不代表最终质量焦点或必然的空间束腰。活动完整返回使用静态 P1/P2 和关于
-`z=0` 的非重合镜像去回程；离子在 `z>0` 沿 `-z` 命中朝 `+z` 的探测面。
-首次安全离开加速器后禁止重入；回程不进入 P1，不切换棱镜电压。
-
-四块 Stripe 的物理电压分组为 `(11,12)→S1`、`(13,14)→S2`，曲线来自合同 B-spline。
-Stripe、中央接地件和棱镜屏蔽由完整实体扣除有限槽，保留真实端部连接材料；
-不能另加桥接盒或因离散化改变孔槽。接地件使用物理 ID18/20，旧拆分 ID19/21 已退役。
-`geometry_receipt` 绑定 resolved 几何、单位、坐标、电极 ID 和孔槽。
-
-加速器局部理论、几何、PA 和电压由独立 OA provider 拥有；MR 通过
-[accelerator_dependency.json](../config/accelerator_dependency.json)及
-[OA提供者入口](../../orthogonal_accelerator/simion/run_component_focus_workflow.ps1)消费统一
-`mrtof_runtime_receipt.json`。出口、grid1、repeller 沿更大的 `+z` 排列，出射沿项目 `-z`。
-组件验收直接调用该入口，显式传入本项目现有的
-`-RequestPath config/accelerator_component_request_n100.json`与
-`-ReleaseSpecPath config/accelerator_component_release_n100.json`（路径相对本项目根或使用绝对路径）。
-OA PA 以 `x=0` 为镜像面，只存半域；实例原点必须保留镜像面，重载检查 `3dplanar[x]`。
-
-`-AcceleratorProviderReceiptPath`传OA发布run的`results/mrtof_runtime_receipt.json`，
-不是某次MR飞行`simion/`中的冻结副本：入口由收据位置定位原owner的manifest、plan及resolved campaign。
-两份收据即使字节相同，也不能把MR副本的目录身份当成OA owner；子运行自行冻结消费副本。
-`-BunchSourceReceiptPath`同样传原源发布run的receipt，绑定其CSV/Fly2；不传其他飞行中的收据副本。
-
-加速器全局 y 由 `accelerator.focus_y_anchor.project_y_mm` 决定。装配读取 provider 的
-实际 PA 原点及实体包络，并与 resolved Prism2 屏蔽件、Stripe 检查净间隙；
-数值 PA 包络可为优先级而重叠，导体实体不得相交。位姿不属于独立 PA 的生成输入时，
-只新建飞行身份并重新评估残差，不据此重建 corridor family。
-
-## 场输入与碰撞
-
-完整飞行复用四个 Workbench 角色，优先级为
-`global_fallback → native_corridor → accelerator → detector`。
-保存后必须重载并用实际重叠区 `wb:find_at` 检查，不能只相信合同表或显示顺序。
-
-| 消费方式 | 场的来源 | 输入与限制 |
-|---|---|---|
-| native Fast Adjust | 已发布全走廊 response-bank，加独立 OA/detector PA | `-NativeCorridorBankRunPath` 与 `-NativeSystemRuntimeBundlePath` 配套；电压表按实际 bank 通道映射 |
-| native 静态父／局域 PA | 固定工作电压的原生 Refine 场，通过有序局窗消费 | `-FieldBindingPath`；完整数值身份与独立碰撞角色绑定，不能对已裁剪 PA 重求原问题 |
-| COMSOL 标量场 | 已封存标量 V、valid mask 及有序局窗，通过原生 `field_array` 消费 | `-FieldBindingPath`；完整电压、几何、网格及装配身份必须相符，不可只改 Fast Adjust 代替更新外场 |
-
-native 路径中 corridor 承担可调分析器场，global fallback 提供低优先级完整几何。
-COMSOL 路径使用独立碰撞 PA；其电极标签、Workbench 场查询和事件 `ion_volts`
-不代表实际 COMSOL 电势。外场、碰撞几何和 detector 命中必须分别验证。
-
-原生静态 provider 请求通过 `numerical_contract_path` 引用实际数值合同；停止值唯一来自
-`simion.numerical_profiles.native_static_field.refine.convergence_v`，父场与局域场各执行一次 Refine。
-加载、封存投影及同电压复用同时核对该数值身份；改变停止配置不能继续静默复用旧默认 PA。
-该`refine`对象可显式声明Boolean `skipped_point`，沿父场CLI和局域`pa:refine`贯通，
-并以`refine_skipped_point`纳入场／响应身份；省略时保留安装版默认，显式策略不与省略策略混用。
-finalize的`-ContractPath`可显式运输这一Boolean策略变化，在`native_refine_change`记录前后解析身份，
-随后核对实际新场的全部层与所选执行合同一致。省略、true和false保持不同身份；
-convergence、网格与其余物理／数值字段不在这项允许变化内，不能把旧场绑定到新策略。
-依据为SIMION 2020安装手册`docs/simion.chm::/lua_simion.pas.html`、`refine --help`及
-[官方高级Refine选项](https://simion.com/info/calculation_time.html)（2026-10-19查阅）；
-该受支持选项是数值诊断控制，不代表已证明能消除NaN或达到场精度。
-新Refine标量场发布binding前自动逐块核验全部节点的有限性和合法电压编码，
-保存`results/pa_payload_validation.json`；原生日志完成或很小的Delta不能替代这项检查。
-复用场不重复扫描；组合路径沿用已有逐块检查，碰撞占据数组仍走独立格式边界。
-当前接线与数值资格分别见 PROJECT，配置可执行不代表其精度已经验证。
-
-历史算子祖先与当前实际消费PA分开验证：只有已完成、精确匹配公共退役收据且受原manifest绑定的历史标量／surface允许缺席。
-读取器保留其原封存identity、几何、电压和完整算子来源；当前运行真正加载的PA仍逐项核验，不能用历史退役收据豁免。
-历史binding原件及run-local冻结副本分别按各自实际owner的inputs／outputs封存记录校验bytes与SHA，随后要求完整JSON字典等价；
-CRLF／LF等序列化差异须先通过各自字节身份，再比较完整JSON；不能冒用另一文件的record，也不能忽略身份。
-该来源校验已完成真实退役后严格复验，算子及种子frozen_problem身份保持；后续运行manifest冻结所消费的来源投影。
-IP完整五层普通场、已物化场及纯响应的历史证明可以递归经过混合owner的细场扩域／响应复用。
-每个退役owner仍须有精确五组scalar／surface的十项删除身份与有效公共收据，保留的元数据逐项核验；
-读取器按新细场owner定位扩域声明，不把其旧parent owner当作整个声明的owner。
-这条路径不允许用已退役响应参与新的PA组合，也不适用于OA局部载荷退役。
-这只维持非活动算子祖先的可追溯性；引用已退役PA的历史IOB须重新物化，不能据此宣称仍可直接重放。
-
-探测器 GEM 使用 ID25 建立物质掩码；[build_component_pa.lua](build_component_pa.lua)
-在 `INITIALIZE=0` 时置零电势并保留电极标志，不把 ID25 当成 25 V。
-该数值终止面不等同于已验证的物理探测器，原生终止与事件面须逐次核对。
-
-### COMSOL 标量、响应组合与固定点物化
-
-本机当前会聚镜的普通冻结标量消费已通过真实N13与省略S参数的N1；这只证明该输入／消费链可运行，
-不代表空间闭合、FEM收敛或束团性能。对应证据见[受控N13][scalar-n13]、[冻结场自动S的N1][scalar-n1]；
-旧mesh3的响应/provider试验不能代替当前会聚mesh1/mesh2资格。
-以下模块及runner接线随项目源码统一纳管；实际运行还须具备显式冻结的本机场资产。
-复用命令前按冻结候选确认资产、模块和实际参数，不从源码可用推定物理资格。
-`analysis/static_field_binding.py`解析已封存场，`simion/scalar_field_adapter.lua`只在有效支撑内查询。
-局窗按有序列表、包含边界、首个匹配窗口接管；必须保留梯度支撑 halo。
-窗内未知值不回退基场、不补零；覆盖越界、未知 mask 或非有限值是数值失败。
-
-普通`-FieldBindingPath`消费以冻结场的完整电压为权威；省略`-Stripe1VoltageV/-Stripe2VoltageV`时，
-当前工作区入口先取该场的S值，再检查接地线性Stripe条件，不提前采用旧Stripe种子的偏压。
-显式S参数须成对提供且与场权威相符；这一缺省行为不放开改压，也不修改其他电压、源或观察定义。
-
-| 能力 | 与普通固定场消费的区别／资格 |
-|---|---|
-| 冻结标量场消费 | 读取既有V/mask及局窗，使用原trial真实飞行；成功终态不代表轨迹闭合 |
-| 变压provider与响应组合 | 分别生产新电压场、或组合已验证增量；须有对应几何、离散和实际电压范围的独立证据 |
-| 固定点物化 | 将选定组合表示保存为新标量PA；计划生成不等于物化已执行，物化成功也不授FEM／性能资格 |
-
-电极仿射组合在既有binding内声明基场、单因素增量及目标电压；
-系数由实际电压差派生，逐项保持网格、mask、sheet、窗口和固定物理身份。
-场线性不代表轨迹线性；新电压必须通过同一完整飞行入口检验。
-固定点物化复用公共 standalone composer，输出新标量 PA，保留原 mask 和所有局窗。
-两种组合表示均明确标为探索性；实际对照、速度、内存及资格见
-[电场表示与数值资格](../docs/PROJECT.md#电场表示与数值资格)，不由文件存在推定。
-
-以下命令只验证／解析 binding，或生成物化计划；不会运行 COMSOL、SIMION 或写 PA。
-物化计划必须由受管运行执行和封存，再消费其 manifest；不得覆盖输入 PA。
-
-```powershell
-.\.venv\Scripts\python.exe -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding --binding '<binding.json>'
-.\.venv\Scripts\python.exe -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding `
-  --binding '<response-binding.json>' --composition-plan '<run>/inputs/composition-plan.json' `
-  --composition-output-directory '<run>/simion'
-```
-
-同模块支持配对查询请求：`--compare-binding`、`--samples`、`--sampling-request`、
-`--comparison-output` 必须成组提供，不能与物化计划混用；它只生成请求，不提供实际场对照。
-GUI 对等不能由 `efield_adjust` 回调推定，最终交付仍须满足实际所用表示的独立验收。
-
-## 构建与独立验收
-
-[run_native_corridor_response_bank.ps1](run_native_corridor_response_bank.ps1)组织 native bank
-生成，调用公共 PA transaction 完成 Refine、inventory、封存和发布。
-底层 transaction 编排见 [run_native_corridor_qualification.ps1](run_native_corridor_qualification.ps1)。
-[native_corridor_identity.py](../analysis/native_corridor_identity.py)定义项目 family 身份；
-物理到局部 ID 映射和响应数量来自冻结 plan，不在本文固定某次 bank 的数量。
-
-响应成员遵守原生 Fast Adjust 的 `10000 V` 参考归一化，不能把 1 V 文件当原生 `.paN`。
-发布前在精确私有 family 上验证非零电压表及关闭／重开，最终 inventory 绑定持久字节和验证证据。
-公共 transaction 是 payload、scratch、发布指针和容量账本的唯一 owner；
-项目不维护第二份 PA 生命周期。缓存命中不得再做 GEM、Refine 或大 PA 复制。
-
-原生响应固定点物化使用项目内的
-[`standalone_pa_composition.py`](../analysis/standalone_pa_composition.py)，尚未取得跨项目公共化资格。
-它按有界float64块组合普通`.pa`，保留电极标志，要求网格及fractional伴随数据一致；
-不Refine、不读取原生family、不修改输入。新PA及sidecar关闭前各执行一次`flush()`和`os.fsync()`；
-刷新失败由owner保留私有残留并失败收尾，不返回成功或重试。
-[Python 3.11官方说明](https://docs.python.org/3.11/library/os.html#os.fsync)要求先刷新Python流，
-Windows使用`_commit`（查阅2026-10-13）；这不保证硬件缓存持久化或场精度，发布仍由公共manifest负责。
-
-[build_native_corridor_iob.lua](build_native_corridor_iob.lua)仅装配已封存四角色，
-检查位姿、网格、对称性及真实重叠优先级。先保存 IOB，再做 Fast Adjust，
-避免 Workbench 保存尝试回写脏 PA；日志中的保存错误即使进程 exit0 也判失败。
-原生电压更新一次提交完整通道表，不逐区合成或保存 published PA。
-
-`-RetainGuiWorkbench` 在共享 native runtime checkpoint 语境下保留
-`simion/gui_workbench/` 的 IOB、Fly2、Lua 和小型收据，飞行后绑定稳定只读 PA。
-没有要求的共享 checkpoint 时不得为 GUI 重建整套 family；实际模式限制以入口校验为准。
-GUI 重载通过只证明装配可检查，不能代替场精度、飞行或性能资格。
-
-[单中心步长对照](../analysis/run_single_center_timestep_convergence.ps1)要求三份 success
-run 的几何、PA、电压、源、程序、脉冲和自然回程身份相同，仅最大 trajectory step 不同。
-分析报告目标 K、回程转折及 detector 的相空间差，不自行设置通过阈值。
-静态入口 [verify_project.ps1](../verify_project.ps1) 不启动商业软件；真实 SIMION、
-GUI 重载及正式资格属于不同验证层，不能互相替代。
-
-## 源与运行入口
-
-所有入口消费本次冻结合同、源及 PA／field 身份；参数全集见各脚本 `param`。
-下面标为飞行、建场或调焦的入口会运行商业软件；分析、源发布及计划生成不运行 SIMION。
-
-| 任务 | 入口 | 必需输入与输出范围 |
-|---|---|---|
-| OA 组件验收 | [OA提供者入口](../../orthogonal_accelerator/simion/run_component_focus_workflow.ps1) | 显式使用本项目现有request／release；provider receipt不授予整机资格 |
-| N=1 或 N>1 OA→MR完整飞行 | [直属oa_mr/execute.ps1](../../../integrations/workflows/oa_mr/execute.ps1) | 几何、镜、Stripe、OA receipt、P1/P2 电压及一种场消费输入；新owner真实飞行待验证 |
-| 束团源发布 | [run_publish_bunch_source.ps1](../analysis/run_publish_bunch_source.ps1) | `-SourceDefinitionPath`、`-GeometryContractPath`、`-AcceleratorProviderReceiptPath`；发布 CSV/Fly2/receipt |
-| P/S 四列单步审计 | [run_downstream_fixed_grid_workpoint.ps1](../analysis/run_downstream_fixed_grid_workpoint.ps1) | baseline 与四个独立单轴扰动 manifest，输出有界电压提议 |
-| P/S 自动重闭合 | [run_downstream_workpoint_iteration.ps1](../analysis/run_downstream_workpoint_iteration.ps1) | 唯一初始工作点、seed 或 continuation；独立 child 飞行及控制器记录 |
-| native 束团筛选 | [run_native_corridor_bunch_screening.ps1](../analysis/run_native_corridor_bunch_screening.ps1) | 同一 checkpoint、冻结静态 cohort；受控小样本不提供正式峰宽 |
-| native Candidate／TE1 链 | [run_native_candidate_chain.ps1](../analysis/run_native_candidate_chain.ps1) | 已接受中心工作点、common 源及相同前缀的 baseline/调焦比较 |
-| K/y campaign | [run_native_candidate_campaign.ps1](../analysis/run_native_candidate_campaign.ps1) | [工况表](../config/native_candidate_campaign_k_y_scan.json)；发布统一 comparison |
-| 源 z／能量／末段时序分析 | [run_source_z_energy_timing_diagnostic.ps1](../analysis/run_source_z_energy_timing_diagnostic.ps1) | 完整 success flight；只读诊断，无新飞行 |
-| 固定关断时钟冻结 | [run_freeze_bunch_pulse_schedule.ps1](../analysis/run_freeze_bunch_pulse_schedule.ps1) | 同源完整静态 pilot，发布 schedule；不证明脉冲已真实执行 |
-
-P/S 单步审计的五个 manifest 参数为 `-BaselineManifest`、`-Stripe1PerturbationManifest`、
-`-Stripe2PerturbationManifest`、`-Prism1PerturbationManifest`、`-Prism2PerturbationManifest`。
-单轴场与轨迹须按该入口合同保持共同冻结问题；边界、尺度、信赖步及停机规则由
-`downstream_fixed_grid_workpoint_profile` 派生，不从命令行另设一套数值。
-提议不是通过资格，必须真实飞行检验。
-
-自动迭代的 `-InitialWorkpointManifest`、`-SeedTrialManifest`、`-ContinuationRunManifest`
-三选一。native 模式使用 bank/bundle；COMSOL 模式使用 `-FieldProviderRequestPath` 和冻结
-`-CenterSourceReceiptPath`，不得混入 native family/checkpoint 或 OA pulse。
-同目标已完成场可通过 `-CompletedFieldProviderManifest` 显式复用；
-`-ResponseFieldBindingPath` 声明探索性 S 响应，不能据此外推其他未声明电压。
-静态 seed 分阶段提取 P 前闭合、同锚 S 响应及完整返回；阶段通过不等于整机通过，
-下游缺事件不补零，不把旧轨迹 Jacobian 当新锚点已验证导数。
-
-native Candidate 链的受控焦点对及回退区间只供导数，不混入正式体积源峰宽。
-实际 cohort、收集门槛和有限回退规则来自冻结合同；达到退出条件即停止该工况。
-同一母队列前缀比较收集率、TOF 和 FWHM，不删损失、不去趋势、不凭单次最佳结果晋升。
-活动任务的样本、TE1 范围及源参数见
-[OA真实源与束团证据](../docs/PROJECT.md#oa真实源与束团证据)，不从历史配置推定。
-
-解析电压链使用 [run_target_operating_point_chain.ps1](../analysis/run_target_operating_point_chain.ps1)，
-从同一合同串接镜 exact-K 与双 Stripe 反演。P1/P2 分段射击继续使用
-[coverage](../analysis/run_two_prism_segmented_coverage.ps1)、
-[continuation](../analysis/run_two_prism_segmented_continuation.ps1)：continuation 只追踪
-冻结的单一事件签名，理论覆盖点不能直接称为真实三维工作点。
-
 ### 源身份与诊断源
 
 源表、Fly2、合同粒子数、预期 ID 及 SHA 在输入 manifest 中绑定；
@@ -566,11 +522,32 @@ native Candidate 链的受控焦点对及回退区间只供导数，不混入正
 不同具名源不能合并统计。整机源位置须按 MR 装配与 OA provider release 合同派生；
 位置、物种、速度、ID 和共同出生时刻原样继承。旧 schema 只能解释旧证据，不能补造新资格。
 
+
+IP实测源保持逐ID六维状态和仪器绝对时钟。分析由`measured_component_analysis.analyze_measured_component`
+按原始ID和全部母群闭合，不能再套OA批次offset恢复ID；z=0观察面不自动成为接地端口或时间焦点。
+需要检测峰宽与时间等效分辨率时，在原`peak_analysis`中保持公共KDE的方法、settings和定义，
+声明`time_basis="instrument_arrival_minus_common_extraction_pulse_us"`及`common_time_reference`：
+它包含源的`clock_epoch_id`、原生`native_timing.json`的标准文件记录`timing`和`field="pulse_start_us"`。
+准备与实飞入口校验该记录的字节、SHA、epoch及脉冲先于全部交接时刻；所有检测命中减去同一个脉冲时刻，
+不逐离子减交接时刻，也不把捕获／冷却等待计入TOF分子。默认诊断在`results/diagnostics/population/`
+输出`detector_peak_samples.csv`、可计算时的`detector_peak_spectrum.csv`、英文PNG／SVG与metadata。
+R仅表示检测幸存子群的时间等效值，和母群／交接群透过率同时报告；少于三命中或零方差时明确不可计算。
+
+官方接口依据（Pulsar Physics，SIMION在线说明／2020附带Lua，2026-10-16查阅）：
+[Time](https://simion.com/info/time.html)定义TOB、绝对TOF及粒子年龄；
+[User Programming Tricks](https://simion.com/docs/advanced_class/11-user_programming_tricks.pdf)的保留变量表限制TOF写入阶段。
+本实现以FLY2保留逐离子TOB，在initialize只设置支持的初态／TOB，不写TOF；普通Lua回调测试不替代SIMION真实载入验收。
+Workbench实际API沿现有装配入口复用，实际新包的重载证据按具名run收据查询。
+实测源helper只接受显式ordinal并返回初态，保留变量的读写在Workbench的`segment.initialize`中执行；
+普通`loadfile`模块不能假设继承Workbench环境。官方[Lua Variables](https://simion.com/info/lua_scope.html)说明环境隔离，
+[变更记录](https://simion.com/info/changes.html)的8.0.4手册L-31条及本机SIMION 2020
+`examples/collision_hs1/README.html`、`test2.lua`区分`simion.import`与普通加载（2026-10-16查阅）。
+这里采用显式参数的纯数据模块，不让普通模块直接读写`ion_*`；在线页的较新标题不扩展为新版功能资格。
+
 ## 恢复与资源
 
-OA完整束团的当前源码入口为 `integrations/workflows/oa_mr/execute.ps1 -BunchSourceReceiptPath ...`，
-新owner真实飞行尚未验证；
-receipt、状态表和 Fly2 必须是同一成功源 run 的唯一输出。
+跨项目完整束团执行和整批恢复的入口／资格见[集成状态](../../../integrations/docs/INTEGRATION.md#已准备ipmr联合飞行)。
+receipt、状态表和Fly2必须是同一成功源run的唯一输出。
 公共调度器选择资源和 batch，项目不设独立并发门槛；详见
 [公共调度与恢复](../../../common/simion/README.md#调度与恢复)。
 
@@ -592,6 +569,12 @@ receipt、状态表和 Fly2 必须是同一成功源 run 的唯一输出。
 恢复沿原状态机核对冻结输入、电压、观察和已完成 child，不扫描目录猜测可用结果，
 不重飞已确认完成的步骤；精确参数组合由入口失败关闭。
 
+普通S恢复的日常状态只接受`recovery_policy_version=8`。旧v5／v6／v7仅在显式
+`-ResumeParentCheckpoint`路径导入：先将原文件冻结到新run的`inputs/imported_recovery_checkpoint.json`，
+再核对同一anchor／trigger并按当前谱系纠正证据，随后规范化为v8；原run及原探针记录保持不变。
+v1–4和未知版本明确拒绝，不在日常prepare中猜测升级。新run同时冻结控制器源码与恢复策略；
+改变策略不能静默重解释已有恢复状态。prepared P/S仍使用自身stage检查点，不能把此v8规则套到它的bootstrap。
+
 native bank 的 `-TransactionCacheKey` 只恢复／复用指定事务；已发布 family 只读。
 `-RecoverMembers` 指定失败成员；`-RecoverRetainedInventoryMembers` 和
 `-CorrectPublishedInventoryMember` 仅处理有原 journal 证明的 inventory 问题，
@@ -607,16 +590,20 @@ published PA 不是 runtime 写目标；私有 family、standalone PA 的具体�
 
 ## 事件与分析
 
-[mrtof_candidate.lua](mrtof_candidate.lua)及[mirror_cycle_counter.lua](mirror_cycle_counter.lua)
+[mrtof_candidate.lua](../simion/mrtof_candidate.lua)及[mirror_cycle_counter.lua](../simion/mirror_cycle_counter.lua)
 以 P2 后正镜转折定义快相位原点，后续每次真实镜转折增加半周期。
 目标 K 与返回镜侧来自 `target_drift_period_ratio/fast_path_symmetry`，不在代码中固定数值。
 中央 `z=0` 或提前 `y=0` 穿越仅作诊断；目标镜转折才产生严格相位返回。
 返回应经 P2、必要的正镜转折后沿 `v_z<0` 命中 detector；只有解析镜区可以令 `v_z` 反号。
 
 碰撞、程序拓扑拒绝、未知场支撑失败和未到达须分别报告，不能按终态坐标猜测部件。
+实测源诊断以完整母群连接原交接状态、方向能量、首缺观察面及几何接触候选，输出`loss_acceptance.csv`；
+无交接态或未到达观察面保留缺失，不补造轨迹。提前碰到detector仍不等于完整返回。
+`mirror_domain_samples.csv`和`mirror_x_boundary_crossings.csv`保留细镜窗口内外状态及有符号跨界；
+跨界本身不证明电场跳变，质心容差不作为整束接受度门槛。轮廓投影不冒充真实布尔截面。
 缺 target-K 或完整返回的观察不得补造有效 Jacobian；完整通过与阶段观察分开保留。
 `sim_segment_global=1` 用于捕获 PA 外终态，仍须逐粒子核对唯一结束和日志完整性。
-[run_iob_flight.lua](run_iob_flight.lua)要求同名 Program/Fly2/operating-point/voltage-map/
+[run_iob_flight.lua](../simion/run_iob_flight.lua)要求同名 Program/Fly2/operating-point/voltage-map/
 mirror-cycle-counter 伴随文件，实际源必须匹配冻结字节；zero-exit 错误日志仍判失败。
 
 同一进程先构建／重载IOB再Fly时，launcher按`simion.pas[1..#simion.pas]`的完整`path`
@@ -701,10 +688,9 @@ schedule 冻结要求全部粒子唯一负 z 安全出口，按 `max(exit)+guard
 
 旧局域五区／八实例、旧拓扑、逐轮 Jacobian、native 缓存修复和旧束团结果均为只读历史，
 不能恢复为活动入口。完整整理前原文见
-[场响应工程里程碑归档](../docs/history/20261008__field-response-engineering-milestone.md)；
+[场响应工程里程碑归档](history/20261008__field-response-engineering-milestone.md)；
 其他历史入口由[项目导航](../README.md#历史补充索引)集中索引。
+旧历史中的`simion/README.md`为当时活动说明路径；当前说明统一迁到本页，
+`加速器选择与接口准备`和`事件与分析`锚点保留。冻结历史正文与运行输入不改写。
 官方 API 与已验证公共边界见[SIMION 参考](../../../docs/tools/SIMION_REFERENCE.md)；
 本次结果只从实际冻结 manifest 和原始日志读取。
-
-[scalar-n13]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_093500__sim__simion__converging-mesh2-fixed-u-controlled-n13__r02/summary.json
-[scalar-n1]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_092318__sim__simion__converging-mesh2-stripe-authority-n1/summary.json

@@ -49,6 +49,7 @@ param(
   [string]$ResumeSuccessfulChildManifest = '',
   [string]$ContractPath = '',
   [string]$PrismControllerPolicyPath = '',
+  [string]$LocalModelRecoveryPolicyPath = '',
   [string]$RunId = '',
   [string]$SimionExe = '',
   [string]$PythonExe = ''
@@ -66,6 +67,9 @@ $project = 'parallel_mirror_dual_stripe_mr_tof'
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 $contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path } else { Join-Path $PSScriptRoot '..\config\simion_candidate_two_zone.json' }
 $frozenPrismControllerPolicyPath=''
+$frozenPreparedTargetAuthorityPath=''
+$frozenPreparedInitialProposalPath=''
+$recoveryPolicySource=if($LocalModelRecoveryPolicyPath){(Resolve-Path -LiteralPath $LocalModelRecoveryPolicyPath).Path}else{Join-Path $PSScriptRoot '../config/local_model_recovery_policy.json'}
 if($PrismControllerPolicyPath){$PrismControllerPolicyPath=(Resolve-Path -LiteralPath $PrismControllerPolicyPath).Path}
 $trialRunner = if($PSCmdlet.ParameterSetName-eq'Prepared'){
   Join-Path $repoRoot 'integrations/workflows/prepared_joint/execute.ps1'
@@ -396,14 +400,23 @@ function Assert-ContinuationPairIdentity {
   }
 }
 
+function Invoke-WorkpointControllerRequest {
+  param([Parameter(Mandatory)][System.Collections.IDictionary]$Request,
+    [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot)
+  Push-Location -LiteralPath $RepoRoot
+  try{
+    $output=@($Request|ConvertTo-Json -Depth 100 -Compress|& $Python -X utf8 -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration --controller-request - --output -)
+    if($LASTEXITCODE-ne0){throw "Controller decision failed: $($Request.action)"}
+    return ($output-join"`n")|ConvertFrom-Json -AsHashtable -Depth 100
+  }finally{Pop-Location}
+}
+
 function Get-RelativeVoltageStencilSteps {
-  param([Parameter(Mandatory)][double[]]$Voltages,[Parameter(Mandatory)]$Profile,[Nullable[double]]$MaximumScaledResidual=$null)
-  $tiers=$Profile.jacobian_relative_step_tiers
-  $relative=[double]$tiers.coarse
-  if($null-ne$MaximumScaledResidual-and[double]$MaximumScaledResidual-le[double]$tiers.medium_maximum_scaled_residual){$relative=[double]$tiers.medium}
-  if($null-ne$MaximumScaledResidual-and[double]$MaximumScaledResidual-le[double]$tiers.fine_maximum_scaled_residual){$relative=[double]$tiers.fine}
-  if($Voltages.Count-ne4-or-not[double]::IsFinite($relative)-or$relative-le0){throw 'Relative Jacobian stencil contract is invalid.'}
-  return @($Voltages|ForEach-Object{$relative*[math]::Max([math]::Abs([double]$_),1.0)})
+  param([Parameter(Mandatory)][double[]]$Voltages,[Parameter(Mandatory)]$Profile,[Nullable[double]]$MaximumScaledResidual=$null,
+    [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot)
+  return Invoke-WorkpointControllerRequest -Python $Python -RepoRoot $RepoRoot -Request @{
+    action='voltage_stencil_steps';voltages_v=@($Voltages);profile=$Profile;maximum_scaled_residual=$MaximumScaledResidual
+  }
 }
 
 function New-CenterTrialArguments {
@@ -826,11 +839,12 @@ function Invoke-WorkpointStencil {
 }
 
 function Invoke-PreclosureDecision {
-  param([string]$Stage,[string]$Anchor,[Collections.IDictionary]$Columns,[string]$OutputPath,[string]$PriorPrismDecisionManifest='',[string]$ControllerPolicyPath='')
+  param([string]$Stage,[string]$Anchor,[Collections.IDictionary]$Columns,[string]$OutputPath,[string]$PriorPrismDecisionManifest='',[string]$ControllerPolicyPath='',
+    [Parameter(Mandatory)][System.Collections.IDictionary]$Context)
+  $repoRoot=[string]$Context.repo_root;$python=[string]$Context.python;$frozenContract=[string]$Context.contract_path
   $arguments=@('--control-stage',$Stage,'--child-manifest',$Anchor,'--contract',$frozenContract,'--output',$OutputPath)
-  $measured=Get-Variable -Name preparedStagedMode -Scope Script -ErrorAction SilentlyContinue
-  if($measured-and$measured.Value){$arguments+=@('--prepared-target-authority',$frozenPreparedTargetAuthorityPath,'--prepared-initial-proposal',$frozenPreparedInitialProposalPath)}
-  if($PrismHandoffReplayManifest){$arguments+=@('--prism-handoff-replay-manifest',$PrismHandoffReplayManifest)}
+  if($Context.prepared_staged){$arguments+=@('--prepared-target-authority',$Context.target_authority_path,'--prepared-initial-proposal',$Context.initial_proposal_path)}
+  if($Context.prism_handoff_replay_manifest){$arguments+=@('--prism-handoff-replay-manifest',$Context.prism_handoff_replay_manifest)}
   if($PriorPrismDecisionManifest){$arguments+=@('--prior-prism-decision-manifest',$PriorPrismDecisionManifest)}
   if($Stage-eq'prism_preclosure'-and$ControllerPolicyPath){$arguments+=@('--prism-controller-policy',$ControllerPolicyPath)}
   foreach($entry in @(@(0,'--s1-child-manifest'),@(1,'--s2-child-manifest'),@(2,'--p1-child-manifest'),@(3,'--p2-child-manifest'))){
@@ -855,7 +869,7 @@ function Publish-StagedPrismModel {
   $modelPath=Join-Path $modelPackage.result_dir 'prism_preclosure_decision.json'
   try{
     $configuration=Get-Content -LiteralPath $modelPackage.run_config -Raw|ConvertFrom-Json -AsHashtable
-    $configuration.inputs=[ordered]@{baseline_manifest=$State.anchor_manifest;workpoint_contract=$frozenContract;controller_source=$controllerSource}
+    $configuration.inputs=[ordered]@{baseline_manifest=$State.anchor_manifest;workpoint_contract=$frozenContract;controller_source=$controllerSource;controller_state_source=$controllerStateSource}
     if($Decision.Contains('prism_controller_policy')){$configuration.inputs.prism_controller_policy=$Decision.prism_controller_policy.path}
     foreach($axis in 2,3){$configuration.inputs[('p{0}_child_manifest'-f($axis-1))]=[string]$State.columns[[string]$axis]}
     $configuration.parameters=[ordered]@{control_stage='prism_preclosure';measured_model_only=$true;full_workpoint_qualified=$false}
@@ -880,7 +894,7 @@ function Publish-StagedPrismModel {
 function Invoke-StagedPreclosureDecision {
   param($State,[string]$OutputPath,[string]$ControllerPolicyPath='')
   $prior=if($State.stage-eq'prism_preclosure'-and$State.columns.Count-eq0-and$State.Contains('prism_model_manifest')){[string]$State.prism_model_manifest}else{''}
-  $decision=Invoke-PreclosureDecision -Stage $State.stage -Anchor $State.anchor_manifest -Columns $State.columns -OutputPath $OutputPath -PriorPrismDecisionManifest $prior -ControllerPolicyPath $ControllerPolicyPath
+  $decision=Invoke-PreclosureDecision -Context $controllerContext -Stage $State.stage -Anchor $State.anchor_manifest -Columns $State.columns -OutputPath $OutputPath -PriorPrismDecisionManifest $prior -ControllerPolicyPath $ControllerPolicyPath
   if($prior-and$decision.status-eq'needs_stencil'){$State.Remove('prism_model_manifest')|Out-Null}
   if($State.stage-eq'prism_preclosure'-and$decision.status-eq'proposed'-and$decision.Contains('physical_jacobian_rows')-and
      (-not$decision.Contains('model_representation')-or$decision.model_representation-ne'transported_local_approximation')-and
@@ -928,14 +942,13 @@ function New-StagedComposeProviderReference {
 }
 
 function Assert-StagedComposeProviderReference {
-  param($Reference,[string]$ChildRunId)
+  param($Reference,[string]$ChildRunId,[Parameter(Mandatory)][System.Collections.IDictionary]$Context)
+  $RunId=[string]$Context.run_id;$artifactRoot=[string]$Context.artifact_root
   if($null-eq$Reference-or$Reference.parent_run_id-ne$RunId){return $null}
   $owner=$Reference
   $allowed=$owner.operation-eq'compose'
   if($owner.operation-eq'refine'){
-    $preparedMode=Get-Variable -Name preparedStagedMode -Scope Script -ErrorAction SilentlyContinue
-    $method=Get-Variable -Name PreparedFieldBuildMode -Scope Script -ErrorAction SilentlyContinue
-    $allowed=$preparedMode-and$preparedMode.Value-and$method-and$method.Value-eq'refine'
+    $allowed=$Context.prepared_staged-and$Context.prepared_field_build_mode-eq'refine'
     $cfgPath=Join-Path $owner.provider_run 'run_config.json'
     $cfg=Get-Content -LiteralPath $cfgPath -Raw|ConvertFrom-Json -AsHashtable
     $doc=Get-Content -LiteralPath $owner.provider_manifest -Raw|ConvertFrom-Json -AsHashtable
@@ -952,7 +965,7 @@ function Assert-StagedComposeProviderReference {
 
 function Resolve-StagedComposeRetirementOwner {
   param($Reference,[string]$ChildRunId)
-  $current=Assert-StagedComposeProviderReference -Reference $Reference -ChildRunId $ChildRunId
+  $current=Assert-StagedComposeProviderReference -Context $controllerContext -Reference $Reference -ChildRunId $ChildRunId
   if($null-ne$current-or$null-eq$Reference){return $current}
   # A restored lineage retains the original sealed owner, not ownership of the
   # new parent. Reconstruct its small reference under that parent's authority.
@@ -1040,7 +1053,7 @@ function Reclaim-StagedComposeProviders {
     if($disposition-eq'keep'){
       # Preserve every physically qualified point eligible for the existing best
       # handoff selector. Only an explicitly unqualified superseded point retires.
-      $full=Invoke-PreclosureDecision -Stage stripe_preclosure -Anchor $entry.child_manifest -Columns ([ordered]@{}) -OutputPath (Join-Path $package.result_dir ('iteration_staged_payload_{0:D3}_decision.json'-f$entry.iteration))
+      $full=Invoke-PreclosureDecision -Context $controllerContext -Stage stripe_preclosure -Anchor $entry.child_manifest -Columns ([ordered]@{}) -OutputPath (Join-Path $package.result_dir ('iteration_staged_payload_{0:D3}_decision.json'-f$entry.iteration))
       if($full-isnot[Collections.IDictionary]-or-not$full.Contains('full_workpoint_qualified')-or
          $full.full_workpoint_qualified-isnot[bool]-or$full.full_workpoint_qualified){continue}
       $disposition='superseded_anchor'
@@ -1060,7 +1073,7 @@ function Reclaim-StagedComposeProviders {
          (Get-FileHash $childCfgPath -Algorithm SHA256).Hash.ToLowerInvariant()-ne([string]$childDocument.run_config.sha256).ToLowerInvariant()){throw 'Restored anchor GUI identity differs.'}
       $cfg=Get-Content -LiteralPath $childCfgPath -Raw|ConvertFrom-Json -AsHashtable
       if($cfg.parameters-is[Collections.IDictionary]-and$cfg.parameters.Contains('gui_workbench_retained')-and$cfg.parameters.gui_workbench_retained-is[bool]-and-not$cfg.parameters.gui_workbench_retained){
-        $full=Invoke-PreclosureDecision -Stage stripe_preclosure -Anchor $restored.anchor_manifest -Columns ([ordered]@{}) -OutputPath (Join-Path $package.result_dir 'iteration_restored_anchor_payload_decision.json')
+        $full=Invoke-PreclosureDecision -Context $controllerContext -Stage stripe_preclosure -Anchor $restored.anchor_manifest -Columns ([ordered]@{}) -OutputPath (Join-Path $package.result_dir 'iteration_restored_anchor_payload_decision.json')
         if($full-is[Collections.IDictionary]-and$full.Contains('full_workpoint_qualified')-and$full.full_workpoint_qualified-is[bool]-and-not$full.full_workpoint_qualified){$releaseGroups+=,$restored}
       }
     }
@@ -1111,7 +1124,10 @@ function Reclaim-StagedComposeProviders {
 }
 
 function Complete-StagedTrial {
-  param($State,$History,$Lineage,$Pending,$Loop,$Tiers,[string]$ControllerPolicyPath='')
+  param($State,$History,$Lineage,$Pending,$Loop,$Tiers,[string]$ControllerPolicyPath='',
+    [Parameter(Mandatory)][System.Collections.IDictionary]$Context)
+  $repoRoot=[string]$Context.repo_root;$python=[string]$Context.python
+  $frozenContract=[string]$Context.contract_path;$resultDirectory=[string]$Context.result_directory
   if(-not$State.Contains('local_model_tier_index')){$State['local_model_tier_index']=0}
   if(-not$State.Contains('consecutive_candidate_rejections')){$State['consecutive_candidate_rejections']=0}
   $child=[string]$Pending.child_manifest
@@ -1121,9 +1137,8 @@ function Complete-StagedTrial {
   $actual=@($materialization.stripe_biases_v)+@($materialization.prism_voltages_v)
   if($actual.Count-ne4-or@((0..3)|Where-Object{-not[double]::IsFinite([double]$actual[$_])-or[double]$actual[$_]-ne[double]$Pending.voltages_v[$_]}).Count){throw 'Pending stage child voltages differ from the persisted trial.'}
   $identityCode="import sys; from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import _load_stage_trial; a=_load_stage_trial(Path(sys.argv[1])); c=_load_stage_trial(Path(sys.argv[2])); assert a['frozen_problem']==c['frozen_problem'], 'Pending stage child frozen problem differs'"
-  $measured=Get-Variable -Name preparedStagedMode -Scope Script -ErrorAction SilentlyContinue
-  if($measured-and$measured.Value){
-    $targetLiteral=ConvertTo-Json -InputObject ([string]$frozenPreparedTargetAuthorityPath) -Compress
+  if([bool]$Context.prepared_staged){
+    $targetLiteral=ConvertTo-Json -InputObject ([string]$Context.target_authority_path) -Compress
     $contractLiteral=ConvertTo-Json -InputObject ([string]$frozenContract) -Compress
     $identityCode="import sys;from pathlib import Path;from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import load_prepared_centroid_trial;load=lambda p:load_prepared_centroid_trial(Path(p),Path($targetLiteral),Path($contractLiteral));a=load(sys.argv[1]);c=load(sys.argv[2]);assert a['frozen_problem']==c['frozen_problem'],'Pending measured stage child frozen problem differs'"
   }
@@ -1131,7 +1146,7 @@ function Complete-StagedTrial {
   if($ControllerPolicyPath){
     # Full measured geometry in a decision can exceed Windows argv limits.
     # Preserve the same input as a checkpoint-bound file, never an argv blob.
-    $predictionInput=Join-Path $package.result_dir ('iteration_prediction_input_{0:D3}.json'-f$State.flight_count)
+    $predictionInput=Join-Path $resultDirectory ('iteration_prediction_input_{0:D3}.json'-f$State.flight_count)
     Write-RunJson -Path $predictionInput -Depth 100 -Value $Pending.decision
     $predictionBytes=(Get-Item -LiteralPath $predictionInput).Length
     $predictionSha=(Get-FileHash -LiteralPath $predictionInput -Algorithm SHA256).Hash
@@ -1150,47 +1165,23 @@ function Complete-StagedTrial {
   if($decision.Contains('prism_controller_policy')){$entry['prism_controller_policy']=$decision.prism_controller_policy}
   if($Pending.Contains('imported_stencil_axis')){$entry['imported_stencil_axis']=$Pending.imported_stencil_axis}
   if($State.Contains('prism_model_manifest')){$entry['prism_model_manifest']=$State.prism_model_manifest}
-  $composeOwner=if($Pending.Contains('provider_reference')){Assert-StagedComposeProviderReference -Reference $Pending.provider_reference -ChildRunId ([string]$Pending.child_run_id)}else{$null}
+  $composeOwner=if($Pending.Contains('provider_reference')){Assert-StagedComposeProviderReference -Context $Context -Reference $Pending.provider_reference -ChildRunId ([string]$Pending.child_run_id)}else{$null}
   if($composeOwner){$entry['provider_reference']=$composeOwner;$entry['compose_payload_use']='keep'}
-  $full=$null
+  # Scientific acceptance and state transitions share the Python controller.
+  # PowerShell validates identities above and publishes the resulting projections.
   if($decision.status-eq'needs_stencil'){
-      # The existing whole-workpoint stage gate, not a second physical formula,
-      # excludes qualified stencil flights from payload retirement.
-      $full=Invoke-PreclosureDecision -Stage stripe_preclosure -Anchor $child -Columns ([ordered]@{}) -OutputPath (Join-Path $package.result_dir ('iteration_staged_payload_{0:D3}_decision.json'-f$State.flight_count))
-      if($composeOwner-and$full.Contains('full_workpoint_qualified')-and$full.full_workpoint_qualified-is[bool]-and-not$full.full_workpoint_qualified){$entry.compose_payload_use='stencil'}
-  }
-  $Lineage.children+=,$entry
-  if($decision.status-eq'needs_stencil'-and$full.Contains('full_workpoint_qualified')-and$full.full_workpoint_qualified-is[bool]-and$full.full_workpoint_qualified){
-    # A measured column is also a real complete trial. Reuse the same whole
-    # workpoint gate; no second column is needed after it has already closed.
-    $History.decisions+=,$full
-    $State.anchor_manifest=$child;$State.columns=[ordered]@{};$State.attempts=@()
-    $State.consecutive_candidate_rejections=0;$State.step_factor=1.0;$State.completion_attempted=$false
-  }elseif($decision.status-eq'needs_stencil'){
-    $State.attempts+=,$Pending.selected
-    $State.columns[[string]$Pending.selected.axis]=$child
+    $checked=Invoke-PreclosureDecision -Context $Context -Stage stripe_preclosure -Anchor $child -Columns ([ordered]@{}) -OutputPath (Join-Path $resultDirectory ('iteration_staged_payload_{0:D3}_decision.json'-f$State.flight_count))
   }else{
-    $checked=Invoke-PreclosureDecision -Stage $State.stage -Anchor $child -Columns ([ordered]@{}) -OutputPath (Join-Path $package.result_dir ('iteration_stage_candidate_{0:D3}_decision.json'-f$State.flight_count))
-    $checked['prediction_assessment']=$predictionAssessment
-    $State['prediction_assessment']=$predictionAssessment
-    $History.decisions+=,$checked
-    $stageChanged=$checked.next_action-in@('prism_preclosure','stripe_preclosure')-and$checked.next_action-ne$State.stage
-    $jointPRejected=$decision.Contains('refinement_mode')-and$decision.refinement_mode-eq'joint_ps_constrained'-and$checked.next_action-eq'prism_preclosure'
-    $candidateRejected=($checked.status-eq'terminal'-and-not$checked.full_workpoint_qualified)-or$jointPRejected
-    $improved=-not$candidateRejected-and$checked.Contains('maximum_scaled_abs_residual')-and$checked.maximum_scaled_abs_residual-le(1.0-[double]$Loop.minimum_relative_improvement)*$decision.maximum_scaled_abs_residual
-    if($checked.full_workpoint_qualified-or(-not$candidateRejected-and($stageChanged-or$improved-or$decision.next_action-eq'complete_N1'))){
-      $State.anchor_manifest=$child;$State.columns=[ordered]@{};$State.attempts=@()
-      $State.consecutive_candidate_rejections=0
-      if($stageChanged){$State.local_model_tier_index=0;$State.Remove('prism_model_manifest')|Out-Null}
-      $State.step_factor=if($predictionAssessment.status-eq'poor'){[double]$State.step_factor*[double]$decision.backtrack_multiplier}else{1.0}
-      if($decision.next_action-ne'complete_N1'){$State.completion_attempted=$false}
-    }else{
-      $State.step_factor=[double]$State.step_factor*[double]$decision.backtrack_multiplier
-      if($State.stage-eq'stripe_preclosure'){$State.consecutive_candidate_rejections++}
-      if($composeOwner-and$candidateRejected-and$checked.full_workpoint_qualified-is[bool]-and-not$checked.full_workpoint_qualified){$entry.compose_payload_use='rejected_candidate'}
-    }
+    $checked=Invoke-PreclosureDecision -Context $Context -Stage $State.stage -Anchor $child -Columns ([ordered]@{}) -OutputPath (Join-Path $resultDirectory ('iteration_stage_candidate_{0:D3}_decision.json'-f$State.flight_count))
   }
-  $State.Remove('pending_trial')|Out-Null
+  $completed=Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{
+    action='complete_staged_trial';state=$State;pending=$Pending;checked=$checked;prediction=$predictionAssessment;loop=$Loop
+  }
+  if($composeOwner){$entry.compose_payload_use=$completed.compose_payload_use}
+  $Lineage.children+=,$entry
+  if($null-ne$completed.history_decision){$History.decisions+=,$completed.history_decision}
+  $State.Clear()
+  foreach($key in $completed.state.Keys){$State[$key]=$completed.state[$key]}
 }
 
 function Reset-StagedSLocalModel {
@@ -1368,11 +1359,11 @@ function Restore-StagedWorkpointChildren {
 function Import-StagedStripeColumns {
   param($State,$History,$Lineage,$Columns,$Loop,$Tiers)
   if($State.stage-ne'stripe_preclosure'-or$State.anchor_manifest-ne$seedManifest){throw 'Explicit Stripe columns require the P-qualified seed anchor.'}
-  $empty=Invoke-PreclosureDecision -Stage 'stripe_preclosure' -Anchor $seedManifest -Columns ([ordered]@{}) -OutputPath (Join-Path $package.result_dir 'iteration_seed_stripe_decision.json')
+  $empty=Invoke-PreclosureDecision -Context $controllerContext -Stage 'stripe_preclosure' -Anchor $seedManifest -Columns ([ordered]@{}) -OutputPath (Join-Path $package.result_dir 'iteration_seed_stripe_decision.json')
   $activeAxes=@(Get-ActiveStripeAxisIndices -Profile (Get-Content -LiteralPath $frozenContract -Raw|ConvertFrom-Json).downstream_fixed_grid_workpoint_profile)
   if(@($Columns.Keys|Where-Object{[int]$_-notin$activeAxes}).Count){throw 'Explicit Stripe column is inactive.'}
   if($empty.status-ne'needs_stencil'){throw 'Explicit Stripe columns require a measurable S seed needing a stencil.'}
-  $checked=Invoke-PreclosureDecision -Stage 'stripe_preclosure' -Anchor $seedManifest -Columns $Columns -OutputPath (Join-Path $package.result_dir 'iteration_imported_stripe_decision.json')
+  $checked=Invoke-PreclosureDecision -Context $controllerContext -Stage 'stripe_preclosure' -Anchor $seedManifest -Columns $Columns -OutputPath (Join-Path $package.result_dir 'iteration_imported_stripe_decision.json')
   foreach($axis in $Columns.Keys){
     if($checked.status-notin@('needs_stencil','proposed')-or
        ($checked.Contains('stencil_rejections')-and$checked.stencil_rejections.Contains([string]$axis))-or
@@ -1396,7 +1387,7 @@ function Import-StagedStripeColumns {
     if($measuredTiers.Count-eq1){$State.local_model_tier_index=[math]::Max([int]$State.local_model_tier_index,[int]$measuredTiers[0])}
     $State.flight_count++
     $pending=[ordered]@{child_manifest=$child;child_run_id=$document.run_id;anchor_manifest=$seedManifest;stage='stripe_preclosure';voltages_v=@($actual);decision=$empty;selected=[ordered]@{axis=[int]$axis;signed_step_v=($actual[[int]$axis]-$anchor[[int]$axis])};imported_stencil_axis=[int]$axis}
-    Complete-StagedTrial -State $State -History $History -Lineage $Lineage -Pending $pending -Loop $Loop -Tiers $Tiers
+    Complete-StagedTrial -Context $controllerContext -State $State -History $History -Lineage $Lineage -Pending $pending -Loop $Loop -Tiers $Tiers
   }
 }
 
@@ -1435,7 +1426,7 @@ function Invoke-StagedWorkpointBootstrap {
         if($state.anchor_manifest-ne$pending.anchor_manifest-or$state.stage-ne$pending.stage){throw 'Pending stage anchor or stage differs from checkpoint.'}
         $axis=[string]$pending.selected.axis
         if($state.columns.Contains($axis)){
-          $refreshed=Invoke-PreclosureDecision -Stage $state.stage -Anchor $state.anchor_manifest -Columns $state.columns -OutputPath (Join-Path $package.result_dir 'iteration_restored_pending_decision.json')
+          $refreshed=Invoke-PreclosureDecision -Context $controllerContext -Stage $state.stage -Anchor $state.anchor_manifest -Columns $state.columns -OutputPath (Join-Path $package.result_dir 'iteration_restored_pending_decision.json')
           if($refreshed.status-in@('needs_stencil','proposed')-and$refreshed.Contains('replayed_stage_axes')-and
              [int]$axis-in@($refreshed.replayed_stage_axes)-and
              ($refreshed.status-eq'proposed'-or[int]$axis-notin@($refreshed.required_axes))-and
@@ -1459,7 +1450,7 @@ function Invoke-StagedWorkpointBootstrap {
         Invoke-CenterTrial -Arguments $arguments -StagedPending $pending -Bootstrap $Bootstrap -BootstrapPath $BootstrapPath | Out-Host
         if($state.Contains('capacity_lifecycle_blocked')){continue}
       }
-      Complete-StagedTrial -State $state -History $history -Lineage $lineage -Pending $pending -Loop $loop -Tiers $tiers -ControllerPolicyPath $ControllerPolicyPath
+      Complete-StagedTrial -Context $controllerContext -State $state -History $history -Lineage $lineage -Pending $pending -Loop $loop -Tiers $tiers -ControllerPolicyPath $ControllerPolicyPath
       Write-RunJson -Path (Join-Path $package.result_dir 'iteration_history.json') -Depth 100 -Value $history
       Write-RunJson -Path (Join-Path $package.result_dir 'iteration_lineage.json') -Depth 100 -Value $lineage
       Save-WorkpointBootstrap -Bootstrap $Bootstrap -BootstrapPath $BootstrapPath
@@ -1517,7 +1508,7 @@ function Invoke-StagedWorkpointBootstrap {
       $anchorVoltages=[double[]]$decision.voltages_v
       $selected=$null
       if($state.stage-eq'stripe_preclosure'){
-        $steps=@(Get-RelativeVoltageStencilSteps -Voltages $anchorVoltages -Profile $profile -MaximumScaledResidual ([double]$decision.maximum_scaled_abs_residual))
+        $steps=@(Get-RelativeVoltageStencilSteps -Python $python -RepoRoot $repoRoot -Voltages $anchorVoltages -Profile $profile -MaximumScaledResidual ([double]$decision.maximum_scaled_abs_residual))
         $residualTier=@(0..($tiers.Count-1)|Where-Object{[double]$tiers[$_]*[math]::Max([math]::Abs($anchorVoltages[0]),1.0)-eq[double]$steps[0]})[0]
         $state.local_model_tier_index=[math]::Max([int]$state.local_model_tier_index,[int]$residualTier)
       }
@@ -1564,7 +1555,7 @@ function Invoke-StagedWorkpointBootstrap {
     $arguments=New-CenterTrialArguments -Voltages $voltages -ChildRunId $childId
     Invoke-CenterTrial -Arguments $arguments -StagedPending $state.pending_trial -Bootstrap $Bootstrap -BootstrapPath $BootstrapPath | Out-Host
     if($state.Contains('capacity_lifecycle_blocked')){continue}
-    Complete-StagedTrial -State $state -History $history -Lineage $lineage -Pending $state.pending_trial -Loop $loop -Tiers $tiers -ControllerPolicyPath $ControllerPolicyPath
+    Complete-StagedTrial -Context $controllerContext -State $state -History $history -Lineage $lineage -Pending $state.pending_trial -Loop $loop -Tiers $tiers -ControllerPolicyPath $ControllerPolicyPath
     Write-RunJson -Path (Join-Path $package.result_dir 'iteration_history.json') -Depth 100 -Value $history
     Write-RunJson -Path (Join-Path $package.result_dir 'iteration_lineage.json') -Depth 100 -Value $lineage
     Save-WorkpointBootstrap -Bootstrap $Bootstrap -BootstrapPath $BootstrapPath
@@ -1688,46 +1679,18 @@ function Get-InterruptedSOnlyTopologyRecoveryDecision {
 
 function Invoke-SLocalModelRecovery {
   param([Parameter(Mandatory)]$Decision,[Parameter(Mandatory)]$History,[Parameter(Mandatory)]$Lineage,
-    [Parameter(Mandatory)][string]$StatePath,[Parameter(Mandatory)][string]$HistoryPath,[Parameter(Mandatory)]$ContractDocument)
+    [Parameter(Mandatory)][string]$StatePath,[Parameter(Mandatory)][string]$HistoryPath,[Parameter(Mandatory)]$ContractDocument,
+    [Parameter(Mandatory)][System.Collections.IDictionary]$RecoveryPolicy)
   $anchor=$Decision.recovery_state.accepted_anchor
   if($anchor-isnot[Collections.IDictionary]){throw 'Recovery decision lacks accepted anchor.'}
   $anchorV=@($anchor.voltages_v|ForEach-Object{[double]$_})
   if($anchorV.Count-ne4){throw 'Recovery decision anchor must contain S1/S2/P1/P2.'}
   $anchorEvidence=Find-AcceptedRecoveryAnchorEvidence -History $History -Lineage $Lineage -Anchor $anchor
-  $steps=@(Get-RelativeVoltageStencilSteps -Voltages $anchorV -Profile $ContractDocument.downstream_fixed_grid_workpoint_profile -MaximumScaledResidual ([double]$anchor.maximum_scaled_abs_residual))
-  if($steps.Count-ne4-or$steps[0]-le0-or$steps[1]-le0){throw 'Recovery stencil steps are invalid.'}
-  $state=[ordered]@{
-    schema_version=1;role='mrtof_downstream_workpoint_local_model_recovery';status='probing'
-    accepted_anchor=[ordered]@{record=$anchor;evidence=$anchorEvidence}
-    trigger=[ordered]@{iteration=$Decision.iteration;reason=$Decision.recovery_state.model_invalid_reason;decision=$Decision}
-    model_version=0;allowed_abs_step_v=@($steps[0],$steps[1]);probe_steps_v=@($steps[0],$steps[1]);recovery_round=1;maximum_recovery_rounds=3;trusted_prediction_count=0
-    total_probe_budget=12;probe_budget_remaining=12;probes=@();history_validation=$null;model=$null;next_action='probe_missing_independent_s_columns'
-  }
-  if(Test-Path -LiteralPath $StatePath){
-    $stored=Get-Content -LiteralPath $StatePath -Raw|ConvertFrom-Json -AsHashtable
-    if($stored.role-eq$state.role-and$stored.accepted_anchor-is[Collections.IDictionary] -and
-       ($stored.accepted_anchor.record.voltages_v-join',')-eq($anchor.voltages_v-join',') -and
-       $stored.trigger-is[Collections.IDictionary] -and
-       [int]$stored.trigger.iteration-eq[int]$Decision.iteration -and
-       [string]$stored.trigger.reason-eq[string]$Decision.recovery_state.model_invalid_reason){$state=$stored}
-  }
-  # Revalidate persisted evidence against the current lineage.  A checkpoint
-  # made by an earlier workflow revision may have bound the anchor to a later
-  # rejected child's copied accepted_workpoint.
-  if($state.accepted_anchor.evidence.materialization-ne$anchorEvidence.materialization){
-    $state.accepted_anchor.evidence=$anchorEvidence
-    if($state.status-eq'validated'){
-      $state.status='probing';$state.model_version=0;$state.model=$null;$state.history_validation=$null
-      $state.next_action='revalidate_local_model_against_corrected_anchor_evidence'
-    }
-  }
-  if(-not $state.Contains('recovery_round')){$state.recovery_round=1}
-  if(-not $state.Contains('maximum_recovery_rounds')){$state.maximum_recovery_rounds=3}
-  if(-not $state.Contains('probe_steps_v')){$state.probe_steps_v=@($steps[0],$steps[1])}
-  if(-not $state.Contains('recovery_policy_version')){$state.recovery_policy_version=1}
-  if(-not $state.Contains('total_probe_budget')){$state.total_probe_budget=12}
-  foreach($storedProbe in @($state.probes)){
-    if(-not $storedProbe.Contains('round')){$storedProbe.round=1}
+  $stored=$null
+  if(Test-Path -LiteralPath $StatePath){$stored=Get-Content -LiteralPath $StatePath -Raw|ConvertFrom-Json -AsHashtable -Depth 100}
+  $state=Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{
+    action='prepare_recovery_state';decision=$Decision;evidence=$anchorEvidence;stored=$stored;history=$History
+    profile=$ContractDocument.downstream_fixed_grid_workpoint_profile;policy=$RecoveryPolicy
   }
   $requiredDirections=Get-RecoveryProbeDirections -History $History -Anchor $anchor
   # The recovery trigger is the authoritative failed local candidate.  It is
@@ -1758,105 +1721,6 @@ function Invoke-SLocalModelRecovery {
   if($hint-is[Collections.IEnumerable] -and @($hint).Count-eq2){
     $hint=@($hint|ForEach-Object{[int]$_})
     if($hint[0] -in @(-1,1) -and $hint[1] -in @(-1,1)){$requiredDirections=$hint}
-  }
-  # Version-one checkpoints only recorded the probe round.  Preserve every
-  # signed step and its round, but resume the bounded recovery once so the
-  # model obtains evidence on the side occupied by the failed candidate.
-  if([int]$state.recovery_policy_version-lt2){
-    $state.recovery_policy_version=2
-    if($state.status-eq'terminal'-and$state.terminal_reason-eq'model_recovery_exhausted'){
-      $state.status='probing';$state.terminal_reason=$null;$state.model=$null
-      $state.next_action='probe_history_supported_s_directions'
-    }
-  }
-  # Version three makes the budget an auditable ledger.  Earlier revisions
-  # decremented and later topped up a mutable counter, which could incorrectly
-  # strand a recovery after a policy migration.  Recompute only from recorded
-  # started probes and retain the fixed total limit.
-  if([int]$state.recovery_policy_version-lt3){
-    $usedProbeCount=@($state.probes|Where-Object{$_.status-eq'started'-or$_.status-eq'accepted_physical_probe'-or$_.status-eq'rejected_physical_probe'-or$_.status-eq'failed'}).Count
-    $state.probe_budget_remaining=[math]::Max(0,[int]$state.total_probe_budget-$usedProbeCount)
-    $state.recovery_policy_version=3
-    if($state.status-eq'terminal'-and$state.terminal_reason-eq'model_recovery_exhausted'){
-      $state.status='probing';$state.terminal_reason=$null;$state.model=$null
-      $state.next_action='complete_missing_directional_s_columns_within_fixed_budget'
-    }
-  }
-  # Version four repairs an interrupted fallback where the opposite probe was
-  # already physically accepted but the preferred rejected side caused the
-  # old loop to classify the axis as missing.  Resume from the saved evidence;
-  # do not consume another flight or alter the fixed probe budget.
-  if([int]$state.recovery_policy_version-lt4){
-    $state.recovery_policy_version=4
-    if($state.status-eq'terminal'-and$state.terminal_reason-eq'model_recovery_exhausted' -and
-       $null-eq$state.model-and$null-eq$state.history_validation){
-      $state.status='probing';$state.terminal_reason=$null
-      $state.next_action='build_model_from_saved_accepted_directional_columns'
-    }
-  }
-  # Version five migrates a terminal state created solely because the final
-  # local radius had no comparable historical flight.  Its accepted probe
-  # columns remain valid evidence and are re-evaluated as a provisional,
-  # bounded model; no probe is restarted.
-  if([int]$state.recovery_policy_version-lt5){$state.recovery_policy_version=5}
-  # Version six applies the same coarse/medium/fine relative tiers used by the
-  # initial physical stencil.  A topology loss at one coarse axis therefore
-  # contracts to 0.25%, then 0.05%, instead of stranding unused probe budget.
-  if([int]$state.recovery_policy_version-lt6){
-    $usedProbeCount=@($state.probes|Where-Object{$_.status-in@('started','accepted_physical_probe','rejected_physical_probe','failed')}).Count
-    $state.recovery_policy_version=6;$state.maximum_recovery_rounds=3;$state.total_probe_budget=12
-    $state.probe_budget_remaining=[math]::Max(0,12-$usedProbeCount)
-    if($state.status-eq'terminal'-and$state.terminal_reason-eq'model_recovery_exhausted'-and
-       $null-eq$state.model-and[int]$state.recovery_round-lt3){
-      $state.recovery_round=[int]$state.recovery_round+1
-      $factor=if([int]$state.recovery_round-eq2){0.25}else{0.2}
-      $state.probe_steps_v=@($state.probe_steps_v|ForEach-Object{[double]$_*$factor})
-      $state.allowed_abs_step_v=@($state.probe_steps_v)
-      $state.status='probing';$state.terminal_reason=$null
-      $state.next_action='refresh_independent_s_columns_at_next_relative_tier'
-    }
-  }
-  # After one recovered model has produced a real accepted prediction, a later
-  # refresh stays at the contract's fine relative tier.  Repeating the known
-  # nonlocal 1% and 0.25% probes only recreates the rejected excursion.
-  if([int]$state.recovery_policy_version-lt7){
-    $state.recovery_policy_version=7
-    $priorRecoveryProposal=@($History.decisions|Where-Object{
-      $_-is[Collections.IDictionary]-and$_.Contains('recovery_resume_proposal')-and$_.recovery_resume_proposal-eq$true
-    }|Select-Object -Last 1)
-    if($priorRecoveryProposal.Count-eq1-and$state.status-ne'validated'){
-      [double]$fineFraction=$ContractDocument.downstream_fixed_grid_workpoint_profile.jacobian_relative_step_tiers.fine
-      $state.recovery_round=[int]$state.maximum_recovery_rounds
-      $state.probe_steps_v=@(
-        ($fineFraction * [math]::Max([math]::Abs([double]$anchorV[0]),1.0))
-        ($fineFraction * [math]::Max([math]::Abs([double]$anchorV[1]),1.0))
-      )
-      $state.allowed_abs_step_v=@($state.probe_steps_v)
-      $state.status='probing';$state.terminal_reason=$null;$state.model=$null;$state.history_validation=$null
-      $state.next_action='refresh_independent_s_columns_at_persisted_fine_relative_tier'
-    }
-  }
-  $noNearbyHistory=($state.history_validation-is[Collections.IDictionary] -and
-    [int]$state.history_validation.eligible_observation_count-eq0)
-  if($state.status-eq'terminal'-and$state.terminal_reason-eq'model_recovery_exhausted' -and
-     $null-eq$state.model-and$noNearbyHistory -and
-     [int]$state.recovery_round-ge[int]$state.maximum_recovery_rounds){
-    $state.status='probing';$state.terminal_reason=$null
-    $state.next_action='re_evaluate_saved_final_radius_columns_as_provisional_model'
-  }
-  # A failed local-history check is evidence that the derivative scale is too
-  # broad, not evidence that the accepted anchor is invalid.  One smaller,
-  # bounded refresh round may replace just those two derivative columns.
-  if($state.status-eq'terminal'-and$state.terminal_reason-eq'model_recovery_exhausted' -and
-     $state.history_validation-is[Collections.IDictionary]-and -not$state.history_validation.passed -and
-     [int]$state.recovery_round-lt[int]$state.maximum_recovery_rounds){
-    $state.recovery_round=[int]$state.recovery_round+1
-    $factor=if([int]$state.recovery_round-eq2){0.25}else{0.2}
-    $state.probe_steps_v=@($state.probe_steps_v|ForEach-Object{[double]$_*$factor})
-    $state.allowed_abs_step_v=@($state.probe_steps_v)
-    $state.probe_budget_remaining=[int]$state.probe_budget_remaining+2
-    $state.status='probing';$state.terminal_reason=$null;$state.model=$null
-    $state.next_action='refresh_independent_s_columns_at_smaller_local_scale'
   }
   if($state.status-eq'validated'){return $state}
   if($state.status-eq'terminal'){return $state}
@@ -1890,10 +1754,8 @@ function Invoke-SLocalModelRecovery {
     }
     if(-not$accepted){
       if([int]$state.recovery_round-lt[int]$state.maximum_recovery_rounds){
-        $state.recovery_round=[int]$state.recovery_round+1
-        $factor=if([int]$state.recovery_round-eq2){0.25}else{0.2}
-        $state.probe_steps_v=@($state.probe_steps_v|ForEach-Object{[double]$_*$factor})
-        $state.allowed_abs_step_v=@($state.probe_steps_v);$state.status='retry';$state.model=$null
+        $state=Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{action='advance_recovery_round';state=$state;profile=$ContractDocument.downstream_fixed_grid_workpoint_profile;replenish_columns=$false}
+        $state.status='retry';$state.model=$null
         $state.next_action='refresh_independent_s_columns_at_next_relative_tier';Save-IterationRecoveryState -State $state -Path $StatePath;return $state
       }
       $state.status='terminal';$state.terminal_reason='model_recovery_exhausted';$state.next_action='stop_with_best_accepted_workpoint';Save-IterationRecoveryState -State $state -Path $StatePath;return $state
@@ -1940,11 +1802,7 @@ function Invoke-SLocalModelRecovery {
   }
   if(-not($model.history_validation-is[Collections.IDictionary]) -or $model.history_validation.passed-isnot[bool] -or -not$model.history_validation.passed){
     if([int]$state.recovery_round-lt[int]$state.maximum_recovery_rounds){
-      $state.recovery_round=[int]$state.recovery_round+1
-      $factor=if([int]$state.recovery_round-eq2){0.25}else{0.2}
-      $state.probe_steps_v=@($state.probe_steps_v|ForEach-Object{[double]$_*$factor})
-      $state.allowed_abs_step_v=@($state.probe_steps_v)
-      $state.probe_budget_remaining=[int]$state.probe_budget_remaining+2
+      $state=Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{action='advance_recovery_round';state=$state;profile=$ContractDocument.downstream_fixed_grid_workpoint_profile;replenish_columns=$true}
       $state.status='retry';$state.history_validation=$model.history_validation;$state.model=$null
       $state.next_action='refresh_independent_s_columns_at_smaller_local_scale';Save-IterationRecoveryState -State $state -Path $StatePath;return $state
     }
@@ -2218,7 +2076,9 @@ function Invoke-PreparedOriginalStagedWorkflow {
     $script:frozenPreparedInitialProposalPath=Join-Path $package.input_dir 'initial_proposal.json'
     $script:frozenPreparedTargetAuthorityPath=Join-Path $package.input_dir 'initial_target_authority.json'
     Copy-Item -LiteralPath $target -Destination $frozenPreparedTargetAuthorityPath
+    $script:controllerContext=@{repo_root=$repoRoot;python=$python;contract_path=$frozenContract;result_directory=$package.result_dir;prepared_staged=$preparedStagedMode;target_authority_path=$frozenPreparedTargetAuthorityPath;initial_proposal_path=$frozenPreparedInitialProposalPath;prism_handoff_replay_manifest=$PrismHandoffReplayManifest;run_id=$RunId;artifact_root=$artifactRoot;prepared_field_build_mode=$PreparedFieldBuildMode}
     $sourceDirectory=Join-Path $repoRoot 'projects/parallel_mirror_dual_stripe_mr_tof/analysis'
+    $script:controllerStateSource=Copy-VerifiedRunInput -Source (Join-Path $sourceDirectory 'workpoint_controller_state.py') -Destination (Join-Path $package.input_dir 'workpoint_controller_state.py')
     $script:controllerSource=Copy-VerifiedRunInput -Source (Join-Path $sourceDirectory 'downstream_workpoint_iteration.py') -Destination (Join-Path $package.input_dir 'downstream_workpoint_iteration.py')
     $workflowSource=Copy-VerifiedRunInput -Source (Join-Path $sourceDirectory 'run_downstream_workpoint_iteration.ps1') -Destination (Join-Path $package.input_dir 'run_downstream_workpoint_iteration.ps1')
     if($PrismControllerPolicyPath){
@@ -2265,7 +2125,7 @@ print(json.dumps(b))
     $cfg.inputs=[ordered]@{prepared_manifest=(Join-Path $prepared 'run_manifest.json');seed_manifest=$seedManifest
       trajectory_contract=$frozenContract;prepared_target_authority=$frozenPreparedTargetAuthorityPath
       prepared_initial_proposal=$frozenPreparedInitialProposalPath;p1_response=$p1;p2_response=$p2;candidate_field_request_template=$template
-      controller_source=$controllerSource;workflow_source=$workflowSource}
+      controller_source=$controllerSource;controller_state_source=$controllerStateSource;workflow_source=$workflowSource}
     if($s1-ne'__none__'){$cfg.inputs['s1_response']=$s1}
     if($frozenPrismControllerPolicyPath){$cfg.inputs['prism_controller_policy']=$frozenPrismControllerPolicyPath}
     $cfg.parameters=[ordered]@{workflow_branch='measured_source_original_P_S_P_stages';source_mode='centroid_probe'
@@ -2459,6 +2319,9 @@ try {
       -Destination (Join-Path $package.input_dir 'completed_field_provider_manifest.json')
   }
   $frozenContract = Copy-VerifiedRunInput -Source $contract -Destination (Join-Path $package.input_dir 'contract.json')
+  $controllerContext=@{repo_root=$repoRoot;python=$python;contract_path=$frozenContract;result_directory=$package.result_dir;prepared_staged=$preparedStagedMode;target_authority_path=$frozenPreparedTargetAuthorityPath;initial_proposal_path=$frozenPreparedInitialProposalPath;prism_handoff_replay_manifest=$PrismHandoffReplayManifest;run_id=$RunId;artifact_root=$artifactRoot;prepared_field_build_mode=$PreparedFieldBuildMode}
+  $frozenRecoveryPolicy=Copy-VerifiedRunInput -Source $recoveryPolicySource -Destination (Join-Path $package.input_dir 'local_model_recovery_policy.json')
+  $recoveryPolicy=Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{action='validate_recovery_policy';policy=(Get-Content -LiteralPath $frozenRecoveryPolicy -Raw|ConvertFrom-Json -AsHashtable)}
   if($PrismControllerPolicyPath){
     $frozenPrismControllerPolicyPath=Copy-VerifiedRunInput -Source $PrismControllerPolicyPath -Destination (Join-Path $package.input_dir 'prism_controller_policy.json')
     Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
@@ -2558,6 +2421,7 @@ try {
     $earlyConfig.inputs.center_source_receipt=$frozenCenterSourceReceipt
   }
   Write-RunJson -Path $package.run_config -Depth 30 -Value $earlyConfig
+  $controllerStateSource=Copy-VerifiedRunInput -Source (Join-Path $PSScriptRoot 'workpoint_controller_state.py') -Destination (Join-Path $package.input_dir 'workpoint_controller_state.py')
   $controllerSource = Copy-VerifiedRunInput `
     -Source (Join-Path $PSScriptRoot 'downstream_workpoint_iteration.py') `
     -Destination (Join-Path $package.input_dir 'downstream_workpoint_iteration.py')
@@ -2646,7 +2510,7 @@ try {
     $frozenSeedMaterialization=Copy-VerifiedRunInput -Source $seedMaterialization -Destination (Join-Path $package.input_dir 'voltage_seed_materialization.json')
     $profile=(Get-Content -LiteralPath $frozenContract -Raw|ConvertFrom-Json).downstream_fixed_grid_workpoint_profile
     Assert-ActiveStripeVoltages -Voltages $seedVoltages -ActiveAxes $activeAxes
-    $steps=@(Get-RelativeVoltageStencilSteps -Voltages $seedVoltages -Profile $profile)
+    $steps=@(Get-RelativeVoltageStencilSteps -Python $python -RepoRoot $repoRoot -Voltages $seedVoltages -Profile $profile)
     if($seedVoltages.Count-ne4-or@($seedVoltages|Where-Object{-not[double]::IsFinite([double]$_)}).Count-or$steps.Count-ne4-or@($steps|Where-Object{[double]$_-le0-or-not[double]::IsFinite([double]$_)}).Count){throw 'Bootstrap requires four finite seed voltages and four positive stencil steps.'}
     $tiers=$profile.jacobian_relative_step_tiers
     $stepScales=@(1.0,([double]$tiers.medium/[double]$tiers.coarse),([double]$tiers.fine/[double]$tiers.coarse))
@@ -2714,9 +2578,12 @@ try {
     }
     if($PrismHandoffReplayManifest){
       $PrismHandoffReplayManifest=Copy-VerifiedRunInput -Source $PrismHandoffReplayManifest -Destination (Join-Path $package.input_dir 'prism_handoff_replay_manifest.json')
+      $controllerContext.prism_handoff_replay_manifest=$PrismHandoffReplayManifest
     }
     $configuration=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
     $configuration.inputs.controller_source=$controllerSource
+    $configuration.inputs.controller_state_source=$controllerStateSource
+    $configuration.inputs.local_model_recovery_policy=$frozenRecoveryPolicy
     if($frozenPrismControllerPolicyPath){$configuration.inputs.prism_controller_policy=$frozenPrismControllerPolicyPath}
     $configuration.inputs.checkpoint_source=$checkpointSource
     if($PrismHandoffReplayManifest){$configuration.inputs.prism_handoff_replay_manifest=$PrismHandoffReplayManifest}
@@ -2829,9 +2696,10 @@ try {
   }
   $configuration = Get-Content -LiteralPath $package.run_config -Raw | ConvertFrom-Json -AsHashtable
   $configuration.inputs = [ordered]@{
+    local_model_recovery_policy=$frozenRecoveryPolicy
     contract=$frozenContract;initial_workpoint=$frozenProposal
     initial_workpoint_manifest=$frozenInitialManifest
-    controller_source=$controllerSource;workflow_source=$workflowSource
+    controller_source=$controllerSource;controller_state_source=$controllerStateSource;workflow_source=$workflowSource
     checkpoint_source=$checkpointSource
   }
   if($bootstrapPath){$configuration.inputs.workpoint_bootstrap=$bootstrapPath}
@@ -2935,7 +2803,15 @@ try {
     }
     if($checkpoint.recovery_state_path){
       $priorRecovery=(Resolve-Path -LiteralPath ([string]$checkpoint.recovery_state_path)).Path
-      Copy-Item -LiteralPath $priorRecovery -Destination $recoveryStatePath -Force
+      $recoveryImportSource=Copy-VerifiedRunInput -Source $priorRecovery -Destination (Join-Path $package.input_dir 'imported_recovery_checkpoint.json')
+      $configuration.inputs.imported_recovery_checkpoint=$recoveryImportSource
+      $importDecision=if($pendingRecoveryDecision){$pendingRecoveryDecision}else{Get-InterruptedSOnlyTopologyRecoveryDecision -History $history}
+      $importEvidence=if($importDecision){Find-AcceptedRecoveryAnchorEvidence -History $history -Lineage $lineage -Anchor $importDecision.recovery_state.accepted_anchor}else{$null}
+      $importedRecovery=Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{
+        action='import_recovery_checkpoint';stored=(Get-Content -LiteralPath $recoveryImportSource -Raw|ConvertFrom-Json -AsHashtable -Depth 100);decision=$importDecision;evidence=$importEvidence
+        history=$history;profile=(Get-Content -LiteralPath $frozenContract -Raw|ConvertFrom-Json -AsHashtable).downstream_fixed_grid_workpoint_profile;policy=$recoveryPolicy
+      }
+      Write-RunJson -Path $recoveryStatePath -Depth 100 -Value $importedRecovery
     }
     Write-RunJson -Path $historyPath -Depth 30 -Value $history
     Write-RunJson -Path $lineagePath -Depth 30 -Value $lineage
@@ -2967,7 +2843,7 @@ try {
   if($null-eq$terminalDecision-and$null-ne$pendingRecoveryDecision){
     do{
       $recovery=Invoke-SLocalModelRecovery -Decision $pendingRecoveryDecision -History $history -Lineage $lineage `
-        -StatePath $recoveryStatePath -HistoryPath $historyPath `
+        -StatePath $recoveryStatePath -HistoryPath $historyPath -RecoveryPolicy $recoveryPolicy `
         -ContractDocument (Get-Content -LiteralPath $frozenContract -Raw|ConvertFrom-Json -AsHashtable)
     }while($recovery.status-eq'retry')
     if($recovery.status-eq'terminal'){
@@ -3148,7 +3024,7 @@ try {
     if($decision.state-eq'recovery_required'){
       do{
         $recovery=Invoke-SLocalModelRecovery -Decision $decision -History $history -Lineage $lineage `
-          -StatePath $recoveryStatePath -HistoryPath $historyPath `
+          -StatePath $recoveryStatePath -HistoryPath $historyPath -RecoveryPolicy $recoveryPolicy `
           -ContractDocument (Get-Content -LiteralPath $frozenContract -Raw|ConvertFrom-Json -AsHashtable)
       }while($recovery.status-eq'retry')
       if($recovery.status-eq'terminal'){

@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "role": "mrtof_local_model_recovery_policy",
+  "maximum_recovery_rounds": 3,
+  "total_probe_budget": 12
+}

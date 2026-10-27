@@ -38,10 +38,10 @@ IP路径保留native轴置换限制，不能据共同刚体回归声称任意相
 真实端面、截面及电极表来自提供者；MR完整组件视图包含镜、Stripe、Prism、屏蔽和detector的20个物理电极身份，
 不以PA编号、数值marker或机械端面替代完整驱动与场验收。
 
-173601当前完整接口的OA→MR N100已自然成功：100唯一终态、98检测、2电极碰撞、无timeout，原静态场复用。
-首批观测后实际为10＋90两批；终态统计现使用最终批计划，新checkpoint保存永久路径。
-完整批次恢复按前驱manifest的显式输入角色定位并验证身份，不依赖已退役的执行alias；已成功前驱可沿公共机制重做分析，
-不改写原成功记录，也不以重复Fly修复统计或发布问题。具体后继恢复验收见直属集成状态。
+OA→MR的原生功能与两代完整批恢复已有证据，结果统一见
+[联合飞行状态](../../../integrations/docs/INTEGRATION.md#已准备ipmr联合飞行)。
+旧173601及恢复run的manifest未完整登记父plan／local-scope，不能追认其配方身份已完整绑定；
+当前owner已补齐永久输入角色及篡改拒绝。恢复不改写原记录，也不以重复Fly修复统计或发布问题。
 
 关闭条件是OA与IP各自在冻结输入下完成几何／驱动／场及相称原生行为对照，明确相交和净距检查范围。
 `pulse_held_rf_zero`不升级成全程动态RF／碰撞耦合；原ID、母群损失、实际6D与绝对时钟始终保留。
@@ -133,7 +133,7 @@ C0为指定外边界假设，完整内表面x=[-162.5,162.5]、y=[-242,558]、z=
 ## 活动原生场与消费合同
 
 跨项目飞行从[直属OA→MR入口](../../../integrations/workflows/oa_mr/execute.ps1)进入；
-MR专属staged工作点及候选控制仍从[操作说明](../simion/README.md)选择。
+MR专属staged工作点及候选控制仍从[操作说明](SIMION.md)选择。
 场由现有native static provider与`static_field_binding.py`提供，不能另建手工闭合器。
 运行必须冻结对应实际资产；源码接入和纯回归不授予新原生、GUI或Formal资格。
 
@@ -213,7 +213,7 @@ S1单独-0.1 V对Ey改善弱且空间相位变差，保留负结果，不重复�
 复现原97出口／19检测链，含0.05 mm碰撞占据patch；它不是524 Da新链的GUI验收。
 手动Fly须使用独立可写的工作台控制／日志目录并核对永久PA绑定；未变大PA按封存身份只读复用。
 当前 launcher 的 `load-workbench` 与批处理 Fly 共用碰撞 PA 预载，打开同一 IOB／Program／Fly2，
-保持 RAM 中的不可 Refine 标志；使用方法和官方依据见[SIMION说明](../simion/README.md#事件与分析)。
+保持 RAM 中的不可 Refine 标志；使用方法和官方依据见[SIMION说明](SIMION.md#事件与分析)。
 这补齐代码中的装载状态差异，不追认旧包已人工打开，也不使普通 PA 查询等于程序回调场。
 [STEP交付](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261014_163154__build__cad__mrtof-tilted-step-publication-recovery/summary.json)
 含40独立电极、6个C0参考面及装配概览；5 μm交换精度不是场或制造精度，第三方消费未验收。

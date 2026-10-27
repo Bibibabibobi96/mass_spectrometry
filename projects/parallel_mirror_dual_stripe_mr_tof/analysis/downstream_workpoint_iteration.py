@@ -12,6 +12,7 @@ import copy
 import json
 import math
 import re
+import sys
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -37,6 +38,11 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_operating_point import (
     measured_prism_jacobian,
     _same_frozen_problem,
+)
+
+
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.workpoint_controller_state import (
+    dispatch_controller_request, relative_voltage_step,
 )
 
 
@@ -327,31 +333,6 @@ def assess_staged_prediction(
                 prediction_direction_wrong=wrong_direction, predicted_executed_residuals=dict(predicted),
                 maximum_normalized_error=maximum, threshold_fraction=threshold,
                 threshold_authority=policy.get("path"), scope="measured_prediction_quality_only")
-
-
-def _relative_voltage_step(profile: Mapping[str, Any], maximum_scaled_residual: float) -> float:
-    tiers = profile.get("jacobian_relative_step_tiers")
-    if not isinstance(tiers, Mapping) or set(tiers) != {
-        "coarse", "medium", "fine", "medium_maximum_scaled_residual",
-        "fine_maximum_scaled_residual",
-    }:
-        raise CandidateContractError("relative voltage step tiers are invalid")
-    coarse = _finite(tiers["coarse"], "coarse relative voltage step")
-    medium = _finite(tiers["medium"], "medium relative voltage step")
-    fine = _finite(tiers["fine"], "fine relative voltage step")
-    medium_limit = _finite(
-        tiers["medium_maximum_scaled_residual"], "medium relative-step threshold"
-    )
-    fine_limit = _finite(
-        tiers["fine_maximum_scaled_residual"], "fine relative-step threshold"
-    )
-    if not 0.0 < fine < medium < coarse or not 0.0 < fine_limit < medium_limit:
-        raise CandidateContractError("relative voltage step tiers must decrease toward convergence")
-    if maximum_scaled_residual <= fine_limit:
-        return fine
-    if maximum_scaled_residual <= medium_limit:
-        return medium
-    return coarse
 
 
 def _field_binding_reference(field_binding: Mapping[str, Any]) -> dict[str, Any]:
@@ -1280,7 +1261,7 @@ def _propose_prism_step(
         model_lower, model_upper = np.asarray(result["measured_model_bounds_v"])
         lower, upper = np.maximum(lower, model_lower), np.minimum(upper, model_upper)
     else:
-        relative = _relative_voltage_step(profile, result["maximum_scaled_abs_residual"])
+        relative = relative_voltage_step(profile, result["maximum_scaled_abs_residual"])
     raw *= advance
     maximum = relative * np.maximum(np.abs(voltages[2:]), 1.0)
     delta, alpha = bounded_coordinate_step(voltages[2:], raw, maximum, lower, upper)
@@ -1560,7 +1541,7 @@ def _decide_joint_ps_refinement(baseline: Mapping[str, Any], samples: Sequence[M
         step = measured["voltages_v"][axis] - voltages[axis]
         columns.append((_record_physical_vector(measured)-residuals)/step)
     columns = np.column_stack(columns)
-    relative = _relative_voltage_step(profile, float(np.max(np.abs(residuals[2:]/tolerances[2:]))))
+    relative = relative_voltage_step(profile, float(np.max(np.abs(residuals[2:]/tolerances[2:]))))
     try:
         delta, _ = _joint_ps_step(columns, residuals, tolerances, voltages, numerics, relative)
     except CandidateContractError as error:
@@ -1681,7 +1662,7 @@ def decide_stripe_preclosure(
         return dict(result, status="terminal", state="terminal", terminal_reason="solver_failure",
                     next_action="stop_S_preclosure", detail=str(error))
     raw *= _factor(loop, "advance_multiplier", "damping_factor")
-    relative = _relative_voltage_step(profile, maximum_residual)
+    relative = relative_voltage_step(profile, maximum_residual)
     delta, alpha = bounded_coordinate_step(
         voltages[indices], raw, relative * np.maximum(np.abs(voltages[indices]), 1.0), lower, upper,
     )
@@ -2093,7 +2074,7 @@ def decide_iteration(
         else:
             prediction_assessment["prediction_confidence"] = "unmeasured"
     raw *= advance_multiplier
-    relative_step = _relative_voltage_step(
+    relative_step = relative_voltage_step(
         profile, _finite(record["maximum_scaled_abs_residual"], "maximum scaled residual")
     )
     maximum = relative_step * np.maximum(np.abs(voltages[indices]), 1.0)
@@ -2705,6 +2686,7 @@ def _load_prior_prism_decision(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--controller-request", choices=("-",), help=argparse.SUPPRESS)
     parser.add_argument("--prior", type=Path)
     parser.add_argument("--observation", type=Path)
     parser.add_argument("--child-manifest", type=Path)
@@ -2743,6 +2725,11 @@ def main() -> int:
                         help="emit the best fully qualified physical workpoint for bunch screening")
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
+    if args.controller_request is not None:
+        if str(args.output) != "-":
+            parser.error("internal controller request writes only to stdout")
+        print(json.dumps(dispatch_controller_request(json.load(sys.stdin))))
+        return 0
     if args.prior_prism_decision_manifest is not None and args.control_stage != "prism_preclosure":
         parser.error("--prior-prism-decision-manifest is only available for prism_preclosure")
     if args.control_stage is not None:
