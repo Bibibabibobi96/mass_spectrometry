@@ -25,6 +25,21 @@ FORMAL_ASSET_LIFECYCLES = frozenset(("formal", "formal_revalidation_pending"))
 DEFAULT_OUTPUT = REPO_ROOT / "config" / "project_registry.json"
 
 
+def validate_runtime_binding(profile: dict[str, Any], project_root: Path) -> Path | None:
+    """Validate a schema-checked profile's optional project resolver declaration."""
+    declaration = profile.get("runtime_binding")
+    if declaration is None:
+        return None
+    if not set(declaration["required_bindings"]) <= set(profile["required_bindings"]):
+        raise ContractError("runtime binding selectors must be required bindings of the execution profile")
+    entrypoint = (project_root / declaration["entrypoint"]).resolve()
+    if not entrypoint.is_relative_to(project_root.resolve()):
+        raise ContractError("runtime binding entrypoint must remain inside its project")
+    if not entrypoint.is_file():
+        raise ContractError(f"runtime binding entrypoint is missing: {declaration['entrypoint']}")
+    return entrypoint
+
+
 def descriptor_paths(repo_root: Path) -> list[Path]:
     return sorted((repo_root / "projects").glob("*/config/project.json"))
 
@@ -257,6 +272,7 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
         profile_ids: set[str] = set()
         profile_keys: set[tuple[str, str]] = set()
         for profile in execution["profiles"]:
+            validate_runtime_binding(profile, project_root)
             profile_id = profile["profile_id"]
             if profile_id in profile_ids:
                 raise ContractError(f"{execution_path}: duplicate profile_id {profile_id!r}")

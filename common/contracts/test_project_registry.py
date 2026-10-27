@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from artifact_identity_archive import (
     historical_project_identities,
@@ -312,6 +313,39 @@ class ProjectRegistryTests(unittest.TestCase):
         descriptor["lifecycle_status"] = "finished"
         with self.assertRaises(ContractError):
             validate_schema(descriptor, "project.schema.json")
+
+    def test_execution_runtime_binding_schema_rejects_invalid_declarations(self) -> None:
+        original = load_json(REPO_ROOT / "projects/rf_multipole_ion_optics/config/execution_profiles.json")
+        valid = original["profiles"][0]["runtime_binding"]
+        invalid = [None, {}, {**valid, "callable": "other_function"}, {**valid, "required_bindings": []},
+                   {**valid, "required_bindings": ["runtime_profile_id", "runtime_profile_id"]}]
+        invalid.extend({**valid, "entrypoint": entrypoint} for entrypoint in (
+            "../other_project/runtime.py", "/external.py", "C:/external.py", "runtime/not-python.json",
+        ))
+        for declaration in invalid:
+            document = copy.deepcopy(original)
+            document["profiles"][0]["runtime_binding"] = declaration
+            with self.subTest(declaration=declaration), self.assertRaises(ContractError):
+                validate_schema(document, "execution_profiles.schema.json")
+
+    def test_project_registration_rejects_missing_runtime_resolver_and_unknown_selectors(self) -> None:
+        project_root = REPO_ROOT / "projects/rf_multipole_ion_optics"
+        descriptor_path = project_root / "config/project.json"
+        descriptor = load_json(descriptor_path)
+        execution_path = project_root / "config/execution_profiles.json"
+        for field, value, message in (
+            ("entrypoint", "runtime/missing_resolver.py", "entrypoint is missing"),
+            ("required_bindings", ["not_a_profile_binding"], "must be required bindings"),
+        ):
+            execution = load_json(execution_path)
+            execution["profiles"][0]["runtime_binding"][field] = value
+
+            def changed_load(path):
+                return execution if Path(path) == execution_path else load_json(path)
+
+            with self.subTest(field=field), patch("build_project_registry.load_json", side_effect=changed_load):
+                with self.assertRaisesRegex(ContractError, message):
+                    validate_descriptor(descriptor, descriptor_path, REPO_ROOT)
 
     def test_formal_project_retains_contracts_and_identity_requirement(self) -> None:
         path = REPO_ROOT / "projects" / "single_reflection_oa_tof_mass_analyzer" / "config" / "project.json"

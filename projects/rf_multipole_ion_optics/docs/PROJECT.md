@@ -91,6 +91,11 @@
 | 旧资格、原身份与冻结记录 | [历史索引](history/README.md) |
 
 活动runtime编译完整输入后执行；不能用命令行自由覆盖几何、RF/DC、源或已绑定数值语义。
+公共命令预览通过execution profile的`runtime_binding`调用本项目
+[`resolve_execution_binding`](../runtime/runtime_profile.py)，具名runtime与campaign均复用既有解析器；
+本项目提取实际结构及campaign的`authorized_run_id`，公共编译器负责身份、能力归属和受保护上下文校验。
+纯回归覆盖三种结构、campaign身份、未知与跨结构拒绝及真实CLI预览；`authorized=False`仍可预览，
+实际商业执行继续由`validate_pilot_budget`失败关闭，不改变上面的未授权结论。
 专用workflow的允许输入与探索数值范围见软件说明及其机器合同。模型参数、阈值和正式证据都不从本文推导。
 旧资格JSON保留原owner、profile名、SHA和run；它们不是可复制改名后执行的新资格合同。
 新的运行合同若引用旧源数据，必须显式验证该来源身份，不能给历史数据补一个新owner。

@@ -598,8 +598,14 @@ OA的二区／三区和RF的四／六／八极使用同一选择语义；极数�
 求解已经运行或指标已经满足。只完成结构构建的runner不得把分辨率等未评价目标列为支持。
 需要显式粒子表、RF幅值等运行绑定的profile使用`--bind key=value`提供预览值。编译器会验证入口文件、
 生成受命名合同约束的子run ID，并保留项目profile的限制说明，但不会创建artifact运行目录。
-多极杆`runtime_profile_id`须解析到所选能力的同一结构变体；未知、空值或跨变体绑定拒绝执行，完整绑定后仍未展开的命令占位符也会被拒绝。
-campaign绑定复用既有实验解析器核对结构，并读取实验冻结的`authorized_run_id`；该身份不能由调用者覆盖。缺少campaign绑定时只返回缺失输入的预览。
+需要项目解析的profile通过可选`runtime_binding`声明项目内Python `entrypoint`及其`required_bindings`子集。
+入口固定实现`resolve_execution_binding(repo_root, project_id, bindings)`，只接收声明的selector，返回且仅返回
+`project_id`、`structural_variant_id`、`authorized_run_id`；最后一项为合法run ID或`None`。公共编译器校验
+声明路径、selector归属、回包字段和类型、项目身份及能力的唯一结构归属，仅注入已校验的运行身份。
+项目解析器拥有科学输入、注册选择和运行身份的来源解释；公共层不读取项目私有预算结构。
+缺少selector时保留缺失输入的预览；selector齐全但其他输入缺失时仍验证该选择。未知、空值、跨结构选择、
+调用者覆盖受保护上下文以及完整绑定后未展开的命令占位符均被拒绝。无声明的profile沿用原有直接绑定。
+预览中的`authorized_run_id`只记录项目解析出的运行身份；商业执行授权仍由项目runner与预算合同验证。
 
 ## 正式结果与来源运行
 

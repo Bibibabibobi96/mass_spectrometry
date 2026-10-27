@@ -10,6 +10,7 @@ from unittest.mock import patch
 from projects.rf_multipole_ion_optics.runtime import runtime_profile
 from projects.rf_multipole_ion_optics.runtime.runtime_profile import (
     resolve_campaign_experiment,
+    resolve_execution_binding,
     resolve_runtime_profile,
 )
 from projects.rf_multipole_ion_optics.runtime.simion_numerics import normalize_simion_solver_numerics
@@ -21,6 +22,36 @@ VARIANTS = ("quadrupole", "hexapole", "octupole")
 
 
 class RuntimeProfileTests(unittest.TestCase):
+    def test_execution_binding_projects_each_actual_structure_without_run_authorization(self) -> None:
+        for variant in VARIANTS:
+            with self.subTest(variant=variant):
+                result = resolve_execution_binding(REPO_ROOT, PROJECT_ID, {
+                    "runtime_profile_id": variant + "_no_acceleration_full_length",
+                })
+                self.assertEqual(result, {"project_id": PROJECT_ID, "structural_variant_id": variant,
+                                          "authorized_run_id": None})
+
+    def test_execution_binding_projects_the_campaign_owned_run_identity(self) -> None:
+        path = REPO_ROOT / "projects/rf_multipole_ion_optics/config/campaigns/20260731__noacc_vs_segmented_h15_n100.json"
+        for variant, short in (("hexapole", "hex"), ("octupole", "oct")):
+            experiment_id = short + "_segmented_h15_n100"
+            runtime = resolve_campaign_experiment(REPO_ROOT, PROJECT_ID, path, experiment_id)
+            with self.subTest(variant=variant):
+                self.assertIs(runtime["engineering_budget"]["inline_contract"]["pilot_authorization"]["authorized"], False)
+                self.assertEqual(resolve_execution_binding(REPO_ROOT, PROJECT_ID, {
+                    "campaign_path": str(path), "experiment_id": experiment_id,
+                }), {
+                    "project_id": PROJECT_ID, "structural_variant_id": variant,
+                    "authorized_run_id": runtime["engineering_budget"]["inline_contract"]["pilot_authorization"]["scope"]["authorized_run_id"],
+                })
+
+    def test_execution_binding_rejects_incomplete_mixed_and_extra_selectors(self) -> None:
+        for bindings in ({}, {"campaign_path": "campaign.json"}, {"experiment_id": "experiment"},
+                         {"runtime_profile_id": "profile", "campaign_path": "campaign.json", "experiment_id": "experiment"},
+                         {"runtime_profile_id": "profile", "authorized_run_id": "forged"}):
+            with self.subTest(bindings=bindings), self.assertRaisesRegex(ValueError, "execution binding requires"):
+                resolve_execution_binding(REPO_ROOT, PROJECT_ID, bindings)
+
     def _current_campaign(self) -> dict[str, object]:
         campaign = json.loads(
             (REPO_ROOT / "projects/rf_multipole_ion_optics/config/campaigns/20260731__noacc_vs_segmented_h15_n100.json").read_text(

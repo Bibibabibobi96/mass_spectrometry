@@ -1,12 +1,14 @@
 import copy
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 
-from common.contracts.compile_execution_plan import compile_execution, _validate_runtime_structure_binding
+from common.contracts.compile_execution_plan import compile_execution
 from common.contracts.machine_contracts import REPO_ROOT, load_json
 from common.contracts.plan_design_request import build_plan
 
@@ -146,15 +148,6 @@ class ExecutionCompilerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unexpected runtime bindings"):
             self.compile_request(request, {**self.functional_bindings(), "particle_source_path": "C:/data/source.csv"})
 
-    def test_runtime_structure_binding_resolves_all_three_actual_designs(self):
-        project = next(p for p in load_json(self.registry)["projects"] if p["project_id"] == "rf_multipole_ion_optics")
-        for variant in project["structural_variants"]:
-            with self.subTest(variant=variant["variant_id"]):
-                _validate_runtime_structure_binding(
-                    project, {"capability_id": variant["capability_ids"][0], "required_bindings": ["runtime_profile_id"]},
-                    {"runtime_profile_id": variant["variant_id"] + "_no_acceleration_full_length"},
-                )
-
     def test_functional_plan_rejects_unknown_empty_and_cross_structure_runtime(self):
         request = self.approved_functional_rf_request()
         for runtime in ("hexapole_no_acceleration_full_length", "octupole_no_acceleration_full_length"):
@@ -165,9 +158,69 @@ class ExecutionCompilerTests(unittest.TestCase):
                 self.compile_request(request, {**self.functional_bindings(), "runtime_profile_id": runtime})
 
     def test_runtime_structure_is_read_from_resolution_not_selector_spelling(self):
-        resolved = {"design_profile_resolution": {"profile": {"structural_variant_id": "octupole"}}}
+        resolved = {"project_id": "rf_multipole_ion_optics",
+                    "design_profile_resolution": {"profile": {"structural_variant_id": "octupole"}}}
         with patch("projects.rf_multipole_ion_optics.runtime.runtime_profile.resolve_runtime_profile", return_value=resolved):
             with self.assertRaisesRegex(ValueError, "Runtime structural variant"):
+                self.compile_request(self.approved_functional_rf_request(), self.functional_bindings())
+
+    def test_runtime_resolver_receives_only_declared_selectors(self):
+        resolved = {"project_id": "rf_multipole_ion_optics", "structural_variant_id": "quadrupole",
+                    "authorized_run_id": None}
+        with patch("projects.rf_multipole_ion_optics.runtime.runtime_profile.resolve_execution_binding",
+                   return_value=resolved) as resolver:
+            ready = self.compile_request(self.approved_functional_rf_request(), self.functional_bindings())
+            self.assertEqual(ready["status"], "EXECUTION_READY")
+            resolver.assert_called_once_with(REPO_ROOT, "rf_multipole_ion_optics",
+                                            {"runtime_profile_id": self.functional_bindings()["runtime_profile_id"]})
+
+    def test_runtime_selection_is_checked_even_when_other_required_inputs_are_missing(self):
+        with patch("projects.rf_multipole_ion_optics.runtime.runtime_profile.resolve_execution_binding") as resolver:
+            preview = self.compile_request(self.approved_functional_rf_request(), {"evidence_contract_path": "evidence.json"})
+            self.assertEqual(preview["status"], "NEEDS_RUNTIME_INPUTS")
+            resolver.assert_not_called()
+        with self.assertRaisesRegex(ValueError, "unknown runtime profile"):
+            self.compile_request(self.approved_functional_rf_request(), {"runtime_profile_id": "unknown_profile"})
+
+    def test_profiles_without_runtime_resolver_do_not_load_project_code(self):
+        with patch("common.contracts.compile_execution_plan.importlib.import_module") as loader:
+            result = self.compile_request(self.ion_processor_request())
+            self.assertEqual(result["status"], "EXECUTION_READY")
+            request = load_json(HERE / "examples" / "oa_tof_500da_r30000.example.json")
+            self.assertEqual(self.compile_request(request)["status"], "NEEDS_IMPLEMENTATION")
+            loader.assert_not_called()
+
+    def test_runtime_binding_result_rejects_wrong_identity_types_and_extra_context(self):
+        valid = {"project_id": "rf_multipole_ion_optics", "structural_variant_id": "quadrupole",
+                 "authorized_run_id": None}
+        invalid = [None, [], {}, {**valid, "run_id": self.run_id}, {**valid, "project_id": "other_project"}]
+        for key in ("project_id", "structural_variant_id"):
+            invalid.extend({**valid, key: value} for value in (None, 1, "", " quadrupole"))
+        invalid.extend({**valid, "structural_variant_id": value} for value in ("unknown_structure", "hexapole"))
+        invalid.extend({**valid, "authorized_run_id": value} for value in (True, 1, "", "forged", " " + self.run_id))
+        for resolved in invalid:
+            with self.subTest(resolved=resolved), patch(
+                "projects.rf_multipole_ion_optics.runtime.runtime_profile.resolve_execution_binding", return_value=resolved,
+            ), self.assertRaises(ValueError):
+                self.compile_request(self.approved_functional_rf_request(), self.functional_bindings())
+
+    def test_runtime_binding_requires_the_declared_callable(self):
+        with patch("projects.rf_multipole_ion_optics.runtime.runtime_profile.resolve_execution_binding", None):
+            with self.assertRaisesRegex(ValueError, "must define resolve_execution_binding"):
+                self.compile_request(self.approved_functional_rf_request(), self.functional_bindings())
+
+    def test_execution_contract_and_loaded_resolver_must_belong_to_the_selected_project(self):
+        def changed_load(path):
+            document = load_json(path)
+            if Path(path).name == "execution_profiles.json":
+                document["project_id"] = "other_project"
+            return document
+
+        with patch("common.contracts.compile_execution_plan.load_json", side_effect=changed_load):
+            with self.assertRaisesRegex(ValueError, "contract project identity differs"):
+                self.compile_request(self.approved_functional_rf_request(), self.functional_bindings())
+        with patch("projects.rf_multipole_ion_optics.runtime.runtime_profile.__file__", str(HERE / "machine_contracts.py")):
+            with self.assertRaisesRegex(ValueError, "differs from its declared entrypoint"):
                 self.compile_request(self.approved_functional_rf_request(), self.functional_bindings())
 
     def test_complete_bindings_cannot_leave_an_unexpanded_step_argument(self):
@@ -268,6 +321,28 @@ class ExecutionCompilerTests(unittest.TestCase):
             (project_root / "runtime/run_simion_transport_campaign.ps1").resolve(),
         )
         self.assertIn(experiment["experiment_id"], run["argv"])
+
+    def test_cli_compiles_campaign_bindings_to_the_registered_run_identity(self):
+        bindings = self.campaign_binding("hex")
+        with tempfile.TemporaryDirectory() as directory:
+            request_path = Path(directory) / "request.json"
+            plan_path = Path(directory) / "plan.json"
+            request_path.write_text(json.dumps(self.campaign_request("hexapole")), encoding="utf-8")
+            plan, _ = build_plan(request_path, self.registry, self.run_id)
+            plan_path.write_text(json.dumps(plan), encoding="utf-8")
+            command = [sys.executable, "-m", "common.contracts.compile_execution_plan", str(plan_path),
+                       "--registry", str(self.registry)]
+            for key, value in bindings.items():
+                command.extend(["--bind", f"{key}={value}"])
+            completed = subprocess.run(command, cwd=REPO_ROOT, capture_output=True, text=True,
+                                       encoding="utf-8", timeout=60, check=False)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            result = json.loads(completed.stdout)
+        campaign = load_json(Path(bindings["campaign_path"]))
+        experiment = next(row for row in campaign["experiments"] if row["experiment_id"] == bindings["experiment_id"])
+        self.assertEqual(result["status"], "EXECUTION_READY")
+        self.assertEqual(result["commands"][1]["run_id"], experiment["authorized_run_id"])
+        self.assertIn(bindings["experiment_id"], result["commands"][1]["argv"])
 
     def test_campaign_missing_binding_is_a_preview_blocker_not_an_invalid_run_id(self):
         request = self.campaign_request("hexapole")

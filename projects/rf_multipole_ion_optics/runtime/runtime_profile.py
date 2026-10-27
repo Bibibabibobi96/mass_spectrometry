@@ -822,6 +822,35 @@ def resolve_runtime_selection(
     return resolve_campaign_experiment(repo_root, project_id, campaign_path, experiment_id)
 
 
+def resolve_execution_binding(
+    repo_root: Path, project_id: str, bindings: dict[str, str],
+) -> dict[str, str | None]:
+    """Project a validated runtime selection into command-preview identity only.
+
+    Unknown or incomplete selections raise ValueError. This reads the existing
+    runtime authorities; it neither grants commercial authorization nor starts a run.
+    """
+    if set(bindings) == {"runtime_profile_id"}:
+        runtime = resolve_runtime_selection(
+            repo_root, project_id, runtime_profile_id=bindings["runtime_profile_id"],
+        )
+    elif set(bindings) == {"campaign_path", "experiment_id"}:
+        runtime = resolve_runtime_selection(
+            repo_root, project_id, campaign_path=Path(bindings["campaign_path"]),
+            experiment_id=bindings["experiment_id"],
+        )
+    else:
+        raise ValueError("execution binding requires runtime_profile_id or campaign_path + experiment_id")
+    authorized_run_id = None
+    if "campaign" in runtime:
+        authorized_run_id = runtime["engineering_budget"]["inline_contract"]["pilot_authorization"]["scope"]["authorized_run_id"]
+    return {
+        "project_id": runtime["project_id"],
+        "structural_variant_id": runtime["design_profile_resolution"]["profile"]["structural_variant_id"],
+        "authorized_run_id": authorized_run_id,
+    }
+
+
 def _semantic_diff_category(path: tuple[str, ...]) -> str:
     """Classify resolved-plan fields for review without creating execution policy."""
 

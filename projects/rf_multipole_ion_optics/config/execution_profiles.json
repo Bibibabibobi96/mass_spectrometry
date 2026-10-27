@@ -42,6 +42,10 @@
         "runtime_profile_id",
         "evidence_contract_path"
       ],
+      "runtime_binding": {
+        "entrypoint": "runtime/runtime_profile.py",
+        "required_bindings": ["runtime_profile_id"]
+      },
       "steps": [
         {
           "step_id": "static_gate",
@@ -372,6 +376,10 @@
         "campaign_path",
         "experiment_id"
       ],
+      "runtime_binding": {
+        "entrypoint": "runtime/runtime_profile.py",
+        "required_bindings": ["campaign_path", "experiment_id"]
+      },
       "steps": [
         {
           "step_id": "static_gate",
@@ -464,6 +472,10 @@
         "campaign_path",
         "experiment_id"
       ],
+      "runtime_binding": {
+        "entrypoint": "runtime/runtime_profile.py",
+        "required_bindings": ["campaign_path", "experiment_id"]
+      },
       "steps": [
         {
           "step_id": "static_gate",

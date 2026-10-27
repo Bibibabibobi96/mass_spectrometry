@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import re
 from pathlib import Path
 from typing import Any
 
 from common.contracts.artifact_naming import validate_run_id
+from common.contracts.build_project_registry import validate_runtime_binding
 from common.contracts.machine_contracts import REPO_ROOT, load_json, sha256, validate_schema
 
 
@@ -21,18 +23,13 @@ def _operating_point_key(point: dict[str, Any]) -> tuple[float, str, int]:
     return (float(point["mass"]["value"]), point["mass"]["unit"], int(point["charge_state"]))
 
 
-def _validate_runtime_structure_binding(project: dict[str, Any], profile: dict[str, Any],
-                                        bindings: dict[str, str]) -> dict[str, str]:
-    """Validate actual runtime structure and return any campaign-owned run context."""
-    if project["family_id"] != "rf_multipole_ion_optics":
+def _resolve_runtime_binding(project: dict[str, Any], profile: dict[str, Any],
+                             bindings: dict[str, str]) -> dict[str, str]:
+    """Resolve declared project selectors and validate the narrow execution context."""
+    entrypoint = validate_runtime_binding(profile, REPO_ROOT / "projects" / project["project_id"])
+    if entrypoint is None:
         return {}
-    required = set(profile["required_bindings"])
-    if "runtime_profile_id" in required:
-        selection_keys = {"runtime_profile_id"}
-    elif {"campaign_path", "experiment_id"} <= required:
-        selection_keys = {"campaign_path", "experiment_id"}
-    else:
-        return {}
+    selection_keys = set(profile["runtime_binding"]["required_bindings"])
     if not selection_keys <= set(bindings):
         return {}
     for key in selection_keys:
@@ -44,17 +41,33 @@ def _validate_runtime_structure_binding(project: dict[str, Any], profile: dict[s
     }
     if len(owners) != 1:
         raise ValueError("Execution capability must have one declared structural variant")
-    from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_runtime_selection
-    if "runtime_profile_id" in selection_keys:
-        runtime = resolve_runtime_selection(REPO_ROOT, project["project_id"], runtime_profile_id=bindings["runtime_profile_id"])
-    else:
-        runtime = resolve_runtime_selection(REPO_ROOT, project["project_id"],
-                                            campaign_path=Path(bindings["campaign_path"]), experiment_id=bindings["experiment_id"])
-    actual = runtime["design_profile_resolution"]["profile"]["structural_variant_id"]
+    module_name = ".".join(entrypoint.relative_to(REPO_ROOT.resolve()).with_suffix("").parts)
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError as error:
+        raise ValueError(f"Cannot import runtime binding entrypoint: {entrypoint}") from error
+    if not getattr(module, "__file__", None) or Path(module.__file__).resolve() != entrypoint:
+        raise ValueError("Runtime binding module differs from its declared entrypoint")
+    resolver = getattr(module, "resolve_execution_binding", None)
+    if not callable(resolver):
+        raise ValueError("Runtime binding entrypoint must define resolve_execution_binding")
+    resolved = resolver(REPO_ROOT, project["project_id"], {key: bindings[key] for key in selection_keys})
+    if not isinstance(resolved, dict) or set(resolved) != {
+        "project_id", "structural_variant_id", "authorized_run_id",
+    }:
+        raise ValueError("Runtime binding result fields differ")
+    for key in ("project_id", "structural_variant_id"):
+        if not isinstance(resolved[key], str) or not resolved[key] or resolved[key] != resolved[key].strip():
+            raise ValueError(f"Runtime binding result {key} must be a nonempty trimmed string")
+    if resolved["project_id"] != project["project_id"]:
+        raise ValueError("Runtime binding result project identity differs")
+    actual = resolved["structural_variant_id"]
     if actual not in owners:
         raise ValueError(f"Runtime structural variant {actual!r} differs from selected capability {sorted(owners)!r}")
-    if "campaign" in runtime:
-        authorized_run_id = runtime["engineering_budget"]["inline_contract"]["pilot_authorization"]["scope"]["authorized_run_id"]
+    authorized_run_id = resolved["authorized_run_id"]
+    if authorized_run_id is not None:
+        if not isinstance(authorized_run_id, str):
+            raise ValueError("Runtime binding authorized_run_id must be a string or null")
         validate_run_id(authorized_run_id)
         return {"authorized_run_id": authorized_run_id}
     return {}
@@ -92,6 +105,8 @@ def compile_execution(
     execution_path = project_root / execution_relative
     execution = load_json(execution_path)
     validate_schema(execution, "execution_profiles.schema.json")
+    if execution["project_id"] != project["project_id"]:
+        raise ValueError("Execution profile contract project identity differs")
     profile = next((item for item in execution["profiles"] if
                     item["capability_id"] == plan["capability_id"] and item["mode"] == plan["mode"]), None)
     if profile is None:
@@ -143,7 +158,7 @@ def compile_execution(
             + ", ".join(unexpected_bindings)
         )
     missing_bindings = sorted(set(profile["required_bindings"]) - set(bindings))
-    resolved_context = _validate_runtime_structure_binding(project, profile, bindings)
+    resolved_context = _resolve_runtime_binding(project, profile, bindings)
 
     stamp = validate_run_id(plan["run_id"])["stamp"]
     context: dict[str, str] = {
