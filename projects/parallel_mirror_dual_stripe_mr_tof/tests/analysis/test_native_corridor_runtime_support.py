@@ -12,6 +12,44 @@ PROJECT = Path(__file__).resolve().parents[2]
 
 
 class NativeCorridorRuntimeSupportTest(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get('SIMION_EXE'), 'requires explicit SIMION_EXE')
+    def test_real_workbench_loader_preserves_refinable_collision_without_writing(self):
+        script = r"""
+param($Repo,$Root,$Simion)
+$ErrorActionPreference='Stop'
+. (Join-Path $Repo 'common/host_execution_lease.ps1')
+$lease=Enter-HostExecutionLease -Role SIMION -Stage prepare
+$guard=$null
+try{
+  $fixture=Join-Path $Repo 'projects/parallel_mirror_dual_stripe_mr_tof/tests/simion/test_workbench_load_fixture.lua'
+  $seed=Join-Path $Repo 'common/simion/assets/iob_instance_seeds/1_instance_seed.iob'
+  $launcher=Join-Path $Repo 'projects/parallel_mirror_dual_stripe_mr_tof/simion/run_iob_flight.lua'
+  & $Simion --nogui --noprompt lua $fixture $Root prepare $seed $launcher
+  if($LASTEXITCODE-ne0){throw 'Tiny loader fixture preparation failed'}
+  $pa=Join-Path $Root 'collision.pa'
+  $before=(Get-FileHash -LiteralPath $pa -Algorithm SHA256).Hash
+  $guard=[IO.File]::Open($pa,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+  & $Simion --nogui --noprompt lua $fixture $Root load $seed $launcher
+  if($LASTEXITCODE-ne0){throw 'Native loader-only operation failed'}
+  if((Get-FileHash -LiteralPath $pa -Algorithm SHA256).Hash-ne$before){throw 'Loader rewrote collision PA'}
+  Write-Output 'WORKBENCH_LOAD_SOURCE_BYTES=PASS'
+}finally{
+  if($null-ne$guard){$guard.Dispose()}
+  Exit-HostExecutionLease -Lease $lease
+}
+"""
+        with TemporaryDirectory(prefix='mrtof-workbench-load-') as directory:
+            root = Path(directory)
+            fixture = root / 'verify.ps1'
+            fixture.write_text(script, encoding='utf-8')
+            result = subprocess.run(['pwsh', '-NoProfile', '-File', str(fixture), str(PROJECT.parents[1]),
+                                     str(root), os.environ['SIMION_EXE']], cwd=PROJECT,
+                                    capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60)
+            print(result.stdout, end='')
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('WORKBENCH_LOAD_NATIVE=PASS', result.stdout)
+            self.assertIn('WORKBENCH_LOAD_SOURCE_BYTES=PASS', result.stdout)
+
     def test_builder_transports_frozen_waveform_with_each_program_basename(self) -> None:
         """Execute the builder's real companion-copy section, without SIMION."""
         lua = Path(r'C:\Program Files\SIMION-2020\lua.exe')

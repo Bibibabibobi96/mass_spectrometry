@@ -210,7 +210,11 @@ S1单独-0.1 V对Ey改善弱且空间相位变差，保留负结果，不重复�
 当前场、响应库、GUI和CAD按公共owner及实际消费者保护；旧场退役、容量异常及重建路径见
 [收口前记录](history/20261026__assembly-documentation-consolidation.md)，不得由运行终态推断可删除。
 保留的[IP联合加载包](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261018_132106__analysis__python__ip-collision-overlay-workbench/results/joint_workbench/runtime/joint.iob)
-复现原97出口／19检测链，含0.05 mm碰撞占据patch；它不是524 Da新链的GUI验收。手动Fly仍先复制为独立可写副本。
+复现原97出口／19检测链，含0.05 mm碰撞占据patch；它不是524 Da新链的GUI验收。
+手动Fly须使用独立可写的工作台控制／日志目录并核对永久PA绑定；未变大PA按封存身份只读复用。
+当前 launcher 的 `load-workbench` 与批处理 Fly 共用碰撞 PA 预载，打开同一 IOB／Program／Fly2，
+保持 RAM 中的不可 Refine 标志；使用方法和官方依据见[SIMION说明](../simion/README.md#事件与分析)。
+这补齐代码中的装载状态差异，不追认旧包已人工打开，也不使普通 PA 查询等于程序回调场。
 [STEP交付](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261014_163154__build__cad__mrtof-tilted-step-publication-recovery/summary.json)
 含40独立电极、6个C0参考面及装配概览；5 μm交换精度不是场或制造精度，第三方消费未验收。
 [Pulsar英文交接包](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261016_140921__build__python__pulsar-trajectory-handoff/summary.json)

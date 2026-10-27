@@ -628,6 +628,27 @@ mirror-cycle-counter 伴随文件，实际源必须匹配冻结字节；zero-exi
 （2026-10-16查阅）。launcher记录库存的实际`filename`、`path`及匹配结果，供真实运行核对；
 冷启动及旧`.pa0`路径保持原行为。
 
+检查已准备的工作台时，沿同一 launcher 使用 `load-workbench`，先复用上述碰撞预载，
+再调用 `wb:load` 和 `wb:load_particles`。它只打开实例、Program 和指定粒子，不 Fly、
+Refine、Fast Adjust 或保存 PA；装载后还核对碰撞 PA 仍是原来唯一的 RAM 对象且不可 Refine。
+不要直接打开引用可 Refine 碰撞 PA 的 IOB，否则会绕过这项预载。先取得公共资源准入，
+再使用 SIMION 2020／8.2 支持的交互 Lua 形式；以下路径必须指向已准备的工作台及其冻结来源：
+
+```powershell
+& '<SIMION-2020>/simion.exe' lua -i '<runtime>/run_iob_flight.lua' `
+  '<workbench>/joint.iob' '<workbench>/joint.fly2' load-workbench
+```
+
+第三参数省略时仍执行同一 Fly 操作，粒子路径仍由第二参数或同名 Fly2 确定。
+`lua -i` 是官方交互 GUI 形式，不能仅从省略 `--nogui` 推断脚本返回后的驻留行为。
+官方依据（2026-10-27核对；在线标题较新，所用API均已在本机8.2.0.11支持）：
+[8.1.2.8变更记录](https://simion.com/info/changes.html)明确交互形式，
+[Workbench API](https://simion.com/info/lua_simion.wb.html)列出装载和8.2的粒子装载，
+[CLI说明](https://simion.com/info/command_line_interface.html#fly-remove-pas-d)定义RAM保留选项。
+该装载接口只保证同一运行设置；普通 PA 场查询仍不代表 `efield_adjust` 回调场，
+不因此改变原生结果、数值精度或正式资格。手动 Fly 会写输出，仅为此准备独立可写的工作台
+控制／日志目录并核对永久PA绑定；未变大PA继续只读复用，不因GUI装载而复制或重新求场。
+
 ```powershell
 .\.venv\Scripts\python.exe -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis `
   '<run>/stdout.log' '<run>/event_analysis.json' `

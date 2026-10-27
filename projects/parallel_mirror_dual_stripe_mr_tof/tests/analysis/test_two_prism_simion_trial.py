@@ -488,6 +488,73 @@ print('COLLISION_PRELOAD_PASS')
                         self.assertIn("path=C:/different/collision.pa exact_match=false", result.stdout)
                         self.assertIn("existing_pa_reused=false", result.stdout)
 
+    def test_launcher_load_workbench_preserves_preload_without_flying_or_saving(self):
+        lua = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"
+        if not lua.is_file():
+            self.skipTest("plain vendor Lua unavailable; no commercial execution")
+        launcher = Path(__file__).resolve().parents[2] / "simion/run_iob_flight.lua"
+        fixture = r'''
+local launcher,iob,mode,override=unpack(arg)
+local function forbidden() error('load-workbench must not Fly, Refine, save or discard PAs') end
+local collision={path='C:/frozen/collision.pa',refinable=true,refine=forbidden,save=forbidden}
+local ip={path='C:/frozen/ip.pa',refinable=true,refine=forbidden,save=forbidden}
+local detector={path='C:/frozen/detector.pa',refinable=true,refine=forbidden,save=forbidden}
+local unrelated={path='C:/other/collision.pa',refinable=true}
+local inventory={unrelated}
+if mode=='warm' then inventory[#inventory+1]=collision end
+if mode=='ambiguous' then inventory[#inventory+1]=collision;inventory[#inventory+1]=collision end
+local opens,loads,particles=0,0,0
+function inventory:open(path)
+  opens=opens+1
+  for _,pa in ipairs({collision,ip,detector}) do
+    if pa.path==path then self[#self+1]=pa;return pa end
+  end
+  error('unexpected PA path: '..path)
+end
+inventory.close=forbidden
+local wb={save=forbidden}
+function wb:load(path)
+  assert(path==iob and not collision.refinable and unrelated.refinable)
+  loads=loads+1
+  if mode=='ip' then assert(not ip.refinable and not detector.refinable) end
+  if mode=='lost_flag' then collision.refinable=true end
+  if mode=='replaced' then inventory[#inventory]={path=collision.path,refinable=false} end
+end
+function wb:load_particles(path)
+  assert(path==(override=='yes' and iob..'.explicit.fly2' or iob:gsub('%.iob$','.fly2')))
+  particles=particles+1
+end
+simion={pas=inventory,wb=wb,command=forbidden}
+arg={iob,override=='yes' and iob..'.explicit.fly2' or nil,'load-workbench'}
+local ok,err=pcall(assert(loadfile(launcher)))
+if mode=='ambiguous' then
+  assert(not ok and err:match('ambiguous collision PA inventory') and loads==0 and opens==0)
+elseif mode=='lost_flag' or mode=='replaced' then
+  assert(not ok and err:match('Workbench load replaced its protected collision PA'))
+else
+  assert(ok,err);assert(loads==1 and particles==1)
+  assert(opens==(mode=='warm' and 0 or (mode=='ip' and 3 or 1)))
+end
+print('WORKBENCH_LOAD_PRELOAD_PASS')
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            iob = root / 'joint.iob'
+            for suffix in ('.lua', '.fly2', '.iob.explicit.fly2'):
+                (root / ('joint' + suffix)).write_text('', encoding='utf-8')
+            harness = root / 'load_fixture.lua'
+            harness.write_text(fixture, encoding='utf-8')
+            for mode in ('oa', 'ip', 'warm', 'ambiguous', 'lost_flag', 'replaced'):
+                extra = ",collision_geometry_pa_paths={'C:/frozen/ip.pa','C:/frozen/detector.pa'}" if mode == 'ip' else ''
+                iob.with_suffix('.operating_point.lua').write_text(
+                    "return {static_field={collision_pa_path='C:/frozen/collision.pa'" + extra + '}}', encoding='utf-8')
+                for override in ('yes', 'no'):
+                    with self.subTest(mode=mode, override=override):
+                        actual = subprocess.run([str(lua), str(harness), str(launcher), str(iob), mode, override],
+                                                cwd=root, capture_output=True, text=True, timeout=10)
+                        self.assertEqual(actual.returncode, 0, actual.stdout + actual.stderr)
+                        self.assertIn('WORKBENCH_LOAD_PRELOAD_PASS', actual.stdout)
+
     def test_center_view_validates_actual_source_not_particle_count(self):
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import _validate_center_view_source
         _validate_center_view_source(None, None)

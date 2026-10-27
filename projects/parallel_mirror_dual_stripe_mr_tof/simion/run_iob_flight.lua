@@ -1,7 +1,10 @@
--- Run one already-materialized MR-TOF Workbench through SIMION's Fly command.
--- Usage: simion.exe --nogui lua run_iob_flight.lua RUN.iob [PARTICLES.fly2]
+-- Load or fly an already-materialized Workbench through the same PA preload.
+-- Batch: simion.exe --nogui lua run_iob_flight.lua RUN.iob [PARTICLES.fly2]
+-- GUI: simion.exe lua -i run_iob_flight.lua RUN.iob PARTICLES.fly2 load-workbench
 local iob = assert(arg[1], 'usage: RUN.iob')
 local particles = arg[2]
+local operation = arg[3] or 'fly'
+assert(operation == 'fly' or operation == 'load-workbench', 'unknown Workbench operation')
 assert(iob:match('%.iob$'), 'flight input must be an IOB')
 local program = iob:gsub('%.iob$', '.lua')
 local fly2 = iob:gsub('%.iob$', '.fly2')
@@ -42,8 +45,11 @@ for _, path in ipairs(operating.static_field and operating.static_field.collisio
 end
 local preload_option = ''
 local preloaded = {}
+local function path_key(path)
+  return type(path) == 'string' and path:gsub('\\','/'):lower()
+end
 for _, collision in ipairs(collisions) do
-  local normalized = collision:gsub('\\','/'):lower()
+  local normalized = path_key(collision)
   if not preloaded[normalized] then
     -- Official SIMION field_array examples use refinable=false to prevent IOB
     -- load auto-Refine. This PA supplies collisions only; the callback owns E.
@@ -52,13 +58,10 @@ for _, collision in ipairs(collisions) do
     -- Reopening the resident object would create two
     -- matching PAs and make Fly --remove-pas=0 reject the IOB before any ions.
     -- Use the same slash/case normalization as scalar_field_adapter.lua.
-    local function same_path(path)
-      return type(path)=='string' and path:gsub('\\','/'):lower()==collision:gsub('\\','/'):lower()
-    end
     local pa
     for index=1,#simion.pas do
       local candidate=simion.pas[index]
-      local matching=same_path(candidate.path)
+      local matching=path_key(candidate.path)==normalized
       print('MRTOF_COLLISION_PA_INVENTORY index='..index..' filename='..tostring(candidate.filename)
         ..' path='..tostring(candidate.path)..' exact_match='..tostring(matching))
       if matching then
@@ -72,8 +75,28 @@ for _, collision in ipairs(collisions) do
     print('MRTOF_COLLISION_PA_PRELOAD existing_pa_reused='..tostring(reused)..' path='..collision)
     -- Keep the RAM-only flag on IOB load; never save or claim this PA was solved.
     preload_option = ' --remove-pas=0'
-    preloaded[normalized] = true
+    preloaded[normalized] = pa
   end
+end
+if operation == 'load-workbench' then
+  -- Official wb:load/load_particles preserve the GUI-editable IOB and source;
+  -- neither invokes Fly. Keep the collision objects' RAM-only no-Refine flag.
+  simion.wb:load(iob)
+  simion.wb:load_particles(particles or fly2)
+  for path, expected in pairs(preloaded) do
+    local matches = 0
+    for index=1,#simion.pas do
+      local candidate = simion.pas[index]
+      if path_key(candidate.path) == path then
+        matches = matches + 1
+        assert(candidate == expected and candidate.refinable == false,
+          'Workbench load replaced its protected collision PA: '..path)
+      end
+    end
+    assert(matches == 1, 'Workbench load changed collision PA identity: '..path)
+  end
+  print('IOB_LOAD: PASS iob='..iob..' particles='..(particles or fly2)..' FLY=False REFINE=False PA_SAVE=False')
+  return
 end
 simion.command('fly --retain-trajectories=0'..preload_option..particle_option..' "'..iob..'"')
 print('IOB_FLIGHT: PASS iob='..iob)
