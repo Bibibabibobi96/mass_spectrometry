@@ -828,46 +828,6 @@ def _bias_pair_is_nondegenerate(values: np.ndarray, profile: dict[str, Any], ene
     )
 
 
-def _fixed_hardware_joint_trial(
-    mirror: ManagedMirrorCandidate,
-    widths: Sequence[WidthFunction],
-    biases_v: Sequence[float],
-    direction: Sequence[float],
-    search_end_y_mm: float,
-    sample_count: int,
-    kappa_derivative_step: float,
-    time_platform_derivative_step: float,
-    energy_derivative_step_v: float,
-) -> JointL0Trial:
-    """Construct one complete fixed-hardware Stripe trial from two biases."""
-    contract = mirror.contract
-    entry = project_y_from_theory_drift_mm(contract, 0.0)
-    stripes = tuple(
-        StripeHardBoundary(_finite(bias, "Stripe consistency bias"), width)
-        for bias, width in zip(biases_v, widths)
-    )
-    if len(stripes) != 2:
-        raise CandidateContractError("fixed-hardware consistency trial requires two Stripe biases")
-    turn = derive_turning_y_from_entry_direction(
-        mirror_reduced_period_mm_per_sqrt_v=mirror.nominal_reduced_period_mm_per_sqrt_v,
-        energy_per_charge_v=mirror.nominal_energy_per_charge_v,
-        stripes=stripes,
-        entry_y_mm=entry,
-        entry_unit_direction_project=direction,
-        search_end_y_mm=search_end_y_mm,
-        sample_count=sample_count,
-    )
-    return _fixed_hardware_joint_trial_at_turn(
-        mirror,
-        widths,
-        biases_v,
-        turn,
-        kappa_derivative_step,
-        time_platform_derivative_step,
-        energy_derivative_step_v,
-    )
-
-
 def _fixed_hardware_joint_trial_at_turn(
     mirror: ManagedMirrorCandidate,
     widths: Sequence[WidthFunction],

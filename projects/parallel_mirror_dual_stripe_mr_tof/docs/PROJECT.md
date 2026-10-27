@@ -21,6 +21,11 @@ MR拥有Prism、镜组、Stripe、检测、系统布局约束与匹配判据；�
 2026-10-21用户将工作转向同源八极导引接OA，IP碰撞调查暂停。
 后续已授权的具名状态交接与迁移验收以集成记录为准，不因它们完成而自动恢复旧IP优化或大型联合研究。
 
+固定硬件Stripe联合试验由[工作点实现](../analysis/dual_stripe_operating_seed.py)的
+`_fixed_hardware_joint_trial_at_turn`构造。已删除无活动调用或动态注册的
+`_fixed_hardware_joint_trial`；其余转折位置推导与试验构造路径保持原实现，资格仍以上述证据为界。
+该清理通过语法、Ruff及82项既有求解器无关回归；没有新增原生求解或GUI／CAD资格。
+
 ## 统一组装迁移任务
 
 OA／IP准备、普通OA→MR飞行及prepared-joint执行已切换到直属
