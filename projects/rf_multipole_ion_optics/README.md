@@ -52,8 +52,13 @@
 | 四极接口就绪 | [COMSOL](workflows/interface_readiness/run_comsol.ps1)、[SIMION](workflows/interface_readiness/run_simion.ps1) |
 | 四极RF+DC质量过滤 | [COMSOL](workflows/mass_filter_reference/run_comsol.ps1)、[SIMION](workflows/mass_filter_reference/run_simion.ps1)、[响应比较](workflows/mass_filter_reference/compare_responses.ps1) |
 | 同求解器数值研究 | [比较入口](workflows/same_solver_convergence/run_comparison.ps1) |
+| 已记录四极轨迹的RF相位与横向差异 | [轨迹诊断](analysis/plot_transport_phase_diagnostics.py)；从仓库根用下方唯一模块入口，证据边界见[项目状态](docs/PROJECT.md#已记录轨迹相位诊断) |
 | 跨组件装配、外部光学与整机状态 | [统一集成入口](../../integrations/README.md) |
 | 静态门禁 | [verify_project.ps1](verify_project.ps1) |
+
+```powershell
+python -m projects.rf_multipole_ion_optics.analysis.plot_transport_phase_diagnostics --run-dir <run> --comsol-trajectory <comsol.csv> --simion-trajectory <simion.csv> --output-label <label>
+```
 
 内部物理handoff不自动等于机械外出口；冻结旧几何运行不能继承为当前裸杆或新壳体的验证。
 配置编译、纯回归、真实求解、GUI/CAD和Formal资格分别判断，边界见PROJECT。

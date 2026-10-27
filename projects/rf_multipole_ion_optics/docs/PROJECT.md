@@ -173,6 +173,22 @@ schema 3的同一提供者始终发布实际入口／出口：裸杆按杆端面
 详见[源模型记录](history/retired_projects/rf_octupole_ion_optics/docs/history/20260911__source-model-comparison.md)。
 后续更改该比较仍须固定设计、下游端口、数值及完整粒子母队列，仅改变receipt绑定的source model。
 
+## 已记录轨迹相位诊断
+
+[`plot_transport_phase_diagnostics.py`](../analysis/plot_transport_phase_diagnostics.py)保留为既有描述性分析入口，
+唯一模块命令见[README](../README.md#工作流入口)。它读取两份已记录轨迹，以相同原始ID比较；有限状态、
+原记录顺序中的严格前向位置与递增时间、完整显示网格支持区间均须满足，重复或反向轨迹不排序去重，
+缺支持区间直接失败，不补造终止后位置。原采样步长、平面选择、相位公式和差异阈值保持；零方差相关
+发布null及状态，JSON禁止非有限数。
+
+输出记录两份输入的实际字节/SHA、观测ID、单位、显示网格及各粒子支持区间。当前默认设计只决定诊断
+平面与RF周期，不证明原CSV使用同一设计；母群、frame与clock证据未提供时均明确为unspecified，
+相同ID不授予共同源、配对物理试验或科学资格。旧`plane_metrics`及`transverse_difference_onset`字段
+继续供[接口评估](../workflows/interface_readiness/assess_integration.py)消费。
+
+长期验证入口为[`test_interface_integration_gate.py`](../tests/analysis/test_interface_integration_gate.py)，
+覆盖真实`--help`、CSV→JSON/PNG→接口评估CLI及无效窗口/轨迹拒绝；该层不运行求解器，不授予native或Formal资格。
+
 ## 部件与组装边界
 
 本项目发布原生机械、端口、驱动及canonical handoff；连接器、位姿、公共电位、时钟和下游场域由
