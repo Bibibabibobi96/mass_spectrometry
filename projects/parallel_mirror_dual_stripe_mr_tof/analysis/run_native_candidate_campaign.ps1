@@ -509,8 +509,9 @@ function New-CampaignComparison {
   }
   $eligible=@($rows|Where-Object{
     $_.workflow_outcome-eq'within_tolerance'-and
-    $_.focused.peak_method_id-eq'common_gaussian_kde_time_v1'-and
-    $null-ne$_.focused.peak_analysis_contract
+    $_.focused.peak_method_id-ceq'common_gaussian_kde_time_v2'-and
+    $null-ne$_.focused.peak_analysis_contract-and
+    $_.focused.peak_analysis_contract.method_id-ceq'common_gaussian_kde_time_v2'
   })
   $peakContracts=@($eligible|ForEach-Object{
     $_.focused.peak_analysis_contract|ConvertTo-Json -Depth 10 -Compress

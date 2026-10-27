@@ -1757,7 +1757,8 @@ try{
   )
   $comparisonData=Get-Content -LiteralPath $comparison -Raw|ConvertFrom-Json -AsHashtable
   $rootComparison=@($comparisonData.samples|Where-Object{$_.label-eq'root'})[-1]
-  if($rootComparison.peak_method_id-ne'common_gaussian_kde_time_v1'){
+  if($rootComparison.peak_method_id-cne'common_gaussian_kde_time_v2'-or
+    $rootComparison.peak_analysis_contract.method_id-cne'common_gaussian_kde_time_v2'){
     throw 'Candidate resolution requires current frozen common KDE metrics.'
   }
   $measuredResolution=if($null-ne$rootComparison.mass_resolution_t_over_2fwhm){

@@ -34,7 +34,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
 )
 from common.simion.native_completion import parse_fly_completed_line
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
-    _fwhm,
+    histogram_half_height_bin_span,
     peak_time_metrics,
     collision_diagnostics,
     parse_events,
@@ -522,6 +522,34 @@ def materialize_te1_variation_from_diagnostics(
     )
 
 
+def _require_current_time_peak_result(timing: dict[str, Any], label: str) -> dict[str, Any]:
+    """Require the native common-zero KDE result and its own matching settings."""
+    from common.analysis.peak_metrics import AnalysisSettings
+
+    contract = timing.get("analysis_contract")
+    metadata = timing.get("analysis_metadata")
+    if (timing.get("method_id") != "common_gaussian_kde_time_v2"
+            or not isinstance(contract, dict)
+            or contract.get("method_id") != timing["method_id"]
+            or contract.get("resolution_definition") != "mean_tof_us/(2*direct_fwhm_tof_us)"
+            or contract.get("time_basis") != "instrument_arrival_us_from_common_zero_birth"
+            or not isinstance(contract.get("settings"), dict)
+            or set(contract["settings"]) != set(AnalysisSettings.__dataclass_fields__)):
+        raise CandidateContractError(f"{label} requires current frozen KDE method and time reference")
+    try:
+        settings = AnalysisSettings(**contract["settings"]).to_dict()
+    except (TypeError, ValueError) as error:
+        raise CandidateContractError(f"{label} has invalid KDE settings") from error
+    expected_clock = {"kind": "common_zero_birth", "reference_time_us": 0.0,
+                      "clock_qualification": "declared_by_analysis_contract"}
+    if (timing.get("settings") != settings or not isinstance(metadata, dict)
+            or metadata.get("method_id") != timing["method_id"]
+            or metadata.get("settings") != settings
+            or metadata.get("time_reference") != expected_clock):
+        raise CandidateContractError(f"{label} KDE settings or time reference do not match its contract")
+    return contract
+
+
 def compare_te1_diagnostics(
     *, baseline_path: Path, probe_path: Path, root_path: Path,
     probe_coordinate: float, root_coordinate: float, baseline_coordinate: float = 0.0,
@@ -587,9 +615,8 @@ def compare_te1_diagnostics(
             source_identity = str(value["evidence"]["source_state_table"]["sha256"]).lower()
             timing = value["terminal_plane_diagnostic"]["detector_plane"]["absolute_time"]
             median = float(timing["median"])
-            method = timing.get("method_id", "legacy_histogram_unversioned")
-            if method != "common_gaussian_kde_time_v1":
-                raise CandidateContractError("TE1 comparison requires current frozen KDE metrics")
+            detector_contract = _require_current_time_peak_result(timing, f"{label} detector")
+            method = timing["method_id"]
             raw_fwhm = timing["fwhm"]
             fwhm = None if raw_fwhm is None else float(raw_fwhm)
         except (KeyError, TypeError, ValueError) as error:
@@ -614,6 +641,9 @@ def compare_te1_diagnostics(
         if isinstance(z0, dict) and z0.get("status") == "observed":
             try:
                 z0_timing = z0["absolute_time"]
+                z0_contract = _require_current_time_peak_result(z0_timing, f"{label} z=0")
+                if z0_contract != detector_contract:
+                    raise CandidateContractError(f"{label} z=0 and detector require identical frozen peak contracts")
                 z0_reached = int(z0["reached_particle_count"])
                 z0_median = float(z0_timing["median"])
                 z0_fwhm_raw = z0_timing["fwhm"]
@@ -1079,22 +1109,25 @@ def _pearson(xs: list[float], ys: list[float]) -> float | None:
 
 def _distribution(
     xs: list[float], ys: list[float], *, value_unit: str, slope_unit: str,
-    include_histogram_width: bool = True,
+    include_histogram_span: bool = True,
 ) -> dict[str, Any]:
-    return {
+    result = {
         "sample_count": len(ys),
         "median": statistics.median(ys),
         "value_unit": value_unit,
-        "fwhm": _fwhm(ys) if include_histogram_width else None,
         "range": [min(ys), max(ys)],
         "initial_z_association": _association(xs, ys, slope_unit),
     }
+    if include_histogram_span:
+        span, metadata = histogram_half_height_bin_span(ys, unit=value_unit)
+        result.update(histogram_half_height_bin_span=span, histogram_analysis=metadata)
+    return result
 
 
 def _time_plane_distribution(
     xs: list[float], times_us: list[float], *, peak_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    result = _distribution(xs, times_us, value_unit="us", slope_unit="us/mm", include_histogram_width=False)
+    result = _distribution(xs, times_us, value_unit="us", slope_unit="us/mm", include_histogram_span=False)
     result.update(peak_time_metrics(times_us, **(peak_context or {
         "mass_th": None, "analysis_contract": None, "cohort_role": None,
     })))
@@ -2146,8 +2179,10 @@ def analyze_source_z_energy_timing_events(
             or cohort.get("observed_particle_ids") != expected_ids
             or sorted(source_rows) != expected_ids):
         raise CandidateContractError("diagnostic requires complete ordered source/event evidence")
+    source_charges = {state.get("charge_e") for state in source_rows.values()}
     peak_context = {
         "mass_th": cohort.get("particle_mass_th"),
+        "charge_state": next(iter(source_charges)) if len(source_charges) == 1 else None,
         "analysis_contract": cohort.get("peak_analysis_contract"),
         "cohort_role": cohort.get("cohort_role"),
     }

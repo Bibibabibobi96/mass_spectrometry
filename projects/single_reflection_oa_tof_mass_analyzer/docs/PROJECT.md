@@ -112,6 +112,47 @@ instrument clock仅用于调度与诊断，禁止作为分辨率声明；集成�
 
 ## 当前能力与边界
 
+辅助`solver_diagnostics.analyze_simion_log`只报告出生相对时间的Gaussian proxy：新输出使用
+`GaussianProxyFwhmTofNs`与`GaussianProxyTimeEquivalentResolution`，替代旧的`FwhmTofNs`／
+`ResolutionFwhm`歧义字段。方法标签、时间参考和`ResolutionClaim=false`随结果发布，不能用于上文的
+脉冲相对分辨率声明。缺失事件保留为`not_observed`母群成员；允许不完整census不再放松唯一ID约束。
+无命中、单个命中与零方差分别有状态，未观测粒子不被推断为物理损失。历史冻结输出保持原身份。
+辅助摘要现对全部状态发布`analysis_metadata`，明确样本sigma为`ddof=1`、等ID单位权重及各自样本数／
+权重和／有效数；命中峰宽、全部实录穿面宽度与非命中源统计有独立群范围。方法、单位、实际穿面选择和
+出生相对时间随同保留，原Gaussian proxy标量不变，不补造脉冲epoch或质量分辨率资格。
+
+峰形比较和配对bootstrap已接入[公共显式ID合同](../../../common/analysis/README.md)：通用比较入口
+不再由等长数组或自动编号推断配对。合法配对的数值定义与随机重采样保持不变，五质量分析仍只比较分布。
+该修复关闭通用入口的错误使用路径；既有Formal入口已声明同源配对，历史结果及资格不因此改写。
+
+通用reference分析的新结果已显式标识`nominal_mean_relative_square_v1`名义相对质量映射，保留
+原Da数值与CSV列；其输入TOF的时钟资格为`unspecified`，不能仅凭此入口取得脉冲相对或绝对标定资格。
+五质量分析明确采用`sqrt_mz_affine_centroid_fit_v1`：每个求解器对同批物种质心拟合
+`sqrt(m/z)=a*tof_us+b`并检查同批残差，拟合`-b/a`不代表测得的脉冲epoch。图中m/z单位修正为Th，
+非整数电荷在转换前失败关闭，`resolution_claim_allowed=false`保持不变。
+五质量CSV同时拒绝整数转换前的分数／布尔／非有限／非正／重复原ID；COMSOL局部ID和SIMION混合源
+全局ID分别按对应母群上界校验，COMSOL缺原ID不能自动补号。两求解器含非命中行的物种数量均不得超过
+声明emitted，未知或歧义物种也拒绝；无效输入在写结果前失败。保留合法非连续命中ID，不按观察行重编号。
+后续独立复核发现已验证ID被二次CSV推断转浮点的路径，现由reference导入边界统一精确整数解析：
+ID列保留词法，COMSOL母群校验与命中筛选使用同一源表。大于2^53、int64最大值及整数小数／指数编码
+在筛选和CSV输出中保持原值；高精度分数、越界和不同编码的重复ID均拒绝。泛用缺ID导入的生成标志和
+禁止生成ID配对边界保持，不能把外部Excel已舍入的数值恢复成原始ID。
+这轮修改补齐结果语义，不重算冻结分析合同、历史receipt或524 Da Formal资产。
+求解器无关验证包含29项峰形/reference/五质量测试与17项相邻密度、Formal布局及COMSOL事件分析测试。
+对B3前的只读源码快照作同输入内存对照：6组质心拟合、31粒子reference和每求解器25粒子的五物种分析
+保留全部既有结果字段，5份CSV逐字节一致。新增元数据与图标签不构成真实求解器、独立校准或Formal复验。
+
+最终输入审计后的峰形/reference/五质量模块38项通过；辅助诊断模块16项通过，含真实PowerShell包装器，
+包装器复用既有`SIMULATION_PYTHON_EXE`与Python 3.11校验，不因隔离树缺本地`.venv`跳过。
+完整项目回归另发现该赋值变化未同步候选源码冻结器，导致33项共同报错；现冻结器精确替换当前
+整块赋值，冻结副本不允许环境变量覆盖绑定解释器。长期测试实际冻结完整closure，再以无效环境
+解释器运行冻结包装器仍成功；16项辅助诊断回归通过。修复后的完整Static门禁478项中476通过、
+2项skip（194.275秒，总198.677秒），未运行真实求解器或重写正式资产。
+新增Python CLI实际验证分数ID及超额物种在写结果前失败、空诊断完整JSON可序列化。
+实函数覆盖两求解器原ID、合法非连续编码、非命中行上界、未知物种及四种proxy状态，原有峰形／配对／
+质谱输出回归保持通过。精确ID修复另对普通、整数小数、无ID和显式列映射4类旧输入作同输入修前／修后
+对照，表值、dtype及导入metadata完全一致。这关闭通用分析入口的非法输入路径，不将缺陷追溯认定为旧Formal结果错误。
+
 | 能力 | 当前范围 | 资格 |
 |---|---|---|
 | Static合同与候选编译 | baseline/science/numerics分层、resolved与源码冻结 | PASS |

@@ -27,8 +27,8 @@
     },
     "peak_metrics": {
       "path": "common/analysis/peak_metrics.py",
-      "bytes": 24684,
-      "sha256": "DF50A675272A92C88E1150822925257B509A892F2EA69D8B4FE6A368ED809ED3"
+      "bytes": 33791,
+      "sha256": "1A5FDA0459A9D9894C9C64BC8218E10818F42310843D2D2C65A952835A340E98"
     },
     "two_zone_theory": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/oatof_oaaccelerator_coupling.py",

@@ -194,7 +194,7 @@ $runRecordComplete = $true
 try { Remove-RunExecutionAlias -ExecutionAlias $executionAlias.execution_alias -TargetDirectory $OutputDir }
 catch { Write-Warning "Could not remove short diagnostic execution alias: $($_.Exception.Message)" }
 $executionAlias = $null
-$summaries | Sort-Object Distribution,Mode | Format-Table Distribution,Mode,Hit,EfficiencyPct,MeanTofUs,StdTofNs,FwhmTofNs,ResolutionFwhm,MaxCrossingRadiusMm -AutoSize
+$summaries | Sort-Object Distribution,Mode | Format-Table Distribution,Mode,Hit,EfficiencyPct,MeanTofUs,StdTofNs,GaussianProxyFwhmTofNs,GaussianProxyTimeEquivalentResolution,MaxCrossingRadiusMm -AutoSize
 Write-Host "Summary: $summaryCsv"
 
 } finally {

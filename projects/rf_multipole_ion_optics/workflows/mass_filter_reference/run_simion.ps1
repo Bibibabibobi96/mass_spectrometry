@@ -31,6 +31,7 @@ $python = if ($PythonExe) {
     Join-Path $repoRoot '.venv\Scripts\python.exe'
 }
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $projectRoot 'runtime\frozen_python_package.ps1')
 . (Join-Path $repoRoot 'projects\rf_multipole_ion_optics\runtime\simion_layout_template_support.ps1')
 . (Join-Path $projectRoot 'runtime\simion_run_config.ps1')
 . (Join-Path $projectRoot 'runtime\simion_execution.ps1')
@@ -90,6 +91,36 @@ try {
         -Destination $frozenInterface | Out-Null
     Copy-VerifiedRunInput -Source ([IO.Path]::GetFullPath($SolverNumericsContractPath)) `
         -Destination $frozenNumericalContract | Out-Null
+
+    $frozenPythonSupport = Copy-VerifiedRunInput `
+        -Source (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') `
+        -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
+    . $frozenPythonSupport
+    $analysisModule = 'projects.rf_multipole_ion_optics.workflows.mass_filter_reference.evaluate_simion'
+    $analysisFiles = @(
+        'projects\rf_multipole_ion_optics\workflows\__init__.py',
+        'projects\rf_multipole_ion_optics\workflows\mass_filter_reference\__init__.py',
+        'projects\rf_multipole_ion_optics\workflows\mass_filter_reference\evaluate_simion.py',
+        'projects\rf_multipole_ion_optics\core\__init__.py',
+        'projects\rf_multipole_ion_optics\core\mass_response.py',
+        'projects\rf_multipole_ion_optics\core\paired_mass_scan.py',
+        'common\contracts\file_identity.py',
+        'common\analysis\peak_metrics.py',
+        'projects\rf_multipole_ion_optics\workflows\mass_filter_reference\theory.py',
+        'projects\rf_multipole_ion_optics\core\family_contract.py',
+        'projects\rf_multipole_ion_optics\config\contracts\family_contract.json'
+    )
+    $frozenAnalysisPackage = New-FrozenPythonPackage `
+        -SourceRoot $repoRoot -CodeRoot (Join-Path $inputDir 'analysis_runtime') `
+        -RelativePaths $analysisFiles
+    $analysisRequiredModules = @($analysisFiles | Where-Object { $_.EndsWith('.py') } |
+        ForEach-Object { $_ -replace '[/\\]__init__\.py$', '' -replace '\.py$', '' -replace '[/\\]', '.' })
+    $analysisDistributions = @('matplotlib','numpy','scipy')
+    $frozenAnalysisEnvironment = Invoke-IsolatedFrozenPythonModule `
+        -Python $python -Package $frozenAnalysisPackage -Module $analysisModule `
+        -Arguments @('--help') -DistributionNames $analysisDistributions `
+        -RequiredModuleNames $analysisRequiredModules `
+        -ForbiddenRoots @($repoRoot,$projectRoot) -ProbeOnly
     Push-Location $repoRoot
     try {
         & $python -m projects.rf_multipole_ion_optics.analysis.verify_resolved_design $frozenResolved
@@ -229,6 +260,7 @@ try {
         mode = $modeName
         project_root = $projectRoot
         inputs = [ordered]@{
+            frozen_python_package_support = $frozenPythonSupport
             baseline = $frozenBaseline
             resolved_design = $frozenResolved
             interface_contract = $frozenInterface
@@ -250,6 +282,10 @@ try {
             simion_resource_profiles = $resourceProfiles
             simion_repository_dispatch_plan = $dispatchPlan
             simion_execution_batch_plan = $batchPlan
+        }
+        frozen_python = [ordered]@{
+            package = $frozenAnalysisPackage
+            environment = $frozenAnalysisEnvironment
         }
         provenance = [ordered]@{
             source_ion11_sha256 = Get-RunFileSha256 -Path $frozenSourceIon
@@ -291,7 +327,12 @@ try {
         particles = $expectedParticles
         execution_batch_count = [int]$batchPlanDocument.batch_count
     }
-    $runConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
+    foreach ($entry in $frozenAnalysisPackage.files) {
+        $name = 'analysis_runtime_' +
+            ([string]$entry.relative_path -replace '[^A-Za-z0-9]+','_').Trim('_')
+        $runConfig.inputs[$name] = [string]$entry.path
+    }
+    $runConfig | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
 
     $luaConfig = ConvertTo-RfSimionLuaConfig -CoreConfig $coreConfig `
         -SharedProgramPath (Join-Path $candidateDir 'quad_monolithic.lua')
@@ -397,14 +438,30 @@ try {
             throw 'Particle-state contract gate failed.'
         }
 
-        & $python -m `
-            projects.rf_multipole_ion_optics.workflows.mass_filter_reference.evaluate_simion `
-            --state $particleStateCsv --particles $particlePath `
-            --baseline $frozenBaseline --mode $frozenMode `
-            --response $massResponseCsv --metrics $massMetricsJson --figure $massResponseFigure
-        $analysisExitCode = $LASTEXITCODE
     } finally {
         Pop-Location
+    }
+    $analysisExitCode = 0
+    try {
+        Invoke-IsolatedFrozenPythonModule `
+            -Python $python -Package $frozenAnalysisPackage -Module $analysisModule `
+            -Arguments @(
+                '--state',$particleStateCsv,'--particles',$particlePath,
+                '--baseline',$frozenBaseline,'--mode',$frozenMode,
+                '--response',$massResponseCsv,'--metrics',$massMetricsJson,
+                '--figure',$massResponseFigure
+            ) -DistributionNames $analysisDistributions `
+            -RequiredModuleNames $analysisRequiredModules `
+            -ForbiddenRoots @($repoRoot,$projectRoot) | Out-Null
+    } catch {
+        # A completed analyzer may exit nonzero for a physical FAIL. All other
+        # isolation failures propagate; the existing output/status checks follow.
+        if (-not $_.Exception.Data.Contains('exit_code')) {
+            throw
+        }
+        $analysisExitCode = [int]$_.Exception.Data['exit_code']
+        if ($analysisExitCode -eq 0) { throw }
+        Assert-FrozenPythonPackage -Package $frozenAnalysisPackage
     }
     foreach ($analysisOutput in @($massResponseCsv,$massMetricsJson,$massResponseFigure)) {
         if (-not (Test-Path -LiteralPath $analysisOutput -PathType Leaf)) {

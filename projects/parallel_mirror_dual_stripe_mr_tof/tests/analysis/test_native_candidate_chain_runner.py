@@ -16,6 +16,24 @@ RUNNER = Path(__file__).resolve().parents[2] / "analysis" / "run_native_candidat
 
 class NativeCandidateChainRunnerTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_actual_resolution_guard_accepts_only_current_matching_method(self):
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        start = source.index("  if($rootComparison.peak_method_id")
+        end = source.index("  $measuredResolution=", start)
+        guard = source[start:end]
+        for method, contract_method in (("common_gaussian_kde_time_v2", "common_gaussian_kde_time_v2"),
+                                        ("common_gaussian_kde_time_v1", "common_gaussian_kde_time_v1"),
+                                        ("unknown", "unknown"),
+                                        ("common_gaussian_kde_time_v2", "common_gaussian_kde_time_v1")):
+            script = ("$ErrorActionPreference='Stop';$rootComparison=@{peak_method_id='" + method
+                      + "';peak_analysis_contract=@{method_id='" + contract_method + "'}};" + guard)
+            with self.subTest(method=method, contract_method=contract_method):
+                result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,
+                                        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+                self.assertEqual(result.returncode == 0, method == contract_method == "common_gaussian_kde_time_v2",
+                                 result.stdout + result.stderr)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_static_center_source_projection_verifies_consumed_records_not_unused_pa(self):
         run = REPO_ROOT.parent/"artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261014_064108__sim__simion__converging-joint-ps-workpoint__r02-stage-020"
         if not (run/"run_manifest.json").exists():

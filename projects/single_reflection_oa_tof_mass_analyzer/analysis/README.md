@@ -121,6 +121,44 @@ shield边界和rebuild plan均由该函数一次性闭合。API严格拒绝profi
 正式数据优先CSV/JSON。XLSX只接收人工导出，导入后立即规范化。严格配对必须使用相同粒子ID，并区分
 整体时移与去均值逐粒子残差。
 
+`reference_analysis compare`默认只比较分布；`--bootstrap-resamples`为正时必须同时指定
+`--require-paired-particle-ids`，导入器自动编号不能用于配对。真实ID按输入顺序传给
+[公共峰函数](../../../common/analysis/README.md)，不排序或取共同命中交集。Formal验证与跨求解器诊断
+已由各自入口声明配对并验证来源；五质量分析继续只消费分布指标，不把每物种局部ID与混合束全局ID自动配对。
+
+`reference_analysis single/compare`的新结果在`metrics.analysis_metadata`登记
+`common_gaussian_kde_nominal_mass_v1`：既有`mass_grid_Da`及质量指标仍按
+`nominal_mean_relative_square_v1`的`m_nominal*(tof/mean(tof))^2`生成，单位仍是Da，
+不是已标定的m/z轴。通用输入只证明调用者提供了TOF，时钟资格标为`unspecified`；不从列名、
+名义质量或配对ID补造电荷、脉冲epoch或绝对标定资格。冻结`analysis_contract.json`与历史结果不改写。
+
+`mass_spectrum.py`的新`analysis_metadata`登记`sqrt_mz_affine_centroid_fit_v1`：
+每个求解器以同批物种平均TOF为自变量、`sqrt(m/z)`为响应做等物种权重的一次最小二乘拟合，
+即`sqrt(m/z)=a*tof_us+b`，随后映射同批粒子并报告同批质心残差。它不是独立标定集验证；
+`time_offset_us=-b/a`只是拟合零点，不能当作脉冲epoch。m/z图轴及偏差使用Th、密度使用1/Th，
+现有CSV列名和数值保留。名义质量/电荷来自mode，COMSOL按物种文件归属，SIMION按记录的质量/电荷选择；
+两处电荷读取都在整数转换前拒绝分数、布尔、零和非有限值。`resolution_claim_allowed=false`保持不变。
+元数据按求解器将拟合观测数和等权有效数登记为物种质心数，并逐物种记录实际命中粒子数，不能混作粒子KDE样本数；
+计算状态为`computed`，科学资格为`not_assessed`。
+相关回归位于`tests/analysis/test_peak_metrics.py`，覆盖方法方向、同批范围、未限定时钟和无效电荷。
+
+两端原始CSV粒子ID在整数转换前校验，拒绝分数、布尔、非有限、非正和重复编号；COMSOL不能用自动编号
+补齐缺失ID。COMSOL各物种局部ID与SIMION混合源全局ID分别受对应完整母群计数上界约束，不按单物种
+上界误判后续SIMION物种。所有提供的行（含非命中）须落在声明物种及母群上界内；超额、未知物种或
+无效ID在写结果前拒绝，不截断编号、删除行或生成超过100%的传输率。合法非连续ID和整数CSV编码保留。
+ID解析统一在`reference_analysis_core.py`：CSV仅将选定ID列保留为原始文本，按十进制精确校验到
+正int64整数，支持整数小数／指数编码；其他科学数值列沿用既有读取。COMSOL母群校验与命中筛选消费
+同一张源表，避免重复读取把大于2^53的ID先转浮点再贴回。别名、显式列映射、事件列和Hit筛选均保留
+原ID与观测行的对应关系；XLSX文本ID同样精确读取，不能恢复外部表格软件已舍入的数值单元格。
+只有泛用导入确实缺ID列时仍允许生成行ID，并保留`particle_id_generated=true`，不能用于配对或五质量输入。
+
+`solver_diagnostics.analyze_simion_log`的`analysis_metadata`完整登记
+`birth_relative_sample_sigma_gaussian_proxy_v1`、`ddof=1`、等ID单位权重、单位与出生相对时钟。
+命中、实录穿面、完整源和非命中（含未观测源）分别记录样本数、权重和及有效数；主峰摘要的N仅对应命中。
+空群／单样本宽度为null，零方差宽度为0且比值为null；这些状态均保留方法与观测声明。Gaussian proxy
+标量算法不变，不是直接半高宽或脉冲相对质量分辨率。`tests/analysis/test_solver_diagnostics.py`验证四状态、
+出生时钟整体平移及实际CLI JSON。
+
 ## 自动理想场比较
 
 从仓库根使用仓库锁定的 Python 环境运行：

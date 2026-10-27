@@ -260,7 +260,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         original = json.loads(contract_path.read_text())
         original["simion"].update(default_trajectory_profile_id="fixture",
             trajectory_profiles=dict(fixture=dict(trajectory_quality=3, maximum_step_us=.002, purpose="fixture")))
-        original["peak_analysis"] = dict(method_id="common_gaussian_kde_time_v1",
+        original["peak_analysis"] = dict(method_id="common_gaussian_kde_time_v2",
             resolution_definition="mean_tof_us/(2*direct_fwhm_tof_us)",
             time_basis="instrument_arrival_us_from_common_zero_birth", settings=vars(AnalysisSettings()))
         contract_path.write_text(json.dumps(original))
@@ -320,7 +320,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         timing = self.root / "timing.json"
         timing.write_text(json.dumps(dict(schema_version=1, role="native_electrode_timing", pulse_start_us=7500)))
         source = json.loads((self.source / "source_receipt.json").read_text())
-        contract["peak_analysis"] = dict(method_id="common_gaussian_kde_time_v1",
+        contract["peak_analysis"] = dict(method_id="common_gaussian_kde_time_v2",
             resolution_definition="mean_tof_us/(2*direct_fwhm_tof_us)",
             time_basis="instrument_arrival_minus_common_extraction_pulse_us", settings=vars(AnalysisSettings()),
             common_time_reference=dict(clock_epoch_id=source["clock_epoch_id"], timing=file_record(timing), field="pulse_start_us"))

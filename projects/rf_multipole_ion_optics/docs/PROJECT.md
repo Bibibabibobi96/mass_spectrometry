@@ -118,6 +118,34 @@ RF+DC已有理论和有限几何功能响应，网格、跨求解器一致性及
 [公共ion_release](../../../common/ion_release/README.md)提供。旧150 mm碰撞脚本不是活动合同。
 旧矩形PA导出／比较三脚本已退役，不恢复硬编码0.2 mm基线的GEM文本替换链。
 
+质量响应的L1、SIMION、COMSOL及响应比较共用`core/mass_response.py`准备结果，再复用公共
+`half_height_width`计算`sampled_mass_response_linear_half_height_v1`。旧
+`observed_half_maximum_band_Th`仍是全部半高样本的采样包络；新
+`interpolated_main_peak_fwhm_Th`只取首个全局最大值两侧最近半高交点的线性插值，单位Th。
+多个峰之间的空隙不会并入该主峰宽，等高plateau仍按同一定义处理。未夹住左／右／两侧交点时明确
+记录缺侧；全零响应为`unavailable_no_positive_response`，峰位、采样带与插值宽都不可用。
+输入质量点必须有限、严格递增且唯一，传输分数必须有限并在`[0,1]`内；原功能判据保持，
+新诊断的`resolution_claim_allowed=false`，不能据稀疏采样插值建立质量分辨能力。
+
+ION11第二列实际为`mass_amu`，不是任意电荷态的m/z。当前质量扫描只接受正单电荷：读取源、
+生成两求解器扫描表及独立SIMION结果分析都校验有限正质量与精确`charge_state=+1`，不经整数截断，
+不自动除电荷。L1源合同同样拒绝布尔或分数电荷。合法+1粒子的表字节和既有科学计算保持不变，
+生成元数据注明该质量与Th数值相容范围；这不建立多电荷运行资格。
+
+三个原生／比较PowerShell入口在运行前使用已有冻结包机制登记实际分析源码，分析从run-local包执行，
+包含公共峰函数及项目传递依赖，禁止回到活动仓库导入。L1仍使用原积分器与科学配置；其CSV冻结后由
+同一模块的纯分析分支在隔离包内生成JSON和图，两者消费同一份prepared结果，run config和manifest
+登记CSV、源码、模块来源与Python依赖环境。比较表保持共同七质量点，图使用各来源的实际完整采样网格。
+COMSOL／SIMION质量过滤运行器只声明冻结文件闭包，模块探针由此派生并保留包级检查。
+隔离helper保留原错误文案，以`Exception.Data['exit_code']`传递分析进程非零退出；SIMION不再解析文案，
+依赖探针、源码篡改和缺失仍直接失败。冻结包5项回归通过，含真实隔离执行、物理PASS／FAIL和仅匹配文案的拒绝。
+旧冻结run、receipt与已有资格不回写；只保存分析器`.txt`而执行活动源码的路径已在这些消费者关闭。
+本轮47项求解器无关回归覆盖手算曲线、平台／多峰、截断／全零、输入域、+1源边界与三个真实分析入口，
+并验证冻结模块来源及篡改／缺失拒绝。原合同每质量N=100、29点的完整L1临时运行功能PASS：采样带
+为99.5–103.0 Th，另报插值主峰宽4.1227490996398615 Th；11份分析源码快照与7个实际模块来源登记，
+5项输出的manifest完整核验PASS，临时run已清理。该验证只关闭分析重放，不把原进程中的源生成／积分
+称为隔离执行，也不代替原生SIMION／COMSOL重跑、网格收敛或质量分辨能力资格。
+
 N=1000 COMSOL bridge曾在release构造阶段资源中断，向量化release候选未证明等价；两者都不是生产路径。
 相关数值、释放诊断及旧接口证据见
 [四极历史](history/retired_projects/rf_quadrupole_ion_optics/docs/history/20260911__solver-sensitivity-and-retired-interface.md)。

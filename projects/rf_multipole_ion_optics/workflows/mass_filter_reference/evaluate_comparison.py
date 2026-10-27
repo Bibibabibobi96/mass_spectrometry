@@ -14,6 +14,8 @@ import matplotlib
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt  # noqa: E402
 
+from projects.rf_multipole_ion_optics.core.mass_response import prepare_response_analysis
+
 from .theory import theory_masses
 
 
@@ -144,6 +146,10 @@ def compare_responses(
     ):
         raise ValueError("L1 response particle count differs from source metrics")
     theory = theory_masses(baseline, mode)
+    response_analyses = {
+        name: prepare_response_analysis(list(response.values()))
+        for name, response in responses.items()
+    }
     passband = (theory["low_mass_Th"], theory["high_mass_Th"])
     rows: list[dict[str, Any]] = []
     for mass in expected:
@@ -194,6 +200,7 @@ def compare_responses(
             for name, document in sorted(source_metrics.items())
         },
         "theory": theory,
+        "sampled_response_analysis": response_analyses,
         "particles_per_mass": response_particles,
         "acceptance": {
             "maximum_absolute_transmission_difference": threshold,
@@ -214,15 +221,14 @@ def write_comparison(path: Path, rows: list[dict[str, Any]]) -> None:
 
 def plot_comparison(
     path: Path,
-    rows: list[dict[str, Any]],
+    analyses: dict[str, dict[str, Any]],
     passband: tuple[float, float],
 ) -> None:
     """Render the diagnostic comparison figure."""
-    masses = [float(row["mass_Th"]) for row in rows]
     styles = (
-        ("l1_transmission", "L1 ideal finite length", "#009E73", "o"),
-        ("simion_transmission", "SIMION finite geometry", "#0072B2", "s"),
-        ("comsol_transmission", "COMSOL finite geometry", "#D55E00", "^"),
+        ("L1", "L1 ideal finite length", "#009E73", "o"),
+        ("SIMION", "SIMION finite geometry", "#0072B2", "s"),
+        ("COMSOL", "COMSOL finite geometry", "#D55E00", "^"),
     )
     with plt.rc_context(
         {"font.size": 8, "axes.labelsize": 9, "legend.fontsize": 8}
@@ -239,8 +245,8 @@ def plot_comparison(
         )
         for key, label, color, marker in styles:
             axis.plot(
-                masses,
-                [float(row[key]) for row in rows],
+                analyses[key]["mass_samples_Th"],
+                analyses[key]["transmission_fraction_samples"],
                 marker=marker,
                 markersize=4,
                 linewidth=1.2,
@@ -306,7 +312,7 @@ def main() -> None:
     theory = metrics["theory"]
     plot_comparison(
         args.figure,
-        (rows),
+        metrics["sampled_response_analysis"],
         (theory["low_mass_Th"], theory["high_mass_Th"]),
     )
     print(

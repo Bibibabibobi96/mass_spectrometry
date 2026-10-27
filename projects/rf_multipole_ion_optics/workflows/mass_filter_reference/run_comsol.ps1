@@ -14,6 +14,7 @@ $workspaceRoot=Split-Path -Parent $repoRoot
 $artifactRoot=Join-Path $workspaceRoot 'artifacts\projects\rf_multipole_ion_optics'
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $projectRoot 'runtime\frozen_python_package.ps1')
 . (Join-Path $projectRoot 'runtime\comsol_solver_numerics.ps1')
 if([string]::IsNullOrWhiteSpace($RunId)){
   $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__comsol__mass-filter__rf-dc-scan'
@@ -61,6 +62,32 @@ try {
     -RequestedContractPath $requestedNumerics `
     -ProfileId $SolverNumericsProfileId
   $compiledNumerics=$numericsCompilation.compiled
+  $frozenPythonSupport = Copy-VerifiedRunInput `
+      -Source (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') `
+      -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
+  . $frozenPythonSupport
+  $analysisModule = 'projects.rf_multipole_ion_optics.workflows.mass_filter_reference.evaluate_comsol'
+  $analysisFiles = @(
+      'projects\rf_multipole_ion_optics\workflows\__init__.py',
+      'projects\rf_multipole_ion_optics\workflows\mass_filter_reference\__init__.py',
+      'projects\rf_multipole_ion_optics\workflows\mass_filter_reference\evaluate_comsol.py',
+      'projects\rf_multipole_ion_optics\core\__init__.py',
+      'projects\rf_multipole_ion_optics\core\mass_response.py',
+      'projects\rf_multipole_ion_optics\core\paired_mass_scan.py',
+      'common\contracts\file_identity.py',
+      'common\analysis\peak_metrics.py'
+  )
+  $frozenAnalysisPackage = New-FrozenPythonPackage `
+      -SourceRoot $repoRoot -CodeRoot (Join-Path $inputDir 'analysis_runtime') `
+      -RelativePaths $analysisFiles
+  $analysisRequiredModules = @($analysisFiles | Where-Object { $_.EndsWith('.py') } |
+      ForEach-Object { $_ -replace '[/\\]__init__\.py$', '' -replace '\.py$', '' -replace '[/\\]', '.' })
+  $analysisDistributions = @('matplotlib','numpy','scipy')
+  $frozenAnalysisEnvironment = Invoke-IsolatedFrozenPythonModule `
+      -Python $python -Package $frozenAnalysisPackage -Module $analysisModule `
+      -Arguments @('--help') -DistributionNames $analysisDistributions `
+      -RequiredModuleNames $analysisRequiredModules `
+      -ForbiddenRoots @($repoRoot,$projectRoot) -ProbeOnly
   $codeInputs=[ordered]@{}
   $codeSources=[ordered]@{
     runner=$PSCommandPath
@@ -69,13 +96,21 @@ try {
       'comsol\solve_deterministic_rf_quadrupole_particles.m')
     contract_loader=(Join-Path $projectRoot 'load_rf_quadrupole_contract.m')
     case_preparer=(Join-Path $PSScriptRoot 'prepare_comsol_scan.py')
-    result_analyzer=(Join-Path $PSScriptRoot 'evaluate_comsol.py')
     state_metrics_analyzer=(Join-Path $projectRoot 'analysis\analyze_comsol_particle_state_metrics.py')
     paired_mass_library=(Join-Path $repoRoot 'projects\rf_multipole_ion_optics\core\paired_mass_scan.py')
   }
   foreach($key in $codeSources.Keys){
     $extension=[IO.Path]::GetExtension($codeSources[$key]);$destination=Join-Path $inputDir "$key$extension.txt"
     Copy-Item -LiteralPath $codeSources[$key] -Destination $destination;$codeInputs[$key]=$destination
+  }
+  $codeInputs.result_analyzer = Get-FrozenPythonPackageFile `
+    -Package $frozenAnalysisPackage `
+    -RelativePath 'projects/rf_multipole_ion_optics/workflows/mass_filter_reference/evaluate_comsol.py'
+  $codeInputs.frozen_python_package_support = $frozenPythonSupport
+  foreach ($entry in $frozenAnalysisPackage.files) {
+    $name = 'analysis_runtime_' +
+      ([string]$entry.relative_path -replace '[^A-Za-z0-9]+','_').Trim('_')
+    $codeInputs[$name] = [string]$entry.path
   }
   $caseTableDir=Join-Path $inputDir 'particle_cases'
   $caseMetadata=Join-Path $inputDir 'particle_cases.json'
@@ -145,6 +180,7 @@ try {
       scan_execution=$scanConfig
       code=$codeInputs
     }
+    frozen_python=[ordered]@{package=$frozenAnalysisPackage;environment=$frozenAnalysisEnvironment}
     compiled_solver_numerics=$compiledNumerics
     solver_numerics_contract_id=$compiledNumerics.authority.contract_id
     solver_numerics_contract_logical_sha256=$compiledNumerics.authority.logical_sha256
@@ -178,11 +214,14 @@ try {
   }
   $response=Join-Path $resultDir 'mass-response__comsol.csv'
   $metrics=Join-Path $resultDir 'mass-filter__comsol-functional-metrics.json'
-  & $package.python -m `
-    projects.rf_multipole_ion_optics.workflows.mass_filter_reference.evaluate_comsol `
-    --scan-config $scanConfig --mode $sources.mode `
-    --response $response --metrics $metrics
-  if($LASTEXITCODE-ne 0){throw 'COMSOL mass-filter functional analysis failed.'}
+  Invoke-IsolatedFrozenPythonModule `
+    -Python $python -Package $frozenAnalysisPackage -Module $analysisModule `
+    -Arguments @(
+      '--scan-config',$scanConfig,'--mode',$sources.mode,
+      '--response',$response,'--metrics',$metrics
+    ) -DistributionNames $analysisDistributions `
+    -RequiredModuleNames $analysisRequiredModules `
+    -ForbiddenRoots @($repoRoot,$projectRoot) | Out-Null
   $metricDocument=Get-Content -LiteralPath $metrics -Raw -Encoding UTF8|ConvertFrom-Json
   Write-RunJson -Path $package.summary -Value ([ordered]@{
     schema_version=1;role='rf_quadrupole_comsol_mass_filter_summary';status='success';mode='mass_filter_reference'

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import os
 import shutil
@@ -72,6 +73,26 @@ GATE_VALIDATOR_MODULE = (
 
 def _ps(value: Path | str) -> str:
     return "'" + str(value).replace("'", "''") + "'"
+
+
+def _mass_analysis_setup(runner: Path) -> str:
+    """Exercise each production runner's analysis-only freeze/probe boundary."""
+    source = runner.read_text(encoding="utf-8")
+    probe_end = "-ForbiddenRoots @($repoRoot,$projectRoot) -ProbeOnly"
+    if runner.name == "compare_responses.ps1":
+        package_start = source.index("$runtimeRoot =")
+        package_end = source.index("$inputs =", package_start)
+        probe_start = source.index("$module =", package_end)
+        end = source.index(probe_end, probe_start) + len(probe_end)
+        return source[package_start:package_end] + source[probe_start:end] + "\n" + "\n".join((
+            "$frozenAnalysisPackage = $frozenPythonPackage",
+            "$analysisModule = $module",
+            "$analysisRequiredModules = $requiredModules",
+            "$analysisDistributions = $distributions",
+        ))
+    start = source.index("$frozenPythonSupport =")
+    end = source.index(probe_end, start) + len(probe_end)
+    return source[start:end]
 
 
 class FrozenParticlePolicyPackageTests(unittest.TestCase):
@@ -324,6 +345,184 @@ $result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath {_ps(result_path)}
             self.assertTrue(numpy_record["version"])
             self.assertIn("site-packages", numpy_record["distribution_root"].lower())
             self.assertNotIn("LIVE_OR_USER_FALLBACK_USED", completed.stderr)
+
+
+    def test_mass_filter_analysis_packages_and_failure_boundaries(self) -> None:
+        workflow = PROJECT_ROOT / "workflows" / "mass_filter_reference"
+        mode_path = PROJECT_ROOT / "config" / "modes" / "quadrupole_mass_filter_reference.json"
+        baseline_path = PROJECT_ROOT / "variants" / "quadrupole" / "config" / "baseline.json"
+        mode = json.loads(mode_path.read_text(encoding="utf-8"))
+        masses = mode["mass_scan_spec"]["paired_source_masses_Th"]
+        center = min(masses, key=lambda mass: abs(mass - mode["mass_scan_spec"]["calibration_mass_Th"]))
+        simion_source = (workflow / "run_simion.ps1").read_text(encoding="utf-8")
+        analysis_start = simion_source.index("$analysisExitCode = 0\n")
+        decision = "$physicalDecision = [string]$massMetrics.status"
+        analysis_end = simion_source.index(decision, analysis_start) + len(decision)
+        analysis_block = simion_source[analysis_start:analysis_end]
+        with tempfile.TemporaryDirectory() as root_text:
+            root = Path(root_text)
+            particles = root / "particles.ion"
+            with particles.open("w", newline="", encoding="utf-8") as stream:
+                csv.writer(stream).writerows(
+                    (0, mass, 1, 0, 0, 0, 0, 0, 2, 1, 0) for mass in masses
+                )
+            for status in ("PASS", "FAIL"):
+                with (root / f"{status}.csv").open("w", newline="", encoding="utf-8") as stream:
+                    writer = csv.DictWriter(stream, fieldnames=("particle_id", "event", "status"))
+                    writer.writeheader()
+                    writer.writerows(
+                        {"particle_id": index, "event": "terminal", "status":
+                         "transmitted" if status == "PASS" and mass == center else "lost"}
+                        for index, mass in enumerate(masses, 1)
+                    )
+            poison_root = root / "poison"
+            poison = poison_root / "common" / "analysis" / "peak_metrics.py"
+            poison.parent.mkdir(parents=True)
+            poison.write_text("raise RuntimeError('LIVE_ANALYSIS_FALLBACK_USED')\n", encoding="utf-8")
+            result_path = root / "result.json"
+            script = [f"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+. {_ps(SUPPORT)}
+. {_ps(HELPER)}
+$repoRoot = {_ps(REPO_ROOT)}
+$projectRoot = {_ps(PROJECT_ROOT)}
+$python = {_ps(Path(sys.executable).resolve())}
+$fixtureRoot = {_ps(root)}
+$env:PYTHONPATH = {_ps(poison_root)}
+$env:PYTHONNOUSERSITE = 'restore-site'
+$env:PYTHONDONTWRITEBYTECODE = 'restore-bytecode'
+$packages = [ordered]@{{}}
+$decisions = [ordered]@{{}}
+$rejections = [ordered]@{{}}
+$startingDirectory = (Get-Location).Path
+"""]
+            for runner_name in ("run_simion.ps1", "run_comsol.ps1", "compare_responses.ps1"):
+                input_directory = root / Path(runner_name).stem
+                input_directory.mkdir()
+                script.extend((
+                    "$inputDir = " + _ps(input_directory),
+                    _mass_analysis_setup(workflow / runner_name),
+                    """
+$execution = Invoke-IsolatedFrozenPythonModule `
+    -Python $python -Package $frozenAnalysisPackage -Module $analysisModule `
+    -Arguments @('--help') -DistributionNames $analysisDistributions `
+    -RequiredModuleNames $analysisRequiredModules -ForbiddenRoots @($repoRoot,$projectRoot)
+""",
+                    "$packages[" + _ps(runner_name) + "] = [ordered]@{package=$frozenAnalysisPackage;execution=$execution}",
+                ))
+                if runner_name != "run_simion.ps1":
+                    continue
+                script.append(f"""
+$particlePath = {_ps(particles)}
+$frozenBaseline = {_ps(baseline_path)}
+$frozenMode = {_ps(mode_path)}
+$moduleFailure = $null
+try {{
+    Invoke-IsolatedFrozenPythonModule -Python $python -Package $frozenAnalysisPackage `
+        -Module $analysisModule -Arguments @('--invalid-frozen-test-option') `
+        -DistributionNames $analysisDistributions -RequiredModuleNames $analysisRequiredModules `
+        -ForbiddenRoots @($repoRoot,$projectRoot) | Out-Null
+}} catch {{
+    $moduleFailure = [ordered]@{{message=$_.Exception.Message;exit_code=$_.Exception.Data['exit_code']}}
+}}
+$analysisBlock = [ScriptBlock]::Create(@'
+{analysis_block}
+{chr(39)}@)
+foreach ($status in @('PASS','FAIL')) {{
+    $particleStateCsv = Join-Path $fixtureRoot "$status.csv"
+    $massResponseCsv = Join-Path $fixtureRoot "$status-response.csv"
+    $massMetricsJson = Join-Path $fixtureRoot "$status-metrics.json"
+    $massResponseFigure = Join-Path $fixtureRoot "$status-figure.png"
+    . $analysisBlock
+    $decisions[$status] = [ordered]@{{decision=$physicalDecision;exit_code=$analysisExitCode}}
+}}
+# Keep the complete FAIL outputs in place: they must not mask isolation failures.
+$peakPath = Get-FrozenPythonPackageFile -Package $frozenAnalysisPackage `
+    -RelativePath common/analysis/peak_metrics.py
+$peakPath = [IO.Path]::GetFullPath($peakPath)
+if (-not $peakPath.StartsWith($fixtureRoot + [IO.Path]::DirectorySeparatorChar,
+        [StringComparison]::OrdinalIgnoreCase)) {{ throw 'Fixture path escaped temporary root.' }}
+$originalPeak = [IO.File]::ReadAllBytes($peakPath)
+foreach ($scenario in @('probe','hash','missing')) {{
+    $savedModules = $analysisRequiredModules
+    if ($scenario -eq 'probe') {{ $analysisRequiredModules += 'common.analysis.missing_test_dependency' }}
+    if ($scenario -eq 'hash') {{ [IO.File]::AppendAllText($peakPath,'# changed') }}
+    if ($scenario -eq 'missing') {{ Remove-Item -LiteralPath $peakPath }}
+    $rejections[$scenario] = $null
+    try {{ . $analysisBlock }} catch {{ $rejections[$scenario] = $_.Exception.Message }} finally {{
+        $analysisRequiredModules = $savedModules
+        [IO.File]::WriteAllBytes($peakPath,$originalPeak)
+    }}
+}}
+# A matching legacy message alone must not turn an infrastructure error into physical FAIL.
+$invokeBody = (Get-Command Invoke-IsolatedFrozenPythonModule).ScriptBlock
+try {{
+    function Invoke-IsolatedFrozenPythonModule {{ throw 'Frozen Python module failed with exit code 1.' }}
+    $rejections['message_only'] = $null
+    try {{ . $analysisBlock }} catch {{ $rejections['message_only'] = $_.Exception.Message }}
+}} finally {{
+    Set-Item Function:Invoke-IsolatedFrozenPythonModule -Value $invokeBody
+}}
+""")
+            script.append(f"""
+$result = [ordered]@{{
+    packages=$packages
+    decisions=$decisions
+    rejections=$rejections
+    module_failure=$moduleFailure
+    environment_restored=(
+        $env:PYTHONPATH -ceq {_ps(poison_root)} -and
+        $env:PYTHONNOUSERSITE -ceq 'restore-site' -and
+        $env:PYTHONDONTWRITEBYTECODE -ceq 'restore-bytecode' -and
+        (Get-Location).Path -ceq $startingDirectory
+    )
+}}
+$result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath {_ps(result_path)} -Encoding UTF8
+""")
+            script_path = root / "exercise.ps1"
+            script_path.write_text("\n".join(script), encoding="utf-8")
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(script_path)],
+                cwd=root, env=os.environ.copy(), capture_output=True, text=True,
+                errors="replace", timeout=120, check=False,
+            )
+            self.assertEqual(completed.returncode, 0, msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}")
+            result = json.loads(result_path.read_text(encoding="utf-8-sig"))
+            self.assertEqual(result["decisions"], {
+                "PASS": {"decision": "PASS", "exit_code": 0},
+                "FAIL": {"decision": "FAIL", "exit_code": 1},
+            })
+            self.assertIn("dependency probe failed", result["rejections"]["probe"])
+            self.assertIn("hash differs", result["rejections"]["hash"])
+            self.assertIn("missing or outside", result["rejections"]["missing"])
+            self.assertEqual(result["rejections"]["message_only"], "Frozen Python module failed with exit code 1.")
+            self.assertEqual(result["module_failure"], {
+                "message": "Frozen Python module failed with exit code 2.", "exit_code": 2,
+            })
+            self.assertTrue(result["environment_restored"])
+            self.assertNotIn("LIVE_ANALYSIS_FALLBACK_USED", completed.stderr)
+            for runner_name, record in result["packages"].items():
+                with self.subTest(runner=runner_name):
+                    code_root = Path(record["package"]["code_root"]).resolve()
+                    origins = {item["name"]: Path(item["origin"]).resolve()
+                               for item in record["execution"]["frozen_modules"]}
+                    for module in (
+                        "projects.rf_multipole_ion_optics.core.mass_response",
+                        "projects.rf_multipole_ion_optics.core.paired_mass_scan",
+                        "common.contracts.file_identity",
+                        "common.analysis.peak_metrics",
+                    ):
+                        self.assertIn(module, origins)
+                    if runner_name != "compare_responses.ps1":
+                        frozen_python = {Path(entry["path"]).resolve() for entry in record["package"]["files"]
+                                         if entry["relative_path"].endswith(".py")}
+                        self.assertEqual(set(origins.values()), frozen_python)
+                    self.assertTrue(all(origin.is_relative_to(code_root) for origin in origins.values()))
+                    self.assertEqual(record["execution"]["python_path"], str(code_root))
+                    self.assertTrue(record["execution"]["module_invoked"])
+                    self.assertTrue(record["execution"]["python_no_user_site"])
+                    self.assertTrue(record["execution"]["python_no_bytecode"])
 
 
 if __name__ == "__main__":

@@ -2713,10 +2713,14 @@ def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path
             for key in (
                 "detection_rate", "detector_tof_fwhm_us", "detector_tof_mean_us",
                 "detector_tof_median_us", "mass_resolution_t_over_2fwhm",
-                "target_k_fraction", "target_k_handoff_tof_fwhm_us",
+                "target_k_fraction", "target_k_handoff_histogram_half_height_bin_span_us",
                 "target_k_handoff_tof_median_us",
             ):
                 cohort[key] = None
+            if "target_k_handoff_histogram_analysis" in cohort:
+                cohort["target_k_handoff_histogram_analysis"]["status"] = (
+                    "not_applicable__accelerator_geometric_exit_scope"
+                )
             cohort["peak_analysis"] = {
                 "status": "not_applicable__accelerator_geometric_exit_scope"
             }

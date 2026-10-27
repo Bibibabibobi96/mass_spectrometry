@@ -11,6 +11,7 @@ Analyze one CSV or GUI-exported XLSX::
 from __future__ import annotations
 
 import argparse
+from decimal import Decimal, InvalidOperation
 import json
 import platform
 import re
@@ -49,6 +50,7 @@ DEFAULT_DETECTOR_CENTER_X_MM = float(
     _physical_geometry["coordinate_convention"]["detector_x"]
 )
 DEFAULT_DETECTOR_CENTER_Y_MM = 0.0
+PARTICLE_ID_ALIASES = ("particleid", "ion", "ionnumber", "ionno", "particlenumber")
 
 
 def _normalized_name(name: str) -> str:
@@ -82,11 +84,42 @@ def _parse_hit(values: pd.Series) -> pd.Series:
     return normalized.isin(truthy)
 
 
-def _read_source_table(path: Path) -> tuple[pd.DataFrame, str]:
+def _validated_particle_ids(values: pd.Series, label: str = "Input") -> pd.Series:
+    """Parse original integer encodings exactly, before any hit/event filtering."""
+    ids = []
+    for value in values:
+        try:
+            number = Decimal(str(value))
+        except InvalidOperation as exc:
+            raise ValueError(f"{label} particle IDs must be positive finite integers") from exc
+        if (isinstance(value, (bool, np.bool_)) or not number.is_finite()
+                or number <= 0 or number > np.iinfo(np.int64).max
+                or number != number.to_integral_value()):
+            raise ValueError(f"{label} particle IDs must be positive finite integers")
+        ids.append(int(number))
+    result = pd.Series(ids, index=values.index, dtype="int64")
+    if result.duplicated().any():
+        duplicates = result[result.duplicated()].tolist()
+        raise ValueError(f"Duplicate particle_id values in {label}: {duplicates[:10]}")
+    return result
+
+
+def _read_source_table(
+    path: Path, particle_id_column: str | None = None,
+) -> tuple[pd.DataFrame, str]:
     if path.suffix.lower() in {".xlsx", ".xlsm"}:
-        return pd.read_excel(path, engine="openpyxl"), "Excel human import"
+        header = pd.read_excel(path, engine="openpyxl", nrows=0)
+        selected_id = particle_id_column or _find_column(header, PARTICLE_ID_ALIASES)
+        # Text IDs stay text; numeric Excel cells retain the values actually stored.
+        dtype = {selected_id: object} if selected_id is not None else None
+        return pd.read_excel(path, engine="openpyxl", dtype=dtype), "Excel human import"
     if path.suffix.lower() == ".csv":
-        return pd.read_csv(path), "CSV machine source"
+        header = pd.read_csv(path, nrows=0)
+        selected_id = particle_id_column or _find_column(header, PARTICLE_ID_ALIASES)
+        # Preserve only the ID column lexically; scientific numeric columns keep
+        # their established pandas parsing and floating-point reduction inputs.
+        dtype = {selected_id: "string"} if selected_id is not None else None
+        return pd.read_csv(path, dtype=dtype), "CSV machine source"
     if path.suffix.lower() in {".log", ".txt"}:
         pattern = re.compile(
             r"^TRACE:\s*detector_crossing\s+ion=(\d+)\s+"
@@ -130,9 +163,28 @@ def read_particle_table(
     path = path.resolve()
     if not path.is_file():
         raise FileNotFoundError(path)
-    source, source_format = _read_source_table(path)
+    source, source_format = _read_source_table(
+        path, (column_overrides or {}).get("particle_id"),
+    )
     if source.empty:
         raise ValueError(f"Input table is empty: {path}")
+    return _normalize_particle_table(
+        source, source_format, detector_center_x_mm, detector_center_y_mm,
+        column_overrides, declared_event,
+    )
+
+
+def _normalize_particle_table(
+    source: pd.DataFrame,
+    source_format: str,
+    detector_center_x_mm: float = DEFAULT_DETECTOR_CENTER_X_MM,
+    detector_center_y_mm: float = DEFAULT_DETECTOR_CENTER_Y_MM,
+    column_overrides: dict[str, str] | None = None,
+    declared_event: str | None = None,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Normalize one already-read source, keeping exact IDs aligned to its rows."""
+    if source.empty:
+        raise ValueError("Input table is empty")
 
     overrides = column_overrides or {}
 
@@ -151,7 +203,7 @@ def read_particle_table(
 
     ion_column = source_column(
         "particle_id",
-        ("particleid", "ion", "ionnumber", "ionno", "particlenumber"),
+        PARTICLE_ID_ALIASES,
     )
     tof_column = source_column(
         "tof_us", ("tofus", "timeofflightus", "tof", "timeofflight"), True
@@ -162,7 +214,7 @@ def read_particle_table(
     particle_id = (
         np.arange(1, len(source) + 1, dtype=np.int64)
         if particle_id_generated
-        else pd.to_numeric(source[ion_column], errors="coerce")
+        else _validated_particle_ids(source[ion_column])
     )
     normalized = pd.DataFrame(
         {
@@ -228,16 +280,6 @@ def read_particle_table(
         if bool((recorded != declared).any()):
             raise ValueError("Declared event conflicts with values in the event column")
 
-    if bool(normalized["particle_id"].isna().any()):
-        raise ValueError("particle_id contains missing or nonnumeric values")
-    if bool((normalized["particle_id"] % 1 != 0).any()):
-        raise ValueError("particle_id must contain integers")
-    normalized["particle_id"] = normalized["particle_id"].astype("int64")
-    if bool(normalized["particle_id"].duplicated().any()):
-        duplicates = normalized.loc[
-            normalized["particle_id"].duplicated(), "particle_id"
-        ].tolist()
-        raise ValueError(f"Duplicate particle_id values: {duplicates[:10]}")
     detected = normalized.loc[normalized["hit"]].copy()
     if len(detected) < 3:
         raise ValueError("Fewer than three detected particles")
@@ -351,7 +393,7 @@ def _plot_single(
     mass_axis.axvline(float(spectra["mass_half_left_Da"]), color="0.4", linestyle="--")
     mass_axis.axvline(float(spectra["mass_half_right_Da"]), color="0.4", linestyle="--")
     mass_axis.set(
-        xlabel="Apparent mass [Da]",
+        xlabel="Nominal-relative apparent mass [Da]",
         ylabel="Normalized intensity",
         title=f"Direct FWHM={metrics['direct_fwhm_mass_Da']:.8g} Da; R={metrics['mass_resolution']:.1f}",
     )
@@ -664,7 +706,8 @@ def analyze_single(
         declared_event=declared_event,
     )
     metrics, spectra = compute_peak_metrics(
-        frame["tof_us"].to_numpy(), nominal_mass_Da, settings
+        frame["tof_us"].to_numpy(), nominal_mass_Da, settings,
+        include_result_metadata=True,
     )
     if {"detector_x_mm", "detector_y_mm"}.issubset(frame.columns):
         metrics["detector"] = compute_detector_metrics(
@@ -788,7 +831,10 @@ def _plot_comparison(
     figure, axes = plt.subplots(2, 2, figsize=(12.5, 8.0), constrained_layout=True)
     axes[0, 0].plot(left_spectra["mass_grid_Da"], left_spectra["mass_density_normalized"], label=left_label)
     axes[0, 0].plot(right_spectra["mass_grid_Da"], right_spectra["mass_density_normalized"], label=right_label)
-    axes[0, 0].set(xlabel="Apparent mass [Da]", ylabel="Normalized intensity", title="Absolute mass peaks")
+    axes[0, 0].set(
+        xlabel="Nominal-relative apparent mass [Da]",
+        ylabel="Normalized intensity", title="Nominal-relative mass peaks",
+    )
     axes[0, 0].legend()
 
     grid = comparison_spectra["standardized_grid"]
@@ -944,6 +990,8 @@ def analyze_comparison(
     bootstrap_seed: int = 20260715,
     contract_path: Path = DEFAULT_CONTRACT,
 ) -> dict[str, Any]:
+    if bootstrap_resamples > 0 and not paired_particle_ids_required:
+        raise ValueError("Paired bootstrap requires explicit paired_particle_ids_required=True")
     contract, settings = load_contract(contract_path)
     left_frame, left_import = read_particle_table(left_path)
     right_frame, right_import = read_particle_table(right_path)
@@ -957,13 +1005,17 @@ def analyze_comparison(
         raise ValueError("Paired comparison forbids generated particle_id values")
 
     left_metrics, left_spectra = compute_peak_metrics(
-        left_frame["tof_us"].to_numpy(), nominal_mass_Da, settings
+        left_frame["tof_us"].to_numpy(), nominal_mass_Da, settings,
+        include_result_metadata=True,
     )
     right_metrics, right_spectra = compute_peak_metrics(
-        right_frame["tof_us"].to_numpy(), nominal_mass_Da, settings
+        right_frame["tof_us"].to_numpy(), nominal_mass_Da, settings,
+        include_result_metadata=True,
     )
     comparison, comparison_spectra = compare_peak_shapes(
-        left_frame["tof_us"].to_numpy(), right_frame["tof_us"].to_numpy(), settings
+        left_frame["tof_us"].to_numpy(), right_frame["tof_us"].to_numpy(), settings,
+        left_particle_ids=left_frame["particle_id"].to_numpy() if paired_particle_ids_required else None,
+        right_particle_ids=right_frame["particle_id"].to_numpy() if paired_particle_ids_required else None,
     )
     paired_ids = np.array_equal(
         left_frame["particle_id"].to_numpy(), right_frame["particle_id"].to_numpy()
@@ -1037,8 +1089,6 @@ def analyze_comparison(
             ),
             "max_abs_ns": float(np.max(np.abs(paired_tof_delta_ns))),
         }
-    else:
-        comparison["paired_standardized_tof_correlation"] = None
     source_frame: pd.DataFrame | None = None
     if paired_particle_ids_required and SOURCE_COLUMNS.issubset(right_frame.columns):
         source_frame = right_frame
@@ -1110,6 +1160,8 @@ def analyze_comparison(
             resamples=bootstrap_resamples,
             seed=bootstrap_seed,
             settings=settings,
+            left_particle_ids=left_frame["particle_id"].to_numpy(),
+            right_particle_ids=right_frame["particle_id"].to_numpy(),
         )
         comparison["paired_bootstrap"] = bootstrap
         comparison.update(

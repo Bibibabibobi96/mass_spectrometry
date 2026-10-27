@@ -19,7 +19,7 @@ from common.contracts.component_particle_state import load_component_particle_st
 from common.contracts.file_identity import file_sha256
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.simion.native_completion import parse_fly_completed_line
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import parse_events
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import parse_events, unavailable_peak_metadata
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -160,7 +160,7 @@ def validate_measured_peak_analysis_contract(contract: dict[str, Any], base: Pat
     """Verify explicit common-pulse peak settings and frozen timing bytes; return pulse time in us."""
     from common.analysis.peak_metrics import AnalysisSettings
     if (set(contract) != {"method_id", "resolution_definition", "time_basis", "settings", "common_time_reference"}
-            or contract["method_id"] != "common_gaussian_kde_time_v1"
+            or contract["method_id"] != "common_gaussian_kde_time_v2"
             or contract["resolution_definition"] != "mean_tof_us/(2*direct_fwhm_tof_us)"
             or contract["time_basis"] != "instrument_arrival_minus_common_extraction_pulse_us"
             or set(contract["settings"]) != set(AnalysisSettings.__dataclass_fields__)):
@@ -206,9 +206,13 @@ def _prepare_detector_peak(contract: dict[str, Any] | None, base: Path, receipt:
                               "time_equivalent_resolution": None,
                               "qualification": "detector_survivor_conditioned_time_equivalent_only",
                               "detected_particle_ids": sorted(detectors), "analysis_contract": contract}
+    weights = [states[particle]["particle_weight"] for particle in sorted(detectors)]
+    result["analysis_metadata"] = unavailable_peak_metadata(
+        len(detectors), result["status"], weights=weights,
+    )
     if contract is None:
         return result, None
-    from common.analysis.peak_metrics import AnalysisSettings, compute_peak_metrics
+    from common.analysis.peak_metrics import AnalysisSettings, compute_time_peak_metrics
 
     pulse = validate_measured_peak_source_reference(contract, base, receipt, states)
     reference = contract["common_time_reference"]
@@ -225,13 +229,28 @@ def _prepare_detector_peak(contract: dict[str, Any] | None, base: Path, receipt:
                   mean_tof_us=statistics.fmean(times) if times else None,
                   nominal_mass_amu=mass, charge_state=charge,
                   timing_policy="One common pulse subtraction; all detector hits retained; no per-ion handoff subtraction.")
+    time_reference = {
+        "kind": "common_extraction_pulse", "clock_epoch_id": reference["clock_epoch_id"],
+        "reference_time_us": pulse, "timing": reference["timing"], "field": reference["field"],
+        "clock_qualification": "validated_epoch_and_frozen_timing",
+    }
+    result["analysis_metadata"] = unavailable_peak_metadata(
+        len(times), result["status"], method_id=contract["method_id"], weights=weights,
+        settings=settings.to_dict(), time_reference=time_reference,
+    )
     if len(times) < 3:
         result["status"] = "unavailable_fewer_than_three_hits"
+        result["analysis_metadata"]["status"] = result["status"]
         return result, None
     if min(times) == max(times):
         result["status"] = "unavailable_zero_variance"
+        result["analysis_metadata"]["status"] = result["status"]
         return result, None
-    metrics, spectra = compute_peak_metrics(times, mass, settings)
+    metrics, spectra = compute_time_peak_metrics(times, settings, weights=weights)
+    metrics["analysis_metadata"]["time_reference"] = time_reference
+    result["analysis_metadata"] = metrics["analysis_metadata"]
+    result["species"] = {key: states[next(iter(states))][key]
+                         for key in ("mass_amu", "charge_state", "mass_to_charge_Th")}
     result.update(status="evaluated", fwhm_us=metrics["direct_fwhm_tof_ns"]/1000,
                   time_equivalent_resolution=metrics["time_equivalent_resolution"], metrics=metrics)
     return result, spectra

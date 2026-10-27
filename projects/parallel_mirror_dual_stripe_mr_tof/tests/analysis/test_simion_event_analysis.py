@@ -14,7 +14,7 @@ import unittest
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.materialize_simion_prototype import _particle_source_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
     SOURCE_COUNT_KEYS, _mirrored_branch_turn_diagnostics, analyze_log,
-    collision_diagnostics, load_particle_source, parse_events, summarize_events, peak_time_metrics,
+    collision_diagnostics, histogram_half_height_bin_span, load_particle_source, parse_events, summarize_events, peak_time_metrics,
 )
 
 
@@ -137,6 +137,46 @@ def current_fixture_manifest(root: Path) -> Path:
 
 
 class SimionEventAnalysisTest(unittest.TestCase):
+    def test_histogram_span_preserves_disconnected_bins_and_declares_its_method(self):
+        span, metadata = histogram_half_height_bin_span([0.] * 4 + [8.] * 4, unit="eV")
+        self.assertEqual(span, 8.)
+        self.assertEqual(metadata["method_id"], "sqrt_count_histogram_half_height_bin_span_v1")
+        self.assertEqual((metadata["bin_count"], metadata["bin_width"]), (8, 1.))
+        self.assertEqual(metadata["sample_count"], 8)
+        self.assertEqual(metadata["unit"], "eV")
+        self.assertEqual(metadata["status"], "computed")
+        self.assertFalse(metadata["detector_resolution_claim_allowed"])
+        self.assertIn("first_and_last", metadata["settings"]["span"])
+
+    def test_histogram_span_empty_short_and_constant_inputs_have_explicit_status(self):
+        for values in ([], [1.], list(range(7))):
+            with self.subTest(values=values):
+                span, metadata = histogram_half_height_bin_span(values, unit="us")
+                self.assertIsNone(span)
+                self.assertEqual(metadata["status"], "unavailable_fewer_than_eight_samples")
+                self.assertEqual(metadata["sample_count"], len(values))
+                self.assertIsNone(metadata["bin_width"])
+        span, metadata = histogram_half_height_bin_span([7.] * 8, unit="us")
+        self.assertEqual(span, 0.)
+        self.assertEqual(metadata["status"], "zero_variance")
+        self.assertEqual(metadata["bin_width"], 0.)
+        for values in ([1.] * 7 + [float("nan")], [True] * 8):
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                histogram_half_height_bin_span(values, unit="us")
+
+    def test_missing_peak_contract_retains_input_metadata_without_clock_qualification(self):
+        result = peak_time_metrics([1., 2.], mass_th=None, analysis_contract=None, cohort_role=None)
+        metadata = result["analysis_metadata"]
+        self.assertIsNone(result["method_id"])
+        self.assertIsNone(metadata["method_id"])
+        self.assertIsNone(metadata["settings"])
+        self.assertEqual(metadata["sample_count"], 2)
+        self.assertEqual(metadata["weight_sum"], 2.)
+        self.assertEqual(metadata["effective_sample_count"], 2.)
+        self.assertEqual(metadata["time_reference"]["clock_qualification"], "unspecified")
+        self.assertEqual(metadata["status"], result["status"])
+        self.assertIsNone(result["fwhm"])
+
     def test_peak_metrics_match_common_units_and_mean_resolution(self):
         from common.analysis.peak_metrics import AnalysisSettings, compute_peak_metrics
         times = [700.0 + index * .001 for index in range(12)]
@@ -146,12 +186,44 @@ class SimionEventAnalysisTest(unittest.TestCase):
         self.assertEqual(actual["time_equivalent_resolution"], expected["time_equivalent_resolution"])
         self.assertEqual(actual["analysis_contract"], PEAK_CONTRACT)
 
+    def test_current_time_method_rejects_legacy_and_unknown_methods(self):
+        for method in ("common_gaussian_kde_time_v1", "unknown"):
+            with self.subTest(method=method), self.assertRaisesRegex(ValueError, "unsupported peak"):
+                peak_time_metrics([1., 2., 3.], mass_th=524,
+                                  analysis_contract={**PEAK_CONTRACT, "method_id": method},
+                                  cohort_role="formal_volume")
+
+    def test_legacy_species_ambiguity_does_not_invent_a_mass_result(self):
+        for mass, charge, status in ((524, 1, "legacy_plus_one_numerical_equivalence"),
+                                    (524, 2, "unavailable_ambiguous_legacy_mass_th"),
+                                    (None, None, "unavailable_ambiguous_legacy_mass_th")):
+            with self.subTest(mass=mass, charge=charge):
+                result = peak_time_metrics([1., 1.2, 1.4, 2.], mass_th=mass, charge_state=charge,
+                                          analysis_contract=PEAK_CONTRACT, cohort_role="formal_volume")
+                self.assertEqual(result["status"], "evaluated")
+                self.assertEqual(result["species"]["status"], status)
+                self.assertEqual(result["species"]["mass_amu"], 524 if charge == 1 else None)
+                self.assertIsNone(result["analysis_metadata"]["mass_axis"])
+                self.assertNotIn("significant_kde_modes", result)
+                self.assertIsInstance(result["significant_time_kde_modes"], int)
+
     def test_peak_metrics_unavailable_for_diagnostics_or_degenerate_samples(self):
         for times, role in (([], "formal_volume"), ([1.0, 2.0], "formal_volume"), ([1.0] * 13, "formal_volume"), ([1.0, 2.0, 3.0], "controlled_diagnostic")):
             with self.subTest(times=times, role=role):
                 result = peak_time_metrics(times, mass_th=524, analysis_contract=PEAK_CONTRACT, cohort_role=role)
                 self.assertIsNone(result["time_equivalent_resolution"])
                 self.assertIsNone(result["fwhm"])
+                metadata = result["analysis_metadata"]
+                self.assertEqual(metadata["status"], result["status"])
+                self.assertEqual(metadata["sample_count"], len(times))
+                self.assertEqual(metadata["weight_sum"], float(len(times)))
+                self.assertEqual(metadata["effective_sample_count"], float(len(times)))
+                self.assertEqual(metadata["sample_sigma_ddof"], 1)
+                self.assertEqual(metadata["weight_policy"], "equal_positive_relative_weights")
+                self.assertEqual(metadata["units"]["time_width"], "ns")
+                self.assertEqual(metadata["settings"], result["settings"])
+                self.assertEqual(metadata["time_reference"]["clock_qualification"], "declared_by_analysis_contract")
+                self.assertEqual(metadata["scientific_qualification"], "not_assessed")
 
     def test_peak_metrics_reject_missing_settings_and_invalid_times(self):
         contract = copy.deepcopy(PEAK_CONTRACT)
@@ -680,7 +752,7 @@ class SimionEventAnalysisTest(unittest.TestCase):
         self.assertFalse(result["event_integrity_passed"])
         self.assertIn(error, result["integrity_errors"])
         for key in ("detection_rate", "target_k_fraction", "detector_tof_fwhm_us",
-                    "mass_resolution_t_over_2fwhm", "target_k_handoff_tof_fwhm_us"):
+                    "mass_resolution_t_over_2fwhm", "target_k_handoff_histogram_half_height_bin_span_us"):
             self.assertIsNone(result[key], key)
         return result
 
@@ -693,6 +765,10 @@ class SimionEventAnalysisTest(unittest.TestCase):
         self.assertEqual(result["electrode_collision_count"], 1)
         self.assertEqual(result["detection_rate"], 8 / 9)
         self.assertGreater(result["mass_resolution_t_over_2fwhm"], 0)
+        self.assertNotIn("target_k_handoff_tof_fwhm_us", result)
+        self.assertEqual(result["target_k_handoff_histogram_half_height_bin_span_us"], 0.)
+        self.assertEqual(result["target_k_handoff_histogram_analysis"]["sample_count"], 8)
+        self.assertEqual(result["target_k_handoff_histogram_analysis"]["status"], "zero_variance")
 
     def test_volume_only_metrics_are_supplemental_to_all_particle_metrics(self):
         expected = tuple(range(1, 23))

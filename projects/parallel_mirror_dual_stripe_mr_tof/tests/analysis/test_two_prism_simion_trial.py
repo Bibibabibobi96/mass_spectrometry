@@ -962,6 +962,8 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
                 "all_losses_retained": True,
                 "detection_rate": 0.0,
                 "peak_analysis": {"status": "unavailable"},
+                "target_k_handoff_histogram_half_height_bin_span_us": .1,
+                "target_k_handoff_histogram_analysis": {"status": "computed"},
             }
             with (
                 patch.object(two_prism_simion_trial, "parse_events", return_value=events),
@@ -978,6 +980,10 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
             )
             self.assertFalse(result["accelerator_geometric_exit_validation"]["passed"])
             self.assertIsNone(result["cohort_analysis"]["detection_rate"])
+            self.assertNotIn("target_k_handoff_tof_fwhm_us", result["cohort_analysis"])
+            self.assertIsNone(result["cohort_analysis"]["target_k_handoff_histogram_half_height_bin_span_us"])
+            self.assertEqual(result["cohort_analysis"]["target_k_handoff_histogram_analysis"]["status"],
+                             "not_applicable__accelerator_geometric_exit_scope")
             self.assertEqual(
                 result["cohort_analysis"]["peak_analysis"]["status"],
                 "not_applicable__accelerator_geometric_exit_scope",

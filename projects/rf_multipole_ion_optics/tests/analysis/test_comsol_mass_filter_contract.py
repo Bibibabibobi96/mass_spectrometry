@@ -56,6 +56,16 @@ class ComsolMassFilterContractTests(unittest.TestCase):
                 mode["mass_scan_spec"]["paired_source_masses_Th"],
             )
             self.assertEqual(metrics["status"], "PASS")
+            self.assertEqual(metrics["sampled_response_analysis"]["status"], "computed")
+            self.assertEqual(metrics["sampled_response_analysis"]["mass_samples_Th"],
+                             mode["mass_scan_spec"]["paired_source_masses_Th"])
+            self.assertFalse(metrics["sampled_response_analysis"]["resolution_claim_allowed"])
+            # The same consumer rejects out-of-domain solver responses before publishing.
+            last_summary = json.loads(summary.read_text(encoding="utf-8"))
+            last_summary["transmission"] = 1.01
+            summary.write_text(json.dumps(last_summary), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "within \\[0, 1\\]"):
+                module.analyze(scan, mode_path)
 
     def test_comsol_case_preparation_derives_n1000_from_source(self) -> None:
         source_100 = (

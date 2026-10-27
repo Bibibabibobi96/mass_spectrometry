@@ -90,6 +90,15 @@ class MassFilterResponseComparisonTests(unittest.TestCase):
         self.assertEqual(len(rows), 7)
         self.assertEqual(metrics["particles_per_mass"], 1000)
         self.assertEqual(metrics["decision_status"], "NOT_EVALUATED")
+        analyses = metrics["sampled_response_analysis"]
+        self.assertEqual(analyses["L1"]["sample_count"], 29)
+        self.assertEqual(analyses["SIMION"]["sample_count"], 7)
+        self.assertEqual(analyses["COMSOL"]["mass_samples_Th"], self.solver_masses)
+        for analysis in analyses.values():
+            self.assertFalse(analysis["resolution_claim_allowed"])
+        module.plot_comparison(self.root / "comparison.png", analyses,
+                               (metrics["theory"]["low_mass_Th"], metrics["theory"]["high_mass_Th"]))
+        self.assertTrue((self.root / "comparison.png").is_file())
         self.assertFalse(
             metrics["acceptance"]["acceptance_tolerance_frozen"]
         )

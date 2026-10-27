@@ -78,6 +78,7 @@ def analyze(
         response,
         (float(metrics["theory"]["low_mass_Th"]), float(metrics["theory"]["high_mass_Th"])),
         "SIMION finite geometry",
+        metrics["sampled_response_analysis"],
     )
     return metrics
 

@@ -3,6 +3,8 @@
 This workflow reports calibration centroids, transmission and diagnostic local
 peak overlays.  It does not promote those overlays to precision FWHM claims or
 replace the dedicated 524 Da formal resolution baseline.
+Each solver's unweighted sqrt(m/z)=a*t+b fit uses the same sample centroids
+that it reports; its fitted time offset does not establish a pulse epoch.
 """
 
 from __future__ import annotations
@@ -26,8 +28,28 @@ from common.contracts.file_identity import file_sha256
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.reference_analysis import (
     DEFAULT_DETECTOR_CENTER_X_MM,
     DEFAULT_DETECTOR_CENTER_Y_MM,
-    read_particle_table,
 )
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.reference_analysis_core import (
+    PARTICLE_ID_ALIASES,
+    _find_column,
+    _normalize_particle_table,
+    _read_source_table,
+    _validated_particle_ids,
+)
+
+
+def _validated_charge_state(value: Any) -> int:
+    """Reject fractional or unphysical charge states before integer conversion."""
+
+    numeric = float(value)
+    if (
+        isinstance(value, (bool, np.bool_))
+        or not np.isfinite(numeric)
+        or not numeric.is_integer()
+        or numeric == 0
+    ):
+        raise ValueError("charge_state must be a finite nonzero integer")
+    return int(value)
 
 
 def load_mode(path: Path) -> dict[str, Any]:
@@ -42,17 +64,25 @@ def load_mode(path: Path) -> dict[str, Any]:
         raise ValueError("species_id values must be unique")
     for item in species:
         mass = float(item["mass_amu"])
-        charge = int(item["charge_state"])
+        charge = _validated_charge_state(item["charge_state"])
         mz = float(item["mz"])
-        if mass <= 0 or charge == 0 or mz <= 0:
+        if not np.isfinite(mass) or mass <= 0 or not np.isfinite(mz) or mz <= 0:
             raise ValueError(f"Invalid species definition: {item}")
         if not np.isclose(mass / abs(charge), mz, rtol=0, atol=1e-12):
             raise ValueError(f"m/z is inconsistent for {item['species_id']}")
+        count = item["particle_count"]
+        if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+            raise ValueError("particle_count must be a positive integer")
     return mode
 
 
 def fit_calibration(mean_tof_us: np.ndarray, mz: np.ndarray) -> dict[str, Any]:
-    """Fit sqrt(m/z)=slope*t+intercept and return residual diagnostics."""
+    """Fit sqrt(m/z)=a*t+b by unweighted least squares in sqrt(m/z).
+
+    Inputs are species mean TOFs in us and nominal m/z in Th. Residuals are
+    evaluated at those same centroids; ``time_offset_us`` is the fitted zero
+    intercept, not an independently measured pulse epoch.
+    """
 
     tof = np.asarray(mean_tof_us, dtype=float)
     target = np.asarray(mz, dtype=float)
@@ -73,7 +103,8 @@ def fit_calibration(mean_tof_us: np.ndarray, mz: np.ndarray) -> dict[str, Any]:
 
 
 def _normalized_simion_rows(path: Path) -> pd.DataFrame:
-    raw = pd.read_csv(path)
+    # Keep lexical IDs until validation; pandas float inference can round them.
+    raw = pd.read_csv(path, dtype={"Ion": "string"})
     required = {
         "Ion", "MassAmu", "ChargeState", "TofUs", "XMm", "YMm", "Hit"
     }
@@ -83,9 +114,11 @@ def _normalized_simion_rows(path: Path) -> pd.DataFrame:
     hit = raw["Hit"].astype(str).str.lower().isin({"true", "1", "yes"})
     result = pd.DataFrame(
         {
-            "particle_id": pd.to_numeric(raw["Ion"], errors="raise").astype(int),
+            "particle_id": _validated_particle_ids(raw["Ion"], "SIMION"),
             "mass_amu": pd.to_numeric(raw["MassAmu"], errors="raise"),
-            "charge_state": pd.to_numeric(raw["ChargeState"], errors="raise").astype(int),
+            "charge_state": pd.to_numeric(raw["ChargeState"], errors="raise").map(
+                _validated_charge_state
+            ),
             "tof_us": pd.to_numeric(raw["TofUs"], errors="coerce"),
             "detector_x_mm": (
                 pd.to_numeric(raw["XMm"], errors="coerce")
@@ -106,14 +139,19 @@ def _normalized_simion_rows(path: Path) -> pd.DataFrame:
     ):
         if source in raw:
             result[target] = pd.to_numeric(raw[source], errors="coerce")
-    if result["particle_id"].duplicated().any():
-        raise ValueError("SIMION mixed-species particle IDs are not unique")
     return result
 
 
-def _normalized_comsol_rows(path: Path) -> pd.DataFrame:
-    result, _ = read_particle_table(path)
-    return result.copy()
+def _normalized_comsol_rows(path: Path, emitted: int) -> pd.DataFrame:
+    source, source_format = _read_source_table(path)
+    id_column = _find_column(source, PARTICLE_ID_ALIASES, True)
+    ids = _validated_particle_ids(source[id_column], "COMSOL")
+    if len(ids) > emitted:
+        raise ValueError("COMSOL has more particle rows than emitted particles")
+    if (ids > emitted).any():
+        raise ValueError("COMSOL particle ID exceeds its species mother population")
+    result, _ = _normalize_particle_table(source, source_format)
+    return result
 
 
 def _plot_mass_detector_landings(
@@ -180,7 +218,7 @@ def _plot_mass_detector_landings(
             bbox={"facecolor": "white", "alpha": 0.72, "edgecolor": "none", "pad": 2},
         )
         axis.set(
-            title=f"m/z {nominal:g}",
+            title=f"m/z {nominal:g} Th",
             xlim=(-extent, extent), ylim=(-extent, extent),
             xlabel="Detector local x (mm)", ylabel="Detector local y (mm)",
         )
@@ -221,8 +259,17 @@ def analyze_mass_spectrum(
     output_dir: Path,
 ) -> dict[str, Any]:
     mode = load_mode(mode_path)
-    output_dir.mkdir(parents=True, exist_ok=True)
     simion = _normalized_simion_rows(simion_csv)
+    total_emitted = sum(item["particle_count"] for item in mode["species"])
+    if (simion["particle_id"] > total_emitted).any():
+        raise ValueError("SIMION particle ID exceeds the mixed-species mother population")
+    species_masks = [
+        np.isclose(simion["mass_amu"], float(item["mass_amu"]), rtol=0, atol=1e-9)
+        & (simion["charge_state"] == int(item["charge_state"]))
+        for item in mode["species"]
+    ]
+    if np.any(np.sum(species_masks, axis=0) != 1):
+        raise ValueError("SIMION particle species must match exactly one declared mass and charge")
     combined_frames: list[pd.DataFrame] = []
     summary_rows: list[dict[str, Any]] = []
     peak_shape_rows: list[dict[str, Any]] = []
@@ -231,7 +278,7 @@ def analyze_mass_spectrum(
         "simion_csv": file_sha256(simion_csv),
     }
 
-    for item in mode["species"]:
+    for item, species_mask in zip(mode["species"], species_masks, strict=True):
         species_id = str(item["species_id"])
         mass = float(item["mass_amu"])
         charge = int(item["charge_state"])
@@ -243,14 +290,17 @@ def analyze_mass_spectrum(
             raise FileNotFoundError(comsol_path)
         input_hashes[f"comsol_{species_id}"] = file_sha256(comsol_path)
 
+        if int(species_mask.sum()) > emitted:
+            raise ValueError(f"SIMION {species_id} has more particle rows than emitted particles")
         solver_frames = {
-            "COMSOL": _normalized_comsol_rows(comsol_path),
-            "SIMION": simion[
-                np.isclose(simion["mass_amu"], mass, rtol=0, atol=1e-9)
-                & (simion["charge_state"] == charge)
-                & simion["hit"]
-            ].copy(),
+            "COMSOL": _normalized_comsol_rows(comsol_path, emitted),
+            "SIMION": simion[species_mask & simion["hit"]].copy(),
         }
+        for solver, frame in solver_frames.items():
+            if len(frame) < 3:
+                raise ValueError(f"{solver} {species_id} has fewer than three hits")
+            if len(frame) > emitted:
+                raise ValueError(f"{solver} {species_id} has more hits than emitted particles")
         comparison, _ = compare_peak_shapes(
             solver_frames["COMSOL"]["tof_us"].to_numpy(dtype=float),
             solver_frames["SIMION"]["tof_us"].to_numpy(dtype=float),
@@ -277,10 +327,6 @@ def analyze_mass_spectrum(
             }
         )
         for solver, frame in solver_frames.items():
-            if len(frame) < 3:
-                raise ValueError(f"{solver} {species_id} has fewer than three hits")
-            if solver == "COMSOL" and len(frame) > emitted:
-                raise ValueError(f"COMSOL {species_id} has more hits than emitted particles")
             frame["solver"] = solver
             frame["species_id"] = species_id
             frame["mass_amu"] = mass
@@ -315,8 +361,18 @@ def analyze_mass_spectrum(
     summary = pd.DataFrame(summary_rows)
     peak_shapes = pd.DataFrame(peak_shape_rows).sort_values("mz").reset_index(drop=True)
     calibrations: dict[str, Any] = {}
+    fit_samples: dict[str, Any] = {}
     for solver in ("COMSOL", "SIMION"):
         selected = summary[summary["solver"] == solver].sort_values("mz")
+        fit_samples[solver] = {
+            "sample_count": len(selected),
+            "weight_sum": float(len(selected)),
+            "effective_sample_count": float(len(selected)),
+            "particle_count_by_species": {
+                str(row["species_id"]): int(row["detected"])
+                for _, row in selected.iterrows()
+            },
+        }
         fit = fit_calibration(selected["mean_tof_us"].to_numpy(), selected["mz"].to_numpy())
         calibrations[solver] = {
             key: value for key, value in fit.items()
@@ -351,6 +407,7 @@ def analyze_mass_spectrum(
         centroid_distance
     )
     summary = summary.sort_values(["mz", "solver"]).reset_index(drop=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
     particles.to_csv(output_dir / "mass_spectrum_particles.csv", index=False)
     summary.to_csv(output_dir / "mass_spectrum_summary.csv", index=False)
     peak_shapes.to_csv(output_dir / "mass_peak_shape_comparison.csv", index=False)
@@ -391,13 +448,14 @@ def analyze_mass_spectrum(
             f"σt COMSOL/SIMION={comsol_std_ns:.3f}/{simion_std_ns:.3f} ns\n"
             f"shape overlap={shape['standardized_kde_overlap']:.3f}; "
             f"KS={shape['standardized_ks_distance']:.3f}\n"
-            f"N/solver={len(peak) // 2}",
+            f"N COMSOL/SIMION={int(peak_summary.loc['COMSOL', 'detected'])}/"
+            f"{int(peak_summary.loc['SIMION', 'detected'])}",
             transform=axis.transAxes, ha="left", va="top", fontsize=8,
         )
         axis.axvline(0, color="0.4", linewidth=1)
-        axis.set_title(f"m/z {nominal:g}")
-        axis.set_xlabel("calibrated m/z - nominal (Da)")
-        axis.set_ylabel("density")
+        axis.set_title(f"m/z {nominal:g} Th")
+        axis.set_xlabel("calibrated m/z - nominal (Th)")
+        axis.set_ylabel("probability density (1/Th)")
         axis.grid(alpha=0.2)
     unused_axes = axes[species_count:]
     if len(unused_axes) > 0:
@@ -413,7 +471,7 @@ def analyze_mass_spectrum(
         )
         centroid_axis.axhline(0, color="0.4", linewidth=1)
         centroid_axis.set_title("cross-solver centroid closure")
-        centroid_axis.set_xlabel("nominal m/z")
+        centroid_axis.set_xlabel("nominal m/z (Th)")
         centroid_axis.set_ylabel("SIMION - COMSOL mean TOF (ns)")
         centroid_axis.grid(alpha=0.25)
     for axis in unused_axes[1:]:
@@ -426,7 +484,7 @@ def analyze_mass_spectrum(
         Line2D([0], [0], color="0.2", linewidth=1.1, linestyle="--",
                label="solver peak mean"),
         Line2D([0], [0], color="0.4", linewidth=1.0,
-               label="nominal mass (Δm=0)"),
+               label="nominal m/z (Δ(m/z)=0)"),
         Line2D([0], [0], color="#6a3d9a", linewidth=1.5, marker="o",
                label="SIMION − COMSOL mean TOF"),
     ]
@@ -434,7 +492,7 @@ def analyze_mass_spectrum(
         handles=legend_handles, loc="lower center", bbox_to_anchor=(0.5, -0.065),
         ncol=5, frameon=True, borderaxespad=0,
     )
-    fig.suptitle("oa-TOF mass peaks: COMSOL and SIMION")
+    fig.suptitle("oa-TOF m/z peaks: same-sample centroid calibration")
     fig.savefig(output_dir / "mass_spectrum_comparison.png", dpi=180, bbox_inches="tight")
     plt.close(fig)
 
@@ -448,6 +506,45 @@ def analyze_mass_spectrum(
         "status": "PASS",
         "role": "oa_tof_candidate_mass_spectrum_analysis",
         "resolution_claim_allowed": False,
+        "analysis_metadata": {
+            "schema_version": 1,
+            "method_id": "sqrt_mz_affine_centroid_fit_v1",
+            "status": "computed",
+            "scientific_qualification": "not_assessed",
+            "settings": {
+                "fit_degree": 1, "fit_intercept": True,
+                "centroid_statistic": "arithmetic_mean", "centroid_std_ddof": 1,
+            },
+            "units": {
+                "tof": "us", "mass_to_charge": "Th", "mass_to_charge_density": "1/Th",
+                "slope": "sqrt(Th)/us", "intercept": "sqrt(Th)",
+            },
+            "time_reference": {
+                "kind": "caller_supplied_tof", "clock_qualification": "unspecified",
+            },
+            "weight_policy": "equal_species_centroid_weights",
+            "sample_unit": "species_centroid",
+            "fit_samples": fit_samples,
+            "fit_equation": "sqrt(m/z)=a*tof_us+b",
+            "fit_method": "numpy_polyfit_degree_1_unweighted",
+            "residual_scope": "same_sample_centroids",
+            "time_offset_role": "fitted_zero_intercept_not_pulse_epoch",
+            "mass_axis": {
+                "quantity": "mass_to_charge",
+                "unit": "Th",
+                "mapping_method": "sqrt_mz_affine_centroid_fit_v1",
+                "absolute_calibration": False,
+                "calibration_scope": "same_sample_centroids_per_solver",
+            },
+            "species_identity": {
+                "nominal_mass_and_charge_source": "mode_species",
+                "comsol_assignment": "species_id_file",
+                "simion_assignment": "recorded_mass_and_charge",
+                "comsol_particle_id_scope": "original_species_local_id_within_1_to_emitted",
+                "simion_particle_id_scope": "original_mixed_source_id_within_1_to_total_emitted",
+                "census_bound": "all_supplied_rows_per_species_at_most_emitted; transmission_denominator_is_declared_emitted",
+            },
+        },
         "python": platform.python_version(),
         "inputs": input_hashes,
         "calibration": calibrations,

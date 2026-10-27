@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import json
+import math
+import os
+import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,6 +23,178 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.solver_diagnostics
 
 
 class SolverDiagnosticsTest(unittest.TestCase):
+    def test_powershell_wrapper_resolves_relative_inputs_from_callers_directory(self) -> None:
+        repo = Path(__file__).resolve().parents[4]
+        if not shutil.which("pwsh"):
+            self.skipTest("PowerShell wrapper requires pwsh")
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import (
+            freeze_candidate_source_closure, verify_candidate_source_closure,
+        )
+        source_id = "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/analyze_ideal_field_log.ps1"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "particles.ion").write_text("0,524,1,0,0,0,0,0,5,1,0\n", encoding="ascii")
+            (root / "simion.log").write_text("", encoding="utf-8")
+            code = root / "frozen code"
+            closure = freeze_candidate_source_closure(code, root / "artifacts", Path(sys.executable))
+            verify_candidate_source_closure(closure)
+            frozen_source = (code / source_id).read_text(encoding="utf-8")
+            self.assertNotIn("SIMULATION_PYTHON_EXE", frozen_source)
+            self.assertNotIn("Join-Path $repoRoot '.venv", frozen_source)
+            for label, wrapper, python_override in (
+                ("live", repo / source_id, sys.executable),
+                ("frozen", code / source_id, str(root / "unavailable-python.exe")),
+            ):
+                with self.subTest(label=label):
+                    quoted_wrapper = str(wrapper).replace("'", "''")
+                    command = (
+                        f"& '{quoted_wrapper}' -Log simion.log -IonFile particles.ion "
+                        f"-Mode test -Distribution fixed -ParticleCsv {label}.csv -AllowIncompleteCensus "
+                        "| ConvertTo-Json -Depth 5"
+                    )
+                    result = subprocess.run(
+                        ["pwsh", "-NoProfile", "-Command", command], cwd=root, check=True,
+                        env={**os.environ, "SIMULATION_PYTHON_EXE": python_override},
+                        capture_output=True, text=True, encoding="utf-8", timeout=60,
+                    )
+                    report = json.loads(result.stdout)
+                    self.assertEqual(report["PeakStatus"], "no_hits")
+                    self.assertEqual(report["UnobservedParticleIds"], [1])
+                    self.assertEqual(pd.read_csv(root / f"{label}.csv")["ObservationStatus"].tolist(), ["not_observed"])
+
+    def _analyze_events(
+        self,
+        events: list[tuple[int, float]],
+        *,
+        birth_us: float = 0.0,
+        allow_incomplete: bool = True,
+    ) -> tuple[pd.DataFrame, dict]:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ion, log = root / "particles.ion", root / "simion.log"
+            ion.write_text(
+                f"{birth_us},524,1,0,0,0,0,0,5,1,0\n" * 3,
+                encoding="ascii",
+            )
+            log.write_text(
+                "".join(
+                    f"TRACE: detector_crossing ion={ion_id} t={time_us} "
+                    "x=0 y=0 z=0 r=0 zmax=4\n"
+                    for ion_id, time_us in events
+                ),
+                encoding="utf-8",
+            )
+            return analyze_simion_log(
+                log, ion, mode="test", distribution="fixed",
+                detector_radius_mm=1.0, allow_incomplete_census=allow_incomplete,
+            )
+
+    def test_no_crossings_preserves_unobserved_source_population(self) -> None:
+        particles, summary = self._analyze_events([])
+        self.assertEqual(particles["Ion"].tolist(), [1, 2, 3])
+        self.assertEqual(particles["ObservationStatus"].tolist(), ["not_observed"] * 3)
+        self.assertFalse(particles["Hit"].any())
+        self.assertEqual(summary["UnobservedParticleIds"], [1, 2, 3])
+        self.assertEqual(summary["CrossingParticleIds"], [])
+        self.assertEqual(summary["PeakStatus"], "no_hits")
+        self.assertEqual(summary["EfficiencyPct"], 0.0)
+        self.assertIsNone(summary["GaussianProxyFwhmTofNs"])
+        self.assertIsNone(summary["GaussianProxyTimeEquivalentResolution"])
+        json.dumps(summary, allow_nan=False)
+
+    def test_complete_census_still_rejects_no_crossings(self) -> None:
+        with self.assertRaisesRegex(ValueError, "No detector_crossing"):
+            self._analyze_events([], allow_incomplete=False)
+
+    def test_allow_incomplete_does_not_allow_duplicate_particle_events(self) -> None:
+        for allow_incomplete in (False, True):
+            with self.subTest(allow_incomplete=allow_incomplete):
+                with self.assertRaisesRegex(ValueError, "Duplicate.*ion 1"):
+                    self._analyze_events([(1, 10.0)] * 4, allow_incomplete=allow_incomplete)
+
+    def test_constant_and_single_hit_have_explicit_proxy_status(self) -> None:
+        cases = [([(1, 10.0)], "insufficient_samples", None),
+                 ([(1, 10.0), (2, 10.0), (3, 10.0)], "zero_variance", 0.0)]
+        for events, status, width in cases:
+            with self.subTest(status=status):
+                _, summary = self._analyze_events(events)
+                self.assertEqual(summary["PeakStatus"], status)
+                self.assertEqual(summary["GaussianProxyFwhmTofNs"], width)
+                self.assertIsNone(summary["GaussianProxyTimeEquivalentResolution"])
+                json.dumps(summary, allow_nan=False)
+
+    def test_gaussian_proxy_keeps_sample_sigma_and_birth_time_reference(self) -> None:
+        events = [(3, 11.0), (1, 9.0), (2, 10.0)]
+        _, summary = self._analyze_events(events, allow_incomplete=False)
+        expected_width_us = 2.0 * math.sqrt(2.0 * math.log(2.0))
+        self.assertAlmostEqual(summary["StdTofNs"], 1000.0)
+        self.assertAlmostEqual(summary["GaussianProxyFwhmTofNs"], 1000.0 * expected_width_us)
+        self.assertAlmostEqual(summary["GaussianProxyTimeEquivalentResolution"], 10.0 / (2 * expected_width_us))
+        self.assertEqual(summary["HitParticleIds"], [1, 2, 3])
+        self.assertEqual(summary["PeakStatus"], "computed")
+        self.assertEqual(summary["TofTimeReference"], "particle_birth")
+        self.assertFalse(summary["ResolutionClaim"])
+        self.assertNotIn("FwhmTofNs", summary)
+        self.assertNotIn("ResolutionFwhm", summary)
+        _, shifted = self._analyze_events(
+            [(ion_id, time_us + 100.0) for ion_id, time_us in events], birth_us=100.0
+        )
+        self.assertEqual(summary["MeanTofUs"], shifted["MeanTofUs"])
+        self.assertEqual(summary["GaussianProxyFwhmTofNs"], shifted["GaussianProxyFwhmTofNs"])
+
+    def test_proxy_metadata_declares_method_units_and_each_sample_population_in_all_states(self) -> None:
+        cases = [([], "no_hits"), ([(1, 10.)], "insufficient_samples"),
+                 ([(1, 10.), (2, 10.), (3, 10.)], "zero_variance"),
+                 ([(1, 9.), (2, 10.), (3, 11.)], "computed")]
+        for events, status in cases:
+            with self.subTest(status=status):
+                _, summary = self._analyze_events(events)
+                metadata = summary["analysis_metadata"]
+                self.assertEqual(metadata["method_id"], summary["DiagnosticMethod"])
+                self.assertEqual(metadata["status"], status)
+                self.assertEqual(metadata["sample_sigma_ddof"], 1)
+                self.assertEqual(metadata["weight_policy"], "equal_particle_ids")
+                self.assertEqual(metadata["sample_count"], len(events))
+                self.assertEqual(metadata["weight_sum"], len(events))
+                self.assertEqual(metadata["effective_sample_count"], len(events))
+                self.assertEqual(metadata["time_reference"]["kind"], "particle_birth")
+                self.assertEqual(metadata["time_reference"]["clock_qualification"], "birth_relative_only_no_pulse_epoch")
+                self.assertEqual(metadata["units"]["time_width"], "ns")
+                self.assertEqual(metadata["observation"]["event"], "detector_crossing")
+                self.assertEqual(metadata["metric_scope"]["AllCrossingStdTofNs"], "recorded_crossings")
+                self.assertEqual(metadata["cohorts"]["source"], {
+                    "sample_count": 3, "weight_sum": 3., "effective_sample_count": 3.,
+                })
+                for key in ("sample_count", "weight_sum", "effective_sample_count"):
+                    self.assertEqual(metadata["cohorts"]["recorded_crossings"][key], len(events))
+                    self.assertEqual(metadata["cohorts"]["non_hits_including_unobserved_source_ids"][key], 3-len(events))
+                self.assertFalse(metadata["resolution_claim_allowed"])
+                self.assertEqual(metadata["scientific_qualification"], "not_assessed")
+                json.dumps(summary, allow_nan=False)
+
+    def test_empty_proxy_cli_serializes_complete_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ion, log = root / "particles.ion", root / "simion.log"
+            ion.write_text("0,524,1,0,0,0,0,0,5,1,0\n", encoding="ascii")
+            log.write_text("", encoding="utf-8")
+            result = subprocess.run([
+                sys.executable, "-B", "-m", "projects.single_reflection_oa_tof_mass_analyzer.analysis.solver_diagnostics",
+                "analyze-simion-log", "--log", str(log), "--ion-file", str(ion),
+                "--mode", "test", "--distribution", "fixed", "--allow-incomplete-census",
+            ], cwd=Path(__file__).resolve().parents[4], capture_output=True, text=True, timeout=60, check=True)
+            metadata = json.loads(result.stdout)["analysis_metadata"]
+            self.assertEqual(metadata["status"], "no_hits")
+            self.assertEqual(metadata["weight_sum"], 0.)
+            self.assertEqual(metadata["cohorts"]["source"]["sample_count"], 1)
+
+    def test_crossing_rejects_unknown_identity_nonpositive_tof_and_nonfinite_time(self) -> None:
+        for event, message in [((4, 10.0), "absent ion"), ((1, 0.0), "birth-relative"),
+                               ((1, float("inf")), "Malformed detector")]:
+            with self.subTest(event=event):
+                with self.assertRaisesRegex(ValueError, message):
+                    self._analyze_events([event])
+
     def test_log_analysis_preserves_census_and_detector_radius(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -44,6 +222,9 @@ class SolverDiagnosticsTest(unittest.TestCase):
             self.assertEqual(len(particles), 2)
             self.assertEqual(summary["Crossed"], 1)
             self.assertEqual(summary["Hit"], 0)
+            self.assertEqual(summary["analysis_metadata"]["cohorts"]["recorded_crossings"]["sample_count"], 1)
+            self.assertEqual(summary["analysis_metadata"]["sample_count"], 0)
+            self.assertEqual(summary["analysis_metadata"]["cohorts"]["non_hits_including_unobserved_source_ids"]["sample_count"], 2)
 
     def test_particle_comparison_pairs_by_id_not_row_order(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

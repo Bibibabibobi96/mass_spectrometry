@@ -182,7 +182,7 @@ class InterfacePreparationTests(unittest.TestCase):
         from common.analysis.peak_metrics import AnalysisSettings
         original = dict(simion=dict(default_trajectory_profile_id='same', trajectory_profiles=dict(
             same=dict(trajectory_quality=8, maximum_step_us=.002, purpose='unit'))),
-            peak_analysis=dict(method_id='common_gaussian_kde_time_v1',
+            peak_analysis=dict(method_id='common_gaussian_kde_time_v2',
                 resolution_definition='mean_tof_us/(2*direct_fwhm_tof_us)',
                 time_basis='instrument_arrival_us_from_common_zero_birth', settings=vars(AnalysisSettings())))
         with tempfile.TemporaryDirectory() as directory:

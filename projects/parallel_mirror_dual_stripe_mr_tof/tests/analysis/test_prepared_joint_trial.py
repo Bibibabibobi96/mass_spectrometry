@@ -80,7 +80,7 @@ class PreparedJointBatchTests(unittest.TestCase):
         timing_authority = root / "native_timing.json"
         timing_authority.write_text(json.dumps(dict(schema_version=1, role="native_electrode_timing", pulse_start_us=7500)))
         source_receipt = json.loads((source / "source_receipt.json").read_text())
-        original["peak_analysis"] = dict(method_id="common_gaussian_kde_time_v1",
+        original["peak_analysis"] = dict(method_id="common_gaussian_kde_time_v2",
             resolution_definition="mean_tof_us/(2*direct_fwhm_tof_us)",
             time_basis="instrument_arrival_minus_common_extraction_pulse_us", settings=vars(AnalysisSettings()),
             common_time_reference=dict(clock_epoch_id=source_receipt["clock_epoch_id"],

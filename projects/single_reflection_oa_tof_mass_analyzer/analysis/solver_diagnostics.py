@@ -12,6 +12,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from common.analysis.peak_metrics import FWHM_FACTOR
+
 
 DETECTOR_PATTERN = re.compile(
     r"TRACE: detector_crossing ion=(\d+) "
@@ -78,17 +80,37 @@ def analyze_simion_log(
     detector_radius_mm: float,
     allow_incomplete_census: bool,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Diagnose unique plane events using birth-relative Gaussian proxies.
+
+    Missing events remain unobserved members of the source population. These
+    auxiliary time statistics do not establish pulse-relative mass resolution.
+    """
+    if not math.isfinite(detector_radius_mm) or detector_radius_mm <= 0:
+        raise ValueError("detector_radius_mm must be finite and positive")
     initial = read_ion_table(ion_path).set_index("Ion", drop=False)
+    if not np.all(np.isfinite(initial.to_numpy(dtype=float))):
+        raise ValueError("ION source contains non-finite values")
     rows: list[dict[str, Any]] = []
+    observed_ids: set[int] = set()
     for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines():
         match = DETECTOR_PATTERN.search(line)
         if not match:
+            if "TRACE: detector_crossing" in line:
+                raise ValueError(f"Malformed detector crossing in {log_path}: {line}")
             continue
         ion = int(match.group(1))
         if ion not in initial.index:
             raise ValueError(f"Detector crossing references absent ion {ion}")
+        if ion in observed_ids:
+            raise ValueError(f"Duplicate detector crossing for ion {ion}")
+        observed_ids.add(ion)
         source = initial.loc[ion]
+        event = np.asarray([float(match.group(index)) for index in range(2, 8)])
+        if not np.all(np.isfinite(event)):
+            raise ValueError(f"Detector crossing contains non-finite values for ion {ion}")
         radius = float(match.group(6))
+        if radius < 0 or float(match.group(2)) <= float(source["TobUs"]):
+            raise ValueError(f"Invalid detector radius or birth-relative TOF for ion {ion}")
         rows.append(
             {
                 "Mode": mode,
@@ -109,7 +131,12 @@ def analyze_simion_log(
                 "Hit": radius <= detector_radius_mm,
             }
         )
-    crossings = pd.DataFrame(rows)
+    columns = [
+        "Mode", "Distribution", "Ion", "MassAmu", "ChargeState", "X0Mm",
+        "Y0Mm", "Z0Mm", "EnergyEv", "TofUs", "InstrumentTimeUs", "XMm",
+        "YMm", "RadiusMm", "ZmaxMm", "Hit",
+    ]
+    crossings = pd.DataFrame(rows, columns=columns)
     if crossings.empty and not allow_incomplete_census:
         raise ValueError(f"No detector_crossing records found in {log_path}")
     if (
@@ -137,29 +164,54 @@ def analyze_simion_log(
             ZmaxMm=np.nan,
             Hit=False,
         )
-        full = pd.concat([full, missing_rows[full.columns]], ignore_index=True)
+        full = (
+            missing_rows[columns].copy() if full.empty
+            else pd.concat([full, missing_rows[columns]], ignore_index=True)
+        )
+    full["Hit"] = full["Hit"].astype(bool)
+    full["ObservationStatus"] = np.where(
+        full["Ion"].isin(observed_ids), "recorded_crossing", "not_observed"
+    )
     full = full.sort_values("Ion").reset_index(drop=True)
 
     hits = full[full["Hit"]]
     misses = full[~full["Hit"]]
     hit_tof = hits["TofUs"].to_numpy(dtype=float)
     std_tof_us = _sample_std(hit_tof)
-    fwhm_tof_us = 2.0 * math.sqrt(2.0 * math.log(2.0)) * std_tof_us
+    fwhm_tof_us = float(FWHM_FACTOR * std_tof_us)
+    peak_status = (
+        "no_hits" if hit_tof.size == 0 else
+        "insufficient_samples" if hit_tof.size < 2 else
+        "zero_variance" if std_tof_us == 0 else "computed"
+    )
+    proxy_resolution = (
+        _mean(hit_tof) / (2.0 * fwhm_tof_us)
+        if peak_status == "computed" else math.nan
+    )
 
     def values(frame: pd.DataFrame, column: str) -> np.ndarray:
         return frame[column].to_numpy(dtype=float)
 
     summary = {
+        "DiagnosticMethod": "birth_relative_sample_sigma_gaussian_proxy_v1",
+        "TofTimeReference": "particle_birth",
+        "ResolutionClaim": False,
+        "PeakStatus": peak_status,
+        "SourceParticleIds": initial["Ion"].astype(int).tolist(),
+        "CrossingParticleIds": sorted(observed_ids),
+        "HitParticleIds": hits["Ion"].astype(int).tolist(),
+        "UnobservedParticleIds": [int(ion) for ion in missing],
         "Mode": mode,
         "Distribution": distribution,
         "Emitted": int(len(initial)),
         "Crossed": int(len(crossings)),
+        "Unobserved": int(len(missing)),
         "Hit": int(len(hits)),
         "EfficiencyPct": 100.0 * len(hits) / len(initial),
         "MeanTofUs": _finite_or_none(_mean(hit_tof)),
         "StdTofNs": _finite_or_none(1000.0 * std_tof_us),
-        "FwhmTofNs": _finite_or_none(1000.0 * fwhm_tof_us),
-        "ResolutionFwhm": _finite_or_none(_mean(hit_tof) / (2.0 * fwhm_tof_us)),
+        "GaussianProxyFwhmTofNs": _finite_or_none(1000.0 * fwhm_tof_us),
+        "GaussianProxyTimeEquivalentResolution": _finite_or_none(proxy_resolution),
         "AllCrossingStdTofNs": _finite_or_none(
             1000.0 * _sample_std(values(crossings, "TofUs"))
         ),
@@ -201,6 +253,56 @@ def analyze_simion_log(
         "HitMeanEnergyEv": _finite_or_none(_mean(values(hits, "EnergyEv"))),
         "MissMeanEnergyEv": _finite_or_none(_mean(values(misses, "EnergyEv"))),
         "Log": str(log_path.resolve()),
+        "analysis_metadata": {
+            "schema_version": 1,
+            "method_id": "birth_relative_sample_sigma_gaussian_proxy_v1",
+            "status": peak_status,
+            "scientific_qualification": "not_assessed",
+            "resolution_claim_allowed": False,
+            "sample_sigma_ddof": 1,
+            "weight_policy": "equal_particle_ids",
+            "sample_unit": "original_source_particle_id",
+            "sample_count": int(len(hits)),
+            "weight_sum": float(len(hits)),
+            "effective_sample_count": float(len(hits)),
+            "settings": {
+                "gaussian_sigma_to_fwhm_factor": FWHM_FACTOR,
+                "detector_radius_mm": detector_radius_mm,
+                "allow_incomplete_census": allow_incomplete_census,
+            },
+            "units": {"tof": "us", "time_width": "ns", "position": "mm", "energy": "eV"},
+            "time_reference": {
+                "kind": "particle_birth",
+                "expression": "detector_crossing.t - ION.TobUs",
+                "clock_qualification": "birth_relative_only_no_pulse_epoch",
+            },
+            "observation": {
+                "event": "detector_crossing",
+                "multiplicity": "one_recorded_event_per_original_source_id",
+                "hit_selection": "recorded RadiusMm <= detector_radius_mm",
+                "unobserved_policy": "retain_source_id_as_not_observed; no_physical_loss_inference",
+                "source_ion_file": str(ion_path.resolve()),
+                "event_log": str(log_path.resolve()),
+            },
+            "metric_scope": {
+                "primary_peak": "hits",
+                "AllCrossingStdTofNs": "recorded_crossings",
+                "CorrTof": "hits",
+                "CorrRadius": "recorded_crossings",
+                "MissMean": "non_hits_including_unobserved_source_ids",
+            },
+            "cohorts": {
+                name: {"sample_count": count, "weight_sum": float(count),
+                       "effective_sample_count": float(count)}
+                for name, count in (
+                    ("source", len(initial)), ("recorded_crossings", len(crossings)),
+                    ("hits", len(hits)), ("non_hits_including_unobserved_source_ids", len(misses)),
+                )
+            },
+            "width_definition": "FWHM_FACTOR * sample_std(hit_tof, ddof=1); Gaussian proxy, not direct half-height width",
+            "time_equivalent_ratio_definition": "mean(hit_tof) / (2 * Gaussian proxy width); no mass-resolution qualification",
+            "null_policy": "empty/singleton sample width is null; zero variance width is zero and ratio is null",
+        },
     }
     return full, summary
 

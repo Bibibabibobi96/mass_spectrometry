@@ -7,6 +7,10 @@ from pathlib import Path
 from typing import Any
 
 import matplotlib
+import numpy as np
+
+from common.analysis.peak_metrics import half_height_width
+from projects.rf_multipole_ion_optics.core.paired_mass_scan import load_ion_rows
 
 
 matplotlib.use("Agg")
@@ -16,11 +20,72 @@ from matplotlib import pyplot as plt  # noqa: E402
 TERMINAL_STATUSES = {"transmitted", "lost", "timeout"}
 
 
+def prepare_response_analysis(response: list[dict[str, Any]]) -> dict[str, Any]:
+    """Prepare one sampled m/z response for metrics and plots, without qualification.
+
+    The legacy band is the envelope of all samples at or above half maximum.
+    The separate interpolated width uses the nearest half-height crossings
+    around the first global maximum, through the common numerical authority.
+    Missing crossings and an all-zero response are unavailable widths, not
+    extrapolated bands. Invalid or unordered input raises ``ValueError``.
+    """
+    masses = np.asarray([row["mass_Th"] for row in response], dtype=float)
+    transmission = np.asarray([row["transmission_fraction"] for row in response], dtype=float)
+    if masses.ndim != 1 or transmission.ndim != 1 or masses.size < 3:
+        raise ValueError("sampled mass response requires at least three scalar mass samples")
+    if not np.all(np.isfinite(masses)) or not np.all(np.isfinite(transmission)):
+        raise ValueError("sampled mass response must contain only finite values")
+    if not np.all(masses[1:] > masses[:-1]):
+        raise ValueError("sampled mass response masses must be sorted and unique")
+    if np.any(transmission < 0) or np.any(transmission > 1):
+        raise ValueError("sampled transmission fractions must be within [0, 1]")
+    peak_index = int(np.argmax(transmission))
+    peak = float(transmission[peak_index])
+    result: dict[str, Any] = {
+        "schema_version": 1,
+        "method_id": "sampled_mass_response_linear_half_height_v1",
+        "status": "unavailable_no_positive_response",
+        "mass_axis": {"quantity": "mass_to_charge", "unit": "Th"},
+        "sample_count": int(masses.size),
+        "mass_samples_Th": masses.tolist(),
+        "transmission_fraction_samples": transmission.tolist(),
+        "peak_selection": "first_global_maximum",
+        "crossing_policy": "nearest_half_height_on_each_side_linear_interpolation",
+        "peak_mass_Th": None,
+        "peak_transmission": peak,
+        "observed_half_maximum_band_Th": None,
+        "interpolated_main_peak_fwhm_Th": None,
+        "half_height_crossings_Th": None,
+        "missing_half_height_crossings": [],
+        "resolution_claim_allowed": False,
+        "species_scope": "positive_single_charge_mass_amu_equals_mass_to_charge_Th",
+    }
+    if peak == 0:
+        return result
+    half_maximum = 0.5 * peak
+    half_indices = np.flatnonzero(transmission >= half_maximum)
+    result["peak_mass_Th"] = float(masses[peak_index])
+    result["observed_half_maximum_band_Th"] = [
+        float(masses[half_indices[0]]), float(masses[half_indices[-1]]),
+    ]
+    missing = []
+    if not np.any(transmission[:peak_index + 1] <= half_maximum):
+        missing.append("left")
+    if not np.any(transmission[peak_index:] <= half_maximum):
+        missing.append("right")
+    if missing:
+        result.update(status="unavailable_missing_half_height_crossings",
+                      missing_half_height_crossings=missing)
+        return result
+    width, left, right, _ = half_height_width(masses, transmission)
+    result.update(status="computed", interpolated_main_peak_fwhm_Th=width,
+                  half_height_crossings_Th=[left, right])
+    return result
+
+
 def load_ion_masses(path: Path) -> dict[int, float]:
-    """Return particle ID to mass-to-charge ratio from an eleven-column ION table."""
-    rows = list(csv.reader(path.read_text(encoding="utf-8").splitlines()))
-    if not rows or any(len(row) != 11 for row in rows):
-        raise ValueError("particle table must contain eleven-column rows")
+    """Return m/z in Th only after validating the ION11 physical mass/+1 scope."""
+    rows = load_ion_rows(path)
     return {index: float(row[1]) for index, row in enumerate(rows, start=1)}
 
 
@@ -68,8 +133,7 @@ def evaluate_functional_contrast(
     response: list[dict[str, Any]], calibration_mass_Th: float, acceptance: dict[str, Any]
 ) -> dict[str, Any]:
     """Evaluate center transmission, endpoint rejection and their contrast."""
-    if len(response) < 3:
-        raise ValueError("functional mass response requires at least three masses")
+    analysis = prepare_response_analysis(response)
     center = min(response, key=lambda row: abs(float(row["mass_Th"]) - calibration_mass_Th))
     endpoint_maximum = max(
         float(response[0]["transmission_fraction"]), float(response[-1]["transmission_fraction"])
@@ -88,6 +152,7 @@ def evaluate_functional_contrast(
         "center_transmission": center_transmission,
         "maximum_endpoint_transmission": endpoint_maximum,
         "center_to_endpoint_contrast": contrast,
+        "sampled_response_analysis": analysis,
     }
 
 
@@ -104,10 +169,11 @@ def export_response_figure(
     response: list[dict[str, Any]],
     passband_Th: tuple[float, float],
     solver_label: str,
+    analysis: dict[str, Any],
 ) -> None:
     """Export an accessible report-profile mass response with actual samples."""
-    masses = [float(row["mass_Th"]) for row in response]
-    transmission = [float(row["transmission_fraction"]) for row in response]
+    masses = analysis["mass_samples_Th"]
+    transmission = analysis["transmission_fraction_samples"]
     sample_counts = {int(row["particles"]) for row in response}
     if len(sample_counts) != 1:
         raise ValueError("response figure requires the same particle count at every mass")
@@ -127,6 +193,18 @@ def export_response_figure(
         axis.set_xlabel("Mass-to-charge ratio (Th)")
         axis.set_ylabel("Transmission fraction")
         axis.set_ylim(-0.03, 1.03)
+        width = analysis["interpolated_main_peak_fwhm_Th"]
+        if width is not None:
+            left, right = analysis["half_height_crossings_Th"]
+            axis.hlines(0.5 * analysis["peak_transmission"], left, right,
+                        color="0.3", linestyle="--", linewidth=1)
+            width_label = f"Interpolated main-peak width: {width:.4g} Th"
+        elif analysis["missing_half_height_crossings"]:
+            missing = "/".join(analysis["missing_half_height_crossings"])
+            width_label = f"Width unavailable: missing {missing} half-height crossing"
+        else:
+            width_label = "Width unavailable: no positive response"
+        axis.set_title(width_label, fontsize=9)
         axis.grid(axis="y", linewidth=0.5, alpha=0.3)
         axis.legend(frameon=False, loc="lower center")
         figure.savefig(path, format="png", dpi=240, facecolor="white")

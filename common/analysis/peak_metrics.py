@@ -8,6 +8,7 @@ tested without a GUI or artifact workspace.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from numbers import Integral, Real
 from typing import Any
 
 import numpy as np
@@ -27,6 +28,25 @@ class AnalysisSettings:
     standardized_grid_min: float = -6.0
     standardized_grid_max: float = 6.0
     standardized_grid_points: int = 2001
+
+    def __post_init__(self) -> None:
+        for name in ("grid_points", "standardized_grid_points"):
+            value = getattr(self, name)
+            if isinstance(value, (bool, np.bool_)) or not isinstance(value, Integral) or value < 3:
+                raise ValueError(f"{name} must be an integer of at least three")
+        for name in (
+            "bandwidth_multiplier", "mode_threshold_fraction",
+            "standardized_grid_min", "standardized_grid_max",
+        ):
+            value = getattr(self, name)
+            if isinstance(value, (bool, np.bool_)) or not isinstance(value, Real) or not np.isfinite(value):
+                raise ValueError(f"{name} must be a finite real number")
+        if self.bandwidth_multiplier <= 0:
+            raise ValueError("bandwidth_multiplier must be positive")
+        if not 0 <= self.mode_threshold_fraction <= 1:
+            raise ValueError("mode_threshold_fraction must be between zero and one inclusive")
+        if self.standardized_grid_min >= self.standardized_grid_max:
+            raise ValueError("standardized_grid_min must be less than standardized_grid_max")
 
     def to_dict(self) -> dict[str, Any]:
         result = asdict(self)
@@ -80,14 +100,39 @@ def _linear_crossing(
 def half_height_width(
     grid: np.ndarray, density: np.ndarray
 ) -> tuple[float, float, float, int]:
-    """Return direct FWHM, left/right crossings and the global peak index."""
+    """Return direct FWHM, left/right crossings and the global peak index.
+
+    The equal-length, finite 1D arrays need at least three points, a strictly
+    increasing grid and nonnegative density with a positive maximum. The nearest
+    half-height crossing on each side of the first global maximum is linearly
+    interpolated; a missing crossing fails instead of reporting a truncated width.
+    Width and crossings retain the units of the caller's grid.
+    """
+
+    if np.iscomplexobj(grid) or np.iscomplexobj(density):
+        raise ValueError("grid and density must contain real values")
+    grid = np.asarray(grid, dtype=float)
+    density = np.asarray(density, dtype=float)
+    if grid.ndim != 1 or density.ndim != 1:
+        raise ValueError("grid and density must be one-dimensional")
+    if grid.size != density.size or grid.size < 3:
+        raise ValueError("grid and density must have equal length of at least three")
+    if not np.all(np.isfinite(grid)) or not np.all(np.isfinite(density)):
+        raise ValueError("grid and density must contain only finite values")
+    if not np.all(grid[1:] > grid[:-1]):
+        raise ValueError("grid must be strictly increasing")
+    if np.any(density < 0) or not np.any(density > 0):
+        raise ValueError("density must be nonnegative with a positive maximum")
 
     peak_index = int(np.argmax(density))
     half_height = 0.5 * float(density[peak_index])
     left_candidates = np.flatnonzero(density[: peak_index + 1] <= half_height)
     right_candidates = np.flatnonzero(density[peak_index:] <= half_height)
     if left_candidates.size == 0 or right_candidates.size == 0:
-        raise ValueError("KDE grid does not bracket both half-height crossings")
+        missing = "both" if left_candidates.size == right_candidates.size == 0 else (
+            "left" if left_candidates.size == 0 else "right"
+        )
+        raise ValueError(f"density grid does not bracket {missing} half-height crossing(s)")
 
     left_below = int(left_candidates[-1])
     right_below = peak_index + int(right_candidates[0])
@@ -122,89 +167,167 @@ def _significant_mode_count(
     return int(np.count_nonzero(local_maximum & significant))
 
 
+def _validate_equal_weights(weights: np.ndarray | None, count: int) -> float:
+    """Validate equal positive relative weights and retain their actual sum."""
+    if weights is None:
+        return float(count)
+    supplied = np.asarray(weights)
+    if (supplied.shape != (count,) or supplied.dtype.kind not in "iuf"
+            or any(isinstance(value, (bool, np.bool_)) for value in np.asarray(weights, dtype=object).flat)):
+        raise ValueError("weights must be one real numeric value per sample, without booleans")
+    values = supplied.astype(float)
+    if not np.all(np.isfinite(values)) or np.any(values <= 0):
+        raise ValueError("weights must be positive and finite")
+    if not np.all(values == values[0]):
+        raise ValueError("nonuniform weights are not supported by equal-particle KDE")
+    with np.errstate(over="ignore"):
+        weight_sum = float(values.sum())
+    if not np.isfinite(weight_sum):
+        raise ValueError("weight sum must be finite")
+    return weight_sum
+
+
+def _time_peak_metrics(
+    tof: np.ndarray, settings: AnalysisSettings,
+) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
+    time_grid = _spectrum_grid(tof, settings)
+    time_density = _kde_density(tof, time_grid, settings)
+    width, left, right, peak_index = half_height_width(time_grid, time_density)
+    mean = float(np.mean(tof))
+    std = float(np.std(tof, ddof=1))
+    standardized = (tof - mean) / std
+    metrics = {
+        "particles": int(tof.size),
+        "mean_tof_us": mean,
+        "std_tof_ns": std * 1.0e3,
+        "direct_fwhm_tof_ns": width * 1.0e3,
+        "gaussian_proxy_fwhm_tof_ns": FWHM_FACTOR * std * 1.0e3,
+        "time_equivalent_resolution": mean / (2.0 * width),
+        "tof_skewness": float(stats.skew(tof, bias=False)),
+        "tof_excess_kurtosis": float(stats.kurtosis(tof, fisher=True, bias=False)),
+        "significant_time_kde_modes": _significant_mode_count(
+            time_density, settings.mode_threshold_fraction
+        ),
+        "tail_fraction_outside_3sigma": float(np.mean(np.abs(standardized) > 3.0)),
+    }
+    spectra = {
+        "tof_us": tof,
+        "time_grid_us": time_grid,
+        "time_density": time_density,
+        "time_density_normalized": time_density / np.max(time_density),
+        "time_half_left_us": np.asarray(left),
+        "time_half_right_us": np.asarray(right),
+        "time_peak_us": np.asarray(time_grid[peak_index]),
+    }
+    return metrics, spectra
+
+
+def _peak_result_metadata(
+    method_id: str, mass_axis: dict[str, Any] | None,
+    settings: AnalysisSettings, count: int, weight_sum: float,
+) -> dict[str, Any]:
+    # Projects bind validated clock evidence; a numerical TOF array proves none.
+    return {
+        "schema_version": 1,
+        "method_id": method_id,
+        "time_reference": {"kind": "caller_supplied_tof", "clock_qualification": "unspecified"},
+        "weight_policy": "equal_positive_relative_weights",
+        "sample_count": count,
+        "weight_sum": weight_sum,
+        "effective_sample_count": float(count),
+        "sample_sigma_ddof": 1,
+        "settings": settings.to_dict(),
+        "units": {"tof": "us", "time_width": "ns", "time_density": "1/us"},
+        "status": "computed",
+        "scientific_qualification": "not_assessed",
+        "mass_axis": mass_axis,
+    }
+
+
+def compute_time_peak_metrics(
+    tof_us: np.ndarray,
+    settings: AnalysisSettings | None = None,
+    *,
+    weights: np.ndarray | None = None,
+) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
+    """Direct time KDE/FWHM without inventing a mass or a clock qualification.
+
+    Samples are positive finite real TOFs in microseconds. Explicit weights must
+    be positive, finite and equal; the sample sigma remains ddof=1. The project
+    owns the common time reference and the detected population selection.
+    """
+    if np.iscomplexobj(tof_us):
+        raise ValueError("tof_us must contain real values")
+    if np.asarray(tof_us).ndim != 1:
+        raise ValueError("tof_us must be one-dimensional")
+    tof = _as_valid_sample(tof_us, "tof_us")
+    if np.any(tof <= 0):
+        raise ValueError("tof_us must be positive")
+    weight_sum = _validate_equal_weights(weights, tof.size)
+    settings = settings or AnalysisSettings()
+    metrics, spectra = _time_peak_metrics(tof, settings)
+    metrics["analysis_metadata"] = _peak_result_metadata(
+        "common_gaussian_kde_time_v2", None, settings, int(tof.size), weight_sum
+    )
+    return metrics, spectra
+
+
 def compute_peak_metrics(
     tof_us: np.ndarray,
     nominal_mass_Da: float,
     settings: AnalysisSettings | None = None,
+    *,
+    weights: np.ndarray | None = None,
+    include_result_metadata: bool = False,
 ) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
-    """Compute canonical direct-FWHM and shape metrics from detector TOFs."""
+    """Retain the nominal mean-relative mass mapping and legacy metric values.
 
+    This is not absolute mass calibration. The optional result metadata names
+    the mapping without changing the frozen legacy result field set by default.
+    """
     settings = settings or AnalysisSettings()
+    if np.iscomplexobj(tof_us):
+        raise ValueError("tof_us must contain real values")
     tof = _as_valid_sample(tof_us, "tof_us")
     if np.any(tof <= 0):
         raise ValueError("tof_us must be positive")
     if not np.isfinite(nominal_mass_Da) or nominal_mass_Da <= 0:
         raise ValueError("nominal_mass_Da must be positive")
-
-    mean_tof_us = float(np.mean(tof))
+    weight_sum = _validate_equal_weights(weights, tof.size)
+    time_metrics, time_spectra = _time_peak_metrics(tof, settings)
+    mean_tof_us = time_metrics["mean_tof_us"]
     apparent_mass = nominal_mass_Da * (tof / mean_tof_us) ** 2
-
-    time_grid = _spectrum_grid(tof, settings)
-    time_density = _kde_density(tof, time_grid, settings)
-    time_fwhm_us, time_left, time_right, time_peak_index = half_height_width(
-        time_grid, time_density
-    )
-
     mass_grid = _spectrum_grid(apparent_mass, settings)
     mass_density = _kde_density(apparent_mass, mass_grid, settings)
-    mass_fwhm_Da, mass_left, mass_right, mass_peak_index = half_height_width(
-        mass_grid, mass_density
-    )
-
-    std_tof_us = float(np.std(tof, ddof=1))
+    mass_fwhm_Da, mass_left, mass_right, mass_peak_index = half_height_width(mass_grid, mass_density)
     std_mass_Da = float(np.std(apparent_mass, ddof=1))
     mass_peak_Da = float(mass_grid[mass_peak_index])
     left_hwhm_Da = mass_peak_Da - mass_left
     right_hwhm_Da = mass_right - mass_peak_Da
-    skewness = float(stats.skew(tof, bias=False))
-    excess_kurtosis = float(stats.kurtosis(tof, fisher=True, bias=False))
-    standardized = (tof - mean_tof_us) / std_tof_us
-
     metrics: dict[str, Any] = {
         "particles": int(tof.size),
         "nominal_mass_Da": float(nominal_mass_Da),
-        "mean_tof_us": mean_tof_us,
-        "std_tof_ns": std_tof_us * 1.0e3,
-        "direct_fwhm_tof_ns": time_fwhm_us * 1.0e3,
-        "gaussian_proxy_fwhm_tof_ns": FWHM_FACTOR * std_tof_us * 1.0e3,
-        "time_equivalent_resolution": mean_tof_us / (2.0 * time_fwhm_us),
+        **{key: value for key, value in time_metrics.items()
+           if key not in {"particles", "significant_time_kde_modes"}},
         "mean_apparent_mass_Da": float(np.mean(apparent_mass)),
         "std_apparent_mass_Da": std_mass_Da,
         "kde_peak_mass_Da": mass_peak_Da,
         "direct_fwhm_mass_Da": mass_fwhm_Da,
         "gaussian_proxy_fwhm_mass_Da": FWHM_FACTOR * std_mass_Da,
         "mass_resolution": float(nominal_mass_Da / mass_fwhm_Da),
-        "tof_skewness": skewness,
-        "tof_excess_kurtosis": excess_kurtosis,
         "left_hwhm_mass_Da": left_hwhm_Da,
         "right_hwhm_mass_Da": right_hwhm_Da,
         "hwhm_asymmetry_right_over_left": right_hwhm_Da / left_hwhm_Da,
-        "significant_kde_modes": _significant_mode_count(
-            mass_density, settings.mode_threshold_fraction
-        ),
-        "tail_fraction_outside_3sigma": float(
-            np.mean(np.abs(standardized) > 3.0)
-        ),
+        "significant_kde_modes": _significant_mode_count(mass_density, settings.mode_threshold_fraction),
         "direct_vs_gaussian_mass_fwhm_difference_pct": 100.0
-        * (mass_fwhm_Da - FWHM_FACTOR * std_mass_Da)
-        / (FWHM_FACTOR * std_mass_Da),
+        * (mass_fwhm_Da - FWHM_FACTOR * std_mass_Da) / (FWHM_FACTOR * std_mass_Da),
         "direct_mass_vs_time_resolution_difference_pct": 100.0
-        * (
-            nominal_mass_Da / mass_fwhm_Da
-            - mean_tof_us / (2.0 * time_fwhm_us)
-        )
+        * (nominal_mass_Da / mass_fwhm_Da - time_metrics["time_equivalent_resolution"])
         / (nominal_mass_Da / mass_fwhm_Da),
     }
-
     spectra = {
-        "tof_us": tof,
+        **time_spectra,
         "apparent_mass_Da": apparent_mass,
-        "time_grid_us": time_grid,
-        "time_density": time_density,
-        "time_density_normalized": time_density / np.max(time_density),
-        "time_half_left_us": np.asarray(time_left),
-        "time_half_right_us": np.asarray(time_right),
-        "time_peak_us": np.asarray(time_grid[time_peak_index]),
         "mass_grid_Da": mass_grid,
         "mass_density": mass_density,
         "mass_density_normalized": mass_density / np.max(mass_density),
@@ -212,6 +335,12 @@ def compute_peak_metrics(
         "mass_half_right_Da": np.asarray(mass_right),
         "mass_peak_Da": np.asarray(mass_peak_Da),
     }
+    if include_result_metadata:
+        metrics["analysis_metadata"] = _peak_result_metadata("common_gaussian_kde_nominal_mass_v1", {
+            "quantity": "mass", "unit": "Da", "mapping_method": "nominal_mean_relative_square_v1",
+            "nominal_mass_amu": float(nominal_mass_Da), "reference_tof_us": mean_tof_us,
+            "absolute_calibration": False,
+        }, settings, int(tof.size), weight_sum)
     return metrics, spectra
 
 
@@ -234,16 +363,52 @@ def compute_detector_metrics(
     }
 
 
+def _validate_paired_particle_ids(
+    left_particle_ids: np.ndarray | None,
+    right_particle_ids: np.ndarray | None,
+    left_size: int,
+    right_size: int,
+) -> None:
+    """Require explicit, unique, identically ordered integer cohort identities."""
+    if left_particle_ids is None or right_particle_ids is None:
+        raise ValueError("Paired analysis requires both left_particle_ids and right_particle_ids")
+    # Preserve integers and mixed bool/int inputs without narrowing or coercion.
+    left_ids = np.asarray(left_particle_ids, dtype=object)
+    right_ids = np.asarray(right_particle_ids, dtype=object)
+    for name, ids, size in (("left_particle_ids", left_ids, left_size),
+                            ("right_particle_ids", right_ids, right_size)):
+        if ids.ndim != 1 or ids.size != size:
+            raise ValueError(f"{name} must be one-dimensional and match its TOF sample length")
+        if any(isinstance(pid, (bool, np.bool_)) or not isinstance(pid, Integral) for pid in ids):
+            raise ValueError(f"{name} must contain integer IDs, not bool or coerced values")
+        if len(set(ids)) != ids.size:
+            raise ValueError(f"{name} contains duplicate particle IDs")
+    if not np.array_equal(left_ids, right_ids):
+        raise ValueError("Paired analysis requires identical ordered particle IDs")
+
+
 def compare_peak_shapes(
     left_tof_us: np.ndarray,
     right_tof_us: np.ndarray,
     settings: AnalysisSettings | None = None,
+    *,
+    left_particle_ids: np.ndarray | None = None,
+    right_particle_ids: np.ndarray | None = None,
 ) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
-    """Compare standardized peak structure independently of absolute width."""
+    """Compare standardized peak structure independently of absolute width.
+
+    Without IDs only distribution statistics are returned; paired correlation is
+    null. Supplying IDs requires both unique, integer arrays in identical order.
+    Callers establish their common source provenance; no IDs are generated,
+    sorted or intersected here.
+    """
 
     settings = settings or AnalysisSettings()
     left = _as_valid_sample(left_tof_us, "left_tof_us")
     right = _as_valid_sample(right_tof_us, "right_tof_us")
+    paired = left_particle_ids is not None or right_particle_ids is not None
+    if paired:
+        _validate_paired_particle_ids(left_particle_ids, right_particle_ids, left.size, right.size)
     left_standardized = (left - np.mean(left)) / np.std(left, ddof=1)
     right_standardized = (right - np.mean(right)) / np.std(right, ddof=1)
     grid = np.linspace(
@@ -255,7 +420,7 @@ def compare_peak_shapes(
     right_density = _kde_density(right_standardized, grid, settings)
     ks_result = stats.ks_2samp(left_standardized, right_standardized)
     paired_correlation: float | None = None
-    if left.size == right.size:
+    if paired:
         paired_correlation = float(np.corrcoef(left_standardized, right_standardized)[0, 1])
 
     comparison = {
@@ -590,14 +755,23 @@ def bootstrap_resolution_difference(
     seed: int = 20260715,
     settings: AnalysisSettings | None = None,
     batch_size: int = 16,
+    *,
+    left_particle_ids: np.ndarray,
+    right_particle_ids: np.ndarray,
 ) -> dict[str, Any]:
-    """Paired bootstrap CI for absolute cross-solver R difference percentage."""
+    """Paired bootstrap CI for absolute cross-solver R difference percentage.
+
+    Both original ID arrays are required and must be unique, integer and in
+    identical order. Callers establish common source provenance. The same row
+    indices resample both TOF arrays; the right resolution remains the denominator.
+    """
 
     settings = settings or AnalysisSettings()
     left = _as_valid_sample(left_tof_us, "left_tof_us")
     right = _as_valid_sample(right_tof_us, "right_tof_us")
     if left.size != right.size:
         raise ValueError("Paired bootstrap requires equal particle counts")
+    _validate_paired_particle_ids(left_particle_ids, right_particle_ids, left.size, right.size)
     if resamples <= 0 or batch_size <= 0:
         raise ValueError("resamples and batch_size must be positive")
 

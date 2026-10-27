@@ -240,7 +240,10 @@ print(json.dumps({
                 $moduleOutput = (& $Python -m $Module @Arguments |
                     Out-String).Trim()
                 if ($LASTEXITCODE -ne 0) {
-                    throw "Frozen Python module failed with exit code $LASTEXITCODE."
+                    $failure = [InvalidOperationException]::new(
+                        "Frozen Python module failed with exit code $LASTEXITCODE.")
+                    $failure.Data['exit_code'] = [int]$LASTEXITCODE
+                    throw $failure
                 }
             }
         } finally {

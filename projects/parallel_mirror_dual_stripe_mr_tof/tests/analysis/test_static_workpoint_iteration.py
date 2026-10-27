@@ -334,7 +334,8 @@ class PowerShellTrialBoundaryTest(unittest.TestCase):
         if not pwsh:
             self.skipTest("PowerShell Core is unavailable")
         with tempfile.TemporaryDirectory(prefix="mrtof-center-freeze-") as directory:
-            root = Path(directory)
+            root = Path(directory) / "fixture with spaces"
+            root.mkdir()
             producer = root / "producer/results/bunch_source_receipt.json"
             producer.parent.mkdir(parents=True)
             producer.write_text('{"status":"materialized"}', encoding="utf-8")
@@ -376,8 +377,12 @@ $child=New-CenterTrialArguments -Voltages @(-27,54,191,-190) -ChildRunId 'fixtur
   maximum=$child.BunchParticleIdMax;frozen_source=$frozenCenterSourceReceipt;
   frozen_exists=(Test-Path -LiteralPath $frozenCenterSourceReceipt)}|ConvertTo-Json -Compress
 """
+            # -Command reparses trailing native arguments as PowerShell text;
+            # -File binds each path as one argument, including embedded spaces.
+            fixture_script = root / "invoke fixture.ps1"
+            fixture_script.write_text(command, encoding="utf-8", newline="\n")
             process = subprocess.run(
-                [pwsh, "-NoProfile", "-Command", "& {" + command + "}",
+                [pwsh, "-NoProfile", "-File", str(fixture_script),
                  str(RUNNER), str(producer), str(inputs)],
                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30,
             )

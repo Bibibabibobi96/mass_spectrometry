@@ -12,11 +12,22 @@ from common.contracts.file_identity import file_sha256 as sha256
 
 
 def load_ion_rows(path: Path) -> list[list[str]]:
-    """Load and validate an eleven-column SIMION ION table."""
+    """Load an ION11 source within the positive singly charged scan scope."""
     rows = list(csv.reader(path.read_text(encoding="utf-8").splitlines()))
+    _validate_source_rows(rows)
+    return rows
+
+
+def _validate_source_rows(rows: list[list[str]]) -> None:
+    """The scan writes Th into the physical mass column only for charge +1."""
     if not rows or any(len(row) != 11 for row in rows):
         raise ValueError("source ION table must contain non-empty eleven-column rows")
-    return rows
+    for row in rows:
+        mass, charge = row[1], row[2]
+        if isinstance(mass, bool) or not math.isfinite(float(mass)) or float(mass) <= 0:
+            raise ValueError("mass-scan source mass_amu must be finite and positive")
+        if isinstance(charge, bool) or not math.isfinite(float(charge)) or float(charge) != 1.0:
+            raise ValueError("mass scan requires charge_state exactly +1")
 
 
 def validate_masses(values: list[Any]) -> list[float]:
@@ -31,6 +42,7 @@ def validate_masses(values: list[Any]) -> list[float]:
 
 def build_paired_ion_rows(source_rows: list[list[str]], masses_Th: list[float]) -> list[list[str]]:
     """Replicate identical phase-space rows at each requested mass."""
+    _validate_source_rows(source_rows)
     output: list[list[str]] = []
     for mass in validate_masses(masses_Th):
         mass_text = f"{mass:.12g}"
@@ -72,6 +84,8 @@ def generate_paired_ion_table(
         "particles_per_mass": int(expected_particles_per_mass),
         "particles": len(output_rows),
         "pairing": "each mass uses the same source rows in the same order",
+        "species_scope": "positive_single_charge_mass_amu_equals_mass_to_charge_Th",
+        "charge_state": 1,
         "particle_table": str(destination.resolve()),
         "particle_table_sha256": sha256(destination),
         "provenance": provenance,
@@ -105,6 +119,8 @@ def generate_paired_case_tables(
         write_ion_table(destination, rows)
         cases.append({
             "mass_Th": mass,
+            "charge_state": 1,
+            "species_scope": "positive_single_charge_mass_amu_equals_mass_to_charge_Th",
             "particles": len(rows),
             "particle_table": str(destination.resolve()),
             "particle_table_sha256": sha256(destination),

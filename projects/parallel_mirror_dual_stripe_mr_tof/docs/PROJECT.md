@@ -145,6 +145,51 @@ C0为指定外边界假设，完整内表面x=[-162.5,162.5]、y=[-242,558]、z=
 不作为峰宽。历史平行／会聚比较同时改变几何、电压、表示和步长，不能将全部差异归因于倾镜。
 受控N13含中心及具名扰动，与纯体积N100不同；高斯ID1不是名义源中心。
 
+## 时间峰结果与方法身份
+
+当前活动峰合同使用`common_gaussian_kde_time_v2`，两个MR分析器共用公共纯时间KDE入口；
+source-z比较、原生候选链和campaign排名同时要求当前方法及一致的冻结合同。旧v1结果留在原run中
+只读解释，活动请求拒绝v1和未知方法，不重写旧receipt、历史峰数或既有Formal身份。
+时间宽度及`mean_tof/(2*FWHM)`保留原数值定义；`mass_resolution_t_over_2fwhm`仍是既有摘要的时间等效投影，
+不表示经过质量标定。v2的`significant_time_kde_modes`取时间密度；v1的旧同名峰数实际来自名义质量密度，
+两者不能直接比较。公共metadata随结果和图表metadata保留方法、设置、单位、ddof=1、观测数、权重和及资格边界。
+
+OA零出生路径仍要求具名共同零出生合同。实测component路径继续验证共同instrument epoch和冻结提取
+时序，对全部detector hit扣同一个pulse，不按每颗交接时刻重居中；母群census和损失保持完整。
+canonical `particle_weight`显式传入KDE，当前只接受正有限等权；非等权不会被忽略。
+纯时间结果不再附带无需求的名义质量谱；source/检测条件和`detector_survivor_conditioned_time_equivalent_only`
+限定保持，不从数值可计算推导Formal或仪器性能资格。
+
+legacy `mass_th`的历史Th命名与实现直接作为SIMION质量及AMU动能因子的用法并不构成任意电荷态的
+一致合同。新结果只在已知+1时标注数值相容的`mass_amu/charge_state/mass_to_charge_Th`；未知或非+1
+的legacy输入保留原物理运行值，质量派生明确不可计算。已验证canonical状态沿用其三个独立字段，
+不把该身份传递测试解释成新的多电荷运行资格。
+
+本轮十个focused模块共333项，330通过；两项因隔离checkout无外部历史证据跳过，一项显式
+native-97历史后分析未启用。覆盖公共数值、项目适配的合成参考、源/时钟拒绝以及真实PowerShell
+方法门禁，另两份修改PS脚本语法检查通过。
+公共旧质量入口对12组合法样本的完整metrics和全部spectra数组与改动前逐值一致。
+未重跑历史资产或商业求解器，不称为历史golden重放；Core门禁不能代替这些消费者回归。
+
+辅助直方图现由同一`histogram_half_height_bin_span`实现发布，方法为
+`sqrt_count_histogram_half_height_bin_span_v1`：保留原sqrt(N)分箱及所有半高以上bin的首尾包络，
+即使中间有空bin也不将它解释成插值FWHM。结果记录原单位、样本数、bin数／宽度、规则及不足8、
+零方差或可计算状态，并明确禁止detector resolution解释。target-K摘要改用
+`target_k_handoff_histogram_half_height_bin_span_us`及其descriptor；普通分布使用
+`histogram_half_height_bin_span`，旧含混字段不作为活动fallback。真实时间plane继续发布v2直接KDE宽度，
+短出口试验同步将该辅助量标为不适用，未删除返回位置／能量／角度诊断。
+
+TE1比较的z=0与detector两平面现在都验证当前方法、各自结果／合同设置以及共同零出生时间参考，
+z=0合同还须与本次detector一致；缺方法、旧／未知方法、不一致设置和时钟不会进入辅助分辨率比值。
+两个MR峰适配器的不可计算分支保留输入数、实际相对权重和、有效样本数、ddof、单位及状态；
+缺峰合同时方法／设置和时间参考仍未指定，不由可用的到达时间自行赋予时钟资格或虚构峰值。
+
+该收尾的四个既有测试模块182项通过，另三项真实PowerShell方法／排名门禁通过。
+改动前后内存对照中，3组原生与3组实测主峰完整结果相等、21个谱数组逐值相等，
+8组辅助直方图数值完全保留；新增回归覆盖断开的半高bin、退化状态、新字段消费、
+z=0方法／设置／时钟拒绝及真实当前producer输出消费。仅证明分析合同与数值迁移，
+没有运行商业求解器、重写历史产物或新增Formal资格。
+
 ## 活动原生场与消费合同
 
 跨项目飞行从[直属OA→MR入口](../../../integrations/workflows/oa_mr/execute.ps1)进入；

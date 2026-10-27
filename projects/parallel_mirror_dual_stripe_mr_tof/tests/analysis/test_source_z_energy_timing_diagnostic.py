@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from common.analysis.peak_metrics import AnalysisSettings
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import peak_time_metrics
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
 )
@@ -16,6 +18,8 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_sched
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic import (
     _association,
+    _distribution,
+    _time_plane_distribution,
     _controlled_fast_turn_history,
     _joint_initial_state_timing,
     _load_source_rows_from_paths,
@@ -63,9 +67,11 @@ def _diagnostic(
         },
         "evidence": {"source_state_table": {"sha256": source_identity}},
         "terminal_plane_diagnostic": {"detector_plane": {"absolute_time": {
+            **peak_time_metrics([median + i * .001 for i in range(hit_count)],
+                                mass_th=524, analysis_contract=PEAK_CONTRACT, cohort_role="formal_volume"),
             "median": median,
             "mean": median,
-            "method_id": "common_gaussian_kde_time_v1",
+            "method_id": "common_gaussian_kde_time_v2",
             "analysis_contract": PEAK_CONTRACT,
             "time_equivalent_resolution": None if fwhm is None else median / (2 * fwhm),
             "fwhm": fwhm,
@@ -80,6 +86,8 @@ def _diagnostic(
             "reached_particle_count": hit_count,
             "focus_residual_us_per_mm": slope / 2.0,
             "absolute_time": {
+                **peak_time_metrics([median - 20. + i * .001 for i in range(hit_count)],
+                                    mass_th=524, analysis_contract=PEAK_CONTRACT, cohort_role="formal_volume"),
                 "median": median - 20.0,
                 "time_equivalent_resolution": None if fwhm is None else (median - 20.0) / (2 * fwhm),
                 "fwhm": fwhm,
@@ -577,9 +585,102 @@ class SourceZEnergyTimingDiagnosticTests(unittest.TestCase):
             result = compare_te1_diagnostics(**kwargs)
             self.assertEqual(result["samples"][1]["mass_resolution_t_over_2fwhm"], 45000.)
             timing["analysis_contract"]["settings"]["bandwidth_multiplier"] = 2.
+            timing["settings"] = AnalysisSettings(**timing["analysis_contract"]["settings"]).to_dict()
+            timing["analysis_metadata"]["settings"] = timing["settings"]
+            z0_timing = value["central_plane_focus_history"]["target_return_crossing"]["absolute_time"]
+            z0_timing["analysis_contract"] = json.loads(json.dumps(timing["analysis_contract"]))
+            z0_timing["settings"] = timing["settings"]
+            z0_timing["analysis_metadata"]["settings"] = timing["settings"]
             _write_json(focused, value)
             with self.assertRaisesRegex(CandidateContractError, "identical frozen peak"):
                 compare_te1_diagnostics(**kwargs)
+
+    def test_auxiliary_histogram_span_is_distinct_from_direct_time_kde(self):
+        values = [0.] * 4 + [8.] * 4
+        result = _distribution(list(range(8)), values, value_unit="eV", slope_unit="eV/mm")
+        self.assertNotIn("fwhm", result)
+        self.assertEqual(result["histogram_half_height_bin_span"], 8.)
+        self.assertEqual(result["histogram_analysis"]["unit"], "eV")
+        self.assertFalse(result["histogram_analysis"]["detector_resolution_claim_allowed"])
+        time = _time_plane_distribution([0., 1., 2.], [1., 1.1, 1.2], peak_context={
+            "mass_th": 524, "analysis_contract": PEAK_CONTRACT, "cohort_role": "formal_volume",
+        })
+        self.assertNotIn("histogram_half_height_bin_span", time)
+        self.assertGreater(time["fwhm"], 0.)
+        self.assertEqual(time["method_id"], "common_gaussian_kde_time_v2")
+
+    def test_z0_comparison_rejects_missing_old_unknown_mismatched_settings_and_clock(self):
+        cases = ("missing_method", "missing_contract", "missing_metadata", "old", "unknown",
+                 "mismatched_method", "result_settings", "contract_settings", "time_basis", "clock")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            baseline = _diagnostic(root / "baseline.json", .06)
+            probe = _diagnostic(root / "probe.json", .03)
+            for case in cases:
+                focused = _diagnostic(root / "root.json", .001)
+                value = json.loads(focused.read_text())
+                timing = value["central_plane_focus_history"]["target_return_crossing"]["absolute_time"]
+                if case.startswith("missing_"):
+                    timing.pop({"missing_method": "method_id", "missing_contract": "analysis_contract",
+                                "missing_metadata": "analysis_metadata"}[case])
+                elif case in ("old", "unknown"):
+                    method = "common_gaussian_kde_time_v1" if case == "old" else "unknown"
+                    timing["method_id"] = method
+                    timing["analysis_contract"]["method_id"] = method
+                elif case == "mismatched_method":
+                    timing["analysis_contract"]["method_id"] = "common_gaussian_kde_time_v1"
+                elif case == "result_settings":
+                    timing["settings"]["bandwidth_multiplier"] = 2.
+                elif case == "contract_settings":
+                    timing["analysis_contract"]["settings"]["bandwidth_multiplier"] = 2.
+                    timing["settings"] = AnalysisSettings(**timing["analysis_contract"]["settings"]).to_dict()
+                    timing["analysis_metadata"]["settings"] = timing["settings"]
+                elif case == "time_basis":
+                    timing["analysis_contract"]["time_basis"] = "particle_birth"
+                else:
+                    timing["analysis_metadata"]["time_reference"]["reference_time_us"] = 1.
+                _write_json(focused, value)
+                with self.subTest(case=case), self.assertRaises(CandidateContractError):
+                    compare_te1_diagnostics(baseline_path=baseline, probe_path=probe, root_path=focused,
+                                            probe_coordinate=-1., root_coordinate=-2.)
+
+    def test_z0_comparison_consumes_current_producer_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            baseline = _diagnostic(root / "baseline.json", .06)
+            probe = _diagnostic(root / "probe.json", .03)
+            focused = _diagnostic(root / "root.json", .001)
+            context = dict(mass_th=524, analysis_contract=PEAK_CONTRACT, cohort_role="formal_volume")
+            for path in (baseline, focused):
+                value = json.loads(path.read_text())
+                for timing, center in ((value["terminal_plane_diagnostic"]["detector_plane"], 800.),
+                                       (value["central_plane_focus_history"]["target_return_crossing"], 780.)):
+                    timing["absolute_time"] = _time_plane_distribution(
+                        [0., 1., 2.], [center - .01, center, center + .01], peak_context=context,
+                    )
+                _write_json(path, value)
+            result = compare_te1_diagnostics(baseline_path=baseline, probe_path=probe, root_path=focused,
+                                             probe_coordinate=-1., root_coordinate=-2.)
+            self.assertEqual(result["root_vs_baseline"]["z0_mass_resolution_ratio"], 1.)
+            self.assertGreater(result["samples"][1]["z0_mass_resolution_t_over_2fwhm"], 0.)
+
+    def test_comparison_rejects_old_unknown_and_inconsistent_method_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            baseline = _diagnostic(root / "baseline.json", .06)
+            probe = _diagnostic(root / "probe.json", .03)
+            focused = _diagnostic(root / "root.json", .001)
+            for method, contract_method in (("common_gaussian_kde_time_v1", "common_gaussian_kde_time_v1"),
+                                            ("unknown", "unknown"),
+                                            ("common_gaussian_kde_time_v2", "common_gaussian_kde_time_v1")):
+                value = json.loads(focused.read_text())
+                timing = value["terminal_plane_diagnostic"]["detector_plane"]["absolute_time"]
+                timing["method_id"] = method
+                timing["analysis_contract"]["method_id"] = contract_method
+                _write_json(focused, value)
+                with self.subTest(method=method, contract_method=contract_method), self.assertRaises(CandidateContractError):
+                    compare_te1_diagnostics(baseline_path=baseline, probe_path=probe, root_path=focused,
+                                            probe_coordinate=-1., root_coordinate=-2.)
 
     def test_first_batch_reports_controlled_z_energy_and_x_without_formal_metrics(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

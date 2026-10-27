@@ -212,6 +212,10 @@ try {
         'projects\rf_multipole_ion_optics\workflows\mass_filter_reference\theory.py',
         'projects\rf_multipole_ion_optics\core\__init__.py',
         'projects\rf_multipole_ion_optics\core\family_contract.py',
+        'projects\rf_multipole_ion_optics\core\mass_response.py',
+        'projects\rf_multipole_ion_optics\core\paired_mass_scan.py',
+        'common\contracts\file_identity.py',
+        'common\analysis\peak_metrics.py',
         'projects\rf_multipole_ion_optics\config\contracts\family_contract.json'
     )
     $frozenPythonPackage = New-FrozenPythonPackage `
@@ -242,12 +246,16 @@ try {
         $module,
         'projects.rf_multipole_ion_optics.workflows.mass_filter_reference.theory',
         'projects.rf_multipole_ion_optics.core',
-        'projects.rf_multipole_ion_optics.core.family_contract'
+        'projects.rf_multipole_ion_optics.core.family_contract',
+        'projects.rf_multipole_ion_optics.core.mass_response',
+        'projects.rf_multipole_ion_optics.core.paired_mass_scan',
+        'common.contracts.file_identity',
+        'common.analysis.peak_metrics'
     )
     $distributions = @('matplotlib','numpy','scipy')
     $frozenPythonEnvironment = Invoke-IsolatedFrozenPythonModule `
         -Python $python -Package $frozenPythonPackage -Module $module `
-        -Arguments @() -DistributionNames $distributions `
+        -Arguments @('--help') -DistributionNames $distributions `
         -RequiredModuleNames $requiredModules `
         -ForbiddenRoots @($repoRoot,$projectRoot) -ProbeOnly
     $runConfiguration = [ordered]@{

@@ -351,9 +351,14 @@ foreach ($species in $mode.species) {
 # Run the inexpensive mixed-species SIMION side only after all five COMSOL
 # batches succeed, so a COMSOL failure does not create a misleading half-run.
 $referenceMassAmu = [double]$contract.validation_target.mass_amu
-$simionMaxTofUs = [double](& $python (Join-Path $projectRoot 'analysis\solver_diagnostics.py') `
-  mass-spectrum-max-tof --mode $modePath --reference-mass-amu $referenceMassAmu)
-if ($LASTEXITCODE -ne 0) { throw 'Mass-spectrum maximum TOF calculation failed.' }
+Push-Location -LiteralPath $repoRoot
+try {
+  $simionMaxTofUs = [double](& $python -m projects.single_reflection_oa_tof_mass_analyzer.analysis.solver_diagnostics `
+    mass-spectrum-max-tof --mode $modePath --reference-mass-amu $referenceMassAmu)
+  if ($LASTEXITCODE -ne 0) { throw 'Mass-spectrum maximum TOF calculation failed.' }
+} finally {
+  Pop-Location
+}
 if ($ReanalyzeOnly) {
   foreach ($path in @($simionCsv,$simionSummary)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {

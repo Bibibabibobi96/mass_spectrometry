@@ -2,7 +2,7 @@
   "schema_version": 1,
   "project_id": "parallel_mirror_dual_stripe_mr_tof",
   "peak_analysis": {
-    "method_id": "common_gaussian_kde_time_v1",
+    "method_id": "common_gaussian_kde_time_v2",
     "resolution_definition": "mean_tof_us/(2*direct_fwhm_tof_us)",
     "time_basis": "instrument_arrival_us_from_common_zero_birth",
     "settings": {

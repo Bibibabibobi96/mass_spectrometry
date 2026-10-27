@@ -47,7 +47,7 @@ class MeasuredComponentAnalysisTests(unittest.TestCase):
         timing.write_text(json.dumps(dict(schema_version=1, role="native_electrode_timing", pulse_start_us=pulse)))
         source = json.loads((self.source / "source_receipt.json").read_text())
         from common.analysis.peak_metrics import AnalysisSettings
-        return dict(method_id="common_gaussian_kde_time_v1", resolution_definition="mean_tof_us/(2*direct_fwhm_tof_us)",
+        return dict(method_id="common_gaussian_kde_time_v2", resolution_definition="mean_tof_us/(2*direct_fwhm_tof_us)",
                     time_basis="instrument_arrival_minus_common_extraction_pulse_us",
                     settings={key: value for key, value in vars(AnalysisSettings()).items()},
                     common_time_reference=dict(clock_epoch_id=source["clock_epoch_id"], timing=file_record(timing), field="pulse_start_us"))
@@ -83,7 +83,7 @@ class MeasuredComponentAnalysisTests(unittest.TestCase):
         from common.analysis.peak_metrics import AnalysisSettings, compute_peak_metrics
         source = json.loads((self.source / "source_receipt.json").read_text())
         offsets = [.01, .02, .05, .08, .11]
-        states = {i: dict(mass_amu=524.0, charge_state=1, instrument_time_us=7500+offset)
+        states = {i: dict(mass_amu=524.0, charge_state=1, mass_to_charge_Th=524.0, particle_weight=1.0, instrument_time_us=7500+offset)
                   for i, offset in enumerate(offsets, 1)}
         # Every particle flies the same elapsed time; actual exit spread must survive.
         detectors = {i: {"t_us": float(row["instrument_time_us"])+100} for i, row in states.items()}
@@ -109,9 +109,36 @@ class MeasuredComponentAnalysisTests(unittest.TestCase):
         self.assertAlmostEqual(peak["fwhm_us"], translated["fwhm_us"], places=9)
         self.assertAlmostEqual(peak["time_equivalent_resolution"], translated["time_equivalent_resolution"], places=4)
 
+    def test_current_method_keeps_canonical_species_and_explicit_equal_weights(self) -> None:
+        source = json.loads((self.source / "source_receipt.json").read_text())
+        states = {i: dict(mass_amu=524.0, charge_state=2, mass_to_charge_Th=262.0,
+                          particle_weight=3.5, instrument_time_us=7500.1) for i in range(1, 5)}
+        detectors = {i: {"t_us": 7600.0 + i*.01} for i in states}
+        peak, spectra = _prepare_detector_peak(self._peak_contract(), self.root, source, states, detectors)
+        self.assertEqual(peak["species"], dict(mass_amu=524.0, charge_state=2, mass_to_charge_Th=262.0))
+        self.assertNotIn("mass_resolution", peak["metrics"])
+        self.assertNotIn("mass_grid_Da", spectra)
+        self.assertEqual(peak["detected_particle_ids"], [1, 2, 3, 4])
+        self.assertEqual(peak["analysis_metadata"]["time_reference"]["clock_qualification"],
+                         "validated_epoch_and_frozen_timing")
+        # Typed identity propagation is not a multi-charge flight qualification.
+        self.assertEqual(peak["qualification"], "detector_survivor_conditioned_time_equivalent_only")
+        states[4]["particle_weight"] = 1.0
+        with self.assertRaisesRegex(ValueError, "nonuniform weights"):
+            _prepare_detector_peak(self._peak_contract(), self.root, source, states, detectors)
+
+    def test_old_or_unknown_method_is_not_an_active_request(self) -> None:
+        for method in ("common_gaussian_kde_time_v1", "unknown"):
+            contract = self._peak_contract()
+            contract["method_id"] = method
+            with self.subTest(method=method), self.assertRaisesRegex(ValueError, "Unsupported measured"):
+                analyze_measured_component(self.log, self.source / "source_receipt.json", self.output,
+                                           peak_analysis_contract=contract)
+            self.assertFalse(self.output.exists())
+
     def test_peak_empty_few_and_zero_variance_are_unavailable(self) -> None:
         source = json.loads((self.source / "source_receipt.json").read_text())
-        states = {i: dict(mass_amu=524.0, charge_state=1, instrument_time_us=7500.1) for i in range(1, 4)}
+        states = {i: dict(mass_amu=524.0, charge_state=1, mass_to_charge_Th=524.0, particle_weight=3.5, instrument_time_us=7500.1) for i in range(1, 4)}
         for times, status in (([], "unavailable_fewer_than_three_hits"), ([7600], "unavailable_fewer_than_three_hits"),
                               ([7600, 7601], "unavailable_fewer_than_three_hits"), ([7600]*3, "unavailable_zero_variance")):
             with self.subTest(times=times):
@@ -120,10 +147,41 @@ class MeasuredComponentAnalysisTests(unittest.TestCase):
                 self.assertEqual(peak["status"], status)
                 self.assertIsNone(spectra)
                 self.assertIsNone(peak["fwhm_us"])
+                metadata = peak["analysis_metadata"]
+                self.assertEqual(metadata["sample_count"], len(times))
+                self.assertEqual(metadata["weight_sum"], 3.5 * len(times))
+                self.assertEqual(metadata["effective_sample_count"], float(len(times)))
+                self.assertEqual(metadata["sample_sigma_ddof"], 1)
+                self.assertEqual(metadata["weight_policy"], "equal_positive_relative_weights")
+                self.assertEqual(metadata["status"], status)
+                self.assertEqual(metadata["units"]["time_width"], "ns")
+                self.assertEqual(metadata["settings"], peak["settings"])
+                self.assertEqual(metadata["time_reference"]["reference_time_us"], 7500.)
+                self.assertEqual(metadata["time_reference"]["clock_qualification"], "validated_epoch_and_frozen_timing")
+                self.assertEqual(metadata["scientific_qualification"], "not_assessed")
+
+    def test_missing_peak_contract_keeps_actual_weights_without_inventing_time_reference(self) -> None:
+        source = json.loads((self.source / "source_receipt.json").read_text())
+        states = {i: dict(mass_amu=524., charge_state=1, mass_to_charge_Th=524.,
+                          particle_weight=weight, instrument_time_us=7500.1)
+                  for i, weight in ((7, .125), (19, 8.))}
+        detectors = {7: {"t_us": 7600.}, 19: {"t_us": 7601.}}
+        peak, spectra = _prepare_detector_peak(None, self.root, source, states, detectors)
+        metadata = peak["analysis_metadata"]
+        self.assertIsNone(spectra)
+        self.assertIsNone(peak["fwhm_us"])
+        self.assertIsNone(metadata["method_id"])
+        self.assertIsNone(metadata["settings"])
+        self.assertEqual(metadata["sample_count"], 2)
+        self.assertEqual(metadata["weight_sum"], 8.125)
+        self.assertAlmostEqual(metadata["effective_sample_count"], 8.125**2 / (.125**2 + 8.**2))
+        self.assertEqual(metadata["weight_policy"], "nonuniform_positive_relative_weights__kde_unsupported")
+        self.assertEqual(metadata["time_reference"]["clock_qualification"], "unspecified")
+        self.assertEqual(peak["detected_particle_ids"], [7, 19])
 
     def test_single_centroid_source_can_validate_without_width_analysis(self) -> None:
         source = json.loads((self.source / "source_receipt.json").read_text())
-        states = {1: dict(mass_amu=524.0, charge_state=1, instrument_time_us=7500.1)}
+        states = {1: dict(mass_amu=524.0, charge_state=1, mass_to_charge_Th=524.0, particle_weight=1.0, instrument_time_us=7500.1)}
         contract = self._peak_contract()
         self.assertEqual(validate_measured_peak_source_reference(contract, self.root, source, states), 7500)
         peak, _ = _prepare_detector_peak(contract, self.root, source, states, {})
