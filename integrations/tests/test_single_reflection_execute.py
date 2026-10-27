@@ -507,7 +507,8 @@ function Invoke-SingleReflectionFrontendFieldStage {
  if($env:TEST_BORROWED_CAPACITY-eq'1'-and($CapacitySession.Value.lease_id-ne'owner-lease'-or$CapacitySession.Value.owner-ne'owner-workflow')){throw 'field stage changed the owner capacity identity'}
  $plan=Get-Content (Join-Path $PreparedDirectory 'inputs/frontend_field_design.json') -Raw|ConvertFrom-Json -Depth 100
  $local=$env:TEST_FIELD_FAILURE-in@('local_fly','local_discovery_fly')
- $sampleCount=if($local){25}else{59}
+ # Bare source has 32 real rod pieces and no historical plate/shield samples.
+ $sampleCount=if($local){25}else{57}
  $author=Get-Content (Join-Path $PreparedDirectory 'inputs/request.json') -Raw|ConvertFrom-Json -AsHashtable
  $pulseMode=if($author.ContainsKey('flight')){$author.flight.pulse.mode}else{''}
  $fieldCount=$(if($local){1}else{2})+$(if($pulseMode-eq'held_off'){0}else{1})

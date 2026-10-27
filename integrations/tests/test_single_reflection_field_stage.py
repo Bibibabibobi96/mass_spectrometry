@@ -200,7 +200,8 @@ class DirectFieldPlanTests(unittest.TestCase):
     def test_actual_plan_has_only_three_operating_fields_and_no_source_identity(self):
         with tempfile.TemporaryDirectory() as directory:
             run, plan = prepared(Path(directory))
-            self.assertEqual(len(plan['physical_samples']), 59)
+            # Fixed bare fixture: 32 real rod pieces plus 25 OA electrodes.
+            self.assertEqual(len(plan['physical_samples']), 32 + 25)
             self.assertEqual([p['kind'] for p in plan['working_points']], list(KINDS))
             self.assertEqual(len(plan['members']), 3)
             self.assertTrue(all(len(member['filenames']) == 1 for member in plan['members']))
@@ -214,7 +215,7 @@ class DirectFieldPlanTests(unittest.TestCase):
             self.assertEqual(bank['rf_differential_pa_basenames'], ['frontend.rf_reference.pa'])
             path = run / 'audit.tsv'
             write_audit_spec(plan, run / 'raw.pa#', run, path)
-            self.assertEqual(sum(line.startswith('physical\t') for line in path.read_text().splitlines()), 59)
+            self.assertEqual(sum(line.startswith('physical\t') for line in path.read_text().splitlines()), 32 + 25)
 
     def test_actual_voltage_convergence_boundary_and_geometry_change_cache_identity(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -920,6 +921,9 @@ receipt=json.loads((run/'inputs/frontend_working_field_stage_receipt.json').read
 design=json.loads((prepared/'inputs/frontend_field_design.json').read_text(encoding='utf-8-sig'))
 domain=receipt['domains'][0];points=domain['working_points']
 identities=[json.loads(Path(point['cache_identity_record']['path']).read_text(encoding='utf-8-sig')) for point in points]
+# Only the receipt shape is historical: every member keeps this same current
+# bare GEM and physical geometry; no old shell field is imported or relabeled.
+assert all(item['geometry']==identities[0]['geometry'] and item['gem']==identities[0]['gem'] for item in identities)
 identity=dict(identities[0],working_points=[item['working_points'][0] for item in identities],
               rf_reference_voltage_v=identities[1]['rf_reference_voltage_v'])
 identity['geometry']=dict(identity['geometry'],physical_samples=design['domains'][0]['physical_samples'])
@@ -1060,8 +1064,13 @@ $manifest=Get-Content -LiteralPath (Join-Path $oneDomain.generation_directory 'c
                 second_native = data['native'][data['first_count']:]
                 refinements = [args for args in second_native if len(args)>9 and args[3].endswith('build_dirichlet_patch_operating_pa.lua')]
                 self.assertEqual(len(refinements), 1)
-                self.assertEqual(refinements[0][9], ','.join(format(value,'.17g') for value in json.loads(
-                    (root/'hit/inputs/frontend_field_design.json').read_text())['working_points'][2]['electrode_voltages_v'].values()))
+                frozen_design = json.loads((root/'hit/inputs/frontend_field_design.json').read_text())
+                pulse_voltages = frozen_design['working_points'][2]['electrode_voltages_v']
+                # Native voltage vectors span numeric IDs, including unbound holes;
+                # zero entries for missing IDs do not create physical electrodes.
+                expected_voltages = ','.join(format(pulse_voltages.get(str(eid), 0.), '.17g')
+                    for eid in range(1, max(map(int, pulse_voltages)) + 1))
+                self.assertEqual(refinements[0][9], expected_voltages)
             elif audit_refresh:
                 self.assertEqual(data['commitment_before_second'], data['commitment_after_second'])
                 second_native = data['native'][data['first_count']:]

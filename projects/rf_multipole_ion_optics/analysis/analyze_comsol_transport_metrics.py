@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from projects.rf_multipole_ion_optics.core.interface_geometry import transport_observations
+
 import argparse
 import csv
 import json
@@ -28,7 +30,7 @@ def _finite(row: dict[str, str], field: str) -> float:
 
 def _case_metrics(
     state_rows: list[dict[str, str]], event_rows: list[dict[str, str]], case_id: str,
-    entrance_aperture_radius_mm: float, exit_aperture_radius_mm: float,
+    entrance_port_radius_mm: float | None, exit_port_radius_mm: float | None,
 ) -> dict[str, Any]:
     source = {row["particle_id"] for row in state_rows if row["event"] == "source"}
     terminal = [row for row in state_rows if row["event"] == "terminal"]
@@ -41,14 +43,14 @@ def _case_metrics(
     rows = [row for row in event_rows if row["case_id"] == case_id]
     if {row["particle_id"] for row in rows} != source:
         raise ValueError(f"event rows do not close source cohort for {case_id}")
-    entrance = [float(row["entrance_aperture_radius_mm"]) for row in rows]
-    exit_values = [float(row["exit_aperture_radius_mm"]) for row in rows]
+    entrance = [float(row["entrance_port_radius_mm"]) for row in rows]
+    exit_values = [float(row["exit_port_radius_mm"]) for row in rows]
     return {
         "particles": len(source),
         "transmitted": len(transmitted),
         "transmission_fraction": len(transmitted) / len(source),
-        "entrance_passed": sum(value <= entrance_aperture_radius_mm for value in entrance if math.isfinite(value)),
-        "exit_passed": sum(value <= exit_aperture_radius_mm for value in exit_values if math.isfinite(value)),
+        "entrance_passed": sum(entrance_port_radius_mm is None or value <= entrance_port_radius_mm for value in entrance if math.isfinite(value)),
+        "exit_passed": sum(exit_port_radius_mm is None or value <= exit_port_radius_mm for value in exit_values if math.isfinite(value)),
         "exit_rms_radius_mm": math.sqrt(sum(value * value for value in radii) / len(radii)) if radii else None,
         "mean_output_energy_eV": sum(energies) / len(energies) if energies else None,
         "output_energy_standard_deviation_eV": stdev(energies) if len(energies) > 1 else None,
@@ -59,7 +61,11 @@ def _case_metrics(
 def derive(events: list[dict[str, str]], primary_state: list[dict[str, str]], control_state: list[dict[str, str]], resolved: dict[str, Any], numerics: dict[str, Any]) -> dict[str, Any]:
     topology = resolved["axial_drive"]["topology"]
     geometry = resolved["geometry_mm"]
-    interfaces = resolved["interfaces_mm"]
+    observations = transport_observations(resolved)
+    ports = geometry["enclosure_layout"]["ports"]
+    def port_radius(name):
+        section = ports[name]["cross_section"]
+        return section["radius_mm"] if section["shape"] == "circle" else None
     if topology == "exit_aperture_plate_potential_step":
         primary_case, control_case = "exit_aperture_plate_acceleration_rf_on", "zero_exit_aperture_plate_drop_rf_on"
     elif topology == "segmented_rod_axial_acceleration":
@@ -67,12 +73,12 @@ def derive(events: list[dict[str, str]], primary_state: list[dict[str, str]], co
     else:
         primary_case, control_case = "finite_3d_rf_on", "zero_rf_control"
     primary = _case_metrics(
-        primary_state, events, primary_case, interfaces["entrance"]["aperture_radius_mm"],
-        interfaces["exit"]["aperture_radius_mm"],
+        primary_state, events, primary_case, port_radius("mechanical_entrance"),
+        port_radius("mechanical_exit"),
     )
     control = _case_metrics(
-        control_state, events, control_case, interfaces["entrance"]["aperture_radius_mm"],
-        interfaces["exit"]["aperture_radius_mm"],
+        control_state, events, control_case, port_radius("mechanical_entrance"),
+        port_radius("mechanical_exit"),
     )
     return {
         "schema_version": 1,
@@ -88,10 +94,10 @@ def derive(events: list[dict[str, str]], primary_state: list[dict[str, str]], co
         },
         "voltage_contract": resolved["drive"],
         "interface_geometry_mm": {
-            "entrance_aperture_radius": interfaces["entrance"]["aperture_radius_mm"],
-            "exit_aperture_radius": interfaces["exit"]["aperture_radius_mm"],
-            "release_plane_z": interfaces["entrance"]["release_plane_z_mm"],
-            "census_plane_z": interfaces["exit"]["census_plane_z_mm"],
+            "entrance_port_radius": port_radius("mechanical_entrance"),
+            "exit_port_radius": port_radius("mechanical_exit"),
+            "release_plane_z": observations["release_plane_z_mm"],
+            "census_plane_z": observations["census_plane_z_mm"],
         },
         "primary_case_id": primary_case,
         "control_case_id": control_case,

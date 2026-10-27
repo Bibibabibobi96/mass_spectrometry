@@ -162,10 +162,11 @@ def prepare(request_path: Path, run: Path) -> dict[str, Any]:
         raise ValueError("mechanical exit interface differs from its real resolved geometry")
     observation = _read(paths["mechanical_exit_observation"])
     port = interface["ports"]["mechanical_exit"]
+    aperture = port["cross_section"].get("radius_mm")
     if (observation.get("role") != "multipole_mechanical_exit_observation"
             or observation["frame_id"] != interface["local_frame_id"]
             or observation["mechanical_exit_z_mm"] != port["center_mm"][2]
-            or observation["aperture_radius_mm"] != port["cross_section"]["radius_mm"]):
+            or observation["aperture_radius_mm"] != aperture):
         raise ValueError("observations must use the actual mechanical exit frame/plane/bore")
     census = validate_exit_observations(states, paths["particle_source"], observation)
     if census != _read(census_path):

@@ -17,7 +17,6 @@ class IntegrationRegistryTests(unittest.TestCase):
                 "integration_id": "instrument_assembly",
                 "root": root,
                 "profile_registry": f"{root}/config/connections.json",
-                "downstream_terminal_profile_registry": f"{root}/config/terminals.json",
             }],
         }
 
@@ -26,15 +25,13 @@ class IntegrationRegistryTests(unittest.TestCase):
             with self.subTest(root=root):
                 registry = self._registry(root)
                 validate_schema(registry, "integration_registry.schema.json")
-                del registry["integrations"][0]["downstream_terminal_profile_registry"]
-                validate_schema(registry, "integration_registry.schema.json")
 
     def test_direct_and_family_layouts_cannot_be_mixed(self) -> None:
         for root, other in (
             ("integrations", "integrations/active_family"),
             ("integrations/active_family", "integrations"),
         ):
-            for field in ("profile_registry", "downstream_terminal_profile_registry"):
+            for field in ("profile_registry",):
                 with self.subTest(root=root, field=field):
                     registry = self._registry(root)
                     registry["integrations"][0][field] = f"{other}/config/profiles.json"
@@ -52,7 +49,6 @@ class IntegrationRegistryTests(unittest.TestCase):
                 "/integrations/config/profiles.json",
                 "integrations\\config\\profiles.json",
             ),
-            "downstream_terminal_profile_registry": ("integrations/../profiles.json",),
         }.items():
             for value in values:
                 with self.subTest(field=field, value=value):

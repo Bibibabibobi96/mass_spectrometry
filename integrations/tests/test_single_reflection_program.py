@@ -245,7 +245,11 @@ print('INJECTED_PUBLIC_EDGE_CAP=PASS')
         self.assertIn("single_flight_source_particle_id={[1]=11,[2]=77}",program)
         self.assertIn("single_flight_time_origin_us={[1]=0.25,[2]=2.5}",program)
         carrier = self.design['working_points'][0]['electrode_voltages_v']
-        self.assertEqual([carrier[str(electrode)] for electrode in (9, 10, 11)], [0., 0., 0.])
+        instances, downstream = native_frontend_instances(self.geometry['composition_plan'])
+        native_binding = self.geometry['electrode_bindings'][instances[0]]
+        self.assertEqual({int(electrode) for electrode in native_binding}, set(range(1,9)))
+        shield = self.geometry['electrode_bindings'][downstream]['grounded_shield_id']
+        self.assertEqual(carrier[str(shield)],0.)
         self.assertNotIn('single_flight_rf.apply_static', program)
         drive = _upstream_rod_drive(self.upstream)
         self.assertEqual(len(drive["electrodes"]),8)
@@ -641,11 +645,11 @@ print('LOCAL_OATOF_NO_RF=PASS')
     def test_native_scope_and_real_inputs_reject_incompatible_contracts(self):
         with self.assertRaisesRegex(ValueError, "explicit frontend and downstream"):
             self.build(standalone_dynamic_field_bank=None)
-        for label in ("rod", "ground", "placement", "voltage"):
+        for label in ("rod", "unknown_native_electrode", "placement", "voltage"):
             with self.subTest(label=label):
                 upstream,design,geometry=copy.deepcopy(self.upstream),copy.deepcopy(self.design),copy.deepcopy(self.geometry)
                 if label=="rod": self.upstream["segmentation"]["segmented_rod_array"]["electrodes"].pop()
-                elif label=="ground":
+                elif label=="unknown_native_electrode":
                     instance=self.geometry['composition_plan']['recipe']['connections'][0]['upstream']['instance_id']
                     self.geometry['electrode_bindings'][instance]['10']=9
                 elif label=="placement": self.geometry["downstream_pa_instances"][0]["x_mm"]+=1

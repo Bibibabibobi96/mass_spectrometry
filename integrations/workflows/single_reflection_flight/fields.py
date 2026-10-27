@@ -12,7 +12,7 @@ from integrations.runtime.frontend_field_plan import box_sample, cylinder_sample
 from projects.rf_multipole_ion_optics.simion.simion_geometry import physical_electrode_view
 from integrations.runtime.single_flight_electrode_contract import (
     physical_multipole_voltages,
-    segmented_through_exit_rod_pieces,
+    multipole_rod_pieces,
 )
 from integrations.runtime.single_flight_frontend import frontend_electrode_maps, native_frontend_instances
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_electrical import resolve_accelerator_electrical_design
@@ -144,36 +144,21 @@ def _physical_samples(multipoles: dict[str, dict], geometry: dict, domain: dict,
         view = physical_electrode_view(upstream)
         if set(mapping) != {row['native_electrode_id'] for row in view}:
             raise ValueError(f'{instance_id}: physical electrode binding must cover every provider group')
-        rods = segmented_through_exit_rod_pieces(upstream)
+        rods = multipole_rod_pieces(upstream)
         for rod in rods:
             electrode = mapping[rod['electrode_id']]
             physical.append(dict(label=f'segment_{rod["segment_id"]}_rod_{rod["parent_rod_id"]}_e{electrode}',
                 kind='rod', electrode_id=electrode, segment_id=rod['segment_id'], parent_rod_id=rod['parent_rod_id'],
                 gu=cylinder_sample(rod, rotation, translation, origin, pitch, dimensions)))
-        enclosure = upstream['geometry_mm']['enclosure']
-        inner, outer = enclosure['shield_inner_radius_mm'], enclosure['shield_outer_radius_mm']
         static_rows = [row for row in view if row['voltage_source']['kind'] == 'static']
         for row in static_rows:
-            roles = set(row['roles'])
-            if 'entrance_reference_sleeve' in roles:
-                sleeve = upstream['axial_dc']['entrance_reference_sleeve']
-                radial_low, radial_high = sleeve['inner_radius_mm'], sleeve['outer_radius_mm']
-                zlo, zhi = sleeve['upstream_face_z_mm'], sleeve['downstream_face_z_mm']
-            elif 'shield' in roles:
-                radial_low, radial_high = inner, outer
-                zlo, zhi = enclosure['entrance_outer_endcap_downstream_face_z_mm'], enclosure['exit_outer_endcap_upstream_face_z_mm']
-            elif roles & {'exit_aperture_plate', 'entrance_aperture_plate'}:
-                # Mating endcap faces can belong to the adjacent component.
-                # Audit this electrode on its own internal aperture plate.
-                side = 'exit' if 'exit_aperture_plate' in roles else 'entrance'
-                interface = upstream['interfaces_mm'][side]
-                radial_low, radial_high = interface['aperture_radius_mm'], outer
-                zlo, zhi = interface['aperture_plate_upstream_face_z_mm'], interface['aperture_plate_downstream_face_z_mm']
-            else:
-                raise ValueError(f'{instance_id}: no supported static metal sample for roles {sorted(roles)}')
-            gu, _ = sample_node([(radial_low + radial_high) / 2, 0, (zlo + zhi) / 2], rotation, translation, origin, pitch, dimensions)
-            physical.append(dict(label=f'static_e{mapping[row["native_electrode_id"]]}', kind='static',
-                                 electrode_id=mapping[row['native_electrode_id']], gu=gu))
+            if row['scientific_id'] != 'grounded_shell':
+                raise ValueError(f'{instance_id}: unsupported provider static electrode {row["scientific_id"]}')
+            for body in upstream['geometry_mm']['enclosure_layout']['bodies']:
+                gu, _ = sample_node([(body['inner_radius_mm'] + body['outer_radius_mm']) / 2, 0,
+                    (body['z_min_mm'] + body['z_max_mm']) / 2], rotation, translation, origin, pitch, dimensions)
+                physical.append(dict(label=f'{body["role"]}_e{mapping[row["native_electrode_id"]]}', kind='static',
+                                     electrode_id=mapping[row['native_electrode_id']], gu=gu))
     x,y = g['axis_x_mm'],g['axis_y_mm']
     width = g['electrode_width_mm']
     for role,z,thickness,w,kind in (

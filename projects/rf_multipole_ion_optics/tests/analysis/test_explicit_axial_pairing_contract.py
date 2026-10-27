@@ -61,7 +61,6 @@ class ExplicitAxialPairingContractTests(unittest.TestCase):
         for runtime_profile_id in (
             "no_acceleration_full_length",
             "segmented_rod_axial_acceleration",
-            "exit_aperture_plate_acceleration",
         ):
             resolved_profile = resolve_runtime_profile(
                 REPO_ROOT,

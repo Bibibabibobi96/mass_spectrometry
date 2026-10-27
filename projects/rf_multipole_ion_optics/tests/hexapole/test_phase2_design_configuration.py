@@ -71,29 +71,10 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
         self.assertIn(geometry["rod_radius_ratio"], self.screen["geometry_mm"]["rod_radius_ratio_sweep"])
         self.assertEqual(geometry["rod_z_min"], 0.0)
         self.assertEqual(geometry["rod_z_max"], self.published["geometry_mm"]["rod_length"])
-        self.assertEqual(compiled["geometry_mm"]["enclosure"], geometry["enclosure"])
-        self.assertEqual(
-            geometry["enclosure"],
-            {
-                "model": "cylindrical_grounded_shield_v1",
-                "role": "full_length_grounded_shield",
-                "working_region_radius_mm": 3.6,
-                "vacuum_z_min_mm": -2.5,
-                "vacuum_z_max_mm": 82.1,
-                "shield_inner_radius_mm": 20.0,
-                "shield_outer_radius_mm": 21.0,
-                "entrance_outer_endcap_upstream_face_z_mm": -2.5,
-                "entrance_outer_endcap_downstream_face_z_mm": -2.0,
-                "exit_outer_endcap_upstream_face_z_mm": 81.6,
-                "exit_outer_endcap_downstream_face_z_mm": 82.1,
-            },
-        )
-        for side in ("entrance_interface", "exit_interface"):
-            self.assertEqual(geometry[side]["aperture_radius_mm"], 3.6)
-            self.assertEqual(geometry[side]["plate_thickness_mm"], 0.5)
-            self.assertEqual(geometry[side]["rod_clearance_mm"], 0.5)
-            self.assertEqual(geometry[side]["connector_length_mm"], 0.0)
-            self.assertEqual(geometry[side]["connector_shape"], "cylindrical_bore")
+        self.assertEqual(compiled["geometry_mm"]["enclosure"],{"model":"bare"})
+        self.assertEqual(compiled["geometry_mm"]["enclosure_layout"]["bodies"],[])
+        self.assertEqual(compiled["geometry_mm"]["observations"],geometry["observations"])
+        self.assertEqual(compiled["geometry_mm"]["numerical_domain"],geometry["numerical_domain"])
         self.assertEqual(self.request["drive"], self.published["drive"])
         self.assertEqual(
             self.request["segmentation"],
@@ -127,7 +108,7 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             self.envelope["reference"]["design_request_sha256"],
             hashlib.sha256(REQUEST_PATH.read_bytes()).hexdigest().upper(),
         )
-        self.assertIn("connector_shape_supported", self.catalog["invariants"])
+        self.assertIn("segment_length_conservation", self.catalog["invariants"])
 
     def test_comsol_baseline_freezes_verified_working_region_mesh_limit(self) -> None:
         profiles = self.comsol_numerics["profiles"]

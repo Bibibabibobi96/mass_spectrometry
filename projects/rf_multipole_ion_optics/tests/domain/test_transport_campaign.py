@@ -29,8 +29,9 @@ RUN_ID = "20260731_143000__sim__simion__quad-noacc-radial-h15-r015-z020-t160"
 
 
 def campaign_fixture() -> dict:
+    """Synthetic approval used only by isolated execution-contract test inputs."""
     return {
-        "schema_version": 1,
+        "schema_version": 7,
         "role": "multipole_transport_experiment_campaign",
         "family_id": "rf_multipole_ion_optics",
         "campaign_id": "quad_simion_radial_extension_v1",
@@ -91,15 +92,11 @@ def campaign_fixture() -> dict:
 
 
 def analysis_campaign_fixture() -> dict:
-    source = json.loads(
-        (
-            CAMPAIGN_ROOT / "20260731__oatof_shield_terminal_h15_n100.json"
-        ).read_text(encoding="utf-8-sig")
-    )
-    template = next(
-        item
-        for item in source["experiments"]
-        if item["experiment_id"] == "hex_segmented_oatof_terminal_h15_n100"
+    source = campaign_fixture()
+    template = source["experiments"][0]
+    template.update(
+        design_profile_id="hexapole_segmented_rod_axial_acceleration",
+        comsol_solver_numerics_profile_id="hexapole_baseline_finite_3d",
     )
     rows = []
     for index, suffix in enumerate(("baseline", "drive")):
@@ -116,12 +113,11 @@ def analysis_campaign_fixture() -> dict:
         }
         rows.append(row)
     return {
-        "schema_version": 4,
+        "schema_version": 7,
         "role": source["role"],
         "family_id": source["family_id"],
         "campaign_id": "analysis_contract_v4",
         "preregistered_before_run": True,
-        "downstream_terminal_profile": source["downstream_terminal_profile"],
         "design_variable_authorization": {
             "allowed_variable_ids": ["rf_amplitude", "rf_frequency"],
             "variable_limits": [
@@ -217,7 +213,7 @@ class TransportCampaignTests(unittest.TestCase):
                 (REPO_ROOT / (module.replace(".", "/") + ".py")).is_file()
             )
 
-    def test_campaign_v4_status_validates_analysis_without_writing_runs(self) -> None:
+    def test_campaign_analysis_status_validates_analysis_without_writing_runs(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             self.skipTest("PowerShell Core is unavailable")
@@ -265,7 +261,7 @@ class TransportCampaignTests(unittest.TestCase):
         self.assertIn("MULTIPOLE_CAMPAIGN_ANALYSIS_STATUS=PENDING", completed.stdout)
         self.assertFalse(any(path.exists() for path in (*run_dirs, analysis_dir)))
 
-    def test_campaign_v4_rejects_capability_reference_and_parameter_escape(self) -> None:
+    def test_campaign_analysis_rejects_capability_reference_and_parameter_escape(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             self.skipTest("PowerShell Core is unavailable")
@@ -315,7 +311,7 @@ class TransportCampaignTests(unittest.TestCase):
                 "outside its capability envelope",
             )
 
-    def test_campaign_v4_requires_case_set(self) -> None:
+    def test_campaign_analysis_requires_case_set(self) -> None:
         campaign = analysis_campaign_fixture()
         del campaign["experiments"][0]["case_set"]
         with written_campaign(campaign) as path:
@@ -327,45 +323,12 @@ class TransportCampaignTests(unittest.TestCase):
                     experiment_id=campaign["experiments"][0]["experiment_id"],
                 )
 
-    def test_campaign_v1_to_v2_forbid_case_set_and_v3_accepts_it(self) -> None:
-        v3 = analysis_campaign_fixture()
-        v3["schema_version"] = 3
-        del v3["analysis_requests"]
-        for row in v3["experiments"]:
-            del row["case_set"]
-        campaigns = []
-        for version in (1, 2, 3):
-            campaign = copy.deepcopy(v3)
-            campaign["schema_version"] = version
-            if version < 3:
-                del campaign["design_variable_authorization"]
-                del campaign["particle_source_phase_policy"]
-                for row in campaign["experiments"]:
-                    del row["execution_profile_id"]
-                    del row["design_variable_values"]
-            if version == 1:
-                del campaign["downstream_terminal_profile"]
-            campaign["experiments"][0]["case_set"] = "primary_only"
-            campaigns.append(campaign)
-        for campaign in campaigns[:2]:
-            with self.subTest(schema_version=campaign["schema_version"]), written_campaign(
-                campaign
-            ) as path:
-                with self.assertRaisesRegex(
-                    ValueError, "invalid multipole transport campaign"
-                ):
-                    resolve_runtime_selection(
-                        REPO_ROOT,
-                        campaign["experiments"][0]["project_id"],
-                    campaign_path=path,
-                    experiment_id=campaign["experiments"][0]["experiment_id"],
-                )
-        with written_campaign(campaigns[2]) as path:
+    def test_case_set_is_explicit_and_independent_of_design_changes(self) -> None:
+        campaign = campaign_fixture()
+        campaign["experiments"][0]["case_set"] = "primary_only"
+        with written_campaign(campaign) as path:
             resolved = resolve_runtime_selection(
-                REPO_ROOT,
-                campaigns[2]["experiments"][0]["project_id"],
-                campaign_path=path,
-                experiment_id=campaigns[2]["experiments"][0]["experiment_id"],
+                REPO_ROOT, PROJECT_ID, campaign_path=path, experiment_id=EXPERIMENT_ID,
             )
         self.assertEqual(resolved["case_set"], "primary_only")
 
@@ -374,58 +337,14 @@ class TransportCampaignTests(unittest.TestCase):
             REPO_ROOT,
             Path(
                 "projects/rf_multipole_ion_optics/config/campaigns/"
-                "20260731__oatof_shield_terminal_h15_n100.json"
+                "20260731__noacc_vs_segmented_h15_n100.json"
             ),
         )
         self.assertEqual(
-            status["campaign_id"], "20260731__oatof_shield_terminal_h15_n100"
+            status["campaign_id"], "20260731__noacc_vs_segmented_h15_n100"
         )
-        self.assertEqual(len(status["experiments"]), 9)
+        self.assertEqual(len(status["experiments"]), 5)
 
-    def test_oatof_terminal_campaign_resolves_one_shared_terminal_for_nine_rows(
-        self,
-    ) -> None:
-        path = CAMPAIGN_ROOT / "20260731__oatof_shield_terminal_h15_n100.json"
-        campaign = json.loads(path.read_text(encoding="utf-8"))
-        self.assertEqual(campaign["schema_version"], 2)
-        self.assertEqual(len(campaign["experiments"]), 9)
-        self.assertEqual(
-            set(campaign["downstream_terminal_profile"]),
-            {"integration_id", "terminal_profile_id", "registry_sha256"},
-        )
-        binding = campaign["downstream_terminal_profile"]
-        discovery = json.loads((REPO_ROOT / "integrations/registry.json").read_text(encoding="utf-8"))
-        integration = next(item for item in discovery["integrations"] if item["integration_id"] == binding["integration_id"])
-        registry = json.loads((REPO_ROOT / integration["downstream_terminal_profile_registry"]).read_text(encoding="utf-8"))
-        profiles = [item for item in registry["profiles"] if item["terminal_profile_id"] == binding["terminal_profile_id"]]
-        self.assertEqual(len(profiles), 1)
-        # This tests composition of the registered terminal, not a second frozen
-        # geometry definition predating the integration's circular port migration.
-        expected_aperture = profiles[0]["aperture"]
-        for experiment in campaign["experiments"]:
-            self.assertNotIn("downstream_terminal_profile", experiment)
-            resolved = resolve_runtime_selection(
-                REPO_ROOT,
-                experiment["project_id"],
-                campaign_path=path,
-                experiment_id=experiment["experiment_id"],
-            )
-            terminal = resolved["design_profile_resolution"]["resolved_design"][
-                "downstream_terminal"
-            ]
-            self.assertEqual(terminal["owner"], "downstream")
-            self.assertEqual(terminal["surface_plane_z_mm"], 80.6)
-            self.assertEqual(terminal["rod_end_clearance_mm"], 1.0)
-            self.assertEqual(
-                terminal["aperture"],
-                expected_aperture,
-            )
-            self.assertFalse(terminal["upstream_terminal_electrode_present"])
-            self.assertEqual(
-                resolved["design_profile_resolution"]["resolved_design"]["axial_dc"]
-                ["terminal_electrode_potential_V"],
-                0.0,
-            )
 
     def test_checked_in_family_campaign_resolves_every_declared_row(self) -> None:
         path = (
@@ -458,38 +377,34 @@ class TransportCampaignTests(unittest.TestCase):
                 pilot["limits"]["maximum_pa_grid_points"], 35_000_000
             )
 
-    def test_checked_in_endface_campaign_resolves_canonical_third_arm(self) -> None:
-        path = (
-            CAMPAIGN_ROOT
-            / "20260731__endface_h15_n100.json"
-        )
-        campaign = json.loads(path.read_text(encoding="utf-8"))
-        self.assertEqual(len(campaign["experiments"]), 3)
-        self.assertEqual(
-            {item["project_id"] for item in campaign["experiments"]},
-            {PROJECT_ID},
-        )
-        for experiment in campaign["experiments"]:
-            self.assertIn(
-                experiment["design_profile_id"],
-                {f"{variant}_exit_aperture_plate_acceleration"
-                 for variant in ("quadrupole", "hexapole", "octupole")},
-            )
-            resolved = resolve_runtime_selection(
-                REPO_ROOT,
-                experiment["project_id"],
-                campaign_path=path,
-                experiment_id=experiment["experiment_id"],
-            )
-            design = resolved["design_profile_resolution"]["resolved_design"]
-            self.assertEqual(
-                design["axial_drive"]["topology"],
-                "exit_aperture_plate_potential_step",
-            )
-            self.assertEqual(
-                resolved["solver_numerics"]["simion"]["values"]["cell_mm_xyz"],
-                {"x": 0.15, "y": 0.15, "z": 0.2},
-            )
+    def test_retained_campaigns_do_not_authorize_new_bare_geometry(self) -> None:
+        for name in (
+            "20260731__noacc_vs_segmented_h15_n100.json",
+            "20260914__host_dispatch_acceptance.json",
+        ):
+            path = CAMPAIGN_ROOT / name
+            campaign = json.loads(path.read_text(encoding="utf-8-sig"))
+            for experiment in campaign["experiments"]:
+                with self.subTest(campaign=name, experiment=experiment["experiment_id"]):
+                    self.assertIs(experiment["resource_authorization"]["authorized"], False)
+                    runtime = resolve_runtime_selection(
+                        REPO_ROOT, PROJECT_ID, campaign_path=path,
+                        experiment_id=experiment["experiment_id"],
+                    )
+                    self.assertIs(
+                        runtime["engineering_budget"]["inline_contract"]["pilot_authorization"]["authorized"],
+                        False,
+                    )
+                    with self.assertRaisesRegex(ValueError, "commercial solver pilot is not authorized"):
+                        validate_pilot_budget(
+                            repo_root=REPO_ROOT, budget_path=path, project_id=PROJECT_ID,
+                            solver="simion", runtime_profile_id=experiment["experiment_id"],
+                            design_profile_id=runtime["design_profile_id"],
+                            particle_source_path=Path(runtime["particle_source"]["path"]),
+                            retention_class=experiment["retention_class"],
+                            run_id=experiment["authorized_run_id"],
+                        )
+
 
     def test_family_campaign_launcher_dry_run_resolves_each_case_without_artifacts(self) -> None:
         pwsh = shutil.which("pwsh")
@@ -527,10 +442,8 @@ class TransportCampaignTests(unittest.TestCase):
         self.assertTrue(all("solver_numerics" in profile for profile in plan["experiments"]))
 
     def test_source_model_analysis_rejects_other_structural_variants(self) -> None:
-        source = json.loads(
-            (CAMPAIGN_ROOT / "20260829__oct_planar_vs_volume_source_n1000.json")
-            .read_text(encoding="utf-8")
-        )
+        source = analysis_campaign_fixture()
+        source["analysis_requests"][0]["capability_id"] = "multipole_source_model_comparison_v1"
         for variant in ("quadrupole", "hexapole"):
             document = copy.deepcopy(source)
             for row in document["experiments"]:
@@ -545,53 +458,6 @@ class TransportCampaignTests(unittest.TestCase):
             ):
                 campaign_request_preflight(REPO_ROOT, Path(directory), path)
 
-    def test_current_source_comparison_dry_run_preserves_declared_case_sets(self) -> None:
-        pwsh = shutil.which("pwsh")
-        if pwsh is None:
-            self.skipTest("PowerShell Core is unavailable")
-        campaign = CAMPAIGN_ROOT / "20260829__oct_planar_vs_volume_source_n1000.json"
-        document = json.loads(campaign.read_text(encoding="utf-8"))
-        # This exercises a new author, not analysis of historical producer runs
-        # whose immutable campaign identity predates the terminal-owner move.
-        document["campaign_id"] = "source_comparison_current_author_fixture"
-        for index, row in enumerate(document["experiments"]):
-            row["authorized_run_id"] = f"20260829_2300{index:02d}__sim__simion__source-comparison-fixture-{index}__n1000"
-        for index, request in enumerate(document["analysis_requests"]):
-            request["analysis_run_id"] = f"20260829_2310{index:02d}__analysis__cross__source-comparison-fixture-{index}__n1000"
-        # The maintained source comparison declares its arms explicitly; only
-        # campaigns without case_set use the launcher's implicit control pair.
-        declared = {row["experiment_id"]: row["case_set"] for row in document["experiments"]}
-        with tempfile.TemporaryDirectory() as directory, written_campaign(document) as campaign:
-            plan_path = Path(directory) / "resolved_execution_plan.json"
-            completed = subprocess.run(
-                [
-                    pwsh, "-NoProfile", "-File",
-                    str(REPO_ROOT / "projects/rf_multipole_ion_optics/runtime/run_simion_transport_campaign.ps1"),
-                    "-CampaignPath", str(campaign), "-All", "-DryRun",
-                    "-DryRunOutput", str(plan_path), "-RepoRoot", str(REPO_ROOT),
-                    "-PythonExe", sys.executable,
-                ],
-                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8",
-                errors="replace", timeout=120, check=False,
-            )
-            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-            plan = json.loads(plan_path.read_text(encoding="utf-8"))
-        self.assertEqual(
-            [item["runtime_profile_id"] for item in plan["experiments"]],
-            ["oct_planar_source_control_n1000", "oct_volume_source_n1000"],
-        )
-        self.assertIn("volume_snapshot_receipt", plan["experiments"][1]["particle_source"])
-        self.assertEqual(
-            {row["runtime_profile_id"]: row["case_set"] for row in plan["experiments"]},
-            declared,
-        )
-        dry_run_rows = [line for line in completed.stdout.splitlines() if line.startswith("MULTIPOLE_CAMPAIGN=DRY_RUN ")]
-        self.assertEqual(len(dry_run_rows), len(declared))
-        self.assertEqual(
-            {line.split("EXPERIMENT=", 1)[1].split(" RUN=", 1)[0]: line.split("CASE_SET=", 1)[1]
-             for line in dry_run_rows},
-            declared,
-        )
 
     def test_campaign_semantic_diff_resolves_profiles_without_execution_policy(self) -> None:
         campaign = campaign_fixture()
@@ -721,8 +587,8 @@ class TransportCampaignTests(unittest.TestCase):
                     run_id=RUN_ID + "__r02",
                 )
 
-    def test_legacy_runtime_selection_is_field_compatible(self) -> None:
-        legacy = resolve_runtime_profile(
+    def test_named_runtime_selection_is_field_compatible(self) -> None:
+        named = resolve_runtime_profile(
             REPO_ROOT, PROJECT_ID, "quadrupole_no_acceleration_full_length"
         )
         selected = resolve_runtime_selection(
@@ -730,7 +596,7 @@ class TransportCampaignTests(unittest.TestCase):
             PROJECT_ID,
             runtime_profile_id="quadrupole_no_acceleration_full_length",
         )
-        self.assertEqual(selected, legacy)
+        self.assertEqual(selected, named)
 
     def test_campaign_rejects_duplicate_unknown_and_physical_override_fields(
         self,

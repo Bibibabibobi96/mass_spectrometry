@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from projects.rf_multipole_ion_optics.core.interface_geometry import transport_observations
+
 import argparse
 import csv
 import hashlib
@@ -66,12 +68,10 @@ def _terminal_fingerprint(manifest: dict[str, Any], run_dir: Path) -> str:
     except (KeyError, OSError, TypeError, ValueError) as error:
         raise ValueError("source-model arm lacks a readable resolved terminal") from error
     terminal = {
-        "interfaces_exit": resolved.get("interfaces_mm", {}).get("exit"),
-        "downstream_terminal": resolved.get("downstream_terminal"),
+        "observations": transport_observations(resolved),
+        "enclosure": resolved["geometry_mm"]["enclosure"],
         "static_electrodes_V": resolved.get("static_electrodes_V"),
     }
-    if terminal["interfaces_exit"] is None:
-        raise ValueError("source-model arm lacks the resolved exit terminal")
     return _canonical_sha256(terminal)
 
 

@@ -219,10 +219,10 @@ class ExecutionCompilerTests(unittest.TestCase):
         return request
 
     def campaign_binding(self, short_variant):
-        return {"campaign_path": str(REPO_ROOT / "projects/rf_multipole_ion_optics/config/campaigns/20260731__endface_h15_n100.json"),
-                "experiment_id": short_variant + "_endface_h15_n100"}
+        return {"campaign_path": str(REPO_ROOT / "projects/rf_multipole_ion_optics/config/campaigns/20260731__noacc_vs_segmented_h15_n100.json"),
+                "experiment_id": short_variant + "_segmented_h15_n100"}
 
-    def test_campaign_profiles_use_resolved_authorized_run_and_structure(self):
+    def test_campaign_profiles_use_declared_run_identity_and_structure(self):
         for variant, short in (("hexapole", "hex"), ("octupole", "oct")):
             with self.subTest(variant=variant):
                 request = self.campaign_request(variant)
@@ -242,14 +242,16 @@ class ExecutionCompilerTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "NEEDS_PROJECT_COMPLETION"):
                     self.compile_request(request, bindings)
 
-    def test_real_v3_campaign_previews_with_the_project_relative_runner(self):
+    def test_current_campaign_previews_with_the_project_relative_runner(self):
         project_root = REPO_ROOT / "projects" / "rf_multipole_ion_optics"
-        path = project_root / "config/campaigns/20260803__hex_rf_drive_phase_matched_h15_n100.json"
+        path = project_root / "config/campaigns/20260731__noacc_vs_segmented_h15_n100.json"
         campaign = load_json(path)
-        self.assertEqual(campaign["schema_version"], 3)
-        experiment = next(row for row in campaign["experiments"] if row["experiment_id"] == "hex_rf_p0")
+        self.assertEqual(campaign["schema_version"], 7)
+        experiment = next(row for row in campaign["experiments"] if row["experiment_id"] == "hex_segmented_h15_n100")
+        self.assertIs(experiment["resource_authorization"]["authorized"], False)
         profiles = load_json(project_root / "config/execution_profiles.json")["profiles"]
-        profile = next(item for item in profiles if item["profile_id"] == experiment["execution_profile_id"])
+        profile_id = "hexapole_simion_transport_campaign_engineering"
+        profile = next(item for item in profiles if item["profile_id"] == profile_id)
         step = next(item for item in profile["steps"] if item["kind"] == "run")
         self.assertEqual(step["entrypoint"], "runtime/run_simion_transport_campaign.ps1")
 
@@ -258,7 +260,7 @@ class ExecutionCompilerTests(unittest.TestCase):
             {"campaign_path": str(path), "experiment_id": experiment["experiment_id"]},
         )
         self.assertEqual(result["status"], "EXECUTION_READY")
-        self.assertEqual(result["profile_id"], experiment["execution_profile_id"])
+        self.assertEqual(result["profile_id"], profile_id)
         run = next(command for command in result["commands"] if command["step_id"] == "simion_campaign_run")
         self.assertEqual(run["run_id"], experiment["authorized_run_id"])
         self.assertEqual(

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 7,
   "role": "multipole_transport_experiment_campaign",
   "family_id": "rf_multipole_ion_optics",
   "campaign_id": "20260914__host_dispatch_acceptance",
@@ -20,7 +20,7 @@
       },
       "retention_class": "compact",
       "resource_authorization": {
-        "authorized": true,
+        "authorized": false,
         "limits": {
           "wall_clock_seconds_by_solver": {
             "comsol": 1800,
@@ -39,7 +39,7 @@
         },
         "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED"
       },
-      "claim_limit": "Shared host-dispatch execution acceptance only. Existing A-profile physics, N100 mother sample and the original primary/control pair are unchanged. Judge actual dispatch receipts without forcing one batch or memory pressure; no baseline, numerical-convergence, Candidate or Formal claim."
+      "claim_limit": "Current schema 3 bare geometry is not authorized for commercial execution. Retained historical run IDs require redefinition and explicit authorization before a new run; frozen old-geometry evidence and qualification do not transfer."
     },
     {
       "experiment_id": "quad_dispatch_receipt_acceptance",
@@ -56,7 +56,7 @@
       },
       "retention_class": "compact",
       "resource_authorization": {
-        "authorized": true,
+        "authorized": false,
         "limits": {
           "wall_clock_seconds_by_solver": {
             "comsol": 1800,
@@ -75,8 +75,8 @@
         },
         "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED"
       },
-      "claim_limit": "Shared host-dispatch execution acceptance only. Existing A-profile physics, N100 mother sample and the original primary/control pair are unchanged. Judge actual dispatch receipts without forcing one batch or memory pressure; no baseline, numerical-convergence, Candidate or Formal claim."
+      "claim_limit": "Current schema 3 bare geometry is not authorized for commercial execution. Retained historical run IDs require redefinition and explicit authorization before a new run; frozen old-geometry evidence and qualification do not transfer."
     }
   ],
-  "claim_limit": "Shared host-dispatch execution acceptance only. Existing A-profile physics, N100 mother sample and the original primary/control pair are unchanged. Judge actual dispatch receipts without forcing one batch or memory pressure; no baseline, numerical-convergence, Candidate or Formal claim."
+  "claim_limit": "Current schema 3 bare geometry is not authorized for commercial execution. Retained historical run IDs require redefinition and explicit authorization before a new run; frozen old-geometry evidence and qualification do not transfer."
 }

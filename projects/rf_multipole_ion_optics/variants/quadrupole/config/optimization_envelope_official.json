@@ -8,7 +8,7 @@
   "policy": "The complete request is immutable at execution; candidate generation may only change cataloged fields within these bounds before recompilation.",
   "reference": {
     "design_request": "variants/quadrupole/config/requests/official.json",
-    "design_request_sha256": "175873D8758E3828C77D08037D51C1A14A4EC8516C64CD83E800B20D87DDB4AB"
+    "design_request_sha256": "56B94C3946634B03C4761A9A2053F6EA7893EE5C864BEC4591909E9F3B61431B"
   },
   "constraints": [
     {

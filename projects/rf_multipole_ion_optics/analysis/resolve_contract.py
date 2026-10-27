@@ -9,13 +9,12 @@ import shutil
 from pathlib import Path
 import tempfile
 
-from common.contracts.file_identity import file_sha256 as _sha256
+from common.contracts.file_identity import repository_text_sha256 as _sha256
 from common.contracts.machine_contracts import validate_schema
 from projects.rf_multipole_ion_optics.core.compile_design_request import (
     compile_governed_design_request_file,
 )
 from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
-from projects.rf_multipole_ion_optics.core.component_port import build_exit_component_port
 from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_runtime_profile
 
 
@@ -79,32 +78,6 @@ def _atomic_write_json(path: Path, document: dict) -> None:
             temporary_path.unlink(missing_ok=True)
 
 
-def publish_ports() -> None:
-    """Rebuild each provided port from its own published resolved authority."""
-    for variant in ("quadrupole", "hexapole", "octupole"):
-        config = PROJECT_ROOT / "variants" / variant / "config"
-        source = config / "resolved_design_no_acceleration_full_length.json"
-        name = "rf_multipole_exit_no_acceleration_full_length.json" if variant == "quadrupole" else "rf_multipole_exit.json"
-        port = build_exit_component_port(
-            _load(source), design_profile_id=f"{variant}_no_acceleration_full_length",
-            authority_path=source.relative_to(REPOSITORY_ROOT).as_posix(),
-            authority_sha256=_sha256(source),
-        )
-        _atomic_write_json(config / "interfaces" / "provided" / name, port)
-    source = CONFIG / "resolved_design_official.json"
-    port = build_exit_component_port(
-        _load(source), design_profile_id="quadrupole_official_transport",
-        authority_path=source.relative_to(REPOSITORY_ROOT).as_posix(),
-        authority_sha256=_sha256(source),
-    )
-    port["profile_scope"] = {
-        "scope_id": "official_transport_oatof_oracle",
-        "scope_kind": "integration_oracle",
-        "family_experiment_port": False,
-    }
-    _atomic_write_json(CONFIG / "interfaces" / "provided" / "rf_multipole_exit.json", port)
-
-
 def publish_governance() -> None:
     """Refresh source identities and tracked publications, not qualify every profile.
 
@@ -163,7 +136,6 @@ def publish_governance() -> None:
         )
         output = PROJECT_ROOT / "variants" / variant / "config" / "resolved_design_no_acceleration_full_length.json"
         _atomic_write_json(output, resolution["resolved_design"])
-    publish_ports()
     publish_budget_design_bindings()
     print("DESIGN_GOVERNANCE_PUBLICATION=PASS")
 
@@ -176,7 +148,9 @@ def publish_budget_design_bindings() -> None:
         "optimization_envelope": "optimization_envelope.json",
         "operating_mode_registry": "operating_modes.json",
     }
-    for path in sorted((PROJECT_ROOT / "variants").glob("*/config/**/*budget*.json")):
+    registry = _load(PROJECT_ROOT / "config/runtime_profiles.json")
+    active_budgets = {PROJECT_ROOT / row["engineering_budget_path"] for row in registry["profiles"].values()}
+    for path in sorted(active_budgets):
         document = _load(path)
         scope = document.get("pilot_authorization", {}).get("scope", {})
         if "expected_run_parent_resolved_design_sha256" not in scope:
@@ -211,22 +185,13 @@ def resolve(profile: str) -> dict:
 
 
 def check_variant(variant: str) -> None:
-    """Check the selected structure's published design, port and runtime binding."""
+    """Check the selected structure's published design and runtime binding."""
     profile_id = f"{variant}_no_acceleration_full_length"
     selection = resolve_design_profile(REPOSITORY_ROOT, EXPECTED_IDENTITY["project_id"], profile_id)
     config = PROJECT_ROOT / "variants" / variant / "config"
     source = config / "resolved_design_no_acceleration_full_length.json"
     if source.read_bytes() != _json_bytes(selection["resolved_design"]):
         raise SystemExit(f"STALE={source.relative_to(PROJECT_ROOT).as_posix()}")
-    name = "rf_multipole_exit_no_acceleration_full_length.json" if variant == "quadrupole" else "rf_multipole_exit.json"
-    port_path = config / "interfaces" / "provided" / name
-    port = build_exit_component_port(
-        selection["resolved_design"], design_profile_id=profile_id,
-        authority_path=source.relative_to(REPOSITORY_ROOT).as_posix(),
-        authority_sha256=_sha256(source),
-    )
-    if _load(port_path) != port:
-        raise SystemExit(f"STALE={port_path.relative_to(PROJECT_ROOT).as_posix()}")
     resolve_runtime_profile(REPOSITORY_ROOT, EXPECTED_IDENTITY["project_id"], profile_id)
     print(f"VARIANT_PUBLICATION=PASS STRUCTURAL_VARIANT={variant}")
 

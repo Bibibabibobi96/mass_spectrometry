@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import json
 import unittest
 from pathlib import Path
 
-from common.contracts.machine_contracts import validate_schema
 from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
 
 
@@ -22,7 +20,6 @@ class Phase4DesignConsumerTests(unittest.TestCase):
         for profile_id in (
             "no_acceleration_full_length",
             "segmented_rod_axial_acceleration",
-            "exit_aperture_plate_acceleration",
         ):
             profile = resolve_design_profile(
                 REPO_ROOT, "rf_multipole_ion_optics", ('hexapole_' + profile_id)
@@ -57,16 +54,9 @@ class Phase4DesignConsumerTests(unittest.TestCase):
         self.assertEqual(compiled["geometry_mm"]["rod_length"], 79.6)
         self.assertEqual(compiled["axial_drive"]["topology"], "none")
         self.assertEqual(compiled["axial_drive"]["predicted_energy_gain_eV"], 0.0)
-        self.assertEqual(compiled["interfaces_mm"]["entrance"]["release_plane_z_mm"], -1.5)
-        self.assertEqual(compiled["interfaces_mm"]["exit"]["handoff_plane_z_mm"], 80.6)
-        self.assertEqual(compiled["interfaces_mm"]["exit"]["census_plane_z_mm"], 81.1)
-        evidence = json.loads(
-            (PROJECT_ROOT / "variants/hexapole/config/evidence/no_acceleration_full_length.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        validate_schema(evidence, "multipole_evidence_contract.schema.json")
-        self.assertEqual(evidence["design_profile_id"], "hexapole_no_acceleration_full_length")
+        self.assertEqual(compiled["geometry_mm"]["observations"]["release_plane_z_mm"], -1.5)
+        self.assertEqual(compiled["geometry_mm"]["observations"]["handoff_plane_z_mm"], 80.6)
+        self.assertEqual(compiled["geometry_mm"]["observations"]["census_plane_z_mm"], 81.1)
 
 
 if __name__ == "__main__":

@@ -15,18 +15,6 @@ MULTIPOLE = ROOT / "projects/rf_multipole_ion_optics"
 
 
 class ResolvedDesignConsumerContractTest(unittest.TestCase):
-    def test_family_gate_uses_the_unified_profile_resolver(self) -> None:
-        source = (ROOT / "projects/rf_multipole_ion_optics/analysis/verify_family_foundation.py").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("resolve_design_profile", source)
-        self.assertNotIn("resolved_design_official.json", source)
-        for legacy in (
-            "resolved_geometry.json",
-            "resolved_interface_readiness.json",
-            "resolved_mass_filter.json",
-        ):
-            self.assertNotIn(legacy, source)
 
     def test_both_l3_runners_have_one_governed_physical_authority(self) -> None:
         forbidden = (
@@ -67,10 +55,10 @@ class ResolvedDesignConsumerContractTest(unittest.TestCase):
                 f"cylinder({rod['center_x_mm']:.12g},{rod['center_y_mm']:.12g},",
                 gem,
             )
-        self.assertIn(
-            f",{resolved['interfaces_mm']['entrance']['aperture_radius_mm']:.12g},,",
-            gem,
-        )
+        self.assertEqual(resolved["geometry_mm"]["enclosure"], {"model": "bare"})
+        self.assertEqual(resolved["geometry_mm"]["enclosure_layout"]["bodies"], [])
+        self.assertNotIn("interfaces_mm", resolved)
+        self.assertNotIn("enclosure_role", gem)
 
     def test_comsol_and_simion_consume_all_canonical_drive_fields(self) -> None:
         comsol = (ROOT / "projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m").read_text(encoding="utf-8")

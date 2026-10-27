@@ -28,32 +28,11 @@ PROJECT_ID = "rf_multipole_ion_optics"
 
 def operating_modes() -> dict:
     return {
-        "schema_version": 1,
-        "role": "multipole_typed_operating_mode_registry",
-        "project_id": PROJECT_ID,
-        "family_id": "rf_multipole_ion_optics",
-        "modes": [
-            {
-                "mode_id": "none",
-                "axial_drive_topology": "none",
-                "rod_segment_entrance_common_mode_V": 0.0,
-                "rod_segment_exit_common_mode_V": 0.0,
-                "exit_aperture_plate_and_connector_V": 0.0,
-            },
-            {
-                "mode_id": "exit_plate",
-                "axial_drive_topology": "exit_aperture_plate_potential_step",
-                "rod_segment_entrance_common_mode_V": 3.0,
-                "rod_segment_exit_common_mode_V": 3.0,
-                "exit_aperture_plate_and_connector_V": 0.0,
-            },
-            {
-                "mode_id": "segmented",
-                "axial_drive_topology": "segmented_rod_axial_acceleration",
-                "rod_segment_entrance_common_mode_V": 0.0,
-                "rod_segment_exit_common_mode_V": -3.0,
-                "exit_aperture_plate_and_connector_V": -3.0,
-            },
+        "schema_version":2,"role":"multipole_typed_operating_mode_registry",
+        "project_id":PROJECT_ID,"family_id":PROJECT_ID,"terminal_reference_V":0.,
+        "modes":[
+            {"mode_id":"none","axial_drive_topology":"none","rod_entrance_relative_to_terminal_V":0.,"rod_exit_relative_to_terminal_V":0.},
+            {"mode_id":"segmented","axial_drive_topology":"segmented_rod_axial_acceleration","rod_entrance_relative_to_terminal_V":3.,"rod_exit_relative_to_terminal_V":0.},
         ],
     }
 
@@ -206,7 +185,7 @@ class TypedOperatingModeTests(unittest.TestCase):
                     "sha256": copy.deepcopy(common_hashes),
                     "identity": copy.deepcopy(base["identity"]),
                     "topology": {
-                        "enclosure_role": "full_length_grounded_shield",
+                        "enclosure_model": "bare",
                         "segmentation_strategy": "uniform",
                         "axial_drive_topology": mode["axial_drive_topology"],
                     },
@@ -248,127 +227,29 @@ class TypedOperatingModeTests(unittest.TestCase):
                 {repository_text_sha256(path) for path in source_paths},
             )
 
-    def test_three_profiles_share_one_governed_mechanical_baseline(self) -> None:
+    def test_two_rod_modes_share_one_governed_mechanical_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            base_path, profiles = self.build_repository(root)
-            self.assertEqual(
-                {profile["design_request"] for profile in profiles["profiles"]},
-                {"config/requests/mechanical_base.json"},
-            )
-            self.assertEqual(
-                {
-                    profile["sha256"]["design_request"]
-                    for profile in profiles["profiles"]
-                },
-                {repository_text_sha256(base_path)},
-            )
-            resolved = {
-                mode: resolve_design_profile(
-                    root,
-                    PROJECT_ID,
-                    f"{mode}_profile",
-                )["resolved_design"]
-                for mode in ("none", "exit_plate", "segmented")
-            }
-            modes_sha256 = profiles["operating_mode_registry_sha256"]
-            self.assertEqual(
-                [item["geometry_mm"] for item in resolved.values()],
-                [resolved["none"]["geometry_mm"]] * 3,
-            )
-            self.assertEqual(
-                [item["interfaces_mm"] for item in resolved.values()],
-                [resolved["none"]["interfaces_mm"]] * 3,
-            )
-            physical_segments = []
-            for item in resolved.values():
-                physical_segments.append(
-                    [
-                        {
-                            key: value
-                            for key, value in electrode.items()
-                            if key != "common_mode_V"
-                        }
-                        for electrode in item["segmentation"][
-                            "segmented_rod_array"
-                        ]["electrodes"]
-                    ]
-                )
-                self.assertEqual(
-                    {key: value for key, value in item["drive"].items() if key != "common_mode_offset_V"},
-                    {key: value for key, value in resolved["none"]["drive"].items() if key != "common_mode_offset_V"},
-                )
-                self.assertEqual(
-                    item["static_electrodes_V"][
-                        "shield_entrance_outer_endcap_aperture_plate_connector_V"
-                    ],
-                    0.0,
-                )
-                self.assertEqual(
-                    item["static_electrodes_V"][
-                        "exit_outer_endcap_aperture_plate_connector_V"
-                    ],
-                    0.0,
-                )
-                self.assertEqual(
-                    item["particle_source"],
-                    resolved["none"]["particle_source"],
-                )
-                self.assertTrue(
-                    any(
-                        source["label"].startswith("operating_mode_registry__")
-                        and source["sha256"] == modes_sha256
-                        and source["path"].endswith(
-                            "config/operating_modes.json"
-                        )
-                        for source in item["sources"]
-                    )
-                )
-                self.assertTrue(
-                    any(
-                        source["label"] == "design_request"
-                        and source["sha256"] == repository_text_sha256(base_path)
-                        for source in item["sources"]
-                    )
-                )
-                validate_resolved_design(
-                    item,
-                    request_path=base_path,
-                    source_root=root,
-                    expected_identity=item["identity"],
-                    repository_text_sources=True,
-                )
-            self.assertEqual(physical_segments[0], physical_segments[1])
-            self.assertEqual(physical_segments[1], physical_segments[2])
-            for segment in resolved["segmented"]["segmentation"][
-                "axial_acceleration"
-            ]["derived"]["segments"]:
-                self.assertAlmostEqual(
-                    segment["z_max_mm"] - segment["z_min_mm"],
-                    19.6,
-                )
-            self.assertEqual(
-                [
-                    segment["common_mode_V"]
-                    for segment in resolved["segmented"]["segmentation"][
-                        "axial_acceleration"
-                    ]["derived"]["segments"]
-                ],
-                [0.0, -1.0, -2.0, -3.0],
-            )
-            for mode, expected_common_modes in (
-                ("none", [0.0, 0.0, 0.0, 0.0]),
-                ("exit_plate", [3.0, 3.0, 3.0, 3.0]),
-            ):
-                self.assertEqual(
-                    [
-                        segment["common_mode_V"]
-                        for segment in resolved[mode]["segmentation"][
-                            "axial_acceleration"
-                        ]["derived"]["segments"]
-                    ],
-                    expected_common_modes,
-                )
+            root=Path(directory)
+            base_path,profiles=self.build_repository(root)
+            self.assertEqual({p["design_request"] for p in profiles["profiles"]},{"config/requests/mechanical_base.json"})
+            self.assertEqual({p["sha256"]["design_request"] for p in profiles["profiles"]},{repository_text_sha256(base_path)})
+            resolved={mode:resolve_design_profile(root,PROJECT_ID,mode+"_profile")["resolved_design"] for mode in ("none","segmented")}
+            first=resolved["none"]
+            for mode,item in resolved.items():
+                self.assertEqual(item["geometry_mm"],first["geometry_mm"])
+                self.assertNotIn("interfaces_mm",item)
+                self.assertEqual(item["geometry_mm"]["enclosure"],{"model":"bare"})
+                self.assertEqual(item["static_electrodes_V"],{"role":"bare_multipole_static_electrodes"})
+                self.assertEqual(item["particle_source"],first["particle_source"])
+                self.assertEqual({k:v for k,v in item["drive"].items() if k!="common_mode_offset_V"},{k:v for k,v in first["drive"].items() if k!="common_mode_offset_V"})
+                segments=item["segmentation"]["axial_acceleration"]["derived"]["segments"]
+                self.assertEqual([segment["common_mode_V"] for segment in segments],[0.,0.,0.,0.] if mode=="none" else [3.,2.,1.,0.])
+                self.assertTrue(all(abs(segment["z_max_mm"]-segment["z_min_mm"]-19.6)<1e-12 for segment in segments))
+                self.assertTrue(any(source["label"].startswith("operating_mode_registry__") and source["sha256"]==profiles["operating_mode_registry_sha256"] for source in item["sources"]))
+                validate_resolved_design(item,request_path=base_path,source_root=root,expected_identity=item["identity"],repository_text_sources=True)
+            def physical_segments(value):
+                return [{k:v for k,v in row.items() if k!="common_mode_V"} for row in value["segmentation"]["segmented_rod_array"]["electrodes"]]
+            self.assertEqual(physical_segments(first),physical_segments(resolved["segmented"]))
 
     def test_mode_vocabulary_rejects_unknown_and_geometry_fields(self) -> None:
         base = design_request("hexapole",
@@ -401,15 +282,35 @@ class TypedOperatingModeTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             validate_schema(profiles, "design_profiles.schema.json")
 
+    def test_legacy_registry_and_typed_exit_plate_are_rejected(self) -> None:
+        base = design_request("hexapole",segmentation={
+            "strategy":"uniform","segment_count":4,"intersegment_gap_mm":.4,
+            "entrance_common_mode_V":0.,"exit_common_mode_V":0.,"output_reference_V":0.,
+        })
+        legacy = {
+            "schema_version":1,"role":"multipole_typed_operating_mode_registry",
+            "project_id":PROJECT_ID,"family_id":PROJECT_ID,
+            "modes":[{"mode_id":"none","axial_drive_topology":"none",
+                "rod_segment_entrance_common_mode_V":0.,"rod_segment_exit_common_mode_V":0.,
+                "exit_aperture_plate_and_connector_V":0.}],
+        }
+        exit_plate = operating_modes()
+        exit_plate["modes"][0].update(axial_drive_topology="exit_aperture_plate_potential_step",
+            rod_entrance_relative_to_terminal_V=3.,rod_exit_relative_to_terminal_V=3.)
+        for registry in (legacy,exit_plate):
+            with self.subTest(version=registry["schema_version"]):
+                with self.assertRaises(ContractError):
+                    validate_schema(registry,"multipole_operating_modes.schema.json")
+                with self.assertRaises(MultipoleDesignCompileError):
+                    apply_typed_operating_mode(base,registry,"none")
+
     def test_mode_voltage_cannot_bypass_governed_catalog_bounds(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             base_path, _ = self.build_repository(root)
             config = root / "projects" / PROJECT_ID / "config"
             invalid_modes = operating_modes()
-            invalid_modes["modes"][2][
-                "rod_segment_exit_common_mode_V"
-            ] = -100.0
+            invalid_modes["modes"][1]["rod_entrance_relative_to_terminal_V"] = 100.0
             invalid_path = config / "invalid_operating_modes.json"
             invalid_path.write_text(json.dumps(invalid_modes), encoding="utf-8")
             with self.assertRaisesRegex(

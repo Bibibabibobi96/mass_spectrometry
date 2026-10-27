@@ -52,26 +52,25 @@ typed operating-mode registry 只声明同一机械 base 上的电气差异。�
 ## SIMION实体与独立PA
 
 [`simion_geometry.py`](../simion/simion_geometry.py)的`render_physical_gem(resolved, cell_mm_xyz, electrode_ids=...)`
-与独立器件运行的`render_gem`共用同一实体生成器。前者输出提供者原生局部mm坐标下的杆、屏蔽、端盖、孔、
-连接器和入口参考套筒；不包含`pa_define`、PA原点平移或数值吸收面。当前接受明确的圆柱外壳，支持连续及
-分段杆；贯通模型保留真实带孔外端盖。旧composed终端和矩形reference模型仍可独立渲染，尚不由该组件API
-解释所有权；封闭模型若把侧壁末端绑在PA域而非实体端面，也不能作为组件导出。
+与独立器件运行的`render_gem`共用同一实体生成器。前者只输出提供者局部mm坐标下的真实杆系与
+显式壳体／端盖，不包含`pa_define`、PA原点平移或数值吸收面。当前组件API接受裸杆或显式接地圆柱壳，
+支持连续及分段杆；矩形专用reference保留独立workflow，不作为组件API的隐含光学或兼容外壳。
 
 `electrode_ids`是完整、互异的原生SIMION电极编号到装配求解器编号映射，省略时保持原编号。
 同组多个杆使用一个电气编号，不把它误称为每根杆的机械身份。`cell_mm_xyz`仅沿用原渲染器在金属外延长
 布尔减孔的padding，不改变实体表面或成为第二份尺寸权威。装配只在完整原生实体外应用一次显式位姿，
-不能再次按杆、端盖或套筒分别重算坐标。
+不能再次按杆或壳体实体分别重算坐标。
 
 同文件的`physical_electrode_view(resolved)`发布圆柱提供者的完整物理电气组：原生SIMION ID、
 科学身份、金属角色及指向resolved的电位／drive来源。连续杆和任意已有分段拓扑共用渲染器的编号，
 不把数值census／absorber列为物理电极。同一电气编号的多个金属角色合并，冲突电位明确拒绝；
 视图不复制驱动数值，也不代表整机已支持多套独立驱动。
 
-圆柱外壳的`cylindrical_grounded_shield_v1`保持两端闭合，
-`cylindrical_grounded_shield_through_exit_v1`只发布真实出口孔；
-`cylindrical_grounded_shield_through_entrance_exit_v1`才在同一已解析的入口／出口孔径上贯通两块外端盖，
-并可发布真实`mechanical_entrance`和`mechanical_exit`。它是机械/API变体，尚未替代任何项目的原生运行、
-数值或Formal资格；内部释放面始终不是机械入口。
+当前schema 3提供者默认`bare`，显式接地壳采用`cylindrical_grounded_shell`。壳内半径、壁厚和物理
+z端面属于几何；数值域与observations分别声明。唯一编译器冻结`enclosure_layout.bodies`及真实ports，
+SIMION和COMSOL消费相同实体尺寸，不从旧板、connector或数值bounds重建物理壳。
+`endcaps`的入口／出口共用环形构造，端盖外缘与筒壁内缘接触，同一0 V电极，无重复体积。
+裸杆不创建接地壳或虚构ground ID；孔径等于壳内径的退化端盖被拒绝，缺盖只用缺省表达。
 
 2026-10-22核对SIMION 2020随附官方`docs/simion.chm`中的
 `gem_geometry_file.html#locate-or-project-project-it-transform`及`rotate_y`、`rotate_z`章节；在线定位见
@@ -82,18 +81,12 @@ typed operating-mode registry 只声明同一机械 base 上的电气差异。�
 只写`locate(tx,ty,tz,1,90)`不能表达该完整旋转。已有按杆中心单独投影的helper保持原行为，不据新API
 重写其历史科学输出。此处参考向量及实体序列化回归不代替新装配的原生GEM栅格、求场或飞行验证。
 
-## 下游终端组合
+## 外部光学与运行边界
 
-下游终端profile由对应integration拥有，不在结构变体中复制。 当前 `oatof_shield_terminal` 的唯一catalog为
-[`integrations/config/downstream_terminal_profiles.json`](../../../integrations/config/downstream_terminal_profiles.json)，
-由 `instrument_assembly` 注册；项目campaign按该owner绑定，旧N1 family不再提供terminal catalog。
-[`downstream_terminal.py`](../core/downstream_terminal.py)把已验证resolved design与选定profile确定性组合，
-输出唯一`downstream_terminal`几何、所有权和`axial_dc`电位。`owner=downstream`时禁止上游重复
-末端电极。屏蔽罩、连接器和外部参考外壳必须精确为`0 V`。
-
-项目的接地圆套筒—矩形法兰primitive由[`grounded_shield.py`](../core/grounded_shield.py)生成；具体尺寸和是否
-启用由integration profile决定。开孔离散、贯通列与孔外guard遵循
-[`common/simion/README.md`](../../../common/simion/README.md)。
+多极杆不再拼装`downstream_terminal`。旧catalog、registry绑定、composer和仅服务这些入口的campaign
+随消费者一并退役。外部孔板、透镜与OA归各提供者；配方声明直接位姿和连接，不把外部器件写回多极杆设计。
+当前campaign统一schema 7，按显式design/source/analysis字段运行，不再保留旧版本分支或terminal属性。
+杆系RF/DC、源身份与唯一时钟机制保留，旧冻结run不改写。
 
 <a id="轴向部件与物理面术语"></a>
 
@@ -103,8 +96,8 @@ typed operating-mode registry 只声明同一机械 base 上的电气差异。�
 
 | 术语 | 职责 |
 |---|---|
-| 外壳封闭端盖 | 封闭接地外壳的实体端面 |
-| 带孔接口板 | 定义接口孔和可选静电势阶跃的实体板 |
+| 带孔接地端盖 | 与接地筒壁连续连接的可选壳体实体 |
+| 独立孔板／透镜 | 外部提供者拥有的光学组件，电压为0 V也不归并为壳体 |
 | 源释放面 | canonical粒子初态所在轴向位置 |
 | 出口孔穿越面 | 判断粒子是否真实穿过出口接口孔 |
 | 规范交接面 `handoff` | 发布跨部件canonical状态；跨求解器主评价面 |
@@ -199,9 +192,9 @@ particle source、solver numerics、资源预算和保留类；CLI不得覆盖�
 [`engineering_progression_acceptance.json`](../config/contracts/engineering_progression_acceptance.json)只允许工程推进；
 其PASS不代表数值收敛、求解器等价、绝对精度、Candidate或Formal。
 
-三模式分散方法由[`three_mode_dispersion_contract.json`](../config/contracts/three_mode_dispersion_contract.json)冻结。
-三个arm必须使用同一机械、母样本、求解器和非变化数值。正式统计需要在运行前冻结bootstrap、接受尺度、
-effect resolution和预算；缺少这些设置的既有run只能发布`POSTHOC_DESCRIPTIVE`点估计。
+旧三模式分散结论仅属于冻结旧几何及原分析合同，相关活动入口已经退役。
+当前统计研究必须在运行前冻结比较对象、共同母群、非变化数值、接受尺度和预算；
+缺少预登记设置的既有run只能发布描述性结果，不能继承为新裸杆或壳体资格。
 
 项目分析始终保留全源ID、各arm损失ID和共同幸存者。传输用全源统计，配对连续量只在共同幸存者上
 统计；无批准阈值时输出`UNQUALIFIED`或`INCONCLUSIVE`。
@@ -214,6 +207,10 @@ effect resolution和预算；缺少这些设置的既有run只能发布`POSTHOC_
 原生辅助检查包括[定常求解器 smoke](../tests/domain/test_comsol_stationary_solver_smoke.m)与
 [定常场采样测试](../tests/domain/test_export_comsol_stationary_field_samples.m)。前者是公共COMSOL启动器的任务脚本，
 后者通过已配置LiveLink的MATLAB测试框架执行；入口自行管理本项目`comsol/`依赖路径。L1/L2不运行这两项原生检查。
+
+[杆系与接地壳几何检查](../tests/domain/test_comsol_enclosure_geometry.m)通过公共COMSOL入口消费冻结case，
+直接调用生产杆系和壳体构建器，检查实体干涉、接地连续性、通孔及可选STEP冷导入。
+该长期检查仅构建几何，不求场、不飞行，也不保存MPH；实际证据及资格范围见PROJECT。
 
 本项目在冻结预算边界解析一次 `Limits` 并交给公共观察器；原工程预算随输入冻结，
 Python→PowerShell的派生预算经临时JSON传递并由finally清理，不另存run内的同义预算文件。

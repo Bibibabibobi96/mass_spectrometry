@@ -8,7 +8,7 @@
   "policy": "This envelope preserves the historical N=100 explicit-segmentation functional reference and makes no optimization, convergence, mechanical, Candidate or Formal claim.",
   "reference": {
     "design_request": "variants/quadrupole/config/requests/explicit_axial.json",
-    "design_request_sha256": "1629854A37CD37AC88FC202BF34AB6721231A591829F34575970A13F306C0A17"
+    "design_request_sha256": "A354108A18C33A67561C7DE298008739BC3F282E46091F75E5307215ABCC0FF3"
   },
   "constraints": [
     {

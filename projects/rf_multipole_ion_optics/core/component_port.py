@@ -14,7 +14,7 @@ from common.contracts.file_identity import file_sha256
 from common.contracts.canonical_clock_authority import validate_clock_authority
 from common.contracts.particle_state import PARTICLE_STATE_COLUMNS
 from projects.rf_multipole_ion_optics.core.compile_design_request import resolved_design_sha256
-from projects.rf_multipole_ion_optics.core.interface_geometry import through_entrance_geometry, through_exit_geometry
+from projects.rf_multipole_ion_optics.core.interface_geometry import transport_numerical_domain, transport_observations
 from projects.rf_multipole_ion_optics.simion.simion_geometry import physical_electrode_view
 
 
@@ -85,123 +85,24 @@ def load_transport_producer_result(manifest: Mapping[str, Any], base: Path) -> d
     return dict(source_scientific_status=status, checks=checks,
                 qualification_status=qualification, input_records=consumed)
 
-def _exit_potential(resolved: Mapping[str, Any]) -> float:
-    static = resolved["static_electrodes_V"]
-    if static["role"] == "cylindrical_shield_static_electrodes":
-        return float(static["exit_outer_endcap_aperture_plate_connector_V"])
-    if static["role"] == "rectangular_reference_static_electrodes":
-        return float(static["exit_outer_enclosure_and_connector_V"])
-    raise ContractError("resolved design has an unsupported static-electrode role")
-
-
-def build_exit_component_port(
-    resolved_design: Mapping[str, Any],
-    *,
-    design_profile_id: str,
-    authority_path: str,
-    authority_sha256: str,
-) -> dict[str, Any]:
-    """Return a schema-valid provided port bound to one artifact authority.
-
-    ``authority_path`` is workspace-relative and points to the exact resolved
-    design frozen by the source run.  No operating-mode geometry or voltage is
-    repeated outside that authority.
-    """
-    resolved = dict(resolved_design)
-    validate_schema(resolved, "multipole_resolved_design.schema.json")
-    if resolved_design_sha256(resolved) != resolved["resolved_sha256"]:
-        raise ContractError("multipole exit-port resolved design hash is stale")
-    exit_interface = resolved["interfaces_mm"]["exit"]
-    port = {
-        "schema_version": 1,
-        "role": "component_port",
-        "project_id": resolved["identity"]["project_id"],
-        "port_id": "rf_multipole_exit",
-        "direction": "provided",
-        "profile_scope": {
-            "scope_id": design_profile_id,
-            "scope_kind": "design_profile",
-            "family_experiment_port": True,
-        },
-        "authority": {
-            "source_contract": authority_path,
-            "source_sha256": authority_sha256,
-            "bindings": [
-                {
-                    "port_json_pointer": "/project_id",
-                    "source_json_pointer": "/identity/project_id",
-                },
-                {
-                    "port_json_pointer": "/mating_surface/center_mm/2",
-                    "source_json_pointer": "/interfaces_mm/exit/handoff_plane_z_mm",
-                },
-                {
-                    "port_json_pointer": "/mating_surface/aperture_radius_mm",
-                    "source_json_pointer": "/interfaces_mm/exit/aperture_radius_mm",
-                },
-            ],
-        },
-        "state_contract": {
-            "schema_id": "component_particle_state",
-            "schema_version": 1,
-        },
-        "coordinate_frame": {
-            "frame_id": "multipole_cartesian_z_axis_v1",
-            "length_unit": "mm",
-            "handedness": "right_handed",
-        },
-        "mating_surface": {
-            "center_mm": [0.0, 0.0, float(exit_interface["handoff_plane_z_mm"])],
-            "outward_normal": [0.0, 0.0, 1.0],
-            "aperture_radius_mm": float(exit_interface["aperture_radius_mm"]),
-            "potential_V": _exit_potential(resolved),
-        },
-        "clock": {"time_unit": "s", "origin_id": "instrument_clock_epoch_v1"},
-        "field_boundary": {"field_reaches_surface": True},
-    }
-    # The potential binding pointer depends on the resolved static-electrode role.
-    potential_pointer = (
-        "/static_electrodes_V/exit_outer_endcap_aperture_plate_connector_V"
-        if resolved["static_electrodes_V"]["role"]
-        == "cylindrical_shield_static_electrodes"
-        else "/static_electrodes_V/exit_outer_enclosure_and_connector_V"
-    )
-    port["authority"]["bindings"].append(
-        {
-            "port_json_pointer": "/mating_surface/potential_V",
-            "source_json_pointer": potential_pointer,
-        }
-    )
-    validate_schema(port, "component_port.schema.json")
-    return port
-
 
 def build_assembly_interface(resolved_design: Mapping[str, Any], *, geometry_profile_id: str) -> dict[str, Any]:
-    """Publish actual outer faces separately from state/release planes."""
+    """Publish the frozen real rod/shell faces independently of observations."""
     validate_schema(dict(resolved_design), "multipole_resolved_design.schema.json")
     if resolved_design_sha256(resolved_design) != resolved_design["resolved_sha256"]:
         raise ContractError("multipole mechanical interface resolved design hash is stale")
-    exit_geometry = through_exit_geometry(resolved_design)
-    model = resolved_design["geometry_mm"]["enclosure"]["model"]
-    ports = dict(mechanical_exit=dict(surface_kind="aperture_outer_face", center_mm=[0., 0., exit_geometry["surface_z_mm"]],
-        outward_normal=[0, 0, 1], wall_thickness_mm=exit_geometry["wall_thickness_mm"],
-        cross_section=dict(shape="circle", radius_mm=exit_geometry["aperture_radius_mm"])))
-    variant = "cylindrical_through_exit"
-    if model == "cylindrical_grounded_shield_through_entrance_exit_v1":
-        entrance = through_entrance_geometry(resolved_design)
-        ports["mechanical_entrance"] = dict(surface_kind="aperture_outer_face", center_mm=[0., 0., entrance["surface_z_mm"]],
-            outward_normal=[0, 0, -1], wall_thickness_mm=entrance["wall_thickness_mm"],
-            cross_section=dict(shape="circle", radius_mm=entrance["aperture_radius_mm"]))
-        variant = "cylindrical_through_entrance_exit"
+    geometry = resolved_design["geometry_mm"]
+    if geometry["enclosure"]["model"] == "rectangular_reference_enclosure_v1":
+        raise ContractError("the independent rectangular reference has no bare/shell assembly interface")
     result = dict(schema_version=1, role="component_geometry_interface",
-        project_id=resolved_design["identity"]["project_id"], variant_id=variant,
-        geometry_profile_id=geometry_profile_id, local_frame_id=resolved_design["coordinate"]["coordinate_id"], length_unit="mm",
-        ports=ports,
+        project_id=resolved_design["identity"]["project_id"],
+        variant_id="bare_rods" if geometry["enclosure"]["model"] == "bare" else "cylindrical_grounded_shell",
+        geometry_profile_id=geometry_profile_id, local_frame_id=resolved_design["coordinate"]["coordinate_id"],
+        length_unit="mm", ports=geometry["enclosure_layout"]["ports"],
         component_electrodes=[dict(component_electrode_id=row['native_electrode_id'], role=row['scientific_id'])
                               for row in physical_electrode_view(dict(resolved_design))])
     validate_schema(result, "component_geometry_interface.schema.json")
     return result
-
 
 def prepare_exit_observation_inputs(run: Path, resolved: Mapping[str, Any], *, design_profile_id: str, cell_z_mm: float) -> dict[str, Any]:
     """Freeze a standalone absolute clock and, for an open model, its real exit guard.
@@ -225,21 +126,23 @@ def prepare_exit_observation_inputs(run: Path, resolved: Mapping[str, Any], *, d
         handoff_policy="preserve_instrument_time_us_and_clock_epoch_id", legacy_new_campaign_allowed=False)
     clock = write("clock_authority.json", authority)
     validate_clock_authority(clock, run)
-    if resolved["geometry_mm"]["enclosure"]["model"] not in {
-        "cylindrical_grounded_shield_through_exit_v1",
-        "cylindrical_grounded_shield_through_entrance_exit_v1",
-    }:
+    if resolved["geometry_mm"]["enclosure"]["model"] == "rectangular_reference_enclosure_v1":
         return dict(mechanical_exit_enabled=False)
     interface = build_assembly_interface(resolved, geometry_profile_id=design_profile_id)
-    geometry = through_exit_geometry(resolved)
+    port = interface["ports"]["mechanical_exit"]
+    surface = float(port["center_mm"][2])
+    section = port["cross_section"]
+    aperture = float(section["radius_mm"]) if section["shape"] == "circle" else None
     if not math.isfinite(cell_z_mm) or cell_z_mm <= 0:
         raise ContractError("positive finite exit observation axial cell required")
-    domain_end = float(resolved["geometry_mm"]["enclosure"]["vacuum_z_max_mm"])
-    if domain_end < geometry["surface_z_mm"]+2*cell_z_mm-1e-12:
-        raise ContractError("through-exit vacuum domain requires two axial cells beyond the real exit")
+    observations = transport_observations(resolved)
+    last_observation = max(surface, float(observations["handoff_plane_z_mm"]), float(observations["census_plane_z_mm"]))
+    domain_end = float(transport_numerical_domain(resolved)["z_max_mm"])
+    if domain_end < last_observation + 2*cell_z_mm - 1e-12:
+        raise ContractError("real exit observation requires two axial cells beyond the last declared observation")
     plan = dict(schema_version=1, role="multipole_mechanical_exit_observation", frame_id=interface["local_frame_id"],
-        mechanical_exit_z_mm=geometry["surface_z_mm"], aperture_radius_mm=geometry["aperture_radius_mm"],
-        numerical_guard_z_mm=geometry["surface_z_mm"]+cell_z_mm, numerical_domain_end_z_mm=domain_end,
+        mechanical_exit_z_mm=surface, aperture_radius_mm=aperture,
+        numerical_guard_z_mm=last_observation+cell_z_mm, numerical_domain_end_z_mm=domain_end,
         guard_offset_axial_cells=1, minimum_domain_extension_axial_cells=2, cell_z_mm=cell_z_mm,
         guard_implementation="native_callback_stop_inside_PA__no_absorbing_electrode",
         state_columns=PARTICLE_STATE_COLUMNS, crossing_event="mechanical_exit", terminal_event="terminal",
@@ -282,7 +185,7 @@ def validate_exit_observations(state_path: Path, source_path: Path, plan: Mappin
                 raise ContractError("mechanical exit crossing identity/status is invalid")
             if abs(values["axial_z_mm"]-plan["mechanical_exit_z_mm"]) > 1e-9 or values["velocity_axial_m_s"] <= 0:
                 raise ContractError("mechanical exit crossing is outside its real plane/direction")
-            if math.hypot(values["transverse_x_mm"], values["transverse_y_mm"]) > plan["aperture_radius_mm"]+1e-9:
+            if plan["aperture_radius_mm"] is not None and math.hypot(values["transverse_x_mm"], values["transverse_y_mm"]) > plan["aperture_radius_mm"]+1e-9:
                 raise ContractError("mechanical exit crossing is outside the physical bore")
             exits[particle] = row
         elif row["event"] == "terminal":

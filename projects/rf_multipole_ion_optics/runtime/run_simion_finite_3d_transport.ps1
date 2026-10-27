@@ -304,7 +304,6 @@ try{
 
   $profileResolution=Join-Path $inputDir 'design_profile_resolution.json'
   $resolvedRuntimeProfile=$null
-  $terminalRegistry=$null
   if($resolvedRuntimeInput){
     if((Get-FileHash -LiteralPath $resolvedRuntimeInput -Algorithm SHA256).Hash-ne$resolvedRuntimeInputSha){
       throw 'Resolved runtime-profile snapshot changed before it was frozen.'
@@ -315,15 +314,6 @@ try{
       (Get-FileHash -LiteralPath $engineeringBudgetInput -Algorithm SHA256).Hash-ne
         [string]$campaignSelection.sha256
     ){throw 'Campaign authority changed before it was frozen.'}
-    if($resolvedRuntimeDocument.PSObject.Properties.Name-contains'downstream_terminal_profile'){
-      $terminalBinding=$resolvedRuntimeDocument.downstream_terminal_profile
-      $terminalRegistrySource=(Resolve-Path -LiteralPath ([string]$terminalBinding.registry_path)).Path
-      if((Get-FileHash -LiteralPath $terminalRegistrySource -Algorithm SHA256).Hash-ne
-        [string]$terminalBinding.registry_sha256
-      ){throw 'Downstream-terminal registry changed before it was frozen.'}
-      $terminalRegistry=Copy-VerifiedRunInput -Source $terminalRegistrySource `
-        -Destination (Join-Path $inputDir 'downstream_terminal_profiles.json')
-    }
   }
   $engineeringBudget=Join-Path $inputDir 'engineering_budget.json'
   $engineeringBudget=Copy-VerifiedRunInput -Source $engineeringBudgetInput `
@@ -359,29 +349,6 @@ try{
     $modeRegistry=Join-Path $inputDir 'operating_modes.json'
     Copy-Item -LiteralPath $profile.paths.operating_mode_registry -Destination $modeRegistry
   }
-  $compileRequest=$request;$compileVariables=$variables;$compileEnvelope=$envelope
-  $compileModeRegistry=$modeRegistry;$compileProvenanceRoot=$inputDir
-  if($terminalRegistry){
-    $authorityRoot=Join-Path $inputDir 'authority_repo'
-    function Copy-FrozenAuthorityPath([string]$source,[string]$frozenSource){
-      $relative=[IO.Path]::GetRelativePath($repoRoot,[IO.Path]::GetFullPath($source))
-      if($relative -eq '..' -or $relative.StartsWith(('..'+[IO.Path]::DirectorySeparatorChar))){
-        throw "Terminal authority path escapes the repository: $source"
-      }
-      $destination=Join-Path $authorityRoot $relative
-      New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination)|Out-Null
-      Copy-Item -LiteralPath $frozenSource -Destination $destination
-      return $destination
-    }
-    $compileRequest=Copy-FrozenAuthorityPath ([string]$profile.paths.design_request) $request
-    $compileVariables=Copy-FrozenAuthorityPath ([string]$profile.paths.design_variables) $variables
-    $compileEnvelope=Copy-FrozenAuthorityPath ([string]$profile.paths.optimization_envelope) $envelope
-    if($modeRegistry){
-      $compileModeRegistry=Copy-FrozenAuthorityPath `
-        ([string]$profile.paths.operating_mode_registry) $modeRegistry
-    }
-    $compileProvenanceRoot=$authorityRoot
-  }
   $resolved=Join-Path $inputDir 'multipole_resolved_design.json'
   if($resolvedRuntimeDocument){
     $snapshotDesign=$resolvedRuntimeDocument.design_profile_resolution.resolved_design
@@ -396,30 +363,20 @@ try{
       if($LASTEXITCODE-ne 0){throw 'Resolved runtime-profile design identity is invalid.'}
     }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
   }else{
-    $baseResolved=if($terminalRegistry){
-      Join-Path $inputDir 'multipole_base_resolved_design.json'
-    }else{$resolved}
     Push-Location $codeRoot
     try{
       $env:PYTHONPATH=$codeRoot
       $compileArguments=@('-m','projects.rf_multipole_ion_optics.core.compile_design_request',
-        '--request',$compileRequest,'--design-variables',$compileVariables,
-        '--optimization-envelope',$compileEnvelope,'--output',$baseResolved,
-        '--provenance-root',$compileProvenanceRoot,'--project-id',$ProjectId,
+        '--request',$request,'--design-variables',$variables,
+        '--optimization-envelope',$envelope,'--output',$resolved,
+        '--provenance-root',$inputDir,'--project-id',$ProjectId,
         '--radial-order-n',([string][int]$identity.radial_order_n),
         '--electrode-count',([string][int]$identity.electrode_count))
       if($modeRegistry){
-        $compileArguments+=@('--operating-mode-registry',$compileModeRegistry,'--mode-id',$modeId)
+        $compileArguments+=@('--operating-mode-registry',$modeRegistry,'--mode-id',$modeId)
       }
       & $python @compileArguments
       if($LASTEXITCODE-ne 0){throw 'Governed multipole design compilation failed.'}
-      if($terminalRegistry){
-        & $python -m projects.rf_multipole_ion_optics.core.downstream_terminal `
-          --resolved-design $baseResolved --terminal-registry $terminalRegistry `
-          --terminal-profile-id ([string]$resolvedRuntimeDocument.downstream_terminal_profile.terminal_profile_id) `
-          --output $resolved
-        if($LASTEXITCODE-ne 0){throw 'Downstream-terminal composition failed.'}
-      }
     }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
   }
   $design=Get-Content -LiteralPath $resolved -Raw -Encoding UTF8|ConvertFrom-Json
@@ -737,114 +694,65 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
     $exitObservation=(& $python -B -c $exitPreparationCode $runDir $resolved $DesignProfileId ([string]$resolvedCellMmZ))|ConvertFrom-Json
     if($LASTEXITCODE-ne0){throw 'Multipole mechanical interface/clock preparation failed.'}
   }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
-  $throughExit=[bool]$exitObservation.mechanical_exit_enabled
+  $mechanicalExitEnabled=[bool]$exitObservation.mechanical_exit_enabled
   $drive=$design.drive;$geometry=$design.geometry_mm;$enclosure=$geometry.enclosure
   $static=$design.static_electrodes_V
-  $interfaces=$design.interfaces_mm
   $axialTopology=[string]$design.axial_drive.topology
   $segmented=($axialTopology-eq'segmented_rod_axial_acceleration')
   $segmentedRodGeometry=($null-ne$design.segmentation.segmented_rod_array)
-  $exitAperturePlateStep=($axialTopology-eq'exit_aperture_plate_potential_step')
-  # A connector-owned terminal remains serialized in the integration binding
-  # but is not part of a standalone multipole PA or handoff plane.
-  $hasDownstreamTerminal=(($design.PSObject.Properties.Name-contains'downstream_terminal') -and
-    $design.downstream_terminal.upstream_terminal_electrode_present -eq $true)
-  $handoffPlaneMm=if($hasDownstreamTerminal){
-    [double]$design.downstream_terminal.surface_plane_z_mm
-  }else{[double]$interfaces.exit.handoff_plane_z_mm}
-  $censusPlaneMm=if($hasDownstreamTerminal){
-    $handoffPlaneMm+[double]$design.downstream_terminal.electrode_thickness_mm
-  }else{[double]$interfaces.exit.census_plane_z_mm}
-  $censusRadius=if($enclosure.PSObject.Properties.Name-contains'physical_detector_radius_mm'){
-    [double]$enclosure.physical_detector_radius_mm
-  }else{[double]$interfaces.exit.aperture_radius_mm}
   $rectangular=([string]$enclosure.model-eq'rectangular_reference_enclosure_v1')
-  $origin=if($rectangular){0}else{[double]$enclosure.shield_outer_radius_mm}
-  $zShift=if($rectangular){0}else{-[double]$enclosure.vacuum_z_min_mm}
   if($rectangular){
-    $entranceVoltage=[double]$static.entrance_aperture_plate_and_connector_V
-    $exitVoltage=[double]$static.exit_outer_enclosure_and_connector_V
-    $physicalDetectorVoltage=[double]$static.physical_detector_V
+    $interfaces=$design.interfaces_mm
+    $handoffPlaneMm=[double]$interfaces.exit.handoff_plane_z_mm
+    $censusPlaneMm=[double]$interfaces.exit.census_plane_z_mm
+    $censusRadius=[double]$enclosure.physical_detector_radius_mm
+    $origin=0;$zShift=0
+    $workingRadius=[double]$enclosure.working_region_radius_mm
+    $backwardEscape=[double]$enclosure.vacuum_z_min_mm
   }else{
-    $entranceVoltage=[double]$static.shield_entrance_outer_endcap_aperture_plate_connector_V
-    $exitVoltage=[double]$static.exit_outer_endcap_aperture_plate_connector_V
-    $physicalDetectorVoltage=$exitVoltage
+    $domain=$geometry.numerical_domain;$observations=$geometry.observations
+    $handoffPlaneMm=[double]$observations.handoff_plane_z_mm
+    $censusPlaneMm=[double]$observations.census_plane_z_mm
+    $censusRadius=[double]$observations.acceptance_radius_mm
+    $origin=[double]$domain.radius_mm;$zShift=-[double]$domain.z_min_mm
+    $workingRadius=[double]$domain.working_region_radius_mm
+    $backwardEscape=[double]$domain.z_min_mm
   }
-  $segmentedLua='';$groundElectrodeId=3;$outputElectrodeId=4
-  $entranceReferenceElectrodeId=0;$entranceReferenceVoltage=$entranceVoltage
-  $entrancePlateElectrodeId=0;$entrancePlateVoltage=$entranceVoltage
-  $physicalDetectorElectrodeId=if($rectangular){5}else{4}
-  if($hasDownstreamTerminal){
-    $axialDc=$design.axial_dc
-    $entries=@($axialDc.rod_electrodes|ForEach-Object{
-      $rodId=[int]$_.electrode_id
-      $rodGroup=if($rodId%2-eq 1){1}else{2}
-      if($segmentedRodGeometry){
-        $segmentMatch=@($design.segmentation.segmented_rod_array.electrodes|Where-Object{
-          [int]$_.electrode_id-eq$rodId
-        })
-        $rodGroups=@($segmentMatch|ForEach-Object{[int]$_.electrode_group}|Select-Object -Unique)
-        if($segmentMatch.Count -eq 0 -or $rodGroups.Count -ne 1){
-          throw "Axial-DC rod electrode group is missing or inconsistent: $rodId"
-        }
-        $rodGroup=[int]$rodGroups[0]
-      }
-      "{electrode_id=$rodId,electrode_group=$rodGroup,common_mode_v=$([double]$_.potential_V)}"
+  $electrodesById=[ordered]@{}
+  $rodSources=if($segmentedRodGeometry){@($design.segmentation.segmented_rod_array.electrodes)}else{
+    @($geometry.rod_array.rods|ForEach-Object{
+      [pscustomobject]@{electrode_id=[int]$_.electrode_group;electrode_group=[int]$_.electrode_group;
+        common_mode_V=[double]$drive.common_mode_offset_V}
     })
-    $segmentedLua="segmented_rod_electrodes={$($entries -join ',')},"
-    $maxRodElectrode=($axialDc.rod_electrodes|Measure-Object -Property electrode_id -Maximum).Maximum
-    $groundElectrodeId=[int]$maxRodElectrode+1
-    $outputElectrodeId=$groundElectrodeId+1
-    $physicalDetectorElectrodeId=$outputElectrodeId+1
-    $entranceReferenceElectrodeId=$physicalDetectorElectrodeId+1
-    $entrancePlateElectrodeId=$entranceReferenceElectrodeId+1
-    $entranceVoltage=[double]$axialDc.upstream_shield_potential_V
-    $entranceReferenceVoltage=[double]$axialDc.entrance_reference_sleeve.potential_V
-    $entrancePlateVoltage=[double]$axialDc.entrance_plate_potential_V
-    $exitVoltage=[double]$axialDc.terminal_electrode_potential_V
-    $physicalDetectorVoltage=$exitVoltage
-  }elseif($segmentedRodGeometry){
-    $segments=$design.segmentation.segmented_rod_array
-    # One PA electrode may consist of several physical rods in the same
-    # segment.  The RF kernel receives electrode voltages, not rod geometry;
-    # collapse such identical electrode records while rejecting any ambiguous
-    # group or common-mode assignment.
-    $electrodesById=[ordered]@{}
-    foreach($electrode in @($segments.electrodes)){
-      $electrodeId=[int]$electrode.electrode_id
-      $candidate=[pscustomobject]@{
-        electrode_id=$electrodeId
-        electrode_group=[int]$electrode.electrode_group
-        common_mode_V=[double]$electrode.common_mode_V
-      }
-      if($electrodesById.Contains($electrodeId)){
-        # OrderedDictionary's untyped numeric indexer means “ordinal slot”,
-        # not the physical PA electrode ID.  Force the object-key overload.
-        $existing=$electrodesById[[object]$electrodeId]
-        if($existing.electrode_group-ne$candidate.electrode_group -or
-          $existing.common_mode_V-ne$candidate.common_mode_V){
-          throw "Segmented RF electrode $electrodeId has inconsistent group or common-mode voltage."
-        }
-        continue
-      }
-      $electrodesById.Add($electrodeId,$candidate)
-    }
-    $entries=@($electrodesById.Values|Sort-Object electrode_id|ForEach-Object{
-      "{electrode_id=$([int]$_.electrode_id),electrode_group=$([int]$_.electrode_group),common_mode_v=$([double]$_.common_mode_V)}"
-    })
-    $segmentedLua="segmented_rod_electrodes={$($entries -join ',')},"
-    $groundElectrodeId=2*[int]$segments.segment_count+1;$outputElectrodeId=$groundElectrodeId+1
-    $physicalDetectorElectrodeId=$outputElectrodeId+1
   }
-  # The open model has no numerical census absorber in GEM or its PA basis.
-  if($throughExit){$physicalDetectorElectrodeId=0}
-  $paBasisElectrodeIds=if($hasDownstreamTerminal){
-    @($axialDc.rod_electrodes|ForEach-Object{[int]$_.electrode_id})
-  }elseif($segmentedRodGeometry){
-    @($electrodesById.Keys|ForEach-Object{[int]$_})
-  }else{@(1,2)}
-  $paBasisElectrodeIds+=@($groundElectrodeId,$outputElectrodeId,$physicalDetectorElectrodeId,
-    $entranceReferenceElectrodeId,$entrancePlateElectrodeId)|Where-Object{[int]$_-gt 0}
+  foreach($electrode in $rodSources){
+    $electrodeId=[int]$electrode.electrode_id
+    $candidate=[pscustomobject]@{electrode_id=$electrodeId;
+      electrode_group=[int]$electrode.electrode_group;common_mode_V=[double]$electrode.common_mode_V}
+    if($electrodesById.Contains($electrodeId)){
+      $existing=$electrodesById[[object]$electrodeId]
+      if($existing.electrode_group-ne$candidate.electrode_group-or
+        $existing.common_mode_V-ne$candidate.common_mode_V){
+        throw "RF electrode $electrodeId has inconsistent group or common-mode voltage."
+      }
+    }else{$electrodesById.Add($electrodeId,$candidate)}
+  }
+  $entries=@($electrodesById.Values|Sort-Object electrode_id|ForEach-Object{
+    "{electrode_id=$([int]$_.electrode_id),electrode_group=$([int]$_.electrode_group),common_mode_v=$([double]$_.common_mode_V)}"
+  })
+  $rodLua="rod_electrodes={$($entries-join',')},"
+  $paBasisElectrodeIds=@($electrodesById.Keys|ForEach-Object{[int]$_})
+  $groundElectrodeId=[int](($paBasisElectrodeIds|Measure-Object -Maximum).Maximum)+1
+  $staticRows=@(if($rectangular){
+    @([pscustomobject]@{electrode_id=$groundElectrodeId;potential_v=[double]$static.entrance_aperture_plate_and_connector_V},
+      [pscustomobject]@{electrode_id=$groundElectrodeId+1;potential_v=[double]$static.exit_outer_enclosure_and_connector_V},
+      [pscustomobject]@{electrode_id=$groundElectrodeId+2;potential_v=[double]$static.physical_detector_V})
+  }elseif(@($geometry.enclosure_layout.bodies).Count-gt0){
+    @([pscustomobject]@{electrode_id=$groundElectrodeId;potential_v=[double]$static.ground_V})
+  })
+  $staticEntries=@($staticRows|ForEach-Object{"{electrode_id=$($_.electrode_id),potential_v=$($_.potential_v)}"})
+  $staticLua="static_electrodes={$($staticEntries-join',')},"
+  $paBasisElectrodeIds+=@($staticRows|ForEach-Object{[int]$_.electrode_id})
   $paBasisNames=@('quad_monolithic.pa#','quad_monolithic.pa0')+@(
     $paBasisElectrodeIds|Sort-Object -Unique|ForEach-Object{"quad_monolithic.pa$_"}
   )
@@ -964,11 +872,10 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
     simion_layout_template_registry=$templateRegistryInput;
     simion_layout_registration_manifest=$templateRegistrationManifest;
     simion_layout_template_iob=$templateIob;simion_layout_template_con=$templateCon}
-  if($throughExit){
+  if($mechanicalExitEnabled){
     $runInputs.mechanical_exit_interface=Join-Path $inputDir 'mechanical_exit_interface.json'
     $runInputs.mechanical_exit_observation=Join-Path $inputDir 'mechanical_exit_observation.json'
   }
-  if($terminalRegistry){$runInputs.downstream_terminal_profiles=$terminalRegistry}
   if($paBasisCacheManifestInput){
     $runInputs.simion_pa_basis_cache_manifest=$paBasisCacheManifestInput
   }
@@ -1059,21 +966,15 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
     $caseSummary=Join-Path $resultDir "simion_summary__$name.json"
     # The registered Workbench transform maps GEM +z to flight +x.  Axial
     # sampling and the census-marker threshold must therefore use GEM dz.
-    $surfaceToleranceMm=[Math]::Max(1e-6*$resolvedCellMmZ,1e-9)
-    $handoffApertureLua=if($hasDownstreamTerminal){
-      $terminalAperture=$design.downstream_terminal.aperture
-      if([string]$terminalAperture.shape -eq 'rectangular'){
-        "handoff_aperture={shape=`"rectangular`",width_mm=$([double]$terminalAperture.width_mm),height_mm=$([double]$terminalAperture.height_mm)},"
-      }elseif([string]$terminalAperture.shape -eq 'circular'){
-        "handoff_aperture={shape=`"circular`",radius_mm=$([double]$terminalAperture.radius_mm)},"
-      }else{throw 'Resolved downstream terminal aperture shape is unsupported.'}
-    }else{''}
+    $mechanicalRadiusLua=if($mechanicalExitEnabled-and$null-ne$exitObservation.aperture_radius_mm){
+      [Convert]::ToString([double]$exitObservation.aperture_radius_mm,[Globalization.CultureInfo]::InvariantCulture)
+    }else{'nil'}
     $batchRuns=@()
     foreach($batch in $simionBatches){
       $suffix=("batch_{0:D2}" -f [int]$batch.index)
       $batchState=if($simionBatches.Count-eq 1){$caseState}else{Join-Path $resultDir "particle_states__$name`__$suffix.csv"}
       $batchMechanical=if($simionBatches.Count-eq 1){$caseMechanical}else{Join-Path $resultDir "mechanical_exit_states__$name`__$suffix.csv"}
-      $mechanicalLua=if($throughExit){"mechanical_exit_csv=[[$batchMechanical]],mechanical_exit_plane_mm=$($exitObservation.mechanical_exit_z_mm),mechanical_exit_aperture_radius_mm=$($exitObservation.aperture_radius_mm),mechanical_exit_guard_mm=$($exitObservation.numerical_guard_z_mm),"}else{''}
+      $mechanicalLua=if($mechanicalExitEnabled){"mechanical_exit_csv=[[$batchMechanical]],mechanical_exit_plane_mm=$($exitObservation.mechanical_exit_z_mm),mechanical_exit_aperture_radius_mm=$mechanicalRadiusLua,mechanical_exit_guard_mm=$($exitObservation.numerical_guard_z_mm),"}else{''}
       $batchTrajectory=if($simionBatches.Count-eq 1){$caseTrajectory}else{Join-Path $resultDir "trajectory_samples__$name`__$suffix.csv"}
       $batchSummary=if($simionBatches.Count-eq 1){$caseSummary}else{Join-Path $resultDir "simion_summary__$name`__$suffix.json"}
       $luaConfig=if($simionBatches.Count-eq 1){Join-Path $inputDir "simion_config__$name.lua"}else{Join-Path $inputDir "simion_config__$name`__$suffix.lua"}
@@ -1084,26 +985,15 @@ $mechanicalLua
 mode="resolved_design_transport", operating_point="$name", parent_resolved_design_sha256="$resolvedHash",
 trajectory_quality=$TrajectoryQuality, rf_steps_per_period=$RfStepsPerPeriod, waveform="$($drive.waveform)",
 rf_peak_v=$($drive.rf_amplitude_V_zero_to_peak_per_group), rf_scale=$rfScale, axial_scale=$axialScale,
-scale_static_boundaries=$($exitAperturePlateStep.ToString().ToLowerInvariant()),
 dc_amplitude_v=$($drive.dc_amplitude_V_per_group), frequency_hz=$($drive.frequency_Hz), phase_rad=$($drive.phase_rad),
-axis_voltage_v=$($drive.common_mode_offset_V), entrance_voltage_v=$entranceVoltage,
-exit_voltage_v=$exitVoltage, physical_detector_voltage_v=$physicalDetectorVoltage,
-has_electrode_4=$((-not$throughExit).ToString().ToLowerInvariant()), has_electrode_5=$($rectangular.ToString().ToLowerInvariant()),
-$segmentedLua ground_electrode_id=$groundElectrodeId, ground_reference_v=$entranceVoltage,
-output_electrode_id=$outputElectrodeId, output_reference_v=$exitVoltage,
-physical_detector_electrode_id=$physicalDetectorElectrodeId,
-entrance_reference_electrode_id=$entranceReferenceElectrodeId,
-entrance_reference_v=$entranceReferenceVoltage,
-entrance_plate_electrode_id=$entrancePlateElectrodeId,
-entrance_plate_v=$entrancePlateVoltage,
+$rodLua $staticLua
 maximum_time_us=$MaximumTimeUs, trajectory_plane_step_mm=$resolvedCellMmZ,
 rod_z_min_mm=$($geometry.rod_z_min), rod_z_max_mm=$($geometry.rod_z_max),
 rod_exit_plane_mm=$($geometry.rod_z_max), handoff_plane_mm=$handoffPlaneMm,
-    census_plane_mm=$censusPlaneMm, $handoffApertureLua
-    numerical_census_marker_threshold_mm=$($censusPlaneMm-2*$resolvedCellMmZ-$surfaceToleranceMm),
-census_radius_mm=$censusRadius, radial_escape_radius_mm=$($enclosure.working_region_radius_mm),
-numerical_census_marker_is_handoff=false, axial_axis="x", origin_x_mm=$zShift, origin_y_mm=$(-$origin),
-origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
+    census_plane_mm=$censusPlaneMm,
+census_radius_mm=$censusRadius, radial_escape_radius_mm=$workingRadius,
+axial_axis="x", origin_x_mm=$zShift, origin_y_mm=$(-$origin),
+origin_z_mm=$origin, backward_escape_plane_mm=$backwardEscape}
 "@|Set-Content -LiteralPath $luaConfig -Encoding ASCII
       $batchRuns+=[pscustomobject]@{batch=$batch;state=$batchState;trajectory=$batchTrajectory;
         summary=$batchSummary;mechanical=$batchMechanical;lua_config=$luaConfig;fly2=[string]$batch.fly2}
@@ -1211,7 +1101,7 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
           if(-not(Test-Path -LiteralPath $source)){throw "SIMION $name retained first formal $kind output is missing."}
           Move-Item -LiteralPath $source -Destination $destination -Force
         }
-        if($throughExit){
+        if($mechanicalExitEnabled){
           Move-Item -LiteralPath ([string]$retained.mechanical) -Destination ([string]$firstBatch.mechanical) -Force
         }
         $trajectorySource=[string]$retained.trajectory
@@ -1226,7 +1116,7 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
         foreach($merge in @(
           @{output=$caseState;property='state';required=$true},
           @{output=$caseTrajectory;property='trajectory';required=$false},
-          @{output=$caseMechanical;property='mechanical';required=$throughExit}
+          @{output=$caseMechanical;property='mechanical';required=$mechanicalExitEnabled}
         )){
           $existingBatchPaths=@($batchRuns|ForEach-Object{
             $path=[string]$_.($merge.property)
@@ -1269,7 +1159,7 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
         --solver 'SIMION 2020' --output $stateReport|Out-Null
       if($LASTEXITCODE-ne 0){throw "SIMION $name particle-state contract failed."}
     }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
-    if($throughExit){
+    if($mechanicalExitEnabled){
       $mechanicalValidation=@'
 import json,sys
 from pathlib import Path
@@ -1293,16 +1183,12 @@ output.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n',encoding='utf
   $hostExecutionLease=Update-HostResourceStage -Lease $hostExecutionLease -Stage flight `
     -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
   $control=$null;$controlName=$null
-  if($segmented -or $exitAperturePlateStep){
-    if($exitAperturePlateStep){
-      $primaryName='exit_aperture_plate_acceleration_rf_on';$controlName='zero_exit_aperture_plate_drop_rf_on'
-    }else{
-      $primaryName='axial_acceleration_rf_on';$controlName='zero_axial_drop_rf_on'
-    }
+  if($segmented){
+    $primaryName='axial_acceleration_rf_on';$controlName='zero_axial_drop_rf_on'
     $primary=Invoke-TransportCase $primaryName 1 1
     if($CaseSet-eq'primary_and_zero_axial_control'){
       $control=Invoke-TransportCase $controlName 1 0
-      $metrics=Join-Path $resultDir $(if($exitAperturePlateStep){'exit_aperture_plate_acceleration_metrics.json'}else{'axial_acceleration_metrics.json'})
+      $metrics=Join-Path $resultDir 'axial_acceleration_metrics.json'
       Push-Location $codeRoot
       try{
         $env:PYTHONPATH=$codeRoot
@@ -1313,7 +1199,7 @@ output.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n',encoding='utf
         if($LASTEXITCODE-ne 0){throw 'SIMION axial-drive metrics analysis failed.'}
       }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
     }elseif($CaseSet-eq'primary_and_rf_off_energy_control'){
-      $controlName=$(if($exitAperturePlateStep){'exit_aperture_plate_acceleration_rf_off'}else{'axial_acceleration_rf_off'})
+      $controlName='axial_acceleration_rf_off'
       $control=Invoke-TransportCase $controlName 0 1
       $metrics=Join-Path $resultDir 'rf_off_energy_control_metrics.json'
       Push-Location $codeRoot
@@ -1495,7 +1381,7 @@ print(json.dumps(result,allow_nan=False))
       (Join-Path $resultDir "particle_state_contract__$controlName.json")
     )
   }
-  if($throughExit){$outputs+=@(Get-ChildItem -LiteralPath $resultDir -File -Filter 'mechanical_exit*'|Select-Object -ExpandProperty FullName)}
+  if($mechanicalExitEnabled){$outputs+=@(Get-ChildItem -LiteralPath $resultDir -File -Filter 'mechanical_exit*'|Select-Object -ExpandProperty FullName)}
   $outputs+=@(Get-ChildItem -LiteralPath $logDir -Recurse -File|Select-Object -ExpandProperty FullName)
   if(Test-Path -LiteralPath $evaluation){$outputs+=$evaluation}
   if($resourceProfile){$outputs+=$resourceProfile}

@@ -107,23 +107,6 @@
         "rod_and_aperture_margins": "positive"
       },
       "forbidden_interpretation": "Do not replace the union envelope with an arbitrary cross-solver percentage tolerance or claim mode superiority."
-    },
-    "three_mode_dispersion": {
-      "method_contract": "projects/rf_multipole_ion_optics/config/contracts/three_mode_dispersion_contract.json",
-      "required_observables": [
-        "all_source_particle_transmission_with_losses_retained",
-        "common_survivor_paired_continuous_metrics",
-        "handoff_and_near_interface_metrics",
-        "field_free_projection_at_5_20_50_mm",
-        "deterministic_paired_bootstrap_95_percent_intervals"
-      ],
-      "required_prerun_bindings": [
-        "project_acceptance_contract",
-        "project_effect_resolution_contract",
-        "project_engineering_budget_contract"
-      ],
-      "effect_resolution_required": true,
-      "common_contract_contains_acceptance_tolerances": false
     }
   },
   "acceptance_contract_requirements": {

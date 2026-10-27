@@ -23,7 +23,9 @@
 | [八极杆](variants/octupole/README.md) | 有限三维传输、真实机械出口及来源模型比较 | [配置](variants/octupole/config/) | [八极状态](docs/PROJECT.md#oct) |
 
 `structural_variant_id`选择四／六／八极结构；typed电气mode选择同一机械base上的电位方式。
-装配提供者已有的`variant_id`表达外壳/API变体，不能与极数混用。多实例由
+装配提供者已有的`variant_id`表达外壳/API变体，不能与极数混用。可装配提供者默认裸杆；接地圆柱壳须显式声明，壳体与可选带孔端盖连续相接、共用0 V。
+壳体只输入内半径、壁厚和两个轴向端面，每个端盖只输入孔径半径与厚度；端盖不开放独立电压。
+独立孔板、透镜等光学部件由外部提供者拥有，装配间隙由配方显式声明，没有1 mm默认值。多实例由
 [组装配方](../../integrations/README.md)表达，不复制项目或源码。
 
 ## 机器权威
@@ -50,10 +52,10 @@
 | 四极接口就绪 | [COMSOL](workflows/interface_readiness/run_comsol.ps1)、[SIMION](workflows/interface_readiness/run_simion.ps1) |
 | 四极RF+DC质量过滤 | [COMSOL](workflows/mass_filter_reference/run_comsol.ps1)、[SIMION](workflows/mass_filter_reference/run_simion.ps1)、[响应比较](workflows/mass_filter_reference/compare_responses.ps1) |
 | 同求解器数值研究 | [比较入口](workflows/same_solver_convergence/run_comparison.ps1) |
-| 跨组件执行、连接器与整机状态 | [统一集成入口](../../integrations/README.md) |
+| 跨组件装配、外部光学与整机状态 | [统一集成入口](../../integrations/README.md) |
 | 静态门禁 | [verify_project.ps1](verify_project.ps1) |
 
-内部物理handoff不自动等于机械外出口；闭壳模型不能因输出了状态表就参与要求贯通端口的组装。
+内部物理handoff不自动等于机械外出口；冻结旧几何运行不能继承为当前裸杆或新壳体的验证。
 配置编译、纯回归、真实求解、GUI/CAD和Formal资格分别判断，边界见PROJECT。
 
 ## 目录与产物

@@ -32,7 +32,7 @@ def _resolved_design() -> dict[str, Any]:
             }
         )
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "role": "multipole_resolved_design_do_not_edit",
         "units": {"length": "mm"},
         "coordinate": {
@@ -44,25 +44,10 @@ def _resolved_design() -> dict[str, Any]:
             "rod_z_min": 0.0,
             "rod_z_max": 10.0,
             "rod_array": {"rods": rods},
+            "enclosure": {"model":"bare"},
+            "observations": {"release_plane_z_mm":-1.5,"handoff_plane_z_mm":11.,"census_plane_z_mm":11.5,"acceptance_radius_mm":3.},
         },
-        "interfaces_mm": {
-            "entrance": {
-                "release_plane_z_mm": -1.5,
-                "aperture_plate_upstream_face_z_mm": -1.0,
-                "aperture_plate_downstream_face_z_mm": -0.5,
-                "connector_upstream_face_z_mm": -1.0,
-                "connector_downstream_face_z_mm": -1.0,
-            },
-            "exit": {
-                "aperture_plate_upstream_face_z_mm": 10.5,
-                "aperture_plate_downstream_face_z_mm": 11.0,
-                "aperture_crossing_plane_z_mm": 11.0,
-                "connector_upstream_face_z_mm": 11.0,
-                "connector_downstream_face_z_mm": 11.0,
-                "handoff_plane_z_mm": 11.0,
-                "census_plane_z_mm": 11.5,
-            },
-        },
+
     }
 
 

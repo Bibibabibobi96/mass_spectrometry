@@ -226,7 +226,6 @@ request_value=json.loads(request.read_text())
 provider=next(v for v in request_value['providers']['instances'].values() if 'geometry' not in v)
 enclosure_fixture=json.loads(record_path(provider['resolved_design'],base_dir=request.parent).read_text())
 enclosure_fixture['governance']={key:'A'*64 for key in ('design_variables_sha256','optimization_envelope_sha256','design_request_file_sha256')}
-enclosure_fixture['governance']['enclosure_model']='cylindrical_grounded_shield_through_entrance_exit_v1'
 validate_schema(enclosure_fixture,Path.cwd()/'common/contracts/schemas/multipole_resolved_design.schema.json')
 preparation=prepare.prepare(request,run)
 assert 'composition_plan' not in preparation['outputs']

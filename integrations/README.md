@@ -55,7 +55,7 @@ L1／L2、冻结依赖与最终验收见[状态页](docs/INTEGRATION.md#依赖�
 ## 当前文本绑定编译
 
 唯一入口为`python -m integrations.runtime.refresh_repository_bindings [--check]`。
-它刷新公共terminal catalog及oaTOF required port的受管文本绑定，不改科学设计或历史证据；
+它刷新oaTOF required port的受管文本绑定，不改科学设计或历史证据；
 运行依赖只由[runtime_dependencies.json](config/runtime_dependencies.json)声明，冻结机制见状态页。
 
 ## 历史追溯

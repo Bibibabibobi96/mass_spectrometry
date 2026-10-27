@@ -15,6 +15,7 @@
 
 [机械base](config/requests/mechanical_base.json)、[变量](config/design_variables.json)、[包络](config/optimization_envelope.json)、[圆杆场筛选](config/round_rod_field_screen.json)。
 
+当前可装配提供者默认裸杆；显式接地壳及连续接地端盖采用项目共同几何合同，外部光学单独装配。
 这里保留机械、圆杆近似与工程比较输入。P0 RF基线在新的具名科学合同建立前保持不变；
 共享运行器或N=1000比较不构成自动选择新工作点的依据。
 结构变体ID为`hexapole`；电气模式和装配外壳选择另有明确字段，不隐式切换模型。

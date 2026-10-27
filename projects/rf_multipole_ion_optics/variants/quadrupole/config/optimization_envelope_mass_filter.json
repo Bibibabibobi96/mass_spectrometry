@@ -8,7 +8,7 @@
   "policy": "The complete request is immutable at execution; candidate generation may only change cataloged fields within these bounds before recompilation.",
   "reference": {
     "design_request": "variants/quadrupole/config/requests/mass_filter.json",
-    "design_request_sha256": "8B872B195F1BD8ADFEE16E4EABDD1D7D600ED92A7E8437BA09F668D4CA430793"
+    "design_request_sha256": "511B2473A6B8747746B1AFE26E7D8C9DF224B4B5CC1BC9F012AC77AE9EAFD7E6"
   },
   "constraints": [
     {

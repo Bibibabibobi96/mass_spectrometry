@@ -18,9 +18,7 @@ from projects.rf_multipole_ion_optics.core.compile_design_request import compile
 from projects.rf_multipole_ion_optics.core.component_port import prepare_exit_observation_inputs, validate_exit_observations
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request
 from common.integration.resolve_assembly import compile_assembly_layout, derive_assembly_scope
-from common.contracts.machine_contracts import validate_schema
 from common.contracts.rigid_transform import RigidTransform
-from common.contracts.verify_run_manifest import record_path,verify_record
 from projects.dual_pressure_rectilinear_ion_processor.analysis.assembly_interface import resolve_assembly_interface
 from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection
 from integrations.workflows.multipole_ip.prepare import FRAME, prepare
@@ -55,15 +53,6 @@ class MultipoleIPPreparationTests(unittest.TestCase):
             self.assertEqual(len(local['scope']['connection_ids']), 1)
             self.assertEqual(len(local['scope']['boundary_connection_ids']), 1)
 
-    def test_active_author_uses_one_verified_full_parent_plan(self):
-        path=REPO/'integrations/config/experiments/multipole_ip_through_exit_n100.json'
-        request=json.loads(path.read_text())
-        validate_schema(request,REPO/'integrations/config/schemas/multipole_ip_request.schema.json')
-        verify_record('active multipole/IP parent',request['composition_plan'],base_dir=path.parent)
-        parent=json.loads(record_path(request['composition_plan'],base_dir=path.parent).read_text())
-        self.assertEqual(parent,derive_assembly_scope(parent))
-        self.assertEqual(parent['scope']['kind'],'full')
-
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -73,8 +62,7 @@ class MultipoleIPPreparationTests(unittest.TestCase):
             (run / "inputs").mkdir(parents=True)
             (run / "results").mkdir()
         request = design_request("octupole")
-        request["geometry_mm"]["enclosure"].update(model="cylindrical_grounded_shield_through_exit_v1", vacuum_z_max_mm=90.)
-        request["geometry_mm"]["exit_interface"]["connector_length_mm"] = 0.
+        request["geometry_mm"]["numerical_domain"].update(z_max_mm=90.)
         resolved = compile_design_request(request, expected_identity=request["identity"])
         write_json(self.source / "inputs/multipole_resolved_design.json", resolved)
         self.observation = prepare_exit_observation_inputs(self.source, resolved, design_profile_id="fixture", cell_z_mm=.3)
@@ -88,9 +76,10 @@ class MultipoleIPPreparationTests(unittest.TestCase):
                 status="transmitted" if kind == "mechanical_exit" else "lost",
                 terminal_reason="none" if kind == "mechanical_exit" else "unknown")
             return row
-        self.events = [event(2, "mechanical_exit_step_before", 42., 88.),
-                       event(2, "mechanical_exit_step_after", 44., 90.),
-                       event(2, "mechanical_exit", 43., 89.), event(2, "terminal", 44.2, 89.3),
+        exit_z = self.observation["mechanical_exit_z_mm"]
+        self.events = [event(2, "mechanical_exit_step_before", 42., exit_z-1.),
+                       event(2, "mechanical_exit_step_after", 44., exit_z+1.),
+                       event(2, "mechanical_exit", 43., exit_z), event(2, "terminal", 44.2, exit_z+.3),
                        event(9, "terminal", 20., 30.)]
         self.state = self.source / "results/mechanical_exit_states__rf_on.csv"
         self.census = self.source / "results/mechanical_exit_census__rf_on.json"
@@ -112,7 +101,7 @@ class MultipoleIPPreparationTests(unittest.TestCase):
                 schema_version=1, role="assembly_recipe", integration_id="instrument_assembly", recipe_id="fixture",
                 assembly_frame_id=FRAME, position_tolerance_mm=1e-9, angular_tolerance_rad=1e-9,
                 instances=[dict(instance_id="multipole", project_id="rf_multipole_ion_optics",
-                    transform=pose(resolved["coordinate"]["coordinate_id"], [[0,0,1],[1,0,0],[0,1,0]], [-89.,0.,0.])),
+                    transform=pose(resolved["coordinate"]["coordinate_id"], [[0,0,1],[1,0,0],[0,1,0]], [-exit_z,0.,0.])),
                     dict(instance_id="ion_processor", project_id="dual_pressure_rectilinear_ion_processor",
                     transform=pose(FRAME, [[1,0,0],[0,1,0],[0,0,1]], [0.,0.,0.]))],
                 connections=[dict(connection_id="inlet", upstream=dict(instance_id="multipole", port_id="mechanical_exit"),

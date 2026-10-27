@@ -15,6 +15,7 @@ from common.contracts.particle_physics import (
 )
 from projects.rf_multipole_ion_optics.runtime.particle_source_preflight import load_validated_source
 from common.simion.particle_source import render_source_states, render_standard_beams
+from projects.rf_multipole_ion_optics.core.interface_geometry import transport_numerical_domain
 
 
 def _ion11_rows(
@@ -141,8 +142,9 @@ def render_canonical_source(
     mass_amu = float(metadata["mass_amu"])
     enclosure = resolved["geometry_mm"]["enclosure"]
     rectangular = enclosure["model"] == "rectangular_reference_enclosure_v1"
-    origin = 0.0 if rectangular else float(enclosure["shield_outer_radius_mm"])
-    z_shift = 0.0 if rectangular else -float(enclosure["vacuum_z_min_mm"])
+    domain = transport_numerical_domain(resolved)
+    origin = 0.0 if rectangular else float(domain["radius_mm"])
+    z_shift = 0.0 if rectangular else -float(domain["z_min_mm"])
     charge = int(resolved["particle_source"]["charge_state"])
     if particle_id_min is not None or particle_id_max is not None:
         if (

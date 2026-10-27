@@ -109,27 +109,16 @@ class HexapoleIdealTransportTests(unittest.TestCase):
             resolved["geometry_mm"]["rod_length"],
             self.contract["geometry_mm"]["effective_length"],
         )
-        self.assertLess(
-            resolved["geometry_mm"]["enclosure"]["vacuum_z_min_mm"],
-            resolved["interfaces_mm"]["entrance"]["release_plane_z_mm"],
-        )
-        self.assertLess(
-            resolved["interfaces_mm"]["entrance"]["release_plane_z_mm"],
-            resolved["interfaces_mm"]["entrance"][
-                "aperture_plate_upstream_face_z_mm"
-            ],
-        )
-        self.assertGreater(
-            resolved["interfaces_mm"]["exit"]["census_plane_z_mm"],
-            resolved["interfaces_mm"]["exit"][
-                "aperture_plate_downstream_face_z_mm"
-            ],
-        )
+        geometry=resolved["geometry_mm"]
+        self.assertEqual(geometry["enclosure"],{"model":"bare"})
+        self.assertLess(geometry["numerical_domain"]["z_min_mm"],geometry["observations"]["release_plane_z_mm"])
+        self.assertLess(geometry["observations"]["release_plane_z_mm"],geometry["rod_z_min"])
+        self.assertGreater(geometry["observations"]["census_plane_z_mm"],geometry["rod_z_max"])
         self.assertEqual(len(source_particles(self.contract)), self.contract["particle_source"]["count"])
 
-    def test_design_request_rejects_aperture_beyond_working_region(self):
+    def test_design_request_rejects_acceptance_beyond_working_region(self):
         request = copy.deepcopy(self.request)
-        request["geometry_mm"]["entrance_interface"]["aperture_radius_mm"] = 3.7
+        request["geometry_mm"]["observations"]["acceptance_radius_mm"] = 3.7
         with self.assertRaises(MultipoleDesignCompileError):
             compile_design_request(request, expected_identity=request["identity"])
 
@@ -138,16 +127,10 @@ class HexapoleIdealTransportTests(unittest.TestCase):
         geometry = request["geometry_mm"]
         for key in ("rod_z_min", "rod_z_max"):
             geometry[key] -= 40.0
-        enclosure = geometry["enclosure"]
-        for key in (
-            "vacuum_z_min_mm",
-            "vacuum_z_max_mm",
-            "entrance_outer_endcap_upstream_face_z_mm",
-            "entrance_outer_endcap_downstream_face_z_mm",
-            "exit_outer_endcap_upstream_face_z_mm",
-            "exit_outer_endcap_downstream_face_z_mm",
-        ):
-            enclosure[key] -= 40.0
+        for key in ("z_min_mm", "z_max_mm"):
+            geometry["numerical_domain"][key] -= 40.
+        for key in ("release_plane_z_mm","handoff_plane_z_mm","census_plane_z_mm"):
+            geometry["observations"][key] -= 40.
         resolved = compile_design_request(
             request, expected_identity=request["identity"]
         )

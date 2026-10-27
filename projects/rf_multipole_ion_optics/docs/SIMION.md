@@ -12,16 +12,16 @@
 ## 几何与运行时权威
 
 三变体无碰撞传输使用[共同求解器投影](IMPLEMENTATION.md#求解器投影)和具名runtime profile。
-以下 `quad_transport.lua` 与四极专属数值合同说明接口就绪／质量过滤链，不是六／八极的配置入口。
-
-活动GEM由`../analysis/sync_simion_geometry.py`从具名profile编译的resolved发布生成，并嵌入发布
-SHA-256；生成GEM不得手改。Workbench运行使用项目生成的单PA、Fly2和
-`../simion/programs/quad_transport.lua`。共享模板、GUI复核、`.wgem`绕行和跨工作区可移植性状态
-只由[实现与运行合同](IMPLEMENTATION.md)登记。
+活动GEM由[设计同步器](../analysis/sync_simion_geometry.py)从具名profile编译的resolved发布生成，
+生成GEM不得手改。无碰撞、接口就绪和质量过滤入口共用[simion_transport.lua](../simion/simion_transport.lua)，
+各自冻结实际Program、粒子与PA输入；共享机制不扩大各workflow的物理资格。
+默认裸杆不生成接地边界电极；显式圆柱壳及可选端盖共用同一0 V电极。
+外部孔板／透镜由装配加入，不在Program中补出几何或可调端盖电压。
+共享模板、GUI复核、`.wgem`绕行和跨工作区可移植性状态只由[实现与运行合同](IMPLEMENTATION.md)登记。
 
 Lua只实现RF-only或RF+DC Fast Adjust、静态电极、时间步上限、最长飞行、事件/轨迹和summary，不含
-collision、drag、pressure或buffer-gas逻辑。物理量来自冻结resolved，数值量来自
-`../variants/quadrupole/config/simion_solver_numerics.json`的默认/资格基线，且实际采用的正数步数与trajectory quality会冻结
+collision、drag、pressure或buffer-gas逻辑。物理量来自冻结resolved；共同传输数值来自具名runtime绑定，
+四极专用workflow使用自身数值合同。实际采用的正数步数与trajectory quality会冻结
 进run config与Lua。入口可用于探索性数值取值；非基线取值只标记为未资格的探索结果，不得冒充既有
 baseline或资格证据。Program不得以未记录的默认值或命令行覆盖物理权威输入。
 
@@ -35,7 +35,7 @@ baseline或资格证据。Program不得以未记录的默认值或命令行覆�
 | IOB结构检查 | `../simion/workbench/inspect_builtin_quad_reference.lua` |
 
 接口入口只接受配对bundle中的canonical表示；质量过滤入口只接受显式基础ION11并生成逐质量配对表。
-无碰撞入口的具名runtime profile可选择圆柱家族三种typed电气模式，但不接受自由design/source路径，
+无碰撞入口的具名runtime profile绑定当前杆系typed电气模式，但不接受自由design/source路径，
 也不得选择矩形`official_transport` integration oracle。
 
 接口就绪与质量过滤入口向公共 SIMION 调度器提交粒子总数和冻结数值身份；资源识别、并发与回收

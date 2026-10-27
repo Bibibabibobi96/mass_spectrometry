@@ -57,17 +57,13 @@ class MultipoleOperatingContract:
 def load_family_contract(path: Path = FAMILY_CONTRACT_PATH) -> dict[str, Any]:
     """Load the versioned family contract."""
     document = json.loads(path.read_text(encoding="utf-8"))
-    if document.get("schema_version") != 5 or document.get("role") != "rf_multipole_family_contract":
+    if document.get("schema_version") != 6 or document.get("role") != "rf_multipole_family_contract":
         raise ValueError("RF multipole family contract schema or role differs")
-    foundation = document.get("foundation")
-    if not isinstance(foundation, dict) or foundation.get("api_status") != "frozen":
-        raise ValueError("RF multipole family API is not frozen")
-    validation = foundation.get("functional_validation", {})
-    if (
-        validation.get("status") != "unqualified_pending_contract_v2_rerun"
-        or validation.get("particle_count") != 100
-    ):
-        raise ValueError("RF multipole family contract-v2 qualification status differs")
+    if any(not isinstance(document.get(key), str) or not document[key] for key in (
+            "family_id", "coordinate_convention_id", "voltage_convention_id", "r0_convention_id")):
+        raise ValueError("RF multipole family identity and conventions are required")
+    if document.get("supported_radial_orders") != [2, 3, 4]:
+        raise ValueError("RF multipole family radial orders differ")
     return document
 
 
@@ -198,7 +194,8 @@ def l1_l2_transport_contract_from_resolved_design(
     current profile compiler.  It is deliberately not a design authority.
     """
     operating = from_high_order_resolved_design(resolved)
-    enclosure = resolved["geometry_mm"]["enclosure"]
+    from projects.rf_multipole_ion_optics.core.interface_geometry import transport_numerical_domain
+    domain = transport_numerical_domain(resolved)
     energy = resolved["particle_source"]["energy_model"]
     if energy.get("kind") != "monoenergetic":
         raise ValueError("analytic L1/L2 projection requires a monoenergetic source")
@@ -224,7 +221,7 @@ def l1_l2_transport_contract_from_resolved_design(
         "geometry_mm": {
             "inscribed_radius_r0": operating.geometry.r0_mm,
             "usable_radius": _positive(
-                "working_region_radius_mm", enclosure["working_region_radius_mm"]
+                "working_region_radius_mm", domain["working_region_radius_mm"]
             ),
             "effective_length": operating.geometry.effective_length_mm,
             "round_rod_geometry_selected": False,

@@ -20,6 +20,7 @@ from common.contracts.particle_physics import (
     ELEMENTARY_CHARGE_C as E_CHARGE_C,
 )
 from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
+from projects.rf_multipole_ion_optics.core.interface_geometry import transport_observations
 from projects.rf_multipole_ion_optics.runtime.particle_source_preflight import (
     COLUMNS,
     load_validated_source,
@@ -28,9 +29,14 @@ from projects.rf_multipole_ion_optics.runtime.particle_source_preflight import (
     validate_source,
 )
 from projects.rf_multipole_ion_optics.runtime.simion_particle_source import render_canonical_source
+from common.ion_release import mt19937_disk_cone_rf_phase as release_sampler
+from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_runtime_profile
+from projects.rf_multipole_ion_optics.runtime.resource_budget import validate_pilot_budget
 from common.ion_release.release import materialize_release_from_file as materialize
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request
 
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
 
 def planar_release_spec(resolved: dict, *, count: int = 100) -> dict:
     """A new authored source, sharing the established family sampler only."""
@@ -42,7 +48,7 @@ def planar_release_spec(resolved: dict, *, count: int = 100) -> dict:
         mother_particle_count=count,
         geometry=dict(
             shape="disk",
-            center_mm=[0.0, 0.0, resolved["interfaces_mm"]["entrance"]["release_plane_z_mm"]],
+            center_mm=[0.0, 0.0, transport_observations(resolved)["release_plane_z_mm"]],
             radius_mm=0.5,
         ),
         species=dict(mass_amu=524.0, charge_state=resolved["particle_source"]["charge_state"]),
@@ -57,6 +63,79 @@ def planar_release_spec(resolved: dict, *, count: int = 100) -> dict:
 
 
 class ParticleSourcePreflightTest(unittest.TestCase):
+    def test_registered_524da_bare_source_resolves_without_sampling_or_authorization(self) -> None:
+        with patch.object(
+            release_sampler,
+            "generate_mt19937_disk_cone_rf_phase_states",
+            side_effect=AssertionError("preflight must not sample"),
+        ):
+            runtime = resolve_runtime_profile(
+                REPO_ROOT, "rf_multipole_ion_optics", "octupole_bare_no_acceleration_524da_n100"
+            )
+            baseline = resolve_runtime_profile(
+                REPO_ROOT, "rf_multipole_ion_optics", "octupole_no_acceleration_full_length"
+            )
+            self.assertEqual(runtime["design_profile_resolution"], baseline["design_profile_resolution"])
+            self.assertEqual(runtime["particle_source"]["particle_count"], 100)
+            self.assertNotIn("path", runtime["particle_source"])
+            self.assertEqual(
+                runtime["design_profile_resolution"]["resolved_design"]["geometry_mm"]["enclosure"]["model"],
+                "bare",
+            )
+            with self.assertRaisesRegex(ValueError, "multipole commercial solver pilot is not authorized"):
+                validate_pilot_budget(
+                    repo_root=REPO_ROOT,
+                    budget_path=Path(runtime["engineering_budget"]["path"]),
+                    project_id="rf_multipole_ion_optics",
+                    solver="simion",
+                    runtime_profile_id=runtime["runtime_profile_id"],
+                    design_profile_id=runtime["design_profile_id"],
+                    retention_class="compact",
+                )
+
+    def test_524da_release_changes_speed_without_replacing_the_original_mother(self) -> None:
+        runtime = resolve_runtime_profile(
+            REPO_ROOT, "rf_multipole_ion_optics", 'octupole_bare_no_acceleration_524da_n100'
+        )
+        resolved = runtime["design_profile_resolution"]["resolved_design"]
+        old_runtime = resolve_runtime_profile(REPO_ROOT, "rf_multipole_ion_optics", 'octupole_no_acceleration_full_length')
+        with Path(old_runtime["particle_source"]["path"]).open(encoding="utf-8", newline="") as stream:
+            original = list(csv.DictReader(stream))
+        with tempfile.TemporaryDirectory(prefix="octupole-524da-release-") as directory:
+            root = Path(directory)
+            frozen = root / "release_spec.json"
+            shutil.copyfile(runtime["particle_source"]["release_spec"]["path"], frozen)
+            source, receipt = root / "source.csv", root / "receipt.json"
+            with patch.object(
+                release_sampler,
+                "generate_mt19937_disk_cone_rf_phase_states",
+                wraps=release_sampler.generate_mt19937_disk_cone_rf_phase_states,
+            ) as sample:
+                materialize_source_release(frozen, source, receipt, resolved)
+                metadata, states = load_validated_source(
+                    source, resolved, release_spec_path=frozen, release_receipt_path=receipt
+                )
+                self.assertEqual(sample.call_count, 1)
+            self.assertEqual(
+                (metadata["particle_count"], metadata["mass_amu"], metadata["charge_state"]), (100, 524.0, 1)
+            )
+            self.assertEqual(len(states), len(original))
+            speed_scale = math.sqrt(100.0 / 524.0)
+            # Binary64 roundoff from speed, unit-vector and CSV repr operations.
+            roundoff = 8 * sys.float_info.epsilon
+            for before, after in zip(original, states, strict=True):
+                for field in ("particle_id", "birth_time_s", "x_mm", "y_mm", "z_mm", "charge_state"):
+                    self.assertEqual(float(after[field]), float(before[field]), field)
+                old_velocity = [float(before[axis]) for axis in ("vx_m_s", "vy_m_s", "vz_m_s")]
+                new_velocity = [float(after[axis]) for axis in ("vx_m_s", "vy_m_s", "vz_m_s")]
+                for old, new in zip(old_velocity, new_velocity, strict=True):
+                    self.assertTrue(math.isclose(new, old * speed_scale, rel_tol=roundoff))
+                    self.assertTrue(
+                        math.isclose(new / math.hypot(*new_velocity), old / math.hypot(*old_velocity), rel_tol=roundoff)
+                    )
+                self.assertEqual(float(after["mass_amu"]), 524.0)
+            self.assertEqual(metadata["energy_model"]["kinetic_energy_eV"], 2.0)
+
     def setUp(self) -> None:
         request = design_request(segmentation={"strategy": "off"})
         self.resolved = compile_design_request(request, expected_identity=request["identity"])
@@ -73,7 +152,7 @@ class ParticleSourcePreflightTest(unittest.TestCase):
     ) -> Path:
         path = Path(directory) / "particles.csv"
         rows = []
-        source_z = self.resolved["interfaces_mm"]["entrance"]["release_plane_z_mm"]
+        source_z = transport_observations(self.resolved)["release_plane_z_mm"]
         for particle_id in range(1, count + 1):
             row = {
                 "particle_id": particle_id,
@@ -168,6 +247,9 @@ class ParticleSourcePreflightTest(unittest.TestCase):
                         or ((Path(directory) / name).is_file() and Path(name).suffix not in {".py", ".json"})
                     ],
                 )
+            interface = Path("projects/rf_multipole_ion_optics/core/interface_geometry.py")
+            (frozen / interface).parent.mkdir(parents=True)
+            shutil.copyfile(repo / interface, frozen / interface)
             inputs = frozen / "inputs"
             inputs.mkdir()
             (inputs / "spec.json").write_text(json.dumps(planar_release_spec(self.resolved)), encoding="utf-8")
@@ -205,6 +287,25 @@ print('DETACHED_RELEASE=PASS SAMPLES=1')
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("DETACHED_RELEASE=PASS SAMPLES=1", result.stdout)
+
+    def test_shell_choice_does_not_change_source_projection(self) -> None:
+        request = design_request(segmentation={"strategy": "off"})
+        request["geometry_mm"]["enclosure"] = dict(
+            model="cylindrical_grounded_shell", inner_radius_mm=10.0,
+            wall_thickness_mm=1.0, z_min_mm=2.0, z_max_mm=90.0,
+        )
+        request["static_electrodes_V"] = dict(role="grounded_shell_static_electrodes", ground_V=0.0)
+        shell = compile_design_request(request, expected_identity=request["identity"])
+        with tempfile.TemporaryDirectory() as directory:
+            source = self.write_source(directory)
+            original = source.read_bytes()
+            rendered = []
+            for name, resolved in (("bare", self.resolved), ("shell", shell)):
+                path = Path(directory) / f"{name}.json"
+                path.write_text(json.dumps(resolved), encoding="utf-8")
+                rendered.append(render_canonical_source(source, path))
+            self.assertEqual(rendered[0], rendered[1])
+            self.assertEqual(source.read_bytes(), original)
 
     def test_valid_source_binds_hash_and_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

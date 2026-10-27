@@ -39,13 +39,15 @@ def dispatch_limits(**overrides: int | float) -> dict[str, int | float]:
 
 class ResourceBudgetTests(unittest.TestCase):
     def test_release_budget_uses_authorized_declaration_without_sampling(self) -> None:
-        runtime = resolve_runtime_profile(REPO_ROOT, PROJECT_ID, "octupole_through_exit_no_acceleration_n100")
+        runtime = resolve_runtime_profile(REPO_ROOT, PROJECT_ID, "octupole_no_acceleration_full_length")
         budget = json.loads(Path(runtime["engineering_budget"]["path"]).read_text(encoding="utf-8-sig"))
         runtime["particle_source"] = dict(
             profile_id="new_release",
             particle_count=100,
             release_spec=dict(path="frozen.json", bytes=1, sha256="A" * 64),
         )
+        # Test-local validator fixture only; the production bare budget stays unauthorized.
+        budget["pilot_authorization"]["authorized"] = True
         budget["pilot_authorization"]["scope"]["particle_source_profile_id"] = "new_release"
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "budget.json"
@@ -1566,7 +1568,7 @@ Write-Output 'TERMINATION_FAILURE=PASS'
     def validate(
         self,
         project_id: str = PROJECT_ID,
-        runtime_profile_id: str = "octupole_exit_aperture_plate_acceleration_n100_spatial_refined",
+        runtime_profile_id: str = "octupole_segmented_rod_axial_acceleration_n100_spatial_refined",
         retention_class: str = "compact",
     ) -> dict:
         runtime = resolve_runtime_profile(REPO_ROOT, project_id, runtime_profile_id)
@@ -1583,17 +1585,17 @@ Write-Output 'TERMINATION_FAILURE=PASS'
 
     def test_closed_projects_reject_commercial_solver_pairs(self) -> None:
         for project_id, profile in (
-            (PROJECT_ID, "quadrupole_exit_aperture_plate_acceleration_n100_spatial_refined"),
-            (PROJECT_ID, "octupole_exit_aperture_plate_acceleration_n100_spatial_refined"),
+            (PROJECT_ID, "quadrupole_segmented_rod_axial_acceleration_n100_spatial_refined"),
+            (PROJECT_ID, "octupole_segmented_rod_axial_acceleration_n100_spatial_refined"),
         ):
             with self.assertRaisesRegex(ValueError, "not authorized|differs from authorized scope"):
                 self.validate(project_id, profile)
         with self.assertRaisesRegex(ValueError, "not authorized|differs from authorized scope"):
-            self.validate(PROJECT_ID, "hexapole_exit_aperture_plate_acceleration_n100_spatial_refined")
+            self.validate(PROJECT_ID, "hexapole_segmented_rod_axial_acceleration_n100_spatial_refined")
         with self.assertRaisesRegex(ValueError, "not authorized|differs from authorized scope"):
             self.validate(
                 PROJECT_ID,
-                "octupole_exit_aperture_plate_acceleration",
+                "octupole_no_acceleration_full_length",
             )
 
     def test_hexapole_closed_mesh_build_profiles_are_not_authorized(self) -> None:
@@ -1739,7 +1741,7 @@ foreach($fail in @($false,$true)){
         self.assertIn("differs from the authorized runtime profile", mismatch.stderr)
 
     def test_mesh_cell_limit_is_optional_and_strictly_positive(self) -> None:
-        budget_path = REPO_ROOT / "projects/rf_multipole_ion_optics/variants/hexapole/config/qualification" / "engineering_budget.json"
+        budget_path = REPO_ROOT / "projects/rf_multipole_ion_optics/variants/hexapole/config/bare_transport_budget.json"
         active_budget = json.loads(budget_path.read_text(encoding="utf-8"))
         runtime_profile_id = active_budget["pilot_authorization"]["scope"]["runtime_profile_id"]
         runtime = resolve_runtime_profile(REPO_ROOT, PROJECT_ID, runtime_profile_id)
@@ -1819,7 +1821,7 @@ foreach($fail in @($false,$true)){
             validate_with(invalid_identity)
 
     def test_optional_authorized_run_id_is_exact_and_legacy_compatible(self) -> None:
-        budget_path = REPO_ROOT / "projects/rf_multipole_ion_optics/variants/hexapole/config/qualification" / "engineering_budget.json"
+        budget_path = REPO_ROOT / "projects/rf_multipole_ion_optics/variants/hexapole/config/bare_transport_budget.json"
         fixture = json.loads(budget_path.read_text(encoding="utf-8"))
         runtime_profile_id = fixture["pilot_authorization"]["scope"]["runtime_profile_id"]
         runtime = resolve_runtime_profile(REPO_ROOT, PROJECT_ID, runtime_profile_id)
@@ -1860,7 +1862,7 @@ foreach($fail in @($false,$true)){
     def test_simion_pa_grid_limit_is_optional_solver_specific_and_positive(
         self,
     ) -> None:
-        budget_path = REPO_ROOT / "projects/rf_multipole_ion_optics/variants/hexapole/config/qualification" / "engineering_budget.json"
+        budget_path = REPO_ROOT / "projects/rf_multipole_ion_optics/variants/hexapole/config/bare_transport_budget.json"
         fixture = json.loads(budget_path.read_text(encoding="utf-8"))
         runtime_profile_id = fixture["pilot_authorization"]["scope"]["runtime_profile_id"]
         runtime = resolve_runtime_profile(REPO_ROOT, PROJECT_ID, runtime_profile_id)
@@ -2756,7 +2758,7 @@ if(-not(Update-RepositoryProcessObservation -Observation $metrics -Sample $sampl
     def test_common_runners_reject_free_numerics_before_run_package(self) -> None:
         project = REPO_ROOT / "projects" / PROJECT_ID
         source = REPO_ROOT / ("projects/rf_multipole_ion_optics/config/sources/rf_multipole_family_mother_sample_v1_100.csv")
-        budget = project / "variants/quadrupole/config/family_experiment/engineering_budget.json"
+        budget = project / "variants/quadrupole/config/bare_transport_budget.json"
         cases = (
             (
                 "run_finite_3d_transport.ps1",

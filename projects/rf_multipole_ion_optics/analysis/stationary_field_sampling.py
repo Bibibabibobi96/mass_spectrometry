@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from projects.rf_multipole_ion_optics.core.interface_geometry import transport_observations
+
 
 FIELD_CASES = ("differential", "static")
 SAMPLE_COLUMNS = (
@@ -52,7 +54,7 @@ _CROSS_SECTION_KEYS = {
     "rod_inward_clear_radius_fractions", "azimuth_count",
 }
 _NAMED_PLANE_PATHS = {
-    "source_release_plane": "interfaces_mm.entrance.release_plane_z_mm",
+    "source_release_plane": "sampling_observations.release_plane_z_mm",
     "entrance_aperture_plate_upstream_face":
         "interfaces_mm.entrance.aperture_plate_upstream_face_z_mm",
     "entrance_aperture_plate_downstream_face":
@@ -73,8 +75,8 @@ _NAMED_PLANE_PATHS = {
         "interfaces_mm.exit.connector_upstream_face_z_mm",
     "exit_connector_downstream_face":
         "interfaces_mm.exit.connector_downstream_face_z_mm",
-    "canonical_handoff_plane": "interfaces_mm.exit.handoff_plane_z_mm",
-    "near_interface_census_plane": "interfaces_mm.exit.census_plane_z_mm",
+    "canonical_handoff_plane": "sampling_observations.handoff_plane_z_mm",
+    "near_interface_census_plane": "sampling_observations.census_plane_z_mm",
 }
 
 
@@ -150,9 +152,9 @@ def _nested_number(
 def _validate_resolved_design(
     resolved_design: Mapping[str, Any],
 ) -> tuple[Mapping[str, Any], float]:
-    if resolved_design.get("schema_version") != 2:
+    if resolved_design.get("schema_version") != 3:
         raise StationaryFieldContractError(
-            "resolved design schema_version must be 2"
+            "resolved design schema_version must be 3"
         )
     if resolved_design.get("role") != "multipole_resolved_design_do_not_edit":
         raise StationaryFieldContractError(
@@ -325,6 +327,7 @@ def _axial_samples(
         )
         for index in range(uniform_count)
     ]
+    resolved_design = dict(resolved_design, sampling_observations=transport_observations(resolved_design))
     for index, plane_id in enumerate(plane_ids):
         values.append(
             (

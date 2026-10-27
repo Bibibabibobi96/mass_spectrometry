@@ -118,19 +118,19 @@ class FailedRunManifestTest(unittest.TestCase):
 
 class TransportRunArtifactsTest(unittest.TestCase):
     def test_l1_l2_rejects_unsupported_designs_before_creating_run(self) -> None:
-        profiles = (
-            "quadrupole_no_acceleration_full_length",
-            "hexapole_segmented_rod_axial_acceleration",
-            "octupole_exit_aperture_plate_acceleration",
-            "octupole_through_exit_no_acceleration",
-            "octupole_through_entrance_exit_no_acceleration",
-        )
+        profiles = {
+            "quadrupole_no_acceleration_full_length": "L1/L2 transport only supports",
+            "hexapole_segmented_rod_axial_acceleration": "L1/L2 transport only supports",
+            "octupole_exit_aperture_plate_acceleration": "design profile is not unique",
+            "octupole_through_exit_no_acceleration": "design profile is not unique",
+            "octupole_through_entrance_exit_no_acceleration": "design profile is not unique",
+        }
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with patch.object(artifacts, "ARTIFACT_PROJECTS_ROOT", root):
-                for profile in profiles:
+                for profile, reason in profiles.items():
                     with self.subTest(profile=profile):
-                        with self.assertRaisesRegex(ValueError, "L1/L2 transport only supports"):
+                        with self.assertRaisesRegex(ValueError, reason):
                             with artifacts.transport_run(
                                 PROJECT, "20260729_120001__test__python__unsupported-design",
                                 mode="transport_no_collision", run_config_role="fixture_config",

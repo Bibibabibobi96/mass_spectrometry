@@ -26,10 +26,6 @@ adjustable transport_rf_peak_v = 0
 adjustable transport_dc_amplitude_v = 0
 adjustable transport_frequency_hz = 0
 adjustable transport_phase_rad = 0.0
-adjustable transport_axis_voltage_v = 0.0
-adjustable transport_entrance_voltage_v = 0.0
-adjustable transport_exit_voltage_v = 0.0
-adjustable transport_physical_detector_voltage_v = 0.0
 adjustable transport_rf_steps_per_period = 0
 adjustable transport_max_elapsed_us = 0
 
@@ -46,10 +42,10 @@ local previous_state = {}
 local next_axial_plane = {}
 local crossed_rod_exit = {}
 local crossed_handoff = {}
-local handoff_state = {}
 local timed_out = {}
 local census_counted = {}
 local census_hit = {}
+local census_state = {}
 local terminal_written = {}
 local trajectory_plane_step_mm
 local rod_z_min_mm
@@ -57,7 +53,6 @@ local rod_z_max_mm
 local rod_exit_plane_mm
 local handoff_plane_mm
 local census_plane_mm
-local numerical_census_marker_threshold_mm
 local census_radius_mm
 local handoff_aperture
 local radial_escape_radius_mm
@@ -68,7 +63,8 @@ local origin_z_mm
 local backward_escape_plane_mm
 local rf_scale
 local axial_scale
-local segmented_rod_electrodes
+local rod_electrodes
+local static_electrodes
 local rf_drive
 
 local function set_electrode_voltage(electrode_id, voltage)
@@ -86,10 +82,6 @@ transport_dc_amplitude_v = assert(run_config.dc_amplitude_v)
 transport_frequency_hz = assert(run_config.frequency_hz)
 transport_phase_rad = assert(run_config.phase_rad)
 transport_waveform = assert(run_config.waveform)
-transport_axis_voltage_v = assert(run_config.axis_voltage_v)
-transport_entrance_voltage_v = assert(run_config.entrance_voltage_v)
-transport_exit_voltage_v = assert(run_config.exit_voltage_v)
-transport_physical_detector_voltage_v = assert(run_config.physical_detector_voltage_v)
 transport_rf_steps_per_period = assert(run_config.rf_steps_per_period)
 transport_max_elapsed_us = assert(run_config.maximum_time_us)
 assert(transport_rf_peak_v > 0, 'run config rf_peak_v must be positive')
@@ -105,7 +97,6 @@ rod_z_max_mm = assert(run_config.rod_z_max_mm)
 rod_exit_plane_mm = assert(run_config.rod_exit_plane_mm)
 handoff_plane_mm = assert(run_config.handoff_plane_mm)
 census_plane_mm = assert(run_config.census_plane_mm)
-numerical_census_marker_threshold_mm = assert(run_config.numerical_census_marker_threshold_mm)
 census_radius_mm = assert(run_config.census_radius_mm)
 handoff_aperture = run_config.handoff_aperture
 if handoff_aperture then
@@ -132,33 +123,19 @@ rf_scale = run_config.rf_scale or 1
 assert(rf_scale == 0 or rf_scale == 1, 'rf_scale must be zero or one')
 axial_scale = run_config.axial_scale or 0
 assert(axial_scale == 0 or axial_scale == 1, 'axial_scale must be zero or one')
-segmented_rod_electrodes = run_config.segmented_rod_electrodes
-if segmented_rod_electrodes then
-  assert(#segmented_rod_electrodes >= 2, 'rod electrode table is incomplete')
-  assert(run_config.ground_electrode_id, 'ground electrode id is missing')
-  assert(run_config.output_electrode_id, 'output electrode id is missing')
-  assert(run_config.ground_reference_v, 'ground reference voltage is missing')
-  assert(run_config.output_reference_v, 'output reference voltage is missing')
-end
+rod_electrodes = assert(run_config.rod_electrodes, 'rod electrode table is missing')
+static_electrodes = assert(run_config.static_electrodes, 'static electrode table is missing')
+assert(#rod_electrodes >= 2, 'rod electrode table is incomplete')
 
 local function compile_rf_drive()
   local electrodes = {}
-  if segmented_rod_electrodes then
-    for index, electrode in ipairs(segmented_rod_electrodes) do
-      local group = electrode.electrode_group
-      electrodes[index] = {
-        electrode_id=electrode.electrode_id,
-        electrode_group=group,
-        polarity=group == 1 and 1 or -1,
-        common_mode_v=electrode.common_mode_v,
-      }
-    end
-  else
-    electrodes = {
-      {electrode_id=1, electrode_group=1, polarity=1,
-        common_mode_v=transport_axis_voltage_v},
-      {electrode_id=2, electrode_group=2, polarity=-1,
-        common_mode_v=transport_axis_voltage_v},
+  for index, electrode in ipairs(rod_electrodes) do
+    local group = electrode.electrode_group
+    electrodes[index] = {
+      electrode_id=electrode.electrode_id,
+      electrode_group=group,
+      polarity=group == 1 and 1 or -1,
+      common_mode_v=electrode.common_mode_v,
     }
   end
   return rf_drive_kernel.new {
@@ -167,7 +144,7 @@ local function compile_rf_drive()
     phase_rad=transport_phase_rad,
     rf_amplitude_v=transport_rf_peak_v,
     rf_scale=rf_scale,
-    common_mode_scale=segmented_rod_electrodes and axial_scale or 1,
+    common_mode_scale=axial_scale,
     group_dc_v={[1]=transport_dc_amplitude_v, [2]=-transport_dc_amplitude_v},
     rf_steps_per_period=transport_rf_steps_per_period,
     electrodes=electrodes,
@@ -237,12 +214,16 @@ local function interpolate_state(previous, current, plane)
     vz=lerp(previous.vz,current.vz), ke=lerp(previous.ke,current.ke)}
 end
 
-local function project_state_to_plane(state, plane)
-  assert(state.vx > 0, 'census projection requires positive axial velocity')
-  local dt = (plane - state.x) / state.vx
-  return {t=state.t + dt, x=plane, y=state.y + dt * state.vy,
-    z=state.z + dt * state.vz, vx=state.vx, vy=state.vy,
-    vz=state.vz, ke=state.ke}
+-- Only a forward bracket of observed states establishes a census crossing.
+local function record_census_crossing(particle, previous, current)
+  if census_counted[particle] or not previous or
+      previous.x >= census_plane_mm or current.x < census_plane_mm then return end
+  local state = interpolate_state(previous, current, census_plane_mm)
+  census_counted[particle] = true
+  census_state[particle] = state
+  census_hit[particle] = inside_handoff_aperture(state)
+  crossings = crossings + 1
+  if census_hit[particle] then hits = hits + 1 end
 end
 
 function segment.initialize_run()
@@ -257,10 +238,10 @@ function segment.initialize_run()
   crossed_rod_exit = {}
   crossed_handoff = {}
   crossed_mechanical_exit = {}
-  handoff_state = {}
   timed_out = {}
   census_counted = {}
   census_hit = {}
+  census_state = {}
   terminal_written = {}
   local trajectory_path = run_config.trajectory_csv
   if trajectory_path and trajectory_path ~= '' then
@@ -278,9 +259,9 @@ function segment.initialize_run()
   end
   mechanical_exit_file = nil
   if run_config.mechanical_exit_csv then
-    assert(run_config.mechanical_exit_plane_mm and run_config.mechanical_exit_aperture_radius_mm
+    assert(run_config.mechanical_exit_plane_mm
       and run_config.mechanical_exit_guard_mm > run_config.mechanical_exit_plane_mm,
-      'explicit mechanical exit plane, bore and numerical guard required')
+      'explicit mechanical exit plane and numerical guard required')
     mechanical_exit_file = assert(io.open(run_config.mechanical_exit_csv, 'w'))
     mechanical_exit_file:write('particle_id,event,status,terminal_reason,time_us,elapsed_time_us,rf_phase_rad,axial_z_mm,transverse_x_mm,transverse_y_mm,velocity_axial_m_s,velocity_x_m_s,velocity_y_m_s,kinetic_energy_eV,radial_position_mm,divergence_angle_deg,max_rod_radius_mm\n')
   end
@@ -288,56 +269,14 @@ function segment.initialize_run()
 end
 
 function segment.init_p_values()
-  if segmented_rod_electrodes then
-    set_electrode_voltage(run_config.ground_electrode_id,
-      axial_scale * run_config.ground_reference_v)
-    set_electrode_voltage(run_config.output_electrode_id,
-      axial_scale * run_config.output_reference_v)
-    if run_config.physical_detector_electrode_id and run_config.physical_detector_electrode_id > 0 then
-      set_electrode_voltage(run_config.physical_detector_electrode_id,
-        axial_scale * transport_physical_detector_voltage_v)
-    end
-    if run_config.entrance_reference_electrode_id and run_config.entrance_reference_electrode_id > 0 then
-      set_electrode_voltage(run_config.entrance_reference_electrode_id,
-        axial_scale * run_config.entrance_reference_v)
-    end
-    if run_config.entrance_plate_electrode_id and run_config.entrance_plate_electrode_id > 0 then
-      set_electrode_voltage(run_config.entrance_plate_electrode_id,
-        axial_scale * run_config.entrance_plate_v)
-    end
-    return
-  end
-  local static_scale = run_config.scale_static_boundaries and axial_scale or 1
-  adj_elect03 = static_scale * transport_entrance_voltage_v
-  if run_config.has_electrode_4 ~= false then
-    adj_elect04 = static_scale * transport_exit_voltage_v
-  end
-  if run_config.has_electrode_5 ~= false then
-    adj_elect05 = static_scale * transport_physical_detector_voltage_v
+  for _, electrode in ipairs(static_electrodes) do
+    set_electrode_voltage(electrode.electrode_id, electrode.potential_v)
   end
 end
 
 function segment.fast_adjust()
   rf_drive.apply_at(ion_time_of_flight, set_electrode_voltage)
-  if segmented_rod_electrodes then
-    set_electrode_voltage(run_config.ground_electrode_id,
-      axial_scale * run_config.ground_reference_v)
-    set_electrode_voltage(run_config.output_electrode_id,
-      axial_scale * run_config.output_reference_v)
-    if run_config.physical_detector_electrode_id and run_config.physical_detector_electrode_id > 0 then
-      set_electrode_voltage(run_config.physical_detector_electrode_id,
-        axial_scale * transport_physical_detector_voltage_v)
-    end
-    if run_config.entrance_reference_electrode_id and run_config.entrance_reference_electrode_id > 0 then
-      set_electrode_voltage(run_config.entrance_reference_electrode_id,
-        axial_scale * run_config.entrance_reference_v)
-    end
-    if run_config.entrance_plate_electrode_id and run_config.entrance_plate_electrode_id > 0 then
-      set_electrode_voltage(run_config.entrance_plate_electrode_id,
-        axial_scale * run_config.entrance_plate_v)
-    end
-    return
-  end
+  segment.init_p_values()
 end
 
 function segment.tstep_adjust()
@@ -396,7 +335,6 @@ function segment.other_actions()
       write_particle_state(ion_number, 'handoff', accepted and 'transmitted' or 'lost',
         accepted and 'none' or 'acceptance_aperture', handoff)
       crossed_handoff[ion_number] = true
-      handoff_state[ion_number] = handoff
       if not accepted then
         write_particle_state(ion_number, 'terminal', 'lost', 'acceptance_aperture', handoff)
         if mechanical_exit_file then write_particle_state(ion_number, 'terminal', 'lost', 'acceptance_aperture', handoff, mechanical_exit_file) end
@@ -404,21 +342,19 @@ function segment.other_actions()
         terminal_written[ion_number] = true
         ion_splat = -6
       end
-      if run_config.numerical_census_marker_is_handoff then
-        census_counted[ion_number] = true
-        census_hit[ion_number] = accepted
-        crossings = crossings + 1
-        if accepted then hits = hits + 1 end
-        ion_splat = -5
-      end
+
     end
+  end
+  if not terminal_written[ion_number] then
+    record_census_crossing(ion_number, previous, current)
   end
   if mechanical_exit_file and not terminal_written[ion_number] then
     local exit = run_config.mechanical_exit_plane_mm
     if not crossed_mechanical_exit[ion_number] and previous.x < exit and current.x >= exit then
       local state = interpolate_state(previous, current, exit)
       -- The bracket is two actual native states, never a projected old handoff.
-      if state.vx > 0 and radial_mm(state) <= run_config.mechanical_exit_aperture_radius_mm then
+      local aperture = run_config.mechanical_exit_aperture_radius_mm
+      if state.vx > 0 and (aperture == nil or radial_mm(state) <= aperture) then
         write_particle_state(ion_number, 'mechanical_exit_step_before', 'alive', 'none', previous, mechanical_exit_file)
         write_particle_state(ion_number, 'mechanical_exit_step_after', 'alive', 'none', current, mechanical_exit_file)
         write_particle_state(ion_number, 'mechanical_exit', 'transmitted', 'none', state, mechanical_exit_file)
@@ -436,21 +372,11 @@ end
 
 local function finalize_particle(particle, current)
   if terminal_written[particle] then return end
-  -- The run config derives a safe terminal threshold from the census plane
-  -- and PA cell size so SIMION's fractional-surface back-off is not mistaken
-  -- for an upstream loss.
-  local crossed = census_counted[particle] or current.x >= numerical_census_marker_threshold_mm
-  local terminal_state = current
-  if crossed and handoff_state[particle] and handoff_state[particle].vx > 0 then
-    terminal_state = project_state_to_plane(handoff_state[particle], census_plane_mm)
-  end
+  -- terminate may supply the final observed state after other_actions.
+  record_census_crossing(particle, previous_state[particle], current)
+  local terminal_state = census_state[particle] or current
   local radius = radial_mm(terminal_state)
-  local hit = census_counted[particle] and census_hit[particle] or
-    (crossed and inside_handoff_aperture(terminal_state))
-  if not census_counted[particle] then
-    if crossed then crossings = crossings + 1 end
-    if hit then hits = hits + 1 end
-  end
+  local hit = census_hit[particle] == true
   local status, reason = 'lost', 'electrode'
   if timed_out[particle] then status, reason = 'timeout', 'timeout'
   elseif hit then status, reason = 'transmitted', 'acceptance_surface'

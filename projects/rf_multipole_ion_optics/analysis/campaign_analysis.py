@@ -22,34 +22,11 @@ MODES = {
     "no_acceleration",
     "no_acceleration_5ev",
     "segmented_acceleration",
-    "exit_aperture_plate_acceleration",
 }
 PAIR_DEFINITIONS = (
-    (
-        "initial_5ev_vs_initial_2ev",
-        "no_acceleration",
-        "no_acceleration_5ev",
-    ),
-    (
-        "segmented_vs_no_acceleration",
-        "no_acceleration",
-        "segmented_acceleration",
-    ),
-    (
-        "exit_aperture_plate_vs_no_acceleration",
-        "no_acceleration",
-        "exit_aperture_plate_acceleration",
-    ),
-    (
-        "exit_aperture_plate_vs_segmented",
-        "segmented_acceleration",
-        "exit_aperture_plate_acceleration",
-    ),
-    (
-        "segmented_vs_initial_5ev",
-        "no_acceleration_5ev",
-        "segmented_acceleration",
-    ),
+    ("initial_5ev_vs_initial_2ev", "no_acceleration", "no_acceleration_5ev"),
+    ("segmented_vs_no_acceleration", "no_acceleration", "segmented_acceleration"),
+    ("segmented_vs_initial_5ev", "no_acceleration_5ev", "segmented_acceleration"),
 )
 
 CATALOG_ROLE = "multipole_campaign_analysis_capability_catalog"
@@ -273,7 +250,7 @@ def campaign_request_preflight(
         status_by_experiment[row["experiment_id"]] = {
             "status": status, "manifest": manifest, "reason": reason
         }
-    if campaign["schema_version"] != 4:
+    if not campaign.get("analysis_requests"):
         return {
             "schema_version": 1,
             "role": PREFLIGHT_ROLE,

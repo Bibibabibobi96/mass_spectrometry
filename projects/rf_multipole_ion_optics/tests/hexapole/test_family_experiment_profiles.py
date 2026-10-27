@@ -16,7 +16,6 @@ REPO_ROOT = PROJECT_ROOT.parents[1]
 MODE_IDS = (
     "no_acceleration_full_length",
     "segmented_rod_axial_acceleration",
-    "exit_aperture_plate_acceleration",
 )
 DESIGN_PROFILE_IDS = tuple(f"hexapole_{mode_id}" for mode_id in MODE_IDS)
 
@@ -63,7 +62,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
                 )
                 for item in modes["modes"]
             ],
-            [(0.0, 0.0), (3.0, 0.0), (3.0, 3.0)],
+            [(0.0, 0.0), (3.0, 0.0)],
         )
         for key in ("design_request", "design_variables", "optimization_envelope"):
             self.assertEqual({profile[key] for profile in current}, {
@@ -97,85 +96,20 @@ class FamilyExperimentProfileTests(unittest.TestCase):
                     profile["sha256"][field],
                 )
 
-    def test_three_modes_have_exactly_one_mechanical_geometry(self) -> None:
-        baseline = self.resolved[MODE_IDS[0]]
+    def test_current_rod_modes_share_physical_geometry(self) -> None:
+        baseline=self.resolved[MODE_IDS[0]]
         for resolved in self.resolved.values():
-            self.assertEqual(resolved["geometry_mm"], baseline["geometry_mm"])
-            self.assertEqual(resolved["interfaces_mm"], baseline["interfaces_mm"])
-            physical_segments = [
-                {
-                    key: value
-                    for key, value in electrode.items()
-                    if key != "common_mode_V"
-                }
-                for electrode in resolved["segmentation"]["segmented_rod_array"][
-                    "electrodes"
-                ]
-            ]
-            baseline_segments = [
-                {
-                    key: value
-                    for key, value in electrode.items()
-                    if key != "common_mode_V"
-                }
-                for electrode in baseline["segmentation"]["segmented_rod_array"][
-                    "electrodes"
-                ]
-            ]
-            self.assertEqual(physical_segments, baseline_segments)
-        self.assertEqual(
-            (baseline["geometry_mm"]["rod_z_min"], baseline["geometry_mm"]["rod_z_max"]),
-            (0.0, 79.6),
-        )
-        segments = baseline["segmentation"]["axial_acceleration"]["derived"]["segments"]
-        self.assertEqual(len(segments), 4)
-        for segment in segments:
-            self.assertAlmostEqual(segment["z_max_mm"] - segment["z_min_mm"], 19.6)
-        self.assertEqual(
-            baseline["interfaces_mm"],
-            {
-                "entrance": {
-                    "aperture_radius_mm": 3.6,
-                    "aperture_plate_upstream_face_z_mm": -1.0,
-                    "aperture_plate_downstream_face_z_mm": -0.5,
-                    "connector_length_mm": 0.0,
-                    "connector_upstream_face_z_mm": -1.0,
-                    "connector_downstream_face_z_mm": -1.0,
-                    "release_plane_z_mm": -1.5,
-                    "connector_shape": "cylindrical_bore",
-                },
-                "exit": {
-                    "aperture_radius_mm": 3.6,
-                    "aperture_plate_upstream_face_z_mm": 80.1,
-                    "aperture_plate_downstream_face_z_mm": 80.6,
-                    "aperture_crossing_plane_z_mm": 80.6,
-                    "connector_length_mm": 0.0,
-                    "connector_upstream_face_z_mm": 80.6,
-                    "connector_downstream_face_z_mm": 80.6,
-                    "handoff_plane_z_mm": 80.6,
-                    "census_plane_z_mm": 81.1,
-                    "connector_shape": "cylindrical_bore",
-                },
-            },
-        )
-
-    def test_modes_differ_only_by_registered_electrical_assignments(self) -> None:
-        expected = {
-            "no_acceleration_full_length": ([0.0, 0.0, 0.0, 0.0], 0.0),
-            "segmented_rod_axial_acceleration": ([3.0, 2.0, 1.0, 0.0], 0.0),
-            "exit_aperture_plate_acceleration": ([3.0, 3.0, 3.0, 3.0], 0.0),
-        }
-        for mode_id, resolved in self.resolved.items():
-            segment_voltages = [
-                segment["common_mode_V"]
-                for segment in resolved["segmentation"]["axial_acceleration"][
-                    "derived"
-                ]["segments"]
-            ]
-            exit_voltage = resolved["static_electrodes_V"][
-                "exit_outer_endcap_aperture_plate_connector_V"
-            ]
-            self.assertEqual((segment_voltages, exit_voltage), expected[mode_id])
+            self.assertEqual(resolved["geometry_mm"],baseline["geometry_mm"])
+            self.assertEqual(resolved["geometry_mm"]["enclosure"],{"model":"bare"})
+            self.assertNotIn("interfaces_mm",resolved)
+            self.assertEqual(resolved["static_electrodes_V"],{"role":"bare_multipole_static_electrodes"})
+            self.assertEqual(resolved["particle_source"],baseline["particle_source"])
+            segments=resolved["segmentation"]["axial_acceleration"]["derived"]["segments"]
+            self.assertEqual(len(segments),4)
+            for row in segments:self.assertAlmostEqual(row["z_max_mm"]-row["z_min_mm"],19.6)
+        self.assertEqual((baseline["geometry_mm"]["rod_z_min"],baseline["geometry_mm"]["rod_z_max"]),(0.,79.6))
+        for mode,expected in ((MODE_IDS[0],[0.,0.,0.,0.]),(MODE_IDS[1],[3.,2.,1.,0.])):
+            self.assertEqual([x["common_mode_V"] for x in self.resolved[mode]["segmentation"]["axial_acceleration"]["derived"]["segments"]],expected)
 
     def test_runtime_tiers_change_only_the_registered_numerical_axis(self) -> None:
         for mode_id in MODE_IDS:
@@ -257,32 +191,6 @@ class FamilyExperimentProfileTests(unittest.TestCase):
             runtime_profiles["profiles"],
         )
 
-    def test_active_qualification_refuses_unsourced_thresholds(self) -> None:
-        convergence = load("docs/history/retired_projects/rf_hexapole_ion_optics/config/qualification/n100_convergence_preregistration.json")
-        for solver_id, spatial_key in (
-            ("comsol", "working_region_maximum_element_size_mm"),
-            ("simion", "cell_mm"),
-        ):
-            plan = convergence["solver_plans"][solver_id]
-            self.assertRegex(plan["active_registry_sha256"], r"^[A-F0-9]{64}$")
-            self.assertEqual(
-                plan["tiers"]["temporal_refined"][spatial_key],
-                plan["tiers"]["spatial_refined"][spatial_key],
-            )
-        self.assertFalse(convergence["decision_policy"]["qualification_pass_allowed"])
-        self.assertEqual(
-            convergence["decision_policy"]["continuous_result"], "INCONCLUSIVE"
-        )
-        engineering = load("variants/hexapole/config/qualification/engineering_budget.json")
-        self.assertFalse(engineering["pilot_authorization"]["authorized"])
-        self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
-        for filename in (
-            "n100_no_acceleration_qualification.json",
-            "n100_segmented_rod_axial_acceleration_qualification.json",
-            "n100_exit_aperture_plate_acceleration_qualification.json",
-        ):
-            result = load(f"docs/history/retired_projects/rf_hexapole_ion_optics/config/qualification/{filename}")
-            self.assertIn("decision", result)
 
 if __name__ == "__main__":
     unittest.main()

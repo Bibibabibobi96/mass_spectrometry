@@ -1,39 +1,39 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "role": "multipole_resolved_design_do_not_edit",
   "compiler": {
     "name": "common.multipole.compile_design_request",
-    "version": 2
+    "version": 3
   },
   "governance": {
-    "design_variables_sha256": "BD8952952308C0B48123EDC14E8C9AA043A42924F1512E3D2B3DA255339EFDCC",
-    "optimization_envelope_sha256": "2E6885279B902A6A7852CFC76B75B1281D4536B3496D5ABBCFA3C324B60556A8",
-    "design_request_file_sha256": "68A35B0783DE2EC3A84C65DDCC83937624915241923418721121F3DE22E07364"
+    "design_variables_sha256": "45F8D28E1601E829DCB9F33B8C7AF21C2A79F0E81B7B996D8347DD525274F6FD",
+    "optimization_envelope_sha256": "63FE49E6B1C21C1CA44005BF5EC0372D92E74FEE987ECBBB4405806862DB1CF1",
+    "design_request_file_sha256": "AF72BE4F120503AB9451F7F498598292F651A9B2F2E2327E9B76751B3B097026"
   },
   "request": {
     "request_id": "quadrupole_family_full_length_mechanical_base",
-    "sha256": "776673E59E655E816C981AD94957CA3544FA6CA2751808A946E65978CCACFF0C"
+    "sha256": "39A7DA67D0D9F24D1D4ABD113B997B4AED6B3B66554C324ED8411BEFFFA6F5B9"
   },
   "sources": [
     {
       "label": "design_request",
       "path": "projects/rf_multipole_ion_optics/variants/quadrupole/config/requests/baseline.json",
-      "sha256": "68A35B0783DE2EC3A84C65DDCC83937624915241923418721121F3DE22E07364"
+      "sha256": "AF72BE4F120503AB9451F7F498598292F651A9B2F2E2327E9B76751B3B097026"
     },
     {
       "label": "design_variables",
       "path": "projects/rf_multipole_ion_optics/variants/quadrupole/config/design_variables.json",
-      "sha256": "BD8952952308C0B48123EDC14E8C9AA043A42924F1512E3D2B3DA255339EFDCC"
+      "sha256": "45F8D28E1601E829DCB9F33B8C7AF21C2A79F0E81B7B996D8347DD525274F6FD"
     },
     {
       "label": "operating_mode_registry__no_acceleration_full_length",
       "path": "projects/rf_multipole_ion_optics/config/operating_modes.json",
-      "sha256": "7C3B04C79A6C8EE5332A78EC93F4119FF72345F6AFEAF9E01E70E64B10D12125"
+      "sha256": "EADFDA64A898C6B969BAEEF18358F3EEF3EDA3F2CB092B9DA1FFF6DB7DD8D88A"
     },
     {
       "label": "optimization_envelope",
       "path": "projects/rf_multipole_ion_optics/variants/quadrupole/config/optimization_envelope.json",
-      "sha256": "2E6885279B902A6A7852CFC76B75B1281D4536B3496D5ABBCFA3C324B60556A8"
+      "sha256": "63FE49E6B1C21C1CA44005BF5EC0372D92E74FEE987ECBBB4405806862DB1CF1"
     }
   ],
   "identity": {
@@ -63,17 +63,7 @@
     "rod_z_max": 79.6,
     "rod_length": 79.6,
     "enclosure": {
-      "model": "cylindrical_grounded_shield_v1",
-      "role": "full_length_grounded_shield",
-      "working_region_radius_mm": 3.6,
-      "vacuum_z_min_mm": -2.5,
-      "vacuum_z_max_mm": 82.1,
-      "shield_inner_radius_mm": 20.0,
-      "shield_outer_radius_mm": 21.0,
-      "entrance_outer_endcap_upstream_face_z_mm": -2.5,
-      "entrance_outer_endcap_downstream_face_z_mm": -2.0,
-      "exit_outer_endcap_upstream_face_z_mm": 81.6,
-      "exit_outer_endcap_downstream_face_z_mm": 82.1
+      "model": "bare"
     },
     "rod_array": {
       "inscribed_radius_r0": 4.0,
@@ -122,30 +112,59 @@
           "z_max_mm": 79.6
         }
       ]
-    }
-  },
-  "interfaces_mm": {
-    "entrance": {
-      "aperture_radius_mm": 3.6,
-      "aperture_plate_upstream_face_z_mm": -1.0,
-      "aperture_plate_downstream_face_z_mm": -0.5,
-      "connector_length_mm": 0.0,
-      "connector_upstream_face_z_mm": -1.0,
-      "connector_downstream_face_z_mm": -1.0,
-      "release_plane_z_mm": -1.5,
-      "connector_shape": "cylindrical_bore"
     },
-    "exit": {
-      "aperture_radius_mm": 3.6,
-      "aperture_plate_upstream_face_z_mm": 80.1,
-      "aperture_plate_downstream_face_z_mm": 80.6,
-      "aperture_crossing_plane_z_mm": 80.6,
-      "connector_length_mm": 0.0,
-      "connector_upstream_face_z_mm": 80.6,
-      "connector_downstream_face_z_mm": 80.6,
+    "numerical_domain": {
+      "radius_mm": 21.0,
+      "z_min_mm": -2.5,
+      "z_max_mm": 82.1,
+      "working_region_radius_mm": 3.6
+    },
+    "observations": {
+      "release_plane_z_mm": -1.5,
       "handoff_plane_z_mm": 80.6,
       "census_plane_z_mm": 81.1,
-      "connector_shape": "cylindrical_bore"
+      "acceptance_radius_mm": 3.6
+    },
+    "enclosure_layout": {
+      "bodies": [],
+      "ports": {
+        "mechanical_entrance": {
+          "surface_kind": "open_rod_entrance",
+          "center_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "outward_normal": [
+            0,
+            0,
+            -1
+          ],
+          "wall_thickness_mm": null,
+          "cross_section": {
+            "shape": "open_rod_envelope",
+            "inscribed_radius_mm": 4.0
+          }
+        },
+        "mechanical_exit": {
+          "surface_kind": "open_rod_exit",
+          "center_mm": [
+            0.0,
+            0.0,
+            79.6
+          ],
+          "outward_normal": [
+            0,
+            0,
+            1
+          ],
+          "wall_thickness_mm": null,
+          "cross_section": {
+            "shape": "open_rod_envelope",
+            "inscribed_radius_mm": 4.0
+          }
+        }
+      }
     }
   },
   "drive": {
@@ -164,9 +183,7 @@
     "predicted_output_energy_eV": 2.0
   },
   "static_electrodes_V": {
-    "role": "cylindrical_shield_static_electrodes",
-    "shield_entrance_outer_endcap_aperture_plate_connector_V": 0.0,
-    "exit_outer_endcap_aperture_plate_connector_V": 0.0
+    "role": "bare_multipole_static_electrodes"
   },
   "particle_source": {
     "energy_model": {
@@ -463,5 +480,5 @@
       ]
     }
   },
-  "resolved_sha256": "41EBB1E12514E380959633A2B28242F5A1187C18600A12B968C037030DC75BC0"
+  "resolved_sha256": "AF9EA92FCE394A8FCD9371E75B928E1914BD8934432DB2908BC00AA3E1C34894"
 }

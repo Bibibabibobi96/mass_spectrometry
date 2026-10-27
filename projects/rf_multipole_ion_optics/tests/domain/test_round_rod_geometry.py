@@ -8,10 +8,8 @@ from pathlib import Path
 import numpy as np
 
 from projects.rf_multipole_ion_optics.core.compile_design_request import (
-    MultipoleDesignCompileError,
     compile_design_request,
 )
-from projects.rf_multipole_ion_optics.core.interface_geometry import build_axial_interface_layout
 from projects.rf_multipole_ion_optics.core.round_rod_geometry import (
     build_rod_array,
     build_round_rod_array,
@@ -260,10 +258,7 @@ class RoundRodGeometryTest(unittest.TestCase):
             ) as renderer:
                 gem = render_gem(resolved, 0.2)
                 renderer.assert_called_once_with(
-                    resolved["segmentation"]["segmented_rod_array"],
-                    indent="  ",
-                    significant_digits=12,
-                    electrode_ids=None,
+                    resolved["segmentation"]["segmented_rod_array"], electrode_ids=None,
                 )
                 local = simion_geometry._render_local_segmented_rod_array_gem(
                     resolved["segmentation"]["segmented_rod_array"],
@@ -288,45 +283,7 @@ class RoundRodGeometryTest(unittest.TestCase):
         self.assertIn("cylinder(8.592,0,0, 4.592,, 79.6)", gem)
         self.assertEqual(gem.count("fill { within { cylinder"), 4)
 
-    def test_shared_interface_layout_supports_direct_and_connected_ends(self):
-        base = {
-            "aperture_radius_mm": 1.2,
-            "plate_thickness_mm": 0.8,
-            "rod_clearance_mm": 4.0,
-            "connector_length_mm": 0.0,
-            "connector_shape": "rectangular_bore",
-            "release_offset_mm": 1.0,
-        }
-        exit_interface = dict(base, aperture_radius_mm=3.6, connector_length_mm=2.0)
-        exit_interface["census_offset_mm"] = exit_interface.pop("release_offset_mm")
-        layout = build_axial_interface_layout(
-            rod_z_min_mm=5.8,
-            rod_z_max_mm=85.4,
-            entrance=base,
-            exit_interface=exit_interface,
-        )
-        self.assertEqual(layout["entrance"]["connector_length_mm"], 0.0)
-        self.assertAlmostEqual(layout["entrance"]["release_plane_z_mm"], 0.0)
-        self.assertAlmostEqual(layout["exit"]["handoff_plane_z_mm"], 92.2)
-        self.assertAlmostEqual(layout["exit"]["census_plane_z_mm"], 93.2)
 
-    def test_axial_layout_accepts_interfaces_without_connector_shape(self):
-        entrance = {
-            "aperture_radius_mm": 1.2,
-            "plate_thickness_mm": 0.8,
-            "rod_clearance_mm": 4.0,
-            "connector_length_mm": 0.0,
-            "release_offset_mm": 1.0,
-        }
-        exit_interface = dict(entrance)
-        exit_interface["census_offset_mm"] = exit_interface.pop("release_offset_mm")
-        layout = build_axial_interface_layout(
-            rod_z_min_mm=5.8,
-            rod_z_max_mm=85.4,
-            entrance=entrance,
-            exit_interface=exit_interface,
-        )
-        self.assertNotIn("connector_shape", layout["entrance"])
 
     def resolve(self, variant: str, ratio: float):
         root = ROOT / "projects/rf_multipole_ion_optics/variants" / variant
@@ -351,14 +308,6 @@ class RoundRodGeometryTest(unittest.TestCase):
                     radius, geometry["geometry_mm"]["rod_array"]["rod_center_radius"]
                 )
 
-    def test_zero_length_connector_is_direct_connection(self):
-        geometry = self.resolve("hexapole", 0.55)
-        self.assertEqual(geometry["interfaces_mm"]["entrance"]["connector_length_mm"], 0.0)
-        self.assertEqual(geometry["interfaces_mm"]["exit"]["connector_length_mm"], 0.0)
-        self.assertEqual(
-            geometry["interfaces_mm"]["entrance"]["connector_shape"],
-            "cylindrical_bore",
-        )
 
     def test_same_geometry_exports_all_rods_to_simion(self):
         resolved = json.loads(
@@ -373,26 +322,9 @@ class RoundRodGeometryTest(unittest.TestCase):
         self.assertIn("planar,none", gem)
         self.assertIn(f"parent_resolved_sha256={resolved['resolved_sha256']}", gem)
 
-    def test_positive_connector_shifts_planes_and_exports_tube(self):
-        request = json.loads(
-            (ROOT / "projects/rf_multipole_ion_optics/variants/hexapole/config/requests/baseline.json").read_text()
-        )
-        request["geometry_mm"]["exit_interface"]["connector_length_mm"] = 2.0
-        request["geometry_mm"]["enclosure"]["vacuum_z_max_mm"] += 2.0
-        resolved = compile_design_request(request, expected_identity=request["identity"])
-        self.assertEqual(resolved["interfaces_mm"]["exit"]["connector_length_mm"], 2.0)
-        self.assertIn(",,2)", render_gem(resolved, 0.2))
 
-    def test_design_request_rejects_unknown_connector_shape(self):
-        root = ROOT / "projects/rf_multipole_ion_optics/variants/hexapole"
-        request = json.loads(
-            (root / "config/requests/mechanical_base.json").read_text(encoding="utf-8")
-        )
-        request["geometry_mm"]["entrance_interface"]["connector_shape"] = "square"
-        with self.assertRaisesRegex(MultipoleDesignCompileError, "connector_shape"):
-            compile_design_request(request, expected_identity=request["identity"])
 
-    def test_segmented_simion_geometry_separates_rods_ground_and_output(self):
+    def test_segmented_bare_geometry_exports_only_independent_rod_groups(self):
         resolved = json.loads(
             (
                 ROOT
@@ -403,8 +335,9 @@ class RoundRodGeometryTest(unittest.TestCase):
         gem = render_gem(resolved, 0.2)
         for electrode_id in range(1, 9):
             self.assertIn(f"e({electrode_id}) {{ fill {{ within {{ cylinder", gem)
-        self.assertIn("e(9) { fill {", gem)
-        self.assertIn("e(10) { fill {", gem)
+        self.assertNotIn("e(9) { fill {", gem)
+        self.assertNotIn("e(10) { fill {", gem)
+        self.assertEqual(resolved["geometry_mm"]["enclosure_layout"]["bodies"], [])
         self.assertNotIn("e(3) { fill {\n    within { cylinder(0,0", gem)
         quad_gem = render_segmented_rod_array_gem(segmented)
         self.assertEqual(quad_gem.count("locate(0,0,"), 24)
@@ -412,24 +345,34 @@ class RoundRodGeometryTest(unittest.TestCase):
         first = segmented["electrodes"][0]
         self.assertIn(f"locate(0,0,{first['z_max_mm']:.15g})", quad_gem)
 
-    def test_exit_aperture_plate_mode_keeps_continuous_rods_and_separates_output(self):
-        resolved = json.loads(
-            (
-                ROOT
-                / "projects/rf_multipole_ion_optics/variants/hexapole/config/resolved_design_no_acceleration_full_length.json"
-            ).read_text()
-        )
-        with self.assertRaises(TypeError):
-            render_gem(resolved, 0.2, separate_output_electrode=True)
 
-    def test_design_request_rejects_negative_connector_length(self):
-        root = ROOT / "projects/rf_multipole_ion_optics/variants/hexapole"
-        request = json.loads(
-            (root / "config/requests/mechanical_base.json").read_text(encoding="utf-8")
-        )
-        request["geometry_mm"]["entrance_interface"]["connector_length_mm"] = -0.1
-        with self.assertRaises(MultipoleDesignCompileError):
-            compile_design_request(request, expected_identity=request["identity"])
+
+    def test_explicit_shell_adds_one_ground_group_to_segmented_rods(self):
+        request = json.loads((ROOT / "projects/rf_multipole_ion_optics/variants/octupole/config/requests/grounded_shell.json").read_text(encoding="utf-8"))
+        resolved = compile_design_request(request, expected_identity=request["identity"])
+        gem = render_gem(resolved, 0.2)
+        view = simion_geometry.physical_electrode_view(resolved)
+        rods = [row for row in view if row["scientific_id"] != "grounded_shell"]
+        ground = [row for row in view if row["scientific_id"] == "grounded_shell"]
+        self.assertEqual({row["native_electrode_id"] for row in rods}, set(range(1, 9)))
+        self.assertEqual(len(ground), 1)
+        self.assertEqual(ground[0]["native_electrode_id"], 9)
+        self.assertIn("e(9) { fill {", gem)
+        self.assertNotIn("e(10) { fill {", gem)
+        self.assertIn("; enclosure_role=shell", gem)
+        self.assertNotIn("interfaces_mm", resolved)
+
+    def test_bare_ports_use_real_rod_faces_without_optical_components(self):
+        resolved = self.resolve("hexapole", 0.55)
+        geometry = resolved["geometry_mm"]
+        self.assertEqual(geometry["enclosure"], {"model": "bare"})
+        self.assertEqual(geometry["enclosure_layout"]["bodies"], [])
+        for side, face in (("entrance", "rod_z_min"), ("exit", "rod_z_max")):
+            port = geometry["enclosure_layout"]["ports"]["mechanical_" + side]
+            self.assertEqual(port["center_mm"], [0., 0., geometry[face]])
+            self.assertEqual(port["cross_section"]["shape"], "open_rod_envelope")
+            self.assertIsNone(port["wall_thickness_mm"])
+        self.assertNotIn("interfaces_mm", resolved)
 
 
 if __name__ == "__main__":

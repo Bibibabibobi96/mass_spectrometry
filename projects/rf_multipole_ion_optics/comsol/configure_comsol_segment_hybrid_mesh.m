@@ -5,11 +5,12 @@ function selections = configure_comsol_segment_hybrid_mesh(comp, mesh, geometryT
 %
 % Geometry partitions must already exist and the geometry must have been
 % built.  Each sweep partition lies strictly inside one physical rod
-% segment, leaving rod ends, intersegment gaps, aperture plates and
+% segment, leaving rod ends, intersegment gaps, optional enclosure and
 % external regions to the tetrahedral transition mesh.
 
 strategy = numerics.mesh.hybrid;
 localized = isfield(strategy, 'sensitive_region');
+hasInterfaceBoundaries = localized && ~isempty(interfaceBoundarySelectionTags);
 exitInterfaceRefinement = false;
 assert(~isempty(sweepGeometryTags), ...
     'common:multipole:HybridMeshPartitions', ...
@@ -43,9 +44,6 @@ if localized
         strategy.transition_and_end_tetra_hmax_mm, ...
         'common:multipole:HybridMeshSensitiveRefinement', ...
         'Sensitive-region size must not exceed either surrounding core size.');
-    assert(~isempty(interfaceBoundarySelectionTags), ...
-        'common:multipole:HybridMeshInterfaceBoundaries', ...
-        'Localized meshing requires explicit entrance and exit plate boundaries.');
     exitInterfaceRefinement = isfield( ...
         sensitive, 'exit_interface_refinement');
     if exitInterfaceRefinement
@@ -121,7 +119,7 @@ end
 comp.selection.create('sel_mesh_rod_bnd', 'Union');
 comp.selection('sel_mesh_rod_bnd').set('entitydim', 2);
 comp.selection('sel_mesh_rod_bnd').set('input', rodBoundarySelectionTags);
-if localized
+if hasInterfaceBoundaries
     comp.selection.create('sel_mesh_interface_bnd', 'Union');
     comp.selection('sel_mesh_interface_bnd').set('entitydim', 2);
     comp.selection('sel_mesh_interface_bnd').set( ...
@@ -201,6 +199,8 @@ selections = struct( ...
 if localized
     selections.sweep_sensitive = sweepSensitiveSelections;
     selections.tetrahedral_sensitive = 'sel_mesh_tet_sensitive_vac';
+end
+if hasInterfaceBoundaries
     selections.interface_boundary = 'sel_mesh_interface_bnd';
 end
 if exitInterfaceRefinement

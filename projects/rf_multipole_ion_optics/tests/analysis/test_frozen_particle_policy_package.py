@@ -40,6 +40,7 @@ RELATIVE_PATHS = (
     r"common\ion_release\numpy_box_cone.py",
     r"common\ion_release\numpy_ion11_box.py",
     r"projects\rf_multipole_ion_optics\core\__init__.py",
+    r"projects\rf_multipole_ion_optics\core\interface_geometry.py",
     r"projects\rf_multipole_ion_optics\runtime\particle_source_preflight.py",
 )
 REQUIRED_MODULES = (
@@ -56,6 +57,7 @@ REQUIRED_MODULES = (
     "common.ion_release.numpy_box_cone",
     "common.ion_release.numpy_ion11_box",
     "projects.rf_multipole_ion_optics.core",
+    "projects.rf_multipole_ion_optics.core.interface_geometry",
     "projects.rf_multipole_ion_optics.runtime.particle_source_preflight",
 )
 GATE_VALIDATOR_RELATIVE_PATH = (

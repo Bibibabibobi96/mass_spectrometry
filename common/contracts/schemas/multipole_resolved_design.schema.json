@@ -4,11 +4,6 @@
   "title": "Compiled solver-neutral RF multipole design",
   "type": "object",
   "additionalProperties": false,
-  "dependentRequired": {
-    "terminal_composition": ["downstream_terminal", "axial_dc"],
-    "downstream_terminal": ["terminal_composition", "axial_dc"],
-    "axial_dc": ["terminal_composition", "downstream_terminal"]
-  },
   "required": [
     "schema_version",
     "role",
@@ -20,7 +15,6 @@
     "units",
     "coordinate",
     "geometry_mm",
-    "interfaces_mm",
     "drive",
     "axial_drive",
     "static_electrodes_V",
@@ -29,20 +23,34 @@
     "resolved_sha256"
   ],
   "properties": {
-    "schema_version": {"const": 2},
-    "role": {"const": "multipole_resolved_design_do_not_edit"},
+    "schema_version": {
+      "const": 3
+    },
+    "role": {
+      "const": "multipole_resolved_design_do_not_edit"
+    },
     "compiler": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "version"],
+      "required": [
+        "name",
+        "version"
+      ],
       "properties": {
-        "name": {"const": "common.multipole.compile_design_request", "description": "Stable v2 compiler contract identifier; source relocation does not change this serialized identity or make it an import path."},
-        "version": {"const": 2}
+        "name": {
+          "const": "common.multipole.compile_design_request",
+          "description": "Stable compiler identity; version3 separates physical enclosure and observation/numerical domains."
+        },
+        "version": {
+          "const": 3
+        }
       }
     },
     "governance": {
       "oneOf": [
-        {"type": "null"},
+        {
+          "type": "null"
+        },
         {
           "type": "object",
           "additionalProperties": false,
@@ -52,10 +60,15 @@
             "design_request_file_sha256"
           ],
           "properties": {
-            "design_variables_sha256": {"$ref": "#/$defs/sha256"},
-            "optimization_envelope_sha256": {"$ref": "#/$defs/sha256"},
-            "design_request_file_sha256": {"$ref": "#/$defs/sha256"},
-            "enclosure_model": {"$ref": "multipole_design_request.schema.json#/$defs/enclosure/oneOf/0/properties/model"}
+            "design_variables_sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "optimization_envelope_sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "design_request_file_sha256": {
+              "$ref": "#/$defs/sha256"
+            }
           }
         }
       ]
@@ -63,10 +76,18 @@
     "request": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["request_id", "sha256"],
+      "required": [
+        "request_id",
+        "sha256"
+      ],
       "properties": {
-        "request_id": {"type": "string", "minLength": 1},
-        "sha256": {"$ref": "#/$defs/sha256"}
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
       }
     },
     "sources": {
@@ -74,11 +95,23 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["label", "path", "sha256"],
+        "required": [
+          "label",
+          "path",
+          "sha256"
+        ],
         "properties": {
-          "label": {"type": "string", "minLength": 1},
-          "path": {"type": "string", "minLength": 1},
-          "sha256": {"$ref": "#/$defs/sha256"}
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "$ref": "#/$defs/sha256"
+          }
         }
       }
     },
@@ -92,32 +125,70 @@
         "electrode_count"
       ],
       "properties": {
-        "project_id": {"type": "string", "minLength": 1},
-        "family_id": {"const": "rf_multipole_ion_optics"},
-        "radial_order_n": {"type": "integer", "minimum": 2},
-        "electrode_count": {"type": "integer", "minimum": 4}
+        "project_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "family_id": {
+          "const": "rf_multipole_ion_optics"
+        },
+        "radial_order_n": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "electrode_count": {
+          "type": "integer",
+          "minimum": 4
+        }
       }
     },
     "units": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["length", "voltage", "frequency", "phase", "energy"],
+      "required": [
+        "length",
+        "voltage",
+        "frequency",
+        "phase",
+        "energy"
+      ],
       "properties": {
-        "length": {"const": "mm"},
-        "voltage": {"const": "V"},
-        "frequency": {"const": "Hz"},
-        "phase": {"const": "rad"},
-        "energy": {"const": "eV"}
+        "length": {
+          "const": "mm"
+        },
+        "voltage": {
+          "const": "V"
+        },
+        "frequency": {
+          "const": "Hz"
+        },
+        "phase": {
+          "const": "rad"
+        },
+        "energy": {
+          "const": "eV"
+        }
       }
     },
     "coordinate": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["coordinate_id", "axial_axis", "orientation_rad"],
+      "required": [
+        "coordinate_id",
+        "axial_axis",
+        "orientation_rad"
+      ],
       "properties": {
-        "coordinate_id": {"type": "string", "minLength": 1},
-        "axial_axis": {"const": "+z"},
-        "orientation_rad": {"type": "number"}
+        "coordinate_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "axial_axis": {
+          "const": "+z"
+        },
+        "orientation_rad": {
+          "type": "number"
+        }
       }
     },
     "geometry_mm": {
@@ -135,14 +206,35 @@
         "rod_array"
       ],
       "properties": {
-        "inscribed_radius_r0": {"type": "number", "exclusiveMinimum": 0},
-        "rod_radius_ratio": {"type": "number", "exclusiveMinimum": 0},
-        "rod_radius": {"type": "number", "exclusiveMinimum": 0},
-        "rod_center_radius": {"type": "number", "exclusiveMinimum": 0},
-        "rod_z_min": {"type": "number"},
-        "rod_z_max": {"type": "number"},
-        "rod_length": {"type": "number", "exclusiveMinimum": 0},
-        "enclosure": {"$ref": "#/$defs/enclosure"},
+        "inscribed_radius_r0": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "rod_radius_ratio": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "rod_radius": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "rod_center_radius": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "rod_z_min": {
+          "type": "number"
+        },
+        "rod_z_max": {
+          "type": "number"
+        },
+        "rod_length": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "enclosure": {
+          "$ref": "#/$defs/enclosure"
+        },
         "rod_array": {
           "type": "object",
           "additionalProperties": false,
@@ -154,29 +246,86 @@
             "rods"
           ],
           "properties": {
-            "inscribed_radius_r0": {"type": "number"},
-            "rod_radius": {"type": "number"},
-            "rod_center_radius": {"type": "number"},
-            "rod_length": {"type": "number"},
+            "inscribed_radius_r0": {
+              "type": "number"
+            },
+            "rod_radius": {
+              "type": "number"
+            },
+            "rod_center_radius": {
+              "type": "number"
+            },
+            "rod_length": {
+              "type": "number"
+            },
             "rods": {
               "type": "array",
               "minItems": 4,
-              "items": {"$ref": "#/$defs/rod"}
+              "items": {
+                "$ref": "#/$defs/rod"
+              }
             }
           }
+        },
+        "numerical_domain": {
+          "$ref": "multipole_design_request.schema.json#/$defs/numerical_domain"
+        },
+        "observations": {
+          "$ref": "multipole_design_request.schema.json#/$defs/observations"
+        },
+        "enclosure_layout": {
+          "$ref": "#/$defs/enclosure_layout"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "enclosure": {
+                "properties": {
+                  "model": {
+                    "const": "rectangular_reference_enclosure_v1"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "numerical_domain": false,
+              "observations": false,
+              "enclosure_layout": false
+            }
+          },
+          "else": {
+            "required": [
+              "numerical_domain",
+              "observations",
+              "enclosure_layout"
+            ]
+          }
+        }
+      ]
     },
     "interfaces_mm": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["entrance", "exit"],
+      "required": [
+        "entrance",
+        "exit"
+      ],
       "properties": {
-        "entrance": {"$ref": "#/$defs/resolved_entrance_interface"},
-        "exit": {"$ref": "#/$defs/resolved_exit_interface"}
+        "entrance": {
+          "$ref": "#/$defs/resolved_entrance_interface"
+        },
+        "exit": {
+          "$ref": "#/$defs/resolved_exit_interface"
+        }
       }
     },
-    "drive": {"$ref": "#/$defs/drive"},
+    "drive": {
+      "$ref": "#/$defs/drive"
+    },
     "axial_drive": {
       "description": "Electrical axial-drive topology. This is independent of segmentation.strategy, which describes physical rod continuity or segmentation.",
       "type": "object",
@@ -196,30 +345,48 @@
             "exit_aperture_plate_potential_step"
           ]
         },
-        "source_reference_V": {"type": "number"},
-        "output_reference_V": {"type": "number"},
-        "predicted_energy_gain_eV": {"type": "number"},
-        "predicted_output_energy_eV": {"type": "number"}
+        "source_reference_V": {
+          "type": "number"
+        },
+        "output_reference_V": {
+          "type": "number"
+        },
+        "predicted_energy_gain_eV": {
+          "type": "number"
+        },
+        "predicted_output_energy_eV": {
+          "type": "number"
+        }
       }
     },
-    "terminal_composition": {"$ref": "#/$defs/terminal_composition"},
-    "downstream_terminal": {"$ref": "#/$defs/downstream_terminal"},
-    "axial_dc": {"$ref": "#/$defs/axial_dc"},
-    "static_electrodes_V": {"$ref": "#/$defs/static_electrodes"},
+    "static_electrodes_V": {
+      "$ref": "#/$defs/static_electrodes"
+    },
     "particle_source": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["energy_model", "charge_state"],
+      "required": [
+        "energy_model",
+        "charge_state"
+      ],
       "properties": {
         "energy_model": {
           "oneOf": [
             {
               "type": "object",
               "additionalProperties": false,
-              "required": ["kind", "kinetic_energy_eV"],
+              "required": [
+                "kind",
+                "kinetic_energy_eV"
+              ],
               "properties": {
-                "kind": {"const": "monoenergetic"},
-                "kinetic_energy_eV": {"type": "number", "exclusiveMinimum": 0}
+                "kind": {
+                  "const": "monoenergetic"
+                },
+                "kinetic_energy_eV": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                }
               }
             },
             {
@@ -233,16 +400,35 @@
                 "authority"
               ],
               "properties": {
-                "kind": {"const": "bounded_distribution"},
-                "minimum_energy_eV": {"type": "number", "exclusiveMinimum": 0},
-                "maximum_energy_eV": {"type": "number", "exclusiveMinimum": 0},
-                "nominal_energy_eV": {"type": "number", "exclusiveMinimum": 0},
-                "authority": {"type": "string", "minLength": 1}
+                "kind": {
+                  "const": "bounded_distribution"
+                },
+                "minimum_energy_eV": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "maximum_energy_eV": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "nominal_energy_eV": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "authority": {
+                  "type": "string",
+                  "minLength": 1
+                }
               }
             }
           ]
         },
-        "charge_state": {"type": "integer", "not": {"const": 0}}
+        "charge_state": {
+          "type": "integer",
+          "not": {
+            "const": 0
+          }
+        }
       }
     },
     "segmentation": {
@@ -255,20 +441,33 @@
         "segmented_rod_array"
       ],
       "properties": {
-        "strategy": {"enum": ["off", "uniform", "explicit"]},
+        "strategy": {
+          "enum": [
+            "off",
+            "uniform",
+            "explicit"
+          ]
+        },
         "axial_acceleration": {
           "oneOf": [
-            {"type": "null"},
+            {
+              "type": "null"
+            },
             {
               "type": "object",
-              "required": ["role", "derived"],
+              "required": [
+                "role",
+                "derived"
+              ],
               "properties": {
                 "role": {
                   "const": "multipole_axial_acceleration_resolved_contract"
                 },
                 "derived": {
                   "type": "object",
-                  "required": ["segments"],
+                  "required": [
+                    "segments"
+                  ],
                   "properties": {
                     "segments": {
                       "type": "array",
@@ -283,7 +482,9 @@
         },
         "segmented_rod_array": {
           "oneOf": [
-            {"type": "null"},
+            {
+              "type": "null"
+            },
             {
               "type": "object",
               "required": [
@@ -293,7 +494,9 @@
                 "electrodes"
               ],
               "properties": {
-                "role": {"const": "multipole_segmented_round_rod_array"},
+                "role": {
+                  "const": "multipole_segmented_round_rod_array"
+                },
                 "segment_count": {
                   "type": "integer",
                   "minimum": 2,
@@ -303,17 +506,25 @@
                   "type": "integer",
                   "minimum": 4
                 },
-                "electrodes": {"type": "array", "minItems": 8}
+                "electrodes": {
+                  "type": "array",
+                  "minItems": 8
+                }
               }
             }
           ]
         }
       }
     },
-    "resolved_sha256": {"$ref": "#/$defs/sha256"}
+    "resolved_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
   },
   "$defs": {
-    "sha256": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+    "sha256": {
+      "type": "string",
+      "pattern": "^[A-F0-9]{64}$"
+    },
     "rod": {
       "type": "object",
       "additionalProperties": false,
@@ -328,14 +539,35 @@
         "z_max_mm"
       ],
       "properties": {
-        "rod_id": {"type": "integer", "minimum": 1},
-        "electrode_group": {"enum": [1, 2]},
-        "angle_rad": {"type": "number"},
-        "center_x_mm": {"type": "number"},
-        "center_y_mm": {"type": "number"},
-        "radius_mm": {"type": "number", "exclusiveMinimum": 0},
-        "z_min_mm": {"type": "number"},
-        "z_max_mm": {"type": "number"}
+        "rod_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "electrode_group": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "angle_rad": {
+          "type": "number"
+        },
+        "center_x_mm": {
+          "type": "number"
+        },
+        "center_y_mm": {
+          "type": "number"
+        },
+        "radius_mm": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "z_min_mm": {
+          "type": "number"
+        },
+        "z_max_mm": {
+          "type": "number"
+        }
       }
     },
     "resolved_entrance_interface": {
@@ -352,15 +584,34 @@
         "connector_shape"
       ],
       "properties": {
-        "aperture_radius_mm": {"type": "number", "exclusiveMinimum": 0},
-        "aperture_plate_upstream_face_z_mm": {"type": "number"},
-        "aperture_plate_downstream_face_z_mm": {"type": "number"},
-        "connector_length_mm": {"type": "number", "minimum": 0},
-        "connector_upstream_face_z_mm": {"type": "number"},
-        "connector_downstream_face_z_mm": {"type": "number"},
-        "release_plane_z_mm": {"type": "number"},
+        "aperture_radius_mm": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "aperture_plate_upstream_face_z_mm": {
+          "type": "number"
+        },
+        "aperture_plate_downstream_face_z_mm": {
+          "type": "number"
+        },
+        "connector_length_mm": {
+          "type": "number",
+          "minimum": 0
+        },
+        "connector_upstream_face_z_mm": {
+          "type": "number"
+        },
+        "connector_downstream_face_z_mm": {
+          "type": "number"
+        },
+        "release_plane_z_mm": {
+          "type": "number"
+        },
         "connector_shape": {
-          "enum": ["cylindrical_bore", "rectangular_bore"]
+          "enum": [
+            "cylindrical_bore",
+            "rectangular_bore"
+          ]
         }
       }
     },
@@ -380,85 +631,45 @@
         "connector_shape"
       ],
       "properties": {
-        "aperture_radius_mm": {"type": "number", "exclusiveMinimum": 0},
-        "aperture_plate_upstream_face_z_mm": {"type": "number"},
-        "aperture_plate_downstream_face_z_mm": {"type": "number"},
-        "aperture_crossing_plane_z_mm": {"type": "number"},
-        "connector_length_mm": {"type": "number", "minimum": 0},
-        "connector_upstream_face_z_mm": {"type": "number"},
-        "connector_downstream_face_z_mm": {"type": "number"},
-        "handoff_plane_z_mm": {"type": "number"},
-        "census_plane_z_mm": {"type": "number"},
+        "aperture_radius_mm": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "aperture_plate_upstream_face_z_mm": {
+          "type": "number"
+        },
+        "aperture_plate_downstream_face_z_mm": {
+          "type": "number"
+        },
+        "aperture_crossing_plane_z_mm": {
+          "type": "number"
+        },
+        "connector_length_mm": {
+          "type": "number",
+          "minimum": 0
+        },
+        "connector_upstream_face_z_mm": {
+          "type": "number"
+        },
+        "connector_downstream_face_z_mm": {
+          "type": "number"
+        },
+        "handoff_plane_z_mm": {
+          "type": "number"
+        },
+        "census_plane_z_mm": {
+          "type": "number"
+        },
         "connector_shape": {
-          "enum": ["cylindrical_bore", "rectangular_bore"]
+          "enum": [
+            "cylindrical_bore",
+            "rectangular_bore"
+          ]
         }
       }
     },
     "enclosure": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "role",
-            "model",
-            "working_region_radius_mm",
-            "vacuum_z_min_mm",
-            "vacuum_z_max_mm",
-            "shield_inner_radius_mm",
-            "shield_outer_radius_mm",
-            "entrance_outer_endcap_upstream_face_z_mm",
-            "entrance_outer_endcap_downstream_face_z_mm",
-            "exit_outer_endcap_upstream_face_z_mm",
-            "exit_outer_endcap_downstream_face_z_mm"
-          ],
-          "properties": {
-            "role": {"const": "full_length_grounded_shield"},
-            "model": {"enum": ["cylindrical_grounded_shield_v1", "cylindrical_grounded_shield_through_exit_v1", "cylindrical_grounded_shield_through_entrance_exit_v1"]},
-            "working_region_radius_mm": {"type": "number", "exclusiveMinimum": 0},
-            "vacuum_z_min_mm": {"type": "number"},
-            "vacuum_z_max_mm": {"type": "number"},
-            "shield_inner_radius_mm": {"type": "number", "exclusiveMinimum": 0},
-            "shield_outer_radius_mm": {"type": "number", "exclusiveMinimum": 0},
-            "entrance_outer_endcap_upstream_face_z_mm": {"type": "number"},
-            "entrance_outer_endcap_downstream_face_z_mm": {"type": "number"},
-            "exit_outer_endcap_upstream_face_z_mm": {"type": "number"},
-            "exit_outer_endcap_downstream_face_z_mm": {"type": "number"}
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "role",
-            "model",
-            "working_region_radius_mm",
-            "vacuum_z_min_mm",
-            "vacuum_z_max_mm",
-            "outer_half_width_mm",
-            "inner_half_width_mm",
-            "exit_enclosure_z_min_mm",
-            "exit_enclosure_z_max_mm",
-            "exit_front_wall_end_z_mm",
-            "physical_detector_radius_mm",
-            "physical_detector_thickness_mm"
-          ],
-          "properties": {
-            "role": {"const": "downstream_local_reference_enclosure"},
-            "model": {"const": "rectangular_reference_enclosure_v1"},
-            "working_region_radius_mm": {"type": "number", "exclusiveMinimum": 0},
-            "vacuum_z_min_mm": {"type": "number"},
-            "vacuum_z_max_mm": {"type": "number"},
-            "outer_half_width_mm": {"type": "number", "exclusiveMinimum": 0},
-            "inner_half_width_mm": {"type": "number", "exclusiveMinimum": 0},
-            "exit_enclosure_z_min_mm": {"type": "number"},
-            "exit_enclosure_z_max_mm": {"type": "number"},
-            "exit_front_wall_end_z_mm": {"type": "number"},
-            "physical_detector_radius_mm": {"type": "number", "exclusiveMinimum": 0},
-            "physical_detector_thickness_mm": {"type": "number", "exclusiveMinimum": 0}
-          }
-        }
-      ]
+      "$ref": "multipole_design_request.schema.json#/$defs/enclosure"
     },
     "drive": {
       "type": "object",
@@ -472,155 +683,129 @@
         "phase_rad"
       ],
       "properties": {
-        "waveform": {"enum": ["sine", "cosine"]},
+        "waveform": {
+          "enum": [
+            "sine",
+            "cosine"
+          ]
+        },
         "rf_amplitude_V_zero_to_peak_per_group": {
           "type": "number",
           "exclusiveMinimum": 0
         },
-        "dc_amplitude_V_per_group": {"type": "number"},
-        "common_mode_offset_V": {"type": "number"},
-        "frequency_Hz": {"type": "number", "exclusiveMinimum": 0},
-        "phase_rad": {"type": "number"}
-      }
-    },
-    "terminal_composition": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["composer", "base_resolved_sha256", "terminal_profile_sha256"],
-      "properties": {
-        "composer": {"const": "common.multipole.downstream_terminal.compose_downstream_terminal", "description": "Stable composition contract identifier, retained when the owning module moves."},
-        "base_resolved_sha256": {"$ref": "#/$defs/sha256"},
-        "terminal_profile_sha256": {"$ref": "#/$defs/sha256"}
-      }
-    },
-    "downstream_terminal": {
-      "type": "object",
-      "additionalProperties": false,
-      "allOf": [
-        {
-          "if": {"properties": {"owner": {"const": "upstream"}}},
-          "then": {"properties": {"upstream_terminal_electrode_present": {"const": true}}}
+        "dc_amplitude_V_per_group": {
+          "type": "number"
         },
-        {
-          "if": {"properties": {"owner": {"const": "downstream"}}},
-          "then": {"properties": {"upstream_terminal_electrode_present": {"const": false}}}
+        "common_mode_offset_V": {
+          "type": "number"
+        },
+        "frequency_Hz": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "phase_rad": {
+          "type": "number"
         }
-      ],
-      "required": [
-        "terminal_profile_id", "owner", "surface_role", "surface_plane_z_mm",
-        "rod_end_clearance_mm", "upstream_enclosure_end_plane_z_mm",
-        "upstream_enclosure_to_terminal_clearance_mm", "electrode_thickness_mm",
-        "electrode_outer_shape", "electrode_outer_width_mm", "electrode_outer_height_mm",
-        "aperture", "terminal_potential_V", "upstream_terminal_electrode_present"
-      ],
-      "properties": {
-        "terminal_profile_id": {"type": "string", "minLength": 1},
-        "owner": {"enum": ["upstream", "downstream"]},
-        "surface_role": {"const": "aperture_outer_tangent_plane"},
-        "surface_plane_z_mm": {"type": "number"},
-        "rod_end_clearance_mm": {"type": "number", "exclusiveMinimum": 0},
-        "upstream_enclosure_end_plane_z_mm": {"type": "number"},
-        "upstream_enclosure_to_terminal_clearance_mm": {"type": "number", "minimum": 0},
-        "electrode_thickness_mm": {"type": "number", "exclusiveMinimum": 0},
-        "electrode_outer_shape": {"const": "rectangular"},
-        "electrode_outer_width_mm": {"type": "number", "exclusiveMinimum": 0},
-        "electrode_outer_height_mm": {"type": "number", "exclusiveMinimum": 0},
-        "aperture": {
-          "type": "object",
-          "oneOf": [
-            {
-              "additionalProperties": false,
-              "required": ["shape", "width_mm", "height_mm", "width_axis", "height_axis"],
-              "properties": {
-                "shape": {"const": "rectangular"},
-                "width_mm": {"type": "number", "exclusiveMinimum": 0},
-                "height_mm": {"type": "number", "exclusiveMinimum": 0},
-                "width_axis": {"const": "multipole_x"},
-                "height_axis": {"const": "multipole_y"}
-              }
-            },
-            {
-              "additionalProperties": false,
-              "required": ["shape", "radius_mm"],
-              "properties": {
-                "shape": {"const": "circular"},
-                "radius_mm": {"type": "number", "exclusiveMinimum": 0}
-              }
-            }
-          ]
-        },
-        "terminal_potential_V": {"const": 0.0},
-        "upstream_terminal_electrode_present": {"type": "boolean"}
-      }
-    },
-    "axial_dc": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["rod_electrodes", "upstream_shield_potential_V", "entrance_plate_potential_V", "entrance_reference_sleeve", "terminal_electrode_potential_V"],
-      "properties": {
-        "rod_electrodes": {
-          "type": "array", "minItems": 1,
-          "items": {"type": "object", "additionalProperties": false, "required": ["electrode_id", "potential_V"], "properties": {
-            "electrode_id": {"type": "integer", "minimum": 1}, "potential_V": {"type": "number"}
-          }}
-        },
-        "upstream_shield_potential_V": {"const": 0.0},
-        "entrance_plate_potential_V": {"type": "number"},
-        "entrance_reference_sleeve": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "profile_id", "role", "potential_V", "inner_radius_mm",
-            "outer_radius_mm", "upstream_face_z_mm", "downstream_face_z_mm",
-            "minimum_insulation_gap_mm"
-          ],
-          "properties": {
-            "profile_id": {"const": "source_reference_sleeve_v1"},
-            "role": {"const": "functional_source_reference_not_shield"},
-            "potential_V": {"type": "number"},
-            "inner_radius_mm": {"type": "number", "exclusiveMinimum": 0},
-            "outer_radius_mm": {"type": "number", "exclusiveMinimum": 0},
-            "upstream_face_z_mm": {"type": "number"},
-            "downstream_face_z_mm": {"type": "number"},
-            "minimum_insulation_gap_mm": {"type": "number", "exclusiveMinimum": 0}
-          }
-        },
-        "terminal_electrode_potential_V": {"type": "number"}
       }
     },
     "static_electrodes": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "role",
-            "entrance_aperture_plate_and_connector_V",
-            "exit_outer_enclosure_and_connector_V",
-            "physical_detector_V"
-          ],
-          "properties": {
-            "role": {"const": "rectangular_reference_static_electrodes"},
-            "entrance_aperture_plate_and_connector_V": {"type": "number"},
-            "exit_outer_enclosure_and_connector_V": {"const": 0.0},
-            "physical_detector_V": {"type": "number"}
+      "$ref": "multipole_design_request.schema.json#/$defs/static_electrodes"
+    },
+    "ring_body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "inner_radius_mm",
+        "outer_radius_mm",
+        "z_min_mm",
+        "z_max_mm"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "shell",
+            "entrance_endcap",
+            "exit_endcap"
+          ]
+        },
+        "inner_radius_mm": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "outer_radius_mm": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "z_min_mm": {
+          "type": "number"
+        },
+        "z_max_mm": {
+          "type": "number"
+        }
+      }
+    },
+    "enclosure_layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bodies",
+        "ports"
+      ],
+      "properties": {
+        "bodies": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/ring_body"
           }
         },
-        {
+        "ports": {
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "role",
-            "shield_entrance_outer_endcap_aperture_plate_connector_V",
-            "exit_outer_endcap_aperture_plate_connector_V"
+            "mechanical_entrance",
+            "mechanical_exit"
           ],
           "properties": {
-            "role": {"const": "cylindrical_shield_static_electrodes"},
-            "shield_entrance_outer_endcap_aperture_plate_connector_V": {"const": 0.0},
-            "exit_outer_endcap_aperture_plate_connector_V": {"const": 0.0}
+            "mechanical_entrance": {
+              "$ref": "component_geometry_interface.schema.json#/properties/ports/additionalProperties"
+            },
+            "mechanical_exit": {
+              "$ref": "component_geometry_interface.schema.json#/properties/ports/additionalProperties"
+            }
           }
         }
-      ]
+      }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "geometry_mm": {
+            "properties": {
+              "enclosure": {
+                "properties": {
+                  "model": {
+                    "const": "rectangular_reference_enclosure_v1"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "interfaces_mm"
+        ]
+      },
+      "else": {
+        "properties": {
+          "interfaces_mm": false
+        }
+      }
+    }
+  ]
 }

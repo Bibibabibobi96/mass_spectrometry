@@ -551,36 +551,6 @@
       }
     },
     {
-      "stage": "rf_multipole_foundation",
-      "dependency_profile": "locked",
-      "repository_integration_group": "regression",
-      "matches": [
-        {
-          "regex": "^projects/rf_multipole_ion_optics/(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)(?:core/|runtime/|analysis/|comsol/|simion/|config/(?:contracts|campaigns|sources)/|config/simion_layout_template\\.json$|tests/domain/)",
-          "reason": "rf_multipole_domain_dependency_changed"
-        },
-        {
-          "regex": "^common/simion/(?!README\\.md$|test_[^/]+\\.(?:py|ps1|m|lua)$)",
-          "reason": "common_simion_dependency_changed"
-        },
-        {
-          "regex": "^common/comsol/(?!README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
-          "reason": "common_comsol_dependency_changed"
-        },
-        {
-          "exact": "common/resource_budget_support.ps1",
-          "reason": "shared_resource_budget_dependency_changed"
-        }
-      ],
-      "command": {
-        "runner": "python",
-        "arguments": [
-          "-m",
-          "projects.rf_multipole_ion_optics.analysis.verify_family_foundation"
-        ]
-      }
-    },
-    {
       "stage": "integration_common",
       "dependency_profile": "locked",
       "repository_integration_group": "regression",

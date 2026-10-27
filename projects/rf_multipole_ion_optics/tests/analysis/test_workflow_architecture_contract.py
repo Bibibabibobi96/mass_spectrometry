@@ -54,10 +54,6 @@ CONDITIONAL_LUA_FIELDS = {
     "mechanical_exit_plane_mm",
     "mechanical_exit_aperture_radius_mm",
     "mechanical_exit_guard_mm",
-    "ground_electrode_id",
-    "ground_reference_v",
-    "output_electrode_id",
-    "output_reference_v",
 }
 LATE_LUA_FIELDS = {"mode", "operating_point", "summary_json"}
 PHYSICAL_PROFILE_SWITCHES = {
@@ -554,15 +550,13 @@ $results | Select-Object specification, peak_working_set_bytes | ConvertTo-Json 
             "frequency_hz",
             "phase_rad",
             "waveform",
-            "axis_voltage_v",
-            "entrance_voltage_v",
-            "exit_voltage_v",
-            "physical_detector_voltage_v",
+            "rod_electrodes",
+            "static_electrodes",
             "rf_steps_per_period",
             "maximum_time_us",
         }
         for field in physics_fields:
-            self.assertRegex(lua, rf"assert\(run_config\.{field}\)")
+            self.assertRegex(lua, rf"assert\(run_config\.{field}(?:\)|,)")
             self.assertNotRegex(lua, rf"run_config\.{field}\s+or\s+0(?:\.0)?\b")
 
     def test_profiles_bind_identity_not_repeated_physical_scalars(self) -> None:

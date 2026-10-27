@@ -11,8 +11,7 @@ import unittest
 from integrations.tests.test_single_reflection_preparation import fixture, release_fixture, write_json, rename_author_instances
 from integrations.workflows.single_reflection_flight.prepare import prepare
 from integrations.workflows.single_reflection_flight.fields import prepare_field_design, POLICY
-from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
-from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import identity
+from projects.rf_multipole_ion_optics.simion.simion_geometry import physical_electrode_view
 from integrations.runtime.single_flight_frontend import native_frontend_instances
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture, multi_inputs, multipole_source as chained_source, quadrupole_source
 from common.contracts.verify_run_manifest import record_path
@@ -20,15 +19,8 @@ from common.contracts.rigid_transform import FramedPosition, RigidTransform, rel
 
 
 def multipole_source(project):
-    """Compile a compatible mechanical test design through the real provider.
-
-    These four-segment fixtures are not approved physical operating points.
-    """
-    root = Path(__file__).resolve().parents[2]
-    request = json.loads((root / 'projects/rf_multipole_ion_optics/variants/octupole/config/requests/through_exit.json').read_text())
-    request['identity'] = identity(project)
-    request['request_id'] = 'test_' + project
-    return compile_design_request(request, expected_identity=request['identity'])
+    """Compile the current bare provider through its actual design compiler."""
+    return chained_source(project)
 
 
 class SingleReflectionFieldsTests(unittest.TestCase):
@@ -152,10 +144,10 @@ class SingleReflectionFieldsTests(unittest.TestCase):
                 path, run, _ = fixture(Path(directory), source=source)
                 prepare(path, run)
                 design = json.loads((run / 'inputs/frontend_field_design.json').read_text())
-                self.assertEqual(len(design['domains'][0]['physical_samples']), 4 * rod_count + 27)
+                self.assertEqual(len(design['domains'][0]['physical_samples']), 4 * rod_count + 25)
                 rod_samples = [row for row in design['domains'][0]['physical_samples'] if row['kind'] == 'rod']
                 self.assertEqual(len(rod_samples), 4 * rod_count)
-                self.assertEqual(len(design['working_points'][0]['electrode_voltages_v']), 35)
+                self.assertEqual(len(design['working_points'][0]['electrode_voltages_v']), 8 + 25)
             for change in ('missing', 'duplicate', 'wrong_group'):
                 invalid = copy.deepcopy(source)
                 pieces = invalid['segmentation']['segmented_rod_array']['electrodes']
@@ -165,13 +157,13 @@ class SingleReflectionFieldsTests(unittest.TestCase):
                 oatof = candidate_300mm_fixture()
                 with self.subTest(project=project, change=change), self.assertRaises(ValueError):
                     kw = inputs(invalid, oatof)
-                    kw['electrode_bindings']['multipole'] = {i: i for i in range(1, 11)}
-                    compile_frontend_geometry(invalid, oatof, **kw)
+                    kw['electrode_bindings']['multipole'] = {row['native_electrode_id']: row['native_electrode_id'] for row in physical_electrode_view(source)}
+                    compile_frontend_geometry({'multipole': invalid}, oatof, **kw)
 
     def test_two_and_three_provider_dc_and_rf_tables_are_independent(self):
         from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
         oatof = candidate_300mm_fixture()
-        sources = [chained_source('octupole'), chained_source('hexapole'), chained_source('quadrupole')]
+        sources = [chained_source('octupole', shell=True), chained_source('hexapole'), chained_source('quadrupole', shell=True)]
         for count in (2, 3):
             names = [f'mp_{index}' for index in range(count)]
             kw = multi_inputs(sources[:count], oatof, names=names)
@@ -193,16 +185,21 @@ class SingleReflectionFieldsTests(unittest.TestCase):
             for name, source in zip(names, sources[:count], strict=True):
                 inverse = relative_transform(poses[name], poses[downstream]).inverse()
                 mapping = geometry['electrode_bindings'][name]
-                for native_id in (9, 10):
-                    sample = next(row for row in domain['physical_samples']
-                                  if row['label'] == f'static_e{mapping[native_id]}')
-                    xyz = tuple(domain['instance_origin_mm'][axis] + gu * domain['cell_mm_xyz'][axis]
-                                for axis, gu in zip('xyz', sample['gu'], strict=True))
-                    local = inverse.transform_position(FramedPosition(inverse.from_frame_id, xyz)).coordinates_mm
-                    enclosure = source['geometry_mm']['enclosure']
-                    # Neither audit anchor may land on a component mating cap.
-                    self.assertGreater(local[2], enclosure['entrance_outer_endcap_downstream_face_z_mm'])
-                    self.assertLess(local[2], enclosure['exit_outer_endcap_upstream_face_z_mm'])
+                static = [row for row in physical_electrode_view(source) if row['voltage_source']['kind'] == 'static']
+                if not static:
+                    self.assertEqual(source['geometry_mm']['enclosure_layout']['bodies'], [])
+                for native in static:
+                    eid = mapping[native['native_electrode_id']]
+                    for body in source['geometry_mm']['enclosure_layout']['bodies']:
+                        sample = next(row for row in domain['physical_samples']
+                                      if row['label'] == f'{body["role"]}_e{eid}')
+                        xyz = tuple(domain['instance_origin_mm'][axis] + gu * domain['cell_mm_xyz'][axis]
+                                    for axis, gu in zip('xyz', sample['gu'], strict=True))
+                        local = inverse.transform_position(FramedPosition(inverse.from_frame_id, xyz)).coordinates_mm
+                        self.assertGreaterEqual(math.hypot(*local[:2]), body['inner_radius_mm'])
+                        self.assertLessEqual(math.hypot(*local[:2]), body['outer_radius_mm'])
+                        self.assertGreaterEqual(local[2], body['z_min_mm'])
+                        self.assertLessEqual(local[2], body['z_max_mm'])
             for ordinal, point in enumerate(design['working_points'][1:-1]):
                 active = {key for key, value in point['electrode_voltages_v'].items() if value}
                 provider_ids = {str(value) for value in geometry['electrode_bindings'][names[ordinal]].values()}
@@ -274,9 +271,9 @@ class SingleReflectionFieldsTests(unittest.TestCase):
         return (multipole, load(f'components/{multipole}/resolved_design.json'), load(f'components/{oatof}/resolved_design.json'),
                 geometry, author['numerics'], load('frontend_field_design.json'))
 
-    def test_actual_32_pieces_35_electrical_groups_and_provider_voltages(self):
+    def test_actual_32_pieces_and_only_declared_electrical_groups_and_provider_voltages(self):
         with tempfile.TemporaryDirectory() as directory:
-            multipole, upstream, _, _, numerics, design = self.prepared(Path(directory))
+            multipole, upstream, _, geometry, numerics, design = self.prepared(Path(directory))
             self.assertEqual(design['schema_version'], 3)
             self.assertEqual(design['domains'][0]['boundary_policy'], 'native_zero_neumann')
             self.assertEqual(design['rf_reference_voltage_v'], numerics['rf_reference_voltage_v'])
@@ -291,25 +288,26 @@ class SingleReflectionFieldsTests(unittest.TestCase):
             self.assertEqual(len(rods), 32)
             self.assertEqual({(r['segment_id'], r['parent_rod_id']) for r in rods},
                              {(s, r) for s in range(1, 5) for r in range(1, 9)})
-            self.assertEqual({r['electrode_id'] for r in physical}, set(range(1, 36)))
-            self.assertEqual(len(physical), 59)
+            expected_ids = {value for mapping in geometry['electrode_bindings'].values() for entry in mapping.values() for value in (entry if isinstance(entry, list) else [entry])}
+            self.assertEqual({r['electrode_id'] for r in physical}, expected_ids)
+            self.assertEqual(len(physical), 32 + 25)
             self.assertEqual([p['kind'] for p in design['working_points']],
                              ['carrier_off', 'rf_reference', 'pulse_delta'])
             for point in design['working_points']:
                 values = point['electrode_voltages_v']
-                self.assertEqual(set(values), {str(i) for i in range(1, 36)})
-                self.assertEqual([values[str(i)] for i in (9, 10, 11)], [0., 0., 0.])
+                self.assertEqual(set(values), {str(i) for i in expected_ids})
+                self.assertEqual(values[str(geometry['electrode_bindings']['oatof']['grounded_shield_id'])], 0.)
                 self.assertNotIn('refine_convergence_v', point)
                 self.assertEqual(design['domains'][0]['refine_convergence_v'], numerics['frontend_domains']['parent']['refine_convergence_v'])
             off, rf, pulse = [p['electrode_voltages_v'] for p in design['working_points']]
             self.assertEqual([rf[str(i)] for i in range(1, 9)], [10000., -10000.] * 4)
-            self.assertTrue(all(rf[str(i)] == 0 for i in range(9, 36)))
+            self.assertTrue(all(value == 0. for key, value in rf.items() if int(key) not in range(1, 9)))
             for piece in upstream['segmentation']['segmented_rod_array']['electrodes']:
                 sign = 1 if piece['electrode_group'] == 1 else -1
                 self.assertEqual(off[str(piece['electrode_id'])], piece['common_mode_V']
                                  + sign * upstream['drive']['dc_amplitude_V_per_group'])
-            self.assertTrue(all(off[str(i)] == 0 for i in range(9, 36)))
-            self.assertTrue(all(pulse[str(i)] == 0 for i in range(1, 12)))
+            self.assertTrue(all(value == 0. for key, value in off.items() if int(key) not in range(1, 9)))
+            self.assertTrue(all(pulse[str(i)] == 0 for i in geometry['electrode_bindings'][multipole].values()))
             for eid, value in design['accelerator_voltage_states']['operating_voltages_v'].items():
                 self.assertAlmostEqual(pulse[eid], value, places=9)
 
@@ -343,7 +341,7 @@ class SingleReflectionFieldsTests(unittest.TestCase):
                 elif change == 'wrong_group': rods[0]['electrode_group'] = 2
                 else: g['numerical_domains']['parent']['instance_origin_mm']['z'] += .025
                 with self.subTest(change=change), self.assertRaises((ValueError, KeyError)):
-                    prepare_field_design(u, oatof, g, variant_id='three_zone_square',
+                    prepare_field_design({multipole: u}, oatof, g, variant_id='three_zone_square',
                                          pulse_voltage_policy_id=POLICY, **numerics)
 
     def test_instance_binding_missing_wrong_instance_collision_and_wrong_group_rejected(self):

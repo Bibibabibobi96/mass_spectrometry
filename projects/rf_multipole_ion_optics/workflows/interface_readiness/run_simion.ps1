@@ -47,6 +47,7 @@ $frozenPythonRelativePaths = @(
     'common\ion_release\numpy_box_cone.py',
     'common\ion_release\numpy_ion11_box.py',
     'projects\rf_multipole_ion_optics\core\__init__.py',
+    'projects\rf_multipole_ion_optics\core\interface_geometry.py',
     'projects\rf_multipole_ion_optics\runtime\particle_source_preflight.py'
 )
 $executionCapacityPaths = @('inputs/frozen_python_package.ps1') +
@@ -188,6 +189,7 @@ $frozenPythonExecution = Invoke-IsolatedFrozenPythonModule `
         'common.ion_release',
         'common.ion_release.numpy_ion11_box',
         'projects.rf_multipole_ion_optics.core',
+        'projects.rf_multipole_ion_optics.core.interface_geometry',
         'projects.rf_multipole_ion_optics.runtime.particle_source_preflight'
     ) -ForbiddenRoots @($repoRoot,$projectRoot)
 $frozenParticlePolicy = Get-FrozenPythonPackageFile `

@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.file_identity import file_sha256 as _sha256
-from common.contracts.file_identity import repository_text_sha256
 from common.contracts.machine_contracts import ContractError, validate_schema
 from common.contracts.build_project_registry import pointer_value
 from projects.rf_multipole_ion_optics.core.compile_design_request import (
@@ -22,10 +21,6 @@ from projects.rf_multipole_ion_optics.core.compile_design_request import (
     operating_mode_source_label,
 )
 from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
-from projects.rf_multipole_ion_optics.core.downstream_terminal import (
-    compose_downstream_terminal,
-    select_downstream_terminal_profile,
-)
 from projects.rf_multipole_ion_optics.runtime.simion_numerics import normalize_simion_solver_numerics
 from projects.rf_multipole_ion_optics.runtime.particle_source_preflight import load_release_spec
 
@@ -146,60 +141,6 @@ def _campaign_file(repo_root: Path, path: Path) -> Path:
     if not candidate.is_file():
         raise ValueError(f"campaign path is missing: {candidate}")
     return candidate
-
-
-def _resolve_downstream_terminal_profile(repo_root: Path, binding: dict[str, Any]) -> dict[str, Any]:
-    """Resolve one integration-owned terminal profile without project copies."""
-
-    _require_keys(
-        binding,
-        {"integration_id", "terminal_profile_id", "registry_sha256"},
-        "downstream-terminal campaign binding",
-    )
-    repo_root = repo_root.resolve()
-    discovery_path = repo_root / "integrations" / "registry.json"
-    discovery = _load(discovery_path)
-    validate_schema(discovery, "integration_registry.schema.json")
-    matches = [item for item in discovery["integrations"] if item["integration_id"] == binding["integration_id"]]
-    if len(matches) != 1:
-        raise ValueError("downstream-terminal integration identity is not unique")
-    entry = matches[0]
-    relative = entry.get("downstream_terminal_profile_registry")
-    if not isinstance(relative, str) or not relative:
-        raise ValueError("integration omits its downstream-terminal profile registry")
-    source_root = (repo_root / entry["root"]).resolve()
-    if not source_root.is_relative_to(repo_root):
-        raise ValueError("integration source root escapes the repository")
-    declared = Path(relative)
-    if declared.parent != Path(entry["root"]) / "config":
-        raise ValueError("integration downstream_terminal_profile_registry differs from its declared root")
-    registry_path = (repo_root / declared).resolve()
-    if not registry_path.is_relative_to(source_root):
-        raise ValueError("integration downstream_terminal_profile_registry escapes its declared root")
-    if not registry_path.is_relative_to(repo_root) or not registry_path.is_file():
-        raise ValueError("downstream-terminal profile registry is missing or escapes the repository")
-    registry_sha256 = repository_text_sha256(registry_path)
-    if registry_sha256 != binding["registry_sha256"]:
-        raise ValueError("downstream-terminal profile registry SHA-256 differs")
-    registry = _load(registry_path)
-    validate_schema(registry, "multipole_downstream_terminal_profiles.schema.json")
-    if (
-        registry["integration_id"] != binding["integration_id"]
-        or registry["compatible_upstream_family_id"] != "rf_multipole_ion_optics"
-    ):
-        raise ValueError("downstream-terminal profile registry identity differs")
-    selected = [item for item in registry["profiles"] if item["terminal_profile_id"] == binding["terminal_profile_id"]]
-    if len(selected) != 1:
-        raise ValueError("downstream-terminal profile identity is not unique")
-    return {
-        "integration_id": binding["integration_id"],
-        "terminal_profile_id": binding["terminal_profile_id"],
-        "registry_path": str(registry_path),
-        "registry_sha256": registry_sha256,
-        "profile": selected[0],
-        "discovery_path": str(discovery_path.resolve()),
-        "discovery_sha256": _sha256(discovery_path),
-    }
 
 
 def _serializable_design(design: dict[str, Any]) -> dict[str, Any]:
@@ -486,7 +427,7 @@ def _resolve_source_transform_policy(
     experiment: dict[str, Any],
     design: dict[str, Any],
 ) -> dict[str, Any]:
-    """Bind the governed v5 initial-energy transform without materializing it."""
+    """Bind the governed initial-energy transform without materializing it."""
 
     policy = campaign["particle_source_transform_policy"]
     frequency = float(policy["rf_frequency_Hz"])
@@ -546,7 +487,7 @@ def _compile_campaign_design_candidate(
     experiment: dict[str, Any],
     design: dict[str, Any],
 ) -> dict[str, Any]:
-    """Compile one v3 row through catalog, profile and envelope authorities."""
+    """Compile one declared row through catalog, profile and envelope authorities."""
 
     authorization = campaign["design_variable_authorization"]
     allowed_ids = authorization["allowed_variable_ids"]
@@ -711,12 +652,8 @@ def resolve_campaign_experiment(
     if experiment["project_id"] != project_id:
         raise ValueError("campaign experiment project identity differs")
 
-    downstream_terminal = None
-    if campaign["schema_version"] in (2, 3, 4, 5, 6):
-        downstream_terminal = _resolve_downstream_terminal_profile(repo_root, campaign["downstream_terminal_profile"])
-
     design = resolve_design_profile(repo_root, project_id, experiment["design_profile_id"])
-    if campaign["schema_version"] in (3, 4, 6):
+    if "design_variable_authorization" in campaign:
         design = _compile_campaign_design_candidate(
             repo_root,
             project_id,
@@ -724,13 +661,6 @@ def resolve_campaign_experiment(
             experiment,
             design,
         )
-    if downstream_terminal is not None:
-        terminal_profile = select_downstream_terminal_profile(
-            _load(Path(downstream_terminal["registry_path"])),
-            downstream_terminal["terminal_profile_id"],
-            upstream_project_id=project_id,
-        )
-        design["resolved_design"] = compose_downstream_terminal(design["resolved_design"], terminal_profile)
     source = _resolve_particle_source(
         repo_root,
         project_root,
@@ -738,7 +668,7 @@ def resolve_campaign_experiment(
         experiment["particle_source_profile_id"],
     )
     phase_derivation = None
-    if campaign["schema_version"] in (3, 4):
+    if "particle_source_phase_policy" in campaign:
         phase_derivation = _resolve_phase_policy(
             repo_root,
             project_root,
@@ -750,7 +680,7 @@ def resolve_campaign_experiment(
         if phase_derivation["authority_source"]["sha256"] != source["sha256"]:
             raise ValueError("phase-policy authority source differs from the selected source")
     source_derivation = None
-    if campaign["schema_version"] in (5, 6):
+    if "particle_source_transform_policy" in campaign:
         source_derivation = _resolve_source_transform_policy(
             repo_root,
             project_root,
@@ -851,27 +781,23 @@ def resolve_campaign_experiment(
     }
     if "simion_dispatch" in experiment:
         result["simion_dispatch"] = copy.deepcopy(experiment["simion_dispatch"])
-    if campaign["schema_version"] in (3, 4, 6):
+    if "design_variable_authorization" in campaign:
         result["campaign"]["design_variable_authorization_sha256"] = canonical_sha256(
             campaign["design_variable_authorization"]
         )
-    if campaign["schema_version"] in (3, 4):
+    if "particle_source_phase_policy" in campaign:
         result["campaign"]["particle_source_phase_policy_sha256"] = canonical_sha256(
             campaign["particle_source_phase_policy"]
         )
         result["particle_source_phase_derivation"] = phase_derivation
-        if "simion_pa_basis_policy" in campaign:
-            result["simion_pa_basis_policy"] = copy.deepcopy(campaign["simion_pa_basis_policy"])
-            result["campaign"]["simion_pa_basis_policy_sha256"] = canonical_sha256(campaign["simion_pa_basis_policy"])
-    if campaign["schema_version"] in (5, 6):
+    if "particle_source_transform_policy" in campaign:
         result["campaign"]["particle_source_transform_policy_sha256"] = canonical_sha256(
             campaign["particle_source_transform_policy"]
         )
         result["particle_source_derivation"] = source_derivation
+    if "simion_pa_basis_policy" in campaign:
         result["simion_pa_basis_policy"] = copy.deepcopy(campaign["simion_pa_basis_policy"])
         result["campaign"]["simion_pa_basis_policy_sha256"] = canonical_sha256(campaign["simion_pa_basis_policy"])
-    if downstream_terminal is not None:
-        result["downstream_terminal_profile"] = downstream_terminal
     return result
 
 
@@ -883,13 +809,13 @@ def resolve_runtime_selection(
     campaign_path: Path | None = None,
     experiment_id: str | None = None,
 ) -> dict[str, Any]:
-    """Resolve exactly one legacy profile or declarative campaign experiment."""
+    """Resolve exactly one named runtime profile or declarative campaign experiment."""
 
-    legacy = runtime_profile_id is not None
+    named_profile = runtime_profile_id is not None
     campaign = campaign_path is not None or experiment_id is not None
-    if legacy == campaign:
+    if named_profile == campaign:
         raise ValueError("select exactly one runtime_profile_id or campaign_path + experiment_id")
-    if legacy:
+    if named_profile:
         return resolve_runtime_profile(repo_root, project_id, runtime_profile_id)
     if campaign_path is None or experiment_id is None:
         raise ValueError("campaign_path and experiment_id must be provided together")
@@ -908,8 +834,6 @@ def _semantic_diff_category(path: tuple[str, ...]) -> str:
         return "solver_numerics"
     if top_level in {"design_profile_id", "design_profile_resolution"}:
         return "physical_design_or_field"
-    if top_level == "downstream_terminal_profile":
-        return "handoff_or_downstream_design"
     if top_level in {"campaign", "runtime_profile_registry_path", "runtime_profile_registry_sha256"} or any(
         part.endswith("sha256") for part in path
     ):

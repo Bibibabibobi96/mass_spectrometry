@@ -21,36 +21,17 @@ VARIANTS = ("quadrupole", "hexapole", "octupole")
 
 
 class RuntimeProfileTests(unittest.TestCase):
-    def test_terminal_registry_binding_uses_canonical_repository_text(self) -> None:
-        from common.contracts.file_identity import repository_text_sha256
-        discovery = json.loads((REPO_ROOT / "integrations/registry.json").read_text(encoding="utf-8-sig"))
-        owner = next(row for row in discovery["integrations"] if row["integration_id"] == "instrument_assembly")
-        registry_path = REPO_ROOT / owner["downstream_terminal_profile_registry"]
-        registry = json.loads(registry_path.read_text(encoding="utf-8-sig"))
-        binding = {"integration_id": "instrument_assembly", "terminal_profile_id": registry["profiles"][0]["terminal_profile_id"],
-                   "registry_sha256": repository_text_sha256(registry_path)}
-        raw_sha256 = runtime_profile._sha256
-
-        def raw_hash_other_inputs(path):
-            if path.resolve() == registry_path.resolve():
-                raise AssertionError("repository binding must not use raw bytes")
-            return raw_sha256(path)
-
-        with patch.object(runtime_profile, "_sha256", side_effect=raw_hash_other_inputs):
-            resolved = runtime_profile._resolve_downstream_terminal_profile(REPO_ROOT, binding)
-        self.assertEqual(resolved["registry_sha256"], binding["registry_sha256"])
-
-    def _v3_campaign(self) -> dict[str, object]:
+    def _current_campaign(self) -> dict[str, object]:
         campaign = json.loads(
-            (REPO_ROOT / "projects/rf_multipole_ion_optics/config/campaigns/20260731__oatof_shield_terminal_h15_n100.json").read_text(
+            (REPO_ROOT / "projects/rf_multipole_ion_optics/config/campaigns/20260731__noacc_vs_segmented_h15_n100.json").read_text(
                 encoding="utf-8-sig"
             )
         )
         experiment = next(
-            item for item in campaign["experiments"] if item["experiment_id"] == "hex_segmented_oatof_terminal_h15_n100"
+            item for item in campaign["experiments"] if item["experiment_id"] == "hex_segmented_h15_n100"
         )
-        campaign["schema_version"] = 3
-        campaign["campaign_id"] = "test_drive_variation_v3"
+        campaign["schema_version"] = 7
+        campaign["campaign_id"] = "test_drive_variation"
         campaign["design_variable_authorization"] = {
             "allowed_variable_ids": ["rf_amplitude", "rf_frequency"],
             "variable_limits": [
@@ -91,11 +72,11 @@ class RuntimeProfileTests(unittest.TestCase):
                     REPO_ROOT,
                     "rf_multipole_ion_optics",
                     path,
-                    "hex_segmented_oatof_terminal_h15_n100",
+                    "hex_segmented_h15_n100",
                 )
 
-    def test_campaign_v3_compiles_governed_drive_candidate(self) -> None:
-        resolved = self._resolve_campaign_document(self._v3_campaign())
+    def test_campaign_compiles_governed_drive_candidate(self) -> None:
+        resolved = self._resolve_campaign_document(self._current_campaign())
         design = resolved["design_profile_resolution"]
         self.assertEqual(design["profile"]["design_profile_id"], "hexapole_segmented_rod_axial_acceleration")
         self.assertEqual(
@@ -119,8 +100,8 @@ class RuntimeProfileTests(unittest.TestCase):
             "design_request",
             {item["label"] for item in design["resolved_design"]["sources"]},
         )
-        self.assertIn("downstream_terminal_profile", resolved)
-        self.assertIn("downstream_terminal", design["resolved_design"])
+        self.assertNotIn("downstream_terminal_profile", resolved)
+        self.assertNotIn("downstream_terminal", design["resolved_design"])
         self.assertRegex(resolved["campaign"]["experiment_row_sha256"], r"^[A-F0-9]{64}$")
         self.assertRegex(
             resolved["campaign"]["design_variable_authorization_sha256"],
@@ -128,7 +109,7 @@ class RuntimeProfileTests(unittest.TestCase):
         )
 
     def test_phase_matched_n5000_requires_and_accepts_its_n1000_prefix(self) -> None:
-        campaign = self._v3_campaign()
+        campaign = self._current_campaign()
         campaign["particle_source_phase_policy"]["n1000_reference_profile_id"] = (
             "paper1_prospective_mother_sample_v1_n1000"
         )
@@ -146,206 +127,78 @@ class RuntimeProfileTests(unittest.TestCase):
             1_210_000.0,
         )
 
-    def test_source_model_campaign_allows_distinct_authority_only_with_same_cohort(self) -> None:
-        campaign = REPO_ROOT / "projects/rf_multipole_ion_optics/config/campaigns/20260829__oct_planar_vs_volume_source_n1000.json"
-        resolved = resolve_campaign_experiment(REPO_ROOT, "rf_multipole_ion_optics", campaign, "oct_volume_source_n1000")
-        derivation = resolved["particle_source_phase_derivation"]
-        self.assertEqual(
-            derivation["n1000_authority_relationship"],
-            "source_model_comparison_with_same_particle_ids",
-        )
-        self.assertEqual(derivation["authority_particle_count"], 1000)
+    def test_campaign_accepts_phase_matched_primary_only_row(self) -> None:
+        campaign = self._current_campaign()
+        campaign["experiments"][0]["particle_source_profile_id"] = "family_mother_sample_v1_n1000"
+        campaign["experiments"][0]["case_set"] = "primary_only"
+        campaign["simion_pa_basis_policy"] = {"kind": "content_addressed_geometry_basis", "reuse_scope": "same_project_same_fingerprint"}
+        resolved = self._resolve_campaign_document(campaign)
+        self.assertEqual(resolved["particle_source_phase_derivation"]["authority_particle_count"], 1000)
+        self.assertEqual(resolved["case_set"], "primary_only")
+        self.assertEqual(resolved["simion_pa_basis_policy"], campaign["simion_pa_basis_policy"])
 
-    def test_prospective_paper1_s1_and_s2_campaigns_bind_independent_n5000_source(self) -> None:
-        cases = (
-            (
-                "rf_multipole_ion_optics",
-                "20260826__paper1_s1_prospective_octupole_source_n5000.json",
-                "paper1_s1_prospective_octupole_source_n5000",
-                "particle_source_derivation",
-            ),
-            (
-                "rf_multipole_ion_optics",
-                "20260826__paper1_s2_prospective_segmented_source_n5000.json",
-                "paper1_s2_prospective_segmented_source_n5000",
-                "particle_source_phase_derivation",
-            ),
-        )
-        for project_id, campaign_name, experiment_id, derivation_key in cases:
-            with self.subTest(project_id=project_id):
-                resolved = resolve_campaign_experiment(
-                    REPO_ROOT,
-                    project_id,
-                    Path(campaign_name),
-                    experiment_id,
-                )
-                self.assertEqual(
-                    resolved["particle_source"]["profile_id"],
-                    "paper1_prospective_mother_sample_v1_n5000",
-                )
-                self.assertEqual(resolved[derivation_key]["authority_particle_count"], 5000)
-                self.assertEqual(resolved["case_set"], "primary_only")
-
-    def test_campaign_v4_accepts_n1000_phase_matched_primary_only_row(self) -> None:
-        resolved = resolve_campaign_experiment(
-            REPO_ROOT,
-            "rf_multipole_ion_optics",
-            Path("20260803__hex_rf_drive_phase_matched_h15_n1000.json"),
-            "hex_rf_p0_n1000",
-        )
-        self.assertEqual(
-            resolved["engineering_budget"]["inline_contract"]["pilot_authorization"]["scope"]["particle_count"],
-            1000,
-        )
-        self.assertEqual(
-            resolved["particle_source_phase_derivation"]["authority_particle_count"],
-            1000,
-        )
-        self.assertEqual(
-            resolved["simion_pa_basis_policy"]["kind"],
-            "content_addressed_geometry_basis",
-        )
-
-    def test_campaign_binds_volume_snapshot_receipt_for_solver_preflight(self) -> None:
-        resolved = resolve_campaign_experiment(
-            REPO_ROOT,
-            "rf_multipole_ion_optics",
-            Path("20260829__oct_planar_vs_volume_source_n1000.json"),
-            "oct_volume_source_n1000",
-        )
-        binding = resolved["particle_source"]["volume_snapshot_receipt"]
-        self.assertEqual(
-            resolved["particle_source"]["profile_id"],
+    def test_volume_source_binds_receipt_for_solver_preflight(self) -> None:
+        source = runtime_profile._resolve_particle_source(
+            REPO_ROOT, REPO_ROOT / "projects" / PROJECT_ID, PROJECT_ID,
             "octupole_continuous_axial_volume_snapshot_v1_n1000",
         )
+        binding = source["volume_snapshot_receipt"]
         self.assertTrue(Path(binding["path"]).is_file())
         self.assertRegex(binding["sha256"], r"^[A-F0-9]{64}$")
-        # The frozen planar arm is permitted to publish the one missing
-        # geometry/basis seed; the volume-source arm must reuse it.
-        self.assertFalse(resolved["simion_pa_basis_policy"].get("require_existing", False))
 
-    def test_campaign_v5_binds_governed_n100_energy_transform_for_each_family(self) -> None:
-        cases = (
-            ("rf_multipole_ion_optics", "quad_noacc_5ev_h15_n100"),
-            ("rf_multipole_ion_optics", "hex_noacc_5ev_h15_n100"),
-            ("rf_multipole_ion_optics", "oct_noacc_5ev_h15_n100"),
-        )
-        for project_id, experiment_id in cases:
-            with self.subTest(project_id=project_id):
-                resolved = resolve_campaign_experiment(
-                    REPO_ROOT,
-                    project_id,
-                    Path("20260803__multipole_noacc_5ev_h15_n100.json"),
-                    experiment_id,
-                )
-                derivation = resolved["particle_source_derivation"]
-                self.assertEqual(derivation["target_kinetic_energy_eV"], 5.0)
-                self.assertEqual(derivation["authority_particle_count"], 100)
-                scope = resolved["engineering_budget"]["inline_contract"]["pilot_authorization"]["scope"]
-                self.assertEqual(scope["particle_count"], 100)
-                self.assertNotIn(
-                    "campaign_design_variables",
-                    resolved["design_profile_resolution"],
-                )
+    def test_campaign_binds_declared_energy_transform(self) -> None:
+        campaign = self._current_campaign()
+        del campaign["particle_source_phase_policy"]
+        campaign["particle_source_transform_policy"] = {
+            "kind": "preserve_phase_position_direction_and_scale_energy",
+            "rf_frequency_Hz": 1_210_000.0,
+            "n1000_reference_profile_id": "family_mother_sample_v1_n1000",
+        }
+        campaign["simion_pa_basis_policy"] = {"kind": "content_addressed_geometry_basis", "reuse_scope": "same_project_same_fingerprint"}
+        campaign["experiments"][0]["source_kinetic_energy_eV"] = 5.0
+        resolved = self._resolve_campaign_document(campaign)
+        self.assertEqual(resolved["particle_source_derivation"]["target_kinetic_energy_eV"], 5.0)
+        self.assertEqual(resolved["particle_source_derivation"]["authority_particle_count"], 100)
 
-    def test_campaign_v6_combines_source_transform_and_segment_voltage_variables(self) -> None:
-        resolved = resolve_campaign_experiment(
-            REPO_ROOT,
-            "rf_multipole_ion_optics",
-            Path("20260805__oct_segmented_10ev_h15.json"),
-            "oct_segmented_10ev_h15_n100",
-        )
-        applied = resolved["design_profile_resolution"]["campaign_design_variables"]["applied_values"]
-        self.assertEqual(
-            {key: value["value"] for key, value in applied.items()},
-            {
-                "segment_entrance_common_mode": 8.0,
-                "segment_exit_common_mode": 0.0,
-                "segment_output_reference": 0.0,
-            },
-        )
-        self.assertEqual(resolved["particle_source_derivation"]["target_kinetic_energy_eV"], 2.0)
-        self.assertRegex(
-            resolved["campaign"]["design_variable_authorization_sha256"],
-            r"^[A-F0-9]{64}$",
-        )
-        self.assertRegex(
-            resolved["campaign"]["particle_source_transform_policy_sha256"],
-            r"^[A-F0-9]{64}$",
-        )
+    def test_campaign_rejects_two_source_transformation_policies(self) -> None:
+        campaign = self._current_campaign()
+        campaign["particle_source_transform_policy"] = {
+            "kind": "preserve_phase_position_direction_and_scale_energy",
+            "rf_frequency_Hz": 1_210_000.0,
+            "n1000_reference_profile_id": "family_mother_sample_v1_n1000",
+        }
+        campaign["simion_pa_basis_policy"] = {"kind": "content_addressed_geometry_basis", "reuse_scope": "same_project_same_fingerprint"}
+        campaign["experiments"][0]["source_kinetic_energy_eV"] = 5.0
+        with self.assertRaisesRegex(ValueError, "invalid multipole transport campaign"):
+            self._resolve_campaign_document(campaign)
 
-    def test_campaign_v6_accepts_governed_rf_phase(self) -> None:
-        resolved = resolve_campaign_experiment(
-            REPO_ROOT,
-            "rf_multipole_ion_optics",
-            Path("20260811__oct_rf_phase_p90_h15_n1000.json"),
-            "oct_rf_phase_p90_h15_n1000",
-        )
-        applied = resolved["design_profile_resolution"]["campaign_design_variables"]["applied_values"]
-        self.assertEqual(applied["rf_phase"]["unit"], "rad")
-        self.assertAlmostEqual(applied["rf_phase"]["value"], 1.5707963267948966)
-        self.assertAlmostEqual(
-            resolved["design_profile_resolution"]["resolved_design"]["drive"]["phase_rad"],
-            1.5707963267948966,
-        )
+    def test_new_campaigns_reject_retired_versions_and_terminal_binding(self) -> None:
+        for version in range(1, 7):
+            campaign = self._current_campaign()
+            campaign["schema_version"] = version
+            with self.subTest(version=version), self.assertRaisesRegex(
+                ValueError, "invalid multipole transport campaign"
+            ):
+                self._resolve_campaign_document(campaign)
+        campaign = self._current_campaign()
+        campaign["downstream_terminal_profile"] = {
+            "integration_id": "instrument_assembly", "terminal_profile_id": "retired", "registry_sha256": "0" * 64,
+        }
+        with self.assertRaisesRegex(ValueError, "invalid multipole transport campaign"):
+            self._resolve_campaign_document(campaign)
 
-    def test_terminal_10ev_campaign_keeps_all_rods_at_eight_volts(self) -> None:
-        resolved = resolve_campaign_experiment(
-            REPO_ROOT,
-            "rf_multipole_ion_optics",
-            Path("20260805__oct_terminal_10ev_h15.json"),
-            "oct_terminal_10ev_h15_n100",
-        )
-        design = resolved["design_profile_resolution"]["resolved_design"]
-        segments = design["segmentation"]["axial_acceleration"]["derived"]["segments"]
-        self.assertEqual(
-            design["axial_drive"],
-            {
-                "topology": "exit_aperture_plate_potential_step",
-                "source_reference_V": 8.0,
-                "output_reference_V": 0.0,
-                "predicted_energy_gain_eV": 8.0,
-                "predicted_output_energy_eV": 10.0,
-            },
-        )
-        self.assertEqual([segment["common_mode_V"] for segment in segments], [8.0] * 4)
-        self.assertEqual(design["axial_dc"]["terminal_electrode_potential_V"], 0.0)
-
-    def test_historical_campaign_v1_and_v2_remain_resolvable(self) -> None:
-        cases = (
-            (
-                "20260731__noacc_vs_segmented_h15_n100.json",
-                "rf_multipole_ion_optics",
-                "hex_segmented_h15_n100",
-            ),
-            (
-                "20260731__oatof_shield_terminal_h15_n100.json",
-                "rf_multipole_ion_optics",
-                "hex_segmented_oatof_terminal_h15_n100",
-            ),
-        )
-        for filename, project_id, experiment_id in cases:
-            with self.subTest(filename=filename):
-                resolved = resolve_campaign_experiment(
-                    REPO_ROOT,
-                    project_id,
-                    Path(filename),
-                    experiment_id,
-                )
-                self.assertNotIn("campaign_design_variables", resolved["design_profile_resolution"])
-
-    def test_campaign_v3_rejects_unauthorized_derived_and_out_of_range_values(self) -> None:
-        derived = self._v3_campaign()
+    def test_campaign_rejects_unauthorized_derived_and_out_of_range_values(self) -> None:
+        derived = self._current_campaign()
         derived["experiments"][0]["design_variable_values"] = {"rod_radius": 2.0}
         with self.assertRaisesRegex(ValueError, "invalid multipole transport campaign"):
             self._resolve_campaign_document(derived)
 
-        out_of_range = self._v3_campaign()
+        out_of_range = self._current_campaign()
         out_of_range["experiments"][0]["design_variable_values"]["rf_frequency"] = 1_300_000.0
         with self.assertRaisesRegex(ValueError, "outside its narrow range"):
             self._resolve_campaign_document(out_of_range)
 
-        missing_axis = self._v3_campaign()
+        missing_axis = self._current_campaign()
         del missing_axis["experiments"][0]["design_variable_values"]["rf_frequency"]
         with self.assertRaisesRegex(ValueError, "keys differ from its authorization"):
             self._resolve_campaign_document(missing_axis)
@@ -389,13 +242,13 @@ class RuntimeProfileTests(unittest.TestCase):
                                 structural_variant_id="hexapole",
                             )
 
-    def test_campaign_v3_rejects_execution_profile_and_authority_mismatches(self) -> None:
-        unsupported = self._v3_campaign()
+    def test_campaign_rejects_execution_profile_and_authority_mismatches(self) -> None:
+        unsupported = self._current_campaign()
         unsupported["experiments"][0]["execution_profile_id"] = "transport_no_collision_candidate"
         with self.assertRaisesRegex(ValueError, "execution profile is not unique"):
             self._resolve_campaign_document(unsupported)
 
-        campaign = self._v3_campaign()
+        campaign = self._current_campaign()
         design = runtime_profile.resolve_design_profile(
             REPO_ROOT,
             "rf_multipole_ion_optics",
@@ -509,7 +362,7 @@ class RuntimeProfileTests(unittest.TestCase):
         from projects.rf_multipole_ion_optics.tests.domain.test_particle_source_preflight import planar_release_spec
 
         design = runtime_profile.resolve_design_profile(
-            REPO_ROOT, "rf_multipole_ion_optics", "octupole_through_exit_no_acceleration"
+            REPO_ROOT, "rf_multipole_ion_optics", "octupole_no_acceleration_full_length"
         )["resolved_design"]
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -672,7 +525,7 @@ class RuntimeProfileTests(unittest.TestCase):
             self.assertIn("[string]$RuntimeProfileId", source)
             self.assertNotIn("[string]$ParticleSourcePath", source)
 
-    def test_hybrid_profiles_bind_their_separate_campaign_budget(self) -> None:
+    def test_hybrid_numerics_do_not_inherit_old_geometry_authorization(self) -> None:
         for variant in ("quadrupole", "octupole"):
             baseline = resolve_runtime_profile(
                 REPO_ROOT, PROJECT_ID, f"{variant}_no_acceleration_full_length",
@@ -681,167 +534,13 @@ class RuntimeProfileTests(unittest.TestCase):
                 REPO_ROOT, PROJECT_ID,
                 f"{variant}_no_acceleration_full_length_n100_hybrid_exit025_temporal_refined",
             )
-            self.assertTrue(baseline["engineering_budget"]["path"].endswith("engineering_budget.json"))
-            self.assertIn(
-                "comsol_hybrid_no_acceleration_particle_convergence_budget",
-                hybrid["engineering_budget"]["path"],
-            )
+            self.assertEqual(baseline["engineering_budget"]["path"], hybrid["engineering_budget"]["path"])
+            budget = json.loads(Path(baseline["engineering_budget"]["path"]).read_text(encoding="utf-8-sig"))
+            self.assertFalse(budget["pilot_authorization"]["authorized"])
             self.assertNotEqual(
-                baseline["engineering_budget"]["path"],
-                hybrid["engineering_budget"]["path"],
+                baseline["solver_numerics"]["comsol"]["profile_id"],
+                hybrid["solver_numerics"]["comsol"]["profile_id"],
             )
-
-
-class DownstreamTerminalRegistryTests(unittest.TestCase):
-    """Exercise discovery paths and explicit owner identity without solver assets."""
-
-    def _write_registry(self, repo: Path, root: str) -> tuple[dict, dict, Path]:
-        profile = {
-            "terminal_profile_id": "test_terminal",
-            "owner": "downstream",
-            "surface_role": "aperture_outer_tangent_plane",
-            "rod_end_clearance_mm": 1,
-            "upstream_enclosure_end_plane_binding": "interfaces_mm.exit.aperture_plate_upstream_face_z_mm",
-            "electrode_thickness_mm": 1,
-            "outer_envelope": {"shape": "rectangular", "width_mm": 10, "height_mm": 10},
-            "aperture": {"shape": "circular", "radius_mm": 2},
-            "upstream_entrance_reference_sleeve": {
-                "profile_id": "source_reference_sleeve_v1",
-                "potential_binding": "segmentation.entrance_common_mode_V",
-                "inner_radius_mm": 2,
-                "outer_radius_mm": 3,
-                "minimum_insulation_gap_mm": 1,
-                "downstream_rod_clearance_mm": 0,
-            },
-            "terminal_potential_V": 0,
-        }
-        registry = {
-            "schema_version": 1,
-            "role": "multipole_downstream_terminal_profile_registry",
-            "integration_id": "instrument_assembly",
-            "compatible_upstream_family_id": "rf_multipole_ion_optics",
-            "allowed_upstream_project_ids": ["rf_multipole_ion_optics"],
-            "profiles": [profile],
-        }
-        relative = f"{root}/config/terminals.json"
-        path = repo / relative
-        path.parent.mkdir(parents=True)
-        path.write_text(json.dumps(registry), encoding="utf-8")
-        discovery = {
-            "schema_version": 1,
-            "role": "integration_registry",
-            "integrations": [
-                {
-                    "integration_id": registry["integration_id"],
-                    "root": root,
-                    "profile_registry": f"{root}/config/connections.json",
-                    "downstream_terminal_profile_registry": relative,
-                }
-            ],
-        }
-        (repo / "integrations/registry.json").write_text(json.dumps(discovery), encoding="utf-8")
-        binding = {
-            "integration_id": registry["integration_id"],
-            "terminal_profile_id": profile["terminal_profile_id"],
-            "registry_sha256": runtime_profile._sha256(path),
-        }
-        return discovery, binding, path
-
-    def test_repository_terminal_campaigns_resolve_without_legacy_family_registration(self) -> None:
-        discovery_path = REPO_ROOT / "integrations/registry.json"
-        discovery = runtime_profile._load(discovery_path)
-        direct = [row for row in discovery["integrations"] if row["integration_id"] == "instrument_assembly"]
-        self.assertEqual(len(direct), 1)
-        catalog = REPO_ROOT / "integrations/config/downstream_terminal_profiles.json"
-        self.assertEqual(direct[0]["downstream_terminal_profile_registry"], catalog.relative_to(REPO_ROOT).as_posix())
-        legacy = REPO_ROOT / "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/downstream_terminal_profiles.json"
-        self.assertFalse(legacy.exists())
-        discovery["integrations"] = direct
-        load = runtime_profile._load
-
-        def current_only(path):
-            return discovery if path == discovery_path else load(path)
-
-        bindings = [runtime_profile._load(path)["downstream_terminal_profile"]
-                    for path in sorted((REPO_ROOT / "projects/rf_multipole_ion_optics/config/campaigns").glob("*.json"))
-                    if "downstream_terminal_profile" in runtime_profile._load(path)]
-        self.assertTrue(bindings)
-        with patch.object(runtime_profile, "_load", side_effect=current_only):
-            for binding in bindings:
-                with self.subTest(binding=binding):
-                    resolved = runtime_profile._resolve_downstream_terminal_profile(REPO_ROOT, binding)
-                    self.assertEqual(resolved["integration_id"], "instrument_assembly")
-                    self.assertEqual(Path(resolved["registry_path"]), catalog)
-                    self.assertEqual(resolved["profile"]["terminal_profile_id"], "oatof_shield_terminal")
-
-    def test_retired_family_is_not_a_terminal_discovery_fallback(self) -> None:
-        binding = dict(integration_id="rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-            terminal_profile_id="oatof_shield_terminal", registry_sha256="0" * 64)
-        with self.assertRaisesRegex(ValueError, "integration identity is not unique"):
-            runtime_profile._resolve_downstream_terminal_profile(REPO_ROOT, binding)
-
-
-    def test_direct_and_family_roots_resolve_owner_from_explicit_identity(self) -> None:
-        for root in ("integrations", "integrations/active_family"):
-            with self.subTest(root=root), tempfile.TemporaryDirectory() as directory:
-                repo = Path(directory).resolve()
-                _, binding, path = self._write_registry(repo, root)
-                resolved = runtime_profile._resolve_downstream_terminal_profile(repo, binding)
-                self.assertEqual(resolved["integration_id"], "instrument_assembly")
-                self.assertEqual(Path(resolved["registry_path"]), path)
-                self.assertEqual(resolved["profile"]["terminal_profile_id"], "test_terminal")
-
-    def test_terminal_registry_path_must_match_the_declared_root(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            repo = Path(directory).resolve()
-            discovery, binding, _ = self._write_registry(repo, "integrations/active_family")
-            discovery["integrations"][0]["downstream_terminal_profile_registry"] = (
-                "integrations/another_family/config/profiles.json"
-            )
-            (repo / "integrations/registry.json").write_text(json.dumps(discovery), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "differs from its declared root"):
-                runtime_profile._resolve_downstream_terminal_profile(repo, binding)
-
-    def test_terminal_consumer_requires_only_its_own_registered_capability(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            repo = Path(directory).resolve()
-            discovery, binding, path = self._write_registry(repo, "integrations")
-            del discovery["integrations"][0]["profile_registry"]
-            (repo / "integrations/registry.json").write_text(json.dumps(discovery), encoding="utf-8")
-            resolved = runtime_profile._resolve_downstream_terminal_profile(repo, binding)
-            self.assertEqual(Path(resolved["registry_path"]), path)
-
-    def test_resolved_registry_path_cannot_escape_source_root(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            repo = Path(directory).resolve()
-            _, binding, path = self._write_registry(repo, "integrations")
-            original_resolve = Path.resolve
-
-            def resolve(candidate: Path, *args, **kwargs) -> Path:
-                if candidate == path:
-                    return repo / "outside/terminals.json"
-                return original_resolve(candidate, *args, **kwargs)
-
-            with patch.object(Path, "resolve", resolve):
-                with self.assertRaisesRegex(ValueError, "escapes its declared root"):
-                    runtime_profile._resolve_downstream_terminal_profile(repo, binding)
-
-    def test_terminal_registry_still_rejects_wrong_owner_and_frozen_hash(self) -> None:
-        for change in ("owner", "hash"):
-            with self.subTest(change=change), tempfile.TemporaryDirectory() as directory:
-                repo = Path(directory).resolve()
-                _, binding, path = self._write_registry(repo, "integrations")
-                if change == "owner":
-                    registry = json.loads(path.read_text(encoding="utf-8"))
-                    registry["integration_id"] = "different_owner"
-                    path.write_text(json.dumps(registry), encoding="utf-8")
-                    binding["registry_sha256"] = runtime_profile._sha256(path)
-                    message = "registry identity differs"
-                else:
-                    binding["registry_sha256"] = "0" * 64
-                    message = "SHA-256 differs"
-                with self.assertRaisesRegex(ValueError, message):
-                    runtime_profile._resolve_downstream_terminal_profile(repo, binding)
 
 
 if __name__ == "__main__":

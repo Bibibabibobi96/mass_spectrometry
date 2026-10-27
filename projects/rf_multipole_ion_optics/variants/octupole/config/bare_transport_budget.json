@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "role": "multipole_engineering_budget_contract",
+  "project_id": "rf_multipole_ion_optics",
+  "contract_id": "octupole_bare_transport_resource_budget_v1",
+  "preregistered_before_run": true,
+  "pilot_authorization": {
+    "authorized": false,
+    "scope": {
+      "project_id": "rf_multipole_ion_optics",
+      "runtime_profile_id": "octupole_no_acceleration_full_length",
+      "design_profile_id": "octupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "particle_count": 100,
+      "solver_numerics_profile_ids": {
+        "comsol": "octupole_baseline_finite_3d",
+        "simion": "octupole_baseline_finite_3d"
+      },
+      "allowed_solvers": [
+        "comsol",
+        "simion"
+      ],
+      "retention_class": "compact",
+      "stop_stage": "transport"
+    },
+    "limits": {
+      "wall_clock_seconds_by_solver": {
+        "comsol": 1200,
+        "simion": 720
+      },
+      "transient_run_directory_bytes": 2147483648,
+      "process_tree_working_set_bytes": 17179869184,
+      "minimum_system_available_memory_bytes": 8589934592,
+      "compact_final_retained_bytes": 26214400,
+      "automatic_retry_count": 0
+    }
+  },
+  "full_matrix_authorization": {
+    "authorized": false,
+    "reason": "new_bare_geometry_requires_explicit_run_authorization"
+  },
+  "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
+  "claim_limit": "Resource limits only; no new native run or scientific qualification is authorized by this contract."
+}

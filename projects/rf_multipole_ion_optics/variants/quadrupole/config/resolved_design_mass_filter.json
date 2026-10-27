@@ -1,24 +1,24 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "role": "multipole_resolved_design_do_not_edit",
   "compiler": {
     "name": "common.multipole.compile_design_request",
-    "version": 2
+    "version": 3
   },
   "governance": {
     "design_variables_sha256": "A483EDDD661AB49DD5A9F2267FF5DC2A366EF28FD89C2DD327AF8F10785C4A4C",
-    "optimization_envelope_sha256": "648B7E4985B45534B16840E6651826FFCA2C79E83EA50A0908855B4DEC8AD2DF",
-    "design_request_file_sha256": "8B872B195F1BD8ADFEE16E4EABDD1D7D600ED92A7E8437BA09F668D4CA430793"
+    "optimization_envelope_sha256": "83FEF4B76BCD78F86C9CB8EC5F06131DB9A07185B0884EE16F18A6B03B312410",
+    "design_request_file_sha256": "511B2473A6B8747746B1AFE26E7D8C9DF224B4B5CC1BC9F012AC77AE9EAFD7E6"
   },
   "request": {
     "request_id": "quadrupole_mass_filter_reference",
-    "sha256": "093E09B2452543818036628E1AFF870D25B96DA79D554069CEE5486CB15FBE9B"
+    "sha256": "0A0D8AC7AA0E1282D808B1CA65CE6CA4203060051E7FBBA90F3D03155B49D4EF"
   },
   "sources": [
     {
       "label": "design_request",
       "path": "projects/rf_multipole_ion_optics/variants/quadrupole/config/requests/mass_filter.json",
-      "sha256": "8B872B195F1BD8ADFEE16E4EABDD1D7D600ED92A7E8437BA09F668D4CA430793"
+      "sha256": "511B2473A6B8747746B1AFE26E7D8C9DF224B4B5CC1BC9F012AC77AE9EAFD7E6"
     },
     {
       "label": "design_variables",
@@ -28,7 +28,7 @@
     {
       "label": "optimization_envelope",
       "path": "projects/rf_multipole_ion_optics/variants/quadrupole/config/optimization_envelope_mass_filter.json",
-      "sha256": "648B7E4985B45534B16840E6651826FFCA2C79E83EA50A0908855B4DEC8AD2DF"
+      "sha256": "83FEF4B76BCD78F86C9CB8EC5F06131DB9A07185B0884EE16F18A6B03B312410"
     }
   ],
   "identity": {
@@ -120,30 +120,6 @@
       ]
     }
   },
-  "interfaces_mm": {
-    "entrance": {
-      "aperture_radius_mm": 1.2,
-      "aperture_plate_upstream_face_z_mm": 0.9999999999999998,
-      "aperture_plate_downstream_face_z_mm": 1.7999999999999998,
-      "connector_length_mm": 0.0,
-      "connector_upstream_face_z_mm": 0.9999999999999998,
-      "connector_downstream_face_z_mm": 0.9999999999999998,
-      "release_plane_z_mm": -2.220446049250313e-16,
-      "connector_shape": "rectangular_bore"
-    },
-    "exit": {
-      "aperture_radius_mm": 3.6,
-      "aperture_plate_upstream_face_z_mm": 89.4,
-      "aperture_plate_downstream_face_z_mm": 90.2,
-      "aperture_crossing_plane_z_mm": 90.2,
-      "connector_length_mm": 0.0,
-      "connector_upstream_face_z_mm": 90.2,
-      "connector_downstream_face_z_mm": 90.2,
-      "handoff_plane_z_mm": 90.2,
-      "census_plane_z_mm": 95.2,
-      "connector_shape": "rectangular_bore"
-    }
-  },
   "drive": {
     "waveform": "sine",
     "rf_amplitude_V_zero_to_peak_per_group": 139.81792,
@@ -180,5 +156,29 @@
     "axial_acceleration": null,
     "segmented_rod_array": null
   },
-  "resolved_sha256": "1852E12006A5364DE2F5D9E384F3E5DFF73BD04264475BB8D544CAF1E01A4CE2"
+  "interfaces_mm": {
+    "entrance": {
+      "aperture_radius_mm": 1.2,
+      "aperture_plate_upstream_face_z_mm": 0.9999999999999998,
+      "aperture_plate_downstream_face_z_mm": 1.7999999999999998,
+      "connector_length_mm": 0.0,
+      "connector_upstream_face_z_mm": 0.9999999999999998,
+      "connector_downstream_face_z_mm": 0.9999999999999998,
+      "release_plane_z_mm": -2.220446049250313e-16,
+      "connector_shape": "rectangular_bore"
+    },
+    "exit": {
+      "aperture_radius_mm": 3.6,
+      "aperture_plate_upstream_face_z_mm": 89.4,
+      "aperture_plate_downstream_face_z_mm": 90.2,
+      "aperture_crossing_plane_z_mm": 90.2,
+      "connector_length_mm": 0.0,
+      "connector_upstream_face_z_mm": 90.2,
+      "connector_downstream_face_z_mm": 90.2,
+      "handoff_plane_z_mm": 90.2,
+      "census_plane_z_mm": 95.2,
+      "connector_shape": "rectangular_bore"
+    }
+  },
+  "resolved_sha256": "FFAE12E51FA902B4F56F1F32CFBC9E4DCC25D8C9628D43FA76FF4E75F8CA0A2F"
 }

@@ -21,7 +21,7 @@ from common.integration.resolve_assembly import compile_assembly_layout
 from common.contracts.write_run_manifest import file_record
 from common.contracts.verify_run_manifest import record_path, verify_record
 from projects.rf_multipole_ion_optics.runtime.particle_source_preflight import validate_source
-from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
+from projects.rf_multipole_ion_optics.simion.simion_geometry import physical_electrode_view
 from common.ion_release import cylinder
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture, inputs, reframe_parent
 from integrations.runtime.single_flight_source import GLOBAL_COLUMNS, SOURCE_COLUMNS, published_producer_input
@@ -44,7 +44,7 @@ def fixture(root, *, source=None, source_rows=None, source_metadata=None, clock_
         raw = json.loads(
             (
                 Path(__file__).resolve().parents[2]
-                / "projects/rf_multipole_ion_optics/variants/octupole/config/requests/through_exit.json"
+                / "projects/rf_multipole_ion_optics/variants/octupole/config/requests/mechanical_base.json"
             ).read_text()
         )
         source = compile_design_request(raw, expected_identity=raw["identity"])
@@ -53,7 +53,7 @@ def fixture(root, *, source=None, source_rows=None, source_metadata=None, clock_
     z0 = oatof["accelerator_topology"]["planes_global_z_mm"]["repeller"] - 40.0
     kw["numerical_domains"]["parent"]["pa_bounds_mm"].update(z_min=z0, z_max=z0 + 350.0)
     if source["segmentation"]["segmented_rod_array"] is not None:
-        kw["electrode_bindings"]["multipole"] = {key: key for key in range(1, 11)}
+        kw["electrode_bindings"]["multipole"] = {row["native_electrode_id"]: row["native_electrode_id"] for row in physical_electrode_view(source)}
         kw["electrode_bindings"]["oatof"] = dict(
             grounded_shield_id=11,
             accelerator_repeller_id=12,
@@ -72,7 +72,7 @@ def fixture(root, *, source=None, source_rows=None, source_metadata=None, clock_
                 birth_time_s=i * 1e-6,
                 x_mm=0.01 * i,
                 y_mm=-0.005 * i,
-                z_mm=source["interfaces_mm"]["entrance"]["release_plane_z_mm"],
+                z_mm=source["geometry_mm"]["observations"]["release_plane_z_mm"],
                 vx_m_s=speed * 0.1,
                 vy_m_s=speed * 0.2,
                 vz_m_s=speed * math.sqrt(0.95),
@@ -315,141 +315,37 @@ def downstream_field_source_fixture(root: Path, request_path: Path, request: dic
 
 
 class SingleReflectionPreparationTests(unittest.TestCase):
-    def _current_octupole_provider(self, historical):
-        # This fixed historical case requires the current profile to remain
-        # physically equivalent; a changed design cannot inherit its evidence.
-        current = resolve_design_profile(Path(__file__).resolve().parents[2],
-            'rf_multipole_ion_optics', 'octupole_through_exit_no_acceleration')['resolved_design']
-        for key in ('units', 'coordinate', 'geometry_mm', 'interfaces_mm', 'drive',
-                    'axial_drive', 'static_electrodes_V', 'particle_source'):
-            self.assertEqual(historical[key], current[key], key)
-        segmentation = copy.deepcopy(historical['segmentation'])
-        # Exclude only the ownership label from the physical comparison.
-        segmentation['axial_acceleration']['project_id'] = current['identity']['project_id']
-        self.assertEqual(segmentation, current['segmentation'])
-        return current
-
-    def _current_source_metadata(self, source_path, provider, historical):
-        current = validate_source(source_path, provider)
-        self.assertEqual(current, {**historical, 'parent_resolved_design_sha256': provider['resolved_sha256']})
-        return current
-
-    def test_historical_provider_derives_current_author_without_legacy_native_support(self):
-        from projects.rf_multipole_ion_optics.core.compile_design_request import (
-            apply_typed_operating_mode, compile_design_request,
-        )
+    def test_retired_provider_schema_is_rejected_without_mutating_input(self):
         from projects.rf_multipole_ion_optics.core.component_port import build_assembly_interface
-        from integrations.runtime.single_flight_frontend import native_frontend_instances
+        from integrations.tests.test_single_reflection_geometry import multipole_source
 
-        profile = resolve_design_profile(Path(__file__).resolve().parents[2],
-            'rf_multipole_ion_optics', 'octupole_through_exit_no_acceleration')
-        request = json.loads(profile['paths']['design_request'].read_text(encoding='utf-8-sig'))
-        modes = json.loads(profile['paths']['operating_mode_registry'].read_text(encoding='utf-8-sig'))
-        request = apply_typed_operating_mode(request, modes, profile['profile']['mode_id'])
-        if profile['profile'].get('enclosure_model') is not None:
-            request['geometry_mm']['enclosure']['model'] = profile['profile']['enclosure_model']
-        request['identity']['project_id'] = 'rf_octupole_ion_optics'
-        historical = compile_design_request(request, expected_identity=request['identity'])
-        original = copy.deepcopy(historical)
-        old_plan = inputs(historical, candidate_300mm_fixture())['composition_plan']
-        with self.assertRaisesRegex(ValueError, 'unsupported for rf_octupole_ion_optics'):
-            native_frontend_instances(old_plan)
-        current = self._current_octupole_provider(historical)
-        components = copy.deepcopy(old_plan['components'])
-        components['multipole'] = build_assembly_interface(current, geometry_profile_id=None)
-        self.assertEqual(components['multipole']['ports'], old_plan['components']['multipole']['ports'])
-        recipe = copy.deepcopy(old_plan['recipe'])
-        recipe['instances'][0]['project_id'] = components['multipole']['project_id']
-        plan = compile_assembly_layout(recipe, components)
-        self.assertEqual(native_frontend_instances(plan), (('multipole',), 'oatof'))
-        self.assertEqual(historical, original)
-        self.assertEqual(old_plan['components']['multipole']['project_id'], 'rf_octupole_ion_optics')
+        current = multipole_source('octupole')
+        retired = copy.deepcopy(current)
+        retired['schema_version'] = 2
+        before = copy.deepcopy(retired)
+        with self.assertRaises(ValueError):
+            build_assembly_interface(retired, geometry_profile_id=None)
+        self.assertEqual(retired, before)
+        self.assertEqual(current['schema_version'], 3)
+
+    def test_changed_housing_cannot_inherit_an_existing_parent_geometry(self):
+        from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
+
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            fixture(root, source=historical)
-            metadata_path = root/'author/metadata.json'
-            original_metadata = metadata_path.read_bytes()
-            self._current_source_metadata(root/'author/source.csv', current, json.loads(original_metadata))
-            self.assertEqual(metadata_path.read_bytes(), original_metadata)
-        changed_request = copy.deepcopy(request)
-        changed_request['drive']['frequency_Hz'] *= 2
-        changed = compile_design_request(changed_request, expected_identity=changed_request['identity'])
-        with self.assertRaisesRegex(AssertionError, 'drive'):
-            self._current_octupole_provider(changed)
-
-    def test_available_actual_providers_keep_native_payloads_under_parent_references(self):
-        from projects.rf_multipole_ion_optics.core.component_port import build_assembly_interface
-        frozen = Path(__file__).resolve().parents[3] / ('artifacts/projects/instrument_assembly/runs/'
-            '20261025_193652__analysis__python__current-parent-preparation/inputs')
-        if not frozen.is_dir():
-            self.skipTest('external current-parent complete provider preparation is unavailable')
-        results = []
-        for change in ({}, dict(translation=(0.,64.,0.)),
-                       dict(rotation=((0.,-1.,0.),(1.,0.,0.),(0.,0.,1.)))):
-            with self.subTest(change=change), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                (root/'inputs').mkdir()
-                request = json.loads((frozen/'request.json').read_text())
-                request['schema_version'] = 9  # Author a current request; frozen historical inputs stay unchanged.
-                request['providers'] = dict(instances=request['providers']['instances'])
-                # Current active coverage needs guard clearance. This is a new
-                # numerical grid, while physical bodies, source and clock stay fixed.
-                for domain in request['numerics']['frontend_domains'].values():
-                    for axis in 'xyz':
-                        domain['pa_bounds_mm'][axis+'_min'] -= 1.
-                        domain['pa_bounds_mm'][axis+'_max'] += 1.
-                providers = {}
-                for key, instance in request['providers']['instances'].items():
-                    provider_path = frozen/'components'/key/'resolved_design.json'
-                    if key != 'oatof':
-                        provider = self._current_octupole_provider(json.loads(provider_path.read_text()))
-                        providers[key] = provider
-                        provider_path = root/(key+'.current_resolved_design.json')
-                        write_json(provider_path, provider)
-                    instance['resolved_design'] = file_record(provider_path)
-                for key, name in (('particle_source','particle_source.csv'), ('metadata','particle_source_metadata.json'),
-                                  ('clock_authority','clock_authority.json'), ('instrument_epoch','instrument_epoch.json')):
-                    request['source'][key] = file_record(frozen/name)
-                metadata = self._current_source_metadata(frozen/'particle_source.csv',
-                    providers[request['source']['instance_id']],
-                    json.loads((frozen/'particle_source_metadata.json').read_text()))
-                write_json(root/'current_source_metadata.json', metadata)
-                request['source']['metadata'] = file_record(root/'current_source_metadata.json')
-                parent = json.loads((frozen/'composition_plan.json').read_text())
-                components = copy.deepcopy(parent['components'])
-                for instance_id, component in components.items():
-                    if instance_id == 'oatof':
-                        continue
-                    provider = providers[instance_id]
-                    current = build_assembly_interface(provider,geometry_profile_id=component['geometry_profile_id'])
-                    self.assertEqual(current['ports'],component['ports'])
-                    components[instance_id] = current
-                for instance in parent['recipe']['instances']:
-                    instance['project_id'] = components[instance['instance_id']]['project_id']
-                parent = compile_assembly_layout(parent['recipe'],components)
-                if change:
-                    parent = reframe_parent(parent, **change)
-                write_json(root/'parent.json', parent)
-                request['composition_plan'] = file_record(root/'parent.json')
-                write_json(root/'author.json', request)
-                prepare(root/'author.json', root)
-                payloads = tuple((root/'inputs'/name).read_bytes() for name in (
-                    'frontend.gem','frontend_entrance_refinement.gem','frontend_field_design.json',
-                    'projected_source.csv','clock_authority.json','instrument_epoch.json'))
-                results.append(payloads)
-                for name in ('frontend.gem','frontend_entrance_refinement.gem','projected_source.csv',
-                             'clock_authority.json','instrument_epoch.json'):
-                    current = (root/'inputs'/name).read_bytes()
-                    if name.endswith('.gem'):
-                        self.assertNotIn(b' within {', current)
-                        # Compare actual body primitives; the PA grid and origin
-                        # wrapper changed to leave the current active guard clear.
-                        current = current.replace(b' within_inside_or_on {', b' within {')
-                        self.assertEqual(current.splitlines()[3:], (frozen/name).read_bytes().splitlines()[3:])
-                    else:
-                        self.assertEqual(current, (frozen/name).read_bytes())
-        self.assertEqual(results[0], results[1])
-        self.assertEqual(results[0], results[2])
+            path, run, request = fixture(Path(directory))
+            original_plan = (path.parent/'parent_plan.json').read_bytes()
+            raw = json.loads((Path(__file__).resolve().parents[2] /
+                'projects/rf_multipole_ion_optics/variants/octupole/config/requests/mechanical_base.json').read_text())
+            raw['geometry_mm']['enclosure'] = dict(model='cylindrical_grounded_shell',
+                inner_radius_mm=20., wall_thickness_mm=1., z_min_mm=-2.5, z_max_mm=82.1)
+            raw['static_electrodes_V'] = dict(role='grounded_shell_static_electrodes', ground_V=0.)
+            changed = compile_design_request(raw, expected_identity=raw['identity'])
+            write_json(path.parent/'changed_provider.json', changed)
+            request['providers']['instances']['multipole']['resolved_design'] = file_record(path.parent/'changed_provider.json')
+            write_json(path, request)
+            with self.assertRaises(ValueError):
+                prepare(path, run)
+            self.assertEqual((path.parent/'parent_plan.json').read_bytes(), original_plan)
 
     def test_parent_reference_does_not_move_native_geometry_fields_source_or_clock(self):
         for source_kind in ('recorded_birth', 'release_spec'):
@@ -981,7 +877,7 @@ class SingleReflectionPreparationTests(unittest.TestCase):
                     fine = design['domains'][1]
                     self.assertEqual(fine['parent_domain_id'], 'parent')
                     self.assertEqual(fine['boundary_policy'], 'parent_dirichlet')
-                    self.assertEqual(len(fine['physical_samples']), 38)
+                    self.assertEqual(len(fine['physical_samples']), 36)
                 else:
                     self.assertNotIn('frontend_entrance_refinement', receipt['outputs'])
                     self.assertFalse((run/'inputs/frontend_entrance_refinement.gem').exists())
@@ -1314,43 +1210,34 @@ class SingleReflectionPreparationTests(unittest.TestCase):
             provenance = json.loads((run / "inputs/source_provenance.json").read_text())
             self.assertEqual(provenance["instrument_epoch_us"], 1000.0)
 
-    def test_available_actual_210633_source_preserves_original_clock_and_mother_population(self):
-        source_run = (
-            Path(__file__).resolve().parents[3]
-            / "artifacts/projects/rf_octupole_ion_optics/runs/20261022_210633__sim__simion__octupole-through-exit-n100/inputs"
-        )
-        if not source_run.is_dir():
-            self.skipTest("external actual 210633 run is unavailable in this checkout")
-        source = json.loads((source_run / "multipole_resolved_design.json").read_text())
-        source = self._current_octupole_provider(source)
-        raw = (source_run / "particle_source.csv").read_bytes()
-        metadata = self._current_source_metadata(source_run/'particle_source.csv', source,
-            json.loads((source_run/'particle_source_metadata.json').read_text()))
+    def test_frozen_current_source_preserves_original_clock_and_mother_population(self):
         with tempfile.TemporaryDirectory() as directory:
-            path, run, _ = fixture(
-                Path(directory),
-                source=source,
-                source_rows=raw,
-                source_metadata=metadata,
-                clock_bytes=(source_run / "clock_authority.json").read_bytes(),
-                epoch_bytes=(source_run / "instrument_epoch.json").read_bytes(),
-            )
-            with patch(
-                "integrations.workflows.single_reflection_flight.prepare.materialize_release",
-                side_effect=AssertionError("recorded mother must never be regenerated"),
-            ):
+            root = Path(directory)
+            original_root = root / 'original'
+            original_root.mkdir()
+            original_path, _, _ = fixture(original_root)
+            author = original_path.parent
+            source = json.loads((author / 'multipole.json').read_text())
+            raw = (author / 'source.csv').read_bytes()
+            metadata = json.loads((author / 'metadata.json').read_text())
+            clock = (author / 'clock.json').read_bytes()
+            epoch = (author / 'epoch.json').read_bytes()
+            replay_root = root / 'replay'
+            replay_root.mkdir()
+            path, run, _ = fixture(replay_root, source=source, source_rows=raw,
+                source_metadata=metadata, clock_bytes=clock, epoch_bytes=epoch)
+            with patch('integrations.workflows.single_reflection_flight.prepare.materialize_release',
+                       side_effect=AssertionError('recorded mother must never be regenerated')):
                 result = prepare(path, run)
-            self.assertEqual(result["particle_count"], 100)
-            self.assertEqual((run / "inputs/particle_source.csv").read_bytes(), raw)
-            for name in ("clock_authority.json", "instrument_epoch.json"):
-                self.assertEqual((run / "inputs" / name).read_bytes(), (source_run / name).read_bytes())
-            mother = list(csv.DictReader(io.StringIO(raw.decode("utf-8-sig"))))
-            actual = list(csv.DictReader(io.StringIO((run / "inputs/projected_source.csv").read_text())))
-            self.assertEqual([row["particle_id"] for row in actual], [row["particle_id"] for row in mother])
-            self.assertEqual(
-                [float(row["instrument_time_us"]) for row in actual],
-                [float(row["birth_time_s"]) * 1e6 for row in mother],
-            )
+            self.assertEqual(result['particle_count'], 100)
+            self.assertEqual((run / 'inputs/particle_source.csv').read_bytes(), raw)
+            self.assertEqual((run / 'inputs/clock_authority.json').read_bytes(), clock)
+            self.assertEqual((run / 'inputs/instrument_epoch.json').read_bytes(), epoch)
+            mother = list(csv.DictReader(io.StringIO(raw.decode('utf-8-sig'))))
+            actual = list(csv.DictReader(io.StringIO((run / 'inputs/projected_source.csv').read_text())))
+            self.assertEqual([row['particle_id'] for row in actual], [row['particle_id'] for row in mother])
+            self.assertEqual([float(row['instrument_time_us']) for row in actual],
+                             [float(row['birth_time_s']) * 1e6 for row in mother])
 
     def test_whole_held_off_preserves_original_inputs_and_local_carrier_geometry(self):
         for local in (False, True):

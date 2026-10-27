@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 7,
   "role": "multipole_transport_experiment_campaign",
   "family_id": "rf_multipole_ion_optics",
   "campaign_id": "20260731__noacc_vs_segmented_h15_n100",
@@ -28,7 +28,7 @@
       },
       "retention_class": "compact",
       "resource_authorization": {
-        "authorized": true,
+        "authorized": false,
         "limits": {
           "wall_clock_seconds_by_solver": {"comsol": 1800, "simion": 2400},
           "transient_run_directory_bytes": 8589934592,
@@ -44,7 +44,7 @@
         },
         "budget_exhaustion_result": "Stop without retry and record the exhausted limit."
       },
-      "claim_limit": "One N=100 SIMION engineering comparison arm at the preregistered H15 discretization."
+      "claim_limit": "Current schema 3 bare geometry is not authorized for commercial execution. Retained historical run IDs require redefinition and explicit authorization before a new run; frozen old-geometry evidence and qualification do not transfer."
     },
     {
       "experiment_id": "quad_segmented_h15_n100",
@@ -69,7 +69,7 @@
       },
       "retention_class": "compact",
       "resource_authorization": {
-        "authorized": true,
+        "authorized": false,
         "limits": {
           "wall_clock_seconds_by_solver": {"comsol": 1800, "simion": 2400},
           "transient_run_directory_bytes": 8589934592,
@@ -85,7 +85,7 @@
         },
         "budget_exhaustion_result": "Stop without retry and record the exhausted limit."
       },
-      "claim_limit": "One N=100 segmented-rod SIMION engineering comparison arm at the preregistered H15 discretization."
+      "claim_limit": "Current schema 3 bare geometry is not authorized for commercial execution. Retained historical run IDs require redefinition and explicit authorization before a new run; frozen old-geometry evidence and qualification do not transfer."
     },
     {
       "experiment_id": "hex_segmented_h15_n100",
@@ -110,7 +110,7 @@
       },
       "retention_class": "compact",
       "resource_authorization": {
-        "authorized": true,
+        "authorized": false,
         "limits": {
           "wall_clock_seconds_by_solver": {"comsol": 1800, "simion": 2400},
           "transient_run_directory_bytes": 8589934592,
@@ -126,7 +126,7 @@
         },
         "budget_exhaustion_result": "Stop without retry and record the exhausted limit."
       },
-      "claim_limit": "One N=100 segmented-rod SIMION engineering comparison arm at the preregistered H15 discretization."
+      "claim_limit": "Current schema 3 bare geometry is not authorized for commercial execution. Retained historical run IDs require redefinition and explicit authorization before a new run; frozen old-geometry evidence and qualification do not transfer."
     },
     {
       "experiment_id": "oct_noacc_h15_n100",
@@ -151,7 +151,7 @@
       },
       "retention_class": "compact",
       "resource_authorization": {
-        "authorized": true,
+        "authorized": false,
         "limits": {
           "wall_clock_seconds_by_solver": {"comsol": 1800, "simion": 2400},
           "transient_run_directory_bytes": 8589934592,
@@ -167,7 +167,7 @@
         },
         "budget_exhaustion_result": "Stop without retry and record the exhausted limit."
       },
-      "claim_limit": "One N=100 SIMION engineering comparison arm at the preregistered H15 discretization."
+      "claim_limit": "Current schema 3 bare geometry is not authorized for commercial execution. Retained historical run IDs require redefinition and explicit authorization before a new run; frozen old-geometry evidence and qualification do not transfer."
     },
     {
       "experiment_id": "oct_segmented_h15_n100",
@@ -192,7 +192,7 @@
       },
       "retention_class": "compact",
       "resource_authorization": {
-        "authorized": true,
+        "authorized": false,
         "limits": {
           "wall_clock_seconds_by_solver": {"comsol": 1800, "simion": 2400},
           "transient_run_directory_bytes": 8589934592,
@@ -208,8 +208,8 @@
         },
         "budget_exhaustion_result": "Stop without retry and record the exhausted limit."
       },
-      "claim_limit": "One N=100 segmented-rod SIMION engineering comparison arm at the preregistered H15 discretization."
+      "claim_limit": "Current schema 3 bare geometry is not authorized for commercial execution. Retained historical run IDs require redefinition and explicit authorization before a new run; frozen old-geometry evidence and qualification do not transfer."
     }
   ],
-  "claim_limit": "Five new runs plus the existing preregistered hexapole no-acceleration H15 run form the six-arm family engineering comparison; this is not a convergence proof."
+  "claim_limit": "Current schema 3 bare geometry is not authorized for commercial execution. Retained historical run IDs require redefinition and explicit authorization before a new run; frozen old-geometry evidence and qualification do not transfer."
 }

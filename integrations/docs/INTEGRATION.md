@@ -22,6 +22,17 @@
 三实例N3额外原生验收已取消，不再续接大场；仅保留已发布carrier、局部原生探针和轻量回归。
 未来增加实例、拓扑或物理域须按实际请求验收，不能从准备包、缓存命中或现有功能证据推定任意组合可运行。
 
+## 当前多极杆几何边界
+
+可装配多极杆默认裸杆，显式接地圆柱壳只声明内半径、壁厚和两个物理轴向端面；
+入口／出口端盖各自可选，每个只声明孔径半径和厚度，与壳连续相接并共用唯一0 V电极。
+独立孔板和透镜归外部提供者；不保留内置出口光学、through模型或1 mm绝缘间隙草稿。
+零间隙按实际杆端、接地壳及OA孔口判断，允许独立导体互不接触的组合；发生接触须由配方显式修改几何或间隙，没有统一默认距离。
+
+以下N2、机械出口和分段链结果均绑定原冻结几何、输入及资格，不因提供者升级成为新裸杆结果。
+旧四处CAD交叠保留为原几何负证据；新壳体CAD与杆对壳核对的范围见[提供者状态](../../projects/rf_multipole_ion_optics/docs/PROJECT.md#当前组件边界与几何)，不能写为整机修复已验收。
+源、粒子母群和唯一时钟保持原身份；配方演进不改写历史运行。
+
 ## 装配与公共机制
 
 [配方解析](../README.md#配方解析)冻结完整父配方与组件直接位姿；默认运行其全部实例，局部范围必须显式派生。
@@ -178,7 +189,7 @@ schema 2请求显式引用来源／接收manifest、冻结父plan与可选local�
 bbox差均0，近似体积差分别−1.6007e-10／+1.4552e-11 mm³。
 
 [几何诊断](../../../artifacts/projects/instrument_assembly/runs/20261027_093507__test__cad__component-geometry-acceptance/results/geometry_kernel.json)
-保留4处原始不同native-ID正体积交叠：两个实例各自的shield与exit outercap／exit plate重叠，
+记录冻结旧几何的4处不同native-ID正体积交叠：两个实例各自的shield与exit outercap／exit plate重叠，
 每处分别约64.394489／125.770485 mm³。GEM后写拥有相交材料，CAD未做补偿减法或合并电压来隐藏交叠。
 `raw_electrode_clearance_qualified=false`、manufacturing／Formal均false；近似体积测量不是制造公差验收。
 本轮无mesh／physics／study／Compute／新MPH，也没有重算原仿真。

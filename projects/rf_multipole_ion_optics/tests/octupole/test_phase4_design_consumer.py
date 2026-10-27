@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import json
-import hashlib
 import unittest
 from pathlib import Path
 from typing import Any
 
 from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_runtime_profile
-from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
 from common.contracts.particle_count_policy import validate_prefix_particle_sources
-from projects.rf_multipole_ion_optics.tests.test_support.historical_contracts import historical_path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -17,7 +14,6 @@ REPO_ROOT = PROJECT_ROOT.parents[1]
 MODE_IDS = (
     "no_acceleration_full_length",
     "segmented_rod_axial_acceleration",
-    "exit_aperture_plate_acceleration",
 )
 N100_TIER_SUFFIXES = (
     "",
@@ -35,7 +31,7 @@ def load(relative: str) -> dict[str, Any]:
     return json.loads((PROJECT_ROOT / relative).read_text(encoding="utf-8"))
 
 
-class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
+class CurrentRuntimeConsumerTests(unittest.TestCase):
     def test_family_runtime_profiles_resolve_without_free_numerics(self) -> None:
         registry = load("config/runtime_profiles.json")
         expected_ids = {
@@ -158,278 +154,19 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
         self.assertTrue(Path(receipt["path"]).is_file())
         self.assertRegex(receipt["sha256"], r"^[A-F0-9]{64}$")
 
-    def test_preregistration_fails_inconclusive_without_supported_thresholds(self) -> None:
-        plan = load("docs/history/retired_projects/rf_octupole_ion_optics/config/qualification/n100_convergence_preregistration.json")
-        acceptance = load(
-            "docs/history/retired_projects/rf_octupole_ion_optics/config/qualification/dispersion_acceptance.json"
-        )
-        effect = load(
-            "docs/history/retired_projects/rf_octupole_ion_optics/config/qualification/dispersion_effect_resolution.json"
-        )
-        budget = load("docs/history/retired_projects/rf_octupole_ion_optics/config/qualification/engineering_budget.json")
-        for document in (plan, acceptance, effect, budget):
-            self.assertTrue(document["preregistered_before_run"])
-            self.assertEqual(document["project_id"], "rf_octupole_ion_optics")
-        self.assertEqual(
-            plan["decision_policy"]["without_supported_acceptance_budget"],
-            "INCONCLUSIVE",
-        )
-        self.assertEqual(
-            acceptance["acceptance_criteria"]["status"],
-            "not_established",
-        )
-        self.assertEqual(
-            effect["effect_resolution"]["status"],
-            "not_established",
-        )
-        self.assertEqual(
-            budget["budget_exhaustion_result"],
-            "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
-        )
-        self.assertFalse(budget["pilot_authorization"]["authorized"])
-        self.assertEqual(
-            budget["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_spatial_refined",
-        )
-        result = load(
-            "docs/history/retired_projects/rf_octupole_ion_optics/config/qualification/n100_no_acceleration_qualification.json"
-        )
-        self.assertEqual(result["functional_transport"]["status"], "PASS")
-        self.assertEqual(
-            result["continuous_diagnostics"]["status"],
-            "INCONCLUSIVE_NO_SOURCED_ERROR_BUDGET",
-        )
-        acceleration = load(
-            "docs/history/retired_projects/rf_octupole_ion_optics/config/qualification/n100_segmented_rod_axial_acceleration_qualification.json"
-        )
-        self.assertEqual(
-            acceleration["baseline_functional_transport"]["status"],
-            "PASS",
-        )
-        self.assertEqual(
-            acceleration["same_solver_spatial"]["simion"]["functional_status"],
-            "PASS",
-        )
-        self.assertEqual(
-            acceleration["same_solver_spatial"]["comsol"]["status"],
-            "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
-        )
-        exit_plate = load(
-            "docs/history/retired_projects/rf_octupole_ion_optics/config/qualification/n100_exit_aperture_plate_acceleration_qualification.json"
-        )
-        self.assertEqual(
-            exit_plate["baseline_functional_transport"]["status"],
-            "PASS",
-        )
-        self.assertEqual(
-            exit_plate["same_solver_spatial"]["simion"]["functional_status"],
-            "PASS",
-        )
-        self.assertEqual(
-            exit_plate["same_solver_spatial"]["comsol"]["status"],
-            "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
-        )
 
-    def test_hybrid_reference_arm_is_authorized_without_full_matrix(
-        self,
-    ) -> None:
-        campaign = load(
-            "docs/history/retired_projects/rf_octupole_ion_optics/config/qualification/"
-            "comsol_hybrid_no_acceleration_particle_convergence_preregistration.json"
-        )
-        self.assertEqual(
-            campaign["status"],
-            "REFERENCE_ARM_COMPLETED_FOR_DOWNSTREAM_SOURCE_REVISION_SCREEN",
-        )
-        self.assertEqual(campaign["commercial_run_count_executed"], 1)
-        self.assertEqual(campaign["maximum_commercial_run_count"], 3)
-        budget = load(
-            "docs/history/retired_projects/rf_octupole_ion_optics/config/qualification/"
-            "comsol_hybrid_no_acceleration_particle_convergence_budget.json"
-        )
-        self.assertEqual(
-            campaign["scope"]["expected_run_parent_resolved_design_sha256"],
-            budget["pilot_authorization"]["scope"][
-                "expected_run_parent_resolved_design_sha256"
-            ],
-        )
-        for authority in campaign["frozen_authorities"].values():
-            path = historical_path(PROJECT_ROOT, authority["path"])
-            self.assertRegex(authority["sha256"], r"^[A-F0-9]{64}$")
-            self.assertTrue(path.is_file())
 
-        numerics = load("config/comsol_solver_numerics.json")["profiles"]
-        runtime = load("config/runtime_profiles.json")["profiles"]
-        arms = campaign["ordered_arms"]
-        self.assertEqual([arm["sequence"] for arm in arms], [1, 2, 3])
-        self.assertTrue(arms[0]["executed"])
-        self.assertTrue(all(not arm["executed"] for arm in arms[1:]))
-        self.assertTrue(all(arm["run_id"] is None for arm in arms[1:]))
-        for arm in arms:
-            binding = runtime["octupole_" + arm["runtime_profile_id"]]
-            self.assertEqual(
-                binding["comsol_solver_numerics_profile_id"],
-                "octupole_" + arm["comsol_solver_numerics_profile_id"],
-            )
-            self.assertEqual(
-                binding["simion_solver_numerics_profile_id"],
-                "octupole_baseline_finite_3d",
-            )
 
-        coarse = numerics["octupole_" + arms[2]["comsol_solver_numerics_profile_id"]]
-        reference = numerics["octupole_" + arms[0]["comsol_solver_numerics_profile_id"]]
-        spatial = numerics["octupole_" + arms[1]["comsol_solver_numerics_profile_id"]]
-        coarse_normalized = json.loads(json.dumps(coarse))
-        coarse_normalized["trajectory"]["rf_steps_per_period"] = 160
-        self.assertEqual(coarse_normalized, reference)
-        spatial_normalized = json.loads(json.dumps(spatial))
-        spatial_normalized["mesh"]["hybrid"]["sensitive_region"][
-            "exit_interface_refinement"
-        ]["maximum_element_size_mm"] = 0.25
-        self.assertEqual(spatial_normalized, reference)
-
-        budget = load(
-            "docs/history/retired_projects/rf_octupole_ion_optics/config/qualification/"
-            "comsol_hybrid_no_acceleration_particle_convergence_budget.json"
-        )
-        self.assertTrue(budget["pilot_authorization"]["authorized"])
-        self.assertFalse(arms[0]["authorized"])
-        self.assertTrue(arms[0]["executed"])
-        self.assertTrue(arms[0]["run_id"].startswith("20260730_231701__"))
-        self.assertEqual(arms[0]["result"]["status"], "PASS")
-        self.assertEqual(arms[0]["result"]["primary_transmitted"], 100)
-        self.assertTrue(all(not arm["authorized"] for arm in arms[1:]))
-        self.assertFalse(budget["full_matrix_authorization"]["authorized"])
-        self.assertEqual(
-            budget["pilot_authorization"]["scope"]["runtime_profile_id"],
-            arms[0]["runtime_profile_id"],
-        )
-        self.assertEqual(
-            budget["pilot_authorization"]["limits"]["maximum_mesh_cells"],
-            1000000,
-        )
-
-    def test_geometry_and_voltage_contracts_match_typed_resolved_modes(self) -> None:
-        invariant_path = (
-            PROJECT_ROOT
-            / "docs/history/retired_projects/rf_octupole_ion_optics/config/qualification/three_mode_geometry_invariant.json"
-        )
-        invariant = json.loads(invariant_path.read_text(encoding="utf-8"))
-        invariant_sha256 = hashlib.sha256(invariant_path.read_bytes()).hexdigest().upper()
-        mechanical = invariant["mechanical_baseline"]
-        frozen_voltages = {
-            "no_acceleration_full_length": [0.0, 0.0, 0.0, 0.0],
-            "segmented_rod_axial_acceleration": [0.0, -1.0, -2.0, -3.0],
-            "exit_aperture_plate_acceleration": [0.0, 0.0, 0.0, 0.0],
-        }
-        active_voltages = {
-            "no_acceleration_full_length": [0.0, 0.0, 0.0, 0.0],
-            "segmented_rod_axial_acceleration": [3.0, 2.0, 1.0, 0.0],
-            "exit_aperture_plate_acceleration": [3.0, 3.0, 3.0, 3.0],
-        }
-        for mode_id, expected in active_voltages.items():
-            resolved = resolve_design_profile(
-                REPO_ROOT,
-                "rf_multipole_ion_optics",
-                ('octupole_' + mode_id),
-            )["resolved_design"]
-            voltage = load(f"docs/history/retired_projects/rf_octupole_ion_optics/config/qualification/voltage_{mode_id}.json")
-            self.assertEqual(
-                voltage["geometry_invariant_sha256"],
-                invariant_sha256,
-            )
-            self.assertEqual(
-                voltage["rod_segment_common_mode_V"],
-                frozen_voltages[mode_id],
-            )
-            self.assertEqual(
-                [
-                    item["common_mode_V"]
-                    for item in resolved["segmentation"]["axial_acceleration"][
-                        "derived"
-                    ]["segments"]
-                ],
-                expected,
-            )
-            self.assertEqual(
-                resolved["interfaces_mm"]["entrance"]["release_plane_z_mm"],
-                mechanical["release_plane_z_mm"],
-            )
-            self.assertEqual(
-                resolved["interfaces_mm"]["exit"]["handoff_plane_z_mm"],
-                mechanical["handoff_plane_z_mm"],
-            )
-            self.assertEqual(
-                resolved["interfaces_mm"]["exit"]["census_plane_z_mm"],
-                mechanical["near_interface_census_plane_z_mm"],
-            )
-
-    def test_dispersion_preregistration_references_are_fresh(self) -> None:
-        preregistration = load(
-            "docs/history/retired_projects/rf_octupole_ion_optics/config/qualification/three_mode_dispersion_preregistration.json"
-        )
-        self.assertEqual(
-            preregistration["formal_binding_status"],
-            "pending_real_solver_outputs",
-        )
-        references = [
-            preregistration["geometry"],
-            preregistration["source_family"]["n100"],
-            preregistration["source_family"]["n1000"],
-            *[
-                item["voltage_contract"]
-                for item in preregistration["modes"]
-            ],
-            *preregistration["qualification_bindings"].values(),
-        ]
-        for reference in references:
-            path = historical_path(PROJECT_ROOT, reference["path"])
-            self.assertEqual(
-                hashlib.sha256(path.read_bytes()).hexdigest().upper(),
-                reference["sha256"],
-            )
-        self.assertEqual(
-            preregistration["formal_binding_generation"][
-                "missing_real_handoff_decision"
-            ],
-            "FAIL_CLOSED_NO_FORMAL_BINDING",
-        )
 
     def test_design_profile_registry_contains_only_typed_modes(self) -> None:
         profiles = [profile for profile in load("config/design_profiles.json")["profiles"]
                     if profile["structural_variant_id"] == "octupole"]
         self.assertEqual(
             {profile["design_profile_id"] for profile in profiles},
-            {f"octupole_{name}" for name in MODE_IDS} | {"octupole_through_exit_no_acceleration", "octupole_through_entrance_exit_no_acceleration"},
+            {f"octupole_{name}" for name in MODE_IDS} | {"octupole_grounded_shell_no_acceleration"},
         )
         self.assertEqual({profile["mode_id"] for profile in profiles}, set(MODE_IDS))
 
-    def test_through_exit_runtime_consumers_bind_the_explicit_topology_and_independent_sources(self) -> None:
-        sources = load("config/particle_source_profiles.json")["profiles"]
-        for runtime_id, source_id in (
-            ("through_exit_no_acceleration_n100", "family_mother_sample_v1_n100"),
-            ("through_exit_no_acceleration_524da_n100", "octupole_planar_524da_2ev_n100"),
-        ):
-            with self.subTest(runtime_id=runtime_id):
-                runtime = resolve_runtime_profile(REPO_ROOT, "rf_multipole_ion_optics", ('octupole_' + runtime_id))
-                self.assertEqual(runtime["design_profile_id"], "octupole_through_exit_no_acceleration")
-                design = runtime["design_profile_resolution"]
-                self.assertEqual(design["profile"]["mode_id"], MODE_IDS[0])
-                self.assertEqual(design["profile"]["design_request"], "variants/octupole/config/requests/through_exit.json")
-                self.assertEqual(design["profile"]["optimization_envelope"], "variants/octupole/config/through_exit_optimization_envelope.json")
-                source = runtime["particle_source"]
-                self.assertEqual(source["profile_id"], source_id)
-                if source_id == "family_mother_sample_v1_n100":
-                    self.assertEqual(Path(source["path"]), REPO_ROOT / sources[source_id]["path"])
-                    self.assertEqual(source["sha256"], sources[source_id]["sha256"])
-                    self.assertNotIn("release_spec", source)
-                else:
-                    spec_path = PROJECT_ROOT / sources[source_id]["release_spec"]
-                    self.assertEqual(Path(source["release_spec"]["path"]), spec_path)
-                    spec = json.loads(spec_path.read_text(encoding="utf-8"))
-                    self.assertEqual(spec["species"], dict(mass_amu=524., charge_state=1))
-                    self.assertEqual((spec["particle_count"], spec["mother_particle_count"]), (100,100))
-                    self.assertNotIn("path", source)
 
     def test_wrappers_delegate_registered_runtime_profile_resolution(self) -> None:
         runtime_ids = set(load("config/runtime_profiles.json")["profiles"])

@@ -13,6 +13,7 @@ from typing import Any
 
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.particle_count_policy import validate_positive_particle_count
+from projects.rf_multipole_ion_optics.core.interface_geometry import transport_observations
 
 COLUMNS = [
     "particle_id",
@@ -44,7 +45,7 @@ def load_release_spec(path: Path, resolved: dict[str, Any] | None = None) -> tup
     if resolved is not None:
         if spec["frame_id"] != resolved["coordinate"]["coordinate_id"]:
             raise ValueError("release frame differs from the native multipole coordinate frame")
-        if spec["geometry"]["center_mm"][2] != resolved["interfaces_mm"]["entrance"]["release_plane_z_mm"]:
+        if spec["geometry"]["center_mm"][2] != transport_observations(resolved)["release_plane_z_mm"]:
             raise ValueError("release plane differs from resolved design")
         if spec["species"]["charge_state"] != resolved["particle_source"]["charge_state"]:
             raise ValueError("release charge differs from resolved design")
@@ -238,7 +239,7 @@ def load_validated_source(
             raise ValueError("expected source-family SHA-256 requires a source family")
         if source_family_sha256 != expected_source_family_sha256.upper():
             raise ValueError("source-family SHA-256 differs from the frozen runner input")
-    source_plane = float(resolved["interfaces_mm"]["entrance"]["release_plane_z_mm"])
+    source_plane = float(transport_observations(resolved)["release_plane_z_mm"])
     expected_charge = int(resolved["particle_source"]["charge_state"])
     energy_model = (
         operating_point["kinetic_energy_eV"]

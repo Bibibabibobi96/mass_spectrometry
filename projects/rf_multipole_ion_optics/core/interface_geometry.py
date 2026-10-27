@@ -6,7 +6,6 @@ import math
 from typing import Any
 from collections.abc import Mapping
 
-from common.contracts.machine_contracts import ContractError
 
 
 class InterfaceGeometryError(ValueError):
@@ -92,70 +91,75 @@ def build_axial_interface_layout(
     return layout
 
 
-def through_exit_geometry(resolved_design: Mapping[str, Any]) -> dict[str, Any]:
-    """Resolve the explicitly open cylindrical exit; closed or composed models fail."""
-    geometry = resolved_design["geometry_mm"]
-    enclosure = geometry["enclosure"]
-    if enclosure["model"] not in {
-        "cylindrical_grounded_shield_through_exit_v1",
-        "cylindrical_grounded_shield_through_entrance_exit_v1",
-    }:
-        raise ContractError("mechanical exit requires the explicit through-exit enclosure model")
-    if "downstream_terminal" in resolved_design:
-        raise ContractError("through-exit mechanical interface does not support composed downstream terminals")
-    interface = resolved_design["interfaces_mm"]["exit"]
-    cap_start = float(enclosure["exit_outer_endcap_upstream_face_z_mm"])
-    cap_end = float(enclosure["exit_outer_endcap_downstream_face_z_mm"])
-    length = float(interface["connector_length_mm"])
-    connector_start = float(interface["aperture_plate_downstream_face_z_mm"])
-    connector_end = connector_start + length
-    if length and (interface["connector_shape"] != "cylindrical_bore" or connector_start > cap_start):
-        raise ContractError("through-exit connector must be a continuous coaxial cylindrical bore")
-    return dict(surface_z_mm=max(cap_end, connector_end), aperture_radius_mm=float(interface["aperture_radius_mm"]),
-                outer_endcap_z_min_mm=cap_start, outer_endcap_z_max_mm=cap_end,
-                wall_thickness_mm=cap_end-cap_start if connector_end <= cap_end else None)
 
+def build_enclosure_layout(geometry: Mapping[str, Any]) -> dict[str, Any]:
+    """Compile real shell/endcap annuli and ports, independently of the numeric box.
 
-def through_entrance_geometry(resolved_design: Mapping[str, Any]) -> dict[str, Any]:
-    """Resolve the explicit outer entrance bore, never the internal release plane."""
-    geometry = resolved_design["geometry_mm"]
-    enclosure = geometry["enclosure"]
-    if enclosure["model"] != "cylindrical_grounded_shield_through_entrance_exit_v1":
-        raise ContractError("mechanical entrance requires the explicit through-entrance-exit enclosure model")
-    if "downstream_terminal" in resolved_design:
-        raise ContractError("through-entrance mechanical interface does not support composed downstream terminals")
-    interface = resolved_design["interfaces_mm"]["entrance"]
-    cap_start = float(enclosure["entrance_outer_endcap_upstream_face_z_mm"])
-    cap_end = float(enclosure["entrance_outer_endcap_downstream_face_z_mm"])
-    length = float(interface["connector_length_mm"])
-    connector_start = float(interface["connector_upstream_face_z_mm"])
-    connector_end = float(interface["connector_downstream_face_z_mm"])
-    if length and (interface["connector_shape"] != "cylindrical_bore" or connector_end < cap_end):
-        raise ContractError("through-entrance connector must be a continuous coaxial cylindrical bore")
-    return dict(surface_z_mm=min(cap_start, connector_start), aperture_radius_mm=float(interface["aperture_radius_mm"]),
-                outer_endcap_z_min_mm=cap_start, outer_endcap_z_max_mm=cap_end,
-                wall_thickness_mm=cap_end-cap_start if connector_start >= cap_start else None)
-
-
-def through_shield_geometry(resolved_design: Mapping[str, Any]) -> dict[str, float]:
-    """Return the physical cylindrical side-shell span for an open exit model.
-
-    The numerical vacuum may deliberately extend past the real exit for an
-    observation guard.  It is never a material-shell dimension.  The older
-    exit-only model retains its existing upstream shell origin; the explicit
-    dual-through model starts at the real entrance outer endcap.
+    Missing enclosure means bare rods. Endcaps extend inward from the declared
+    shell faces, have the shell inner radius as their outer radius, and belong
+    to the same grounded conductor. No absent cap becomes a zero-volume body.
     """
-    enclosure = resolved_design["geometry_mm"]["enclosure"]
-    model = enclosure["model"]
-    if model not in {
-        "cylindrical_grounded_shield_through_exit_v1",
-        "cylindrical_grounded_shield_through_entrance_exit_v1",
-    }:
-        raise ContractError("physical side shell requires an explicit through-exit enclosure model")
-    z_min = float(enclosure["vacuum_z_min_mm"])
-    if model == "cylindrical_grounded_shield_through_entrance_exit_v1":
-        z_min = float(enclosure["entrance_outer_endcap_upstream_face_z_mm"])
-    z_max = float(enclosure["exit_outer_endcap_downstream_face_z_mm"])
-    if z_max <= z_min:
-        raise ContractError("through side-shell span must be increasing")
-    return dict(z_min_mm=z_min, z_max_mm=z_max)
+    enclosure = geometry.get("enclosure", {"model": "bare"})
+    if enclosure["model"] == "bare":
+        ports = {}
+        for side, sign, plane in (("entrance", -1, geometry["rod_z_min"]),
+                                  ("exit", 1, geometry["rod_z_max"])):
+            ports["mechanical_" + side] = dict(
+                surface_kind="open_rod_" + side, center_mm=[0., 0., float(plane)],
+                outward_normal=[0, 0, sign], wall_thickness_mm=None,
+                cross_section=dict(shape="open_rod_envelope",
+                                   inscribed_radius_mm=float(geometry["inscribed_radius_r0"])))
+        return dict(bodies=[], ports=ports)
+    if enclosure["model"] != "cylindrical_grounded_shell":
+        raise InterfaceGeometryError("physical annuli require bare rods or the cylindrical grounded shell")
+    inner = _positive(enclosure["inner_radius_mm"], "shell inner radius")
+    wall = _positive(enclosure["wall_thickness_mm"], "shell wall thickness")
+    lower, upper = float(enclosure["z_min_mm"]), float(enclosure["z_max_mm"])
+    if not math.isfinite(lower) or not math.isfinite(upper) or upper <= lower:
+        raise InterfaceGeometryError("shell axial bounds must be finite and increasing")
+    bodies = [dict(role="shell", inner_radius_mm=inner, outer_radius_mm=inner + wall,
+                   z_min_mm=lower, z_max_mm=upper)]
+    ports = {}
+    cap_faces = {}
+    for side, sign, plane in (("entrance", -1, lower), ("exit", 1, upper)):
+        cap = enclosure.get("endcaps", {}).get(side)
+        aperture, thickness = inner, None
+        if cap is not None:
+            aperture = _positive(cap["aperture_radius_mm"], side + " endcap aperture")
+            thickness = _positive(cap["thickness_mm"], side + " endcap thickness")
+            if aperture >= inner or thickness >= upper - lower:
+                raise InterfaceGeometryError("endcap requires a real annulus and thickness within the shell span")
+            start, end = (plane, plane + thickness) if side == "entrance" else (plane - thickness, plane)
+            bodies.append(dict(role=side + "_endcap", inner_radius_mm=aperture,
+                               outer_radius_mm=inner, z_min_mm=start, z_max_mm=end))
+            cap_faces[side] = (start, end)
+        ports["mechanical_" + side] = dict(
+            surface_kind="aperture_outer_face", center_mm=[0., 0., plane],
+            outward_normal=[0, 0, sign], wall_thickness_mm=thickness,
+            cross_section=dict(shape="circle", radius_mm=aperture))
+    if len(cap_faces) == 2 and cap_faces["entrance"][1] > cap_faces["exit"][0]:
+        raise InterfaceGeometryError("entrance and exit endcaps overlap axially")
+    return dict(bodies=bodies, ports=ports)
+
+
+def transport_observations(resolved: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Read explicit observations; the independent rectangular reference owns its layout."""
+    geometry = resolved["geometry_mm"]
+    if geometry["enclosure"]["model"] != "rectangular_reference_enclosure_v1":
+        return geometry["observations"]
+    interfaces = resolved["interfaces_mm"]
+    return dict(release_plane_z_mm=interfaces["entrance"]["release_plane_z_mm"],
+                handoff_plane_z_mm=interfaces["exit"]["handoff_plane_z_mm"],
+                census_plane_z_mm=interfaces["exit"]["census_plane_z_mm"],
+                acceptance_radius_mm=interfaces["exit"]["aperture_radius_mm"])
+
+
+def transport_numerical_domain(resolved: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Read the declared numerical domain, with no inference from physical shell size."""
+    geometry = resolved["geometry_mm"]
+    if geometry["enclosure"]["model"] != "rectangular_reference_enclosure_v1":
+        return geometry["numerical_domain"]
+    enclosure = geometry["enclosure"]
+    return dict(radius_mm=enclosure["outer_half_width_mm"],
+                z_min_mm=enclosure["vacuum_z_min_mm"], z_max_mm=enclosure["vacuum_z_max_mm"],
+                working_region_radius_mm=enclosure["working_region_radius_mm"])

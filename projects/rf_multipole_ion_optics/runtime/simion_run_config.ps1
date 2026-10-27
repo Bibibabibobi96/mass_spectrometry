@@ -251,13 +251,6 @@ function New-RfSimionCoreRunConfig {
         -Property 'drive' -Name 'resolved design drive'
     $staticElectrodes = Get-RfSimionRequiredProperty -Object $ResolvedDesign `
         -Property 'static_electrodes_V' -Name 'resolved design static_electrodes_V'
-    $solverNumerics = Get-RfSimionRequiredProperty -Object $InterfaceContract `
-        -Property 'solver_numerics' -Name 'interface contract solver_numerics'
-    $terminalBackoffCells = Get-RfSimionRequiredFiniteNumber -Object $solverNumerics `
-        -Property 'simion_terminal_surface_backoff_cells' `
-        -Name 'interface SIMION terminal-surface backoff cells' -NonNegative
-    $numericalCensusMarkerThresholdMm =
-        $resolvedCensusPlaneMm - $terminalBackoffCells * $simionCellMm
     $outerHalfWidthMm = Get-RfSimionRequiredFiniteNumber -Object $enclosure `
         -Property 'outer_half_width_mm' -Name 'resolved enclosure outer_half_width_mm' -Positive
     $vacuumZMinMm = Get-RfSimionRequiredFiniteNumber -Object $enclosure `
@@ -267,6 +260,8 @@ function New-RfSimionCoreRunConfig {
     if ($vacuumZMaxMm -le $vacuumZMinMm) {
         throw 'Resolved enclosure vacuum z span must be positive.'
     }
+    $commonModeVoltage = Get-RfSimionRequiredFiniteNumber -Object $drive `
+        -Property 'common_mode_offset_V' -Name 'resolved common-mode voltage'
     return [ordered]@{
         mode = $ModeName
         operating_point = $OperatingPoint
@@ -289,18 +284,15 @@ function New-RfSimionCoreRunConfig {
         phase_rad = Get-RfSimionRequiredFiniteNumber -Object $drive `
             -Property 'phase_rad' -Name 'resolved RF phase'
         waveform = $waveform
-        axis_voltage_v = Get-RfSimionRequiredFiniteNumber -Object $drive `
-            -Property 'common_mode_offset_V' -Name 'resolved common-mode voltage'
-        entrance_voltage_v = Get-RfSimionRequiredFiniteNumber -Object $staticElectrodes `
-            -Property 'entrance_aperture_plate_and_connector_V' -Name 'resolved entrance voltage'
-        exit_voltage_v = Get-RfSimionRequiredFiniteNumber -Object $staticElectrodes `
-            -Property 'exit_outer_enclosure_and_connector_V' -Name 'resolved exit voltage'
-        physical_detector_voltage_v = Get-RfSimionRequiredFiniteNumber -Object $staticElectrodes `
-            -Property 'physical_detector_V' -Name 'resolved physical detector voltage'
-        ground_electrode_id = 0
-        output_electrode_id = 0
-        ground_reference_v = 0
-        output_reference_v = 0
+        rod_electrodes = @(
+            [ordered]@{electrode_id=1;electrode_group=1;common_mode_v=$commonModeVoltage}
+            [ordered]@{electrode_id=2;electrode_group=2;common_mode_v=$commonModeVoltage}
+        )
+        static_electrodes = @(
+            [ordered]@{electrode_id=3;potential_v=(Get-RfSimionRequiredFiniteNumber -Object $staticElectrodes -Property 'entrance_aperture_plate_and_connector_V' -Name 'resolved entrance voltage')}
+            [ordered]@{electrode_id=4;potential_v=(Get-RfSimionRequiredFiniteNumber -Object $staticElectrodes -Property 'exit_outer_enclosure_and_connector_V' -Name 'resolved exit voltage')}
+            [ordered]@{electrode_id=5;potential_v=(Get-RfSimionRequiredFiniteNumber -Object $staticElectrodes -Property 'physical_detector_V' -Name 'resolved physical detector voltage')}
+        )
         maximum_time_us = $maximumTimeUs
         trajectory_plane_step_mm = $simionCellMm
         rod_z_min_mm = $rodZMinMm
@@ -308,7 +300,6 @@ function New-RfSimionCoreRunConfig {
         rod_exit_plane_mm = $rodExitPlaneMm
         handoff_plane_mm = $handoffPlaneMm
         census_plane_mm = $censusPlaneMm
-        numerical_census_marker_threshold_mm = $numericalCensusMarkerThresholdMm
         census_radius_mm = Get-RfSimionRequiredFiniteNumber -Object $enclosure `
             -Property 'physical_detector_radius_mm' -Name 'resolved census radius' -Positive
         radial_escape_radius_mm = $outerHalfWidthMm
@@ -345,6 +336,15 @@ function ConvertTo-RfSimionLuaConfig {
         if ($name -eq 'source_states') {
             $encoded = ConvertTo-RfSimionLuaLongString ([string]$value)
             $lines.Add("  source_states=dofile($encoded),")
+        } elseif ($name -in @('rod_electrodes','static_electrodes')) {
+            $rows = @($value | ForEach-Object {
+                $fields = @($_.GetEnumerator() | ForEach-Object {
+                    $number = [Convert]::ToString($_.Value,[Globalization.CultureInfo]::InvariantCulture)
+                    "$($_.Key)=$number"
+                })
+                '{' + ($fields -join ',') + '}'
+            })
+            $lines.Add("  $name={" + ($rows -join ',') + '},')
         } elseif ($value -is [string]) {
             $lines.Add("  $name=$(ConvertTo-RfSimionLuaLongString $value),")
         } elseif ($value -is [bool]) {

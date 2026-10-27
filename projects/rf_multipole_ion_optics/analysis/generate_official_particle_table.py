@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from projects.rf_multipole_ion_optics.core.interface_geometry import transport_observations
+
+
 import argparse
 import csv
 import json
@@ -61,7 +64,7 @@ def generate_canonical(count: int, resolved_design: dict[str, object]) -> list[d
     """Project the official local ION11 realization onto the governed release plane."""
     source = generate(count)
     release_z_mm = float(
-        resolved_design["interfaces_mm"]["entrance"]["release_plane_z_mm"]  # type: ignore[index]
+        transport_observations(resolved_design)["release_plane_z_mm"]  # type: ignore[index]
     )
     rows: list[dict[str, str]] = []
     for particle_id, values in enumerate(source, start=1):

@@ -1,7 +1,8 @@
 # RF八极杆设计变体
 
 本目录保存RF多极杆项目的八极杆专属设计与科学输入，结构为径向阶数`n=4`、八根电极。
-研究范围是有限三维无碰撞传输、机械出口和来源模型比较；闭壳、单端贯通与双端贯通分别表达。当前结果、资格和开放动作只见
+研究范围是有限三维无碰撞传输、机械出口和来源模型比较。当前可装配提供者默认裸杆，接地壳须显式声明。
+当前结果、资格和开放动作只见
 [PROJECT的八极杆状态](../../docs/PROJECT.md#oct)，不在本入口复制第二份状态表。
 
 ## 阅读与选择
@@ -13,9 +14,11 @@
 
 ## 专属输入
 
-[机械base](config/requests/mechanical_base.json)、[贯通请求](config/requests/through_exit.json)、[变量](config/design_variables.json)、[包络](config/optimization_envelope.json)、[完整N=100源](config/sources/family_complete_mother_n100.json)、[524 Da源](config/sources/planar_524da_2ev_n100.json)。
+[机械base](config/requests/mechanical_base.json)、[显式接地壳请求](config/requests/grounded_shell.json)、[变量](config/design_variables.json)、[包络](config/optimization_envelope.json)、[完整N=100源](config/sources/family_complete_mother_n100.json)、[524 Da源](config/sources/planar_524da_2ev_n100.json)。
 
-这里明确区分闭壳、贯通外壳以及100 Da完整母群与524 Da源；旧嵌套母样本的前缀身份保持。
+当前壳体与可选带孔端盖采用共同几何机制，端盖与壳连续连接并共用0 V；独立孔板／透镜由外部提供者拥有。
+旧闭壳、单／双端贯通结论只属于冻结旧几何，不继承为当前裸杆或显式壳体资格。
+100 Da完整母群与524 Da源分别声明；旧嵌套母样本的前缀身份保持。
 内部handoff与真实最外端盖出口各自使用其事件证据，不能仅凭全传输数字互换。
 结构变体ID为`octupole`；电气模式和装配外壳选择另有明确字段，不隐式切换模型。
 

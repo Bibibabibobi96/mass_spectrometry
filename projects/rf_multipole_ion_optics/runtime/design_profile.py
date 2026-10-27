@@ -117,7 +117,7 @@ def resolve_design_profile(
         modes = json.loads(modes_path.read_text(encoding="utf-8-sig"))
         request = apply_typed_operating_mode(request, modes, mode_id)
         paths["operating_mode_registry"] = modes_path
-    if mode_id is not None or options.get("enclosure_model") is not None:
+    if mode_id is not None:
         resolved_design = compile_governed_design_request_file(
             paths["design_request"],
             paths["design_variables"],
@@ -126,13 +126,12 @@ def resolve_design_profile(
             provenance_root=repo_root,
             operating_mode_registry_path=paths.get("operating_mode_registry"),
             mode_id=mode_id,
-            enclosure_model=options.get("enclosure_model"),
             repository_text_sources=True,
         )
     if request["identity"] != profile["identity"]:
         raise ContractError("design request identity differs from design profile")
-    if request["geometry_mm"]["enclosure"]["role"] != options["topology"]["enclosure_role"]:
-        raise ContractError("design request enclosure role differs from design profile")
+    if request["geometry_mm"].get("enclosure", {"model": "bare"})["model"] != options["topology"]["enclosure_model"]:
+        raise ContractError("design request enclosure model differs from design profile")
     if request["segmentation"]["strategy"] != options["topology"]["segmentation_strategy"]:
         raise ContractError("design request segmentation differs from design profile")
     if request["axial_drive"]["topology"] != options["topology"]["axial_drive_topology"]:

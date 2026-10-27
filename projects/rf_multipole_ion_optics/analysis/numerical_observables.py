@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from projects.rf_multipole_ion_optics.core.interface_geometry import transport_observations, transport_numerical_domain
+
+
 import copy
 import csv
 import hashlib
@@ -292,8 +295,8 @@ def run_data(manifest_path: Path) -> dict[str, Any]:
         raise ValueError("source particle IDs must be contiguous and one-based")
     values = list(handoff.values())
     derived_observables = handoff_observables(values)
-    exit_interface = resolved["interfaces_mm"]["exit"]
-    aperture_radius = float(exit_interface["aperture_radius_mm"])
+    exit_interface = transport_observations(resolved)
+    aperture_radius = float(exit_interface["acceptance_radius_mm"])
     projection_distance = float(exit_interface["census_plane_z_mm"]) - float(
         exit_interface["handoff_plane_z_mm"]
     )
@@ -311,7 +314,7 @@ def run_data(manifest_path: Path) -> dict[str, Any]:
     maximum_rod_radius = max(
         _finite_row_value(row, "max_rod_radius_mm") for row in rows
     )
-    working_radius = float(resolved["geometry_mm"]["enclosure"]["working_region_radius_mm"])
+    working_radius = float(transport_numerical_domain(resolved)["working_region_radius_mm"])
     margin_fraction = (working_radius - maximum_rod_radius) / working_radius
     return {
         "manifest": manifest,

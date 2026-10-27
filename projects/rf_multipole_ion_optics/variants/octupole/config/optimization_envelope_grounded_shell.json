@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "role": "project_optimization_envelope",
+  "project_id": "rf_multipole_ion_optics",
+  "family_id": "rf_multipole_ion_optics",
+  "envelope_id": "octupole_explicit_grounded_shell",
+  "status": "candidate",
+  "policy": "Candidates may move within catalog bounds only after request compilation. Identity and coupled geometry constraints remain mandatory; expanding this envelope does not modify the accepted baseline.",
+  "reference": {
+    "design_request": "variants/octupole/config/requests/grounded_shell.json",
+    "design_request_sha256": "10A7706B77A692CED9C2C67438A474A9370AC0E23F4F5881A18E56AE275C139E"
+  },
+  "constraints": [
+    {
+      "constraint_id": "current_bare_shell_dimensions_and_drive",
+      "request_json_pointers": [
+        "/geometry_mm/inscribed_radius_r0",
+        "/geometry_mm/rod_radius_ratio",
+        "/geometry_mm/rod_z_min",
+        "/geometry_mm/rod_z_max",
+        "/geometry_mm/numerical_domain/working_region_radius_mm",
+        "/geometry_mm/numerical_domain/z_min_mm",
+        "/geometry_mm/numerical_domain/z_max_mm",
+        "/drive/rf_amplitude_V_zero_to_peak_per_group",
+        "/drive/dc_amplitude_V_per_group",
+        "/drive/common_mode_offset_V",
+        "/drive/frequency_Hz",
+        "/drive/phase_rad",
+        "/segmentation/segment_count",
+        "/segmentation/intersegment_gap_mm",
+        "/segmentation/entrance_common_mode_V",
+        "/segmentation/exit_common_mode_V",
+        "/segmentation/output_reference_V"
+      ],
+      "description": "All active numeric variables are explicitly bounded by the design-variable catalog; physical shell/endcap containment, rod clearance and independent observations are validated by the current compiler.",
+      "kind": "bounded_variable"
+    }
+  ]
+}

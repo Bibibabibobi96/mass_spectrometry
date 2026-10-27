@@ -16,12 +16,6 @@
       "axial_drive_topology": "segmented_rod_axial_acceleration",
       "rod_entrance_relative_to_terminal_V": 3.0,
       "rod_exit_relative_to_terminal_V": 0.0
-    },
-    {
-      "mode_id": "exit_aperture_plate_acceleration",
-      "axial_drive_topology": "exit_aperture_plate_potential_step",
-      "rod_entrance_relative_to_terminal_V": 3.0,
-      "rod_exit_relative_to_terminal_V": 3.0
     }
   ]
 }

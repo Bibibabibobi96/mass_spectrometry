@@ -266,9 +266,7 @@
       ],
       "supported_design_variables": [
         "rf_amplitude",
-        "rf_frequency",
-        "dc_differential",
-        "axis_offset"
+        "rf_frequency"
       ],
       "supported_constraints": [],
       "deliverable_outputs": [
@@ -340,15 +338,29 @@
         }
       ],
       "supported_design_variables": [
+        "inscribed_radius_r0",
+        "rod_radius_ratio",
+        "rod_z_min",
+        "rod_z_max",
+        "working_region_radius",
+        "vacuum_z_min",
+        "vacuum_z_max",
         "rf_amplitude",
-        "rf_frequency"
+        "dc_amplitude",
+        "common_mode_offset",
+        "rf_frequency",
+        "rf_phase",
+        "segment_count",
+        "intersegment_gap",
+        "segment_entrance_common_mode",
+        "segment_exit_common_mode",
+        "segment_output_reference"
       ],
       "supported_constraints": [
         "locked_multipole_identity",
         "catalog_variable_bounds",
         "campaign_variable_bounds",
-        "phase_matched_particle_source",
-        "downstream_terminal_geometry"
+        "phase_matched_particle_source"
       ],
       "deliverable_outputs": [
         "simulation_results",
@@ -422,25 +434,9 @@
         "rod_radius_ratio",
         "rod_z_min",
         "rod_z_max",
-        "enclosure_working_region_radius",
+        "working_region_radius",
         "vacuum_z_min",
         "vacuum_z_max",
-        "shield_inner_radius",
-        "shield_outer_radius",
-        "entrance_outer_endcap_upstream_face_z",
-        "entrance_outer_endcap_downstream_face_z",
-        "exit_outer_endcap_upstream_face_z",
-        "exit_outer_endcap_downstream_face_z",
-        "entrance_aperture_radius",
-        "entrance_plate_thickness",
-        "entrance_rod_clearance",
-        "entrance_connector_length",
-        "entrance_release_offset",
-        "exit_aperture_radius",
-        "exit_plate_thickness",
-        "exit_rod_clearance",
-        "exit_connector_length",
-        "exit_census_offset",
         "rf_amplitude",
         "dc_amplitude",
         "common_mode_offset",
@@ -456,8 +452,7 @@
         "locked_multipole_identity",
         "catalog_variable_bounds",
         "campaign_variable_bounds",
-        "phase_matched_particle_source",
-        "downstream_terminal_geometry"
+        "phase_matched_particle_source"
       ],
       "deliverable_outputs": [
         "simulation_results",

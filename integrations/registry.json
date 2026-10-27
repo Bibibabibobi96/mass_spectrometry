@@ -4,8 +4,7 @@
   "integrations": [
     {
       "integration_id": "instrument_assembly",
-      "root": "integrations",
-      "downstream_terminal_profile_registry": "integrations/config/downstream_terminal_profiles.json"
+      "root": "integrations"
     }
   ]
 }

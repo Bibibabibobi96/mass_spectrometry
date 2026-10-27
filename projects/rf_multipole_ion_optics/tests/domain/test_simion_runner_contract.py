@@ -261,24 +261,13 @@ ConvertTo-Json -InputObject $script:calls -Depth 6
             source.index("Invoke-SimionStep 'gem2pa'"),
         )
 
-    def test_runner_freezes_terminal_authority_and_consumes_resolved_snapshot(self) -> None:
-        source = RUNNER.read_text(encoding="utf-8-sig")
-        for token in (
-            "downstream_terminal_profiles.json",
-            "projects.rf_multipole_ion_optics.core.downstream_terminal",
-            "Downstream-terminal registry changed before it was frozen.",
-            "Frozen resolved design differs from the resolved runtime snapshot.",
-            "Resolved runtime-profile design identity is invalid.",
-            "$design.axial_dc",
-            "$design.downstream_terminal.surface_plane_z_mm",
-            "handoff_aperture={shape=",
-            "radius_mm=$([double]$terminalAperture.radius_mm)",
-        ):
-            self.assertIn(token, source)
-        self.assertLess(
-            source.index("Resolved runtime-profile design identity is invalid."),
-            source.index("projects.rf_multipole_ion_optics.simion.simion_geometry"),
-        )
+    def test_runner_consumes_frozen_snapshot_without_private_terminal_composition(self) -> None:
+        runner = RUNNER.read_text(encoding="utf-8")
+        for token in ("downstream_terminal_profiles.json","core.downstream_terminal","$hasDownstreamTerminal"):
+            self.assertNotIn(token,runner)
+        self.assertIn("$snapshotDesign=$resolvedRuntimeDocument.design_profile_resolution.resolved_design",runner)
+        self.assertIn("$geometry.observations",runner)
+        self.assertIn("$observations.handoff_plane_z_mm",runner)
 
     def test_default_run_ids_delimit_the_design_profile_variable(self) -> None:
         for name in (
@@ -535,26 +524,39 @@ if($scenario-eq'inherited_light'){
         self.assertNotIn("--segmented-rods", runner)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
-    def test_through_exit_excludes_removed_absorber_from_runtime_and_basis(self) -> None:
-        runner = RUNNER.read_text(encoding="utf-8")
-        block = runner[runner.index("  $segmentedLua=''"):runner.index("  $normalizedGem=")]
-        for through_exit in (True, False):
-            script = r"""
-$ErrorActionPreference='Stop'
-$rectangular=$false;$hasDownstreamTerminal=$false;$segmentedRodGeometry=$true
-$entranceVoltage=0;$exitVoltage=0
-$design=[pscustomobject]@{segmentation=[pscustomobject]@{segmented_rod_array=[pscustomobject]@{
- segment_count=4;electrodes=@(1..8|ForEach-Object{[pscustomobject]@{
- electrode_id=$_;electrode_group=(($_-1)%2+1);common_mode_V=0}})}}}
-""" + "$throughExit=$" + str(through_exit).lower() + "\n" + block + r"""
-@{physical_detector_electrode_id=$physicalDetectorElectrodeId;basis=$paBasisElectrodeIds}|ConvertTo-Json -Compress
+    def test_bare_and_shell_bind_only_the_actual_native_electrodes(self) -> None:
+        from projects.rf_multipole_ion_optics.tests.domain.test_simion_geometry import resolved_design,shell
+        runner=RUNNER.read_text(encoding="utf-8")
+        block=runner[runner.index("  $electrodesById=[ordered]@{}"):runner.index("  $paBasisNames=")]
+        for enclosure in (None,shell()):
+            for segmented in (False,True):
+                design=resolved_design(enclosure,segmented=segmented)
+                document=json.dumps(design)
+                script="$ErrorActionPreference='Stop'\n$design='"+document+"'|ConvertFrom-Json -Depth 50\n"+"""
+$geometry=$design.geometry_mm;$drive=$design.drive;$static=$design.static_electrodes_V
+$rectangular=$false;$segmentedRodGeometry=($null-ne$design.segmentation.segmented_rod_array)
+"""+block+"""
+@{basis=$paBasisElectrodeIds;rod_lua=$rodLua;static_lua=$staticLua;static_count=@($staticRows).Count}|ConvertTo-Json -Compress
 """
-            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
-                                    cwd=REPO_ROOT, capture_output=True, text=True, timeout=30)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            binding = json.loads(result.stdout)
-            self.assertEqual(binding["physical_detector_electrode_id"], 0 if through_exit else 11)
-            self.assertEqual(11 in binding["basis"], not through_exit)
+                result=subprocess.run([shutil.which("pwsh"),"-NoProfile","-Command",script],cwd=REPO_ROOT,capture_output=True,text=True,timeout=90)
+                self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+                binding=json.loads(result.stdout)
+                expected=list(range(1,(5 if segmented else 3)+(1 if enclosure else 0)))
+                self.assertEqual(binding["basis"],expected)
+                self.assertEqual(binding["static_count"],1 if enclosure else 0)
+                self.assertIn("rod_electrodes={",binding["rod_lua"])
+                self.assertNotIn("output_electrode",binding["static_lua"])
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
+    def test_open_mechanical_exit_serializes_no_physical_aperture(self) -> None:
+        runner=RUNNER.read_text(encoding="utf-8")
+        block=runner[runner.index("    $mechanicalRadiusLua=if("):runner.index("    $batchRuns=@()",runner.index("    $mechanicalRadiusLua=if("))]
+        for enabled,radius,expected in ((True,None,"nil"),(True,3.6,"3.6"),(False,None,"nil")):
+            document=json.dumps({"aperture_radius_mm":radius} if enabled else {})
+            script="$ErrorActionPreference='Stop'; Set-StrictMode -Version Latest;\n$mechanicalExitEnabled=$"+str(enabled).lower()+"\n$exitObservation='"+document+"'|ConvertFrom-Json\n"+block+"Write-Output $mechanicalRadiusLua"
+            result=subprocess.run([shutil.which("pwsh"),"-NoProfile","-Command",script],cwd=REPO_ROOT,capture_output=True,text=True,timeout=90)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertEqual(result.stdout.strip(),expected)
 
     def test_segmented_rf_program_collapses_shared_pa_electrodes(self) -> None:
         runner = RUNNER.read_text(encoding="utf-8")
@@ -562,7 +564,7 @@ $design=[pscustomobject]@{segmentation=[pscustomobject]@{segmented_rod_array=[ps
         self.assertIn("$electrodesById.Contains($electrodeId)", runner)
         self.assertIn("$electrodesById[[object]$electrodeId]", runner)
         self.assertIn(
-            "Segmented RF electrode $electrodeId has inconsistent group or common-mode voltage.",
+            "RF electrode $electrodeId has inconsistent group or common-mode voltage.",
             runner,
         )
         self.assertIn("$electrodesById.Values|Sort-Object electrode_id", runner)
@@ -717,21 +719,6 @@ $design=[pscustomobject]@{segmentation=[pscustomobject]@{segmented_rod_array=[ps
         self.assertIn("$interfaces.exit.census_plane_z_mm", source)
         self.assertIn("handoff_plane_mm=$handoffPlaneMm", source)
         self.assertIn("census_plane_mm=$censusPlaneMm", source)
-        self.assertIn("numerical_census_marker_is_handoff=false", source)
-        self.assertIn(
-            "$surfaceToleranceMm=[Math]::Max(1e-6*$resolvedCellMmZ,1e-9)",
-            source,
-        )
-        self.assertIn(
-            "$censusPlaneMm-2*$resolvedCellMmZ-$surfaceToleranceMm",
-            source,
-        )
-        program = (REPO_ROOT / "projects/rf_multipole_ion_optics/simion/simion_transport.lua").read_text(encoding="utf-8")
-        self.assertIn("census_plane_mm = assert(run_config.census_plane_mm)", program)
-        self.assertIn(
-            "project_state_to_plane(handoff_state[particle], census_plane_mm)",
-            program,
-        )
 
     def test_gem_z_spacing_maps_to_the_flight_axis_controls(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
@@ -927,7 +914,7 @@ $design=[pscustomobject]@{segmentation=[pscustomobject]@{segmented_rod_array=[ps
             source,
         )
         self.assertIn(
-            "segmentedRodGeometry = isfield(design.segmentation,'segmented_rod_array');",
+            "segmentedRodGeometry = isfield(design.segmentation,'segmented_rod_array')",
             comsol,
         )
         self.assertIn("if segmentedRodGeometry", comsol)
@@ -937,38 +924,17 @@ $design=[pscustomobject]@{segmentation=[pscustomobject]@{segmented_rod_array=[ps
             comsol,
         )
 
-    def test_dual_through_outer_caps_reuse_the_existing_apertured_plate_builder(self) -> None:
-        comsol = (REPO_ROOT / "projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m").read_text(
-            encoding="utf-8"
-        )
-        plate_builder = (REPO_ROOT / "common" / "comsol" / "create_comsol_apertured_plate.m").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn(
-            "cylindrical_grounded_shield_through_entrance_exit_v1", comsol
-        )
-        geometry_start = comsol.index("create_comsol_cylindrical_shell")
-        entrance_start = comsol.index("if throughEntrance", geometry_start)
-        exit_start = comsol.index("if throughExit", entrance_start)
-        entrance_branch = comsol[entrance_start:exit_start]
-        self.assertIn("create_comsol_apertured_plate(geom,'outerIn'", entrance_branch)
-        exit_branch = comsol[
-            exit_start:comsol.index("create_comsol_apertured_plate(geom, 'capIn'", exit_start)
-        ]
-        self.assertIn("create_comsol_apertured_plate(geom,'outerOut'", exit_branch)
-        self.assertIn("geom.feature.create(tag,'Difference')", plate_builder)
-        shell_contract = comsol[
-            comsol.index("physicalShieldZMin = d.vacuum_z_min;"):
-            comsol.index("if throughEntrance", comsol.index("physicalShieldZMin = d.vacuum_z_min;"))
-        ]
-        self.assertIn(
-            "physicalShieldZMax = enclosure.exit_outer_endcap_downstream_face_z_mm;",
-            shell_contract,
-        )
-        self.assertIn(
-            "shieldOuter,physicalShieldZMax-physicalShieldZMin,physicalShieldZMin",
-            comsol,
-        )
+    def test_comsol_uses_the_single_frozen_enclosure_projector(self) -> None:
+        comsol=(REPO_ROOT/"projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m").read_text(encoding="utf-8")
+        helper=(REPO_ROOT/"projects/rf_multipole_ion_optics/comsol/build_multipole_enclosure.m").read_text(encoding="utf-8")
+        self.assertIn("build_multipole_enclosure(geom,enclosureLayout.bodies,'enclosure')",comsol)
+        self.assertIn("create_comsol_cylindrical_shell",helper)
+        for field in ("inner_radius_mm","outer_radius_mm","z_max_mm","z_min_mm"):
+            self.assertIn("body."+field,helper)
+        self.assertNotIn("cylindrical_grounded_shield_through",comsol)
+        self.assertIn("domain.radius_mm",comsol)
+        self.assertIn("contract.ground_V==0",comsol)
+        self.assertNotIn("exit_outer_endcap_aperture_plate_connector_V",comsol)
 
     def test_metrics_are_unqualified_without_explicit_evidence(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")

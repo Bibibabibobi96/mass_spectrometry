@@ -15,7 +15,6 @@ import unittest
 from common.contracts.build_project_registry import validate_descriptor, validate_structural_variants
 from common.contracts.machine_contracts import ContractError
 from projects.rf_multipole_ion_optics.core.compile_design_request import (
-    MultipoleDesignCompileError,
     compile_governed_design_request_file,
 )
 from projects.rf_multipole_ion_optics.runtime.design_profile import (
@@ -121,17 +120,37 @@ class MultipoleStructuralVariantTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "structural variant capability variables are unsupported"):
             validate_descriptor(self.descriptor, PROJECT_ROOT / "config/project.json", REPO_ROOT)
 
-    def test_migration_preserves_physical_projection_and_rejected_reference(self) -> None:
+    def test_independent_rectangular_references_preserve_existing_physical_fixture(self) -> None:
         fixture = load(Path(__file__).with_name("fixtures") / "multipole_structural_variant_migration.json")
+        references = {"quadrupole_official_transport", "quadrupole_interface_readiness", "quadrupole_mass_filter_reference", "quadrupole_explicit_axial_reference"}
         for record in fixture["profiles"]:
+            if record["design_profile_id"] not in references:
+                continue
             with self.subTest(profile=record["design_profile_id"]):
-                if "expected_compile_error" in record:
-                    with self.assertRaisesRegex(MultipoleDesignCompileError, record["expected_compile_error"]):
-                        compile_profile(record["design_profile_id"])
-                    continue
                 value = physical_projection(compile_profile(record["design_profile_id"]))
-                payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
-                self.assertEqual(hashlib.sha256(payload).hexdigest().upper(), record["physical_projection_sha256"])
+                self.assertEqual(value["geometry_mm"]["enclosure"]["model"],"rectangular_reference_enclosure_v1")
+                # The fixture predates schema3. Only its serialization version is
+                # normalized; every geometric, voltage and source scalar remains.
+                # This test-only comparison is not a production schema-compatibility path.
+                value["schema_version"] = 2
+                payload = json.dumps(value,sort_keys=True,separators=(",", ":"),ensure_ascii=False).encode()
+                self.assertEqual(hashlib.sha256(payload).hexdigest().upper(),record["physical_projection_sha256"])
+
+    def test_current_bare_providers_do_not_inherit_retired_shell_qualification(self) -> None:
+        fixture_path = Path(__file__).with_name("fixtures") / "multipole_structural_variant_migration.json"
+        original = fixture_path.read_bytes()
+        records = {row["design_profile_id"]:row for row in load(fixture_path)["profiles"]}
+        for variant in ("quadrupole", "hexapole", "octupole"):
+            name = variant + "_no_acceleration_full_length"
+            current = compile_profile(name)
+            self.assertEqual(current["geometry_mm"]["enclosure"], {"model":"bare"})
+            self.assertEqual(current["geometry_mm"]["enclosure_layout"]["bodies"], [])
+            self.assertNotIn("interfaces_mm",current)
+            value=physical_projection(current)
+            value["schema_version"]=2
+            payload=json.dumps(value,sort_keys=True,separators=(",", ":"),ensure_ascii=False).encode()
+            self.assertNotEqual(hashlib.sha256(payload).hexdigest().upper(),records[name]["physical_projection_sha256"])
+        self.assertEqual(fixture_path.read_bytes(),original)
 
     def test_each_runtime_resolves_explicit_structure_and_its_original_inputs(self) -> None:
         registry = load(PROJECT_ROOT / "config/runtime_profiles.json")

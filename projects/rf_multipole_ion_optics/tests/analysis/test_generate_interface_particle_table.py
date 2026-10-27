@@ -360,6 +360,10 @@ class InterfaceParticleTableTests(unittest.TestCase):
                     code_root / "projects/rf_multipole_ion_optics/core/__init__.py",
                 ),
                 (
+                    REPOSITORY_ROOT / "projects/rf_multipole_ion_optics/core/interface_geometry.py",
+                    code_root / "projects/rf_multipole_ion_optics/core/interface_geometry.py",
+                ),
+                (
                     REPOSITORY_ROOT
                     / "projects/rf_multipole_ion_optics/runtime/particle_source_preflight.py",
                     code_root

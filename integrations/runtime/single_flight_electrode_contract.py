@@ -15,7 +15,6 @@ TWO_ZONE_BARE_VARIANT = "canonical_two_zone_bare_continuous_rods_v1"
 TWO_ZONE_BARE_PA_PLUS_MODEL_ID = "two_zone_linear_ring_bare_octupole_pa_plus_v1"
 THREE_ZONE_BARE_VARIANT = "canonical_three_zone_bare_continuous_rods_v1"
 THREE_ZONE_BARE_PA_PLUS_MODEL_ID = "three_zone_linear_ring_bare_octupole_pa_plus_v1"
-SEGMENTED_THROUGH_EXIT_PA_PLUS_MODEL_ID = "three_zone_linear_ring_segmented_through_exit_pa_plus_v1"
 PA_PLUS_FIELD_LOADING_POLICY_ID = "octupole_common_differential_pa_plus_v2"
 
 
@@ -36,11 +35,14 @@ def _physical_voltage_value(document: dict, pointer: str) -> float:
 
 def physical_multipole_voltages(resolved: dict, mapping: dict[int, int]) -> tuple[dict[int, float], dict[int, int]]:
     """Resolve one provider's static volts and RF groups into bound solver IDs."""
+    view = physical_electrode_view(resolved)
+    expected = {row['native_electrode_id'] for row in view}
+    if set(mapping) != expected:
+        raise ValueError(f'physical electrode binding differs from provider-native groups: '
+                         f'missing={sorted(expected - set(mapping))}, extra={sorted(set(mapping) - expected)}')
     carrier, groups = {}, {}
-    for row in physical_electrode_view(resolved):
+    for row in view:
         native = row['native_electrode_id']
-        if native not in mapping:
-            raise ValueError('physical electrode binding omits a provider-native group')
         source = row['voltage_source']
         solver = mapping[native]
         if source['kind'] == 'static':
@@ -61,11 +63,10 @@ def require_pa_plus_solution_model(
 ) -> dict[str, Any]:
     """Validate supported physical PA+ bases without inventing a new model."""
     model_id = model.get("model_id")
-    if model_id not in {THREE_ZONE_PA_PLUS_MODEL_ID, TWO_ZONE_BARE_PA_PLUS_MODEL_ID, THREE_ZONE_BARE_PA_PLUS_MODEL_ID, SEGMENTED_THROUGH_EXIT_PA_PLUS_MODEL_ID}:
+    if model_id not in {THREE_ZONE_PA_PLUS_MODEL_ID, TWO_ZONE_BARE_PA_PLUS_MODEL_ID, THREE_ZONE_BARE_PA_PLUS_MODEL_ID}:
         raise ValueError("unsupported PA+ solution model")
     two_zone = model_id == TWO_ZONE_BARE_PA_PLUS_MODEL_ID
-    segmented = model_id == SEGMENTED_THROUGH_EXIT_PA_PLUS_MODEL_ID
-    bare = model_id in {TWO_ZONE_BARE_PA_PLUS_MODEL_ID, THREE_ZONE_BARE_PA_PLUS_MODEL_ID} or segmented
+    bare = model_id in {TWO_ZONE_BARE_PA_PLUS_MODEL_ID, THREE_ZONE_BARE_PA_PLUS_MODEL_ID}
     expected_names = ["rod_common", "rod_differential", "repeller", "grid1"]
     if not two_zone:
         expected_names.append("intermediate2")
@@ -87,20 +88,8 @@ def require_pa_plus_solution_model(
     ring_ids = policy.get("derived_accelerator_ring_ids")
     if not isinstance(endpoint_ids, list) or len(endpoint_ids) != (3 if two_zone else 4) or not isinstance(ring_ids, list) or not ring_ids:
         raise ValueError("PA+ solution model electrode policy is invalid")
-    grounds = [9, 10, 11] if segmented else [9]
+    grounds = [9]
     physical_ids = set(ROD_ELECTRODE_IDS) | set(grounds) | set(endpoint_ids) | set(ring_ids)
-    if segmented:
-        declared = model.get("physical_electrode_ids")
-        all_ids = [*ROD_ELECTRODE_IDS, *grounds, *endpoint_ids, *ring_ids]
-        groups = model.get("rod_electrical_groups")
-        piece_counts = {row.get("physical_piece_count") for row in groups} if isinstance(groups, list) else set()
-        if len(piece_counts) != 1 or any(type(count) is not int or count <= 0 for count in piece_counts):
-            raise ValueError("segmented PA+ physical piece counts are invalid")
-        expected_groups = [{"electrode_id": i, "electrode_group": 1 if i % 2 else 2,
-                            "physical_piece_count": next(iter(piece_counts))} for i in ROD_ELECTRODE_IDS]
-        if (len(all_ids) != len(physical_ids) or declared != sorted(physical_ids)
-                or groups != expected_groups):
-            raise ValueError("segmented PA+ physical electrode mapping is invalid")
     if not bare:
         physical_ids |= {int(endpoint_ids[-1]) + 1, int(endpoint_ids[-1]) + 2}
     first = max(physical_ids) + 1 if bare else 36
@@ -164,9 +153,6 @@ def project_pa_plus_mode_voltages(
     if any(not (value == value and abs(value) < float("inf")) for value in physical.values()):
         raise ValueError("PA+ physical voltages are non-finite")
 
-    if (model["model_id"] == SEGMENTED_THROUGH_EXIT_PA_PLUS_MODEL_ID
-            and set(physical) != set(model["physical_electrode_ids"])):
-        raise ValueError("PA+ physical electrode coverage must exactly match the declared electrical groups")
     if any(physical.get(int(i), 0.0) != 0.0 for i in model["grounded_physical_electrode_ids"]):
         raise ValueError("PA+ ground voltage must be zero")
     projected: dict[int, float] = {}
@@ -227,7 +213,7 @@ def resolve_post_pulse_pa_plus_solution_projection(
     modes = model.get("modes")
     mode_ids = model.get("mode_ids")
     expected_count = {TWO_ZONE_BARE_PA_PLUS_MODEL_ID: 5, THREE_ZONE_BARE_PA_PLUS_MODEL_ID: 6,
-                      THREE_ZONE_PA_PLUS_MODEL_ID: 8, SEGMENTED_THROUGH_EXIT_PA_PLUS_MODEL_ID: 6}[model["model_id"]]
+                      THREE_ZONE_PA_PLUS_MODEL_ID: 8}[model["model_id"]]
     if (
         not isinstance(modes, list)
         or not isinstance(mode_ids, list)
@@ -324,7 +310,6 @@ def _resolve_linear_ring_pa_plus_solution_model(
     two_zone_bare: bool,
     acceleration_direction: int = 1,
     three_zone_bare: bool = False,
-    segmented_through_exit: bool = False,
 ) -> dict[str, Any]:
     """Derive the exact PA+ projection for a three-zone linear ring stack.
 
@@ -334,18 +319,15 @@ def _resolve_linear_ring_pa_plus_solution_model(
     solution array.  Each ring is represented by the two enclosing endpoint
     modes with coefficients that sum to one.
     """
-    topology = (dict(topology_id="segmented_through_exit", maximum_electrode_id=max(_flatten_electrode_ids(electrodes)))
-                if segmented_through_exit else resolve_frontend_electrode_topology(electrodes))
-    bare = two_zone_bare or three_zone_bare or segmented_through_exit
+    topology = resolve_frontend_electrode_topology(electrodes)
+    bare = two_zone_bare or three_zone_bare
     accepted = {THREE_ZONE_BARE_VARIANT} if three_zone_bare else {TWO_ZONE_BARE_VARIANT} if two_zone_bare else {
         "three_zone_frontend_v1", "three_zone_frontend_contract_derived_v1"
     }
-    if segmented_through_exit:
-        accepted = {"segmented_through_exit"}
     if topology["topology_id"] not in accepted:
         raise ValueError("PA+ solution model requires a three-zone frontend")
     required_planes = ({"repeller", "grid1", "exit"} if two_zone_bare else
-                       {"repeller", "grid1", "intermediate2", "exit"} if three_zone_bare or segmented_through_exit else
+                       {"repeller", "grid1", "intermediate2", "exit"} if three_zone_bare else
                        {"repeller", "intermediate1", "intermediate2", "exit"})
     if set(planes_global_z_mm) != required_planes:
         raise ValueError("PA+ solution model requires exactly four accelerator planes")
@@ -439,8 +421,7 @@ def _resolve_linear_ring_pa_plus_solution_model(
         by_name[right]["physical_electrode_coefficients"][str(ring_id)] = right_weight
     return {
         "schema_version": 1,
-        "model_id": (SEGMENTED_THROUGH_EXIT_PA_PLUS_MODEL_ID if segmented_through_exit else
-                     TWO_ZONE_BARE_PA_PLUS_MODEL_ID if two_zone_bare else
+        "model_id": (TWO_ZONE_BARE_PA_PLUS_MODEL_ID if two_zone_bare else
                      THREE_ZONE_BARE_PA_PLUS_MODEL_ID if three_zone_bare else THREE_ZONE_PA_PLUS_MODEL_ID),
         "field_loading_policy_id": PA_PLUS_FIELD_LOADING_POLICY_ID,
         # This is deliberately part of the frozen model, rather than an
@@ -469,93 +450,30 @@ def _resolve_linear_ring_pa_plus_solution_model(
         "mode_ids": [mode["mode_id"] for mode in modes],
         "mode_count": len(modes),
         "modes": modes,
-        "grounded_physical_electrode_ids": ([9, 10, 11] if segmented_through_exit else
-                                             [int(electrodes["grounded_shield_id"])]),
+        "grounded_physical_electrode_ids": [int(electrodes["grounded_shield_id"])],
     }
 
 
 
-def segmented_through_exit_rod_pieces(upstream: Mapping[str, Any]) -> list[dict]:
-    """Validate all provider rod pieces for the supported four-segment topology.
-
-    Electrical IDs identify segment/RF groups, not individual physical rods.
-    The provider's parent rods determine how many pieces share each group.
-    """
+def multipole_rod_pieces(upstream: Mapping[str, Any]) -> list[dict]:
+    """Return the provider's actual segmented or continuous physical rods."""
     segmented = upstream["segmentation"]["segmented_rod_array"]
-    parents = upstream["geometry_mm"]["rod_array"]["rods"]
-    parent_groups = {row["rod_id"]: row["electrode_group"] for row in parents}
-    count = upstream["identity"]["electrode_count"]
-    if (segmented["segment_count"] != 4 or segmented["electrode_count_per_segment"] != count
-            or len(parents) != count or len(parent_groups) != count
-            or set(parent_groups.values()) != {1, 2}
-            or sum(group == 1 for group in parent_groups.values()) * 2 != count):
-        raise ValueError("segmented through-exit requires four segments of the complete two-RF-group provider rods")
-    pieces = segmented["electrodes"]
-    expected = {(segment, rod) for segment in range(1, 5) for rod in parent_groups}
-    if len(pieces) != len(expected) or {(row["segment_id"], row["parent_rod_id"]) for row in pieces} != expected:
-        raise ValueError("segmented through-exit requires every unique segment/parent rod piece")
-    for row in pieces:
-        group = parent_groups[row["parent_rod_id"]]
-        if row["electrode_group"] != group or row["electrode_id"] != 2 * (row["segment_id"] - 1) + group:
-            raise ValueError(f"conflicting provider RF group for electrode {row['electrode_id']}: "
-                             f"segment {row['segment_id']} parent rod {row['parent_rod_id']}")
-    return pieces
-
-
-def resolve_segmented_through_exit_pa_plus_solution_model(
-    upstream: Mapping[str, Any], *, multipole_electrode_ids: Mapping[int, int],
-    accelerator_electrodes: Mapping[str, Any], planes_global_z_mm: Mapping[str, Any],
-    ring_z_mm: list[Any],
-) -> dict[str, Any]:
-    """Compile six voltage modes for four multipole segments and a three-zone OA.
-
-    Native electrical groups 1..8 retain all provider rod pieces; the actual entrance
-    shield, exit cap and OA shield remain separate groups 9, 10 and 11. This
-    model holds those three groups at zero and supports only common/differential
-    rod voltages, not independent axial segment tuning. No field is generated.
-    """
-    if (upstream.get("role") != "multipole_resolved_design_do_not_edit"
-            or upstream["geometry_mm"]["enclosure"]["model"] != "cylindrical_grounded_shield_through_exit_v1"
-            or dict(multipole_electrode_ids) != {i: i for i in range(1, 11)}
-            or accelerator_electrodes["grounded_shield_id"] != 11):
-        raise ValueError("segmented through-exit PA+ requires explicit native groups 1..10 and OA shield 11")
-    static = upstream["static_electrodes_V"]
-    for name in ("shield_entrance_outer_endcap_aperture_plate_connector_V",
-                 "exit_outer_endcap_aperture_plate_connector_V"):
-        if float(static[name]) != 0.:
-            raise ValueError(f"PA+ ground voltage must be zero: static_electrodes_V.{name}")
-    pieces = segmented_through_exit_rod_pieces(upstream)
-    groups: dict[int, tuple[int, float]] = {}
-    counts: dict[int, int] = {}
-    for row in pieces:
-        eid, group, common = int(row["electrode_id"]), int(row["electrode_group"]), float(row["common_mode_V"])
-        if eid in groups and groups[eid] != (group, common):
-            raise ValueError(f"conflicting segmented physical pieces for electrode {eid}")
-        if eid not in ROD_ELECTRODE_IDS or group != (1 if eid % 2 else 2):
-            raise ValueError(f"segmented electrode {eid} has unsupported RF group {group}")
-        groups[eid] = group, common
-        counts[eid] = counts.get(eid, 0) + 1
-    if counts != dict.fromkeys(ROD_ELECTRODE_IDS, upstream["identity"]["electrode_count"] // 2):
-        raise ValueError("segmented PA+ electrical groups must cover all provider rod pieces")
-    electrodes = dict(accelerator_electrodes, multipole_rod_ids=list(ROD_ELECTRODE_IDS),
-                      multipole_shield_id=9, multipole_exit_cap_id=10)
-    basis_ids = _flatten_electrode_ids(electrodes)
-    if basis_ids[0] != 0:
-        raise ValueError("segmented PA+ electrical IDs must be positive")
-    physical_ids = list(basis_ids[1:])
-    model = _resolve_linear_ring_pa_plus_solution_model(
-        electrodes, planes_global_z_mm=planes_global_z_mm, ring_z_mm=ring_z_mm,
-        two_zone_bare=False, segmented_through_exit=True,
-    )
-    model.update(physical_electrode_ids=physical_ids, rod_electrical_groups=[
-        dict(electrode_id=eid, electrode_group=groups[eid][0], physical_piece_count=counts[eid])
-        for eid in ROD_ELECTRODE_IDS])
-    physical = dict.fromkeys(physical_ids, 0.)
-    differential_dc = float(upstream["drive"]["dc_amplitude_V_per_group"])
-    for eid, (group, common) in groups.items():
-        physical[eid] = common + (differential_dc if group == 1 else -differential_dc)
-    project_pa_plus_mode_voltages(model, physical)
-    return model
+    if segmented is not None:
+        pieces = segmented["electrodes"]
+        parents = {row["rod_id"]: row["electrode_group"]
+                   for row in upstream["geometry_mm"]["rod_array"]["rods"]}
+        expected = {(segment, rod) for segment in range(1, segmented["segment_count"] + 1)
+                    for rod in parents}
+        if len(pieces) != len(expected) or {(row["segment_id"], row["parent_rod_id"]) for row in pieces} != expected:
+            raise ValueError("multipole requires every unique segment/parent rod piece")
+        for row in pieces:
+            group = parents[row["parent_rod_id"]]
+            if row["electrode_group"] != group or row["electrode_id"] != 2 * (row["segment_id"] - 1) + group:
+                raise ValueError("conflicting provider RF group in multipole rod pieces")
+        return pieces
+    return [dict(rod, segment_id=1, parent_rod_id=rod["rod_id"],
+                 electrode_id=rod["electrode_group"])
+            for rod in upstream["geometry_mm"]["rod_array"]["rods"]]
 
 
 def resolve_three_zone_pa_plus_solution_model(

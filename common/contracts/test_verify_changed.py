@@ -776,7 +776,6 @@ $wrapper=Join-Path __FIXTURE__ 'invoke.ps1'
         self.assertTrue(
             {
                 "rf_multipole_domain_tests",
-                "rf_multipole_foundation",
                 "rf_multipole_generated_publications",
                 "rf_multipole_quadrupole_static",
                 "rf_multipole_hexapole_static",
@@ -791,7 +790,6 @@ $wrapper=Join-Path __FIXTURE__ 'invoke.ps1'
         ):
             routed = self.routed_stages(shared_path)
             self.assertIn("rf_multipole_domain_tests", routed)
-            self.assertIn("rf_multipole_foundation", routed)
             if shared_path.startswith("common/simion/"):
                 self.assertIn("instrument_assembly_integration", routed)
             for project_id in (
@@ -837,7 +835,6 @@ $wrapper=Join-Path __FIXTURE__ 'invoke.ps1'
         variants = {f"rf_multipole_{variant}_static" for variant in ("quadrupole", "hexapole", "octupole")}
         domain_stages = variants | {
             "rf_multipole_generated_publications", "rf_multipole_domain_tests",
-            "rf_multipole_foundation",
         }
         for path in (
             "projects/rf_multipole_ion_optics/core/family_contract.py",
@@ -924,7 +921,7 @@ $wrapper=Join-Path __FIXTURE__ 'invoke.ps1'
         self.assertEqual(self.routed_stages("common/comsol/README.md"), {})
         consumers = {
             "rf_multipole_generated_publications", "rf_multipole_domain_tests",
-            "rf_multipole_foundation",             "single_reflection_oa_tof_mass_analyzer_static", "rf_multipole_quadrupole_static",
+            "single_reflection_oa_tof_mass_analyzer_static", "rf_multipole_quadrupole_static",
             "rf_multipole_hexapole_static", "rf_multipole_octupole_static",
             "transverse_helical_filament_wehnelt_electron_gun_static",
         }

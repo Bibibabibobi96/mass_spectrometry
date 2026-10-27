@@ -7,6 +7,9 @@
 
 ## 当前结论
 
+下表原生功能结果来自冻结旧几何；当前schema 3裸杆与新壳体不继承这些资格。
+当前具名runtime与活动campaign均未获新裸杆几何的商业执行授权；历史run ID须重新定义并明确授权，旧冻结证据不自动继承。
+
 | 结构变体 | 已有功能证据 | 保持的限制 |
 |---|---|---|
 | [四极杆](#quad) | 三种typed电气模式COMSOL/SIMION N=100功能传输；质量过滤理论与有限几何响应 | 连续数值等价未闭合；历史严格接口相空间比较FAIL；质量分辨能力未资格 |
@@ -15,7 +18,7 @@
 
 ## 资格边界
 
-共同三模式baseline只闭合功能分类。四极与八极原N=100运行两求解器均100/100且handoff身份一致；
+冻结旧几何的共同三模式baseline只闭合功能分类。四极与八极原N=100运行两求解器均100/100且handoff身份一致；
 六极原记录也已闭合功能传输。连续相空间的空间／时间敏感性与跨求解器比较保持
 `INCONCLUSIVE_NUMERICAL_CONVERGENCE_NOT_ESTABLISHED`；工程六指标PASS只允许声明范围内的下游推进。
 四极与八极两种加速模式的SIMION相邻空间档已执行，COMSOL空间档触发原预登记资源帽，保持
@@ -29,18 +32,48 @@
   碰撞理论已收录，但不代表碰撞运行能力已建立。
 - 配置编译和纯回归只证明输入、投影及机制行为；没有真实求解、数值矩阵或GUI/CAD证据时不得宣称对应层级通过。
 
-## 当前机械与模式
+## 当前组件边界与几何
 
-四、六、八极杆分别为径向阶数`n=2/3/4`的结构变体。精确机械、RF/DC、源和数值只认下表机器合同。
-当前圆柱base的共同三种typed电气模式是`no_acceleration_full_length`、
-`segmented_rod_axial_acceleration`和`exit_aperture_plate_acceleration`；同一base内模式只改变杆段与
-出口孔板电位，不隐式改变几何、源或数值。电气模式名不含结构变体前缀；具名设计、runtime、数值和变体专属源profile使用
-`quadrupole_`、`hexapole_`或`octupole_`前缀避免歧义。完全相同的家族与论文母群源由三变体共用，
-保留不带变体前缀的源ID，具体绑定以粒子源注册表为准。
+当前作者与resolved合同为schema 3。可装配多极杆默认只发布真实杆系（`bare`）；只有显式声明
+`cylindrical_grounded_shell`才构造接地圆柱壳。默认不随独立运行或装配场景变化，也不从数值域猜测壳。
+多极杆不承载入口／出口光学板、连接套筒或下游透镜；这些部件由其实际提供者通过装配配方接入。
 
-`structural_variant_id`表达极数结构，装配的`variant_id`保留外壳/API选择语义。封闭外端盖、带孔
-接口板、释放面、handoff和机械出口不是同一对象；术语只在[实现说明](IMPLEMENTATION.md#统一术语)
-定义。当前内部handoff传输不能证明穿过整个器件外端盖。
+壳只声明内半径、壁厚和两个物理轴向端面，外半径及长度派生。`endcaps`中入口和出口各自可选，
+出现时仅声明孔径半径与厚度；没有端盖就不生成实体。端盖从壳端面向内延伸，仅填充孔外、壳内的环形
+区域，与筒壁连续相接且共用唯一0 V电极，不产生重叠体积或独立偏压端盖。孔径等于壳内径不是无盖的另一种写法。
+此前1 mm绝缘间隙草稿已退役，不作为壳体参数或全仓默认。
+这些是schema 3作者JSON输入，可直接声明后经`compile_governed`编译；装配配方引用冻结resolved，
+不再覆盖器件尺寸。当前优化catalog不开放壳、端盖或数值域半径的自动搜索；显式壳体具名设计仍为候选，未绑定授权runtime。
+
+数值域和`observations`独立于物理壳。源、handoff和census不再由已移除的光学板派生；裸杆也需要明确的
+外部场边界，默认PA边缘不是实物。壳尺寸必须对应实际设计，不把既有20 mm内半径推广为最优值或固定r0倍数。
+可调孔板即使电压为0 V也仍是独立光学组件，不因瞬时同电位并入壳体。
+
+四／六／八极分别为径向阶数n=2/3/4，共用同一几何机制。当前杆系电气模式保留
+`no_acceleration_full_length`和`segmented_rod_axial_acceleration`；内置出口孔板加速模式及私有terminal
+组合入口已退役，不能静默替换为另一科学实验。矩形专用参考仍服务原接口／质量过滤workflow，
+不作为新可装配多极杆的隐含外壳或默认光学部件。
+
+旧三模式、闭壳、单／双端贯通和出口孔板运行保持原输入、原owner与资格；它们是冻结旧几何证据，
+不自动成为schema 3裸杆或新壳体的求场、飞行、数值、制造或Formal验证。本次先闭合几何，未开展跨求解器差异研究。
+
+[壳体CAD检查](../../../../artifacts/projects/rf_multipole_ion_optics/runs/20261027_143100__test__cad__multipole-enclosure-r02/summary.json)
+已完成bare、开放壳、前盖、后盖、双盖及缩放双盖六种构型：bare无壳实体，其余为唯一连续接地域；
+各实体对正体积交叠和中心孔交集均为0。五份STEP冷导入均为1域，最大体积回导差约5.10e-11 mm³，
+不作制造容差声明；独立manifest核验13项输出。该证据仅覆盖壳体，不授予求场、Fly、数值或Formal资格。
+首轮在构建几何前因MATLAB目录helper遮蔽失败，保留执行失败证据，
+不记为物理失败。当前壳体请求只把数值域上界延至82.9 mm以容纳既有最粗0.4 mm轴向格的出面观测余量，
+实物端面仍为82.1 mm，源、handoff与census不动；其壳体尺寸与该CAD检查相同，输入全文身份不同，不混用hash。
+
+[完整器件几何检查](../../../../artifacts/projects/rf_multipole_ion_optics/runs/20261027_144000__test__cad__multipole-full-geometry/summary.json)
+进一步使用真实生产分段helper构造bare和双盖两种完整器件，各含32杆段；双盖的3个接地实体属于同一电极。
+分别覆盖496／592对实体，原生实测bbox证明496／560对分离，其余32对经真实Boolean求交，正体积交叠均为0；
+独立manifest核验8项输出。本run不重复STEP、求场或飞行。它与上述壳体连续性、通孔及STEP证据共同闭合
+本轮几何干涉检查，不代表制造、数值、Fly或Formal资格，也不回写旧冻结几何的四处交叠结论。
+
+当前census只接受实际回调状态夹住观测面的前向穿越（含terminate最后状态），不按近面阈值或从handoff
+直线外推补造命中。[供应商CLI回调检查](../../../../artifacts/projects/rf_multipole_ion_optics/runs/20261027_133140__test__cad__multipole-enclosure/results/agent4_callback_acceptance.json)
+覆盖4场景及重复run；无PA夹具只验证回调状态机，不建立真实PA边界backoff或Fly资格，未实际越面仍为未观测。
 
 ## 机器权威
 
@@ -53,7 +86,7 @@
 | 三变体传输数值注册表 | [COMSOL](../config/comsol_solver_numerics.json)、[SIMION](../config/simion_solver_numerics.json) |
 | 四极机械、变量、源及专用workflow合同 | [quadrupole/config](../variants/quadrupole/config/) |
 | 六极机械、变量及工程合同 | [hexapole/config](../variants/hexapole/config/) |
-| 八极机械、贯通请求、来源模型及工程合同 | [octupole/config](../variants/octupole/config/) |
+| 八极机械、显式壳体、来源模型及工程合同 | [octupole/config](../variants/octupole/config/) |
 | 可执行入口与绑定要求 | [execution_profiles.json](../config/execution_profiles.json) |
 | 旧资格、原身份与冻结记录 | [历史索引](history/README.md) |
 
@@ -61,9 +94,7 @@
 专用workflow的允许输入与探索数值范围见软件说明及其机器合同。模型参数、阈值和正式证据都不从本文推导。
 旧资格JSON保留原owner、profile名、SHA和run；它们不是可复制改名后执行的新资格合同。
 新的运行合同若引用旧源数据，必须显式验证该来源身份，不能给历史数据补一个新owner。
-家族合同两处`consumers`中的旧ID用于匹配历史owner；[家族门禁](../analysis/verify_family_foundation.py)
-保留`recorded_project_id`核查原身份，同时以当前项目和结构变体验证活动设计。这些旧ID不参与公共能力发现，
-也不允许新run回写到旧owner。
+活动设计由当前家族合同与设计解析器校验；历史owner与资格只从封存记录追溯，不允许新run回写到旧owner。
 
 <a id="quad"></a>
 
@@ -74,10 +105,8 @@
 `Mode`或粒子数不能切换科学声明。接口历史严格相空间比较FAIL，当前机械base仍待新资格。
 RF+DC已有理论和有限几何功能响应，网格、跨求解器一致性及质量分辨能力未闭合。
 
-旧非typed设计`exit_aperture_plate_acceleration_reference`在迁移前基线`3647bcae`即因
-`axial-drive potential profile does not accelerate selected charge sign`被编译器拒绝；新具名对应项
-`quadrupole_exit_aperture_plate_acceleration_reference`保留此拒绝，不改物理符号来制造迁移PASS。
-它与已完成N=100功能的typed `quadrupole_exit_aperture_plate_acceleration`不同。
+冻结旧非typed出口孔板设计曾因`axial-drive potential profile does not accelerate selected charge sign`
+被编译器拒绝。此负结果保留；内置孔板模式及其活动profile已退役，不能改物理符号或换成裸杆来制造通过。
 
 质量过滤L0参考实现仍在[专属workflow](../workflows/mass_filter_reference/theory.py)，其源由
 [official_particle_source.json](../variants/quadrupole/config/official_particle_source.json)声明，确定性采样由
@@ -101,7 +130,8 @@ N=1000 COMSOL bridge曾在release构造阶段资源中断，向量化release候�
 源能量与加速方式的比较保持描述性，数值只见
 [源能量记录](history/retired_projects/rf_hexapole_ion_optics/docs/history/20260803__multipole-four-mode-source-energy-h15-n100.md)。
 
-oaTOF的零长度直连、接地圆套筒与带孔法兰由集成合同显式选择；屏蔽电位不作为隐式变量开放。
+旧oaTOF零长度直连、接地圆套筒与带孔法兰结论属于冻结旧几何。当前外部部件及直接位姿由装配配方声明，
+零间隙仅在真实端面上的独立导体互不接触时允许；发生接触须显式修改几何或间隙，具体距离没有默认值。
 旧逐臂profile、预登记和专用诊断测试的结论从
 [退役campaign](history/retired_projects/rf_hexapole_ion_optics/docs/history/20260802__retired-comsol-qualification-campaigns.md)
 追溯，新的研究只使用当前注册的runtime与窄变量campaign，不恢复一次性诊断树。
@@ -110,35 +140,20 @@ oaTOF的零长度直连、接地圆套筒与带孔法兰由集成合同显式选
 
 ## 八极杆
 
-### 真实机械出口
+### 冻结机械出口证据
 
-旧闭壳模型的内部handoff在`z=80.6 mm`，近端数值标记在`81.1 mm`，外端盖`81.6..82.1 mm`实心。
-旧100/100只证明内部传输；不将它重述为穿过最外端盖。
-[through_exit.json](../variants/octupole/config/requests/through_exit.json)显式选择单端贯通外壳；
-`octupole_through_exit_no_acceleration`设计保持真实物理外端面`82.1 mm`，数值域延至`82.7 mm`。
-延长数值域不是延长金属，也不建立第二份孔径。
+旧闭壳的内部handoff与最外端面不同。历史单端贯通运行
+`20261022_210633__sim__simion__octupole-through-exit-n100`曾完成原100 Da母群越过82.1 mm外端面，
+64项manifest输出通过；这些原ID、6D状态和时钟仍可作为明确来源的只读输入。
+旧贯通作者与分支不再是当前运行接口，也不被改写为默认裸杆验证。
 
-旧owner下的SIMION运行`20261022_210633__sim__simion__octupole-through-exit-n100`已完成新求场与N=100飞行，
-100个原始ID真实穿过外端面，64项manifest输出校验通过。出口由步长前后真实状态包围并插值，完整母群、
-位置／速度／绝对时间与canonical clock均校验。首次尝试的旧电极11绑定错误已在该重跑前修复；
-不补假几何，也不把出口后的停止回退状态误记为出口前损失。
-这些状态可用于显式state handoff功能验证，不授予边缘场截断、数值收敛、COMSOL、GUI/CAD或Formal资格。
-
-### 双端贯通与源身份
-
-`octupole_through_entrance_exit_no_acceleration`复用同一贯通request和变量包络，通过显式
-`enclosure_model`选择双端贯通外壳。原单端设计不变；两端孔径、法向、壁厚与RF/DC仍从同一request编译。
-原项目证据覆盖profile→resolved→真实双端口与GEM的纯回归及非法选择拒绝；这项提供者证据本身未包含
-新的原生求场、飞行或多实例验收。正在集成的装配工作以集成状态为准，不提前继承其结论。
-
-[family_complete_mother_n100.json](../variants/octupole/config/sources/family_complete_mother_n100.json)
-声明N=100即完整实验母群；新源profile为`octupole_family_complete_mother_n100`。它经公共release物化，
-已与上述旧100 Da运行的原CSV逐字节重建一致，相关纯装配准备的局部及投影源也保持字节一致。
-此重建不是一次新的native求解。旧嵌套家族源profile继续表达其原有前缀关系，不能与完整N=100母群混用。
+schema 3的同一提供者始终发布实际入口／出口：裸杆按杆端面及开放杆包络解释，有壳按壳端面与
+实际端盖孔或开放内孔解释；释放、观测和机械端面分别命名。两端端盖只是同一壳体的可选构造。
+原单／双端配置、粒子母群及资格从冻结记录追溯，不在当前代码保留兼容模型。
 
 ### 524 Da工况与来源模型比较
 
-`octupole_through_exit_no_acceleration_524da_n100`绑定独立
+历史`octupole_through_exit_no_acceleration_524da_n100`绑定独立
 [524 Da源](../variants/octupole/config/sources/planar_524da_2ev_n100.json)和具名数值profile，复用单端贯通设计。
 旧100 Da源保留；相同位置、方向、ID和出生抽样下，质量改为524 Da、仍为+1及2 eV，速度按`sqrt(100/524)`
 缩放。RF与机械不随质量调优；观察窗按相同轴向速度尺度扩展，不保证传输或收敛。

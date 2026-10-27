@@ -62,27 +62,11 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             [geometry["inscribed_radius_r0"], geometry["rod_radius_ratio"], geometry["rod_z_min"], geometry["rod_z_max"]],
             [4.0, 0.5, 0.0, 79.6],
         )
-        self.assertEqual(compiled["geometry_mm"]["enclosure"], geometry["enclosure"])
-        self.assertEqual(
-            (
-                compiled["interfaces_mm"]["entrance"]["release_plane_z_mm"],
-                compiled["interfaces_mm"]["entrance"][
-                    "aperture_plate_upstream_face_z_mm"
-                ],
-                compiled["interfaces_mm"]["entrance"][
-                    "aperture_plate_downstream_face_z_mm"
-                ],
-                compiled["interfaces_mm"]["exit"][
-                    "aperture_plate_upstream_face_z_mm"
-                ],
-                compiled["interfaces_mm"]["exit"][
-                    "aperture_plate_downstream_face_z_mm"
-                ],
-                compiled["interfaces_mm"]["exit"]["handoff_plane_z_mm"],
-                compiled["interfaces_mm"]["exit"]["census_plane_z_mm"],
-            ),
-            (-1.5, -1.0, -0.5, 80.1, 80.6, 80.6, 81.1),
-        )
+        self.assertEqual(compiled["geometry_mm"]["enclosure"],{"model":"bare"})
+        self.assertNotIn("interfaces_mm",compiled)
+        self.assertEqual(compiled["geometry_mm"]["observations"],geometry["observations"])
+        self.assertEqual(compiled["geometry_mm"]["numerical_domain"],geometry["numerical_domain"])
+        self.assertEqual((geometry["observations"]["release_plane_z_mm"],geometry["observations"]["handoff_plane_z_mm"],geometry["observations"]["census_plane_z_mm"]),(-1.5,80.6,81.1))
         self.assertEqual(
             self.request["drive"]["waveform"],
             "cosine",
@@ -98,8 +82,8 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             "rectangular_reference_enclosure_v1",
         )
         self.assertEqual(
-            self.request["geometry_mm"]["enclosure"]["model"],
-            "cylindrical_grounded_shield_v1",
+            self.request["geometry_mm"].get("enclosure", {"model":"bare"})["model"],
+            "bare",
         )
         self.assertNotEqual(
             self.official_oracle["interfaces_mm"]["exit"]["handoff_plane_z_mm"],
@@ -126,7 +110,7 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             self.envelope["reference"]["design_request_sha256"],
             repository_text_sha256(REQUEST_PATH),
         )
-        self.assertIn("connector_shape_supported", self.catalog["invariants"])
+        self.assertIn("segment_length_conservation", self.catalog["invariants"])
 
 
 if __name__ == "__main__":

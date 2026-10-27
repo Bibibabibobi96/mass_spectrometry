@@ -4,10 +4,6 @@ import unittest
 from pathlib import Path
 
 from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
-from projects.rf_multipole_ion_optics.core.compile_design_request import (
-    MultipoleDesignCompileError,
-    compile_governed_design_request_file,
-)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -88,25 +84,6 @@ class Phase4DesignConsumerTests(unittest.TestCase):
             )
             self.assertEqual(
                 resolved["profile"]["identity"]["electrode_count"], 4
-            )
-
-    def test_legacy_non_typed_exit_plate_profile_still_rejects_invalid_acceleration(self) -> None:
-        # This request already failed at the pre-migration baseline; it is not
-        # the typed exit_aperture_plate_acceleration mode.
-        with self.assertRaisesRegex(
-            MultipoleDesignCompileError,
-            "axial-drive potential profile does not accelerate the selected charge sign",
-        ):
-            selected = resolve_design_profile(
-                REPO_ROOT, "rf_multipole_ion_optics",
-                "quadrupole_exit_aperture_plate_acceleration_reference",
-            )
-            compile_governed_design_request_file(
-                selected["paths"]["design_request"],
-                selected["paths"]["design_variables"],
-                selected["paths"]["optimization_envelope"],
-                expected_identity=selected["profile"]["identity"],
-                provenance_root=REPO_ROOT,
             )
 
     def test_no_collision_entries_fix_one_scientific_profile(self) -> None:

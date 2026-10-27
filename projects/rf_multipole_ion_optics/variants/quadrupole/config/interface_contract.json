@@ -99,7 +99,6 @@
     ]
   },
   "solver_numerics": {
-    "simion_terminal_surface_backoff_cells": 2.5,
     "policy": "Numerical classification only; the numerical census marker resolves from census.z_mm and is not a physical detector."
   }
 }
