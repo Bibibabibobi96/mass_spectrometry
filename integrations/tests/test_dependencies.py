@@ -86,7 +86,10 @@ print('FROZEN_PREPARED_JOINT_ASSEMBLY_SCOPE=PASS')
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
     def test_native_completion_provider_imports_in_each_frozen_consumer(self) -> None:
-        for consumer in ('accelerator_interface', 'cooled_frontend'):
+        consumers = next(item["consumers"] for group in load(INVENTORY)["providers"]
+                         for item in group["files"]
+                         if item["source_repo_path"] == "common/contracts/artifact_retention.py")
+        for consumer in consumers:
             with self.subTest(consumer=consumer), tempfile.TemporaryDirectory() as directory:
                 output = Path(directory)
                 script = f"""
@@ -97,25 +100,76 @@ $null=Freeze-ConsumerDependencies -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENT
                     capture_output=True, text=True, encoding='utf-8', timeout=120)
                 self.assertEqual(frozen.returncode, 0, frozen.stdout + frozen.stderr)
                 snapshot = output / 'runtime_snapshot'
-                environment = dict(os.environ)
+                environment = dict(os.environ, PYTHONNOUSERSITE="1")
                 environment.pop('PYTHONPATH', None)
                 statement = """
 from pathlib import Path
 from common.simion import native_completion
-from projects.dual_pressure_rectilinear_ion_processor.analysis import batching
-assert all(Path(module.__file__).is_relative_to(Path.cwd()) for module in (native_completion,batching))
+assert Path(native_completion.__file__).is_relative_to(Path.cwd())
 """
+                if consumer in ('accelerator_interface', 'cooled_frontend'):
+                    statement += "\nfrom projects.dual_pressure_rectilinear_ion_processor.analysis import batching\n"
+                    statement += "assert Path(batching.__file__).is_relative_to(Path.cwd())\n"
                 if consumer == 'accelerator_interface':
                     statement += "\nfrom projects.parallel_mirror_dual_stripe_mr_tof.analysis import bunch_source_and_schedule\n"
                 command = [sys.executable, '-B', '-s', '-c', statement]
                 completed = subprocess.run(command, cwd=snapshot, env=environment,
                     capture_output=True, text=True, encoding='utf-8', timeout=60)
                 self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+                for module in (False, True):
+                    with self.subTest(module=module, adapter_present=True):
+                        self._assert_frozen_retention(snapshot, module=module, adapter_present=True)
                 (snapshot / 'common/simion/native_completion.py').unlink()
                 missing = subprocess.run(command, cwd=snapshot, env=environment,
                     capture_output=True, text=True, encoding='utf-8', timeout=60)
                 self.assertNotEqual(missing.returncode, 0)
                 self.assertIn('native_completion', missing.stderr)
+                for module in (False, True):
+                    with self.subTest(module=module, adapter_present=False):
+                        self._assert_frozen_retention(snapshot, module=module, adapter_present=False)
+
+    def _assert_frozen_retention(self, snapshot: Path, *, module: bool, adapter_present: bool) -> None:
+        """Exercise public retention entrypoints with no live-checkout import path."""
+        run = snapshot.parent / "runs" / f"retention_{module}_{adapter_present}"
+        logs = run / "logs"
+        logs.mkdir(parents=True)
+        config = run / "run_config.json"
+        config.write_text(json.dumps({
+            "schema_version": 2,
+            "artifact_retention": {"policy_version": 1, "class": "compact", "reason": None},
+        }), encoding="utf-8")
+        original_logs = {
+            logs / "simion__batch01.trace.log": b"status,Fly completed.\n",
+            logs / "simion__batch02.stdout.log": b"status,Fly completed. 2 splats, 0.1 seconds\n",
+        }
+        for path, contents in original_logs.items():
+            path.write_bytes(contents)
+        payload = run / "field.pa0"
+        payload.write_bytes(b"rebuildable fixture")
+        entry = (["-m", "common.contracts.artifact_retention"] if module else
+                 [str(snapshot / "common/contracts/artifact_retention.py")])
+        command = [sys.executable, "-B", "-s", *entry, "apply", "--run-config", str(config), "--failed-run"]
+        for path in original_logs:
+            command.extend(("--preserve-path", str(path)))
+        environment = dict(os.environ, PYTHONNOUSERSITE="1")
+        environment.pop("PYTHONPATH", None)
+        completed = subprocess.run(command, cwd=snapshot if module else snapshot.parent,
+            env=environment, capture_output=True, text=True, encoding="utf-8", timeout=60)
+        receipt = run / "retention_actions.json"
+        if adapter_present:
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertFalse(payload.exists())
+            action = load(receipt)
+            self.assertEqual(action["status"], "complete")
+            self.assertEqual({row["path"] for row in action["preserved"]},
+                             {path.relative_to(run).as_posix() for path in original_logs})
+        else:
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("native_completion", completed.stderr)
+            self.assertEqual(payload.read_bytes(), b"rebuildable fixture")
+            self.assertFalse(receipt.exists())
+        for path, contents in original_logs.items():
+            self.assertEqual(path.read_bytes(), contents)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
     def test_single_reflection_snapshot_plans_downstream_without_live_checkout(self) -> None:

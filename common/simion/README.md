@@ -1,27 +1,32 @@
-# SIMION公共实现层
+# SIMION公共实现与验证
 
 本目录保存不含器件身份、专用坐标系或运行模式假设的SIMION公共实现。`particle_source.py`接收已经由
 上游适配器转换到工作台语义的 beam 或逐粒子状态并生成 FLY2/Lua 文本；多极杆的 ION11 和 canonical 字段映射
 仍由 `projects/rf_multipole_ion_optics/runtime/simion_particle_source.py` 负责。
 `render_source_states(..., significant_digits=17)`用于binary64往返精确投影；默认15位保持既有源文本不变。
+本页维护仓库 API、调用约束与验证范围；软件表示和兼容边界见[SIMION 参考](../../docs/tools/SIMION_REFERENCE.md)，
+主机许可与门禁接线见[公共机制](../README.md)。项目操作和科学资格由项目 README／PROJECT 路由。
 
 ## 按任务导航
 
 | 任务 | 入口 |
 |---|---|
+| 将已冻结的粒子状态序列化为 FLY2 | [粒子序列化](particle_source.py)，字段映射由消费者适配器拥有 |
 | 序列化几何、检查孔拓扑 | [几何与 Workbench](#几何与-workbench) |
 | 缓存 PA family、导出 standalone 工作点 | [PA 缓存与工作点](#pa-缓存与工作点) |
 | 长 PA 输入与缓存写隔离 | 先读[跨项目边界](../../docs/tools/SIMION_REFERENCE.md#长pa输入路径)，再读 [API 与证据](#长路径输入-api与证据) |
 | 读取原生 Fly 完成事实 | [原生完成事实](#原生完成事实) |
 | HS1运行副本的重复Fly复位与参数审计 | [HS1生命周期](#hs1运行副本生命周期) |
 | 共用电压边沿步长计算 | [电压边沿](#电压边沿) |
+| 共用 RF/DC 公式与时间步约束 | [RF 驱动](#rf驱动) |
 | 并发、资源画像及中断续算 | [调度与恢复](#调度与恢复) |
 | 查旧 Fly 入口审计 | [只读历史入口](PRODUCTION_FLY_AUDIT.md) |
 
 ## 几何与 Workbench
 
-[`gem_primitives.py`](gem_primitives.py)只序列化明确传入的有限坐标与尺寸，提供
-`centered_box3D`和沿`z`轴的`cylinder`文本，不选择电极、器件尺寸、孔径、网格或坐标变换。
+[`gem_primitives.py`](gem_primitives.py)只序列化明确传入的有限坐标与尺寸；Python函数
+`centered_box3d`、`cylinder_z`分别生成GEM的`centered_box3D`和沿`z`轴的`cylinder`文本，
+不选择电极、器件尺寸、孔径、网格或坐标变换。
 独立正交加速器和连接装配共用这一层；器件CSG、侧孔与两／三区电极组合由加速器项目拥有。
 
 项目间连接的矩形开孔统一调用[`aperture.py`](aperture.py)：机械宽、高任一小于一个cell时失败关闭；
@@ -88,7 +93,14 @@ full／local脉冲hook及冷却前端的入口关闭／释放边沿也显式注�
 [`native_completion.py`](native_completion.py)只解析仓库已实测的 SIMION 2020 原始行
 `status,Fly completed. <splats> splats[, <seconds> seconds]`：它提供 splat 数和可选耗时，
 不把这项项目实现表述为供应商稳定 stdout ABI。裸前缀、截断或旧格式不是完成事实；调用方选择自己的
-单日志唯一或多日志显式求和策略，且不相加 elapsed。项目仍负责 TRACE、粒子 ID、时钟、阈值和科学终态。
+单日志唯一或多日志显式求和策略，且不相加 elapsed。项目仍负责粒子 ID、时钟、阈值和科学终态。
+
+同一模块为失败收尾提供`recoverable_batch_log_kind`、`has_recoverable_batch_completion`和
+`recoverable_batch_logs`：仅识别run的`logs/simion__batch*.trace.log`或`.stdout.log`。
+恢复完成判据检查最后一个非空行；TRACE使用仓库生产者的精确裸sentinel `status,Fly completed.`，
+原生stdout必须符合上面的数字语法，不能把TRACE约定用于原生日志。日志原字节与路径保持不变。
+这只决定声明日志能否保留以供恢复，不能替代完整母群、源、时钟或科学验收。
+通用收尾、收据及终态保护由[保留API](../contracts/README.md#运行终态保留)处理，不在PowerShell复制供应商文本解析。
 
 ## PA 缓存与工作点
 
@@ -371,8 +383,8 @@ family 的运行时安全证明。只有新 family 的构建 staging 可以执�
 从仓库根运行回归：
 
 ```powershell
-.\.venv\Scripts\python.exe common/simion/test_short_pa_path_support.py
-.\.venv\Scripts\python.exe common/simion/test_export_standalone_pa.py
+.\.venv\Scripts\python.exe -m unittest common.simion.test_short_pa_path_support
+.\.venv\Scripts\python.exe -m unittest common.simion.test_export_standalone_pa
 ```
 
 第一项回归主动改写临时副本，检查长路径只读源的字节与属性未变；第二项以真实 SIMION 建立小型 family，

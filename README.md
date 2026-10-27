@@ -9,7 +9,7 @@
 
 1. Agent先读[执行规则](AGENTS.md)，再从下表选择项目或[组装入口](integrations/README.md)。
 2. 项目任务读目标README和`docs/PROJECT.md`；组装任务读`docs/INTEGRATION.md`，确认能力、资格、限制和开放动作。
-   公共工具任务读最近的`common/<domain>/README.md`，不创建占位PROJECT。
+   公共工具任务从[公共机制](common/README.md)进入最近的实现说明，不创建占位PROJECT。
 3. 按[文档任务目录](docs/README.md)选择本次需要的理论、操作或规范；修改或审查代码先读
    [开发标准阅读导航](docs/DEVELOPMENT_STANDARDS.md#阅读导航)。
 4. 创建文件、运行或归档前查[生命周期](docs/LIFECYCLE.md)，执行与提交前查[操作指南](docs/OPERATIONS.md)。
@@ -40,7 +40,7 @@
 | 选择部件、配置实例、组装和联合研究 | [组装入口](integrations/README.md)、[当前集成状态](integrations/docs/INTEGRATION.md) |
 | 文件放哪里、项目怎样划分、谁拥有知识 | [仓库架构](docs/REPOSITORY_ARCHITECTURE.md) |
 | 查理论、验证方法、软件操作、规范或参考资料 | [文档任务目录](docs/README.md) |
-| 查公共API、运行机制和机器合同 | [公共机制导航](docs/README.md#公共实现与机器合同) |
+| 查公共API、运行机制和机器合同 | [公共机制导航](common/README.md) |
 | 查长期目标和建设顺序 | [愿景](docs/VISION.md)、[路线图](docs/ROADMAP.md) |
 | 追溯已完成全仓审计 | [审计索引](docs/AUDITS.md)；项目历史从所属README进入 |
 

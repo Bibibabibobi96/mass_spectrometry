@@ -498,6 +498,34 @@ try {
     $_.path -eq $fullFlightStdout
   }).Count 1 'Failed full-flight manifest must retain completed stdout.'
 
+  $malformedDir=Join-Path (Join-Path $testRoot 'runs') '20260723_170007__test__cross__malformed-stdout'
+  New-Item -ItemType Directory -Path (Join-Path $malformedDir 'logs') -Force|Out-Null
+  $malformedConfig=Join-Path $malformedDir 'run_config.json'
+  $malformedSummary=Join-Path $malformedDir 'summary.json'
+  $malformedStdout=Join-Path $malformedDir 'logs/simion__batch01.stdout.log'
+  $malformedDocument=Get-Content $fullFlightConfig -Raw|ConvertFrom-Json -AsHashtable
+  $malformedDocument.run_id=Split-Path -Leaf $malformedDir
+  Write-RunJson -Path $malformedConfig -Value $malformedDocument
+  $untouchedPayload=Join-Path $malformedDir 'field.pa0'
+  [IO.File]::WriteAllText($untouchedPayload,'untouched field fixture')
+  foreach($line in @('status,Fly completed.','status,Fly completed. invalid')){
+    [IO.File]::WriteAllText($malformedStdout,$line+"`n")
+    $rejected=$false
+    try {
+      Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $malformedConfig `
+        -Summary $malformedSummary -SummaryRole fixture_summary -Reason fixture -Software @('fixture') `
+        -PreserveRawOutputs -PreserveRawOutputPaths @($malformedStdout)
+    }catch{
+      if($_.Exception.Message-ne'Run artifact retention failed.'){throw}
+      $rejected=$true
+    }
+    Assert-Equal $rejected $true 'Malformed stdout was accepted as a recoverable completion.'
+    Assert-Equal ([IO.File]::ReadAllText($untouchedPayload)) 'untouched field fixture' 'Rejected recovery deleted a payload.'
+    foreach($name in @('run_manifest.json','retention_actions.json')){
+      Assert-Equal (Test-Path -LiteralPath (Join-Path $malformedDir $name)) $false 'Rejected recovery published a receipt.'
+    }
+  }
+
   $successDir = Join-Path $testRoot '20260723_170002__test__cross__lifecycle-success__n100'
   New-Item -ItemType Directory -Path $successDir -Force | Out-Null
   $successConfig = Join-Path $successDir 'run_config.json'
@@ -574,6 +602,18 @@ try {
       Assert-Equal ([IO.File]::ReadAllText($manifest)) $faultBefore 'Rejected terminal manifest was overwritten.'
       Assert-Equal ([Convert]::ToBase64String([IO.File]::ReadAllBytes($package.summary))) $before[$package.summary] `
         'Rejected manifest cleanup changed the summary.'
+    }
+    foreach($terminalStatus in @('success','failed','interrupted','superseded')){
+      $document=ConvertFrom-Json -InputObject $published -AsHashtable
+      $document.status=$terminalStatus
+      Write-RunJson -Path $manifest -Value $document
+      $terminalBytes=[IO.File]::ReadAllText($manifest)
+      Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config `
+        -Summary $package.summary -SummaryRole fixture_summary -Reason fixture -Software @('fixture') `
+        -PreserveRawOutputs -PreserveRawOutputPaths @('missing recovery fixture')
+      Assert-Equal ([IO.File]::ReadAllText($manifest)) $terminalBytes 'Failure cleanup changed an existing terminal.'
+      Assert-Equal ([Convert]::ToBase64String([IO.File]::ReadAllBytes($package.summary))) $before[$package.summary] `
+        'Failure cleanup changed the summary of an existing terminal.'
     }
     [IO.File]::WriteAllText($manifest,$published)
   }

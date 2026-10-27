@@ -12,7 +12,7 @@
    ├─ 通用方法：VALIDATION_METHODS / TOF_ERROR_BUDGET
    ├─ 接口实现：COMSOL_API
    ├─ 异常定位：COMSOL_DEBUGGING
-   ├─ 启动与组件测试：common/comsol/README
+   ├─ 仓库启动器、构建原语与组件测试：common/comsol/README
    ├─ 官方语义查证：docs/references/software/README
    └─ 项目 README
       ├─ PROJECT：当前结论、资格、限制与开放任务
@@ -29,7 +29,7 @@
 | 1、10、100 ps 是否足够，怎样按分辨率计算预算 | [TOF 查表与唯一计算入口](../science/TOF_ERROR_BUDGET.md) | 参考峰非高斯、多个峰或有截断时，使用项目直接 FWHM 与配对粒子指标 |
 | 如何创建节点、设置活动属性、读数据 | [API 按专题定位](COMSOL_API.md#按专题定位) | 不确定类型、合法值或物理含义时查官方语义；采用前核对已有验证层级 |
 | 设置不生效、无场、异常停止、崩溃或漏计 | [快速分诊与案例](COMSOL_DEBUGGING.md#快速分诊) | 先确定失败阶段，再读该故障专题及对应项目证据 |
-| 怎样启动、限制资源、选择组件测试 | [共享启动器与测试](../../common/comsol/README.md) | 实际执行前读取操作指南的工具链与资源规则；源码存在不等于测试已运行 |
+| 怎样启动或接入仓库的构建原语、资源阶段、组件测试 | [公共实现与验证](../../common/comsol/README.md) | 实际执行前读取操作指南；修改实现时再进入对应 API 或测试源码，源码存在不等于测试已运行 |
 | 需要核对供应商原始定义 | [官方资料定位](../references/software/README.md) | 只读问题对应的目标版本章节，不通读全部 PDF |
 | 某项目现在通过了什么、还缺什么 | 下表的项目入口 → PROJECT | 改 COMSOL 实现再读 COMSOL；追溯完整过程再读项目 History 索引 |
 

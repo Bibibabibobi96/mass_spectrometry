@@ -295,11 +295,14 @@ try {{
         with tempfile.TemporaryDirectory(prefix="parallel_gate_fixture_") as directory:
             child = Path(directory) / "child.ps1"
             child.write_text(
-                "param($InternalStage, $InternalLogPath)\nStart-Sleep -Seconds 1\n",
+                "param($InternalStage, $InternalLogPath)\nStart-Sleep -Seconds 1\n"
+                "Set-Content -LiteralPath $InternalLogPath -Value 'CHILD_FINISHED'\n",
                 encoding="utf-8",
             )
             started = time.monotonic()
-            self.run_script(self.prelude() + f"""
+            completed = self.run_script(self.prelude() + f"""
+$env:TEMP = {quote(directory)}
+$env:TMP = {quote(directory)}
 $script:started = $null
 function Start-Process {{
     param($FilePath, $ArgumentList, $WindowStyle, [switch]$PassThru)
@@ -324,6 +327,87 @@ if ($null -eq $script:started) {{ throw 'first child never started' }}
 if (Get-Process -Id $script:childId -ErrorAction SilentlyContinue) {{ throw 'child survived' }}
 """)
             self.assertGreaterEqual(time.monotonic() - started, 0.8)
+            retained = re.search(r"^GATE_DIAGNOSTICS=RETAINED PATH=(.+)$", completed.stdout, re.MULTILINE)
+            self.assertIsNotNone(retained, completed.stdout)
+            group = Path(retained.group(1).strip())
+            self.assertEqual(group.parent.resolve(), Path(directory).resolve())
+            self.assertIn("CHILD_FINISHED", (group / "00_first.log").read_text(encoding="utf-8"))
+            self.assertIn("injected second launch failure", (group / "group_failure.log").read_text(encoding="utf-8"))
+            self.assertFalse((group / "matplotlib").exists())
+
+    def test_failed_group_keeps_reported_logs_until_explicit_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="parallel_gate_fixture_") as directory:
+            child = Path(directory) / "child.ps1"
+            child.write_text(
+                "param($InternalStage, $InternalLogPath)\n"
+                "Set-Content -LiteralPath $InternalLogPath -Value ('DIAG_' + $InternalStage)\n"
+                "if ($InternalStage -eq 'second') { exit 7 }\n",
+                encoding="utf-8",
+            )
+            completed = self.run_script(self.prelude() + f"""
+$env:TEMP = {quote(directory)}
+$env:TMP = {quote(directory)}
+$items = @(@{{Name='first';Run=$true}}, @{{Name='second';Run=$true}})
+try {{
+    Invoke-IndependentGateStageGroup -Items $items -MaxConcurrency 2 `
+        -GateScriptPath {quote(child)} -PythonExe {quote(sys.executable)} `
+        -ChildBaseArguments @() -TempNamePrefix 'parallel_gate_test_' `
+        -FailureMessage 'test group failed' -InvokeInlineStage {{ throw 'unexpected inline' }} `
+        -InvokeSkipStage {{ throw 'unexpected skip' }}
+    throw 'missing stage failure'
+}} catch {{
+    if ($_.Exception.Message -ne 'test group failed: second=7') {{ throw }}
+}}
+""")
+            reported_logs = re.findall(
+                r"^GATE_PROCESS=START NAME=(\w+) PID=\d+ LOG_PATH=(.+)$",
+                completed.stdout, re.MULTILINE,
+            )
+            self.assertEqual(len(reported_logs), 2, completed.stdout)
+            self.assertIn("GATE_DIAGNOSTICS=TEMPORARY PATH=", completed.stdout)
+            self.assertIn("GATE_DIAGNOSTICS=RETAINED PATH=", completed.stdout)
+            self.assertNotIn("GATE_DIAGNOSTICS=CLEANED PATH=", completed.stdout)
+            for name, log_path in reported_logs:
+                log = Path(log_path.strip())
+                self.assertEqual(log.parent.parent.resolve(), Path(directory).resolve())
+                self.assertEqual(log.read_text(encoding="utf-8").strip(), f"DIAG_{name}")
+                self.assertFalse((log.parent / "matplotlib").exists())
+            command = re.search(
+                r"^GATE_DIAGNOSTICS_CLEANUP=AFTER_REVIEW COMMAND=(.+)$", completed.stdout, re.MULTILINE,
+            )
+            self.assertIsNotNone(command, completed.stdout)
+            self.run_script(self.prelude() + f"""
+$env:TEMP = {quote(directory)}
+$env:TMP = {quote(directory)}
+{command.group(1)}
+""")
+            self.assertFalse(Path(reported_logs[0][1].strip()).parent.exists())
+
+    def test_missing_child_log_records_serial_fallback_failure(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="parallel_gate_fixture_") as directory:
+            child = Path(directory) / "child.ps1"
+            child.write_text("param($InternalStage, $InternalLogPath)\nexit 7\n", encoding="utf-8")
+            completed = self.run_script(self.prelude() + f"""
+$env:TEMP = {quote(directory)}
+$env:TMP = {quote(directory)}
+$items = @(@{{Name='first';Run=$true}}, @{{Name='second';Run=$true}})
+try {{
+    Invoke-IndependentGateStageGroup -Items $items -MaxConcurrency 2 `
+        -GateScriptPath {quote(child)} -PythonExe {quote(sys.executable)} `
+        -ChildBaseArguments @() -TempNamePrefix 'parallel_gate_test_' `
+        -FailureMessage 'test group failed' -InvokeInlineStage {{ throw 'FALLBACK_ERROR' }} `
+        -InvokeSkipStage {{ throw 'unexpected skip' }}
+    throw 'missing fallback failure'
+}} catch {{
+    if ($_.Exception.Message -notlike 'test group failed: *serial_fallback_failed_after_7*') {{ throw }}
+}}
+""")
+            logs = re.findall(r"^GATE_PROCESS=START .+ LOG_PATH=(.+)$", completed.stdout, re.MULTILINE)
+            self.assertEqual(len(logs), 2, completed.stdout)
+            for log_path in logs:
+                log = Path(log_path.strip())
+                self.assertEqual(log.parent.parent.resolve(), Path(directory).resolve())
+                self.assertIn("FALLBACK_ERROR", log.read_text(encoding="utf-8"))
 
     def test_nested_group_serializes_inherited_reservation(self) -> None:
         with tempfile.TemporaryDirectory(prefix="parallel_gate_fixture_") as directory:
@@ -344,6 +428,8 @@ Invoke-IndependentGateStageGroup -Items $items -MaxConcurrency 2 `
     -InvokeSkipStage {{ throw 'unexpected skip' }}
 """)
             self.assertIn("REASON=inherited_resource_reservation", completed.stdout)
+            self.assertIn("GATE_DIAGNOSTICS=CLEANED PATH=", completed.stdout)
+            self.assertNotIn("GATE_DIAGNOSTICS=RETAINED PATH=", completed.stdout)
             reported_logs = re.findall(
                 r"^GATE_PROCESS=START NAME=(\w+) PID=\d+ LOG_PATH=(.+)$",
                 completed.stdout, re.MULTILINE,
@@ -351,6 +437,7 @@ Invoke-IndependentGateStageGroup -Items $items -MaxConcurrency 2 `
             self.assertEqual([name for name, _ in reported_logs], ["first", "second"])
             for _, log_path in reported_logs:
                 self.assertIn(f"RECEIVED_LOG_PATH={log_path}", completed.stdout)
+                self.assertFalse(Path(log_path.strip()).parent.exists(), "successful group left temporary logs")
             self.assertLess(
                 completed.stdout.index("COMPLETE NAME=first"),
                 completed.stdout.index("START NAME=second"),

@@ -128,6 +128,8 @@ function Invoke-IndependentGateStageGroup {
         $TempNamePrefix + [guid]::NewGuid().ToString('N')
     )
     New-Item -ItemType Directory -Path $groupRoot | Out-Null
+    Write-Output "GATE_DIAGNOSTICS=TEMPORARY PATH=$groupRoot"
+    $groupSucceeded = $false
         $originalMatplotlibConfig = [Environment]::GetEnvironmentVariable(
             'MPLCONFIGDIR', 'Process'
         )
@@ -248,10 +250,12 @@ function Invoke-IndependentGateStageGroup {
                     "GATE_STAGE=FALLBACK NAME=$($item.Name) " +
                     'REASON=missing_stage_log_serial_fallback'
                 )
-                try {
+                $inlineSucceeded = Invoke-LoggedGateStage -Name $item.Name `
+                    -LogPath $record.LogPath -Action {
                     & $InvokeInlineStage $item
-                } catch {
-                    Write-Output ($_ | Out-String -Width 4096).TrimEnd()
+                }
+                Get-Content -LiteralPath $record.LogPath -Encoding UTF8
+                if (-not $inlineSucceeded) {
                     $failed.Add(
                         "$($item.Name)=serial_fallback_failed_after_" +
                         $record.Process.ExitCode
@@ -273,6 +277,21 @@ function Invoke-IndependentGateStageGroup {
             }
             throw "$FailureMessage`: $($failed -join ', ')"
         }
+        $groupSucceeded = $true
+    } catch {
+        # Keep the original stage paths valid, including startup/fallback errors
+        # that have no child log of their own.
+        $groupFailure = $_
+        try {
+            [IO.File]::WriteAllText(
+                (Join-Path $groupRoot 'group_failure.log'),
+                ($groupFailure | Out-String -Width 4096),
+                [Text.UTF8Encoding]::new($false)
+            )
+        } catch {
+            Write-Warning "Could not record gate group failure: $_"
+        }
+        throw $groupFailure
     } finally {
         # Do not release the work/log directory while a child is alive. An
         # unwind stops future launches but preserves an already-running stage's
@@ -292,7 +311,22 @@ function Invoke-IndependentGateStageGroup {
         } else {
             $env:MPLCONFIGDIR = $originalMatplotlibConfig
         }
-        Remove-GateTemporaryDirectory -Path $groupRoot `
-            -ExpectedNamePrefix $TempNamePrefix
+        if ($groupSucceeded) {
+            Remove-GateTemporaryDirectory -Path $groupRoot `
+                -ExpectedNamePrefix $TempNamePrefix
+        }
+        if (-not (Test-Path -LiteralPath $groupRoot)) {
+            Write-Output "GATE_DIAGNOSTICS=CLEANED PATH=$groupRoot"
+        } else {
+            # Retain only this group's diagnostic files, not its generated cache.
+            Remove-GateTemporaryDirectory -Path (Join-Path $groupRoot 'matplotlib') `
+                -ExpectedNamePrefix 'matplotlib'
+            Write-Output "GATE_DIAGNOSTICS=RETAINED PATH=$groupRoot"
+            Write-Output (
+                'GATE_DIAGNOSTICS_CLEANUP=AFTER_REVIEW ' +
+                "COMMAND=Remove-GateTemporaryDirectory -Path '$($groupRoot.Replace("'", "''"))' " +
+                "-ExpectedNamePrefix '$($TempNamePrefix.Replace("'", "''"))'"
+            )
+        }
     }
 }

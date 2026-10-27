@@ -929,11 +929,14 @@
           "id": "common_simion_native_completion_py",
           "source_repo_path": "common/simion/native_completion.py",
           "consumers": [
+            "local_frontend",
             "prepared_joint",
             "oa_mr",
+            "multipole_ip",
             "single_reflection_flight",
             "accelerator_interface",
             "cooled_frontend",
+            "paired_accelerator_static_field",
             "paired_accelerator_pulse"
           ]
         },

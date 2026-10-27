@@ -51,6 +51,8 @@
 
 | 对象 | 邻近说明 |
 |---|---|
+| 门禁编排、资源调度与公共机制任务路由 | [公共机制入口](../common/README.md) |
+| 峰形、场比较、粒子配对与数值统计 | [公共分析](../common/analysis/README.md) |
 | run身份、冻结、manifest、保留、容量与项目发现 | [机器合同](../common/contracts/README.md) |
 | 组件连接、完整与局部配方解析 | [公共连接合同](../common/integration/README.md) |
 | 离子释放、种子、粒子身份与母群 | [公共离子释放](../common/ion_release/README.md) |

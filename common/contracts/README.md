@@ -174,6 +174,14 @@ manifest schema v2记录保留类和每项输出角色；
 writer/verifier同时扫描未列出的重型文件，防止通过漏报output绕过。schema v1只承担历史兼容，不因
 新增合同而失效；未迁移入口由测试中的具名棘轮清单约束，新建或实质修改时必须退出该清单。
 
+`Complete-FailedRun`只传递调用方的`PreserveRawOutputs/PreserveRawOutputPaths`声明；
+`Apply-RunArtifactRetention -FailedRun`由同一Python保留入口处理未显式保留的批次日志。
+保留声明仅适用于schema v2，必须在任何删除或收据写入前通过
+[SIMION日志完成校验](../simion/README.md#原生完成事实)；畸形或未完成日志不能取得恢复豁免。
+已有终态的run先退出，不覆盖其日志、summary或manifest；原生完成不代表科学成功。
+PowerShell入口使用精确RepoRoot上下文。独立writer/verifier的直接文件入口仍受支持，
+所需SIMION适配器只从同一源码树加载，冻结闭包必须包含该文件，缺失时不搜索活动仓库补齐。
+
 ### 容量准入与维护
 
 `reconcile_artifact_capacity.py`与`artifact_capacity_policy.json`实现日常容量治理，只有三项职责：

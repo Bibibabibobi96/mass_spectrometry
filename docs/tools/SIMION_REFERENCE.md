@@ -1,7 +1,18 @@
 # SIMION 跨项目参考
 
-本文件只保存已经能跨项目复用的 SIMION 操作经验。具体项目的 PA 尺寸、粒子参数、运行结果和
-IOB 路径写入该项目 `docs/SIMION.md` 或 `docs/PROJECT.md`。
+本文件维护 SIMION 的通用表示、操作边界与已验证限制。项目任务先读项目 README 和 PROJECT，
+再按问题进入本页；具体 PA 尺寸、粒子参数和 IOB 操作归项目 `docs/SIMION.md`，当前结果与资格归 PROJECT。
+仓库实现的函数、参数、资源画像及回归入口由[公共 SIMION 实现](../../common/simion/README.md)维护。
+
+## 按任务查阅
+
+| 问题 | 正文 |
+|---|---|
+| PA、GEM、IOB 如何分工，重叠实例怎样生效 | [表示与优先级](#pagem-与-iob) |
+| 独立粒子怎样并行，怎样接入已有调度器 | [粒子并行边界](#flym-粒子并行规范)，实现转[公共调度与恢复](../../common/simion/README.md#调度与恢复) |
+| 长 PA 或 immutable cache 怎样交给 SIMION | [已关闭的长路径边界](#长pa输入路径)，再按需读实现 API |
+| GUI、Program、记录或交付缺少什么 | [GUI 对等](#gui-对等)、[记录](#program-与-data-recording)、[交付](#可复现交付) |
+| 怎样启动软件、确认版本或申请主机资源 | [操作指南](../OPERATIONS.md#工具链与执行入口) |
 
 ## PA、GEM 与 IOB
 
@@ -42,10 +53,10 @@ IOB 路径写入该项目 `docs/SIMION.md` 或 `docs/PROJECT.md`。
 通过 `--particles` 消费一个互不重叠的连续粒子区间，最后按全局粒子 ID 无损合并日志。禁止为了并行
 为每批重建 IOB、复制/Refine PA、修改 Program 或建立项目私有 worker-count 算法。
 
-并发数必须由仓库资源调度器决定：未知画像先保留首个正式粒子批次，观察固定 45 秒后以实测进程树
-内存峰值和末段持续 CPU 重规划，同时保留 CPU 窗口峰值诊断；首批是正式结果，不是丢弃的探针。
-末段口径防止 PA 加载或 Fast Adjust 的短峰把长时间单核飞行误限为单路。每个进程会独立加载共享 PA，这是 SIMION
-进程隔离的必要成本。IOB 必须绑定生命周期覆盖完整飞行的 PA 路径；短期 execution alias 不得写入
+拆批适用条件只见[独立粒子与耦合求解的调度](../DEVELOPMENT_STANDARDS.md#独立粒子与耦合求解的调度)。
+并发数、正式首批观测及资源画像的算法由[公共调度与恢复](../../common/simion/README.md#调度与恢复)维护，
+本页不重复观察时长或容量常量。每个进程会独立加载共享 PA，这是 SIMION 进程隔离的必要成本。
+IOB 必须绑定生命周期覆盖完整飞行的 PA 路径；短期 execution alias 不得写入
 需要在飞行期间延迟打开 `.pa1..paN` 的 IOB。粒子切片、合并覆盖、终态数量和失败批次必须进入运行证据。
 
 真实复验 `20260924_023000__sim__simion__mrtof-yminus45-n100-pilot-r7__n100-static` 使用一个共享 IOB、
@@ -53,12 +64,12 @@ IOB 路径写入该项目 `docs/SIMION.md` 或 `docs/PROJECT.md`。
 三批均自然 `exit 0`，100/100 粒子完整合并，总批次墙钟 `2023.961 s`。该证据只授予并行执行和无损
 合并能力，不授予对应物理结果 Candidate/Formal 资格。该次包装器在合并后因已结束的重型 lease
 转换失败而以 failed manifest 收尾；该多余转换已退役，观测与 collection gate 从既有合并日志恢复，
-没有重飞粒子。后续 success manifest 仍须由下一次正常运行给出，不能把本段当作物理资格捷径。
+没有重飞粒子。这是该次历史执行的证据边界；后续有效运行与当前资格只查所属项目 PROJECT。
 
 官方依据（查阅于 2026-09-23）：[Multi-core CPUs](https://simion.com/info/multicore.html)、
 [High Performance Computing Cluster](https://mail.simion.com/info/hpc_cluster.html)、
 [Command Line Interface](https://mail.simion.com/info/command_line_interface.html)。官方说明的核心模式是多个
-SIMION 实例分别飞行不同粒子子集，再合并输出；本节是仓库内该方法的唯一规范位置。
+SIMION 实例分别飞行不同粒子子集，再合并输出；仓库的调度合同和实现分别由上述入口维护。
 
 ### 长PA输入路径
 
@@ -109,6 +120,7 @@ Number、TOF、坐标和 Event/实例信息，避免把其他 splat 或重复事
 
 ## 可复现交付
 
-打包时至少包含 IOB、同名 Lua/Fly2、所有被引用的 PA 文件及必要 PA0/PA#、可审阅 GEM、固定粒子
-表或生成脚本、参数契约、运行说明和预期校验值。优先使用相对路径，并在另一目录或另一台机器
-进行一次解包复现测试。
+可独立迁移的包必须包含 IOB、同名 Lua/Fly2、实际运行依赖的 PA、可审阅 GEM、固定粒子表或冻结生成输入、
+参数合同、运行说明和身份清单；具体 PA 表示遵循上面的[输入边界](#长pa输入路径)，不因打包而重新开放
+已发布 `.paN`。依赖受管外部资产的工作台必须明确标为非独立包，记录资产 owner、manifest 与保留条件。
+独立包优先使用相对路径，并在另一目录或另一台机器解包复现；复制完成不等于 GUI 或科学验收完成。

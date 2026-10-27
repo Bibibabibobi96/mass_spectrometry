@@ -691,7 +691,8 @@ function Apply-RunArtifactRetention {
     [Parameter(Mandatory)][string]$RepoRoot,
     [Parameter(Mandatory)][string]$RunConfig,
     [string[]]$PreservePaths=@(),
-    [string[]]$RemovePaths=@()
+    [string[]]$RemovePaths=@(),
+    [switch]$FailedRun
   )
   $arguments=@('apply','--run-config',$RunConfig)
   foreach($path in $PreservePaths){
@@ -704,8 +705,11 @@ function Apply-RunArtifactRetention {
       $arguments+=@('--remove-path',$path)
     }
   }
-  $output=& $Python (Join-Path $RepoRoot 'common\contracts\artifact_retention.py') @arguments
-  if($LASTEXITCODE-ne 0){throw 'Run artifact retention failed.'}
+  if($FailedRun){$arguments+='--failed-run'}
+  $output=Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
+    & $Python (Join-Path $RepoRoot 'common\contracts\artifact_retention.py') @arguments
+    if($LASTEXITCODE-ne 0){throw 'Run artifact retention failed.'}
+  }
   Write-Verbose ($output -join [Environment]::NewLine)
   return Join-Path (Split-Path -Parent $RunConfig) 'retention_actions.json'
 }
@@ -872,42 +876,16 @@ function Complete-FailedRun {
   if(-not $PreserveRawOutputs -and $PreserveRawOutputPaths.Count-ne 0){
     throw 'Recoverable raw output paths require PreserveRawOutputs.'
   }
-  $preservedRawTracePaths=@()
   if($PreserveRawOutputs){
     if($PreserveRawOutputPaths.Count-eq 0){
-      throw 'PreserveRawOutputs requires at least one completed SIMION batch log.'
+      throw 'PreserveRawOutputs requires at least one declared recoverable output.'
     }
-    foreach($trace in $PreserveRawOutputPaths){
-      $tracePath=[IO.Path]::GetFullPath($trace)
-      $traceName=[IO.Path]::GetFileName($tracePath)
-      $isPrePulseTrace=$traceName-like'simion__batch*.trace.log'
-      $isFullFlightStdout=$traceName-like'simion__batch*.stdout.log'
-      $completionLine=if(Test-Path -LiteralPath $tracePath -PathType Leaf){
-        Get-Content -LiteralPath $tracePath -Tail 1 -Encoding UTF8
-      }else{''}
-      if(-not $tracePath.StartsWith(([IO.Path]::GetFullPath($runDir)+[IO.Path]::DirectorySeparatorChar),[StringComparison]::OrdinalIgnoreCase) -or
-         -not(Test-Path -LiteralPath $tracePath -PathType Leaf) -or
-         (-not$isPrePulseTrace-and-not$isFullFlightStdout) -or
-         ($isPrePulseTrace-and$completionLine-ne'status,Fly completed.') -or
-         ($isFullFlightStdout-and$completionLine-notlike'status,Fly completed.*')){
-        throw 'Recoverable raw output must be a completed run-local SIMION batch TRACE/stdout.'
-      }
-      $preservedRawTracePaths+=$tracePath
+    if([int]$document.schema_version-ne 2){
+      throw 'Recoverable output retention requires run_config schema_version 2.'
     }
   }
-  $recoverableTraceDirectory=Join-Path $runDir 'logs'
-  $discardedRawTracePaths=if(Test-Path -LiteralPath $recoverableTraceDirectory -PathType Container){
-    @(
-      Get-ChildItem -LiteralPath $recoverableTraceDirectory -File | Where-Object {
-        ($_.Name -like 'simion__batch*.trace.log' -or
-          $_.Name -like 'simion__batch*.stdout.log') -and
-        $preservedRawTracePaths -notcontains $_.FullName
-      } | Select-Object -ExpandProperty FullName
-    )
-  }else{@()}
-  # Completed raw TRACE is an explicit, auditable recovery exception.  All
-  # other compact-forbidden payload, including solver-native PA/IOB/Fly files,
-  # is still removed before the terminal manifest is published.
+  # The retention boundary validates explicit recovery declarations and owns
+  # failed-run disposal. Generic terminal publication does not parse solver logs.
   if([int]$document.schema_version-eq 2){
     $existingRetentionActions=Join-Path $runDir 'retention_actions.json'
     if(Test-Path -LiteralPath $existingRetentionActions -PathType Leaf){
@@ -918,8 +896,7 @@ function Complete-FailedRun {
       $retentionActions=$existingRetentionActions
     }else{
       $retentionActions=Apply-RunArtifactRetention -Python $Python -RepoRoot $RepoRoot `
-        -RunConfig $RunConfig -PreservePaths $preservedRawTracePaths `
-        -RemovePaths $discardedRawTracePaths
+        -RunConfig $RunConfig -PreservePaths $PreserveRawOutputPaths -FailedRun
     }
   }
   if(-not[string]::IsNullOrWhiteSpace($ResourceUsagePath)-and

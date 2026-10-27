@@ -1,6 +1,11 @@
 import unittest
+import tempfile
+from pathlib import Path
 
-from common.simion.native_completion import FlyCompletion, parse_fly_completed_line, require_one_fly_completion
+from common.simion.native_completion import (
+    FlyCompletion, has_recoverable_batch_completion, parse_fly_completed_line,
+    recoverable_batch_logs, require_one_fly_completion,
+)
 
 
 class NativeCompletionTests(unittest.TestCase):
@@ -41,3 +46,32 @@ class NativeCompletionTests(unittest.TestCase):
                 "status,Fly completed. 1 splats\n",
                 "status,Fly completed. 1 splats\n",
             ))
+
+    def test_recovery_tail_distinguishes_trace_from_native_stdout_without_rewriting(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            logs = run / "logs"
+            logs.mkdir()
+            for kind, line, expected in (
+                ("trace", "status,Fly completed.", True),
+                ("stdout", "status,Fly completed. 9 splats, 269.62 seconds", True),
+                ("stdout", "status,Fly completed. 100 splats", True),
+                ("stdout", "status,Fly completed.", False),
+                ("stdout", "status,Fly completed. invalid", False),
+                ("stdout", "status,Fly completed. 9 splats, nan seconds", False),
+                ("stdout", "status,Fly completed. 9 splats trailing", False),
+                ("trace", "status,Fly completed. 9 splats", False),
+            ):
+                with self.subTest(kind=kind, line=line):
+                    path = logs / f"simion__batch01.{kind}.log"
+                    original = ("original body\n" + line + "\r\n").encode("utf-8")
+                    path.write_bytes(original)
+                    self.assertEqual(has_recoverable_batch_completion(path), expected)
+                    self.assertEqual(path.read_bytes(), original)
+            unrelated = logs / "other.stdout.log"
+            unrelated.write_text("status,Fly completed. 9 splats\n", encoding="utf-8")
+            self.assertFalse(has_recoverable_batch_completion(unrelated))
+            self.assertEqual(recoverable_batch_logs(run), {
+                (logs / "simion__batch01.trace.log").resolve(),
+                (logs / "simion__batch01.stdout.log").resolve(),
+            })

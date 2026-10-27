@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import importlib.util
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Iterable
 
 if __package__:
@@ -15,6 +18,28 @@ else:
     from recorded_file_removal import remove_recorded_files, write_json_atomic
 
 POLICY_PATH = Path(__file__).with_name("artifact_retention.json")
+
+
+def _simion_completion_api() -> ModuleType:
+    """Load one sibling adapter for package and existing direct-file consumers."""
+    if __package__:
+        from common.simion import native_completion
+        return native_completion
+    name = f"{__name__}._simion_native_completion"
+    if name in sys.modules:
+        return sys.modules[name]
+    source = Path(__file__).resolve().parents[1] / "simion/native_completion.py"
+    spec = importlib.util.spec_from_file_location(name, source)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"SIMION completion adapter cannot be loaded: {source}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module  # dataclass resolves annotations through this entry.
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        del sys.modules[name]
+        raise
+    return module
 
 
 @dataclass(frozen=True)
@@ -134,44 +159,6 @@ def classify_file(
     return "lightweight_optional"
 
 
-def is_recoverable_native_trace(path: Path) -> bool:
-    """Recognize the one native TRACE shape eligible for failed-run recovery."""
-
-    return (
-        path.parent.name.lower() == "logs"
-        and fnmatch.fnmatch(path.name.lower(), "simion__batch*.trace.log")
-    )
-
-
-def is_recoverable_simion_batch_log(path: Path) -> bool:
-    """Recognize governed pre-pulse TRACE or continuous full-flight stdout."""
-
-    return is_recoverable_native_trace(path) or (
-        path.parent.name.lower() == "logs"
-        and fnmatch.fnmatch(path.name.lower(), "simion__batch*.stdout.log")
-    )
-
-
-def _has_native_completion_sentinel(path: Path) -> bool:
-    """Check the final nonempty line without loading a potentially huge TRACE."""
-
-    with path.open("rb") as stream:
-        stream.seek(0, 2)
-        position = stream.tell()
-        tail = bytearray()
-        while position > 0 and tail.count(b"\n") < 2:
-            chunk_size = min(4096, position)
-            position -= chunk_size
-            stream.seek(position)
-            tail[:0] = stream.read(chunk_size)
-    lines = [line.strip() for line in bytes(tail).splitlines() if line.strip()]
-    if not lines:
-        return False
-    if is_recoverable_native_trace(path):
-        return lines[-1] == b"status,Fly completed."
-    return lines[-1].startswith(b"status,Fly completed.")
-
-
 def load_failed_recovery_exemptions(
     run_dir: Path, retention: Retention
 ) -> set[Path]:
@@ -190,6 +177,10 @@ def load_failed_recovery_exemptions(
         or not isinstance(action.get("preserved", []), list)
     ):
         raise ValueError("failed-run retention actions differ")
+    if not action.get("preserved", []):
+        return set()
+    completion = _simion_completion_api()
+
     exemptions: set[Path] = set()
     for record in action.get("preserved", []):
         if not isinstance(record, dict) or set(record) != {
@@ -205,15 +196,14 @@ def load_failed_recovery_exemptions(
         if (
             relative.is_absolute()
             or not path.is_file()
-            or not is_recoverable_simion_batch_log(path)
-            or not _has_native_completion_sentinel(path)
+            or not completion.has_recoverable_batch_completion(path)
             or record["action"] not in {
                 "retained_completed_native_trace_for_recovery",
                 "retained_completed_simion_batch_log_for_recovery",
             }
             or (
                 record["action"] == "retained_completed_native_trace_for_recovery"
-                and not is_recoverable_native_trace(path)
+                and completion.recoverable_batch_log_kind(path) != "trace"
             )
             or record["retention_role"] != classify_file(path)
             or int(record["bytes"]) != path.stat().st_size
@@ -328,7 +318,7 @@ def _publish_removal_preflight(
 
 def apply_retention(
     run_config_path: Path, *, preserve_paths: Iterable[Path] = (),
-    remove_paths: Iterable[Path] = (),
+    remove_paths: Iterable[Path] = (), failed_run: bool = False,
 ) -> Path:
     """Remove only future-run files forbidden by its frozen retention class."""
 
@@ -345,6 +335,10 @@ def apply_retention(
     action_path = run_dir / "retention_actions.json"
     preserved_paths = {path.resolve() for path in preserve_paths}
     remove_paths = {path.resolve() for path in remove_paths}
+    if failed_run or preserved_paths or remove_paths:
+        completion = _simion_completion_api()
+        if failed_run:
+            remove_paths |= completion.recoverable_batch_logs(run_dir) - preserved_paths
     if preserved_paths & remove_paths:
         raise ValueError("retention cannot both preserve and remove one path")
     for path in preserved_paths | remove_paths:
@@ -352,8 +346,10 @@ def apply_retention(
             path.relative_to(run_dir.resolve())
         except ValueError as exc:
             raise ValueError("retention preserve path escapes run directory") from exc
-        if not path.is_file() or not is_recoverable_simion_batch_log(path):
+        if not path.is_file() or completion.recoverable_batch_log_kind(path) is None:
             raise ValueError("retention may target only a run-local native TRACE")
+        if path in preserved_paths and not completion.has_recoverable_batch_completion(path):
+            raise ValueError(f"retention requires a completed SIMION batch log: {path}")
     removed: list[dict[str, Any]] = []
     preserved: list[dict[str, Any]] = []
     for path in sorted(run_dir.rglob("*")):
@@ -380,7 +376,7 @@ def apply_retention(
                 "retention_role": role,
                 "action": (
                     "retained_completed_native_trace_for_recovery"
-                    if is_recoverable_native_trace(path)
+                    if completion.recoverable_batch_log_kind(path) == "trace"
                     else "retained_completed_simion_batch_log_for_recovery"
                 ),
             })
@@ -404,12 +400,14 @@ def main() -> None:
     apply_parser.add_argument("--run-config", required=True, type=Path)
     apply_parser.add_argument("--preserve-path", action="append", type=Path, default=[])
     apply_parser.add_argument("--remove-path", action="append", type=Path, default=[])
+    apply_parser.add_argument("--failed-run", action="store_true")
     args = parser.parse_args()
     if args.command == "apply":
         action_path = apply_retention(
             args.run_config,
             preserve_paths=args.preserve_path,
             remove_paths=args.remove_path,
+            failed_run=args.failed_run,
         )
         action = json.loads(action_path.read_text(encoding="utf-8"))
         print(

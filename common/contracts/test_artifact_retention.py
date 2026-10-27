@@ -1,4 +1,6 @@
 import json
+import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -9,6 +11,7 @@ from pathlib import Path
 from common.contracts.artifact_retention import (
     apply_retention,
     classify_file,
+    load_failed_recovery_exemptions,
     load_policy,
     validate_retained_files,
     validate_retention,
@@ -198,6 +201,101 @@ class ArtifactRetentionTests(unittest.TestCase):
             cwd=REPO_ROOT, text=True, capture_output=True, check=False, timeout=30,
         )
         self.assertEqual(verifier.returncode, 0, verifier.stderr)
+
+    def test_malformed_recovery_stdout_fails_before_any_deletion_or_receipt(self) -> None:
+        self.write_config("compact", None)
+        stdout = self.run / "logs/simion__batch01.stdout.log"
+        stdout.parent.mkdir()
+        pa = self.run / "simion/field.pa0"
+        pa.parent.mkdir()
+        pa.write_bytes(b"existing rebuildable field")
+        for line in ("status,Fly completed.", "status,Fly completed. invalid",
+                     "status,Fly completed. 1 splats trailing", "status,Fly completed. 1 splats, nan seconds"):
+            with self.subTest(line=line):
+                stdout.write_text(line + "\n", encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "completed SIMION batch log"):
+                    apply_retention(self.config, preserve_paths=[stdout], failed_run=True)
+                self.assertEqual(pa.read_bytes(), b"existing rebuildable field")
+                self.assertTrue(stdout.is_file())
+                self.assertFalse((self.run / "retention_actions.json").exists())
+
+    def test_failed_cleanup_discards_unselected_batch_logs_but_keeps_other_diagnostics(self) -> None:
+        self.write_config("compact", None)
+        logs = self.run / "logs"
+        logs.mkdir()
+        trace = logs / "simion__batch01.trace.log"
+        trace.write_text("status,Fly completed.\n", encoding="utf-8")
+        stdout = logs / "simion__batch02.stdout.log"
+        stdout.write_text("status,Fly completed. 1 splats\n", encoding="utf-8")
+        diagnostic = logs / "builder.stderr.log"
+        diagnostic.write_text("original diagnostic\n", encoding="utf-8")
+        apply_retention(self.config, preserve_paths=[trace], failed_run=True)
+        self.assertTrue(trace.is_file())
+        self.assertFalse(stdout.exists())
+        self.assertEqual(diagnostic.read_text(encoding="utf-8"), "original diagnostic\n")
+
+    def test_recovery_receipt_readback_uses_the_same_strict_native_parser(self) -> None:
+        self.write_config("compact", None)
+        stdout = self.run / "logs/simion__batch01.stdout.log"
+        stdout.parent.mkdir()
+        stdout.write_text("status,Fly completed. 1 splats\n", encoding="utf-8")
+        action_path = apply_retention(self.config, preserve_paths=[stdout])
+        stdout.write_text("status,Fly completed. invalid\n", encoding="utf-8")
+        action = json.loads(action_path.read_text(encoding="utf-8"))
+        action["preserved"][0]["bytes"] = stdout.stat().st_size
+        action_path.write_text(json.dumps(action), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "recovery TRACE differs"):
+            load_failed_recovery_exemptions(self.run, validate_retention({
+                "policy_version": 1, "class": "compact", "reason": None,
+            }))
+
+    def test_retention_cli_supports_bare_file_and_root_bound_module_entrypoints(self) -> None:
+        for module in (False, True):
+            with self.subTest(module=module):
+                environment = dict(os.environ, PYTHONNOUSERSITE="1")
+                environment.pop("PYTHONPATH", None)
+                if module:
+                    environment["PYTHONPATH"] = str(REPO_ROOT)
+                run = self.run.parent / f"cli_{module}"
+                logs = run / "logs"
+                logs.mkdir(parents=True)
+                self.write_config("compact", None)
+                config = run / "run_config.json"
+                config.write_bytes(self.config.read_bytes())
+                stdout = logs / "simion__batch01.stdout.log"
+                stdout.write_text("status,Fly completed. 1 splats\n", encoding="utf-8")
+                entry = (["-m", "common.contracts.artifact_retention"] if module else
+                         [str(REPO_ROOT / "common/contracts/artifact_retention.py")])
+                result = subprocess.run(
+                    [sys.executable, *entry, "apply", "--run-config", str(config),
+                     "--failed-run", "--preserve-path", str(stdout)],
+                    cwd=self.temporary.name, env=environment, capture_output=True,
+                    text=True, encoding="utf-8", timeout=30,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(stdout.is_file())
+                self.assertTrue((run / "retention_actions.json").is_file())
+
+    def test_direct_file_missing_fixed_adapter_fails_without_deleting_payload(self) -> None:
+        self.write_config("compact", None)
+        copy = Path(self.temporary.name) / "frozen/common/contracts"
+        copy.mkdir(parents=True)
+        for name in ("artifact_retention.py", "artifact_retention.json", "recorded_file_removal.py", "file_identity.py"):
+            shutil.copyfile(REPO_ROOT / "common/contracts" / name, copy / name)
+        payload = self.run / "field.pa0"
+        payload.write_bytes(b"original field")
+        environment = dict(os.environ, PYTHONNOUSERSITE="1")
+        environment.pop("PYTHONPATH", None)
+        result = subprocess.run(
+            [sys.executable, str(copy / "artifact_retention.py"), "apply",
+             "--run-config", str(self.config), "--failed-run"],
+            cwd=self.temporary.name, env=environment, capture_output=True,
+            text=True, encoding="utf-8", timeout=30,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("native_completion.py", result.stderr)
+        self.assertEqual(payload.read_bytes(), b"original field")
+        self.assertFalse((self.run / "retention_actions.json").exists())
 
     def test_success_manifest_does_not_accept_failed_recovery_exemption(self) -> None:
         self.write_config("compact", None)
