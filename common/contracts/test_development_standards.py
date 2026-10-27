@@ -192,5 +192,116 @@ class LightweightGateIntegrationTests(unittest.TestCase):
             self.assertIn("tool artifact", rejected.stderr)
 
 
+class ConsumerAuditTests(unittest.TestCase):
+    def write(self, root: Path, relative: str, source: str) -> None:
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source, encoding="utf-8")
+
+    def test_four_categories_preserve_cli_callbacks_and_test_only_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write(root, "common/subject.py", "\n".join(
+                f"def {name}():\n    return 1" for name in
+                ("_formal", "_only_test", "_cli", "_dead", "_callback")))
+            self.write(root, "projects/example/config/execution_profiles.json",
+                       '{"profiles":[{"steps":[{"entrypoint":"entry.py"}]}]}')
+            self.write(root, "projects/example/entry.py",
+                       "from common.subject import _formal as run\nrun()")
+            self.write(root, "common/test_subject.py",
+                       "from common.subject import _only_test\n_only_test()")
+            self.write(root, "common/independent_cli.py",
+                       "from common.subject import _cli\nif __name__ == '__main__':\n    _cli()")
+            self.write(root, "projects/example/callbacks.json", '{"callback":"_callback"}')
+            result = {row["symbol"]: row for row in standards.audit_consumers(root)}
+            self.assertEqual(result["_formal"]["category"], "formal_reachable")
+            self.assertEqual(result["_only_test"]["category"], "test_only_reachable")
+            self.assertEqual(result["_cli"]["category"], "cli_callback_uncertain")
+            self.assertEqual(result["_callback"]["category"], "cli_callback_uncertain")
+            self.assertEqual(result["_dead"]["category"], "private_no_calls")
+            self.assertIn("manual_confirmation", result["_dead"]["reason"])
+            self.assertEqual(result["_formal"]["consumer_modules"], "projects.example.entry")
+
+    def test_relative_lazy_imports_and_cycles_reach_declared_module(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write(root, "projects/example/config/execution_profiles.json",
+                       '{"profiles":[{"entrypoint":"analysis/entry.py"}]}')
+            self.write(root, "projects/example/analysis/entry.py", """
+def run():
+    from . import helpers as dependency
+    return dependency._helper()
+run()
+""")
+            self.write(root, "projects/example/analysis/helpers.py", """
+from . import entry
+def _helper():
+    return 1
+""")
+            result = standards.audit_consumers(root)
+            self.assertEqual(len(result), 1)
+            self.assertEqual(result[0]["category"], "formal_reachable")
+
+    def test_literal_powershell_module_and_qualified_import(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write(root, "projects/example/config/execution_profiles.json",
+                       '{"profiles":[{"entrypoint":"run.ps1"}]}')
+            self.write(root, "projects/example/run.ps1", "& $python -m projects.example.entry")
+            self.write(root, "projects/example/entry.py", "import common.subject as api\napi._work()")
+            self.write(root, "common/subject.py", "def _work():\n    return 1")
+            self.assertEqual(standards.audit_consumers(root)[0]["category"], "formal_reachable")
+
+    def test_decorators_reflection_and_cross_language_names_are_uncertain(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write(root, "common/decorated.py", "@staticmethod\ndef _registered():\n    return 1")
+            self.write(root, "common/reflected.py", "def _reflect():\n    return 1\nregistry=globals()")
+            self.write(root, "common/external.py", "def _callback():\n    return 1")
+            self.write(root, "projects/example/callback.lua", "callback = '_callback'")
+            self.assertTrue(all(row["category"] == "cli_callback_uncertain"
+                                for row in standards.audit_consumers(root)))
+
+    def test_gate_catalog_production_command_is_root_but_unittest_is_not(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write(root, "common/gate_catalog.json", '''{"routes":[
+                {"command":{"runner":"python","arguments":["common/entry.py"]}},
+                {"command":{"runner":"python","arguments":["-m","unittest","common.test_case"]}}
+            ]}''')
+            self.write(root, "common/entry.py", "from common.subject import _production\n_production()")
+            self.write(root, "common/test_case.py", "from common.subject import _tested\n_tested()")
+            self.write(root, "common/subject.py", "def _production():\n    pass\ndef _tested():\n    pass")
+            result = {row["symbol"]: row for row in standards.audit_consumers(root)}
+            self.assertEqual(result["_production"]["category"], "formal_reachable")
+            self.assertEqual(result["_tested"]["category"], "test_only_reachable")
+
+    def test_same_import_alias_in_multiple_scopes_cannot_hide_a_consumer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write(root, "projects/example/config/execution_profiles.json",
+                       '{"profiles":[{"entrypoint":"entry.py"}]}')
+            self.write(root, "projects/example/entry.py", """
+import common.first as dependency
+dependency._first()
+def other():
+    import common.second as dependency
+    return dependency._second()
+""")
+            self.write(root, "common/first.py", "def _first():\n    return 1")
+            self.write(root, "common/second.py", "def _second():\n    return 2")
+            result = standards.audit_consumers(root)
+            self.assertEqual(len(result), 2)
+            self.assertTrue(all(row["category"] == "formal_reachable" for row in result))
+
+    def test_history_syntax_errors_and_public_functions_are_not_dead_candidates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write(root, "common/history/old.py", "def _archived():\n    pass")
+            self.write(root, "common/broken.py", "def :")
+            self.write(root, "common/public.py", "def public_api():\n    pass")
+            self.assertEqual(standards.audit_consumers(root), [])
+
+
 if __name__ == "__main__":
     unittest.main()

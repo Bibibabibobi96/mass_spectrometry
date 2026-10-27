@@ -17,10 +17,6 @@ def _read(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
-def _write(path: Path, value: dict[str, Any]) -> None:
-    path.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n", encoding="utf-8", newline="\n")
-
-
 def verified_reference(run: Path, relative: str, *, required_status: str = "success") -> Path:
     """Verify the exact consumed record, without loading historical field payloads."""
     manifest = _read(run / "run_manifest.json")

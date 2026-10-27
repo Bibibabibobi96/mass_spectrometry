@@ -58,6 +58,9 @@ OA→MR的原生功能与两代完整批恢复已有证据，结果统一见
 质心目标完整结果相等，实测源receipt及11个生成文件逐字节相等；实际入口的非法输入与BOM回归
 见`tests/analysis/test_measured_component_source.py`。此结果不新增原生运行或Formal资格。
 
+消费者审计另确认`prepare_accelerator_interface.py`私有`_write`没有活动调用或回调，已删除该函数，
+保留仍被实际接口消费者使用的整个模块与独立入口。此删除不改变冻结历史源码或输出；
+不能把仅测试引用、独立CLI或动态用途不确定的其他符号一并退役。
 
 ## 加速器接口与整机暂停边界
 

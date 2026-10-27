@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import json
 import re
 import sys
 from pathlib import Path
@@ -175,6 +176,186 @@ def check_matlab() -> list[str]:
     return errors
 
 
+def _python_module(path: Path, root: Path) -> str:
+    parts = list(path.relative_to(root).with_suffix("").parts)
+    return ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
+
+
+def _import_target(module: str, path: Path, node: ast.ImportFrom) -> str:
+    package = module.split(".") if path.name == "__init__.py" else module.split(".")[:-1]
+    if node.level:
+        package = package[:len(package)-node.level+1]
+        return ".".join([*package, *([node.module] if node.module else [])])
+    return node.module or ""
+
+
+def _consumer_references(modules: dict[str, tuple[Path, ast.Module]]):
+    """Conservative symbol references, including callbacks and lazy imports."""
+    definitions = {(module, node.name): node for module, (_, tree) in modules.items()
+                   for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    references = {key: set() for key in definitions}
+    imports = {module: set() for module in modules}
+    uncertain = set()
+    for module, (path, tree) in modules.items():
+        aliases = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    aliases.setdefault(alias.asname or alias.name.split(".")[0], set()).add(
+                        alias.name if alias.asname else alias.name.split(".")[0])
+                    if alias.name in modules:
+                        imports[module].add(alias.name)
+            elif isinstance(node, ast.ImportFrom):
+                base = _import_target(module, path, node)
+                if base in modules:
+                    imports[module].add(base)
+                for alias in node.names:
+                    target = f"{base}.{alias.name}"
+                    aliases.setdefault(alias.asname or alias.name, set()).add(target)
+                    if target in modules:
+                        imports[module].add(target)
+                    elif (base, alias.name) in references:
+                        references[base, alias.name].add(module)
+            elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+                uncertain.update(re.findall(r"\b_[A-Za-z]\w*\b", node.value))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                targets = aliases.get(node.id, set()) | {f"{module}.{node.id}"}
+            elif isinstance(node, ast.Attribute):
+                parts, current = [], node
+                while isinstance(current, ast.Attribute):
+                    parts.append(current.attr)
+                    current = current.value
+                if not isinstance(current, ast.Name):
+                    continue
+                targets = {".".join([prefix, *reversed(parts)])
+                           for prefix in aliases.get(current.id, {current.id})}
+            else:
+                continue
+            for target in targets:
+                owner, _, name = target.rpartition(".")
+                if (owner, name) in references:
+                    references[owner, name].add(module)
+    return definitions, references, imports, uncertain
+
+
+def _declared_python_roots(root: Path, modules: dict) -> set[str]:
+    """Use declared profiles and literal -m commands, never guess dynamic paths."""
+    roots, scripts = set(), set()
+    for contract in (root / "projects").glob("*/config/execution_profiles.json"):
+        project = contract.parent.parent
+        document = json.loads(contract.read_text(encoding="utf-8-sig"))
+        pending = [document]
+        while pending:
+            value = pending.pop()
+            if isinstance(value, list):
+                pending.extend(value)
+            elif isinstance(value, dict):
+                pending.extend(value.values())
+                entry = value.get("entrypoint")
+                if not isinstance(entry, str):
+                    continue
+                path = (project / entry).resolve()
+                if not path.is_relative_to(root):
+                    continue
+                if path.suffix == ".py" and path.is_file():
+                    roots.add(_python_module(path, root))
+                elif path.suffix == ".ps1" and path.is_file():
+                    scripts.add(path)
+    catalog = root / "common/gate_catalog.json"
+    if catalog.is_file():
+        for route in json.loads(catalog.read_text(encoding="utf-8-sig"))["routes"]:
+            for key in ("command", "repository_integration_command"):
+                command = route.get(key, {})
+                if command.get("runner") == "powershell":
+                    scripts.add((root / command["script"]).resolve())
+                elif command.get("runner") == "python":
+                    arguments = command.get("arguments", [])
+                    if len(arguments) > 1 and arguments[0] == "-m":
+                        if arguments[1] != "unittest":
+                            roots.add(arguments[1])
+                    elif arguments and arguments[0].endswith(".py"):
+                        path = (root / arguments[0]).resolve()
+                        if path.is_relative_to(root) and path.is_file():
+                            roots.add(_python_module(path, root))
+    for path in scripts:
+        if not path.is_relative_to(root) or not path.is_file():
+            continue
+        # A literal module is a static edge only. Variable-built commands,
+        # nested PS runners and external callbacks remain unresolved; absence
+        # here never authorizes retirement.
+        source = path.read_text(encoding="utf-8-sig")
+        roots.update(re.findall(r"(?<!\w)-m\s+['\"]?([A-Za-z_]\w*(?:\.\w+)+)", source))
+    return roots.intersection(modules)
+
+
+def _reachable_modules(roots: set[str], imports: dict[str, set[str]]) -> set[str]:
+    reached, pending = set(), list(roots)
+    while pending:
+        module = pending.pop()
+        if module in reached:
+            continue
+        reached.add(module)
+        pending.extend(imports.get(module, set())-reached)
+    return reached
+
+
+def audit_consumers(root: Path = REPO_ROOT) -> list[dict[str, str | int]]:
+    """Inventory Python top-level private functions; never prove runtime use.
+
+    Reachability is deliberately at module level, over all import/reference
+    branches. A reachable module reference is a candidate consumer, not proof
+    that a function executes. Strings, CLI guards, decorators and reflection
+    preserve uncertainty. No category permits automatic source deletion.
+    """
+    modules, external_names = {}, set()
+    for directory in ("common", "projects", "integrations"):
+        for path in sorted((root / directory).rglob("*")):
+            if not path.is_file() or EXCLUDED_PARTS.intersection(path.relative_to(root).parts):
+                continue
+            if path.suffix not in {".py", ".ps1", ".lua", ".m", ".json"}:
+                continue
+            source = path.read_text(encoding="utf-8-sig")
+            if path.suffix == ".py":
+                try:
+                    modules[_python_module(path, root)] = path, ast.parse(source)
+                except SyntaxError:
+                    continue  # The existing syntax check owns this failure.
+            else:
+                external_names.update(re.findall(r"\b_[A-Za-z]\w*\b", source))
+    definitions, references, imports, uncertain = _consumer_references(modules)
+    uncertain.update(external_names)
+    formal = _reachable_modules(_declared_python_roots(root, modules), imports)
+    tests = _reachable_modules({module for module, (path, _) in modules.items()
+                                if path.name.startswith("test_") or path.name.endswith("_test.py")}, imports)
+    cli = _reachable_modules({module for module, (_, tree) in modules.items()
+                              if any(isinstance(node, ast.Constant) and node.value == "__main__"
+                                     for node in ast.walk(tree))}, imports)
+    dynamic = {module for module, (_, tree) in modules.items()
+               if any(isinstance(node, ast.Name) and node.id in {"globals", "locals", "getattr", "eval", "exec"}
+                      for node in ast.walk(tree))}
+    records = []
+    for (module, name), node in sorted(definitions.items()):
+        if not name.startswith("_") or name.startswith("__"):
+            continue
+        uses = references[module, name]
+        ambiguous = name in uncertain or bool(node.decorator_list) or module in dynamic
+        if uses & formal:
+            category, reason = "formal_reachable", "declared_entry_module_reference"
+        elif ambiguous or uses & cli:
+            category, reason = "cli_callback_uncertain", "cli_string_decorator_or_dynamic_reference"
+        elif uses & tests:
+            category, reason = "test_only_reachable", "known_module_references_reach_only_tests"
+        elif uses:
+            category, reason = "cli_callback_uncertain", "references_without_declared_root"
+        else:
+            category, reason = "private_no_calls", "no_static_reference_candidate_requires_manual_confirmation"
+        records.append(dict(path=modules[module][0].relative_to(root).as_posix(), line=node.lineno,
+                            symbol=name, category=category, reason=reason,
+                            consumer_modules=",".join(sorted(uses))))
+    return records
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--show-review", action="store_true", help="list complexity review signals")
@@ -186,6 +367,13 @@ def main(argv: list[str] | None = None) -> int:
     if arguments.show_review:
         for item in reviews:
             print(f"DEVELOPMENT_STANDARD_REVIEW={item}")
+    consumers = audit_consumers()
+    categories = ("formal_reachable", "test_only_reachable", "cli_callback_uncertain", "private_no_calls")
+    if arguments.show_review:
+        for item in consumers:
+            print(f"DEVELOPMENT_CONSUMER_REVIEW={item}")
+    print("CONSUMER_AUDIT=STATIC_MODULE_REFERENCES AUTOMATIC_RETIREMENT=False " + " ".join(
+        f"{category.upper()}={sum(item['category'] == category for item in consumers)}" for category in categories))
     status = "PASS" if not errors else "FAIL"
     print(
         f"DEVELOPMENT_STANDARDS={status} ERRORS={len(errors)} REVIEW_SIGNALS={len(reviews)}"
