@@ -1,6 +1,8 @@
-# RF四极杆离子光学：COMSOL实施与验证
+# RF多极杆离子光学：COMSOL实施与验证
 
-本文保留四极杆专属workflow的实现说明；六、八极杆和共同typed模式使用项目README导航的统一运行入口。
+本页覆盖统一多极杆项目的COMSOL入口，并区分四极杆专属workflow与四／六／八极共同typed模式。
+三变体共用的设计、输入冻结与投影机制见[实现与运行合同](IMPLEMENTATION.md#求解器投影)；
+下表中的无碰撞传输支持三变体；接口就绪和质量过滤保留四极杆范围，不由家族名称扩大资格。
 本文只说明COMSOL模型入口、模型树边界、当前数值限制和GUI验收。跨求解器状态与开放任务只见
 [`PROJECT.md`](PROJECT.md)；2026-07-28以前的完整诊断过程冻结在
 [`retired_projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-comsol.md`](history/retired_projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-comsol.md)。
@@ -12,7 +14,7 @@
 | 科学问题 | 入口 |
 |---|---|
 | 接口就绪输运 | `../workflows/interface_readiness/run_comsol.ps1` |
-| 无碰撞部件回归 | `../workflows/no_collision_transport/run_comsol.ps1` |
+| 四／六／八极无碰撞传输 | `../workflows/no_collision_transport/run_comsol.ps1` |
 | RF+DC质量过滤 | `../workflows/mass_filter_reference/run_comsol.ps1` |
 | release构造诊断 | `../comsol/interface_readiness/run_release_construction_gate.m` |
 | 四、六、八极杆同源功能闭合 | [统一集成单反射工作流](../../../integrations/workflows/single_reflection_flight/run.ps1) |

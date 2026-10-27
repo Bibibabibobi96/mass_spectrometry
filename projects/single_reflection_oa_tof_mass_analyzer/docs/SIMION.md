@@ -3,7 +3,7 @@
 本文只记录SIMION文本、PA/IOB、GUI和独立验收。当前项目资格、跨求解器结论与开放任务只见
 [`PROJECT.md`](PROJECT.md)；2026-07-28以前的完整实施时间线冻结在
 [`history/20260728__pre-document-consolidation-simion.md`](history/20260728__pre-document-consolidation-simion.md)。
-独立交付包的 GUI 复核步骤与完成条件见[`SIMION_REPRODUCTION_PARAMETERS.md`](SIMION_REPRODUCTION_PARAMETERS.md)。
+独立交付包的 GUI 复核步骤与完成条件见[交付检查单](SIMION_DELIVERY_CHECKLIST.md)。
 
 ## 活动入口与资产
 

@@ -275,8 +275,8 @@ $n1000Ion = Join-Path $outputFull 'oatof_comsol_524amu_gaussian_N1000.ion'
   --prefix-n100 $n100Ion --prefix-n1000 $n1000Ion
 if ($LASTEXITCODE -ne 0) { throw 'N=100 source is not the deterministic N=1000 prefix.' }
 
-Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\SIMION_REPRODUCTION_PARAMETERS.md') `
-  -Destination (Join-Path $outputFull 'SIMION_REPRODUCTION_PARAMETERS.md')
+Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\SIMION_DELIVERY_CHECKLIST.md') `
+  -Destination (Join-Path $outputFull 'SIMION_DELIVERY_CHECKLIST.md')
 Copy-Item -LiteralPath $baselinePath -Destination (Join-Path $outputFull 'baseline.json')
 if (-not $candidateMode) {
   Copy-Item -LiteralPath $modePath -Destination (Join-Path $outputFull 'formal_mode.json')

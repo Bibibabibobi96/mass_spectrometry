@@ -86,7 +86,7 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_read_cartesian_release.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/run_oatof_model.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/verify_oatof_comsol_sync.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/docs/SIMION_REPRODUCTION_PARAMETERS.md",
+    "projects/single_reflection_oa_tof_mass_analyzer/docs/SIMION_DELIVERY_CHECKLIST.md",
     "projects/single_reflection_oa_tof_mass_analyzer/load_oatof_contract.m",
     "projects/single_reflection_oa_tof_mass_analyzer/oatof_lifecycle_preflight.ps1",
     "projects/single_reflection_oa_tof_mass_analyzer/oatof_assert_formal_write_authorized.m",

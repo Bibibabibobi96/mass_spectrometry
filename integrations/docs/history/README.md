@@ -2,6 +2,7 @@
 
 返回[组装入口](../../README.md)或[当前状态](../INTEGRATION.md)。本索引允许维护；以下记录保持冻结，
 其旧路径、运行身份、失败和资格边界按记录当时的语境解释。
+历史记录中的MR `simion/README.md`已迁至当前[MR SIMION说明](../../../projects/parallel_mirror_dual_stripe_mr_tof/docs/SIMION.md)；冻结正文保留当时路径。
 
 ## 统一装配迁移
 

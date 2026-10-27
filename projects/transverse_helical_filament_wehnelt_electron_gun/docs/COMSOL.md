@@ -15,7 +15,7 @@
 - build-only生产任务：`../comsol/build_only_smoke.m`
 
 版本与启动见[操作指南](../../../docs/OPERATIONS.md)。三阶段脚本不包含COMSOL安装路径或`mphstart`，只能由仓库统一
-R2025b/COMSOL入口调用。
+LiveLink入口调用。
 
 ## 合同与阶段边界
 

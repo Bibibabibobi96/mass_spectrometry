@@ -31,7 +31,7 @@
 输出composition plan v3；可选`--local-scope "<local-scope.json>"`显式派生范围。
 `stage=layout_only`不代表任何求解器都能执行该装配；实际支持集、资格和拒绝边界见集成状态。
 
-## 迁移期间的活动工作流
+## 活动工作流
 
 以下为公开入口。商业执行须有明确科学输入、授权及相称预算；准备成功不代表求场、Fly或物理验收。
 跨项目新run归`instrument_assembly`，独立组件几何／场／CAD仍归其提供者项目。

@@ -37,7 +37,7 @@ SIMION 前失败。当前 `gas_field_interface.json` 的 `current_artifact` 是 
 准备阶段从 SIMION 安装目录的 `examples\collision_sds` 冻结并哈希
 `collision_sds.lua`、`mbmr.dat`、`textfilelib.lua`、`arraylib.lua` 和 `m_defs.dat`。这些 SIMION 官方、
 受许可约束的文件只进入运行目录，不复制进 Git。RF 电压计算冻结并复用
-`common/multipole/simion_rf_drive.lua`；粒子文件由 `common/simion/particle_source.py` 序列化。
+[`common/simion/rf_drive.lua`](../../../common/simion/rf_drive.lua)；粒子文件由 `common/simion/particle_source.py` 序列化。
 
 当前源圆柱半径为 `1.5 mm`，位于半径 `5 mm` 的上游储气腔内。源可以宽于第一锥 `1 mm` 孔半径；
 运行器保留这些离子，并让锥孔电极几何和一致的 COMSOL 流体支持边界代理决定其能否进入下游。

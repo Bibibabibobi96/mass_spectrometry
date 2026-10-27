@@ -1,6 +1,8 @@
-# RF四极杆离子光学：SIMION实施与验证
+# RF多极杆离子光学：SIMION实施与验证
 
-本文保留四极杆专属workflow的实现说明；六、八极杆和共同typed模式使用项目README导航的统一运行入口。
+本页覆盖统一多极杆项目的SIMION入口，并区分四极杆专属workflow与四／六／八极共同typed模式。
+三变体共用的设计、输入冻结与投影机制见[实现与运行合同](IMPLEMENTATION.md#求解器投影)；
+下表中的无碰撞传输支持三变体；接口就绪和质量过滤保留四极杆范围，不由家族名称扩大资格。
 本文只说明SIMION几何、Program、运行入口与独立验收。跨求解器状态和开放任务只见
 [`PROJECT.md`](PROJECT.md)；2026-07-28以前的完整run、数值和故障链冻结在
 [`retired_projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-simion.md`](history/retired_projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-simion.md)。
@@ -8,6 +10,9 @@
 [实现与运行合同](IMPLEMENTATION.md)的统一术语。
 
 ## 几何与运行时权威
+
+三变体无碰撞传输使用[共同求解器投影](IMPLEMENTATION.md#求解器投影)和具名runtime profile。
+以下 `quad_transport.lua` 与四极专属数值合同说明接口就绪／质量过滤链，不是六／八极的配置入口。
 
 活动GEM由`../analysis/sync_simion_geometry.py`从具名profile编译的resolved发布生成，并嵌入发布
 SHA-256；生成GEM不得手改。Workbench运行使用项目生成的单PA、Fly2和
@@ -25,7 +30,7 @@ baseline或资格证据。Program不得以未记录的默认值或命令行覆�
 | 科学问题 | 入口 |
 |---|---|
 | 接口就绪输运 | `../workflows/interface_readiness/run_simion.ps1` |
-| 无碰撞部件回归 | `../workflows/no_collision_transport/run_simion.ps1` |
+| 四／六／八极无碰撞传输 | `../workflows/no_collision_transport/run_simion.ps1` |
 | RF+DC质量过滤 | `../workflows/mass_filter_reference/run_simion.ps1` |
 | IOB结构检查 | `../simion/workbench/inspect_builtin_quad_reference.lua` |
 

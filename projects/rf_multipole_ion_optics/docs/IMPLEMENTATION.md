@@ -215,21 +215,10 @@ effect resolution和预算；缺少这些设置的既有run只能发布`POSTHOC_
 [定常场采样测试](../tests/domain/test_export_comsol_stationary_field_samples.m)。前者是公共COMSOL启动器的任务脚本，
 后者通过已配置LiveLink的MATLAB测试框架执行；入口自行管理本项目`comsol/`依赖路径。L1/L2不运行这两项原生检查。
 
-单进程资源观察器 `Invoke-ResourceBudgetedProcess` 只接受已解析的 `-Limits` 对象，调用者在冻结预算边界
-解析一次并直接传递；观察收据仍记录完整 `limits`。原工程预算输入继续冻结；Python→PowerShell的
-派生预算只经临时JSON传递，解析后由现有finally清理，不再另存run内的`resolved_resource_budget.json`。
-`Complete-ResourceUsage` 只读取已有 usage 收据收尾，不接收无消费者的预算路径。
-
-单进程观察器不以墙钟、目录体积、进程树工作集或可用内存预算越限判定求解器不健康：每种越限只写一次
-`RESOURCE_BUDGET_WARNING`并保留健康受管进程至其自然退出。低CPU、暂时无输出或采样空洞也不是停止依据。
-原生进程明确失败时，调度器只阻止同一批次继续启动新工作，已运行的健康同级进程自然结束并留下证据。
-只有公共执行机制确认持续低于物理内存危险保留量、继续运行会危及主机时，才走强制停止的受管失败处置；
-后者记录其明确的内存危险原因，不能被普通预算观察替代。
-
-`New-RepositoryProcessObservation`与`Update-RepositoryProcessObservation`复用上述预算与物理危险计量，
-供单进程包装和公共COMSOL入口消费；它们不启动进程、调度、重试或发布科学终态。
-物理危险阈值只来自[主机策略](../../../common/host_resource_policy.json)，无Limits时不写usage；
-目录与usage写入失败只告警，不能抹去已确认的物理危险。COMSOL接线与调用边界见[公共入口](../../../common/comsol/README.md#主机资源阶段)。
+本项目在冻结预算边界解析一次 `Limits` 并交给公共观察器；原工程预算随输入冻结，
+Python→PowerShell的派生预算经临时JSON传递并由finally清理，不另存run内的同义预算文件。
+观察器 API、普通预算告警与持续物理危险的处置只见[进程观测与预算](../../../common/README.md#进程观测与预算)，
+COMSOL阶段接线见[公共入口](../../../common/comsol/README.md#主机资源阶段)。
 
 求解器底层入口为 [COMSOL 传输](../runtime/run_finite_3d_transport.ps1) 和
 [SIMION 传输](../runtime/run_simion_finite_3d_transport.ps1)。它们由项目 wrapper 或 campaign 传入冻结的
@@ -291,8 +280,7 @@ SIMION 完整 PA basis 的内容寻址、完整字节库存、损坏判定、原
 运行器统一发布canonical状态、metrics、轻量诊断图、summary和manifest。SIMION与COMSOL的传输率、出口
 RMS、输出能量统计、成对差和指标JSON均由Python分析器从canonical状态/事件生成；MATLAB仅输出原始
 求解器元数据、状态和事件。PowerShell只编排已冻结的输入与外部进程。跨run图必须共享坐标与分箱；
-图和工程metrics本身不授予资格。资源预算告警与健康求解保护遵循上文公共执行边界；
-预算越界本身不构成终止理由，不自动重试。
+图和工程metrics本身不授予资格。资源预算告警与健康求解保护遵循上述公共观察器边界。
 
 共享SIMION阶段与资源回执已通过一次四极杆N=100主臂/控制臂真实复验：
 [运行manifest](../../../../artifacts/projects/rf_quadrupole_ion_optics/runs/20260914_161823__sim__simion__quad-dispatch-acceptance-a-n100/run_manifest.json)

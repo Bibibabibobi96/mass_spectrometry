@@ -60,7 +60,11 @@
 
 所有workflow从本表导航；目录内不再复制合同和资格说明。命令行细节由入口的`--help`/参数块给出，
 SIMION运行边界见[`docs/SIMION.md`](docs/SIMION.md)，Formal与开放任务见[`docs/PROJECT.md`](docs/PROJECT.md)。
-Candidate campaign的仓库模块入口为`workflows.experiment_campaign.run_campaign`。
+Candidate campaign从仓库根通过以下模块查看参数，再提供表中要求的显式输入：
+
+```powershell
+.\.venv\Scripts\python.exe -m projects.single_reflection_oa_tof_mass_analyzer.workflows.experiment_campaign.run_campaign --help
+```
 
 RF多极杆离子光学→单次反射oa-TOF的新装配与整机运行从
 [统一集成入口](../../integrations/README.md)进入；目录与职责遵循

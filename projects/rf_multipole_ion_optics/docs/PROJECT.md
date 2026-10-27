@@ -61,6 +61,9 @@
 专用workflow的允许输入与探索数值范围见软件说明及其机器合同。模型参数、阈值和正式证据都不从本文推导。
 旧资格JSON保留原owner、profile名、SHA和run；它们不是可复制改名后执行的新资格合同。
 新的运行合同若引用旧源数据，必须显式验证该来源身份，不能给历史数据补一个新owner。
+家族合同两处`consumers`中的旧ID用于匹配历史owner；[家族门禁](../analysis/verify_family_foundation.py)
+保留`recorded_project_id`核查原身份，同时以当前项目和结构变体验证活动设计。这些旧ID不参与公共能力发现，
+也不允许新run回写到旧owner。
 
 <a id="quad"></a>
 

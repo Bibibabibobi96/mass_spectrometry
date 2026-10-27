@@ -52,7 +52,7 @@ API调压、保存与独立重开通过，后继整机已越过该调压点。�
 |---|---|---|
 | 提供者与冻结Candidate回归 | 几何、电压、半cell网格、源码闭包及退出码保真；既有baseline序列化保持 | 新Refine/Fly或Formal资格；旧12位电压文本构建场不能自动继承新源码资格 |
 | 共同静态场比较 | 按唯一point_id对齐完整坐标／电场，比较与显示机制闭合 | 没有获批容差时仅为COMPARISON_COMPLETE，不判场等价 |
-| [完整组件几何保存、重开及STEP][geometry-only-evidence] | 45域／40物理对象，整包及独立STEP发布，geometry_save_reopen_step_only | 上游多极杆、SolidWorks、GUI、ES/CPT/Fly及Formal；GUI按用户决定暂缓 |
+| [完整组件几何保存、重开及STEP][geometry-only-evidence] | 45域／40物理对象，整包及独立STEP发布，geometry_save_reopen_step_only | 上游多极杆、SolidWorks、ES/CPT/Fly及Formal；该run未做人工GUI，当前代码对等与CAD范围见[集成交付边界](../../../integrations/docs/INTEGRATION.md#工程几何与gui边界) |
 | OA-only共同场有限脉冲 | [消费者](../comsol/run_paired_accelerator_pulse.m)已读取已解ES和实录Cartesian源；真实N100 CPT及状态导出见[集成状态](../../../integrations/docs/INTEGRATION.md#共同场与有限脉冲) | 完整反射器仪器、RF等价、检测命中、GUI/CAD或Formal资格 |
 | 有限ON/OFF微例程 | 具名均匀场单粒子解析对照及保存重开通过，失败前驱原样保留 | 仪器默认数值配置或通用误差界；操作与冻结判据见[COMSOL说明](COMSOL.md#有限脉冲微型回归) |
 

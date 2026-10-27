@@ -1,7 +1,9 @@
-# oa-TOF SIMION复现交接
+# oa-TOF SIMION交付检查单
 
 本文件随 SIMION 交付构建复制到独立包，是面向 GUI 复核人员的**交付检查单**，不是参数权威，也不能驱动Candidate、PA重建或Formal发布。
 精确几何、电压、网格、粒子和资产SHA必须在复现时从下列机器合同读取；若本文与合同冲突，以合同为准。
+新构建包使用本文件名。既有冻结包中的 `SIMION_REPRODUCTION_PARAMETERS.md` 保持原字节和身份，
+按其来源 manifest 解释；重命名不重新验收或改写历史 Formal 资产。
 
 ## 包内与仓库输入
 
