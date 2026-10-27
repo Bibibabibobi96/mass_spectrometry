@@ -2331,7 +2331,8 @@ exit 0
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=30,
+                # Allow three native child launches and live process sampling on shared CI.
+                timeout=90,
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             for index in range(3):
