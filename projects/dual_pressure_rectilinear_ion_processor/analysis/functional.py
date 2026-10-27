@@ -377,9 +377,17 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     from projects.dual_pressure_rectilinear_ion_processor.analysis import batching
     from projects.dual_pressure_rectilinear_ion_processor.analysis import extraction_force_budget
     from common.analysis.population_moments import population_pair_moments
+    from common.analysis.beam_focus_diagnostics import prepare_focus_diagnostics
+    from common.analysis.figure_export import export_figures
+    from common.analysis.plane_crossings import iter_bounded_plane_crossings
+    from common.analysis.particle_census import partition_cohort
     assert batching.resource_profile.PROFILE_ROLE == "simion_resource_profile"
     assert callable(extraction_force_budget.export_force_budget)
     assert callable(population_pair_moments)
+    assert callable(prepare_focus_diagnostics)
+    assert callable(export_figures)
+    assert callable(iter_bounded_plane_crossings)
+    assert callable(partition_cohort)
     # Freeze the loaded repository source closure after shared source generation.
     # Solver inputs remain independent of an editable working tree.
     source_paths = set()

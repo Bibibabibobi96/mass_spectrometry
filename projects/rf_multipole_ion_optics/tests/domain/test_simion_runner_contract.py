@@ -190,6 +190,7 @@ ConvertTo-Json -InputObject $script:calls -Depth 6
         expected = {
             "common/host_execution_lease.ps1", "common/host_resource_scheduler.py",
             "common/host_resource_policy.json", "common/require_powershell7.ps1",
+            "common/analysis/particle_census.py",
         }
         for runner_name in ("run_finite_3d_transport.ps1", RUNNER.name):
             source = (RUNNER.parent / runner_name).read_text(encoding="utf-8-sig")
@@ -230,6 +231,37 @@ ConvertTo-Json -InputObject $script:calls -Depth 6
                     cwd=root, capture_output=True, text=True, timeout=15, check=False,
                 )
                 self.assertEqual(probe.returncode, 0, probe.stderr)
+                census_program = """
+import csv, json, pathlib, sys
+sys.path.insert(0, sys.argv[1])
+from common.analysis import particle_census as c
+from common.contracts.particle_state import PARTICLE_STATE_COLUMNS
+from projects.rf_multipole_ion_optics.core.component_port import validate_exit_observations
+assert pathlib.Path(c.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
+source, state = pathlib.Path("mother.csv"), pathlib.Path("terminal.csv")
+source.write_text("particle_id,birth_time_s\\n31,0\\n7,0\\n")
+rows = []
+for pid in (7, 31):
+    row = dict.fromkeys(PARTICLE_STATE_COLUMNS, 0.)
+    row.update(particle_id=pid, event="terminal", status="lost", terminal_reason="unknown",
+               time_us=2., elapsed_time_us=2.)
+    rows.append(row)
+with state.open("w", newline="") as stream:
+    writer = csv.DictWriter(stream, fieldnames=PARTICLE_STATE_COLUMNS)
+    writer.writeheader()
+    writer.writerows(rows)
+result = validate_exit_observations(state, source, dict(mechanical_exit_z_mm=85., aperture_radius_mm=None))
+print(json.dumps(dict(mother=result["mother_particle_ids"], non_exit=result["non_exit_particle_ids"])))
+"""
+                command = [sys.executable, "-B", "-I", "-c", census_program, str(root / "code")]
+                census_probe = subprocess.run(command, cwd=root, capture_output=True, text=True,
+                                              timeout=30, check=False)
+                self.assertEqual(census_probe.returncode, 0, census_probe.stderr)
+                self.assertEqual(json.loads(census_probe.stdout), dict(mother=[7, 31], non_exit=[7, 31]))
+                (root / "code/common/analysis/particle_census.py").unlink()
+                refused = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=30, check=False)
+                self.assertNotEqual(refused.returncode, 0)
+                self.assertIn("particle_census", refused.stderr)
 
     def test_frozen_comsol_runner_receives_resolved_python_environment(self) -> None:
         source = (REPO_ROOT / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1").read_text(encoding="utf-8-sig")

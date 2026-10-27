@@ -9,6 +9,7 @@ from pathlib import Path
 from collections.abc import Mapping
 from typing import Any
 
+from common.analysis.particle_census import partition_cohort
 from common.contracts.machine_contracts import ContractError, validate_schema
 from common.contracts.file_identity import file_sha256
 from common.contracts.canonical_clock_authority import validate_clock_authority
@@ -158,7 +159,14 @@ def prepare_exit_observation_inputs(run: Path, resolved: Mapping[str, Any], *, d
 def validate_exit_observations(state_path: Path, source_path: Path, plan: Mapping[str, Any]) -> dict[str, Any]:
     """Validate native real-exit records and terminal coverage of every original ID."""
     with source_path.open(encoding="utf-8-sig", newline="") as handle:
-        source = {int(r["particle_id"]): r for r in csv.DictReader(handle)}
+        source_rows = list(csv.DictReader(handle))
+    source_ids = [int(row["particle_id"]) for row in source_rows]
+    try:
+        partition_cohort(source_ids, ((pid, "source") for pid in source_ids),
+                         categories=("source",), relative_weights=None)
+    except ValueError as exc:
+        raise ContractError("mechanical exit source requires unique original mother IDs") from exc
+    source = dict(zip(source_ids, source_rows, strict=True))
     with state_path.open(encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         if reader.fieldnames != PARTICLE_STATE_COLUMNS:
@@ -214,9 +222,15 @@ def validate_exit_observations(state_path: Path, source_path: Path, plan: Mappin
             raise ContractError("real terminal precedes its mechanical exit crossing")
     if set(brackets) != set(exits):
         raise ContractError("mechanical exit native brackets do not match crossing IDs")
+    census = partition_cohort(sorted(source),
+        ((pid, "exit" if pid in exits else "non_exit_terminal") for pid in terminals),
+        categories=("exit", "non_exit_terminal"), relative_weights=None)
+    # Preserve the published census contract; non-exit is not a physical loss classification.
     return dict(schema_version=1, role="multipole_mechanical_exit_census", status="PASS",
-                mother_count=len(source), exit_count=len(exits), non_exit_count=len(source)-len(exits),
-                mother_particle_ids=sorted(source), exit_particle_ids=sorted(exits),
-                non_exit_particle_ids=sorted(set(source)-set(exits)),
+                mother_count=census["mother_count"], exit_count=census["counts"]["exit"],
+                non_exit_count=census["counts"]["non_exit_terminal"],
+                mother_particle_ids=census["mother_particle_ids"],
+                exit_particle_ids=census["particle_ids_by_category"]["exit"],
+                non_exit_particle_ids=census["particle_ids_by_category"]["non_exit_terminal"],
                 terminal_reasons={str(particle): row["terminal_reason"] for particle, row in sorted(terminals.items())},
                 scope="actual native mechanical exit observations; old handoff/census statistics remain separate")

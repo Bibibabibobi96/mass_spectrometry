@@ -22,7 +22,9 @@ from common.analysis.population_moments import population_pair_moments
 
 from common.contracts.write_run_manifest import file_record
 from common.contracts.verify_run_manifest import record_path, verify_record
-from projects.dual_pressure_rectilinear_ion_processor.analysis import beam_focus_diagnostics, aperture_acceptance_diagnostics
+from common.analysis import beam_focus_diagnostics
+from common.analysis.figure_export import export_figures
+from projects.dual_pressure_rectilinear_ion_processor.analysis import aperture_acceptance_diagnostics
 from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_phase_space_comparison import (
     COLORS, MARKERS, VALUES, load_recorded_case, prepare_spatial_crossings, prepare_statistics,
 )
@@ -124,6 +126,7 @@ def validate_geometry_cases(cases: list[dict], study: dict, *, recorded_author: 
     if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
         raise ValueError("particle_count must be a positive integer")
     births = None
+    source_weights = None
     stages = None
     for case, cell in zip(cases, cells, strict=True):
         path = Path(case["run"]).resolve()
@@ -147,6 +150,12 @@ def validate_geometry_cases(cases: list[dict], study: dict, *, recorded_author: 
         ids = set(range(1, count + 1))
         if set(case["sources"]) != ids or set(case["terminals"]) != ids or not set(case["exits"]) <= ids:
             raise ValueError("geometry case lacks complete mother census")
+        weights = case.get("particle_weights")
+        if not isinstance(weights, dict) or set(weights) != ids:
+            raise ValueError("geometry case lacks complete mother particle weights")
+        if source_weights is not None and weights != source_weights:
+            raise ValueError("actual source particle weights differ")
+        source_weights = weights
         actual = {r["particle_id"]: tuple(r[k] for k in ("t_us", *VALUES))
                   for r in case["states"] if r["stage"] == "birth"}
         if set(actual) != ids or any(not all(math.isfinite(v) for v in values) for values in actual.values()):
@@ -505,10 +514,12 @@ def analyze_geometry_study(run: Path) -> dict:
             figures["time_focus_diagnostics"] = beam_focus_diagnostics.build_time_focus_figure(time_focus)
         if aperture is not None:
             figures["aperture_acceptance_diagnostics"] = aperture_acceptance_diagnostics.build_aperture_figure(aperture)
-        for role, figure in figures.items():
-            for extension in ("png", "svg"):
-                figure.savefig(output/f"{role}.{extension}", format=extension, dpi=210, facecolor="white")
-            plt.close(figure)
+        try:
+            figure_exports = export_figures({output / role: figure for role,figure in figures.items()},
+                                            formats=("png","svg"),dpi=210,facecolor="white")
+        finally:
+            for figure in figures.values():
+                plt.close(figure)
     summary = dict(schema_version=1, role="ion_processor_geometry_comparison", status="success", mother_count=study["particle_count"],
                    source_counts={c["label"]: len(c["sources"]) for c in cases}, extracted_counts={c["label"]: len(c["exits"]) for c in cases},
                    source_run_statuses={c["label"]: _json(Path(c["run"])/"run_manifest.json")["status"] for c in cases},
@@ -526,7 +537,10 @@ def analyze_geometry_study(run: Path) -> dict:
                     aperture_producer=file_record(Path(aperture_acceptance_diagnostics.__file__)) if aperture is not None else None,
                     cases=[dict(label=c["label"], run=c["run"], source_manifest=file_record(Path(c["run"])/"run_manifest.json"), source_records=c["source_records"]) for c in cases],
                     execution_evidence=execution_evidence, reference_case_id=study["reference_case_id"],
-                    frame=cases[0]["config"]["coordinate_transform"], formats=["png", "svg"], png_dpi=210, figures=list(figures), **visual,
+                    frame=cases[0]["config"]["coordinate_transform"],
+                    formats=list(dict.fromkeys(row["format"] for row in figure_exports)),
+                    png_dpi=next(row["savefig_dpi"] for row in figure_exports if row["format"]=="png"),
+                    figures=list(figures), figure_exports=figure_exports, **visual,
                     units=dict(position="mm", velocity="mm/us", angle="degree", energy="eV", time="instrument us; centered time figure ns"),
                     metrics="Population SD (ddof=0); centered population covariance; RMS projected emittance; no Gaussian/FWHM inference",
                     category_styles=[dict(case=c["label"], color=COLORS[i], marker=MARKERS[i], linestyle=LINESTYLES[i]) for i, c in enumerate(cases)],

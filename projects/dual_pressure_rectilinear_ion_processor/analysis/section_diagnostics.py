@@ -10,7 +10,7 @@ from matplotlib import pyplot as plt
 from matplotlib.patches import Rectangle, Circle, Polygon
 from matplotlib.lines import Line2D
 NAMES = {1: 'Octupole RF A', 2: 'Octupole RF B', 3: 'HP vertical RF', 4: 'HP transverse RF', 5: 'LP pull', 6: 'LP push', 7: 'LP upper side', 8: 'LP lower side', 9: 'HP corner auxiliary', 10: 'LP outer auxiliary', 11: 'LP inner auxiliary', 12: 'Entrance lens', 13: 'Exit lens', 14: 'LP shield', 15: 'HP shield'}
-STATE = {'alive': ('#0069A8', 'o', 'Alive'), 'extracted': ('#00845A', 's', 'Extracted (last position)'), 'lost': ('#B42532', 'x', 'Lost / timeout (last position)')}
+STATE = {'alive': ('#0069A8', 'o', 'Alive'), 'extracted': ('#00845A', 's', 'Extracted (last position)'), 'lost': ('#B42532', 'x', 'Non-exit terminal (last position)')}
 
 def sha(path):
     with path.open('rb') as stream:
@@ -290,7 +290,7 @@ class SectionDiagnostics:
             self.region_labels(ax)
             self.plot_states(ax, rows)
             n = {s: sum((r['status'] == s for r in rows)) for s in STATE}
-            ax.set_title(f"t = {time:g} μs  |  Alive {n['alive']} / Extracted {n['extracted']} / Lost {n['lost']}", fontsize=9)
+            ax.set_title(f"t = {time:g} μs  |  Alive {n['alive']} / Extracted {n['extracted']} / Non-exit terminal {n['lost']}", fontsize=9)
             if time >= self.C['native_timing']['primary_quench_us']:
                 for r in rows:
                     if r['particle_id'] in self.RETAINED_IDS and len(self.RETAINED_IDS) <= 8 and (r['status'] == 'alive'):

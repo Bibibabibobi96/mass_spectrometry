@@ -363,29 +363,112 @@ class FunctionalContractTests(unittest.TestCase):
                 ip_test_alias=sys.modules[__name__])):
             # Prove prepare admits the helper before its loaded-source snapshot,
             # even when another test has not already imported the analysis.
-            sys.modules.pop("common.analysis.population_moments", None)
+            for name in ("population_moments", "plane_crossings", "particle_census",
+                         "beam_focus_diagnostics", "figure_export"):
+                sys.modules.pop(f"common.analysis.{name}", None)
             functional.prepare(self.run, PROJECT, vendor)
         code = self.run / 'inputs/code'
         frozen = code / 'projects/dual_pressure_rectilinear_ion_processor/analysis/functional.py'
         self.assertEqual(frozen.read_bytes(), Path(functional.__file__).read_bytes())
         self.assertTrue((code / 'common/simion/collision_hs1.py').is_file())
-        helper = code / 'common/analysis/population_moments.py'
-        self.assertEqual(helper.read_bytes(),
-                         (PROJECT.parents[1] / 'common/analysis/population_moments.py').read_bytes())
-        # -I excludes editable repository/cwd and PYTHONPATH import fallback.
-        program = (
+        self.assertFalse((code / 'projects/dual_pressure_rectilinear_ion_processor/tests/test_functional.py').exists())
+        self.assertEqual((code / 'common/contracts/rigid_transform.py').read_bytes(),
+                         (PROJECT.parents[1] / 'common/contracts/rigid_transform.py').read_bytes())
+        population_program = (
             "import json, pathlib, sys; "
             "sys.path.insert(0, sys.argv[1]); "
             "from common.analysis import population_moments as m; "
             "assert pathlib.Path(m.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve()); "
             "print(json.dumps(m.population_pair_moments([0., 2.], [3., 1.])))"
         )
-        detached = subprocess.run([sys.executable, '-I', '-c', program, str(code)],
-                                  cwd=self.temporary.name, capture_output=True, text=True,
-                                  encoding='utf-8', timeout=60, check=True)
-        self.assertEqual(json.loads(detached.stdout),
-                         dict(variance_first=1., variance_second=1., covariance=-1., correlation=-1.))
-        self.assertFalse((code / 'projects/dual_pressure_rectilinear_ion_processor/tests/test_functional.py').exists())
+        figure_program = """
+import json, pathlib, sys
+sys.path.insert(0, sys.argv[1])
+from common.analysis import figure_export as export
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+assert pathlib.Path(export.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
+figure=Figure(figsize=(2.,1.)); FigureCanvasAgg(figure)
+figure.subplots().plot([0,1],[0,1])
+records=export.export_figures({pathlib.Path(sys.argv[2])/'frozen':figure},
+                            formats=('png','svg'),dpi=80.,facecolor='white')
+assert all(pathlib.Path(row['path']).stat().st_size==row['bytes']>0 for row in records)
+assert all(row['savefig_dpi']==80. and row['size_inches']==[2.,1.] for row in records)
+print(json.dumps([row['format'] for row in records]))
+"""
+        figure_output = Path(self.temporary.name)/'frozen figures'
+        figure_output.mkdir()
+        beam_program = """
+import json, math, pathlib, sys
+sys.path.insert(0, sys.argv[1])
+from common.analysis import beam_focus_diagnostics as beam
+assert pathlib.Path(beam.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
+rows = [dict(particle_id=pid, plane_z_mm=0., status='alive', t_us=time,
+             x_mm=x, y_mm=0., z_mm=0., vx_mm_us=0., vy_mm_us=0., vz_mm_us=-1.)
+        for pid, time, x in ((7, 1., 0.), (19, 3., 2.))]
+case = dict(label='frozen', sources={7: {}, 19: {}}, exits={7: {}, 19: {}},
+            particle_weights={7: 1., 19: 3.}, states=rows)
+prepared = beam.prepare_focus_diagnostics([case], [0.], [7, 19])
+row = next(r for r in prepared['plane_statistics'] if r['cohort']=='common_extracted_ids')
+assert math.isclose(row['sigma_x_mm'], math.sqrt(.75))
+assert row['mean_x_mm']==1.5 and row['weight_sum']==4.
+assert row['available_ids']==[7,19]
+print(json.dumps(dict(version=prepared['schema_version'], effective=row['effective_sample_count'])))
+"""
+        census_program = """
+import json, pathlib, sys
+sys.path.insert(0, sys.argv[1])
+from common.analysis import particle_census as c
+from projects.dual_pressure_rectilinear_ion_processor.analysis.diagnostics import census
+assert pathlib.Path(c.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
+row = dict(t_us=0., kinetic_energy_ev=0., x_mm=0., y_mm=0., z_mm=0.,
+           vx_mm_us=0., vy_mm_us=0., vz_mm_us=0.)
+data = dict(config=dict(baseline=dict(geometry={})), sources={7: row},
+            terminals={}, tracks={7: [row]}, times={7: [0.]}, census_weights=None)
+counts, rows = census(data, 1.)
+assert rows[0]["reason"] == "missing_bracket"
+print(json.dumps(dict(unknown=counts["unknown"], alive=counts["alive"],
+                     count=counts["source_count"], version=counts["census_schema_version"])))
+"""
+        crossing_program = """
+import json, pathlib, sys
+sys.path.insert(0, sys.argv[1])
+from common.analysis import plane_crossings as c
+from common.contracts.rigid_transform import PhaseSpaceState, PlaneSurface
+assert pathlib.Path(c.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
+samples = [c.CrossingSample(7, 2, PhaseSpaceState('f', (0., 0., 2.), (0., 0., -1000.), 10.)),
+           c.CrossingSample(7, 'exit', PhaseSpaceState('f', (0., 0., 0.), (0., 0., -1000.), 10.5))]
+rows = list(c.iter_bounded_plane_crossings(samples, particle_ids=[7],
+    planes={'middle': PlaneSurface('f', (0., 0., 1.), (0., 0., -1.))},
+    minimum_time_us=10., maximum_gap_us=.5, gap_tolerance_us=1e-12))
+assert len(rows) == 1
+print(json.dumps(dict(alpha=rows[0].interpolation_alpha, lower=rows[0].lower_anchor,
+                     upper=rows[0].upper_anchor, version=rows[0].schema_version)))
+"""
+        # Delete population last: the beam probe must first exercise that dependency.
+        cases = (
+            ('figure_export', figure_program, ['png', 'svg'], [str(figure_output)]),
+            ('beam_focus_diagnostics', beam_program, dict(version=2, effective=1.6), []),
+            ('particle_census', census_program, dict(unknown=1, alive=0, count=1, version=1), []),
+            ('plane_crossings', crossing_program, dict(alpha=.5, lower=2, upper='exit', version=1), []),
+            ('population_moments', population_program,
+             dict(variance_first=1., variance_second=1., covariance=-1., correlation=-1.), []),
+        )
+        for name, program, expected, extra_args in cases:
+            with self.subTest(module=name):
+                helper = code / f'common/analysis/{name}.py'
+                self.assertEqual(helper.read_bytes(),
+                                 (PROJECT.parents[1] / f'common/analysis/{name}.py').read_bytes())
+                # -I excludes editable repository/cwd and PYTHONPATH import fallback.
+                command = [sys.executable, '-B', '-I', '-c', program, str(code), *extra_args]
+                detached = subprocess.run(command, cwd=self.temporary.name, capture_output=True, text=True,
+                                          encoding='utf-8', timeout=60, check=True)
+                self.assertEqual(json.loads(detached.stdout), expected)
+                helper.unlink()
+                refused = subprocess.run(command, cwd=self.temporary.name, capture_output=True, text=True,
+                                         encoding='utf-8', timeout=60)
+                self.assertNotEqual(refused.returncode, 0)
+                self.assertIn(name, refused.stderr)
 
     def test_prepare_preserves_source_identity_in_fly2_projection(self) -> None:
         """Synthetic source files test copying only; no vendor code is executed."""

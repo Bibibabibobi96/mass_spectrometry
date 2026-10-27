@@ -134,6 +134,29 @@ COMSOL Freeze可保留停止后的状态，SIMION停止后不再输出后续观�
 复用当前公共七场，原100 ID闭合为32出口、36 timeout、32未解析停止，实际峰值并发13；未Refine或复制PA。
 其`saved_controls_only`检查不包含第二次完整Fly，不能写为逐轨迹默认回放；未解析停止不归为碰撞实体。
 
+局部OA出口的九变量均值与中心协方差调用[公共总体矩](../../common/analysis/README.md)，与IP二变量统计
+共用`ddof=0`内核；当前出口群仍按每个原ID等权计算，保留全部出口及既有字段和单位。
+这项离线计算收敛不改变原生快照、穿面重建、真实角度定义或历史运行结果。
+
+局部OA与IP的穿面适配器直接消费[公共有界穿面内核](../../common/analysis/plane_crossings.py)，
+局部OA不再构造IP配置或调用IP穿面适配器。原生事件白名单、instance=1、寿命截断、同刻六维精确去重、
+脉冲后选择与原CSV／raw-log锚点仍由局部适配器保持；插值使用原mm／μs字段，z=0只取实测出口。
+公共内核只接受相邻记录夹持的正向事件，最大间隔为冻结采样间隔加最大步长，保留1e-12 μs既有判定余量。
+出口坐标在旧记录容差内也不能支持越过其实际位置的外推；这种情况保留unknown诊断缺口而非物理损失。
+结果的`crossing_reconstruction`记录方法版本与首次穿越选择，不证明未采样区间中没有转折。
+冻结清单包含公共内核；脱离活动仓库的局部快照能实际计算穿面，缺该模块时失败关闭。
+
+局部OA共享时刻census接入[公共母群核算](../../common/analysis/particle_census.py)，
+保留真实shared-time观测与原32 ULP端点政策；没有支持记录时仍为numerical_unsupported，
+不借用IP显示插值，不由缺终态推断存活。legacy already_loss仅指非出口终态，实际图标为Non-exit terminal，
+不表示已证实撞壁。分类与出口比例保持完整原始母群及显式分母，缺观测不从分母移除。
+
+束宽、真角度发射度、时间相关与零场预测现直接调用[公共beam方法](../../common/analysis/beam_focus_diagnostics.py)，
+不再从IP导入实现。局部源按现有生成合同显式全1权重；这不声明支持外来canonical非等权注入。
+固定出口群、各面缺测与全部原始ID保持；场内实际观测和出口后零场反事实继续分开，图只读prepared结果。
+图形保存复用[公共导出](../../common/analysis/figure_export.py)，保持原PNG／SVG、190 DPI、白底和文件名，
+实际导出记录写入focus summary；不改写其他phase summary，路径冲突或失败不覆盖既有文件。
+
 ## OA／IP接口准备与绑定
 
 [accelerator_interface入口](../workflows/accelerator_interface/execute.ps1)拥有跨项目准备与绑定；

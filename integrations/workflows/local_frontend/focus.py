@@ -13,16 +13,22 @@ from pathlib import Path
 
 import numpy as np
 
+from common.analysis.figure_export import export_figures
+from common.analysis.population_moments import population_moments
+from common.analysis.plane_crossings import (
+    METHOD as CROSSING_METHOD,
+    SCHEMA_VERSION as CROSSING_SCHEMA_VERSION,
+    CrossingSample,
+    iter_bounded_plane_crossings,
+)
 from common.contracts.particle_physics import kinetic_energy_ev
+from common.contracts.rigid_transform import PhaseSpaceState, PlaneSurface
 
-from projects.dual_pressure_rectilinear_ion_processor.analysis.beam_focus_diagnostics import (
+from common.analysis.beam_focus_diagnostics import (
     build_focus_figure,
     build_time_focus_figure,
     prepare_focus_diagnostics,
     prepare_time_focus_diagnostics,
-)
-from projects.dual_pressure_rectilinear_ion_processor.analysis.spatial_crossings import (
-    prepare_spatial_crossings_from_samples,
 )
 
 _STATE = ("x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")
@@ -111,6 +117,81 @@ def _provenance(rows: list[dict], anchors: dict, lives: dict, log_indices: dict)
         row["exit_event_raw_line_number"] = event["raw_line_number"] if event else None
 
 
+def _local_crossings(samples, source, exits, terminals, planes, *, frame, pulse, limit, mass):
+    """Select native OA brackets; interpolate raw mm/us fields before advancing."""
+    latest, crossed = {}, {}
+    active_pair = None
+    plane_z = {repr(z): z for z in planes}
+
+    def recorded_states():
+        nonlocal active_pair
+        for line, raw in samples:
+            time = float(raw["t_us"])
+            if time < pulse:
+                continue
+            pid = raw["particle_id"]
+            current = dict(t_us=time, **{key: float(raw[key]) for key in _STATE}, line=line)
+            active_pair = latest.get(pid), current
+            latest[pid] = current
+            yield CrossingSample(pid, line, PhaseSpaceState(
+                frame, tuple(current[f"{axis}_mm"] for axis in "xyz"),
+                tuple(current[f"v{axis}_mm_us"]*1000 for axis in "xyz"), time))
+        for pid, raw in exits.items():
+            state = {key: float(raw[key]) for key in ("t_us", *_STATE)}
+            if (any(not math.isfinite(value) for value in state.values()) or
+                    state["t_us"] < pulse or state["vz_mm_us"] >= 0 or abs(state["z_mm"]) > 1e-10):
+                raise ValueError("recorded exit violates local focus crossing contract")
+            crossed[pid, 0.] = dict(**state, bracket_start_us=None, bracket_end_us=None, bracket_gap_us=None,
+                                   lower_sample_line=None, upper_sample_line=None, interpolation_alpha=None,
+                                   method="recorded_extraction_exit_event")
+            before = latest.get(pid)
+            gap = state["t_us"]-before["t_us"] if before is not None else None
+            if (before is not None and 0 < gap <= limit+1e-12 and
+                    before["vz_mm_us"] < 0 and before["z_mm"] > 0):
+                current = dict(**state, line=None)
+                active_pair = before, current
+                yield CrossingSample(pid, "extraction_exit", PhaseSpaceState(
+                    frame, tuple(state[f"{axis}_mm"] for axis in "xyz"),
+                    tuple(state[f"v{axis}_mm_us"]*1000 for axis in "xyz"), state["t_us"]))
+
+    for bracket in iter_bounded_plane_crossings(
+        recorded_states(), particle_ids=source,
+        planes={key: PlaneSurface(frame, (0., 0., z), (0., 0., -1.)) for key, z in plane_z.items()},
+        minimum_time_us=pulse, maximum_gap_us=limit, gap_tolerance_us=1e-12,
+    ):
+        z = plane_z[bracket.plane_id]
+        if z == 0:
+            continue  # z=0 is supplied exclusively by the measured exit event.
+        before, current = active_pair
+        alpha = bracket.interpolation_alpha
+        state = {key: before[key]+alpha*(current[key]-before[key]) for key in ("t_us", *_STATE)}
+        state["z_mm"] = z
+        crossed[bracket.particle_id, z] = dict(
+            **state, bracket_start_us=before["t_us"], bracket_end_us=current["t_us"],
+            bracket_gap_us=current["t_us"]-before["t_us"], lower_sample_line=before["line"],
+            upper_sample_line=current["line"], interpolation_alpha=alpha,
+            method="bounded_linear_sample_crossing" if current["line"] is not None else "bounded_sample_to_exit_event_crossing")
+    rows = []
+    for z in planes:
+        for pid in sorted(source):
+            state = crossed.get((pid, z))
+            row = dict(case="Local OA", stage=f"z_{z:g}_mm", plane_z_mm=z, particle_id=pid,
+                       status="alive" if state else "unknown",
+                       reason="first_negative_z_crossing" if state else "no_valid_recorded_crossing",
+                       terminal_reason=terminals[pid]["reason"])
+            fields = ("t_us", *_STATE, "bracket_start_us", "bracket_end_us", "bracket_gap_us",
+                      "lower_sample_line", "upper_sample_line", "interpolation_alpha", "method")
+            row.update({key: state[key] if state else None for key in fields})
+            row["time_after_pulse_us"] = state["t_us"]-pulse if state else None
+            row["Ex_eV"] = kinetic_energy_ev(mass, state["vx_mm_us"]*1000, 0, 0) if state else None
+            row["Ez_eV"] = kinetic_energy_ev(mass, 0, 0, state["vz_mm_us"]*1000) if state else None
+            row["total_energy_eV"] = kinetic_energy_ev(mass, *(state[f"v{a}_mm_us"]*1000 for a in "xyz")) if state else None
+            for axis in "xy":
+                row[f"theta_{axis}_deg"] = math.degrees(math.atan2(state[f"v{axis}_mm_us"], abs(state["vz_mm_us"]))) if state else None
+            rows.append(row)
+    return rows
+
+
 def prepare_exit_portrait(rows: list[dict], mass_amu: float) -> dict:
     """Retain every actual exit and its coupled time/space/angle/energy moments."""
     exits = [dict(row) for row in rows if row["plane_z_mm"] == 0 and row["status"] == "alive"]
@@ -121,11 +202,11 @@ def prepare_exit_portrait(rows: list[dict], mass_amu: float) -> dict:
         row["Ey_eV"] = kinetic_energy_ev(mass_amu, 0., row["vy_mm_us"]*1000., 0.)
         row["arrival_minus_mean_ns"] = (row["t_us"]-mean_time)*1000.
     values = np.asarray([[row[field] for field in fields] for row in exits], dtype=float).reshape(len(exits), len(fields))
-    centered = values-values.mean(axis=0) if exits else values
+    population = population_moments(values)
     return dict(states=exits, fields=list(fields), count=len(exits), mean_t_us=mean_time,
-                moments={field: dict(mean=float(values[:, i].mean()), population_sd=float(values[:, i].std()))
+                moments={field: dict(mean=float(population.mean[i]), population_sd=float(np.sqrt(population.covariance[i, i])))
                          for i, field in enumerate(fields)} if exits else {},
-                covariance_matrix=(centered.T@centered/len(exits)).tolist() if exits else None,
+                covariance_matrix=population.covariance.tolist() if exits else None,
                 covariance_definition="Population covariance; field order and units in fields; all own exit IDs, no clipping")
 
 
@@ -156,10 +237,9 @@ def prepare_local_focus(
     exits = {pid: _canonical(life["exit"]) for pid, life in lives.items() if life["exit"]}
     terminals = {pid: dict(reason=life["terminal"]["event"]) for pid, life in lives.items()}
     case = dict(label="Local OA", sources=source, exits=exits, terminals=terminals,
-                config=dict(native_timing=dict(pulse_start_us=pulse_time_us),
-                            diagnostics=dict(max_extraction_bracket_us=sample_interval+maximum_step),
-                            source=dict(species=dict(mass_amu=next(iter(masses))))))
-    rows = prepare_spatial_crossings_from_samples(case, planes, samples)
+                particle_weights={pid: 1. for pid in source})
+    rows = _local_crossings(samples, source, exits, terminals, planes, frame=frontend["native_frame_id"],
+                            pulse=pulse_time_us, limit=sample_interval+maximum_step, mass=next(iter(masses)))
     log_indices = {path: index for index, path in enumerate(dict.fromkeys(r["raw_log_path"] for r in events))}
     _provenance(rows, anchors, lives, log_indices)
     valid = {z: {r["particle_id"] for r in rows if r["plane_z_mm"] == z and r["status"] == "alive"} for z in planes}
@@ -185,6 +265,8 @@ def prepare_local_focus(
                     terminal_loss_ids=sorted(set(source)-set(exits)), cohorts=_COHORT_NAMES,
                     duplicate_count=len(duplicates), canonical_sample_count=len(samples),
                     interpolation="First post-pulse negative-z bounded linear crossing; exit from verified native checkpoint",
+                    crossing_reconstruction=dict(schema_version=CROSSING_SCHEMA_VERSION, method=CROSSING_METHOD,
+                                                 occurrence=1, observation="adjacent_native_sample_reconstruction"),
                     provenance="Sample lines refer to all_native_events.csv including its header; log indices map to raw_logs; raw text stays in source CSV",
                     unknown_policy="No valid bracket means unknown crossing, not loss; no extrapolation or tail rejection",
                     drift_scope="Exit-only zero-field straight-path counterfactual, not actual downstream focus",
@@ -295,15 +377,15 @@ def export_local_focus(prepared: dict, output_directory: Path) -> dict:
                    exit_free_drift_waists=focus["field_free_predictions"],
                    exit_phase_energy_moments={k: v for k, v in prepared["exit_portrait"].items() if k != "states"},
                    scope="Bounded recorded-plane diagnostics; no numerical convergence, MR acceptance or resolving-power claim")
-    for name, value in (("summary", summary), ("metadata", prepared["metadata"])):
-        (out / f"focus_{name}.json").write_text(json.dumps(value, indent=2, allow_nan=False)+"\n", encoding="utf-8")
     with plt.rc_context({"font.family": "DejaVu Sans", "font.size": 9, "svg.fonttype": "none"}):
         figures = build_local_focus_figures(prepared)
         try:
-            for name, figure in figures.items():
-                for extension in ("png", "svg"):
-                    figure.savefig(out / f"focus_{name}.{extension}", format=extension, dpi=190, facecolor="white")
+            summary["figure_exports"] = export_figures(
+                {out / f"focus_{name}": figure for name,figure in figures.items()},
+                formats=("png","svg"),dpi=190,facecolor="white")
         finally:
             for figure in figures.values():
                 plt.close(figure)
+    for name, value in (("summary", summary), ("metadata", prepared["metadata"])):
+        (out / f"focus_{name}.json").write_text(json.dumps(value, indent=2, allow_nan=False)+"\n", encoding="utf-8")
     return {**summary, "output_paths": [str(p) for p in sorted(out.glob("focus_*")) if p.is_file()]}

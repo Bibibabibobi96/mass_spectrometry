@@ -115,10 +115,10 @@ def load_injected_source(contract_path: Path) -> dict[str, Any]:
 
 
 def release_states(admission: dict[str, Any]) -> list[dict[str, Any]]:
-    """Project already validated canonical rows into the existing native source API."""
+    """Project validated states; retain relative weights as non-dynamical metadata."""
     return [dict(particle_id=row["particle_id"], birth_time_s=row["particle_birth_time_us"] / 1e6,
                  arrival_time_us=row["instrument_time_us"], mass_amu=row["mass_amu"],
-                 charge_state=row["charge_state"],
+                 charge_state=row["charge_state"], particle_weight=row["particle_weight"],
                  **{f"{axis}_mm": row[f"position_{axis}_mm"] for axis in "xyz"},
                  **{f"v{axis}_m_s": row[f"velocity_{axis}_m_s"] for axis in "xyz"})
             for row in admission["rows"]]

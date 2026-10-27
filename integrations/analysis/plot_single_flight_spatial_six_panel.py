@@ -1642,7 +1642,7 @@ def build_local_shared_time_figure(
             ax.grid(alpha=.15)
         axes[0, column].set_title(f"t = {time:.6g} us; active N={counts['active']}\n"
             f"Not born {counts['not_born']}; exited {counts['already_exit']}\n"
-            f"Lost {counts['already_loss']}; unsupported {counts['numerical_unsupported']}", fontsize=9)
+            f"Non-exit terminal {counts['already_loss']}; unsupported {counts['numerical_unsupported']}", fontsize=9)
     for ax in axes.flat:
         ax.autoscale_view()
         ax.margins(.04)

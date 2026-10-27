@@ -14,6 +14,9 @@ import pandas as pd
 
 from integrations.runtime.single_flight_source import binary64_serialization_close as _close
 
+from common.analysis.particle_census import (
+    CENSUS_SCHEMA_VERSION, lifetime_position, partition_cohort, subset_efficiency,
+)
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.rigid_transform import FramedPosition, PhaseSpaceState, RigidTransform
 from common.contracts.write_run_manifest import file_record
@@ -39,6 +42,18 @@ _EVENTS = {"source_release", "local_shared_time", "local_trajectory",
            "local_accelerator_exit_step_before", "local_accelerator_exit_step_after",
            "accelerator_exit_stop", "local_timeout", "local_native_stop"}
 _TERMINALS = {"accelerator_exit_stop", "local_timeout", "local_native_stop"}
+_SNAPSHOT_CATEGORIES = ("not_born", "active", "already_exit", "already_loss", "numerical_unsupported")
+_CLASSIFICATION_SEMANTICS = dict(
+    schema_version=CENSUS_SCHEMA_VERSION,
+    interval="birth inclusive, terminal exclusive with the original binary64 serialization tolerance",
+    active="actual native shared-time observation inside the interval",
+    already_exit="terminated after the verified actual local accelerator exit",
+    already_loss="non-exit terminal: timeout or unresolved native stop, not proof of a physical collision",
+    legacy_loss_outputs="all_losses.csv and loss_count enumerate non-exit terminal evidence",
+    numerical_unsupported="missing or mismatched native observation; no survival or loss inferred",
+    not_born="query precedes the original birth",
+    weighting="explicit unit test-particle census from the complete generated source",
+)
 _FLOATS = ("instrument_time_us", "x_mm", "y_mm", "z_mm",
            "vx_mm_per_us", "vy_mm_per_us", "vz_mm_per_us", "requested_time_us")
 _STATE = ("x_mm", "y_mm", "z_mm", "vx_mm_per_us", "vy_mm_per_us", "vz_mm_per_us")
@@ -262,24 +277,27 @@ def _snapshot_census(events: list[dict], source: dict[int, dict], lives: dict[in
             snapshots[key] = row
     census, active, counts = [], [], []
     for time in times:
-        tally = dict(instrument_time_us=time, mother_count=len(source),
-                     not_born=0, active=0, already_exit=0, already_loss=0, numerical_unsupported=0)
+        classified = []
         for pid in source:
             life = lives[pid]
             birth, end = life["birth"]["instrument_time_us"], life["terminal"]["instrument_time_us"]
             row = snapshots.get((pid, time))
-            if time < birth and not _close(time, birth):
+            life_position = lifetime_position(time, birth, end,
+                start_tolerance_us=32*math.ulp(max(1., abs(time), abs(birth))),
+                terminal_tolerance_us=32*math.ulp(max(1., abs(time), abs(end))))
+            if life_position["before_start"]:
                 status = "not_born"
-            elif time >= end or _close(time, end):
+            elif life_position["terminal_reached"]:
                 status = "already_exit" if life["exit"] else "already_loss"
             elif row is None or not _close(row["instrument_time_us"], time):
                 status = "numerical_unsupported"
             else:
                 status = "active"
                 active.append(_observe(row, observer))
-            tally[status] += 1
+            classified.append((pid, status))
             census.append(dict(particle_id=pid, instrument_time_us=time, status=status))
-        counts.append(tally)
+        partition = partition_cohort(source, classified, categories=_SNAPSHOT_CATEGORIES, relative_weights=None)
+        counts.append(dict(instrument_time_us=time, mother_count=partition["mother_count"], **partition["counts"]))
     return census, active, counts
 
 
@@ -387,6 +405,8 @@ def analyze_local_frontend(
     _write(output / "aperture_passage_summary.json", aperture_summary)
     terminals = [dict(life["terminal"], terminal_class=("exit" if life["exit"] else "timeout" if life["terminal"]["event"] == "local_timeout" else "native_stop_unresolved"))
                  for life in lives.values()]
+    terminal_census = partition_cohort(source, ((row["particle_id"], row["terminal_class"]) for row in terminals),
+        categories=("exit", "timeout", "native_stop_unresolved"), relative_weights=None)
     _csv(output / "all_mother_terminal_census.csv", terminals)
     _csv(output / "all_losses.csv", [r for r in terminals if r["terminal_class"] != "exit"], list(terminals[0]))
     _csv(output / "all_shared_time_census.csv", census)
@@ -434,11 +454,15 @@ def analyze_local_frontend(
             pulse_time_us=pulse_time_us, source_events_path=output / "all_native_events.csv",
         )
         focus_summary = export_local_focus(prepared_focus, output)
-    summary = dict(role="local_frontend_recorded_analysis", phase=phase, mother_count=len(source),
-                   exit_count=len(exits), loss_count=len(source)-len(exits),
-                   exit_fraction_of_mother=len(exits)/len(source),
+    exit_efficiency = subset_efficiency(source, (row["particle_id"] for row in exits), source,
+                                        relative_weights=None)
+    summary = dict(role="local_frontend_recorded_analysis", phase=phase, mother_count=terminal_census["mother_count"],
+                   exit_count=terminal_census["counts"]["exit"],
+                   loss_count=terminal_census["counts"]["timeout"]+terminal_census["counts"]["native_stop_unresolved"],
+                   exit_fraction_of_mother=exit_efficiency["count_fraction"],
                    exit_conditional_population_count=len(exits), actual_pulse_time_us=pulse_time_us,
-                   terminal_counts={kind: sum(r["terminal_class"] == kind for r in terminals) for kind in ("exit", "timeout", "native_stop_unresolved")},
+                   terminal_counts=terminal_census["counts"],
+                   exit_efficiency=exit_efficiency, classification_semantics=_CLASSIFICATION_SEMANTICS,
                    mr_exit_statistics=mr_stats, aperture_passages=aperture_summary,
                    focus_diagnostics=focus_summary,
                    shared_unsupported_count=sum(r["numerical_unsupported"] for r in counts),
@@ -451,6 +475,7 @@ def analyze_local_frontend(
            shared_times_us=shared_times_us, display_times_us=[r["instrument_time_us"] for r in display_counts],
            display_selection=SHARED_TIME_DISPLAY_SELECTION,
            census_interval="birth inclusive, terminal exclusive; terminal positions never propagated",
+           classification_semantics=_CLASSIFICATION_SEMANTICS, exit_efficiency=exit_efficiency,
            checkpoint_rule="first forward passage per ID; every recrossing retained in all_native_events.csv",
            shared_figure_scaling="common z limits and common transverse limits per row; display aspect ratio only",
            shared_figure_geometry="Frozen canonical electrodes and guide rods in the native MR frame; labelled sections and projections",

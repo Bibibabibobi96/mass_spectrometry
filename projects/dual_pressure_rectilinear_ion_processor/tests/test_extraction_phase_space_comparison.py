@@ -95,7 +95,7 @@ class ExtractionPhaseSpaceComparisonTests(unittest.TestCase):
                 for t,z,vx in ((9,12,.0),(11,10,.1),(11.01,8,.3),(11.5,3,.9)):
                     writer.writerow(dict(zip(fields,[1,t,0,170,z,vx,0,-1])))
             exit_state=dict(zip(fields,[1,12,0,170,0,.4,0,-1]))
-            case=dict(label="test",run=str(run),config=dict(native_timing=dict(pulse_start_us=10),diagnostics=dict(max_extraction_bracket_us=.02),source=dict(species=dict(mass_amu=524))),
+            case=dict(label="test",run=str(run),config=dict(native_timing=dict(pulse_start_us=10),diagnostics=dict(max_extraction_bracket_us=.02),source=dict(species=dict(mass_amu=524)),coordinate_transform=dict(to_frame_id="fixture_world"),baseline=dict(clock=dict(epoch_us=0.))),
                       sources={1:{},2:{}},exits={1:exit_state},terminals={1:{"reason":"acceptance_surface"},2:{"reason":"solver_stop"}},source_records=[dict(path=str(sample))])
             result=prepare_spatial_crossings(case,[11,9,8,3,0])
             nine=next(r for r in result if r["particle_id"]==1 and r["plane_z_mm"]==9)
@@ -252,7 +252,8 @@ def sample(pid: int, time: float, z: float, **updates: float) -> dict:
 def case_fixture() -> dict:
     return dict(
         label="bounded-crossing",
-        config=dict(native_timing=dict(pulse_start_us=10.0),
+        config=dict(coordinate_transform=dict(to_frame_id="fixture_world"),
+                    baseline=dict(clock=dict(epoch_us=0.)), native_timing=dict(pulse_start_us=10.0),
                     diagnostics=dict(max_extraction_bracket_us=0.5),
                     source=dict(species=dict(mass_amu=524.0))),
         sources={1: {}, 2: {}, 3: {}}, exits={},
@@ -351,6 +352,105 @@ class SpatialCrossingSamplesTests(unittest.TestCase):
                         (4, sample(1, time, 2))]
                 with self.assertRaisesRegex(ValueError, "time not increasing for particle"):
                     prepare_spatial_crossings_from_samples(case_fixture(), [3], rows)
+
+
+    def test_prepulse_filter_keeps_prior_identity_state_and_order_skip_policy(self):
+        rows = [(2, dict(particle_id=999, t_us=9.5)),
+                (3, dict(particle_id=999, t_us=8.5)),
+                (4, sample(1, 10., 4.)),
+                (5, dict(t_us=9.)),
+                (6, sample(1, 10.5, 2.))]
+        result = prepare_spatial_crossings_from_samples(case_fixture(), [3.], iter(rows))[0]
+        self.assertEqual((result["t_us"], result["lower_sample_line"], result["upper_sample_line"]),
+                         (10.25, 4, 6))
+        with self.assertRaisesRegex(ValueError, "source row number"):
+            prepare_spatial_crossings_from_samples(case_fixture(), [3.], [(0, dict(t_us=9.))])
+
+    def test_zero_only_request_checks_postpulse_time_but_requires_recorded_exit(self):
+        rows = [(2, sample(1, 10., 1.)), (3, sample(1, 10.5, -1.))]
+        result = prepare_spatial_crossings_from_samples(case_fixture(), [0.], iter(rows))
+        self.assertTrue(all(row["status"] == "unknown" for row in result))
+        for time in (10., 9.999):
+            case = case_fixture()
+            case["config"]["native_timing"]["pulse_start_us"] = 9.
+            with self.subTest(time=time), self.assertRaisesRegex(ValueError, "time not increasing for particle"):
+                prepare_spatial_crossings_from_samples(case, [0.],
+                    [(2, sample(1, 10., 1.)), (3, sample(1, time, -1.))])
+
+    def test_earlier_or_equal_exit_is_retained_but_cannot_extend_last_sample(self):
+        for time in (10.75, 11.):
+            with self.subTest(time=time):
+                case = case_fixture()
+                case["exits"][1] = sample(1, time, 0.)
+                rows = [(2, sample(1, 10.5, 4.)), (3, sample(1, 11., 2.))]
+                result = prepare_spatial_crossings_from_samples(case, [1., 0.], iter(rows))
+                one, zero = [row for row in result if row["particle_id"] == 1]
+                self.assertEqual(one["status"], "unknown")
+                self.assertEqual((zero["t_us"], zero["method"]), (time, "recorded_extraction_exit_event"))
+                self.assertIsNone(zero["interpolation_alpha"])
+
+    def test_exit_tolerance_cannot_authorize_positive_plane_extrapolation(self):
+        case = case_fixture()
+        case["exits"][1] = sample(1, 10.5, 1e-11)
+        result = prepare_spatial_crossings_from_samples(case, [1e-12, 0.], [(2, sample(1, 10., 1.))])
+        below_exit, zero = [row for row in result if row["particle_id"] == 1]
+        self.assertEqual(below_exit["status"], "unknown")
+        self.assertIsNone(below_exit["interpolation_alpha"])
+        self.assertEqual((zero["t_us"], zero["z_mm"]), (10.5, 1e-11))
+        self.assertEqual(zero["method"], "recorded_extraction_exit_event")
+
+    def test_epoch_is_added_once_only_in_core_view_and_raw_interpolation_is_preserved(self):
+        from projects.dual_pressure_rectilinear_ion_processor.analysis import spatial_crossings as adapter
+        case = case_fixture()
+        case["config"]["baseline"]["clock"]["epoch_us"] = 1024.
+        rows = [(2, sample(1, 10., 4., vx_mm_us=.49472944992699563)),
+                (3, sample(1, 10.5, 2., vx_mm_us=.899852148325918))]
+        original = adapter.iter_bounded_plane_crossings
+        seen, call = [], {}
+        def inspect(values, **keywords):
+            call.update(keywords)
+            def forward():
+                for value in values:
+                    seen.append(value)
+                    yield value
+            yield from original(forward(), **keywords)
+        with patch.object(adapter, "iter_bounded_plane_crossings", side_effect=inspect):
+            result = adapter.prepare_spatial_crossings_from_samples(case, [3.], iter(rows))[0]
+        self.assertEqual([row.state.instrument_time_us for row in seen], [1034., 1034.5])
+        self.assertEqual([row.state.frame_id for row in seen], ["fixture_world", "fixture_world"])
+        self.assertEqual(call["minimum_time_us"], 1034.)
+        self.assertEqual(seen[0].state.velocity_m_s[0], rows[0][1]["vx_mm_us"]*1000.)
+        self.assertEqual((result["t_us"], result["bracket_start_us"], result["bracket_end_us"],
+                          result["bracket_gap_us"], result["time_after_pulse_us"]), (10.25, 10., 10.5, .5, .25))
+        expected = rows[0][1]["vx_mm_us"]+.5*(rows[1][1]["vx_mm_us"]-rows[0][1]["vx_mm_us"])
+        self.assertEqual(result["vx_mm_us"], expected)
+
+    def test_close_planes_keep_distinct_identity_and_samples_are_consumed_once(self):
+        class OnePass:
+            def __init__(self):
+                self.started = False
+            def __iter__(self):
+                if self.started:
+                    raise AssertionError("raw source was reread")
+                self.started = True
+                yield 2, sample(1, 10., 4.)
+                yield 3, sample(2, 10., 4.)
+                yield 4, sample(1, 10.5, 2., x_mm=6.)
+                yield 5, sample(2, 10.5, 2., x_mm=10.)
+        result = prepare_spatial_crossings_from_samples(case_fixture(), [3.0000001, 3.], OnePass())
+        observed = [row for row in result if row["particle_id"] == 1]
+        self.assertNotEqual(observed[0]["t_us"], observed[1]["t_us"])
+        self.assertEqual(observed[1]["x_mm"], 4.)
+        self.assertEqual((observed[1]["lower_sample_line"], observed[1]["upper_sample_line"]), (2, 4))
+        other = next(row for row in result if row["particle_id"] == 2 and row["plane_z_mm"] == 3.)
+        self.assertEqual((other["x_mm"], other["lower_sample_line"], other["upper_sample_line"]), (6., 3, 5))
+
+    def test_frame_and_epoch_must_come_from_declared_case(self):
+        for field in ("coordinate_transform", "baseline"):
+            case = case_fixture()
+            del case["config"][field]
+            with self.subTest(field=field), self.assertRaises(KeyError):
+                prepare_spatial_crossings_from_samples(case, [0.], iter(()))
 
     def test_source_line_numbers_must_be_positive_integers(self):
         for line in (0, -1, True, 2.0):

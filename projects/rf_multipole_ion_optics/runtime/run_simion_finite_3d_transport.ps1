@@ -243,10 +243,11 @@ if(-not(Test-Path -LiteralPath $simion -PathType Leaf)){
 $hostRuntimeSourcePaths=@(
   'common/host_execution_lease.ps1','common/host_resource_scheduler.py',
   'common/host_resource_policy.json','common/require_powershell7.ps1','common/resource_budget_support.ps1')
+$analysisSourcePaths=@('common/analysis/particle_census.py')
 $executionCapacityPaths=Get-RunPackageCopiedSourcePaths -RepoRoot $repoRoot `
   -SourceRelativeDirectories @('common/contracts','common/simion','common/ion_release','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/comsol','projects/rf_multipole_ion_optics/simion') `
   -Extensions @('.py','.json','.ps1','.lua')
-$executionCapacityPaths+=@($hostRuntimeSourcePaths|ForEach-Object{"inputs/code/$_"})
+$executionCapacityPaths+=@(($hostRuntimeSourcePaths+$analysisSourcePaths)|ForEach-Object{"inputs/code/$_"})
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$ProjectId") -RunId $RunId `
   -Project $ProjectId -Mode 'resolved_design_transport' -Software @('SIMION 2020','Python 3.11') `
@@ -276,7 +277,7 @@ try{
       Copy-Item -LiteralPath $_.FullName -Destination $destination
     }
   }
-  foreach($relative in $hostRuntimeSourcePaths){
+  foreach($relative in @($hostRuntimeSourcePaths+$analysisSourcePaths)){
     Copy-VerifiedRunInput -Source (Join-Path $repoRoot $relative) `
       -Destination (Join-Path $codeRoot $relative)|Out-Null
   }

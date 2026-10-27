@@ -79,6 +79,27 @@ class MultipoleComponentPortTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "hash is stale"):
             build_assembly_interface(resolved, geometry_profile_id="current")
 
+    def test_all_non_exit_terminals_remain_a_complete_negative_census(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, state = root/"source.csv", root/"state.csv"
+            source.write_text("particle_id,birth_time_s\n31,0\n7,0\n")
+            rows = []
+            for pid, reason in ((7, "timeout"), (31, "unknown")):
+                row = {key: 0. for key in PARTICLE_STATE_COLUMNS}
+                row.update(particle_id=pid, event="terminal", status="lost", terminal_reason=reason,
+                           time_us=2., elapsed_time_us=2.)
+                rows.append(row)
+            with state.open("w", newline="") as stream:
+                writer = csv.DictWriter(stream, fieldnames=PARTICLE_STATE_COLUMNS)
+                writer.writeheader()
+                writer.writerows(rows)
+            result = validate_exit_observations(state, source, dict(mechanical_exit_z_mm=85., aperture_radius_mm=None))
+            self.assertEqual(result["mother_particle_ids"], [7, 31])
+            self.assertEqual(result["exit_count"], 0)
+            self.assertEqual(result["non_exit_particle_ids"], [7, 31])
+            self.assertEqual(result["terminal_reasons"], {"7": "timeout", "31": "unknown"})
+
     def test_exit_observations_require_complete_mother_and_actual_plane(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -117,6 +138,11 @@ class MultipoleComponentPortTests(unittest.TestCase):
             write()
             plan = dict(mechanical_exit_z_mm=89.0, aperture_radius_mm=1.0)
             result = validate_exit_observations(state, source, plan)
+            original_source = source.read_text()
+            source.write_text(original_source + "1,0.000001\n")
+            with self.assertRaisesRegex(ContractError, "unique original mother"):
+                validate_exit_observations(state, source, plan)
+            source.write_text(original_source)
             self.assertEqual(
                 (result["mother_count"], result["exit_particle_ids"], result["non_exit_particle_ids"]), (2, [1], [2])
             )

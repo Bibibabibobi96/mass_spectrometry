@@ -270,12 +270,13 @@ class ComponentExitTests(unittest.TestCase):
         self.assertEqual(float(rows[0]["velocity_z_m_s"]), -38000)
         self.assertEqual(float(rows[0]["velocity_x_m_s"]), 10)
         self.assertEqual(rows[0]["phase_rad"], "")
+        self.assertEqual([float(row["particle_weight"]) for row in rows], [1., 1.])
         with (self.output / "source_census.csv").open(newline="") as handle:
             census = list(csv.DictReader(handle))
         self.assertEqual([row["particle_id"] for row in census], ["2", "9", "20"])
         self.assertEqual(census[1]["terminal_reason"], "solver_stop")
 
-    def test_injected_export_preserves_birth_arrival_clock_and_upstream_losses(self) -> None:
+    def _injected_population(self) -> tuple[dict, list[dict]]:
         self.model["baseline"]["clock"]["epoch_us"] = 0
         self.model["injected_source"] = dict(particle_ids=[2, 9, 20], mother_particle_count=4)
         self._write_json("inputs/resolved_model.json", self.model)
@@ -306,6 +307,10 @@ class ComponentExitTests(unittest.TestCase):
             particle_birth_time_us=.5, mass_amu=524, charge_state=1,
             terminal_instrument_time_us=1, terminal_reason="upstream_stop") for pid in (2, 9, 20, 99)])
         self._seal()
+        return clock, rows
+
+    def test_injected_export_preserves_birth_arrival_clock_and_upstream_losses(self) -> None:
+        clock, _ = self._injected_population()
         receipt = export_component_exit(self.run, self.output, source_instance_id="processor_a", target_instance_id="analyzer_b")
         self.assertEqual(receipt["counts"], dict(source=4, transferred=2, not_transferred=2))
         self.assertEqual(receipt["lost_particle_ids"], [9, 99])
@@ -314,6 +319,44 @@ class ComponentExitTests(unittest.TestCase):
         self.assertEqual(float(transferred[0]["particle_birth_time_us"]), 2)
         self.assertAlmostEqual(float(transferred[0]["last_component_elapsed_time_us"]), 9.2)
         self.assertEqual(transferred[0]["clock_epoch_id"], clock["clock_epoch_id"])
+        self.assertEqual([float(row["particle_weight"]) for row in transferred], [1., 1.])
+
+    def test_injected_export_preserves_relative_weights_by_id_with_identical_state_and_census(self) -> None:
+        _, rows = self._injected_population()
+        baseline = export_component_exit(self.run, self.output, source_instance_id="processor_a", target_instance_id="analyzer_b")
+        original = self._read_output_rows("component_particle_state.csv")
+        census = (self.output/"source_census.csv").read_bytes()
+        for index, weights in enumerate(({2: 3.5, 9: 3.5, 20: 3.5}, {2: .125, 9: 3.5, 20: 8.})):
+            with self.subTest(weights=weights):
+                weighted = [dict(row, particle_weight=weights[row["particle_id"]]) for row in reversed(rows)]
+                write_component_particle_state_csv(self.run/"inputs/injected_states.csv", weighted)
+                self._seal()
+                names = ("inputs/injected_states.csv", "simion/events.csv", "summary.json")
+                before = {name: file_record(self.run/name) for name in names}
+                output = self.root/f"weighted_export_{index}"
+                receipt = export_component_exit(self.run, output, source_instance_id="processor_a", target_instance_id="analyzer_b")
+                with (output/"component_particle_state.csv").open(newline="", encoding="utf-8") as stream:
+                    transferred = list(csv.DictReader(stream))
+                self.assertEqual({int(row["particle_id"]): float(row["particle_weight"]) for row in transferred},
+                                 {pid: weights[pid] for pid in (2, 20)})
+                self.assertEqual([{k: v for k, v in row.items() if k != "particle_weight"} for row in transferred],
+                                 [{k: v for k, v in row.items() if k != "particle_weight"} for row in original])
+                self.assertEqual(receipt["counts"], baseline["counts"])
+                self.assertEqual(receipt["transferred_particle_ids"], baseline["transferred_particle_ids"])
+                self.assertIn("preserved_per_id_relative_weight", receipt["adapter_semantics"]["particle_weight"])
+                self.assertEqual((output/"source_census.csv").read_bytes(), census)
+                self.assertEqual({name: file_record(self.run/name) for name in names}, before)
+
+    def test_injected_export_rejects_missing_weight_or_missing_id_before_publication(self) -> None:
+        _, rows = self._injected_population()
+        variants = ([dict(row, particle_weight="") for row in rows], rows[:-1])
+        for invalid in variants:
+            with self.subTest(ids=[row["particle_id"] for row in invalid]):
+                self._write_csv("inputs/injected_states.csv", invalid)
+                self._seal()
+                with self.assertRaises(ValueError):
+                    export_component_exit(self.run, self.output, source_instance_id="processor_a", target_instance_id="analyzer_b")
+                self.assertFalse(self.output.exists())
 
     def test_reuses_verified_identities_with_absolute_receipt_paths(self) -> None:
         manifest = json.loads((self.run / "run_manifest.json").read_text())

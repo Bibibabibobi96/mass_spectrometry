@@ -48,7 +48,7 @@ def projection_fixture() -> dict:
 
 def source_fixture(run: Path, mode: str, *, status: str = "success", exits: tuple[int, ...] = (1, 2)) -> None:
     config = dict(source=dict(particle_count=3, species=dict(mass_amu=524)),
-                  baseline=dict(geometry=dict(lp_length_mm=61.5,lp_center_mm=170), electric=dict(lift_v=4480.)),
+                  baseline=dict(geometry=dict(lp_length_mm=61.5,lp_center_mm=170), electric=dict(lift_v=4480.), clock=dict(epoch_us=0.)),
                   numerics=dict(native_grid_mm=.1), coordinate_transform=dict(to_frame_id="fixture_world",translation_mm=[0,0,9.8]),
                   native_operating_point=dict(lift_v=4480.), native_timing=dict(pulse_start_us=1.),
                   diagnostics=dict(snapshots=[dict(label="source"), dict(label="pre")], max_extraction_bracket_us=.02),
@@ -161,12 +161,33 @@ class GeometryComparisonTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"unsupported"):
             geometry.analyze_geometry_study(parent)
 
+    def test_controlled_geometry_rejects_changed_or_incomplete_source_weights(self):
+        cases, study = self.design_cases()
+        changes = ({1:1.,2:100.,3:1.}, {1:3.5,2:3.5,3:3.5}, {1:1.,2:1.}, {1:1.,2:1.,3:2.})
+        with patch.object(geometry,"native_projection",return_value=projection_fixture()), patch.object(geometry,"validate_numerical_boundaries"):
+            for weights in changes:
+                changed = copy.deepcopy(cases)
+                changed[1]["particle_weights"] = weights
+                with self.subTest(weights=weights), self.assertRaisesRegex(ValueError, "particle weights"):
+                    geometry.validate_geometry_cases(changed, study)
+
+    def test_controlled_geometry_preserves_identical_mother_weights_in_any_id_order(self):
+        cases, study = self.design_cases()
+        for index, case in enumerate(cases):
+            values = [(1,.125),(2,8.),(3,3.5)]
+            case["particle_weights"] = dict(reversed(values) if index == 1 else values)
+        before = copy.deepcopy(cases)
+        with patch.object(geometry,"native_projection",return_value=projection_fixture()), patch.object(geometry,"validate_numerical_boundaries"):
+            geometry.validate_geometry_cases(cases, study)
+        self.assertEqual(cases, before)
+
     def test_full_mother_and_common_exits_are_independent_of_own_exit_counts(self):
         cases, study = self.design_cases()
         study["particle_count"] = 100
         for case, count in zip(cases, (96,97,34), strict=True):
             original = {stage: next(r for r in case["states"] if r["stage"] == stage) for stage in case["stages"]}
             case["sources"] = {pid:dict(particle_id=pid) for pid in range(1,101)}
+            case["particle_weights"] = {pid:1. for pid in case["sources"]}
             case["terminals"] = copy.deepcopy(case["sources"])
             case["exits"] = {pid:dict(particle_id=pid) for pid in range(1,count+1)}
             case["states"] = [dict(original[stage],particle_id=pid,
@@ -364,8 +385,11 @@ class GeometryComparisonTests(unittest.TestCase):
         parent = self.root/"comparison"
         write_json(parent/"inputs/study_contract.json", study)
         write_json(parent/"run_config.json", dict(project=recorded.PROJECT, inputs=dict(study_contract="inputs/study_contract.json")))
-        with patch.object(geometry, "native_projection", return_value=projection_fixture()), patch.object(geometry, "validate_numerical_boundaries", return_value=None):
+        from common.analysis.figure_export import export_figures
+        with patch.object(geometry, "native_projection", return_value=projection_fixture()), patch.object(geometry, "validate_numerical_boundaries", return_value=None), patch.object(geometry,"export_figures",wraps=export_figures) as exported:
             result = geometry.analyze_geometry_study(parent)
+        exported.assert_called_once()
+        self.assertEqual(exported.call_args.kwargs,dict(formats=("png","svg"),dpi=210,facecolor="white"))
         self.assertEqual(result["loss_records"], 3)
         output = parent/"results/geometry_comparison"
         self.assertEqual(len(list(output.glob("*.png"))), 8)
@@ -378,6 +402,13 @@ class GeometryComparisonTests(unittest.TestCase):
                             if row["cohort"] == "common_extracted_ids"))
         self.assertEqual(len(result["sampled_envelope_minima"]), 27)
         metadata = json.loads((output/"figure_manifest.json").read_text())
+        self.assertEqual(len(metadata["figure_exports"]),16)
+        self.assertEqual(metadata["formats"],["png","svg"])
+        self.assertEqual(metadata["png_dpi"],210)
+        for row in metadata["figure_exports"]:
+            self.assertEqual(row["bytes"],Path(row["path"]).stat().st_size)
+            self.assertEqual(row["savefig_dpi"],210)
+            self.assertEqual(row["facecolor"],"white")
         for edges in metadata["histogram_bins"].values():
             self.assertEqual(len(edges), 21)
             self.assertTrue(np.all(np.diff(edges) > 0))

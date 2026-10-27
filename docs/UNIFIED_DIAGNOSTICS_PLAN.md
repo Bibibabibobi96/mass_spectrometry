@@ -1,223 +1,292 @@
 # 统一质谱诊断执行计划
 
-本计划落实[质谱仓库改造指导聊天记录](https://chatgpt.com/share/6ae0659a-6554-83eb-badb-b54daa60fea3)
-提出的公共诊断、公共机制收敛和有依据的旧实现清理。用户于2026-10-27要求生成并执行完整goal。
-状态：**goal已启动，三条源码审计已完成，正在准备锁定验证环境；尚未实施诊断代码迁移**。
+依据[用户提供的聊天记录](https://chatgpt.com/share/6ae0659a-6554-83eb-badb-b54daa60fea3)，审计基线为
+`0292d3bb037cccc7b6568072c350155566fcc54e`。本页保存目标、任务状态与验收证据；项目当前科学结论
+分别归所属PROJECT，公共API归[公共分析说明](../common/analysis/README.md)与[公共合同](../common/contracts/README.md)。
 
-审计与实施起点为`0292d3bb037cccc7b6568072c350155566fcc54e`，与分享记录的源码基线一致。
-本页是迁移任务与验收清单，不代表目标能力已经存在；通用规范继续以
-[架构](REPOSITORY_ARCHITECTURE.md)、[开发标准](DEVELOPMENT_STANDARDS.md)、
-[生命周期](LIFECYCLE.md)和[操作指南](OPERATIONS.md)为准。
+**当前：Goal执行中，未提交或推送。首轮115路径L1／L2通过；冗余收敛及独立复核完成，
+固定116路径候选的完整L1／L2均已通过，正在执行主题提交与原工作区交付。**
 
-## 总目标与交付物
+## 目标与边界
 
-在现有项目、集成和公共层边界内，形成单离子、离子束、离子团及谱峰的可复用诊断链：
-原始记录经适配形成明确观测，选择可追溯母群，再计算具名指标，最后由所属项目解释与验收。
-让相同科学定义只有一个活动计算权威，降低重复代码、入口数量和修改一个指标时需要同步的位置。
+形成求解器无关、可追溯、实际复用的单离子、束流／束团、谱峰与分辨率诊断链：
+原始记录→具名观测→完整母群及选择→数值结果→项目解释与验收。减少同义实现、逆向依赖与维护位置，
+目标仍包括降低复杂度与活动脚本规模，实际数量变化独立报告。用户在增长复核后明确确认：
+以职责与依赖收敛为主，接受经审查的必要净增长；保留原定能力范围，不把净行数下降作为硬性验收阈值。
 
-最终交付包括以下内容：
+- 复用canonical状态的原ID、物种、单位、frame、instrument clock及相对权重；交接状态仍每粒子一行。
+- 观测记录保留原行／事件锚点；事件次数、方向、first／k／all选择明确。插值只在实际夹持区间内，
+  未观测、不可重建与物理终态分开，缺终态不自行推断存活。
+- 母群、选中ID、粒子／事件数、权重和、有效数、排除原因及效率分母可追溯；全链与条件效率分别报告。
+  相对权重不表示绝对电流或电荷。
+- 保留原点RMS与中心宽度、真角度与斜率、总体矩与样本sigma、实际观测与零场反事实的区别。
+- 方法具名／版本化，记录单位、ddof、设置、可计算状态和独立科学资格。直接FWHM、Gaussian proxy、
+  采样响应包络不能混名；Da、Th、名义相对映射、同批质心拟合与独立标定不能互换。
+- 图、CSV和JSON消费同一prepared结果；来源可通过父分析metadata追溯，不要求每图复制整份输入合同。
+- 不扩大到性能调参、扫描、N=1000、S4或Candidate／Formal晋升；不重写历史冻结结果。
+  本goal未授权远程推送、合并或外部发布。
 
-1. 实际被多个独立场景调用的公共数值内核、观测与结果合同，以及薄的项目适配器。
-2. IP／局部OA、单反射TOF、MR、RF既有消费者的迁移；图、表与JSON消费同一诊断结果。
-3. 严格输入校验、小输入冻结、图形发布、runtime binding及可达性审计的必要收敛。
-4. 已被替代代码和入口的退役，以及同步更新的注册、配置、依赖冻结、文档与测试。
-5. 每批行为回归、适用门禁、定义变化说明、代码量报告和最终验收记录。
+规范继续以[架构](REPOSITORY_ARCHITECTURE.md)、[开发标准](DEVELOPMENT_STANDARDS.md)、
+[生命周期](LIFECYCLE.md)和[操作指南](OPERATIONS.md)为准，本页不维护第二套执行规则。
 
-本任务不自动扩展到性能调参、优化扫描、统计样本升级、新器件设计或Candidate／Formal晋升。
-软件重构通过不等于真实求解器、数值收敛、GUI／CAD或整机科学资格通过。
+## 批次与实现证据
 
-## 现状核验与执行条件
+下表的“已实现”不替代整体验收。更细的方法、限制和项目回归归各链接文档。
 
-| 项目 | 已确认事实 | 后续动作 |
+| 批次 | 当前实现与实际消费者 | 验收证据／边界 |
 |---|---|---|
-| 源码 | 当前独立checkout的HEAD与聊天基线相同；检出后工作树干净 | 每批保留起点与变更范围，保护后续用户改动 |
-| 环境 | 已安装Python 3.11；现有NumPy／SciPy／pandas版本与锁文件不同，且缺Ruff | 正式验证须建立锁定环境；PATH默认Python 3.14不能使用 |
-| 数据 | 新checkout没有随Git提交的科学运行资产 | 先用现有fixture；需要历史run时核对manifest后使用，不伪造冻结回归 |
-| 峰形 | MR主检测峰已经调用公共KDE算法 | 审查剩余直方图路径、参数语义和发布结果，不重复建设主算法 |
-| 束流 | IP与local_frontend已有跨场景调用 | 提取真正中立的算法，保留项目方向、阶段与选择假设 |
-| 发射度 | IP现有`epsilon_mm_mrad`源于位置—真实角度协方差 | 明确旧方法名称；斜率发射度如新增，须用独立字段和方法版本 |
-| 快照 | IP显示可有界插值；集成快照要求实际原生记录 | 分别显式表达`bounded_linear`与`recorded_only`，不得自动补齐集成缺态 |
-| 运行依赖 | 集成显式依赖库存包含当前IP诊断源文件 | 同步来源路径与消费者，由现有冻结器生成run收据；派生绑定仍由对应编译器刷新 |
+| B0 基线与候选审计 | 当前源码、配置、注册与真实消费者已核查；与分享记录建议区分 | 私有函数审计与模块人工核对见下一节；不是按文件名删模块 |
+| B1 峰形与身份 | 公共半高交点输入域、原ID配对；单反射空／退化proxy具名 | 公共25项；单反射38项峰／导入及16项辅助诊断；生成ID禁止配对 |
+| B2 IP／局部OA | 公共穿面、census、总体矩、weighted beam／time focus、图形导出；两个真实适配器直接消费 | 公共及消费者回归、实际冻结调用与缺模块拒绝；IP显示插值不替代集成原生快照 |
+| B3 单反射／MR | 纯时间KDE v2；具名时间参考／质量映射；MR辅助bin span退出FWHM名称 | MR方法／clock／设置拒绝；单反射大整数在读取、Hit过滤与最终CSV保真 |
+| B4 RF | 完整出口census；采样响应包络与插值主峰宽分开；run-local分析 | +1源边界、截断／全零／多峰；实际隔离模块来源和篡改拒绝；不授予分辨能力 |
+| B5 公共机制 | strict_json两消费者、公共小输入复制、图形导出、项目runtime binding及四类消费者审计 | 实际替换旧helper，冻结库存和门禁同步；未另建状态／插件框架 |
+| B6 联合交付 | 收敛后的116路径L1与完整L2均PASS，CLOC源码身份与测试树一致 | 主题提交、原工作区交付与最终记录完成后关闭goal |
 
-未完成的基线工作包括：完整消费者矩阵、锁定环境、各代码批次的门禁计划、可用冻结数据与CLOC基线。
-每个迁移消费者须登记回归输入、路径／manifest、基线SHA、预期输出与容差来源，并区分独立fixture、
-基线版本对照和真实历史run复现。必要外部资产缺失时，对应批次保持未关闭。
+主要知识入口：
 
-### 已确认的修复证据
+- [IP PROJECT](../projects/dual_pressure_rectilinear_ion_processor/docs/PROJECT.md)：
+  完整注入权重、观测／寿命、同群比较和几何比较的科学不变量。
+- [集成状态](../integrations/docs/INTEGRATION.md)：local OA原生记录／穿面／母群及冻结依赖。
+- [单反射 PROJECT](../projects/single_reflection_oa_tof_mass_analyzer/docs/PROJECT.md)：
+  Gaussian proxy、精确原ID、同批质心拟合与解释器冻结。
+- [MR PROJECT](../projects/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md)：
+  current-only v2、零出生／共同pulse、辅助直方图和z=0方法guard。
+- [RF PROJECT](../projects/rf_multipole_ion_optics/docs/PROJECT.md)：
+  unit-count出口、+1质量响应、隔离分析及轨迹相位CLI。
 
-以下缺陷用Python 3.11和现有依赖的内存探针复现，没有写入科学资产，也未启动商业求解器。
-NumPy 1.23.5、SciPy 1.10.0、pandas 2.1.2不满足锁文件，故这只是缺陷复现证据，不能称为正式门禁通过。
+## B0保留与退役结论
 
-| 边界与入口 | 输入与观察结果 | 首批验收要求 |
-|---|---|---|
-| 单反射`analyze_simion_log` | 允许不完整census且零crossing时发生`KeyError('Ion')` | 保留空结果列和母群，输出明确无命中状态 |
-| 同一入口 | 三个常量TOF在宽度为零时触发除零 | 除法前判定退化，不以Inf／NaN或异常替代状态 |
-| 同一入口 | 母群3个粒子，ID=1重复4次，可得到133.333%效率 | 不完整census不得绕过重复身份校验 |
-| `half_height_width` | 降序grid得到负宽度；NaN传入结果；数组不等长触发索引错误 | 形状、有限性、严格递增与密度域有明确校验 |
-| `AnalysisSettings` | `mode_threshold_fraction=2`被接受并给出0个模态 | 设置域在入口校验，合法设置数值保持 |
-| MR私有函数 | `_fixed_hardware_joint_trial`只找到定义；实际调用使用`_at_turn` | 删除旧函数后保留其他活动依赖并通过相关回归 |
-
-其他审查结果：RF的`observed_half_maximum_band_Th`已经具名表示采样响应带；MR旧直方图宽度仍被
-target-k和通用分布诊断调用，不能直接删除或伪装成正TOF输入；部分仅测试可达脚本仍有独立CLI。
-
-## 目标合同与实现边界
-
-优先扩展`common/analysis/`已有纯函数；跨模块版本化合同归`common/contracts/`。
-项目提供原始格式适配、科学选择、方向、位置、脉冲与阈值；integration负责组合与完整母群核算。
-公共函数不按项目名称分支，不读取项目配置，不引入无消费者插件框架。
-
-### 观测与粒子身份
-
-复用`component_particle_state`的身份、物种、质量、电荷、权重、frame、clock和单位含义。
-交接状态继续每粒子一行；允许重复粒子记录的是独立观测／事件表示，不能放松原交接合同。
-
-| 观测 | 显式选择与状态 | 验收重点 |
-|---|---|---|
-| 轨迹／事件序列 | 原始ID、事件序号、记录锚点、终止原因 | 同一粒子的多条记录不增加独立粒子数 |
-| 同时刻快照 | 仪器时刻、重建策略、寿命与采样支撑 | 未出生、未进入、已终止、缺失和不可重建分别保留 |
-| 定向穿面 | frame、平面、方向、首次／第k次／全部事件 | 多次和反向穿越可区分，夹持区间外不插值 |
-| 检测事件 | 检测条件、时间参考、实测／重建来源 | 外推不得冒充实际检测；峰形与效率的母群分别可追溯 |
-
-### 诊断结果
-
-版本化结果至少能还原输入身份、方法身份、观测、选择与计算状态，字段实现以现有合同和实际消费者
-共同确定，不同时创建含义相同的多个结果对象。
-
-| 信息 | 必须可还原的内容 |
+| 对象 | 当前事实与处理 |
 |---|---|
-| 来源 | run与冻结输入引用、代码／方法版本、原始记录锚点 |
-| 观测 | 类型、位置或时刻、frame、方向与穿越次数、记录／重建／预测方法 |
-| 时间 | instrument epoch、脉冲／出生／标定参考及映射来源 |
-| 母群 | 原始ID集合、入口集合、选中集合、选择条件和排除原因 |
-| 样本 | 粒子数、事件数、权重和及适用的有效样本数 |
-| 数值 | 变量、单位、中心化规则、ddof、权重语义、分箱／KDE／拟合设置 |
-| 状态 | 可计算、样本不足、不适用、退化分布、缺少半高交点等原因 |
-| 科学判断 | 适用性与项目验收分别表达，不能由算法成功自动赋予 |
+| MR `_fixed_hardware_joint_trial` | 复核活动引用后精确删除，已在`b5efb9d9`；活动`_at_turn`及turning helper保留 |
+| MR接口私有`_write` | 无活动调用／回调，删除函数；接口模块和独立入口保留 |
+| 旧IP beam实现 | 迁入common后删除旧项目实现文件，无兼容wrapper；真实消费者／冻结库存一起更新 |
+| RF phase CSV CLI | 有真实接口评估消费者，保留并修复模块调用、原ID、记录顺序与有界插值；14项回归及独立复核接受 |
+| MR coarse_raw／两PS生产入口／Lua验证 | 有几何、容量、cache、冻结和原生PA验证职责，保留；未据名称或年龄清理载荷 |
+| 不确定CLI／回调／外部使用 | 保留并列为人工核查范围，不用Python导入图冒充完整执行证据 |
 
-同时保留全链效率、入口到出口的条件效率、实际参与峰形或发射度计算的母群，以及损失、超时、
-尚未观测和状态未知的分类。未知状态不能默认为成功、损失或零值。
+四类审计已进入既有development standards脚本：formal_reachable、test_only_reachable、
+cli_callback_uncertain、private_no_calls。它只覆盖Python顶层私有符号与静态模块引用，
+不是跨语言完整调用图，不自动退役。首轮固定源码输出673／1／1511／0；这些计数不是科学资格。
 
-### 指标定义的迁移规则
+## 数值、来源与重放证据
 
-- 原点RMS半径与中心化束宽分别具名；总体矩`ddof=0`与样本估计明确区分。
-- 真实角度、斜率、速度和动量保持不同变量与单位；转向或近零纵向速度时不强算斜率／Twiss。
-- 相对权重与实际粒子数分开；只有相对权重不能报告绝对电流。
-- 明确支持的权重定义；未实现加权的入口拒绝非等权输入。加权结果报告粒子数、权重和及定义明确的
-  有效数，测试等权退化、手算非等权例子及非法权重，不能静默丢弃canonical权重。
-- 拟合残差不自动解释为温度或冷却；零场漂移只作为有条件预测，不冒充实际焦点。
-- 直接FWHM、Gaussian proxy及RF采样响应带宽分别命名；方法设置和多峰选择规则进入结果。
-- TOF时间峰宽与质量标定分层；`m/z`与质量Da不混用，名义质量相对映射不称为绝对标定。
-- 有意变化使用新方法版本与对照说明；冻结历史结果保留原身份和含义，不回写为新结果。
+以下是实际完成过的同输入／focused证据，不是历史golden或真实求解器重跑；当前收敛后仍需重验受影响范围。
 
-## 分批执行与关闭条件
-
-批次以证据关闭，不预设日历工期。独立主题可并行，但同一文件同一时段只有一个写入负责人。
-
-| 批次 | 实施内容 | 前置条件 | 关闭条件 |
-|---|---|---|---|
-| B0 基线 | 指标／消费者／入口矩阵、环境与冻结数据盘点、测试和CLOC基线 | 规范与实际HEAD已读取 | 每个候选有源码证据、归属、验证路径和状态 |
-| B1 语义与小修复 | 峰宽名称和方法标签、零命中／零方差等边界、原始ID配对、已确认私有死函数 | B0相关边界完成 | 缺陷可复现且有最小回归；定义变化可见；不误删CLI |
-| B2 IP／局部OA | 中立穿面、粒子群、快照策略、多变量矩、束流／束团诊断和结果驱动面板 | B1合同与选择语义确定 | 两个真实场景消费同一实现；数值、身份和原生快照边界保持 |
-| B3 单反射／MR | 峰形、方法身份、时间参考、相对质量与标定语义、图表结果贯通 | 公共结果合同可用 | 同一方法回归一致；不同算法不再混名；主路径唯一 |
-| B4 RF | 传输母群与损失统计、响应曲线峰值和半高交点内核 | 峰宽／母群合同稳定 | 采样带与插值宽度明确；步长、交点缺失及资格边界有测试 |
-| B5 公共机制 | strict_json、小输入冻结、图形出口、runtime binding、消费者审计、旧入口退出 | 各项有重复证据和真实消费者 | 实际替换而非增加平行路径；活动引用、注册和门禁同步 |
-| B6 联合验收 | 合同／项目／集成回归、必要L1与L2、CLOC、复现和剩余限制 | 所有已实施批次局部通过 | 下面的总验收逐项有证据，必要验证无未关闭缺口 |
-
-### B1：优先检查清单
-
-1. 单反射`solver_diagnostics.py`：验证零命中、不完整census及常量到达时间；在除法前处理退化状态。
-2. 公共`compare_peak_shapes`：等长不能代替ID一致；从真实调用点建立配对选择，明确非配对比较行为。
-3. MR`simion_event_analysis.py`：保留已复用的公共主检测峰，逐项判断粗直方图辅助指标的科学用途。
-4. MR`dual_stripe_operating_seed.py::_fixed_hardware_joint_trial`：复核全活动树、动态分派与生命周期后，
-   才删除已被`_fixed_hardware_joint_trial_at_turn`取代的私有实现。
-
-### B2：公共提取的接线要求
-
-从IP的空间穿面、束流聚焦和状态诊断以及`integrations/workflows/local_frontend/focus.py`出发。
-先分离纯计算与项目选择，再迁移消费者；负z轴、出口位置、提取脉冲、阶段名及科学阈值不进入公共内核。
-集成的原生快照验收不降级为插值；IP允许的有界显示插值继续标明来源与适用范围。
-同步维护`integrations/config/runtime_dependencies.json`中的来源路径与消费者，沿现有冻结器生成run收据。
-IP新增公共模块必须在冻结已加载源码闭包之前导入；适用的派生绑定由其具名编译器刷新并检查新鲜度。
-
-### B5：公共机制与安全退役
-
-| 主题 | 优先复用 | 必须保持的边界 |
-|---|---|---|
-| JSON／数值校验 | `strict_json`及现有校验原语 | 数字字符串／布尔值的接受变化显式说明；物理范围与错误上下文留在调用层 |
-| 小输入冻结 | `freeze_file`、`Copy-VerifiedRunInput` | 大PA、可写副本、跨信任边界验证不被普通文件复制替代 |
-| 图形发布 | 现有artifact及来源元数据机制上的薄出口 | 科学面板与解释归项目；绘图不重新计算另一套指标 |
-| runtime binding | RF项目提供解析结果，公共编译器校验通用身份和能力 | 结构一致性、campaign和授权run核验不丢失 |
-| 资产owner收尾 | 已有生命周期和退休入口 | 只处理当前有证据的缺口，不顺带清空未知资产 |
-| 可达性审计 | 项目注册、execution profiles、integration依赖和既有门禁 | Python导入图不能替代Lua／MATLAB／PowerShell／回调／外部CLI证据 |
-
-消费者审计输出四类：正式入口可达、仅测试可达、CLI／回调或外部使用待核实、确认私有无调用。
-前两类如实区分；第三类保留并列出待核实事项；第四类确认无生命周期责任后才清理。
-RF旧绘图CLI、MR粗网格raw入口及只有测试引用的分析脚本均是审查候选，不是预批准整模块删除清单。
-独立解析参考、跨求解器验证和不同科学workflow继续保留其独立性。
-
-## 验证矩阵与失败处理
-
-| 验证层 | 覆盖内容 | 成功证明与限制 |
-|---|---|---|
-| 公共数值 | 手算加权矩、常量／空输入、已知曲线、半高交点、多峰选择 | 证明算法与定义，不证明真实粒子性能 |
-| 身份与观测 | ID重排／缺失／重复、首次／多次／反向穿面、寿命与夹持区间 | 证明统计对象、事件和状态没有被偷换 |
-| 变换 | 刚体坐标变换、时间原点平移、单位边界 | 仅对定义允许的不变量断言不变 |
-| 消费者 | IP／局部OA、单反射／MR、RF的实际接线与选择 | 避免只有公共单元测试而生产入口未迁移 |
-| 冻结回归 | 同输入同方法的ID、母群、事件、损失、单位、时间与数值 | 资产缺失明确未执行；不能用人工造数据称为历史复现 |
-| 工程门禁 | Ruff、文档、派生新鲜度、L1；共享合同变更后的L2 | 按机器目录选择，不另写平行门禁 |
-| 原生验证 | 事件采集、clock或观察定义改变时的相应真实求解器 | 不修改这些边界时不无故重算；需要却未完成时不得关闭对应批次 |
-
-同方法的容差来自已有定义、序列化精度、独立参考或收敛证据，不为通过测试临时放宽。
-遇到环境、依赖、资产或许可证缺失，保留精确原因与复现条件；可独立的纯计算工作继续推进。
-任何身份、母群、单位或科学定义出现无法解释的变化，暂停该迁移分支并先定位，不继续发布其结果。
-
-正式验证从仓库根显式使用Python 3.11和PowerShell 7，按顺序执行相关focused测试、
-`common/verify_changed.ps1 -PlanOnly`、相应L1，以及共享合同改变所需的L2。
-完整参数与环境记录随实际执行结果填写；本计划列命令不代表已经运行。
-
-已定位的focused测试组如下，使用`python -B -m unittest <完整模块名>`；项目测试前缀由源码路径确定。
-
-| 批次／边界 | 已有测试模块 |
+| 范围 | 已取得证据 |
 |---|---|
-| 公共峰宽与单反射 | 单反射`tests.analysis.test_peak_metrics`、`test_solver_diagnostics`、`test_ideal_acceptance_density`、`test_three_zone_ideal_theory` |
-| MR峰形／时钟 | MR `tests.analysis.test_simion_event_analysis`、`test_source_z_energy_timing_diagnostic`、`test_measured_component_analysis` |
-| IP／局部OA | `common.analysis.test_population_moments`；IP `tests.test_beam_focus_diagnostics`、`test_extraction_phase_space_comparison`、`test_diagnostics`；`integrations.tests.test_local_frontend_focus`、`test_local_frontend_analysis` |
-| 公共校验／冻结 | `common.contracts.test_strict_json`、`test_frozen_inputs`；`integrations.tests.test_dependencies`及MR候选／exact-K回归 |
-| runtime binding | `common.contracts.test_execution_compiler` |
-| RF响应 | RF `test_mass_filter_l1`、`test_mass_filter_response_comparison`；实施前确认其完整模块路径 |
+| 公共峰形 | 手算半高宽、等高峰／截断、非法设置、显式原ID配对和bootstrap；12组旧质量metrics及全部spectra逐值一致 |
+| 穿面 | 23项、first／k／all、反向、斜面、端点、时序／gap；500行弱引用探针最多保留3个对象；两实际适配器接线 |
+| 中心矩／beam | 六模块84项；40组旧输入47,054个数值字段exact；非等权手算、重排、缺测、平移／旋转；真实PNG／SVG |
+| IP权重与效率 | release至出口按原ID保留相对权重；完整母群例加权1/93、计数1/3；未知上游母群权重时明确unavailable |
+| IP／local OA旧行为 | IP穿面100例、5,200记录、1,740结果行exact；600快照状态旧字段exact；local 30行旧census结果exact |
+| 实际冻结闭包 | IP计算／导出、local OA穿面、两RF transport census从冻结副本执行，逐个缺依赖拒绝；不能扩大为IP几何CLI全程强制隔离证明 |
+| MR | 333项focused中330通过、3项外部历史／显式后分析skip；后续辅助方法182项＋3项PS guard；6组主峰／21谱数组及8组histogram数值保留 |
+| 单反射原ID | >2^53、int64max、小数／指数编码在筛选和CSV往返保持；非法分数／越界／重复／非命中行无效ID拒绝；4类合法输入值、dtype、import metadata与旧实现exact |
+| 单反射标定 | 6组拟合、31粒子reference及每solver25粒子五物种旧字段保持，5份CSV字节相同；Th拟合不授予绝对标定 |
+| RF响应 | 47项focused；原合同每质量N=100、29点L1功能PASS，采样带99.5–103.0 Th，另报主峰插值宽4.1227490996398615 Th；5项输出manifest核验，临时run已清理 |
+| strict_json | 72项中71通过、1项历史metadata skip；MR源receipt及11文件、paired pulse计划及17文件旧合法输入字节相同 |
+| runtime binding | compiler／planner／registry／RF共94项；9类预览等价、3类身份投影exact；preview不授予商业执行授权 |
+| 公共复制 | 实际prepared快照脱离活动仓库继续冻结；身份不匹配仍含实测源／目标哈希与原错误上下文 |
 
-公共数值还须使用独立参考向量；项目以公共实现作为expected的parity测试只能证明接线。
+同方法回归未靠放宽容差、删除异常粒子或换输入制造PASS。非等权分位使用具名weighted ECDF；
+等权保持既有NumPy linear quantile。缺共同clock／frame或外部Excel已舍入的原ID不自行补造。
+纯时间KDE仍只支持正有限等权，非等权拒绝；RF出口仍是unit count，局部OA源仍按已有全1合同。
 
-## 协作与当前进度
+## 门禁与失败复验记录
 
-| 负责人 | 当前范围 | 状态 |
+| 固定范围／会话 | 结果及处理 |
+|---|---|
+| 首组19路径L1 | PASS，仅证明当时快照 |
+| 原checkout 35路径L1→L2 | L1 PASS；L2的MR 1673项中1 failure／38 skips，PS测试harness在含空格路径错误分割；改为真实`-File`fixture，模块29项中28通过／1历史资产skip |
+| 109路径：22017／39114 | 两轮因需求审计发现权重、ID、辅助宽度／z0／metadata缺口主动取消，CODE_FIX_REQUIRED，不记PASS |
+| 114路径：33138／24674 | L1单反射478项33 errors／2 skips，均为解释器赋值与冻结器精确转换不匹配；L2取消，保留失败事实 |
+| 项目重跑72044 | 478项1 failure／2 skips：测试对合法绝对路径中的`.venv`作过宽拒绝；修窄到回退赋值，独立冻结包装器实跑通过 |
+| 固定修复77071 | 单反射完整Static：478项中476通过／2 skips，测试194.275秒、阶段198.677秒 |
+| 115路径L1：1937 | 终态exit 0，`CHANGED_GATE=PASS PYTHON=3.11 CHANGED_PATHS=115 FULL_SCOPE=False`；集成子进程1830.259秒 |
+| 完整L2：93804 | 终态exit 0，`REPOSITORY_INTEGRATION_GATE=PASS PYTHON=3.11`；集成1793.281秒、MR Static1876.491秒、单反射228.875秒 |
+| 收敛后116路径：79059／12608 | 两轮均终态exit 0，`CHANGED_GATE=PASS`、`REPOSITORY_INTEGRATION_GATE=PASS`；L1集成2004.872秒，L2集成1958.423秒、MR Static2073.105秒、单反射256.630秒 |
+
+L1的MR路由实际执行Core，完整Static由L2完成。单反射两个skip是明确历史native source snapshot
+未随本工作树携带，以及未配置可选T5 receipt。其他项目缺历史资产的skip按其原层级保留。
+成功门禁诊断目录由公共机制报告CLEANED。109／114路径两组的4个失败／取消临时目录已逐个核对
+归属、无活动引用及无reparse point，使用公共清理入口删除49个日志／缓存文件，释放958,923字节。
+原日志不逐字保留，必要失败事实在上表；测试和缓存可重建，没有删除科学模型或唯一数据。
+
+未执行真实COMSOL／SIMION Fly、GUI／CAD或L3 Formal验证；本次没有修改几何、源、积分器、采集或时钟。
+无求解器fixture、冻结模块及算法回归不冒充历史实测／原生golden复现，也不升级项目资格。
+
+## 规模与架构复核
+
+用户指出的Git差异已实际复现：+8,398／−1,271，净+7,127物理行。
+其中生产code +2,017、tests code +2,983、文档净+1,236、空行／代码注释+891。
+以下官方CLOC已刷新到本轮冗余收敛后的116路径候选：production净+2,002、tests净+2,955、total净+4,957。
+相对首轮累计树，纯代码少43行（生产15、测试28）；计划由862行压到287行，后续状态说明可能少量变化。
+这改善重复声明和交付体量，没有把整体代码净增长变成净减少。新源码身份为
+`383f31e7f3804828bbb95b7070c605c2610f394823aef6085f7c40981222da1a`，已越过本轮完整门禁并重新核对一致。
+
+| 项目 | 收敛前实际变化／判断 |
+|---|---|
+| 生产／测试文件 | 969→972（+3）／484→489（+5）；总体代码363,540→368,540（+5,000） |
+| 活动入口 | CLOC活动profile 20→20、生产PS入口60→60；RF新增`--analyze-response`子模式，不能据文件数不变声称操作接口无增加 |
+| 中心矩 | 公共pair与local OA独立计算合到同一多变量内核；pair保留薄投影 |
+| 穿面／beam | 一个IP项目实现迁为一个公共实现＋两个薄适配器；不是算法数2→1，旧IP私有依赖退出 |
+| JSON／复制／图形保存 | 私有通用helper与独立循环退出，复用公共机制；领域约束、科学面板和输出选择归caller |
+| KDE／辅助宽度 | KDE原本已有公共权威；纯时间入口去掉虚构质量，histogram span具名；不能把API拆分叫第二套算法 |
+| RF依赖方向 | 公共编译器不再理解RF selector／预算内部，项目解释归RF |
+| 复杂度结论 | 指定维护职责更集中、边界更明确；总体代码与机制数量没有净减少，不能称规模精简成功 |
+
+已完成的收敛动作：本文只保留一份最新完整CLOC与一张失败／复验表；RF文件闭包只声明一次，
+模块probe从同一清单派生，异常退出码改为结构化字段；同一IP测试文件内复用冻结probe脚手架，
+保留每种真实计算／导出、`-I`隔离和缺模块失败。没有删除必要回归或新建跨项目测试框架。
+
+<details>
+<summary>官方CLOC 2.10：完整计数、分类与过滤口径（收敛后验证树）</summary>
+
+```text
+CLOC_DELTA=PASS
+BASELINE=0292d3bb037cccc7b6568072c350155566fcc54e
+RESULT=WORKTREE(head=b5efb9d9c1963b5fc62a4c44c34549c08a9a6878)
+CLOC_VERSION=2.10
+CREATED_UTC=2026-10-27T13:43:35.0671846+00:00
+CLASSIFIER_SHA256=d3365e7f02e66a775ec8eb3b12fb7b7bfa1bf34b87009543768a8e36bb4db749
+LANGUAGE_DEFINITION_SHA256=985e60f06bd8981c36966a0895cccfccd182fd625c79eb6ae94b65a12c5508a6
+WORKTREE_DIRTY=true
+WORKTREE_TRACKED_DIRTY_COUNT=107
+WORKTREE_UNTRACKED_COUNT=9
+INPUT_IDENTITY SNAPSHOT=baseline FILES=1453 SHA256=e6b0484dd5571f4f766c64c6378c8a4af669436a2540682419faf51077a3529d
+INPUT_IDENTITY SNAPSHOT=result FILES=1461 SHA256=383f31e7f3804828bbb95b7070c605c2610f394823aef6085f7c40981222da1a
+FILTER=extensions=.py,.m,.ps1,.lua,.gem,.fly2,.json,.toml,.yml,.yaml,.c,.h,.cc,.cpp,.cxx,.hpp,.cs,.java,.js,.jsx,.ts,.tsx,.go,.rs,.rb,.php,.swift,.kt,.kts,.sh,.bash,.zsh,.bat,.cmd;excluded_components=.git,.venv,.tmp,artifacts,generated,vendor,vendors,third_party,third-party,thirdparty,run,runs;excluded_lifecycle_paths=any/docs/history/**|root/scratch/**|artifacts/projects/<project>/(archive|scratch)/**;language_overrides=.m:MATLAB|.fly2:Lua|.gem:SIMION_GEM;production=execution_profile_entrypoint|run_*.ps1|verify_*.ps1|tests/support(non-test-named);tests=fixture|test_support|testing_support_path|test_*.(py|ps1|m|lua)|*_test.py|tests_boundary/*_fixtures.py|*Test.m|*.Tests.*;unclassified=other_code_below_test_or_tests_path;worktree_source=git_tracked_plus_nonignored_untracked
+CLASSIFICATION_DETAIL SNAPSHOT=baseline CATEGORY=production REASON=active_powershell_entrypoint FILES=60
+CLASSIFICATION_DETAIL SNAPSHOT=baseline CATEGORY=production REASON=execution_profile_entrypoint FILES=20
+CLASSIFICATION_DETAIL SNAPSHOT=baseline CATEGORY=production REASON=non_test_source FILES=889
+CLASSIFICATION_DETAIL SNAPSHOT=baseline CATEGORY=tests REASON=test_filename FILES=478
+CLASSIFICATION_DETAIL SNAPSHOT=baseline CATEGORY=tests REASON=test_support_path FILES=6
+FUNCTION_DETAIL SNAPSHOT=baseline FUNCTION=contracts_configuration FILES=293 SCRIPT_FILES=39
+FUNCTION_DETAIL SNAPSHOT=baseline FUNCTION=runtime_orchestration FILES=173 SCRIPT_FILES=173
+FUNCTION_DETAIL SNAPSHOT=baseline FUNCTION=scientific_analysis FILES=259 SCRIPT_FILES=259
+FUNCTION_DETAIL SNAPSHOT=baseline FUNCTION=solver_models FILES=164 SCRIPT_FILES=164
+FUNCTION_DETAIL SNAPSHOT=baseline FUNCTION=tests FILES=484 SCRIPT_FILES=483
+FUNCTION_DETAIL SNAPSHOT=baseline FUNCTION=tooling_other FILES=80 SCRIPT_FILES=80
+CLASSIFICATION_DETAIL SNAPSHOT=result CATEGORY=production REASON=active_powershell_entrypoint FILES=60
+CLASSIFICATION_DETAIL SNAPSHOT=result CATEGORY=production REASON=execution_profile_entrypoint FILES=20
+CLASSIFICATION_DETAIL SNAPSHOT=result CATEGORY=production REASON=non_test_source FILES=892
+CLASSIFICATION_DETAIL SNAPSHOT=result CATEGORY=tests REASON=test_filename FILES=483
+CLASSIFICATION_DETAIL SNAPSHOT=result CATEGORY=tests REASON=test_support_path FILES=6
+FUNCTION_DETAIL SNAPSHOT=result FUNCTION=contracts_configuration FILES=293 SCRIPT_FILES=39
+FUNCTION_DETAIL SNAPSHOT=result FUNCTION=runtime_orchestration FILES=173 SCRIPT_FILES=173
+FUNCTION_DETAIL SNAPSHOT=result FUNCTION=scientific_analysis FILES=262 SCRIPT_FILES=262
+FUNCTION_DETAIL SNAPSHOT=result FUNCTION=solver_models FILES=164 SCRIPT_FILES=164
+FUNCTION_DETAIL SNAPSHOT=result FUNCTION=tests FILES=489 SCRIPT_FILES=488
+FUNCTION_DETAIL SNAPSHOT=result FUNCTION=tooling_other FILES=80 SCRIPT_FILES=80
+CATEGORY=total
+LANGUAGE=JSON BASE_FILES=252 RESULT_FILES=252 DELTA_FILES=0 BASE_BLANK=0 RESULT_BLANK=0 DELTA_BLANK=0 BASE_COMMENT=0 RESULT_COMMENT=0 DELTA_COMMENT=0 BASE_CODE=34406 RESULT_CODE=34645 DELTA_CODE=239
+LANGUAGE=Lua BASE_FILES=95 RESULT_FILES=95 DELTA_FILES=0 BASE_BLANK=361 RESULT_BLANK=361 DELTA_BLANK=0 BASE_COMMENT=712 RESULT_COMMENT=712 DELTA_COMMENT=0 BASE_CODE=11050 RESULT_CODE=11050 DELTA_CODE=0
+LANGUAGE=MATLAB BASE_FILES=125 RESULT_FILES=125 DELTA_FILES=0 BASE_BLANK=960 RESULT_BLANK=960 DELTA_BLANK=0 BASE_COMMENT=1964 RESULT_COMMENT=1964 DELTA_COMMENT=0 BASE_CODE=14752 RESULT_CODE=14752 DELTA_CODE=0
+LANGUAGE=PowerShell BASE_FILES=142 RESULT_FILES=142 DELTA_FILES=0 BASE_BLANK=1021 RESULT_BLANK=1022 DELTA_BLANK=1 BASE_COMMENT=948 RESULT_COMMENT=950 DELTA_COMMENT=2 BASE_CODE=38074 RESULT_CODE=38208 DELTA_CODE=134
+LANGUAGE=Python BASE_FILES=826 RESULT_FILES=834 DELTA_FILES=8 BASE_BLANK=22995 RESULT_BLANK=23410 DELTA_BLANK=415 BASE_COMMENT=20278 RESULT_COMMENT=20766 DELTA_COMMENT=488 BASE_CODE=264880 RESULT_CODE=269464 DELTA_CODE=4584
+LANGUAGE=SIMION GEM BASE_FILES=10 RESULT_FILES=10 DELTA_FILES=0 BASE_BLANK=26 RESULT_BLANK=26 DELTA_BLANK=0 BASE_COMMENT=54 RESULT_COMMENT=54 DELTA_COMMENT=0 BASE_CODE=214 RESULT_CODE=214 DELTA_CODE=0
+LANGUAGE=TOML BASE_FILES=1 RESULT_FILES=1 DELTA_FILES=0 BASE_BLANK=4 RESULT_BLANK=4 DELTA_BLANK=0 BASE_COMMENT=0 RESULT_COMMENT=0 DELTA_COMMENT=0 BASE_CODE=24 RESULT_CODE=24 DELTA_CODE=0
+LANGUAGE=YAML BASE_FILES=2 RESULT_FILES=2 DELTA_FILES=0 BASE_BLANK=4 RESULT_BLANK=4 DELTA_BLANK=0 BASE_COMMENT=2 RESULT_COMMENT=2 DELTA_COMMENT=0 BASE_CODE=140 RESULT_CODE=140 DELTA_CODE=0
+LANGUAGE=SUM BASE_FILES=1453 RESULT_FILES=1461 DELTA_FILES=8 BASE_BLANK=25371 RESULT_BLANK=25787 DELTA_BLANK=416 BASE_COMMENT=23958 RESULT_COMMENT=24448 DELTA_COMMENT=490 BASE_CODE=363540 RESULT_CODE=368497 DELTA_CODE=4957
+CATEGORY=production
+LANGUAGE=JSON BASE_FILES=251 RESULT_FILES=251 DELTA_FILES=0 BASE_BLANK=0 RESULT_BLANK=0 DELTA_BLANK=0 BASE_COMMENT=0 RESULT_COMMENT=0 DELTA_COMMENT=0 BASE_CODE=34272 RESULT_CODE=34511 DELTA_CODE=239
+LANGUAGE=Lua BASE_FILES=77 RESULT_FILES=77 DELTA_FILES=0 BASE_BLANK=297 RESULT_BLANK=297 DELTA_BLANK=0 BASE_COMMENT=611 RESULT_COMMENT=611 DELTA_COMMENT=0 BASE_CODE=9295 RESULT_CODE=9295 DELTA_CODE=0
+LANGUAGE=MATLAB BASE_FILES=77 RESULT_FILES=77 DELTA_FILES=0 BASE_BLANK=484 RESULT_BLANK=484 DELTA_BLANK=0 BASE_COMMENT=1392 RESULT_COMMENT=1392 DELTA_COMMENT=0 BASE_CODE=9799 RESULT_CODE=9799 DELTA_CODE=0
+LANGUAGE=PowerShell BASE_FILES=134 RESULT_FILES=134 DELTA_FILES=0 BASE_BLANK=963 RESULT_BLANK=964 DELTA_BLANK=1 BASE_COMMENT=915 RESULT_COMMENT=917 DELTA_COMMENT=2 BASE_CODE=36424 RESULT_CODE=36558 DELTA_CODE=134
+LANGUAGE=Python BASE_FILES=417 RESULT_FILES=420 DELTA_FILES=3 BASE_BLANK=12928 RESULT_BLANK=13074 DELTA_BLANK=146 BASE_COMMENT=8801 RESULT_COMMENT=9045 DELTA_COMMENT=244 BASE_CODE=141887 RESULT_CODE=143516 DELTA_CODE=1629
+LANGUAGE=SIMION GEM BASE_FILES=10 RESULT_FILES=10 DELTA_FILES=0 BASE_BLANK=26 RESULT_BLANK=26 DELTA_BLANK=0 BASE_COMMENT=54 RESULT_COMMENT=54 DELTA_COMMENT=0 BASE_CODE=214 RESULT_CODE=214 DELTA_CODE=0
+LANGUAGE=TOML BASE_FILES=1 RESULT_FILES=1 DELTA_FILES=0 BASE_BLANK=4 RESULT_BLANK=4 DELTA_BLANK=0 BASE_COMMENT=0 RESULT_COMMENT=0 DELTA_COMMENT=0 BASE_CODE=24 RESULT_CODE=24 DELTA_CODE=0
+LANGUAGE=YAML BASE_FILES=2 RESULT_FILES=2 DELTA_FILES=0 BASE_BLANK=4 RESULT_BLANK=4 DELTA_BLANK=0 BASE_COMMENT=2 RESULT_COMMENT=2 DELTA_COMMENT=0 BASE_CODE=140 RESULT_CODE=140 DELTA_CODE=0
+LANGUAGE=SUM BASE_FILES=969 RESULT_FILES=972 DELTA_FILES=3 BASE_BLANK=14706 RESULT_BLANK=14853 DELTA_BLANK=147 BASE_COMMENT=11775 RESULT_COMMENT=12021 DELTA_COMMENT=246 BASE_CODE=232055 RESULT_CODE=234057 DELTA_CODE=2002
+CATEGORY=tests
+LANGUAGE=JSON BASE_FILES=1 RESULT_FILES=1 DELTA_FILES=0 BASE_BLANK=0 RESULT_BLANK=0 DELTA_BLANK=0 BASE_COMMENT=0 RESULT_COMMENT=0 DELTA_COMMENT=0 BASE_CODE=134 RESULT_CODE=134 DELTA_CODE=0
+LANGUAGE=Lua BASE_FILES=18 RESULT_FILES=18 DELTA_FILES=0 BASE_BLANK=64 RESULT_BLANK=64 DELTA_BLANK=0 BASE_COMMENT=101 RESULT_COMMENT=101 DELTA_COMMENT=0 BASE_CODE=1755 RESULT_CODE=1755 DELTA_CODE=0
+LANGUAGE=MATLAB BASE_FILES=48 RESULT_FILES=48 DELTA_FILES=0 BASE_BLANK=476 RESULT_BLANK=476 DELTA_BLANK=0 BASE_COMMENT=572 RESULT_COMMENT=572 DELTA_COMMENT=0 BASE_CODE=4953 RESULT_CODE=4953 DELTA_CODE=0
+LANGUAGE=PowerShell BASE_FILES=8 RESULT_FILES=8 DELTA_FILES=0 BASE_BLANK=58 RESULT_BLANK=58 DELTA_BLANK=0 BASE_COMMENT=33 RESULT_COMMENT=33 DELTA_COMMENT=0 BASE_CODE=1650 RESULT_CODE=1650 DELTA_CODE=0
+LANGUAGE=Python BASE_FILES=409 RESULT_FILES=414 DELTA_FILES=5 BASE_BLANK=10067 RESULT_BLANK=10336 DELTA_BLANK=269 BASE_COMMENT=11477 RESULT_COMMENT=11721 DELTA_COMMENT=244 BASE_CODE=122993 RESULT_CODE=125948 DELTA_CODE=2955
+LANGUAGE=SUM BASE_FILES=484 RESULT_FILES=489 DELTA_FILES=5 BASE_BLANK=10665 RESULT_BLANK=10934 DELTA_BLANK=269 BASE_COMMENT=12183 RESULT_COMMENT=12427 DELTA_COMMENT=244 BASE_CODE=131485 RESULT_CODE=134440 DELTA_CODE=2955
+CATEGORY=unclassified
+LANGUAGE=SUM BASE_FILES=0 RESULT_FILES=0 DELTA_FILES=0 BASE_BLANK=0 RESULT_BLANK=0 DELTA_BLANK=0 BASE_COMMENT=0 RESULT_COMMENT=0 DELTA_COMMENT=0 BASE_CODE=0 RESULT_CODE=0 DELTA_CODE=0
+FUNCTION=contracts_configuration
+LANGUAGE=JSON BASE_FILES=251 RESULT_FILES=251 DELTA_FILES=0 BASE_BLANK=0 RESULT_BLANK=0 DELTA_BLANK=0 BASE_COMMENT=0 RESULT_COMMENT=0 DELTA_COMMENT=0 BASE_CODE=34272 RESULT_CODE=34511 DELTA_CODE=239
+LANGUAGE=PowerShell BASE_FILES=2 RESULT_FILES=2 DELTA_FILES=0 BASE_BLANK=27 RESULT_BLANK=27 DELTA_BLANK=0 BASE_COMMENT=41 RESULT_COMMENT=41 DELTA_COMMENT=0 BASE_CODE=1001 RESULT_CODE=1006 DELTA_CODE=5
+LANGUAGE=Python BASE_FILES=37 RESULT_FILES=37 DELTA_FILES=0 BASE_BLANK=1571 RESULT_BLANK=1577 DELTA_BLANK=6 BASE_COMMENT=958 RESULT_COMMENT=962 DELTA_COMMENT=4 BASE_CODE=15720 RESULT_CODE=15761 DELTA_CODE=41
+LANGUAGE=TOML BASE_FILES=1 RESULT_FILES=1 DELTA_FILES=0 BASE_BLANK=4 RESULT_BLANK=4 DELTA_BLANK=0 BASE_COMMENT=0 RESULT_COMMENT=0 DELTA_COMMENT=0 BASE_CODE=24 RESULT_CODE=24 DELTA_CODE=0
+LANGUAGE=YAML BASE_FILES=2 RESULT_FILES=2 DELTA_FILES=0 BASE_BLANK=4 RESULT_BLANK=4 DELTA_BLANK=0 BASE_COMMENT=2 RESULT_COMMENT=2 DELTA_COMMENT=0 BASE_CODE=140 RESULT_CODE=140 DELTA_CODE=0
+LANGUAGE=SUM BASE_FILES=293 RESULT_FILES=293 DELTA_FILES=0 BASE_BLANK=1606 RESULT_BLANK=1612 DELTA_BLANK=6 BASE_COMMENT=1001 RESULT_COMMENT=1005 DELTA_COMMENT=4 BASE_CODE=51157 RESULT_CODE=51442 DELTA_CODE=285
+SCRIPT_FILES BASE=39 RESULT=39 DELTA=0
+FUNCTION=runtime_orchestration
+LANGUAGE=PowerShell BASE_FILES=85 RESULT_FILES=85 DELTA_FILES=0 BASE_BLANK=519 RESULT_BLANK=520 DELTA_BLANK=1 BASE_COMMENT=345 RESULT_COMMENT=347 DELTA_COMMENT=2 BASE_CODE=20945 RESULT_CODE=21060 DELTA_CODE=115
+LANGUAGE=Python BASE_FILES=88 RESULT_FILES=88 DELTA_FILES=0 BASE_BLANK=1872 RESULT_BLANK=1896 DELTA_BLANK=24 BASE_COMMENT=1960 RESULT_COMMENT=2004 DELTA_COMMENT=44 BASE_CODE=21142 RESULT_CODE=21533 DELTA_CODE=391
+LANGUAGE=SUM BASE_FILES=173 RESULT_FILES=173 DELTA_FILES=0 BASE_BLANK=2391 RESULT_BLANK=2416 DELTA_BLANK=25 BASE_COMMENT=2305 RESULT_COMMENT=2351 DELTA_COMMENT=46 BASE_CODE=42087 RESULT_CODE=42593 DELTA_CODE=506
+SCRIPT_FILES BASE=173 RESULT=173 DELTA=0
+FUNCTION=scientific_analysis
+LANGUAGE=PowerShell BASE_FILES=23 RESULT_FILES=23 DELTA_FILES=0 BASE_BLANK=238 RESULT_BLANK=238 DELTA_BLANK=0 BASE_COMMENT=197 RESULT_COMMENT=197 DELTA_COMMENT=0 BASE_CODE=9306 RESULT_CODE=9308 DELTA_CODE=2
+LANGUAGE=Python BASE_FILES=236 RESULT_FILES=239 DELTA_FILES=3 BASE_BLANK=7787 RESULT_BLANK=7897 DELTA_BLANK=110 BASE_COMMENT=4734 RESULT_COMMENT=4921 DELTA_COMMENT=187 BASE_CODE=88803 RESULT_CODE=89907 DELTA_CODE=1104
+LANGUAGE=SUM BASE_FILES=259 RESULT_FILES=262 DELTA_FILES=3 BASE_BLANK=8025 RESULT_BLANK=8135 DELTA_BLANK=110 BASE_COMMENT=4931 RESULT_COMMENT=5118 DELTA_COMMENT=187 BASE_CODE=98109 RESULT_CODE=99215 DELTA_CODE=1106
+SCRIPT_FILES BASE=259 RESULT=262 DELTA=3
+FUNCTION=solver_models
+LANGUAGE=Lua BASE_FILES=77 RESULT_FILES=77 DELTA_FILES=0 BASE_BLANK=297 RESULT_BLANK=297 DELTA_BLANK=0 BASE_COMMENT=611 RESULT_COMMENT=611 DELTA_COMMENT=0 BASE_CODE=9295 RESULT_CODE=9295 DELTA_CODE=0
+LANGUAGE=MATLAB BASE_FILES=77 RESULT_FILES=77 DELTA_FILES=0 BASE_BLANK=484 RESULT_BLANK=484 DELTA_BLANK=0 BASE_COMMENT=1392 RESULT_COMMENT=1392 DELTA_COMMENT=0 BASE_CODE=9799 RESULT_CODE=9799 DELTA_CODE=0
+LANGUAGE=SIMION GEM BASE_FILES=10 RESULT_FILES=10 DELTA_FILES=0 BASE_BLANK=26 RESULT_BLANK=26 DELTA_BLANK=0 BASE_COMMENT=54 RESULT_COMMENT=54 DELTA_COMMENT=0 BASE_CODE=214 RESULT_CODE=214 DELTA_CODE=0
+LANGUAGE=SUM BASE_FILES=164 RESULT_FILES=164 DELTA_FILES=0 BASE_BLANK=807 RESULT_BLANK=807 DELTA_BLANK=0 BASE_COMMENT=2057 RESULT_COMMENT=2057 DELTA_COMMENT=0 BASE_CODE=19308 RESULT_CODE=19308 DELTA_CODE=0
+SCRIPT_FILES BASE=164 RESULT=164 DELTA=0
+FUNCTION=tests
+LANGUAGE=JSON BASE_FILES=1 RESULT_FILES=1 DELTA_FILES=0 BASE_BLANK=0 RESULT_BLANK=0 DELTA_BLANK=0 BASE_COMMENT=0 RESULT_COMMENT=0 DELTA_COMMENT=0 BASE_CODE=134 RESULT_CODE=134 DELTA_CODE=0
+LANGUAGE=Lua BASE_FILES=18 RESULT_FILES=18 DELTA_FILES=0 BASE_BLANK=64 RESULT_BLANK=64 DELTA_BLANK=0 BASE_COMMENT=101 RESULT_COMMENT=101 DELTA_COMMENT=0 BASE_CODE=1755 RESULT_CODE=1755 DELTA_CODE=0
+LANGUAGE=MATLAB BASE_FILES=48 RESULT_FILES=48 DELTA_FILES=0 BASE_BLANK=476 RESULT_BLANK=476 DELTA_BLANK=0 BASE_COMMENT=572 RESULT_COMMENT=572 DELTA_COMMENT=0 BASE_CODE=4953 RESULT_CODE=4953 DELTA_CODE=0
+LANGUAGE=PowerShell BASE_FILES=8 RESULT_FILES=8 DELTA_FILES=0 BASE_BLANK=58 RESULT_BLANK=58 DELTA_BLANK=0 BASE_COMMENT=33 RESULT_COMMENT=33 DELTA_COMMENT=0 BASE_CODE=1650 RESULT_CODE=1650 DELTA_CODE=0
+LANGUAGE=Python BASE_FILES=409 RESULT_FILES=414 DELTA_FILES=5 BASE_BLANK=10067 RESULT_BLANK=10336 DELTA_BLANK=269 BASE_COMMENT=11477 RESULT_COMMENT=11721 DELTA_COMMENT=244 BASE_CODE=122993 RESULT_CODE=125948 DELTA_CODE=2955
+LANGUAGE=SUM BASE_FILES=484 RESULT_FILES=489 DELTA_FILES=5 BASE_BLANK=10665 RESULT_BLANK=10934 DELTA_BLANK=269 BASE_COMMENT=12183 RESULT_COMMENT=12427 DELTA_COMMENT=244 BASE_CODE=131485 RESULT_CODE=134440 DELTA_CODE=2955
+SCRIPT_FILES BASE=483 RESULT=488 DELTA=5
+FUNCTION=tooling_other
+LANGUAGE=PowerShell BASE_FILES=24 RESULT_FILES=24 DELTA_FILES=0 BASE_BLANK=179 RESULT_BLANK=179 DELTA_BLANK=0 BASE_COMMENT=332 RESULT_COMMENT=332 DELTA_COMMENT=0 BASE_CODE=5172 RESULT_CODE=5184 DELTA_CODE=12
+LANGUAGE=Python BASE_FILES=56 RESULT_FILES=56 DELTA_FILES=0 BASE_BLANK=1698 RESULT_BLANK=1704 DELTA_BLANK=6 BASE_COMMENT=1149 RESULT_COMMENT=1158 DELTA_COMMENT=9 BASE_CODE=16222 RESULT_CODE=16315 DELTA_CODE=93
+LANGUAGE=SUM BASE_FILES=80 RESULT_FILES=80 DELTA_FILES=0 BASE_BLANK=1877 RESULT_BLANK=1883 DELTA_BLANK=6 BASE_COMMENT=1481 RESULT_COMMENT=1490 DELTA_COMMENT=9 BASE_CODE=21394 RESULT_CODE=21499 DELTA_CODE=105
+SCRIPT_FILES BASE=80 RESULT=80 DELTA=0
+```
+
+</details>
+
+## 当前责任与提交边界
+
+| Agent | 责任 | 状态 |
 |---|---|---|
-| Agent 0 | goal、计划、合同与跨流整合、环境、联合验证、交付 | 已创建goal、完成检出与规范读取；维护本计划 |
-| Agent 1 | 峰形／分辨率、单反射边界和MR私有死代码 | 已完成只读审计及内存缺陷复现，未修改源码 |
-| Agent 2 | IP／局部OA公共束流与快照边界 | 已完成只读审计和本计划独立复核，未修改源码 |
-| Agent 3 | RF和公共机制／入口清理 | 已完成只读审计，未修改源码 |
+| Agent 0 | 目标、整合、证据、CLOC、门禁与交付 | 本轮L1／L2与源码身份核对完成，执行本地主题提交和交付 |
+| Agent 1 | RF冻结接线清单及结构化退出码 | 5个授权文件已冻结；5项冻结包回归、3PS parser及Ruff通过 |
+| Agent 2 | IP冻结测试脚手架 | 2个授权文件已冻结；35项通过，5成功＋5缺模块失败probe |
+| Agent 3 | 单反射／RF与独立复核 | 前批已交付冻结；精确ID与解释器绑定独立接受 |
+| Agent 4 | B0与提交边界 | 收敛后两实际测试独立通过；RF包probe与IP隔离／计算边界接受 |
 
-实现阶段开始前按具体文件划分写入责任，Git索引和提交串行。只读审计完成不等于批次完成；
-每批记录实际修改、验证、未完成项和下一依赖，不按估计工时给出虚假的完成百分比。
+本地主题顺序保持：runtime binding；strict_json；公共复制；消费者审计与精确退役；
+RF phase CLI；峰／ID／RF响应；B2束流与观测。共享README、gate catalog、依赖库存、
+PROJECT和本计划按主题分段暂存；后续RF helper若增加改动路径，重新核对清单。
+每组正文说明累计树验证范围，不将累计最终树PASS冒充中间提交独立全门禁PASS。
+Git写入串行，原checkout的旧中间稿在整合前保留恢复点；没有远程推送／合并／发布授权。
 
-计划阶段验证：文档结构检查通过（304份Markdown、161份历史记录，活动链接错误0）；L1的
-`DOCUMENTATION_ONLY`路径通过仓库卫生、受管文本字节和文档阶段。已有111条人工review提示主要为
-冻结历史链接和长文，不属于新增错误。当前改动只有本计划和Roadmap导航，
-`CLOC_DELTA=N/A (docs-only)`。尚未运行锁定环境代码回归、真实求解器、GUI／CAD或Formal验证。
+原工作区：`C:/Users/Liao/Documents/ChatGPT/Mass spectrometry repository`。
+当前隔离工作树：`C:/Users/Liao/.codex/worktrees/unified-diagnostics-b2/Mass spectrometry repository`。
+当前HEAD仍为`b5efb9d9c1963b5fc62a4c44c34549c08a9a6878`。
+正式验证使用原工作区锁定的`.venv/Scripts/python.exe`，独立树不另装环境。
+门禁共用`C:/Users/Liao/Documents/ChatGPT/artifacts/common/host_resources.sqlite3`。
 
-## 总验收与goal关闭
+## 复现与最终关闭
 
-- [ ] B0候选均被核验，当前事实与分享记录中的建议有明确区分。
-- [ ] 诊断输入、观测、粒子选择、数值算法、科学判定和发布可独立追溯。
-- [ ] IP／局部OA、单反射／MR、RF按实际需求完成公共接线，并保留各自科学边界。
-- [ ] 直接FWHM、Gaussian proxy、质量响应带、时间参考与质量标定不再同名混用。
-- [ ] 同方法的冻结回归及有意方法变化证据齐全；必要原生验证没有未关闭缺口。
-- [ ] 图、表与JSON共享数值权威，发布后可追溯母群、方法和来源。
-- [ ] 已确认重复实现和旧入口真正退出，调用、配置、注册、冻结依赖和文档无悬挂引用。
-- [ ] 公共与项目测试、适用L1／L2通过，未执行的其他验证明确划定结论边界。
-- [ ] 使用`report_cloc_delta.ps1`报告起点到结果的total／production／tests及各语言变化；
-      工具不可用时明确失败，不用自制计数代替。
-- [ ] 交付活动实现数量、入口数量、维护位置变化及复现命令；不虚构收益百分比。
-- [ ] 计划、项目／集成当前文档和最终报告一致，所有必要实现及验证完成后才关闭goal。
+从仓库根设置上述锁定解释器的`SIMULATION_PYTHON_EXE`及PATH，再按[操作指南](OPERATIONS.md#分层门禁)执行：
 
-当前只完成goal建立、源码检出与初步审计；上述未勾选项均不构成已交付能力。
+```powershell
+./common/verify_changed.ps1 -PythonExe $env:SIMULATION_PYTHON_EXE -PlanOnly
+./common/verify_changed.ps1 -PythonExe $env:SIMULATION_PYTHON_EXE -MaxConcurrency 2
+./common/verify_repository_integration.ps1 -PythonExe $env:SIMULATION_PYTHON_EXE -MaxConcurrency 2
+./common/report_cloc_delta.ps1 -Base 0292d3bb037cccc7b6568072c350155566fcc54e -Current WORKTREE
+```
+
+- [x] B0候选保留／退役、原始目标与当前事实逐项核对完成。
+- [x] 观测、母群、原ID／权重、单位、时间、方法与科学资格可独立追溯。
+- [x] 各真实消费者与冻结库存无悬挂引用，同方法及有意变化证据完整。
+- [x] 增长／复杂度复核与已确认冗余收敛完成，规模和操作接口如实报告。
+- [x] 最终固定源码的公共／项目／集成回归与适用L1／L2通过；未执行层级明确。
+- [x] 最新官方CLOC含total／production／tests各语言files、blank、comment、code及完整过滤口径。
+- [ ] 主题提交、原工作区整合、临时内容清理和最终报告一致；全部必要工作完成后才关闭goal。

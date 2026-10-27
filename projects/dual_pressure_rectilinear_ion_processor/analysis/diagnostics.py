@@ -17,6 +17,10 @@ from matplotlib.collections import LineCollection
 from matplotlib.patches import Rectangle
 import numpy as np
 
+from common.analysis.particle_census import (
+    CENSUS_SCHEMA_VERSION, lifetime_position, partition_cohort, subset_efficiency,
+)
+from common.contracts.component_particle_state import load_component_particle_state_csv
 from common.contracts.file_identity import file_sha256
 from common.contracts.particle_physics import kinetic_energy_ev
 from projects.rf_multipole_ion_optics.analysis.exit_state_plot import prepare_visual_style_map
@@ -29,6 +33,25 @@ from projects.dual_pressure_rectilinear_ion_processor.analysis.post_extraction_d
 PRODUCER_SOURCE_SHA256 = file_sha256(Path(__file__))
 
 STATES = ("alive", "extracted", "lost", "notborn", "unknown")
+CLASSIFICATION_SEMANTICS = dict(
+    schema_version=CENSUS_SCHEMA_VERSION,
+    interval="source/admission inclusive, terminal exclusive",
+    alive="exact recorded or bounded display-interpolated state within the interval",
+    extracted="recorded acceptance_surface terminal; last position, not a live cloud",
+    lost="non-exit terminal of any recorded reason; not proof of a physical collision",
+    legacy_loss_outputs="diagnostic_losses.csv and loss_count enumerate non-exit terminal evidence",
+    notborn="before independent-source birth",
+    not_admitted="upstream particle exists but has not entered IP",
+    unknown="no supported observation; neither survival nor loss is inferred",
+)
+STATE_LABELS = {"lost": "non-exit terminal"}
+
+
+def _partition(data: dict, rows: list[dict]) -> dict:
+    return partition_cohort(sorted(data["sources"]),
+                            ((row["particle_id"], row["status"]) for row in rows),
+                            categories=_states(data), relative_weights=data["census_weights"])
+
 
 
 def _states(data: dict) -> tuple[str, ...]:
@@ -142,7 +165,7 @@ def prepare_data(run: Path) -> dict[str, Any]:
     events = _iter_csv(run / "simion/events.csv", {"particle_id", "event", "reason", "t_us", *VALUES})
     samples = _iter_csv(run / "simion/samples.csv", {"particle_id", "t_us", *VALUES})
     canonical = _csv(run / "results/particle_state.csv", {"particle_id", "event", "status"})
-    sources, terminals, tracks = {}, {}, {}
+    sources, terminals, tracks, exits = {}, {}, {}, {}
     mass = c["source"]["species"]["mass_amu"]
     for raw in chain(samples, events):
         particle = int(raw["particle_id"])
@@ -155,17 +178,67 @@ def prepare_data(run: Path) -> dict[str, Any]:
             if particle in sources:
                 raise ValueError("duplicate source ID")
             sources[particle] = row
+        if raw.get("event") == "extraction_exit":
+            if particle in exits:
+                raise ValueError("duplicate extraction exit ID")
+            exits[particle] = row
         if raw.get("event") == "terminal":
             if particle in terminals:
                 raise ValueError("duplicate terminal ID")
             terminals[particle] = {**row, "reason": raw["reason"], "electrode_id": raw.get("electrode_id") or "unknown"}
-    if not sources or set(tracks) != set(sources) or not set(terminals) <= set(sources):
+    if not sources or set(tracks) != set(sources) or not set(terminals) <= set(sources) or not set(exits) <= set(sources):
         raise ValueError("sample/event particle IDs do not match source")
     if {int(row["particle_id"]) for row in canonical if row["event"] == "source"} != set(sources):
         raise ValueError("canonical source membership differs")
+    weights = None  # The independent generated source explicitly counts equal test particles.
+    mother_ids = sorted(sources)
+    weight_paths = []
+    if "injected_source" in c:
+        weight_path = run / "inputs/injected_states.csv"
+        admitted = load_component_particle_state_csv(weight_path).rows
+        weights = {row["particle_id"]: row["particle_weight"] for row in admitted}
+        if set(weights) != set(sources):
+            raise ValueError("injected weight IDs differ from the complete IP admission cohort")
+        mother_path = run / "inputs/upstream_mother_census.json"
+        mother_ids = _json(mother_path)["mother_particle_ids"]
+        if len(mother_ids) != c["injected_source"]["mother_particle_count"]:
+            raise ValueError("upstream mother count differs from frozen IP admission")
+        weight_paths = [weight_path, mother_path]
+    # Validate the original full mother sequence before any set can hide duplicates.
+    admission = partition_cohort(mother_ids,
+        ((pid, "admitted" if pid in sources else "not_admitted") for pid in mother_ids),
+        categories=("admitted", "not_admitted"), relative_weights=None)
+    if set(admission["particle_ids_by_category"]["admitted"]) != set(sources):
+        raise ValueError("IP admission IDs are outside the frozen upstream mother")
+    for pid, exit_row in exits.items():
+        terminal = terminals.get(pid)
+        if (terminal is None or terminal["reason"] != "acceptance_surface"
+                or any(exit_row[key] != terminal[key] for key in ("t_us", *VALUES))):
+            raise ValueError("recorded extraction exit differs from its terminal state")
+    conditional = subset_efficiency(sorted(sources), exits, sources, relative_weights=weights)
+    # This call explicitly counts one ID per mother. Its unit-weight view is
+    # not evidence for the absent upstream relative weights.
+    full_count = subset_efficiency(mother_ids, exits, mother_ids, relative_weights=None)
+    full_chain = {key: full_count[key] for key in (
+        "schema_version", "mother_particle_ids", "numerator_particle_ids",
+        "denominator_particle_ids", "numerator_count", "denominator_count", "count_fraction")}
+    full_weighted = full_count if "injected_source" not in c else None
+    if "injected_source" in c and set(sources) == set(mother_ids):
+        # Every mother has a frozen admitted state: its original weight is
+        # authoritative even though upstream fates do not repeat that column.
+        full_weighted = subset_efficiency(mother_ids, exits, mother_ids, relative_weights=weights)
+    full_chain.update(
+        relative_weight_fraction=full_weighted["relative_weight_fraction"] if full_weighted is not None else None,
+        numerator_weight_sum=full_weighted["numerator_weight_sum"] if full_weighted is not None else None,
+        denominator_weight_sum=full_weighted["denominator_weight_sum"] if full_weighted is not None else None,
+        weighting=full_weighted["weighting"] if full_weighted is not None else "unavailable",
+        relative_weight_reason="complete_upstream_mother_weights_not_recorded" if full_weighted is None else None)
     ordered = {}
     for particle, table in tracks.items():
-        death = terminals.get(particle, {}).get("t_us", math.inf)
+        terminal_time = terminals.get(particle, {}).get("t_us")
+        lifetime_position(sources[particle]["t_us"], sources[particle]["t_us"], terminal_time,
+                          start_tolerance_us=0., terminal_tolerance_us=0.)
+        death = math.inf if terminal_time is None else terminal_time
         rows = [row for time, row in sorted(table.items()) if time <= death]
         if any(row["t_us"] < sources[particle]["t_us"] for row in rows):
             raise ValueError("recorded state precedes IP admission" if "injected_source" in c else "recorded state precedes particle birth")
@@ -186,19 +259,24 @@ def prepare_data(run: Path) -> dict[str, Any]:
     if len({label for label, _ in snapshots}) != len(snapshots) or not set(contract["stage_labels"]) <= {label for label, _ in snapshots}:
         raise ValueError("duplicate or missing diagnostic stage label")
     return dict(config=c, contract=contract, sources=sources, terminals=terminals, tracks=ordered,
-                times={particle: [row["t_us"] for row in rows] for particle, rows in ordered.items()}, snapshots=snapshots)
+                times={particle: [row["t_us"] for row in rows] for particle, rows in ordered.items()}, snapshots=snapshots,
+                census_weights=weights, census_source_paths=weight_paths,
+                exit_efficiencies=dict(observation="recorded extraction_exit paired with acceptance_surface terminal",
+                                       ip_admitted=conditional, full_chain=full_chain))
 
 
 def state_at(data: dict, particle: int, time: float) -> dict:
     """Classify first; interpolate only observed adjacent points within limits."""
     source = data["sources"][particle]
     base = dict(particle_id=particle, t_us=time, status="unknown", reason="missing_bracket", electrode_id="unknown", bracket_start_us=None, bracket_end_us=None, bracket_gap_us=None, **{key: None for key in (*VALUES, "kinetic_energy_ev")})
-    if time < source["t_us"]:
+    terminal = data["terminals"].get(particle)
+    life = lifetime_position(time, source["t_us"], terminal["t_us"] if terminal else None,
+                             start_tolerance_us=0., terminal_tolerance_us=0.)
+    if life["before_start"]:
         if "injected_source" in data["config"]:
             return {**base, "status": "not_admitted", "reason": "not_yet_entered_IP"}
         return {**base, "status": "notborn", "reason": "not_yet_born"}
-    terminal = data["terminals"].get(particle)
-    if terminal and time >= terminal["t_us"]:
+    if life["terminal_reached"]:
         # These coordinates are explicitly the LAST state, not a live cloud.
         return {**base, **{key: terminal[key] for key in (*VALUES, "kinetic_energy_ev")}, "status": "extracted" if terminal["reason"] == "acceptance_surface" else "lost", "reason": terminal["reason"], "electrode_id": terminal["electrode_id"]}
     times = data["times"][particle]
@@ -233,16 +311,18 @@ def lp_members(data: dict, rows: list[dict]) -> list[dict] | None:
 
 def census(data: dict, time: float) -> tuple[dict, list[dict]]:
     rows = [state_at(data, particle, time) for particle in sorted(data["sources"])]
-    counts = {state: sum(row["status"] == state for row in rows) for state in _states(data)}
-    if sum(counts.values()) != len(data["sources"]):
-        raise AssertionError("diagnostic census does not close")
+    partition = _partition(data, rows)
+    counts = partition["counts"]
     alive = [row for row in rows if row["status"] == "alive"]
     lp=lp_members(data,rows)
     slow, _, _ = coordinate_axes(data)
     spread=float(np.std([row[slow+"_mm"] for row in alive])) if alive else None
     lp_spread=float(np.std([row[slow+"_mm"] for row in lp])) if lp else None
-    result=dict(t_us=time, source_count=len(rows), **counts, sigma_slow_mm=spread, sigma_axis=slow,
-                lp_alive_count=None if lp is None else len(lp), lp_sigma_slow_mm=lp_spread)
+    result=dict(t_us=time, source_count=partition["mother_count"], **counts, sigma_slow_mm=spread, sigma_axis=slow,
+                lp_alive_count=None if lp is None else len(lp), lp_sigma_slow_mm=lp_spread,
+                census_schema_version=CENSUS_SCHEMA_VERSION, source_weight_sum=partition["mother_weight_sum"],
+                width_weighting="equal_particle_ids", width_ddof=0,
+                **{state+"_weight_sum": value for state, value in partition["weight_sums"].items()})
     if "coordinate_transform" not in data["config"]:
         result.update(sigma_x_mm=spread, lp_sigma_x_mm=lp_spread)
     return result, rows
@@ -312,7 +392,7 @@ def build_figures(data: dict, snapshot_rows: list[dict], evolution: list[dict], 
             for state in ("lost", "extracted"):
                 terminals = [row for row in data["terminals"].values() if (row["reason"] == "acceptance_surface") == (state == "extracted")]
                 if terminals:
-                    axis.scatter([row[slow+"_mm"] for row in terminals], [row[vertical+"_mm"] for row in terminals], color=styles[state]["color"], marker=styles[state]["marker"], label=state+" last positions", zorder=5)
+                    axis.scatter([row[slow+"_mm"] for row in terminals], [row[vertical+"_mm"] for row in terminals], color=styles[state]["color"], marker=styles[state]["marker"], label=STATE_LABELS.get(state,state)+" last positions", zorder=5)
             axis.autoscale_view()
             axis.set_title("Recorded trajectories with projected electrode outlines")
         _shared_legend(figure, axes[0])
@@ -326,12 +406,12 @@ def build_figures(data: dict, snapshot_rows: list[dict], evolution: list[dict], 
             axis.set(xlim=bounds["full_x_mm"], ylim=bounds["full_y_mm"])
             for state in ("alive", "lost", "extracted"):
                 selected = [row for row in rows if row["status"] == state]
-                axis.scatter([row[slow+"_mm"] for row in selected], [row[fast+"_mm"] for row in selected], color=styles[state]["color"], marker=styles[state]["marker"], s=12, label=state if state == "alive" else state+" last")
-            counts = {state: sum(row["status"] == state for row in rows) for state in _states(data)}
+                axis.scatter([row[slow+"_mm"] for row in selected], [row[fast+"_mm"] for row in selected], color=styles[state]["color"], marker=styles[state]["marker"], s=12, label=STATE_LABELS.get(state,state) if state == "alive" else STATE_LABELS.get(state,state)+" last")
+            counts = _partition(data, rows)["counts"]
             snapshot_spec = next(item for item in data["contract"]["snapshots"] if item["label"] == label)
             anchor_label = {"extraction_start_us":"requested_quench" if "native_timing" in data["config"] else "legacy_quench", "primary_quench_us":"quench_start", "pulse_start_us":"pulse_start"}.get(snapshot_spec["anchor"])
             display_label = f"{anchor_label}{snapshot_spec['offset_us']:+g} us" if anchor_label else label
-            axis.set_title(f"{display_label} t={time:g} us\n" + ", ".join(f"{state}={n}" for state, n in counts.items()), fontsize=8)
+            axis.set_title(f"{display_label} t={time:g} us\n" + ", ".join(f"{STATE_LABELS.get(state,state)}={n}" for state, n in counts.items()), fontsize=8)
         for axis in list(np.asarray(axes).flat)[len(data["snapshots"]):]:
             axis.set_visible(False)
         _shared_legend(figure, np.asarray(axes).flat[0])
@@ -349,7 +429,7 @@ def build_figures(data: dict, snapshot_rows: list[dict], evolution: list[dict], 
                 rows=[row for row in snapshot_rows if row["snapshot"]==label]
                 for state in ("alive","lost","extracted"):
                     selected=[row for row in rows if row["status"]==state]
-                    axis.scatter([row[slow+"_mm"] for row in selected],[row[fast+"_mm"] for row in selected],color=styles[state]["color"],marker=styles[state]["marker"],s=18,label=state if state=="alive" else state+" last")
+                    axis.scatter([row[slow+"_mm"] for row in selected],[row[fast+"_mm"] for row in selected],color=styles[state]["color"],marker=styles[state]["marker"],s=18,label=STATE_LABELS.get(state,state) if state=="alive" else STATE_LABELS.get(state,state)+" last")
                 alive=[row for row in rows if row["status"]=="alive"]
                 outside=sum(not(bounds["local_x_mm"][0]<=row[slow+"_mm"]<=bounds["local_x_mm"][1] and bounds["local_y_mm"][0]<=row[fast+"_mm"]<=bounds["local_y_mm"][1]) for row in alive)
                 axis.set_title(f"quench_start{time-quench:+g} us\nalive outside zoom={outside}/{len(alive)}",fontsize=8)
@@ -421,7 +501,7 @@ def build_figures(data: dict, snapshot_rows: list[dict], evolution: list[dict], 
     axes[0,0].set(xlabel="Instrument time (us)", ylabel="Kinetic energy (eV)", title="All recorded IDs; lines join recorded samples")
     axes[0,1].set(xlabel="Instrument time (us)", ylabel=f"{slow} (mm)")
     for state in _states(data):
-        axes[0,2].plot([row["t_us"] for row in evolution], [row[state] for row in evolution], color=styles[state]["color"], marker=styles[state]["marker"], markevery=max(1,len(evolution)//12), markersize=3, label=state)
+        axes[0,2].plot([row["t_us"] for row in evolution], [row[state] for row in evolution], color=styles[state]["color"], marker=styles[state]["marker"], markevery=max(1,len(evolution)//12), markersize=3, label=STATE_LABELS.get(state,state))
     axes[0,2].set(xlabel="Instrument time (us)", ylabel="Particle count (full source denominator)")
     axes[0,2].legend(fontsize=7)
     axes[1,0].plot([row["t_us"] for row in evolution], [np.nan if row["sigma_slow_mm"] is None else row["sigma_slow_mm"] for row in evolution], color="#0072B2", marker="o", markevery=max(1,len(evolution)//12), markersize=3)
@@ -436,7 +516,7 @@ def build_figures(data: dict, snapshot_rows: list[dict], evolution: list[dict], 
     axes[1,1].set(xlabel="Extraction energy (eV)", ylabel="Conditional ECDF")
     losses = [row for row in data["terminals"].values() if row["reason"] != "acceptance_surface"]
     axes[1,2].scatter([row["t_us"]-quench for row in losses], [row[slow+"_mm"] for row in losses], marker="x", color=styles["lost"]["color"])
-    axes[1,2].set(xlabel="Loss time - RF quench start (us)", ylabel=f"Terminal {slow} (mm)", title="Loss positions (entity unknown unless logged)")
+    axes[1,2].set(xlabel="Non-exit terminal time - RF quench start (us)", ylabel=f"Terminal {slow} (mm)", title="Non-exit terminal positions (physical cause requires evidence)")
     for axis in axes.flat:
         axis.grid(alpha=.16)
     figures["population_evolution"] = figure
@@ -458,7 +538,8 @@ def cooling_statistics(data: dict, snapshots: list[dict]) -> dict:
         rows = [row for row in snapshots if row["snapshot"]==label]
         alive = [row for row in rows if row["status"]=="alive"]
         matched_key = "same_ids_at_admission" if "injected_source" in data["config"] else "same_ids_at_birth"
-        stages[label] = dict(census={state:sum(row["status"]==state for row in rows) for state in _states(data)},
+        partition = _partition(data, rows)
+        stages[label] = dict(census=partition["counts"], census_weight_sums=partition["weight_sums"],
                              alive_particle_ids=[row["particle_id"] for row in alive],
                              alive=describe(alive), **{matched_key:describe([data["sources"][row["particle_id"]] for row in alive])})
     return dict(schema_version=1,role="ion_processor_cooling_distributions",source_count=len(data["sources"]),
@@ -507,9 +588,14 @@ def export_diagnostics(run: Path, output_directory: Path | None = None) -> dict:
             git[key] = result.stdout.strip() if result.returncode == 0 else "unavailable"
         git["source"]="live repository fallback; frozen source context absent"
     source_paths = [run/relative for relative in ("inputs/resolved_model.json","inputs/diagnostics.json","simion/events.csv","simion/samples.csv","results/particle_state.csv")]
+    source_paths.extend(data["census_source_paths"])
     if context_path.is_file():
         source_paths.append(context_path)
     metadata = dict(schema_version=1, role="ion_processor_diagnostic_figure", source_run=str(run), source_profile=data["config"].get("source_profile"), source_particle_count=len(data["sources"]), displayed_particle_ids=sorted(data["sources"]), source_records=[dict(path=str(path),sha256=file_sha256(path),bytes=path.stat().st_size) for path in source_paths], git=git, code_sha256=PRODUCER_SOURCE_SHA256, frame_id=data["config"].get("coordinate_transform", {}).get("to_frame_id",data["config"]["baseline"]["clock"]["frame_id"]), coordinate_transform=data["config"].get("coordinate_transform"), sigma_csv_compatibility="new frames use sigma_slow_mm/lp_sigma_slow_mm with explicit sigma_axis; sigma_x aliases exist only for legacy local-axis runs", units=dict(position="mm",velocity="mm/us in CSV; m/s phase-space display",time="instrument absolute us",energy="eV"), selection="full-range views preserve all source IDs; explicitly conditional LP zoom and per-stage alive energy details accompany full-cohort views; no KDE, smoothing, fitting or subsampling", display_bounds=display_bounds(data), interpolation="display only; linear between adjacent recorded positions/velocities within frozen bracket limit; energy recomputed from interpolated velocity", maximum_used_interpolation_gap_us=maximum_used_gap, pulse_timing=pulse_timing_context(data), snapshot_census=[dict(label=label,**census(data,time)[0]) for label,time in data["snapshots"]], lp_conditioning="alive with guide_length+hp_length < slow_coordinate < guide_length+hp_length+lp_length; slow=project y for transformed runs, local x for legacy; no detector-outcome selection; global sigma includes HP-retained ions", geometry_provenance="statistical panels contain no projected electrode boxes; separate section panels consume frozen CSG solids/cutouts and declare any projected E9 footprints explicitly", geometry_sha256=file_sha256(run/"inputs/resolved_model.json"), display_claim="all recorded trajectories and bounded display interpolation, not every integration step; lost/extracted points are last positions, never alive clouds", uncertainty="none; N10 exploration or N100 functional only", numerical_or_GUI_qualification=False)
+    metadata.update(classification_semantics=CLASSIFICATION_SEMANTICS,
+                    census_weighting="relative" if data["census_weights"] is not None else "unit",
+                    moment_weighting="unit; relative weights currently affect census and efficiency only",
+                    exit_efficiencies=data["exit_efficiencies"])
     if "injected_source" in data["config"]:
         metadata.update(initial_state_semantics="actual IP admission, not original particle birth",
             population_scope="IP-admitted cohort; original upstream mother fates remain in frozen inputs and component export",
@@ -547,5 +633,6 @@ def export_diagnostics(run: Path, output_directory: Path | None = None) -> dict:
         if not (results / filename).is_file():
             raise ValueError(f"required post-extraction table missing: {filename}")
     summary=dict(schema_version=1,role="ion_processor_diagnostics_summary",post_extraction_status=packet_status,source_particle_count=len(data["sources"]),figure_roles=output_roles,all_recorded_particle_ids=True,snapshot_count=len(data["snapshots"]),census_rows=len(census_rows),loss_count=len(losses),qualification="diagnostic_only_no_physics_or_GUI_pass",maximum_used_interpolation_gap_us=metadata["maximum_used_interpolation_gap_us"])
+    summary.update(classification_semantics=CLASSIFICATION_SEMANTICS, exit_efficiencies=data["exit_efficiencies"])
     (results/"diagnostics_summary.json").write_text(json.dumps(summary,indent=2)+"\n",encoding="utf-8")
     return summary

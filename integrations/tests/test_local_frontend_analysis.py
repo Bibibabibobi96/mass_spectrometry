@@ -124,6 +124,21 @@ class SharedTimeDisplaySelectionTests(unittest.TestCase):
         finally:
             plt.close("all")
 
+    def test_common_lifetime_retains_native_32_ulp_boundaries_without_inventing_observations(self):
+        observer = RigidTransform.identity("mrtof_global_cartesian")
+        lives = {31: dict(birth=dict(instrument_time_us=.5),
+                          terminal=dict(instrument_time_us=2., event="local_timeout"), exit=None)}
+        times = [.5-33*math.ulp(1.), .5-32*math.ulp(1.), 1.,
+                 2.-33*math.ulp(2.), 2.-32*math.ulp(2.), 2.]
+        census, active, counts = _snapshot_census([], {31: {}}, lives, times, observer)
+        self.assertEqual([row["status"] for row in census],
+                         ["not_born", "numerical_unsupported", "numerical_unsupported",
+                          "numerical_unsupported", "already_loss", "already_loss"])
+        self.assertEqual(active, [])
+        self.assertTrue(all(sum(row[key] for key in
+            ("not_born", "active", "already_exit", "already_loss", "numerical_unsupported")) == 1
+            for row in counts))
+
     def test_terminal_markers_are_actual_past_positions_and_not_active_states(self):
         active = pd.DataFrame([dict(requested_time_us=1., z_mm=32., x_mm=0., y_mm=-50.)])
         terminals = pd.DataFrame([
@@ -338,6 +353,10 @@ class LocalFrontendAnalysisTests(unittest.TestCase):
             result = analyze_local_frontend(root, [log], phase="discovery", shared_times_us=_TIMES)
             output = root / "results/local_frontend/discovery"
             self.assertEqual((result["mother_count"], result["exit_count"], result["loss_count"]), (3, 1, 2))
+            self.assertEqual(result["exit_efficiency"]["denominator_particle_ids"], [3, 11, 67])
+            self.assertEqual(result["exit_efficiency"]["count_fraction"], 1/3)
+            self.assertEqual(result["classification_semantics"]["schema_version"], 1)
+            self.assertIn("not proof of a physical collision", result["classification_semantics"]["already_loss"])
             checkpoints = pd.read_csv(output / "checkpoints.csv")
             self.assertEqual((checkpoints.event == "accelerator_grid1_forward").sum(), 1)
             self.assertEqual(result["selected_pulse_time_us"], .5)

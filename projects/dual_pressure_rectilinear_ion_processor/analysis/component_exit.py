@@ -252,7 +252,8 @@ def export_component_exit(source_run: Path, output_directory: Path, *,
         velocity = [_finite(terminal[f"v{axis}_mm_us"]) * 1000 for axis in "xyz"]
         species_id = f"ion_m{mass:.17g}_q{charge}".replace(".", "_").replace("+", "p").replace("-", "n")
         row = dict(particle_id=particle_id, parent_particle_id="", generation=0, species_id=species_id,
-                   particle_weight=1, source_component_id=source_instance_id, target_component_id=target_instance_id,
+                   particle_weight=release["particle_weight"] if injected else 1,
+                   source_component_id=source_instance_id, target_component_id=target_instance_id,
                    state_event="extraction_exit", frame_id=frame, clock_epoch_id=clock["clock_epoch_id"],
                    instrument_time_us=time, lineage_age_us=time-birth, particle_age_us=time-birth,
                    last_component_elapsed_time_us=time-(_finite(release["arrival_time_us"]) if injected else birth), lineage_birth_time_us=birth,
@@ -299,7 +300,10 @@ def export_component_exit(source_run: Path, output_directory: Path, *,
                    units=dict(position="mm", velocity="m/s", time="us", energy="eV", mass="u"),
                    clock_semantics="instrument_epoch_plus_recorded_solver_elapsed_once; ages_from_per_id_release_birth",
                    observation_surface=dict(center_mm=list(center), normal=normal, semantics="recorded_stop_plane_not_physical_port"),
-                   adapter_semantics=dict(species_id="derived_from_per_id_release_mass_and_charge", particle_weight="unit_independent_test_particle_count_not_physical_bunch_charge", lineage="root_source_no_reactions", phase="absent_no_transfer_phase_reference"),
+                   adapter_semantics=dict(species_id="derived_from_per_id_release_mass_and_charge",
+                       particle_weight=("preserved_per_id_relative_weight_from_frozen_injected_states_not_physical_bunch_charge"
+                                        if injected else "unit_independent_test_particle_count_not_physical_bunch_charge"),
+                       lineage="root_source_no_reactions", phase="absent_no_transfer_phase_reference"),
                    validation=validation, lifecycle_verification=lifecycle)
     (output / "component_exit_receipt.json").write_text(json.dumps(receipt, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     return receipt

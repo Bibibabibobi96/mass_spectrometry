@@ -1,203 +1,99 @@
-"""Independent analytic regression, drift, membership and headless checks."""
+"""IP source-weight binding and actual public beam-consumer regressions."""
 from __future__ import annotations
 
-import copy
+import json
+from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import patch
 
-import numpy as np
-
-from projects.dual_pressure_rectilinear_ion_processor.analysis.beam_focus_diagnostics import (
-    prepare_focus_diagnostics, build_focus_figure, prepare_time_focus_diagnostics, build_time_focus_figure,
-)
-
-
-def fixture() -> dict:
-    states=[]
-    # At reference z=0: x=-L*u with L=10, and t=10-20/abs(vz).
-    for z in (1.,0.):
-        for pid,u,speed in ((1,-.1,1.),(2,0.,2.),(3,.1,4.)):
-            states.append(dict(plane_z_mm=z,particle_id=pid,status="alive",x_mm=-10*u-z*u,
-                y_mm=float(pid),t_us=10-20/speed-z/speed,vx_mm_us=u*speed,vy_mm_us=0.,vz_mm_us=-speed))
-    return dict(label="Analytic",sources={i:{} for i in (1,2,3)},exits={i:{} for i in (1,2,3)},states=states)
+from common.analysis import beam_focus_diagnostics as beam
+from common.contracts.component_particle_state import write_component_particle_state_csv
+from common.contracts.particle_physics import kinetic_energy_ev
+from common.contracts.write_run_manifest import file_record
+from projects.dual_pressure_rectilinear_ion_processor.analysis import extraction_phase_space_comparison as recorded
+from projects.dual_pressure_rectilinear_ion_processor.analysis import geometry_comparison
+from projects.dual_pressure_rectilinear_ion_processor.tests.test_geometry_comparison import source_fixture, write_json, write_csv
 
 
-class BeamFocusTests(unittest.TestCase):
-    def prepare(self,case=None,common=None):
-        return prepare_focus_diagnostics([fixture() if case is None else case],[1.,0.],[1,2,3] if common is None else common)
+class RecordedBeamBindingTests(unittest.TestCase):
+    def setUp(self):
+        temporary=tempfile.TemporaryDirectory(prefix="ip_beam_binding_")
+        self.addCleanup(temporary.cleanup)
+        self.run=Path(temporary.name)/"recorded"
+        source_fixture(self.run,"flat")
+        completed=patch.object(recorded,"require_completed_terminal_publication")
+        completed.start();self.addCleanup(completed.stop)
 
-    def test_independent_regression_and_waist_predictions(self):
-        result=self.prepare()
-        rows=[r for r in result["field_free_predictions"] if r["cohort"]=="common_extracted_ids"]
-        x=next(r for r in rows if r["coordinate"]=="x")
-        self.assertAlmostEqual(x["L_star_mm"],10.)
-        self.assertAlmostEqual(x["z_focus_mm"],-10.)
-        self.assertAlmostEqual(x["sigma_at_prediction"],0.)
-        time=next(r for r in rows if r["coordinate"]=="time")
-        self.assertAlmostEqual(time["L_star_mm"],20.)
-        self.assertAlmostEqual(time["sigma_at_prediction"],0.)
-        self.assertEqual(time["sigma_unit"],"ns")
-        angle=next(r for r in result["exit_angle_decomposition"] if r["axis"]=="x")
-        self.assertAlmostEqual(angle["rho"],-1.)
-        self.assertAlmostEqual(angle["sigma_residual_deg"],0.)
-        self.assertAlmostEqual(angle["sigma_total_deg"],np.degrees(np.arctan(.1))*np.sqrt(2/3))
-        self.assertAlmostEqual(angle["variance_identity_residual_deg2"],0.)
+    def seal(self):
+        path=self.run/"run_manifest.json"
+        manifest=json.loads(path.read_text())
+        manifest["outputs"]=[file_record(p) for p in self.run.rglob("*")
+                             if p.is_file() and p.name not in {"run_manifest.json","run_config.json"}]
+        write_json(path,manifest)
 
-    def test_common_own_and_changing_alive_membership_are_explicit(self):
-        case=fixture();case["exits"]={1:{},2:{}}
-        next(r for r in case["states"] if r["plane_z_mm"]==0 and r["particle_id"]==3)["status"]="unknown"
-        result=self.prepare(case,common=[1,2])
-        alive=next(r for r in result["sampled_minima"] if r["cohort"]=="all_available_alive")
-        self.assertFalse(alive["cohort_membership_constant"])
-        self.assertFalse(alive["eligible_for_envelope_comparison"])
-        own=next(r for r in result["sampled_minima"] if r["cohort"]=="own_extracted_ids")
-        self.assertTrue(own["cohort_membership_constant"])
-        self.assertTrue(own["eligible_for_envelope_comparison"])
-        last=next(r for r in result["plane_statistics"] if r["cohort"]=="all_available_alive" and r["plane_z_mm"]==0)
-        self.assertEqual(last["available_ids"],[1,2])
-        self.assertEqual(last["missing_ids"],[3])
+    def injected(self):
+        config_path=self.run/"inputs/resolved_model.json"
+        config=json.loads(config_path.read_text());config["injected_source"]={"particle_ids":[1,2,3]}
+        write_json(config_path,config)
+        rows=[]
+        for pid,weight in ((3,8.),(1,.125),(2,2.)):
+            rows.append(dict(particle_id=pid,parent_particle_id="",generation=0,species_id="ion",
+                particle_weight=weight,source_component_id="upstream",target_component_id="ip",
+                state_event="mechanical_exit",frame_id="fixture_world",clock_epoch_id="fixture_epoch",
+                instrument_time_us=0.,lineage_age_us=0.,particle_age_us=0.,last_component_elapsed_time_us=0.,
+                lineage_birth_time_us=0.,particle_birth_time_us=0.,mass_to_charge_Th=524.,mass_amu=524.,charge_state=1,
+                position_x_mm=pid/10,position_y_mm=pid/5,position_z_mm=10.,
+                velocity_x_m_s=1000.,velocity_y_m_s=0.,velocity_z_m_s=0.,
+                kinetic_energy_eV=kinetic_energy_ev(524.,1000.,0.,0.),phase_reference_id="",phase_rad=""))
+        write_component_particle_state_csv(self.run/"inputs/injected_states.csv",rows)
+        self.seal()
+        return rows
 
-    def test_constant_empty_missing_and_nonfinite_values(self):
-        case=fixture()
-        for row in case["states"]:
-            row["vx_mm_us"]=0.;row["x_mm"]=1.
-        result=self.prepare(case,common=[])
-        row=next(r for r in result["field_free_predictions"] if r["coordinate"]=="x" and r["cohort"]=="own_extracted_ids")
-        self.assertIsNone(row["L_star_mm"])
-        self.assertEqual(row["sigma_at_reference"],0.)
-        empty=next(r for r in result["exit_angle_decomposition"] if r["cohort"]=="common_extracted_ids")
-        self.assertIsNone(empty["sigma_total_deg"])
-        case["states"][0]["t_us"]=None
-        missing=self.prepare(case)
-        row=next(r for r in missing["sampled_minima"] if r["metric"]=="sigma_t_ns")
-        self.assertFalse(row["metric_complete_all_planes"])
-        case["states"][0]["t_us"]=float("nan")
-        with self.assertRaisesRegex(ValueError,"finite"):
-            self.prepare(case)
+    def test_native_equal_source_and_real_geometry_consume_public_module(self):
+        case=recorded.load_recorded_case(self.run,"Native",include_samples=True)
+        self.assertEqual(case["particle_weights"],{1:1.,2:1.,3:1.})
+        self.assertIs(geometry_comparison.beam_focus_diagnostics,beam)
+        case["states"]=recorded.prepare_spatial_crossings(case,[5.,0.])
+        result=geometry_comparison.beam_focus_diagnostics.prepare_focus_diagnostics([case],[5.,0.],[1,2])
+        row=next(r for r in result["plane_statistics"] if r["plane_z_mm"]==0. and r["cohort"]=="common_extracted_ids")
+        self.assertEqual(row["weight_sum"],2.)
+        self.assertEqual(row["effective_sample_count"],2.)
 
-    def test_stable_incomplete_common_is_not_a_complete_cohort_envelope(self):
-        case=fixture()
-        for row in case["states"]:
-            if row["particle_id"]==3:
-                row["status"]="unknown"
-        result=self.prepare(case)
-        row=next(r for r in result["sampled_minima"] if r["cohort"]=="common_extracted_ids")
-        self.assertTrue(row["cohort_membership_constant"])
-        self.assertFalse(row["covers_declared_cohort"])
-        self.assertFalse(row["eligible_for_envelope_comparison"])
-        from matplotlib import pyplot as plt
-        figure=build_focus_figure(result)
-        self.assertIn("valid N=2",figure.legends[0].get_texts()[0].get_text())
-        self.assertIn("Declared common exit N=3",figure.legends[0].get_title().get_text())
-        plt.close(figure)
+    def test_injected_weights_are_read_once_bound_and_preserve_lost_source_id(self):
+        self.injected()
+        with patch.object(recorded,"load_component_particle_state_csv",wraps=recorded.load_component_particle_state_csv) as loader:
+            case=recorded.load_recorded_case(self.run,"Injected",include_samples=True)
+        loader.assert_called_once_with(self.run/"inputs/injected_states.csv")
+        self.assertEqual(case["particle_weights"],{3:8.,1:.125,2:2.})
+        self.assertNotIn(3,case["exits"])
+        self.assertIn(str(self.run/"inputs/injected_states.csv"),[r["path"] for r in case["source_records"]])
+        case["states"]=recorded.prepare_spatial_crossings(case,[5.,0.])
+        result=beam.prepare_focus_diagnostics([case],[5.,0.],[1,2])
+        row=next(r for r in result["plane_statistics"] if r["plane_z_mm"]==0. and r["cohort"]=="common_extracted_ids")
+        self.assertEqual(row["available_ids"],[1,2])
+        self.assertEqual(row["weight_sum"],2.125)
+        self.assertAlmostEqual(row["mean_x_mm"],(.125*.1+2*.2)/2.125)
 
-    def test_invalid_duplicate_identity_and_reference_plane(self):
-        case=fixture();case["states"].append(copy.deepcopy(case["states"][0]))
-        with self.assertRaisesRegex(ValueError,"duplicate"):
-            self.prepare(case)
-        with self.assertRaises(ValueError):
-            prepare_focus_diagnostics([fixture()],[0.,1.],[1])
-        with self.assertRaises(ValueError):
-            prepare_focus_diagnostics([fixture()],[1.,0.],[99])
-        self.assertEqual(self.prepare()["reference_z_mm"],0.)
+    def test_missing_bound_source_or_hash_drift_is_rejected(self):
+        self.injected();manifest_path=self.run/"run_manifest.json"
+        manifest=json.loads(manifest_path.read_text())
+        manifest["outputs"]=[r for r in manifest["outputs"] if not r["path"].endswith("injected_states.csv")]
+        write_json(manifest_path,manifest)
+        with self.assertRaisesRegex(ValueError,"manifest-bound.*injected_states"):
+            recorded.load_recorded_case(self.run,"Missing")
+        self.seal()
+        with (self.run/"inputs/injected_states.csv").open("a") as stream:stream.write("\n")
+        with self.assertRaisesRegex(AssertionError,"byte count changed"):
+            recorded.load_recorded_case(self.run,"Changed")
 
-    def test_sampled_boundary_minimum_and_single_header_render(self):
-        from matplotlib import pyplot as plt
-        result=self.prepare()
-        minimum=next(r for r in result["sampled_minima"] if r["metric"]=="sigma_x_mm")
-        self.assertEqual(minimum["plane_z_mm"],0.)
-        self.assertTrue(minimum["boundary_minimum"])
-        figure=build_focus_figure(result)
-        self.assertEqual(len(figure.axes),6)
-        self.assertEqual(len(figure.legends),1)
-        self.assertIsNone(figure._suptitle)
-        self.assertTrue(all(ax.get_legend() is None for ax in figure.axes))
-        self.assertGreater(figure.axes[0].get_xlim()[0],figure.axes[0].get_xlim()[1])
-        figure.canvas.draw();plt.close(figure)
-
-
-class TimeFocusTests(unittest.TestCase):
-    def prepare(self,case=None,common=None,lengths=None):
-        return prepare_time_focus_diagnostics([fixture() if case is None else case],[1.,0.],
-            [1,2,3] if common is None else common,{"drift_lengths_mm":[0.,10.,20.,30.] if lengths is None else lengths})
-
-    def test_known_time_focus_quadratic_and_absolute_particle_times(self):
-        result=self.prepare()
-        row=next(r for r in result["plane_time_statistics"] if r["cohort"]=="common_extracted_ids" and r["plane_z_mm"]==0)
-        self.assertAlmostEqual(row["unconstrained_L_star_mm"],20.)
-        self.assertAlmostEqual(row["downstream_L_star_mm"],20.)
-        self.assertAlmostEqual(row["downstream_min_sigma_t_ns"],0.)
-        self.assertAlmostEqual(row["rho_t_inverse_abs_vz"],-1.)
-        self.assertEqual(row["rho_t_x_mm_matched_count"],3)
-        self.assertEqual(row["rho_t_y_mm_matched_count"],3)
-        self.assertAlmostEqual(row["rho_t_x_mm"],np.corrcoef([-10.,0.,5.],[1.,0.,-1.])[0,1])
-        focused=[r for r in result["reference_plane_predictions"] if r["cohort"]=="common_extracted_ids" and r["drift_length_mm"]==20]
-        self.assertAlmostEqual(focused[0]["predicted_sigma_t_ns"],0.)
-        self.assertAlmostEqual(focused[0]["predicted_central90_width_ns"],0.)
-        particles=[r for r in result["reference_particle_predictions"] if r["cohort"]=="common_extracted_ids" and r["drift_length_mm"]==20]
-        self.assertEqual(len(particles),3)
-        self.assertTrue(all(r["predicted_t_us"]==10. for r in particles))
-        self.assertTrue(all(r["predicted_z_mm"]==-20. for r in particles))
-        budget=next(r for r in result["time_interval_variance_rows"] if r["cohort"]=="common_extracted_ids")
-        self.assertEqual(budget["paired_count"],3)
-        self.assertAlmostEqual(budget["closure_residual_ns2"],0.,places=7)
-
-    def test_long_tail_retained_and_constant_speed_has_no_unique_focus(self):
-        case=fixture();case["sources"][4]={};case["exits"][4]={}
-        case["states"]=[]
-        for z in (1.,0.):
-            for pid,t in enumerate((0.,0.,0.,.1),1):
-                case["states"].append(dict(plane_z_mm=z,particle_id=pid,status="alive",x_mm=0.,y_mm=0.,
-                    t_us=t+(1-z),vx_mm_us=0.,vy_mm_us=0.,vz_mm_us=-2.,total_energy_eV=float(pid)))
-        result=self.prepare(case,common=[1,2,3,4])
-        row=next(r for r in result["plane_time_statistics"] if r["cohort"]=="own_extracted_ids" and r["plane_z_mm"]==0)
-        self.assertAlmostEqual(row["sigma_t_ns"],25*np.sqrt(3))
-        self.assertAlmostEqual(row["central68_width_ns"],52.)
-        self.assertAlmostEqual(row["central90_width_ns"],85.)
-        self.assertIsNone(row["unconstrained_L_star_mm"])
-        self.assertFalse(row["unique_time_waist"])
-        self.assertEqual(row["downstream_L_star_mm"],0.)
-        self.assertIsNone(row["rho_t_vz"])
-        self.assertEqual(row["rho_t_vz_matched_count"],4)
-        self.assertEqual(result["metadata"]["energy_fields_available_by_case"][case["label"]],["total_energy_eV"])
-        curve=[r for r in result["reference_plane_predictions"] if r["cohort"]=="own_extracted_ids"]
-        self.assertTrue(all(abs(r["predicted_central90_width_ns"]-85)<1e-10 for r in curve))
-
-    def test_empty_and_missing_pairs_keep_ids_and_null_predictions(self):
-        case=fixture()
-        next(r for r in case["states"] if r["particle_id"]==3 and r["plane_z_mm"]==0)["t_us"]=None
-        result=self.prepare(case,common=[])
-        empty=next(r for r in result["plane_time_statistics"] if r["cohort"]=="common_extracted_ids")
-        self.assertIsNone(empty["sigma_t_ns"])
-        curve=next(r for r in result["reference_plane_predictions"] if r["cohort"]=="own_extracted_ids")
-        self.assertIsNone(curve["predicted_sigma_t_ns"])
-        self.assertEqual(curve["paired_forward_count"],2)
-        self.assertNotIn("available_ids",curve)
-        self.assertNotIn("missing_ids",curve)
-        particles=[r for r in result["reference_particle_predictions"] if r["particle_id"]==3]
-        self.assertEqual(len(particles),4)
-        self.assertTrue(all(r["predicted_t_us"] is None for r in particles))
-        interval=next(r for r in result["time_interval_variance_rows"] if r["cohort"]=="own_extracted_ids")
-        self.assertEqual(interval["paired_count"],2)
-        self.assertEqual(interval["unpaired_available_ids"],[3])
-        with self.assertRaises(ValueError):
-            self.prepare(lengths=[])
-        with self.assertRaises(ValueError):
-            self.prepare(lengths=[-1.])
-        with self.assertRaisesRegex(ValueError,"unique"):
-            self.prepare(lengths=[0.,0.])
-        with self.assertRaisesRegex(ValueError,"only drift_lengths_mm"):
-            prepare_time_focus_diagnostics([fixture()],[1.,0.],[1],{"drift_lengths_mm":[0.],"hidden_distance":10})
-
-    def test_single_header_time_focus_render(self):
-        from matplotlib import pyplot as plt
-        result=self.prepare(lengths=[10.,20.])  # Zero need not be declared.
-        figure=build_time_focus_figure(result)
-        self.assertEqual(len(figure.axes),6)
-        self.assertEqual(len(figure.legends),1)
-        self.assertIsNone(figure._suptitle)
-        self.assertTrue(all(ax.get_legend() is None for ax in figure.axes))
-        self.assertEqual(figure.axes[1].lines[0].get_xdata().tolist(),[10.,20.])
-        figure.canvas.draw();plt.close(figure)
+    def test_injected_id_coverage_and_missing_weight_fail_closed(self):
+        rows=self.injected()
+        for invalid in (rows[:-1],rows+[rows[0]],
+                        [{k:v for k,v in row.items() if k!="particle_weight"} for row in rows]):
+            write_csv(self.run/"inputs/injected_states.csv",invalid);self.seal()
+            with self.assertRaises(ValueError):
+                recorded.load_recorded_case(self.run,"Invalid")
 
 
 if __name__=="__main__":

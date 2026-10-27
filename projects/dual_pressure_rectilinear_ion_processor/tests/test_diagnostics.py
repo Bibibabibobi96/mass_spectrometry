@@ -4,12 +4,16 @@ from __future__ import annotations
 import copy
 import csv
 import json
+import math
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from matplotlib import pyplot as plt
+
+from common.contracts.component_particle_state import write_component_particle_state_csv
+from common.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th
 
 from projects.dual_pressure_rectilinear_ion_processor.analysis.diagnostics import (
     build_figures, census, export_diagnostics, prepare_data, state_at,
@@ -63,11 +67,28 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertEqual(state_at(data,3,0)["status"],"notborn")
         self.assertEqual(state_at(data,1,4)["status"],"extracted")
 
-    def test_injected_initial_state_means_admission_not_a_new_birth(self) -> None:
+    def inject(self, weights):
         path = self.run/"inputs/resolved_model.json"
         config = json.loads(path.read_text())
         config["injected_source"] = dict(mother_particle_count=4)
         path.write_text(json.dumps(config))
+        rows = []
+        for pid, arrival in ((3, .5), (2, 0.), (1, 0.)):
+            rows.append(dict(particle_id=pid, parent_particle_id=None, generation=0,
+                species_id="fixture_524", particle_weight=weights[pid],
+                source_component_id="upstream", target_component_id="ip", state_event="mechanical_exit",
+                frame_id="test_local", clock_epoch_id="fixture_epoch", instrument_time_us=arrival,
+                lineage_age_us=arrival, particle_age_us=arrival, last_component_elapsed_time_us=arrival,
+                lineage_birth_time_us=0., particle_birth_time_us=0., mass_to_charge_Th=mass_to_charge_th(524, 1),
+                mass_amu=524., charge_state=1, position_x_mm=arrival, position_y_mm=0., position_z_mm=0.,
+                velocity_x_m_s=1000., velocity_y_m_s=0., velocity_z_m_s=0.,
+                kinetic_energy_eV=kinetic_energy_ev(524, 1000, 0, 0), phase_reference_id=None, phase_rad=None))
+        write_component_particle_state_csv(self.run/"inputs/injected_states.csv", rows)
+        (self.run/"inputs/upstream_mother_census.json").write_text(json.dumps(dict(mother_particle_ids=[1, 2, 3, 99])))
+        return rows
+
+    def test_injected_initial_state_means_admission_not_a_new_birth(self) -> None:
+        self.inject({1: 1., 2: 1., 3: 1.})
         data = prepare_data(self.run)
         self.assertEqual(state_at(data, 3, 0)["status"], "not_admitted")
         self.assertEqual(state_at(data, 3, 0)["reason"], "not_yet_entered_IP")
@@ -92,6 +113,89 @@ class DiagnosticsTests(unittest.TestCase):
         finally:
             for figure in figures.values():
                 plt.close(figure)
+
+    def test_relative_census_and_explicit_conditional_vs_full_chain_efficiency(self):
+        self.inject({1: .125, 2: 3.5, 3: 8.})
+        path = self.run/"simion/events.csv"
+        with path.open(newline="") as stream:
+            events = list(csv.DictReader(stream))
+        terminal = next(row for row in events if row["particle_id"] == "1" and row["event"] == "terminal")
+        events.insert(events.index(terminal), dict(terminal, event="extraction_exit"))
+        self.write_csv(path, events, list(events[0]))
+        data = prepare_data(self.run)
+        counts, _ = census(data, 3.)
+        self.assertEqual(counts["source_weight_sum"], 11.625)
+        self.assertEqual(counts["unknown_weight_sum"], 8.125)
+        self.assertEqual(counts["lost_weight_sum"], 3.5)
+        conditional = data["exit_efficiencies"]["ip_admitted"]
+        self.assertEqual(conditional["denominator_particle_ids"], [1, 2, 3])
+        self.assertEqual(conditional["count_fraction"], 1/3)
+        self.assertEqual(conditional["relative_weight_fraction"], 1/93)
+        full = data["exit_efficiencies"]["full_chain"]
+        self.assertEqual(full["denominator_particle_ids"], [1, 2, 3, 99])
+        self.assertEqual(full["count_fraction"], .25)
+        self.assertIsNone(full["relative_weight_fraction"])
+        self.assertEqual(full["relative_weight_reason"], "complete_upstream_mother_weights_not_recorded")
+
+    def test_missing_terminal_and_missing_record_do_not_prove_survival(self):
+        path = self.run/"simion/events.csv"
+        with path.open(newline="") as stream:
+            events = list(csv.DictReader(stream))
+        events = [row for row in events if not (row["particle_id"] == "1" and row["event"] == "terminal")]
+        self.write_csv(path, events, list(events[0]))
+        data = prepare_data(self.run)
+        row = state_at(data, 1, 3.)
+        self.assertEqual((row["status"], row["reason"]), ("unknown", "missing_bracket"))
+        self.assertIsNone(row["x_mm"])
+        self.assertEqual(census(data, 3.)[0]["source_count"], 3)
+
+    def test_full_chain_weighted_efficiency_when_all_mothers_have_frozen_admitted_weights(self):
+        self.inject({1: .125, 2: 3.5, 3: 8.})
+        config_path = self.run/"inputs/resolved_model.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config["injected_source"]["mother_particle_count"] = 3
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        (self.run/"inputs/upstream_mother_census.json").write_text(
+            json.dumps(dict(mother_particle_ids=[3, 1, 2])), encoding="utf-8")
+        path = self.run/"simion/events.csv"
+        with path.open(newline="") as stream:
+            events = list(csv.DictReader(stream))
+        terminal = next(row for row in events if row["particle_id"] == "1" and row["event"] == "terminal")
+        events.insert(events.index(terminal), dict(terminal, event="extraction_exit"))
+        self.write_csv(path, events, list(events[0]))
+        full = prepare_data(self.run)["exit_efficiencies"]["full_chain"]
+        self.assertEqual(full["denominator_particle_ids"], [3, 1, 2])
+        self.assertEqual(full["count_fraction"], 1/3)
+        self.assertEqual(full["relative_weight_fraction"], 1/93)
+        self.assertEqual(full["numerator_weight_sum"], .125)
+        self.assertEqual(full["denominator_weight_sum"], 11.625)
+        self.assertEqual(full["weighting"], "relative")
+        self.assertIsNone(full["relative_weight_reason"])
+
+    def test_strict_ip_birth_and_terminal_boundaries_are_unchanged(self):
+        data = prepare_data(self.run)
+        self.assertEqual(state_at(data, 3, math.nextafter(.5, -math.inf))["status"], "notborn")
+        self.assertEqual(state_at(data, 3, .5)["status"], "alive")
+        self.assertEqual(state_at(data, 2, math.nextafter(1.5, -math.inf))["status"], "alive")
+        self.assertEqual(state_at(data, 2, 1.5)["status"], "lost")
+        data["terminals"][3]["t_us"] = .4
+        with self.assertRaisesRegex(ValueError, "precedes"):
+            state_at(data, 3, .5)
+
+    def test_injected_census_requires_complete_weight_and_mother_ids(self):
+        rows = self.inject({1: .125, 2: 3.5, 3: 8.})
+        state = self.run/"inputs/injected_states.csv"
+        write_component_particle_state_csv(state, rows[:-1])
+        with self.assertRaisesRegex(ValueError, "weight IDs"):
+            prepare_data(self.run)
+        write_component_particle_state_csv(state, rows)
+        mother = self.run/"inputs/upstream_mother_census.json"
+        mother.write_text(json.dumps(dict(mother_particle_ids=[1, 2, 3, 3])))
+        with self.assertRaisesRegex(ValueError, "unique"):
+            prepare_data(self.run)
+        mother.write_text(json.dumps(dict(mother_particle_ids=[1, 2, 99, 100])))
+        with self.assertRaisesRegex(ValueError, "outside"):
+            prepare_data(self.run)
 
     def test_cooling_distributions_preserve_loss_and_unknown_cohorts(self) -> None:
         data=prepare_data(self.run)

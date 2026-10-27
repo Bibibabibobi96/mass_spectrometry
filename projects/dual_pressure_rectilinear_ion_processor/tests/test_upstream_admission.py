@@ -14,7 +14,7 @@ from common.contracts.file_identity import file_sha256
 from common.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th
 from common.contracts.write_run_manifest import file_record
 from projects.dual_pressure_rectilinear_ion_processor.analysis.upstream_admission import (
-    FATE_COLUMNS, load_injected_source, release_states,
+    FATE_COLUMNS, frozen_release_states, load_injected_source, release_states,
 )
 from projects.dual_pressure_rectilinear_ion_processor.analysis import functional, batching
 from projects.dual_pressure_rectilinear_ion_processor.tests.test_functional import HS1_SOURCE_FIXTURE
@@ -152,6 +152,36 @@ class AdmissionTests(unittest.TestCase):
         self.assertEqual(states[0]["arrival_time_us"], 43.02)
         self.assertEqual((states[0]["x_mm"], states[0]["vx_m_s"]), (0, 2000))
 
+    def test_relative_weights_follow_original_ids_without_changing_native_states(self):
+        original = release_states(self.load())
+        for weights in ({2: 1., 42: 1.}, {2: 3.5, 42: 3.5}, {2: .125, 42: 8.}):
+            with self.subTest(weights=weights):
+                rows = [dict(row, particle_weight=weights[row["particle_id"]])
+                        for row in reversed(self.rows)]
+                write_component_particle_state_csv(self.inputs/"source_states.csv", rows)
+                self.refresh("source_states", "source_states.csv")
+                before = file_record(self.inputs/"source_states.csv")
+                states = release_states(self.load())
+                self.assertEqual({r["particle_id"]: r["particle_weight"] for r in states}, weights)
+                self.assertEqual([{k: v for k, v in r.items() if k != "particle_weight"} for r in states],
+                                 [{k: v for k, v in r.items() if k != "particle_weight"} for r in original])
+                self.assertEqual(file_record(self.inputs/"source_states.csv"), before)
+
+    def test_missing_injected_weight_or_original_id_is_not_replaced(self):
+        path = self.inputs/"source_states.csv"
+        rows = [dict(row, particle_weight="") for row in self.rows]
+        with path.open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+            writer.writeheader()
+            writer.writerows(rows)
+        self.refresh("source_states", "source_states.csv")
+        with self.assertRaises(ValueError):
+            self.load()
+        write_component_particle_state_csv(path, self.rows[:1])
+        self.refresh("source_states", "source_states.csv")
+        with self.assertRaisesRegex(ValueError, "cohort"):
+            self.load()
+
     def test_recipe_instance_ids_survive_freezing_and_target_mismatch_is_rejected(self):
         original = release_states(self.load())
         self.rows = [dict(row,source_component_id="guide_a",target_component_id="processor_b") for row in self.rows]
@@ -220,7 +250,13 @@ class AdmissionTests(unittest.TestCase):
         return consumer, functional.read_json(consumer/"inputs/resolved_model.json")
 
     def test_real_prepare_freezes_actual_source_clock_and_batch_identity(self):
+        weights = {2: .125, 42: 8.}
+        self.rows = [dict(row, particle_weight=weights[row["particle_id"]]) for row in reversed(self.rows)]
+        write_component_particle_state_csv(self.inputs/"source_states.csv", self.rows)
+        self.refresh("source_states", "source_states.csv")
         consumer, config = self.prepare_consumer()
+        self.assertEqual({row["particle_id"]: row["particle_weight"]
+                          for row in frozen_release_states(consumer, config)}, weights)
         self.assertEqual(config["source_profile"], "upstream")
         self.assertEqual(config["source"]["particle_count"], 2)
         self.assertEqual(config["source"]["mother_particle_count"], 3)

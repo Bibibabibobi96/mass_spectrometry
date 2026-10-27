@@ -18,6 +18,11 @@
 
 ## 资格边界
 
+机械出口母群统计现复用公共particle_census的完整ID分类；构字典前拒绝重复source ID，
+两传输运行器同时冻结该依赖并计入容量。原机械平面、孔径、正向夹持与terminal覆盖校验保持，
+有／无出口两组旧census结果精确相同；non_exit_terminal是非出口终态集合，不等同已证实实物损失。
+此处仍是unit粒子计数，不授予相对权重或真实电流资格。
+
 冻结旧几何的共同三模式baseline只闭合功能分类。四极与八极原N=100运行两求解器均100/100且handoff身份一致；
 六极原记录也已闭合功能传输。连续相空间的空间／时间敏感性与跨求解器比较保持
 `INCONCLUSIVE_NUMERICAL_CONVERGENCE_NOT_ESTABLISHED`；工程六指标PASS只允许声明范围内的下游推进。

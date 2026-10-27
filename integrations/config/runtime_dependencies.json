@@ -1198,6 +1198,53 @@
           ]
         },
         {
+          "id": "common_analysis_particle_census_py",
+          "source_repo_path": "common/analysis/particle_census.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "common_analysis_plane_crossings_py",
+          "source_repo_path": "common/analysis/plane_crossings.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "common_analysis_figure_export_py",
+          "source_repo_path": "common/analysis/figure_export.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "common_analysis_beam_focus_diagnostics_py",
+          "source_repo_path": "common/analysis/beam_focus_diagnostics.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
           "id": "common_analysis_population_moments_py",
           "source_repo_path": "common/analysis/population_moments.py",
           "consumers": [
@@ -2185,18 +2232,6 @@
           "id": "local_frontend_projects_dual_pressure_rectilinear_ion_processor_analysis_spatial_crossings_py",
           "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/spatial_crossings.py",
           "consumers": [
-            "local_frontend",
-            "prepared_joint",
-            "accelerator_interface",
-            "cooled_frontend",
-            "oa_mr"
-          ]
-        },
-        {
-          "id": "local_frontend_projects_dual_pressure_rectilinear_ion_processor_analysis_beam_focus_diagnostics_py",
-          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/beam_focus_diagnostics.py",
-          "consumers": [
-            "local_frontend",
             "prepared_joint",
             "accelerator_interface",
             "cooled_frontend",

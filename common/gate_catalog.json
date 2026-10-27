@@ -154,6 +154,98 @@
       }
     },
     {
+      "stage": "figure_export_tests",
+      "dependency_profile": "locked",
+      "repository_integration_group": "regression",
+      "matches": [
+        {
+          "exact": "common/analysis/figure_export.py",
+          "reason": "shared_figure_export_changed"
+        },
+        {
+          "exact": "common/analysis/test_figure_export.py",
+          "reason": "shared_figure_export_tests_changed"
+        }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": [
+          "-m",
+          "unittest",
+          "common.analysis.test_figure_export"
+        ]
+      }
+    },
+    {
+      "stage": "beam_focus_diagnostics_tests",
+      "dependency_profile": "locked",
+      "repository_integration_group": "regression",
+      "matches": [
+        {
+          "exact": "common/analysis/beam_focus_diagnostics.py",
+          "reason": "shared_beam_focus_diagnostics_changed"
+        },
+        {
+          "exact": "common/analysis/test_beam_focus_diagnostics.py",
+          "reason": "shared_beam_focus_tests_changed"
+        }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": [
+          "-m",
+          "unittest",
+          "common.analysis.test_beam_focus_diagnostics"
+        ]
+      }
+    },
+    {
+      "stage": "particle_census_tests",
+      "dependency_profile": "stdlib",
+      "repository_integration_group": "regression",
+      "matches": [
+        {
+          "exact": "common/analysis/particle_census.py",
+          "reason": "shared_particle_census_changed"
+        },
+        {
+          "exact": "common/analysis/test_particle_census.py",
+          "reason": "shared_particle_census_tests_changed"
+        }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": [
+          "-m",
+          "unittest",
+          "common.analysis.test_particle_census"
+        ]
+      }
+    },
+    {
+      "stage": "plane_crossings_tests",
+      "dependency_profile": "stdlib",
+      "repository_integration_group": "regression",
+      "matches": [
+        {
+          "exact": "common/analysis/plane_crossings.py",
+          "reason": "shared_plane_crossings_changed"
+        },
+        {
+          "exact": "common/analysis/test_plane_crossings.py",
+          "reason": "shared_plane_crossings_tests_changed"
+        }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": [
+          "-m",
+          "unittest",
+          "common.analysis.test_plane_crossings"
+        ]
+      }
+    },
+    {
       "stage": "population_moments_tests",
       "dependency_profile": "locked",
       "repository_integration_group": "regression",
@@ -558,6 +650,10 @@
         {
           "exact": "common/resource_budget_support.ps1",
           "reason": "shared_resource_budget_dependency_changed"
+        },
+        {
+          "exact": "common/analysis/particle_census.py",
+          "reason": "shared_particle_census_changed"
         }
       ],
       "command": {
@@ -877,6 +973,10 @@
           "reason": "shared_resource_budget_dependency_changed"
         },
         {
+          "exact": "common/analysis/particle_census.py",
+          "reason": "shared_particle_census_changed"
+        },
+        {
           "exact": "common/analysis/peak_metrics.py",
           "reason": "shared_response_peak_metrics_changed"
         }
@@ -934,6 +1034,10 @@
         {
           "exact": "common/resource_budget_support.ps1",
           "reason": "shared_resource_budget_dependency_changed"
+        },
+        {
+          "exact": "common/analysis/particle_census.py",
+          "reason": "shared_particle_census_changed"
         }
       ],
       "command": {
@@ -982,6 +1086,10 @@
         {
           "exact": "common/resource_budget_support.ps1",
           "reason": "shared_resource_budget_dependency_changed"
+        },
+        {
+          "exact": "common/analysis/particle_census.py",
+          "reason": "shared_particle_census_changed"
         }
       ],
       "command": {
@@ -1009,6 +1117,10 @@
           "reason": "ion_processor_changed"
         },
         {
+          "exact": "common/analysis/plane_crossings.py",
+          "reason": "shared_plane_crossings_changed"
+        },
+        {
           "exact": "common/ion_release/release.py",
           "reason": "shared_release_changed"
         },
@@ -1031,6 +1143,18 @@
         {
           "exact": "common/resource_budget_support.ps1",
           "reason": "shared_resource_budget_dependency_changed"
+        },
+        {
+          "exact": "common/analysis/particle_census.py",
+          "reason": "shared_particle_census_changed"
+        },
+        {
+          "exact": "common/analysis/beam_focus_diagnostics.py",
+          "reason": "shared_beam_focus_diagnostics_changed"
+        },
+        {
+          "exact": "common/analysis/figure_export.py",
+          "reason": "shared_figure_export_changed"
         }
       ],
       "command": {

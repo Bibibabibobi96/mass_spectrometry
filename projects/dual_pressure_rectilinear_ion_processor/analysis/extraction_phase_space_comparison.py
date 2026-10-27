@@ -18,7 +18,9 @@ from matplotlib import pyplot as plt
 import numpy as np
 
 from common.analysis.population_moments import population_pair_moments
+from common.analysis.plane_crossings import METHOD as CROSSING_METHOD, SCHEMA_VERSION as CROSSING_SCHEMA_VERSION
 
+from common.contracts.component_particle_state import load_component_particle_state_csv
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
@@ -101,6 +103,18 @@ def load_recorded_case(run: Path, label: str, *, include_samples: bool = False,
         raise ValueError("source/terminal/exit census differs")
     if len(sources) != config["source"]["particle_count"]:
         raise ValueError("source census differs from frozen particle count")
+    if "injected_source" in config:
+        name = "inputs/injected_states.csv"
+        if name not in records:
+            raise ValueError(f"consumed record not manifest-bound: {name}")
+        verify_record(name, records[name], base_dir=run)
+        injected = load_component_particle_state_csv(run / name).rows
+        particle_weights = {row["particle_id"]: row["particle_weight"] for row in injected}
+        if set(particle_weights) != set(sources):
+            raise ValueError("injected weight IDs differ from recorded IP source IDs")
+        consumed += (name,)
+    else:
+        particle_weights = {pid: 1. for pid in sources}
     snapshots = _table(run / "results/diagnostic_snapshots.csv")
     stages = [item["label"] for item in _json(run / "inputs/diagnostics.json")["snapshots"] if item["label"] != "source"]
     states = []
@@ -133,7 +147,7 @@ def load_recorded_case(run: Path, label: str, *, include_samples: bool = False,
             raise ValueError(f"stage census lacks full source identity: {stage}")
     geometry = config["baseline"]["geometry"]
     return dict(label=label, run=str(run), config=config, states=states, stages=["birth", *stages, "exit_z0"],
-                sources=sources, exits=exits, terminals=terminals,
+                sources=sources, exits=exits, terminals=terminals, particle_weights=particle_weights,
                 lp_length_mm=geometry["lp_length_mm"], lift_v=config["baseline"]["electric"]["lift_v"],
                 source_records=[dict(record, path=str(run / name)) for name, record in records.items() if name in consumed])
 
@@ -451,6 +465,9 @@ def export_comparison(run_mapping: dict[str, Path], output_directory: Path, stud
                     metrics="Population SD; centered covariance; RMS emittance=sqrt(var(x)*var(vx)-cov(x,vx)^2), or replace vx by theta_x in mrad. Ex includes mean drift. Theta=atan2(vtrans,abs(vz)); only after pulse with vz<0. x-theta moments use exactly the angle-defined subset.",
                     cohorts="all_available_alive uses currently alive snapshot states, own_extracted_ids and common_extracted_ids track exit-selected IDs backward; census retains losses/unknown/notborn/extracted separately. Exit ensemble uses individual crossing times.",
                     transformations="Existing bounded snapshot interpolation unchanged; birth and exit are actual recorded events. No smoothing, fitting, subsampling, outlier exclusion or extrapolation.",
+                    crossing_reconstruction=dict(schema_version=CROSSING_SCHEMA_VERSION, method=CROSSING_METHOD,
+                                                 occurrence=1, observation="adjacent_native_sample_reconstruction",
+                                                 exit_rule="Recorded exit only at z=0; sample-to-exit interpolation must lie within both actual positions"),
                     spatial_sections="First -z crossing after actual pulse from bounded adjacent sample records; z=0 uses recorded exit. Near pulse and near small vz, theta describes direction only and is not an established paraxial beam. Missing crossings stay unknown with terminal reason. Each plane ensemble has different arrival times.",
                     effects="Equal weights: length=short-minus-long, lift=high-minus-low; interaction=(short_high-long_high)-(short_low-long_low).",
                     inference="Single seed N100 per cell; descriptive functional causal evidence at fixed numerics; no confidence interval, statistical or numerical convergence qualification. Paired ID differences are trajectory sensitivity, not identical collision histories.",

@@ -446,6 +446,37 @@ Write-Output 'FROZEN_DEPENDENCIES=PASS'
             completed = subprocess.run([sys.executable, "-s", "-c", statement], cwd=snapshot, env=env,
                                        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
+            # Exercise the real local OA adapter inside the detached snapshot,
+            # then remove its new public kernel and prove imports fail closed.
+            crossing_statement = """
+from pathlib import Path
+from integrations.workflows.local_frontend.focus import _local_crossings
+from common.analysis import plane_crossings
+assert Path(plane_crossings.__file__).is_relative_to(Path.cwd())
+rows = _local_crossings(
+    [(4, dict(particle_id=7,t_us=1.,x_mm=1.,y_mm=2.,z_mm=2.,vx_mm_us=0.,vy_mm_us=0.,vz_mm_us=-1.)),
+     (8, dict(particle_id=7,t_us=2.,x_mm=3.,y_mm=2.,z_mm=0.,vx_mm_us=0.,vy_mm_us=0.,vz_mm_us=-1.))],
+    {7: {}}, {}, {7: dict(reason='not_extracted')}, [1.,0.],
+    frame='mrtof_global_cartesian',pulse=0.,limit=1.,mass=524.)
+assert rows[0]['t_us']==1.5 and rows[0]['lower_sample_line']==4 and rows[0]['upper_sample_line']==8
+assert rows[1]['status']=='unknown'
+print('LOCAL_SNAPSHOT_CROSSING=PASS')
+"""
+            crossing_command = [sys.executable, "-B", "-s", "-c", crossing_statement]
+            crossed = subprocess.run(crossing_command, cwd=snapshot, env=env,
+                                     capture_output=True, text=True, encoding="utf-8", timeout=60)
+            self.assertEqual(crossed.returncode, 0, crossed.stdout+crossed.stderr)
+            self.assertIn("LOCAL_SNAPSHOT_CROSSING=PASS", crossed.stdout)
+            kernel = snapshot/"common/analysis/plane_crossings.py"
+            contents = kernel.read_bytes()
+            kernel.unlink()
+            try:
+                absent = subprocess.run(crossing_command, cwd=snapshot, env=env,
+                                        capture_output=True, text=True, encoding="utf-8", timeout=60)
+                self.assertNotEqual(absent.returncode, 0)
+                self.assertIn("plane_crossings", absent.stderr)
+            finally:
+                kernel.write_bytes(contents)
             # Removing one declared provider proves the clean snapshot cannot
             # silently recover an undeclared cross-project import from the repo.
             (snapshot/"projects/dual_pressure_rectilinear_ion_processor/analysis/guide_interface.py").unlink()
