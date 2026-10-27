@@ -1,5 +1,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'common/contracts/run_artifact_support.ps1')
 
 function Get-DependencyIntegrationRoot {
   [CmdletBinding()]
@@ -114,13 +115,16 @@ function Copy-FrozenDependency {
   if (Test-Path -LiteralPath $destination) {
     throw "Dependency $($Dependency.id) frozen destination already exists: $destination"
   }
-  $destinationParent = Split-Path -Parent $destination
-  New-Item -ItemType Directory -Path $destinationParent -Force | Out-Null
-  Copy-Item -LiteralPath $source -Destination $destination
-  $sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
-  $frozenHash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
-  if ($sourceHash -ne $frozenHash) {
-    throw "Dependency changed while frozen: $source; destination=$destination; source_sha256=$sourceHash; frozen_sha256=$frozenHash"
+  $identity = $null
+  try {
+    $null = Copy-VerifiedRunInput -Source $source -Destination $destination -VerifiedIdentity ([ref]$identity)
+  } catch {
+    $details = $_.Exception.Data
+    if ($details.Contains('source_sha256') -and $details.Contains('frozen_sha256')) {
+      $message = "Dependency changed while frozen: $source; destination=$destination; source_sha256=$($details['source_sha256']); frozen_sha256=$($details['frozen_sha256'])"
+      throw [InvalidOperationException]::new($message, $_.Exception)
+    }
+    throw
   }
   return [pscustomobject]@{
     id = [string]$Dependency.id
@@ -132,7 +136,7 @@ function Copy-FrozenDependency {
     consumers = @($Dependency.consumers)
     frozen_path = $destination
     snapshot_path = $destination
-    sha256 = $sourceHash
+    sha256 = $identity.sha256
   }
 }
 

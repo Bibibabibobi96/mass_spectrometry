@@ -23,6 +23,45 @@ def load(path: Path) -> dict:
 
 class DependencyTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
+    def test_prepared_snapshot_can_freeze_dependency_without_live_repository(self) -> None:
+        """The PS freezer resolves its shared implementation from the snapshot."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inputs = root / "inputs"
+            detached = inputs / "runtime_snapshot"
+            script = f"""
+. '{DEPENDENCIES}'
+$null=Freeze-ConsumerDependencies -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId prepared_joint
+"""
+            result = subprocess.run(
+                [shutil.which("pwsh"), "-NoProfile", "-Command", script], cwd=REPO_ROOT,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            destination = root / "second_inputs"
+            # New process, no live-repository import. The source is an existing
+            # frozen contract; the copy and receipt must bind its actual bytes.
+            script = f"""
+. '{detached / 'integrations/runtime/dependencies.ps1'}'
+$dependency=[pscustomobject]@{{
+ id='fixture';provider_scope='repository_common';provider_project='common';provider_repo_path='common'
+ source_repo_path='common/contracts/run_artifact_support.ps1';frozen_filename='copied.ps1'
+ run_input_name='fixture';consumers=@('prepared_joint')
+}}
+Copy-FrozenDependency -RepoRoot '{detached}' -InputDir '{destination}' -Dependency $dependency | ConvertTo-Json -Depth 5
+"""
+            result = subprocess.run(
+                [shutil.which("pwsh"), "-NoProfile", "-Command", script], cwd=root,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            record = json.loads(result.stdout)
+            source = detached / "common/contracts/run_artifact_support.ps1"
+            self.assertEqual((destination / "copied.ps1").read_bytes(), source.read_bytes())
+            self.assertEqual(record["sha256"], hashlib.sha256(source.read_bytes()).hexdigest().upper())
+            self.assertEqual(Path(record["snapshot_path"]), destination / "copied.ps1")
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
     def test_prepared_joint_derives_scope_from_its_complete_frozen_assembly_closure(self) -> None:
         """Run the actual parent compiler detached, including non-Python schemas."""
         required = (

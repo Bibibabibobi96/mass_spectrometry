@@ -35,6 +35,8 @@
 `-VerificationAttempts 3`，每次都要求复制前源、复制后源和目标SHA-256三方完全一致；首轮普通复制
 失败后，后续轮次使用8-MiB显式流、write-through和磁盘flush。该选项只容忍可重试的本机大文件复制
 抖动，不会把持续变化的源或坏副本降级为成功。
+复制身份校验失败的异常`Data`保留`source_path`、`destination_path`、`source_sha256`和`frozen_sha256`，
+适配器可复用这些实测身份生成诊断，无需额外哈希。
 需要规避 Windows 路径深度的外部运行器可在`New-RunPackage`显式选择`-UseShortExecutionPath`。公共层会从
 `MASS_SPECTROMETRY_EXECUTION_ROOT`（未设置时使用工作区的`artifacts/common/execution_aliases/`）创建一次性短 junction 指向最终
 `artifacts/.../runs/<run_id>`；运行器把短路径仅作为进程工作路径，并在终态后调用

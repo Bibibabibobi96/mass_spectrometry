@@ -207,6 +207,9 @@ MR的`load-workbench`与batch Fly共用碰撞PA预载并保持不可Refine状态
 ## 依赖冻结与门禁
 
 [运行依赖清单](../config/runtime_dependencies.json)与[冻结器](../runtime/dependencies.ps1)按明确owner／consumer复制实际来源。
+普通小输入的复制与身份校验统一调用`Copy-VerifiedRunInput`，直接使用其已核验SHA生成来源收据；
+集成适配器继续验证提供者边界、显式清单与目标不存在，公共复制失败的实测摘要保留在依赖错误中。
+冻结清单已包含PowerShell公共复制入口及直接导入，`prepared_joint`快照可脱离活动仓库继续冻结输入。
 源与副本SHA不一致继续失败关闭，报告两条路径及实测摘要，不重试或放宽身份判据；缺依赖不回读活动仓库。
 上游只验证实际消费记录，阶段恢复和终态发布复用公共机制。跨父目录执行显式共用同一调度账本。
 

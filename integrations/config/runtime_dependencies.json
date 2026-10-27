@@ -318,6 +318,9 @@
           "source_repo_path": "common/contracts/run_artifact_support.ps1",
           "consumers": [
             "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "multipole_ip",
             "cooled_frontend",
             "oa_mr",
             "single_reflection_flight",
@@ -330,6 +333,9 @@
           "source_repo_path": "common/require_powershell7.ps1",
           "consumers": [
             "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "multipole_ip",
             "cooled_frontend",
             "oa_mr",
             "single_reflection_flight",
@@ -513,6 +519,9 @@
           "source_repo_path": "common/host_execution_lease.ps1",
           "consumers": [
             "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "multipole_ip",
             "cooled_frontend",
             "oa_mr",
             "single_reflection_flight",

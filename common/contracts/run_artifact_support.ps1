@@ -766,7 +766,12 @@ function Copy-VerifiedRunInput {
       return $destinationPath
     }
   }
-  throw "Run input changed or copied inconsistently while frozen after $VerificationAttempts attempt(s): $sourcePath"
+  $failure=[InvalidOperationException]::new("Run input changed or copied inconsistently while frozen after $VerificationAttempts attempt(s): $sourcePath")
+  $failure.Data['source_path']=$sourcePath
+  $failure.Data['destination_path']=$destinationPath
+  $failure.Data['source_sha256']=$sourceHashAfter
+  $failure.Data['frozen_sha256']=$destinationHash
+  throw $failure
 }
 
 function Write-RunDirectoryChecksumInventory {
