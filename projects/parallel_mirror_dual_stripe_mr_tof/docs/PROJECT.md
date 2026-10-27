@@ -52,6 +52,13 @@ OA→MR的原生功能与两代完整批恢复已有证据，结果统一见
 `pulse_held_rf_zero`不升级成全程动态RF／碰撞耦合；原ID、母群损失、实际6D与绝对时钟始终保留。
 接线与迁移进展只查[直属集成状态](../../../integrations/docs/INTEGRATION.md)。
 
+实测源`measured_component_source.py`的JSON读取与有限实数表示检查现复用公共`strict_json`，
+删除同义私有读取器与质心目标的finite helper；重复键、非有限字面量和溢出输入失败关闭，仍接受UTF-8 BOM。
+物种、单位、实际能量账本、原ID、母群及绝对时钟的科学校验不变。纯分析同输入对照中，
+质心目标完整结果相等，实测源receipt及11个生成文件逐字节相等；实际入口的非法输入与BOM回归
+见`tests/analysis/test_measured_component_source.py`。此结果不新增原生运行或Formal资格。
+
+
 ## 加速器接口与整机暂停边界
 
 独立加速器可选OA或IP，器件来源与实际父plan均须显式绑定。IP使用实测出口状态交接，

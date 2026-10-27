@@ -15,6 +15,7 @@ from unittest.mock import patch
 from common.contracts.canonical_clock_authority import validate_clock_authority
 from common.contracts.component_particle_state import write_component_particle_state_csv
 from common.contracts.file_identity import file_sha256
+from common.contracts.strict_json import StrictJsonError
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import measured_component_source as source_module
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import (
     materialize_measured_source, materialize_measured_source_slice, materialize_centroid_probe,
@@ -86,6 +87,13 @@ class MeasuredCentroidTargetTests(unittest.TestCase):
         self.assertAlmostEqual(ledger["clean_target_angle_degrees"],math.degrees(angle))
         self.assertFalse(result["physical_matching_qualified"])
 
+    def test_numeric_representation_is_checked_before_target_physics(self):
+        for value in (True, "-27.36410265968425", None, math.inf, 10**1000):
+            evidence = self.evidence()
+            evidence["stripe_1_voltage_v"] = value
+            with self.subTest(value_type=type(value).__name__), self.assertRaises(StrictJsonError):
+                author_measured_centroid_prism_target(**evidence)
+
     def test_invalid_or_incomplete_actual_ledger_fails_closed(self):
         for scenario in ("nan_phi","missing_phi","missing_ex_state","charge","wrong_binding","wrong_source","bad_K","bad_H","no_clean","no_partition","bad_geometry"):
             with self.subTest(scenario=scenario):
@@ -142,6 +150,25 @@ class MeasuredComponentSourceTests(unittest.TestCase):
     @staticmethod
     def _identity(path: Path) -> dict:
         return {"path": str(path), "bytes": path.stat().st_size, "sha256": file_sha256(path)}
+
+    def test_real_materializer_rejects_ambiguous_and_nonfinite_json_before_output(self) -> None:
+        original = self.handoff.read_text(encoding="utf-8")
+        for prefix in ('"schema_version":3,', '"unused":{"x":1,"x":2},',
+                       '"unused":NaN,', '"unused":Infinity,', '"unused":1e999,'):
+            self.handoff.write_text("{" + prefix + original.lstrip()[1:], encoding="utf-8")
+            with self.subTest(prefix=prefix), self.assertRaises(StrictJsonError):
+                self._materialize()
+            self.assertFalse(self.output.exists())
+        self.handoff.write_text(original, encoding="utf-8")
+
+    def test_real_materializer_retains_bom_input_and_canonical_particle_bytes(self) -> None:
+        original = self.handoff.read_text(encoding="utf-8")
+        self.handoff.write_text(original, encoding="utf-8-sig")
+        receipt = json.loads(original)
+        canonical = Path(receipt["outputs"]["component_particle_state"]["path"])
+        result = self._materialize()
+        self.assertTrue(result["source_materialization_ready"])
+        self.assertEqual((self.output / "component_particle_state.csv").read_bytes(), canonical.read_bytes())
 
     def test_old_or_missing_handoff_connection_is_explicitly_unsupported(self) -> None:
         original = json.loads(self.handoff.read_text())

@@ -187,6 +187,16 @@
           ]
         },
         {
+          "id": "common_strict_json",
+          "source_repo_path": "common/contracts/strict_json.py",
+          "consumers": [
+            "paired_accelerator_pulse",
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
           "id": "common_file_identity",
           "source_repo_path": "common/contracts/file_identity.py",
           "consumers": [

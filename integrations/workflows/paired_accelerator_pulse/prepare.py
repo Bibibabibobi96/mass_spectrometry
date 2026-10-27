@@ -12,6 +12,7 @@ from typing import Any
 
 from common.contracts.canonical_clock_authority import validate_clock_authority
 from common.contracts.frozen_inputs import freeze_file
+from common.contracts.strict_json import load_json_object, require_number
 from common.contracts.particle_count_policy import validate_positive_particle_count
 from common.contracts.particle_physics import AMU_KG
 from common.contracts.verify_run_manifest import record_path
@@ -23,16 +24,6 @@ from integrations.runtime.single_flight_source import (
     require_producer_manifest_binding,
     select_timed_pre_pulse_states,
 )
-
-
-def _read(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8-sig"))
-
-
-def _number(value: Any, name: str, *, positive: bool = False) -> float:
-    if type(value) not in (int, float) or not math.isfinite(value) or (positive and value <= 0):
-        raise ValueError(f"{name} must be finite" + (" and positive" if positive else ""))
-    return float(value)
 
 
 def _freeze(record: dict, destination: Path, base: Path) -> dict:
@@ -57,7 +48,7 @@ def _role_voltages(table: dict, source_binding: dict, target_binding: dict) -> d
             raise ValueError("source and static OA ring counts differ")
         for source_id, target_id in zip(source_ids, target_ids, strict=True):
             consumed.add(str(source_id))
-            result[str(target_id)] = _number(table[str(source_id)], "electrode voltage")
+            result[str(target_id)] = require_number(table[str(source_id)], "electrode voltage")
     if set(table) != consumed or len(result) != len(consumed):
         raise ValueError("actual OA voltage table does not cover its physical electrodes exactly")
     return result
@@ -72,7 +63,7 @@ def prepare(request_path: Path, output_dir: Path, *, source_base_dir: Path | Non
     """
     request_path = request_path.resolve(strict=True)
     source_base_dir = (source_base_dir or request_path.parent).resolve(strict=True)
-    request = _read(request_path)
+    request = load_json_object(request_path)
     if (set(request) != {"schema_version", "role", "static_field_manifest", "source", "observation_times_us", "numerics"}
             or type(request["schema_version"]) is not int or request["schema_version"] != 1
             or request["role"] != "paired_accelerator_pulse_request"):
@@ -88,7 +79,7 @@ def prepare(request_path: Path, output_dir: Path, *, source_base_dir: Path | Non
     quality = numerics["simion_trajectory_quality"]
     if type(quality) is not int or not 1 <= quality <= 500:
         raise ValueError("simion_trajectory_quality must be an integer from 1 to 500")
-    numerics = {**{key: _number(value, key, positive=True) for key, value in numerics.items() if key != "simion_trajectory_quality"},
+    numerics = {**{key: require_number(value, key, minimum=0.0, strict_minimum=True) for key, value in numerics.items() if key != "simion_trajectory_quality"},
                 "simion_trajectory_quality": quality}
     output_dir = output_dir.resolve()
     inputs = output_dir / "inputs"
@@ -97,14 +88,14 @@ def prepare(request_path: Path, output_dir: Path, *, source_base_dir: Path | Non
 
     static_manifest_path = record_path(request["static_field_manifest"], base_dir=source_base_dir)
     records["static_field_manifest"] = _freeze(request["static_field_manifest"], inputs / "static_manifest.json", source_base_dir)
-    static_manifest = _read(Path(records["static_field_manifest"]["path"]))
+    static_manifest = load_json_object(Path(records["static_field_manifest"]["path"]))
     own_plan_path = static_manifest_path.parent / "inputs/bvp/paired_accelerator_static_field_plan.json"
     own_plans = [row for row in static_manifest["inputs"].values()
                  if record_path(row, base_dir=static_manifest_path.parent) == own_plan_path.resolve()]
     if len(own_plans) != 1:
         raise ValueError("static producer must bind its own BVP plan")
     records["static_plan"] = _freeze(own_plans[0], inputs / "static_plan.json", static_manifest_path.parent)
-    static_plan = _read(Path(records["static_plan"]["path"]))
+    static_plan = load_json_object(Path(records["static_plan"]["path"]))
     static_source = load_paired_static_model_source(static_manifest_path, Path(records["static_field_manifest"]["path"]), expected_plan=static_plan)
     if static_source["source_stage"] != "solved_saved":
         raise ValueError("paired pulse requires an explicitly solved static field")
@@ -118,7 +109,7 @@ def prepare(request_path: Path, output_dir: Path, *, source_base_dir: Path | Non
     if len(publications) != 1:
         raise ValueError("static producer must bind its original SIMION publication")
     records["simion_field_publication"] = _freeze(publications[0], inputs / "simion_field_publication.json", static_manifest_path.parent)
-    publication = _read(Path(records["simion_field_publication"]["path"]))
+    publication = load_json_object(Path(records["simion_field_publication"]["path"]))
     if publication.get("status") != "published" or publication.get("action_required") != "complete":
         raise ValueError("static producer SIMION field is not published")
 
@@ -126,9 +117,9 @@ def prepare(request_path: Path, output_dir: Path, *, source_base_dir: Path | Non
     require_completed_terminal_publication(producer_path)
     for name in ("producer_manifest", "pre_pulse_collection", *(('pulse_decision',) if 'pulse_decision' in source else ())):
         records[name] = _freeze(source[name], inputs / f"{name}.json", source_base_dir)
-    producer = _read(Path(records["producer_manifest"]["path"]))
-    collection = _read(Path(records["pre_pulse_collection"]["path"]))
-    decision = _read(Path(records["pulse_decision"]["path"])) if "pulse_decision" in source else None
+    producer = load_json_object(Path(records["producer_manifest"]["path"]))
+    collection = load_json_object(Path(records["pre_pulse_collection"]["path"]))
+    decision = load_json_object(Path(records["pulse_decision"]["path"])) if "pulse_decision" in source else None
     selection = select_timed_pre_pulse_states(collection, decision)
     if decision is not None and (not isinstance(decision.get("input_records"), dict)
             or decision["input_records"].get("request") != collection.get("request_record")
@@ -155,9 +146,9 @@ def prepare(request_path: Path, output_dir: Path, *, source_base_dir: Path | Non
         filename = name if name in ("clock_authority", "instrument_epoch") else "producer_" + name
         records[name] = _freeze(record, inputs / (filename + suffix), producer_path.parent)
     clock = validate_clock_authority(Path(records["clock_authority"]["path"]), output_dir)
-    epoch = _number(_read(Path(records["instrument_epoch"]["path"]))["instrument_time_us"], "instrument epoch")
-    provenance = _read(Path(records["source_provenance"]["path"]))
-    frontend = _read(Path(records["geometry"]["path"]))
+    epoch = require_number(load_json_object(Path(records["instrument_epoch"]["path"]))["instrument_time_us"], "instrument epoch")
+    provenance = load_json_object(Path(records["source_provenance"]["path"]))
+    frontend = load_json_object(Path(records["geometry"]["path"]))
     if (provenance.get("role") != "single_reflection_source_provenance"
             or provenance.get("target_frame_id") != source["frame_id"]
             or provenance.get("clock_epoch_id") != selection["clock_epoch_id"]
@@ -171,10 +162,10 @@ def prepare(request_path: Path, output_dir: Path, *, source_base_dir: Path | Non
     source_component = frontend["composition_plan"]["components"][instance]
     if any(source_component[key] != scope["components"][instance][key] for key in ("project_id", "local_frame_id")):
         raise ValueError("recorded OA component identity differs")
-    parent_request = _read(Path(records["request"]["path"]))
+    parent_request = load_json_object(Path(records["request"]["path"]))
     resolved_record = published_producer_input(producer, parent_request["providers"]["instances"][instance]["resolved_design"])
     records["source_oatof_resolved"] = _freeze(resolved_record, inputs / "source_oatof_resolved.json", producer_path.parent)
-    states = _read(Path(records["field_design"]["path"]))["accelerator_voltage_states"]
+    states = load_json_object(Path(records["field_design"]["path"]))["accelerator_voltage_states"]
     source_binding = frontend["electrode_bindings"][instance]
     target_binding = static_plan["native_geometry_compilation"]["electrode_bindings"][instance]
     off = _role_voltages(states["off_voltages_v"], source_binding, target_binding)
@@ -183,13 +174,13 @@ def prepare(request_path: Path, output_dir: Path, *, source_base_dir: Path | Non
             or any(value != 0 for value in off.values()) or on != static_plan["static_on_electrode_voltages_v"]):
         raise ValueError("actual OA ON/OFF voltage authority differs from the static field")
     pulse = collection["flight"]["pulse"]
-    on_time = _number(pulse["time_us"], "pulse on time")
-    off_time = on_time + _number(pulse["width_us"], "pulse width", positive=True)
+    on_time = require_number(pulse["time_us"], "pulse on time")
+    off_time = on_time + require_number(pulse["width_us"], "pulse width", minimum=0.0, strict_minimum=True)
     source_time = selection["pulse_time_us"]
     times = request["observation_times_us"]
     if not isinstance(times, list) or not times:
         raise ValueError("explicit observation times required")
-    times = [_number(value, "observation time") for value in times]
+    times = [require_number(value, "observation time") for value in times]
     if (source_time > on_time or not math.isfinite(off_time) or times[0] != source_time
             or any(right <= left for left, right in zip(times, times[1:]))
             or on_time not in times or off_time not in times or times[-1] <= off_time):
@@ -197,7 +188,7 @@ def prepare(request_path: Path, output_dir: Path, *, source_base_dir: Path | Non
     species = provenance.get("source_metadata")
     if not isinstance(species, dict) or species.get("particle_count") != len(selection["mother_particle_ids"]):
         raise ValueError("recorded mother species metadata is missing or incomplete")
-    mass = _number(species["mass_amu"], "mass_amu", positive=True)
+    mass = require_number(species["mass_amu"], "mass_amu", minimum=0.0, strict_minimum=True)
     if type(species.get("charge_state")) is not int or species["charge_state"] != 1:
         raise ValueError("this native Cartesian release requires charge_state +1")
     metadata = build_comsol_prepulse_replay(Path(records["pre_pulse_collection"]["path"]),

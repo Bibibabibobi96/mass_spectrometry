@@ -89,6 +89,11 @@ N3薄片局部探针与carrier发布不构成完整场、工作台或Fly验收�
 [有限脉冲owner](../workflows/paired_accelerator_pulse/execute.ps1)只接受显式static producer、实录源、绝对观察时刻与numerics；
 脉冲、物种、原母群和OFF电压从原权威派生。`-PredecessorManifest`按完成事实复用阶段和完整批，
 已发布CSV直接分析，保存模型只补缺失导出。完整输出按原ID与时刻外配对，只发布`diagnostic_only`差异。
+有限脉冲`prepare.py`已复用公共`strict_json`读取与数值表示检查，删除私有`_read`／`_number`；
+重复键、NaN／Infinity和浮点溢出失败关闭，BOM、有限有符号电压与时间、既有正值数值控制保持原合同。
+相同惰性身份fixture下，迁移前后完整plan和17个生成文件逐字节相等；真实prepare入口回归覆盖
+重复键、非有限值、bool／字符串和超大整数拒绝，见`test_paired_accelerator_pulse_preparation.py`。
+此检查未执行求解器，不改变母群、时钟、+1物种限制或跨后端数值资格。
 
 | 运行或来源 | 有效事实 | 限制 |
 |---|---|---|

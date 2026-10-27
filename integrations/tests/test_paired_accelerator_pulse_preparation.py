@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from common.contracts.particle_physics import AMU_KG, kinetic_energy_ev
+from common.contracts.strict_json import StrictJsonError
 from common.contracts.write_run_manifest import build_run_manifest, file_record
 from integrations.tests import test_paired_accelerator_static_field_execute as static_tests
 from integrations.runtime import paired_accelerator_model
@@ -246,6 +247,36 @@ class PairedPulsePreparationTests(unittest.TestCase):
                     self.assertEqual(float(actual[axis + "_mm"]), recorded[axis + "_mm"])
                     self.assertEqual(float(actual["v" + axis + "_m_per_s"]), recorded["v" + axis + "_mm_per_us"] * 1000.)
             self.assertEqual(len(list((root / "prepared").glob("source*.csv"))), 1)
+
+    def test_real_prepare_rejects_duplicate_and_nonfinite_json_before_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path, _, _, _ = self.fixture(root)
+            original = path.read_text(encoding="utf-8")
+            for index, prefix in enumerate(('"schema_version":1,', '"unused":{"x":1,"x":2},',
+                                            '"unused":NaN,', '"unused":Infinity,', '"unused":1e999,')):
+                path.write_text("{" + prefix + original.lstrip()[1:], encoding="utf-8")
+                output = root / f"invalid_{index}"
+                with self.subTest(prefix=prefix), self.assertRaises(StrictJsonError):
+                    prepare(path, output)
+                self.assertFalse(output.exists())
+
+    def test_real_prepare_retains_bom_and_rejects_numeric_lookalikes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path, author, _, _ = self.fixture(root)
+            path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8-sig")
+            plan = prepare(path, root / "bom")
+            self.assertEqual(plan["pulse"], dict(on_us=10., off_us=12.))
+            self.assertEqual(plan["selected_particle_ids"], list(range(100, 0, -1)))
+            for index, value in enumerate((True, "0.1", None, 10**1000)):
+                changed = copy.deepcopy(author)
+                changed["numerics"]["maximum_step_us"] = value
+                runtime.write(path, changed)
+                output = root / f"invalid_{index}"
+                with self.subTest(value_type=type(value).__name__), self.assertRaises(StrictJsonError):
+                    prepare(path, output)
+                self.assertFalse(output.exists())
 
     def test_rejects_invalid_author_times_controls_and_unbound_source(self):
         with tempfile.TemporaryDirectory() as directory:

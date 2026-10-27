@@ -58,6 +58,12 @@ writer与verifier共用保留策略入口，独立消费时仍重新验证完整
 
 ### 文件身份与读取
 
+`strict_json.py`提供机器JSON的公共表示检查：`load_json_object`读取UTF-8（可带BOM）对象，
+拒绝任意层级的重复键、NaN／Infinity及浮点溢出；`require_number`拒绝bool、数值字符串和非有限值，
+超大整数的浮点转换失败也归为`StrictJsonError`。边界值只由调用方显式传入，不推断单位、物种或科学资格。
+MR实测源与共同场有限脉冲准备已复用同一入口，原有文件身份、物理约束和CSV解析仍由各自owner负责。
+表示检查与现有EI／电子枪真实消费回归见`test_strict_json.py`及两项目`test_resolve_contract.py`。
+
 `file_identity.py`是SHA-256身份的唯一共享实现，固定返回大写十六进制。`file_sha256`按原始字节标识
 manifest、正式资产和外部artifact；`repository_text_sha256`只用于Git治理的文本依赖，先把行尾规范为
 LF，从而使Windows工作树与干净checkout得到同一身份。调用者仍负责路径范围、字节数和证据资格。

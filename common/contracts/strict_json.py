@@ -67,7 +67,10 @@ def require_number(
 
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise StrictJsonError(f"{context} must be numeric")
-    numeric = float(value)
+    try:
+        numeric = float(value)
+    except OverflowError as exc:
+        raise StrictJsonError(f"{context} must be finite") from exc
     if not math.isfinite(numeric):
         raise StrictJsonError(f"{context} must be finite")
     if minimum is not None:
@@ -89,16 +92,33 @@ def require_positive_integer(value: Any, context: str) -> int:
 
 
 def load_json_object(path: Path) -> dict[str, Any]:
-    """Load one JSON object while rejecting ``NaN`` and infinities."""
+    """Read UTF-8 (optional BOM) object JSON without duplicate/nonfinite values.
+
+    Parsing is representation-only: project identities, units, scientific bounds
+    and frozen byte identities remain the caller's responsibility.
+    """
+
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise StrictJsonError(f"{path}: duplicate JSON key {key!r}")
+            result[key] = value
+        return result
+
+    def finite_float(token: str) -> float:
+        value = float(token)
+        if not math.isfinite(value):
+            raise StrictJsonError(f"{path}: non-finite JSON number {token}")
+        return value
+
+    def reject_constant(token: str) -> None:
+        raise StrictJsonError(f"{path}: non-finite JSON number {token}")
 
     try:
-        with path.open("r", encoding="utf-8") as stream:
-            value = json.load(
-                stream,
-                parse_constant=lambda token: (_ for _ in ()).throw(
-                    StrictJsonError(f"{path}: non-finite JSON number {token}")
-                ),
-            )
-    except (OSError, json.JSONDecodeError) as exc:
+        with path.open("r", encoding="utf-8-sig") as stream:
+            value = json.load(stream, object_pairs_hook=unique_object,
+                              parse_float=finite_float, parse_constant=reject_constant)
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise StrictJsonError(f"cannot read {path}: {exc}") from exc
     return require_dict(value, str(path))

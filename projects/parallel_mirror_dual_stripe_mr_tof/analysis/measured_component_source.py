@@ -20,6 +20,7 @@ from common.contracts.component_particle_state import (
 )
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.file_identity import file_sha256
+from common.contracts.strict_json import load_json_object, require_number
 from common.contracts.rigid_transform import PhaseSpaceState, RigidTransform
 from common.simion.particle_source import render_source_states, render_standard_beams
 
@@ -56,11 +57,6 @@ def author_measured_centroid_prism_target(*, event_field_audit: dict, audit_requ
                 or any(c not in "0123456789abcdefABCDEF" for c in record["sha256"])):
             raise ValueError("Frozen input file identity is incomplete")
 
-    def finite(value: Any, name: str) -> float:
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-            raise ValueError("Finite target-authoring value required: " + name)
-        return float(value)
-
     def equal_record(a: dict, b: dict) -> bool:
         return a.get("bytes") == b.get("bytes") and str(a.get("sha256", "")).lower() == str(b.get("sha256", "")).lower()
 
@@ -91,10 +87,10 @@ def author_measured_centroid_prism_target(*, event_field_audit: dict, audit_requ
             or not equal_record(field["binding_record"], request_inputs["candidate_binding"])):
         raise ValueError("Birth and clean evidence must use one frozen actual binding")
     voltages = field["analyzer_electrode_voltages_v"]
-    stripe = finite(stripe_1_voltage_v, "S1 anchor")
+    stripe = require_number(stripe_1_voltage_v, "S1 anchor")
     if len(voltages) != 20 or voltages[10] != stripe or voltages[11] != stripe or voltages[12:14] != [0, 0]:
         raise ValueError("Target anchor must retain actual S1 and grounded S2")
-    mass, charge = finite(source_receipt["mass_amu"], "mass"), finite(source_receipt["charge_state"], "charge")
+    mass, charge = require_number(source_receipt["mass_amu"], "mass"), require_number(source_receipt["charge_state"], "charge")
     if mass <= 0 or charge <= 0 or mass != audit_request["mass_amu"] or charge != audit_request["charge_state"]:
         raise ValueError("Target authoring requires the same positive-ion species")
     rows, points = event_field_audit["samples"], audit_request["points"]
@@ -112,22 +108,22 @@ def author_measured_centroid_prism_target(*, event_field_audit: dict, audit_requ
         if len(position) != 3 or len(velocity) != 3:
             raise ValueError("Complete Cartesian state required")
         for value in [*position, *velocity, row["instrument_time_us"]]:
-            finite(value, "actual event state")
+            require_number(value, "actual event state")
         axes = [kinetic_energy_ev(mass, *(velocity[i] if i == a else 0 for i in range(3)))/charge for a in range(3)]
-        kinetic = finite(row["kinetic_energy_per_charge_ev"], "event K/q")
-        phi = finite(row.get("phi_v"), "actual electrostatic phi")
-        if not close(sum(axes), kinetic) or not close(kinetic+phi, finite(row["k_over_q_plus_phi_v"], "event H/q")):
+        kinetic = require_number(row["kinetic_energy_per_charge_ev"], "event K/q")
+        phi = require_number(row.get("phi_v"), "actual electrostatic phi")
+        if not close(sum(axes), kinetic) or not close(kinetic+phi, require_number(row["k_over_q_plus_phi_v"], "event H/q")):
             raise ValueError("Actual K/velocity/phi energy ledger is inconsistent")
         energies[row["sample_id"]] = axes
     births = [r for r in rows if r["sample_id"] == "source_centroid" and r["event"] == "source_centroid"]
     if len(births) != 1:
         raise ValueError("Unique canonical centroid birth required")
     birth = births[0]
-    birth_k = finite(source_receipt["centroid_kinetic_energy_eV"], "canonical centroid K")/charge
+    birth_k = require_number(source_receipt["centroid_kinetic_energy_eV"], "canonical centroid K")/charge
     h = birth_k+birth["phi_v"]
     if (not close(birth_k, birth["kinetic_energy_per_charge_ev"])
             or birth["instrument_time_us"] != source_receipt["solver_epoch_instrument_time_us"]
-            or not close(h, finite(event_field_audit["source_centroid_h_over_q_v"], "source H/q"))):
+            or not close(h, require_number(event_field_audit["source_centroid_h_over_q_v"], "source H/q"))):
         raise ValueError("Actual birth ledger differs from canonical centroid")
     reference = design_target["prism_handoff_target"]
     contract = copy.deepcopy(trajectory_contract)
@@ -147,8 +143,8 @@ def author_measured_centroid_prism_target(*, event_field_audit: dict, audit_requ
         raise ValueError("First forward clean negative-z reference was not observed")
     clean = min(clean_rows, key=lambda r: r["instrument_time_us"])
     ex = energies[clean["sample_id"]][0]
-    available = finite(h-clean["phi_v"]-ex, "available YZ energy")
-    ws = finite(reference["slow_energy_reference_per_charge_v"], "MR design Ws")
+    available = require_number(h-clean["phi_v"]-ex, "available YZ energy")
+    ws = require_number(reference["slow_energy_reference_per_charge_v"], "MR design Ws")
     if available <= 0 or ws <= 0:
         raise ValueError("Positive available YZ energy and MR design action required")
 
@@ -175,7 +171,7 @@ def author_measured_centroid_prism_target(*, event_field_audit: dict, audit_requ
     target["prism_handoff_target"] = resolved
     target["inputs"].update(interface_energy_field_audit=copy.deepcopy(input_records["event_field_audit"]),
                              trajectory_contract=copy.deepcopy(input_records["trajectory_contract"]))
-    target["source_energy_ledger"] = dict(mean_particle_kinetic_energy_ev_per_q=finite(source_receipt["mean_particle_kinetic_energy_eV"],"mother mean K")/charge,
+    target["source_energy_ledger"] = dict(mean_particle_kinetic_energy_ev_per_q=require_number(source_receipt["mean_particle_kinetic_energy_eV"],"mother mean K")/charge,
         kinetic_energy_of_mean_velocity_ev_per_q=birth_k, centroid_joint_phi_v=birth["phi_v"], centroid_joint_hamiltonian_ev_per_q=h)
     target["qualification"] = "immutable_anchor_source_specific_L0_engineering_target__not_3D_action_or_N100_energy_acceptance"
     return dict(schema_version=1, role="mrtof_measured_centroid_prism_target_authoring", inputs=copy.deepcopy(input_records),
@@ -240,13 +236,6 @@ return M
 '''
 
 
-def _read(path: Path) -> dict[str, Any]:
-    value = json.loads(path.read_text(encoding="utf-8-sig"))
-    if not isinstance(value, dict):
-        raise ValueError(f"Expected JSON object: {path}")
-    return value
-
-
 def _identity(path: Path) -> dict[str, Any]:
     return {"path": str(path.resolve()), "bytes": path.stat().st_size, "sha256": file_sha256(path)}
 
@@ -278,9 +267,9 @@ def _validate_import(handoff: dict[str, Any], base: Path) -> tuple[
         raise ValueError("Unsupported measured handoff receipt")
     inputs = {key: _bound(record, base) for key, record in handoff["inputs"].items()}
     outputs = {key: _bound(record, base) for key, record in handoff["outputs"].items()}
-    exported = _read(inputs["component_receipt"])
+    exported = load_json_object(inputs["component_receipt"])
     source_id, target_id = validate_component_exit_binding(exported)
-    connection = resolve_ip_mr_connection(_read(outputs["matching_request_resolved"])["composition_plan"])
+    connection = resolve_ip_mr_connection(load_json_object(outputs["matching_request_resolved"])["composition_plan"])
     if (handoff.get("connection") != connection
             or (source_id, target_id) != (connection["upstream"]["instance_id"], connection["downstream"]["instance_id"])):
         raise ValueError("Measured handoff instances differ from its frozen recipe connection")
@@ -334,7 +323,7 @@ def _validate_states(handoff: dict[str, Any], paths: dict[str, Path], exported: 
            or row["state_event"] != "extraction_exit" or row["velocity_z_m_s"] >= 0 for row in rows):
         raise ValueError("Measured source must be IP extraction_exit toward negative z into MR")
     clock_path = paths["clock_authority"]
-    original_clock = _read(clock_path)
+    original_clock = load_json_object(clock_path)
     # The component exporter binds its original root and both clock files.
     source_run = Path(exported["source_run"])
     validate_clock_authority(clock_path, source_run)
@@ -342,9 +331,8 @@ def _validate_states(handoff: dict[str, Any], paths: dict[str, Path], exported: 
     if (original_clock["clock_epoch_id"] != exported["clock_epoch_id"]
             or (source_run / original_clock["authority"]["path"]).resolve() != epoch_path.resolve()):
         raise ValueError("Original canonical clock authority binding differs")
-    epoch = _read(epoch_path)["instrument_time_us"]
-    if not isinstance(epoch, (int, float)) or not math.isfinite(epoch):
-        raise ValueError("Original clock epoch must be finite")
+    epoch = load_json_object(epoch_path)["instrument_time_us"]
+    require_number(epoch, "Original clock epoch")
     return original_clock, clock_path
 
 
@@ -394,7 +382,7 @@ def materialize_measured_source(handoff_receipt_path: Path, output_directory: Pa
     """
     if output_directory.exists():
         raise FileExistsError(f"Refusing to overwrite measured source: {output_directory}")
-    handoff = _read(handoff_receipt_path)
+    handoff = load_json_object(handoff_receipt_path)
     paths, exported, table = _validate_import(handoff, handoff_receipt_path.parent)
     rows = table.rows
     clock, clock_path = _validate_states(handoff, paths, exported, table)
@@ -436,7 +424,7 @@ def materialize_centroid_probe(source_directory: Path, output_directory: Path) -
     Original canonical states and the entire mother census are provenance only.
     """
     receipt_path = source_directory / "source_receipt.json"
-    receipt = _read(receipt_path)
+    receipt = load_json_object(receipt_path)
     if receipt.get("role") != "mrtof_measured_component_source":
         raise ValueError("Centroid requires an original measured population")
     for record in receipt["outputs"].values():
@@ -455,7 +443,7 @@ def materialize_centroid_probe(source_directory: Path, output_directory: Path) -
     species = ("mass_amu", "charge_state", "frame_id", "clock_epoch_id", "source_component_id", "target_component_id")
     if any(any(row[key] != rows[0][key] for key in species) for row in rows):
         raise ValueError("Centroid requires one species, frame and canonical clock")
-    handoff = _read(_bound(receipt["inputs"]["handoff_receipt"], source_directory))
+    handoff = load_json_object(_bound(receipt["inputs"]["handoff_receipt"], source_directory))
     if (handoff.get("schema_version") != 3 or handoff.get("role") != "mrtof_ion_processor_handoff_preparation"):
         raise ValueError("Unsupported measured handoff binding")
     connection = handoff.get("connection")
@@ -496,7 +484,7 @@ def materialize_centroid_probe(source_directory: Path, output_directory: Path) -
             if key in probe_census:
                 probe_census[key] = ""
         writer.writerow(probe_census)
-    clock = _read(source_directory / "clock_authority.json")
+    clock = load_json_object(source_directory / "clock_authority.json")
     _write(output_directory / "instrument_epoch.json", {"instrument_time_us": time})
     clock["authority"] = {"path": "instrument_epoch.json", "field": "instrument_time_us",
                           "sha256": file_sha256(output_directory / "instrument_epoch.json")}
@@ -526,7 +514,7 @@ def materialize_centroid_probe(source_directory: Path, output_directory: Path) -
 def materialize_measured_source_slice(source_directory: Path, output_directory: Path,
                                       ordinal_min: int, ordinal_max: int) -> dict[str, Any]:
     """Project one scheduler ordinal interval without rebasing the instrument epoch."""
-    receipt = _read(source_directory / "source_receipt.json")
+    receipt = load_json_object(source_directory / "source_receipt.json")
     if receipt.get("role") not in {"mrtof_measured_component_source", "mrtof_measured_exit_centroid_probe_source"}:
         raise ValueError("Measured source receipt required")
     for record in receipt["outputs"].values():
@@ -538,7 +526,7 @@ def materialize_measured_source_slice(source_directory: Path, output_directory: 
         raise FileExistsError(output_directory)
     shutil.copytree(source_directory, output_directory)
     epoch = receipt["solver_epoch_instrument_time_us"]
-    clock = _read(source_directory / "clock_authority.json")
+    clock = load_json_object(source_directory / "clock_authority.json")
     mapping = _write_projection(output_directory, rows[ordinal_min-1:ordinal_max], epoch, clock)
     result = dict(schema_version=1, role="mrtof_measured_source_batch",
                   ordinal_min=ordinal_min, ordinal_max=ordinal_max, count=len(mapping),
