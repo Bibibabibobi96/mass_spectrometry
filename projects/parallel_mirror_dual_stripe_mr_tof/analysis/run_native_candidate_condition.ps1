@@ -32,6 +32,10 @@ $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRo
 $conditionSource=(Resolve-Path -LiteralPath $ConditionPath).Path
 $contextSource=(Resolve-Path -LiteralPath $ContextPath).Path
 $contextDirectory=Split-Path -Parent $contextSource
+$compositionPlanSource=(Resolve-Path -LiteralPath $CompositionPlanPath).Path
+$localScopeSource=if($LocalScopePath){(Resolve-Path -LiteralPath $LocalScopePath).Path}else{''}
+if(-not(Test-Path -LiteralPath $compositionPlanSource -PathType Leaf)){throw 'CompositionPlanPath must be a file.'}
+if($localScopeSource-and-not(Test-Path -LiteralPath $localScopeSource -PathType Leaf)){throw 'LocalScopePath must be a file.'}
 
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 
@@ -300,6 +304,8 @@ $terminalized=$false;$failureStage='freeze_inputs'
 try{
   $frozenCondition=Copy-VerifiedRunInput -Source $conditionSource -Destination (Join-Path $package.input_dir 'condition.json')
   $frozenContext=Copy-VerifiedRunInput -Source $contextSource -Destination (Join-Path $package.input_dir 'context.json')
+  $CompositionPlanPath=Copy-VerifiedRunInput -Source $compositionPlanSource -Destination (Join-Path $package.input_dir 'composition_plan.json')
+  $LocalScopePath=if($localScopeSource){Copy-VerifiedRunInput -Source $localScopeSource -Destination (Join-Path $package.input_dir 'local_scope.json')}else{''}
   $conditionContract=Copy-VerifiedRunInput -Source $baseContract -Destination (Join-Path $package.input_dir 'condition_contract.json')
   $contract=Get-Content -LiteralPath $conditionContract -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   $contract.nominal.target_drift_period_ratio=$k
@@ -307,6 +313,8 @@ try{
   Write-RunJson -Path $conditionContract -Depth 100 -Value $contract
   $runConfig=Get-Content -LiteralPath $package.run_config -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   $runConfig.inputs=[ordered]@{condition=$frozenCondition;context=$frozenContext;condition_contract=$conditionContract}
+  $runConfig.inputs.composition_plan=$CompositionPlanPath
+  if($LocalScopePath){$runConfig.inputs.local_scope=$LocalScopePath}
   $runConfig.parameters=[ordered]@{K=$k;accelerator_y_mm=$acceleratorY;execution='strict_serial_existing_runners'}
   Write-RunJson -Path $package.run_config -Depth 12 -Value $runConfig
 

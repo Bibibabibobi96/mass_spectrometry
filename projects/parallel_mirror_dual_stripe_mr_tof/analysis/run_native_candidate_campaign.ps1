@@ -4,6 +4,8 @@ param(
   [Parameter(Mandatory)][string]$CheckpointPath,
   [string]$ConditionRunnerPath='',
   [Parameter(Mandatory)][string]$ConditionContextPath,
+  [Parameter(Mandatory)][string]$CompositionPlanPath,
+  [string]$LocalScopePath='',
   [string]$InitialProviderReuseMapPath='',
   [string]$ConditionReuseMapPath='',
   [string]$CampaignStamp='',
@@ -14,12 +16,14 @@ param(
 # This controller intentionally knows nothing about MR-TOF physics.  The
 # condition runner owns the complete theory -> P/S -> N=100 chain and accepts:
 #   -ConditionPath <JSON> -ContextPath <JSON> -RunId <managed run id>
+#   -CompositionPlanPath <frozen JSON> [-LocalScopePath <frozen JSON>]
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $project='parallel_mirror_dual_stripe_mr_tof'
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $workspaceRoot=Split-Path -Parent $repoRoot
 $artifactRuns=Join-Path $workspaceRoot "artifacts\projects\$project\runs"
+. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 $campaign=(Resolve-Path -LiteralPath $CampaignPath).Path
 $conditionRunner=if($ConditionRunnerPath){
   (Resolve-Path -LiteralPath $ConditionRunnerPath).Path
@@ -27,6 +31,10 @@ $conditionRunner=if($ConditionRunnerPath){
   Join-Path $PSScriptRoot 'run_native_candidate_condition.ps1'
 }
 $conditionContext=(Resolve-Path -LiteralPath $ConditionContextPath).Path
+$compositionPlan=(Resolve-Path -LiteralPath $CompositionPlanPath).Path
+$localScope=if($LocalScopePath){(Resolve-Path -LiteralPath $LocalScopePath).Path}else{''}
+if(-not(Test-Path -LiteralPath $compositionPlan -PathType Leaf)){throw 'CompositionPlanPath must be a file.'}
+if($localScope-and-not(Test-Path -LiteralPath $localScope -PathType Leaf)){throw 'LocalScopePath must be a file.'}
 $initialProviderReuseMap=if($InitialProviderReuseMapPath){(Resolve-Path -LiteralPath $InitialProviderReuseMapPath).Path}else{$null}
 $conditionReuseMap=if($ConditionReuseMapPath){(Resolve-Path -LiteralPath $ConditionReuseMapPath).Path}else{$null}
 if(-not(Test-Path -LiteralPath $conditionRunner -PathType Leaf)){throw 'ConditionRunnerPath must be a file.'}
@@ -34,6 +42,35 @@ if(-not(Test-Path -LiteralPath $conditionContext -PathType Leaf)){throw 'Conditi
 $checkpoint=[IO.Path]::GetFullPath($CheckpointPath)
 $checkpointParent=Split-Path -Parent $checkpoint
 $supportRoot=Join-Path $checkpointParent (([IO.Path]::GetFileNameWithoutExtension($checkpoint))+'.d')
+
+function Copy-CampaignAssemblyInput {
+  param([string]$Source,[string]$Destination)
+  $identity=$null
+  $frozen=Copy-VerifiedRunInput -Source $Source -Destination $Destination -VerifiedIdentity ([ref]$identity)
+  return [ordered]@{source_path=$Source;path=$frozen;bytes=$identity.bytes;sha256=$identity.sha256}
+}
+
+function Assert-CampaignAssemblyInput {
+  param($Record,[string]$Source,[string]$Destination,[string]$Label)
+  # Only the small, frozen assembly inputs are hashed; provider payloads keep
+  # their existing owner verification and are never scanned by this controller.
+  if($Record-isnot[Collections.IDictionary]-or-not$Record.Contains('source_path')-or
+     -not$Record.Contains('path')-or-not$Record.Contains('bytes')-or-not$Record.Contains('sha256')-or
+     [string]$Record.sha256-notmatch'^[0-9a-fA-F]{64}$'){
+    throw "Campaign checkpoint lacks the frozen $Label identity."
+  }
+  if(-not[string]::Equals([string]$Record.source_path,$Source,[StringComparison]::OrdinalIgnoreCase)-or
+     -not[string]::Equals([string]$Record.path,$Destination,[StringComparison]::OrdinalIgnoreCase)){
+    throw "$Label differs from the campaign checkpoint."
+  }
+  foreach($path in @($Source,$Destination)){
+    if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Frozen campaign $Label input is missing: $path"}
+    if((Get-Item -LiteralPath $path).Length-ne[int64]$Record.bytes-or
+       (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash-ne[string]$Record.sha256){
+      throw "$Label content differs from the campaign checkpoint: $path"
+    }
+  }
+}
 
 function Read-ConditionList {
   param([Parameter(Mandatory)][string]$Path)
@@ -554,6 +591,18 @@ if(Test-Path -LiteralPath $checkpoint -PathType Leaf){
   if($CampaignStamp-and$CampaignStamp-ne[string]$state.campaign_stamp){
     throw 'CampaignStamp differs from the existing checkpoint.'
   }
+  if(-not$state.Contains('composition_plan')-or-not$state.Contains('local_scope')){
+    throw 'Campaign checkpoint lacks frozen assembly input identities; start a new campaign with explicit inputs.'
+  }
+  Assert-CampaignAssemblyInput -Record $state.composition_plan -Source $compositionPlan `
+    -Destination (Join-Path $supportRoot 'composition_plan.json') -Label CompositionPlanPath
+  if(($null-ne$state.local_scope)-ne(-not[string]::IsNullOrWhiteSpace($localScope))){
+    throw 'LocalScopePath presence differs from the campaign checkpoint.'
+  }
+  if($localScope){
+    Assert-CampaignAssemblyInput -Record $state.local_scope -Source $localScope `
+      -Destination (Join-Path $supportRoot 'local_scope.json') -Label LocalScopePath
+  }
   if(-not[string]::Equals([string]$state.context_source_path,$conditionContext,[StringComparison]::OrdinalIgnoreCase)){
     throw 'ConditionContextPath differs from the campaign checkpoint.'
   }
@@ -618,6 +667,8 @@ if(Test-Path -LiteralPath $checkpoint -PathType Leaf){
   if(-not$CampaignStamp){$CampaignStamp=Get-Date -Format 'yyyyMMdd_HHmmss'}
   if($CampaignStamp-notmatch'^\d{8}_\d{6}$'){throw 'CampaignStamp must be YYYYMMDD_HHMMSS.'}
   New-Item -ItemType Directory -Path $checkpointParent,$supportRoot -Force|Out-Null
+  $frozenPlan=Copy-CampaignAssemblyInput -Source $compositionPlan -Destination (Join-Path $supportRoot 'composition_plan.json')
+  $frozenScope=if($localScope){Copy-CampaignAssemblyInput -Source $localScope -Destination (Join-Path $supportRoot 'local_scope.json')}else{$null}
   $frozenContext=Join-Path $supportRoot 'context.json'
   $contextTemporary=$frozenContext+'.tmp'
   Copy-Item -LiteralPath $conditionContext -Destination $contextTemporary
@@ -662,6 +713,7 @@ if(Test-Path -LiteralPath $checkpoint -PathType Leaf){
   $state=[ordered]@{
     schema_version=1;role='mrtof_native_candidate_campaign_checkpoint';status='checkpoint'
     campaign_stamp=$CampaignStamp;context_source_path=$conditionContext;frozen_context=$frozenContext
+    composition_plan=$frozenPlan;local_scope=$frozenScope
     initial_provider_reuse_source_path=$initialProviderReuseMap;frozen_initial_provider_reuse_map=$frozenProviderReuseMap
     condition_reuse_source_path=$conditionReuseMap;frozen_condition_reuse_map=$frozenConditionReuseMap
     condition_runner_identity=$runnerIdentity;conditions=$conditions
@@ -717,11 +769,19 @@ for($index=0;$index-lt$conditionCount;$index++){
     throw "Campaign remains stopped at failed condition $($condition.ordinal): $($condition.run_manifest)"
   }
   $attempt=[int]$condition.attempt_count+1
+  Assert-CampaignAssemblyInput -Record $state.composition_plan -Source $compositionPlan `
+    -Destination (Join-Path $supportRoot 'composition_plan.json') -Label CompositionPlanPath
+  if($localScope){
+    Assert-CampaignAssemblyInput -Record $state.local_scope -Source $localScope `
+      -Destination (Join-Path $supportRoot 'local_scope.json') -Label LocalScopePath
+  }
   $runId=Get-ConditionAttemptRunId -Origin $origin -ConditionIndex $index -ConditionCount $conditionCount -Attempt $attempt
   $condition.attempt_count=$attempt;$condition.run_manifest=$null;$condition.workflow_outcome=$null
   Write-Checkpoint -Value $state
 
   $arguments=@{ConditionPath=[string]$condition.condition_path;ContextPath=$conditionContext;RunId=$runId}
+  $arguments.CompositionPlanPath=[string]$state.composition_plan.path
+  if($null-ne$state.local_scope){$arguments.LocalScopePath=[string]$state.local_scope.path}
   if(-not[string]::IsNullOrWhiteSpace([string]$state.accelerator_runtime_checkpoint)){
     $arguments.AcceleratorRuntimeCheckpoint=[string]$state.accelerator_runtime_checkpoint
   }

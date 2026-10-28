@@ -1,5 +1,8 @@
 import json
 from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 import unittest
 
 
@@ -243,6 +246,104 @@ class NativeCandidateConditionRunnerTests(unittest.TestCase):
         self.assertIn("'--auto-select-initial-bracket'", continuation)
         self.assertIn("'--expected-topology-signature-sha256'", continuation)
         self.assertIn("Explicit continuation selection requires topology", continuation)
+
+
+@unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+class NativeCandidateConditionPreparationTests(unittest.TestCase):
+    def test_default_campaign_child_freezes_the_same_plan_and_optional_scope(self) -> None:
+        # Execute both production scripts unchanged. Only lifecycle allocation
+        # and the first physical stage are substituted: no solver is requested.
+        for with_scope in (False, True):
+            with self.subTest(with_scope=with_scope), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                repo = root / "repo"
+                analysis = repo / "projects" / RUNNER.parents[1].name / "analysis"
+                analysis.mkdir(parents=True)
+                for name in ("run_native_candidate_campaign.ps1", RUNNER.name):
+                    shutil.copyfile(RUNNER.with_name(name), analysis / name)
+                support = repo / "common" / "contracts" / "run_artifact_support.ps1"
+                support.parent.mkdir(parents=True)
+                real_support = RUNNER.parents[3] / "common" / "contracts" / support.name
+                support.write_text(
+                    f". '{real_support.as_posix()}'\n" + r"""
+function New-RunPackage {
+  param($Python,$RepoRoot,$ArtifactRoot,$RunId,$Project,$Mode,$Software,
+    [switch]$RetentionContractEnabled,$RetentionClass,[switch]$CapacityLedgerLifecycleEnabled)
+  $run=Join-Path (Join-Path $ArtifactRoot 'runs') $RunId
+  $inputs=Join-Path $run 'inputs'
+  New-Item -ItemType Directory -Path $inputs -Force|Out-Null
+  $config=Join-Path $run 'run_config.json'
+  Write-RunJson -Path $config -Value @{run_id=$RunId;project=$Project;mode=$Mode}
+  return [pscustomobject]@{input_dir=$inputs;run_config=$config;summary=(Join-Path $run 'summary.json')}
+}
+function Complete-FailedRun {
+  param($Python,$RepoRoot,$RunConfig,$Summary,$SummaryRole,$Reason,$Software,$Status,$FailureStage)
+  $config=Get-Content -LiteralPath $RunConfig -Raw|ConvertFrom-Json -AsHashtable
+  Write-RunJson -Path (Join-Path (Split-Path -Parent $RunConfig) 'run_manifest.json') -Value @{
+    schema_version=2;run_id=$config.run_id;project=$config.project;mode=$config.mode;status=$Status}
+  Write-RunJson -Path $Summary -Value @{status=$Status;failure_stage=$FailureStage;reason=$Reason}
+}
+""",
+                    encoding="utf-8",
+                )
+                (analysis / "run_dual_stripe_operating_seed.ps1").write_text(
+                    "param($FixedGridRunManifest,$ContractPath,$RunId,$PythonExe)\n"
+                    "throw 'PREPARE_BOUNDARY_BEFORE_PHYSICS'\n",
+                    encoding="utf-8",
+                )
+                campaign = root / "campaign.json"
+                campaign.write_text(json.dumps([{"K": 25.5, "accelerator_y": -55.0}]), encoding="utf-8")
+                contract = root / "contract.json"
+                contract.write_text(json.dumps({"nominal": {"target_drift_period_ratio": 1},
+                    "accelerator": {"focus_y_anchor": {"project_y_mm": 0}}}), encoding="utf-8")
+                mirror = root / "mirror"
+                (mirror / "results").mkdir(parents=True)
+                for path in (mirror / "run_manifest.json", mirror / "results" / "mirror_real_field_period_comparison.json"):
+                    path.write_text("{}", encoding="utf-8")
+                context = root / "context.json"
+                context.write_text(json.dumps({
+                    "schema_version": 1, "role": "mrtof_native_candidate_condition_context",
+                    "contract_path": str(contract),
+                    "fixed_grid_mirror_run_manifest": str(mirror / "run_manifest.json"),
+                    "geometry_review_run_path": str(root), "native_corridor_bank_run_path": str(root),
+                    "native_system_runtime_bundle_path": str(contract), "native_runtime_checkpoint_path": "",
+                    "source_definition_path": str(contract), "oa_base_release_spec_path": str(contract),
+                    "oa_request_path": str(contract),
+                }), encoding="utf-8")
+                plan, scope = root / "plan.json", root / "scope.json"
+                plan.write_bytes(b'{"fixture": "explicit parent plan"}\n')
+                scope.write_bytes(b'{"fixture": "explicit local scope"}\n')
+                checkpoint = root / "checkpoint.json"
+                command = ["pwsh", "-NoProfile", "-NonInteractive", "-File",
+                    str(analysis / "run_native_candidate_campaign.ps1"),
+                    "-CampaignPath", str(campaign), "-CheckpointPath", str(checkpoint),
+                    "-ConditionContextPath", str(context), "-CompositionPlanPath", str(plan),
+                    "-CampaignStamp", "20261028_000000"]
+                if with_scope:
+                    command.extend(["-LocalScopePath", str(scope)])
+                result = subprocess.run(command, cwd=repo, capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", timeout=60, check=False)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Condition run terminated with status failed", result.stdout + result.stderr)
+                state = json.loads(checkpoint.read_text(encoding="utf-8-sig"))
+                self.assertEqual(state["conditions"][0]["terminal_state"], "failed")
+                run = Path(state["conditions"][0]["run_manifest"]).parent
+                config = json.loads((run / "run_config.json").read_text(encoding="utf-8-sig"))
+                summary = json.loads((run / "summary.json").read_text(encoding="utf-8-sig"))
+                self.assertEqual(summary["failure_stage"], "fixed_grid_stripe_seed")
+                self.assertEqual(summary["reason"], "PREPARE_BOUNDARY_BEFORE_PHYSICS")
+                for key, source in (("composition_plan", plan), ("local_scope", scope)):
+                    if key == "local_scope" and not with_scope:
+                        self.assertIsNone(state[key])
+                        self.assertNotIn(key, config["inputs"])
+                        continue
+                    frozen = Path(config["inputs"][key])
+                    self.assertEqual(frozen.parent, run / "inputs")
+                    self.assertEqual(frozen.read_bytes(), source.read_bytes())
+                    self.assertEqual(frozen.read_bytes(), Path(state[key]["path"]).read_bytes())
+                frozen_contract = json.loads(Path(config["inputs"]["condition_contract"]).read_text(encoding="utf-8-sig"))
+                self.assertEqual(frozen_contract["nominal"]["target_drift_period_ratio"], 25.5)
+                self.assertEqual(frozen_contract["accelerator"]["focus_y_anchor"]["project_y_mm"], -55.0)
 
 
 if __name__ == "__main__":

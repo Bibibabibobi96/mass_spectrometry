@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -40,8 +41,6 @@ class NativeCandidateCampaignRunnerTests(unittest.TestCase):
         self.assertIn("run_manifest=$null;workflow_outcome=$null", self.source)
         self.assertNotIn("coverage_run_manifest", self.source)
         self.assertIn("continuation_reuse_run_manifest", self.source)
-        self.assertNotIn("Get-FileHash", self.source)
-        self.assertNotIn("SHA256", self.source)
 
     def test_provider_cache_is_k_scoped_and_passed_explicitly(self) -> None:
         self.assertIn("[string]$InitialProviderReuseMapPath=''", self.source)
@@ -86,20 +85,22 @@ class NativeCandidateCampaignRunnerTests(unittest.TestCase):
         self.assertIn("$arguments.WorkpointResumeSuccessfulChildManifest", self.source)
         self.assertIn("$arguments.QualifiedWorkpointRunPath", self.source)
         self.assertIn("condition_runner_resume_wiring_version=2", self.source)
-        self.assertNotIn("Get-FileHash", self.source)
-        self.assertNotIn("SHA256", self.source)
 
     def test_completed_conditions_require_their_existing_manifest(self) -> None:
         self.assertIn("Condition manifest identity is invalid", self.source)
         self.assertIn("Condition summary identity or outcome is invalid", self.source)
         self.assertIn("Condition runner did not publish a run manifest", self.source)
 
-    def test_context_and_runner_are_frozen_without_payload_hashing(self) -> None:
+    def test_only_frozen_assembly_inputs_add_payload_hashing(self) -> None:
         self.assertIn("context_source_path=$conditionContext;frozen_context=$frozenContext", self.source)
         self.assertIn("ConditionContextPath differs from the campaign checkpoint", self.source)
         self.assertIn("Condition runner identity differs from the campaign checkpoint", self.source)
         self.assertIn("last_write_time_utc_ticks", self.source)
-        self.assertNotIn("Get-FileHash", self.source)
+        before, remainder = self.source.split("function Assert-CampaignAssemblyInput", 1)
+        identity_check, after = remainder.split("function Read-ConditionList", 1)
+        self.assertNotIn("Get-FileHash", before + after)
+        self.assertIn("Get-FileHash", identity_check)
+        self.assertIn("Copy-VerifiedRunInput", self.source)
 
     def test_condition_is_reconciled_and_atomically_rewritten(self) -> None:
         self.assertIn("Assert-ConditionInput -Condition $condition", self.source)
@@ -129,6 +130,10 @@ class NativeCandidateCampaignBehaviorTests(unittest.TestCase):
         self.artifact_runs.mkdir(parents=True)
         source = RUNNER.read_text(encoding="utf-8-sig")
         source = source.replace(
+            "$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\\..\\..')).Path",
+            f"$repoRoot='{RUNNER.parents[3].as_posix()}'",
+        )
+        source = source.replace(
             '$artifactRuns=Join-Path $workspaceRoot "artifacts\\projects\\$project\\runs"',
             f"$artifactRuns='{self.artifact_runs.as_posix()}'",
         )
@@ -140,6 +145,8 @@ class NativeCandidateCampaignBehaviorTests(unittest.TestCase):
   [Parameter(Mandatory)][string]$ConditionPath,
   [Parameter(Mandatory)][string]$ContextPath,
   [Parameter(Mandatory)][string]$RunId,
+  [Parameter(Mandatory)][string]$CompositionPlanPath,
+  [string]$LocalScopePath='',
   [string]$ProviderReusePath='',
   [string]$StripeReuseRunManifest='',
   [string]$ContinuationReuseRunManifest='',
@@ -160,7 +167,7 @@ $project=if($context.behavior-eq'wrong_manifest'){'wrong_project'}else{'parallel
 $run=Join-Path $context.artifact_runs $RunId
 New-Item -ItemType Directory -Path $run -Force|Out-Null
 [ordered]@{stripe=$StripeReuseRunManifest;continuation=$ContinuationReuseRunManifest;candidate=$CandidateReuseRunManifest;qualified_workpoint=$QualifiedWorkpointRunPath;workpoint_initial=$WorkpointResumeInitialManifest;workpoint_parent=$WorkpointResumeParentCheckpoint;workpoint_child=$WorkpointResumeSuccessfulChildManifest}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $run 'reuse_arguments.json') -Encoding UTF8
-[ordered]@{inputs=[ordered]@{condition=$ConditionPath}}|ConvertTo-Json -Depth 3|Set-Content -LiteralPath (Join-Path $run 'run_config.json') -Encoding UTF8
+[ordered]@{inputs=[ordered]@{condition=$ConditionPath;composition_plan=$CompositionPlanPath;local_scope=$LocalScopePath}}|ConvertTo-Json -Depth 3|Set-Content -LiteralPath (Join-Path $run 'run_config.json') -Encoding UTF8
 $provider=$null
 if($ProviderReusePath){
   $provider=Get-Content -LiteralPath $ProviderReusePath -Raw|ConvertFrom-Json
@@ -203,6 +210,10 @@ if($status-eq'success'){
             json.dumps([{"K": 25.5, "accelerator_y": -55.0}]), encoding="utf-8"
         )
         self.checkpoint = self.root / "checkpoint.json"
+        self.plan = self.root / "composition_plan.json"
+        self.plan.write_text('{"fixture": "plan"}', encoding="utf-8")
+        self.scope = self.root / "local_scope.json"
+        self.scope.write_text('{"fixture": "scope"}', encoding="utf-8")
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
@@ -227,10 +238,15 @@ if($status-eq'success'){
         context: Path,
         provider_reuse_map: Path | None = None,
         condition_reuse_map: Path | None = None,
+        *,
+        composition_plan: Path | None = None,
+        local_scope: Path | None = None,
+        include_plan: bool = True,
     ) -> subprocess.CompletedProcess[str]:
         command = [
                 "pwsh",
                 "-NoProfile",
+                "-NonInteractive",
                 "-File",
                 str(self.runner),
                 "-CampaignPath",
@@ -244,6 +260,10 @@ if($status-eq'success'){
                 "-CampaignStamp",
                 "20260924_010000",
             ]
+        if include_plan:
+            command.extend(["-CompositionPlanPath", str(composition_plan or self.plan)])
+        if local_scope is not None:
+            command.extend(["-LocalScopePath", str(local_scope)])
         if provider_reuse_map is not None:
             command.extend(["-InitialProviderReuseMapPath", str(provider_reuse_map)])
         if condition_reuse_map is not None:
@@ -258,6 +278,105 @@ if($status-eq'success'){
             capture_output=True,
             check=False,
         )
+
+    def test_assembly_inputs_are_frozen_and_reused_after_interruption(self) -> None:
+        context = self.write_context("context.json", "interrupted_then_success")
+        first = self.invoke(context, local_scope=self.scope)
+        self.assertNotEqual(first.returncode, 0)
+        self.assertIn("new identity on restart", first.stdout + first.stderr)
+        checkpoint = json.loads(self.checkpoint.read_text(encoding="utf-8-sig"))
+        for key, source in (("composition_plan", self.plan), ("local_scope", self.scope)):
+            record = checkpoint[key]
+            self.assertEqual(Path(record["source_path"]), source)
+            self.assertEqual(Path(record["path"]).read_bytes(), source.read_bytes())
+            self.assertEqual(record["bytes"], len(source.read_bytes()))
+            self.assertEqual(record["sha256"].lower(), hashlib.sha256(source.read_bytes()).hexdigest())
+        second = self.invoke(context, local_scope=self.scope)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        configs = sorted(self.artifact_runs.glob("*__mrtof-native-condition/run_config.json"))
+        self.assertEqual(len(configs), 2)
+        for config in configs:
+            inputs = json.loads(config.read_text(encoding="utf-8-sig"))["inputs"]
+            for key in ("composition_plan", "local_scope"):
+                self.assertEqual(inputs[key], checkpoint[key]["path"])
+
+    def test_assembly_identity_drift_rejects_restore_before_any_child(self) -> None:
+        context = self.write_context("context.json", "success")
+        plan_bytes, scope_bytes = self.plan.read_bytes(), self.scope.read_bytes()
+        cases = (
+            "plan_source_content", "plan_frozen_content", "plan_source_missing",
+            "plan_frozen_missing", "plan_source_path", "scope_source_path", "scope_source_content",
+            "scope_frozen_content", "scope_frozen_missing", "scope_source_missing",
+            "scope_removed", "scope_added", "identity_missing",
+        )
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory(dir=self.root) as folder:
+                self.plan.write_bytes(plan_bytes)
+                self.scope.write_bytes(scope_bytes)
+                self.checkpoint = Path(folder) / "checkpoint.json"
+                scope = None if case == "scope_added" else self.scope
+                initial = self.invoke(context, local_scope=scope)
+                self.assertEqual(initial.returncode, 0, initial.stdout + initial.stderr)
+                state = json.loads(self.checkpoint.read_text(encoding="utf-8-sig"))
+                plan = self.plan
+                if case.endswith("content") or (case.endswith("missing") and case != "identity_missing"):
+                    key = "composition_plan" if case.startswith("plan") else "local_scope"
+                    source = self.plan if key == "composition_plan" else self.scope
+                    target = source if "source" in case else Path(state[key]["path"])
+                    if case.endswith("missing"):
+                        target.unlink()
+                    else:
+                        # Same byte count ensures content, not only size, is checked.
+                        target.write_bytes(target.read_bytes().replace(b"fixture", b"changed"))
+                elif case == "plan_source_path":
+                    plan = Path(folder) / "same_plan.json"
+                    plan.write_bytes(plan_bytes)
+                elif case == "scope_source_path":
+                    scope = Path(folder) / "same_scope.json"
+                    scope.write_bytes(scope_bytes)
+                elif case == "scope_removed":
+                    scope = None
+                elif case == "scope_added":
+                    scope = self.scope
+                else:
+                    del state["composition_plan"]
+                    self.checkpoint.write_text(json.dumps(state), encoding="utf-8")
+                checkpoint_bytes = self.checkpoint.read_bytes()
+                counter = (self.root / "context.json.counter").read_bytes()
+                rejected = self.invoke(context, composition_plan=plan, local_scope=scope)
+                self.assertNotEqual(rejected.returncode, 0, rejected.stdout + rejected.stderr)
+                self.assertEqual(self.checkpoint.read_bytes(), checkpoint_bytes)
+                self.assertEqual((self.root / "context.json.counter").read_bytes(), counter)
+
+    def test_frozen_plan_drift_between_conditions_stops_before_next_attempt(self) -> None:
+        context = self.write_context("context.json", "success")
+        self.campaign.write_text(json.dumps([
+            {"K": 25.5, "accelerator_y": -55.0}, {"K": 25.5, "accelerator_y": -50.0},
+        ]), encoding="utf-8")
+        self.fake_runner.write_text(self.fake_runner.read_text(encoding="utf-8") +
+            "\nif($attempt-eq1){Add-Content -LiteralPath $CompositionPlanPath -Value ' '}\n",
+            encoding="utf-8")
+        result = self.invoke(context)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("CompositionPlanPath content differs", result.stdout + result.stderr)
+        self.assertEqual((self.root / "context.json.counter").read_text(encoding="utf-8-sig").strip(), "1")
+        state = json.loads(self.checkpoint.read_text(encoding="utf-8-sig"))
+        self.assertEqual(state["conditions"][0]["terminal_state"], "success")
+        self.assertEqual(state["conditions"][1]["terminal_state"], "pending")
+        self.assertEqual(state["conditions"][1]["attempt_count"], 0)
+
+    def test_missing_or_nonfile_assembly_inputs_fail_before_checkpoint(self) -> None:
+        context = self.write_context("context.json", "success")
+        for options in (
+            {"include_plan": False}, {"composition_plan": self.root / "absent.json"},
+            {"composition_plan": self.root}, {"local_scope": self.root / "absent.json"},
+            {"local_scope": self.root},
+        ):
+            with self.subTest(options=options):
+                result = self.invoke(context, **options)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(self.checkpoint.exists())
+                self.assertFalse((self.root / "context.json.counter").exists())
 
     def write_provider_reuse_map(self, k: float = 25.5) -> Path:
         provider_run = self.artifact_runs / "imported-provider"

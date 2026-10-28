@@ -38,6 +38,17 @@ MR继续提供真实几何、场、匹配与执行科学合同，不保留第二
 几何、源与IOB消费同一直接位姿，局部源只变换一次；不从历史focus或实例名称再推导位姿。
 MR几何、网格、源和科学诊断保持提供者局部frame，父装配映射由实例直接位姿表达。
 
+原生候选campaign入口[`run_native_candidate_campaign.ps1`](../analysis/run_native_candidate_campaign.ps1)
+同样要求显式`CompositionPlanPath`，可选`LocalScopePath`；不按条件、历史run或默认文件猜装配输入。
+两份小型输入经公共校验复制到checkpoint旁的`.d`目录，checkpoint记录源路径、冻结路径、字节数和SHA-256。
+默认condition收到这组冻结路径，再复制到自身`inputs/`并登记到run config；后续已有组装与工作点入口消费
+该副本，plan/scope的科学关系仍由现有组装校验负责。
+
+恢复及下一条件启动前核对上述身份，源文件或冻结副本缺失、内容变化、路径切换，以及scope有无变化均停止，
+不会递增新attempt或用新输入续接旧条件。缺少装配输入身份的旧checkpoint不能自动补写或追认；需用显式输入
+建立新campaign，保留原记录。完成／中断／重试、精确K的OA provider复用及原有工作点恢复规则继续生效。
+轻量回归运行真实默认condition至输入冻结边界，并在首个物理阶段前停止；这不新增原生飞行或Formal资格。
+
 当前OA renderer要求OA相对MR的旋转为identity；父装配共同平移／旋转的支持范围按实际冻结对照判定。
 IP路径保留native轴置换限制，不能据共同刚体回归声称任意相对角、任意多IP／MR拓扑可用。
 真实端面、截面及电极表来自提供者；MR完整组件视图包含镜、Stripe、Prism、屏蔽和detector的20个物理电极身份，
