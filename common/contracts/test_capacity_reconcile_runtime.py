@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import io
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from datetime import date, timedelta
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -30,6 +32,56 @@ WRITING_DUTIES = {
 
 
 class DailyCapacityReconcileTest(unittest.TestCase):
+    def test_startup_cli_apply_evaluates_admission_once(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            capacity_ledger.initialize_capacity_ledger(root, objects=[])
+            create_capacity_protection_lease(
+                root, lease_id="current", owner="test", ttl_seconds=60,
+                protected_paths=[root / "future"], committed_new_bytes=1,
+            )
+            for free_bytes, accepted in ((10**15, True), (0, False)):
+                with (self.subTest(accepted=accepted),
+                      patch.object(capacity.shutil, "disk_usage", return_value=Mock(free=free_bytes)) as disk,
+                      patch.object(capacity_ledger, "load_capacity_ledger", wraps=capacity_ledger.load_capacity_ledger) as ledger,
+                      patch.object(capacity.protection, "load_capacity_protection_leases",
+                                   wraps=capacity.protection.load_capacity_protection_leases) as leases,
+                      patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "1"}),
+                      patch.object(sys, "argv", [
+                          "capacity", "--artifact-root", str(root), "--capacity-protection-lease-id", "current", "--apply",
+                      ]), redirect_stdout(io.StringIO()) as stdout):
+                    capacity.main()
+                rendered = json.loads(stdout.getvalue())
+                self.assertEqual(rendered["satisfied_after_apply"], accepted)
+                self.assertEqual(rendered["applied"], accepted)
+                self.assertEqual(rendered["owner_actions"], {})
+                self.assertTrue({"plan", "plan.disk_usage", "plan.ledger_and_leases"}.issubset(
+                    rendered["timing"]["phases_seconds"],
+                ))
+                disk.assert_called_once()
+                ledger.assert_called_once()
+                leases.assert_called_once()
+
+    def test_separate_startup_apply_rechecks_new_commitments(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            capacity_ledger.initialize_capacity_ledger(root, objects=[])
+            create_capacity_protection_lease(
+                root, lease_id="current", owner="test", ttl_seconds=60,
+                protected_paths=[root / "future"], committed_new_bytes=1,
+            )
+            receipt = capacity.plan(root, target_bytes=1, minimum_free_bytes=0,
+                                    capacity_protection_lease_id="current")
+            self.assertTrue(receipt["satisfied"])
+            create_capacity_protection_lease(
+                root, lease_id="new", owner="other", ttl_seconds=60,
+                protected_paths=[root / "other"], committed_new_bytes=1,
+            )
+            refreshed = capacity.apply(receipt)
+            self.assertFalse(refreshed["satisfied_after_apply"])
+            self.assertEqual(refreshed["blocking_reason"], "TARGET_CAPACITY_EXCEEDED")
+            self.assertEqual(refreshed["total_active_lease_committed_new_bytes"], 2)
+
     def test_owner_recovers_only_stale_atomic_ledger_temp_without_payload_hash(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

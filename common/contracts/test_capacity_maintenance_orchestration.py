@@ -50,6 +50,7 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
             "activate_owner_dispositions", "_register_workspace_scratch_scope",
             "_resume_source_scratch_dispositions", "_reconcile_execution_alias_root",
             "_resume_terminal_run_owner", "_audit_pa_transaction_owner", "_recover_capacity_ledger_owner",
+            "_resume_partial_run_retirement_owner",
         )
         for apply_requested in (False, True):
             with self.subTest(apply=apply_requested), ExitStack() as stack:
@@ -83,6 +84,9 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
                   "checked_count": 1, "finalized_count": 1, "blocked_count": 0,
                   "migrated_count": 0, "migrated_bytes": 0,
               }) as resumed,
+              patch.object(capacity, "_resume_partial_run_retirement_owner", return_value={
+                  "completed_count": 0, "removed_bytes": 0, "blocked_count": 0,
+              }),
               patch.object(capacity, "_audit_pa_transaction_owner", return_value={
                   "checked_count": 1, "replayable_count": 0, "awaiting_verification_count": 0,
                   "missing_failure_evidence_count": 0, "invalid_count": 0,
@@ -108,7 +112,56 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
         resumed.assert_called_once()
         audited.assert_called_once()
         self.assertEqual(rendered["owner_action_failures"][0]["action"], "owner_dispositions")
-        self.assertEqual(rendered["terminal_run_lifecycle_resume"]["finalized_count"], 1)
+        self.assertEqual(rendered["owner_actions"]["terminal_run_lifecycle"]["finalized_count"], 1)
+
+    def test_cli_times_every_owner_and_serializes_partial_retirement(self) -> None:
+        clock = [0.0]
+        actions = {
+            "capacity_ledger_recovery": "_recover_capacity_ledger_owner",
+            "owner_dispositions": "activate_owner_dispositions",
+            "terminal_run_lifecycle": "_resume_terminal_run_owner",
+            "partial_run_retirement": "_resume_partial_run_retirement_owner",
+            "pa_transaction_audit": "_audit_pa_transaction_owner",
+            "workspace_scratch_registration": "_register_workspace_scratch_scope",
+            "source_scratch_dispositions": "_resume_source_scratch_dispositions",
+            "execution_alias_reconciliation": "_reconcile_execution_alias_root",
+        }
+
+        def owner_action(_root):
+            clock[0] += 10.0
+            return {"completed_count": 1, "removed_bytes": 17, "blocked_count": 0}
+
+        def plan(*_args, **_kwargs):
+            clock[0] += 2.0
+            return {"execution_mode": "maintenance", "satisfied": True}
+
+        def apply(receipt):
+            clock[0] += 3.5
+            return receipt | {"timing": {"phases_seconds": {"plan": 2.0, "apply": 3.0, "post_verify": 0.5}}}
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(capacity.time, "perf_counter", side_effect=lambda: clock[0]))
+            for name in actions.values():
+                stack.enter_context(patch.object(capacity, name, side_effect=owner_action))
+            stack.enter_context(patch.object(capacity, "plan", side_effect=plan))
+            stack.enter_context(patch.object(capacity, "apply", side_effect=apply))
+            stack.enter_context(patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "1"}))
+            stack.enter_context(patch.object(sys, "argv", [
+                "capacity", "--artifact-root", "unused", "--execution-mode", "maintenance", "--apply",
+            ]))
+            stdout = stack.enter_context(redirect_stdout(io.StringIO()))
+            capacity.main()
+        rendered = json.loads(stdout.getvalue())
+        self.assertEqual(set(rendered["owner_actions"]), set(actions))
+        self.assertEqual(rendered["owner_actions"]["partial_run_retirement"]["removed_bytes"], 17)
+        timing = rendered["timing"]
+        self.assertEqual(timing["total_seconds"], 85.5)
+        self.assertEqual(timing["phases_seconds"], {
+            **{f"owner.{name}": 10.0 for name in actions},
+            "plan": 2.0, "apply": 3.0, "post_verify": 0.5,
+        })
+        self.assertTrue(any(item["name"] == "total" for item in timing["performance_warnings"]))
+        self.assertNotIn("terminal_run_lifecycle_resume", rendered)
 
     def test_maintenance_reserves_peak_and_deletes_without_payload_hashing(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

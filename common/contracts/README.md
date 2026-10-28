@@ -310,6 +310,15 @@ startup与maintenance均报告总耗时和分段耗时；正常目标为5秒，�
 受管范围；前两项只在校准时计量，工作区`scratch/`若尚未登记则由maintenance做一次范围计量，之后启动仅使用冻结的台账数值。`legacy_capacity_backfill.py`
 只承担历史恢复，不能提供日常准入或容量水位覆盖。
 
+CLI的`timing.total_seconds`从入口计时，包含maintenance的全部owner continuation；
+`owner_actions`按动作名完整记录结果，包括`partial_run_retirement`，对应耗时归入`owner.<动作名>`阶段。
+原planner的磁盘、台账及租约等分段以`plan.<阶段名>`保留，它们嵌套于`plan`，不能与总时间相加。
+未执行owner动作的只读预览和startup返回空`owner_actions`，不伪造检查数。单动作失败继续报告
+`owner_action_failures`，容量达标仍不代表生命周期闭合。同一`startup --apply`调用只执行一次最终准入；
+独立调用`plan`后再调用`apply`仍重新读取台账与租约，不能把旧预览当成准入凭证。
+partial-retirement在原容量锁内一次建立run与路径索引，索引引用同一批账本记录；
+每次实际移除前继续检查最新租约、消费者和原批准身份，pending收据重放与删除授权保持原边界。
+
 缺少现行事务而已被明确放弃的历史范围，只能由其目标项目 owner 在
 `artifacts/common/capacity_calibration/owner_dispositions/`提供一次性、代际绑定的范围处置记录。显式校准只复核
 该记录所列完整路径和字节数及已封存的代际/manifest 路径，不重新读取或哈希 PA payload；仅在该元数据不一致

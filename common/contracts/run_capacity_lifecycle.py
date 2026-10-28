@@ -656,6 +656,7 @@ def _approved_partial_receipt(path: Path) -> dict[str, Any]:
 
 def partial_retirement_is_protected(
     root: Path, ledger: dict[str, Any], entry: dict[str, Any], path: Path,
+    *, by_path: dict[str, dict[str, Any]] | None = None,
 ) -> bool:
     """Reject any live reference or lease before a physical removal."""
 
@@ -664,7 +665,8 @@ def partial_retirement_is_protected(
     leases = capacity_protection.load_capacity_protection_leases(root)
     if capacity_protection.path_is_protected(path, leases["protected_paths"]):
         return True
-    by_path = {str(item["path"]): item for item in ledger["objects"]}
+    if by_path is None:
+        by_path = {str(item["path"]): item for item in ledger["objects"]}
     # Missing consumer records are ambiguous and therefore protected.  A
     # writing consumer is live too; only a retired consumer releases a file.
     return any(
@@ -704,11 +706,14 @@ def recorded_heavy_identity(run_dir: Path, path: Path, bytes_count: int) -> str 
     return next(iter(identities)) if len(identities) == 1 else None
 
 
-def _eligible_partial_entries(root: Path, ledger: dict[str, Any], run_dir: Path) -> list[dict[str, Any]]:
+def _eligible_partial_entries(
+    root: Path, ledger: dict[str, Any], run_dir: Path,
+    entries: list[dict[str, Any]], by_path: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
     """Return this run's explicitly authorized, presently removable files."""
 
     records: list[dict[str, Any]] = []
-    for entry in ledger["objects"]:
+    for entry in entries:
         if not (
             entry.get("status") == "writing"
             and entry.get("class") == "rebuildable_payload"
@@ -719,11 +724,11 @@ def _eligible_partial_entries(root: Path, ledger: dict[str, Any], run_dir: Path)
         ):
             continue
         path = root / str(entry["path"])
-        if _partial_retirement_run(path) != run_dir or not path.is_file():
+        if not path.is_file():
             continue
         if classify_file(path, bytes_count=int(entry["bytes"])) not in HEAVY_RETENTION_ROLES:
             continue
-        if partial_retirement_is_protected(root, ledger, entry, path):
+        if partial_retirement_is_protected(root, ledger, entry, path, by_path=by_path):
             continue
         sha256 = recorded_heavy_identity(run_dir, path, int(entry["bytes"]))
         if sha256 is None:
@@ -774,26 +779,30 @@ def resume_partial_retirements(artifact_root: Path) -> dict[str, int]:
         ledger = capacity_ledger.load_capacity_ledger(root)
         if ledger is None:
             raise ValueError("partial retirement requires a valid capacity ledger")
-        run_dirs = sorted({
-            run_dir for item in ledger["objects"]
-            if (run_dir := _partial_retirement_run(root / str(item["path"]))) is not None
-        }, key=str)
-        for run_dir in run_dirs:
+        # These indexes reference the locked ledger's entries, so retirement
+        # transitions remain visible to later consumer checks in this pass.
+        by_run: dict[Path, list[dict[str, Any]]] = {}
+        by_path: dict[str, dict[str, Any]] = {}
+        for item in ledger["objects"]:
+            by_path[str(item["path"])] = item
+            run_dir = _partial_retirement_run(root / str(item["path"]))
+            if run_dir is not None:
+                by_run.setdefault(run_dir, []).append(item)
+        for run_dir, entries in sorted(by_run.items(), key=lambda pair: str(pair[0])):
             receipt_path = run_dir / PARTIAL_RETIREMENT_RECEIPT
             if not receipt_path.exists():
-                approved = _eligible_partial_entries(root, ledger, run_dir)
+                approved = _eligible_partial_entries(root, ledger, run_dir, entries, by_path)
                 if not approved:
-                    for entry in ledger["objects"]:
+                    for entry in entries:
                         path = root / str(entry["path"])
                         if (
-                            _partial_retirement_run(path) == run_dir
-                            and entry.get("status") == "writing"
+                            entry.get("status") == "writing"
                             and entry.get("class") == "rebuildable_payload"
                             and entry.get("recovery_task") == "explicit_user_authorized_abandonment"
                             and path.is_file()
                             and classify_file(path, bytes_count=int(entry["bytes"])) in HEAVY_RETENTION_ROLES
                             and (
-                                partial_retirement_is_protected(root, ledger, entry, path)
+                                partial_retirement_is_protected(root, ledger, entry, path, by_path=by_path)
                                 or recorded_heavy_identity(run_dir, path, int(entry["bytes"])) is None
                             )
                         ):
@@ -817,7 +826,6 @@ def resume_partial_retirements(artifact_root: Path) -> dict[str, int]:
                     continue
             if receipt["status"] == "complete":
                 continue
-            by_path = {str(item["path"]): item for item in ledger["objects"]}
             run_removed = 0
             try:
                 for record in receipt["approved"]:
@@ -827,7 +835,7 @@ def resume_partial_retirements(artifact_root: Path) -> dict[str, int]:
                     if entry is None:
                         raise ValueError("partial retirement ledger entry disappeared")
                     if absolute.exists():
-                        if partial_retirement_is_protected(root, ledger, entry, absolute):
+                        if partial_retirement_is_protected(root, ledger, entry, absolute, by_path=by_path):
                             raise ValueError("partial retirement approved file is protected")
                         current = absolute.stat()
                         if (

@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 from common.contracts import capacity_ledger
 from common.contracts import capacity_protection
+from common.contracts import run_capacity_lifecycle
 from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
 from common.contracts.run_capacity_lifecycle import (
     assert_retention_complete,
@@ -885,6 +886,31 @@ class RunCapacityLifecycleTests(unittest.TestCase):
             self.assertEqual(resume_partial_retirements(root), {
                 "completed_count": 0, "removed_bytes": 0, "blocked_count": 0,
             })
+
+    def test_partial_retirement_indexes_each_path_once_and_observes_retired_consumers(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initialize_capacity_ledger(root, objects=[])
+            previous = None
+            for index in range(4):
+                run, _ = self.fixture(root, f"indexed-{index}")
+                heavy = run / "field.pa0"
+                heavy.write_bytes(b"rebuildable")
+                self.record_heavy_identity(run, heavy)
+                capacity_ledger.record_capacity_object(
+                    root, path=heavy, object_class="rebuildable_payload", bytes_count=heavy.stat().st_size,
+                    status="writing", owner="p", recovery_reason="structured_nonterminal_run_reference",
+                    review_deadline="2026-10-01", recovery_task="explicit_user_authorized_abandonment",
+                    consumers=[] if previous is None else [previous],
+                )
+                previous = heavy
+            entry_count = len(load_capacity_ledger(root)["objects"])
+            with patch.object(run_capacity_lifecycle, "_partial_retirement_run",
+                              wraps=run_capacity_lifecycle._partial_retirement_run) as classify:
+                result = resume_partial_retirements(root)
+            self.assertEqual(classify.call_count, entry_count)
+            self.assertEqual(result, {"completed_count": 4, "removed_bytes": 44, "blocked_count": 0})
+            self.assertTrue(all(item["status"] == "retired" for item in load_capacity_ledger(root)["objects"]))
 
     def test_partial_retirement_preserves_file_when_active_consumer_exists(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

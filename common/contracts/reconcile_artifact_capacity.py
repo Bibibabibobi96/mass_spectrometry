@@ -1146,7 +1146,9 @@ def activate_owner_dispositions(root: Path) -> dict[str, Any]:
     return activate(root)
 
 
-def _run_maintenance_owner_actions(root: Path) -> tuple[dict[str, dict[str, int]], list[dict[str, str]]]:
+def _run_maintenance_owner_actions(
+    root: Path, timings: _PhaseTimings,
+) -> tuple[dict[str, dict[str, int]], list[dict[str, str]]]:
     """Run independent owner continuations without masking later safe work."""
 
     actions = (
@@ -1180,7 +1182,8 @@ def _run_maintenance_owner_actions(root: Path) -> tuple[dict[str, dict[str, int]
     failures: list[dict[str, str]] = []
     for name, action, fallback in actions:
         try:
-            results[name] = action(root)
+            with timings.phase(f"owner.{name}"):
+                results[name] = action(root)
         except (OSError, RuntimeError, ValueError, protection.CapacityProtectionLeaseError) as exc:
             # Owner continuations have isolated evidence and pending receipts.
             # A malformed historical range must not prevent other owners from
@@ -1271,6 +1274,17 @@ def _historical_closure_summary(
     ]
 
 
+def _complete_startup_decision(receipt: dict[str, Any]) -> dict[str, Any]:
+    """Mark a freshly evaluated admission without repeating its read-only work."""
+
+    receipt.update(
+        applied=bool(receipt["satisfied"]), removed=[], removed_bytes=0,
+        free_bytes_after=receipt["free_bytes_before"],
+        satisfied_after_apply=bool(receipt["satisfied"]),
+    )
+    return receipt
+
+
 def apply(receipt: dict[str, Any]) -> dict[str, Any]:
     """Apply a startup recheck or exact ledger retirement plan."""
 
@@ -1284,12 +1298,7 @@ def apply(receipt: dict[str, Any]) -> dict[str, Any]:
             capacity_ledger_path=Path(receipt["capacity_ledger"]),
             capacity_protection_lease_id=receipt.get("capacity_protection_lease_id"),
         )
-        refreshed.update(
-            applied=bool(refreshed["satisfied"]), removed=[], removed_bytes=0,
-            free_bytes_after=refreshed["free_bytes_before"],
-            satisfied_after_apply=bool(refreshed["satisfied"]),
-        )
-        return refreshed
+        return _complete_startup_decision(refreshed)
     if receipt.get("measurement_mode") != "LEDGER_MAINTENANCE":
         raise ValueError("only startup or ledger maintenance receipts can be applied")
     timings = _maintenance_apply_timings(receipt)
@@ -1498,7 +1507,10 @@ def _lease_action(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
 
 
 def main() -> None:
+    started = time.perf_counter()
     policy = _capacity_policy()
+    timings = _timings(policy)
+    timings.started = started
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifact-root", required=True, type=Path)
     actions = parser.add_mutually_exclusive_group()
@@ -1563,33 +1575,34 @@ def main() -> None:
             print(json.dumps(lease, indent=2))
             return
         owner_action_failures: list[dict[str, str]] = []
+        owner_actions: dict[str, dict[str, int]] = {}
         if args.execution_mode == "maintenance" and args.apply:
-            owner_actions, owner_action_failures = _run_maintenance_owner_actions(args.artifact_root)
-        else:
-            owner_actions = {
-                "capacity_ledger_recovery": {"checked_count": 0, "retired_count": 0, "removed_bytes": 0,
-                                             "fresh_count": 0, "invalid_count": 0, "replayed_count": 0},
-                "owner_dispositions": {"activated_count": 0, "activated_bytes": 0},
-                "terminal_run_lifecycle": {"checked_count": 0, "finalized_count": 0, "blocked_count": 0,
-                                           "migrated_count": 0, "migrated_bytes": 0},
-                "pa_transaction_audit": {"checked_count": 0, "replayable_count": 0, "awaiting_verification_count": 0,
-                                         "missing_failure_evidence_count": 0, "invalid_count": 0},
-                "workspace_scratch_registration": {"registered_count": 0, "registered_bytes": 0},
-                "source_scratch_dispositions": {"completed_count": 0, "removed_bytes": 0},
-                "execution_alias_reconciliation": {"corrected_count": 0, "released_bytes": 0},
-            }
-        receipt = plan(
-            args.artifact_root,
-            target_bytes=int(target_gib * GIB),
-            minimum_free_bytes=int(policy["minimum_free_gib"] * GIB),
-            protected_paths=args.protect_path,
-            protected_cache_keys=args.protect_cache_key,
-            execution_mode=args.execution_mode,
-            capacity_ledger=args.capacity_ledger,
-            capacity_protection_lease_id=args.capacity_protection_lease_id,
-        )
+            owner_actions, owner_action_failures = _run_maintenance_owner_actions(args.artifact_root, timings)
+        with timings.phase("plan"):
+            receipt = plan(
+                args.artifact_root,
+                target_bytes=int(target_gib * GIB),
+                minimum_free_bytes=int(policy["minimum_free_gib"] * GIB),
+                protected_paths=args.protect_path,
+                protected_cache_keys=args.protect_cache_key,
+                execution_mode=args.execution_mode,
+                capacity_ledger=args.capacity_ledger,
+                capacity_protection_lease_id=args.capacity_protection_lease_id,
+            )
+        # Keep the planner's diagnostics as named subphases. They are nested
+        # within plan, not additional elapsed time to add to the entry total.
+        for name, seconds in receipt.get("timing", {}).get("phases_seconds", {}).items():
+            timings.phases[f"plan.{name}"] = seconds
         if args.apply:
-            receipt = apply(receipt)
+            if args.execution_mode == "startup":
+                # This CLI has not yielded its freshly evaluated decision to a
+                # caller. Separate plan/apply API calls still recheck in apply.
+                receipt = _complete_startup_decision(receipt)
+            else:
+                receipt = apply(receipt)
+                for name, seconds in receipt.get("timing", {}).get("phases_seconds", {}).items():
+                    if name != "plan":
+                        timings.phases[name] = seconds
         # A maintenance pass may retire thousands of individually receipted PA
         # files.  Dumping that entire list on the launcher hot path makes the
         # terminal/PowerShell JSON conversion a material part of the task.  The
@@ -1607,22 +1620,10 @@ def main() -> None:
                 "planned_count": len(receipt.get("planned", [])),
                 "removed_count": len(receipt.get("removed", [])),
             }
-        if owner_actions["owner_dispositions"]["activated_count"]:
-            receipt["owner_dispositions_activated"] = owner_actions["owner_dispositions"]
-        if owner_actions["capacity_ledger_recovery"]["checked_count"]:
-            receipt["capacity_ledger_recovery"] = owner_actions["capacity_ledger_recovery"]
-        if any(owner_actions["terminal_run_lifecycle"].values()):
-            receipt["terminal_run_lifecycle_resume"] = owner_actions["terminal_run_lifecycle"]
-        if owner_actions["pa_transaction_audit"]["checked_count"]:
-            receipt["pa_transaction_owner_audit"] = owner_actions["pa_transaction_audit"]
-        if owner_actions["execution_alias_reconciliation"]["corrected_count"]:
-            receipt["administrative_aliases_reconciled"] = owner_actions["execution_alias_reconciliation"]
-        if owner_actions["workspace_scratch_registration"]["registered_count"]:
-            receipt["repository_workspace_scratch_registered"] = owner_actions["workspace_scratch_registration"]
-        if owner_actions["source_scratch_dispositions"]["completed_count"]:
-            receipt["source_scratch_dispositions_completed"] = owner_actions["source_scratch_dispositions"]
+        receipt["owner_actions"] = owner_actions
         if owner_action_failures:
             receipt["owner_action_failures"] = owner_action_failures
+        receipt["timing"] = timings.finish()
         print(json.dumps(receipt, indent=2))
     except (ValueError, RuntimeError, protection.CapacityProtectionLeaseError) as exc:
         parser.error(str(exc))
