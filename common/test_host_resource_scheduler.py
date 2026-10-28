@@ -650,6 +650,78 @@ class HostResourceSchedulerTests(unittest.TestCase):
                     self.acquire(1)
             self.snapshot[key] = original
 
+    def test_reused_descendant_pid_keeps_new_children_and_older_orphans(self) -> None:
+        for parent_live in (True, False):
+            for reverse_order in (False, True):
+                with self.subTest(parent_live=parent_live, reverse_order=reverse_order):
+                    self.path = Path(self.temporary.name) / f"reuse_{parent_live}_{reverse_order}.sqlite3"
+                    owner = dict(pid=1, parent_pid=0, started=f"{1:019d}", memory_bytes=1)
+                    old_parent = dict(pid=2, parent_pid=1, started=f"{10:019d}", memory_bytes=1)
+                    new_parent = dict(old_parent, started=f"{30:019d}")
+                    self.snapshot["processes"] = [owner, old_parent]
+                    self.acquire(1)
+                    self.call("register", token="1", process_id=2)
+                    self.snapshot["processes"] = [owner, new_parent]
+                    self.call("register", token="1", process_id=2)
+                    children = [
+                        dict(pid=3, parent_pid=2, started=f"{20:019d}", memory_bytes=1),
+                        dict(pid=4, parent_pid=2, started=f"{40:019d}", memory_bytes=1),
+                        dict(pid=5, parent_pid=3, started=f"{25:019d}", memory_bytes=1),
+                        dict(pid=6, parent_pid=4, started=f"{50:019d}", memory_bytes=1),
+                    ]
+                    self.snapshot["processes"] = [owner, *([new_parent] if parent_live else []), *children]
+                    if reverse_order:
+                        self.snapshot["processes"].reverse()
+                    result = self.call("poll", token="1")
+                    expected = {1, 3, 4, 5, 6} | ({2} if parent_live else set())
+                    self.assertEqual(set(result["live_process_ids"]), expected)
+                    self.assertEqual(set(result["live_work_process_ids"]), expected - {1})
+                    self.assertEqual({p["started"] for p in result["processes"] if p["pid"] == 2},
+                                     {old_parent["started"], new_parent["started"]})
+                    for child in children:
+                        observed = dict(self.snapshot, observed_at_ticks=time.time_ns())
+                        inherited = transact(self.path, dict(operation="inherit", token="1",
+                                             owner=dict(pid=child["pid"], started=child["started"])),
+                                             observed, self.policy)
+                        self.assertEqual(inherited["status"], "acquired")
+
+    def test_unrelated_reused_parent_cannot_give_new_children_the_old_reservation(self) -> None:
+        owner = dict(pid=1, parent_pid=0, started=f"{1:019d}", memory_bytes=1)
+        old_parent = dict(pid=2, parent_pid=1, started=f"{10:019d}", memory_bytes=1)
+        self.snapshot["processes"] = [owner, old_parent]
+        self.acquire(1)
+        self.call("register", token="1", process_id=2)
+        unrelated = dict(old_parent, parent_pid=99, started=f"{30:019d}")
+        old_child = dict(pid=3, parent_pid=2, started=f"{20:019d}", memory_bytes=1)
+        new_child = dict(pid=4, parent_pid=2, started=f"{40:019d}", memory_bytes=1)
+        self.snapshot["processes"] = [owner, unrelated, old_child, new_child]
+        result = self.call("poll", token="1")
+        self.assertEqual(result["live_process_ids"], [1, 3])
+        self.assertEqual(result["live_work_process_ids"], [3])
+        for process in (unrelated, new_child):
+            observed = dict(self.snapshot, observed_at_ticks=time.time_ns())
+            with self.assertRaisesRegex(ValueError, "owner or a live descendant"):
+                transact(self.path, dict(operation="inherit", token="1",
+                         owner=dict(pid=process["pid"], started=process["started"])), observed, self.policy)
+
+    def test_newly_observed_reused_parent_does_not_expand_registered_work(self) -> None:
+        owner = dict(pid=1, parent_pid=0, started=f"{1:019d}", memory_bytes=1)
+        old_parent = dict(pid=2, parent_pid=1, started=f"{10:019d}", memory_bytes=1)
+        self.snapshot["processes"] = [owner, old_parent]
+        self.acquire(1)
+        self.call("register", token="1", process_id=2)
+        new_parent = dict(old_parent, started=f"{30:019d}")
+        self.snapshot["processes"] = [
+            owner, new_parent,
+            dict(pid=3, parent_pid=2, started=f"{20:019d}", memory_bytes=1),
+            dict(pid=4, parent_pid=2, started=f"{40:019d}", memory_bytes=1),
+        ]
+        result = self.call("poll", token="1")
+        self.assertEqual(result["live_process_ids"], [1, 2, 3, 4])
+        # The new process is a legitimate descendant, but has not been
+        # registered as stage work; old work's orphan retains that duty.
+        self.assertEqual(result["live_work_process_ids"], [3])
+
     def test_orphan_kept_when_parent_pid_already_reused(self) -> None:
         self.acquire(1, budget(cpu=4))
         self.snapshot["processes"][0]["started"] = "0000000000000000003"

@@ -141,30 +141,39 @@ def _processes(snapshot: dict[str, Any]) -> dict[int, dict[str, Any]]:
     return {int(p["pid"]): p for p in snapshot["processes"]}
 
 
-def _refresh(record: dict[str, Any], processes: dict[int, dict[str, Any]]) -> bool:
-    """Retain observed descendants, including descendants of an exited owner."""
-    roots = {_identity(p) for p in record["processes"]}
+def _live_descendants(roots: set[tuple[int, str]], processes: dict[int, dict[str, Any]]) -> set[int]:
+    """Follow every retained creation identity, including older reused parents."""
     live = {pid for pid, started in roots if pid in processes and _same_creation_time(str(processes[pid]["started"]), started)}
-    # Windows keeps ParentProcessId after parent exit. Creation ordering avoids
-    # claiming an older process when a PID has been recycled.
-    parent_birth = {pid: started for pid, started in roots}
+    parent_births: dict[int, set[str]] = {}
+    for pid, started in roots:
+        parent_births.setdefault(pid, set()).add(started)
     changed = True
     while changed:
         changed = False
         for pid, process in processes.items():
             parent = int(process.get("parent_pid", 0))
-            if pid in live or parent not in parent_birth:
+            if pid in live or parent not in parent_births:
                 continue
-            if str(process["started"]) < parent_birth[parent]:
+            started = str(process["started"])
+            observed_parent = processes.get(parent)
+            # A current parent's new child and a still-live child of an older
+            # parent identity can coexist. A PID alone must never choose one.
+            if not any(started >= birth and (
+                observed_parent is None
+                or _same_creation_time(str(observed_parent["started"]), birth)
+                or started < str(observed_parent["started"])
+            ) for birth in parent_births[parent]):
                 continue
-            if parent in processes and not _same_creation_time(str(processes[parent]["started"]), parent_birth[parent]):
-                # A child born BEFORE a reused PID's new creation time belongs
-                # to the old parent; never discard that still-live orphan.
-                if str(process["started"]) >= str(processes[parent]["started"]):
-                    continue
             live.add(pid)
-            parent_birth[pid] = str(process["started"])
+            parent_births.setdefault(pid, set()).add(started)
             changed = True
+    return live
+
+
+def _refresh(record: dict[str, Any], processes: dict[int, dict[str, Any]]) -> bool:
+    """Retain observed descendants, including descendants of an exited owner."""
+    roots = {_identity(p) for p in record["processes"]}
+    live = _live_descendants(roots, processes)
     # A snapshot can supply the native 100-ns creation tick for a process
     # already recorded with CIM's microsecond tick.  They are one identity
     # under _same_creation_time, so replace the older spelling with the
@@ -191,24 +200,7 @@ def _refresh(record: dict[str, Any], processes: dict[int, dict[str, Any]]) -> bo
     # process explicitly registered by the workflow, and descendants it
     # creates, may hold a stage boundary open.
     work_roots = {_identity(p) for p in record.setdefault("work_roots", [])}
-    work_live = {pid for pid, started in work_roots
-                 if pid in processes and _same_creation_time(str(processes[pid]["started"]), started)}
-    work_parent_birth = {pid: started for pid, started in work_roots}
-    changed = True
-    while changed:
-        changed = False
-        for pid, process in processes.items():
-            parent = int(process.get("parent_pid", 0))
-            if pid in work_live or parent not in work_parent_birth:
-                continue
-            if str(process["started"]) < work_parent_birth[parent]:
-                continue
-            if parent in processes and not _same_creation_time(str(processes[parent]["started"]), work_parent_birth[parent]):
-                if str(process["started"]) >= str(processes[parent]["started"]):
-                    continue
-            work_live.add(pid)
-            work_parent_birth[pid] = str(process["started"])
-            changed = True
+    work_live = _live_descendants(work_roots, processes)
     record["live_work_process_ids"] = sorted(work_live)
     if record.get("reason") == "owner_released_descendants_still_live":
         # A completed release may initially lack the console's image identity.
