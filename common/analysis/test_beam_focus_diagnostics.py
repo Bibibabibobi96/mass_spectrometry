@@ -74,6 +74,18 @@ class BeamFocusTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"finite"):
             self.prepare(case)
 
+    def test_missing_values_do_not_hide_nonfinite_or_complex_supplied_states(self):
+        for field in ("x_mm", "vx_mm_us", "vz_mm_us", "t_us"):
+            for invalid in (float("nan"), float("inf"), -float("inf"), 1+2j):
+                for order in ((None, invalid), (invalid, None)):
+                    case = fixture()
+                    for row, value in zip(case["states"], order):
+                        row[field] = value
+                    with self.subTest(field=field, values=order), self.assertRaisesRegex(ValueError, "finite|real"):
+                        self.prepare(case)
+                    with self.subTest(time_focus=True, field=field, values=order), self.assertRaisesRegex(ValueError, "finite|real"):
+                        prepare_time_focus_diagnostics([case], [1.,0.], [1,2,3], {"drift_lengths_mm": [0.,10.]})
+
     def test_stable_incomplete_common_is_not_a_complete_cohort_envelope(self):
         case=fixture()
         for row in case["states"]:

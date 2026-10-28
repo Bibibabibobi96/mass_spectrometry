@@ -68,15 +68,16 @@ def _quantiles(values: np.ndarray, weights: np.ndarray) -> tuple[np.ndarray, str
 
 
 def _array(rows: list[dict], fields: tuple[str, ...]) -> np.ndarray | None:
-    if not rows or any(row.get(key) is None for row in rows for key in fields):
-        return None
-    supplied = [[row[key] for key in fields] for row in rows]
-    if np.iscomplexobj(supplied):
+    supplied = [row.get(key) for row in rows for key in fields]
+    present = [value for value in supplied if value is not None]
+    if np.iscomplexobj(present):
         raise ValueError("focus diagnostics require real supplied states")
-    values = np.array(supplied, dtype=float)
+    values = np.array(present, dtype=float)
     if not np.isfinite(values).all():
         raise ValueError("focus diagnostics require finite supplied states")
-    return values
+    if not rows or len(present) != len(supplied):
+        return None
+    return values.reshape(len(rows), len(fields))
 
 
 def _decomposition(rows: list[dict], axis: str, weights: np.ndarray) -> dict:

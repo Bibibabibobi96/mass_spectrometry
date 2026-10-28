@@ -11,6 +11,30 @@ from common.contracts.rigid_transform import PhaseSpaceState, PlaneSurface
 VALUES = ("x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")
 
 
+def _recorded_lifetime_ends(case: dict, pulse: float) -> tuple[dict, dict]:
+    """Read known IP end times and complete event anchors without inventing states."""
+    terminal_states, end_times, anchors = {}, {}, {}
+    for pid, raw in case.get("terminals", {}).items():
+        state = {key: float(raw[key]) for key in ("t_us", *VALUES) if raw.get(key) not in (None, "")}
+        if any(not math.isfinite(value) for value in state.values()):
+            raise ValueError("nonfinite recorded terminal state")
+        terminal_states[pid] = state
+        if "t_us" in state:
+            end_times[pid] = state["t_us"]
+            if len(state) == len(VALUES)+1:
+                anchors[pid] = "terminal", state
+    for pid, raw in case["exits"].items():
+        state = {key: float(raw[key]) for key in ("t_us", *VALUES)}
+        if any(not math.isfinite(value) for value in state.values()) or state["t_us"] < pulse or state["vz_mm_us"] >= 0 or abs(state["z_mm"]) > 1e-10:
+            raise ValueError("recorded exit violates spatial crossing contract")
+        terminal = case.get("terminals", {}).get(pid, {})
+        if (any(state[key] != value for key, value in terminal_states.get(pid, {}).items())
+                or terminal.get("reason") not in (None, "acceptance_surface")):
+            raise ValueError("recorded extraction exit differs from its terminal state")
+        end_times[pid], anchors[pid] = state["t_us"], ("extraction_exit", state)
+    return end_times, anchors
+
+
 def prepare_spatial_crossings_from_samples(
     case: dict, planes: list[float], samples: Iterable[tuple[int, dict]],
 ) -> list[dict]:
@@ -23,6 +47,10 @@ def prepare_spatial_crossings_from_samples(
     Pre-pulse rows retain the previous skip policy. z=0 always comes from the
     recorded exit, never an interpolated sample crossing. Every mother ID is
     retained, and missing brackets do not imply physical loss.
+    Known exit/terminal events bound the usable samples; a complete end state
+    anchors the final segment, whose terminal instant is excluded from alive
+    positive-plane crossings. Without an end event only observed brackets are
+    supported; no lifetime is extrapolated beyond them.
     """
     if not planes or len(set(planes)) != len(planes) or any(not math.isfinite(z) or z < 0 for z in planes) or planes != sorted(planes, reverse=True):
         raise ValueError("spatial planes must be unique finite nonnegative descending z")
@@ -36,7 +64,8 @@ def prepare_spatial_crossings_from_samples(
         raise ValueError("spatial crossing epoch must be finite")
     plane_z = {repr(z): z for z in planes}
     surfaces = {key: PlaneSurface(frame, (0., 0., z), (0., 0., -1.)) for key, z in plane_z.items()}
-    latest, active_pair, crossed = {}, {}, {}
+    end_times, end_anchors = _recorded_lifetime_ends(case, pulse)
+    latest, active_pair, crossed, sample_times = {}, {}, {}, {}
 
     def canonical_sample(pid, anchor, state):
         return CrossingSample(pid, anchor, PhaseSpaceState(
@@ -59,23 +88,26 @@ def prepare_spatial_crossings_from_samples(
             current = dict(t_us=t, **{key:float(raw[key]) for key in VALUES}, line=line)
             if any(not math.isfinite(current[key]) for key in ("t_us", *VALUES)):
                 raise ValueError("nonfinite spatial sample")
+            if pid in sample_times and t <= sample_times[pid]:
+                raise ValueError(f"sample time not increasing for particle {pid}")
+            sample_times[pid] = t
+            # Native Lua records a step endpoint before interpolating finish().
+            # Keep raw validation, but use the recorded event rather than a
+            # state at/after that end to reconstruct the last valid segment.
+            if pid in end_times and (t > end_times[pid] or (t == end_times[pid] and pid in end_anchors)):
+                continue
             active_pair[pid] = latest.get(pid), current
             latest[pid] = current
             yield canonical_sample(pid, line, current)
-        for pid, raw in case["exits"].items():
-            state = {key:float(raw[key]) for key in ("t_us", *VALUES)}
-            if any(not math.isfinite(value) for value in state.values()) or state["t_us"] < pulse or state["vz_mm_us"] >= 0 or abs(state["z_mm"]) > 1e-10:
-                raise ValueError("recorded exit violates spatial crossing contract")
-            if 0 in planes:
+        for pid, (anchor, state) in end_anchors.items():
+            if anchor == "extraction_exit" and 0 in planes:
                 crossed[pid,0] = dict(**state, bracket_start_us=None, bracket_end_us=None, bracket_gap_us=None,
                                       lower_sample_line=None, upper_sample_line=None, interpolation_alpha=None,
                                       method="recorded_extraction_exit_event")
             before = latest.get(pid)
             if before is not None:
-                gap = state["t_us"]-before["t_us"]
-                if 0 < gap <= limit+1e-12 and before["vz_mm_us"] < 0 and before["z_mm"] > 0:
-                    active_pair[pid] = before, state
-                    yield canonical_sample(pid, "extraction_exit", state)
+                active_pair[pid] = before, state
+                yield canonical_sample(pid, anchor, state)
 
     # Include requested z=0 in validation, even for a zero-only request, but
     # discard its interpolated receipts. The real exit remains authoritative.
@@ -89,20 +121,24 @@ def prepare_spatial_crossings_from_samples(
         before, current = active_pair[bracket.particle_id]
         alpha = bracket.interpolation_alpha
         state = {key:before[key]+alpha*(current[key]-before[key]) for key in ("t_us", *VALUES)}
+        if bracket.particle_id in end_times and state["t_us"] >= end_times[bracket.particle_id]:
+            continue
         state["z_mm"] = z
         from_exit = bracket.upper_anchor == "extraction_exit"
+        from_terminal = bracket.upper_anchor == "terminal"
         crossed[bracket.particle_id,z] = dict(
             **state, bracket_start_us=before["t_us"], bracket_end_us=current["t_us"],
             bracket_gap_us=current["t_us"]-before["t_us"], lower_sample_line=bracket.lower_anchor,
-            upper_sample_line=None if from_exit else bracket.upper_anchor, interpolation_alpha=alpha,
-            method="bounded_sample_to_exit_event_crossing" if from_exit else "bounded_linear_sample_crossing",
+            upper_sample_line=None if from_exit or from_terminal else bracket.upper_anchor, interpolation_alpha=alpha,
+            method=("bounded_sample_to_exit_event_crossing" if from_exit else
+                    "bounded_sample_to_terminal_event_crossing" if from_terminal else "bounded_linear_sample_crossing"),
         )
     rows = []
     for z in planes:
         for pid in sorted(case["sources"]):
             state = crossed.get((pid,z))
             row = dict(case=case["label"], stage=f"z_{z:g}_mm", plane_z_mm=z, particle_id=pid, status="alive" if state else "unknown",
-                       reason="first_negative_z_crossing" if state else "no_valid_recorded_crossing", terminal_reason=case["terminals"][pid]["reason"])
+                       reason="first_negative_z_crossing" if state else "no_valid_recorded_crossing", terminal_reason=case.get("terminals", {}).get(pid, {}).get("reason"))
             columns = ("t_us", *VALUES, "bracket_start_us", "bracket_end_us", "bracket_gap_us", "lower_sample_line", "upper_sample_line", "interpolation_alpha", "method")
             row.update({key:state[key] if state else None for key in columns})
             row["time_after_pulse_us"] = state["t_us"]-pulse if state else None

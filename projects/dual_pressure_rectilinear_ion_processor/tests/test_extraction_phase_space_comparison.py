@@ -377,7 +377,7 @@ class SpatialCrossingSamplesTests(unittest.TestCase):
                 prepare_spatial_crossings_from_samples(case, [0.],
                     [(2, sample(1, 10., 1.)), (3, sample(1, time, -1.))])
 
-    def test_earlier_or_equal_exit_is_retained_but_cannot_extend_last_sample(self):
+    def test_earlier_or_equal_exit_replaces_late_sample_as_final_anchor(self):
         for time in (10.75, 11.):
             with self.subTest(time=time):
                 case = case_fixture()
@@ -385,9 +385,90 @@ class SpatialCrossingSamplesTests(unittest.TestCase):
                 rows = [(2, sample(1, 10.5, 4.)), (3, sample(1, 11., 2.))]
                 result = prepare_spatial_crossings_from_samples(case, [1., 0.], iter(rows))
                 one, zero = [row for row in result if row["particle_id"] == 1]
-                self.assertEqual(one["status"], "unknown")
+                self.assertEqual(one["status"], "alive")
+                self.assertEqual(one["t_us"], 10.5+.75*(time-10.5))
+                self.assertEqual(one["method"], "bounded_sample_to_exit_event_crossing")
+                self.assertEqual(one["lower_sample_line"], 2)
+                self.assertIsNone(one["upper_sample_line"])
                 self.assertEqual((zero["t_us"], zero["method"]), (time, "recorded_extraction_exit_event"))
                 self.assertIsNone(zero["interpolation_alpha"])
+
+    def test_known_exit_and_nonexit_terminal_preserve_supported_lifetime_segment(self):
+        for reason, end_z in (("acceptance_surface", 0.), ("solver_stop", 1.), ("downstream_domain_exit", 1.)):
+            with self.subTest(reason=reason):
+                case = case_fixture()
+                case["sources"] = {7: sample(7, 9., 8.), 19: sample(19, 9., 8.)}
+                case["particle_weights"] = {7: .125, 19: 8.}
+                endpoint = sample(7, 10.75, end_z, x_mm=10.)
+                case["terminals"] = {7: dict(endpoint, reason=reason)}
+                case["exits"] = {7: endpoint} if reason == "acceptance_surface" else {}
+                samples = [(2, sample(7, 10.5, 4.)), (3, sample(19, 10.5, 4.)),
+                           (4, sample(7, 11., -1., x_mm=99.))]
+                original = copy.deepcopy((case, samples))
+                rows = prepare_spatial_crossings_from_samples(case, [4., 2., 1., .5, 0.], iter(samples))
+                self.assertEqual((case, samples), original)
+                self.assertEqual({row["particle_id"] for row in rows}, {7,19})
+                observed = {row["plane_z_mm"]: row for row in rows if row["particle_id"] == 7}
+                middle = observed[2.]
+                alpha = 2./(4.-end_z)
+                self.assertEqual(middle["t_us"], 10.5+alpha*.25)
+                self.assertEqual(middle["x_mm"], 2.+alpha*8.)
+                self.assertEqual((middle["lower_sample_line"], middle["upper_sample_line"]), (2,None))
+                self.assertEqual((middle["bracket_start_us"], middle["bracket_end_us"]), (10.5,10.75))
+                self.assertEqual(observed[4.]["t_us"], 10.5)
+                if reason == "acceptance_surface":
+                    self.assertEqual((observed[.5]["status"], observed[.5]["t_us"]), ("alive",10.71875))
+                    self.assertEqual(observed[0.]["t_us"], 10.75)
+                else:
+                    self.assertEqual(middle["method"], "bounded_sample_to_terminal_event_crossing")
+                    self.assertTrue(all(observed[z]["status"] == "unknown" for z in (1.,.5,0.)))
+                self.assertTrue(all(row["status"] == "unknown" for row in rows if row["particle_id"] == 19))
+
+    def test_terminal_endpoint_is_excluded_and_missing_terminal_does_not_invent_a_bound(self):
+        samples = [(2, sample(1, 10., 4.)), (3, sample(1, 10.5, 2.)), (4, sample(1, 10.75, 0.))]
+        for terminal in (None, {"reason": "solver_stop"}, {"t_us": 10.5, "reason": "solver_stop"},
+                         dict(sample(1, 10.5, 2.), reason="solver_stop")):
+            case = case_fixture()
+            case["terminals"] = {} if terminal is None else {1: terminal}
+            with self.subTest(terminal=terminal):
+                rows = prepare_spatial_crossings_from_samples(case, [3.,2.,1.], iter(samples))
+                observed = [row for row in rows if row["particle_id"] == 1]
+                self.assertEqual((observed[0]["status"], observed[0]["t_us"]), ("alive",10.25))
+                expected = "unknown" if terminal and "t_us" in terminal else "alive"
+                self.assertEqual([row["status"] for row in observed[1:]], [expected,expected])
+                if terminal is None:
+                    self.assertIsNone(observed[0]["terminal_reason"])
+        case["terminals"] = {1: dict(t_us=10.25, reason="solver_stop")}
+        rows = prepare_spatial_crossings_from_samples(case, [3.], iter(samples))
+        self.assertTrue(all(row["status"] == "unknown" for row in rows))
+
+    def test_terminal_anchor_keeps_gap_direction_and_pulse_bounds(self):
+        for time, vz, expected in ((10.5,-1.,"alive"), (10.5000001,-1.,"unknown"),
+                                   (10.5,0.,"unknown"), (10.5,1.,"unknown"),
+                                   (9.9,-1.,"unknown"), (10.,-1.,"unknown")):
+            case = case_fixture()
+            case["terminals"][1] = dict(sample(1,time,2.,vz_mm_us=vz),reason="solver_stop")
+            with self.subTest(time=time, vz=vz):
+                rows = prepare_spatial_crossings_from_samples(case, [3.], [(2,sample(1,10.,4.))])
+                self.assertEqual(rows[0]["status"], expected)
+                if expected == "alive":
+                    self.assertEqual(rows[0]["t_us"], 10.25)
+
+    def test_known_lifetime_conflicts_and_invalid_postterminal_samples_fail(self):
+        endpoint = dict(sample(1, 10.75, 0.), reason="acceptance_surface")
+        for changed in (dict(t_us=10.5), dict(t_us=11.), dict(t_us=float("nan")), dict(x_mm=float("inf"))):
+            case = case_fixture()
+            case["exits"] = {1: endpoint}
+            case["terminals"][1] = endpoint | changed
+            with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, "terminal|finite"):
+                prepare_spatial_crossings_from_samples(case, [.5,0.], [(2,sample(1,10.5,4.))])
+        case = case_fixture()
+        case["terminals"][1] = dict(sample(1, 10.75, 0.), reason="solver_stop")
+        for samples in ([(2,sample(1,11.,-1.)),(3,sample(1,10.9,-2.))],
+                        [(2,sample(1,11.,-1.,x_mm=float("nan")))],
+                        [(2,sample(99,11.,-1.))]):
+            with self.subTest(samples=samples), self.assertRaises(ValueError):
+                prepare_spatial_crossings_from_samples(case, [.5], iter(samples))
 
     def test_exit_tolerance_cannot_authorize_positive_plane_extrapolation(self):
         case = case_fixture()
