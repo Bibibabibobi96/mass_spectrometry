@@ -62,6 +62,9 @@ python -m projects.rf_multipole_ion_optics.analysis.plot_transport_phase_diagnos
 
 内部物理handoff不自动等于机械外出口；冻结旧几何运行不能继承为当前裸杆或新壳体的验证。
 配置编译、纯回归、真实求解、GUI/CAD和Formal资格分别判断，边界见PROJECT。
+L1按[统一测试目录](../../common/README.md#门禁编排)给项目门禁传入`ChangedTestModules`，
+使四极`Core`同时运行本次改动的测试；`Static`运行所选变体的完整回归，Freshness前置保持。
+L1的fixture／未知目录回退和`-FullScope`由统一目录发现并补充模块；独立`Static`不自动推断新目录归属。
 
 ## 目录与产物
 

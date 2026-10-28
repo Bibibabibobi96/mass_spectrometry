@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$PythonExe = '')
+param([string]$PythonExe = '', [string[]]$ChangedTestModules = @())
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -20,7 +20,13 @@ try {
     try {
         & $PythonExe -m ruff check integrations/runtime integrations/analysis integrations/workflows integrations/tests
         if ($LASTEXITCODE -ne 0) { throw 'Instrument assembly Ruff gate failed.' }
-        & $PythonExe -m unittest discover -s integrations/tests -p 'test_*.py' -v
+        $testModules = @(@(
+            Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'tests') -Filter 'test_*.py' -File -Recurse |
+                ForEach-Object {
+                    $_.FullName.Substring($repoRoot.Length + 1, $_.FullName.Length - $repoRoot.Length - 4).Replace('\', '.')
+                }
+        ) + $ChangedTestModules | Sort-Object -Unique)
+        & $PythonExe -m unittest @testModules -v
         if ($LASTEXITCODE -ne 0) { throw 'Instrument assembly tests failed.' }
     } finally {
         Pop-Location

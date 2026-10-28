@@ -4,6 +4,7 @@ param(
     [string[]]$ChangedPath = @(),
     [switch]$FullScope,
     [switch]$PlanOnly,
+    [string]$SummaryPath = '',
     [ValidateRange(0, 32)][int]$MaxConcurrency = 0,
     [string]$InternalStage = '',
     [string]$InternalRequestPath = '',
@@ -43,6 +44,8 @@ if ($LASTEXITCODE -ne 0 -or $pythonVersion -ne '3.11') {
     throw "Changed-files gate requires Python 3.11, found $pythonVersion at $PythonExe"
 }
 $originalSimulationPython = [Environment]::GetEnvironmentVariable('SIMULATION_PYTHON_EXE', 'Process')
+$gateSummary = $null
+$gateFailure = $null
 try {
 $env:SIMULATION_PYTHON_EXE = $PythonExe
 $concurrencyMode = if ($MaxConcurrency -eq 0) { 'auto' } else { 'explicit' }
@@ -68,7 +71,7 @@ function Get-ChangedRepositoryPaths {
         throw 'Changed-files gate cannot determine Git HEAD; pass -ChangedPath explicitly.'
     }
     $script:changedPathSource = "GIT_DIFF_BASE=HEAD:$head;UNTRACKED=git_ls_files"
-    $tracked = @(& git -C $repoRoot diff --name-only --diff-filter=ACMRD HEAD)
+    $tracked = @(& git -C $repoRoot diff --name-only --no-renames --diff-filter=ACMRD HEAD)
     if ($LASTEXITCODE -ne 0) { throw 'git diff for changed-files gate failed.' }
     $untracked = @(& git -C $repoRoot ls-files --others --exclude-standard)
     if ($LASTEXITCODE -ne 0) { throw 'git ls-files for changed-files gate failed.' }
@@ -118,14 +121,11 @@ function Invoke-ChangedGateStage {
         [Parameter(Mandatory)][string]$Reason,
         [Parameter(Mandatory)][scriptblock]$Action
     )
-    $timer = [Diagnostics.Stopwatch]::StartNew()
-    Write-Output "GATE_STAGE=RUN NAME=$Name REASON=$Reason"
-    Invoke-ResourceBudgetedGateAction -Name $Name -Action {
-        & $Action
+    $changedStageAction = $Action
+    Invoke-RecordedGateStage -Name $Name -Reason $Reason -Summary $gateSummary -Action {
+        & $changedStageAction
         if ($LASTEXITCODE -ne 0) { throw "Changed-files gate stage failed: $Name" }
     }
-    $timer.Stop()
-    Write-Output "GATE_STAGE=PASS NAME=$Name ELAPSED_SECONDS=$([Math]::Round($timer.Elapsed.TotalSeconds, 3))"
 }
 
 function Skip-ChangedGateStage {
@@ -159,16 +159,9 @@ $hasDocumentationChange = $FullScope -or (Test-AnyPath {
 $isDocumentationOnly = -not $FullScope -and $changedPaths.Count -gt 0 -and -not (Test-AnyPath {
     -not (Test-DocumentationPath $_)
 })
-$integrationTestModulePattern = '^integrations/tests/test_[^/]+\.py$'
-$changedIntegrationTestModules = @(
-    $changedPaths | Where-Object { $_ -match $integrationTestModulePattern }
-)
-$integrationTestsOnly = -not $FullScope -and $changedPaths.Count -gt 0 -and
-    $changedIntegrationTestModules.Count -eq $changedPaths.Count
-$existingIntegrationTestModules = @(
-    $changedIntegrationTestModules |
-        ForEach-Object { Join-Path $repoRoot $_ } |
-        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
+$knownTestRoots = @(
+    $routes | Where-Object { $null -ne $_.PSObject.Properties['test_selection'] } |
+        ForEach-Object { @($_.test_selection.roots) }
 )
 
 $stageItems = [ordered]@{}
@@ -188,6 +181,8 @@ function Add-ChangedStageItem {
         Reason = $Reason
         DependencyProfile = $DependencyProfile
         Action = $Action
+        Command = $null
+        RequiresStages = @()
     }
 }
 
@@ -268,27 +263,46 @@ foreach ($route in $routes) {
         Get-ChangedRouteReason -Route $route
     }
     if ($reason) {
-        $command = $route.command
-        $testModules = @()
-        if ($integrationTestsOnly -and $command.runner -eq 'powershell' -and
-            ([string]$command.script).Replace('\', '/') -match '^integrations/(?:[^/]+/)?verify_integration\.ps1$') {
-            $testDirectory = Join-Path $repoRoot (Join-Path (Split-Path -Parent $command.script) 'tests')
-            $testModules = @($existingIntegrationTestModules | Where-Object {
-                (Split-Path -Parent $_) -eq $testDirectory
+        $command = if ($FullScope -and
+            $null -ne $route.PSObject.Properties['test_selection'] -and
+            $null -ne $route.test_selection.PSObject.Properties['module_parameter'] -and
+            $null -ne $route.PSObject.Properties['repository_integration_command']) {
+            $route.repository_integration_command
+        } else { $route.command }
+        $testSelection = Get-GateChangedTests -Route $route -ChangedPaths $changedPaths `
+            -KnownTestRoots $knownTestRoots -RepoRoot $repoRoot -FullScope:$FullScope
+        $preserveCommand = $null -ne $route.PSObject.Properties['test_selection'] -and
+            $null -ne $route.test_selection.PSObject.Properties['preserve_command'] -and
+            [bool]$route.test_selection.preserve_command
+        if ($null -ne $testSelection -and
+            ($preserveCommand -or -not $testSelection.OnlyTestModules) -and
+            $null -ne $route.test_selection.PSObject.Properties['module_parameter']) {
+            # The project gate merges this list with its own Core modules.  A
+            # source change still executes the original project contract gate.
+            $command = $command | ConvertTo-Json -Depth 32 | ConvertFrom-Json -Depth 32
+            $moduleName = [string]$route.test_selection.module_parameter
+            $testModules = @($testSelection.Modules | ForEach-Object {
+                $_.Substring(0, $_.Length - 3).Replace('/', '.')
             })
+            $command.parameters | Add-Member -NotePropertyName $moduleName -NotePropertyValue $testModules
+            $reason = $testSelection.Reason
         }
-        if ($integrationTestsOnly -and $testModules.Count -gt 0 -and
-            $existingIntegrationTestModules.Count -eq $changedIntegrationTestModules.Count) {
-            Add-ChangedStageItem $name $true 'integration_test_modules_changed' `
-                ([string]$route.dependency_profile) {
-                & $PythonExe -m unittest @testModules
-            }.GetNewClosure()
-        } else {
-            Add-ChangedStageItem $name $true $reason `
-                ([string]$route.dependency_profile) {
-                & $routeCommandInvoker -Command $command
-            }.GetNewClosure()
+        elseif ($null -ne $testSelection -and ($testSelection.OnlyTestModules -or
+            ($testSelection.Expanded -and $command.runner -eq 'python'))) {
+            $testModules = @($testSelection.Modules)
+            $command = [pscustomobject]@{
+                runner = 'python'; arguments = @('-m', 'unittest') + $testModules
+                python_path_roots = @($route.test_selection.roots)
+            }
+            $reason = $testSelection.Reason
+        } elseif ($null -ne $testSelection -and $testSelection.Expanded) {
+            $reason = $testSelection.Reason
         }
+        Add-ChangedStageItem $name $true $reason `
+            ([string]$route.dependency_profile) {
+            & $routeCommandInvoker -Command $command
+        }.GetNewClosure()
+        $stageItems[$name].Command = $command
     } else {
         Add-ChangedStageItem $name $false 'no_route_match' `
             ([string]$route.dependency_profile)
@@ -315,6 +329,7 @@ foreach ($route in $routes) {
     } else {
         @()
     }
+    $item.RequiresStages = $requiredStages
     foreach ($requiredStage in $requiredStages) {
         if (-not $stageItems[[string]$requiredStage].Run) {
             throw "Selected gate stage is missing prerequisite: $($route.stage) -> $requiredStage"
@@ -350,6 +365,7 @@ function Invoke-ChangedStageGroup {
         changed_paths = @($changedPaths)
     }
     Invoke-IndependentGateStageGroup -Items $items `
+        -Summary $gateSummary `
         -MaxConcurrency $MaxConcurrency -GateScriptPath $PSCommandPath `
         -PythonExe $PythonExe `
         -ChildBaseArguments @(
@@ -373,6 +389,41 @@ if ($InternalStage) {
     Invoke-InternalChangedStage
 }
 
+$stageItems['repository_hygiene'].Command = @{
+    runner = 'powershell'; script = 'common/verify_repository_hygiene.ps1'
+}
+$stageItems['repository_text_bytes'].Command = @{
+    runner = 'python'; arguments = @('common/verify_repository_text_bytes.py')
+}
+$stageItems['documentation'].Command = @{
+    runner = 'powershell'; script = 'common/verify_documentation.ps1'
+    parameters = @{ StructureOnly = $true; PythonExe = $PythonExe }
+}
+$stageItems['development_standards'].Command = @{
+    runner = 'python'; arguments = @('common/verify_development_standards.py')
+}
+$stageItems['ruff_changed_python'].Command = @{
+    runner = 'python'
+    arguments = @('-m', 'ruff', 'check') + $(if ($FullScope) {
+        @('common', 'projects', 'integrations')
+    } else { $existingPythonFiles })
+}
+foreach ($item in $stageItems.Values) {
+    if ($null -eq $item.Command) { continue }
+    if ($item.Command.runner -eq 'powershell' -and
+        $null -ne $item.Command.PSObject.Properties['parameters']) {
+        foreach ($property in $item.Command.parameters.PSObject.Properties) {
+            if ($property.Value -is [string]) {
+                $property.Value = $property.Value.Replace('{python}', $PythonExe)
+            }
+        }
+    } elseif ($item.Command.runner -eq 'python') {
+        $item.Command.arguments = @($item.Command.arguments | ForEach-Object {
+            ([string]$_).Replace('{python}', $PythonExe)
+        })
+    }
+}
+
 Write-Output "CHANGED_GATE_INPUT_SOURCE=$changedPathSource"
 Write-Output "CHANGED_GATE_INPUTS=COUNT=$($changedPaths.Count) PATHS=$($changedPaths -join ',')"
 Write-Output (
@@ -385,9 +436,12 @@ if ($PlanOnly) {
         $stageItems.Values | Where-Object { $_.Run } |
             ForEach-Object { $_.Name }
     )
+    $effectiveStageNames = if ($isDocumentationOnly) {
+        @('repository_hygiene', 'repository_text_bytes', 'documentation')
+    } else { $selectedStages }
     $dependencyProfile = if (@(
-            $stageItems.Values | Where-Object {
-                $_.Run -and $_.DependencyProfile -eq 'locked'
+            $effectiveStageNames | ForEach-Object { $stageItems[$_] } | Where-Object {
+                $_.DependencyProfile -eq 'locked'
             }
         ).Count -gt 0) {
         'locked'
@@ -399,11 +453,7 @@ if ($PlanOnly) {
     } else {
         'FULL_CHANGED_SCOPE'
     }
-    $effectiveStages = if ($isDocumentationOnly) {
-        'repository_hygiene,repository_text_bytes,documentation'
-    } else {
-        $selectedStages -join ','
-    }
+    $effectiveStages = $effectiveStageNames -join ','
     Write-Output (
         "CHANGED_GATE_PLAN=PASS DEPENDENCY_PROFILE=$dependencyProfile " +
         "EXECUTION_MODE=$executionMode " +
@@ -415,6 +465,12 @@ if ($PlanOnly) {
 
 $env:PYTHONDONTWRITEBYTECODE = '1'
 $env:RUFF_NO_CACHE = 'true'
+$summaryItems = if ($isDocumentationOnly) {
+    @('repository_hygiene', 'repository_text_bytes', 'documentation') |
+        ForEach-Object { $stageItems[$_] }
+} else { @($stageItems.Values) }
+$gateSummary = New-GateRunSummary -Items @($summaryItems) -GateName 'changed_scope' `
+    -PythonExe $PythonExe -RepoRoot $repoRoot -SummaryPath $SummaryPath
 Invoke-ChangedGateStage 'repository_hygiene' 'always' (
     $stageItems['repository_hygiene'].Action
 )
@@ -463,6 +519,13 @@ $postFreshnessStages = @(
 Invoke-ChangedStageGroup $postFreshnessStages
 
 Write-Output "CHANGED_GATE=PASS PYTHON=$pythonVersion CHANGED_PATHS=$($changedPaths.Count) FULL_SCOPE=$([bool]$FullScope)"
+} catch {
+    $gateFailure = $_
+    throw
 } finally {
-    [Environment]::SetEnvironmentVariable('SIMULATION_PYTHON_EXE', $originalSimulationPython, 'Process')
+    try {
+        Complete-GateRunSummary -Summary $gateSummary -Failure $gateFailure
+    } finally {
+        [Environment]::SetEnvironmentVariable('SIMULATION_PYTHON_EXE', $originalSimulationPython, 'Process')
+    }
 }

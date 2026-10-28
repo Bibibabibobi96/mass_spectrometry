@@ -43,6 +43,8 @@ COMSOL 或其他求解器是否已有可执行入口，以 PROJECT 的当前说�
 项目描述符只登记已经稳定的机器能力和合同路径；当前物理状态、运行证据与未关闭任务仍以
 [PROJECT](docs/PROJECT.md)为准。尚未形成单一正式执行链的试验 runner 不会为了目录可发现性而全部登记成
 execution profile；轻量项目门禁统一由[`verify_project.ps1`](verify_project.ps1)进入，且不会启动商业求解器。
+`Core`保留固定合同回归，并合并L1按[统一测试目录](../../common/README.md#门禁编排)传入的
+`ChangedTestModules`，相同模块只运行一次。完整静态回归仍由`Static`承担；Core通过不证明其他未选模块通过。
 
 ## 历史补充索引
 

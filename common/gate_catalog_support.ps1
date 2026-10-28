@@ -106,6 +106,20 @@ function Read-GateCatalog {
         }
         Test-GateCatalogCommand -Command $route.command -Stage $stage `
             -RepoRoot $RepoRoot
+        if ($null -ne $route.PSObject.Properties['test_selection']) {
+            $selection = $route.test_selection
+            if (@($selection.roots).Count -eq 0) {
+                throw "Gate test owner requires discovery roots: $stage"
+            }
+            foreach ($root in @($selection.roots)) {
+                if ([IO.Path]::IsPathRooted([string]$root) -or
+                    [string]$root -match '(^|/)\.\.(/|$)' -or
+                    -not ([string]$root).EndsWith('/') -or
+                    -not (Test-Path -LiteralPath (Join-Path $RepoRoot $root) -PathType Container)) {
+                    throw "Invalid gate test discovery root: $stage -> $root"
+                }
+            }
+        }
         if ($null -ne $route.PSObject.Properties['repository_integration_command']) {
             Test-GateCatalogCommand `
                 -Command $route.repository_integration_command `
@@ -192,6 +206,73 @@ function Read-GateCatalog {
     return $routes
 }
 
+function Get-GateChangedTests {
+    param(
+        [Parameter(Mandatory)]$Route,
+        [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$ChangedPaths,
+        [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$KnownTestRoots,
+        [Parameter(Mandatory)][string]$RepoRoot,
+        [switch]$FullScope
+    )
+    if ($null -eq $Route.PSObject.Properties['test_selection']) { return $null }
+    $selection = $Route.test_selection
+    $roots = @($selection.roots)
+    $related = @($ChangedPaths | Where-Object {
+        $path = $_
+        @($roots | Where-Object { $path.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0 -or
+        ($null -ne $selection.PSObject.Properties['support_paths'] -and @(
+            $selection.support_paths | Where-Object {
+                $path.StartsWith($_, [StringComparison]::OrdinalIgnoreCase)
+            }
+        ).Count -gt 0) -or
+        ($null -ne $selection.PSObject.Properties['scope'] -and
+            $path.StartsWith([string]$selection.scope, [StringComparison]::OrdinalIgnoreCase) -and
+            @($KnownTestRoots | Where-Object {
+                $path.StartsWith($_, [StringComparison]::OrdinalIgnoreCase)
+            }).Count -eq 0)
+    })
+    if ($FullScope) { $related = @($roots | ForEach-Object { $_ + '__init__.py' }) }
+    if ($related.Count -eq 0) { return $null }
+    $modules = @($related | Where-Object {
+        $_ -match '/test_[^/]+\.py$' -and
+        (($roots | ForEach-Object { $_.TrimEnd('/') }) -contains (Split-Path -Parent $_).Replace('\', '/')) -and
+        (Test-Path -LiteralPath (Join-Path $RepoRoot $_) -PathType Leaf)
+    })
+    $expanded = $FullScope -or $modules.Count -ne $related.Count
+    if ($expanded) {
+        $discoveryRoots = @($roots)
+        if ($null -ne $selection.PSObject.Properties['scope'] -and ($FullScope -or @($related | Where-Object {
+            $path = $_
+            @($KnownTestRoots | Where-Object {
+                $path.StartsWith($_, [StringComparison]::OrdinalIgnoreCase)
+            }).Count -eq 0
+        }).Count -gt 0)) {
+            $discoveryRoots += [string]$selection.scope
+        }
+        $modules = @(
+            foreach ($root in ($discoveryRoots | Sort-Object -Unique)) {
+                Get-ChildItem -LiteralPath (Join-Path $RepoRoot $root) -Filter 'test_*.py' -File -Recurse |
+                    ForEach-Object { $_.FullName.Substring($RepoRoot.Length + 1).Replace('\', '/') } |
+                    Where-Object {
+                        $path = $_
+                        # Shared fixtures expand each registered owner once;
+                        # the scope fallback additionally owns only new roots.
+                        @($roots | Where-Object { $path.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0 -or
+                        @($KnownTestRoots | Where-Object { $path.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }).Count -eq 0
+                    }
+            }
+        )
+    }
+    return [pscustomobject]@{
+        Modules = @($modules | Sort-Object -Unique)
+        Expanded = $expanded
+        OnlyTestModules = -not $expanded -and $related.Count -eq $ChangedPaths.Count
+        Reason = if ($FullScope) { 'full_scope_test_owner_discovery' }
+            elseif ($expanded) { 'test_owner_discovery_for_deleted_support_or_unknown_path' }
+            else { 'changed_test_modules' }
+    }
+}
+
 function Invoke-GateCatalogCommand {
     param(
         [Parameter(Mandatory)]$Command,
@@ -206,7 +287,30 @@ function Invoke-GateCatalogCommand {
                     ([string]$_).Replace('{python}', $PythonExe)
                 }
             )
-            & $PythonExe @arguments
+            $hasPythonPathRoots = $null -ne $Command.PSObject.Properties['python_path_roots']
+            $originalPythonPath = [Environment]::GetEnvironmentVariable('PYTHONPATH', 'Process')
+            try {
+                if ($hasPythonPathRoots) {
+                    # Explicit unittest modules retain the import roots that
+                    # unittest discover previously supplied through start_dir.
+                    $pythonSearchPath = @($Command.python_path_roots | ForEach-Object {
+                        [IO.Path]::GetFullPath((Join-Path $RepoRoot ([string]$_)))
+                    })
+                    if ($null -ne $originalPythonPath) { $pythonSearchPath += $originalPythonPath }
+                    [Environment]::SetEnvironmentVariable(
+                        'PYTHONPATH', ($pythonSearchPath -join [IO.Path]::PathSeparator), 'Process'
+                    )
+                }
+                & $PythonExe @arguments
+            } finally {
+                if ($hasPythonPathRoots) {
+                    if ($null -eq $originalPythonPath) {
+                        [Environment]::SetEnvironmentVariable('PYTHONPATH', [NullString]::Value, 'Process')
+                    } else {
+                        [Environment]::SetEnvironmentVariable('PYTHONPATH', $originalPythonPath, 'Process')
+                    }
+                }
+            }
         } else {
             $scriptPath = Join-Path $RepoRoot ([string]$Command.script)
             $parameters = @{}

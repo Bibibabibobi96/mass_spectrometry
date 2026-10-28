@@ -41,6 +41,12 @@ Lua／MATLAB／PowerShell的引用亦不会被当作无用；未解析的嵌套�
 integration新增公开门禁时必须注册，目录与文件系统不一致即失败。集成route通过
 `runtime_dependencies_path`引用已有运行依赖库存；公共catalog读取器将其`source_repo_path`展开为精确匹配，
 新增依赖不再手抄第二份路由表。缺失库存、未知版本／身份或缺失来源文件在规划时失败。
+需要补充或精确选择测试的owner在同一目录声明`test_selection`。明确的新增／修改测试模块进入实际
+执行集合；生产与测试混合改动保留原owner门禁。删除、重命名旧路径、共享fixture、包初始化及未知
+测试目录变化扩大到所属owner发现，并报告选择原因。Git差异保留重命名两端，不能只看到新路径。
+模块集合由项目入口合并去重；Core的成功不能替代未运行测试的证据。
+显式Python测试命令保留目录声明的发现根作为临时导入路径，并在返回时恢复调用者环境，
+使既有目录级导入与未知子目录的模块枚举同时成立。
 仓库只保留
 `common/verify_changed.ps1`这一个L1入口，不提供旧名称兼容脚本。`.github/workflows/lightweight-gate.yml`
 在push只运行L1；L2仅可由`workflow_dispatch`人工启动，不对pull request自动运行全仓回归。
@@ -58,6 +64,12 @@ FullScope均失败关闭为`locked`。本地并发默认为`min(8, logical_proce
 成功组清理临时目录；失败组保留阶段日志、请求JSON和`group_failure.log`，输出
 `GATE_DIAGNOSTICS=RETAINED`及精确清理命令。串行fallback也写入同一阶段日志，不能只有控制台错误。
 复核完成后沿[操作指南](../docs/OPERATIONS.md#分层门禁)清理，不按年龄自动删除失败证据。
+两个根入口均输出`GATE_SUMMARY_PATH`：默认是系统临时目录中的独立小JSON，可用`-SummaryPath`指定
+不存在的目标文件。摘要保留选中原因、实际命令、依赖、环境、阶段状态、耗时、退出码和日志保留情况，
+成功清理详细日志后仍保留摘要。计划先落盘，阶段完成即更新；可捕获的失败或中断按实际状态收尾，
+硬杀或断电后的`PENDING/RUNNING`只表示未完成，不能解释为通过。日志路径标为未保留时不可用。
+CI使用[官方artifact action](https://github.com/actions/upload-artifact)在`always()`步骤上传摘要和本次保留的门禁诊断。
+摘要是观测记录，不是跳过后续验证或跨改动复用PASS的凭证。
 历史耗时测量见[门禁审计](../docs/history/20260802__gate-system-audit.md)；
 L2用于显式全仓审计，纯文档提交不默认运行L2。
 L1/L2共用命令调用器直接绑定函数脚本块；仅冻结每项路由参数，不对调用器本身建立动态闭包，

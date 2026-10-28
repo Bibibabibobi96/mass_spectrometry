@@ -49,6 +49,8 @@
 | OA共同场有限脉冲 | [paired_accelerator_pulse/execute.ps1](workflows/paired_accelerator_pulse/execute.ps1)，`-Request`及显式来源 | [阶段／整批恢复与诊断](docs/INTEGRATION.md#共同场与有限脉冲) |
 
 直属静态入口为[verify_integration.ps1](verify_integration.ps1)，不启动商业求解器。
+入口递归枚举`integrations/tests`中的测试模块；L1按统一目录传入`ChangedTestModules`时合并去重，
+保持该入口的Ruff检查。明确的纯测试模块变更可由L1精确运行，fixture、删除或未知目录变化扩大到owner。
 L1／L2、冻结依赖与最终验收见[状态页](docs/INTEGRATION.md#依赖冻结与门禁)及[操作指南](../docs/OPERATIONS.md#分层门禁)。
 不使用已退役的旧family或arm CLI执行新实验；历史运行保持原身份。
 

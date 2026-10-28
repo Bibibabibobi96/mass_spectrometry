@@ -448,7 +448,7 @@
       "repository_integration_group": "regression",
       "matches": [
         {
-          "regex": "^common/contracts/(?!test_verify_changed\\.py$)",
+          "regex": "^common/contracts/(?!test_verify_changed\\.py$|test_expected_values\\.py$)",
           "reason": "common_contracts_changed"
         }
       ],
@@ -462,6 +462,11 @@
           "common/contracts",
           "-p",
           "test_*.py"
+        ]
+      },
+      "test_selection": {
+        "roots": [
+          "common/contracts/"
         ]
       }
     },
@@ -536,6 +541,10 @@
         {
           "exact": ".github/workflows/lightweight-gate.yml",
           "reason": "verification_workflow_changed"
+        },
+        {
+          "exact": "common/contracts/test_changed_test_selection.py",
+          "reason": "changed_test_selection_tests_changed"
         }
       ],
       "command": {
@@ -545,7 +554,8 @@
           "unittest",
           "common.contracts.test_verify_changed",
           "common.contracts.test_parallel_gate_support",
-          "common.contracts.test_development_standards"
+          "common.contracts.test_development_standards",
+          "common.contracts.test_changed_test_selection"
         ]
       }
     },
@@ -654,6 +664,10 @@
         {
           "exact": "common/analysis/particle_census.py",
           "reason": "shared_particle_census_changed"
+        },
+        {
+          "exact": "projects/rf_multipole_ion_optics/tests/__init__.py",
+          "reason": "rf_multipole_test_package_changed"
         }
       ],
       "command": {
@@ -666,6 +680,15 @@
           "projects/rf_multipole_ion_optics/tests/domain",
           "-p",
           "test_*.py"
+        ]
+      },
+      "test_selection": {
+        "roots": [
+          "projects/rf_multipole_ion_optics/tests/domain/"
+        ],
+        "support_paths": [
+          "projects/rf_multipole_ion_optics/tests/test_support/",
+          "projects/rf_multipole_ion_optics/tests/__init__.py"
         ]
       }
     },
@@ -785,7 +808,13 @@
           "PythonExe": "{python}"
         }
       },
-      "runtime_dependencies_path": "integrations/config/runtime_dependencies.json"
+      "runtime_dependencies_path": "integrations/config/runtime_dependencies.json",
+      "test_selection": {
+        "roots": [
+          "integrations/tests/"
+        ],
+        "module_parameter": "ChangedTestModules"
+      }
     },
     {
       "stage": "solidworks_common",
@@ -887,6 +916,18 @@
           "Level": "Static",
           "PythonExe": "{python}"
         }
+      },
+      "test_selection": {
+        "roots": [
+          "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/",
+          "projects/parallel_mirror_dual_stripe_mr_tof/tests/simion/"
+        ],
+        "scope": "projects/parallel_mirror_dual_stripe_mr_tof/tests/",
+        "support_paths": [
+          "projects/parallel_mirror_dual_stripe_mr_tof/tests/test_support/"
+        ],
+        "module_parameter": "ChangedTestModules",
+        "preserve_command": true
       }
     },
     {
@@ -1000,6 +1041,18 @@
           "FreshnessPrevalidated": true,
           "PythonExe": "{python}"
         }
+      },
+      "test_selection": {
+        "roots": [
+          "projects/rf_multipole_ion_optics/tests/analysis/"
+        ],
+        "support_paths": [
+          "projects/rf_multipole_ion_optics/tests/test_support/",
+          "projects/rf_multipole_ion_optics/tests/__init__.py"
+        ],
+        "module_parameter": "ChangedTestModules",
+        "scope": "projects/rf_multipole_ion_optics/tests/",
+        "preserve_command": true
       }
     },
     {
@@ -1052,7 +1105,18 @@
       },
       "requires_stages": [
         "rf_multipole_generated_publications"
-      ]
+      ],
+      "test_selection": {
+        "roots": [
+          "projects/rf_multipole_ion_optics/tests/hexapole/"
+        ],
+        "support_paths": [
+          "projects/rf_multipole_ion_optics/tests/test_support/",
+          "projects/rf_multipole_ion_optics/tests/__init__.py"
+        ],
+        "module_parameter": "ChangedTestModules",
+        "preserve_command": true
+      }
     },
     {
       "stage": "rf_multipole_octupole_static",
@@ -1104,7 +1168,18 @@
       },
       "requires_stages": [
         "rf_multipole_generated_publications"
-      ]
+      ],
+      "test_selection": {
+        "roots": [
+          "projects/rf_multipole_ion_optics/tests/octupole/"
+        ],
+        "support_paths": [
+          "projects/rf_multipole_ion_optics/tests/test_support/",
+          "projects/rf_multipole_ion_optics/tests/__init__.py"
+        ],
+        "module_parameter": "ChangedTestModules",
+        "preserve_command": true
+      }
     },
     {
       "stage": "dual_pressure_rectilinear_ion_processor_static",

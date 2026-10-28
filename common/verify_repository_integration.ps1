@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$PythonExe = '',
+    [string]$SummaryPath = '',
     [ValidateRange(0, 32)][int]$MaxConcurrency = 0,
     [string]$InternalStage = '',
     [string]$InternalLogPath = ''
@@ -23,6 +24,8 @@ if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) { throw "Python run
 $pythonVersion = (& $PythonExe -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')").Trim()
 if ($LASTEXITCODE -ne 0 -or $pythonVersion -ne '3.11') { throw "Repository integration gate requires Python 3.11, found $pythonVersion at $PythonExe" }
 $originalSimulationPython = [Environment]::GetEnvironmentVariable('SIMULATION_PYTHON_EXE', 'Process')
+$gateSummary = $null
+$gateFailure = $null
 try {
 $env:SIMULATION_PYTHON_EXE = $PythonExe
 $concurrencyMode = if ($MaxConcurrency -eq 0) { 'auto' } else { 'explicit' }
@@ -32,29 +35,23 @@ $catalogCommandInvoker = ${function:Invoke-GateCatalogCommand}
 
 function Invoke-IntegrationStage {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][scriptblock]$Action)
-    $timer = [Diagnostics.Stopwatch]::StartNew()
-    Write-Output "GATE_STAGE=RUN NAME=$Name"
-    Invoke-ResourceBudgetedGateAction -Name $Name -Action {
+    Invoke-RecordedGateStage -Name $Name -Reason 'repository_integration' -Summary $gateSummary -Action {
         & $Action
         if ($LASTEXITCODE -ne 0) { throw "Repository integration stage failed: $Name" }
     }
-    Write-Output "GATE_STAGE=PASS NAME=$Name ELAPSED_SECONDS=$([math]::Round($timer.Elapsed.TotalSeconds, 3))"
 }
 
-$stageActions = [ordered]@{
-    documentation = { & (Join-Path $PSScriptRoot 'verify_documentation.ps1') -PythonExe $PythonExe }
-    repository_text_bytes = { & $PythonExe (Join-Path $PSScriptRoot 'verify_repository_text_bytes.py') }
-    development_standards = { & $PythonExe (Join-Path $PSScriptRoot 'verify_development_standards.py') }
-    ruff_all = {
-        & $PythonExe -m ruff check (Join-Path $repoRoot 'common') `
-            (Join-Path $repoRoot 'projects') (Join-Path $repoRoot 'integrations')
-    }
+$stageCommands = [ordered]@{
+    documentation = [pscustomobject]@{ runner='powershell'; script='common/verify_documentation.ps1'; parameters=[pscustomobject]@{ PythonExe=$PythonExe } }
+    repository_text_bytes = [pscustomobject]@{ runner='python'; arguments=@('common/verify_repository_text_bytes.py') }
+    development_standards = [pscustomobject]@{ runner='python'; arguments=@('common/verify_development_standards.py') }
+    ruff_all = [pscustomobject]@{ runner='python'; arguments=@('-m', 'ruff', 'check', 'common', 'projects', 'integrations') }
 }
 
 foreach ($route in $routes) {
     if ($route.repository_integration_group -eq 'covered') { continue }
     $stage = [string]$route.stage
-    if ($stageActions.Contains($stage)) {
+    if ($stageCommands.Contains($stage)) {
         throw "Duplicate repository integration stage: $stage"
     }
     $command = if (
@@ -65,6 +62,11 @@ foreach ($route in $routes) {
     } else {
         $route.command
     }
+    $stageCommands[$stage] = $command
+}
+$stageActions = [ordered]@{}
+foreach ($stage in $stageCommands.Keys) {
+    $command = $stageCommands[$stage]
     $stageActions[$stage] = {
         & $catalogCommandInvoker -Command $command -RepoRoot $repoRoot `
             -PythonExe $PythonExe
@@ -88,17 +90,9 @@ function Invoke-InternalIntegrationStage {
 
 function Invoke-ParallelIntegrationGroup {
     param([Parameter(Mandatory)][string[]]$Names)
-    $items = @(
-        $Names | ForEach-Object {
-            [pscustomobject]@{
-                Name = $_
-                Run = $true
-                Reason = 'repository_integration'
-                Action = $stageActions[$_]
-            }
-        }
-    )
+    $items = @($Names | ForEach-Object { $allStageItems[$_] })
     Invoke-IndependentGateStageGroup -Items $items `
+        -Summary $gateSummary `
         -MaxConcurrency $MaxConcurrency -GateScriptPath $PSCommandPath `
         -PythonExe $PythonExe `
         -ChildBaseArguments @(
@@ -120,6 +114,22 @@ function Invoke-ParallelIntegrationGroup {
 if ($InternalStage) {
     Invoke-InternalIntegrationStage
 }
+
+$allStageItems = [ordered]@{}
+foreach ($name in $stageActions.Keys) {
+    $route = @($routes | Where-Object { $_.stage -eq $name })
+    $allStageItems[$name] = [pscustomobject]@{
+        Name = $name; Run = $true; Reason = 'repository_integration'
+        Action = $stageActions[$name]; Command = $stageCommands[$name]
+        DependencyProfile = $(if ($route.Count -gt 0) { $route[0].dependency_profile } else { 'locked' })
+        RequiresStages = $(if ($route.Count -gt 0 -and $null -ne $route[0].PSObject.Properties['requires_stages']) {
+            @($route[0].requires_stages)
+        } else { @() })
+    }
+}
+$gateSummary = New-GateRunSummary -Items @($allStageItems.Values) `
+    -GateName 'repository_integration' -SummaryPath $SummaryPath `
+    -PythonExe $PythonExe -RepoRoot $repoRoot
 
 Write-Output (
     "GATE_CONCURRENCY=$MaxConcurrency MODE=$concurrencyMode " +
@@ -153,6 +163,12 @@ Invoke-ParallelIntegrationGroup $fastFailStages
 Invoke-ParallelIntegrationGroup $fullRegressionStages
 
 Write-Output "REPOSITORY_INTEGRATION_GATE=PASS PYTHON=$pythonVersion"
+} catch {
+    $gateFailure = $_
+    throw
 } finally {
-    [Environment]::SetEnvironmentVariable('SIMULATION_PYTHON_EXE', $originalSimulationPython, 'Process')
+    try { Complete-GateRunSummary -Summary $gateSummary -Failure $gateFailure }
+    finally {
+        [Environment]::SetEnvironmentVariable('SIMULATION_PYTHON_EXE', $originalSimulationPython, 'Process')
+    }
 }

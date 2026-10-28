@@ -55,6 +55,9 @@ L1 始终先查仓库卫生与受管文本字节。纯 Markdown 及根、项目�
 设计发布及四极专属派生物。L1按改动范围选择四极`Core`、六极／八极`Static`，三者均复用该发布前置结果。
 统一`verify_project.ps1`的`Core`停在所选结构的无求解器设计合同；`Static`再运行所选变体的Python回归并
 解析全项目PowerShell。共享领域测试由目录中的独立阶段执行，不由变体`Core`或`Static`替代。
+L1还按统一目录的测试owner声明把新增／修改测试加入实际执行集合，项目Core与这些模块合并去重；
+删除、fixture、包初始化或未知测试目录变化扩大到owner发现，并输出原因。纯文档计划先确定实际
+执行的三个阶段再计算依赖等级，因此项目README也使用`stdlib`；混合源码变化仍保留相应回归。
 
 L2在长测试前完成全多极杆`Freshness`，之后覆盖全部活动项目、integration和公共静态回归；四／六／八极
 均执行`Static`并复用该前置结果。纯文档和规则文字调整不触发L2，GitHub仅手动触发。
@@ -79,6 +82,11 @@ RUN／SKIP原因、启动与完成状态；`LOG_PATH`定位执行中的完整日
 本地并发默认保守自动选择，可用`-MaxConcurrency`显式降低；资源调度器仍决定实际准入。
 GitHub的push执行L1，L2通过`workflow_dispatch`显式启动。只有所有适用阶段成功才表示该层门禁通过；
 超时、环境失败与科学求解失败分别处理。
+
+L1／L2接受`-SummaryPath <不存在的JSON路径>`；省略时在系统临时目录生成小摘要并输出
+`GATE_SUMMARY_PATH`。摘要先记录计划，再逐阶段记录终态、理由、实际命令及耗时，成功后也保留。
+整体`PASS`要求所有已选阶段通过；未执行、前置阻断和中断不等于测试skip。主进程硬杀后可能留下
+`PENDING/RUNNING`，它只证明记录未完成。CI始终上传可用摘要及保留的失败诊断。
 
 结束后检查`GATE_DIAGNOSTICS`：`CLEANED`表示临时日志已清理，`RETAINED`表示日志目录仍在。
 失败时先读取原`LOG_PATH`和`group_failure.log`，原请求JSON保留用于核对阶段参数。

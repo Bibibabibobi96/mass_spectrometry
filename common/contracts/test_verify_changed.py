@@ -25,6 +25,11 @@ MULTIPOLE_GATE = (
 
 
 class ChangedGateContractTests(unittest.TestCase):
+    def setUp(self) -> None:
+        summary_directory = tempfile.TemporaryDirectory(prefix="changed_gate_summary_test_")
+        self.addCleanup(summary_directory.cleanup)
+        self.summary_path = str(Path(summary_directory.name) / "summary.json")
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.source = CHANGED_GATE.read_text(encoding="utf-8")
@@ -165,7 +170,8 @@ exit 0
         pwsh = shutil.which("pwsh")
         with tempfile.TemporaryDirectory(prefix="documentation_python_") as directory:
             root = Path(directory)
-            (root / "verify_documentation.ps1").write_text(
+            (root / "common").mkdir()
+            (root / "common/verify_documentation.ps1").write_text(
                 "param([Parameter(Mandatory=$true)][string]$PythonExe)\n"
                 "& $PythonExe -c 'import sys; print(\"DOCUMENTATION_PYTHON_VERSION=\" "
                 "+ str(sys.version_info.major) + \".\" + str(sys.version_info.minor))'\n"
@@ -180,23 +186,16 @@ $ast=[Management.Automation.Language.Parser]::ParseFile(__GATE__,[ref]$tokens,[r
 if($errors.Count){throw 'Integration gate failed PowerShell parsing'}
 $assignment=$ast.Find({param($node)
   $node-is[Management.Automation.Language.AssignmentStatementAst]-and
-  $node.Left.Extent.Text-eq'$stageActions'
+  $node.Left.Extent.Text-eq'$stageCommands'
 },$true)
-$table=$assignment.Find({param($node)
-  $node-is[Management.Automation.Language.HashtableAst]
-},$true)
-$entry=@($table.KeyValuePairs|Where-Object {$_.Item1.Value-eq'documentation'})
-if($entry.Count-ne1){throw 'Expected exactly one documentation action'}
-$action=$entry[0].Item2.Find({param($node)
-  $node-is[Management.Automation.Language.ScriptBlockExpressionAst]
-},$true)
-$wrapper=Join-Path __FIXTURE__ 'invoke.ps1'
-[IO.File]::WriteAllText($wrapper,
-  'param([string]$PythonExe)'+[Environment]::NewLine+'& '+$action.Extent.Text)
-& $wrapper -PythonExe __PYTHON__
+$PythonExe=__PYTHON__
+. ([scriptblock]::Create($assignment.Extent.Text))
+. __SUPPORT__
+Invoke-GateCatalogCommand -Command $stageCommands.documentation -RepoRoot __FIXTURE__ -PythonExe $PythonExe
 """.replace("__GATE__", quote(INTEGRATION_GATE)).replace(
                 "__FIXTURE__", quote(root)
-            ).replace("__PYTHON__", quote(sys.executable))
+            ).replace("__PYTHON__", quote(sys.executable)).replace(
+                "__SUPPORT__", quote(REPO_ROOT / "common/gate_catalog_support.ps1"))
             completed = subprocess.run(
                 [pwsh, "-NoProfile", "-NonInteractive", "-Command", command],
                 cwd=REPO_ROOT, capture_output=True, text=True,
@@ -219,6 +218,7 @@ $wrapper=Join-Path __FIXTURE__ 'invoke.ps1'
                 sys.executable,
                 "-ChangedPath",
                 "CHANGELOG.md",
+                "-SummaryPath", self.summary_path,
             ],
             cwd=REPO_ROOT,
             capture_output=True,
@@ -335,6 +335,7 @@ $wrapper=Join-Path __FIXTURE__ 'invoke.ps1'
                 sys.executable,
                 "-ChangedPath",
                 changed_module,
+                "-SummaryPath", self.summary_path,
             ],
             cwd=REPO_ROOT,
             capture_output=True,
@@ -344,7 +345,7 @@ $wrapper=Join-Path __FIXTURE__ 'invoke.ps1'
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn(
-            "GATE_STAGE=RUN NAME=instrument_assembly_integration REASON=integration_test_modules_changed",
+            "GATE_STAGE=RUN NAME=instrument_assembly_integration REASON=changed_test_modules",
             completed.stdout,
         )
         self.assertNotIn("INTEGRATION_GATE=PASS", completed.stdout)
@@ -637,6 +638,10 @@ $wrapper=Join-Path __FIXTURE__ 'invoke.ps1'
             return match.group(1)
 
         self.assertEqual(profile_for("CHANGELOG.md"), "stdlib")
+        for path in ("README.md", "projects/rf_multipole_ion_optics/README.md",
+                     "common/contracts/README.md"):
+            with self.subTest(documentation=path):
+                self.assertEqual(profile_for(path), "stdlib")
         # These routes run real Ruff and nested changed-Python gates, even if
         # the author's own change is only PowerShell or workflow YAML.
         for path in ("common/gate_catalog_support.ps1", "common/verify_changed.ps1",
@@ -823,6 +828,9 @@ $wrapper=Join-Path __FIXTURE__ 'invoke.ps1'
         )
 
     def test_multipole_tests_do_not_route_to_runtime_consumers(self) -> None:
+        initializer_routes = self.routed_stages("projects/rf_multipole_ion_optics/tests/__init__.py")
+        self.assertTrue({"rf_multipole_domain_tests", "rf_multipole_quadrupole_static",
+                         "rf_multipole_hexapole_static", "rf_multipole_octupole_static"}.issubset(initializer_routes))
         for filename in ("test_simion_geometry.py", "test_simion_rf_drive.lua",
                          "test_comsol_stationary_solver_smoke.m"):
             with self.subTest(filename=filename):
@@ -960,7 +968,7 @@ $wrapper=Join-Path __FIXTURE__ 'invoke.ps1'
             self.skipTest("PowerShell Core is unavailable")
         cases = (
             (["common/contracts/expected_values.py"], "expected_values_tests", True),
-            (["common/contracts/test_expected_values.py"], "expected_values_tests", True),
+            (["common/contracts/test_expected_values.py"], "expected_values_tests", False),
             (["common/contracts/test_verify_changed.py"], "gate_contract_tests", False),
             (["common/contracts/test_report_cloc_delta.py"], "cloc_contract_tests", True),
             (["common/contracts/file_identity.py", "pyproject.toml"], "python_dependency_contract", True),

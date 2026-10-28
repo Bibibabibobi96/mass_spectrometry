@@ -61,7 +61,7 @@ jobs:
           }
           $scope = [ordered]@{ full_scope = $true; changed_paths = @() }
           if ($baseAvailable) {
-            $changedPaths = @(& git diff --name-only --diff-filter=ACMRD "$before..$after")
+            $changedPaths = @(& git diff --name-only --no-renames --diff-filter=ACMRD "$before..$after")
             if ($LASTEXITCODE -ne 0) { throw 'Unable to calculate changed paths for push gate.' }
             if ($changedPaths.Count -gt 0) {
               $scope.full_scope = $false
@@ -97,11 +97,20 @@ jobs:
           $scope = Get-Content -Raw -LiteralPath $scopePath | ConvertFrom-Json -Depth 4
           $python = (Get-Command python).Source
           if ($scope.full_scope) {
-            .\common\verify_changed.ps1 -PythonExe $python -FullScope -MaxConcurrency 2
+            .\common\verify_changed.ps1 -PythonExe $python -FullScope -MaxConcurrency 2 -SummaryPath (Join-Path $env:RUNNER_TEMP 'changed_gate_summary.json')
           } else {
             Write-Output "CHANGED_SCOPE_CI_PATHS=$(@($scope.changed_paths).Count)"
-            .\common\verify_changed.ps1 -PythonExe $python -ChangedPath @($scope.changed_paths) -MaxConcurrency 2
+            .\common\verify_changed.ps1 -PythonExe $python -ChangedPath @($scope.changed_paths) -MaxConcurrency 2 -SummaryPath (Join-Path $env:RUNNER_TEMP 'changed_gate_summary.json')
           }
+      - name: Upload changed-scope gate evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: changed-scope-gate-evidence
+          path: |
+            ${{ runner.temp }}/changed_gate_summary.json
+            ${{ runner.temp }}/changed_gate_*/**
+          if-no-files-found: warn
   repository_integration:
     if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
@@ -137,4 +146,13 @@ jobs:
         run: python -m pip install --disable-pip-version-check -r requirements-lock.txt
       - name: Run repository integration gate
         shell: pwsh
-        run: .\common\verify_repository_integration.ps1 -PythonExe (Get-Command python).Source -MaxConcurrency 2
+        run: .\common\verify_repository_integration.ps1 -PythonExe (Get-Command python).Source -MaxConcurrency 2 -SummaryPath (Join-Path $env:RUNNER_TEMP 'integration_gate_summary.json')
+      - name: Upload repository gate evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: repository-integration-gate-evidence
+          path: |
+            ${{ runner.temp }}/integration_gate_summary.json
+            ${{ runner.temp }}/repository_integration_gate_*/**
+          if-no-files-found: warn

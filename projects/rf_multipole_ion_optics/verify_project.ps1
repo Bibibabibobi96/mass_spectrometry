@@ -2,7 +2,8 @@ param(
   [ValidateSet('Freshness','Core','Static','Formal')][string]$Level = 'Static',
   [ValidateSet('All','quadrupole','hexapole','octupole')][string]$StructuralVariant = 'All',
   [string]$PythonExe = '',
-  [switch]$FreshnessPrevalidated
+  [switch]$FreshnessPrevalidated,
+  [string[]]$ChangedTestModules = @()
 )
 
 Set-StrictMode -Version Latest
@@ -75,17 +76,30 @@ if ($LASTEXITCODE -ne 0) { throw 'Entry-aperture L0 reference gate failed.' }
 # before the repository-wide RF analysis suite and PowerShell tree parse; those
 # broader regressions remain part of Static integration verification.
 if ($Level -eq 'Core') {
+  if ($ChangedTestModules.Count -gt 0) {
+    $testModules = @($ChangedTestModules | Sort-Object -Unique)
+    Write-Output "PROJECT_TEST_MODULES=$($testModules -join ',')"
+    Push-Location $repoRoot
+    try { & $python -m unittest @testModules } finally { Pop-Location }
+    if ($LASTEXITCODE -ne 0) { throw 'Changed RF test modules failed.' }
+  }
   "PROJECT_GATE=PASS PROJECT=rf_multipole_ion_optics LEVEL=$Level STRUCTURAL_VARIANT=$StructuralVariant"
   return
 }
 
 Push-Location $repoRoot
 try {
+  $testModules = @($ChangedTestModules)
   foreach ($variant in $selectedVariants) {
     $testDirectory = if ($variant -eq 'quadrupole') { 'analysis' } else { $variant }
-    & $python -m unittest discover -s (Join-Path $projectRoot "tests\$testDirectory") -p 'test_*.py'
-    if ($LASTEXITCODE -ne 0) { throw "Python variant tests failed: $variant" }
+    $testModules += @(Get-ChildItem -LiteralPath (Join-Path $projectRoot "tests\$testDirectory") -Filter 'test_*.py' -File -Recurse |
+      ForEach-Object {
+        $_.FullName.Substring($repoRoot.Length + 1, $_.FullName.Length - $repoRoot.Length - 4).Replace('\', '.')
+      })
   }
+  $testModules = @($testModules | Sort-Object -Unique)
+  & $python -m unittest @testModules
+  if ($LASTEXITCODE -ne 0) { throw "Python variant tests failed: $StructuralVariant" }
 } finally { Pop-Location }
 $parseErrors = @()
 Get-ChildItem -LiteralPath $projectRoot -Recurse -Filter '*.ps1' | ForEach-Object {

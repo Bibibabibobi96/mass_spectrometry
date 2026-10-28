@@ -544,36 +544,115 @@ class CandidateGateParameterContractTests(unittest.TestCase):
         self.assertNotIn("SimionRunLabel", runner_parameters)
         self.assertNotIn("ComparisonLabel", runner_parameters)
 
-    def test_project_gate_core_keeps_physical_contracts_but_not_full_regressions(self) -> None:
-        project_gate = PROJECT_GATE.read_text(encoding="utf-8")
-        core_return = project_gate.index("if ($Level -eq 'Core')")
-        full_analysis = project_gate.index("-m unittest discover")
-        full_parse = project_gate.index("[System.Management.Automation.Language.Parser]::ParseFile")
+    def invoke_project_gate_fixture(self, level: str, *, changed: bool = False,
+                                    failure: str = "") -> dict:
+        if not shutil.which("pwsh"):
+            self.skipTest("PowerShell 7 is required")
+        with tempfile.TemporaryDirectory(prefix="rf_gate_contract_") as directory:
+            root = Path(directory)
+            project = root / "projects/rf_multipole_ion_optics"
+            project.mkdir(parents=True)
+            gate = project / "verify_project.ps1"
+            gate.write_bytes(PROJECT_GATE.read_bytes())
+            quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+            support = root / "common/host_execution_lease.ps1"
+            support.parent.mkdir()
+            support.write_text(". " + quote(REPO_ROOT / "common/host_execution_lease.ps1") + "\n",
+                               encoding="utf-8")
+            modules = {}
+            for relative in ("analysis/test_root.py", "analysis/new_area/test_nested.py",
+                             "hexapole/test_hex.py", "octupole/test_oct.py", "new_area/test_forwarded.py"):
+                path = project / "tests" / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                module = path.relative_to(root).with_suffix("").as_posix().replace("/", ".")
+                modules[relative] = module
+                path.write_text(
+                    "import os, unittest\nfrom pathlib import Path\n"
+                    "class Probe(unittest.TestCase):\n"
+                    "    def test_selected(self):\n"
+                    "        with Path(os.environ['RF_GATE_TEST_EVENTS']).open('a', encoding='utf-8') as stream:\n"
+                    f"            stream.write({module!r} + '\\n')\n"
+                    f"        self.assertNotEqual(os.environ.get('RF_GATE_FAIL_TEST'), {module!r}, 'RF_GATE_TEST_FAILURE')\n",
+                    encoding="utf-8",
+                )
+            if failure == "syntax" or level == "Core":
+                (project / "invalid_fixture.ps1").write_text("function Broken {\n", encoding="utf-8")
+            shim = root / "python_probe.ps1"
+            shim.write_text(
+                "$arguments = @($args)\n"
+                "[IO.File]::AppendAllText($env:RF_GATE_COMMAND_EVENTS, "
+                "((ConvertTo-Json -Compress -InputObject $arguments) + [Environment]::NewLine))\n"
+                "if ($arguments.Count -ge 2 -and $arguments[0] -eq '-m' -and $arguments[1] -eq 'unittest') {\n"
+                "  & $env:RF_GATE_REAL_PYTHON @arguments\n  exit $LASTEXITCODE\n}\nexit 0\n",
+                encoding="utf-8",
+            )
+            commands_path, events_path = root / "commands.jsonl", root / "tests.txt"
+            environment = dict(os.environ, SIMULATION_PYTHON_EXE=sys.executable,
+                               RF_GATE_REAL_PYTHON=sys.executable,
+                               RF_GATE_COMMAND_EVENTS=str(commands_path), RF_GATE_TEST_EVENTS=str(events_path),
+                               PYTHONDONTWRITEBYTECODE="1", TEMP=directory, TMP=directory)
+            environment["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"] = os.environ.get(
+                "MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH",
+                str(REPO_ROOT.parent / "artifacts/common/host_resources.sqlite3"),
+            )
+            environment["RF_GATE_FAIL_TEST"] = modules["analysis/test_root.py"] if level == "Core" else (
+                modules["analysis/new_area/test_nested.py"] if failure == "test" else ""
+            )
+            selected = ([modules["new_area/test_forwarded.py"]] * 2 if changed else [])
+            if level == "Static":
+                selected += [modules["analysis/test_root.py"]] * 2
+            variant = "quadrupole" if level == "Core" else "All"
+            script = "& " + quote(gate) + " -PythonExe " + quote(shim) + " -Level " + level
+            script += " -StructuralVariant " + variant
+            if selected:
+                script += " -ChangedTestModules @(" + ",".join(map(quote, selected)) + ")"
+            result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=root, env=environment,
+                                    capture_output=True, text=True, encoding="utf-8", timeout=180)
+            return {"result": result, "modules": modules,
+                    "commands": [json.loads(line) for line in commands_path.read_text(encoding="utf-8").splitlines()],
+                    "executed": events_path.read_text(encoding="utf-8").splitlines() if events_path.exists() else []}
 
-        self.assertLess(core_return, full_analysis)
-        self.assertLess(core_return, full_parse)
-        for required in (
-            "resolve_contract --check",
-            "--profile interface --check",
-            "--profile mass_filter --check",
-            "sync_simion_geometry --check",
-            "generate_official_particle_table --check",
-            "mass_filter_reference.theory",
-            "mass_filter_reference.run_finite_length",
-            "entry_aperture_l0.py",
-        ):
-            with self.subTest(required=required):
-                self.assertLess(project_gate.index(required), core_return)
+    def test_project_gate_core_keeps_physical_contracts_but_not_full_regressions(self) -> None:
+        expected = [
+            "resolve_contract --structural-variant quadrupole --check",
+            "resolve_contract --check", "resolve_contract --profile interface --check",
+            "resolve_contract --profile mass_filter --check", "sync_simion_geometry --check",
+            "generate_official_particle_table --check", "mass_filter_reference.theory --check-mode",
+            "mass_filter_reference.run_finite_length --check-contract", "entry_aperture_l0.py --check",
+        ]
+        for changed in (False, True):
+            with self.subTest(changed=changed):
+                observed = self.invoke_project_gate_fixture("Core", changed=changed)
+                result = observed["result"]
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                commands = observed["commands"]
+                physical = [" ".join(command) for command in commands if command[:2] != ["-m", "unittest"]]
+                self.assertEqual(len(physical), len(expected))
+                for command, required in zip(physical, expected):
+                    self.assertIn(required, command)
+                unittest_commands = [command for command in commands if command[:2] == ["-m", "unittest"]]
+                selected = [observed["modules"]["new_area/test_forwarded.py"]] if changed else []
+                self.assertEqual(unittest_commands, [["-m", "unittest", *selected]] if changed else [])
+                self.assertEqual(observed["executed"], selected)
+                self.assertIn("PROJECT_GATE=PASS", result.stdout)
 
     def test_project_gate_static_retains_full_analysis_and_powershell_regressions(self) -> None:
-        project_gate = PROJECT_GATE.read_text(encoding="utf-8")
-
-        self.assertIn("-m unittest discover", project_gate)
-        self.assertIn("[System.Management.Automation.Language.Parser]::ParseFile", project_gate)
-        self.assertLess(
-            project_gate.index("if ($Level -eq 'Core')"),
-            project_gate.index("-m unittest discover"),
-        )
+        for failure in ("", "test", "syntax"):
+            with self.subTest(failure=failure):
+                observed = self.invoke_project_gate_fixture("Static", changed=True, failure=failure)
+                result = observed["result"]
+                expected = sorted(observed["modules"].values())
+                calls = [command for command in observed["commands"] if command[:2] == ["-m", "unittest"]]
+                self.assertEqual(calls, [["-m", "unittest", *expected]])
+                self.assertEqual(sorted(observed["executed"]), expected)
+                if not failure:
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("PROJECT_GATE=PASS", result.stdout)
+                else:
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertNotIn("PROJECT_GATE=PASS", result.stdout)
+                    diagnostic = "RF_GATE_TEST_FAILURE" if failure == "test" else "PowerShell syntax gate failed"
+                    self.assertIn(diagnostic, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

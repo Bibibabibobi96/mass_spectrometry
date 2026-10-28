@@ -2,7 +2,8 @@
 param(
   [ValidateSet('Core', 'Static')][string]$Level = 'Static',
   [string]$PythonExe = '',
-  [string]$LuaExe = ''
+  [string]$LuaExe = '',
+  [string[]]$ChangedTestModules = @()
 )
 
 Set-StrictMode -Version Latest
@@ -42,13 +43,19 @@ try {
         'projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_native_corridor_plan',
         'projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_native_corridor_freeze'
       )
+      $coreTests = @($coreTests + $ChangedTestModules | Sort-Object -Unique)
+      Write-Output "PROJECT_TEST_MODULES=$($coreTests -join ',')"
       & $python -m unittest @coreTests
       if ($LASTEXITCODE -ne 0) { throw 'MR-TOF core contract tests failed.' }
     } else {
-      & $python -m unittest discover -s (Join-Path $projectRoot 'tests\analysis') -p 'test_*.py'
-      if ($LASTEXITCODE -ne 0) { throw 'MR-TOF Python analysis tests failed.' }
-      & $python -m unittest discover -s (Join-Path $projectRoot 'tests\simion') -p 'test_*.py'
-      if ($LASTEXITCODE -ne 0) { throw 'MR-TOF solver-free SIMION adapter tests failed.' }
+      $testModules = @(@(
+        Get-ChildItem -LiteralPath (Join-Path $projectRoot 'tests') -Filter 'test_*.py' -File -Recurse |
+          ForEach-Object {
+            $_.FullName.Substring($repoRoot.Length + 1, $_.FullName.Length - $repoRoot.Length - 4).Replace('\', '.')
+          }
+      ) + $ChangedTestModules | Sort-Object -Unique)
+      & $python -m unittest @testModules
+      if ($LASTEXITCODE -ne 0) { throw 'MR-TOF solver-free Python tests failed.' }
     }
   } finally {
     Pop-Location

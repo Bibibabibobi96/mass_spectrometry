@@ -240,6 +240,8 @@ MR的`load-workbench`与batch Fly共用碰撞PA预载并保持不可Refine状态
 后续文档与运行边界修复、失败及复验见[系统审查](../../docs/history/20261027__system-maintainability-review.md)。
 先前权限、宿主、夹具和发布失败仍按固定源码及原日志解释，focused通过不拼成失败整轮通过。
 后续改动按[操作指南](../../docs/OPERATIONS.md#分层门禁)运行适用门禁；软件检查不授予新原生、数值或Formal资格。
+集成测试入口的模块枚举及L1选择边界见[入口说明](../README.md#活动工作流)；
+未执行模块和未选阶段不计为通过，机器摘要只记录本轮实际阶段结果。
 
 ## 实施与退出条件
 

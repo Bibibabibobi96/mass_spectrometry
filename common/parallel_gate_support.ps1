@@ -1,6 +1,179 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Write-GateRunSummary {
+    param([Parameter(Mandatory)]$Summary)
+    $temporary = $Summary.Path + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
+    try {
+        [IO.File]::WriteAllText($temporary,
+            ($Summary.Document | ConvertTo-Json -Depth 16),
+            [Text.UTF8Encoding]::new($false))
+        [IO.File]::Move($temporary, $Summary.Path, $true)
+    } finally {
+        if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary }
+    }
+}
+
+function New-GateRunSummary {
+    param(
+        [Parameter(Mandatory)][object[]]$Items,
+        [Parameter(Mandatory)][string]$GateName,
+        [Parameter(Mandatory)][string]$PythonExe,
+        [Parameter(Mandatory)][string]$RepoRoot,
+        [string]$SummaryPath = ''
+    )
+    if (-not $SummaryPath) {
+        $SummaryPath = Join-Path ([IO.Path]::GetTempPath()) (
+            'gate_summary_' + [guid]::NewGuid().ToString('N') + '.json')
+    }
+    $SummaryPath = [IO.Path]::GetFullPath($SummaryPath)
+    if (Test-Path -LiteralPath $SummaryPath) {
+        throw "Gate summary already exists: $SummaryPath"
+    }
+    [IO.Directory]::CreateDirectory((Split-Path -Parent $SummaryPath)) | Out-Null
+    $stages = @($Items | ForEach-Object {
+        $item = $_
+        $record = [ordered]@{
+            name = [string]$item.Name
+            selected = [bool]$item.Run
+            selection_reason = [string]$item.Reason
+            dependency_profile = $null
+            command = $null
+            requires_stages = @()
+            status = $(if ($item.Run) { 'PENDING' } else { 'NOT_APPLICABLE' })
+            reason_code = $(if ($item.Run) { 'NOT_STARTED' } else { 'NOT_SELECTED' })
+            started_at = $null; finished_at = $null; elapsed_seconds = $null
+            exit_code = $null; child_exit_code = $null; log_path = $null; log_retained = $false
+            error = $null
+        }
+        foreach ($field in @('DependencyProfile', 'Command', 'RequiresStages')) {
+            if ($null -ne $item.PSObject.Properties[$field] -or
+                ($item -is [Collections.IDictionary] -and $item.Contains($field))) {
+                $key = @{ DependencyProfile='dependency_profile'; Command='command'; RequiresStages='requires_stages' }[$field]
+                if ($field -eq 'RequiresStages') {
+                    $record[$key] = @($item.$field | Where-Object { $null -ne $_ })
+                } else { $record[$key] = $item.$field }
+            }
+        }
+        [pscustomobject]$record
+    })
+    $summary = [pscustomobject]@{
+        Path = $SummaryPath
+        Timer = [Diagnostics.Stopwatch]::StartNew()
+        Document = [ordered]@{
+            schema_version = 1; gate = $GateName; repository = $RepoRoot
+            python_exe = $PythonExe; powershell_version = [string]$PSVersionTable.PSVersion
+            started_at = [DateTime]::UtcNow.ToString('o'); finished_at = $null
+            elapsed_seconds = $null; status = 'RUNNING'; error = $null
+            stages = $stages
+        }
+    }
+    Write-GateRunSummary -Summary $summary
+    Write-Host "GATE_SUMMARY_PATH=$SummaryPath"
+    return $summary
+}
+
+function Set-GateStageResult {
+    param($Summary, [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][Collections.IDictionary]$Result)
+    if ($null -eq $Summary) { return }
+    $record = @($Summary.Document.stages | Where-Object { $_.name -eq $Name })
+    if ($record.Count -ne 1) { throw "Unknown or duplicate summary stage: $Name" }
+    foreach ($key in $Result.Keys) { $record[0].$key = $Result[$key] }
+    Write-GateRunSummary -Summary $Summary
+}
+
+function Complete-GateRunSummary {
+    param($Summary, $Failure)
+    if ($null -eq $Summary) { return }
+    $interrupted = ($null -ne $Failure -and
+        $Failure.Exception -is [Management.Automation.PipelineStoppedException]) -or
+        @($Summary.Document.stages | Where-Object { $_.status -eq 'INTERRUPTED' }).Count -gt 0
+    foreach ($stage in $Summary.Document.stages) {
+        if ($stage.status -notin @('PENDING', 'RUNNING')) { continue }
+        $failedDependencies = @($Summary.Document.stages | Where-Object {
+            $_.name -in @($stage.requires_stages) -and $_.status -ne 'PASS'
+        })
+        $stage.status = if ($interrupted) { 'INTERRUPTED' } else { 'BLOCKED' }
+        $stage.reason_code = if ($interrupted) { 'GATE_INTERRUPTED' }
+            elseif ($failedDependencies.Count -gt 0) { 'PREREQUISITE_NOT_PASSED' }
+            else { 'GATE_ENDED_BEFORE_STAGE_COMPLETED' }
+    }
+    $Summary.Timer.Stop()
+    $Summary.Document.finished_at = [DateTime]::UtcNow.ToString('o')
+    $Summary.Document.elapsed_seconds = [Math]::Round($Summary.Timer.Elapsed.TotalSeconds, 6)
+    $incomplete = @($Summary.Document.stages | Where-Object {
+        $_.selected -and $_.status -ne 'PASS'
+    }).Count -gt 0
+    $Summary.Document.status = if ($interrupted) { 'INTERRUPTED' }
+        elseif ($null -ne $Failure -or $incomplete) { 'FAIL' } else { 'PASS' }
+    if ($null -ne $Failure) { $Summary.Document.error = $Failure.Exception.Message }
+    try { Write-GateRunSummary -Summary $Summary } catch {
+        if ($null -ne $Failure -or $interrupted -or $incomplete) {
+            Write-Warning "Gate summary could not be completed; original gate failure is retained: $_"
+        } else { throw }
+    }
+}
+
+function Invoke-RecordedGateStage {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$Reason,
+        [Parameter(Mandatory)][Alias('Action')][scriptblock]$Operation,
+        $Summary
+    )
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $result = [ordered]@{
+        status = 'RUNNING'; reason_code = 'EXECUTING'
+        started_at = [DateTime]::UtcNow.ToString('o'); finished_at = $null
+        elapsed_seconds = $null; exit_code = $null; error = $null
+    }
+    $stageFailure = $null
+    Set-GateStageResult -Summary $Summary -Name $Name -Result $result
+    Write-Output "GATE_STAGE=RUN NAME=$Name REASON=$Reason"
+    try {
+        Invoke-ResourceBudgetedGateAction -Name $Name -Action $Operation
+        $result.status = 'PASS'; $result.reason_code = 'COMPLETED'; $result.exit_code = 0
+    } catch {
+        $stageFailure = $_
+        $result.status = if ($_.Exception -is [Management.Automation.PipelineStoppedException]) {
+            'INTERRUPTED'
+        } else { 'FAIL' }
+        $result.reason_code = 'STAGE_EXCEPTION'
+        $nativeCode = Get-Variable -Name LASTEXITCODE -ValueOnly -ErrorAction SilentlyContinue
+        $result.exit_code = if ($nativeCode) { $nativeCode } else { 1 }
+        $result.error = $_.Exception.Message
+        throw
+    } finally {
+        if ($result.status -eq 'RUNNING') {
+            # PowerShell pipeline cancellation can bypass catch but still unwind finally.
+            $result.status = 'INTERRUPTED'; $result.reason_code = 'STAGE_INTERRUPTED'
+        }
+        $timer.Stop()
+        $result.finished_at = [DateTime]::UtcNow.ToString('o')
+        $result.elapsed_seconds = [Math]::Round($timer.Elapsed.TotalSeconds, 6)
+        $recordingFailure = $null
+        try { Set-GateStageResult -Summary $Summary -Name $Name -Result $result }
+        catch { $recordingFailure = $_ }
+        # The logged child wrapper owns this sidecar; the parent owns the run summary.
+        if (Get-Variable -Name GateStageResultPath -Scope Script -ErrorAction SilentlyContinue) {
+            if ($script:GateStageResultPath) {
+                try {
+                    Write-GateRunSummary -Summary ([pscustomobject]@{
+                        Path = $script:GateStageResultPath; Document = $result
+                    })
+                } catch { if ($null -eq $recordingFailure) { $recordingFailure = $_ } }
+            }
+        }
+        if ($null -ne $recordingFailure) {
+            if ($null -ne $stageFailure -or $result.status -eq 'INTERRUPTED') {
+                Write-Warning "Stage summary could not be written; original stage failure is retained: $recordingFailure"
+            } else { throw $recordingFailure }
+        }
+    }
+    Write-Output "GATE_STAGE=PASS NAME=$Name ELAPSED_SECONDS=$($result.elapsed_seconds)"
+}
+
 function Invoke-ResourceBudgetedGateAction {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -82,6 +255,10 @@ function Invoke-LoggedGateStage {
     )
     $writer.AutoFlush = $true
     $succeeded = $true
+    $previousResultPath = if (Get-Variable -Name GateStageResultPath -Scope Script -ErrorAction SilentlyContinue) {
+        $script:GateStageResultPath
+    } else { $null }
+    $script:GateStageResultPath = $LogPath + '.result.json'
     try {
         & $Action *>&1 | ForEach-Object {
             $writer.WriteLine(($_ | Out-String -Width 4096).TrimEnd())
@@ -91,6 +268,7 @@ function Invoke-LoggedGateStage {
         $writer.WriteLine(($_ | Out-String -Width 4096).TrimEnd())
     } finally {
         $writer.Dispose()
+        $script:GateStageResultPath = $previousResultPath
     }
     return $succeeded
 }
@@ -107,7 +285,8 @@ function Invoke-IndependentGateStageGroup {
         [Parameter(Mandatory)][scriptblock]$InvokeInlineStage,
         [Parameter(Mandatory)][scriptblock]$InvokeSkipStage,
         [hashtable]$RequestPayload,
-        [string]$InternalRequestParameter = ''
+        [string]$InternalRequestParameter = '',
+        $Summary
     )
     # A nested gate consumes its caller's whole-stage reservation. It cannot
     # multiply that reservation by starting simultaneous inheriting children.
@@ -130,6 +309,7 @@ function Invoke-IndependentGateStageGroup {
     New-Item -ItemType Directory -Path $groupRoot | Out-Null
     Write-Output "GATE_DIAGNOSTICS=TEMPORARY PATH=$groupRoot"
     $groupSucceeded = $false
+    $groupFailure = $null
         $originalMatplotlibConfig = [Environment]::GetEnvironmentVariable(
             'MPLCONFIGDIR', 'Process'
         )
@@ -137,13 +317,38 @@ function Invoke-IndependentGateStageGroup {
         $reportedCompletions = [Collections.Generic.HashSet[string]]::new(
             [StringComparer]::Ordinal
         )
+        # This reporter stays on this call's stack. A dynamic-module closure
+        # would hide helpers dot-sourced in the calling gate's script scope.
         $reportCompletions = {
             foreach ($recordName in @($records.Keys)) {
                 $record = $records[$recordName]
                 if ($record.Process.HasExited -and
                     $reportedCompletions.Add([string]$recordName)) {
                     $record.Process.WaitForExit()
-                    $elapsed = [DateTime]::UtcNow - $record.StartedAt
+                    $record.Timer.Stop()
+                    $elapsed = $record.Timer.Elapsed
+                    $result = @{
+                        status = $(if ($record.Process.ExitCode -eq 0) { 'PASS' } else { 'FAIL' })
+                        reason_code = $(if ($record.Process.ExitCode -eq 0) { 'COMPLETED' } else { 'CHILD_EXIT_NONZERO' })
+                        finished_at = [DateTime]::UtcNow.ToString('o')
+                        elapsed_seconds = [Math]::Round($elapsed.TotalSeconds, 6)
+                        exit_code = $record.Process.ExitCode
+                        child_exit_code = $record.Process.ExitCode
+                        log_path = $record.LogPath
+                        log_retained = (Test-Path -LiteralPath $record.LogPath)
+                    }
+                    $resultPath = $record.LogPath + '.result.json'
+                    if (Test-Path -LiteralPath $resultPath -PathType Leaf) {
+                        $record.HasResultReceipt = $true
+                        $childResult = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json -AsHashtable
+                        foreach ($key in $childResult.Keys) { $result[$key] = $childResult[$key] }
+                        if ($record.Process.ExitCode -ne 0 -and $result.status -eq 'PASS') {
+                            $result.status = 'FAIL'; $result.reason_code = 'CHILD_EXIT_NONZERO'
+                            $result.exit_code = $record.Process.ExitCode
+                        }
+                    }
+                    $record.Result = $result
+                    Set-GateStageResult -Summary $Summary -Name $recordName -Result $result
                     Write-Output (
                         "GATE_PROCESS=COMPLETE NAME=$recordName " +
                         "EXIT_CODE=$($record.Process.ExitCode) " +
@@ -152,7 +357,7 @@ function Invoke-IndependentGateStageGroup {
                     )
                 }
             }
-        }.GetNewClosure()
+        }
         try {
         $env:MPLCONFIGDIR = Join-Path $groupRoot 'matplotlib'
         New-Item -ItemType Directory -Path $env:MPLCONFIGDIR | Out-Null
@@ -210,12 +415,34 @@ function Invoke-IndependentGateStageGroup {
                     ConvertTo-GateProcessArgument ([string]$_)
                 }
             ) -join ' '
-            $process = Start-Process -FilePath (Get-Command pwsh).Source `
-                -ArgumentList $argumentText -WindowStyle Hidden -PassThru
+            Set-GateStageResult -Summary $Summary -Name $item.Name -Result @{
+                status = 'RUNNING'; reason_code = 'CHILD_STARTING'
+                started_at = [DateTime]::UtcNow.ToString('o'); log_path = $logPath
+            }
+            $launchTimer = [Diagnostics.Stopwatch]::StartNew()
+            try {
+                $process = Start-Process -FilePath (Get-Command pwsh).Source `
+                    -ArgumentList $argumentText -WindowStyle Hidden -PassThru
+            } catch {
+                $launchFailure = $_
+                $launchTimer.Stop()
+                try {
+                    Set-GateStageResult -Summary $Summary -Name $item.Name -Result @{
+                        status = 'FAIL'; reason_code = 'CHILD_START_FAILED'; error = $launchFailure.Exception.Message
+                        finished_at = [DateTime]::UtcNow.ToString('o')
+                        elapsed_seconds = $launchTimer.Elapsed.TotalSeconds
+                    }
+                } catch {
+                    Write-Warning "Gate launch failure could not be recorded; original launch failure is retained: $_"
+                }
+                throw $launchFailure
+            }
             $records[$item.Name] = [pscustomobject]@{
                 LogPath = $logPath
                 Process = $process
-                StartedAt = [DateTime]::UtcNow
+                Timer = $launchTimer
+                Result = $null
+                HasResultReceipt = $false
             }
             Write-Output "GATE_PROCESS=START NAME=$($item.Name) PID=$($process.Id) LOG_PATH=$logPath"
         }
@@ -235,15 +462,18 @@ function Invoke-IndependentGateStageGroup {
                 continue
             }
             $record = $records[$item.Name]
-            if (Test-Path -LiteralPath $record.LogPath -PathType Leaf) {
-                Get-Content -LiteralPath $record.LogPath -Encoding UTF8
-                if ($record.Process.ExitCode -ne 0) {
-                    $failed.Add("$($item.Name)=$($record.Process.ExitCode)")
-                    $failedRecords.Add([pscustomobject]@{
-                        Name = [string]$item.Name
-                        ExitCode = $record.Process.ExitCode
-                        LogPath = $record.LogPath
-                    })
+            $hasLog = Test-Path -LiteralPath $record.LogPath -PathType Leaf
+            if ($hasLog -or $record.HasResultReceipt) {
+                if ($hasLog) { Get-Content -LiteralPath $record.LogPath -Encoding UTF8 }
+                if ($record.Process.ExitCode -ne 0 -or $record.Result.status -ne 'PASS') {
+                    $failed.Add("$($item.Name)=$($record.Result.exit_code)")
+                    if ($hasLog) {
+                        $failedRecords.Add([pscustomobject]@{
+                            Name = [string]$item.Name
+                            ExitCode = $record.Result.exit_code
+                            LogPath = $record.LogPath
+                        })
+                    }
                 }
             } else {
                 Write-Output (
@@ -255,6 +485,12 @@ function Invoke-IndependentGateStageGroup {
                     & $InvokeInlineStage $item
                 }
                 Get-Content -LiteralPath $record.LogPath -Encoding UTF8
+                Set-GateStageResult -Summary $Summary -Name $item.Name -Result @{
+                    status = $(if ($inlineSucceeded) { 'PASS' } else { 'FAIL' })
+                    reason_code = $(if ($inlineSucceeded) { 'SERIAL_FALLBACK_COMPLETED' } else { 'SERIAL_FALLBACK_FAILED' })
+                    exit_code = $(if ($inlineSucceeded) { 0 } else { 1 })
+                    log_retained = $true
+                }
                 if (-not $inlineSucceeded) {
                     $failed.Add(
                         "$($item.Name)=serial_fallback_failed_after_" +
@@ -304,12 +540,22 @@ function Invoke-IndependentGateStageGroup {
                     Get-Content -LiteralPath $record.LogPath -Encoding UTF8
                 }
             }
-            $record.Process.Dispose()
         }
-        if ($null -eq $originalMatplotlibConfig) {
-            Remove-Item Env:MPLCONFIGDIR -ErrorAction SilentlyContinue
-        } else {
-            $env:MPLCONFIGDIR = $originalMatplotlibConfig
+        $finalizationFailure = $null
+        try { & $reportCompletions } catch {
+            if ($null -ne $groupFailure) {
+                Write-Warning "Gate completion could not be recorded; original group failure is retained: $_"
+            } else {
+                $finalizationFailure = $_
+                $groupSucceeded = $false
+            }
+        } finally {
+            foreach ($record in @($records.Values)) { $record.Process.Dispose() }
+            if ($null -eq $originalMatplotlibConfig) {
+                Remove-Item Env:MPLCONFIGDIR -ErrorAction SilentlyContinue
+            } else {
+                $env:MPLCONFIGDIR = $originalMatplotlibConfig
+            }
         }
         if ($groupSucceeded) {
             Remove-GateTemporaryDirectory -Path $groupRoot `
@@ -328,5 +574,17 @@ function Invoke-IndependentGateStageGroup {
                 "-ExpectedNamePrefix '$($TempNamePrefix.Replace("'", "''"))'"
             )
         }
+        foreach ($recordName in @($records.Keys)) {
+            try {
+                Set-GateStageResult -Summary $Summary -Name $recordName -Result @{
+                    log_retained = (Test-Path -LiteralPath $records[$recordName].LogPath)
+                }
+            } catch {
+                if (-not $groupSucceeded) {
+                    Write-Warning "Gate log retention could not be recorded; original group failure is retained: $_"
+                } else { throw }
+            }
+        }
+        if ($null -ne $finalizationFailure) { throw $finalizationFailure }
     }
 }
