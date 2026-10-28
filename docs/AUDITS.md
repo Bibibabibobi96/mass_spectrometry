@@ -4,6 +4,8 @@
 
 ## 公共机制与执行资源
 
+- [2026-10-28 独立系统指南第一波阶段验收（全指南任务尚未完成）](history/20261028__system-guide-first-wave.md)
+
 - [2026-10-28 统一诊断独立复审与工作区归位验收](history/20261028__unified-diagnostics-review-acceptance.md)
 
 - [2026-10-27 全仓文档职责、项目发现与执行诊断系统审查](history/20261027__system-maintainability-review.md)
