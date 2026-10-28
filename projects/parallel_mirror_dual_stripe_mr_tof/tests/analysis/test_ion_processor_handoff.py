@@ -66,7 +66,7 @@ class IonProcessorHandoffTests(unittest.TestCase):
         self.source = self.root / "source.csv"
         write_component_particle_state_csv(self.source, self.rows)
         self.census = self.root / "census.csv"
-        self.census.write_text("particle_id,transfer_status,terminal_reason,instrument_time_us,particle_birth_time_us,particle_age_us\n1,transferred,downstream_domain_exit,7500.6,0,7500.6\n7,transferred,downstream_domain_exit,7500.7,0,7500.7\n9,not_transferred,solver_stop,21,0,21\n", encoding="utf-8")
+        self.census.write_text("particle_id,transfer_status,terminal_reason,instrument_time_us,particle_birth_time_us,particle_age_us\n1,transferred,downstream_domain_exit,7500.6,0,7500.6\n7,transferred,downstream_domain_exit,7500.7,0,7500.7\n9,not_transferred,solver_stop,21,0,21\n", encoding="utf-8", newline="\n")
         self.receipt = {
             "schema_version": 2, "role": "ion_processor_component_exit_export",
             "source_instance_id": "ip_exit_shield", "target_instance_id": "mr_entry_frame",

@@ -257,6 +257,12 @@ def peak_time_metrics(
         return result
     method = analysis_contract.get("method_id")
     if method != "common_gaussian_kde_time_v2":
+        if cohort_role != "formal_volume":
+            # A diagnostic cohort does not request KDE. Retain its declared
+            # contract as provenance without interpreting an unsupported method.
+            result["status"] = "unavailable_controlled_or_unclassified_cohort"
+            result["analysis_metadata"]["status"] = result["status"]
+            return result
         raise ValueError("unsupported peak analysis method")
     from common.analysis.peak_metrics import AnalysisSettings, compute_time_peak_metrics
 

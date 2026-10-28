@@ -58,9 +58,27 @@ OA→MR的原生功能与两代完整批恢复已有证据，结果统一见
 质心目标完整结果相等，实测源receipt及11个生成文件逐字节相等；实际入口的非法输入与BOM回归
 见`tests/analysis/test_measured_component_source.py`。此结果不新增原生运行或Formal资格。
 
+实测源测试曾将原样复制的母群CSV绑定到Windows默认CRLF的固定SHA；同值LF夹具会误报失败。
+现将交接夹具默认字节明确为LF，复制件按实际输入字节和SHA核对，四个生成文件仍保留原固定SHA。
+LF／CRLF两臂均通过真实handoff→materializer入口，母群字节及身份保持，六份生成／状态文件逐字节相同；
+冻结后仅改换行仍在创建输出前被拒绝。两测试模块38项通过（0失败／0跳过，12.450秒），Ruff通过；
+生产源码、复制策略和SHA验证未改，未运行商业求解器或新增物理资格。
+
 消费者审计另确认`prepare_accelerator_interface.py`私有`_write`没有活动调用或回调，已删除该函数，
 保留仍被实际接口消费者使用的整个模块与独立入口。此删除不改变冻结历史源码或输出；
 不能把仅测试引用、独立CLI或动态用途不确定的其他符号一并退役。
+
+复审进一步确认`mirror_fixed_grid_voltage_point.py`的产物具有真实消费者：
+`mirror_real_field_period.py`、`fixed_grid_mirror_stripe_handoff.py`及
+`mirror_fixed_grid_voltage_correction.py`读取`mrtof_fixed_grid_mirror_voltage_point` receipt。
+因此保留该独立准备CLI，职责是把受限修正提议物化为待验证点；它不启动求解或授予工作点资格。
+仅在这三条receipt消费路径共同迁移或退役后，才能移除该生产者。
+
+原`analysis/cad_pose_contract.py`实际只服务机械坐标回归，没有生产调用或CLI，现迁到
+`tests/test_support/cad_pose_contract.py`，唯一测试导入同步切换；不保留生产转发。
+仅模块说明改为独立测试参考，去除该说明后AST相同，变换计算未改。
+`config/cad_to_theory_frame.json`及CAD证据保持，机械中面映射与逆变换仍由独立参考验证。
+这明确其长期验证归属，不把测试实现当作当前CAD生成入口。
 
 ## 加速器接口与整机暂停边界
 
@@ -149,10 +167,17 @@ C0为指定外边界假设，完整内表面x=[-162.5,162.5]、y=[-242,558]、z=
 
 当前活动峰合同使用`common_gaussian_kde_time_v2`，两个MR分析器共用公共纯时间KDE入口；
 source-z比较、原生候选链和campaign排名同时要求当前方法及一致的冻结合同。旧v1结果留在原run中
-只读解释，活动请求拒绝v1和未知方法，不重写旧receipt、历史峰数或既有Formal身份。
+只读解释，活动峰计算请求拒绝v1和未知方法，不重写旧receipt、历史峰数或既有Formal身份。
 时间宽度及`mean_tof/(2*FWHM)`保留原数值定义；`mass_resolution_t_over_2fwhm`仍是既有摘要的时间等效投影，
 不表示经过质量标定。v2的`significant_time_kde_modes`取时间密度；v1的旧同名峰数实际来自名义质量密度，
 两者不能直接比较。公共metadata随结果和图表metadata保留方法、设置、单位、ddof=1、观测数、权重和及资格边界。
+
+非`formal_volume`的原生受控诊断不请求KDE；其历史或未知方法合同仅保留为来源，峰结果明确为
+`unavailable_controlled_or_unclassified_cohort`，不可计算metadata不声称已验证方法、设置或时钟。
+这使既有单中心run的静态返回／出口诊断可独立重分析，不新增旧峰算法或把旧方法改标v2。
+合法v2的所有角色仍走原设置校验与metadata路径；正式束团的v1／未知方法继续失败关闭。
+真实`20261006_030113__sim__simion__mrtof-comsol-p1-plus1-center`历史输入的回归保留原残差和出口失败
+断言，原文件只读，不将中心返回功能贯通解释为几何出口或Formal资格通过。
 
 OA零出生路径仍要求具名共同零出生合同。实测component路径继续验证共同instrument epoch和冻结提取
 时序，对全部detector hit扣同一个pulse，不按每颗交接时刻重居中；母群census和损失保持完整。

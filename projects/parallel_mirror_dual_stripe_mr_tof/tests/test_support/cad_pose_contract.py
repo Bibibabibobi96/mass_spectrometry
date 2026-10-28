@@ -1,4 +1,4 @@
-"""Validate the explicit SolidWorks-to-project coordinate transform."""
+"""Independent test reference for the recorded CAD-to-project rigid transform."""
 
 from __future__ import annotations
 

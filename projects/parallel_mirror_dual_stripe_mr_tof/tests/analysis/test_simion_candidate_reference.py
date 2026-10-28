@@ -32,7 +32,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis 
     parse_events,
     summarize_events,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.cad_pose_contract import (
+from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.cad_pose_contract import (
     load_cad_pose_contract,
     project_to_source,
     source_to_project,

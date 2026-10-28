@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.materialize_simion_prototype import _particle_source_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
@@ -192,6 +193,42 @@ class SimionEventAnalysisTest(unittest.TestCase):
                 peak_time_metrics([1., 2., 3.], mass_th=524,
                                   analysis_contract={**PEAK_CONTRACT, "method_id": method},
                                   cohort_role="formal_volume")
+
+    def test_nonformal_unsupported_peak_method_retains_provenance_without_kde(self):
+        for role in ("controlled_diagnostic", None):
+            for method in ("common_gaussian_kde_time_v1", "unknown"):
+                contract = {**copy.deepcopy(PEAK_CONTRACT), "method_id": method}
+                before = copy.deepcopy(contract)
+                with self.subTest(role=role, method=method), patch(
+                    "common.analysis.peak_metrics.compute_time_peak_metrics"
+                ) as compute:
+                    result = peak_time_metrics(
+                        [700., 701., 702.], mass_th=524,
+                        analysis_contract=contract, cohort_role=role,
+                    )
+                compute.assert_not_called()
+                self.assertEqual(result["status"], "unavailable_controlled_or_unclassified_cohort")
+                self.assertEqual(result["method_id"], method)
+                self.assertEqual(result["analysis_contract"], before)
+                self.assertEqual(contract, before)
+                self.assertEqual(result["mean"], 701.)
+                for key in ("fwhm", "mass_resolution_t_over_2fwhm",
+                            "time_equivalent_resolution", "significant_time_kde_modes"):
+                    self.assertIsNone(result[key])
+                metadata = result["analysis_metadata"]
+                self.assertEqual(metadata["status"], result["status"])
+                self.assertEqual(metadata["sample_count"], 3)
+                self.assertIsNone(metadata["method_id"])
+                self.assertIsNone(metadata["settings"])
+                self.assertEqual(metadata["time_reference"]["clock_qualification"], "unspecified")
+                self.assertEqual(metadata["scientific_qualification"], "not_assessed")
+
+    def test_nonformal_current_peak_method_still_validates_settings(self):
+        contract = copy.deepcopy(PEAK_CONTRACT)
+        del contract["settings"]["bandwidth_multiplier"]
+        with self.assertRaisesRegex(ValueError, "explicit settings"):
+            peak_time_metrics([1., 2., 3.], mass_th=524,
+                              analysis_contract=contract, cohort_role="controlled_diagnostic")
 
     def test_legacy_species_ambiguity_does_not_invent_a_mass_result(self):
         for mass, charge, status in ((524, 1, "legacy_plus_one_numerical_equivalence"),
