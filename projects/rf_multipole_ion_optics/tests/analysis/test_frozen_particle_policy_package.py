@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -96,6 +97,96 @@ def _mass_analysis_setup(runner: Path) -> str:
 
 
 class FrozenParticlePolicyPackageTests(unittest.TestCase):
+    def test_comsol_canonical_state_to_response_uses_one_frozen_analysis_package(self) -> None:
+        runner = PROJECT_ROOT / "workflows/mass_filter_reference/run_comsol.ps1"
+        source = runner.read_text(encoding="utf-8")
+        start = source.index("  foreach($case in $cases){", source.index("Restore-RunEnvironment"))
+        analysis = source[start:source.index("  $metricDocument=", start)]
+        setup = _mass_analysis_setup(runner)
+        files = re.findall(r"^\s*'((?:projects|common)\\[^']+)'[,]?$", setup, re.MULTILINE)
+        state_relative = "projects/rf_multipole_ion_optics/analysis/analyze_comsol_particle_state_metrics.py"
+        helper_relative = "projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1"
+        mode_path = PROJECT_ROOT / "config/modes/quadrupole_mass_filter_reference.json"
+        mode = json.loads(mode_path.read_text(encoding="utf-8"))
+        masses = mode["mass_scan_spec"]["paired_source_masses_Th"]
+        center = mode["mass_scan_spec"]["calibration_mass_Th"]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            active = root / "active_source"
+            for relative in {*files, state_relative, helper_relative}:
+                destination = active / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(REPO_ROOT / relative, destination)
+            inputs, results = root / "inputs", root / "results"
+            inputs.mkdir()
+            results.mkdir()
+            frozen_mode = inputs / "mode.json"
+            shutil.copy2(mode_path, frozen_mode)
+            cases = []
+            for index, mass in enumerate(masses):
+                state, raw, summary = (results / f"case_{index}_{name}" for name in ("state.csv", "raw.json", "summary.json"))
+                raw.write_text(json.dumps(dict(role="rf_quadrupole_comsol_raw_solver_metadata",
+                                               mode="mass_filter_reference", mass_Th=mass)), encoding="utf-8")
+                with state.open("w", newline="", encoding="utf-8") as stream:
+                    writer = csv.DictWriter(stream, fieldnames=("particle_id", "event", "status", "radial_position_mm", "kinetic_energy_eV"))
+                    writer.writeheader()
+                    writer.writerows(dict(particle_id=pid, event=event,
+                                          status="alive" if event == "source" else (
+                                              "transmitted" if mass == center else "lost"),
+                                          radial_position_mm=.1, kinetic_energy_eV=2.)
+                                     for pid in range(1, 5) for event in ("source", "terminal"))
+                cases.append(dict(mass_Th=mass, raw_metadata=str(raw), particle_state=str(state), solver_summary=str(summary)))
+            scan = inputs / "scan.json"
+            scan.write_text(json.dumps(dict(cases=cases)), encoding="utf-8")
+            receipt = root / "receipt.json"
+            script = root / "exercise.ps1"
+            script.write_text(f"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+. {_ps(SUPPORT)}
+$python = {_ps(Path(sys.executable).resolve())}
+$package = @{{python=$python}}
+$repoRoot = {_ps(active)}
+$projectRoot = Join-Path $repoRoot 'projects/rf_multipole_ion_optics'
+$inputDir = {_ps(inputs)}
+$resultDir = {_ps(results)}
+$scanConfig = {_ps(scan)}
+$sources = @{{mode={_ps(frozen_mode)}}}
+$cases = (Get-Content -LiteralPath $scanConfig -Raw | ConvertFrom-Json).cases
+{setup}
+$analysisBlock = [ScriptBlock]::Create(@'
+{analysis}
+{chr(39)}@)
+Set-Location -LiteralPath $repoRoot
+. $analysisBlock
+$before = [IO.File]::ReadAllText($metrics)
+$beforeResponse = [IO.File]::ReadAllText($response)
+$beforeStates = @($cases | ForEach-Object {{ [IO.File]::ReadAllText($_.solver_summary) }})
+[IO.File]::WriteAllText((Join-Path $repoRoot '{state_relative}'), "raise RuntimeError('LIVE_STATE_METRICS_USED')")
+. $analysisBlock
+$unchanged = $before -ceq [IO.File]::ReadAllText($metrics) -and $beforeResponse -ceq [IO.File]::ReadAllText($response)
+for ($index=0; $index -lt $cases.Count; $index++) {{
+    $unchanged = $unchanged -and $beforeStates[$index] -ceq [IO.File]::ReadAllText($cases[$index].solver_summary)
+}}
+$statePath = Get-FrozenPythonPackageFile -Package $frozenAnalysisPackage -RelativePath '{state_relative}'
+Remove-Item -LiteralPath $statePath
+$missing = $null
+try {{ . $analysisBlock }} catch {{ $missing=$_.Exception.Message }}
+@{{unchanged=$unchanged;missing=$missing;metrics=(Get-Content -LiteralPath $metrics -Raw | ConvertFrom-Json);
+   source_state=(Get-Content -LiteralPath $cases[3].solver_summary -Raw | ConvertFrom-Json)}} |
+    ConvertTo-Json -Depth 20 | Set-Content -LiteralPath {_ps(receipt)} -Encoding UTF8
+""", encoding="utf-8")
+            completed = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File", str(script)],
+                                       cwd=root, capture_output=True, text=True, errors="replace", timeout=120)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            result = json.loads(receipt.read_text(encoding="utf-8-sig"))
+            self.assertTrue(result["unchanged"])
+            self.assertIn("missing or outside", result["missing"])
+            self.assertEqual(result["source_state"]["metrics_authority"], "python_canonical_particle_state")
+            self.assertEqual(result["source_state"]["hits"], 4)
+            self.assertEqual(result["metrics"]["status"], "PASS")
+            self.assertEqual(result["metrics"]["sampled_response_analysis"]["interpolated_main_peak_fwhm_Th"], 1.75)
+
     def test_both_runners_use_the_isolated_frozen_package_contract(self) -> None:
         forbidden_live_path = (
             '$env:PYTHONPATH = "$frozenCodeRoot'

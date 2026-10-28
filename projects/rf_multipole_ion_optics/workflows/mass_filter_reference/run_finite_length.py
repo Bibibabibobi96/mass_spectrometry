@@ -358,6 +358,28 @@ def analyze_response_file(
     return metrics
 
 
+def _invoke_run_artifact_support(command: str, arguments: dict[str, Any]) -> None:
+    """Call the existing PowerShell lifecycle owner without a second run protocol."""
+    request = {"python": sys.executable, "repo_root": str(REPOSITORY_ROOT),
+               "software": "Python 3.11 solver-free quadrupole L1", **arguments}
+    script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+$request = $env:RF_L1_RUN_ARTIFACT_REQUEST | ConvertFrom-Json
+. (Join-Path $request.repo_root 'common/contracts/run_artifact_support.ps1')
+""" + command
+    try:
+        subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+            env={**os.environ, "RF_L1_RUN_ARTIFACT_REQUEST": json.dumps(request)},
+            cwd=REPOSITORY_ROOT, check=True, capture_output=True, text=True, encoding="utf-8",
+            timeout=MANIFEST_TIMEOUT_S,
+        )
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError(f"L1 run lifecycle failed: {(error.stderr or error.stdout).strip()}") from error
+
+
 def run(
     baseline_path: Path,
     resolved_path: Path,
@@ -373,97 +395,117 @@ def run(
     resolved = load_json(resolved_path)
     mode = load_json(mode_path)
     source = load_json(source_path)
-    derived = validate_l1_contract(baseline, mode, source)
-    destination = artifact_project_root.resolve() / "runs" / run_id
+    validate_l1_contract(baseline, mode, source)
+    artifact_project_root = artifact_project_root.resolve()
+    destination = artifact_project_root / "runs" / run_id
     if destination.exists():
         raise FileExistsError(destination)
+    _invoke_run_artifact_support(r"""
+New-RunPackage -Python $request.python -RepoRoot $request.repo_root `
+    -ArtifactRoot $request.artifact_root -RunId $request.run_id `
+    -Project rf_multipole_ion_optics -Mode mass_filter_reference -Software @($request.software) `
+    -RetentionContractEnabled -CapacityLedgerLifecycleEnabled:$request.governed | Out-Null
+""", {"artifact_root": str(artifact_project_root), "run_id": run_id,
+      "governed": any(path.name == "artifacts" for path in (artifact_project_root, *artifact_project_root.parents))})
     results = destination / "results"
     inputs = destination / "inputs"
-    results.mkdir(parents=True)
-    inputs.mkdir()
+    run_config = destination / "run_config.json"
+    summary = destination / "summary.json"
+    config = load_json(run_config)
+    config["role"] = "rf_quadrupole_mass_filter_l1_run_config"
+    config["parameters"].update({
+        "model_level": "L1", "solver_rerun": False,
+        "requested_input_paths": {key: str(path.resolve()) for key, path in (
+            ("baseline", baseline_path), ("resolved_design", resolved_path),
+            ("mode", mode_path), ("source", source_path),
+        )},
+    })
+
+    def checkpoint(stage: str) -> None:
+        config["parameters"]["lifecycle_stage"] = stage
+        run_config.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
     frozen_baseline = inputs / "baseline.json"
     frozen_resolved = inputs / "resolved_design_mass_filter.json"
     frozen_mode = inputs / "mass_filter_reference.json"
     frozen_source = inputs / "official_particle_source.json"
-    for source_file, frozen_file in (
-        (baseline_path, frozen_baseline), (resolved_path, frozen_resolved),
-        (mode_path, frozen_mode), (source_path, frozen_source),
-    ):
-        freeze_file(source_file, frozen_file)
-    request_path, analysis_inputs = _prepare_analysis_request(inputs, results)
-    frozen_analysis = _invoke_analysis_stage(request_path, prepare_only=True)
-    for entry in frozen_analysis["package"]["files"]:
-        key = "analysis_code_" + entry["relative_path"].replace("/", "_").replace(".", "_")
-        analysis_inputs[key] = entry["path"]
-    analysis_inputs["analysis_package"] = str(inputs / "analysis_package.json")
-    baseline, resolved, mode, source = (
-        load_json(path) for path in (frozen_baseline, frozen_resolved, frozen_mode, frozen_source)
-    )
-    derived = validate_l1_contract(baseline, mode, source)
-    screen = mode["functional_screen"]
-    particles = _l1_particles_from_release(
-        source, int(screen["particle_count"]), int(screen["random_seed"]),
-    )
-    frozen_workflow = Path(frozen_analysis["package"]["code_root"]) / (
-        "projects/rf_multipole_ion_optics/workflows/mass_filter_reference"
-    )
-
-    rows = [
-        simulate_mass(float(mass), particles, resolved, int(screen["steps_per_rf_period"]))
-        for mass in derived["masses_Th"]
-    ]
-    response_path = results / "mass-response__finite-length.csv"
-    metrics_path = results / "mass-filter__functional-metrics.json"
-    figure_path = results / "mass-response__passband.png"
-    write_response_csv(response_path, rows)
-    frozen_response = inputs / "mass_response_for_analysis.csv"
-    freeze_file(response_path, frozen_response)
-    analysis_inputs["response_for_analysis"] = str(frozen_response)
-    execution = _invoke_analysis_stage(request_path, prepare_only=False)
-    metrics = load_json(metrics_path)
-
-    run_config = destination / "run_config.json"
-    run_config.write_text(json.dumps({
-        "schema_version": 1,
-        "role": "rf_quadrupole_mass_filter_l1_run_config",
-        "run_id": run_id,
-        "project": "rf_multipole_ion_optics",
-        "mode": "mass_filter_reference",
-        "project_root": str(REPOSITORY_ROOT),
-        "inputs": {
-            "baseline": str(frozen_baseline),
-            "resolved_design": str(frozen_resolved),
-            "mode": str(frozen_mode),
-            "source": str(frozen_source),
-            "runner": str(frozen_workflow / "run_finite_length.py"),
-            "l0_reference": str(frozen_workflow / "theory.py"),
-            **analysis_inputs,
-        },
-        "frozen_python_analysis": {"package": frozen_analysis["package"], "environment": execution},
-        "parameters": {"model_level": "L1", "solver_rerun": False},
-        "formal_gate_passed": False,
-    }, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    summary = destination / "summary.json"
-    summary.write_text(json.dumps({
-        "schema_version": 1,
-        "role": "quadrupole_mass_filter_l1_run_summary",
-        "status": "success" if metrics["status"] == "PASS" else "failed",
-        "functional_gate": metrics["status"],
-        "model_level": "L1",
-        "result": "results/mass-filter__functional-metrics.json",
-        "figure": "results/mass-response__passband.png",
-    }, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    command = [
-        sys.executable,
-        str(REPOSITORY_ROOT / "common" / "contracts" / "write_run_manifest.py"),
-        "--run-config", str(run_config),
-        "--manifest", str(destination / "run_manifest.json"),
-        "--status", "success" if metrics["status"] == "PASS" else "failed",
-        "--software", "Python 3.11 solver-free quadrupole L1",
-    ]
-    for output in (response_path, metrics_path, figure_path, summary, results / "analysis_execution.json"):
-        command.extend(("--output", str(output)))
-    subprocess.run(command, check=True, cwd=REPOSITORY_ROOT, timeout=MANIFEST_TIMEOUT_S)
+    try:
+        checkpoint("input_freezing")
+        for key, source_file, frozen_file in (
+            ("baseline", baseline_path, frozen_baseline), ("resolved_design", resolved_path, frozen_resolved),
+            ("mode", mode_path, frozen_mode), ("source", source_path, frozen_source),
+        ):
+            freeze_file(source_file, frozen_file)
+            config["inputs"][key] = str(frozen_file)
+        checkpoint("analysis_preparation")
+        request_path, analysis_inputs = _prepare_analysis_request(inputs, results)
+        config["inputs"].update(analysis_inputs)
+        frozen_analysis = _invoke_analysis_stage(request_path, prepare_only=True)
+        for entry in frozen_analysis["package"]["files"]:
+            key = "analysis_code_" + entry["relative_path"].replace("/", "_").replace(".", "_")
+            config["inputs"][key] = entry["path"]
+        config["inputs"]["analysis_package"] = str(inputs / "analysis_package.json")
+        frozen_workflow = Path(frozen_analysis["package"]["code_root"]) / (
+            "projects/rf_multipole_ion_optics/workflows/mass_filter_reference"
+        )
+        config["inputs"].update(runner=str(frozen_workflow / "run_finite_length.py"),
+                                l0_reference=str(frozen_workflow / "theory.py"))
+        config["frozen_python_analysis"] = frozen_analysis
+        checkpoint("simulation")
+        baseline, resolved, mode, source = (
+            load_json(path) for path in (frozen_baseline, frozen_resolved, frozen_mode, frozen_source)
+        )
+        derived = validate_l1_contract(baseline, mode, source)
+        screen = mode["functional_screen"]
+        particles = _l1_particles_from_release(
+            source, int(screen["particle_count"]), int(screen["random_seed"]),
+        )
+        rows = [
+            simulate_mass(float(mass), particles, resolved, int(screen["steps_per_rf_period"]))
+            for mass in derived["masses_Th"]
+        ]
+        response_path = results / "mass-response__finite-length.csv"
+        metrics_path = results / "mass-filter__functional-metrics.json"
+        figure_path = results / "mass-response__passband.png"
+        write_response_csv(response_path, rows)
+        checkpoint("analysis_execution")
+        frozen_response = inputs / "mass_response_for_analysis.csv"
+        freeze_file(response_path, frozen_response)
+        config["inputs"]["response_for_analysis"] = str(frozen_response)
+        execution = _invoke_analysis_stage(request_path, prepare_only=False)
+        metrics = load_json(metrics_path)
+        config["frozen_python_analysis"]["environment"] = execution
+        checkpoint("publication")
+        status = "success" if metrics["status"] == "PASS" else "failed"
+        summary.write_text(json.dumps({
+            "schema_version": 1, "role": "quadrupole_mass_filter_l1_run_summary", "status": status,
+            "functional_gate": metrics["status"], "model_level": "L1",
+            "result": "results/mass-filter__functional-metrics.json",
+            "figure": "results/mass-response__passband.png",
+        }, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        checkpoint("complete")
+        _invoke_run_artifact_support(r"""
+$retention = Apply-RunArtifactRetention -Python $request.python -RepoRoot $request.repo_root `
+    -RunConfig $request.run_config
+Write-VerifiedRunManifest -Python $request.python -RepoRoot $request.repo_root `
+    -RunConfig $request.run_config -Status $request.status -Software @($request.software) `
+    -Outputs @($request.outputs + @($retention)) | Out-Null
+""", {"run_config": str(run_config), "status": status, "outputs": [str(path) for path in (
+            response_path, metrics_path, figure_path, summary, results / "analysis_execution.json",
+        )]})
+    except Exception as error:
+        try:
+            _invoke_run_artifact_support(r"""
+Complete-FailedRun -Python $request.python -RepoRoot $request.repo_root `
+    -RunConfig $request.run_config -Summary $request.summary `
+    -SummaryRole quadrupole_mass_filter_l1_run_summary -Reason $request.reason `
+    -FailureClass execution_failed -FailureStage $request.stage -ThresholdResultEligible $false `
+    -AdditionalSummaryProperties @{model_level='L1'} -Software @($request.software) | Out-Null
+""", {"run_config": str(run_config), "summary": str(summary),
+          "reason": f"{type(error).__name__}: {error}", "stage": config["parameters"]["lifecycle_stage"]})
+        except Exception as cleanup_error:
+            error.add_note(f"L1 failure finalization also failed: {cleanup_error}")
+        raise
     if metrics["status"] != "PASS":
         raise RuntimeError("mass-filter L1 functional gate failed")
     return destination

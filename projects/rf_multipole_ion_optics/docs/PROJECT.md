@@ -143,15 +143,32 @@ ION11第二列实际为`mass_amu`，不是任意电荷态的m/z。当前质量�
 登记CSV、源码、模块来源与Python依赖环境。比较表保持共同七质量点，图使用各来源的实际完整采样网格。
 COMSOL／SIMION质量过滤运行器只声明冻结文件闭包，模块探针由此派生并保留包级检查。
 隔离helper保留原错误文案，以`Exception.Data['exit_code']`传递分析进程非零退出；SIMION不再解析文案，
-依赖探针、源码篡改和缺失仍直接失败。冻结包5项回归通过，含真实隔离执行、物理PASS／FAIL和仅匹配文案的拒绝。
-旧冻结run、receipt与已有资格不回写；只保存分析器`.txt`而执行活动源码的路径已在这些消费者关闭。
-本轮47项求解器无关回归覆盖手算曲线、平台／多峰、截断／全零、输入域、+1源边界与三个真实分析入口，
+依赖探针、源码篡改和缺失仍直接失败。冻结包回归含真实隔离执行、物理PASS／FAIL和仅匹配文案的拒绝。
+COMSOL的canonical state逐质量统计现也纳入同一`analysis_runtime`包，不再仅保存分析器`.txt`后调用
+活动源码；长期回归使用七质量点、每点四个原ID的合成state，实际执行state metrics→响应→峰宽／功能
+结果。冻结后改动临时活动源码不改变结果，删除冻结模块即失败；该fixture的插值宽为1.75 Th，
+只验证分析接线，不代表真实COMSOL飞行或质量分辨能力。旧冻结run、receipt与已有资格不回写。
+
+L1在冻结输入前通过公共`New-RunPackage`建立checkpoint三件套，并保留公共retention／capacity合同。
+输入冻结、分析准备、计算或分析执行失败时由`Complete-FailedRun`记录阶段、原异常和部分冻结输入；请求源路径
+与实际冻结输入分别登记，不复用原run ID。成功发布和物理FAIL保留原功能口径；收尾自身失败不吞原异常，
+已发布终态不被异常收尾覆盖。完整`run()`回归保留配置的N=100／29质量点，以合成响应验证实际冻结分析、
+PNG与三件套发布，未改变积分器、源采样或科学输入。
+
+此前47项求解器无关回归覆盖手算曲线、平台／多峰、截断／全零、输入域、+1源边界与三个真实分析入口，
 并验证冻结模块来源及篡改／缺失拒绝。原合同每质量N=100、29点的完整L1临时运行功能PASS：采样带
 为99.5–103.0 Th，另报插值主峰宽4.1227490996398615 Th；11份分析源码快照与7个实际模块来源登记，
 5项输出的manifest完整核验PASS，临时run已清理。该验证只关闭分析重放，不把原进程中的源生成／积分
 称为隔离执行，也不代替原生SIMION／COMSOL重跑、网格收敛或质量分辨能力资格。
 
 N=1000 COMSOL bridge曾在release构造阶段资源中断，向量化release候选未证明等价；两者都不是生产路径。
+`analysis/sampling_analysis.py`暂保留具名N100／N1000历史同源统计CLI职责；当前仅发现私有统计测试
+直接导入，不能据此认定存在活动生产调用。bridge预登记绑定旧`common/multipole/sampling_analysis.py`
+路径及SHA，但该运行未到粒子求解、没有N1000结果，不证明当前源码与旧冻结副本相同或成功重放。
+正确工作区保有两个SIMION N100／N1000及两个COMSOL N100的具名run，小输入／结果身份已核验；
+各code_inventory不含sampling分析器，预登记的A3B210…旧源码仍无已验证副本。
+待原冻结分析及输入可独立重放，或完成同输入等价替代后，连同私有测试
+退役此CLI。保留不构成永久兼容承诺，也不授权恢复N1000研究。
 相关数值、释放诊断及旧接口证据见
 [四极历史](history/retired_projects/rf_quadrupole_ion_optics/docs/history/20260911__solver-sensitivity-and-retired-interface.md)。
 当前适用操作保留在[COMSOL](COMSOL.md)与[SIMION](SIMION.md)说明中。

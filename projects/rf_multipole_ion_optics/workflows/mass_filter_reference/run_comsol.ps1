@@ -71,6 +71,7 @@ try {
       'projects\rf_multipole_ion_optics\workflows\__init__.py',
       'projects\rf_multipole_ion_optics\workflows\mass_filter_reference\__init__.py',
       'projects\rf_multipole_ion_optics\workflows\mass_filter_reference\evaluate_comsol.py',
+      'projects\rf_multipole_ion_optics\analysis\analyze_comsol_particle_state_metrics.py',
       'projects\rf_multipole_ion_optics\core\__init__.py',
       'projects\rf_multipole_ion_optics\core\mass_response.py',
       'projects\rf_multipole_ion_optics\core\paired_mass_scan.py',
@@ -96,7 +97,6 @@ try {
       'comsol\solve_deterministic_rf_quadrupole_particles.m')
     contract_loader=(Join-Path $projectRoot 'load_rf_quadrupole_contract.m')
     case_preparer=(Join-Path $PSScriptRoot 'prepare_comsol_scan.py')
-    state_metrics_analyzer=(Join-Path $projectRoot 'analysis\analyze_comsol_particle_state_metrics.py')
     paired_mass_library=(Join-Path $repoRoot 'projects\rf_multipole_ion_optics\core\paired_mass_scan.py')
   }
   foreach($key in $codeSources.Keys){
@@ -106,6 +106,9 @@ try {
   $codeInputs.result_analyzer = Get-FrozenPythonPackageFile `
     -Package $frozenAnalysisPackage `
     -RelativePath 'projects/rf_multipole_ion_optics/workflows/mass_filter_reference/evaluate_comsol.py'
+  $codeInputs.state_metrics_analyzer = Get-FrozenPythonPackageFile `
+    -Package $frozenAnalysisPackage `
+    -RelativePath 'projects/rf_multipole_ion_optics/analysis/analyze_comsol_particle_state_metrics.py'
   $codeInputs.frozen_python_package_support = $frozenPythonSupport
   foreach ($entry in $frozenAnalysisPackage.files) {
     $name = 'analysis_runtime_' +
@@ -204,11 +207,13 @@ try {
     foreach($path in @($case.raw_metadata,$case.particle_state)){
       if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Mass-case output is missing: $path"}
     }
-    & $package.python -m `
-      projects.rf_multipole_ion_optics.analysis.analyze_comsol_particle_state_metrics `
-      --raw-metadata $case.raw_metadata --particle-state $case.particle_state `
-      --output $case.solver_summary
-    if($LASTEXITCODE-ne 0){throw "Python COMSOL particle-state metrics analysis failed: $($case.mass_Th) Th"}
+    Invoke-IsolatedFrozenPythonModule `
+      -Python $python -Package $frozenAnalysisPackage `
+      -Module 'projects.rf_multipole_ion_optics.analysis.analyze_comsol_particle_state_metrics' `
+      -Arguments @('--raw-metadata',$case.raw_metadata,'--particle-state',$case.particle_state,
+        '--output',$case.solver_summary) -DistributionNames $analysisDistributions `
+      -RequiredModuleNames $analysisRequiredModules `
+      -ForbiddenRoots @($repoRoot,$projectRoot) | Out-Null
     if(-not(Test-Path -LiteralPath $case.solver_summary -PathType Leaf)){
       throw "Python COMSOL particle-state metrics did not create summary: $($case.mass_Th) Th"}
   }
