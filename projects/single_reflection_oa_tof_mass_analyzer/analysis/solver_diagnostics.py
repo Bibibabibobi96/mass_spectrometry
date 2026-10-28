@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from decimal import Decimal, InvalidOperation
 import json
 import math
 import re
@@ -46,6 +47,18 @@ def _correlation(left: np.ndarray, right: np.ndarray) -> float:
     return float(np.corrcoef(left, right)[0, 1])
 
 
+def _validated_charge_state(value: Any) -> int:
+    """Parse a finite nonzero integer charge without truncating source text."""
+    try:
+        number = Decimal(str(value))
+    except InvalidOperation as exc:
+        raise ValueError("charge_state must be a finite nonzero integer") from exc
+    if (isinstance(value, (bool, np.bool_)) or not number.is_finite()
+            or number == 0 or number != number.to_integral_value()):
+        raise ValueError("charge_state must be a finite nonzero integer")
+    return int(number)
+
+
 def read_ion_table(path: Path) -> pd.DataFrame:
     rows: list[dict[str, float | int]] = []
     for ion, line in enumerate(path.read_text(encoding="ascii").splitlines(), start=1):
@@ -59,7 +72,7 @@ def read_ion_table(path: Path) -> pd.DataFrame:
                 "Ion": ion,
                 "TobUs": float(columns[0]),
                 "MassAmu": float(columns[1]),
-                "ChargeState": int(float(columns[2])),
+                "ChargeState": _validated_charge_state(columns[2]),
                 "X0Mm": float(columns[3]),
                 "Y0Mm": float(columns[4]),
                 "Z0Mm": float(columns[5]),

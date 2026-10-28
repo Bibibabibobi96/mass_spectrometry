@@ -19,10 +19,51 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.solver_diagnostics
     compare_field_reports,
     compare_particle_exports,
     mass_spectrum_max_tof_us,
+    read_ion_table,
 )
 
 
 class SolverDiagnosticsTest(unittest.TestCase):
+    def test_ion_charge_uses_exact_signed_integer_encodings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ion, log = root / "particles.ion", root / "empty.log"
+            ion.write_text("".join(f"0,524,{charge},0,0,0,0,0,5,1,0\n"
+                                   for charge in ("1", "1.0", "1e0", "-2", "-2.0", "-2e0")), encoding="ascii")
+            log.write_text("", encoding="utf-8")
+            source = read_ion_table(ion)
+            self.assertEqual(source["ChargeState"].tolist(), [1, 1, 1, -2, -2, -2])
+            self.assertEqual(str(source["ChargeState"].dtype), "int64")
+            particles, summary = analyze_simion_log(log, ion, mode="test", distribution="fixed",
+                                                    detector_radius_mm=40., allow_incomplete_census=True)
+            self.assertEqual(particles["ChargeState"].tolist(), source["ChargeState"].tolist())
+            self.assertEqual(summary["UnobservedParticleIds"], [1, 2, 3, 4, 5, 6])
+            self.assertFalse(summary["ResolutionClaim"])
+
+    def test_ion_charge_rejects_fractional_zero_boolean_and_nonfinite_source_values(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            ion = Path(directory) / "particles.ion"
+            for charge in ("1.5", "-1.5", "1.00000000000000001", "0", "nan", "inf", "True"):
+                with self.subTest(charge=charge):
+                    ion.write_text(f"0,524,{charge},0,0,0,0,0,5,1,0\n", encoding="ascii")
+                    with self.assertRaisesRegex(ValueError, "charge_state.*integer"):
+                        read_ion_table(ion)
+
+    def test_proxy_cli_rejects_fractional_charge_before_particle_output(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ion, log, output = root / "particles.ion", root / "empty.log", root / "output.csv"
+            ion.write_text("0,524,1.5,0,0,0,0,0,5,1,0\n", encoding="ascii")
+            log.write_text("", encoding="utf-8")
+            result = subprocess.run([
+                sys.executable, "-B", "-m", "projects.single_reflection_oa_tof_mass_analyzer.analysis.solver_diagnostics",
+                "analyze-simion-log", "--log", str(log), "--ion-file", str(ion),
+                "--mode", "test", "--distribution", "fixed", "--allow-incomplete-census", "--particle-csv", str(output),
+            ], cwd=Path(__file__).resolve().parents[4], capture_output=True, text=True, timeout=60)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("charge_state must be a finite nonzero integer", result.stderr)
+            self.assertFalse(output.exists())
+
     def test_powershell_wrapper_resolves_relative_inputs_from_callers_directory(self) -> None:
         repo = Path(__file__).resolve().parents[4]
         if not shutil.which("pwsh"):

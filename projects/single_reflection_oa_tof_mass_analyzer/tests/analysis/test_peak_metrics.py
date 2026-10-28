@@ -430,6 +430,51 @@ class SourceMappingAndBootstrapTest(unittest.TestCase):
         np.testing.assert_allclose(fit["fitted_mz"], expected, rtol=0, atol=1e-14)
         np.testing.assert_allclose(fit["residual_mz"], expected - [1.0, 4.0, 16.0], atol=1e-14)
 
+    def test_mass_calibration_rejects_degenerate_design_and_invalid_numeric_inputs(self) -> None:
+        for tof in ([10., 10., 10.], [1., 1., np.nextafter(1., 2.)]):
+            with self.subTest(tof=tof), self.assertRaisesRegex(ValueError, "not identifiable"):
+                fit_calibration(tof, [10., 100., 1000.])
+        for tof, mz in (([[1., 2., 3.]], [1., 4., 9.]), ([1., 2.], [1., 4.]),
+                        ([1., 2., 3.], [1., 4.]), ([0., 1., 2.], [1., 4., 9.]),
+                        ([1., float("nan"), 3.], [1., 4., 9.]),
+                        ([1., 2., 3.], [1., float("inf"), 9.]),
+                        ([1., 2., 3.], [1., -4., 9.]),
+                        ([1j, 2j, 3j], [1., 4., 9.]),
+                        ([True, True, True], [1., 4., 9.])):
+            with self.subTest(tof=tof, mz=mz), self.assertRaises(ValueError):
+                fit_calibration(tof, mz)
+        with self.assertRaisesRegex(ValueError, "finite numerical results"):
+            fit_calibration([1e308, 1.1e308, 1.2e308], [1., 4., 9.])
+
+    def test_mass_calibration_keeps_identifiable_polyfit_results_exact(self) -> None:
+        # Two distinct times suffice for affine rank; repeated observations are valid.
+        for tof, mz in (([1., 1., 2.], [1., 1., 4.]),
+                        ([1., 2., 3.], [1., 4., 16.]),
+                        ([10., 20., 30., 40.], [10., 100., 524., 2000.])):
+            with self.subTest(tof=tof):
+                tof, mz = np.asarray(tof), np.asarray(mz)
+                slope, intercept = np.polyfit(tof, np.sqrt(mz), 1)
+                expected = (slope * tof + intercept)**2
+                fit = fit_calibration(tof, mz)
+                self.assertEqual(fit["slope_sqrt_mz_per_us"], slope)
+                self.assertEqual(fit["intercept_sqrt_mz"], intercept)
+                self.assertEqual(fit["time_offset_us"], -intercept / slope)
+                np.testing.assert_array_equal(fit["fitted_mz"], expected)
+                np.testing.assert_array_equal(fit["residual_mz"], expected - mz)
+
+    def test_mass_spectrum_rejects_unidentifiable_solver_calibration_before_output(self) -> None:
+        for solver in ("COMSOL", "SIMION"):
+            with self.subTest(solver=solver), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                mode, comsol, simion = self._mass_spectrum_inputs(root)
+                for path in list(comsol.glob("*.csv")) if solver == "COMSOL" else [simion]:
+                    frame = pd.read_csv(path)
+                    frame["TofUs"] = [9.999, 10., 10.001] * (len(frame) // 3)
+                    frame.to_csv(path, index=False)
+                with self.assertRaisesRegex(ValueError, "not identifiable"):
+                    analyze_mass_spectrum(mode, comsol, simion, root / "output")
+                self.assertFalse((root / "output").exists())
+
     def test_mass_mode_rejects_fractional_charge_before_conversion(self) -> None:
         mode_path = ANALYSIS_DIR.parent / "config" / "modes" / "mass_spectrum.json"
         mode = json.loads(mode_path.read_text(encoding="utf-8"))
@@ -453,18 +498,18 @@ class SourceMappingAndBootstrapTest(unittest.TestCase):
     def test_simion_mass_rows_reject_fractional_charge_before_conversion(self) -> None:
         frame = pd.DataFrame({
             "Ion": [1, 2, 3], "MassAmu": [10.0] * 3,
-            "ChargeState": [1.0, 1.0, 1.0], "TofUs": [1.0, 2.0, 3.0],
+            "ChargeState": ["1.0", "1.0", "1.0"], "TofUs": [1.0, 2.0, 3.0],
             "XMm": [0.0] * 3, "YMm": [0.0] * 3, "Hit": [False, True, True],
         })
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "mixed.csv"
-            for charge in (1.5, -1.5, 0.0, float("nan"), float("inf")):
+            for charge in ("1.5", "-1.5", "0", "nan", "inf", "True", "1.00000000000000001"):
                 with self.subTest(charge=charge):
                     frame.loc[0, "ChargeState"] = charge
                     frame.to_csv(path, index=False)
                     with self.assertRaisesRegex(ValueError, "charge_state.*integer"):
                         _normalized_simion_rows(path)
-            frame["ChargeState"] = [-2.0, 1.0, 2.0]
+            frame["ChargeState"] = ["-2.0", "1e0", "+2"]
             frame.to_csv(path, index=False)
             np.testing.assert_array_equal(
                 _normalized_simion_rows(path)["charge_state"], [-2, 1, 2]
@@ -566,13 +611,15 @@ class SourceMappingAndBootstrapTest(unittest.TestCase):
                              [str(value) for value in expected_simion])
 
     def test_mass_spectrum_cli_rejects_bad_ids_and_overfull_species_without_outputs(self) -> None:
-        for invalid in ("fractional_id", "overfull_species"):
+        for invalid in ("fractional_id", "overfull_species", "unidentifiable_calibration"):
             with self.subTest(invalid=invalid), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 mode, comsol, simion = self._mass_spectrum_inputs(root, 4)
                 frame = pd.read_csv(simion)
                 if invalid == "fractional_id":
                     frame["Ion"] = frame["Ion"].astype(float) + .9
+                elif invalid == "unidentifiable_calibration":
+                    frame["TofUs"] = [9.999, 10., 10.001] * (len(frame) // 3)
                 else:
                     document = json.loads(mode.read_text(encoding="utf-8"))
                     document["species"][0]["particle_count"] = 3

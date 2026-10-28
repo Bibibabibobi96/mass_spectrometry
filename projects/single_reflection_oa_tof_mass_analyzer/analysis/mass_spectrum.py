@@ -36,20 +36,9 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.reference_analysis
     _read_source_table,
     _validated_particle_ids,
 )
-
-
-def _validated_charge_state(value: Any) -> int:
-    """Reject fractional or unphysical charge states before integer conversion."""
-
-    numeric = float(value)
-    if (
-        isinstance(value, (bool, np.bool_))
-        or not np.isfinite(numeric)
-        or not numeric.is_integer()
-        or numeric == 0
-    ):
-        raise ValueError("charge_state must be a finite nonzero integer")
-    return int(value)
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.solver_diagnostics import (
+    _validated_charge_state,
+)
 
 
 def load_mode(path: Path) -> dict[str, Any]:
@@ -70,6 +59,7 @@ def load_mode(path: Path) -> dict[str, Any]:
             raise ValueError(f"Invalid species definition: {item}")
         if not np.isclose(mass / abs(charge), mz, rtol=0, atol=1e-12):
             raise ValueError(f"m/z is inconsistent for {item['species_id']}")
+        item["charge_state"] = charge
         count = item["particle_count"]
         if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
             raise ValueError("particle_count must be a positive integer")
@@ -84,27 +74,46 @@ def fit_calibration(mean_tof_us: np.ndarray, mz: np.ndarray) -> dict[str, Any]:
     intercept, not an independently measured pulse epoch.
     """
 
-    tof = np.asarray(mean_tof_us, dtype=float)
-    target = np.asarray(mz, dtype=float)
-    if tof.size < 3 or tof.size != target.size:
-        raise ValueError("Calibration requires equal arrays with at least three points")
-    slope, intercept = np.polyfit(tof, np.sqrt(target), 1)
-    fitted_mz = (slope * tof + intercept) ** 2
-    residual = fitted_mz - target
+    tof, target = np.asarray(mean_tof_us), np.asarray(mz)
+    if tof.ndim != 1 or target.ndim != 1 or tof.size < 3 or tof.size != target.size:
+        raise ValueError("Calibration requires equal 1D arrays with at least three points")
+    if any(values.dtype.kind not in "iuf" for values in (tof, target)):
+        raise ValueError("Calibration inputs must be real numeric values")
+    tof, target = tof.astype(float), target.astype(float)
+    if any(not np.isfinite(values).all() or np.any(values <= 0) for values in (tof, target)):
+        raise ValueError("Calibration TOF and m/z inputs must be finite and positive")
+    try:
+        with np.errstate(over="raise", invalid="raise", divide="raise"):
+            # Use polyfit's existing default rcond/rank policy; no new tolerance
+            # or alternative fit changes the established full-rank coefficients.
+            coefficients, _, rank, _, _ = np.polyfit(tof, np.sqrt(target), 1, full=True)
+            if rank != 2:
+                raise ValueError("Calibration is not identifiable: centroid TOF design has deficient rank")
+            slope, intercept = coefficients
+            if not np.isfinite(coefficients).all() or slope == 0:
+                raise ValueError("Calibration coefficients must be finite with nonzero slope")
+            fitted_mz = (slope * tof + intercept) ** 2
+            residual = fitted_mz - target
+            time_offset_us = float(-intercept / slope)
+            residual_rms_mz = float(np.sqrt(np.mean(residual**2)))
+    except (FloatingPointError, np.linalg.LinAlgError) as exc:
+        raise ValueError("Calibration fit cannot produce finite numerical results") from exc
+    if not all(np.isfinite(value).all() for value in (fitted_mz, residual, time_offset_us, residual_rms_mz)):
+        raise ValueError("Calibration fit cannot produce finite numerical results")
     return {
         "slope_sqrt_mz_per_us": float(slope),
         "intercept_sqrt_mz": float(intercept),
-        "time_offset_us": float(-intercept / slope),
+        "time_offset_us": time_offset_us,
         "fitted_mz": fitted_mz,
         "residual_mz": residual,
-        "residual_rms_mz": float(np.sqrt(np.mean(residual**2))),
+        "residual_rms_mz": residual_rms_mz,
         "residual_max_abs_mz": float(np.max(np.abs(residual))),
     }
 
 
 def _normalized_simion_rows(path: Path) -> pd.DataFrame:
-    # Keep lexical IDs until validation; pandas float inference can round them.
-    raw = pd.read_csv(path, dtype={"Ion": "string"})
+    # Keep integer fields lexical until validation; float inference can round them.
+    raw = pd.read_csv(path, dtype={"Ion": "string", "ChargeState": "string"})
     required = {
         "Ion", "MassAmu", "ChargeState", "TofUs", "XMm", "YMm", "Hit"
     }
@@ -116,9 +125,7 @@ def _normalized_simion_rows(path: Path) -> pd.DataFrame:
         {
             "particle_id": _validated_particle_ids(raw["Ion"], "SIMION"),
             "mass_amu": pd.to_numeric(raw["MassAmu"], errors="raise"),
-            "charge_state": pd.to_numeric(raw["ChargeState"], errors="raise").map(
-                _validated_charge_state
-            ),
+            "charge_state": raw["ChargeState"].map(_validated_charge_state),
             "tof_us": pd.to_numeric(raw["TofUs"], errors="coerce"),
             "detector_x_mm": (
                 pd.to_numeric(raw["XMm"], errors="coerce")
