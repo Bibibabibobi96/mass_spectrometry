@@ -4,6 +4,8 @@
 
 ## 公共机制与执行资源
 
+- [2026-10-28 统一诊断独立复审与工作区归位验收](history/20261028__unified-diagnostics-review-acceptance.md)
+
 - [2026-10-27 全仓文档职责、项目发现与执行诊断系统审查](history/20261027__system-maintainability-review.md)
 
 - [2026-10-21 全仓时间精度需求、分辨率预算与数值陷阱审查](history/20261021__project-timing-precision-budget-review.md)
