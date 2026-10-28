@@ -6,11 +6,13 @@ import argparse
 import ast
 import json
 import re
+import subprocess
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path.cwd() if __file__ == "<stdin>" else Path(__file__).resolve().parents[1]
 SOURCE_ROOTS = (
     REPO_ROOT / "common",
     REPO_ROOT / "projects",
@@ -45,6 +47,58 @@ def active_files(suffix: str) -> list[Path]:
 
 def location(path: Path, line: int) -> str:
     return f"{path.relative_to(REPO_ROOT).as_posix()}:{line}"
+
+
+def staged_sources(root: Path) -> dict[Path, str]:
+    """Read managed source blobs from the index in one Git batch, never the worktree."""
+    listing = subprocess.run(
+        ["git", "ls-files", "--stage", "-z"], cwd=root, timeout=60,
+        check=True, capture_output=True,
+    ).stdout
+    entries = []
+    for entry in listing.split(b"\0"):
+        if not entry:
+            continue
+        metadata, name = entry.split(b"\t", 1)
+        mode, identity, stage = metadata.split()
+        if stage != b"0":
+            raise ValueError("development standards cannot check an unmerged index")
+        path = Path(name.decode("utf-8"))
+        if (path.parts[0] not in {"common", "projects", "integrations"}
+                or EXCLUDED_PARTS.intersection(path.parts)
+                or path.suffix not in {".py", ".ps1", ".m"}):
+            continue
+        if mode not in {b"100644", b"100755"}:
+            raise ValueError(f"managed source is not a regular staged file: {path}")
+        entries.append((root / path, identity))
+    if not entries:
+        return {}
+    payload = subprocess.run(
+        ["git", "cat-file", "--batch"], cwd=root, timeout=60, check=True,
+        input=b"".join(identity + b"\n" for _, identity in entries), capture_output=True,
+    ).stdout
+    sources, offset = {}, 0
+    for path, identity in entries:
+        end = payload.index(b"\n", offset)
+        returned, kind, size_text = payload[offset:end].split()
+        size = int(size_text)
+        start, offset = end + 1, end + 1 + size
+        if returned != identity or kind != b"blob" or payload[offset:offset + 1] != b"\n":
+            raise ValueError(f"Git returned an invalid source blob: {path}")
+        sources[path] = payload[start:offset].decode("utf-8-sig")
+        offset += 1
+    if offset != len(payload):
+        raise ValueError("Git returned unexpected trailing source data")
+    return sources
+
+
+def source_items(
+    suffix: str, sources: dict[Path, str] | None = None,
+) -> Iterator[tuple[Path, str]]:
+    """Select one language from the explicit index snapshot or active worktree."""
+    if sources is not None:
+        return ((path, text) for path, text in sources.items() if path.suffix == suffix)
+    return ((path, path.read_text(encoding="utf-8-sig")) for path in active_files(suffix))
 
 
 def keyword_names(call: ast.Call) -> set[str]:
@@ -86,16 +140,20 @@ def check_legacy_powershell_launchers(path: Path, tree: ast.AST) -> list[str]:
     return errors
 
 
-def check_python() -> tuple[list[str], list[str]]:
+def check_python(
+    sources: dict[Path, str] | None = None,
+    *, parsed: dict[Path, ast.Module] | None = None,
+) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     reviews: list[str] = []
-    for path in active_files(".py"):
-        source = path.read_text(encoding="utf-8-sig")
+    for path, source in source_items(".py", sources):
         try:
             tree = ast.parse(source, filename=str(path))
         except SyntaxError as exception:
             errors.append(f"{location(path, exception.lineno or 1)} Python syntax error: {exception.msg}")
             continue
+        if parsed is not None:
+            parsed[path] = tree
         errors.extend(check_legacy_powershell_launchers(path, tree))
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and any(alias.name == "*" for alias in node.names):
@@ -136,10 +194,9 @@ def check_python() -> tuple[list[str], list[str]]:
     return errors, reviews
 
 
-def check_powershell() -> list[str]:
+def check_powershell(sources: dict[Path, str] | None = None) -> list[str]:
     errors: list[str] = []
-    for path in active_files(".ps1"):
-        source = path.read_text(encoding="utf-8-sig")
+    for path, source in source_items(".ps1", sources):
         if not re.search(r"(?im)^\s*Set-StrictMode\s+-Version\s+Latest\b", source):
             errors.append(f"{location(path, 1)} PowerShell omits Set-StrictMode -Version Latest")
         if not re.search(r"(?i)\$ErrorActionPreference\s*=\s*['\"]Stop['\"]", source):
@@ -169,10 +226,10 @@ def check_matlab_source(path: Path, source: str) -> list[str]:
     return errors
 
 
-def check_matlab() -> list[str]:
+def check_matlab(sources: dict[Path, str] | None = None) -> list[str]:
     errors: list[str] = []
-    for path in active_files(".m"):
-        errors.extend(check_matlab_source(path, path.read_text(encoding="utf-8-sig")))
+    for path, source in source_items(".m", sources):
+        errors.extend(check_matlab_source(path, source))
     return errors
 
 
@@ -195,10 +252,11 @@ def _consumer_references(modules: dict[str, tuple[Path, ast.Module]]):
                    for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
     references = {key: set() for key in definitions}
     imports = {module: set() for module in modules}
-    uncertain = set()
+    uncertain, cli_modules, dynamic_modules = set(), set(), set()
     for module, (path, tree) in modules.items():
         aliases = {}
-        for node in ast.walk(tree):
+        nodes = tuple(ast.walk(tree))
+        for node in nodes:
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     aliases.setdefault(alias.asname or alias.name.split(".")[0], set()).add(
@@ -218,7 +276,11 @@ def _consumer_references(modules: dict[str, tuple[Path, ast.Module]]):
                         references[base, alias.name].add(module)
             elif isinstance(node, ast.Constant) and isinstance(node.value, str):
                 uncertain.update(re.findall(r"\b_[A-Za-z]\w*\b", node.value))
-        for node in ast.walk(tree):
+                if node.value == "__main__":
+                    cli_modules.add(module)
+            elif isinstance(node, ast.Name) and node.id in {"globals", "locals", "getattr", "eval", "exec"}:
+                dynamic_modules.add(module)
+        for node in nodes:
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
                 targets = aliases.get(node.id, set()) | {f"{module}.{node.id}"}
             elif isinstance(node, ast.Attribute):
@@ -236,7 +298,7 @@ def _consumer_references(modules: dict[str, tuple[Path, ast.Module]]):
                 owner, _, name = target.rpartition(".")
                 if (owner, name) in references:
                     references[owner, name].add(module)
-    return definitions, references, imports, uncertain
+    return definitions, references, imports, uncertain, cli_modules, dynamic_modules
 
 
 def _declared_python_roots(root: Path, modules: dict) -> set[str]:
@@ -300,13 +362,17 @@ def _reachable_modules(roots: set[str], imports: dict[str, set[str]]) -> set[str
     return reached
 
 
-def audit_consumers(root: Path = REPO_ROOT) -> list[dict[str, str | int]]:
+def audit_consumers(
+    root: Path = REPO_ROOT, *, parsed: dict[Path, ast.Module] | None = None,
+) -> list[dict[str, str | int]]:
     """Inventory Python top-level private functions; never prove runtime use.
 
     Reachability is deliberately at module level, over all import/reference
     branches. A reachable module reference is a candidate consumer, not proof
     that a function executes. Strings, CLI guards, decorators and reflection
     preserve uncertainty. No category permits automatic source deletion.
+    ``parsed`` reuses the complete hard-check AST snapshot; missing trees have
+    syntax errors already owned by that check and are not parsed again.
     """
     modules, external_names = {}, set()
     for directory in ("common", "projects", "integrations"):
@@ -315,25 +381,24 @@ def audit_consumers(root: Path = REPO_ROOT) -> list[dict[str, str | int]]:
                 continue
             if path.suffix not in {".py", ".ps1", ".lua", ".m", ".json"}:
                 continue
-            source = path.read_text(encoding="utf-8-sig")
             if path.suffix == ".py":
+                if parsed is not None:
+                    if path in parsed:
+                        modules[_python_module(path, root)] = path, parsed[path]
+                    continue
                 try:
-                    modules[_python_module(path, root)] = path, ast.parse(source)
+                    modules[_python_module(path, root)] = path, ast.parse(path.read_text(encoding="utf-8-sig"))
                 except SyntaxError:
                     continue  # The existing syntax check owns this failure.
             else:
+                source = path.read_text(encoding="utf-8-sig")
                 external_names.update(re.findall(r"\b_[A-Za-z]\w*\b", source))
-    definitions, references, imports, uncertain = _consumer_references(modules)
+    definitions, references, imports, uncertain, cli_modules, dynamic = _consumer_references(modules)
     uncertain.update(external_names)
     formal = _reachable_modules(_declared_python_roots(root, modules), imports)
     tests = _reachable_modules({module for module, (path, _) in modules.items()
                                 if path.name.startswith("test_") or path.name.endswith("_test.py")}, imports)
-    cli = _reachable_modules({module for module, (_, tree) in modules.items()
-                              if any(isinstance(node, ast.Constant) and node.value == "__main__"
-                                     for node in ast.walk(tree))}, imports)
-    dynamic = {module for module, (_, tree) in modules.items()
-               if any(isinstance(node, ast.Name) and node.id in {"globals", "locals", "getattr", "eval", "exec"}
-                      for node in ast.walk(tree))}
+    cli = _reachable_modules(cli_modules, imports)
     records = []
     for (module, name), node in sorted(definitions.items()):
         if not name.startswith("_") or name.startswith("__"):
@@ -359,21 +424,34 @@ def audit_consumers(root: Path = REPO_ROOT) -> list[dict[str, str | int]]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--show-review", action="store_true", help="list complexity review signals")
+    parser.add_argument("--audit-consumers", action="store_true", help="explicitly audit static consumer references; combine with --show-review for records")
+    parser.add_argument("--staged", action="store_true", help="check all managed source bytes from the Git index")
     arguments = parser.parse_args(argv)
-    python_errors, reviews = check_python()
-    errors = [*python_errors, *check_powershell(), *check_matlab()]
+    if arguments.staged and arguments.audit_consumers:
+        parser.error("--staged checks hard rules only; consumer audits use the worktree")
+    try:
+        sources = staged_sources(REPO_ROOT) if arguments.staged else None
+        parsed = {} if arguments.audit_consumers else None
+        python_errors, reviews = check_python(sources, parsed=parsed)
+        errors = [*python_errors, *check_powershell(sources), *check_matlab(sources)]
+    except (OSError, ValueError, subprocess.SubprocessError) as exception:
+        print(f"DEVELOPMENT_STANDARDS=FAIL REASON=source_read_failed ERROR={exception}")
+        return 1
     for item in errors:
         print(f"DEVELOPMENT_STANDARD_ERROR={item}")
     if arguments.show_review:
         for item in reviews:
             print(f"DEVELOPMENT_STANDARD_REVIEW={item}")
-    consumers = audit_consumers()
-    categories = ("formal_reachable", "test_only_reachable", "cli_callback_uncertain", "private_no_calls")
-    if arguments.show_review:
-        for item in consumers:
-            print(f"DEVELOPMENT_CONSUMER_REVIEW={item}")
-    print("CONSUMER_AUDIT=STATIC_MODULE_REFERENCES AUTOMATIC_RETIREMENT=False " + " ".join(
-        f"{category.upper()}={sum(item['category'] == category for item in consumers)}" for category in categories))
+    if arguments.audit_consumers:
+        consumers = audit_consumers(REPO_ROOT, parsed=parsed)
+        categories = ("formal_reachable", "test_only_reachable", "cli_callback_uncertain", "private_no_calls")
+        if arguments.show_review:
+            for item in consumers:
+                print(f"DEVELOPMENT_CONSUMER_REVIEW={item}")
+        print("CONSUMER_AUDIT=STATIC_MODULE_REFERENCES AUTOMATIC_RETIREMENT=False " + " ".join(
+            f"{category.upper()}={sum(item['category'] == category for item in consumers)}" for category in categories))
+    else:
+        print("CONSUMER_AUDIT=NOT_REQUESTED")
     status = "PASS" if not errors else "FAIL"
     print(
         f"DEVELOPMENT_STANDARDS={status} ERRORS={len(errors)} REVIEW_SIGNALS={len(reviews)}"

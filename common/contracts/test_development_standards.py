@@ -1,9 +1,14 @@
 import ast
+import io
+import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 from common import verify_development_standards as standards
 
@@ -78,6 +83,32 @@ command = ["pwsh.exe", "-NoProfile", "-File", task]
 
 
 class DevelopmentStandardsCoverageTests(unittest.TestCase):
+    def test_default_and_complexity_review_do_not_run_consumer_audit(self):
+        for arguments in ([], ["--show-review"]):
+            with self.subTest(arguments=arguments), patch.object(
+                standards, "check_python", return_value=([], [])
+            ), patch.object(standards, "check_powershell", return_value=[]), patch.object(
+                standards, "check_matlab", return_value=[]
+            ), patch.object(standards, "audit_consumers") as audit, redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(standards.main(arguments), 0)
+                audit.assert_not_called()
+                self.assertIn("CONSUMER_AUDIT=NOT_REQUESTED", output.getvalue())
+                self.assertNotIn("PRIVATE_NO_CALLS=0", output.getvalue())
+
+    def test_explicit_consumer_audit_reuses_hard_check_parse(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            common = root / "common"
+            common.mkdir()
+            (common / "subject.py").write_text("def _unused():\n    return 1\n", encoding="utf-8")
+            with patch.object(standards, "REPO_ROOT", root), patch.object(
+                standards, "SOURCE_ROOTS", (common,)
+            ), patch.object(standards.ast, "parse", wraps=ast.parse) as parse, redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(standards.main(["--audit-consumers"]), 0)
+                self.assertEqual(parse.call_count, 1)
+                self.assertIn("CONSUMER_AUDIT=STATIC_MODULE_REFERENCES", output.getvalue())
+                self.assertIn("PRIVATE_NO_CALLS=1", output.getvalue())
+
     def test_integrations_are_part_of_python_and_powershell_scan_roots(self):
         integration_root = standards.REPO_ROOT / "integrations"
         self.assertIn(integration_root, standards.SOURCE_ROOTS)
@@ -192,6 +223,107 @@ class LightweightGateIntegrationTests(unittest.TestCase):
             self.assertIn("tool artifact", rejected.stderr)
 
 
+class StagedDevelopmentStandardsTests(unittest.TestCase):
+    def git(self, root: Path, *arguments: str) -> subprocess.CompletedProcess:
+        environment = dict(os.environ)
+        environment["PATH"] = str(Path(sys.executable).parent) + os.pathsep + environment.get("PATH", "")
+        return subprocess.run(
+            ["git", *arguments], cwd=root, timeout=30, capture_output=True,
+            text=True, encoding="utf-8", env=environment,
+        )
+
+    def prepare(self, root: Path) -> Path:
+        common = root / "common"
+        common.mkdir()
+        hooks = root / ".githooks"
+        hooks.mkdir()
+        checker = common / "verify_development_standards.py"
+        shutil.copyfile(standards.REPO_ROOT / "common/verify_development_standards.py", checker)
+        shutil.copyfile(standards.REPO_ROOT / ".githooks/pre-commit", hooks / "pre-commit")
+        (hooks / "pre-commit").chmod(0o755)
+        self.assertEqual(self.git(root, "init", "--quiet").returncode, 0)
+        self.assertEqual(self.git(root, "config", "core.autocrlf", "false").returncode, 0)
+        self.assertEqual(self.git(root, "config", "core.hooksPath", ".githooks").returncode, 0)
+        self.assertEqual(self.git(root, "add", "--", "common", ".githooks").returncode, 0)
+        return checker
+
+    def run_hook(self, root: Path) -> subprocess.CompletedProcess:
+        # A disposable repository commit exercises Git's actual hook path,
+        # including Git versions predating the standalone `git hook` command.
+        return self.git(root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                        "commit", "--quiet", "-m", "Check staged development standards")
+
+    def test_actual_hook_checks_index_not_worktree_in_both_directions(self):
+        good = "def sample(values=None):\n    return values\n"
+        bad = "def sample(values=[]):\n    return values\n"
+        for staged, worktree, accepted in ((bad, good, False), (good, bad, True)):
+            with self.subTest(accepted=accepted), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.prepare(root)
+                subject = root / "common" / "subject with spaces.py"
+                subject.write_text(staged, encoding="utf-8", newline="\n")
+                self.assertEqual(self.git(root, "add", "--", str(subject)).returncode, 0)
+                subject.write_text(worktree, encoding="utf-8", newline="\n")
+                completed = self.run_hook(root)
+                output = completed.stdout + completed.stderr
+                self.assertEqual(completed.returncode == 0, accepted, output)
+                self.assertIn("CONSUMER_AUDIT=NOT_REQUESTED", output)
+                self.assertEqual("mutable default argument" in output, not accepted)
+
+    def test_hook_executes_staged_checker_when_worktree_checker_is_invalid(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checker = self.prepare(root)
+            checker.write_text("raise RuntimeError('unstaged checker must not execute')\n", encoding="utf-8")
+            completed = self.run_hook(root)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertIn("DEVELOPMENT_STANDARDS=PASS", completed.stdout + completed.stderr)
+
+    def test_unstaged_checker_repair_cannot_hide_a_staged_rule_violation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checker = self.prepare(root)
+            source = checker.read_text(encoding="utf-8")
+            checker.write_text(source + "\ndef accidental(values=[]):\n    return values\n", encoding="utf-8", newline="\n")
+            self.assertEqual(self.git(root, "add", "--", "common/verify_development_standards.py").returncode, 0)
+            checker.write_text(source, encoding="utf-8", newline="\n")
+            completed = self.run_hook(root)
+            output = completed.stdout + completed.stderr
+            self.assertNotEqual(completed.returncode, 0, output)
+            self.assertIn("mutable default argument in accidental", output)
+
+    def test_unmerged_index_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.prepare(root)
+            blob = self.git(root, "rev-parse", ":common/verify_development_standards.py").stdout.strip()
+            indexed = subprocess.run(
+                ["git", "update-index", "--index-info"], cwd=root, timeout=30, check=True,
+                input=f"100644 {blob} 1\tcommon/conflicted.py\n100644 {blob} 2\tcommon/conflicted.py\n".encode("ascii"),
+                capture_output=True,
+            )
+            self.assertEqual(indexed.returncode, 0)
+            with self.assertRaisesRegex(ValueError, "unmerged index"):
+                standards.staged_sources(root)
+
+    def test_index_snapshot_checks_powershell_matlab_and_excludes_deleted_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.prepare(root)
+            (root / "common/bad.ps1").write_text("Write-Output 'missing policy'\n", encoding="utf-8", newline="\n")
+            (root / "common/bad.m").write_text("% REPOSITORY_CONTRACT: MATLAB_BUILD_ONLY\nmodel.study.create('s');\n", encoding="utf-8", newline="\n")
+            deleted = root / "common/deleted.py"
+            deleted.write_text("def example(values=[]):\n    return values\n", encoding="utf-8", newline="\n")
+            self.assertEqual(self.git(root, "add", "--", "common").returncode, 0)
+            self.assertEqual(self.git(root, "rm", "--cached", "--", "common/deleted.py").returncode, 0)
+            completed = self.run_hook(root)
+            output = completed.stdout + completed.stderr
+            self.assertNotEqual(completed.returncode, 0, output)
+            self.assertIn("PowerShell omits", output)
+            self.assertIn("MATLAB_BUILD_ONLY creates a study", output)
+            self.assertNotIn("deleted.py", output)
+
+
 class ConsumerAuditTests(unittest.TestCase):
     def write(self, root: Path, relative: str, source: str) -> None:
         path = root / relative
@@ -214,6 +346,8 @@ class ConsumerAuditTests(unittest.TestCase):
                        "from common.subject import _cli\nif __name__ == '__main__':\n    _cli()")
             self.write(root, "projects/example/callbacks.json", '{"callback":"_callback"}')
             result = {row["symbol"]: row for row in standards.audit_consumers(root)}
+            parsed = {path: ast.parse(path.read_text(encoding="utf-8")) for path in root.rglob("*.py")}
+            self.assertEqual(result, {row["symbol"]: row for row in standards.audit_consumers(root, parsed=parsed)})
             self.assertEqual(result["_formal"]["category"], "formal_reachable")
             self.assertEqual(result["_only_test"]["category"], "test_only_reachable")
             self.assertEqual(result["_cli"]["category"], "cli_callback_uncertain")
