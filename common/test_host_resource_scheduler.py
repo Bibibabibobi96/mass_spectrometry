@@ -650,7 +650,9 @@ class HostResourceSchedulerTests(unittest.TestCase):
                     self.acquire(1)
             self.snapshot[key] = original
 
-    def test_reused_descendant_pid_keeps_new_children_and_older_orphans(self) -> None:
+    @patch("time.time_ns")
+    def test_reused_descendant_pid_keeps_new_children_and_older_orphans(self, clock) -> None:
+        clock.side_effect = (1_000_000_000 + index // 4 for index in range(1000))
         for parent_live in (True, False):
             for reverse_order in (False, True):
                 with self.subTest(parent_live=parent_live, reverse_order=reverse_order):
@@ -679,13 +681,17 @@ class HostResourceSchedulerTests(unittest.TestCase):
                     self.assertEqual({p["started"] for p in result["processes"] if p["pid"] == 2},
                                      {old_parent["started"], new_parent["started"]})
                     for child in children:
-                        observed = dict(self.snapshot, observed_at_ticks=time.time_ns())
+                        # Sequential synthetic observations are newer even when
+                        # the host clock repeats; stale telemetry remains rejected.
+                        observed = dict(self.snapshot, observed_at_ticks=self.stored_state()["observed_at_ticks"] + 1)
                         inherited = transact(self.path, dict(operation="inherit", token="1",
                                              owner=dict(pid=child["pid"], started=child["started"])),
                                              observed, self.policy)
                         self.assertEqual(inherited["status"], "acquired")
 
-    def test_unrelated_reused_parent_cannot_give_new_children_the_old_reservation(self) -> None:
+    @patch("time.time_ns")
+    def test_unrelated_reused_parent_cannot_give_new_children_the_old_reservation(self, clock) -> None:
+        clock.side_effect = (1_000_000_000 + index // 4 for index in range(1000))
         owner = dict(pid=1, parent_pid=0, started=f"{1:019d}", memory_bytes=1)
         old_parent = dict(pid=2, parent_pid=1, started=f"{10:019d}", memory_bytes=1)
         self.snapshot["processes"] = [owner, old_parent]
@@ -699,7 +705,7 @@ class HostResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(result["live_process_ids"], [1, 3])
         self.assertEqual(result["live_work_process_ids"], [3])
         for process in (unrelated, new_child):
-            observed = dict(self.snapshot, observed_at_ticks=time.time_ns())
+            observed = dict(self.snapshot, observed_at_ticks=self.stored_state()["observed_at_ticks"] + 1)
             with self.assertRaisesRegex(ValueError, "owner or a live descendant"):
                 transact(self.path, dict(operation="inherit", token="1",
                          owner=dict(pid=process["pid"], started=process["started"])), observed, self.policy)

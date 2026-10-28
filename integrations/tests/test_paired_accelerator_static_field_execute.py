@@ -30,10 +30,12 @@ class PairedStaticExecutionTests(unittest.TestCase):
     def capacity_isolated_owner(self, root):
         """Startup capacity admission is inert; lease and lifecycle operations remain real."""
         source=(WORKFLOW/'execute.ps1').read_text(encoding='utf-8')
-        boundary=". (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')"
+        # dependencies.ps1 reloads the public capacity adapter. Install the
+        # fixture after that import so host disk policy stays outside this test.
+        boundary=". (Join-Path $RepoRoot 'integrations/runtime/dependencies.ps1')"
         self.assertEqual(source.count(boundary),1)
         owner=root/'inert_capacity_owner.ps1'
-        owner.write_text(source.replace(boundary,boundary+"\nfunction Invoke-ArtifactCapacityGate { [pscustomobject]@{satisfied_after_apply=$true} }"),
+        owner.write_text(source.replace(boundary,boundary+"\nfunction Invoke-ArtifactCapacityGate { Write-Host 'TEST_CAPACITY_ADMISSION=ISOLATED'; [pscustomobject]@{satisfied_after_apply=$true} }"),
             encoding='utf-8',newline='\n')
         return owner
 
@@ -613,6 +615,7 @@ dofile('{Path(tasks['lua']).as_posix()}')
                 cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=180)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             run=artifacts/'projects/instrument_assembly/runs'/run_id
+            self.assertIn('TEST_CAPACITY_ADMISSION=ISOLATED', result.stdout)
             summary=runtime.read(run/'summary.json')
             self.assertFalse(summary['native_executed'])
             self.assertEqual(runtime.read(run/'run_manifest.json')['status'],'success')
