@@ -79,10 +79,19 @@ def validate_execution_contract(reference: dict[str, Any], contract: dict[str, A
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_analysis import validate_measured_peak_analysis_contract
         validate_measured_peak_analysis_contract(peak, Path.cwd())
         if peak != previous_peak:
-            names = ("method_id", "resolution_definition", "settings")
-            if previous_peak is None or any(peak[name] != previous_peak.get(name) for name in names):
-                raise ValueError("Measured peak reference change must retain the declared method and settings")
-            analysis_change = dict(change_kind="measured_detector_common_pulse_reference",
+            names = ("resolution_definition", "settings")
+            old_method = previous_peak.get("method_id") if previous_peak else None
+            method_ok = old_method == peak["method_id"] or (
+                old_method == "common_gaussian_kde_time_v1" and peak["method_id"] == "common_gaussian_kde_time_v2"
+                and previous_peak.get("time_basis") in (
+                    "instrument_arrival_us_from_common_zero_birth",
+                    "instrument_arrival_minus_common_extraction_pulse_us",
+                )
+            )
+            if previous_peak is None or not method_ok or any(peak[name] != previous_peak.get(name) for name in names):
+                raise ValueError("Measured peak reference change must retain the declared method, time basis and settings")
+            analysis_change = dict(change_kind=("measured_detector_peak_method_upgrade" if old_method != peak["method_id"]
+                                                else "measured_detector_common_pulse_reference"),
                                    previous=previous_peak, current=peak)
             scientific["peak_analysis"] = expected["peak_analysis"]
     previous = resolve_trajectory_profile(expected)

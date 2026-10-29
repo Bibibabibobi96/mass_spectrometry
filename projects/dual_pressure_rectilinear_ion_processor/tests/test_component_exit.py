@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -146,6 +147,67 @@ class ComponentExitTests(unittest.TestCase):
             all_ids_closed=True, rng_policy="per_global_particle_seed_v1"))
         self._seal()
 
+    def test_continued_export_uses_manifest_bound_parent_native_results(self) -> None:
+        parent = self.root / "20261016_121422__sim__simion__parent"
+        shutil.copytree(self.run, parent)
+        config = json.loads((parent / "run_config.json").read_text())
+        config["run_id"] = parent.name
+        (parent / "run_config.json").write_text(json.dumps(config), encoding="utf-8")
+        manifest = json.loads((parent / "run_manifest.json").read_text())
+        manifest["run_id"] = parent.name
+        manifest["run_config"] = file_record(parent / "run_config.json")
+        for record in [*manifest["inputs"].values(), *manifest["outputs"]]:
+            record["path"] = str(parent / Path(record["path"]).relative_to(self.run))
+        (parent / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        names = ("simion/events.csv", "results/batch_merge_receipt.json", "results/simion_batch_resource_usage.json")
+        plan = {"role": "simion_whole_unit_replay_plan", "status": "ready", "reusable_unit_count": 1, "replay_unit_count": 0,
+                "predecessor": {"run_dir": str(parent), "manifest_sha256": file_record(parent / "run_manifest.json")["sha256"]},
+                "units": [{"key": "complete_population", "action": "reuse", "terminal_outputs": [file_record(parent / name) for name in names]}]}
+        self._write_json("inputs/simion_whole_unit_replay_plan.json", plan)
+        for name in names:
+            (self.run / name).unlink()
+        child_manifest = json.loads((self.run / "run_manifest.json").read_text())
+        child_manifest["inputs"]["continuation_predecessor_manifest"] = file_record(parent / "run_manifest.json")
+        child_manifest["inputs"]["continuation_plan"] = file_record(self.run / "inputs/simion_whole_unit_replay_plan.json")
+        child_manifest["outputs"] = [file_record(self.run / "summary.json")]
+        self._write_json("run_manifest.json", child_manifest)
+        result = export_component_exit(self.run, self.output, source_instance_id="ip", target_instance_id="mr")
+        self.assertEqual(result["counts"]["transferred"], 2)
+        self.assertEqual(Path(result["inputs"]["simion/events.csv"]["path"]), parent / "simion/events.csv")
+        child_manifest["inputs"]["continuation_predecessor_manifest"]["sha256"] = "0" * 64
+        self._write_json("run_manifest.json", child_manifest)
+        with self.assertRaisesRegex(ValueError, "not bound"):
+            export_component_exit(self.run, self.root / "bad", source_instance_id="ip", target_instance_id="mr")
+
+    def test_partial_replay_export_counts_reused_workers_without_claiming_new_processes(self) -> None:
+        parent = self.root / "20261016_121422__sim__simion__parent"
+        shutil.copytree(self.run, parent)
+        config = json.loads((parent/"run_config.json").read_text()); config["run_id"] = parent.name
+        (parent/"run_config.json").write_text(json.dumps(config), encoding="utf-8")
+        manifest = json.loads((parent/"run_manifest.json").read_text()); manifest["run_id"] = parent.name
+        manifest["run_config"] = file_record(parent/"run_config.json")
+        for record in [*manifest["inputs"].values(), *manifest["outputs"]]:
+            record["path"] = str(parent/Path(record["path"]).relative_to(self.run))
+        (parent/"run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        folder = self.run/"inputs/partial_batch_replay"; folder.mkdir()
+        self._write_json("inputs/partial_batch_replay/simion_whole_unit_replay_plan.json", dict(
+            role="simion_whole_unit_replay_plan", status="ready", predecessor=dict(run_dir=str(parent),
+            manifest_sha256=file_record(parent/"run_manifest.json")["sha256"]), reusable_unit_count=1,
+            replay_unit_count=0, units=[dict(key="batch_0001", action="reuse", terminal_outputs=[])]))
+        self._write_json("inputs/partial_batch_replay/batch_plan.json", dict(batches=[]))
+        self._write_json("inputs/partial_batch_replay/field_source.json", dict(path="fixture"))
+        self._write_json("results/simion_batch_resource_usage.json", dict(schema_version=2, role="multipole_resource_usage",
+            status="completed", failure_class=None, limit_name=None,
+            execution_wave=dict(process_count=0, reused_batch_count=1)))
+        self._seal()
+        child_manifest = json.loads((self.run/"run_manifest.json").read_text())
+        for path in folder.iterdir():
+            child_manifest["inputs"]["partial_"+path.name] = file_record(path)
+        child_manifest["inputs"]["partial_predecessor_manifest"] = file_record(parent/"run_manifest.json")
+        self._write_json("run_manifest.json", child_manifest)
+        result = export_component_exit(self.run, self.output, source_instance_id="ip", target_instance_id="mr")
+        self.assertEqual(result["counts"]["transferred"], 2)
+
     def test_explicit_instances_do_not_select_a_downstream_project_or_change_state(self) -> None:
         first = export_component_exit(self.run, self.output,
             source_instance_id="processor_a", target_instance_id="analyzer_b")
@@ -182,7 +244,7 @@ class ComponentExitTests(unittest.TestCase):
         receipt = export_component_exit(self.run, self.output, source_instance_id="processor_a", target_instance_id="analyzer_b")
         self.assertEqual(receipt["counts"], dict(source=100, transferred=81, not_transferred=19))
         self.assertEqual(receipt["transferred_particle_ids"], list(range(1, 82)))
-        self.assertEqual(receipt["lost_particle_ids"], list(range(82, 101)))
+        self.assertEqual(receipt["not_transferred_particle_ids"], list(range(82, 101)))
         self.assertEqual(receipt["producer_result"], dict(source_scientific_status="failed",
             checks=self.summary["checks"], functional_status="functional_incomplete",
             qualification="synthetic_fixture_not_native_flight"))
@@ -242,7 +304,7 @@ class ComponentExitTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "summary identity"):
             export_component_exit(self.run, self.output, source_instance_id="processor_a", target_instance_id="analyzer_b")
 
-    def test_complete_negative_zero_exit_does_not_create_transfer_package(self) -> None:
+    def test_complete_negative_zero_exit_publishes_census_without_transfer_states(self) -> None:
         self._negative_population()
         events = [dict(row, reason="solver_stop") if row["event"] == "terminal" else row
                   for row in self.events if row["event"] != "extraction_exit"]
@@ -251,15 +313,18 @@ class ComponentExitTests(unittest.TestCase):
         self.summary["terminal_reasons"] = dict(solver_stop=100)
         self._write_json("summary.json", self.summary)
         self._seal()
-        with self.assertRaisesRegex(ValueError, "no transferable extraction states"):
-            export_component_exit(self.run, self.output, source_instance_id="processor_a", target_instance_id="analyzer_b")
-        self.assertFalse(self.output.exists())
+        receipt = export_component_exit(self.run, self.output, source_instance_id="processor_a", target_instance_id="analyzer_b")
+        self.assertEqual(receipt["status"], "zero_exit")
+        self.assertEqual(receipt["counts"], {"source": 100, "transferred": 0, "not_transferred": 100})
+        self.assertIsNone(receipt["outputs"]["component_states"])
+        self.assertFalse((self.output/"component_particle_state.csv").exists())
+        self.assertEqual(len(self._read_output_rows("source_census.csv")), 100)
 
     def test_preserves_noncontiguous_ids_complete_state_and_variable_absolute_clocks(self) -> None:
         receipt = export_component_exit(self.run, self.output, source_instance_id="processor_a", target_instance_id="analyzer_b")
         self.assertEqual(receipt["counts"], {"source": 3, "transferred": 2, "not_transferred": 1})
         self.assertEqual(receipt["transferred_particle_ids"], [2, 20])
-        self.assertEqual(receipt["lost_particle_ids"], [9])
+        self.assertEqual(receipt["not_transferred_particle_ids"], [9])
         self.assertEqual(receipt["observation_surface"]["semantics"], "recorded_stop_plane_not_physical_port")
         self.assertEqual(validate_component_particle_state_csv(self.output / "component_particle_state.csv")["status"], "PASS")
         with (self.output / "component_particle_state.csv").open(newline="") as handle:
@@ -311,21 +376,31 @@ class ComponentExitTests(unittest.TestCase):
 
     def test_injected_export_preserves_birth_arrival_clock_and_upstream_losses(self) -> None:
         clock, _ = self._injected_population()
+        path = self.run/"inputs/upstream_mother_fates.csv"
+        with path.open(newline="", encoding="utf-8") as stream:
+            fates = list(csv.DictReader(stream))
+        next(row for row in fates if row["particle_id"] == "99")["terminal_reason"] = "unknown"
+        self._write_csv("inputs/upstream_mother_fates.csv", fates)
+        self._seal()
         receipt = export_component_exit(self.run, self.output, source_instance_id="processor_a", target_instance_id="analyzer_b")
         self.assertEqual(receipt["counts"], dict(source=4, transferred=2, not_transferred=2))
-        self.assertEqual(receipt["lost_particle_ids"], [9, 99])
+        self.assertEqual(receipt["not_transferred_particle_ids"], [9, 99])
+        self.assertNotIn("lost_particle_ids", receipt)
+        census = self._read_output_rows("source_census.csv")
+        self.assertEqual(next(row for row in census if row["particle_id"] == "99")["terminal_reason"], "unknown")
         with (self.output/"component_particle_state.csv").open(newline="") as stream:
             transferred = list(csv.DictReader(stream))
         self.assertEqual(float(transferred[0]["particle_birth_time_us"]), 2)
         self.assertAlmostEqual(float(transferred[0]["last_component_elapsed_time_us"]), 9.2)
         self.assertEqual(transferred[0]["clock_epoch_id"], clock["clock_epoch_id"])
         self.assertEqual([float(row["particle_weight"]) for row in transferred], [1., 1.])
+        self.assertEqual({row["species_id"] for row in transferred}, {"upstream_ion"})
 
     def test_injected_export_preserves_relative_weights_by_id_with_identical_state_and_census(self) -> None:
         _, rows = self._injected_population()
         baseline = export_component_exit(self.run, self.output, source_instance_id="processor_a", target_instance_id="analyzer_b")
         original = self._read_output_rows("component_particle_state.csv")
-        census = (self.output/"source_census.csv").read_bytes()
+        census = self._read_output_rows("source_census.csv")
         for index, weights in enumerate(({2: 3.5, 9: 3.5, 20: 3.5}, {2: .125, 9: 3.5, 20: 8.})):
             with self.subTest(weights=weights):
                 weighted = [dict(row, particle_weight=weights[row["particle_id"]]) for row in reversed(rows)]
@@ -344,7 +419,11 @@ class ComponentExitTests(unittest.TestCase):
                 self.assertEqual(receipt["counts"], baseline["counts"])
                 self.assertEqual(receipt["transferred_particle_ids"], baseline["transferred_particle_ids"])
                 self.assertIn("preserved_per_id_relative_weight", receipt["adapter_semantics"]["particle_weight"])
-                self.assertEqual((output/"source_census.csv").read_bytes(), census)
+                with (output/"source_census.csv").open(newline="", encoding="utf-8") as stream:
+                    updated_census = list(csv.DictReader(stream))
+                self.assertEqual([{k: v for k, v in row.items() if k != "particle_weight"} for row in updated_census],
+                                 [{k: v for k, v in row.items() if k != "particle_weight"} for row in census])
+                self.assertEqual({int(row["particle_id"]): float(row["particle_weight"]) for row in updated_census if row["particle_weight"]}, weights)
                 self.assertEqual({name: file_record(self.run/name) for name in names}, before)
 
     def test_injected_export_rejects_missing_weight_or_missing_id_before_publication(self) -> None:

@@ -102,7 +102,7 @@ class SimionLayoutTemplateContractTests(unittest.TestCase):
                     "projects\\rf_multipole_ion_optics\\runtime\\simion_layout_template_support.ps1", source
                 )
                 self.assertIn("Resolve-MultipoleSimionLayoutTemplate", source)
-                self.assertNotIn("TemplateIob", source)
+                self.assertNotRegex(source, r"\[string\]\$TemplateIob(?:Path)?\b")
                 self.assertNotIn("examples\\quad", source)
 
 

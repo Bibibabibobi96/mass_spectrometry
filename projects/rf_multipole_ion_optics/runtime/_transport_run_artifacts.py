@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import subprocess
+import shutil
 import sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -12,6 +12,7 @@ from typing import Any, Iterator, Mapping
 
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.artifact_project import ensure_artifact_project
+from common.contracts.write_run_manifest import build_run_manifest, publish_run_manifest, publish_terminal_state
 from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
 from projects.rf_multipole_ion_optics.core.family_contract import (
     from_high_order_resolved_design,
@@ -28,13 +29,6 @@ def _write_json(path: Path, value: Mapping[str, Any]) -> None:
     path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def _write_manifest(run_config: Path, status: str, outputs: list[Path]) -> None:
-    command = [sys.executable, str(REPO_ROOT / "common/contracts/write_run_manifest.py"), "--run-config", str(run_config)]
-    command.extend(("--status", status, "--software", f"Python {sys.version_info.major}.{sys.version_info.minor}"))
-    command.extend(argument for output in outputs for argument in ("--output", str(output)))
-    subprocess.run(command, check=True, cwd=REPO_ROOT, timeout=60)
-
-
 class TransportRun(SimpleNamespace):
     """One prepared analytic transport run and its frozen scientific input document."""
 
@@ -47,9 +41,19 @@ class TransportRun(SimpleNamespace):
 
 def _finalize(run: TransportRun, status: str, fields: Mapping[str, Any]) -> None:
     summary = run.run_dir / "summary.json"
-    _write_json(summary, {**fields, "schema_version": 1, "role": run.summary_role, "status": status})
+    document = {**fields, "schema_version": 1, "role": run.summary_role, "status": status}
     outputs = run.outputs if status == "success" else [path for path in run.outputs if path.is_file()]
-    _write_manifest(run.run_dir / "run_config.json", status, [*outputs, summary] if status == "success" else [summary, *outputs])
+    output_paths = [*outputs, summary] if status == "success" else [summary, *outputs]
+    config = run.run_dir / "run_config.json"
+    software = [f"Python {sys.version_info.major}.{sys.version_info.minor}"]
+    if status == "interrupted":
+        _write_json(summary, document)
+        publish_run_manifest(config, status, software=software, output_paths=output_paths,
+                             extra_fields={"lifecycle_state": "provisional"})
+    else:
+        manifest = build_run_manifest(config, status, software=software, output_paths=output_paths,
+                                      virtual_documents={summary: document}, extra_fields={"lifecycle_state": "terminal"})
+        publish_terminal_state(run.run_dir, document, manifest, allow_provisional=True)
 
 
 @contextmanager
@@ -87,7 +91,12 @@ def transport_run(
         family_operating,
         operating_contract_document(from_high_order_resolved_design(frozen_design)),
     )
-    inputs = {**identity_inputs, "resolved_design": frozen_resolved, "mode": frozen_mode, "family_operating_contract": family_operating}
+    frozen_identity = {}
+    for name, source in identity_inputs.items():
+        destination = input_dir / f"identity_{name}{source.suffix}"
+        shutil.copyfile(source, destination)
+        frozen_identity[name] = destination
+    inputs = {**frozen_identity, "resolved_design": frozen_resolved, "mode": frozen_mode, "family_operating_contract": family_operating}
     _write_json(run_dir / "run_config.json", {
         "schema_version": 1, "role": run_config_role, "run_id": run_id, "project": project_id,
         "mode": mode, "project_root": str(project_root),
@@ -96,7 +105,7 @@ def transport_run(
         "parameters": dict(parameters), "formal_gate_passed": False,
     })
     run = TransportRun(contract=contract, run_dir=run_dir, result_dir=result_dir, summary_role=summary_role,
-                       outputs=[result_dir / name for name in output_names], completion=None)
+                       outputs=[result_dir / name for name in output_names], completion=None, frozen_identity=frozen_identity)
     _finalize(run, "interrupted", {})
     try:
         yield run
@@ -104,5 +113,8 @@ def transport_run(
             raise RuntimeError("transport run completed without a success summary")
         _finalize(run, "success", run.completion)
     except Exception as exception:
-        _finalize(run, "failed", {"reason": str(exception)})
+        try:
+            _finalize(run, "failed", {"reason": str(exception)})
+        except Exception as closure_error:
+            exception.add_note(f"Failure finalization also failed: {closure_error}")
         raise

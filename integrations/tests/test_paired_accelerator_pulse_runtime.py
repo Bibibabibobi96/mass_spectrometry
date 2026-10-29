@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 from integrations.workflows.paired_accelerator_pulse.runtime import (
     COLUMNS, ROW_PREFIX, collect_simion_batches, load_completed_pulse_stages, materialize_batches, materialize_simion_continuation,
-    materialize_comsol_task, materialize_simion_batches, prepare_dispatch_request,
+    materialize_comsol_task, materialize_simion_batches, prepare_dispatch_request, plan_simion_replay_continuation,
 )
 
 from common.contracts.particle_physics import AMU_KG
@@ -62,6 +62,92 @@ def fixture(root: Path) -> tuple[Path, Path, Path]:
 
 
 class PairedPulseRuntimeTests(unittest.TestCase):
+    def test_provisional_formal_completion_reuses_first_and_replans_missing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,pa,seed=fixture(root)
+            work=self.saved_simion(root,plan,pa,seed,completed=(1,),baseline=False,replay=False)
+            initial=plan_simion_dispatch(dict(solver='SIMION',field_kind='electrostatic',particle_count=2,
+                independent_particles=True,trajectory_quality=8),[],available_memory_bytes=10*1024**3,
+                total_physical_memory_bytes=20*1024**3,logical_processors=8)
+            self.assertEqual(initial['waves'][0]['batches'][0]['count'],work['batches'][0]['count'])
+            work['coverage']='initial_formal_batch_only';work['batches']=work['batches'][:1]
+            (root/'results/pulse_workbench.json').write_text(json.dumps(work))
+            (root/'results/pulse.dispatch_plan.json').write_text(json.dumps(initial))
+            (root/'results/pulse.provisional_dispatch_plan.json').write_text(json.dumps(initial))
+            receipt=root/'results/frontend_batch_completion/pulse'/f"{work['batches'][0]['case_id']}.json"
+            fact=json.loads(receipt.read_text());fact['resource_observation']=dict(peak_bytes=1024**3,process_cpu_percent=10,background_cpu_percent=0)
+            receipt.write_text(json.dumps(fact))
+            manifest,snapshot=self.publish(root,plan)
+            stages=load_completed_pulse_stages(plan,manifest,snapshot)
+            self.assertEqual([row['is_complete'] for row in stages['partial_units']],[True,False])
+            child=root/'child';child.mkdir()
+            continuation=materialize_simion_continuation(plan,child,stages,code_root=ROOT,field_pa=pa,seed_iob=seed)
+            self.assertEqual([u['action'] for u in json.loads(Path(continuation['continuation_plan_path']).read_text())['units']],['reuse','replay'])
+            fact.pop('resource_observation');receipt.write_text(json.dumps(fact))
+            manifest,snapshot=self.publish(root,plan)
+            stages=load_completed_pulse_stages(plan,manifest,snapshot)
+            self.assertTrue(stages['recovered_dispatch']['estimation']['recovered_missing_observation'])
+            second=root/'second';second.mkdir()
+            continuation=materialize_simion_continuation(plan,second,stages,code_root=ROOT,field_pa=pa,seed_iob=seed)
+            self.assertEqual([u['action'] for u in json.loads(Path(continuation['continuation_plan_path']).read_text())['units']],['reuse','replay'])
+
+    def test_partial_replay_uses_manifest_bound_original_partition(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,pa,seed=fixture(root)
+            work=self.saved_simion(root,plan,pa,seed,replay=True)
+            missing=work['batches'][1]
+            Path(missing['default_replay_stdout']).unlink()
+            (root/'results/frontend_batch_completion/pulse_replay'/f"{missing['case_id']}.json").unlink()
+            # A partial replay cannot claim a completed comparison.
+            (root/'results/simion_pulse_replay_comparison.json').unlink()
+            manifest,snapshot=self.publish(root,plan)
+            stages=load_completed_pulse_stages(plan,manifest,snapshot)
+            self.assertEqual([u['is_complete'] for u in stages['replay_partial_units']],[True,False])
+            child=root/'child';child.mkdir()
+            replay=plan_simion_replay_continuation(stages,child)
+            self.assertEqual([u['action'] for u in replay['plan']['units']],['reuse','replay'])
+            self.assertEqual(replay['plan']['units'][0]['key'],work['batches'][0]['case_id'])
+            receipt=root/'results/frontend_batch_completion/pulse_replay'/f"{work['batches'][0]['case_id']}.json"
+            damaged=json.loads(receipt.read_text());damaged['source_row_range']=[2,2]
+            receipt.write_text(json.dumps(damaged))
+            manifest,snapshot=self.publish(root,plan)
+            with self.assertRaisesRegex(ValueError,'differs'):
+                load_completed_pulse_stages(plan,manifest,snapshot)
+
+    def test_replay_all_units_reuse_without_comparison(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,pa,seed=fixture(root)
+            self.saved_simion(root,plan,pa,seed,replay=True)
+            (root/'results/simion_pulse_replay_comparison.json').unlink()
+            manifest,snapshot=self.publish(root,plan)
+            stages=load_completed_pulse_stages(plan,manifest,snapshot)
+            child=root/'child';child.mkdir()
+            replay=plan_simion_replay_continuation(stages,child)
+            self.assertEqual([u['action'] for u in replay['plan']['units']],['reuse','reuse'])
+
+    def test_replay_second_generation_requires_parent_rebinding(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);first=root/'first';first.mkdir()
+            plan,pa,seed=fixture(first);work=self.saved_simion(first,plan,pa,seed,replay=True)
+            ancestor=work['batches'][0];old_log=Path(ancestor['default_replay_stdout'])
+            old_fact=first/'results/frontend_batch_completion/pulse_replay'/f"{ancestor['case_id']}.json"
+            second=root/'second';second.mkdir();second_plan,pa2,seed2=fixture(second)
+            current=self.saved_simion(second,second_plan,pa2,seed2,replay=True)
+            first_case=current['batches'][0]
+            Path(first_case['default_replay_stdout']).unlink()
+            (second/'results/frontend_batch_completion/pulse_replay'/f"{first_case['case_id']}.json").unlink()
+            first_case['default_replay_stdout']=str(old_log)
+            (second/'results/pulse_workbench.json').write_text(json.dumps(current))
+            (second/'results/simion_pulse_replay_comparison.json').unlink()
+            manifest,snapshot=self.publish(second,second_plan,extra_inputs={'borrowed_log':str(old_log),'borrowed_fact':str(old_fact)})
+            stages=load_completed_pulse_stages(second_plan,manifest,snapshot)
+            self.assertEqual([u['is_complete'] for u in stages['replay_partial_units']],[True,True])
+            child=root/'third';child.mkdir()
+            replay=plan_simion_replay_continuation(stages,child)
+            self.assertEqual([u['action'] for u in replay['plan']['units']],['reuse','reuse'])
+            manifest,snapshot=self.publish(second,second_plan,extra_inputs={'borrowed_log':str(old_log)})
+            stages=load_completed_pulse_stages(second_plan,manifest,snapshot)
+            self.assertEqual([u['is_complete'] for u in stages['replay_partial_units']],[False,True])
     def test_materializes_disjoint_original_id_batches_without_native_payload_reads(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);plan,pa,seed=fixture(root)
@@ -307,9 +393,19 @@ assert(sim_trajectory_quality==nil,'verifier covered a missing saved quality by 
             reopened.write_text("PAIRED_ACCELERATOR_PULSE_IOB_VERIFY=PASS fixture-only\n")
             case["iob_reopen_record"]=file_record(reopened)
             self.native_protocol_log(Path(case["stdout"]),case["expected_particle_ids"])
+            completion=root/'results/frontend_batch_completion/pulse'/f"{case['case_id']}.json"
+            completion.parent.mkdir(parents=True,exist_ok=True)
+            completion.write_text(json.dumps(dict(schema_version=1,role='frontend_batch_natural_completion',
+                phase='pulse',case_id=case['case_id'],exit_code=0,natural_exit=True,stdout_relative_path=str(Path(case['stdout']).relative_to(root)),
+                count=case['count'],source_row_range=case['source_row_range'])))
             case["default_replay_stdout"]=str(root/f"logs/replay.{case['index']}.log")
             if replay:
                 self.native_protocol_log(Path(case["default_replay_stdout"]),case["expected_particle_ids"])
+                completion=root/'results/frontend_batch_completion/pulse_replay'/f"{case['case_id']}.json"
+                completion.parent.mkdir(parents=True,exist_ok=True)
+                completion.write_text(json.dumps(dict(schema_version=1,role='frontend_batch_natural_completion',
+                    phase='pulse_replay',case_id=case['case_id'],exit_code=0,natural_exit=True,
+                    stdout_relative_path=str(Path(case['default_replay_stdout']).relative_to(root)),count=case['count'],source_row_range=case['source_row_range'])))
         receipt=root/"results/pulse_workbench.json";receipt.write_text(json.dumps(work))
         if baseline:
             collect_simion_batches(plan,receipt,root)
@@ -359,6 +455,12 @@ assert(sim_trajectory_quality==nil,'verifier covered a missing saved quality by 
             work=json.loads((root/"results/pulse_workbench.json").read_text())
             for case in work["batches"]:
                 self.native_protocol_log(Path(case["default_replay_stdout"]),case["expected_particle_ids"])
+                completion=root/'results/frontend_batch_completion/pulse_replay'/f"{case['case_id']}.json"
+                completion.parent.mkdir(parents=True,exist_ok=True)
+                completion.write_text(json.dumps(dict(schema_version=1,role='frontend_batch_natural_completion',
+                    phase='pulse_replay',case_id=case['case_id'],exit_code=0,natural_exit=True,
+                    stdout_relative_path=str(Path(case['default_replay_stdout']).relative_to(root)),
+                    count=case['count'],source_row_range=case['source_row_range'])))
             collect_simion_batches(plan,root/"results/pulse_workbench.json",root,phase="default_replay")
             manifest,snapshot=self.publish(root,plan)
             both=load_completed_pulse_stages(plan,manifest,snapshot)
@@ -395,7 +497,9 @@ assert(sim_trajectory_quality==nil,'verifier covered a missing saved quality by 
             resumed=materialize_simion_continuation(plan,new,stages,code_root=ROOT,field_pa=pa,seed_iob=seed)
             continuation=json.loads(Path(resumed["continuation_plan_path"]).read_text())
             self.assertEqual([r["action"] for r in continuation["units"]],["replay","reuse"])
-            self.assertEqual(resumed["workbench"]["batches"][1],work["batches"][1])
+            reused=resumed['workbench']['batches'][1]
+            self.assertEqual({k:v for k,v in reused.items() if k!='continuation_source'},work['batches'][1])
+            self.assertEqual(reused['continuation_source'],continuation['units'][1])
             self.assertTrue(Path(resumed["workbench"]["batches"][0]["paths"]["paired_pulse.lua"]).is_relative_to(new))
             self.assertFalse((new/"simion/pulse/batch_0002").exists())
             # Completed native proof may not silently become an incomplete unit.
@@ -487,7 +591,7 @@ assert(sim_trajectory_quality==nil,'verifier covered a missing saved quality by 
                 load_completed_pulse_stages(plan,manifest,snapshot)
             duplicate.unlink();log.write_text("changed canonical log")
             manifest,snapshot=self.publish(root,plan)
-            with self.assertRaisesRegex(ValueError,"exactly one canonical output"):
+            with self.assertRaisesRegex(ValueError,"exactly one canonical output|exactly one SIMION native Fly completion"):
                 load_completed_pulse_stages(plan,manifest,snapshot)
 
     def test_borrowed_canonical_logs_preserve_original_owner_across_consumer_recovery(self):
@@ -504,9 +608,11 @@ assert(sim_trajectory_quality==nil,'verifier covered a missing saved quality by 
             first=load_completed_pulse_stages(plan,manifest,snapshot)
             consumer=root/"consumer";consumer.mkdir();current,_,_=fixture(consumer)
             (consumer/"results").mkdir()
-            for item in (producer/"results").iterdir():shutil.copyfile(item,consumer/"results"/item.name)
+            for item in (producer/"results").iterdir():
+                if item.is_file():shutil.copyfile(item,consumer/"results"/item.name)
             borrowed={}
-            for index,item in enumerate((producer/"results").iterdir()):borrowed[f"completed_parent_{index}"]=str(item)
+            for index,item in enumerate((producer/"results").rglob('*')):
+                if item.is_file():borrowed[f"completed_parent_{index}"]=str(item)
             for index,item in enumerate((producer/"logs").iterdir()):borrowed[f"completed_parent_log_{index}"]=str(item)
             for index,item in enumerate((producer/"simion").rglob("*")):
                 if item.is_file():borrowed[f"borrowed_control_{index}"]=str(item)

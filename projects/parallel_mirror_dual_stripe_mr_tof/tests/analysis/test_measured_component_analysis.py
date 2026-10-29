@@ -206,8 +206,12 @@ class MeasuredComponentAnalysisTests(unittest.TestCase):
         report = self._analyze()
         self.assertEqual(report["counts"], {"mother_source": 3, "upstream_not_transferred": 1,
                                          "downstream_released": 2, "detected": 2,
-                                         "downstream_timeout": 0, "downstream_loss": 0})
+                                         "downstream_timeout": 0, "downstream_loss": 0,
+                                         "downstream_topology_rejected": 0, "downstream_unknown": 0})
         self.assertEqual(report["detected_fraction_of_mother"], 2/3)
+        self.assertIsNone(report["weighted_efficiency"]["mother"])
+        self.assertEqual(report["weighted_efficiency"]["mother_unavailable_reason"], "incomplete_mother_weights")
+        self.assertEqual(report["weighted_efficiency"]["handoff"]["relative_weight_fraction"], 1)
         self.assertAlmostEqual(report["absolute_arrival"]["population_sigma"], .03)
         self.assertAlmostEqual(report["elapsed_since_handoff"]["population_sigma"], 0)
         self.assertIsNone(report["absolute_arrival"]["fwhm"])
@@ -218,6 +222,34 @@ class MeasuredComponentAnalysisTests(unittest.TestCase):
         self.assertEqual(rows[2]["downstream_status"], "not_transferred")
         self.assertEqual(rows[2]["upstream_terminal_reason"], "solver_stop")
         self.assertEqual(rows[0]["terminal_velocity_z_m_s"], "-30000.0")
+
+    def test_complete_mother_weights_produce_weighted_full_chain_efficiency(self) -> None:
+        path = self.source / "source_census.csv"
+        with path.open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+        weights = {1: 1, 7: 1, 9: 4}
+        for row in rows:
+            row["particle_weight"] = weights[int(row["particle_id"])]
+        with path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(rows[0]), lineterminator="\n")
+            writer.writeheader()
+            writer.writerows(rows)
+        receipt_path = self.source / "source_receipt.json"
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt["outputs"]["source_census"] = file_record(path)
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        report = self._analyze()
+        self.assertEqual(report["weighted_efficiency"]["mother"]["relative_weight_fraction"], 2/6)
+        self.assertEqual(report["weighted_efficiency"]["mother"]["count_fraction"], 2/3)
+
+    def test_unknown_and_programmatic_rejection_are_not_physical_losses(self) -> None:
+        self.log.write_text("\n".join((_terminal(1, 0, 7600.51), _terminal(7, 4, 7600.57),
+                                       "status,Fly completed. 2 splats")), encoding="utf-8")
+        report = self._analyze()
+        self.assertEqual(report["counts"]["downstream_loss"], 0)
+        self.assertEqual(report["counts"]["downstream_unknown"], 1)
+        self.assertEqual(report["counts"]["downstream_topology_rejected"], 1)
+        self.assertEqual(report["population_partition_counts"]["not_transferred"], 1)
 
     def test_all_one_hundred_mother_ids_are_denominator(self) -> None:
         fixture = self.fixture.fixture

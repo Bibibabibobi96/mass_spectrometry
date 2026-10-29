@@ -44,7 +44,7 @@
 | 裸导引→二区／三区OA | [local_frontend/execute.ps1](workflows/local_frontend/execute.ps1)，`-Request` | [准备与复核](docs/INTEGRATION.md#局部前端执行与复核) |
 | 冷却前端→OA | [cooled_frontend/execute.ps1](workflows/cooled_frontend/execute.ps1)，`-Request` | [局部证据](docs/INTEGRATION.md#局部前端执行与复核) |
 | 多极杆→OA→单反射TOF | [single_reflection_flight/run.ps1](workflows/single_reflection_flight/run.ps1)，`-Request -ExecutionBudgetPath` | [schema 9及默认完整Fly](docs/INTEGRATION.md#单反射整机)；内部execute由owner调用 |
-| OA／IP→MR接口准备 | [accelerator_interface/execute.ps1](workflows/accelerator_interface/execute.ps1)，明确提供者与参考run；IP设计另给`-MatchingRequestPath` | [设计／Finalize边界](docs/INTEGRATION.md#oaip接口准备与绑定) |
+| OA／IP→MR接口准备与IP完整链 | [accelerator_interface/execute.ps1](workflows/accelerator_interface/execute.ps1)，明确提供者与参考run；IP设计另给`-MatchingRequestPath`，完整链显式选`-FullJoint` | [输入及设计／Finalize边界](docs/INTEGRATION.md#oaip接口准备与绑定) |
 | 已准备IP→MR飞行／分析 | [prepared_joint/execute.ps1](workflows/prepared_joint/execute.ps1)，准备run与观测合同 | [联合执行及Analysis](docs/INTEGRATION.md#已准备ipmr联合飞行) |
 | OA→MR | [oa_mr/execute.ps1](workflows/oa_mr/execute.ps1)，`-CompositionPlanPath`及可选`-LocalScopePath` | [支持范围与证据](docs/INTEGRATION.md#已准备ipmr联合飞行) |
 | 真实多极杆→IP状态准备 | [multipole_ip/execute.ps1](workflows/multipole_ip/execute.ps1)，`-Request` | [真实源／母群与负结果](docs/INTEGRATION.md#真实多极杆ip状态交接) |
@@ -53,7 +53,8 @@
 
 直属静态入口为[verify_integration.ps1](verify_integration.ps1)，不启动商业求解器。
 入口递归枚举`integrations/tests`中的测试模块；L1按统一目录传入`ChangedTestModules`时合并去重，
-保持该入口的Ruff检查。明确的纯测试模块变更可由L1精确运行，fixture、删除或未知目录变化扩大到owner。
+保持该入口的Ruff检查。测试使用公共计时runner，即时报出失败详情并逐测试计时；明确的纯测试模块变更
+可由L1精确运行，fixture、删除或未知目录变化扩大到owner。
 L1／L2、冻结依赖与最终验收见[状态页](docs/INTEGRATION.md#依赖冻结与门禁)及[操作指南](../docs/OPERATIONS.md#分层门禁)。
 不使用已退役的旧family或arm CLI执行新实验；历史运行保持原身份。
 

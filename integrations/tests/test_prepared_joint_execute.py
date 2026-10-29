@@ -114,7 +114,7 @@ function Update-ArtifactWorkflowCapacitySession {
  if($env:ANALYSIS_TEST_CAPACITY_FAIL-eq'1'-and$RemainingCommittedNewBytes-eq0){throw 'Explicit inert terminal capacity failure'}
  return @{session=$Session}
 }
-function Exit-ArtifactWorkflowCapacitySession {}
+function Exit-ArtifactWorkflowCapacitySession {$script:capacityReleased=$true}
 '''
         host_fixture = r'''
 # Explicit inert host admission; this fixture never creates a host ledger.
@@ -128,6 +128,21 @@ function Exit-HostExecutionLease {
  param($Lease,$Outcome,$RunId)
  if($Lease.test_lease-ne'analysis'-or$Lease.run_id-ne$RunId){throw 'Analysis released a different host lease'}
  [IO.File]::AppendAllText($env:ANALYSIS_TEST_HOST_EVENTS,"exit:$Outcome`n")
+}
+'''
+        owner_fixture = r'''
+# Explicit lifecycle boundary fixture; the real adapter and CLI recovery run
+# separately in test_workflow_finalization_recovery.
+function Initialize-RunArtifactPowerShellOwner {param($Package) @{package=$Package;result_path='inert-result'}}
+function Complete-RunArtifactPowerShellOwner {
+ param($Context,$Status,$Summary,$OutputPaths,$WritersStopped,$WriterCompletion,$OriginalFailure)
+ if(-not$WritersStopped-or$WriterCompletion.operations.Count-or$WriterCompletion.resource_releases.Count){throw 'Analysis fabricated native execution'}
+ Write-RunJson -Path $Context.package.summary -Value $Summary
+ $null=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $Context.package.run_config
+ $null=Update-ArtifactWorkflowCapacitySession -RemainingCommittedNewBytes 0
+ Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $Context.package.run_config -Status $Status -Software @('Python fixture') -Outputs @($OutputPaths) -DeferCapacityFinalization|Out-Host
+ Invoke-ProjectPython -Arguments @('-m','common.contracts.run_capacity_lifecycle','--action','seal-stopped-payload','--run-config',$Context.package.run_config)|Out-Host
+ @{status=$Status;stage='complete'}
 }
 '''
         analyzer_fixture = '''import json, os, sys
@@ -167,6 +182,8 @@ if os.environ['ANALYSIS_TEST_SEAL_FAIL']=='1': raise RuntimeError('Explicit iner
                 helpers = repo / "common/contracts/run_artifact_support.ps1"
                 helpers.write_text(helpers.read_text() + capacity_fixture)
                 (repo / "common/host_execution_lease.ps1").write_text(host_fixture)
+                workflow_owner = repo / "common/contracts/run_artifact_workflow.ps1"
+                workflow_owner.write_text(workflow_owner.read_text() + owner_fixture)
                 (repo / "projects/parallel_mirror_dual_stripe_mr_tof/analysis/mrtof_batch_flight.py").write_text(analyzer_fixture)
                 (repo / "common/contracts/run_capacity_lifecycle.py").write_text(seal_fixture)
                 source, contract = analysis_source_fixture(workspace,
@@ -218,6 +235,49 @@ if os.environ['ANALYSIS_TEST_SEAL_FAIL']=='1': raise RuntimeError('Explicit iner
 
 
 class PreparedJointExecuteTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_missing_observation_calibrates_first_missing_batch_only(self):
+        from common.simion.resource_scheduler import plan_recovered_formal_followup, plan_simion_dispatch
+        request = {"solver": "SIMION", "field_kind": "rf", "rf_steps_per_period": 40,
+                   "particle_count": 3, "independent_particles": True, "trajectory_quality": 8}
+        provisional = plan_simion_dispatch(request, [], available_memory_bytes=10*1024**3,
+                                           total_physical_memory_bytes=20*1024**3, logical_processors=8)
+        first = provisional["waves"][0]["batches"][0]
+        fallback = plan_recovered_formal_followup(provisional, {"natural_exit": True, "exit_code": 0,
+            "count": first["count"], "source_row_range": [first["particle_id_min"], first["particle_id_max"]],
+            "resource_observation": None})
+        source = (REPO / "integrations/workflows/prepared_joint/execute.ps1").read_text()
+        start = source.index("    $dispatchValue=Get-Content -LiteralPath $dispatch -Raw|ConvertFrom-Json")
+        end = source.index("    $checkpoint={", start)
+        block = source[start:end]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch, plan = root / "dispatch.json", root / "plan.json"
+            dispatch.write_text(json.dumps(fallback))
+            plan.write_text(json.dumps({"batches": fallback["waves"][0]["batches"]}))
+            quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+            script = f'''$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$dispatch={quote(dispatch)};$plan={quote(plan)};$request='unused';$profiles='unused';$continuation=@{{}}
+$initial=Get-Content $plan -Raw|ConvertFrom-Json;$records=@{{}};foreach($b in $initial.batches){{$record=[pscustomobject]@{{scheduler_batch=$b;index=[int]$b.index}};if([int]$b.index-eq1){{$record|Add-Member -NotePropertyName reused -NotePropertyValue $true}};$records[[int]$b.index]=$record}}
+$replay=@($initial.batches|Where-Object{{$_.index-ne1}});$script:calls=0
+function Invoke-ProjectPython {{param($Arguments) $script:calls++;if($Arguments-notcontains'--recovered-missing-plan'-or$Arguments-contains'--request'){{throw 'wrong calibration'}};& {quote(sys.executable)} @Arguments;if($LASTEXITCODE-ne0){{throw 'calibration failed'}}}}
+{block}
+if($firstSpecification.index-ne2){{throw 'reused prefix selected for native observation'}}
+$formal=[pscustomobject]@{{process_record=[pscustomobject]@{{completed=$true}};observed_peak_process_tree_working_set_bytes=1073741824;observed_process_cpu_percent=8;observed_background_cpu_percent=2;available_memory_bytes=10737418240;total_physical_memory_bytes=21474836480}}
+& $replan $formal
+$remaining=& $prepareRemaining $formal
+if($script:calls-ne1-or@($remaining.pending).Count-ne1-or$remaining.pending[0].index-ne3){{throw 'wrong pending batches'}}
+$calibrated=Get-Content $dispatch -Raw|ConvertFrom-Json
+if(-not$calibrated.estimation.recovered_missing_observation_completed-or$calibrated.limits.maximum_concurrency-ne1){{throw 'wrong calibrated identity'}}
+if($calibrated.estimation.observed_peak_bytes-ne1073741824-or$calibrated.estimation.observed_process_cpu_percent-ne8-or$calibrated.estimation.background_cpu_percent-ne2-or$calibrated.host.available_memory_bytes-ne10737418240-or$calibrated.host.total_physical_memory_bytes-ne21474836480){{throw 'actual observation changed'}}
+if(($calibrated.waves[0].batches|ConvertTo-Json -Compress)-cne($initial.batches|ConvertTo-Json -Compress)){{throw 'fixed intervals changed'}}
+'''
+            path = root / "test.ps1"
+            path.write_text(script, encoding="utf-8")
+            completed = subprocess.run(["pwsh", "-NoProfile", "-File", str(path)], cwd=REPO,
+                                       capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
     def test_existing_public_runner_replans_and_dispatches_local_batch_files(self):
         powershell = shutil.which("pwsh")
         if not powershell:
@@ -227,8 +287,16 @@ class PreparedJointExecuteTests(unittest.TestCase):
             script = Path(directory) / "mock.ps1"
             script.write_text(r'''param($Runner,$TestRoot,$PythonRuntime,$Repository,$Scenario)
 $ErrorActionPreference='Stop'
+$null = Set-StrictMode -Version Latest
 $ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$null)
 $function=$ast.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Invoke-PreparedJointTrial'},$true)
+$helperAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repository 'common/resource_budget_support.ps1'),[ref]$null,[ref]$null)
+$helper=$helperAst.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Invoke-ObservedPreparationFailureDrain'},$true)
+Invoke-Expression $helper.Extent.Text
+$helper=$helperAst.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Invoke-SimionFormalObservation'},$true)
+Invoke-Expression $helper.Extent.Text
+$helper=$helperAst.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Invoke-SimionBatchPhase'},$true)
+Invoke-Expression $helper.Extent.Text
 $code=$function.Extent.Text -replace '(?m)^  \. \(Join-Path[^\r\n]+',''
 Invoke-Expression $code
 $repoRoot=$TestRoot;$workspaceRoot=$TestRoot;$projectId='instrument_assembly'
@@ -242,9 +310,18 @@ function Freeze-ConsumerDependencies {
 }
 '{}'|Set-Content (Join-Path $TestRoot 'run_manifest.json')
 $env:PYTHONPATH=$Repository
-$PreparedJointWorkbenchRunPath=$TestRoot;$ContractPath=$Runner;$RunId='mockrun';$python='mock';$simion='mock'
-$ContinuationPredecessorManifestPath=if($Scenario-in@('mixed','zero')){Join-Path $TestRoot 'parent/run_manifest.json'}else{''}
-if($ContinuationPredecessorManifestPath){New-Item -ItemType Directory -Force -Path (Split-Path -Parent $ContinuationPredecessorManifestPath)|Out-Null;'{}'|Set-Content $ContinuationPredecessorManifestPath}
+$PreparedJointWorkbenchRunPath=$TestRoot;$ContractPath=$Runner;$RunId='mockrun';$python='mock';$simion=if($Scenario-eq'zero'){Join-Path $TestRoot 'missing-simion.exe'}else{$PythonRuntime}
+$ContinuationPredecessorManifestPath=if($Scenario-in@('mixed','mixed_insufficient','zero')){Join-Path $TestRoot 'parent/run_manifest.json'}else{''}
+$PreparedSourceMode='measured_population';$FieldBindingPath='';$TrajectoryEquivalenceReferenceRunPath='';$ResultPath=''
+$script:capacityReleased=$false;$script:hostReleased=$false;$script:retained=$false;$script:sealed=$false
+if($ContinuationPredecessorManifestPath){New-Item -ItemType Directory -Force -Path (Split-Path -Parent $ContinuationPredecessorManifestPath),(Join-Path $TestRoot 'ancestor')|Out-Null;'{}'|Set-Content $ContinuationPredecessorManifestPath;'sealed'|Set-Content (Join-Path $TestRoot 'ancestor/source.log')}
+$script:projectionCalls=0;$script:projectionCapacity=$false;$script:unprofiled=$false
+function mock {
+ $global:LASTEXITCODE=0;$script:projectionCalls++
+ $ancestor=Join-Path $TestRoot 'ancestor/source.log'
+ if($script:projectionCalls-eq2){$writable=$false;try{$stream=[IO.File]::Open($ancestor,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::ReadWrite);$stream.Dispose();$writable=$true}catch{};if($writable){throw 'Borrowed ancestor was not locked'}}
+ @{run_directories=@((Split-Path -Parent $ContinuationPredecessorManifestPath),(Join-Path $TestRoot 'ancestor'));files=@($ContinuationPredecessorManifestPath,$ancestor);manifests=@{}}|ConvertTo-Json -Depth 10 -Compress
+}
 $script:adapted=$false;$script:observed=$false;$script:dispatched=$false;$script:analyzed=$false;$script:assetChecks=0;$script:leased=$false
 function Write-RunJson {param($Path,$Depth,$Value) $Value|ConvertTo-Json -Depth 60|Set-Content $Path}
 function New-RunPackage {
@@ -257,7 +334,9 @@ function New-RunPackage {
  return @{artifact_run_dir=$r;input_dir=(Join-Path $r 'inputs');result_dir=$results;log_dir=$logs;run_config=$config;summary=(Join-Path $r 'summary.json')}
 }
 function Enter-ArtifactWorkflowCapacitySession {return @{status='active'}}
-function Update-ArtifactWorkflowCapacitySession {return @{session=@{status='active'}}}
+function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session,$ProtectedPaths,$RemainingCommittedNewBytes)
+ if($ContinuationPredecessorManifestPath-and@($ProtectedPaths)-contains(Join-Path $TestRoot 'ancestor/source.log')){$script:projectionCapacity=$true}
+ return @{session=@{status='active'}}}
 function Exit-ArtifactWorkflowCapacitySession {}
 function Write-VerifiedRunManifest {
  param($Python,$RepoRoot,$RunConfig,$Status,$Software,$Outputs,[switch]$DeferCapacityFinalization)
@@ -268,11 +347,24 @@ function Write-VerifiedRunManifest {
  if($m.inputs.PSObject.Properties.Value.exists-contains$false){throw 'Actual manifest has an unbound input'}
 }
 function Complete-FailedRun {throw 'Unexpected light-evidence finalizer used'}
-function Enter-HostResourceStage {$script:leased=$true;return @{test=$true}}
+function Initialize-RunArtifactPowerShellOwner {param($Package) return @{package=$Package;result_path='inert-result'}}
+# This science-routing fixture replaces only the public lifecycle boundary;
+# separate recovery tests execute the actual common owner and original CLI.
+function Complete-RunArtifactPowerShellOwner {
+ param($Context,$Status,$Summary,$OutputPaths,$WritersStopped,$WriterCompletion,$OriginalFailure)
+ if(-not$WritersStopped){throw 'unknown writer retained'}
+ Write-RunJson -Path $Context.package.summary -Depth 60 -Value $Summary
+ $null=Apply-RunArtifactRetention
+ Write-VerifiedRunManifest -RunConfig $Context.package.run_config -Status $Status -DeferCapacityFinalization|Out-Host
+ Invoke-ProjectPython -Arguments @('-m','common.contracts.run_capacity_lifecycle','--action','seal-stopped-payload')
+ return @{status=$Status;terminal_published=$true;lease_released=$true}
+}
+
+function Enter-HostResourceStage {$script:leased=$true;return @{test=$true;inherited=$false;token='actual-fixture-token'}}
 function Get-HostResourceBudget {return @{test=$true}}
-function Exit-HostResourceStage {}
+function Exit-HostResourceStage {param([Parameter(Mandatory)]$Lease,[switch]$PassThru) $script:hostReleased=$true;if($PassThru){@{status='released';token=$Lease.token}}}
 function Complete-ResourceUsage {}
-function Apply-RunArtifactRetention {$r=Join-Path $TestRoot 'run/retention_actions.json';'{}'|Set-Content $r;return $r}
+function Apply-RunArtifactRetention {if($Scenario-eq'closeout_failure'){throw 'Synthetic retention failure'};$script:retained=$true;$r=Join-Path $TestRoot 'run/retention_actions.json';'{}'|Set-Content $r;return $r}
 function Invoke-ProjectPython {
  param($Arguments)
  if($Arguments[0]-eq'-c'){
@@ -294,19 +386,28 @@ function Invoke-ProjectPython {
   $plan=Join-Path $borrowed 'simion_execution_batch_plan.json';Write-RunJson $plan 20 @{role='simion_single_wave_particle_batch_plan';batches=@(@{index=1;particle_id_min=1;particle_id_max=1;count=1},@{index=2;particle_id_min=2;particle_id_max=2;count=1})}
   $request=Join-Path $borrowed 'simion_dispatch_request.json';'{}'|Set-Content $request
   $profiles=Join-Path $borrowed 'simion_resource_profiles.json';'{}'|Set-Content $profiles
-  $dispatch=Join-Path $borrowed 'simion_repository_dispatch_plan.json';Write-RunJson $dispatch 20 @{estimation=@{kind='observed'}}
-  $units=@();$batches=@();foreach($index in 1..2){$d=Join-Path $parent ('results/batches/batch_{0:D3}'-f$index);New-Item -ItemType Directory -Force -Path $d|Out-Null;$log=Join-Path $parent ('logs/joint_flight_batch_{0:D3}.log'-f$index);$receipt=Join-Path $d 'batch_receipt.json';$fly=Join-Path $d 'joint.fly2';'parent'|Set-Content $log;'{}'|Set-Content $receipt;'parent fly'|Set-Content $fly;$action=if($Scenario-eq'mixed'-and$index-eq2){'replay'}else{'reuse'};$units+=@{key=('batch-{0:D3}'-f$index);action=$action;terminal_outputs=@(@{path=$log;sha256=('A'*64)},@{path=$receipt;sha256=('B'*64)},@{path=$fly;sha256=('C'*64)})};$batches+=@{index=$index;particle_id_min=$index;particle_id_max=$index;count=1;action=$action}}
-  $o=Value '--output-dir';New-Item -ItemType Directory -Force -Path $o|Out-Null;Write-RunJson (Join-Path $o 'simion_whole_unit_replay_plan.json') 40 @{schema_version=2;role='simion_whole_unit_replay_plan';batch_plan=@{path=$plan;sha256=('D'*64)};dispatch_request=@{path=$request;sha256=('E'*64)};resource_profiles=@{path=$profiles;sha256=('F'*64)};dispatch_plan=@{path=$dispatch;sha256=('G'*64)};units=$units;batches=$batches;reusable_unit_count=$(if($Scenario-eq'mixed'){1}else{2});replay_unit_count=$(if($Scenario-eq'mixed'){1}else{0})};return
+  $dispatch=Join-Path $borrowed 'simion_repository_dispatch_plan.json';Write-RunJson $dispatch 20 $(if($Scenario-eq'mixed_insufficient'){@{estimation=@{kind='observed_formal_batch'};waves=@(@{batches=@(@{count=0})})}}else{@{estimation=@{kind='observed'}}})
+  $units=@();$batches=@();foreach($index in 1..2){$d=Join-Path $parent ('results/batches/batch_{0:D3}'-f$index);New-Item -ItemType Directory -Force -Path $d|Out-Null;$log=Join-Path $parent ('logs/joint_flight_batch_{0:D3}.log'-f$index);$receipt=Join-Path $d 'batch_receipt.json';$fly=Join-Path $d 'joint.fly2';'parent'|Set-Content $log;'{}'|Set-Content $receipt;'parent fly'|Set-Content $fly;$action=if($Scenario-in@('mixed','mixed_insufficient')-and$index-eq2){'replay'}else{'reuse'};$units+=@{key=('batch-{0:D3}'-f$index);action=$action;terminal_outputs=@(@{path=$log;sha256=('A'*64)},@{path=$receipt;sha256=('B'*64)},@{path=$fly;sha256=('C'*64)})};$batches+=@{index=$index;particle_id_min=$index;particle_id_max=$index;count=1;action=$action}}
+  $o=Value '--output-dir';New-Item -ItemType Directory -Force -Path $o|Out-Null;Write-RunJson (Join-Path $o 'simion_whole_unit_replay_plan.json') 40 @{schema_version=2;role='simion_whole_unit_replay_plan';batch_plan=@{path=$plan;sha256=('D'*64)};dispatch_request=@{path=$request;sha256=('E'*64)};resource_profiles=@{path=$profiles;sha256=('F'*64)};dispatch_plan=@{path=$dispatch;sha256=('G'*64)};units=$units;batches=$batches;reusable_unit_count=$(if($Scenario-in@('mixed','mixed_insufficient')){1}else{2});replay_unit_count=$(if($Scenario-in@('mixed','mixed_insufficient')){1}else{0})};return
  }
  if($command-eq'recording-config'){return '{"mode":"fixed_interval","interval_us":0.1,"reason":"test","output_budget_bytes":10000}'}
  if($command-eq'prepare'){
   $r=Value '--run-directory';$results=Join-Path $r 'results'
   $fieldDirectory=if($Scenario-eq'candidate'){'candidate_fields'}else{'live_fields'}
-  Write-RunJson (Join-Path $results 'prepared_joint_trial.json') 60 @{protected_paths=@();guard_paths=@((Join-Path $TestRoot ($fieldDirectory+'/parent/field.pa')),(Join-Path $TestRoot ($fieldDirectory+'/local/field.pa')));field_binding=@{path=(Join-Path $TestRoot ($fieldDirectory+'/binding.json'))};launched_particle_count=2;mother_particle_count=3;expected_particle_ids=@(1,7);trajectory_contract=@{path=$Runner};launcher='mock_launcher.lua';trajectory_equivalence_reference=@{reference_log='frozen'}}
+  Write-RunJson (Join-Path $results 'prepared_joint_trial.json') 60 @{protected_paths=@();guard_paths=@((Join-Path $TestRoot ($fieldDirectory+'/parent/field.pa')),(Join-Path $TestRoot ($fieldDirectory+'/local/field.pa')));field_binding=@{path=(Join-Path $TestRoot ($fieldDirectory+'/binding.json'))};launched_particle_count=2;mother_particle_count=3;expected_particle_ids=@(1,7);prism_voltages_v=@(1,2);stripe_biases_v=@(0,0);trajectory_contract=@{path=$Runner};launcher='mock_launcher.lua';trajectory_equivalence_reference=@{reference_log='frozen'}}
   '{}'|Set-Content (Join-Path $results 'simion_dispatch_request.json')
  }elseif($command-eq'discover'){'{}'|Set-Content (Value '--output')
  }elseif($Arguments[1]-eq'common.simion.resource_scheduler'){
-  if($Arguments-contains'--observed-formal-peak-bytes'){$script:adapted=$true}
+  if($Scenario-eq'mixed_insufficient'-and$Arguments-contains'--request'-and$Arguments-notcontains'--observed-formal-peak-bytes'){
+   if($Arguments-contains'--profiles'){throw 'Insufficient profile was reused'};$script:unprofiled=$true
+  }
+  if($Arguments-contains'--prepare-fixed-recovery-plan'){
+   if($Scenario-eq'mixed_insufficient'-and@($Arguments|Where-Object{$_-eq'--replay-batch-index'}).Count-ne1){throw 'Fixed recovery omitted missing batch'}
+   $prior=Get-Content (Value '--output') -Raw|ConvertFrom-Json
+   if($prior.estimation.kind-eq'formal_first_batch_observation'){$prior.estimation|Add-Member -NotePropertyName recovered_missing_observation -NotePropertyValue $true -Force}
+   Write-RunJson (Value '--output') 20 $prior;return
+  }
+  if($Arguments-contains'--observed-formal-peak-bytes'){if($Scenario-in@('drain_failure','drain_budget_failure')){throw 'Synthetic replan failure'};$script:adapted=$true}
   $kind=if($script:adapted){'observed'}else{'formal_first_batch_observation'}
   Write-RunJson (Value '--output') 20 @{estimation=@{kind=$kind}}
  }elseif($Arguments[1]-eq'common.simion.particle_batching'){
@@ -334,25 +435,49 @@ function Assert-LocalSpecification($Specification){
 }
 function Start-ObservedFormalProcess {
  param($DispatchPlanPath,$ProcessSpecification)
+ if($Scenario-eq'mixed_insufficient'-and[int]$ProcessSpecification.scheduler_batch.index-ne2){throw 'Observed a reused batch'}
  Assert-LocalSpecification $ProcessSpecification;$script:observed=$true
- return @{resource_budget_exceeded=$false;completed_naturally=$true;exit_code=0;process_record=@{completed=$true};observed_peak_process_tree_working_set_bytes=100;observed_process_cpu_percent=10;observed_background_cpu_percent=0;available_memory_bytes=10000;total_physical_memory_bytes=20000}
+ return @{resource_budget_exceeded=$false;completed_naturally=$true;exit_code=0;process_record=@{completed=$true;exit_code=0;root_process_id=44;root_process_started_at_utc_ticks=123;specification=$ProcessSpecification};observed_peak_process_tree_working_set_bytes=100;observed_process_cpu_percent=10;observed_background_cpu_percent=0;available_memory_bytes=10000;total_physical_memory_bytes=20000}
 }
 function Invoke-ResourceBudgetedProcesses {
- param($DispatchPlanPath,$RunDir,$UsagePath,$ProcessSpecifications,$ExistingProcessRecords)
- if(@($ProcessSpecifications).Count-ne1-or$ProcessSpecifications[0].scheduler_batch.index-ne2){throw 'Wrong adaptive wave'}
- Assert-LocalSpecification $ProcessSpecifications[0];$script:dispatched=$true
+ param($DispatchPlanPath,$RunDir,$UsagePath,$ProcessSpecifications,$ExistingProcessRecords,$OnProcessCompleted)
+ if($Scenario-eq'drain_failure'){throw 'Synthetic drain failure'}
+ if($Scenario-eq'drain_budget_failure'){return @{resource_budget_exceeded=$true;processes=@()}}
+ if($Scenario-eq'wave_failure'){throw 'Synthetic batch runner failure'}
+ if($Scenario-eq'closeout_failure'){try{throw 'Synthetic original flight failure'}catch{$_.Exception.Data['simion_wave_writer_completion_confirmed']=$true;throw}}
+ if($Scenario-eq'wave_budget_failure'){return @{resource_budget_exceeded=$true;processes=@()}}
+ if($Scenario-eq'mixed_insufficient'){
+  if(@($ProcessSpecifications).Count-ne0-or@($ExistingProcessRecords).Count-ne1){throw 'Wrong retained observation wave'}
+  if($OnProcessCompleted){foreach($record in @($ExistingProcessRecords)){& $OnProcessCompleted $record}}
+ }else{
+  if(@($ProcessSpecifications).Count-ne1-or$ProcessSpecifications[0].scheduler_batch.index-ne2){throw 'Wrong adaptive wave'}
+  Assert-LocalSpecification $ProcessSpecifications[0];$script:dispatched=$true
+  if($OnProcessCompleted){foreach($record in @($ExistingProcessRecords)+@(@{completed=$true;exit_code=0;root_process_id=44;root_process_started_at_utc_ticks=123;specification=$ProcessSpecifications[0]})){& $OnProcessCompleted $record}}
+ }
  return @{resource_budget_exceeded=$false;processes=@(@{exit_code=0})}
 }
-try{Invoke-PreparedJointTrial;if($Scenario-notin@('success','candidate','mixed','zero')){throw 'Expected scenario failure did not happen'}}catch{if($Scenario-in@('success','candidate','mixed','zero')){throw}}
+try{Invoke-PreparedJointTrial;if($Scenario-notin@('success','candidate','mixed','mixed_insufficient','zero')){throw 'Expected scenario failure did not happen'}}catch{if($Scenario-in@('success','candidate','mixed','mixed_insufficient','zero')){throw};if($Scenario-eq'closeout_failure'){if($_.Exception.Message-ne'Synthetic original flight failure'-or$_.Exception.Data['prepared_joint_closeout_error']-notlike'*Synthetic retention failure*'){throw};'PUBLIC_PREPARED_RUNNER_MOCK_PASS';exit 0}}
+if($Scenario-in@('drain_failure','drain_budget_failure','wave_failure','wave_budget_failure')){
+ $summary=Get-Content (Join-Path $TestRoot 'run/summary.json') -Raw|ConvertFrom-Json
+ $expectedReason=if($Scenario-in@('drain_failure','drain_budget_failure')){'Synthetic replan failure'}elseif($Scenario-eq'wave_failure'){'Synthetic batch runner failure'}else{'Measured joint flight failed or exceeded repository resource budget.'}
+ if($summary.status-ne'writer_completion_unknown'-or$summary.reason-ne$expectedReason){throw 'Unknown writer evidence missing'}
+ if($Scenario-eq'drain_failure'-and$summary.drain_error-ne'Synthetic drain failure'){throw 'Drain error missing'}
+ if($Scenario-eq'drain_budget_failure'-and$summary.drain_error-notlike'*did not confirm writer completion*'){throw 'Unconfirmed budget drain missing'}
+ if($script:capacityReleased-or$script:hostReleased-or$script:retained-or$script:sealed){throw 'Unknown writer was finalized'}
+ 'PUBLIC_PREPARED_RUNNER_MOCK_PASS';exit 0
+}
 $manifest=Get-Content (Join-Path $TestRoot 'run/run_manifest.json') -Raw|ConvertFrom-Json
 $expectedStatus=if($Scenario-in@('analysis_failure','asset_failure')){'failed'}else{'success'}
 if($manifest.status-ne$expectedStatus){throw 'Scientific manifest was incorrectly rewritten'}
-if($Scenario-eq'asset_failure'){if($script:observed-or$script:dispatched-or$script:analyzed){throw 'Bad actual assets reached a vendor consumer'}}elseif($Scenario-in@('mixed','zero')){if(-not($script:analyzed-and$script:sealed)){throw 'Recovery skipped merge or analysis'};if($Scenario-eq'zero'-and($script:observed-or$script:dispatched)){throw 'Zero-missing recovery launched SIMION'};if($Scenario-eq'mixed'-and($script:observed-or-not$script:dispatched)){throw 'Mixed recovery launched wrong batches'}}elseif(-not($script:observed-and$script:adapted-and$script:dispatched-and$script:analyzed-and$script:sealed)){throw 'Missing public workflow stage'}
+if($Scenario-eq'asset_failure'){if($script:observed-or$script:dispatched-or$script:analyzed){throw 'Bad actual assets reached a vendor consumer'}}elseif($Scenario-in@('mixed','mixed_insufficient','zero')){if(-not($script:analyzed-and$script:sealed)){throw 'Recovery skipped merge or analysis'};if($Scenario-eq'zero'-and($script:observed-or$script:dispatched)){throw 'Zero-missing recovery launched SIMION'};if($Scenario-eq'mixed'-and($script:observed-or-not$script:dispatched)){throw 'Mixed recovery launched wrong batches'};if($Scenario-eq'mixed_insufficient'-and(-not$script:observed-or-not$script:adapted-or$script:dispatched)){throw 'Insufficient profile did not observe only the missing batch'}}elseif(-not($script:observed-and$script:adapted-and$script:dispatched-and$script:analyzed-and$script:sealed)){throw 'Missing public workflow stage'}
+if($ContinuationPredecessorManifestPath-and($script:projectionCalls-ne2-or-not$script:projectionCapacity)){throw 'Ancestor projection was not protected and rechecked'}
+if($ContinuationPredecessorManifestPath){$stream=[IO.File]::Open((Join-Path $TestRoot 'ancestor/source.log'),[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::ReadWrite);$stream.Dispose()}
+if($Scenario-eq'mixed_insufficient'){$original=Get-Content (Join-Path $TestRoot 'ancestor_inputs/simion_repository_dispatch_plan.json') -Raw|ConvertFrom-Json;if($original.estimation.kind-ne'observed_formal_batch'-or-not$script:unprofiled){throw 'Ancestor dispatch was rewritten or insufficient profile reused'}}
 if($Scenario-notin@('analysis_failure','asset_failure')-and-not$script:compared){throw 'Trajectory equivalence gate was skipped'}
 if($script:assetChecks-ne$(if($Scenario-eq'zero'){0}else{1})){throw 'Native payload verification count differs'}
 'PUBLIC_PREPARED_RUNNER_MOCK_PASS'
 ''', encoding="utf-8")
-            for scenario in ("success", "candidate", "seal_failure", "analysis_failure", "mixed", "zero", "asset_failure"):
+            for scenario in ("success", "candidate", "seal_failure", "analysis_failure", "mixed", "mixed_insufficient", "zero", "asset_failure", "drain_failure", "drain_budget_failure", "wave_failure", "wave_budget_failure", "closeout_failure"):
                 with self.subTest(scenario=scenario):
                     case_root = Path(directory) / scenario
                     case_root.mkdir()

@@ -148,9 +148,33 @@ def _prepared_assembly(prepared_run: Path, parent: dict, manifest: dict) -> tupl
     return plan, connection, sources
 
 
+def _continuation_waveforms(predecessor_manifest: Path) -> tuple[Path, dict[str, Any]]:
+    """Resolve the predecessor's manifest-bound small helper for the new run."""
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_continuation import _bound_parent_input
+    manifest_path = predecessor_manifest.resolve()
+    manifest = _read(manifest_path)
+    config_record = manifest["run_config"]
+    verify_record("continuation run configuration", config_record)
+    config_path = Path(config_record["path"]).resolve()
+    if config_path != manifest_path.parent / "run_config.json":
+        raise ValueError("Continuation manifest run configuration is not its own")
+    config = _read(config_path)
+    if config.get("project") != "instrument_assembly" or config.get("mode") != "prepared_joint":
+        raise ValueError("Continuation predecessor is not a prepared-joint run")
+    trial_record = _bound_parent_input(parent_inputs=config.get("inputs") or {}, manifest=manifest,
+                                       role="prepared_joint_trial")
+    trial = _read(Path(trial_record["path"]))
+    waveform = trial["voltage_waveforms"]
+    verify_record("continuation flight waveform", waveform)
+    return Path(waveform["path"]).resolve(), {"manifest": str(manifest_path),
+                                              "prepared_joint_trial": trial_record,
+                                              "voltage_waveforms": waveform}
+
+
 def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
                   reference_flight_run: Path | None = None, *,
-                  field_binding_path: Path | None = None, source_mode: str = "measured_population") -> dict[str, Any]:
+                  field_binding_path: Path | None = None, source_mode: str = "measured_population",
+                  continuation_predecessor_manifest: Path | None = None) -> dict[str, Any]:
     """Verify sealed small inputs and field metadata; never rehash or copy PA payloads."""
     if source_mode not in {"measured_population", "centroid_probe"}:
         raise ValueError("Unsupported prepared source mode")
@@ -266,8 +290,13 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
         freeze_file(path, frozen_runtime / path.name)
     current_program = Path(__file__).parents[1] / "simion/mrtof_candidate.lua"
     program_record = freeze_file(current_program, frozen_runtime / "joint.lua")
-    waveforms_record = freeze_file(Path(__file__).parents[3] / "common/simion/voltage_waveforms.lua",
+    waveform_source, waveform_provenance = (Path(__file__).parents[3] / "common/simion/voltage_waveforms.lua", None)
+    if continuation_predecessor_manifest is not None:
+        waveform_source, waveform_provenance = _continuation_waveforms(continuation_predecessor_manifest)
+    waveforms_record = freeze_file(waveform_source,
                                   frozen_runtime / "joint.voltage_waveforms.lua")
+    if waveform_provenance is not None:
+        waveforms_record["continuation_source"] = waveform_provenance
     source_runtime_record = freeze_file(source_copy / "source_runtime.lua", frozen_runtime / "joint.source_runtime.lua")
     freeze_file(Path(__file__).parents[1] / "simion/scalar_field_adapter.lua",
                 frozen_runtime / "joint.scalar_field_adapter.lua")
@@ -618,6 +647,7 @@ def main() -> None:
     prepare.add_argument("--equivalence-reference-run", type=Path)
     prepare.add_argument("--field-binding", type=Path)
     prepare.add_argument("--source-mode", choices=("measured_population", "centroid_probe"), default="measured_population")
+    prepare.add_argument("--continuation-predecessor-manifest", type=Path)
     analyze = sub.add_parser("analyze-probe")
     analyze.add_argument("--preparation", type=Path, required=True)
     analyze.add_argument("--log", type=Path, required=True)
@@ -630,7 +660,8 @@ def main() -> None:
                 or destination.get("run_id") != args.run_directory.resolve().name):
             raise ValueError("destination requires instrument_assembly prepared_joint identity matching its directory")
         prepare_trial(args.prepared_run,args.contract,args.run_directory,args.equivalence_reference_run,
-                      field_binding_path=args.field_binding,source_mode=args.source_mode)
+                      field_binding_path=args.field_binding,source_mode=args.source_mode,
+                      continuation_predecessor_manifest=args.continuation_predecessor_manifest)
     else:
         analyze_centroid_probe(args.preparation,args.log,args.output)
 

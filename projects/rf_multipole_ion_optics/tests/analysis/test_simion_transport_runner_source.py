@@ -68,33 +68,278 @@ def write_canonical_source(path: Path) -> None:
 
 
 class SimionTransportRunnerSourceTests(unittest.TestCase):
+    def test_preparation_completion_never_turns_unknown_descendants_into_stopped(self) -> None:
+        script = r"""
+$ErrorActionPreference='Stop'
+. (Join-Path $PWD 'projects/rf_multipole_ion_optics/runtime/simion_execution.ps1')
+function Invoke-ResourceBudgetedProcess {
+ param($Limits)
+ if($null-ne$Limits){throw 'Invented project limits'}
+ if($scenario-eq'observation_failure'){$error=[Exception]::new('observation-failed');$error.Data['observed_process_exit_confirmed']=$true;throw $error}
+ [pscustomobject]@{exit_code=$(if($scenario-eq'nonzero'){7}else{0});resource_budget_exceeded=($scenario-eq'danger');root_process_id=44;root_process_started_at_utc_ticks=123}
+}
+foreach($scenario in @('success','nonzero','observation_failure','danger')){
+ $operations=[Collections.Generic.List[object]]::new();$caught=$null
+ try{$null=Invoke-RfSimionPreparationProcess -Name refine -SimionExe fixture -ArgumentList @('refine') -CandidateDir $env:RF_TEST_TEMP `
+  -RunDir $env:RF_TEST_TEMP -Stdout (Join-Path $env:RF_TEST_TEMP 'stdout.txt') -Stderr (Join-Path $env:RF_TEST_TEMP 'stderr.txt') -NativeOperations $operations}
+ catch{$caught=$_}
+ if($scenario-eq'success'){if($caught-or-not$operations[0].observation.exit_confirmed-or$operations[0].observation.returncode-ne0){throw 'Natural completion lost'};continue}
+ if($null-eq$caught){throw 'Failure was hidden'}
+ if($scenario-eq'nonzero'){if(-not$caught.Exception.Data['simion_wave_writer_completion_confirmed']-or$operations[0].observation.returncode-ne7){throw 'Known failure facts lost'}}
+ else{if($caught.Exception.Data['simion_wave_writer_completion_confirmed']-ne$false-or$operations[0].observation.exit_confirmed){throw 'Unknown writer was sealed'}}
+ if($scenario-eq'observation_failure'-and$caught.Exception.Message-cne'observation-failed'){throw 'Original observation exception was replaced'}
+}
+'PREPARATION_OWNER=PASS'
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,
+                env={**os.environ, "RF_TEST_TEMP": directory}, capture_output=True,
+                text=True, encoding="utf-8", errors="replace", timeout=25)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("PREPARATION_OWNER=PASS", result.stdout)
+
+    def test_prepared_identity_and_mass_analysis_consume_resolved_radian_phase(self) -> None:
+        from projects.rf_multipole_ion_optics.core.compile_design_request import resolved_design_sha256
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            resolved = json.loads((PROJECT_ROOT / "variants/quadrupole/config/resolved_design_mass_filter.json").read_text(encoding="utf-8"))
+            resolved["drive"]["phase_rad"] = 0.37
+            resolved["resolved_sha256"] = resolved_design_sha256(resolved)
+            (root / "resolved.json").write_text(json.dumps(resolved), encoding="utf-8")
+            script = r"""
+$ErrorActionPreference='Stop'
+. (Join-Path $PWD 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $PWD 'projects/rf_multipole_ion_optics/runtime/simion_run_config.ps1')
+. (Join-Path $PWD 'projects/rf_multipole_ion_optics/runtime/simion_execution.ps1')
+$r=Get-Content (Join-Path $env:RF_TEST_TEMP 'resolved.json') -Raw|ConvertFrom-Json
+$i=Get-Content 'projects/rf_multipole_ion_optics/variants/quadrupole/config/interface_contract.json' -Raw|ConvertFrom-Json
+$n=Get-Content 'projects/rf_multipole_ion_optics/variants/quadrupole/config/simion_solver_numerics.json' -Raw|ConvertFrom-Json
+$coreConfig=New-RfSimionCoreRunConfig -ResolvedDesign $r -InterfaceContract $i -SolverNumerics $n `
+ -RfStepsPerPeriod $n.baseline_rf_steps_per_period -TrajectoryQuality $n.trajectory_quality -ModeName mass_filter_reference `
+ -OperatingPoint mass_filter_reference -IobPath 'C:\fixture\a.iob' -Fly2Path 'C:\fixture\a.fly2' `
+ -SourceStatesLua 'C:\fixture\source.lua' -ParticleStateCsv 'C:\fixture\state.csv' -TrajectoryCsv 'C:\fixture\trajectory.csv' -SummaryJson 'C:\fixture\summary.json'
+if($coreConfig.phase_rad-ne0.37-or$coreConfig.Contains('phase_deg')){throw 'Core radian authority differs'}
+$program='projects/rf_multipole_ion_optics/simion/simion_transport.lua'
+$source=@{files=@(@{relative_path='fixture.py';sha256=('A'*64)})}
+$one=Join-Path $env:RF_TEST_TEMP 'one.json';$two=Join-Path $env:RF_TEST_TEMP 'two.json';$three=Join-Path $env:RF_TEST_TEMP 'three.json'
+Write-RfSimionPreparedFlyIdentity -CoreConfig $coreConfig -Path $one -CaseName fixture -SourcePackage $source -SourceRelativePaths fixture.py -ProgramSourcePath $program -NativeFlyArguments @(Get-RfSimionFlyArgumentIdentity -CoreConfig $coreConfig)
+$coreConfig.iob='C:\other\a.iob';$coreConfig.particle_state_csv='C:\other\state.csv'
+Write-RfSimionPreparedFlyIdentity -CoreConfig $coreConfig -Path $two -CaseName fixture -SourcePackage $source -SourceRelativePaths fixture.py -ProgramSourcePath $program -NativeFlyArguments @(Get-RfSimionFlyArgumentIdentity -CoreConfig $coreConfig)
+if((Get-Content $one -Raw)-cne(Get-Content $two -Raw)){throw 'Owner output location invalidated Fly'}
+$lua=ConvertTo-RfSimionLuaConfig -CoreConfig $coreConfig -SharedProgramPath $program
+if(-not$lua.Contains('phase_rad=0.37,')){throw 'Lua converted radians a second time'}
+function Invoke-TestParticleState {
+ $index=[array]::IndexOf($args,'--phase-rad')
+ if($index-lt0-or[double]$args[$index+1]-ne0.37){throw 'Analysis did not receive the same radian phase'}
+ $global:LASTEXITCODE=0
+}
+$python='Invoke-TestParticleState';$particleStateCsv='state';$particlePath='particles';$frozenInterface='interface';$stateContractReport='report'
+$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD 'projects/rf_multipole_ion_optics/workflows/mass_filter_reference/run_simion.ps1'),[ref]$null,[ref]$null)
+$command=@($ast.FindAll({param($node)$node-is[Management.Automation.Language.CommandAst]-and$node.Extent.Text.Contains('-m common.contracts.particle_state')},$true))
+if($command.Count-ne1){throw 'Missing mass-analysis boundary'}
+. ([scriptblock]::Create($command[0].Extent.Text))
+$coreConfig.phase_rad=0.38
+Write-RfSimionPreparedFlyIdentity -CoreConfig $coreConfig -Path $three -CaseName fixture -SourcePackage $source -SourceRelativePaths fixture.py -ProgramSourcePath $program -NativeFlyArguments @(Get-RfSimionFlyArgumentIdentity -CoreConfig $coreConfig)
+if((Get-Content $two -Raw)-ceq(Get-Content $three -Raw)){throw 'Physical phase change was ignored'}
+'RADIAN_AUTHORITY=PASS'
+"""
+            result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,
+                env={**os.environ, "RF_TEST_TEMP": directory}, capture_output=True,
+                text=True, encoding="utf-8", errors="replace", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("RADIAN_AUTHORITY=PASS", result.stdout)
+
+    def test_both_prepared_clis_bind_explicit_predecessor_to_shared_recovery(self) -> None:
+        script = r"""
+$ErrorActionPreference='Stop'
+$script:calls=0
+function Initialize-RfSimionPreparedContinuation {
+ param($ManifestPath,$RunDir,$CaseName,$InputNames,$BatchPlanPath,$DispatchPlanPath)
+ if($ManifestPath-cne'parent/run_manifest.json'-or$RunDir-cne$env:RF_TEST_TEMP){throw 'Wrong predecessor or physical owner'}
+ foreach($name in @('resolved_design','particle_table','simion_program_source','simion_rf_drive_kernel','simion_iob_builder','simion_gem','simion_fly2','source_states')){
+  if($name-cnotin$InputNames){throw "Missing physical identity: $name"}
+ }
+ if(@($InputNames|Where-Object{$_-in@('mode','interface_contract','numerical_contract')}).Count){throw 'Whole analysis contracts invalidate effective Fly projection'}
+ if($CaseName-cnotin@('interface_readiness','mass_filter_reference')){throw 'Wrong case'}
+ $script:calls++
+ @{batch_count=2}|ConvertTo-Json|Set-Content $BatchPlanPath
+ @{estimation=@{kind='exact_resource_profile'}}|ConvertTo-Json -Depth 5|Set-Content $DispatchPlanPath
+ [pscustomobject]@{all_reused=$true;units=@{}}
+}
+$ContinuationPredecessorManifestPath='parent/run_manifest.json';$package=@{artifact_run_dir=$env:RF_TEST_TEMP}
+$artifactRoot=Join-Path $env:RF_TEST_TEMP 'artifacts/projects/rf_multipole_ion_optics'
+$python='unused';$repoRoot=$PWD;$runConfig=@{};$runConfigPath='unused';$runDir='alias'
+$batchPlan=Join-Path $env:RF_TEST_TEMP 'batches.json';$dispatchPlan=Join-Path $env:RF_TEST_TEMP 'dispatch.json'
+foreach($runner in @('workflows/interface_readiness/run_simion.ps1','workflows/mass_filter_reference/run_simion.ps1')){
+ $path=Join-Path $PWD ('projects/rf_multipole_ion_optics/'+$runner)
+ $command=Get-Command $path
+ if($null-eq$command.Parameters['ContinuationPredecessorManifestPath']){throw 'Missing public CLI predecessor'}
+ $ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$null,[ref]$null)
+ $bindings=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.IfStatementAst]-and
+  $n.Extent.Text.StartsWith('if($ContinuationPredecessorManifestPath)')},$true))
+ if($bindings.Count-ne1){throw 'Recovery has no unique normal-entry binding'}
+ . ([scriptblock]::Create($bindings[0].Extent.Text))
+ if(-not$continuation.all_reused-or$batchPlanDocument.batch_count-ne2){throw 'CLI did not use recovered partition'}
+}
+if($script:calls-ne2){throw 'Shared recovery not called'}
+'CLI_RECOVERY=PASS'
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,
+                env={**os.environ, "RF_TEST_TEMP": directory}, capture_output=True,
+                text=True, encoding="utf-8", errors="replace", timeout=25)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("CLI_RECOVERY=PASS", result.stdout)
+
+    def test_prepared_wave_full_and_partial_reuse_preserve_native_units(self) -> None:
+        script = r"""
+$ErrorActionPreference='Stop'
+. (Join-Path $PWD 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $PWD 'projects/rf_multipole_ion_optics/runtime/simion_execution.ps1')
+function Initialize-RfSimionPaBasis {if($script:fieldReady){throw 'Completed field was refined again'};$script:pa++}
+function Initialize-RfSimionPreparedBatch {if($script:fieldReady){throw 'Prepared IOB was rebuilt'};$script:iob++}
+function Update-HostResourceStage {param($Lease) $Lease}
+function Get-HostResourceBudget {@{}}
+function Invoke-ResourceBudgetedProcesses {
+ param($ProcessSpecifications,$OnProcessCompleted)
+ $records=@()
+ foreach($spec in $ProcessSpecifications){
+  $script:launched.Add($spec.name)
+  $record=[pscustomobject]@{name=$spec.name;specification=$spec;exit_code=$(if($script:failNative){7}else{0})}
+  & $OnProcessCompleted $record
+  $records+=$record
+ }
+ [pscustomobject]@{resource_budget_exceeded=$false;processes=$records}
+}
+foreach($scenario in @('full','partial','prepared_partial','failed')){
+ $full=$scenario-eq'full';$script:failNative=$scenario-eq'failed'
+ $script:fieldReady=$scenario-eq'prepared_partial'
+ $root=Join-Path $env:RF_TEST_TEMP $scenario
+ $current=Join-Path $root 'child';$parent=Join-Path $root 'parent'
+ New-Item -ItemType Directory -Force -Path (Join-Path $current 'results'),(Join-Path $current 'logs'),(Join-Path $parent 'results')|Out-Null
+ $batches=@();$units=@{};$script:pa=0;$script:iob=0;$script:launched=[Collections.Generic.List[string]]::new()
+ foreach($index in @(1,2)){
+  $state=Join-Path $current ('results/particle_state__batch_{0:D2}.csv'-f$index)
+  $summary=Join-Path $current ('results/solver_summary__batch_{0:D2}.json'-f$index)
+  $log=Join-Path $current ('logs/batch_{0:D2}'-f$index);New-Item -ItemType Directory -Force -Path $log|Out-Null
+  "particle_id,event`n1,terminal"|Set-Content $state
+  @{solver='SIMION';particles=1;census_plane_crossings=1;hits=1;mode='fixture';operating_point='fixture';parent_resolved_design_sha256='same'}|ConvertTo-Json|Set-Content $summary
+  'status,Fly completed. 1 splats, 0.1 seconds'|Set-Content (Join-Path $log 'simion_stdout.txt')
+  $batch=[pscustomobject]@{index=$index;particle_id_min=$index;particle_id_max=$index;simion_particle_id_offset=$index-1;count=1}
+  $batches += [pscustomobject]@{name="batch_$index";batch=$batch;config=@{iob='unused';fly2='unused';trajectory_quality=1;rf_steps_per_period=1};
+   state=$state;summary=$summary;trajectory='unused';lua='unused';log_dir=$log;
+   merged_state=(Join-Path $current 'results/particle_state.csv');merged_trajectory='unused';merged_summary=(Join-Path $current 'results/solver_summary.json')}
+  if($full-or$index-eq1){
+   $oldState=Join-Path $parent ('results/particle_state__batch_{0:D2}.csv'-f$index)
+   $oldSummary=Join-Path $parent ('results/solver_summary__batch_{0:D2}.json'-f$index)
+   Copy-Item $state $oldState;Copy-Item $summary $oldSummary
+   $units[('fixture.batch_{0:D2}'-f$index)]=@{terminal_outputs=@(@{path=$oldState},@{path=$oldSummary})}
+  }
+ }
+ $plan=Join-Path $current 'plan.json'
+ @{dispatch='single_wave_parallel';particle_count=2;batch_count=2;batches=@($batches|ForEach-Object{$_.batch})}|ConvertTo-Json -Depth 8|Set-Content $plan
+ $completed=[Collections.Generic.List[string]]::new()
+ $caught=$false
+ try{$result=Invoke-RfSimionParticleBatchWave -HostLease @{} -SimionExe 'never-launch' -CandidateDir $current `
+  -IobPath unused -RootFly2Path unused -IobBuilderScript unused -ProgramSourcePath unused -RootRunConfigLua unused `
+  -InspectScript unused -IobReport unused -LogDir (Join-Path $current 'logs') -TrajectoryQuality 1 -RfStepsPerPeriod 1 `
+  -BatchRuns $batches -BatchPlanPath $plan -DispatchPlanPath 'unused' -RunDir $current -UsagePath unused `
+  -PythonExe $env:RF_TEST_PYTHON -RepositoryRoot $PWD -CaseName fixture -ContinuationUnits $units -CompletionOutputs $completed -RfDriveKernelPath unused -Prepared:$script:fieldReady
+ }catch{if(-not$script:failNative-or-not$_.Exception.Message.Contains('batch wave failed')){throw};$caught=$true}
+ if($script:failNative){if(-not$caught-or$completed.Count){throw 'Failed native unit was accepted'};continue}
+ if($full){if($script:pa-or$script:iob-or$script:launched.Count-or$completed.Count){throw 'Full reuse performed native work'}}
+ else{$expectedBuilds=if($script:fieldReady){0}else{1};if($script:pa-ne$expectedBuilds-or$script:iob-ne$expectedBuilds-or($script:launched-join',')-cne'batch_2'){throw 'Partial recovery replayed a complete unit or rebuilt its field'}
+  if(-not(Test-Path (Join-Path $current 'results/simion_batch_completion__fixture__batch_02.json'))){throw 'Missing durable completion receipt'}}
+ $ids=@(Import-Csv (Join-Path $current 'results/particle_state.csv')|ForEach-Object{[int]$_.particle_id})
+ if(($ids-join',')-cne'1,2'){throw 'Original mother IDs lost'}
+}
+'PREPARED_REUSE=PASS'
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,
+                env={**os.environ, "RF_TEST_TEMP": directory, "RF_TEST_PYTHON": sys.executable},
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=45)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("PREPARED_REUSE=PASS", result.stdout)
+
+    def test_particle_wave_dispatches_through_shared_batch_phase(self) -> None:
+        support = PROJECT_ROOT / "runtime/simion_execution.ps1"
+        script = r"""
+$ErrorActionPreference='Stop'
+. $env:RF_EXECUTION_SUPPORT
+function New-RfSimionFlyProcessSpecification {param($Name) [pscustomobject]@{name=$Name}}
+function Invoke-FixturePython {$global:LASTEXITCODE=0}
+function Invoke-SimionBatchPhase {
+ param($PrepareRemaining,$FirstSpecification,$Replan)
+ $formal=if($FirstSpecification){[pscustomobject]@{process_record=@{name='first';specification=@{name='first'}}}}else{$null}
+ $prepared=& $PrepareRemaining $formal
+ $expected=if($formal){1}else{2}
+ if(@($prepared.pending).Count-ne$expected){throw 'wrong pending specification count'}
+ if($formal-and$prepared.pending[0].name-ne'second'){throw 'formal first worker was dispatched twice'}
+ return [pscustomobject]@{prepared=$prepared;resource_budget_exceeded=$false;processes=@()}
+}
+function New-Batch($name,$offset) {
+ [pscustomobject]@{name=$name;config=@{iob='iob';fly2='fly';trajectory_quality=1;rf_steps_per_period=1};
+  lua='lua';log_dir='log';merged_state='merged-state';merged_trajectory='merged-trajectory';merged_summary='merged-summary';
+  state='state';trajectory='trajectory';summary='summary';batch=@{simion_particle_id_offset=$offset}}
+}
+$batches=@((New-Batch 'first' 0),(New-Batch 'second' 1))
+$arguments=@{HostLease=@{};SimionExe='simion';CandidateDir=$PWD;IobPath='iob';RootFly2Path='fly';
+ IobBuilderScript='builder';ProgramSourcePath='program';RootRunConfigLua='config';InspectScript='inspect';
+ IobReport='report';LogDir='log';TrajectoryQuality=1;RfStepsPerPeriod=1;BatchRuns=$batches;
+ BatchPlanPath='plan';DispatchPlanPath='dispatch';RunDir=$PWD;UsagePath='usage';
+ PythonExe='Invoke-FixturePython';RepositoryRoot=$PWD;Prepared=$true}
+$null=Invoke-RfSimionParticleBatchWave @arguments
+$arguments.FirstSpecification=@{name='first'};$arguments.Replan={};$arguments.PrepareAfterObservation={param($formal) $batches}
+$null=Invoke-RfSimionParticleBatchWave @arguments
+"""
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+            cwd=REPO_ROOT, env={**os.environ, "RF_EXECUTION_SUPPORT": str(support)},
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_adaptive_wave_retains_first_batch_and_failure_inventory(self) -> None:
         """Execute the shared lifecycle with native work replaced at its boundary."""
         support = PROJECT_ROOT / "runtime/simion_execution.ps1"
         script = r"""
 $ErrorActionPreference='Stop'
 . $env:RF_EXECUTION_SUPPORT
-function Initialize-RfSimionPaBasis { "PA build diagnostics" }
-function Initialize-RfSimionPreparedBatch { "IOB build diagnostics" }
-function New-RfSimionFlyProcessSpecification {}
-function Start-ObservedFormalProcess { $script:events+='observe'; return @{process_record='first'} }
+. (Join-Path $PWD 'common/resource_budget_support.ps1')
+function Initialize-RfSimionPaBasis { if($prebuilt){throw 'Prepared PA rebuilt'}; "PA build diagnostics" }
+function Initialize-RfSimionPreparedBatch { if($prebuilt){throw 'Prepared IOB rebuilt'}; "IOB build diagnostics" }
+function New-RfSimionFlyProcessSpecification { return @{name='first'} }
+function Start-ObservedFormalProcess {
+ $script:events+='observe'; return @{process_record=[pscustomobject]@{name='first';completed=$false};resource_budget_exceeded=$false}
+}
+function Invoke-ObservedPreparationFailureDrain {param($Failure) $script:events+='drain'; throw $Failure}
 function Update-RfSimionDispatchAfterFormalObservation {
  $script:events+='replan'
  if($fail-eq'replan'){throw 'replan-failed'}
  return @{batches=@{batch_count=2}}
 }
 function Invoke-RfSimionParticleBatchWave {
- param($BatchRuns,$ExistingProcessRecords=@(),[switch]$Prepared)
- $script:events+='wave'
- if($unknown-and(-not$Prepared-or$ExistingProcessRecords.Count-ne1-or$ExistingProcessRecords[0]-ne'first')){throw 'first batch lost'}
- if(-not$unknown-and($Prepared-or$ExistingProcessRecords.Count)){throw 'unexpected observed batch'}
- if($fail-eq'wave'){throw 'wave-failed'}
+ param($BatchRuns,$FirstSpecification,$Replan,$PrepareAfterObservation,[switch]$Prepared,$DispatchPlanPath,$RunDir,$UsagePath)
+ if($unknown-and(-not$Prepared-or$null-eq$FirstSpecification)){throw 'first batch lost'}
+ if(-not$unknown-and($null-ne$FirstSpecification-or([bool]$Prepared-ne[bool]$prebuilt))){throw 'unexpected observed batch'}
+ $prepare={param($formal) if($formal-and@(& $PrepareAfterObservation $formal).Count-ne2){throw 'replanned batch inventory lost'};[pscustomobject]@{pending=@('pending')}}
+ $null=Invoke-SimionBatchPhase -DispatchPlanPath $DispatchPlanPath -RunDir $RunDir -UsagePath $UsagePath `
+  -PrepareRemaining $prepare -FirstSpecification $FirstSpecification -Replan $Replan
  return @{ok=$true}
+}
+function Invoke-ResourceBudgetedProcesses {
+ param($ExistingProcessRecords=@())
+ $script:events+='wave'
+ if($unknown-and($ExistingProcessRecords.Count-ne1-or$ExistingProcessRecords[0].name-ne'first')){throw 'first batch lost'}
+ if($fail-eq'wave'){throw 'wave-failed'}
+ return @{resource_budget_exceeded=$false;processes=@()}
 }
 function Update-HostResourceStage { param($Stage) $script:events+=$Stage; return @{token='same'} }
 function Get-HostResourceBudget { return @{} }
 function Complete-ResourceUsage { $script:events+='usage' }
 function Invoke-FixturePython { $script:events+='publish'; $global:LASTEXITCODE=0; 'profile publication diagnostics' }
+foreach($prebuilt in @($false,$true)){
 foreach($unknown in @($false,$true)){
  foreach($fail in @('none','wave','replan')){
   $script:events=@();$batches=@(@{name='first';config=@{iob='iob';fly2='fly';trajectory_quality=1;rf_steps_per_period=1};lua='lua';log_dir='log'});$caught=$null
@@ -104,7 +349,8 @@ foreach($unknown in @($false,$true)){
    UsagePath=(Join-Path $env:RF_TEST_TEMP 'usage.json');RunDir=$env:RF_TEST_TEMP;
    DispatchPlanPath='dispatch';BatchPlanPath='batches';HostLease=@{token='same'};
    SimionExe='fixture';CandidateDir=$PWD;IobPath='iob';RootFly2Path='fly';IobBuilderScript='builder';
-   ProgramSourcePath='program';RootRunConfigLua='lua';InspectScript='inspect';IobReport='report';LogDir='log'}
+   ProgramSourcePath='program';RootRunConfigLua='lua';InspectScript='inspect';IobReport='report';LogDir='log';RfDriveKernelPath='kernel'}
+  if($prebuilt){$wave.Prepared=$true}
   try {
    $result=Invoke-RfSimionAdaptiveBatchWave -WaveArguments $wave -BatchRuns ([ref]$batches) `
     -DispatchPlan @{estimation=@{kind=$kind}} -DispatchRequestPath request -ResourceProfilesPath profiles `
@@ -116,7 +362,8 @@ foreach($unknown in @($false,$true)){
   if($unknown-and$fail-ne'replan'){
    if($batches.Count-ne2-or$run.execution_batch_count-ne2){throw 'failure inventory lost replanned batches'}
   }elseif($batches.Count-ne1){throw 'unobserved batch changed'}
-  $events=@();if($unknown){$events+=@('flight','observe','replan')}
+  $events=@();if($unknown-or$prebuilt){$events+='flight'};if($unknown){$events+=@('observe','replan')}
+  if($unknown-and$fail-eq'replan'){$events+='drain'}
   if(-not($unknown-and$fail-eq'replan')){$events+='wave'}
   if(-not$expected){
    if(@($result).Count-ne1-or-not$result.receipt.ok){throw 'diagnostics polluted return value'}
@@ -124,6 +371,7 @@ foreach($unknown in @($false,$true)){
   }
   if(($script:events-join ',')-ne($events-join ',')){throw "Wrong lifecycle: $script:events"}
  }
+}
 }
 """
         with tempfile.TemporaryDirectory() as directory:
@@ -148,24 +396,31 @@ function Get-HostResourceSnapshot {
         processes=@(@{pid=$PID;parent_pid=0;started='fixture-owner';memory_bytes=1MB})}
 }
 function Remove-RunPackageExecutionAlias { param($Package) }
+function Invoke-RunToolRootContext {param($Operation)}
+$artifactRoot=$PWD;$repoRoot=$PWD
 $tokens=$null;$parseErrors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($env:RF_TEST_RUNNER,[ref]$tokens,[ref]$parseErrors)
 if ($parseErrors.Count) { throw 'Runner parse failed' }
 $outer=@($ast.EndBlock.Statements | Where-Object { $_ -is [Management.Automation.Language.TryStatementAst] })
 if ($outer.Count -ne 1) { throw 'Expected one protected runner body' }
-$acquire=@($outer[0].Body.Statements | Where-Object { $_.Extent.Text -match '^\$hostExecutionLease = Enter-HostExecutionLease' })
+$acquire=@($outer[0].Body.Statements | Where-Object { $_.Extent.Text -match '^if\(\$null-eq\$continuation-or-not\$continuation.all_reused\)' -and $_.Extent.Text.Contains('Enter-HostExecutionLease') })
 if ($acquire.Count -ne 1) { throw 'Host acquisition must be inside the protected body' }
 $calls=@($outer[0].Body.FindAll({param($n) $n -is [Management.Automation.Language.CommandAst] -and
     $n.GetCommandName() -in @('Invoke-RfSimionAdaptiveBatchWave')},$true))
 if ($calls.Count -ne 1 -or @($calls | Where-Object { $_.Extent.StartOffset -lt $acquire[0].Extent.StartOffset }).Count) {
     throw 'Every solver branch must follow host acquisition'
 }
-$package=@{};$RunId='rf-lease-fixture'
+$package=@{artifact_run_dir=$PWD};$RunId='rf-lease-fixture'
 foreach ($nested in @($false,$true)) {
     foreach ($fail in @($false,$true)) {
         $parent=$null
         if ($nested) { $parent=Enter-HostExecutionLease -Role SIMION -Stage flight -RunId parent }
         $hostExecutionLease=$null;$hostExecutionOutcome='failed';$caught=$false
+        $writerCompletionUnknown=$false;$interfaceFailure=$null;$massFilterFailure=$null;$continuation=$null;$fieldContext=$null
+        $hostReleaseState=@{released=$false;completion=$null};$nativePreparation=[Collections.Generic.List[object]]::new()
+        $ownerCapacity=$null;$deferFinalization=$false;$ResultPath='fixture-result.json'
+        $execution=@{clock=[Diagnostics.Stopwatch]::StartNew();phase='prepare';phase_started=0.0;phase_seconds=[ordered]@{};elapsed_seconds=0.0}
+        $executionStatus='failed';$dataValidity='unavailable';$scienceStatus='not_evaluated';$failureStage=$null
         $body=$acquire[0].Extent.Text + @'
 
 # Exercise production PA stage transitions around a native-command fixture.
@@ -177,6 +432,11 @@ function Invoke-TestSimion {
     } elseif ('refine' -in $args) { Assert-HostResourceHeavyStage }
     else { throw 'Unexpected native operation' }
     $global:LASTEXITCODE=0
+}
+function Invoke-RfSimionPreparationProcess {
+ param($ArgumentList)
+ & Invoke-TestSimion @ArgumentList
+ [pscustomobject]@{exit_code=0}
 }
 Initialize-RfSimionPaBasis -SimionExe Invoke-TestSimion -CandidateDir $PWD -HostLease $hostExecutionLease
 $current=@((Get-HostResourceStatus).records)[0]
@@ -225,6 +485,39 @@ $hostExecutionOutcome='success'
                     )
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     self.assertIn("HOST_LIFECYCLE=PASS", result.stdout)
+
+    def test_unknown_writer_preserves_dedicated_runner_ownership(self) -> None:
+        script = r"""
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($env:RF_TEST_RUNNER,[ref]$tokens,[ref]$errors)
+$owner=@($ast.EndBlock.Statements|Where-Object{$_ -is [Management.Automation.Language.TryStatementAst] -and $_.CatchClauses.Count -and $_.CatchClauses[0].Extent.Text.Contains('writerCompletionUnknown')})[-1]
+if ($null -eq $owner) { throw 'missing owner failure guard' }
+$tail=$owner.CatchClauses[0].Extent.Text+'finally'+$owner.Finally.Extent.Text
+$script:events=[Collections.Generic.List[string]]::new()
+function Write-RunJson {param($Path,$Value) if($Value.status -ne 'writer_completion_unknown'){throw 'bad result'};$script:events.Add('result')}
+function Complete-FailedRun {throw 'published terminal'}
+function Remove-RunPackageExecutionAlias {$script:events.Add('alias')}
+function Exit-HostExecutionLease {$script:events.Add('host')}
+function Close-RfSimionFieldCheckpointGuard {throw 'unknown writer source guard released'}
+function Exit-ArtifactWorkflowCapacitySession {throw 'unknown writer capacity released'}
+function Set-RfSimionExecutionPhase {}
+$execution=@{phase='flight';phase_seconds=@{};elapsed_seconds=0.0};$dataValidity='unavailable';$scienceStatus='not_evaluated'
+$runSummary='inert';$hostExecutionLease=@{};$package=@{artifact_run_dir=$PWD};$hostExecutionOutcome='failed';$RunId='fixture';$continuation=$null;$fieldContext=[pscustomobject]@{guard=@{};owns_capacity=$true;capacity=@{}}
+foreach($data in @("`$e.Data['simion_first_batch_writer_unknown']=`$true", "`$e.Data['simion_first_batch_drain_error']='drain'", "`$e.Data['simion_wave_writer_completion_confirmed']=`$false", "`$e.Data['simion_wave_drain_error']='drain'")) {
+ $script:events.Clear();$writerCompletionUnknown=$false
+ try {. ([scriptblock]::Create("try{`$e=[Exception]::new('primary');$data;throw `$e}"+$tail))} catch {if($_.Exception.Message -ne 'primary'){throw}}
+ if(($script:events -join ',') -ne 'result'){throw 'unknown writer protection released'}
+}
+exit 0
+"""
+        for runner in (RUNNER, MASS_RUNNER):
+            with self.subTest(workflow=runner.parent.name):
+                result = subprocess.run(
+                    ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                    cwd=REPO_ROOT, env={**os.environ, "RF_TEST_RUNNER": str(runner)},
+                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_dedicated_runners_accept_an_optional_simion_executable(self) -> None:
         for runner in (RUNNER, MASS_RUNNER):
@@ -332,8 +625,7 @@ $hostExecutionOutcome='success'
             for forbidden in (
                 "return {",
                 "Copy-Item",
-                "gem2pa",
-                "Start-Process -FilePath $simion",
+                                "Start-Process -FilePath $simion",
             ):
                 self.assertNotIn(forbidden, runner)
 
@@ -599,10 +891,10 @@ $hostExecutionOutcome='success'
         ):
             self.assertNotIn(forbidden, source)
         for required in (
-            "[Parameter(Mandatory=$true)][string]$ParticleTablePath",
-            "[Parameter(Mandatory=$true)][string]$ParticleBundleMetadataPath",
-            "[Parameter(Mandatory=$true)][string]$SourceFamilyPath",
-            "[Parameter(Mandatory=$true)][string]$ParticleDistributionPath",
+            "[Parameter(Mandatory=$true,ParameterSetName='Execute')][string]$ParticleTablePath",
+            "[Parameter(Mandatory=$true,ParameterSetName='Execute')][string]$ParticleBundleMetadataPath",
+            "[Parameter(Mandatory=$true,ParameterSetName='Execute')][string]$SourceFamilyPath",
+            "[Parameter(Mandatory=$true,ParameterSetName='Execute')][string]$ParticleDistributionPath",
         ):
             self.assertIn(required, parameter_block)
         self.assertIn("$mode = 'transport_interface_readiness'", source)
@@ -616,7 +908,7 @@ $hostExecutionOutcome='success'
             "'--expected-source-family-sha256',$sourceFamilySha",
             "'--fly2',$flyPath",
             "'--source-states-lua',$sourceStatesLua",
-            "& $python @sourceProjectionArguments",
+            "-Arguments @($sourceProjectionArguments|Select-Object -Skip 2)",
         ):
             self.assertIn(token, invocation)
         self.assertNotIn(
@@ -840,6 +1132,7 @@ $hostExecutionOutcome='success'
                         "bundle": {
                             "iob": {"path": str(layout_asset)},
                             "con": {"path": str(layout_asset)},
+                            "placeholder_pa0": {"path": str(layout_asset)},
                         },
                     }
                 )
@@ -959,7 +1252,7 @@ $hostExecutionOutcome='success'
         self.assertIn("$physicalDecision = if", source)
         self.assertIn("physical_decision=$physicalDecision", source)
         self.assertIn("EXECUTION=PASS DECISION=$physicalDecision", source)
-        self.assertIn("Write-VerifiedRunManifest", source)
+        self.assertIn("Complete-RunArtifactPowerShellOwner", source)
         integrity = source[
             source.index("if ($summary.particles -ne $expectedParticles")
             : source.index("$physicalDecision = if")

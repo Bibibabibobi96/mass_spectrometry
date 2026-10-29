@@ -315,7 +315,9 @@ def _aggregate(steps: dict, sources: dict, terminals: dict, exits: dict, surface
 def prepare_force_budget(run: Path) -> dict:
     """Validate both raw audit tables and full census, then calculate unadjusted budgets."""
     run = Path(run)
-    paths = [run/p for p in ("inputs/resolved_model.json", "simion/events.csv", "simion/extraction_steps.csv", "simion/extraction_impulses.csv")]
+    from projects.dual_pressure_rectilinear_ion_processor.analysis.batching import analysis_source_record, native_data_directory
+    native = native_data_directory(run)
+    paths = [run/"inputs/resolved_model.json", *(native/name for name in ("events.csv", "extraction_steps.csv", "extraction_impulses.csv"))]
     for path in paths:
         if not path.is_file():
             raise FileNotFoundError(f"required extraction force audit input missing: {path}")
@@ -339,7 +341,7 @@ def prepare_force_budget(run: Path) -> dict:
     result["phase_space"] = phase_space_statistics(result["particles"])
     result.update(source_count=len(sources), surfaces=surfaces,
                   audit_window_start_us=window_start,
-                  source_records=[dict(path=str(path.resolve()), bytes=path.stat().st_size, sha256=file_sha256(path)) for path in paths],
+                  source_records=[analysis_source_record(run, path) for path in paths],
                   frame_id=config["coordinate_transform"]["to_frame_id"],
                   losses=[dict(particle_id=pid, reason=row["reason"], t_us=_number(row["t_us"]),
                                event_csv_line=row["csv_line"], source="simion/events.csv")

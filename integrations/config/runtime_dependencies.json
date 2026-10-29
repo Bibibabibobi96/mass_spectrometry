@@ -261,6 +261,7 @@
           "source_repo_path": "common/resource_budget_support.ps1",
           "consumers": [
             "local_frontend",
+            "prepared_joint",
             "cooled_frontend",
             "oa_mr",
             "single_reflection_flight",
@@ -329,6 +330,14 @@
           ]
         },
         {
+          "id": "common_run_artifact_workflow",
+          "source_repo_path": "common/contracts/run_artifact_workflow.ps1",
+          "consumers": [
+            "prepared_joint",
+            "oa_mr"
+          ]
+        },
+        {
           "id": "common_require_powershell7",
           "source_repo_path": "common/require_powershell7.ps1",
           "consumers": [
@@ -394,6 +403,7 @@
             "accelerator_interface",
             "cooled_frontend",
             "oa_mr",
+            "multipole_ip",
             "single_reflection_flight",
             "paired_accelerator_static_field",
             "paired_accelerator_pulse"
@@ -733,6 +743,7 @@
             "local_frontend",
             "cooled_frontend",
             "oa_mr",
+            "prepared_joint",
             "single_reflection_flight",
             "paired_accelerator_static_field",
             "paired_accelerator_pulse"
@@ -934,7 +945,8 @@
           "id": "common_simion_native_fast_adjust_runtime_support_ps1",
           "source_repo_path": "common/simion/native_fast_adjust_runtime_support.ps1",
           "consumers": [
-            "oa_mr"
+            "oa_mr",
+            "prepared_joint"
           ]
         },
         {
@@ -965,6 +977,8 @@
           "consumers": [
             "prepared_joint",
             "oa_mr",
+            "accelerator_interface",
+            "cooled_frontend",
             "single_reflection_flight",
             "paired_accelerator_pulse"
           ]
@@ -975,6 +989,8 @@
           "consumers": [
             "prepared_joint",
             "oa_mr",
+            "accelerator_interface",
+            "cooled_frontend",
             "single_reflection_flight"
           ]
         },
@@ -2914,7 +2930,8 @@
           "id": "projects_parallel_mirror_dual_stripe_mr_tof_simion_native_corridor_runtime_support_ps1",
           "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/simion/native_corridor_runtime_support.ps1",
           "consumers": [
-            "oa_mr"
+            "oa_mr",
+            "prepared_joint"
           ]
         },
         {

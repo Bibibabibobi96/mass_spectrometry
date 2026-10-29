@@ -4,6 +4,11 @@
 [六极杆](variants/hexapole/README.md)、[八极杆](variants/octupole/README.md)三个显式结构变体。
 当前研究包括无碰撞RF传输、轴向加速和四极RF+DC质量过滤。碰撞、空间电荷等扩展物理尚无当前资格。
 变体共享机制，分别声明科学输入与证据；项目合并不提升已有结果的资格。
+项目门禁的unittest执行通过公共计时runner记录逐测试耗时并即时输出失败详情；测试范围仍由门禁目录选择。
+SIMION 正常入口以 `-NativeFieldRunPath` 显式复用原 producer 的 fractional 场，
+场、Fly 与分析依赖分别判断；公共检查点 API 及保留条件见[项目状态](docs/PROJECT.md#当前结论)。
+finite、interface_readiness 与 mass_filter_reference 的 request／completion 和收尾恢复默认接入公共 PowerShell owner API，
+项目只提供真实退出和 host release 事实；三条原 CLI 均可用 `-ResumeFinalization -RunId` 恢复收尾。
 
 ## 固定阅读顺序
 
@@ -55,6 +60,10 @@
 | 已记录四极轨迹的RF相位与横向差异 | [轨迹诊断](analysis/plot_transport_phase_diagnostics.py)；从仓库根用下方唯一模块入口，证据边界见[项目状态](docs/PROJECT.md#已记录轨迹相位诊断) |
 | 跨组件装配、外部光学与整机状态 | [统一集成入口](../../integrations/README.md) |
 | 静态门禁 | [verify_project.ps1](verify_project.ps1) |
+
+上述三个 SIMION CLI 均可通过 `-ContinuationPredecessorManifestPath` 显式指定同 workflow 终态前驱，
+以新的 `-RunId` 复用完整批次；科学输入和原分区必须匹配，旧 run 缺少所需证据时不会被当作完整批次。
+恢复、分析资源及保留边界见[SIMION活动入口](docs/SIMION.md#活动入口)。
 
 ```powershell
 python -m projects.rf_multipole_ion_optics.analysis.plot_transport_phase_diagnostics --run-dir <run> --comsol-trajectory <comsol.csv> --simion-trajectory <simion.csv> --output-label <label>

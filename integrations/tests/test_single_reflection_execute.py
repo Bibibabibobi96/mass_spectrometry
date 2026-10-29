@@ -22,6 +22,70 @@ EXECUTE = REPO / 'integrations/workflows/single_reflection_flight/execute.ps1'
 
 @unittest.skipUnless(shutil.which('pwsh'), 'PowerShell 7 is required')
 class SingleReflectionExecuteTests(unittest.TestCase):
+    def test_saved_replay_budget_failure_reports_unknown_writer(self):
+        script = r'''param($Owner)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$null,[ref]$null)
+$branch=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$replay.resource_budget_exceeded'},$true)
+if($null-eq$branch){throw 'replay guard missing'}
+$replay=@{resource_budget_exceeded=$true}
+try{. ([scriptblock]::Create($branch.Extent.Text));throw 'missing failure'}catch{
+ if(-not$_.Exception.Data.Contains('simion_wave_writer_completion_confirmed')-or$_.Exception.Data['simion_wave_writer_completion_confirmed']){throw}
+}
+exit 0
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            wrapper = Path(directory) / 'replay_guard.ps1'
+            wrapper.write_text(script, encoding='utf-8')
+            for owner in (EXECUTE, REPO / 'integrations/workflows/paired_accelerator_pulse/execute.ps1'):
+                result = subprocess.run(['pwsh', '-NoProfile', '-File', str(wrapper), str(owner)],
+                    cwd=REPO, capture_output=True, text=True, encoding='utf-8', timeout=30)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_frontend_owners_keep_unknown_writer_resources_and_primary_error(self):
+        script = r'''param($Owner,$Kind,$FailureKind,$Root)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw ($errors|Out-String)}
+$needle=if($Kind-eq'execute'){'Invoke-FrontendFlightPhase'}elseif($Kind-eq'run'){'execute_frozen_workflow'}else{'terminal_publication'}
+$body=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.TryStatementAst]-and$null-ne$n.Finally-and$n.Body.Extent.Text.Contains($needle)},$false))[0]
+if($null-eq$body){throw 'Owner lifecycle missing'}
+$handler=[scriptblock]::Create(($body.CatchClauses[0].Body.Statements.Extent.Text-join"`n"))
+$finalizer=[scriptblock]::Create(($body.Finally.Statements.Extent.Text-join"`n"))
+$writerUnknown=$false;$terminalized=$false;$package=@{result_dir=$Root};$resultDirectory=$Root
+$stageName='flight';$stage='flight';$lease=@{};$capacity=@{};$paGuards=@('guard');$failure=$null
+$script:written=0;$script:released=0
+function Write-RunJson {param($Path,$Value) if($Value.status-ne'unknown'){throw 'bad status'};$script:written++}
+function Exit-HostResourceStage {$script:released++};function Exit-HostExecutionLease {$script:released++}
+function Exit-ArtifactWorkflowCapacitySession {$script:released++};function Unprotect-ImmutablePaSource {$script:released++}
+function Remove-RunPackageExecutionAlias {$script:released++};function Complete-FailedRun {throw 'unexpected terminal'}
+try {
+ try {try{throw 'wave failed'}catch{
+   if($FailureKind-eq'first'){$_.Exception.Data['simion_first_batch_drain_error']='drain failed'}
+   else{$_.Exception.Data['simion_wave_writer_completion_confirmed']=$false}
+   throw
+ }} catch {. $handler}
+}catch{if($_.Exception.Message-ne'wave failed'){throw}}
+finally{. $finalizer}
+if(-not$writerUnknown-or$script:written-ne1-or$script:released-ne0){throw 'unknown writer cleanup escaped'}
+exit 0
+'''
+        owners = (
+            (EXECUTE, 'execute'),
+            (EXECUTE.with_name('run.ps1'), 'run'),
+            (REPO / 'integrations/workflows/paired_accelerator_pulse/execute.ps1', 'pulse'),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            wrapper = Path(directory) / 'writer_guard.ps1'
+            wrapper.write_text(script, encoding='utf-8')
+            for owner, kind in owners:
+                for failure in ('first', 'wave'):
+                    with self.subTest(owner=kind, failure=failure):
+                        result = subprocess.run(['pwsh', '-NoProfile', '-File', str(wrapper), str(owner), kind, failure, directory],
+                            cwd=REPO, capture_output=True, text=True, encoding='utf-8', timeout=30)
+                        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_iob_copy_initializer_hands_off_guard_before_capacity_debit(self):
         from common.contracts.write_run_manifest import file_record
         from common.simion.test_short_pa_path_support import PA_HASH_READ_COUNTERS
@@ -863,6 +927,15 @@ try {
                             self.assertTrue(list((run/'results').glob('*.stdout.log')))
                             continue
                         published_workbench=json.loads(published_path.read_text())
+                        if failure in ('flight_native', 'flight_native_controls'):
+                            self.assertEqual(published_workbench['coverage'], 'initial_formal_batch_only')
+                            self.assertEqual(len(published_workbench['batches']), 1)
+                            ids = published_workbench['batches'][0]['expected_particle_ids']
+                            self.assertEqual(ids, list(range(1, len(ids) + 1)))
+                            self.assertEqual(published_workbench['pending_particle_ids'], list(range(len(ids) + 1, 101)))
+                            self.assertEqual(published_workbench['flight_validation']['status'], 'failed')
+                            self.assertIn('Formal first batch did not continue or complete safely', result.stderr)
+                            continue
                         self.assertEqual(len(published_workbench['batches']),3)
                         self.assertEqual([pid for case in published_workbench['batches'] for pid in case['expected_particle_ids']],list(range(1,101)))
                         self.assertIsNone(published_workbench['gui_case'])

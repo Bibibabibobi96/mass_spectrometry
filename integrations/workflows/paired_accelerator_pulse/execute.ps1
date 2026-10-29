@@ -32,7 +32,7 @@ $project='instrument_assembly';$consumer='paired_accelerator_pulse'
 $reason='Recorded OA finite pulse; preserve original sources, shared fields, raw particle solutions and negative evidence; no numerical or Formal qualification.'
 $software=@('Python 3.11','PowerShell 7')
 if(-not$DryRun){$software+=@('SIMION 2020','COMSOL 6.4','MATLAB R2025b')}
-$package=$null;$capacity=$null;$lease=$null;$paGuards=@();$frozen=$null;$terminalized=$false
+$package=$null;$capacity=$null;$lease=$null;$paGuards=@();$frozen=$null;$terminalized=$false;$writerUnknown=$false
 $failure=$null;$stage='initialization';$reusedParticleSolution=$false;$reusedBaseline=$false;$reusedReplay=$false;$reusedParticleExports=$false;$nativeExecuted=$false
 $header="import json,sys; from pathlib import Path; from integrations.workflows.paired_accelerator_pulse.prepare import prepare; from integrations.workflows.paired_accelerator_pulse.runtime import *; "
 function Invoke-PulsePython {
@@ -136,6 +136,7 @@ try{
           if($done.ContainsKey($key)){$config.inputs["completed_parent_$index"]=$done[$key].path;$index++}
         }
         foreach($record in $done.logs){$config.inputs["completed_parent_$index"]=$record.path;$index++}
+        if($done.ContainsKey('completion_facts')){foreach($record in $done.completion_facts){$config.inputs["completed_parent_$index"]=$record.path;$index++}}
       }
       if($reusedParticleExports){$config.inputs.completed_particle_export_plan=$completed.particle_exports.plan.path}
       Write-RunJson -Path $package.run_config -Depth 100 -Value $config
@@ -203,9 +204,18 @@ try{
           $continuation=Invoke-PulsePython 'print(json.dumps(materialize_simion_continuation(Path(sys.argv[1]),Path(sys.argv[2]),json.loads(Path(sys.argv[3]).read_text(encoding="utf-8-sig")),code_root=Path(sys.argv[4]),field_pa=Path(sys.argv[5]),seed_iob=Path(sys.argv[6]))))' `
             @($planPath,$package.artifact_run_dir,$stagesPath,$frozen.execution_root,$fieldPa,$seed)
           if($null-ne$continuation){
-            $continuationArguments=@{FixedDispatchPlanPath=$continuation.fixed_dispatch_plan_path;ContinuationPlanPath=$continuation.continuation_plan_path;ContinuationWorkbench=$continuation.workbench}
+            $null=Copy-VerifiedRunInput -Source $continuation.fixed_dispatch_plan_path -Destination $dispatchPath
+            $continuationArguments=@{FixedDispatchPlanPath=$dispatchPath;ContinuationPlanPath=$continuation.continuation_plan_path;ContinuationWorkbench=$continuation.workbench}
             $config=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable -Depth 100
             $config.inputs.simion_whole_unit_continuation=$continuation.continuation_record.path
+            $reuseIndex=0
+            foreach($unit in $continuation.workbench.batches){
+              # Bind the actual reused ancestor outputs through this direct parent.
+              if(($unit-is[Collections.IDictionary]-and$unit.Contains('continuation_source'))-or
+                 $unit.PSObject.Properties.Name-contains'continuation_source'){
+                foreach($record in $unit.continuation_source.terminal_outputs){$config.inputs["reused_baseline_$reuseIndex"]=$record.path;$reuseIndex++}
+              }
+            }
             Write-RunJson -Path $package.run_config -Value $config -Depth 100
             if($continuation.field.path-ne$fieldPa){
               $oldField=$continuation.field
@@ -222,7 +232,9 @@ try{
         $workbench=Invoke-FrontendFlightPhase -RunDirectory $package.artifact_run_dir -ProjectRunsRoot (Split-Path -Parent $package.artifact_run_dir) `
           -RepoRoot $frozen.execution_root -Python $Python -RuntimeModule integrations.workflows.paired_accelerator_pulse.runtime `
           -SimionExe $SimionExe -Limits ([pscustomobject]$budget.limits) -Phase pulse -RuntimeInputArguments $runtimeInputs -WorkbenchReceiptPath $workbenchPath `
-          -IobVerification ${function:Confirm-PulseIobVerification} @continuationArguments
+          -IobVerification ${function:Confirm-PulseIobVerification} `
+          -OnProcessCompleted {param($record) Write-FrontendBatchCheckpoint -Record $record -Phase 'pulse' -RunDirectory $package.artifact_run_dir `
+            -RunConfig $package.run_config -WorkbenchReceiptPath $workbenchPath -DispatchPlanPath $dispatchPath -Python $Python -RepoRoot $RepoRoot} @continuationArguments
         if(@($workbench.native_process_records).Count){$nativeExecuted=$true}
         Write-RunJson -Path $workbenchPath -Depth 100 -Value $workbench
         $lease=Update-HostResourceStage -Lease $lease -Stage postprocess -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
@@ -232,7 +244,27 @@ try{
       }
       if(-not$reusedReplay){
         $stage='default_replay'
+        $replayContinuation=$null;$replayUnits=@{}
+        if($PredecessorManifest){
+          $replayContinuation=Invoke-PulsePython 'print(json.dumps(plan_simion_replay_continuation(json.loads(Path(sys.argv[1]).read_text(encoding="utf-8-sig")),Path(sys.argv[2]))))' @($stagesPath,$package.artifact_run_dir)
+          if($null-ne$replayContinuation){
+            $config=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable -Depth 100
+            $config.inputs.pulse_replay_continuation=$replayContinuation.plan_record.path
+            $index=0
+            foreach($unit in $replayContinuation.plan.units){
+              $replayUnits[[string]$unit.key]=$unit
+              if($unit.action-eq'reuse'){foreach($record in $unit.terminal_outputs){$config.inputs["reused_replay_$index"]=$record.path;$index++}}
+            }
+            Write-RunJson -Path $package.run_config -Value $config -Depth 100
+          }
+        }
         $specifications=@(foreach($case in $workbench.batches){
+          $unit=$replayUnits[[string]$case.case_id]
+          if($null-ne$unit-and$unit.action-eq'reuse'){
+            $case|Add-Member -NotePropertyName default_replay_stdout -NotePropertyValue ([string]$unit.terminal_outputs[0].path) -Force
+            $case|Add-Member -NotePropertyName replay_continuation_source -NotePropertyValue $unit -Force
+            continue
+          }
           $case|Add-Member -NotePropertyName default_replay_stdout -NotePropertyValue (Join-Path $package.artifact_run_dir ('logs/'+$case.case_id+'.replay.stdout.log')) -Force
           $case|Add-Member -NotePropertyName default_replay_stderr -NotePropertyValue (Join-Path $package.artifact_run_dir ('logs/'+$case.case_id+'.replay.stderr.log')) -Force
           $replayCase=$case|ConvertTo-Json -Depth 100|ConvertFrom-Json -AsHashtable -Depth 100
@@ -240,13 +272,20 @@ try{
           New-FrontendFlightSpecification -Case ([pscustomobject]$replayCase) -SimionExe $SimionExe
         })
         Write-RunJson -Path $workbenchPath -Value $workbench -Depth 100
-        $lease=Update-HostResourceStage -Lease $lease -Stage flight -Budget $budget.host_budgets.simion_flight -RetainedMemoryBytes 0
-        $replay=Invoke-ResourceBudgetedProcesses -DispatchPlanPath $dispatchPath `
-          -RunDir $package.artifact_run_dir -UsagePath (Join-Path $package.result_dir 'pulse_replay.resource_usage.json') -ProcessSpecifications $specifications
+        if($specifications.Count){$lease=Update-HostResourceStage -Lease $lease -Stage flight -Budget $budget.host_budgets.simion_flight -RetainedMemoryBytes 0}
+        $replay=if($specifications.Count){Invoke-ResourceBudgetedProcesses -DispatchPlanPath $dispatchPath `
+          -RunDir $package.artifact_run_dir -UsagePath (Join-Path $package.result_dir 'pulse_replay.resource_usage.json') -ProcessSpecifications $specifications `
+          -OnProcessCompleted {param($record) Write-FrontendBatchCheckpoint -Record $record -Phase 'pulse_replay' -RunDirectory $package.artifact_run_dir `
+            -RunConfig $package.run_config -WorkbenchReceiptPath $workbenchPath -DispatchPlanPath $dispatchPath -Python $Python -RepoRoot $RepoRoot}}else{@{resource_budget_exceeded=$false;processes=@()}}
+        if($replay.resource_budget_exceeded){
+          try{throw 'Pulse saved-default replay exceeded the resource budget; writer completion is unconfirmed.'}catch{
+            $_.Exception.Data['simion_wave_writer_completion_confirmed']=$false;throw
+          }
+        }
         if($replay.resource_budget_exceeded-or@($replay.processes|Where-Object exit_code -ne 0).Count){throw 'Pulse saved-default replay failed.'}
         if($specifications.Count){$nativeExecuted=$true}
-        Complete-ResourceUsage -RunDir $package.artifact_run_dir -UsagePath (Join-Path $package.result_dir 'pulse_replay.resource_usage.json')|Out-Null
-        $lease=Update-HostResourceStage -Lease $lease -Stage postprocess -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
+        if($specifications.Count){Complete-ResourceUsage -RunDir $package.artifact_run_dir -UsagePath (Join-Path $package.result_dir 'pulse_replay.resource_usage.json')|Out-Null}
+        if($specifications.Count){$lease=Update-HostResourceStage -Lease $lease -Stage postprocess -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0}
         $stage='collect_replay'
         $null=Invoke-PulsePython 'print(json.dumps(collect_simion_batches(Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]),phase="default_replay")))' `
           @($planPath,$workbenchPath,$package.artifact_run_dir)
@@ -290,6 +329,16 @@ try{
   $terminalized=$true
 }catch{
   $failure=$_
+  $data=$failure.Exception.Data
+  $writerUnknown=([bool]$data['simion_first_batch_writer_unknown']-or[bool]$data['simion_first_batch_drain_error']-or
+    ($data.Contains('simion_wave_writer_completion_confirmed')-and-not[bool]$data['simion_wave_writer_completion_confirmed']))
+  if($writerUnknown){
+    try{Write-RunJson -Path (Join-Path $package.result_dir 'writer_completion_unknown.json') -Value @{
+      schema_version=1;role='writer_completion_unknown';status='unknown';reason=$failure.Exception.Message;failure_stage=$stage
+      drain_error=[string]$data['simion_first_batch_drain_error'];wave_drain_error=[string]$data['simion_wave_drain_error']
+    }}catch{$failure.Exception.Data['writer_unknown_result_error']=[string]$_}
+    throw $failure
+  }
   if($lease){try{Exit-HostResourceStage -Lease $lease}catch{Write-Warning "Pulse stage release failed: $_"};$lease=$null}
   if($package-and-not$terminalized){
     $nativeOutputs=@(Get-ChildItem (Join-Path $package.artifact_run_dir 'comsol'),(Join-Path $package.artifact_run_dir 'simion') -Recurse -File|ForEach-Object FullName)
@@ -301,6 +350,7 @@ try{
   throw $failure
 }finally{
   $cleanupFailure=$null
+  if(-not$writerUnknown){
   foreach($source in $paGuards){try{Unprotect-ImmutablePaSource -Source $source}catch{$cleanupFailure=$_;Write-Warning "Pulse PA guard release failed: $_"}}
   if($capacity){try{$null=Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $capacity}catch{$cleanupFailure=$_;Write-Warning "Pulse capacity release failed: $_"}}
   if($package-and$terminalized){
@@ -311,5 +361,6 @@ try{
     }catch{$cleanupFailure=$_;Write-Warning "Pulse stopped payload sealing failed: $_"}
   }
   if($package){try{Remove-RunPackageExecutionAlias -Package $package}catch{$cleanupFailure=$_;Write-Warning "Pulse alias cleanup failed: $_"}}
+  }
   if($cleanupFailure-and-not$failure){throw $cleanupFailure}
 }

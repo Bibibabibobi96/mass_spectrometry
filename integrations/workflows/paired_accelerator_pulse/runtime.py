@@ -15,7 +15,8 @@ from common.analysis.particle_events import group_particle_events, iter_particle
 from common.contracts.file_identity import canonical_json_sha256
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
-from common.simion.native_completion import parse_fly_completed_line, require_one_fly_completion
+from common.simion.native_completion import (parse_fly_completed_line, require_one_fly_completion,
+    frontend_batch_completion_path, validate_frontend_batch_completion)
 from common.simion.batch_continuation import WholeUnitReplayUnit, build_whole_unit_replay_plan
 from common.simion.particle_batching import batch_plan_from_dispatch
 from integrations.runtime.single_flight_source import (
@@ -379,6 +380,20 @@ def load_completed_pulse_stages(plan_path: Path,predecessor_manifest: Path,snaps
         if _fingerprint(actual)!=_fingerprint(declared):
             raise ValueError("published pulse log identity differs")
         return actual
+    def completion_fact(phase: str, case: dict, stdout: Path) -> dict | None:
+        expected=frontend_batch_completion_path(base,phase,case['case_id'])
+        matches={record_path(r,base_dir=base) for r in records
+                 if record_path(r,base_dir=base).name==expected.name
+                 and record_path(r,base_dir=base).parent.name==phase
+                 and record_path(r,base_dir=base).parent.parent.name=='frontend_batch_completion'}
+        if len(matches)>1:
+            raise ValueError('pulse batch completion has ambiguous manifest bindings')
+        if not matches:
+            return None
+        path=next(iter(matches));fact=bound(path)
+        validate_frontend_batch_completion(path,phase=phase,case_id=case['case_id'],
+            stdout=stdout,count=case['count'],row_range=case['source_row_range'])
+        return fact
     plans=[r for r in manifest["inputs"].values() if Path(r["path"]).name=="paired_accelerator_pulse_plan.json" and record_path(r,base_dir=base).is_relative_to(base)]
     if len(plans)!=1:
         raise ValueError("one published predecessor pulse plan required")
@@ -391,7 +406,7 @@ def load_completed_pulse_stages(plan_path: Path,predecessor_manifest: Path,snaps
     verify_record("current static plan",current["static_plan"])
     result=dict(particle_model=None,particle_solution_fact=None,particle_source=None,particle_exports=None,simion_baseline=None,simion_replay=None,
                 simion_workbench=None,simion_dispatch=None,simion_field=None,
-                manifest=dict(file_record(snapshot_manifest),source_path=str(predecessor_manifest)),plan=old_plan_record,partial_units=[])
+                manifest=dict(file_record(snapshot_manifest),source_path=str(predecessor_manifest)),plan=old_plan_record,partial_units=[],replay_partial_units=[])
     original_source=None
     solution_record=bound(base/"comsol/paired_pulse_solution.json",optional=True)
     if solution_record is not None:
@@ -458,13 +473,31 @@ def load_completed_pulse_stages(plan_path: Path,predecessor_manifest: Path,snaps
                  and previous_field==_simion_field_identity(current))
     if workbench_record is None or dispatch_record is None:
         raise ValueError("published pulse units require their workbench and fixed dispatch")
-    workbench=_read(record_path(workbench_record));dispatch=_read(record_path(dispatch_record))
+    workbench=_read(record_path(workbench_record))
+    if workbench.get('coverage')=='initial_formal_batch_only':
+        provisional=bound(base/'results/pulse.provisional_dispatch_plan.json')
+        dispatch=_read(record_path(provisional))
+    else:
+        dispatch=_read(record_path(dispatch_record))
     batch_plan=batch_plan_from_dispatch(dispatch)
+    recovered_dispatch=None
     if batch_plan.get("coverage","complete_population")!="complete_population":
-        raise ValueError("predecessor has no fixed complete dispatch; do not repeat completed formal work")
-    if (batch_plan["particle_count"]!=previous["particle_count"] or len(workbench["batches"])!=batch_plan["batch_count"]):
+        from common.simion.resource_scheduler import plan_recovered_formal_followup
+        provisional=bound(base/'results/pulse.provisional_dispatch_plan.json')
+        initial=_read(record_path(provisional))
+        if len(workbench['batches'])!=1:
+            raise ValueError('provisional pulse workbench must contain its single formal batch')
+        first=workbench['batches'][0]
+        receipt=frontend_batch_completion_path(base,'pulse',first['case_id'])
+        bound(receipt)
+        validate_frontend_batch_completion(receipt,phase='pulse',case_id=first['case_id'],
+            stdout=Path(first['stdout']),count=first['count'],row_range=first['source_row_range'])
+        recovered_dispatch=plan_recovered_formal_followup(initial,_read(receipt))
+        batch_plan=batch_plan_from_dispatch(recovered_dispatch)
+    if (batch_plan["particle_count"]!=previous["particle_count"] or
+            (recovered_dispatch is None and len(workbench["batches"])!=batch_plan["batch_count"])):
         raise ValueError("published workbench differs from its fixed dispatch")
-    for case,batch in zip(sorted(workbench["batches"],key=lambda c:c["index"]),batch_plan["batches"],strict=True):
+    for case,batch in zip(sorted(workbench["batches"],key=lambda c:c["index"]),batch_plan["batches"]):
         low,high=batch["particle_id_min"],batch["particle_id_max"]
         if (case["index"]!=batch["index"] or case["count"]!=batch["count"] or case["source_row_range"]!=[low,high]
                 or case["expected_particle_ids"]!=previous["selected_particle_ids"][low-1:high]):
@@ -483,26 +516,48 @@ def load_completed_pulse_stages(plan_path: Path,predecessor_manifest: Path,snaps
                 marker=f"PAIRED_ACCELERATOR_PULSE_CALLBACKS_COMPLETE particles={case['count']}"
                 if native.splats!=case["count"] or sum(line.strip()==marker for line in lines)!=1:
                     raise ValueError("declared completed native pulse batch has invalid census")
-                artifacts=[bound(stdout),*_verify_case_records(case,bound)];complete=True
+                fact=completion_fact('pulse',case,stdout)
+                if fact is not None:
+                    artifacts=[bound(stdout),*_verify_case_records(case,bound),fact];complete=True
         if complete:
             complete_records.extend(artifacts)
         result["partial_units"].append(dict(key=case["case_id"],is_complete=complete,
             terminal_outputs=[str(record_path(r)) for r in artifacts] if complete else [str(stdout)]))
     if same_simion:
         result.update(simion_workbench=workbench_record,simion_dispatch=dispatch_record,simion_field=field)
+        if recovered_dispatch is not None:
+            result['recovered_dispatch']=recovered_dispatch
+            for batch in batch_plan['batches'][1:]:
+                low,high=batch['particle_id_min'],batch['particle_id_max']
+                key=f"batch_{batch['index']:04d}__rows_{low:06d}_{high:06d}"
+                result['partial_units'].append(dict(key=key,is_complete=False,terminal_outputs=[str(base/'logs'/f'{key}.missing')]))
+        for case in workbench['batches']:
+            stdout=Path(case.get('default_replay_stdout',base/'logs'/f"{case['case_id']}.replay.stdout.log"))
+            log=bound(stdout,verify=False,optional=True)
+            fact=completion_fact('pulse_replay',case,stdout) if log is not None else None
+            complete=False;artifacts=[]
+            if fact is not None:
+                with stdout.open(encoding='utf-8-sig') as stream:
+                    lines=list(stream)
+                native=require_one_fly_completion(lines)
+                marker=f"PAIRED_ACCELERATOR_PULSE_CALLBACKS_COMPLETE particles={case['count']}"
+                if native.splats!=case['count'] or sum(line.strip()==marker for line in lines)!=1:
+                    raise ValueError('declared completed pulse replay has invalid census')
+                artifacts=[bound(stdout),fact,*_verify_case_records(case,bound)];complete=True
+            result['replay_partial_units'].append(dict(key=case['case_id'],is_complete=complete,
+                terminal_outputs=[str(record_path(r)) for r in artifacts] if complete else [str(stdout)]))
     if baseline_record is not None:
         baseline=_read(record_path(baseline_record))
         if (baseline.get("role")!="paired_accelerator_pulse_simion_collection" or baseline.get("native_complete") is not True
                 or baseline.get("phase")!="baseline" or baseline.get("particle_ids")!=previous["selected_particle_ids"]
                 or baseline.get("physical_identity")!=_source_identity(previous) or baseline.get("simion_field_identity")!=previous_field
-                or baseline.get("simion_numerics")!=_simion_numerics(previous)
-                or not all(unit["is_complete"] for unit in result["partial_units"])):
+                or baseline.get("simion_numerics")!=_simion_numerics(previous)):
             raise ValueError("declared complete SIMION baseline evidence is invalid")
         sample_record=bound(record_path(baseline["samples"]))
         if _fingerprint(sample_record)!=_fingerprint(baseline["samples"]):
             raise ValueError("SIMION baseline result identity differs")
         baseline_logs=[published_log(record) for record in baseline["logs"]]
-        if same_simion:
+        if same_simion and all(unit["is_complete"] for unit in result["partial_units"]):
             result["simion_baseline"]=dict(collection=baseline_record,samples=sample_record,logs=baseline_logs,
                 workbench=workbench_record,dispatch=dispatch_record,field=field,control_records=complete_records)
     replay_record=bound(base/"results/simion_pulse_replay_comparison.json",optional=True)
@@ -516,9 +571,27 @@ def load_completed_pulse_stages(plan_path: Path,predecessor_manifest: Path,snaps
         if _fingerprint(replay_samples)!=_fingerprint(replay["replay_samples"]):
             raise ValueError("SIMION replay result identity differs")
         replay_logs=[published_log(record) for record in replay["logs"]]
-        if same_simion:
-            result["simion_replay"]=dict(comparison=replay_record,samples=replay_samples,logs=replay_logs)
+        replay_facts=[]
+        for case in workbench['batches']:
+            fact=completion_fact('pulse_replay',case,Path(case['default_replay_stdout']))
+            if fact is None:
+                break
+            replay_facts.append(fact)
+        if same_simion and result['simion_baseline'] is not None and len(replay_facts)==len(workbench['batches']):
+            result["simion_replay"]=dict(comparison=replay_record,samples=replay_samples,logs=replay_logs,completion_facts=replay_facts)
     return result
+
+
+def plan_simion_replay_continuation(stages: dict, run: Path) -> dict | None:
+    """Reuse only manifest-bound complete replay units from the fixed predecessor."""
+    rows=stages.get('replay_partial_units',[])
+    if not rows or not any(row['is_complete'] for row in rows):
+        return None
+    parent=Path(stages['manifest']['source_path']).parent
+    directory=run.resolve()/'inputs/pulse_replay_continuation'
+    units=[WholeUnitReplayUnit(row['key'],tuple(Path(p) for p in row['terminal_outputs']),row['is_complete']) for row in rows]
+    plan=build_whole_unit_replay_plan(predecessor_run_dir=parent,output_dir=directory,units=units)
+    return dict(plan=plan,plan_record=file_record(directory/'simion_whole_unit_replay_plan.json'))
 
 
 def prepare_dispatch_request(run: Path,plan_path: Path,code_root: Path,field_pa: Path) -> dict:
@@ -612,11 +685,17 @@ def materialize_simion_continuation(plan_path: Path,run: Path,stages: dict, *,co
     planned=build_whole_unit_replay_plan(predecessor_run_dir=source,output_dir=directory,units=units)
     replay={row["key"] for row in planned["units"] if row["action"]=="replay"}
     parent_workbench=_read(record_path(stages["simion_workbench"]))
-    dispatch=_read(record_path(stages["simion_dispatch"]))
+    dispatch=stages.get('recovered_dispatch') or _read(record_path(stages["simion_dispatch"]))
+    dispatch_path=record_path(stages["simion_dispatch"])
+    if stages.get('recovered_dispatch') is not None:
+        dispatch_path=directory/'recovered_dispatch_plan.json'
+        _json_once(dispatch_path,dispatch)
     workbench=materialize_batches(run,plan_path,dispatch,code_root=code_root,field_pa=field_pa,seed_iob=seed_iob,materialize_case_ids=replay)
-    workbench["batches"].extend(case for case in parent_workbench["batches"] if case["case_id"] not in replay)
+    units_by_key={unit['key']:unit for unit in planned['units']}
+    workbench["batches"].extend({**case,'continuation_source':units_by_key[case['case_id']]}
+        for case in parent_workbench["batches"] if case["case_id"] not in replay)
     workbench["batches"].sort(key=lambda case:case["index"])
-    return dict(fixed_dispatch_plan_path=str(record_path(stages["simion_dispatch"])),
+    return dict(fixed_dispatch_plan_path=str(dispatch_path),
                 continuation_plan_path=str(directory/"simion_whole_unit_replay_plan.json"),
                 continuation_record=file_record(directory/"simion_whole_unit_replay_plan.json"),
                 workbench=workbench,field=stages["simion_field"])

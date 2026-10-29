@@ -636,15 +636,18 @@ class ArtifactRetentionTests(unittest.TestCase):
             compact = source.replace(" ", "")
             self.assertIn(
                 "[ValidateSet('compact','qualification','solver_review')]"
-                "[string]$RetentionClass='compact'",
+                f"[string]$RetentionClass='{'solver_review' if name == 'run_simion_finite_3d_transport.ps1' else 'compact'}'",
                 compact,
             )
             self.assertIn("artifact_retention=", source)
             self.assertIn("-RetentionContractEnabled", source)
-            self.assertLess(
-                source.index("Apply-RunArtifactRetention"),
-                source.index("Write-VerifiedRunManifest", source.index("try{")),
-            )
+            if name == "run_simion_finite_3d_transport.ps1":
+                owner = (REPO_ROOT / "common/contracts/run_artifact_workflow.ps1").read_text(encoding="utf-8-sig")
+                self.assertIn("Complete-RunArtifactPowerShellOwner -Context", source)
+                self.assertLess(owner.index("Apply-RunArtifactRetention"), owner.index("Publish-WorkflowTerminal -Python"))
+            else:
+                self.assertLess(source.index("Apply-RunArtifactRetention"),
+                                source.index("Write-VerifiedRunManifest", source.index("try{")))
 
     def test_every_production_new_run_package_caller_enables_capacity_lifecycle(self) -> None:
         callers: dict[str, str] = {}

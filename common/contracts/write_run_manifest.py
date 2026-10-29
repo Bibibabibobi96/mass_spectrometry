@@ -8,6 +8,7 @@ import json
 import os
 import platform
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,10 +17,12 @@ try:
     from common.contracts.artifact_naming import validate_run_id
     from common.contracts.file_identity import file_sha256, file_sha256_unbuffered
     from common.contracts.recorded_file_removal import write_json_atomic
+    from common.contracts.capacity_protection import process_file_lock
 except ModuleNotFoundError:
     from artifact_naming import validate_run_id
     from file_identity import file_sha256, file_sha256_unbuffered
     from recorded_file_removal import write_json_atomic
+    from capacity_protection import process_file_lock
 
 
 def retention_api() -> tuple[Any, Any, Any, Any]:
@@ -56,6 +59,8 @@ def resolve_path(value: str, base: Path, project_root: Path | None) -> Path:
 
 
 TERMINAL_JOURNAL_NAME = ".run_terminal_publication.json"
+TERMINAL_LOCK_NAME = ".run_terminal_publication.lock"
+TERMINAL_STATUSES = {"success", "failed", "interrupted", "superseded"}
 # Reuse the validated Windows PA inventory's 8 MiB large-payload read tier.
 # This I/O threshold is not a scientific parameter or a retry policy.
 _UNBUFFERED_SOLVER_PAYLOAD_BYTES = 8 * 1024 * 1024
@@ -166,8 +171,10 @@ def build_run_manifest(
             declared = resolve_path(value, base, project_root)
             actual, recorded = actual_and_recorded(declared)
             inputs[name] = file_record(actual, recorded_path=recorded, _identity_cache=identity_cache)
+    lock_paths = {(actual_root / TERMINAL_LOCK_NAME).resolve(), (recorded_root / TERMINAL_LOCK_NAME).resolve()}
     resolved_outputs = [
-        resolve_path(str(path), base, project_root) for path in (output_paths or [])
+        resolved for path in (output_paths or [])
+        if (resolved := resolve_path(str(path), base, project_root)) not in lock_paths
     ]
     if retention is not None and status not in {"interrupted", "checkpoint"}:
         run_files = [
@@ -243,9 +250,15 @@ def require_completed_terminal_publication(manifest_path: Path) -> None:
         raise ValueError("run terminal publication is incomplete; replay its journal")
 
 
-def replay_terminal_publication(run_root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Idempotently replay the sole durable terminal-publication journal."""
+def _can_replace_provisional(existing: dict[str, Any], target: dict[str, Any], allowed: bool) -> bool:
+    return bool(allowed and existing.get("status") == "interrupted"
+                and existing.get("lifecycle_state") == "provisional"
+                and existing.get("run_id") == target.get("run_id")
+                and existing.get("project") == target.get("project")
+                and existing.get("mode") == target.get("mode"))
 
+
+def _replay_terminal_publication_locked(run_root: Path, *, allow_provisional: bool = False) -> tuple[dict[str, Any], dict[str, Any]]:
     root = run_root.resolve()
     journal_path = root / TERMINAL_JOURNAL_NAME
     journal = json.loads(journal_path.read_text(encoding="utf-8-sig"))
@@ -263,20 +276,38 @@ def replay_terminal_publication(run_root: Path) -> tuple[dict[str, Any], dict[st
         raise ValueError("terminal publication journal is invalid")
     summary = documents["summary.json"]
     manifest = documents["run_manifest.json"]
+    existing_path = root / "run_manifest.json"
+    if existing_path.is_file():
+        existing = json.loads(existing_path.read_text(encoding="utf-8-sig"))
+        if (existing.get("status") in TERMINAL_STATUSES and existing != manifest
+                and not _can_replace_provisional(existing, manifest, allow_provisional)):
+            raise ValueError("terminal publication conflicts with the already published manifest")
     write_json_atomic(root / "summary.json", summary)
     write_json_atomic(root / "run_manifest.json", manifest)
     journal_path.unlink()
     return summary, manifest
 
 
+def replay_terminal_publication(run_root: Path, *, allow_provisional: bool = False) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Idempotently replay the sole durable terminal-publication journal."""
+    root = run_root.resolve()
+    if not root.is_dir():
+        raise FileNotFoundError(f"terminal run directory is missing: {root}")
+    with process_file_lock(root / TERMINAL_LOCK_NAME):
+        return _replay_terminal_publication_locked(root, allow_provisional=allow_provisional)
+
+
 def publish_terminal_state(
     run_root: Path,
     summary: dict[str, Any],
     manifest: dict[str, Any],
+    *, allow_provisional: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Journal and publish summary plus manifest as one replayable intent."""
 
     root = run_root.resolve()
+    if not root.is_dir():
+        raise FileNotFoundError(f"terminal run directory is missing: {root}")
     journal_path = root / TERMINAL_JOURNAL_NAME
     journal = {
         "schema_version": 1,
@@ -284,13 +315,68 @@ def publish_terminal_state(
         "run_id": manifest.get("run_id"),
         "documents": {"summary.json": summary, "run_manifest.json": manifest},
     }
-    if journal_path.exists():
-        existing = json.loads(journal_path.read_text(encoding="utf-8-sig"))
-        if existing != journal:
-            raise ValueError("another terminal publication is already pending")
-    else:
-        write_json_atomic(journal_path, journal)
-    return replay_terminal_publication(root)
+    with process_file_lock(root / TERMINAL_LOCK_NAME):
+        existing_manifest_path = root / "run_manifest.json"
+        if existing_manifest_path.is_file():
+            existing_manifest = json.loads(existing_manifest_path.read_text(encoding="utf-8-sig"))
+            if existing_manifest.get("status") in TERMINAL_STATUSES:
+                if existing_manifest != manifest and not _can_replace_provisional(existing_manifest, manifest, allow_provisional):
+                    raise ValueError("terminal publication conflicts with the already published manifest")
+                if existing_manifest == manifest and not journal_path.exists():
+                    existing_summary = json.loads((root / "summary.json").read_text(encoding="utf-8-sig"))
+                    if existing_summary != summary:
+                        raise ValueError("terminal publication conflicts with the already published summary")
+                    return summary, manifest
+        if journal_path.exists():
+            existing = json.loads(journal_path.read_text(encoding="utf-8-sig"))
+            if existing != journal:
+                raise ValueError("another terminal publication is already pending")
+        else:
+            write_json_atomic(journal_path, journal)
+        return _replay_terminal_publication_locked(root, allow_provisional=allow_provisional)
+
+
+def publish_run_manifest(
+    run_config_path: Path, status: str, *, destination: Path | None = None,
+    software: list[str] | None = None, output_paths: list[Path] | None = None,
+    actual_root: Path | None = None, recorded_root: Path | None = None,
+    virtual_documents: dict[Path, dict[str, Any]] | None = None,
+    extra_fields: dict[str, Any] | None = None, allow_missing_inputs: bool = False,
+    allow_provisional: bool = False,
+) -> dict[str, Any]:
+    """Build and atomically publish through the shared terminal exclusion."""
+    run_config_path = run_config_path.resolve()
+    destination = destination or run_config_path.with_name("run_manifest.json")
+    with process_file_lock(run_config_path.parent / TERMINAL_LOCK_NAME):
+        require_completed_terminal_publication(run_config_path.parent / "run_manifest.json")
+        prior, prior_error = None, None
+        is_primary = destination.resolve() == (run_config_path.parent / "run_manifest.json").resolve()
+        if is_primary and destination.is_file():
+            try:
+                prior = json.loads(destination.read_text(encoding="utf-8-sig"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as error:
+                prior_error = error
+            if isinstance(prior, dict) and prior.get("status") in TERMINAL_STATUSES:
+                current = json.loads(run_config_path.read_text(encoding="utf-8-sig"))
+                if not _can_replace_provisional(prior, current, allow_provisional):
+                    raise ValueError("cannot replace an already published terminal manifest")
+        manifest = build_run_manifest(run_config_path, status, software=software, output_paths=output_paths,
+            actual_root=actual_root, recorded_root=recorded_root, virtual_documents=virtual_documents,
+            extra_fields=extra_fields, allow_missing_inputs=allow_missing_inputs)
+        missing = [record["path"] for record in manifest["outputs"] if not record["exists"]]
+        if missing:
+            raise ValueError(f"missing run outputs: {missing}")
+        if is_primary and destination.is_file() and (prior_error is not None or not isinstance(prior, dict)):
+            raise ValueError("existing run manifest is unreadable")
+        candidate = destination.with_name(f".{destination.stem}.{uuid.uuid4().hex}.candidate{destination.suffix}")
+        try:
+            write_json_atomic(candidate, manifest)
+            if candidate.read_bytes() != _json_bytes(manifest):
+                raise ValueError("published manifest differs from the computed records")
+            os.replace(candidate, destination)
+        finally:
+            candidate.unlink(missing_ok=True)
+        return manifest
 
 
 def main() -> None:
@@ -311,7 +397,6 @@ def main() -> None:
     run_config_path = args.run_config.resolve()
     destination = args.manifest or run_config_path.with_name("run_manifest.json")
     try:
-        require_completed_terminal_publication(destination)
         output_values = list(args.output)
         if args.output_list_json is not None:
             payload = (sys.stdin.buffer.read().decode("utf-8-sig") if str(args.output_list_json) == "-"
@@ -321,18 +406,8 @@ def main() -> None:
                 raise ValueError("--output-list-json requires a JSON list[str]")
             output_values.extend(entries)
         output_paths = [Path(value) for value in output_values]
-        manifest = build_run_manifest(
-            run_config_path,
-            args.status,
-            software=args.software,
-            output_paths=output_paths,
-        )
-        missing = [record["path"] for record in manifest["outputs"] if not record["exists"]]
-        if missing:
-            raise ValueError(f"missing run outputs: {missing}")
-        write_json_atomic(destination, manifest)
-        if destination.read_bytes() != _json_bytes(manifest):
-            raise ValueError("published manifest differs from the computed records")
+        publish_run_manifest(run_config_path, args.status, destination=destination,
+                             software=args.software, output_paths=output_paths)
     except (ValueError, OSError) as error:
         raise SystemExit(str(error)) from error
     print(f"RUN_MANIFEST=PASS PATH={destination}")

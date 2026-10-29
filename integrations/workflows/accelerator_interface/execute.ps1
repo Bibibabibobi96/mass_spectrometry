@@ -1,14 +1,26 @@
 [CmdletBinding()]
 param(
-  [Parameter(Mandatory)][string]$ReferenceMrRunPath,
+  [string]$ReferenceMrRunPath='',
   [ValidateSet('orthogonal_accelerator','dual_pressure_rectilinear_ion_processor')]
   [string]$AcceleratorProvider='orthogonal_accelerator',
   [string]$IonProcessorRunPath='',
+  [string]$MultipoleIpRequestPath='',
+  [string]$MultipoleIpRunId='',
+  [string]$IonProcessorRunId='',
+  [string]$IonProcessorConfigurationDirectory='',
+  [string]$IonProcessorFieldRunPath='',
+  [switch]$ContinueOnIpScientificFailure,
   [switch]$FinalizeJointWorkbench,
   [string]$PreparedInterfaceRunPath='',
   [string]$JointFieldRunPath='',
   [string]$ContractPath='',
   [string]$MatchingRequestPath='',
+  [switch]$FullJoint,
+  [switch]$ResumeFinalization,
+  [string]$ResultPath='',
+  [string]$FieldRequestPath='',
+  [string]$ContinuationPredecessorManifestPath='',
+  [string]$PreparedJointWorkbenchRunPath='',
   [string]$SimionExe='',
   [string]$RunId='',
   [string]$LuaExe='',
@@ -31,6 +43,280 @@ $script:pythonRoot=$repoRoot
 $workspaceRoot=Split-Path -Parent $repoRoot
 . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
 $python=if($PythonExe){(Resolve-Path -LiteralPath $PythonExe).Path}else{Join-Path $repoRoot '.venv/Scripts/python.exe'}
+function Invoke-JointOwnerStage {
+  param([string]$Script,[hashtable]$Arguments)
+  $watch=[Diagnostics.Stopwatch]::StartNew()
+  try{& $Script @Arguments}
+  finally{Write-Output ("JOINT_STAGE OWNER={0} ELAPSED_SECONDS={1:F3}" -f $Script,$watch.Elapsed.TotalSeconds)}
+}
+function Get-JointDesignReceipt {
+  param([string]$Run)
+  $path=Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+    & $python -B -c 'import sys;from pathlib import Path;from integrations.workflows.accelerator_interface.prepare import verified_preparation_reference;print(verified_preparation_reference(Path(sys.argv[1]),"results/accelerator_interface_preparation.json"))' $Run
+    if($LASTEXITCODE-ne0){throw 'Design preparation receipt failed its owner and manifest validation.'}
+  }
+  return Get-Content -LiteralPath ($path|Select-Object -Last 1) -Raw|ConvertFrom-Json -AsHashtable
+}
+function Get-MultipoleIpPreparation {
+  param([string]$Run,[string]$ConfigurationDirectory)
+  # Check the published handoff and the actual receiver geometry before any IP
+  # native work. The project owns its geometry projection and coordinate map.
+  $code=@'
+import json, sys
+from pathlib import Path
+from common.contracts.verify_run_manifest import verified_successful_run_reference, verify_record, record_path
+from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection
+from projects.dual_pressure_rectilinear_ion_processor.analysis.coordinates import transform_from_config
+run, config = map(Path, sys.argv[1:])
+path = verified_successful_run_reference(run, 'results/multipole_ip/preparation_receipt.json', project='instrument_assembly', mode='multipole_ip_preparation')
+receipt = json.loads(path.read_text(encoding='utf-8-sig'))
+if receipt.get('role') != 'multipole_ip_preparation' or receipt.get('status') != 'success':
+    raise ValueError('MP-to-IP preparation receipt is not complete')
+verify_record('receiver model', receipt['receiver_model'], base_dir=run)
+model = json.loads(record_path(receipt['receiver_model'], base_dir=run).read_text(encoding='utf-8-sig'))
+candidate = {name: json.loads((config / (name + '.json')).read_text(encoding='utf-8-sig')) for name in ('baseline', 'numerics', 'coordinate_transform')}
+if native_projection(model['baseline'], model['numerics']) != native_projection(candidate['baseline'], candidate['numerics']) or transform_from_config(model) != transform_from_config(candidate):
+    raise ValueError('IP configuration geometry/frame differs from the frozen MP-to-IP receiver')
+source = verified_successful_run_reference(run, 'results/multipole_ip/ip_injected_source.json', project='instrument_assembly', mode='multipole_ip_preparation')
+if record_path(receipt['injected_source'], base_dir=run) != source:
+    raise ValueError('MP-to-IP source differs from its preparation receipt')
+verify_record('injected source', receipt['injected_source'], base_dir=run)
+print(json.dumps(receipt))
+'@
+  $output=Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+    & $python -B -c $code $Run $ConfigurationDirectory
+    if($LASTEXITCODE-ne0){throw 'MP-to-IP preparation or receiver configuration failed validation.'}
+  }
+  return (($output -join "`n")|ConvertFrom-Json -AsHashtable)
+}
+function Assert-CompletedIpScientificFailure {
+  param([string]$Run)
+  $code=@'
+import json, sys
+from pathlib import Path
+from projects.dual_pressure_rectilinear_ion_processor.analysis.component_exit import load_component_source
+summary, _, _ = load_component_source(Path(sys.argv[1]).resolve())
+if not (summary.get('status') == 'failed' and summary.get('execution_status') == 'completed' and summary.get('data_validity') == 'valid' and summary.get('science_status') == 'not_passed' and summary.get('analysis_exit_code') == 2 and summary.get('native_completed') is True and summary.get('diagnostics_complete') is True):
+    raise ValueError('IP failure lacks completed native and analysis evidence')
+print(json.dumps(summary))
+'@
+  $output=Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+    & $python -B -c $code $Run
+    if($LASTEXITCODE-ne0){throw 'IP failure is not a verified completed scientific negative result.'}
+  }
+  return (($output -join "`n")|ConvertFrom-Json -AsHashtable)
+}
+function Assert-JointFieldRunId {
+  param([string]$Id)
+  Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+    & $python -B -m common.contracts.artifact_naming run $Id|Out-Null
+    if($LASTEXITCODE-ne0){throw "Run ID '$Id' does not satisfy the repository run naming contract."}
+  }
+}
+function Get-JointSourceStart {
+  param([hashtable]$ExitReceipt)
+  if(-not$ExitReceipt.ContainsKey('inputs')-or$null-eq$ExitReceipt.inputs){return 'unknown'}
+  if($ExitReceipt.inputs.ContainsKey('inputs/injected_source.json')){return 'upstream_injected_population'}
+  if($ExitReceipt.inputs.ContainsKey('inputs/release.csv')){return 'ip_local_release'}
+  return 'unknown'
+}
+function Write-FullJointFailure {
+  param([string]$Stage,[string]$Flight,[string]$Reason,[double]$Elapsed)
+  $recovery='inspect_stage_owner_result';$summaryPath=Join-Path $Flight 'summary.json'
+  if(Test-Path -LiteralPath $summaryPath -PathType Leaf){
+    try{
+      $summary=Get-Content -LiteralPath $summaryPath -Raw|ConvertFrom-Json -AsHashtable
+      if($summary.ContainsKey('failure_stage')){$Stage=[string]$summary.failure_stage}
+      if($summary.ContainsKey('reason')){$Reason=[string]$summary.reason}
+      if($Stage-eq'automatic_joint_diagnostics'){$recovery='use_prepared_joint_analysis_without_fly'}
+      elseif($summary.status-eq'success'){$recovery='inspect_published_result_and_capacity_sealing'}
+      else{$recovery='inspect_flight_summary_and_use_prepared_joint_owner'}
+    }catch{Write-Warning 'Flight summary could not be read; original failure retained.'}
+  }
+  Write-Error ("FULL_JOINT=FAILED STAGE={0} DATA_VALIDITY=unknown SCIENCE=unknown FLIGHT={1} RECOVERY={2} TOTAL_SECONDS={3:F3} REASON={4}" -f $Stage,$Flight,$recovery,$Elapsed,$Reason) -ErrorAction Continue
+}
+function Write-FullJointFlightResult {
+  param([string]$Workbench,[string]$Flight,[double]$Elapsed)
+  $summary=Get-Content -LiteralPath (Join-Path $Flight 'summary.json') -Raw|ConvertFrom-Json -AsHashtable
+  if($summary.status-ne'success'){throw 'Prepared joint owner did not publish a successful flight summary.'}
+  $validity='unknown';$counts='unknown';$peak='unknown';$source='unknown';$scope='unknown'
+  $diagnosticPath=Join-Path $summary.diagnostics 'diagnostics_receipt.json'
+  if(Test-Path -LiteralPath $diagnosticPath -PathType Leaf){
+    $diagnostic=Get-Content -LiteralPath $diagnosticPath -Raw|ConvertFrom-Json -AsHashtable
+    if($diagnostic.status-eq'complete_recorded_diagnostics'){
+      $validity='recorded_diagnostics_complete';$counts=($diagnostic.counts|ConvertTo-Json -Compress -Depth 10)
+      if($diagnostic.ContainsKey('detector_peak')){$peak=($diagnostic.detector_peak|ConvertTo-Json -Compress -Depth 20)}
+    }
+  }
+  $exitPath=Join-Path $Workbench 'results/ion_processor_exit/component_exit_receipt.json'
+  if(Test-Path -LiteralPath $exitPath -PathType Leaf){$source=Get-JointSourceStart -ExitReceipt (Get-Content -LiteralPath $exitPath -Raw|ConvertFrom-Json -AsHashtable)}
+  $bindingPath=Join-Path $Workbench 'results/joint_workbench/static_field_binding.json'
+  if(Test-Path -LiteralPath $bindingPath -PathType Leaf){
+    $binding=Get-Content -LiteralPath $bindingPath -Raw|ConvertFrom-Json -AsHashtable
+    if($binding.ContainsKey('parent')-and$binding.parent.ContainsKey('grid')-and$binding.ContainsKey('refinement_windows')){
+      $windows=@($binding.refinement_windows|ForEach-Object{@{name=$_.name;grid=$_.grid;active_box_mm=$_.active_box_mm}})
+      $scope=(@{parent_grid=$binding.parent.grid;windows=$windows}|ConvertTo-Json -Compress -Depth 20)
+    }
+  }
+  Write-Output ("FULL_JOINT EXECUTION=success DATA_VALIDITY={0} SCIENCE=not_qualified SOURCE={1} HANDOFF=state FIELD_SCOPE={2} COUNTS={3} DETECTOR_PEAK={4} NATIVE_BATCHES={5} REUSED_BATCHES={6} WORKBENCH={7} RESULT={8} DIAGNOSTICS={9} RECOVERY=none TOTAL_SECONDS={10:F3}" -f $validity,$source,$scope,$counts,$peak,$summary.actual_native_batch_count,$summary.reused_batch_count,$Workbench,$Flight,$summary.diagnostics,$Elapsed)
+}
+function Invoke-JointAnalysisPreflight {
+  param([string]$Design,[string]$Source,[string]$Contract)
+  Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+    & $python -B -c 'import sys;from pathlib import Path;from integrations.workflows.accelerator_interface.prepare import preflight_joint_analysis;preflight_joint_analysis(*map(Path,sys.argv[1:]))' $Design $Source $Contract
+    if($LASTEXITCODE-ne 0){throw "Joint analysis preflight failed (exit $LASTEXITCODE)."}
+  }
+}
+function Invoke-FullJoint {
+  $totalWatch=[Diagnostics.Stopwatch]::StartNew()
+  if($PreparedJointWorkbenchRunPath){
+    if(-not$ContractPath-or$FinalizeJointWorkbench-or$PreparedInterfaceRunPath-or$JointFieldRunPath-or$MatchingRequestPath-or$FieldRequestPath-or$MultipoleIpRequestPath-or$MultipoleIpRunId-or$IonProcessorRunId-or$IonProcessorConfigurationDirectory-or$IonProcessorFieldRunPath-or$ContinueOnIpScientificFailure){
+      throw 'A prepared workbench requires ContractPath and cannot be combined with design or field inputs.'
+    }
+    $workbench=(Resolve-Path -LiteralPath $PreparedJointWorkbenchRunPath).Path
+    $flightId=if($RunId){$RunId}else{(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__ip-mr-joint-'+[guid]::NewGuid().ToString('N').Substring(0,8)}
+    $flightRun=Join-Path $workspaceRoot "artifacts/projects/instrument_assembly/runs/$flightId"
+    $flight=@{PreparedJointWorkbenchRunPath=$workbench;ContractPath=$ContractPath;RunId=$flightId;RepoRoot=$repoRoot}
+    if($ResultPath){$flight.ResultPath=$ResultPath}
+    if($PythonExe){$flight.PythonExe=$PythonExe};if($SimionExe){$flight.SimionExe=$SimionExe}
+    if($ContinuationPredecessorManifestPath){$flight.ContinuationPredecessorManifestPath=$ContinuationPredecessorManifestPath}
+    try{
+      Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'integrations/workflows/prepared_joint/execute.ps1') -Arguments $flight
+      Write-FullJointFlightResult -Workbench $workbench -Flight $flightRun -Elapsed $totalWatch.Elapsed.TotalSeconds
+    }catch{
+      Write-FullJointFailure -Stage 'flight_and_analysis' -Flight $flightRun -Reason $_.Exception.Message -Elapsed $totalWatch.Elapsed.TotalSeconds
+      throw
+    }
+    return
+  }
+  if($AcceleratorProvider-ne'dual_pressure_rectilinear_ion_processor'-or-not$ReferenceMrRunPath-or-not$ContractPath){
+    throw 'FullJoint requires IP provider, MR reference and observation contract.'
+  }
+  if($MultipoleIpRequestPath){
+    if($IonProcessorRunPath-or-not$MultipoleIpRunId-or-not$IonProcessorRunId-or-not$IonProcessorConfigurationDirectory){
+      throw 'MP-to-IP source requires explicit preparation and IP run IDs and IP configuration, without an existing IP run.'
+    }
+    Assert-JointFieldRunId -Id $MultipoleIpRunId
+    Assert-JointFieldRunId -Id $IonProcessorRunId
+  }elseif(-not$IonProcessorRunPath-or$MultipoleIpRunId-or$IonProcessorRunId-or$IonProcessorConfigurationDirectory-or$IonProcessorFieldRunPath-or$ContinueOnIpScientificFailure){
+    throw 'FullJoint requires an existing IP source or an explicit MP-to-IP request and its source options.'
+  }
+  if($FinalizeJointWorkbench-or($JointFieldRunPath-and-not$PreparedInterfaceRunPath)-or
+     ($PreparedInterfaceRunPath-and$MatchingRequestPath)-or($JointFieldRunPath-and$FieldRequestPath)){
+    throw 'FullJoint accepts either an existing design or matching request, and either an existing field or field request.'
+  }
+  if(-not$PreparedInterfaceRunPath-and-not$MatchingRequestPath){throw 'FullJoint requires an existing design or matching request.'}
+  if(-not$JointFieldRunPath-and-not$FieldRequestPath){throw 'FullJoint requires an existing field or field request.'}
+  $fieldRequest=$null;$fieldId=''
+  if($FieldRequestPath){
+    $fieldTemplate=(Resolve-Path -LiteralPath $FieldRequestPath).Path
+    $fieldRequest=Get-Content -LiteralPath $fieldTemplate -Raw|ConvertFrom-Json -AsHashtable
+    $fieldId=[string]$fieldRequest.run_id
+    if(-not$fieldId-or$fieldId-in@('.','..')-or$fieldId-match'[/\\]'){throw 'Field request requires a safe new run_id.'}
+    Assert-JointFieldRunId -Id $fieldId
+  }
+  $designId=if($RunId){$RunId}else{New-AcceleratorInterfaceRunId -Provider $AcceleratorProvider}
+  $designRun=if($PreparedInterfaceRunPath){(Resolve-Path -LiteralPath $PreparedInterfaceRunPath).Path}else{Join-Path $workspaceRoot "artifacts/projects/instrument_assembly/runs/$designId"}
+  $fieldRun=if($JointFieldRunPath){(Resolve-Path -LiteralPath $JointFieldRunPath).Path}else{Join-Path $workspaceRoot "artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/$fieldId"}
+  $finalId=New-AcceleratorInterfaceRunId -Provider $AcceleratorProvider
+  $finalRun=Join-Path $workspaceRoot "artifacts/projects/instrument_assembly/runs/$finalId"
+  $flightId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__ip-mr-joint-'+[guid]::NewGuid().ToString('N').Substring(0,8)
+  $flightRun=Join-Path $workspaceRoot "artifacts/projects/instrument_assembly/runs/$flightId"
+  $common=@{ReferenceMrRunPath=$ReferenceMrRunPath;AcceleratorProvider=$AcceleratorProvider;IonProcessorRunPath=$IonProcessorRunPath;RepoRoot=$repoRoot}
+  if($LuaExe){$common.LuaExe=$LuaExe};if($PythonExe){$common.PythonExe=$PythonExe};if($SimionExe){$common.SimionExe=$SimionExe}
+  $stage='design';$temporary=$null
+  try {
+    if($MultipoleIpRequestPath){
+      $stage='multipole_ip_preparation'
+      $sourceRequest=(Resolve-Path -LiteralPath $MultipoleIpRequestPath).Path
+      $ipConfiguration=(Resolve-Path -LiteralPath $IonProcessorConfigurationDirectory).Path
+      $sourceRun=Join-Path $workspaceRoot "artifacts/projects/instrument_assembly/runs/$MultipoleIpRunId"
+      $sourceArguments=@{Request=$sourceRequest;RunId=$MultipoleIpRunId;RepoRoot=$repoRoot}
+      if($PythonExe){$sourceArguments.PythonExe=$PythonExe}
+      Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'integrations/workflows/multipole_ip/execute.ps1') -Arguments $sourceArguments
+      $sourceReceipt=Get-MultipoleIpPreparation -Run $sourceRun -ConfigurationDirectory $ipConfiguration
+      if([int]$sourceReceipt.exit_count-eq0){
+        Write-Output ("FULL_JOINT=ZERO_EXIT EXECUTION=success DATA_VALIDITY=valid SCIENCE=not_qualified SOURCE_RUN={0} SOURCE_CASE={1} SOURCE_PREPARATION={2} MOTHER={3} TRANSFERRED=0 IP_FLY=False MR_FIELD=False MR_FLY=False RECOVERY=none TOTAL_SECONDS={4:F3}" -f $sourceReceipt.source.run_id,$sourceReceipt.source.case_id,$sourceRun,$sourceReceipt.mother_count,$totalWatch.Elapsed.TotalSeconds)
+        return
+      }
+      $stage='ion_processor_flight'
+      $IonProcessorRunPath=Join-Path $workspaceRoot "artifacts/projects/dual_pressure_rectilinear_ion_processor/runs/$IonProcessorRunId"
+      $ipArguments=@{RunId=$IonProcessorRunId;InjectedSource=(Join-Path $sourceRun 'results/multipole_ip/ip_injected_source.json');ConfigurationDirectory=$ipConfiguration}
+      if($SimionExe){$ipArguments.SimionExe=$SimionExe}
+      if($IonProcessorFieldRunPath){$ipArguments.NativeFieldRun=(Resolve-Path -LiteralPath $IonProcessorFieldRunPath).Path}
+      try {Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'projects/dual_pressure_rectilinear_ion_processor/simion/run_functional.ps1') -Arguments $ipArguments}
+      catch {
+        $ipFailure=$_
+        if(-not$ContinueOnIpScientificFailure-or$ipFailure.Exception.Message-cne'Analysis or required diagnostics incomplete; see frozen summary and logs'){throw $ipFailure}
+        try {$ipSummary=Assert-CompletedIpScientificFailure -Run $IonProcessorRunPath}
+        catch {$ipFailure.Exception.Data['ip_source_verification_error']=$_.Exception.Message;throw $ipFailure}
+        Write-Output "FULL_JOINT_IP_SCIENCE=not_passed IP_RUN=$IonProcessorRunPath ORIGINAL_ERROR=$($ipFailure.Exception.Message)"
+      }
+      $common.IonProcessorRunPath=$IonProcessorRunPath
+      Write-Output "FULL_JOINT_SOURCE RUN=$($sourceReceipt.source.run_id) CASE=$($sourceReceipt.source.case_id) PREPARATION=$sourceRun IP_RUN=$IonProcessorRunPath HANDOFF=state"
+    }
+    $stage='design'
+    if(-not$PreparedInterfaceRunPath){Invoke-JointOwnerStage -Script $PSCommandPath -Arguments ($common+@{MatchingRequestPath=$MatchingRequestPath;RunId=$designId})}
+    $manifest=Join-Path $designRun 'run_manifest.json'
+    $assembly=Join-Path $designRun 'results/joint_flight/assembly/assembly_preparation.json'
+    $designReceipt=Join-Path $designRun 'results/accelerator_interface_preparation.json'
+    if(-not(Test-Path -LiteralPath $manifest -PathType Leaf)-or-not(Test-Path -LiteralPath $designReceipt -PathType Leaf)){throw 'Design owner did not publish its manifest and preparation receipt.'}
+    $designResult=Get-JointDesignReceipt -Run $designRun
+    if($designResult.status-eq'zero_exit'){
+      $counts=$designResult.source_exit.counts
+      $source=Get-JointSourceStart -ExitReceipt $designResult.source_exit
+      $producer='unknown'
+      if($designResult.source_exit.ContainsKey('producer_result')){$producer=($designResult.source_exit.producer_result|ConvertTo-Json -Compress -Depth 10)}
+      Write-Output ("FULL_JOINT=ZERO_EXIT EXECUTION=success DATA_VALIDITY=valid SCIENCE=not_qualified SOURCE={0} HANDOFF=none PRODUCER_RESULT={1} DESIGN={2} MOTHER={3} TRANSFERRED=0 NOT_TRANSFERRED={4} MR_FIELD=False FLY=False RECOVERY=none TOTAL_SECONDS={5:F3}" -f $source,$producer,$designRun,$counts.source,$counts.not_transferred,$totalWatch.Elapsed.TotalSeconds)
+      return
+    }
+    if($designResult.status-ne'prepared'){throw 'Design receipt is not an interface design preparation.'}
+    if(-not(Test-Path -LiteralPath $assembly -PathType Leaf)){throw 'Design owner did not publish its assembly receipt.'}
+    $stage='analysis_preflight'
+    Invoke-JointAnalysisPreflight -Design $designRun -Source $IonProcessorRunPath -Contract $ContractPath
+    $stage='field'
+    if(-not$JointFieldRunPath){
+      $fieldRequest.replacement_assembly_path=$assembly
+      $fieldRequest.replacement_assembly_manifest=$manifest
+      $temporary=Join-Path ([IO.Path]::GetTempPath()) ('ip-mr-field-'+[guid]::NewGuid().ToString('N')+'.json')
+      $fieldRequest|ConvertTo-Json -Depth 100|Set-Content -LiteralPath $temporary -Encoding utf8
+      Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'projects/parallel_mirror_dual_stripe_mr_tof/simion/run_native_static_field_provider.ps1') -Arguments @{RequestPath=$temporary;RunDirectory=$fieldRun;Approved=$true}
+    }
+    if(-not(Test-Path -LiteralPath (Join-Path $fieldRun 'run_manifest.json') -PathType Leaf)){throw 'Field owner did not publish its manifest.'}
+    $stage='binding'
+    Invoke-JointOwnerStage -Script $PSCommandPath -Arguments ($common+@{FinalizeJointWorkbench=$true;PreparedInterfaceRunPath=$designRun;JointFieldRunPath=$fieldRun;ContractPath=$ContractPath;RunId=$finalId})
+    if(-not(Test-Path -LiteralPath (Join-Path $finalRun 'run_manifest.json') -PathType Leaf)){throw 'Workbench owner did not publish its manifest.'}
+    $stage='flight_and_analysis'
+    $flight=@{PreparedJointWorkbenchRunPath=$finalRun;ContractPath=$ContractPath;RunId=$flightId;RepoRoot=$repoRoot}
+    if($ResultPath){$flight.ResultPath=$ResultPath}
+    if($PythonExe){$flight.PythonExe=$PythonExe};if($SimionExe){$flight.SimionExe=$SimionExe}
+    if($ContinuationPredecessorManifestPath){$flight.ContinuationPredecessorManifestPath=$ContinuationPredecessorManifestPath}
+    Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'integrations/workflows/prepared_joint/execute.ps1') -Arguments $flight
+    Write-Output "FULL_JOINT_INPUTS DESIGN=$designRun FIELD=$fieldRun"
+    Write-FullJointFlightResult -Workbench $finalRun -Flight $flightRun -Elapsed $totalWatch.Elapsed.TotalSeconds
+  }catch{
+    Write-Output "FULL_JOINT_INPUTS DESIGN=$designRun FIELD=$fieldRun WORKBENCH=$finalRun"
+    Write-FullJointFailure -Stage $stage -Flight $flightRun -Reason $_.Exception.Message -Elapsed $totalWatch.Elapsed.TotalSeconds
+    throw
+  }finally{if($temporary-and(Test-Path -LiteralPath $temporary)){Remove-Item -LiteralPath $temporary}}
+}
+if($ResumeFinalization){
+  if(-not$FullJoint-or-not$RunId){throw 'ResumeFinalization requires FullJoint and the existing flight RunId.'}
+  $allowed=@('ResumeFinalization','FullJoint','RunId','ResultPath','PythonExe','RepoRoot')
+  if(@($PSBoundParameters.Keys|Where-Object{$_-notin$allowed}).Count){throw 'Finalization recovery consumes the frozen run; omit scientific and native execution options.'}
+  $recovery=@{ResumeFinalization=$true;RunId=$RunId;RepoRoot=$repoRoot}
+  if($ResultPath){$recovery.ResultPath=$ResultPath}
+  if($PythonExe){$recovery.PythonExe=$PythonExe}
+  Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'integrations/workflows/prepared_joint/execute.ps1') -Arguments $recovery
+  return
+}
+if($ResultPath-and-not$FullJoint){throw 'ResultPath requires FullJoint.'}
+if($FullJoint){Invoke-FullJoint;return}
+if($FieldRequestPath){throw 'FieldRequestPath requires FullJoint.'}
+if($ContinuationPredecessorManifestPath){throw 'ContinuationPredecessorManifestPath requires FullJoint.'}
+if($PreparedJointWorkbenchRunPath){throw 'PreparedJointWorkbenchRunPath requires FullJoint.'}
+if($MultipoleIpRequestPath-or$MultipoleIpRunId-or$IonProcessorRunId-or$IonProcessorConfigurationDirectory-or$IonProcessorFieldRunPath-or$ContinueOnIpScientificFailure){throw 'MP-to-IP source options require FullJoint.'}
+if(-not$ReferenceMrRunPath){throw 'ReferenceMrRunPath is required for interface preparation.'}
 $reference=(Resolve-Path -LiteralPath $ReferenceMrRunPath).Path
 if($AcceleratorProvider-eq'dual_pressure_rectilinear_ion_processor'-and-not$IonProcessorRunPath){
   throw 'Ion processor selection requires an explicit source run.'
@@ -204,7 +490,9 @@ try{
   $stage='capacity_finalization'
   Invoke-RunCapacityLifecycleAdapter -Python $python -RepoRoot $repoRoot `
     -Action finalize-ready -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunConfig $package.run_config|Out-Null
-  Write-Output "ACCELERATOR_PREPARATION=PASS PROVIDER=$AcceleratorProvider RUN_ID=$RunId SOLVER_EXECUTED=False"
+  if($receipt.status-eq'zero_exit'){
+    Write-Output "ACCELERATOR_PREPARATION=ZERO_EXIT PROVIDER=$AcceleratorProvider RUN_ID=$RunId MOTHER=$($receipt.source_exit.counts.source) TRANSFERRED=0 SCIENTIFIC_QUALIFICATION=not_passed SOLVER_EXECUTED=False"
+  }else{Write-Output "ACCELERATOR_PREPARATION=PASS PROVIDER=$AcceleratorProvider RUN_ID=$RunId SOLVER_EXECUTED=False"}
 }catch{
   if($terminalized){
     Write-Warning 'Scientific summary and verified manifest retained; capacity handoff failed and requires public owner recovery.'

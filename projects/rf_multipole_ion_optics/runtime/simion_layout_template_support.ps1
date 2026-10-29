@@ -69,5 +69,7 @@ function Resolve-MultipoleSimionLayoutTemplate {
             -Destination (Join-Path $templateDir 'quad_monolithic.iob')
         con = Copy-VerifiedRunInput -Source $profile.bundle.con.path `
             -Destination (Join-Path $templateDir 'quad_monolithic.con')
+        placeholder_pa0 = Copy-VerifiedRunInput -Source $profile.bundle.placeholder_pa0.path `
+            -Destination (Join-Path $templateDir 'quad_monolithic.pa0')
     }
 }

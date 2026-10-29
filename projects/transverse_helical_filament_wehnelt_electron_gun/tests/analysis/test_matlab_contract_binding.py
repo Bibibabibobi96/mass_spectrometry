@@ -549,6 +549,7 @@ class MatlabContractBindingTests(unittest.TestCase):
             "verify_project.ps1",
             "common\\contracts\\run_artifact_support.ps1",
             "common\\contracts\\write_run_manifest.py",
+            "common\\contracts\\capacity_protection.py",
             "common\\contracts\\recorded_file_removal.py",
             "common\\contracts\\verify_run_manifest.py",
             "common\\contracts\\particle_physics.py",
@@ -634,6 +635,7 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
             "common/resource_budget_support.ps1",
             "common/contracts/run_artifact_support.ps1",
             "common/contracts/write_run_manifest.py",
+            "common/contracts/capacity_protection.py",
             "common/contracts/recorded_file_removal.py",
             "common/contracts/verify_run_manifest.py",
             "common/contracts/artifact_naming.py",
@@ -747,6 +749,7 @@ function Get-HostResourceSnapshot {
                 check=False,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
                 timeout=30,
             )
             self.assertEqual(

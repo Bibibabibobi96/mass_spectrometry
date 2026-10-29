@@ -196,6 +196,25 @@ class InterfacePreparationTests(unittest.TestCase):
             self.assertEqual(result['analysis_change']['current'], peak)
             self.assertIsNone(result['numerical_change'])
             self.assertIsNone(validate_execution_contract(selected, selected)['analysis_change'])
+            legacy = copy.deepcopy(selected)
+            legacy['peak_analysis']['method_id'] = 'common_gaussian_kde_time_v1'
+            upgraded = validate_execution_contract(legacy, selected)
+            self.assertEqual(upgraded['analysis_change']['change_kind'], 'measured_detector_peak_method_upgrade')
+            self.assertEqual(upgraded['analysis_change']['previous']['method_id'], 'common_gaussian_kde_time_v1')
+            legacy = copy.deepcopy(original)
+            legacy['peak_analysis']['method_id'] = 'common_gaussian_kde_time_v1'
+            upgraded = validate_execution_contract(legacy, selected)
+            self.assertEqual(upgraded['analysis_change']['previous'], legacy['peak_analysis'])
+            self.assertEqual(upgraded['analysis_change']['current'], selected['peak_analysis'])
+            self.assertIsNone(upgraded['numerical_change'])
+            invalid_legacy = copy.deepcopy(legacy)
+            invalid_legacy['peak_analysis']['time_basis'] = 'unknown'
+            with self.assertRaises(ValueError):
+                validate_execution_contract(invalid_legacy, selected)
+            invalid_legacy = copy.deepcopy(legacy)
+            invalid_legacy['peak_analysis']['settings']['grid_points'] += 2
+            with self.assertRaises(ValueError):
+                validate_execution_contract(invalid_legacy, selected)
             for kind in ('method', 'settings', 'field', 'hash', 'physics'):
                 changed = copy.deepcopy(selected)
                 if kind == 'method':
@@ -213,6 +232,52 @@ class InterfacePreparationTests(unittest.TestCase):
             timing.write_text('{}')
             with self.assertRaises((ValueError, AssertionError)):
                 validate_execution_contract(selected, selected)
+
+    def test_joint_analysis_preflight_binds_source_and_clock_before_field(self):
+        from types import SimpleNamespace
+        from common.analysis.peak_metrics import AnalysisSettings
+        from integrations.workflows.accelerator_interface.prepare import preflight_joint_analysis
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            reference, receipt_path, states, selected, timing = [root/name for name in
+                ('reference.json', 'receipt.json', 'states.csv', 'selected.json', 'timing.json')]
+            source = root/'source'
+            timing.write_text(json.dumps(dict(schema_version=1, role='native_electrode_timing', pulse_start_us=10.0)))
+            states.write_text('fixture')
+            original = dict(simion=dict(default_trajectory_profile_id='same', trajectory_profiles=dict(
+                same=dict(trajectory_quality=8, maximum_step_us=.002, purpose='unit'))),
+                peak_analysis=dict(method_id='common_gaussian_kde_time_v1',
+                    resolution_definition='mean_tof_us/(2*direct_fwhm_tof_us)',
+                    time_basis='instrument_arrival_us_from_common_zero_birth', settings=vars(AnalysisSettings())))
+            current = copy.deepcopy(original)
+            current['peak_analysis'].update(method_id='common_gaussian_kde_time_v2',
+                time_basis='instrument_arrival_minus_common_extraction_pulse_us',
+                common_time_reference=dict(clock_epoch_id='epoch', field='pulse_start_us', timing=file_record(timing)))
+            reference.write_text(json.dumps(original)); selected.write_text(json.dumps(current))
+            receipt = dict(schema_version=2, role='ion_processor_component_exit_export', status='prepared',
+                source_project='dual_pressure_rectilinear_ion_processor', source_instance_id='ip',
+                target_instance_id='mr', source_run=str(source), clock_epoch_id='epoch',
+                outputs=dict(component_states=file_record(states)))
+            receipt_path.write_text(json.dumps(receipt))
+            paths = {'inputs/reference_trajectory.json': reference,
+                'results/ion_processor_exit/component_exit_receipt.json': receipt_path,
+                'results/ion_processor_exit/component_particle_state.csv': states}
+            table = SimpleNamespace(report=dict(clock_epoch_ids=['epoch']),
+                rows=[dict(particle_id=7, instrument_time_us=11.)])
+            with patch('integrations.workflows.accelerator_interface.prepare.verified_preparation_reference',
+                       side_effect=lambda run, relative: paths[relative]), \
+                 patch('common.contracts.component_particle_state.load_component_particle_state_csv', return_value=table):
+                preflight_joint_analysis(root, source, selected)
+                with self.assertRaisesRegex(ValueError, 'selected IP run'):
+                    preflight_joint_analysis(root, root/'different', selected)
+                table.rows[0]['instrument_time_us'] = 9.
+                with self.assertRaisesRegex(ValueError, 'pulse time'):
+                    preflight_joint_analysis(root, source, selected)
+                table.rows[0]['instrument_time_us'] = 11.
+                current['peak_analysis']['common_time_reference']['clock_epoch_id'] = 'other'
+                selected.write_text(json.dumps(current))
+                with self.assertRaisesRegex(ValueError, 'clock authority'):
+                    preflight_joint_analysis(root, source, selected)
 
     def test_finalize_freezes_selected_step_contract_and_rejects_other_changes(self):
         module = 'integrations.workflows.accelerator_interface.prepare'

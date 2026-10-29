@@ -397,6 +397,34 @@ class AssemblyTests(unittest.TestCase):
         self.assertEqual(binding["instances"][2]["origin_mm"], [0, -227, -0.5])
         self.assertEqual(binding["accelerator_provider"], "dual_pressure_rectilinear_ion_processor")
 
+    def test_replacement_field_accepts_current_and_legacy_preparation_identity(self):
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import native_static_field_provider as provider
+
+        request = self.materializable_request()
+        path = Path(request["replacement_assembly_manifest"])
+        manifest = json.loads(path.read_text())
+        with patch.object(assembly, "_analyzer_geometry_lines", return_value=["e(2) { box3d(1,2,3,4,5,6) }"]):
+            legacy = provider.compile_request(request)
+            manifest.update(project="instrument_assembly", mode="accelerator_interface_preparation")
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            current = provider.compile_request(request)
+            self.assertEqual(current["resolved_geometry"], legacy["resolved_geometry"])
+            for project, mode, status in (
+                ("instrument_assembly", "other", "success"),
+                ("other", "accelerator_interface_preparation", "success"),
+                ("instrument_assembly", "accelerator_interface_preparation", "failed"),
+            ):
+                with self.subTest(project=project, mode=mode, status=status):
+                    manifest.update(project=project, mode=mode, status=status)
+                    path.write_text(json.dumps(manifest), encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, "successful sealed"):
+                        provider.compile_request(request)
+            manifest.update(project="instrument_assembly", mode="accelerator_interface_preparation", status="success")
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            (self.root / "results/accelerator_interface_preparation.json").write_text('{"inputs": {}, "tampered": true}')
+            with self.assertRaises((AssertionError, ValueError)):
+                provider.compile_request(request)
+
     def test_ordinary_pa_header_forecast_distinguishes_unit_pitch(self):
         self.assertEqual(assembly.ordinary_pa_file_bytes([65, 65, 9], [1, 1, 1]), 304232)
         self.assertEqual(assembly.ordinary_pa_file_bytes([65, 65, 9], [1, 1, 0.5]), 304256)

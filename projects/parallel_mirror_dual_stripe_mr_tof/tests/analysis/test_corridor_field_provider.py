@@ -290,13 +290,15 @@ class SealedSourceCompileTest(unittest.TestCase):
     def setUp(self) -> None:
         # Reuse the public tiny-asset fixture; historical mirror metadata does
         # not make retired PA payloads a static test dependency.
-        self.fixture = RefinementWindowProviderTest()
-        self.fixture.setUp()
-        self.addCleanup(self.fixture.doCleanups)
         root = Path(__file__).resolve().parents[5] / "artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs"
         self.reference = root / "20261006_014633__sim__simion__mrtof-comsol-static-center-entry__r02"
         source = root / "20261005_212938__analysis__comsol__mrtof-c0-p1-intermediate-field"
         self.external_authority_path = source / "inputs/frozen_input.json"
+        self.fixture = RefinementWindowProviderTest()
+        if self.external_authority_path.is_file():
+            self.fixture.initial_voltages = json.loads(self.external_authority_path.read_text(encoding="utf-8"))["analyzer_electrode_voltages_v"]
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups)
 
     def mirror_request(self) -> dict:
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_mirror_stripe_operating_point import _named_record
@@ -315,20 +317,6 @@ class SealedSourceCompileTest(unittest.TestCase):
             path = Path(_named_record(reference["inputs"], name, name)["path"])
             if not path.is_file():
                 self.skipTest("External sealed mirror metadata file is not installed: " + name)
-        actual = json.loads(self.external_authority_path.read_text(encoding="utf-8"))
-        self.fixture.authority["analyzer_electrode_voltages_v"] = actual["analyzer_electrode_voltages_v"]
-        field = self.fixture.model.parent.parent
-        summary = json.loads((field / "summary.json").read_text())
-        self.fixture.seal(field, {
-            "inputs/frozen_input.json":self.fixture.authority,
-            "inputs/resolved_geometry.json":self.fixture.geometry,
-            "results/dataset_readback.json":self.fixture.dataset},
-            {"comsol/source.mph":b"fake"}, summary=summary)
-        binding = json.loads(self.fixture.binding.read_text())
-        for owner in [binding["export_manifest"], *[w["export_manifest"] for w in self.fixture.windows]]:
-            export = Path(owner).parent
-            grid = json.loads((export / "inputs/plan.json").read_text())
-            self.fixture.export(export, grid, self.fixture.authority)
         request = self.source_request()
         request.update(mirror_reference_trial_manifest=str(manifest),
                        mirror_voltage_variation_path=str(variation),
@@ -467,7 +455,7 @@ class RefinementWindowProviderTest(unittest.TestCase):
         self.runs = self.root / "artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs"
         self.runs.mkdir(parents=True)
         self.retention = dict(policy_version=1, **{"class":"solver_review"}, reason="Tiny contract fixture")
-        self.authority = dict(analyzer_electrode_voltages_v=list(range(20)), component_voltages_v=[],
+        self.authority = dict(analyzer_electrode_voltages_v=getattr(self, "initial_voltages", list(range(20))), component_voltages_v=[],
             assembly=dict(accelerator_iob_origin_mm=[0,0,0], detector=dict(box={}),
                 accelerator_resolved_electrodes=dict(local_to_pa_translation_mm=[0,0,0],
                     grounded_enclosure=dict(outer_box_mm=dict(z_min_mm=-1)),

@@ -796,7 +796,7 @@ try {
     Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $successConfig `
       -Status success -Outputs @($missingOutput)
   }catch{$writeError=$_.Exception.Message}
-  if($writeError-notlike '*missing run outputs*'){throw "Missing output did not block publication: $writeError"}
+  if($writeError-notlike '*already published terminal*'){throw "Published terminal was not protected: $writeError"}
   Assert-Equal ([IO.File]::ReadAllText($publishedManifest)) $publishedBefore `
     'Failed candidate publication replaced the previously published manifest.'
 

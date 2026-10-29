@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from common.contracts.capacity_ledger import initialize_capacity_ledger
+from common.contracts.write_run_manifest import file_record
 from projects.rf_multipole_ion_optics.runtime import _transport_run_artifacts as artifacts
 from projects.rf_multipole_ion_optics.runtime.run_round_rod_transport import execute as execute_round_rod
 from projects.rf_multipole_ion_optics.runtime import run_round_rod_transport
@@ -147,13 +148,17 @@ class TransportRunArtifactsTest(unittest.TestCase):
             root = Path(directory)
             source = root / project_id / "runs" / run_id
             (source / "inputs").mkdir(parents=True)
-            (source / "run_manifest.json").write_text(json.dumps({"status": "success", "project": project_id}))
             identity = {"project_id": project_id, "family_id": project_id, "radial_order_n": 3, "electrode_count": 6}
-            (source / "inputs/multipole_resolved_design.json").write_text(json.dumps({"identity": identity}))
+            design = source / "inputs/multipole_resolved_design.json"
+            design.write_text(json.dumps({"identity": identity}))
+            config = source / "run_config.json"
+            config.write_text(json.dumps({"run_id": run_id, "project": project_id, "mode": "round_rod_field_screen"}))
+            (source / "run_manifest.json").write_text(json.dumps({"status": "success", "run_id": run_id, "project": project_id,
+                "mode": "round_rod_field_screen", "run_config": file_record(config), "outputs": [file_record(design)]}))
             expected = {**identity, "radial_order_n": 4, "electrode_count": 8}
             with patch.object(run_round_rod_transport, "ARTIFACT_PROJECTS_ROOT", root):
                 with self.assertRaisesRegex(ValueError, "structural identity"):
-                    run_round_rod_transport._load_source(project_id, run_id, expected_identity=expected)
+                    run_round_rod_transport._load_source(project_id, run_id, expected_design={"identity": expected})
 
     def test_success_freezes_inputs_and_terminalizes_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

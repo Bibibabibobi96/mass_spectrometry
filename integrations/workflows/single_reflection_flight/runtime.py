@@ -673,7 +673,7 @@ def main() -> int:
             parser.error("materialize-continuation requires --continuation-phase")
         from integrations.workflows.single_reflection_flight.continuation import (
             _parent, _phase_paths, freeze_phase_inputs,
-            prepare_phase_continuation, _published_case,
+            prepare_phase_continuation, _published_case, recover_provisional_dispatch,
         )
         context = _prepare_context(preparation, args.field_receipt, publication["receipt_record"], args.run,
             snapshot_root=args.snapshot_root, flight=flight, phase=args.phase, pulse_decision_record=args.pulse_decision_record)
@@ -685,7 +685,7 @@ def main() -> int:
             freeze_phase_inputs(preparation, args.run, args.continuation_phase)
             print(json.dumps(None))
             return 0
-        dispatch = _read(dispatch_path)
+        dispatch = recover_provisional_dispatch(preparation,args.continuation_phase) or _read(dispatch_path)
         preview = preview_batches(args.run, args.phase, dispatch, context=context)
         if args.continuation_phase == "default_replay":
             planned = prepare_phase_continuation(preparation, preview, args.run, args.continuation_phase)

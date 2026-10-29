@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import fnmatch
+import json
 from pathlib import Path
 import re
 from typing import Iterable, Literal
@@ -51,6 +52,33 @@ def require_one_fly_completion(lines: Iterable[str]) -> FlyCompletion:
     if len(completions) != 1:
         raise ValueError("expected exactly one SIMION native Fly completion line")
     return completions[0]
+
+
+def frontend_batch_completion_path(run_dir: Path, phase: str, case_id: str) -> Path:
+    """Locate a small per-process fact without consulting native payloads."""
+    if not re.fullmatch(r"[a-z][a-z0-9_]*", phase) or not re.fullmatch(r"[A-Za-z0-9_-]+", case_id):
+        raise ValueError("frontend batch completion identity is invalid")
+    return run_dir / "results" / "frontend_batch_completion" / phase / f"{case_id}.json"
+
+
+def validate_frontend_batch_completion(path: Path, *, phase: str, case_id: str, stdout: Path,
+                                       count: int, row_range: list[int]) -> None:
+    """Validate an already manifest-verified process fact against its frozen case."""
+    try:
+        value = json.loads(path.read_text(encoding="utf-8-sig"))
+        valid = (isinstance(value, dict) and value.get("schema_version") == 1
+                 and value.get("role") == "frontend_batch_natural_completion"
+                 and value.get("phase") == phase and value.get("case_id") == case_id
+                 and type(value.get("exit_code")) is int and value["exit_code"] == 0 and value.get("natural_exit") is True
+                 and value.get("count") == count and value.get("source_row_range") == row_range
+                 and isinstance(value.get("stdout_relative_path"), str)
+                 and not Path(value["stdout_relative_path"]).is_absolute()
+                 and (path.parents[3] / value["stdout_relative_path"]).resolve().is_relative_to(path.parents[3].resolve())
+                 and (path.parents[3] / value["stdout_relative_path"]).resolve() == stdout.resolve())
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError, KeyError) as error:
+        raise ValueError("frontend batch completion receipt is invalid") from error
+    if not valid:
+        raise ValueError("frontend batch completion receipt differs from its frozen case")
 
 
 def recoverable_batch_log_kind(path: Path) -> Literal["trace", "stdout"] | None:

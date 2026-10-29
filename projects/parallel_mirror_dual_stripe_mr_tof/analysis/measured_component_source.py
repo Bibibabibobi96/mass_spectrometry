@@ -15,6 +15,7 @@ import shutil
 from typing import Any
 
 from common.contracts.canonical_clock_authority import validate_clock_authority
+from common.analysis.particle_census import partition_cohort
 from common.contracts.component_particle_state import (
     ComponentParticleStateTable, load_component_particle_state_csv, write_component_particle_state_csv,
 )
@@ -22,7 +23,7 @@ from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.file_identity import file_sha256
 from common.contracts.strict_json import load_json_object, require_number
 from common.contracts.rigid_transform import PhaseSpaceState, RigidTransform
-from common.simion.particle_source import render_source_states, render_standard_beams
+from common.simion.particle_source import project_direct_velocity, render_source_states, render_standard_beams
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import (
     resolve_ip_mr_connection, validate_component_exit_binding,
@@ -308,14 +309,26 @@ def _validate_states(handoff: dict[str, Any], paths: dict[str, Path], exported: 
     rows, validation = table.rows, table.report
     census = _rows(paths["source_census"])
     ids = {row["particle_id"] for row in rows}
-    transferred = {int(row["particle_id"]) for row in census if row["transfer_status"] == "transferred"}
-    lost = {int(row["particle_id"]) for row in census if row["transfer_status"] == "not_transferred"}
+    partition = partition_cohort([int(row["particle_id"]) for row in census],
+        [(int(row["particle_id"]), row["transfer_status"]) for row in census],
+        categories=("transferred", "not_transferred"), relative_weights=None)
+    transferred = set(partition["particle_ids_by_category"]["transferred"])
+    lost = set(partition["particle_ids_by_category"]["not_transferred"])
     counts = {"source": len(census), "transferred": len(rows), "not_transferred": len(lost)}
-    if (len({row["particle_id"] for row in census}) != len(census)
-            or ids != transferred or ids & lost or len(ids | lost) != len(census)
+    if (ids != transferred
             or counts != handoff["counts"] or counts != exported["counts"]
-            or ids != set(exported["transferred_particle_ids"]) or lost != set(exported["lost_particle_ids"])):
+            or ids != set(exported["transferred_particle_ids"])
+            or lost != set(exported.get("not_transferred_particle_ids", exported.get("lost_particle_ids", [])))):
         raise ValueError("Complete mother census and measured IDs do not close")
+    states_by_id = {row["particle_id"]: row for row in rows}
+    for row in census:
+        if row.get("particle_weight"):
+            weight = float(row["particle_weight"])
+            if not math.isfinite(weight) or weight <= 0:
+                raise ValueError("Complete mother census has an invalid weight")
+            particle = int(row["particle_id"])
+            if particle in states_by_id and weight != states_by_id[particle]["particle_weight"]:
+                raise ValueError("Complete mother census and measured state weights differ")
     frame = handoff["rigid_transform"]["to_frame_id"]
     if validation["frame_ids"] != [frame] or validation["clock_epoch_ids"] != [exported["clock_epoch_id"]]:
         raise ValueError("Measured source frame or clock differs from handoff")
@@ -339,12 +352,14 @@ def _validate_states(handoff: dict[str, Any], paths: dict[str, Path], exported: 
 def _project_rows(rows: list[dict[str, Any]], epoch: float) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     states, beams, mapping = [], [], []
     for ordinal, row in enumerate(rows, 1):
-        state = {axis: row[f"position_{axis}_mm"] for axis in "xyz"}
-        state.update({f"v{axis}": row[f"velocity_{axis}_m_s"] / 1000 for axis in "xyz"})
-        state.update(particle_id=ordinal, t=row["instrument_time_us"]-epoch, ke=row["kinetic_energy_eV"])
+        position = [row[f"position_{axis}_mm"] for axis in "xyz"]
+        velocity = [row[f"velocity_{axis}_m_s"] for axis in "xyz"]
+        state, beam = project_direct_velocity(particle_id=ordinal, time_us=row["instrument_time_us"]-epoch,
+            position_mm=position, velocity_m_s=velocity, energy_ev=row["kinetic_energy_eV"],
+            mass_amu=row["mass_amu"], charge_state=row["charge_state"], beam_position_mm=position,
+            beam_direction=[value/1000 for value in velocity], weight=row["particle_weight"], color=0)
         states.append(state)
-        beams.append({**state, "tob": state["t"], "mass": row["mass_amu"], "charge": row["charge_state"],
-                      "direction": [state[f"v{axis}"] for axis in "xyz"], "cwf": row["particle_weight"], "color": 0})
+        beams.append(beam)
         mapping.append({"simion_ordinal": ordinal, "particle_id": row["particle_id"],
                         "mass_amu": row["mass_amu"], "charge_state": row["charge_state"],
                         "instrument_time_us": row["instrument_time_us"], "solver_birth_time_us": state["t"],

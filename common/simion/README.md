@@ -11,7 +11,7 @@
 
 | 任务 | 入口 |
 |---|---|
-| 将已冻结的粒子状态序列化为 FLY2 | [粒子序列化](particle_source.py)，字段映射由消费者适配器拥有 |
+| 将已冻结的粒子状态投影和序列化为 FLY2 | [粒子序列化](particle_source.py)：`project_direct_velocity`共用6D、时间及直接速度投影；坐标变换、原ID映射和科学能量仍由消费者拥有 |
 | 序列化几何、检查孔拓扑 | [几何与 Workbench](#几何与-workbench) |
 | 缓存 PA family、导出 standalone 工作点 | [PA 缓存与工作点](#pa-缓存与工作点) |
 | 长 PA 输入与缓存写隔离 | 先读[跨项目边界](../../docs/tools/SIMION_REFERENCE.md#长pa输入路径)，再读 [API 与证据](#长路径输入-api与证据) |
@@ -278,6 +278,9 @@ transaction路径、库存SHA、当前producer与活动容量session；真实lea
 它沿相同guarded copy逐个构造私有响应，不伪造generation。可选逐响应验证回调只在该响应的私有
 standalone副本仍受护时执行；全部响应验证完成后，调用方才向原公共事务提交verification并发布。
 是否已完成重场构建由项目的原manifest与实际构建记录证明，helper的roundtrip不能替代Refine完成证据。
+`InvokeNativeOperation` 保留 Python 受管进程完成合同，也接受直接 PowerShell owner 的
+`powershell_process_completion`：实际 PID、启动时刻和退出码须与原生 observation 一致，且进程退出、
+stdout／stderr 排空均已确认。OA→MR 经提供者透传该回调；未知完成保留原输入保护，不虚构 Python worker。
 同一场身份的后续K、电压、粒子源、TE1和GUI只复用producer-owned checkpoint，不按trial重复重组。
 该边界已由 OA provider `20261003_152000__sim__simion__mrtof-oa-private-runtime-provider-r04` 与 MRTOF
 safe-exit `20261003_153100__sim__simion__mrtof-oa-private-runtime-safe-exit-n100` 真实贯通：后者复用既有
@@ -551,6 +554,14 @@ Windows分配失败、真实进程非零退出仍保留失败证据并失败闭�
 为false的单元直接安排整单元重跑，不读取或哈希其部分日志；为true的单元仍须通过已有manifest绑定及字节校验。
 whole-unit plan schema 2直接绑定当前显式前驱manifest输入／输出中的实际文件，输出canonical绝对路径；
 恢复run再次中断时，下一次仍可复用其已绑定的更早产物，不扫描祖先、不复制日志或新建恢复权威。
+已自然退出的首个正式批若在重规划前后失败，owner可将原 provisional 计划、首批输入和小退出事实绑定到原run终态。
+`resource_scheduler.plan_recovered_formal_followup`先核对已完成区间；有真实资源观测时沿用既有自适应规划。
+缺少完整观测时保留已完成首批，按不大于原首批的区间冻结缺失批，并先观察第一个缺失批；
+`--recovered-missing-plan`使用该批的真实峰值、CPU与主机内存观测校准原分区，在一个lane内接续其他缺失批，
+不重新发射已完成首批，也不虚构资源峰值。小退出事实按既有终态manifest验证；未绑定的硬中断事实不授权复用。
+已有完整固定分区的续跑使用`prepare_fixed_partition_dispatch`或`--prepare-fixed-recovery-plan`：
+原分区不变，已观测画像须覆盖最大缺批；否则在真实最大缺批上采集正式资源观测，再以`--recovered-missing-plan`校准。
+观测批索引随计划保留，续跑不扩大并发；不以未执行的首区间大小解释缺批的资源峰值。
 项目 adapter 只需提供其冻结的科学输入投影、独立单位及实际终态判据；项目 runner 负责把生成的 plan 接到新的执行与结果物化。公共层不把这些物理语义、粒子
 分类或项目结果布局变成第二套通用合同。
 
@@ -558,6 +569,20 @@ PA family 的可恢复发布／复用由[`pa_family_cache.py`](pa_family_cache.p
 运行期 Fast Adjust 私有 family 由[`native_fast_adjust_runtime_support.ps1`](native_fast_adjust_runtime_support.ps1)
 从已发布 generation 重建。两者均不保存或恢复供应商进程的内存状态。当前公共层尚未提供把任意
 项目 runner 自动接入 continuation 的 CLI：各项目保留上述窄 adapter，避免公共层猜测日志语法或完成语义。
+
+`Invoke-SimionBatchPhase`统一协调首批观察、owner物化回调、剩余批次派发及全复用零启动；
+前端、prepared joint和OA→MR使用此入口。`Invoke-SimionFormalObservation`负责启动正式首批、检查观测结果并调用owner的重规划回调；
+成功时返回同一进程记录供后续wave接管，回调失败时先排空该进程；启动后观察异常也传递实际记录，
+无法确认身份或停止时保留未知状态。前端、prepared joint、OA→MR、RF有限三维及IP功能入口已接入；
+批次物化和科学完成判据仍由owner负责。
+
+首批正式观测启动后，准备或调度重规划失败时，`Invoke-ObservedPreparationFailureDrain`将已启动记录交还
+公共进程执行器等待收尾，再执行可选的控制验证并抛出原异常；收尾或验证次错附于原异常的Data并以警告报告。
+前端、prepared joint和OA→MR经统一批次协调器共用此失败路径；RF和IP的迁移应以各自实际接线为准。
+批次wave中的后续准备或checkpoint失败停止派发新任务，公共进程owner继续等待已启动的健康worker，
+为其调用原checkpoint回调，并保留原始异常和收尾次错；未确认停写时调用方不得发布终态或释放保护。
+前端按固定分区保存经现有 manifest 绑定的自然退出码、stdout 和控制文件；default replay
+同样按完整批次复用。旧 pulse 若没有逐 worker 退出事实则按未知处理，不能仅凭日志推定完成。
 
 ### 直接进程观察
 

@@ -52,6 +52,34 @@ from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.
 
 
 class CandidateDesignTests(unittest.TestCase):
+    def test_candidate_finalization_uses_frozen_request_without_stages(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = root / "runs" / "candidate"
+            request_path = run / "inputs" / "execution_request.json"
+            request_path.parent.mkdir(parents=True)
+            request_path.write_text(json.dumps({"package": {"project": "single_reflection_oa_tof_mass_analyzer",
+                "mode": "design_candidate", "artifact_project_root": str(root), "run_id": run.name}}), encoding="utf-8")
+            (run / "summary.json").write_text('{"candidate_decision":"candidate_rejected"}', encoding="utf-8")
+            result_path = root / "scratch" / "workflow_results" / run.name / "result.json"
+            result_path.parent.mkdir(parents=True)
+            result_path.write_text('{}', encoding="utf-8")
+            def owner(command, log):
+                self.assertIn("-ResumeFinalization", command)
+                self.assertEqual(Path(command[command.index("-RequestPath") + 1]), request_path)
+                self.assertEqual(Path(command[command.index("-ResultPath") + 1]), result_path)
+                result_path.write_text('{"terminal_published":true,"capacity_finalized":true,"lease_released":true}', encoding="utf-8")
+            with mock.patch.object(candidate_workflow, "_run_command", side_effect=owner), \
+                    mock.patch.object(candidate_workflow, "_execute_candidate_stages") as stages:
+                self.assertEqual(candidate_workflow.resume_candidate_finalization(run)[0], run)
+                stages.assert_not_called()
+            def failed_owner(command, log):
+                log.write_text("publication failure detail", encoding="utf-8")
+                raise RuntimeError("owner failed")
+            with mock.patch.object(candidate_workflow, "_run_command", side_effect=failed_owner):
+                with self.assertRaisesRegex(CandidateWorkflowError, "publication failure detail"):
+                    candidate_workflow.resume_candidate_finalization(run)
+
     def test_candidate_entry_forwards_explicit_pa_handoff_and_rejects_dry_run(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

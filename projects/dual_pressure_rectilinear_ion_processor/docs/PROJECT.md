@@ -72,6 +72,14 @@ HS1截面仍为未标定示例值。原解析规定电场已退役，活动生�
 不构造假孔、整面静态电位或新时钟。完整接口不替代真实几何与场的消费核验。
 
 `component_exit.py`只读封存运行，发布公共canonical粒子状态、原ID、物种、实测6D、绝对时间和全母群census；
+新MP→IP准备结果的母群终态携带每ID相对权重，IP出口census同时保留未转交粒子的权重；历史记录缺少
+母群权重时保留未知，不能把缺失权重当单位权重计算全链效率。转交分类复用公共`particle_census`。
+零出口发布`zero_exit`和完整母群census，不构造空粒子状态；下游应停止匹配和飞行并保留负结果。
+上游零出口导致的IP空接收run也输出同一零出口结论，不宣称IP已飞行；未转交ID不作为物理损失，
+注入源的原始`species_id`与权重随出口保留。新的准备run在终态manifest发布前不可作为有效交接。
+IP源与批次源的6D及直接速度序列化投影使用公共`particle_source`，原坐标变换与原ID映射不变。
+已发布的MP→IP准备结果通过公共manifest引用核验准备run终态、原始输入包和上游manifest，
+IP冻结输入保留该引用；旧式未发布的准备包仍使用原生产者校验路径，不弱化原生完成与科学结果检查。
 不重建速度、不执行求解。实例路由由冻结配方指定，测试粒子权重不表示实际电流。
 单位、父母群、边界事件与唯一时钟由接收方独立验收；实际端面与数值z=0观察面分别保留。
 
@@ -206,3 +214,34 @@ IP的210 DPI及白底。manifest记录实际导出的尺寸／格式／DPI／字
 5. 新GUI包用独立可写运行目录准备，用户验收与文件默认重放分别记录，不覆盖已确认包。
 
 独立产物归`artifacts/projects/dual_pressure_rectilinear_ion_processor/`；跨组件装配及联合证据归集成owner。
+
+IP功能入口的正式首批观测及重规划由公共SIMION机制执行；IP继续负责批次物化和物理判据。
+
+IP批次请求可在提供已验证场身份及冻结程序后计算，计算过程不创建IOB或场；正常准备入口继续使用同一身份投影。
+`run_functional.ps1 -ContinuationPredecessorManifestPath`目前支持完整母群已归并的显式终态前驱：
+验证原生批完成、母群、科学输入与程序身份后直接引用原CSV重分析，不启动PA、IOB或Fly，也不改父run。
+多代重分析先验证前驱与数据源的 manifest 绑定，在容量会话中保护来源链，再引用原始完整母群；出口也沿该绑定读取原生证据。
+正式批次完成回调持久记录每个原生进程的实际退出码与批次身份；旧结果缺少该证据时不能仅凭结束日志推断单批成功。
+未归并的终态前驱按原批次计划恢复：完整单元须有原进程退出码、日志、输入和输出的 manifest 绑定；
+未知或不完整单元整批重飞，不能安全容纳原批的当前资源预算会直接拒绝，不改变分区。原始 worker 数据由受保护的前驱提供；
+已归档 worker 的四个 CSV 在新 run 解包供现有 merger 读取，种子、HS1 和日志仍引用原始证据。
+合并后按既有文件移除合同删除临时解包；多次部分失败沿每代绑定追溯原完成单元，不重新启动已复用批。
+全批复用只执行合并和分析，不启动 SIMION；混合恢复引用前驱场并持有防写锁，使用新 run 发布结果，不修改父 run。
+外部 PA 家族由原 owner 的 manifest 保持唯一字节权威；新 run 只绑定小来源 manifest 与现有
+`native_field_consumption.json`，后者保留精确 family records 和几何／网格／Refine投影。
+准备的元数据绑定本身不授权原生消费：正式 `NativeFieldRun` 和混合恢复均在首个原生调用前逐成员执行一次
+公共 immutable-source 字节校验并持有防写／删除句柄，持续到新 run 发布与完整验证结束。
+消费侧同时持有原终态发布的既有 byte-lock，拒绝 pending journal；来源 manifest、run config 和PA不能
+在此窗口被替换。后续投影与子manifest不再重复读取原owner的大PA，不新增跳过校验参数。
+部分恢复按冻结场的来源判断外部家族，沿用上述保护；不会因未传`NativeFieldRun`而把已接续场误当新建家族写打开。
+显式场与部分恢复同时指定时，只在实际adopt前获取一次最终来源保护，不重复获取同一终态发布锁；全批复用不进入该adopt分支。
+summary与stdout报告失败阶段、原因、恢复动作、稳定结果路径和阶段／总耗时；summary计时截止结果观察，
+stdout的最终owner总耗时另含发布及资源释放。未知写者保留保护并要求先确认其完成，不能直接重试。
+正常IP收尾使用公共PowerShell owner：冻结request、实际进程／host完成事实和小Result后，由公共机制执行
+保留、终态发布与容量封存。Result默认持久放在`scratch/workflow_results/<run_id>/result.json`；
+原入口`run_functional.ps1 -RunId <id> -ResumeFinalization [-ResultPath <原Result>]`只重放收尾，
+不准备源／场／IOB、不重飞、不修改父run。发布前失败与已发布终态后的seal失败均保留原事实；重复恢复
+不重写已发布summary/manifest。未知writer仍拒绝收尾，原始科学异常与收尾次错分别保留。
+`component_exit.load_component_source`验证封存的IP来源与结果；科学门限失败、诊断失败与写入状态未知分别记录，
+未知写入者不发布终态或显式释放受保护资源。
+原生准备命令与IOB模板构建同样以公共观察器的实际退出事实决定停写；退出未知时保留PA句柄、资源和容量保护，原始异常不被收尾覆盖。

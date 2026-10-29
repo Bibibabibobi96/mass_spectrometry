@@ -14,6 +14,7 @@ import shutil
 import statistics
 from typing import Any
 
+from common.analysis.particle_census import partition_cohort, subset_efficiency
 from common.contracts.canonical_clock_authority import validate_clock_authority
 from common.contracts.component_particle_state import load_component_particle_state_csv
 from common.contracts.file_identity import file_sha256
@@ -63,13 +64,25 @@ def _load_source(path: Path) -> tuple[dict[str, Any], dict[int, dict[str, Any]],
         raise ValueError("Prepared source clock/frame authority differs")
     states = {row["particle_id"]: row for row in table.rows}
     census = _rows(census_path)
-    transferred = {int(row["particle_id"]) for row in census if row["transfer_status"] == "transferred"}
-    lost = {int(row["particle_id"]) for row in census if row["transfer_status"] == "not_transferred"}
-    counts = {"source": len(census), "transferred": len(states), "not_transferred": len(lost)}
-    if (len({int(row["particle_id"]) for row in census}) != len(census)
-            or transferred != set(states) or transferred & lost or len(transferred | lost) != len(census)
-            or counts != receipt["counts"]):
+    try:
+        partition = partition_cohort([int(row["particle_id"]) for row in census],
+            [(int(row["particle_id"]), row["transfer_status"]) for row in census],
+            categories=("transferred", "not_transferred"), relative_weights=None)
+    except ValueError as exc:
+        raise ValueError("Prepared source complete mother census does not close") from exc
+    transferred = set(partition["particle_ids_by_category"]["transferred"])
+    counts = {"source": partition["mother_count"], "transferred": len(states),
+              "not_transferred": partition["counts"]["not_transferred"]}
+    if transferred != set(states) or counts != receipt["counts"]:
         raise ValueError("Prepared source complete mother census does not close")
+    for row in census:
+        pid = int(row["particle_id"])
+        if row.get("particle_weight"):
+            weight = float(row["particle_weight"])
+            if not math.isfinite(weight) or weight <= 0:
+                raise ValueError("Prepared source census has an invalid weight")
+            if pid in states and weight != states[pid]["particle_weight"]:
+                raise ValueError("Prepared source census and transferred state weights differ")
     return receipt, states, census, census_path
 
 
@@ -142,8 +155,9 @@ def _population_rows(census: list[dict[str, str]], states: dict[int, dict[str, A
             handoff = states[particle]["instrument_time_us"]
             terminal = terminals[particle]
             code = int(terminal["splat"])
+            status = {1: "detected", 2: "timeout", -1: "loss", 4: "topology_rejected"}.get(code, "unknown")
             row.update(handoff_instrument_time_us=handoff,
-                       downstream_status="detected" if particle in detectors else ("timeout" if code == 2 else "loss"),
+                       downstream_status=status,
                        downstream_terminal_splat=code, downstream_terminal_instrument_time_us=terminal["t_us"])
             for axis in "xyz":
                 row[f"terminal_position_{axis}_mm"] = terminal[f"{axis}_mm"]
@@ -313,10 +327,21 @@ def analyze_measured_component(log_path: Path, source_receipt_path: Path, output
     receipt, states, census, census_path = _load_source(source_receipt_path)
     events, terminals, detectors = _close_events(log_path.read_text(encoding="utf-8-sig"), states)
     rows = _population_rows(census, states, terminals, detectors)
+    mother = [int(row["particle_id"]) for row in census]
+    partition = partition_cohort(mother, [(row["particle_id"], row["downstream_status"]) for row in rows],
+        categories=("not_transferred", "detected", "timeout", "loss", "topology_rejected", "unknown"), relative_weights=None)
+    # Missing historical mother weights are unknown, never inferred as unit weights.
+    complete_weights = all(row.get("particle_weight") for row in census)
+    weights = {int(row["particle_id"]): float(row["particle_weight"]) for row in census} if complete_weights else None
+    mother_efficiency = subset_efficiency(mother, detectors, mother, relative_weights=weights) if complete_weights else None
+    handoff_weights = {pid: row["particle_weight"] for pid, row in states.items()}
+    handoff_efficiency = subset_efficiency(list(states), detectors, list(states), relative_weights=handoff_weights)
     counts = {"mother_source": len(census), "upstream_not_transferred": receipt["counts"]["not_transferred"],
               "downstream_released": len(states), "detected": len(detectors),
               "downstream_timeout": sum(row["downstream_status"] == "timeout" for row in rows),
-              "downstream_loss": sum(row["downstream_status"] == "loss" for row in rows)}
+              "downstream_loss": sum(row["downstream_status"] == "loss" for row in rows),
+              "downstream_topology_rejected": sum(row["downstream_status"] == "topology_rejected" for row in rows),
+              "downstream_unknown": sum(row["downstream_status"] == "unknown" for row in rows)}
     arrivals = [float(event["t_us"]) for event in detectors.values()]
     elapsed = [float(event["t_us"])-states[particle]["instrument_time_us"] for particle, event in detectors.items()]
     peak, spectra = _prepare_detector_peak(peak_analysis_contract, contract_base_directory or source_receipt_path.parent,
@@ -338,6 +363,10 @@ def analyze_measured_component(log_path: Path, source_receipt_path: Path, output
               "counts": counts, "clock_epoch_id": receipt["clock_epoch_id"], "frame_id": receipt["frame_id"],
               "detected_fraction_of_mother": len(detectors)/len(census),
               "detected_fraction_of_handoff": len(detectors)/len(states),
+              "population_partition_counts": partition["counts"],
+              "weighted_efficiency": {"mother": mother_efficiency,
+                  "mother_unavailable_reason": None if complete_weights else "incomplete_mother_weights",
+                  "handoff": handoff_efficiency},
               "absolute_arrival": _statistics(arrivals, "canonical_absolute_instrument_time_us"),
               "elapsed_since_handoff": _statistics(elapsed, "per_particle_elapsed_since_measured_handoff_diagnostic_only"),
               "detector_peak": peak,

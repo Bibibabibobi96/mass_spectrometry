@@ -21,6 +21,11 @@
 母群选择、单位转换和指标判定必须在调用点显式完成；不同函数的总体矩、样本sigma和直接峰宽不能互换。
 本层不提供运行器，也不从目录、软件成功退出或数值结果自动推断Candidate/Formal资格。
 
+MP→IP接收和IP→MR测量源／分析用`partition_cohort`校验完整原ID的转交分区；分类只表示转交事实，
+未知终态不被解释为物理损失。MR分析用`subset_efficiency`分别报告转交条件和原母群效率；旧来源
+缺少完整母群权重时，全链加权值明确不可计算，转交群的已知权重仍可计算条件效率。
+MR测量飞行将原生碰撞、超时、程序性拓扑拒绝和未知终态分别计数；终止回调的未知代码不作为物理损失。
+
 `compare_peak_shapes`默认只比较分布，配对相关系数为null；提供keyword-only
 `left_particle_ids`与`right_particle_ids`后才计算配对相关。`bootstrap_resolution_difference`
 必须提供这两个参数。ID须为与各自TOF同长、唯一且顺序完全一致的整数一维数组；拒绝bool、类型强转、

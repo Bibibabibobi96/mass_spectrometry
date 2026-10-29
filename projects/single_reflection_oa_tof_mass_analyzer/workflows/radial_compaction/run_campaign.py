@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import copy
-import csv
 import hashlib
 import json
 import os
@@ -16,7 +15,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -62,13 +60,10 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract 
     resolve_contract_documents,
     serialized,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.solver_diagnostics import analyze_simion_log
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.simion_component_pa_plan import (
     compile_component_pa_plan, sum_component_commitments,
 )
-from common.analysis.peak_metrics import (
-    compute_peak_metrics,
-)
+from projects.single_reflection_oa_tof_mass_analyzer.workflows.radial_compaction import analysis
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.prepare_candidate_consumers import (
     prepare,
 )
@@ -95,6 +90,7 @@ FROZEN_INPUTS = (
 )
 EXTRA_SOURCE_IDS = (
     "projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/run_campaign.py",
+    "projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/analysis.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/compile_candidate_design.py",
     "common/contracts/frozen_inputs.py",
     "common/contracts/schemas/simion_batch_continuation.schema.json",
@@ -103,10 +99,30 @@ EXTRA_SOURCE_IDS = (
     "common/simion/resource_profile.py",
     "common/simion/resource_scheduler.py",
 )
+# These sources are consumed only after native Fly in this workflow. All other
+# closure members, the driver, frozen inputs and solver/runtime remain bound.
+ANALYSIS_ONLY_SOURCES = frozenset({
+    "common/analysis/peak_metrics.py",
+    "projects/single_reflection_oa_tof_mass_analyzer/analysis/solver_diagnostics.py",
+    "projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/analysis.py",
+})
 
 
 def _write_json(path: Path, document: Any) -> None:
     write_json_atomic(path, document)
+
+
+def _same_flight_dependencies(current: dict[str, Any], parent: dict[str, Any]) -> bool:
+    """Compare frozen inputs and all native dependencies, excluding pure analyzers."""
+    if {k: v for k, v in current.items() if k != "sources"} != {
+        k: v for k, v in parent.items() if k != "sources"
+    }:
+        return False
+    current_sources, parent_sources = current["sources"], parent["sources"]
+    if current_sources.keys() != parent_sources.keys():
+        return False
+    return all(current_sources[name] == parent_sources[name]
+               for name in current_sources if name not in ANALYSIS_ONLY_SOURCES)
 
 
 def _read_parent(parent: Path) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
@@ -307,7 +323,7 @@ def _freeze_run(
     context["sources"] = {row["source_id"]: row["source_sha256"] for row in closure["sources"]}
     if execution_request is not None and context["sources"] != execution_request["source_sha256"]:
         raise ValueError("execution sources changed after capacity planning")
-    if parent_data and context != load_json(Path(parent_data[0]["inputs"]["recovery_context"])):
+    if parent_data and not _same_flight_dependencies(context, load_json(Path(parent_data[0]["inputs"]["recovery_context"]))):
         raise ValueError("predecessor frozen execution identity differs; continuation is refused")
     for index, source in enumerate(closure["sources"]):
         declared[f"source_{index:03d}"] = frozen_source_path(closure, source["source_id"])
@@ -417,7 +433,7 @@ def _validate_prepared_run(
 
 def _plan_replay(run_root: Path, parent: Path, config: dict[str, Any]) -> None:
     """Let the common planner select only published complete native Fly units."""
-    _, summary, _ = _read_parent(parent)
+    parent_config, summary, _ = _read_parent(parent)
     campaign = load_json(Path(config["inputs"]["campaign"]))
     case_ids = {row["case_id"] for row in (
         campaign["radius_screen"] + campaign["ring_count_compensation"]["cases"]
@@ -434,7 +450,7 @@ def _plan_replay(run_root: Path, parent: Path, config: dict[str, Any]) -> None:
                         and record.get("native_splats") == campaign["fixed_contract"]["particle_count"])
             if complete and (
                 record.get("case_id") != case_id or record.get("mode") != mode
-                or record.get("context_sha256") != config["context_sha256"]
+                or record.get("context_sha256") != parent_config["context_sha256"]
                 or record.get("role") != "oatof_radial_compaction_native_unit"
             ):
                 raise ValueError(f"predecessor native unit identity differs: {key}")
@@ -444,6 +460,7 @@ def _plan_replay(run_root: Path, parent: Path, config: dict[str, Any]) -> None:
         predecessor_run_dir=parent, output_dir=run_root / "inputs", units=units,
     )
     config["inputs"]["continuation_plan"] = str(run_root / "inputs" / "simion_whole_unit_replay_plan.json")
+    config["continuation_parent_context_sha256"] = parent_config["context_sha256"]
     config["continuation_units"] = {}
     for unit in plan["units"]:
         if unit["action"] != "reuse":
@@ -508,16 +525,6 @@ def _verify_authorities(config: dict[str, Any]) -> tuple[Path, Path]:
     if sha256(particles) != reference["particle_sha256"]:
         raise ValueError("radial campaign reference particle table changed")
     return summary, particles
-
-
-def _canonical_metrics(particle_csv: Path) -> dict[str, Any]:
-    tof = []
-    with particle_csv.open("r", encoding="utf-8-sig", newline="") as stream:
-        for row in csv.DictReader(stream):
-            if str(row["Hit"]).lower() == "true":
-                tof.append(float(row["TofUs"]))
-    metrics, _ = compute_peak_metrics(np.asarray(tof), 524.0)
-    return metrics
 
 
 def _assert_only_allowed_changes(
@@ -638,6 +645,7 @@ def _prepare_case(
         "simion_dir": case_root / "simion",
         "run_id": run_root.name,
         "context_sha256": run_config.get("context_sha256"),
+        "continuation_parent_context_sha256": run_config.get("continuation_parent_context_sha256"),
         "capacity_session_path": run_config.get("capacity_session_path"),
         "component_plan_path": frozen.get(f"component_plan_{case['case_id']}"),
         "replay_units": {
@@ -836,7 +844,6 @@ def _fly(case: dict[str, Any], mode: str, simion_exe: Path, particle_count: int,
     results = case["case_root"] / "results"
     log = logs / f"{mode}.log"
     error = logs / f"{mode}.stderr.log"
-    particle_csv = results / f"{mode}_particles.csv"
     summary_path = results / f"{mode}_summary.json"
     native_path = results / f"{mode}_native.json"
     if summary_path.exists() or native_path.exists():
@@ -858,7 +865,7 @@ def _fly(case: dict[str, Any], mode: str, simion_exe: Path, particle_count: int,
     if native:
         if (
             native.get("case_id") != case["case_id"] or native.get("mode") != mode
-            or native.get("context_sha256") != case["context_sha256"]
+            or native.get("context_sha256") != case.get("continuation_parent_context_sha256", case["context_sha256"])
             or type(native.get("native_returncode")) is not int or native["native_returncode"] != 0
             or native.get("role") != "oatof_radial_compaction_native_unit"
             or native.get("particle_count") != particle_count
@@ -906,6 +913,7 @@ def _fly(case: dict[str, Any], mode: str, simion_exe: Path, particle_count: int,
     try:
         _write_json(native_path, {
             **native, "run_id": case["run_id"],
+            "context_sha256": case["context_sha256"],
             "reused_from_receipt": str(reused) if reused else None,
         })
     except BaseException as failure:
@@ -913,29 +921,7 @@ def _fly(case: dict[str, Any], mode: str, simion_exe: Path, particle_count: int,
         failure.observed_process_returncode = 0
         raise
     try:
-        particles, diagnostics = analyze_simion_log(
-            log, ion, mode=mode, distribution=f"fixedN{particle_count}",
-            detector_radius_mm=40, allow_incomplete_census=True,
-        )
-        particles.to_csv(particle_csv, index=False)
-        diagnostics = json.loads(json.dumps(diagnostics, allow_nan=False))
-        canonical = _canonical_metrics(particle_csv)
-        summary = {
-            "schema_version": 1,
-            "role": "oatof_radial_compaction_case_result",
-            "status": "success",
-            "case_id": case["case_id"],
-            "mode": mode,
-            "run_id": case["run_id"],
-            "context_sha256": case["context_sha256"],
-            "flight_seconds": elapsed,
-            "flight_reused_from_interrupted_run": reused_flight,
-            "resource_profile": resource_profile,
-            "diagnostics": diagnostics,
-            "canonical_peak_metrics": canonical,
-        }
-        _write_json(summary_path, summary)
-        return summary
+        return analysis.analyze_flight(case, mode, log, ion, particle_count, elapsed, reused_flight, resource_profile)
     except BaseException as failure:
         # Analysis is in-process; the native unit above is already complete.
         failure.observed_process_exit_confirmed = True
@@ -1130,7 +1116,7 @@ def _execute_campaign(
 ) -> dict[str, Any]:
     config = load_json(Path(run_config["inputs"]["campaign"]))
     baseline = load_json(Path(run_config["inputs"]["baseline"]))
-    reference_metrics = _canonical_metrics(Path(run_config["inputs"]["reference_particles"]))
+    reference_metrics = analysis.canonical_metrics(Path(run_config["inputs"]["reference_particles"]))
     seed = int(config["fixed_contract"]["particle_source_seed"])
     count = int(config["fixed_contract"]["particle_count"])
     quality = int(config["fixed_contract"]["trajectory_quality"])
@@ -1465,7 +1451,11 @@ def _invoke_workflow_owner(request: dict[str, Any]) -> None:
         temporary = Path(directory)
         request_path = temporary / "request.json"
         handoff_output = request["payload"].get("pa_handoff_output")
-        result_path = Path(handoff_output) if handoff_output else temporary / "result.json"
+        result_path = (Path(handoff_output) if handoff_output else
+                       ARTIFACT_ROOT / "scratch" / "workflow_results" / request["package"]["run_id"] / "result.json")
+        result_path.parent.mkdir(parents=True, exist_ok=True)
+        if result_path.exists():
+            raise ValueError(f"Workflow Result already exists: {result_path}")
         _write_json(request_path, request)
         result, _ = run_observed_process(
             ["pwsh.exe", "-NoProfile", "-File", str(REPO_ROOT / "common/contracts/run_artifact_workflow.ps1"),
@@ -1475,7 +1465,7 @@ def _invoke_workflow_owner(request: dict[str, Any]) -> None:
         )
         if result.returncode:
             details = (temporary / "owner.stderr.log").read_text(encoding="utf-8-sig")
-            raise RuntimeError(f"Radial workflow owner failed ({result.returncode}): {details}")
+            raise RuntimeError(f"Radial workflow owner failed ({result.returncode}): {details}; result: {result_path}")
         if not result_path.is_file():
             raise RuntimeError("Radial workflow owner returned no result receipt")
 
@@ -1483,6 +1473,10 @@ def _invoke_workflow_owner(request: dict[str, Any]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-id", required=True)
+    parser.add_argument("--resume-finalization", action="store_true",
+                        help="Resume publication for this run from its frozen request and retained owner result")
+    parser.add_argument("--owner-result", type=Path,
+                        help="Existing owner Result when an explicit PA handoff output was used")
     parser.add_argument("--simion-exe", type=Path,
                         default=Path(r"C:\Program Files\SIMION-2020\simion.exe"))
     parser.add_argument("--dry-run", action="store_true")
@@ -1495,6 +1489,31 @@ def main() -> None:
     parser.add_argument("--pa-producer-handoff", type=Path, nargs=2, action="append", metavar=("TRANSACTION", "OWNER_RESULT"),
                         help="Explicit unpublished PA producer pair; repeat for multiple components, independently of --resume-from")
     args = parser.parse_args()
+    if args.resume_finalization:
+        validate_run_id(args.run_id)
+        run_root = ARTIFACT_ROOT / "runs" / args.run_id
+        request_path = run_root / "inputs" / "execution_request.json"
+        request = load_json(request_path)
+        result_path = (args.owner_result or Path(request["payload"].get("pa_handoff_output") or
+                       ARTIFACT_ROOT / "scratch" / "workflow_results" / args.run_id / "result.json"))
+        result_path = result_path.resolve(strict=True)
+        if request["package"]["project"] != PROJECT_ID or request["package"]["mode"] != "simion_radial_compaction":
+            raise ValueError("finalization request is not a radial compaction run")
+        with tempfile.TemporaryDirectory(prefix="oatof-radial-finalize-") as directory:
+            temporary = Path(directory)
+            result, _ = run_observed_process(
+                ["pwsh.exe", "-NoProfile", "-File", str(REPO_ROOT / "common/contracts/run_artifact_workflow.ps1"),
+                 "-RequestPath", str(request_path), "-ResultPath", str(result_path), "-ResumeFinalization"],
+                cwd=REPO_ROOT, stdout=temporary / "owner.log", stderr=temporary / "owner.stderr.log",
+                warning_seconds=1800,
+            )
+            if result.returncode:
+                raise RuntimeError(f"Radial finalization failed; result: {result_path}; "
+                                   f"{(temporary / 'owner.stderr.log').read_text(encoding='utf-8-sig')}")
+        print(f"RADIAL_COMPACTION=FINALIZED ROOT={run_root} RESULT={result_path}", flush=True)
+        return
+    if args.owner_result is not None:
+        parser.error("--owner-result requires --resume-finalization")
     if args.resume_from is not None and args.campaign is not None:
         parser.error("--resume-from cannot be combined with an explicit --campaign")
     if args.dry_run and (args.pa_handoff_output is not None or args.pa_producer_handoff):
@@ -1531,7 +1550,8 @@ def main() -> None:
     summary = load_json(ARTIFACT_ROOT / "runs" / args.run_id / "summary.json")
     if summary.get("status") != "success" or summary.get("writers_stopped") is not True:
         raise RuntimeError("Radial workflow did not publish a successful stopped-writer terminal state")
-    print(f"RADIAL_COMPACTION={'DRY_RUN' if args.dry_run else 'PASS'} ROOT={ARTIFACT_ROOT / 'runs' / args.run_id}", flush=True)
+    result_path = args.pa_handoff_output or ARTIFACT_ROOT / "scratch" / "workflow_results" / args.run_id / "result.json"
+    print(f"RADIAL_COMPACTION={'DRY_RUN' if args.dry_run else 'PASS'} ROOT={ARTIFACT_ROOT / 'runs' / args.run_id} RESULT={result_path}", flush=True)
 
 
 if __name__ == "__main__":

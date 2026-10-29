@@ -203,9 +203,13 @@ def execute_request(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--request", required=True, type=Path)
-    parser.add_argument("--run-id", required=True)
-    parser.add_argument("--particle-source-seed", required=True, type=int)
+    parser.add_argument("--request", type=Path)
+    parser.add_argument("--run-id")
+    parser.add_argument("--particle-source-seed", type=int)
+    parser.add_argument("--resume-finalization", type=Path, metavar="RUN_DIR",
+                        help="Resume publication from an existing run's frozen request")
+    parser.add_argument("--owner-result", type=Path,
+                        help="Existing owner Result when an explicit PA handoff output was used")
     parser.add_argument("--simion-exe", type=Path)
     parser.add_argument("--reuse-parent", type=Path)
     parser.add_argument("--reuse-through", choices=REUSABLE_STAGES)
@@ -216,6 +220,20 @@ def main() -> None:
     parser.add_argument("--campaign-table", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--campaign-selection", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.resume_finalization is not None:
+        from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow import (
+            resume_candidate_finalization,
+        )
+        try:
+            run_root, summary = resume_candidate_finalization(args.resume_finalization, args.owner_result)
+        except (OSError, KeyError, ValueError, CandidateWorkflowError) as exc:
+            raise SystemExit(f"OATOF_CANDIDATE=FINALIZATION_FAILED RUN_ROOT={args.resume_finalization} ERROR={exc}") from exc
+        print(f"OATOF_CANDIDATE=FINALIZED RUN_ROOT={run_root} DECISION={summary['candidate_decision']}")
+        return
+    if args.owner_result is not None:
+        parser.error("--owner-result requires --resume-finalization")
+    if args.request is None or args.particle_source_seed is None or args.run_id is None:
+        parser.error("execution requires --request, --run-id and --particle-source-seed")
     if args.dry_run and (args.pa_handoff_output is not None or args.pa_producer_handoff):
         parser.error("PA producer handoff requires execution; it cannot be combined with --dry-run")
     if args.pa_handoff_output is not None and args.pa_handoff_output.exists():
@@ -254,7 +272,8 @@ def main() -> None:
         raise SystemExit(f"OATOF_CANDIDATE=FAIL_BEFORE_RUN ERROR={exc}") from exc
     print(
         f"OATOF_CANDIDATE=PASS RUN_ROOT={run_root} "
-        f"DECISION={summary['candidate_decision']}"
+        f"DECISION={summary['candidate_decision']} "
+        f"RESULT={args.pa_handoff_output or run_root.parent.parent / 'scratch' / 'workflow_results' / run_root.name / 'result.json'}"
     )
 
 

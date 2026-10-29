@@ -300,6 +300,7 @@ class ThreeZoneT5SimionCandidateTests(unittest.TestCase):
                 "run_config.json",
                 "summary.json",
                 "run_manifest.json",
+                ".run_terminal_publication.lock",
             },
         )
         self.assertFalse(summary["formal_gate_passed"])

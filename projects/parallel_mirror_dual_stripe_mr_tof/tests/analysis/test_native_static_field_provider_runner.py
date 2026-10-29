@@ -58,10 +58,10 @@ $overlayMode=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.Assi
 if($names.Count-ne1-or$overlayMode.Count-ne1){throw 'Collision names/mode assignments not unique'}
 if($Mode-eq'overlay'){
  $expectedNames=@('analyzer_collision_patch')
- $plan=@{operation='collision_overlay';analyzer_collision_patch_build=@{pa_bytes=8};resource_limits=@{process_tree_working_set_bytes=32};levels=@{};committed_new_bytes=32;final_retained_estimate_bytes=24}
+ $plan=@{operation='collision_overlay';analyzer_collision_patch_build=@{pa_bytes=8};resource_limits=@{process_tree_working_set_bytes=32;wall_clock_seconds_by_solver=@{simion=100}};levels=@{};committed_new_bytes=32;final_retained_estimate_bytes=24}
 }else{
  $expectedNames=@('collision','ip_collision','detector')
- $plan=@{operation='refine';collision_build=@{pa_bytes=8};ip_collision_build=@{pa_bytes=8};detector_build=@{pa_bytes=8};levels=@{parent=@{resource_limits=@{process_tree_working_set_bytes=16}}};committed_new_bytes=32;final_retained_estimate_bytes=24}
+ $plan=@{operation='refine';collision_build=@{pa_bytes=8};ip_collision_build=@{pa_bytes=8};detector_build=@{pa_bytes=8};levels=@{parent=@{resource_limits=@{process_tree_working_set_bytes=16;wall_clock_seconds_by_solver=@{simion=100}}}};committed_new_bytes=32;final_retained_estimate_bytes=24}
 }
 . ([scriptblock]::Create($names[0].Extent.Text))
 . ([scriptblock]::Create($overlayMode[0].Extent.Text))
@@ -81,6 +81,7 @@ function Invoke-ResourceBudgetedProcess {
  if($FilePath-ne$exe-or$name-notin$expectedNames-or($ArgumentList-join',')-ne('--nogui,--noprompt,gem2pa,'+$name+'.gem,'+$name+'.pa')){throw 'Unexpected Refine/Fast Adjust/copy'}
  $expectedMemory=if($Mode-eq'overlay'){32}else{16}
  if($Limits.process_tree_working_set_bytes-ne$expectedMemory){throw 'Wrong ordinary/overlay resource limit source'}
+ if($Limits.wall_clock_seconds-ne100){throw 'SIMION wall-clock observation limit differs from its numerical contract'}
  [IO.File]::WriteAllBytes((Join-Path $WorkingDirectory ($name+'.pa')),[byte[]]::new(8))
  if($Mode-eq'overlay'){[IO.File]::WriteAllText((Join-Path $WorkingDirectory ($name+'.pa-surf')),'fractional')}
  return @{exit_code=0}
@@ -285,6 +286,7 @@ function Invoke-ResourceBudgetedProcess {
  param($Limits,$RunDir,$UsagePath,$FilePath,$WorkingDirectory,$ArgumentList,$RedirectStandardOutput,$RedirectStandardError)
  $script:calls+=,@($ArgumentList)
  @{wall_clock_seconds=1;peak_process_tree_working_set_bytes=1}|ConvertTo-Json|Set-Content -LiteralPath $UsagePath
+ if($Limits.wall_clock_seconds-ne100){throw 'SIMION wall-clock observation limit differs from its numerical contract'}
  $label=Split-Path -Leaf $WorkingDirectory
  if($ArgumentList[2]-eq'gem2pa'){
   $pa=Join-Path $WorkingDirectory $ArgumentList[4]

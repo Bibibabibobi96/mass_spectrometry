@@ -16,6 +16,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
+from common.analysis.particle_census import partition_cohort
 from common.contracts.component_particle_state import (
     load_component_particle_state_csv,
     write_component_particle_state_csv,
@@ -200,11 +201,13 @@ def compare_measured_exit_energy(component_receipt_path: Path, reference_mr_run:
     with census_path.open(encoding="utf-8-sig", newline="") as handle:
         census = list(csv.DictReader(handle))
     ids = {row["particle_id"] for row in rows}
-    transferred = {int(row["particle_id"]) for row in census if row["transfer_status"] == "transferred"}
-    lost = {int(row["particle_id"]) for row in census if row["transfer_status"] == "not_transferred"}
-    if (len({int(row["particle_id"]) for row in census}) != len(census) or ids != transferred or ids & lost
-            or len(ids | lost) != len(census) or ids != set(component["transferred_particle_ids"])
-            or lost != set(component["lost_particle_ids"])
+    partition = partition_cohort([int(row["particle_id"]) for row in census],
+        [(int(row["particle_id"]), row["transfer_status"]) for row in census],
+        categories=("transferred", "not_transferred"), relative_weights=None)
+    transferred = set(partition["particle_ids_by_category"]["transferred"])
+    lost = set(partition["particle_ids_by_category"]["not_transferred"])
+    if (ids != transferred or ids != set(component["transferred_particle_ids"])
+            or lost != set(component.get("not_transferred_particle_ids", component.get("lost_particle_ids", [])))
             or component["counts"] != {"source": len(census), "transferred": len(rows), "not_transferred": len(lost)}):
         raise ValueError("IP complete mother census and energy cohort do not close")
     if (validation["frame_ids"] != [component["frame_id"]]
@@ -224,7 +227,7 @@ def compare_measured_exit_energy(component_receipt_path: Path, reference_mr_run:
             "status": "characterized_without_acceptance_tolerance", "qualification": "energy_distribution_comparison_only",
             "energy_unit": "eV_per_abs_charge_state", "target_axial_energy_per_charge_v": target,
             "target_basis": "historical_OA_provider_axial_design_seed_not_unique_IP_or_total_energy_target",
-            "ip_counts": component["counts"], "ip_transferred_particle_ids": sorted(ids), "ip_lost_particle_ids": sorted(lost),
+            "ip_counts": component["counts"], "ip_transferred_particle_ids": sorted(ids), "ip_not_transferred_particle_ids": sorted(lost),
             "ip_exit": measured, "reference_oa": reference,
             "centroid_residual_to_target": residual,
             "centroid_residual_to_reference_oa_mean": axial["mean"]-ref_axial["mean"],
@@ -251,7 +254,7 @@ def compare_measured_exit_energy(component_receipt_path: Path, reference_mr_run:
                 "Small IP slow-axis energy is intentional; its difference from OA Ey is descriptive and is not a mismatch or failure criterion.",
                 "Prism voltages and geometry may redistribute y/z momentum and direction, subject to electrostatic energy conservation and physical acceptance; arbitrary independent components are not implied.",
                 "Matching mean Ez does not qualify emittance, time focus, prism transport or detector performance.",
-                "All transferred ions enter the distributions; upstream losses remain in the full mother census.",
+                "All transferred ions enter the distributions; upstream non-transfers remain in the full mother census.",
             ],
             "inputs": {**identities, "component_receipt": _identity(component_receipt_path),
                        "component_states": _identity(state_path), "mother_census": _identity(census_path)}}
@@ -292,18 +295,19 @@ def resolve_matching_request(
         census = list(csv.DictReader(handle))
     ids = sorted(row["particle_id"] for row in rows)
     census_ids = [int(row["particle_id"]) for row in census]
-    lost_ids = exported["lost_particle_ids"]
+    partition = partition_cohort(census_ids, [(int(row["particle_id"]), row["transfer_status"]) for row in census],
+        categories=("transferred", "not_transferred"), relative_weights=None)
+    lost_ids = exported.get("not_transferred_particle_ids", exported.get("lost_particle_ids", []))
     counts = exported["counts"]
     if (ids != sorted(exported["transferred_particle_ids"])
             or len(ids) != counts["transferred"]
             or len(lost_ids) != counts["not_transferred"]
-            or len(census_ids) != len(set(census_ids))
             or len(census_ids) != counts["source"]
             or set(ids) & set(lost_ids)
             or set(census_ids) != set(ids) | set(lost_ids)):
         raise ValueError("Exported IDs and complete source census do not close")
-    census_transferred = {int(row["particle_id"]) for row in census if row["transfer_status"] == "transferred"}
-    census_lost = {int(row["particle_id"]) for row in census if row["transfer_status"] == "not_transferred"}
+    census_transferred = set(partition["particle_ids_by_category"]["transferred"])
+    census_lost = set(partition["particle_ids_by_category"]["not_transferred"])
     if census_transferred != set(ids) or census_lost != set(lost_ids):
         raise ValueError("Source census transfer statuses differ from the transferred and lost IDs")
     if (exported["source_instance_id"] != connection["upstream"]["instance_id"]

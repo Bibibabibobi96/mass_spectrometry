@@ -26,8 +26,15 @@ function Invoke-MultipoleProjectFinite3dTransport {
     [string]$ReferenceComsolRunId = '',
     [ValidateSet('primary_and_zero_axial_control', 'primary_and_rf_off_energy_control', 'primary_only')]
     [string]$CaseSet = 'primary_and_zero_axial_control',
-    [string]$SimionExe = ''
+    [string]$SimionExe = '',
+    [string]$ContinuationPredecessorManifestPath = '',
+    [string]$NativeFieldRunPath = '',
+    [string]$ResultPath = ''
   )
+
+  if ($Solver -ne 'simion' -and ($ContinuationPredecessorManifestPath -or $NativeFieldRunPath)) {
+    throw 'SIMION continuation is not supported by the COMSOL transport entry.'
+  }
 
   $python = if ($PythonExe) {
     [IO.Path]::GetFullPath($PythonExe)
@@ -72,6 +79,10 @@ function Invoke-MultipoleProjectFinite3dTransport {
         throw "RunId differs from campaign experiment '$ExperimentId'."
       }
       $RunId = $authorizedRunId
+      if ($PSBoundParameters.ContainsKey('RetentionClass') -and $RetentionClass -cne [string]$profile.retention_class) {
+        throw 'RetentionClass differs from the declared campaign experiment.'
+      }
+      $RetentionClass = [string]$profile.retention_class
     }
     $numerics = $profile.solver_numerics.$Solver.values
     $stopStage = [string]$profile.stop_stage
@@ -120,6 +131,11 @@ function Invoke-MultipoleProjectFinite3dTransport {
         $CaseSet
       }
       $arguments.ResolvedRuntimeProfilePath = $resolutionPath
+      if ($ContinuationPredecessorManifestPath) {
+        $arguments.ContinuationPredecessorManifestPath = $ContinuationPredecessorManifestPath
+      }
+      if ($NativeFieldRunPath) {$arguments.NativeFieldRunPath = $NativeFieldRunPath}
+      if ($ResultPath) {$arguments.ResultPath = $ResultPath}
       if ($SimionExe) {
         $arguments.SimionExe = $SimionExe
       }

@@ -14,6 +14,125 @@ RUNNER = REPO / "integrations/workflows/oa_mr/execute.ps1"
 
 class TwoPrismTrialRunnerTest(unittest.TestCase):
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_fixed_partition_observes_largest_missing_not_reused_prefix(self):
+        from common.simion.resource_scheduler import plan_simion_dispatch, prepare_fixed_partition_dispatch
+        request = {"solver":"SIMION", "field_kind":"rf", "rf_steps_per_period":40,
+                   "particle_count":6, "independent_particles":True, "trajectory_quality":8}
+        initial = plan_simion_dispatch(request, [], available_memory_bytes=10*1024**3,
+                                       total_physical_memory_bytes=20*1024**3, logical_processors=8)
+        batches = [dict(index=i, particle_id_min=low, particle_id_max=high, count=high-low+1,
+                        simion_particle_id_offset=low-1) for i,(low,high) in enumerate(((1,1),(2,3),(4,6)),1)]
+        plan = prepare_fixed_partition_dispatch(initial, dict(role="simion_single_wave_particle_batch_plan",
+            coverage="complete_population", particle_count=6, batches=batches), [2,3])
+        source = RUNNER.read_text(encoding="utf-8")
+        start = source.index("    $dispatch=Get-Content -Raw -LiteralPath $runtimeDispatchPlanPath|ConvertFrom-Json")
+        end = source.index("    $checkpointAction={", start)
+        block = source[start:end]
+        with TemporaryDirectory() as directory:
+            root = Path(directory); dispatch = root/"dispatch.json"; dispatch.write_text(json.dumps(plan))
+            quote = lambda value: "'"+str(value).replace("'", "''")+"'"
+            script = f'''$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$runtimeDispatchPlanPath={quote(dispatch)};$batchContinuationPlan=@{{}};$replayBatchIndexes=@(2,3);$batchRecords=@{{1=@{{index=1}};2=@{{index=2}};3=@{{index=3}}}}
+$dispatchRequestPath='unused';$resourceProfilesPath='unused';$batchPlanPath='unused'
+function Get-MrtofBatchProcessSpecification {{param($Record) return [pscustomobject]@{{index=$Record.index}}}}
+function Publish-MrtofFirstBatchAberration {{param($Record)}}
+function Invoke-ProjectPython {{param($Arguments) & {quote(sys.executable)} @Arguments;if($LASTEXITCODE-ne0){{throw 'calibration failed'}}}}
+{block}
+if($firstSpec.index-ne3-or$formalBatchIndex-ne3){{throw 'did not observe largest missing unit'}}
+$formal=[pscustomobject]@{{process_record=[pscustomobject]@{{completed=$true}};observed_peak_process_tree_working_set_bytes=1073741824;observed_process_cpu_percent=8;observed_background_cpu_percent=2;available_memory_bytes=10737418240;total_physical_memory_bytes=21474836480}}
+& $replan $formal
+$result=Get-Content $runtimeDispatchPlanPath -Raw|ConvertFrom-Json
+if($result.estimation.observed_missing_batch_index-ne3-or$result.limits.maximum_concurrency-ne1-or$result.waves[0].batches[2].count-ne3){{throw 'calibrated fixed partition differs'}}
+'''
+            path = root/"fixed.ps1"; path.write_text(script, encoding="utf-8")
+            result = subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(path)],cwd=REPO,
+                                    capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=30)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_continuation_protects_ancestor_before_locking_borrowed_evidence(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            parent = root/"parent"; ancestor = root/"ancestor"; parent.mkdir(); ancestor.mkdir()
+            (parent/"logs").mkdir(); (parent/"results").mkdir()
+            local = parent/"logs/native_two_prism_flight__batch01.log"; local.write_text("parent")
+            borrowed = ancestor/"batch.log"; borrowed.write_text("ancestor")
+            (parent/"run_config.json").write_text("{}")
+            manifest = dict(role="simulation_run_manifest", status="failed", inputs={"reused_batch_002_log": {"path":str(borrowed)}},
+                            outputs=[{"path":str(local)}])
+            (parent/"run_manifest.json").write_text(json.dumps(manifest))
+            script = root/"protect.ps1"
+            script.write_text(r'''param($Runner,$Parent,$Borrowed,$Repo)
+$ErrorActionPreference='Stop';$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$errors)
+if($errors.Count){throw ($errors|Out-String)}
+$runtime=Join-Path $Repo 'projects/parallel_mirror_dual_stripe_mr_tof/simion/native_corridor_runtime_support.ps1'
+$ast=[Management.Automation.Language.Parser]::ParseFile($runtime,[ref]$null,[ref]$errors)
+$node=$ast.Find({param($a)$a-is[Management.Automation.Language.FunctionDefinitionAst]-and$a.Name-eq'Protect-MrtofContinuationEvidence'},$true)
+Invoke-Expression $node.Extent.Text
+function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session,$ProtectedPaths) if($ProtectedPaths-notcontains$Borrowed){throw 'ancestor was not protected'};$script:admitted=$true;return @{session=$Session}}
+$script:projectionCalls=0;$script:drift=$false
+function pythonFixture {$global:LASTEXITCODE=0;$script:projectionCalls++;@{run_directories=@($Parent,(Split-Path $Borrowed));files=@($Borrowed,(Join-Path $Parent 'logs/native_two_prism_flight__batch01.log'),(Join-Path $Parent 'run_manifest.json'));manifests=@{value=$(if($script:drift-and$script:projectionCalls-eq2){'changed'}else{'fixed'})}}|ConvertTo-Json -Depth 20 -Compress}
+$guards=[Collections.Generic.List[IO.FileStream]]::new();$script:admitted=$false
+$null=Protect-MrtofContinuationEvidence -Parent $Parent -Session @{status='active'} -Python pythonFixture -RepoRoot $Parent -Guards $guards
+if(-not$script:admitted-or$script:projectionCalls-ne2){throw 'capacity renewal or locked reprojection missing'}
+foreach($path in @($Borrowed,(Join-Path $Parent 'logs/native_two_prism_flight__batch01.log'),(Join-Path $Parent 'run_manifest.json'))){
+ $blocked=$false;try{$w=[IO.File]::Open($path,'Open','Write','ReadWrite');$w.Dispose()}catch{$blocked=$true}
+ if(-not$blocked){throw 'continuation source is writable'}
+}
+foreach($stream in $guards){$stream.Dispose()}
+$guards=[Collections.Generic.List[IO.FileStream]]::new();$script:projectionCalls=0;$script:drift=$true;$caught=$false
+try{Protect-MrtofContinuationEvidence -Parent $Parent -Session @{status='active'} -Python pythonFixture -RepoRoot $Parent -Guards $guards|Out-Null}catch{$caught=$_.Exception.Message-match'projection changed'}
+foreach($stream in $guards){$stream.Dispose()}
+if(-not$caught){throw 'changed projection was accepted'}
+''', encoding="utf-8")
+            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script), str(RUNNER), str(parent), str(borrowed), str(REPO)],
+                                    cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_missing_observation_calibrates_first_missing_batch_only(self):
+        from common.simion.resource_scheduler import plan_recovered_formal_followup, plan_simion_dispatch
+        request = {"solver": "SIMION", "field_kind": "rf", "rf_steps_per_period": 40,
+                   "particle_count": 3, "independent_particles": True, "trajectory_quality": 8}
+        provisional = plan_simion_dispatch(request, [], available_memory_bytes=10*1024**3,
+                                           total_physical_memory_bytes=20*1024**3, logical_processors=8)
+        first = provisional["waves"][0]["batches"][0]
+        fallback = plan_recovered_formal_followup(provisional, {"natural_exit": True, "exit_code": 0,
+            "count": first["count"], "source_row_range": [first["particle_id_min"], first["particle_id_max"]],
+            "resource_observation": None})
+        source = RUNNER.read_text(encoding="utf-8")
+        start = source.index("    $dispatch=Get-Content -Raw -LiteralPath $runtimeDispatchPlanPath|ConvertFrom-Json")
+        end = source.index("    $checkpointAction={", start)
+        block = source[start:end]
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch = root / "dispatch.json"
+            dispatch.write_text(json.dumps(fallback))
+            quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+            script = f'''$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$runtimeDispatchPlanPath={quote(dispatch)};$batchContinuationPlan=@{{}};$replayBatchIndexes=@(2,3);$batchRecords=@{{1=@{{index=1}};2=@{{index=2}};3=@{{index=3}}}}
+$dispatchRequestPath='unused';$resourceProfilesPath='unused';$batchPlanPath='unused';$script:calls=0
+function Get-MrtofBatchProcessSpecification {{param($Record) return [pscustomobject]@{{index=$Record.index}}}}
+function Publish-MrtofFirstBatchAberration {{param($Record)}}
+function Invoke-ProjectPython {{param($Arguments) $script:calls++;if($Arguments-notcontains'--recovered-missing-plan'-or$Arguments-contains'--request'){{throw 'wrong calibration'}};& {quote(sys.executable)} @Arguments;if($LASTEXITCODE-ne0){{throw 'calibration failed'}}}}
+{block}
+if($firstSpec.index-ne2-or$formalBatchIndex-ne2){{throw 'reused prefix selected for native observation'}}
+$formal=[pscustomobject]@{{process_record=[pscustomobject]@{{completed=$true}};observed_peak_process_tree_working_set_bytes=1073741824;observed_process_cpu_percent=8;observed_background_cpu_percent=2;available_memory_bytes=10737418240;total_physical_memory_bytes=21474836480}}
+& $replan $formal
+if($script:calls-ne1-or@($replanState.replayIndexes).Count-ne2-or$replanState.replayIndexes[0]-ne2-or$replanState.replayIndexes[1]-ne3){{throw 'wrong pending batches'}}
+$calibrated=Get-Content $runtimeDispatchPlanPath -Raw|ConvertFrom-Json
+if(-not$calibrated.estimation.recovered_missing_observation_completed-or$calibrated.limits.maximum_concurrency-ne1){{throw 'wrong calibrated identity'}}
+if($calibrated.estimation.observed_peak_bytes-ne1073741824-or$calibrated.estimation.observed_process_cpu_percent-ne8-or$calibrated.estimation.background_cpu_percent-ne2-or$calibrated.host.available_memory_bytes-ne10737418240-or$calibrated.host.total_physical_memory_bytes-ne21474836480){{throw 'actual observation changed'}}
+if(@($calibrated.waves[0].batches).Count-ne3-or$calibrated.waves[0].batches[0].particle_id_max-ne1-or$calibrated.waves[0].batches[1].particle_id_min-ne2){{throw 'fixed intervals changed'}}
+'''
+            path = root / "test.ps1"
+            path.write_text(script, encoding="utf-8")
+            completed = subprocess.run(["pwsh", "-NoProfile", "-File", str(path)], cwd=REPO,
+                                       capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_real_recovery_stages_skip_native_for_zero_and_run_only_missing_batches(self):
         """Execute the public script's stages with real recovery, guards and merging.
 
@@ -99,7 +218,9 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
                 plan_path = results / "simion_execution_batch_plan.json"
                 plan_path.write_bytes((parent / "inputs/simion_execution_batch_plan.json").read_bytes())
                 dispatch_path = results / "dispatch.json"
-                dispatch_path.write_text('{"estimation":{"kind":"observed"}}')
+                dispatch_path.write_text(json.dumps(dict(particle_count=3, field_kind="electrostatic",
+                    estimation=dict(kind="exact_resource_profile", observed_batch_work_units=2),
+                    limits=dict(maximum_concurrency=1), waves=[dict(batches=[])])))
                 source_receipt = root / "source.json"
                 materialize_bunch_source(states=_states(100), mother_particle_count=1000,
                     source_profile_id="recovery_fixture", frame_id="fixture",
@@ -116,6 +237,14 @@ $OutputEncoding=[Text.UTF8Encoding]::new($false)
 $repoRoot=$Repo;$script:pythonRoot=$Repo;$python=$Python
 $simion=if($Case-eq'zero'){Join-Path $Root 'missing_simion.exe'}else{$Python}
 . (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+$helperAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'common/resource_budget_support.ps1'),[ref]$null,[ref]$null)
+$helper=$helperAst.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Invoke-ObservedPreparationFailureDrain'},$true)
+Invoke-Expression $helper.Extent.Text
+$helper=$helperAst.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Invoke-SimionFormalObservation'},$true)
+Invoke-Expression $helper.Extent.Text
+$helper=$helperAst.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Invoke-SimionBatchPhase'},$true)
+Invoke-Expression $helper.Extent.Text
+
 $runDir=$Current;$runConfig=Join-Path $Current run_config.json
 $resultDir=Join-Path $Current results;$logDir=Join-Path $Current logs;$solverDir=Join-Path $Current inputs
 $artifactSolverDir=$solverDir;$package=@{input_dir=$solverDir;artifact_run_dir=$Current}
@@ -128,11 +257,12 @@ $staticFieldLocal=$checkpointConfig.inputs.static_field_binding;$FieldBindingPat
 $staticFieldBinding=Get-Content $Metadata -Raw|ConvertFrom-Json -Depth 100
 $staticFieldRequested=$true;$staticFieldMode='native_static_pa';$isBunchFlight=$true
 $BatchContinuationRunPath=if($Case-eq'fresh'){''}else{$Parent}
+$continuationParent=$Parent
 $batchPlanPath=Join-Path $resultDir simion_execution_batch_plan.json
 $runtimeDispatchPlanPath=Join-Path $resultDir dispatch.json
 $dispatchRequestPath=$null;$resourceProfilesPath=$null;$batchContinuationPlan=$null;$batchContinuationPlanPath=$null
 $batchResourceUsagePath=Join-Path $logDir usage.json
-$batchRuntimeRoot=$null;$batchRecords=@{};$checkpointOutputs=[Collections.Generic.List[string]]::new()
+$batchRuntimeRoot=$null;$batchRecords=@{};$checkpointOutputs=[Collections.Generic.List[string]]::new();$nativeOperations=[Collections.Generic.List[object]]::new();$ResultPath='';$frozenEntryRecord=$null;$contract=$Metadata
 $staticPaGuards=[Collections.Generic.List[IO.FileStream]]::new()
 $bunchSourceLocal=$SourceReceipt;$bunchSourceContract=Get-Content $SourceReceipt -Raw|ConvertFrom-Json
 $bunchSelectionRequested=$false;$RetainGuiWorkbench=$Case-eq'gui_missing';$retainGuiWorkbenchFiles=$RetainGuiWorkbench
@@ -156,6 +286,7 @@ function Update-ArtifactWorkflowCapacitySession {
  param($Python,$RepoRoot,$Session,$ProtectedPaths,$ProtectedCacheKeys,$RemainingCommittedNewBytes)
  return @{session=$Session;renewal=@{};admission_gate=@{}}
 }
+function Initialize-RunArtifactPowerShellOwner {return @{result_path='inert'}}
 function Enter-HostResourceStage {throw 'Unexpected heavy admission'}
 function Update-HostResourceStage {throw 'Unexpected heavy transition'}
 function Test-RunFilesIdentical {param($Left,$Right) return [Linq.Enumerable]::SequenceEqual([byte[]][IO.File]::ReadAllBytes($Left),[byte[]][IO.File]::ReadAllBytes($Right))}
@@ -179,6 +310,7 @@ function Invoke-ResourceBudgetedProcesses {
   $lines+=@("status,Fly completed. $count splats",'IOB_FLIGHT: PASS iob=inert.iob')
   $lines|Set-Content -LiteralPath $spec.stdout
   ''|Set-Content -LiteralPath $spec.stderr
+   if($OnProcessCompleted){$null=& $OnProcessCompleted ([pscustomobject]@{specification=$spec;exit_code=0;completed=$true;root_process_id=44;root_process_started_at_utc_ticks=123})}
   @{exit_code=0}
  })
  return @{resource_budget_exceeded=$false;processes=$records}
@@ -427,7 +559,7 @@ with patch.object(module, 'materialize_trial', side_effect=inert_materialize):
             script = root / "freeze.ps1"
             script.write_text(r"""param($Repo,$Root,$Python,$Owner,$Fixture)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$repoRoot=$Repo;$runDir=$Root;$projectId='instrument_assembly';$ContractPath=''
+$repoRoot=$Repo;$runDir=$Root;$projectId='instrument_assembly';$ContractPath='';$continuationParent=$null
 $runConfig=Join-Path $Root 'run_config.json'
 @{project=$Owner;mode='oa_mr';inputs=@{}}|ConvertTo-Json|Set-Content $runConfig
 . (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
@@ -508,9 +640,8 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_preflight_checkpoint_refresh_only_after_formal_observation(self):
         source = RUNNER.read_text(encoding="utf-8-sig")
-        start = source.index("    $finalBatchPlan=Get-Content")
-        block = source[start:source.index(
-            "    if($pendingSpecs.Count-eq0-and$existingRecords.Count-eq0){", start)]
+        start = source.index("    $prepareRemaining={")
+        block = source[start:source.index("    $writerCompletion.stopped=$false", start)]
         initial = {"inputs": {"simion_execution_batch_plan": "frozen-plan.json"},
                    "parameters": {"unchanged": "frozen source and field"}}
         cases = (
@@ -556,14 +687,16 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
                         "$Manifest,$Status,$Software,$Outputs) $script:manifests++;"
                         "if($Status-ne'checkpoint'-or$Outputs[0]-ne'initial-output.json'){throw 'identity changed'}};"
                         "function Get-MrtofBatchProcessSpecification {param($Record) $Record.index};"
-                        "try {\n" + block + "\n} catch {"
+                        "try {\n" + block + "\n$prepared=& $prepareRemaining $null;$pendingSpecs=@($prepared.pending)\n} catch {"
                         "@{error=$_.Exception.Message;writes=$script:writes;manifests=$script:manifests}"
                         "|ConvertTo-Json -Compress;exit 1};"
                         "@{writes=$script:writes;manifests=$script:manifests;pending=@($pendingSpecs)}"
                         "|ConvertTo-Json -Compress"
                     )
+                    script_path = root / "preflight.ps1"
+                    script_path.write_text(script, encoding="utf-8")
                     result = subprocess.run(
-                        ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                        ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(script_path)],
                         cwd=RUNNER.parents[3], capture_output=True, text=True, encoding="utf-8", timeout=30,
                     )
                     actual = json.loads(result.stdout.splitlines()[-1])
@@ -686,10 +819,10 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
     def test_standard_source_diagnostic_is_one_postprocess_output(self):
         source = RUNNER.read_text(encoding="utf-8-sig")
         start = source.index("  $sourceTimingDiagnostic=$null;")
-        end = source.index("  $retention=Apply-RunArtifactRetention", start)
+        end = source.index("  $manifestOutputs=@", start)
         block = source[start:end]
         self.assertGreater(start, source.rindex("Write-RunJson -Path $runConfig -Value $config", 0, start))
-        self.assertLess(end, source.rindex("Write-VerifiedRunManifest"))
+        self.assertLess(end, source.rindex("Complete-RunArtifactPowerShellOwner"))
         publication = next(line for line in source.splitlines()
                            if line.strip().startswith("if($null-ne$sourceTimingDiagnostic){$manifestOutputs"))
         with TemporaryDirectory() as directory:
@@ -1043,7 +1176,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
                     self.assertEqual(actual["keys"], [])
 
     def test_first_batch_observation_keeps_repository_scheduler_contract(self):
-        self.assertIn("Start-ObservedFormalProcess -DispatchPlanPath", self.source)
+        self.assertIn("Invoke-SimionBatchPhase -DispatchPlanPath", self.source)
         self.assertNotIn("WaitForNaturalCompletionAfterObservation", self.source)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
@@ -1107,7 +1240,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
             "[string]$BatchContinuationRunPath=''",
             "projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_continuation",
             "simion_whole_unit_replay_plan",
-            "continuation requires one sealed whole-batch log",
+            "continuation requires a sealed whole-batch log and owner exit evidence",
             "-OnProcessCompleted $checkpointAction",
             "-Status checkpoint",
         ):
@@ -1115,105 +1248,31 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
         self.assertIn("$replayBatchIndexes-contains$index", self.source)
         self.assertIn("$replayBatchIndexes=@(", self.source)
         self.assertIn(
-            "$replayBatchIndexes=@($replanned.batches|ForEach-Object{[int]$_.index})",
+            "$replanState.replayIndexes=@($replanned.batches|ForEach-Object{[int]$_.index})",
             self.source,
         )
 
     def test_failure_removes_only_disposable_trajectory_cache_before_publication(self):
         catch = self.source.index("}catch{")
-        failed = self.source.index("Publish-OaMrFailureManifest -Status failed", catch)
+        failed = self.source.index("Complete-RunArtifactPowerShellOwner -Context $owner", catch)
         cache_cleanup = self.source.index(
             "Get-ChildItem -LiteralPath $temporarySolverDir -File -Filter 'trj*.tmp'",
             catch,
         )
         self.assertLess(cache_cleanup, failed)
 
-    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_terminal_publication_is_independent_of_payload_seal(self):
-        source = RUNNER.read_text(encoding="utf-8")
-        start = source.index("  # The public writer publishes and reads back identities once.")
-        tail = source[start:]
-        catch = tail.index("}catch{\n  $failureRecord=$_")
-        publication, cleanup = tail[:catch], tail[catch:]
-        capacity_publication = source[source.index("  $sourceTimingDiagnostic=$null;"):start]
-        helper_start = source.index("function Publish-OaMrFailureManifest {")
-        helper = source[helper_start:source.index("function Remove-TemporarySolverDirectory", helper_start)]
-        for owned, failure in ((True, "none"), (True, "writer"), (True, "seal"),
-                               (True, "science"), (True, "failure_writer"), (True, "terminal_capacity"),
-                               (False, "none"), (False, "light")):
-            with self.subTest(owned=owned, failure=failure), TemporaryDirectory() as temporary:
-                root = Path(temporary)
-                script = root / "fixture.ps1"
-                script.write_text(r"""param($Source,$Root,$Owned,$Failure)
-$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$ownsCapacitySession=$Owned-eq'True';$ownsHostResourceLease=$false
-$trajectoryRecording=$null;$trajectoryRetentionReason='';$trajectoryPayloadNeedsSeal=$false
-$terminalPublicationAttempted=$false;$terminalStatus='interrupted';$deferredHostCompletionNotification=$false
-$terminalPublicationClosed=$false;$failureRecord=$null;$closeoutErrors=[Collections.Generic.List[object]]::new()
-$writerCompletion=[pscustomobject]@{stopped=$true}
-$python='python';$repoRoot='repo';$runDir=$Root;$resultDir=$Root;$logDir=$Root
-$runConfig=Join-Path $Root run_config.json;$summary=Join-Path $Root summary.json
-'{}'|Set-Content $runConfig
-$manifestPath=Join-Path $Root run_manifest.json
-'{"status":"checkpoint"}'|Set-Content $manifestPath
-$package=@{artifact_run_dir=$Root};$artifactRoot='artifacts';$projectId='instrument_assembly'
-$RunId='fixture';$failureStage='analysis';$observed=@{status='bunch_observed'};$hostOutcome='failed'
-$capacitySession=@{status='active'};$resourceLease=$null
-$isBunchFlight=$false;$staticFieldRequested=$false;$nativeBankKey='fixture'
-$staticPaGuards=@();$temporaryAcceleratorRuntimeSession=$null;$temporarySolverDir=$null;$batchRuntimeRoot=$null
-$retainGuiWorkbenchFiles=$false;$manifestOutputs=@();$script:calls=[Collections.Generic.List[string]]::new()
-function Write-Host {param($Object)}
-function Write-Warning {param($Message,$WarningAction)}
-function Write-RunJson {param($Path,$Value) $script:calls.Add('summary:'+$Value.status)}
-function Write-VerifiedRunManifest {param($Python,$RepoRoot,$RunConfig,$Status,$Software,$Outputs,[switch]$DeferCapacityFinalization)
- if(-not$DeferCapacityFinalization){throw 'terminal writer must defer capacity finalization'}
- $script:calls.Add('writer:'+$Status)
- if($Failure-in@('writer','failure_writer')){throw 'writer failed'}
- @{status=$Status}|ConvertTo-Json|Set-Content $manifestPath
-}
-function Complete-FailedRun {throw 'failure must not invoke light finalizer'}
-function Apply-RunArtifactRetention {param($Python,$RepoRoot,$RunConfig) return 'retention'}
-function Update-ArtifactWorkflowCapacitySession {
- param($Python,$RepoRoot,$Session,$ProtectedCacheKeys,$RemainingCommittedNewBytes)
- $script:calls.Add('capacity')
- throw 'terminal capacity failed'
-}
-function Invoke-RunCapacityLifecycleAdapter {param($Python,$RepoRoot,$Action,$ArtifactRoot,$RunConfig)
- $script:calls.Add('light:'+ $Action);if($Failure-eq'light'){throw 'light capacity failed'}
-}
-function Remove-RunPackageExecutionAlias {param($Package)}
-function Exit-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session) $script:calls.Add('release');$Session.status='released'}
-function Invoke-ProjectPython {param($Arguments)
- $script:calls.Add('seal')
- if($Arguments-notcontains'seal-stopped-payload'-or$Arguments[-1]-eq''){throw 'wrong seal authority or missing reason'}
- if($Failure-eq'seal'){throw 'seal failed'}
-}
-""" + helper + "\n$caught=$false;try{try{\n" +
-                    ("throw 'science failed'\n" if failure in ("science", "failure_writer") else
-                     (capacity_publication if failure == "terminal_capacity" else "") + publication) +
-                    cleanup + "\n}catch{$caught=$true};@{calls=@($script:calls);caught=$caught;status=$terminalStatus;manifest=(Get-Content $manifestPath -Raw|ConvertFrom-Json).status}|ConvertTo-Json -Compress",
-                    encoding="utf-8")
-                result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(RUNNER), str(root), str(owned), failure],
-                                        cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                observed = json.loads(result.stdout)
-                expected_status = "failed" if failure in ("science", "failure_writer", "writer", "terminal_capacity") else "success"
-                writers = [x for x in observed["calls"] if x.startswith("writer:")]
-                expected_writers = (["writer:success", "writer:failed"] if failure == "writer"
-                                    else ["writer:" + expected_status])
-                self.assertEqual(writers, expected_writers)
-                if failure == "terminal_capacity":
-                    self.assertLess(observed["calls"].index("capacity"), observed["calls"].index("writer:failed"))
-                    self.assertNotIn("writer:success", observed["calls"])
-                self.assertEqual(observed["status"], expected_status)
-                self.assertEqual(observed["manifest"], "checkpoint" if failure in ("writer", "failure_writer") else expected_status)
-                self.assertEqual(observed["caught"], failure != "none")
-                self.assertEqual("release" in observed["calls"], owned)
-                self.assertEqual("seal" in observed["calls"], owned and failure not in ("writer", "failure_writer"))
-                if "seal" in observed["calls"]:
-                    self.assertLess(observed["calls"].index("release"), observed["calls"].index("seal"))
-                if not owned:
-                    self.assertIn("light:finalize-ready", observed["calls"])
+        # Real retention/publication/repeat recovery now runs through both CLIs
+        # in test_workflow_finalization_recovery; this protects production wiring.
+        self.assertNotIn("function Publish-OaMrFailureManifest", self.source)
+        self.assertNotIn("Apply-RunArtifactRetention", self.source)
+        self.assertNotIn("--action','seal-stopped-payload", self.source)
+        self.assertIn("Initialize-RunArtifactPowerShellOwner", self.source)
+        self.assertIn("-OwnCapacitySession:$ownsCapacitySession", self.source)
+        self.assertIn("-WritersStopped $true -WriterCompletion", self.source)
+        self.assertIn("-OriginalFailure $failureRecord", self.source)
+        self.assertLess(self.source.index("$release=Exit-HostResourceStage"),
+                        self.source.index("Complete-RunArtifactPowerShellOwner -Context $owner"))
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_closeout_preserves_primary_error_and_isolates_safe_owner_actions(self):
@@ -1236,15 +1295,28 @@ function Invoke-Fixture {
  $ownsCapacitySession=$Owned;$capacitySession=@{status='active'}
  $temporarySolverDir=$null;$temporaryAcceleratorRuntimeSession=@{};$batchRuntimeRoot=[string]$PWD
  $retainGuiWorkbenchFiles=$false;$runConfig=Join-Path $PWD 'README.md';$python='inert';$repoRoot=[string]$PWD
- $artifactRoot='inert';$projectId='instrument_assembly';$package=@{artifact_run_dir='inert'};$RunId='inert'
+ $artifactRoot='inert';$projectId='instrument_assembly';$package=@{artifact_run_dir='inert'};$RunId='inert';$resultDir='inert'
  $trajectoryRetentionReason='fixture';$observed=@{status='inert'}
+ $runClock=[Diagnostics.Stopwatch]::StartNew();$nativePhaseTimings=[ordered]@{};$runDir='inert';$owner=@{result_path='inert'};$ownerOutputs=@();$nativeOperations=[Collections.Generic.List[object]]::new();$resourceReleases=[Collections.Generic.List[object]]::new();$summary='inert'
  $guard1=[pscustomobject]@{};$guard1|Add-Member ScriptMethod Dispose {
   $script:events.Add('guard1');if($script:fault-in@('guard','multiple')){throw 'guard failed'}
  }
  $guard2=[pscustomobject]@{};$guard2|Add-Member ScriptMethod Dispose {$script:events.Add('guard2')}
  $staticPaGuards=@($guard1,$guard2)
- function Publish-OaMrFailureManifest {param($Status,$Reason,$Evidence)
+ $continuationEvidenceGuards=@()
+ function Write-RunJson {param($Path,$Value) if($Value.status-eq'unknown'){$script:events.Add('unknown_result')}elseif($Value.status-ne'failed'){throw 'bad failure result'}}
+ function Get-Content {param($LiteralPath,[switch]$Raw) '{}'}
+ function Get-ChildItem {param($LiteralPath,[switch]$Recurse,[switch]$File) @()}
+ function Complete-RunArtifactPowerShellOwner {
+  param($Context,$Status,$Summary,$OutputPaths,$WritersStopped,$WriterCompletion,$OriginalFailure)
+  if(-not$WritersStopped){throw 'unknown writer retained'}
   $script:events.Add('publish');if($script:fault-eq'publish'){throw 'publish failed'}
+  if($Owned){
+   $script:events.Add('capacity');if($script:fault-in@('capacity','capacity_unreleased')){throw 'capacity failed'}
+   $capacitySession.status='released'
+   $script:events.Add('seal');if($script:fault-eq'seal'){throw 'seal failed'}
+  }else{$script:events.Add('light')}
+  return @{status=$Status;stage='complete';terminal_published=$true;capacity_finalized=$Owned;recovery_action=$null}
  }
  function Invoke-RunCapacityLifecycleAdapter {param($Python,$RepoRoot,$Action,$ArtifactRoot,$RunConfig) $script:events.Add('light')}
  function Suspend-NativeCorridorRuntimeSession {param($Session)
@@ -1272,7 +1344,7 @@ function Invoke-Fixture {
  function Write-Host {param($Object)}
  function Write-Warning {param($Message,$WarningAction)}
  $caught=$null;$secondary=@()
- $body=if($Primary){"try{throw 'science failed'}"}else{'try{}'}
+ $body=if($Fault-eq'observation_unknown'){"try{`$e=[Exception]::new('science failed');`$e.Data['simion_first_batch_writer_unknown']=`$true;throw `$e}"}elseif($Fault-eq'wave_stopped'){"try{`$e=[Exception]::new('science failed');`$e.Data['simion_wave_writer_completion_confirmed']=`$true;throw `$e}"}elseif($Primary){"try{throw 'science failed'}"}else{'try{}'}
  try{. ([scriptblock]::Create($body+$Tail))}catch{
   $caught=$_.Exception.Message
   if($_.Exception.Data.Contains('oa_mr_closeout_errors')){$secondary=@($_.Exception.Data['oa_mr_closeout_errors'])}
@@ -1286,6 +1358,8 @@ $rows=@(foreach($fault in @('none','publish','guard','runtime','host','host_reta
 $rows+=@(Invoke-Fixture 'guard' $false $true $true $tail)
 $rows+=@(Invoke-Fixture 'none' $false $true $true $tail)
 $rows+=@(Invoke-Fixture 'none' $true $false $true $tail)
+$rows+=@(Invoke-Fixture 'observation_unknown' $true $true $true $tail)
+$rows+=@(Invoke-Fixture 'wave_stopped' $true $false $true $tail)
 $rows+=@(Invoke-Fixture 'none' $true $true $false $tail)
 $rows|ConvertTo-Json -Depth 8 -Compress
 """
@@ -1302,8 +1376,8 @@ $rows|ConvertTo-Json -Depth 8 -Compress
                     self.assertIsNone(row["error"])
                 else:
                     self.assertIn("guard failed", row["error"])
-                if not row["stopped"]:
-                    self.assertEqual(calls, ["host", "notify"])
+                if (not row["stopped"] and row["fault"] != "wave_stopped") or row["fault"] == "observation_unknown":
+                    self.assertEqual(calls, ["unknown_result"])
                     self.assertEqual(row["capacity_status"], "active")
                     continue
                 for expected in ("guard1", "guard2", "runtime"):
@@ -1320,15 +1394,15 @@ $rows|ConvertTo-Json -Depth 8 -Compress
                     self.assertFalse(set(calls) & {"temp", "capacity", "seal", "alias"})
                     self.assertEqual(row["capacity_status"], "active")
                 else:
-                    for expected in ("temp", "capacity", "alias"):
+                    for expected in (("temp", "alias") if row["fault"] == "publish" else ("temp", "capacity", "alias")):
                         self.assertIn(expected, calls)
                     self.assertEqual("seal" in calls, row["fault"] not in
                                      ("publish", "capacity", "capacity_unreleased"))
-                if row["fault"] != "none":
+                if row["fault"] not in ("none", "wave_stopped"):
                     self.assertTrue(row["secondary"])
                 if row["fault"] == "multiple":
                     self.assertEqual([item["stage"] for item in row["secondary"]],
-                                     ["guard_release", "temporary_directory", "execution_alias"])
+                                     ["guard_release", "temporary_directory", "execution_alias"], row["secondary"])
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_native_stop_fact_requires_actual_wait_even_for_nonzero_exit(self):
@@ -1347,15 +1421,15 @@ function Register-HostResourceProcess {param($Lease,$ProcessId)
 }
 function Write-Host {param($Object)}
 $rows=@(foreach($case in @('zero','nonzero','unknown')){
- $script:inject=$case-eq'unknown';$script:child=$null;$writerCompletion=[pscustomobject]@{stopped=$true}
+ $script:inject=$case-eq'unknown';$script:child=$null;$writerCompletion=[pscustomobject]@{stopped=$true};$nativeOperations=[Collections.Generic.List[object]]::new();$nativePhaseTimings=[ordered]@{}
  $code=if($case-eq'unknown'){'import time; time.sleep(0.25)'}elseif($case-eq'nonzero'){'raise SystemExit(7)'}else{'pass'}
  $errorText=$null
- try{Invoke-SimionStage -Stage $case -Arguments @('-B','-c',$code) -ResourceLease @{}}
+ try{$null=Invoke-SimionStage -Stage $case -Arguments @('-B','-c',$code) -ResourceLease @{}}
  catch{$errorText=$_.Exception.Message}
  $fact=[bool]$writerCompletion.stopped
  # The test owns the deliberately unobserved root and waits for its natural end.
  if($null-ne$script:child){try{$script:child.WaitForExit()}finally{$script:child.Dispose()}}
- @{case=$case;stopped=$fact;error=$errorText}
+ @{case=$case;stopped=$fact;error=$errorText;observation=$nativeOperations[0].observation}
 })
 $rows|ConvertTo-Json -Compress
 """
@@ -1369,8 +1443,31 @@ $rows|ConvertTo-Json -Compress
             self.assertEqual([rows[key]["stopped"] for key in ("zero", "nonzero", "unknown")],
                              [True, True, False])
             self.assertIsNone(rows["zero"]["error"])
+            self.assertGreater(rows["zero"]["observation"]["process_id"], 0)
+            self.assertGreater(rows["zero"]["observation"]["process_started_at_utc_ticks"], 0)
+            self.assertEqual(rows["nonzero"]["observation"]["returncode"], 7)
+            self.assertFalse(rows["unknown"]["observation"]["exit_confirmed"])
             self.assertIn("SIMION stage failed", rows["nonzero"]["error"])
             self.assertIn("registration failed", rows["unknown"]["error"])
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_runtime_provider_forwards_existing_owned_native_callback(self):
+        script = r'''
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. (Join-Path $PWD 'projects/parallel_mirror_dual_stripe_mr_tof/simion/native_corridor_runtime_support.ps1')
+$records=[Collections.Generic.List[object]]::new();$callback={throw 'must remain a callback'}
+function New-NativeFastAdjustRuntimeFamily {
+ param($GenerationDirectory,$ExpectedResponseIds,$NativeOperationObservations,$InvokeNativeOperation)
+ if($GenerationDirectory-cne'sealed-field'-or($ExpectedResponseIds-join',')-cne'1,2,3,4,5,6,7,8'){throw 'physical namespace changed'}
+ if(-not[object]::ReferenceEquals($records,$NativeOperationObservations)-or-not[object]::ReferenceEquals($callback,$InvokeNativeOperation)){throw 'actual native observer not forwarded'}
+ @{marker='existing-common-owner'}
+}
+$result=New-NativeCorridorRuntimeFamily -BankGenerationDirectory sealed-field -CacheKey key -GenerationSha256 digest -DestinationDirectory unused -Python unused -RepoRoot $PWD -SimionExe unused -ResourceLease @{} -RunId fixture -NativeOperationObservations $records -InvokeNativeOperation $callback
+if($result.marker-cne'existing-common-owner'){throw 'private native path used'}
+'''
+        process = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO,
+            capture_output=True, text=True, encoding="utf-8", timeout=20)
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
 
     def test_compact_postprocess_does_not_transition_a_finished_solver_lease(self):
         self.assertNotIn("-Stage 'mrtof_postprocess'", self.source)
@@ -1385,7 +1482,7 @@ $rows|ConvertTo-Json -Compress
             self.source.count("Update-HostResourceStage -Lease $resourceLease -Stage 'mrtof_flight'"),
             2,
         )
-        self.assertIn("if($ownsHostResourceLease-and$null-ne$resourceLease)", self.source)
+        self.assertIn("if($writerCompletion.stopped-and$ownsHostResourceLease-and$null-ne$resourceLease)", self.source)
 
     def test_shared_host_lease_does_not_accumulate_transient_work_roots(self):
         self.assertIn("[bool]$RegisterHostProcess=$true", self.source)

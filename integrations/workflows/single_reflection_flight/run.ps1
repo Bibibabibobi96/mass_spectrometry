@@ -33,7 +33,7 @@ $workspace=Split-Path -Parent $RepoRoot
 $artifacts=Join-Path $workspace 'artifacts'
 $package=$null
 $capacity=$null
-$terminalized=$false
+$terminalized=$false;$writerUnknown=$false
 $stageName='create_run_package'
 $retentionReason='Retain native single-reflection fields, saved workbench, frozen source-cohort flight evidence, and default-replay parity for solver review.'
 try {
@@ -140,6 +140,16 @@ try {
   Write-Output "SINGLE_REFLECTION_RUN=PASS RUN_ID=$RunId STAGE=$stage GUI=False"
 }catch {
   $failure=$_
+  $data=$failure.Exception.Data
+  $writerUnknown=([bool]$data['simion_first_batch_writer_unknown']-or[bool]$data['simion_first_batch_drain_error']-or
+    ($data.Contains('simion_wave_writer_completion_confirmed')-and-not[bool]$data['simion_wave_writer_completion_confirmed']))
+  if($writerUnknown){
+    try{Write-RunJson -Path (Join-Path $package.result_dir 'writer_completion_unknown.json') -Value @{
+      schema_version=1;role='writer_completion_unknown';status='unknown';reason=$failure.Exception.Message;failure_stage=$stageName
+      drain_error=[string]$data['simion_first_batch_drain_error'];wave_drain_error=[string]$data['simion_wave_drain_error']
+    }}catch{$failure.Exception.Data['writer_unknown_result_error']=[string]$_}
+    throw $failure
+  }
   $deferred=($null-ne$capacity-and$capacity.PSObject.Properties['defer_capacity_finalization']-and$capacity.defer_capacity_finalization)
   if($null-ne$package-and-not$terminalized){
     $failureProperties=@{requested_stage=$stage;gui_executed=$false}
@@ -166,8 +176,8 @@ try {
   }
   throw $failure
 }finally {
-  if($null-ne$capacity-and-not($capacity.PSObject.Properties['defer_capacity_finalization']-and$capacity.defer_capacity_finalization)){
+  if(-not$writerUnknown-and$null-ne$capacity-and-not($capacity.PSObject.Properties['defer_capacity_finalization']-and$capacity.defer_capacity_finalization)){
     $null=Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $capacity
   }
-  if($null-ne$package){Remove-RunPackageExecutionAlias -Package $package}
+  if(-not$writerUnknown-and$null-ne$package){Remove-RunPackageExecutionAlias -Package $package}
 }

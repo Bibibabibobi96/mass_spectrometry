@@ -256,6 +256,12 @@ try{
     def test_active_formal_is_replanned_and_drained_on_preparation_failure(self):
         script = """param([string]$Source)
 . $Source
+$repo=Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $Source))
+$helperAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $repo 'common/resource_budget_support.ps1'),[ref]$null,[ref]$null)
+foreach($name in @('Invoke-ObservedPreparationFailureDrain','Invoke-SimionFormalObservation','Invoke-SimionBatchPhase')){
+ $helper=$helperAst.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq$name},$true)
+ Invoke-Expression $helper.Extent.Text
+}
 $root=Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N'));New-Item -ItemType Directory (Join-Path $root 'results') -Force|Out-Null
 $script:worker=$null
 try{

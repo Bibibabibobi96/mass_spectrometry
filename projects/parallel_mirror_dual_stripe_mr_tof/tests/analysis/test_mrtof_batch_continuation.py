@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import importlib.util
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -11,11 +14,60 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_continuati
     REQUIRED_INPUT_ROLES,
     build_continuation_plan,
     build_prepared_joint_whole_unit_plan,
+    continuation_protection_projection,
 )
 from common.contracts.write_run_manifest import file_record
 
 
 class MrtofBatchContinuationTests(unittest.TestCase):
+    def test_protection_projection_covers_multigeneration_and_rejects_unbound_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runs = Path(directory) / "artifacts/projects/instrument_assembly/runs"
+            original, second, third = (runs / name for name in ("old", "middle", "new"))
+            for path in (original, second, third):
+                path.mkdir(parents=True)
+            log = original / "joint_flight_batch_001.log"
+            exit_fact = original / "owner_exit.json"
+            log.write_text("sealed native output")
+            exit_fact.write_text('{"role":"simion_batch_owner_exit"}')
+            def seal(run, inputs, outputs):
+                config = run / "run_config.json"
+                config.write_text(json.dumps({"run_id": run.name, "project": "instrument_assembly",
+                    "mode": "prepared_joint", "inputs": {key: str(path) for key, path in inputs.items()}}))
+                (run / "run_manifest.json").write_text(json.dumps({"role": "simulation_run_manifest", "status": "failed",
+                    "run_id": run.name, "project": "instrument_assembly", "mode": "prepared_joint",
+                    "run_config": file_record(config), "inputs": {key: file_record(path) for key, path in inputs.items()},
+                    "outputs": [file_record(path) for path in outputs]}))
+            seal(original, {}, [log, exit_fact])
+            seal(second, {"reused_batch_001_log": log, "reused_batch_001_owner_exit": exit_fact,
+                          "continuation_parent_manifest": original / "run_manifest.json"}, [])
+            seal(third, {"reused_batch_001_log": log, "reused_batch_001_owner_exit": exit_fact,
+                         "continuation_parent_manifest": second / "run_manifest.json"}, [])
+            projection = continuation_protection_projection(third)
+            self.assertCountEqual(projection["run_directories"], [str(original), str(second), str(third)])
+            self.assertIn(str(log), projection["files"])
+            self.assertIn(str(exit_fact), projection["files"])
+            self.assertEqual(len(projection["manifests"]), 3)
+            cli = subprocess.run([sys.executable, "-m",
+                "projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_continuation",
+                "--predecessor-run-dir", str(third), "--protection-projection"],
+                cwd=Path(__file__).resolve().parents[4], capture_output=True, text=True, timeout=30)
+            self.assertEqual(cli.returncode, 0, cli.stdout + cli.stderr)
+            self.assertEqual(json.loads(cli.stdout), projection)
+            source_manifest_path = original / "run_manifest.json"
+            source = json.loads(source_manifest_path.read_text())
+            source["outputs"][0]["sha256"] = "0" * 64
+            source_manifest_path.write_text(json.dumps(source))
+            with self.assertRaises((ValueError, AssertionError, ContractError)):
+                continuation_protection_projection(third)
+
+    def _exit(self, root: Path, index: int, code: int = 0) -> Path:
+        path = root / f"results/batches/batch_{index:03d}/owner_exit.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"schema_version": 1, "role": "simion_batch_owner_exit",
+                                    "batch_index": index, "completed": True, "exit_code": code}))
+        return path
+
     def _prepared_joint_fixture(self, root: Path, *, second_complete: bool) -> tuple[Path, Path]:
         """Create an interrupted two-unit predecessor and its new frozen preparation."""
         parent = root / "parent"
@@ -100,6 +152,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
                 encoding="utf-8",
             )
             outputs.extend((fly, receipt, log))
+            outputs.append(self._exit(parent, index))
         config = parent / "run_config.json"
         config.write_text(
             json.dumps(
@@ -144,9 +197,260 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             )
         self.assertEqual([batch["action"] for batch in plan["batches"]], ["reuse", "replay"])
         self.assertEqual((plan["reusable_unit_count"], plan["replay_unit_count"]), (1, 1))
-        self.assertEqual(len(plan["units"][0]["terminal_outputs"]), 3)
+        self.assertEqual(len(plan["units"][0]["terminal_outputs"]), 4)
         self.assertEqual(plan["units"][1]["terminal_outputs"], [])
         self.assertTrue(plan["dispatch_plan"]["path"].endswith("simion_repository_dispatch_plan.json"))
+
+    def test_prepared_rejects_incomplete_or_gapped_population_plan(self) -> None:
+        for kind in ("formal_only", "truncated", "gap"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                parent, current = self._prepared_joint_fixture(root, second_complete=True)
+                plan_path = parent / "results/simion_execution_batch_plan.json"
+                plan = json.loads(plan_path.read_text())
+                if kind == "formal_only":
+                    plan["coverage"] = "initial_formal_batch_only"
+                    plan["batches"] = plan["batches"][:1]
+                elif kind == "truncated":
+                    plan["batches"] = plan["batches"][:1]
+                else:
+                    plan["batches"][1]["particle_id_min"] = 3
+                plan_path.write_text(json.dumps(plan))
+                manifest_path = parent / "run_manifest.json"
+                manifest = json.loads(manifest_path.read_text())
+                manifest["inputs"]["simion_execution_batch_plan"] = file_record(plan_path)
+                manifest["outputs"] = [file_record(plan_path) if record["path"] == str(plan_path.resolve()) else record
+                                       for record in manifest["outputs"]]
+                manifest_path.write_text(json.dumps(manifest))
+                with self.assertRaisesRegex(ContractError, "(formal recovery|formal provisional|batch plan does not cover|batch interval differs)"):
+                    build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current,
+                                                        output_dir=root / "recovery")
+
+    def test_prepared_replans_formal_batch_from_sealed_observation(self) -> None:
+        from common.simion.particle_batching import batch_plan_from_dispatch
+        from common.simion.resource_scheduler import plan_simion_dispatch
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            parent, current = self._prepared_joint_fixture(root, second_complete=False)
+            request = {"solver": "SIMION", "field_kind": "rf", "rf_steps_per_period": 40,
+                       "particle_count": 2, "independent_particles": True, "trajectory_quality": 8}
+            dispatch = plan_simion_dispatch(request, [], available_memory_bytes=10*1024**3,
+                                           total_physical_memory_bytes=20*1024**3, logical_processors=8)
+            dispatch_path = parent / "results/simion_repository_dispatch_plan.json"
+            plan_path = parent / "results/simion_execution_batch_plan.json"
+            dispatch_path.write_text(json.dumps(dispatch))
+            plan_path.write_text(json.dumps(batch_plan_from_dispatch(dispatch)))
+            usage = parent / "logs/simion_batch_resource_usage.json"
+            usage.write_text(json.dumps({"first_formal_observation": {"peak_managed_memory_bytes": 1024**3,
+                "process_cpu_percent": 8.0, "background_cpu_percent": 0.0}}))
+            manifest_path = parent / "run_manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            for role, path in (("simion_execution_batch_plan", plan_path), ("simion_repository_dispatch_plan", dispatch_path)):
+                manifest["inputs"][role] = file_record(path)
+                manifest["outputs"] = [file_record(path) if record["path"] == str(path.resolve()) else record
+                                       for record in manifest["outputs"]]
+            manifest["outputs"].append(file_record(usage))
+            manifest_path.write_text(json.dumps(manifest))
+            recovered = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current,
+                                                            output_dir=root / "recovery")
+            self.assertEqual([item["action"] for item in recovered["batches"]], ["reuse", "replay"])
+            self.assertEqual(recovered["batches"][0]["particle_id_max"], 1)
+            self.assertEqual(recovered["batches"][1]["particle_id_min"], 2)
+            self.assertTrue(Path(recovered["dispatch_plan"]["path"]).is_file())
+            self.assertEqual(recovered["recovered_formal_provenance"]["resource_usage"]["path"], str(usage.resolve()))
+            usage.write_text(json.dumps({"first_formal_observation": {"peak_working_set_bytes": 2048,
+                "process_cpu_percent": 8.0, "background_cpu_percent": 0.0}}))
+            manifest["outputs"] = [file_record(usage) if entry["path"] == str(usage.resolve()) else entry
+                                   for entry in manifest["outputs"]]
+            manifest_path.write_text(json.dumps(manifest))
+            recovered = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current,
+                                                            output_dir=root / "legacy_observation")
+            legacy = json.loads(Path(recovered["dispatch_plan"]["path"]).read_text())
+            self.assertTrue(legacy["estimation"]["recovered_missing_observation"])
+            usage.unlink()
+            manifest["outputs"] = [entry for entry in manifest["outputs"] if entry["path"] != str(usage.resolve())]
+            manifest_path.write_text(json.dumps(manifest))
+            recovered = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current,
+                                                            output_dir=root / "no_observation")
+            self.assertEqual([item["action"] for item in recovered["batches"]], ["reuse", "replay"])
+            fallback = json.loads(Path(recovered["dispatch_plan"]["path"]).read_text())
+            self.assertTrue(fallback["estimation"]["recovered_missing_observation"])
+            self.assertEqual(fallback["limits"]["maximum_concurrency"], 1)
+            self.assertIsNone(recovered["recovered_formal_provenance"]["resource_usage"])
+
+    def test_prepared_recovers_committed_dispatch_when_batch_plan_write_failed(self) -> None:
+        from common.simion.particle_batching import batch_plan_from_dispatch
+        from common.simion.resource_scheduler import plan_adaptive_followup, plan_simion_dispatch
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            parent,current=self._prepared_joint_fixture(root,second_complete=False)
+            request={"solver":"SIMION","field_kind":"rf","rf_steps_per_period":40,
+                     "particle_count":2,"independent_particles":True,"trajectory_quality":8}
+            initial=plan_simion_dispatch(request,[],available_memory_bytes=10*1024**3,
+                                         total_physical_memory_bytes=20*1024**3,logical_processors=8)
+            committed=plan_adaptive_followup(initial,1024**3,observed_cpu_percent=8,
+                background_cpu_percent=0,first_batch_completed=True)
+            dispatch_path=parent/'results/simion_repository_dispatch_plan.json'
+            plan_path=parent/'results/simion_execution_batch_plan.json'
+            dispatch_path.write_text(json.dumps(committed))
+            plan_path.write_text(json.dumps(batch_plan_from_dispatch(initial)))
+            manifest_path=parent/'run_manifest.json';manifest=json.loads(manifest_path.read_text())
+            for role,path in (("simion_execution_batch_plan",plan_path),("simion_repository_dispatch_plan",dispatch_path)):
+                manifest['inputs'][role]=file_record(path)
+                manifest['outputs']=[file_record(path) if record['path']==str(path.resolve()) else record
+                                     for record in manifest['outputs']]
+            manifest_path.write_text(json.dumps(manifest))
+            recovered=build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent,current_preparation=current,
+                                                           output_dir=root/'recovery')
+            self.assertEqual([unit['action'] for unit in recovered['batches']],['reuse','replay'])
+            self.assertEqual(json.loads(Path(recovered['dispatch_plan']['path']).read_text()),committed)
+            committed['waves'][0]['batches'][0]['particle_id_max']=2
+            dispatch_path.write_text(json.dumps(committed));manifest['inputs']['simion_repository_dispatch_plan']=file_record(dispatch_path)
+            manifest['outputs']=[file_record(dispatch_path) if record['path']==str(dispatch_path.resolve()) else record
+                                 for record in manifest['outputs']]
+            manifest_path.write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(ContractError,'provisional dispatch'):
+                build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent,current_preparation=current,
+                                                     output_dir=root/'rejected')
+
+    def test_owner_exit_missing_or_nonzero_replays_only_that_complete_batch(self) -> None:
+        for kind in ("oa", "prepared"):
+            for state in ("missing", "nonzero"):
+                with self.subTest(kind=kind, state=state), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    if kind == "oa":
+                        parent, current = self._fixture(root)
+                    else:
+                        parent, current = self._prepared_joint_fixture(root, second_complete=True)
+                    evidence = parent / "results/batches/batch_001/owner_exit.json"
+                    if state == "missing":
+                        evidence.unlink()
+                    else:
+                        self._exit(parent, 1, code=7)
+                    plan = (build_continuation_plan(predecessor_run_dir=parent, current_run_config=current,
+                                                    output_dir=root / "recovery") if kind == "oa" else
+                            build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current,
+                                                                 output_dir=root / "recovery"))
+                    self.assertEqual(plan["batches"][0]["action"], "replay")
+                    if kind == "prepared":
+                        self.assertEqual(plan["batches"][1]["action"], "reuse")
+
+    def test_legacy_prepared_success_uses_bound_owner_and_aggregate_usage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            parent, current = self._prepared_joint_fixture(root, second_complete=True)
+            for index in (1, 2):
+                (parent / f"results/batches/batch_{index:03d}/owner_exit.json").unlink()
+            owner = parent / "owner.ps1"
+            owner.write_bytes(subprocess.check_output(["git", "show", "af158d22c53e5ff85a32e9984f4d9b2bb009777b:integrations/workflows/prepared_joint/execute.ps1"], cwd=Path(__file__).resolve().parents[4], timeout=30))
+            usage = parent / "logs/simion_batch_resource_usage.json"
+            usage.write_text(json.dumps({"status": "completed", "execution_wave": {"process_count": 2}}))
+            config_path = parent / "run_config.json"
+            config = json.loads(config_path.read_text())
+            config.update(project="instrument_assembly", mode="prepared_joint")
+            config["inputs"]["prepared_joint_integrations_workflows_prepared_joint_execute_ps1"] = str(owner)
+            config_path.write_text(json.dumps(config))
+            manifest_path = parent / "run_manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            manifest["status"] = "success"
+            manifest["run_config"] = file_record(config_path)
+            manifest["inputs"]["prepared_joint_integrations_workflows_prepared_joint_execute_ps1"] = file_record(owner)
+            manifest["outputs"] = [record for record in manifest["outputs"] if not record["path"].endswith("owner_exit.json")]
+            manifest["outputs"].append(file_record(usage))
+            manifest_path.write_text(json.dumps(manifest))
+            from projects.parallel_mirror_dual_stripe_mr_tof.analysis import mrtof_batch_continuation
+            frozen_module = root / "snapshot/projects/parallel_mirror_dual_stripe_mr_tof/analysis/mrtof_batch_continuation.py"
+            frozen_module.parent.mkdir(parents=True)
+            frozen_module.write_bytes(Path(mrtof_batch_continuation.__file__).read_bytes())
+            spec = importlib.util.spec_from_file_location("frozen_batch_continuation", frozen_module)
+            assert spec is not None and spec.loader is not None
+            snapshot = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(snapshot)
+            self.assertIsNone(snapshot._legacy_prepared_success(manifest_path, 2))
+            self.assertEqual(snapshot._legacy_prepared_success(manifest_path, 2,
+                trusted_repo_root=Path(mrtof_batch_continuation.__file__).resolve().parents[3]), usage)
+            self.assertIsNone(snapshot._legacy_prepared_success(manifest_path, 2, trusted_repo_root=root))
+            plan = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current, output_dir=root / "legacy")
+            self.assertEqual(plan["replay_unit_count"], 0)
+            self.assertEqual(plan["batches"][0]["exit_evidence_kind"], "legacy_aggregate_success")
+            self.assertEqual(plan["batches"][0]["exit_evidence_manifest"], str(manifest_path.resolve()))
+            owner.write_bytes(owner.read_bytes() + b"\n# different version\n")
+            manifest["inputs"]["prepared_joint_integrations_workflows_prepared_joint_execute_ps1"] = file_record(owner)
+            manifest_path.write_text(json.dumps(manifest))
+            plan = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current, output_dir=root / "unknown_owner")
+            self.assertEqual(plan["replay_unit_count"], 2)
+            manifest["status"] = "failed"
+            manifest_path.write_text(json.dumps(manifest))
+            plan = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current, output_dir=root / "failed")
+            self.assertEqual(plan["replay_unit_count"], 2)
+
+    def test_continuation_waveform_is_resolved_through_sealed_trial_and_rejects_damage(self) -> None:
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial import _continuation_waveforms
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            waveform = root / "waveforms.lua"
+            waveform.write_text("return {}\n")
+            trial = root / "trial.json"
+            trial.write_text(json.dumps({"voltage_waveforms": file_record(waveform)}))
+            config = root / "run_config.json"
+            config.write_text(json.dumps({"project": "instrument_assembly", "mode": "prepared_joint",
+                                          "inputs": {"prepared_joint_trial": str(trial)}}))
+            manifest = root / "run_manifest.json"
+            manifest.write_text(json.dumps({"run_config": file_record(config),
+                                            "inputs": {"prepared_joint_trial": file_record(trial)}}))
+            resolved, provenance = _continuation_waveforms(manifest)
+            self.assertEqual(resolved, waveform.resolve())
+            self.assertEqual(provenance["manifest"], str(manifest.resolve()))
+            waveform.write_text("changed\n")
+            with self.assertRaises((ValueError, AssertionError)):
+                _continuation_waveforms(manifest)
+
+    def test_peak_upgrade_reuses_fly_only_with_verified_contracts_and_unchanged_flight(self) -> None:
+        from common.analysis.peak_metrics import AnalysisSettings
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            parent, current = self._prepared_joint_fixture(root, second_complete=True)
+            timing = root / "timing.json"
+            timing.write_text(json.dumps({"schema_version": 1, "role": "native_electrode_timing", "pulse_start_us": 1.0}))
+            peak = {"method_id": "common_gaussian_kde_time_v2",
+                    "resolution_definition": "mean_tof_us/(2*direct_fwhm_tof_us)",
+                    "time_basis": "instrument_arrival_minus_common_extraction_pulse_us",
+                    "settings": vars(AnalysisSettings()), "common_time_reference": {
+                        "clock_epoch_id": "epoch", "field": "pulse_start_us", "timing": file_record(timing)}}
+            parent_contract, current_contract = root / "old.json", root / "new.json"
+            parent_contract.write_text(json.dumps({"peak_analysis": {**peak, "method_id": "common_gaussian_kde_time_v1"}, "flight": {"step": 1}}))
+            current_contract.write_text(json.dumps({"peak_analysis": peak, "flight": {"step": 1}}))
+            parent_trial = parent / "results/prepared_joint_trial.json"
+            for trial, contract in ((parent_trial, parent_contract), (current, current_contract)):
+                value = json.loads(trial.read_text())
+                value["trajectory_contract"] = file_record(contract)
+                trial.write_text(json.dumps(value))
+            manifest_path = parent / "run_manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            manifest["inputs"]["prepared_joint_trial"] = file_record(parent_trial)
+            manifest["outputs"] = [file_record(parent_trial) if entry["path"] == str(parent_trial.resolve()) else entry
+                                   for entry in manifest["outputs"]]
+            manifest_path.write_text(json.dumps(manifest))
+            plan = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current, output_dir=root / "ok")
+            self.assertEqual(plan["replay_unit_count"], 0)
+            self.assertEqual(plan["analysis_contract_change"]["excluded_analysis_field"], "peak_analysis")
+            invalid_peak = dict(peak)
+            invalid_peak.pop("common_time_reference")
+            current_contract.write_text(json.dumps({"peak_analysis": invalid_peak, "flight": {"step": 1}}))
+            value = json.loads(current.read_text())
+            value["trajectory_contract"] = file_record(current_contract)
+            current.write_text(json.dumps(value))
+            with self.assertRaisesRegex(ContractError, "peak analysis contract is invalid"):
+                build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current, output_dir=root / "clock")
+            current_contract.write_text(json.dumps({"peak_analysis": peak, "flight": {"step": 2}}))
+            value = json.loads(current.read_text())
+            value["trajectory_contract"] = file_record(current_contract)
+            current.write_text(json.dumps(value))
+            with self.assertRaisesRegex(ContractError, "scientific identity differs"):
+                build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current, output_dir=root / "bad")
+            current_contract.write_text('{}')
+            with self.assertRaisesRegex(ContractError, "trajectory contract is invalid"):
+                build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current, output_dir=root / "tampered")
 
     def test_prepared_joint_rejects_scientific_input_drift_before_reuse(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -243,6 +547,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
                 "reused_batch_001_log": first_outputs[0]["path"],
                 "reused_batch_001_receipt": first_outputs[1]["path"],
                 "reused_batch_001_fly2": first_outputs[2]["path"],
+                "reused_batch_001_owner_exit": first_outputs[3]["path"],
             }
             recovered_config.write_text(
                 json.dumps({"run_id": "recovered", "inputs": recovered_inputs}) + "\n",
@@ -256,7 +561,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
                         "status": "interrupted",
                         "run_config": {"sha256": file_sha256(recovered_config)},
                         "inputs": {key: file_record(Path(value)) for key, value in recovered_inputs.items()},
-                        "outputs": [file_record(path) for path in (replay_fly, replay_receipt, replay_log)],
+                        "outputs": [file_record(path) for path in (replay_fly, replay_receipt, replay_log, self._exit(recovered, 2))],
                     }
                 )
                 + "\n",
@@ -346,6 +651,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
         )
         partial = parent / "logs" / "native_two_prism_flight__batch02.log"
         partial.write_text("MRTOF_EVENT terminal ion=1 splat=1 t_us=2\n", encoding="utf-8")
+        exits = [self._exit(parent, i) for i in (1, 2)]
         manifest_inputs = {role: file_record(Path(path)) for role, path in parent_inputs.items()}
         (parent / "run_manifest.json").write_text(
             json.dumps(
@@ -358,6 +664,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
                     "outputs": [
                         {"path": str(complete), "sha256": file_sha256(complete)},
                         {"path": str(partial), "sha256": file_sha256(partial)},
+                        *[file_record(path) for path in exits],
                     ],
                 }
             )
@@ -464,6 +771,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
         manifest["inputs"] = {key: file_record(Path(value))
             for key, value in json.loads(config.read_text())["inputs"].items()}
         manifest["outputs"] = [file_record(path) for path in sorted((parent / "logs").glob("*.log"))]
+        manifest["outputs"] += [file_record(path) for path in sorted((parent / "results/batches").glob("*/owner_exit.json"))]
         manifest_path.write_text(json.dumps(manifest)+"\n")
 
     def test_oa_zero_replay_retains_original_batch_plan_offsets_and_logs_without_pa(self):
@@ -484,6 +792,31 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             self.assertEqual(Path(plan["batch_plan"]["path"]), parent / "inputs/simion_execution_batch_plan.json")
             self.assertFalse((root / "unavailable_field.pa").exists())
             self.assertNotEqual(plan["frozen_trial_authority"]["sha256"], plan["current_materialization"]["sha256"])
+
+    def test_oa_formal_recovery_keeps_first_and_replans_remaining(self):
+        from common.simion.particle_batching import batch_plan_from_dispatch
+        from common.simion.resource_scheduler import plan_simion_dispatch
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            parent, current = self._fixture(root)
+            request = {"solver": "SIMION", "field_kind": "rf", "rf_steps_per_period": 40,
+                       "particle_count": 3, "independent_particles": True, "trajectory_quality": 8}
+            dispatch = plan_simion_dispatch(request, [], available_memory_bytes=10*1024**3,
+                                           total_physical_memory_bytes=20*1024**3, logical_processors=8)
+            dispatch_path = parent / "inputs/simion_repository_dispatch_plan.json"
+            plan_path = parent / "inputs/simion_execution_batch_plan.json"
+            dispatch_path.write_text(json.dumps(dispatch))
+            plan_path.write_text(json.dumps(batch_plan_from_dispatch(dispatch)))
+            config = json.loads((parent / "run_config.json").read_text())
+            config["inputs"]["simion_repository_dispatch_plan"] = str(dispatch_path)
+            (parent / "run_config.json").write_text(json.dumps(config))
+            self._seal_oa_parent(parent)
+            result = build_continuation_plan(predecessor_run_dir=parent, current_run_config=current,
+                                             output_dir=root / "recovery")
+            self.assertEqual([item["action"] for item in result["batches"]], ["reuse", "replay", "replay"])
+            self.assertEqual((result["completed_particle_count"], result["replay_particle_count"]), (1, 2))
+            recovered = json.loads(Path(result["recovered_formal_dispatch"]["path"]).read_text())
+            self.assertTrue(recovered["estimation"]["recovered_missing_observation"])
 
     def test_oa_later_complete_batch_does_not_require_a_completed_prefix(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -568,11 +901,13 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             config = json.loads(second_config.read_text())
             config["inputs"]["simion_execution_batch_plan"] = first["batch_plan"]["path"]
             config["inputs"]["reused_batch_001_log"] = first["batches"][0]["terminal_outputs"][0]["path"]
+            config["inputs"]["reused_batch_001_owner_exit"] = first["batches"][0]["terminal_outputs"][1]["path"]
             second_config.write_text(json.dumps(config))
             (second / "logs/native_two_prism_flight__batch02.log").write_text(
                 "MRTOF_EVENT terminal ion=2 splat=1 t_us=1\n"
                 "MRTOF_EVENT terminal ion=1 splat=1 t_us=1\n"
                 "status,Fly completed. 2 splats\nIOB_FLIGHT: PASS iob=replayed.iob\n")
+            self._exit(second, 2)
             (second / "run_manifest.json").write_text(json.dumps(dict(
                 role="simulation_run_manifest", run_id="second", status="failed",
                 run_config=dict(sha256=file_sha256(second_config)),

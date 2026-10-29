@@ -210,7 +210,8 @@ def prepare(request_path: Path, run: Path) -> dict[str, Any]:
                 original = source[int(event["particle_id"])]
                 writer.writerow(dict(particle_id=event["particle_id"], particle_birth_time_us=float(original["birth_time_s"])*1e6,
                     mass_amu=original["mass_amu"], charge_state=original["charge_state"],
-                    terminal_instrument_time_us=event["time_us"], terminal_reason=event["terminal_reason"]))
+                    terminal_instrument_time_us=event["time_us"], terminal_reason=event["terminal_reason"],
+                    particle_weight=request["particle_weight"]))
     state_path = output / "source_states.csv"
     if rows:
         write_component_particle_state_csv(state_path, rows)

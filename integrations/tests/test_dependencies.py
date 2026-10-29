@@ -22,6 +22,63 @@ def load(path: Path) -> dict:
 
 
 class DependencyTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
+    def test_accelerator_interface_imports_ip_validator_from_frozen_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            inputs = Path(directory) / "inputs"
+            freeze = f". '{DEPENDENCIES}'; $null=Freeze-ConsumerDependencies -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId accelerator_interface"
+            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", freeze],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=120)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            snapshot = inputs / "runtime_snapshot"
+            code = '''
+from pathlib import Path
+from integrations.workflows.accelerator_interface import prepare
+from projects.dual_pressure_rectilinear_ion_processor.analysis import functional
+root = Path.cwd().resolve()
+for module in (prepare, functional):
+    Path(module.__file__).resolve().relative_to(root)
+assert callable(functional.validate_configs)
+'''
+            result = subprocess.run([sys.executable, "-B", "-s", "-c", code], cwd=snapshot,
+                env=dict(os.environ, PYTHONPATH="", PYTHONNOUSERSITE="1"),
+                capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_manifest_writer_consumers_freeze_its_process_lock_dependency(self) -> None:
+        entries = {item["source_repo_path"]: set(item["consumers"])
+                   for group in load(INVENTORY)["providers"] for item in group["files"]}
+        self.assertLessEqual(entries["common/contracts/write_run_manifest.py"],
+                             entries["common/contracts/capacity_protection.py"])
+
+    def test_joint_finalization_owners_freeze_the_existing_public_adapter(self) -> None:
+        entries = {item["source_repo_path"]: set(item["consumers"])
+                   for group in load(INVENTORY)["providers"] for item in group["files"]}
+        self.assertEqual(entries["common/contracts/run_artifact_workflow.ps1"],
+                         {"prepared_joint", "oa_mr"})
+        self.assertLessEqual(entries["common/contracts/run_artifact_workflow.ps1"],
+                             entries["common/resource_budget_support.ps1"])
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
+    def test_prepared_joint_loads_shared_mr_continuation_guard_from_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            inputs = Path(directory)/"inputs"
+            freeze = f". '{DEPENDENCIES}'; $null=Freeze-ConsumerDependencies -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId prepared_joint"
+            result = subprocess.run([shutil.which("pwsh"),"-NoProfile","-Command",freeze],cwd=REPO_ROOT,
+                                    capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=120)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+            snapshot = inputs/"runtime_snapshot"
+            runtime = snapshot/"projects/parallel_mirror_dual_stripe_mr_tof/simion/native_corridor_runtime_support.ps1"
+            load_runtime = f". '{runtime}'; if(-not (Get-Command Protect-MrtofContinuationEvidence -ErrorAction SilentlyContinue)){{throw 'missing frozen guard'}}"
+            result = subprocess.run([shutil.which("pwsh"),"-NoProfile","-Command",load_runtime],cwd=snapshot,
+                                    capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+            environment = dict(os.environ, PYTHONPATH="", PYTHONNOUSERSITE="1")
+            result = subprocess.run([sys.executable,"-B","-s","-m",
+                "projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_continuation","--help"],
+                cwd=snapshot,env=environment,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+
     def test_single_reflection_workflow_imports_form_a_dag(self) -> None:
         """Include deferred imports; they must not hide a reverse ownership edge."""
         prefix = "integrations.workflows.single_reflection_flight."
@@ -193,7 +250,10 @@ $null=Freeze-ConsumerDependencies -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENT
                 statement = """
 from pathlib import Path
 from common.simion import native_completion
+from common.contracts import write_run_manifest, capacity_protection
 assert Path(native_completion.__file__).is_relative_to(Path.cwd())
+assert Path(write_run_manifest.__file__).is_relative_to(Path.cwd())
+assert Path(capacity_protection.__file__).is_relative_to(Path.cwd())
 """
                 if consumer in ('accelerator_interface', 'cooled_frontend'):
                     statement += "\nfrom projects.dual_pressure_rectilinear_ion_processor.analysis import batching\n"

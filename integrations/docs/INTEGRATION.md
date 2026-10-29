@@ -1,7 +1,7 @@
 # 统一装配实施状态
 
 返回[集成入口](../README.md)。本页维护当前入口、有效证据、限制与开放动作，组件自身资格归各PROJECT。
-状态截至2026-10-27；原始输入和终态仍以各run的manifest为准。早期阶段见
+状态截至2026-10-30；原始输入和终态仍以各run的manifest为准。早期阶段见
 [迁移证据](history/20261026__assembly-migration-execution-evidence.md)，后续重试和门禁过程可从
 [收口前固定版本](https://github.com/Bibibabibobi96/mass_spectrometry/blob/09d7dec5a6802f47df791a3239ed75e5b73321fd/integrations/docs/INTEGRATION.md)追溯；不复制另一套全文快照。
 
@@ -183,6 +183,29 @@ OA、IP和MR分别拥有自身设计与科学约束。IP设计必须显式提供
 `-FinalizeJointWorkbench`只消费设计run已冻结的父plan、matching request及实际源／场，不回读活动默认。
 它会建立／重开IOB和做场审计，**不执行Fly**。完整输入参数以该入口为准。
 
+同一入口的`-FullJoint`显式选择IP完整链，须提供`-IonProcessorRunPath`、
+`-ReferenceMrRunPath`、`-ContractPath`，并分别提供新设计的`-MatchingRequestPath`或
+已有设计的`-PreparedInterfaceRunPath`、新场的`-FieldRequestPath`或已有场的`-JointFieldRunPath`。
+场请求由作者指定局部数值域、surface容量预估及符合仓库规则的新场run_id；各层计算预算沿设计冻结的
+参考数值计划使用。入口将replacement assembly路径绑定到
+新设计run，再依次调用MR场owner、Finalize及prepared-joint飞行／分析owner。各阶段保留自己的
+run和终态；失败输出阶段及各run路径，后续恢复沿对应owner入口进行，不改写前驱。
+可将`-ContinuationPredecessorManifestPath`传给prepared-joint整批恢复；已有场仍由Finalize校验与设计和源的身份。
+也可直接给`-PreparedJointWorkbenchRunPath`与`-ContractPath`，跳过设计、求场及IOB重建，
+由prepared-joint校验原绑定和恢复批次；全部批次有效时不启动Fly。入口输出失败阶段和各阶段／总耗时。
+IP源的真实出口为零时，准备run保留完整母群census及源科学状态，结果标记`zero_exit`；
+完整链在此停止匹配、求场和Fly，零出口不是物理性能通过。
+该模式从显式实测IP源开始，以状态交接而非连续Fly到MR；不能据调度成功声称物理匹配或Formal资格。
+准备结果保留设计、场计划与真实源交接；不再生成无生产消费者的独立IP重飞recipe。
+仅当实验明确改变上游工作点时才由IP入口产生新实测源，既有状态不会因准备新联合场而重新采样或缩放。
+
+`-FullJoint -MultipoleIpRequestPath`也可从已封存的真实MP出口接续：调用者同时显式提供
+`-MultipoleIpRunId`、`-IonProcessorRunId`和`-IonProcessorConfigurationDirectory`，可选
+`-IonProcessorFieldRunPath`复用符合IP owner检查的原生场。入口先校验准备run绑定的接收几何与
+IP配置，再传递原始母群；MP零出口直接报告并停止。`-ContinueOnIpScientificFailure`只允许
+原生与诊断已完整但科学门限未通过的结果继续，执行错误或未知状态仍失败关闭。源request仍显式绑定
+MP run、case、接收器、父plan、物种及权重，不能从参考MR或历史结果推测；这是分段状态交接。
+
 完整MP／IP／MR父plan可派生IP／MR局部范围；同一完整IP接口同时发布guide_inlet与extraction_exit。
 MR-local几何、原IP→MR直接位姿和唯一clock保持，不按锚点反算放置。真实115429准备已完成81粒子源的
 IOB保存／独立重开及接口场审计；审计完成不等于物理匹配或边缘场截断资格。
@@ -191,7 +214,17 @@ IOB保存／独立重开及接口场审计；审计完成不等于物理匹配�
 
 [prepared_joint入口](../workflows/prepared_joint/execute.ps1)消费`-PreparedJointWorkbenchRunPath`与`-ContractPath`。
 同入口`-AnalyzeRunPath`从封存原生日志建立新分析run，不重飞、不复制PA或改写原run。
+两条原CLI的`-ResumeFinalization -RunId <原run_id> [-ResultPath <小Result>]`沿公共PowerShell owner收尾；
+默认Result位于`artifacts/projects/instrument_assembly/scratch/workflow_results/<run_id>/result.json`。
+该模式直接读取原run冻结的execution request与实际停写／host释放事实，不重做准备、Fly或分析，也不要求重传科学输入。
+正常流程在retention／发布前持久保存小完成记录；收尾失败可原命令重试，未知writer先确认完成。
+继承容量会话不由child减承诺或释放；heavy child只发布自己的终态，Result明确提示`parent_capacity_owner_finalize`，
+不把父owner尚未封存的载荷报告为收尾完成。外层`accelerator_interface/execute.ps1 -FullJoint -ResumeFinalization -RunId <原flight_run_id>`
+透传同一恢复命令，跳过设计、场和源阶段。
+
 显式前驱恢复以固定完整批为单位，仅执行缺失批，来源和借用控制文件继续绑定原owner。
+全批复用不申请或释放不存在的SIMION重型租约；批次执行器异常且写入者未确认停止时保留保护，
+不做终态发布或retention。该项为软件行为回归，不代表新原生求解或物理资格。
 
 [oa_mr入口](../workflows/oa_mr/execute.ps1)要求冻结`-CompositionPlanPath`及可选`-LocalScopePath`；
 当前支持唯一OA轴向出口→MR入口及相对identity rotation，MR可随父装配共同平移／旋转。
@@ -203,6 +236,18 @@ OA→MR owner的异常收尾保留原科学错误，guard、runtime、host、临
 PowerShell退出不代表FileShare句柄继续存在。容量封存还要求终态发布完成、自身容量session已释放，
 自有host token必须由真实release收据确认，继承token不冒充本run已释放；封存失败不改写科学终态。
 相关实际catch/finally故障矩阵与小型原生进程替身测试只验证软件收尾，不构成新的SIMION物理验收。
+
+本轮正常FullJoint[复用记录](../../../artifacts/projects/instrument_assembly/runs/20261030_014500__sim__simion__ip-mr-joint-9a6ef3c4/summary.json)
+在故意不存在的SIMION路径下完成，actual native=0、完整复用2批，无原生IOB重建；原母群100、转交81、未转交19。
+入口总墙钟86.044秒，准备37.435秒、飞行阶段0.012秒、分析38.962秒；首次run外Result记录到公共收尾结束共82.870秒，
+且`terminal_published`／`capacity_finalized`均true。该计时与旧轮并发大场的资源等待不同，不据此宣称同环境加速倍数。
+真实起点是原上游状态，采用状态重启及下游联合场，不能表述为全程continuous Fly；科学结果仍为`candidate_only`。
+当前`instrument_assembly`设计已进入新场编译器；`20261029_224600__build__simion__ip-mr-field-coreflow-c3e10d46`
+的parent Refine完成855.49秒，后续covered_local由用户主动停止，owner以failed保留，属于主动中止而非科学或数值FAIL；不重启大场。
+最新验收按用户授权采用快速小／粗软件机制验证，未获得全尺度精度资格。
+RF的9³、N1 fresh＋reuse原生机制验收（66.228秒）只见[RF项目记录](../../projects/rf_multipole_ion_optics/docs/PROJECT.md)，
+不替代本集成链的科学资格；既有历史L2结果也不冒充本轮最终联合回归。
+
 
 | 冻结链 | 有效事实 | 身份与资格限制 |
 |---|---|---|
@@ -269,6 +314,9 @@ MR的`load-workbench`与batch Fly共用碰撞PA预载并保持不可Refine状态
 后续文档与运行边界修复、失败及复验见[系统审查](../../docs/history/20261027__system-maintainability-review.md)。
 先前权限、宿主、夹具和发布失败仍按固定源码及原日志解释，focused通过不拼成失败整轮通过。
 后续改动按[操作指南](../../docs/OPERATIONS.md#分层门禁)运行适用门禁；软件检查不授予新原生、数值或Formal资格。
+本轮最终L1为24/24阶段通过、1337.500秒。完整L2主体44/45阶段通过、1578.351秒，RF失败责任阶段
+修正后以正式quadrupole Static完整复验通过（298.011秒）；原失败整轮不改写为PASS。
+正常FullJoint的原CLI重复收尾4.401秒通过，子summary／manifest及父manifest字节均未改；不重飞、不求场。
 集成测试入口的模块枚举及L1选择边界见[入口说明](../README.md#活动工作流)；
 未执行模块和未选阶段不计为通过，机器摘要只记录本轮实际阶段结果。
 
@@ -279,3 +327,13 @@ MR的`load-workbench`与batch Fly共用碰撞PA预载并保持不可Refine状态
 3. 工程几何已同源构建和交换，但4处原始交叠未消失；机械无干涉、制造、数值收敛及Formal继续按各自判据闭合。
 4. 未请求的N3额外大模型不再续接。科学载荷是否可退役由公共owner、消费者和精确身份决定，不凭run终态或文件年龄删除。
 5. 总目标的软件交付以最终提交、适用门禁和独立审查共同确认；本页的局部success不替代完整交付或项目资格。
+
+## 已完成首批后的资源恢复
+
+首批自然退出且原分区与退出事实已由前驱终态绑定时，若重规划失败，恢复计划保留首批。
+有真实观测值时沿现有 scheduler 重建余下区间；缺观测时，缺失区间不超过原首批，先观察
+首个缺批，再按实际资源校准单通道计划。未确认首批自然退出时不视为可复用。
+
+IP→MR 的 FullJoint 在求场前验证设计 manifest 绑定的来源 receipt、粒子状态、时钟与共同脉冲。
+仅已知 v1 zero-birth 到严格验证的 v2 common-pulse 分析升级受支持；其他 Fly 依赖仍保持冻结。
+预检通过只表示输入合同成立，不表示已求场或通过科学资格。

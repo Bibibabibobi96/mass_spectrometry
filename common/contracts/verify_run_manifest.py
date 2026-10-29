@@ -53,6 +53,7 @@ def verified_successful_run_reference(
     manifest: dict[str, Any] | None = None,
 ) -> Path:
     """Verify one consumed input/output record, without reading other payloads."""
+    require_completed_terminal_publication(run / "run_manifest.json")
     if manifest is None:
         manifest = json.loads((run / "run_manifest.json").read_text(encoding="utf-8-sig"))
     if (manifest.get("project") != project or manifest.get("mode") != mode

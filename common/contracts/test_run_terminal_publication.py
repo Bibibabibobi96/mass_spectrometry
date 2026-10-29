@@ -24,10 +24,10 @@ class RunTerminalPublicationTests(unittest.TestCase):
     def assert_replay_after_crash(self, crash_name: str) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            write_json_atomic(root / "summary.json", {"status": "interrupted"})
+            write_json_atomic(root / "summary.json", {"status": "checkpoint"})
             write_json_atomic(
                 root / "run_manifest.json",
-                {"run_id": "old", "status": "interrupted"},
+                {"run_id": "20260920_120000__test__python__terminal-journal", "status": "checkpoint"},
             )
             summary, manifest = self.documents()
 

@@ -22,6 +22,7 @@ _PUBLIC_FLY = r'''param($Repo,$Python,$OutputDirectory,$frozenExecutionRoot,$Fie
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 . (Join-Path $Repo 'integrations/runtime/frontend_flight_support.ps1')
+. (Join-Path $Repo 'common/resource_budget_support.ps1')
 function Write-RunJson {param($Path,$Value,$Depth=100) ConvertTo-Json -InputObject $Value -Depth $Depth|Set-Content -LiteralPath $Path -Encoding utf8}
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation) & $Operation}
 function Get-HostResourceBudget {param($Role,$Stage) return @{}}
@@ -54,7 +55,7 @@ function Invoke-FrontendIobBuild {
  Write-RunJson -Path $Case.receipt_path -Value $Case
 }
 function Invoke-ResourceBudgetedProcesses {
- param($DispatchPlanPath,$RunDir,$UsagePath,$ProcessSpecifications,$ExistingProcessRecords=@())
+ param($DispatchPlanPath,$RunDir,$UsagePath,$ProcessSpecifications,$ExistingProcessRecords=@(),$OnProcessCompleted)
  $records=@($ExistingProcessRecords)
  foreach($spec in $ProcessSpecifications){
   $script:flights++
@@ -94,6 +95,63 @@ Write-RunJson -Path (Join-Path $resultDirectory 'inert_copy_count.json') -Value 
 
 
 class SingleReflectionContinuationTests(unittest.TestCase):
+    def test_provisional_formal_completion_reuses_first_interval(self) -> None:
+        from common.simion.resource_scheduler import plan_simion_dispatch
+        initial=plan_simion_dispatch(dict(solver='SIMION',field_kind='electrostatic',particle_count=100,
+            independent_particles=True,trajectory_quality=8),[],available_memory_bytes=10*1024**3,
+            total_physical_memory_bytes=20*1024**3,logical_processors=8)
+        context=runtime._prepare_context(self.preparation,self.field_receipt,file_record(self.downstream_path),self.run,
+            snapshot_root=self.snapshot,flight=self.flight,phase='full_instrument')
+        workbench=runtime.materialize_batches(self.run,'full_instrument',initial,context=context)
+        case=workbench['batches'][0];iob=Path(case['working_directory'])/'instrument.iob'
+        iob.write_bytes(b'INERT_SAVED_IOB');case['outputs']['iob']=file_record(iob)
+        parent=self._parent(workbench)
+        dispatch=parent/'results/full_instrument.dispatch_plan.json'
+        provisional=parent/'results/full_instrument.provisional_dispatch_plan.json'
+        runtime_tests.write_json(dispatch,initial);runtime_tests.write_json(provisional,initial)
+        receipt=parent/'results/frontend_batch_completion/full_instrument'/f"{case['case_id']}.json"
+        fact=json.loads(receipt.read_text());fact['resource_observation']=dict(peak_bytes=1024**3,process_cpu_percent=10,background_cpu_percent=0)
+        runtime_tests.write_json(receipt,fact)
+        manifest_path=parent/'run_manifest.json';manifest=json.loads(manifest_path.read_text())
+        manifest['outputs']=[r for r in manifest['outputs'] if Path(r['path']) not in (dispatch,receipt)]
+        manifest['outputs'] += [file_record(dispatch),file_record(provisional),file_record(receipt)]
+        runtime_tests.write_json(manifest_path,manifest)
+        frozen=self.run/'inputs/continuation_parent_manifest.json';shutil.copyfile(manifest_path,frozen)
+        self.preparation['input_records']['continuation_parent_manifest']={**file_record(frozen),'source_path':str(manifest_path)}
+        result=self._materialize_cli('baseline')
+        actions=[u['action'] for u in result['continuation']['plan']['units']]
+        self.assertEqual(actions[0],'reuse');self.assertTrue(all(action=='replay' for action in actions[1:]))
+        self.assertEqual(result['batches'][0]['source_row_range'],case['source_row_range'])
+        shutil.rmtree(self.run/'inputs/continuation')
+        shutil.rmtree(self.run/'simion/full_instrument')
+        fact.pop('resource_observation');runtime_tests.write_json(receipt,fact)
+        manifest['outputs']=[r for r in manifest['outputs'] if Path(r['path'])!=receipt]
+        manifest['outputs'].append(file_record(receipt));runtime_tests.write_json(manifest_path,manifest)
+        shutil.copyfile(manifest_path,frozen)
+        self.preparation['input_records']['continuation_parent_manifest']={**file_record(frozen),'source_path':str(manifest_path)}
+        fallback=self._materialize_cli('baseline')
+        actions=[u['action'] for u in fallback['continuation']['plan']['units']]
+        self.assertEqual(actions[0],'reuse');self.assertTrue(all(action=='replay' for action in actions[1:]))
+        dispatch=json.loads(Path(fallback['continuation']['frozen_inputs']['dispatch_record']['path']).read_text())
+        self.assertTrue(dispatch['estimation']['recovered_missing_observation'])
+
+    def test_legacy_success_requires_manifest_bound_actual_exit_records(self):
+        current=self._current_workbench();parent=self._parent(current)
+        manifest_path=parent/'run_manifest.json';manifest=json.loads(manifest_path.read_text())
+        rows=[]
+        for case in current['batches']:
+            stdout=parent/'results/baseline'/f"{case['case_id']}.stdout.log"
+            rows.append(dict(phase='baseline',exit_code=0,controls_unchanged=True,stdout_path=str(stdout)))
+        evidence=parent/'results/single_reflection/flight_execution_records.json'
+        runtime_tests.write_json(evidence,rows)
+        manifest['status']='success'
+        manifest['outputs']=[r for r in manifest['outputs'] if 'frontend_batch_completion' not in r['path']]
+        manifest['outputs'].append(file_record(evidence));runtime_tests.write_json(manifest_path,manifest)
+        frozen=self.run/'inputs/continuation_parent_manifest.json';shutil.copyfile(manifest_path,frozen)
+        self.preparation['input_records']['continuation_parent_manifest']={**file_record(frozen),'source_path':str(manifest_path)}
+        result=self._materialize_cli('baseline')
+        self.assertEqual([u['action'] for u in result['continuation']['plan']['units']],['reuse','reuse'])
+
     def setUp(self) -> None:
         self.workbench_fixture = runtime_tests.WorkbenchMaterializationTests("run")
         self.workbench_fixture.setUp()
@@ -193,6 +251,13 @@ class SingleReflectionContinuationTests(unittest.TestCase):
             replay.write_text(log, encoding="utf-8", newline="\n")
             case["stdout"], case["replay_stdout"] = str(baseline), str(replay)
             artifacts.extend((baseline, replay))
+            for receipt_phase, log_path in ((phase, baseline), ('default_replay', replay)):
+                completion = parent / 'results' / 'frontend_batch_completion' / receipt_phase / f"{case['case_id']}.json"
+                completion.parent.mkdir(parents=True, exist_ok=True)
+                runtime_tests.write_json(completion, dict(schema_version=1, role='frontend_batch_natural_completion',
+                    phase=receipt_phase, case_id=case['case_id'], exit_code=0, natural_exit=True,
+                    stdout_relative_path=str(log_path.relative_to(parent)), count=case['count'], source_row_range=case['source_row_range']))
+                artifacts.append(completion)
         parent_cases.reverse()  # Publication order is not an execution dependency.
         if missing_iob:
             next(case for case in parent_cases if case["source_row_range"] == [51, 100])["outputs"].pop("iob")
@@ -331,6 +396,12 @@ class SingleReflectionContinuationTests(unittest.TestCase):
             low, high = case["source_row_range"]
             Path(case["stdout"]).write_text(self._native_log(rows[low-1:high]), encoding="utf-8")
             outputs.extend([file_record(Path(case["stdout"])), *case["outputs"].values()])
+            completion = self.run / 'results/frontend_batch_completion/full_instrument' / f"{case['case_id']}.json"
+            completion.parent.mkdir(parents=True, exist_ok=True)
+            runtime_tests.write_json(completion, dict(schema_version=1, role='frontend_batch_natural_completion',
+                phase='full_instrument', case_id=case['case_id'], exit_code=0, natural_exit=True,
+                stdout_relative_path=str(Path(case['stdout']).relative_to(self.run)), count=case['count'], source_row_range=case['source_row_range']))
+            outputs.append(file_record(completion))
         receipt = result_dir / "workbench_preparation.json"
         runtime_tests.write_json(receipt, first)
         dispatch = self.run / "results/full_instrument.dispatch_plan.json"

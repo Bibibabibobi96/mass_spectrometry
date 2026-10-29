@@ -1531,6 +1531,114 @@ Write-Output 'TERMINATION_FAILURE=PASS'
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
+    def test_preparation_failure_drains_already_started_worker(self) -> None:
+        """A later preparation failure waits for the earlier owned worker."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch, usage = root / "dispatch.json", root / "usage.json"
+            dispatch.write_text(json.dumps({"role": "simion_repository_dispatch_plan",
+                "estimation": {"kind": "exact_resource_profile", "per_process_memory_budget_bytes": 1024**2,
+                               "memory_safety_factor": 1.10},
+                "limits": dispatch_limits(launch_stagger_seconds=1)}), encoding="utf-8")
+            support = REPO_ROOT / "common/resource_budget_support.ps1"
+            marker = root / "completed.txt"
+            command = (
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
+                "function Get-SystemCpuPercent {[double]0};"
+                "function Get-RepositoryAvailableMemoryBytes {[int64](32GB)};"
+                "function Get-RepositoryProcessSnapshot {};"
+                "function Get-ManagedSolverProcessSample {param($RootProcessIds,$TrackedProcessIds);"
+                "$live=@(Get-Process -Id $RootProcessIds -ErrorAction SilentlyContinue);"
+                "[pscustomobject]@{tracked_process_ids=@($RootProcessIds);"
+                "active_process_ids=@($live|ForEach-Object Id);working_set_bytes=[int64]1MB;"
+                "managed_memory_bytes=[int64]1MB;total_processor_time_ticks=[int64]0}};"
+                "$exe=(Get-Process -Id $PID).Path;$script:checkpointed=@();"
+                "$specs=@([pscustomobject]@{name='first';file_path=$exe;"
+                f"argument_list=@('-NoProfile','-Command',\"Start-Sleep -Seconds 4; Set-Content -LiteralPath '{marker}' -Value done\");"
+                f"stdout='{root}\\first.out';stderr='{root}\\first.err';environment=@{{}};working_directory='{root}'}},"
+                "[pscustomobject]@{name='next';file_path=$exe;argument_list=@('-NoProfile','-Command','exit 0');"
+                f"stdout='{root}\\next.out';stderr='{root}\\next.err';environment=@{{}};working_directory='{root}';"
+                "prepare={throw 'later preparation failure'}});"
+                "$checkpoint={param($record) $script:checkpointed+=@($record.name)};"
+                f"try{{Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' -RunDir '{root}' "
+                f"-UsagePath '{usage}' -ProcessSpecifications $specs -OnProcessCompleted $checkpoint;exit 2}}catch{{"
+                "if($_.Exception.Message-ne'later preparation failure'-or-not$_.Exception.Data['simion_wave_writer_completion_confirmed']){throw};"
+                f"if(-not(Test-Path -LiteralPath '{marker}')-or$script:checkpointed-notcontains'first'){{exit 3}}}}"
+            )
+            completed = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_observation_error_drains_started_formal_worker(self) -> None:
+        """A sampling error after launch must not orphan the formal worker."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch, usage, marker = root / "dispatch.json", root / "usage.json", root / "finished.txt"
+            dispatch.write_text(json.dumps({"role": "simion_repository_dispatch_plan",
+                "estimation": {"kind": "formal_first_batch_observation", "per_process_memory_budget_bytes": 1024**2,
+                               "memory_safety_factor": 1.10},
+                "limits": dispatch_limits(formal_observation_seconds=5)}), encoding="utf-8")
+            support = REPO_ROOT / "common/resource_budget_support.ps1"
+            command = (
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
+                "function Get-SystemCpuPercent {[double]0};"
+                "function Get-RepositoryAvailableMemoryBytes {[int64](32GB)};"
+                "function Get-RepositoryProcessSnapshot {}; $script:samples=0;"
+                "function Get-ManagedSolverProcessSample {param($RootProcessIds,$TrackedProcessIds);"
+                "$script:samples++;if($script:samples-eq1){throw 'observation failure'};"
+                "$live=@(Get-Process -Id $RootProcessIds -ErrorAction SilentlyContinue);"
+                "[pscustomobject]@{tracked_process_ids=@($RootProcessIds);"
+                "active_process_ids=@($live|ForEach-Object Id);working_set_bytes=[int64]1MB;"
+                "managed_memory_bytes=[int64]1MB;total_processor_time_ticks=[int64]0}};"
+                "$exe=(Get-Process -Id $PID).Path;"
+                "$spec=[pscustomobject]@{name='formal';file_path=$exe;"
+                f"argument_list=@('-NoProfile','-Command',\"Start-Sleep -Seconds 3; Set-Content -LiteralPath '{marker}' -Value done\");"
+                f"stdout='{root}\\formal.out';stderr='{root}\\formal.err';environment=@{{}};working_directory='{root}'}};"
+                f"try{{Invoke-SimionFormalObservation -DispatchPlanPath '{dispatch}' -RunDir '{root}' "
+                f"-UsagePath '{usage}' -ProcessSpecification $spec -Replan {{throw 'unexpected replan'}};exit 2}}catch{{"
+                "if($_.Exception.Message-ne'observation failure'-or$_.Exception.Data['simion_first_batch_writer_unknown']){throw};"
+                f"if(-not(Test-Path -LiteralPath '{marker}')){{exit 3}}}}"
+            )
+            completed = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_checkpoint_failure_waits_for_active_workers_and_records_them(self) -> None:
+        """Checkpoint errors stop new launches while active results can still be recorded."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch, usage = root / "dispatch.json", root / "usage.json"
+            dispatch.write_text(json.dumps({"role": "simion_repository_dispatch_plan",
+                "estimation": {"kind": "exact_resource_profile", "per_process_memory_budget_bytes": 1024**2,
+                               "memory_safety_factor": 1.10},
+                "limits": dispatch_limits(launch_stagger_seconds=1)}), encoding="utf-8")
+            support = REPO_ROOT / "common/resource_budget_support.ps1"
+            command = (
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
+                "function Get-SystemCpuPercent {[double]0};"
+                "function Get-RepositoryAvailableMemoryBytes {[int64](32GB)};"
+                "function Get-RepositoryProcessSnapshot {};"
+                "function Get-ManagedSolverProcessSample {param($RootProcessIds,$TrackedProcessIds);"
+                "$live=@(Get-Process -Id $RootProcessIds -ErrorAction SilentlyContinue);"
+                "[pscustomobject]@{tracked_process_ids=@($RootProcessIds);"
+                "active_process_ids=@($live|ForEach-Object Id);working_set_bytes=[int64]1MB;"
+                "managed_memory_bytes=[int64]1MB;total_processor_time_ticks=[int64]0}};"
+                "$exe=(Get-Process -Id $PID).Path;$script:seen=@();"
+                "$specs=@('first','sibling','queued'|ForEach-Object {"
+                "$seconds=if($_-eq'first'){2}else{5};[pscustomobject]@{name=$_;file_path=$exe;"
+                "argument_list=@('-NoProfile','-Command',\"Start-Sleep -Seconds $seconds\");"
+                f"stdout='{root}\\$_.out';stderr='{root}\\$_.err';environment=@{{}};working_directory='{root}'}}}});"
+                "$checkpoint={param($record) $script:seen+=@($record.name);"
+                "if($record.name-eq'first'){throw 'checkpoint failed'}};"
+                f"try{{Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' -RunDir '{root}' "
+                f"-UsagePath '{usage}' -ProcessSpecifications $specs -OnProcessCompleted $checkpoint;exit 2}}catch{{"
+                "if($_.Exception.Message-ne'checkpoint failed'-or-not$_.Exception.Data['simion_wave_writer_completion_confirmed']){throw};"
+                f"if($script:seen-notcontains'sibling'-or(Test-Path -LiteralPath '{root / 'queued.out'}')){{exit 3}}}}"
+            )
+            completed = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
     def test_shared_runtime_key_serializes_only_conflicting_workers(self) -> None:
         """A shared SIMION PA family waits without becoming a global lane cap."""
         with tempfile.TemporaryDirectory() as directory:
@@ -1806,9 +1914,16 @@ foreach($fail in @($false,$true)){
                 "[Parameter(Mandatory=$true)][string]$RuntimeProfileId",
                 "[Parameter(Mandatory=$true)][string]$EngineeringBudgetPath",
                 "resource_budget_exceeded",
-                "Complete-ResourceUsage",
             ):
                 self.assertIn(token, source)
+            owner = (REPO_ROOT / "common/contracts/run_artifact_workflow.ps1").read_text(encoding="utf-8-sig")
+            self.assertIn("Complete-ResourceUsage", owner if "simion" in name else source)
+            if "simion" in name:
+                self.assertIn("Complete-RunArtifactPowerShellOwner -Context $ownerContext", source)
+                self.assertIn("-ResourceUsagePaths $resourceItems", source)
+                self.assertIn("-ResourceUsagePaths $failureUsage", source)
+                self.assertIn("path=(Convert-WorkflowOwnerPath $ownerContext $caseResourceUsage[$_])", source)
+                self.assertIn("resource_usage_paths=@($ResourceUsagePaths|ForEach-Object", owner)
             self.assertIn("-UseShortExecutionPath", source)
             self.assertIn("Remove-RunPackageExecutionAlias", source)
         comsol = (REPO_ROOT / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
@@ -2375,9 +2490,10 @@ foreach($fail in @($false,$true)){
             command = f"""
 . '{REPO_ROOT / "common/resource_budget_support.ps1"}'
 function Get-RunDirectoryBytes {{ param($RunDir) return [int64]128 }}
-$runDir='{root}';$run=$runDir;$RunDirectory=$runDir;$OutputDirectory=$runDir;$phaseDirectory=$runDir
+$runDir='{root}';$runRoot=$runDir;$run=$runDir;$RunDirectory=$runDir;$OutputDirectory=$runDir;$phaseDirectory=$runDir
 $usage=Join-Path $runDir 'usage.json'
 $usagePath=$usage
+$item=@{{path=$usage}}
 $resourceUsage=$usage;$controlResourceUsage=$usage;$axisFieldUsage=$usage
 $batchResourceUsagePath=$usage
 $package=@{{run_dir=$runDir;artifact_run_dir=$runDir;result_dir=$runDir}};$arguments=@{{RunDir=$runDir;UsagePath=$usage}}

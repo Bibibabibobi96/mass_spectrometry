@@ -24,14 +24,26 @@ param(
   [ValidateScript({[double]::IsFinite($_) -and $_ -gt 0})][double]$MaximumTimeUs=80.0,
   [ValidateSet('primary_and_zero_axial_control','primary_and_rf_off_energy_control','primary_only')]
   [string]$CaseSet='primary_and_zero_axial_control',
-  [ValidateSet('compact','qualification','solver_review')][string]$RetentionClass='compact',
-  [string]$RetentionReason='',
+  [ValidateSet('compact','qualification','solver_review')][string]$RetentionClass='solver_review',
+  [string]$RetentionReason='Producer-owned fractional field/IOB and complete batch evidence retained for explicit stage reuse.',
   [string]$SourceFamilyPath='',
-  [string]$OperatingPointId=''
+  [string]$OperatingPointId='',
+  [string]$ContinuationPredecessorManifestPath='',
+  [string]$NativeFieldRunPath='',
+  [string]$ResultPath=''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
+$entryScriptHash=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash
+$runTimer=[Diagnostics.Stopwatch]::StartNew();$phaseTimings=[ordered]@{};$phaseName='prepare';$phaseBoundary=0.0
+function Set-RfRunPhase([string]$Next){
+  $now=$runTimer.Elapsed.TotalSeconds
+  if(-not$phaseTimings.Contains($phaseName)){$phaseTimings[$phaseName]=0.0}
+  $phaseTimings[$phaseName]+=$now-$phaseBoundary
+  $script:phaseBoundary=$now
+  if($Next){$script:phaseName=$Next}
+}
 $resolvedCellMmX=if($PSCmdlet.ParameterSetName-eq'AnisotropicCell'){$CellMmX}else{$CellMm}
 $resolvedCellMmY=if($PSCmdlet.ParameterSetName-eq'AnisotropicCell'){$CellMmY}else{$CellMm}
 $resolvedCellMmZ=if($PSCmdlet.ParameterSetName-eq'AnisotropicCell'){$CellMmZ}else{$CellMm}
@@ -70,61 +82,12 @@ function Get-SimionPaGridAudit {
   }
 }
 
-function Invoke-CommonPaFamilyCache {
-  param(
-    [Parameter(Mandatory=$true)][ValidateSet('probe','ensure','publish','materialize')][string]$Operation,
-    [Parameter(Mandatory=$true)][string]$IdentityPath,
-    [Parameter(Mandatory=$true)][string]$CacheRoot,
-    [Parameter(Mandatory=$true)][string[]]$Filenames,
-    [Parameter(Mandatory=$true)][string]$ModuleRoot,
-    [Parameter(Mandatory=$true)][string]$Python,
-    [string]$SourceDirectory='',
-    [string]$DestinationDirectory=''
-  )
-  $arguments=@('-m','common.simion.pa_family_cache','--action',$Operation,
-    '--cache-root',$CacheRoot,'--identity',$IdentityPath,
-    '--filenames',($Filenames-join ','))
-  if($Operation-eq'publish'){
-    if([string]::IsNullOrWhiteSpace($SourceDirectory)){throw 'PA-family cache publish requires a source directory.'}
-    $arguments+=@('--source-directory',$SourceDirectory)
-  }elseif($Operation-eq'materialize'){
-    if([string]::IsNullOrWhiteSpace($DestinationDirectory)){throw 'PA-family cache materialize requires a destination directory.'}
-    $arguments+=@('--destination-directory',$DestinationDirectory)
-  }
-  Push-Location $ModuleRoot
-  try{
-    $env:PYTHONPATH=$ModuleRoot
-    $output=& $Python @arguments
-    if($LASTEXITCODE-ne 0){throw "SIMION PA-family cache $Operation failed."}
-  }finally{
-    Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
-    Pop-Location
-  }
-  try{return ($output -join "`n"|ConvertFrom-Json)}catch{
-    throw "SIMION PA-family cache $Operation returned invalid JSON."
-  }
-}
-
-function Assert-MultipolePaBasisNames {
-  param([Parameter(Mandatory=$true)]$Files)
-  $names=@($Files|ForEach-Object{[string]$_.name})
-  if($names.Count-lt 3-or
-    $names-notcontains'quad_monolithic.pa#'-or
-    $names-notcontains'quad_monolithic.pa0'
-  ){throw 'SIMION PA-basis cache is incomplete.'}
-  foreach($name in $names){
-    if($name-notmatch'^quad_monolithic\.pa(?:#|-surf|\d+)$'){
-      throw "SIMION PA-basis cache filename is invalid: $name"
-    }
-  }
-  return @($names|Sort-Object -Unique)
-}
-
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $workspaceRoot=Split-Path -Parent $repoRoot
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
-. (Join-Path $repoRoot 'common\resource_budget_support.ps1')
+. (Join-Path $PSScriptRoot 'simion_execution.ps1')
+. (Join-Path $PSScriptRoot 'simion_field_checkpoint_support.ps1')
 $particleSourceInput=if($ParticleSourcePath){(Resolve-Path -LiteralPath $ParticleSourcePath).Path}else{$null}
 $engineeringBudgetInput=(Resolve-Path -LiteralPath $EngineeringBudgetPath).Path
 $engineeringBudgetAuthority=Get-Content -LiteralPath $engineeringBudgetInput -Raw -Encoding UTF8|ConvertFrom-Json
@@ -133,7 +96,8 @@ $resolvedRuntimeDocument=$null
 $resolvedRuntimeInputSha=$null
 $hasReleaseSpec=$false
 $executionBatching=$null
-$existingFormalProcessRecords=@()
+$writerCompletionUnknown=$false
+$nativeOperations=[Collections.ArrayList]::new()
 $retainedFormalBatchOutputs=@{}
 $resourceIdentityWasUnknown=$false
 # Repository scheduling is the default for this independent-particle runner.
@@ -248,22 +212,75 @@ $executionCapacityPaths=Get-RunPackageCopiedSourcePaths -RepoRoot $repoRoot `
   -SourceRelativeDirectories @('common/contracts','common/simion','common/ion_release','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/comsol','projects/rf_multipole_ion_optics/simion') `
   -Extensions @('.py','.json','.ps1','.lua')
 $executionCapacityPaths+=@(($hostRuntimeSourcePaths+$analysisSourcePaths)|ForEach-Object{"inputs/code/$_"})
-$package=New-RunPackage -Python $python -RepoRoot $repoRoot `
+$continuationCapacity=$null;$continuationGuards=[Collections.ArrayList]::new();$continuationPredecessor=$null;$continuationChain=@()
+$projectRuns=[IO.Path]::GetFullPath((Join-Path $workspaceRoot "artifacts\projects\$ProjectId\runs"))
+$prefix=$projectRuns.TrimEnd([IO.Path]::DirectorySeparatorChar)+[IO.Path]::DirectorySeparatorChar
+if(-not$ResultPath){$ResultPath=Join-Path $workspaceRoot "artifacts\projects\$ProjectId\scratch\workflow_results\$RunId\result.json"}
+$ResultPath=[IO.Path]::GetFullPath($ResultPath)
+$targetRun=[IO.Path]::GetFullPath((Join-Path $projectRuns $RunId)).TrimEnd('\')+'\'
+if($ResultPath.StartsWith($targetRun,[StringComparison]::OrdinalIgnoreCase)){throw 'Workflow Result must be outside the owner run.'}
+if(Test-Path -LiteralPath $ResultPath){throw 'Workflow Result already exists; choose a new run and Result path.'}
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $ResultPath)|Out-Null
+if($ContinuationPredecessorManifestPath){
+  $ContinuationPredecessorManifestPath=(Resolve-Path -LiteralPath $ContinuationPredecessorManifestPath).Path
+  if([IO.Path]::GetFileName($ContinuationPredecessorManifestPath)-cne'run_manifest.json'){
+    throw 'Continuation requires an explicit predecessor run manifest.'
+  }
+  $continuationPredecessor=Split-Path -Parent $ContinuationPredecessorManifestPath
+  if(-not[IO.Path]::GetFullPath($continuationPredecessor).StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)-or
+     [IO.Path]::GetFileName($continuationPredecessor)-ceq$RunId){throw 'Continuation requires a distinct same-project predecessor.'}
+  Push-Location $repoRoot
+  try{$chainJson=& $python -m projects.rf_multipole_ion_optics.runtime.simion_batch_continuation --predecessor $continuationPredecessor --project $ProjectId
+    if($LASTEXITCODE-ne0){throw 'RF continuation ancestry is invalid.'}}
+  finally{Pop-Location}
+  $continuationChain=@(($chainJson-join"`n")|ConvertFrom-Json)
+  foreach($ancestor in $continuationChain){
+    if(-not[IO.Path]::GetFullPath([string]$ancestor).StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)){
+      throw 'RF continuation ancestry escapes the project run root.'
+    }
+  }
+}
+$continuationCapacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+  -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunDirectory (Join-Path $projectRuns $RunId) `
+  -CommittedNewBytes ([int64]$resolvedBudgetPreflight.limits.transient_run_directory_bytes) -ProtectedPaths $continuationChain `
+  -Owner ("run-artifact-workflow:{0}:{1}"-f$ProjectId,$RunId)
+if($ContinuationPredecessorManifestPath){
+  try{
+    Protect-RfSimionContinuationEvidence -Chain $continuationChain -Guards $continuationGuards
+    Push-Location $repoRoot
+    try{$chainCheck=& $python -m projects.rf_multipole_ion_optics.runtime.simion_batch_continuation --predecessor $continuationPredecessor --project $ProjectId
+      if($LASTEXITCODE-ne0-or(($chainCheck-join"`n")|ConvertFrom-Json|ConvertTo-Json -Compress)-cne($continuationChain|ConvertTo-Json -Compress)){throw 'RF continuation ancestry changed during admission.'}}
+    finally{Pop-Location}
+  }catch{
+    $admissionFailure=$_
+    foreach($stream in $continuationGuards){$stream.Dispose()}
+    try{Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $continuationCapacity|Out-Null}
+    catch{$admissionFailure.Exception.Data['capacity_release_error']=[string]$_}
+    throw $admissionFailure
+  }
+}
+try{$package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$ProjectId") -RunId $RunId `
   -Project $ProjectId -Mode 'resolved_design_transport' -Software @('SIMION 2020','Python 3.11') `
   -RetentionContractEnabled -CapacityLedgerLifecycleEnabled `
   -RetentionClass $RetentionClass -RetentionReason $RetentionReason `
   -AdditionalDirectories @('simion') -UseShortExecutionPath `
-  -ExpectedExecutionRelativePaths $executionCapacityPaths
+  -ExpectedExecutionRelativePaths $executionCapacityPaths}
+catch{$packageFailure=$_;foreach($stream in $continuationGuards){$stream.Dispose()};if($null-ne$continuationCapacity){try{Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $continuationCapacity|Out-Null}catch{$packageFailure.Exception.Data['capacity_release_error']=[string]$_}};throw $packageFailure}
 $runDir=$package.run_dir;$inputDir=$package.input_dir;$resultDir=$package.result_dir
 $logDir=$package.log_dir;$solverDir=Join-Path $runDir 'simion'
+$physicalRunDir=$package.artifact_run_dir
+$ownerContext=$null;$hostReleased=$false;$hostReleaseState=@{released=$false;completion=$null;unknown=$false};$deferFinalization=$false
+$fieldCheckpointGuard=$null;$fieldCheckpointOutputs=@();$layoutInspectionRequired=$false;$flightIobPath=Join-Path $physicalRunDir 'simion/quad_monolithic.iob'
 $runConfig=$package.run_config;$summary=$package.summary;$manifestRepoRoot=$repoRoot
 $resourceBudgetExceeded=$false
 . (Join-Path $repoRoot 'common\host_execution_lease.ps1')
 $hostExecutionOutcome='failed'
 $simionRunFailure=$null
-$hostExecutionLease=Enter-HostResourceStage -Role SIMION -Stage prepare -RunId $RunId `
-  -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare)
+try{$hostExecutionLease=Enter-HostResourceStage -Role SIMION -Stage prepare -RunId $RunId `
+  -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare)}
+catch{$leaseFailure=$_;foreach($stream in $continuationGuards){$stream.Dispose()};if($null-ne$continuationCapacity){try{Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $continuationCapacity|Out-Null}catch{$leaseFailure.Exception.Data['capacity_release_error']=[string]$_}};throw $leaseFailure}
+
 
 try{
   $codeRoot=Join-Path $inputDir 'code'
@@ -289,8 +306,21 @@ try{
   })
   [ordered]@{schema_version=1;role='frozen_code_inventory';files=$inventory}|
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $codeInventory -Encoding UTF8
+  $ownerSource=Join-Path $physicalRunDir 'inputs/code/projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1'
+  $ownerRecord=Get-Item -LiteralPath $ownerSource
+  $ownerInventory=@($inventory|Where-Object{$_.path-ceq'projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1'})
+  if($ownerInventory.Count-ne1-or$ownerInventory[0].sha256-ine$entryScriptHash){throw 'Frozen PowerShell owner differs from the launched source.'}
+  . (Join-Path $codeRoot 'common/contracts/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization
+  $ownerContext=Initialize-RunArtifactPowerShellOwner -Python $python -RepoRoot $repoRoot -Package $package `
+    -CapacitySession $continuationCapacity -ResultPath $ResultPath -EntrypointPath $ownerSource `
+    -EntrypointRecord @{path=$ownerSource;exists=$true;bytes=[long]$ownerRecord.Length;sha256=$entryScriptHash} `
+    -CommitmentInputPaths @($engineeringBudgetInput) -Software @('SIMION 2020','Python 3.11')
+  $workflowRequestPath=$ownerContext.request_path
+  $workflowRequest=Get-Content -LiteralPath $workflowRequestPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   $manifestRepoRoot=$codeRoot
   . (Join-Path $codeRoot 'projects\rf_multipole_ion_optics\runtime\simion_layout_template_support.ps1')
+  . (Join-Path $codeRoot 'projects\rf_multipole_ion_optics\runtime\simion_execution.ps1')
+  . (Join-Path $codeRoot 'projects\rf_multipole_ion_optics\runtime\simion_field_checkpoint_support.ps1')
 
   $templateDir=Join-Path $inputDir 'simion_layout_template'
   $templateRegistryFrozen=Join-Path $codeRoot 'projects\rf_multipole_ion_optics\config\simion_layout_template.json'
@@ -303,6 +333,7 @@ try{
   $templateRegistrationManifest=$template.registration_manifest
   $templateIob=$template.iob
   $templateCon=$template.con
+  $templateSeedPa=$template.placeholder_pa0
 
   $profileResolution=Join-Path $inputDir 'design_profile_resolution.json'
   $resolvedRuntimeProfile=$null
@@ -673,8 +704,6 @@ try{
   if($gridAuditDocument.status-eq'FAIL'){
     throw "SIMION PA grid point budget exceeded: $($gridAuditDocument.grid_points) > $maximumPaGridPoints"
   }
-  Copy-Item -LiteralPath $templateIob -Destination (Join-Path $solverDir 'quad_monolithic.iob')
-  Copy-Item -LiteralPath $templateCon -Destination (Join-Path $solverDir 'quad_monolithic.con')
   Copy-VerifiedRunInput `
     -Source (Join-Path $codeRoot 'projects\rf_multipole_ion_optics\simion\simion_transport.lua') `
     -Destination (Join-Path $solverDir 'multipole_runtime_program.lua')|Out-Null
@@ -755,16 +784,12 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
   $staticEntries=@($staticRows|ForEach-Object{"{electrode_id=$($_.electrode_id),potential_v=$($_.potential_v)}"})
   $staticLua="static_electrodes={$($staticEntries-join',')},"
   $paBasisElectrodeIds+=@($staticRows|ForEach-Object{[int]$_.electrode_id})
-  $paBasisNames=@('quad_monolithic.pa#','quad_monolithic.pa0')+@(
-    $paBasisElectrodeIds|Sort-Object -Unique|ForEach-Object{"quad_monolithic.pa$_"}
-  )
   $normalizedGem=(Get-Content -LiteralPath $gem -Encoding ASCII|Where-Object{
     $_-notmatch'^; parent_resolved_sha256='
   })-join"`n"
   $paSurfaceMatches=[regex]::Matches($normalizedGem,'\bsurface=(fractional|none)\b')
   if($paSurfaceMatches.Count-ne 1){throw 'SIMION GEM must declare exactly one PA surface mode.'}
   $paSurface=[string]$paSurfaceMatches[0].Groups[1].Value
-  if($paSurface-eq'fractional'){$paBasisNames=@('quad_monolithic.pa-surf')+$paBasisNames}
   $normalizedGemPath=Join-Path $inputDir 'quad_monolithic.normalized_for_pa_cache.gem'
   Set-Content -LiteralPath $normalizedGemPath -Value $normalizedGem -Encoding ASCII -NoNewline
   $normalizedGemSha=(Get-FileHash -LiteralPath $normalizedGemPath -Algorithm SHA256).Hash
@@ -778,40 +803,13 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
     surface=$paSurface
     simion_identity=[ordered]@{executable_sha256=(Get-FileHash -LiteralPath $simion -Algorithm SHA256).Hash}
     refine_policy=[ordered]@{arguments=@('--nogui','--noprompt','refine','quad_monolithic.pa#')}
-    builder_identity=[ordered]@{runner_sha256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash}
+    builder_identity=[ordered]@{runner_sha256=$entryScriptHash}
   }
-  $paBasisCacheRoot=[IO.Path]::GetFullPath((
-    Join-Path $workspaceRoot "artifacts\projects\$ProjectId\cache\simion_pa_basis"
-  ))
   $paBasisIdentityPath=Join-Path $inputDir 'simion_pa_basis_cache_identity.json'
   $paBasisIdentity|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $paBasisIdentityPath -Encoding UTF8
-  $paBasisCacheManifestInput=$null
-  $paBasisReuseAuthorized=($resolvedRuntimeDocument-and
-    $resolvedRuntimeDocument.PSObject.Properties.Name-contains'simion_pa_basis_policy'-and
-    [string]$resolvedRuntimeDocument.simion_pa_basis_policy.kind-eq'content_addressed_geometry_basis'-and
-    [string]$resolvedRuntimeDocument.simion_pa_basis_policy.reuse_scope-eq'same_project_same_fingerprint')
-  $paBasisRequireExisting=($paBasisReuseAuthorized-and
-    $resolvedRuntimeDocument.simion_pa_basis_policy.PSObject.Properties.Name-contains'require_existing'-and
-    $resolvedRuntimeDocument.simion_pa_basis_policy.require_existing-eq$true)
-  $paBasisReuse=$false
-  $paBasisCacheKey=$null
-  $paBasisGenerationDirectory=$null
-  if($paBasisReuseAuthorized){
-    $paBasisProbe=Invoke-CommonPaFamilyCache -Operation ensure -IdentityPath $paBasisIdentityPath `
-      -CacheRoot $paBasisCacheRoot -Filenames $paBasisNames -ModuleRoot $codeRoot -Python $python
-    $paBasisCacheKey=[string]$paBasisProbe.cache_key
-    if([string]$paBasisProbe.disposition-eq'hit'){
-      $paBasisGenerationDirectory=[string]$paBasisProbe.generation_directory
-      $paBasisCacheManifestInput=Copy-VerifiedRunInput `
-        -Source (Join-Path $paBasisGenerationDirectory 'cache_manifest.json') `
-        -Destination (Join-Path $inputDir 'simion_pa_basis_cache_manifest.json')
-      $paBasisReuse=$true
-    }
+  if($resolvedRuntimeDocument-and$resolvedRuntimeDocument.PSObject.Properties.Name-contains'simion_pa_basis_policy'){
+    throw 'SIMION_PA_BASIS_POLICY_UNSUPPORTED: current fractional families cannot use the surface=none standalone cache protocol. Preserve the original surface; use an explicit -NativeFieldRunPath producer checkpoint instead. No cache require_existing policy is silently replaced.'
   }
-  if($paBasisRequireExisting -and -not $paBasisReuse){
-    throw "SIMION_PA_BASIS_CACHE_REQUIRED: source-model comparison requires an existing verified PA basis for cache key $paBasisCacheKey."
-  }
-  $publishedPaBasisManifest=$null
   $provenance=[ordered]@{parent_resolved_design_sha256=$resolvedHash;particle_source_sha256=$sourceMeta.source_sha256;
     source_family_sha256=$sourceFamilySha;operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null});
     particle_source_operating_point_binding=$sourceMeta.operating_point_binding;
@@ -825,9 +823,8 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
       con_sha256=[string]$templateProfile.bundle.con.sha256
     }
     simion_pa_basis=[ordered]@{
-      cache_key_sha256=$paBasisCacheKey
-      authorized=$paBasisReuseAuthorized
-      action=$(if(-not$paBasisReuseAuthorized){'independent_refine'}elseif($paBasisReuse){'reuse'}elseif($paBasisRequireExisting){'required_reuse'}else{'publish'})
+      representation='producer_owned_fractional_checkpoint'
+      action=$(if($NativeFieldRunPath-or$continuationPredecessor){'explicit_field_reuse'}else{'independent_refine'})
     }}
   if($resolvedRuntimeProfile){
     $provenance.resolved_runtime_profile_sha256=(
@@ -857,7 +854,31 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
       $provenance.particle_source_direction_and_birth_time_preserved=$true
     }
   }
+  # This frozen projection is the sole source for the case Lua's physical
+  # values. Output paths remain per-run and do not define Fly identity.
+  $flyPhysics=[ordered]@{schema_version=1;role='multipole_simion_fly_physics';
+    trajectory_quality=$TrajectoryQuality;rf_steps_per_period=$RfStepsPerPeriod;
+    waveform=[string]$drive.waveform;rf_peak_v=[double]$drive.rf_amplitude_V_zero_to_peak_per_group;
+    dc_amplitude_v=[double]$drive.dc_amplitude_V_per_group;frequency_hz=[double]$drive.frequency_Hz;phase_rad=[double]$drive.phase_rad;
+    rod_lua=$rodLua;static_lua=$staticLua;maximum_time_us=$MaximumTimeUs;trajectory_plane_step_mm=$resolvedCellMmZ;
+    rod_z_min_mm=[double]$geometry.rod_z_min;rod_z_max_mm=[double]$geometry.rod_z_max;
+    handoff_plane_mm=$handoffPlaneMm;census_plane_mm=$censusPlaneMm;census_radius_mm=$censusRadius;
+    radial_escape_radius_mm=$workingRadius;origin_x_mm=$zShift;origin_y_mm=(-$origin);origin_z_mm=$origin;
+    backward_escape_plane_mm=$backwardEscape;mechanical_exit_enabled=$mechanicalExitEnabled;
+    axial_axis='x';
+    gem2pa_args=@('--nogui','--noprompt','gem2pa','quad_monolithic.gem','quad_monolithic.pa#');
+    refine_args=@('--nogui','--noprompt','refine','quad_monolithic.pa#');
+    iob_args=@('--nogui','--noprompt','lua','build_simion_runtime_iob.lua','quad_monolithic.iob','multipole_runtime_program.lua','quad_monolithic.fly2');
+    fly_args=@('--nogui','--noprompt','fly','--remove-pas=3','--trajectory-quality',[string]$TrajectoryQuality,'--programs','1','--retain-trajectories','0','--adjustable',"transport_rf_steps_per_period=$RfStepsPerPeriod");
+    mechanical_exit_plane_mm=$(if($mechanicalExitEnabled){$exitObservation.mechanical_exit_z_mm}else{$null});
+    mechanical_exit_guard_mm=$(if($mechanicalExitEnabled){$exitObservation.numerical_guard_z_mm}else{$null});
+    mechanical_exit_aperture_radius_lua=$(if($mechanicalExitEnabled-and$null-ne$exitObservation.aperture_radius_mm){[Convert]::ToString([double]$exitObservation.aperture_radius_mm,[Globalization.CultureInfo]::InvariantCulture)}else{'nil'});
+    cases=[ordered]@{rf_on=[ordered]@{rf=1;axial=0};zero_rf_control=[ordered]@{rf=0;axial=0};
+      axial_acceleration_rf_on=[ordered]@{rf=1;axial=1};zero_axial_drop_rf_on=[ordered]@{rf=1;axial=0};axial_acceleration_rf_off=[ordered]@{rf=0;axial=1}}}
+  $flyPhysicsPath=Join-Path $inputDir 'simion_fly_physics.json'
+  Write-RunJson -Path $flyPhysicsPath -Value $flyPhysics -Depth 12
   $runInputs=[ordered]@{project_registry=$registry;project_descriptor=$descriptor;design_profiles=$profiles;
+    execution_request=$workflowRequestPath;
     engineering_budget=$engineeringBudget;
     design_profile_resolution=$profileResolution;design_request=$request;design_variables=$variables;
     optimization_envelope=$envelope;operating_mode_registry=$modeRegistry;
@@ -865,22 +886,23 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
     particle_source_metadata=$sourceMetadata;particle_source_family=$sourceFamily;
     particle_source_release_spec=$releaseSpec;particle_source_release_receipt=$releaseReceipt;
     solver_numerics=$numerics;simion_grid_audit=$gridAudit;code_inventory=$codeInventory;
+    simion_pa_basis_identity=$paBasisIdentityPath;
+    simion_fly_physics=$flyPhysicsPath;
     simion_execution_batch_plan=$batchPlan;
-    evidence_contract=$evidence;simion_gem=$gem;simion_fly2=$fly2;
+    evidence_contract=$evidence;simion_gem=$gem;simion_fly2=$fly2;simion_source_states=$states;
     simion_rf_drive_kernel=$rfDriveKernelLua;
     clock_authority=(Join-Path $inputDir 'clock_authority.json');instrument_epoch=(Join-Path $inputDir 'instrument_epoch.json');
     resolved_runtime_profile=$resolvedRuntimeProfile;
     simion_layout_template_resolution=$templateResolution;
     simion_layout_template_registry=$templateRegistryInput;
     simion_layout_registration_manifest=$templateRegistrationManifest;
-    simion_layout_template_iob=$templateIob;simion_layout_template_con=$templateCon}
+    simion_layout_template_iob=$templateIob;simion_layout_template_con=$templateCon;
+    simion_layout_template_placeholder_pa0=$templateSeedPa}
   if($mechanicalExitEnabled){
     $runInputs.mechanical_exit_interface=Join-Path $inputDir 'mechanical_exit_interface.json'
     $runInputs.mechanical_exit_observation=Join-Path $inputDir 'mechanical_exit_observation.json'
   }
-  if($paBasisCacheManifestInput){
-    $runInputs.simion_pa_basis_cache_manifest=$paBasisCacheManifestInput
-  }
+  if($dispatchPlan){$runInputs.simion_repository_dispatch_plan=$dispatchPlan}
   if($candidateRequest){$runInputs.candidate_design_request=$candidateRequest}
   if($phaseDerivationMetadata){
     $runInputs.particle_source_authority=$phaseAuthoritySource
@@ -892,11 +914,18 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
     $provenance.reference_comsol_source_run_id=$referenceComsolSourceRunId
     $runInputs.reference_comsol_run_manifest=$referenceComsolManifest
   }
+  foreach($key in @($runInputs.Keys)){
+    $value=$runInputs[$key]
+    if($value-is[string]-and$value.StartsWith($runDir.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase)){
+      $runInputs[$key]=Join-Path $physicalRunDir ([IO.Path]::GetRelativePath($runDir,$value))
+    }
+  }
+  $initialLifecycle=(Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json).capacity_ledger_lifecycle
   [ordered]@{schema_version=2;role='multipole_resolved_simion_run_config';run_id=$RunId;project=$ProjectId;
     mode='resolved_design_transport';project_root=$profile.project_root;
     artifact_retention=[ordered]@{policy_version=1;class=$RetentionClass;
       reason=$(if($RetentionClass-eq'compact'){$null}else{$RetentionReason})};
-    provenance=$provenance;inputs=$runInputs;
+    capacity_ledger_lifecycle=$initialLifecycle;provenance=$provenance;inputs=$runInputs;
     parameters=[ordered]@{model_level='L3';runtime_profile_id=$RuntimeProfileId;design_profile_id=$DesignProfileId;
       experiment_id=$(if($campaignSelection){[string]$campaignSelection.experiment_id}else{$null});
       case_set=$CaseSet;
@@ -905,61 +934,147 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
       reference_comsol_run_id=$ReferenceComsolRunId};
     formal_gate_passed=$false}|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $runConfig -Encoding UTF8
 
-  $resourceUsage=Join-Path $resultDir 'resource_usage.json'
-  function Invoke-SimionStep([string]$name,[string[]]$arguments){
-    $stdout=Join-Path $logDir "simion_stdout__$name.txt";$stderr=Join-Path $logDir "simion_stderr__$name.txt"
-    $step=Invoke-ResourceBudgetedProcess -Limits $resolvedBudgetPreflight.limits `
-      -RunDir $runDir -UsagePath $resourceUsage -FilePath $simion -WorkingDirectory $solverDir `
-      -ArgumentList $arguments -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-    if($step.resource_budget_exceeded){
-      $script:resourceBudgetExceeded=$true
-      throw "SIMION $name resource budget exceeded."
+  $continuationUnits=@{};$continuationAllReuse=$false;$continuationLargestMissing=0
+  if($continuationPredecessor){
+    $continuationCases=if($segmented){
+      @('axial_acceleration_rf_on')+$(if($CaseSet-eq'primary_and_zero_axial_control'){@('zero_axial_drop_rf_on')}elseif($CaseSet-eq'primary_and_rf_off_energy_control'){@('axial_acceleration_rf_off')}else{@()})
+    }else{@('rf_on')+$(if($CaseSet-ne'primary_only'){@('zero_rf_control')}else{@()})}
+    $planArguments=@('-m','projects.rf_multipole_ion_optics.runtime.simion_batch_continuation',
+      '--predecessor',$continuationPredecessor,'--project',$ProjectId,'--run-dir',$runDir,'--retention',$RetentionClass)
+    foreach($case in $continuationCases){$planArguments+=@('--case',$case)}
+    if($mechanicalExitEnabled){$planArguments+='--mechanical'}
+    Push-Location $codeRoot
+    try{
+      $env:PYTHONPATH=$codeRoot
+      $planned=& $python @planArguments
+      if($LASTEXITCODE-ne0){throw 'RF continuation planning failed.'}
+      $continuation=($planned-join"`n")|ConvertFrom-Json
+      Write-RunJson -Path $batchPlan -Value $continuation.batch_plan -Depth 12
+      Set-SimionBatchesFromPlan -Plan $continuation.batch_plan
+    }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+    foreach($unit in $continuation.replay.units){if($unit.action-eq'reuse'){$continuationUnits[[string]$unit.key]=$unit}}
+    foreach($unit in $continuation.replay.units|Where-Object{$_.action-eq'replay'}){
+      if([string]$unit.key-notmatch'\.batch_(\d+)$'){throw 'RF continuation unit key is invalid.'}
+      $index=[int]$Matches[1]
+      $plannedBatch=@($simionBatches|Where-Object{[int]$_.index-eq$index})
+      if($plannedBatch.Count-ne1){throw 'RF continuation unit is outside the frozen partition.'}
+      $count=[int]$plannedBatch[0].particle_id_max-[int]$plannedBatch[0].particle_id_min+1
+      $continuationLargestMissing=[Math]::Max($continuationLargestMissing,$count)
     }
+    $continuationAllReuse=([int]$continuation.replay.replay_unit_count-eq0)
+    if($continuationAllReuse){$resourceIdentityWasUnknown=$false}
+    # Preserve the original partition. An unknown resource identity still
+    # observes the first missing formal batch before dispatching the rest.
+    $configDocument=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+    $configDocument.inputs.continuation_predecessor_manifest=$ContinuationPredecessorManifestPath
+    $configDocument.inputs.continuation_plan=Join-Path $physicalRunDir 'inputs/simion_whole_unit_replay_plan.json'
+    $configDocument.parameters.continuation_predecessor=$continuationPredecessor
+    Write-RunJson -Path $runConfig -Value $configDocument -Depth 12
+  }
+
+  $resourceUsage=Join-Path $resultDir 'resource_usage.json'
+  function Invoke-SimionStep([string]$name,[string[]]$arguments,[hashtable]$Environment=@{}){
+    $stdout=Join-Path $logDir "simion_stdout__$name.txt";$stderr=Join-Path $logDir "simion_stderr__$name.txt"
+    try{
+      $step=Invoke-ResourceBudgetedProcess -Limits $resolvedBudgetPreflight.limits `
+        -RunDir $runDir -UsagePath $resourceUsage -FilePath $simion -WorkingDirectory $solverDir `
+        -ArgumentList $arguments -RedirectStandardOutput $stdout -RedirectStandardError $stderr -Environment $Environment
+    }catch{
+      # The direct process helper only confirms its root after an observation
+      # error; it cannot attest that every descendant has stopped.
+      if($_.Exception.Data.Contains('observed_process_exit_confirmed')){
+        $_.Exception.Data['simion_wave_writer_completion_confirmed']=$false
+      }
+      throw
+    }
+    if($step.resource_budget_exceeded){
+      $failure=[InvalidOperationException]::new("SIMION $name resource budget exceeded; descendant completion is unconfirmed.")
+      $failure.Data['simion_wave_writer_completion_confirmed']=$false
+      $script:resourceBudgetExceeded=$true
+      throw $failure
+    }
+    [void]$nativeOperations.Add([ordered]@{operation_id=$name;observation=@{exit_confirmed=$true;returncode=[int]$step.exit_code;
+      process_id=[int]$step.root_process_id;process_started_at_utc_ticks=[long]$step.root_process_started_at_utc_ticks};resource_release_id='simion'})
     if($step.exit_code-ne 0){throw "SIMION $name failed with exit code $($step.exit_code)."}
   }
-  if($paBasisReuse){
-    Invoke-CommonPaFamilyCache -Operation materialize -IdentityPath $paBasisIdentityPath `
-      -CacheRoot $paBasisCacheRoot -Filenames $paBasisNames -DestinationDirectory $solverDir `
-      -ModuleRoot $codeRoot -Python $python|Out-Null
-    Write-Output "MULTIPOLE_SIMION_PA_BASIS=REUSE CACHE_KEY=$paBasisCacheKey"
+  Set-RfRunPhase 'field_and_layout'
+  if(-not$continuationAllReuse){
+  $fieldIdentityPath=Join-Path $physicalRunDir 'inputs/simion_field_identity.json'
+  $fieldIdentity=New-RfSimionFieldIdentity -GemPath $gem -SimionExe $simion `
+    -Grid @($gridAuditDocument.nx,$gridAuditDocument.ny,$gridAuditDocument.nz) `
+    -CellMm @($resolvedCellMmX,$resolvedCellMmY,$resolvedCellMmZ) -ResponseIds @($paBasisElectrodeIds|Sort-Object -Unique) `
+    -Gem2PaArguments @($flyPhysics.gem2pa_args) -RefineArguments @($flyPhysics.refine_args)
+  Write-RunJson -Path $fieldIdentityPath -Value $fieldIdentity -Depth 12
+  $fieldConfig=Get-Content -LiteralPath $runConfig -Raw|ConvertFrom-Json -AsHashtable
+  $fieldConfig.inputs.simion_field_identity=$fieldIdentityPath
+  Write-RunJson -Path $runConfig -Value $fieldConfig -Depth 20
+  $fieldSource=if($NativeFieldRunPath){$NativeFieldRunPath}else{$continuationPredecessor}
+  $fieldPlan=$null
+  if($fieldSource){
+    $fieldPlan=Read-RfSimionFieldCheckpoint -SourceRunPath $fieldSource -IdentityPath $fieldIdentityPath `
+      -ProgramSourcePath (Join-Path $solverDir 'multipole_runtime_program.lua') -Python $python -RepoRoot $codeRoot `
+      -TemplateIobPath $templateIob -TemplateConPath $templateCon
+    $continuationCapacity=(Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+      -Session $continuationCapacity -ProtectedPaths @($fieldPlan.protected_paths)).session
+    $workflowRequest.capacity.protected_paths=@((@($continuationChain)+@($fieldPlan.protected_paths))|Select-Object -Unique)
+    Write-RunJson -Atomic -Path $workflowRequestPath -Value $workflowRequest -Depth 64
+    $fieldCheckpointGuard=Protect-RfSimionFieldCheckpoint -Checkpoint $fieldPlan -ExistingProtectedRuns $continuationChain
+    $fieldConfig.inputs.simion_field_checkpoint=[string]$fieldPlan.checkpoint_path
+    $fieldConfig.inputs.simion_field_producer_manifest=[string]$fieldPlan.producer_manifest
+    Write-RunJson -Path $runConfig -Value $fieldConfig -Depth 20
+    $flightIobPath=[string]$fieldPlan.iob_path
+    Write-Output "MULTIPOLE_SIMION_FIELD=REUSE PRODUCER=$($fieldPlan.producer_manifest) REFINE=0"
   }else{
-    Invoke-SimionStep 'gem2pa' @('--nogui','--noprompt','gem2pa','quad_monolithic.gem','quad_monolithic.pa#')
+    Invoke-SimionStep 'gem2pa' @($flyPhysics.gem2pa_args)
     $hostExecutionLease=Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
       -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
     try {
-      Invoke-SimionStep 'refine' @('--nogui','--noprompt','refine','quad_monolithic.pa#')
+      Invoke-SimionStep 'refine' @($flyPhysics.refine_args)
     } finally {
       # The metered process has exited before releasing the refine permission.
       # The facade refuses downgrade if any owned solver descendants remain.
       $hostExecutionLease=Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
         -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
     }
-    if($paBasisReuseAuthorized){
-      $refinedPaBasisNames=Assert-MultipolePaBasisNames -Files @(
-        Get-ChildItem -LiteralPath $solverDir -File|Where-Object{
-          $_.Name-match'^quad_monolithic\.pa(?:#|-surf|\d+)$'
-        }|Sort-Object Name|ForEach-Object{[pscustomobject]@{name=$_.Name}}
-      )
-      if(@(Compare-Object -ReferenceObject $paBasisNames -DifferenceObject $refinedPaBasisNames).Count-ne 0){
-        throw 'Refined SIMION PA basis filenames differ from the resolved electrode namespace.'
-      }
-      $paBasisPublication=Invoke-CommonPaFamilyCache -Operation publish -IdentityPath $paBasisIdentityPath `
-        -CacheRoot $paBasisCacheRoot -Filenames $paBasisNames -SourceDirectory $solverDir `
-        -ModuleRoot $codeRoot -Python $python
-      $paBasisCacheKey=[string]$paBasisPublication.cache_key
-      if([string]$paBasisPublication.disposition-eq'published'){
-        $publishedPaBasisManifest=Join-Path ([string]$paBasisPublication.generation_directory) 'cache_manifest.json'
-      }
-      Write-Output "MULTIPOLE_SIMION_PA_BASIS=PUBLISH CACHE_KEY=$paBasisCacheKey"
+    if($RetentionClass-ne'compact'){
+      $checkpoint=Write-RfSimionFieldCheckpoint -RunDirectory $physicalRunDir -IdentityPath $fieldIdentityPath `
+        -IobPath (Join-Path $physicalRunDir 'simion/quad_monolithic.iob') -NativeOperations $nativeOperations -Python $python -RepoRoot $codeRoot
+      $fieldCheckpointOutputs+=@($checkpoint.output_paths)
     }
   }
+  if($null-eq$fieldPlan-or$fieldPlan.requires_iob_rebind){
+  Copy-Item -LiteralPath $templateIob -Destination (Join-Path $solverDir 'quad_monolithic.iob')
+  Copy-Item -LiteralPath $templateCon -Destination (Join-Path $solverDir 'quad_monolithic.con')
   Copy-VerifiedRunInput `
     -Source (Join-Path $codeRoot 'projects\rf_multipole_ion_optics\simion\build_simion_runtime_iob.lua') `
     -Destination (Join-Path $solverDir 'build_simion_runtime_iob.lua')|Out-Null
-  Invoke-SimionStep 'build_runtime_iob' @(
-    '--nogui','--noprompt','lua','build_simion_runtime_iob.lua',
-    'quad_monolithic.iob','multipole_runtime_program.lua','quad_monolithic.fly2')
+  $controller=if($null-ne$fieldPlan){[string]$fieldPlan.controller_path}else{Join-Path $physicalRunDir 'simion/quad_monolithic.pa0'}
+  $flightIobPath=Join-Path $physicalRunDir 'simion/quad_monolithic.iob'
+  $iobBuildArguments=@($flyPhysics.iob_args)
+  # wb.save resolves PA references relative to its destination. Use the
+  # permanent destination, never the short execution alias as its base.
+  $iobBuildArguments[4]=$flightIobPath
+  $layoutSeed=$null
+  if($null-ne$fieldPlan){
+    $layoutSeed=New-RfSimionLayoutSeedCompanion -IobPath $flightIobPath -SeedPaPath $templateSeedPa
+  }
+  Invoke-SimionStep 'build_runtime_iob' ($iobBuildArguments+@($controller))
+  if($null-ne$layoutSeed){
+    $buildFact=@($nativeOperations|Where-Object{$_.operation_id-eq'build_runtime_iob'})[-1]
+    Remove-RfSimionLayoutSeedCompanion -Companion $layoutSeed -BuildObservation $buildFact.observation
+  }
+  $layoutInspectionRequired=$true
   Start-Sleep -Milliseconds 500
+  }
+  }
+  Set-RfRunPhase 'flight_and_case_analysis'
+
+  # Each stopped worker writes a small completion receipt. The existing owner
+  # binds those receipts and their retained outputs in one terminal manifest.
+  $checkpointOutputs=[Collections.ArrayList]::new()
+  $batchCompletionReceipts=[Collections.ArrayList]::new()
+  $retainedTrajectoryOutputs=[Collections.ArrayList]::new()
+  $caseRunsNative=@{}
 
   function Invoke-TransportCase([string]$name,[int]$rfScale,[int]$axialScale){
     $caseState=Join-Path $resultDir "particle_states__$name.csv"
@@ -968,54 +1083,99 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
     $caseSummary=Join-Path $resultDir "simion_summary__$name.json"
     # The registered Workbench transform maps GEM +z to flight +x.  Axial
     # sampling and the census-marker threshold must therefore use GEM dz.
-    $mechanicalRadiusLua=if($mechanicalExitEnabled-and$null-ne$exitObservation.aperture_radius_mm){
-      [Convert]::ToString([double]$exitObservation.aperture_radius_mm,[Globalization.CultureInfo]::InvariantCulture)
-    }else{'nil'}
-    $batchRuns=@()
+    $casePhysics=$flyPhysics.cases[$name]
+    if($null-eq$casePhysics-or[int]$casePhysics.rf-ne$rfScale-or[int]$casePhysics.axial-ne$axialScale){
+      throw "SIMION $name case differs from frozen Fly physics."
+    }
+    function New-TransportBatchRuns {
+    $runs=@()
     foreach($batch in $simionBatches){
       $suffix=("batch_{0:D2}" -f [int]$batch.index)
       $batchState=if($simionBatches.Count-eq 1){$caseState}else{Join-Path $resultDir "particle_states__$name`__$suffix.csv"}
       $batchMechanical=if($simionBatches.Count-eq 1){$caseMechanical}else{Join-Path $resultDir "mechanical_exit_states__$name`__$suffix.csv"}
-      $mechanicalLua=if($mechanicalExitEnabled){"mechanical_exit_csv=[[$batchMechanical]],mechanical_exit_plane_mm=$($exitObservation.mechanical_exit_z_mm),mechanical_exit_aperture_radius_mm=$mechanicalRadiusLua,mechanical_exit_guard_mm=$($exitObservation.numerical_guard_z_mm),"}else{''}
+      $mechanicalLua=if($flyPhysics.mechanical_exit_enabled){"mechanical_exit_csv=[[$batchMechanical]],mechanical_exit_plane_mm=$($flyPhysics.mechanical_exit_plane_mm),mechanical_exit_aperture_radius_mm=$($flyPhysics.mechanical_exit_aperture_radius_lua),mechanical_exit_guard_mm=$($flyPhysics.mechanical_exit_guard_mm),"}else{''}
       $batchTrajectory=if($simionBatches.Count-eq 1){$caseTrajectory}else{Join-Path $resultDir "trajectory_samples__$name`__$suffix.csv"}
       $batchSummary=if($simionBatches.Count-eq 1){$caseSummary}else{Join-Path $resultDir "simion_summary__$name`__$suffix.json"}
+      $unitKey="{0}.batch_{1:D2}"-f$name,[int]$batch.index
+      if($continuationUnits.ContainsKey($unitKey)){
+        $artifacts=@($continuationUnits[$unitKey].terminal_outputs|ForEach-Object{[string]$_.path})
+        $stateMatch=@($artifacts|Where-Object{[IO.Path]::GetFileName($_)-ceq[IO.Path]::GetFileName($batchState)})
+        $summaryMatch=@($artifacts|Where-Object{[IO.Path]::GetFileName($_)-ceq[IO.Path]::GetFileName($batchSummary)})
+        if($stateMatch.Count-ne1-or$summaryMatch.Count-ne1){throw "RF reused batch $unitKey lacks state or summary."}
+        $batchState=$stateMatch[0];$batchSummary=$summaryMatch[0]
+        if($mechanicalExitEnabled){
+          $matches=@($artifacts|Where-Object{[IO.Path]::GetFileName($_)-ceq[IO.Path]::GetFileName($batchMechanical)})
+          if($matches.Count-ne1){throw "RF reused batch $unitKey lacks mechanical exit."};$batchMechanical=$matches[0]
+        }
+        if($RetentionClass-ne'compact'){
+          $matches=@($artifacts|Where-Object{[IO.Path]::GetFileName($_)-ceq[IO.Path]::GetFileName($batchTrajectory)})
+          if($matches.Count-ne1){throw "RF reused batch $unitKey lacks trajectory."};$batchTrajectory=$matches[0]
+        }
+      }
       $luaConfig=if($simionBatches.Count-eq 1){Join-Path $inputDir "simion_config__$name.lua"}else{Join-Path $inputDir "simion_config__$name`__$suffix.lua"}
       @"
-return {iob=[[$(Join-Path $solverDir 'quad_monolithic.iob')]], fly2=[[$($batch.fly2)]], source_states=dofile([[$($batch.states)]]),
+return {iob=[[$flightIobPath]], fly2=[[$($batch.fly2)]], source_states=dofile([[$($batch.states)]]),
 trajectory_csv=[[$batchTrajectory]], particle_state_csv=[[$batchState]], summary_json=[[$batchSummary]],
 $mechanicalLua
 mode="resolved_design_transport", operating_point="$name", parent_resolved_design_sha256="$resolvedHash",
-trajectory_quality=$TrajectoryQuality, rf_steps_per_period=$RfStepsPerPeriod, waveform="$($drive.waveform)",
-rf_peak_v=$($drive.rf_amplitude_V_zero_to_peak_per_group), rf_scale=$rfScale, axial_scale=$axialScale,
-dc_amplitude_v=$($drive.dc_amplitude_V_per_group), frequency_hz=$($drive.frequency_Hz), phase_rad=$($drive.phase_rad),
-$rodLua $staticLua
-maximum_time_us=$MaximumTimeUs, trajectory_plane_step_mm=$resolvedCellMmZ,
-rod_z_min_mm=$($geometry.rod_z_min), rod_z_max_mm=$($geometry.rod_z_max),
-rod_exit_plane_mm=$($geometry.rod_z_max), handoff_plane_mm=$handoffPlaneMm,
-    census_plane_mm=$censusPlaneMm,
-census_radius_mm=$censusRadius, radial_escape_radius_mm=$workingRadius,
-axial_axis="x", origin_x_mm=$zShift, origin_y_mm=$(-$origin),
-origin_z_mm=$origin, backward_escape_plane_mm=$backwardEscape}
+trajectory_quality=$($flyPhysics.trajectory_quality), rf_steps_per_period=$($flyPhysics.rf_steps_per_period), waveform="$($flyPhysics.waveform)",
+rf_peak_v=$($flyPhysics.rf_peak_v), rf_scale=$($casePhysics.rf), axial_scale=$($casePhysics.axial),
+dc_amplitude_v=$($flyPhysics.dc_amplitude_v), frequency_hz=$($flyPhysics.frequency_hz), phase_rad=$($flyPhysics.phase_rad),
+$($flyPhysics.rod_lua) $($flyPhysics.static_lua)
+maximum_time_us=$($flyPhysics.maximum_time_us), trajectory_plane_step_mm=$($flyPhysics.trajectory_plane_step_mm),
+rod_z_min_mm=$($flyPhysics.rod_z_min_mm), rod_z_max_mm=$($flyPhysics.rod_z_max_mm),
+rod_exit_plane_mm=$($flyPhysics.rod_z_max_mm), handoff_plane_mm=$($flyPhysics.handoff_plane_mm),
+    census_plane_mm=$($flyPhysics.census_plane_mm),
+census_radius_mm=$($flyPhysics.census_radius_mm), radial_escape_radius_mm=$($flyPhysics.radial_escape_radius_mm),
+axial_axis="$($flyPhysics.axial_axis)", origin_x_mm=$($flyPhysics.origin_x_mm), origin_y_mm=$($flyPhysics.origin_y_mm),
+origin_z_mm=$($flyPhysics.origin_z_mm), backward_escape_plane_mm=$($flyPhysics.backward_escape_plane_mm)}
 "@|Set-Content -LiteralPath $luaConfig -Encoding ASCII
-      $batchRuns+=[pscustomobject]@{batch=$batch;state=$batchState;trajectory=$batchTrajectory;
+      $runs+=[pscustomobject]@{batch=$batch;state=$batchState;trajectory=$batchTrajectory;
         summary=$batchSummary;mechanical=$batchMechanical;lua_config=$luaConfig;fly2=[string]$batch.fly2}
     }
-    $flyArguments=@('--nogui','--noprompt','fly','--remove-pas=3','--trajectory-quality',
-      [string]$TrajectoryQuality,'--programs','1','--retain-trajectories','0','--adjustable',
-      "transport_rf_steps_per_period=$RfStepsPerPeriod",(Join-Path $solverDir 'quad_monolithic.iob'))
-    if($script:resourceCalibrationRequired){
-      if($batchRuns.Count-ne 1){throw 'Unknown resource identity must start from one formal SIMION batch.'}
-      $firstSpecification=[pscustomobject]@{
-        name="fly__$name`__batch_1";file_path=$simion
-        argument_list=($flyArguments[0..5]+@('--particles',$batchRuns[0].fly2)+$flyArguments[6..($flyArguments.Count-1)])
-        working_directory=$solverDir
-        stdout=(Join-Path $logDir "simion_stdout__fly__$name`__batch_1.txt")
-        stderr=(Join-Path $logDir "simion_stderr__fly__$name`__batch_1.txt")
-        environment=@{MULTIPOLE_SIMION_RUN_CONFIG_LUA=$batchRuns[0].lua_config;MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA=$rfDriveKernelLua}
-        scheduler_batch=[pscustomobject]@{index=[int]$batchRuns[0].batch.index;total_batches='OBSERVATION_ONLY';particle_id_min=[int]$batchRuns[0].batch.particle_id_min;particle_id_max=[int]$batchRuns[0].batch.particle_id_max;count=([int]$batchRuns[0].batch.particle_id_max-[int]$batchRuns[0].batch.particle_id_min+1)}
+    return $runs
+    }
+    $batchRuns=@(New-TransportBatchRuns)
+    if($script:layoutInspectionRequired){
+      # Inspect with the actual first case configuration: loading the real
+      # Program requires its complete source, drive and coordinate contract.
+      $inspectionConfig=Join-Path $inputDir 'simion_iob_inspection.lua'
+      @"
+local config=dofile([[$($batchRuns[0].lua_config)]])
+config.expected_pa_nx=$($gridAuditDocument.nx);config.expected_pa_ny=$($gridAuditDocument.ny);config.expected_pa_nz=$($gridAuditDocument.nz)
+config.expected_pa_cell_mm_x=$resolvedCellMmX;config.expected_pa_cell_mm_y=$resolvedCellMmY;config.expected_pa_cell_mm_z=$resolvedCellMmZ
+return config
+"@|Set-Content -LiteralPath $inspectionConfig -Encoding ASCII
+      $inspector=Join-Path $codeRoot 'projects/rf_multipole_ion_optics/simion/workbench/inspect_builtin_quad_reference.lua'
+      Invoke-SimionStep 'inspect_runtime_iob' @('--nogui','--noprompt','lua',$inspector) @{
+        MULTIPOLE_SIMION_RUN_CONFIG_LUA=$inspectionConfig;MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA=$rfDriveKernelLua;
+        RFQUAD_SIMION_REFERENCE_IOB=$flightIobPath;RFQUAD_SIMION_REFERENCE_REPORT=(Join-Path $resultDir 'simion_iob_inspection.txt')}
+      if($null-eq$fieldPlan-and$RetentionClass-ne'compact'){
+        $checkpoint=Write-RfSimionFieldCheckpoint -RunDirectory $physicalRunDir -IdentityPath $fieldIdentityPath `
+          -IobPath $flightIobPath -NativeOperations $nativeOperations -Python $python -RepoRoot $codeRoot
+        $script:fieldCheckpointOutputs+=@($checkpoint.output_paths)
       }
-      $formalObservation=Start-ObservedFormalProcess -DispatchPlanPath $dispatchPlan `
-        -ProcessSpecification $firstSpecification
+      $script:layoutInspectionRequired=$false
+    }
+    $caseRunsNative[$name]=(@($batchRuns|Where-Object{-not$continuationUnits.ContainsKey(("{0}.batch_{1:D2}"-f$name,[int]$_.batch.index))}).Count-gt0)
+    $batchState=[pscustomobject]@{runs=$batchRuns}
+    $firstSpecification=$null;$replanAction=$null
+    $flyArguments=@($flyPhysics.fly_args)+@($flightIobPath)
+    $pendingRuns=@($batchRuns|Where-Object{-not$continuationUnits.ContainsKey(("{0}.batch_{1:D2}"-f$name,[int]$_.batch.index))})
+    if($script:resourceCalibrationRequired-and$pendingRuns.Count-gt0){
+      if(-not$continuationPredecessor-and$batchRuns.Count-ne 1){throw 'Unknown resource identity must start from one formal SIMION batch.'}
+      $firstRun=@($pendingRuns|Sort-Object -Descending -Property @{Expression={[int]$_.batch.particle_id_max-[int]$_.batch.particle_id_min+1}})[0]
+      $firstSpecification=[pscustomobject]@{
+        name="fly__$name`__batch_$($firstRun.batch.index)";file_path=$simion
+        argument_list=($flyArguments[0..5]+@('--particles',$firstRun.fly2)+$flyArguments[6..($flyArguments.Count-1)])
+        working_directory=$solverDir
+        stdout=(Join-Path $logDir "simion_stdout__fly__$name`__batch_$($firstRun.batch.index).txt")
+        stderr=(Join-Path $logDir "simion_stderr__fly__$name`__batch_$($firstRun.batch.index).txt")
+        environment=@{MULTIPOLE_SIMION_RUN_CONFIG_LUA=$firstRun.lua_config;MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA=$rfDriveKernelLua}
+        scheduler_batch=[pscustomobject]@{index=[int]$firstRun.batch.index;total_batches='OBSERVATION_ONLY';particle_id_min=[int]$firstRun.batch.particle_id_min;particle_id_max=[int]$firstRun.batch.particle_id_max;count=([int]$firstRun.batch.particle_id_max-[int]$firstRun.batch.particle_id_min+1)}
+      }
+      $replan={
+      param($formalObservation)
       if([int64]$formalObservation.observed_peak_process_tree_working_set_bytes-lt1){
         throw "SIMION $name first formal batch did not produce a usable resource observation."
       }
@@ -1037,63 +1197,133 @@ origin_z_mm=$origin, backward_escape_plane_mm=$backwardEscape}
           @($updatedDispatch.waves).Count-ne1-or[int]$updatedDispatch.waves[0].batch_count-lt1){
           throw 'SIMION formal-first dispatch plan is invalid.'
         }
-        & $python -m common.simion.particle_batching --from-dispatch-plan $dispatchPlan `
-          --output $batchPlan | Out-Null
-        if($LASTEXITCODE-ne 0){throw 'SIMION formal-first particle batch planning failed.'}
-        $updatedBatchPlan=Get-Content -LiteralPath $batchPlan -Raw -Encoding UTF8|ConvertFrom-Json
-        Set-SimionBatchesFromPlan -Plan $updatedBatchPlan
+        if($continuationPredecessor-and
+          ([int]$firstRun.batch.particle_id_max-[int]$firstRun.batch.particle_id_min+1)-lt$continuationLargestMissing){
+          # A later case contains a larger missing unit than this observation.
+          # Keep admission conservative until that unit has completed.
+          $updatedDispatch.limits.maximum_concurrency=1
+          Write-RunJson -Path $dispatchPlan -Value $updatedDispatch -Depth 20
+        }
+        if(-not$continuationPredecessor){
+          & $python -m common.simion.particle_batching --from-dispatch-plan $dispatchPlan `
+            --output $batchPlan | Out-Null
+          if($LASTEXITCODE-ne 0){throw 'SIMION formal-first particle batch planning failed.'}
+          $updatedBatchPlan=Get-Content -LiteralPath $batchPlan -Raw -Encoding UTF8|ConvertFrom-Json
+          Set-SimionBatchesFromPlan -Plan $updatedBatchPlan
+          $script:batchPlanDocument=$updatedBatchPlan
+        }
         $script:dispatchPlanDocument=$updatedDispatch
-        $script:batchPlanDocument=$updatedBatchPlan
         $script:executionBatching=[pscustomobject]@{dispatch='single_wave_parallel';
-          batch_count=[int]$updatedDispatch.waves[0].batch_count}
+          batch_count=$(if($continuationPredecessor){[int]$batchRuns.Count}else{[int]$updatedDispatch.waves[0].batch_count})}
         $script:resourceCalibrationRequired=$false
-        $formalObservation.process_record.specification.scheduler_batch=[pscustomobject]@{index=[int]$batchRuns[0].batch.index;total_batches=[int]$batchRuns.Count;particle_id_min=[int]$batchRuns[0].batch.particle_id_min;particle_id_max=[int]$batchRuns[0].batch.particle_id_max;count=([int]$batchRuns[0].batch.particle_id_max-[int]$batchRuns[0].batch.particle_id_min+1)}
-        $script:existingFormalProcessRecords=@($formalObservation.process_record)
+        if($continuationPredecessor){$script:resourceIdentityWasUnknown=$false}
+        $formalObservation.process_record.specification.scheduler_batch=[pscustomobject]@{index=[int]$firstRun.batch.index;total_batches=[int]$batchRuns.Count;particle_id_min=[int]$firstRun.batch.particle_id_min;particle_id_max=[int]$firstRun.batch.particle_id_max;count=([int]$firstRun.batch.particle_id_max-[int]$firstRun.batch.particle_id_min+1)}
         # The first formal worker began before the replan, when the run had a
         # single unsuffixed output name.  Keep that completed-or-live output
-        # identity so the recursive, multi-batch invocation can publish it as
+        # identity so the replanned multi-batch phase can publish it as
         # canonical batch_01 before merging.  The first worker is formal work,
         # not a disposable resource probe.
-        $script:retainedFormalBatchOutputs[$name]=[pscustomobject]@{
-          state=$batchRuns[0].state;trajectory=$batchRuns[0].trajectory
-          summary=$batchRuns[0].summary;mechanical=$batchRuns[0].mechanical
-        }
+        if(-not$continuationPredecessor){$script:retainedFormalBatchOutputs[$name]=[pscustomobject]@{
+          state=$firstRun.state;trajectory=$firstRun.trajectory
+          summary=$firstRun.summary;mechanical=$firstRun.mechanical
+        }}
       }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
-      return Invoke-TransportCase $name $rfScale $axialScale
+      }
+      $replanAction=$replan
     }
     # Keep each case's receipt independent: a control has no primary first worker.
     # The canonical path remains the primary observation consumed by the publisher.
     $resourceUsage=if($name-eq$primaryName){Join-Path $resultDir 'resource_usage.json'}else{
       Join-Path $resultDir "resource_usage__$name.json"
     }
-    if($null-eq$dispatchPlan-and$batchRuns.Count-eq 1-and$script:existingFormalProcessRecords.Count-eq 0){
+    if($null-ne$firstSpecification){$script:resourceObservationUsage=$resourceUsage}
+    if($null-eq$dispatchPlan-and$batchRuns.Count-eq 1-and$null-eq$firstSpecification){
       $env:MULTIPOLE_SIMION_RUN_CONFIG_LUA=$batchRuns[0].lua_config
       $env:MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA=$rfDriveKernelLua
       try{Invoke-SimionStep "fly__$name" ($flyArguments[0..5]+@('--particles',$batchRuns[0].fly2)+$flyArguments[6..($flyArguments.Count-1)])}
       finally{Remove-Item Env:MULTIPOLE_SIMION_RUN_CONFIG_LUA -ErrorAction SilentlyContinue;Remove-Item Env:MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA -ErrorAction SilentlyContinue}
     }else{
-      $specifications=@($batchRuns|ForEach-Object{
+      $prepareRemaining={
+      param($formal)
+      if($null-ne$formal-and-not$continuationPredecessor){$batchState.runs=@(New-TransportBatchRuns)}
+      $specifications=@($batchState.runs|Where-Object{-not$continuationUnits.ContainsKey(("{0}.batch_{1:D2}"-f$name,[int]$_.batch.index))}|ForEach-Object{
         [pscustomobject]@{name="fly__$name`__batch_$($_.batch.index)";file_path=$simion;
           argument_list=($flyArguments[0..5]+@('--particles',$_.fly2)+$flyArguments[6..($flyArguments.Count-1)]);
           working_directory=$solverDir;stdout=(Join-Path $logDir "simion_stdout__fly__$name`__batch_$($_.batch.index).txt");
           stderr=(Join-Path $logDir "simion_stderr__fly__$name`__batch_$($_.batch.index).txt");
           environment=@{MULTIPOLE_SIMION_RUN_CONFIG_LUA=$_.lua_config;MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA=$rfDriveKernelLua}
-          scheduler_batch=[pscustomobject]@{index=[int]$_.batch.index;total_batches=[int]$batchRuns.Count;particle_id_min=[int]$_.batch.particle_id_min;particle_id_max=[int]$_.batch.particle_id_max;count=([int]$_.batch.particle_id_max-[int]$_.batch.particle_id_min+1)}}
+          scheduler_batch=[pscustomobject]@{index=[int]$_.batch.index;total_batches=[int]$batchState.runs.Count;particle_id_min=[int]$_.batch.particle_id_min;particle_id_max=[int]$_.batch.particle_id_max;count=([int]$_.batch.particle_id_max-[int]$_.batch.particle_id_min+1)}}
       })
-      if($script:existingFormalProcessRecords.Count-gt 0){
-        $specifications=@($specifications|Select-Object -Skip 1)
+      if($null-ne$formal){
+        $specifications=@($specifications|Where-Object{[int]$_.scheduler_batch.index-ne[int]$formal.process_record.specification.scheduler_batch.index})
       }
-      $wave=Invoke-ResourceBudgetedProcesses -DispatchPlanPath $dispatchPlan `
-        -RunDir $runDir -UsagePath $resourceUsage `
-        -ProcessSpecifications $specifications `
-        -ExistingProcessRecords $script:existingFormalProcessRecords
-      if($wave.resource_budget_exceeded){$script:resourceBudgetExceeded=$true;throw "SIMION $name batch wave resource budget exceeded."}
+      [pscustomobject]@{pending=$specifications;batch_runs=$batchState.runs}
+      }
+      $checkpointAction={
+        param($completedRecord)
+          $index=[int]$completedRecord.specification.scheduler_batch.index
+          if($null-eq$completedRecord.exit_code){throw "SIMION $name batch $index exit is unconfirmed."}
+          [void]$nativeOperations.Add([ordered]@{operation_id="fly__$name`__batch_$index";observation=@{exit_confirmed=$true;returncode=[int]$completedRecord.exit_code;
+            process_id=[int]$completedRecord.root_process_id;process_started_at_utc_ticks=[long]$completedRecord.root_process_started_at_utc_ticks};resource_release_id='simion'})
+          if([int]$completedRecord.exit_code-ne0){return}
+          $matches=@($batchState.runs|Where-Object{[int]$_.batch.index-eq$index})
+          if($matches.Count-ne1){throw "SIMION $name completed batch index is ambiguous: $index"}
+          $completedBatch=$matches[0]
+          # The formally observed first batch initially used unqualified case
+          # paths. Replanning changes only filenames, not the first interval.
+          if($index-eq1-and$script:retainedFormalBatchOutputs.ContainsKey($name)){
+            $retained=$script:retainedFormalBatchOutputs[$name]
+            foreach($kind in @('state','summary')+$(if($mechanicalExitEnabled){@('mechanical')}else{@()})+$(if($RetentionClass-ne'compact'){@('trajectory')}else{@()})){
+              if([string]$retained.$kind-cne[string]$completedBatch.$kind){
+                Copy-Item -LiteralPath ([string]$retained.$kind) -Destination ([string]$completedBatch.$kind)
+              }
+            }
+          }
+          $check=@('-m','projects.rf_multipole_ion_optics.runtime.simion_batch_completion',
+            '--stdout',[string]$completedRecord.specification.stdout,'--state',[string]$completedBatch.state,
+            '--summary',[string]$completedBatch.summary,'--particle-count',[string]$completedRecord.specification.scheduler_batch.count)
+          if($mechanicalExitEnabled){$check+=@('--mechanical',[string]$completedBatch.mechanical)}
+          if($RetentionClass-ne'compact'-and-not(Test-Path -LiteralPath $completedBatch.trajectory -PathType Leaf)){
+            throw "SIMION $name batch $index lacks the retained trajectory required by $RetentionClass."
+          }
+          Push-Location $codeRoot
+          try{$env:PYTHONPATH=$codeRoot;& $python @check | Out-Null;if($LASTEXITCODE-ne0){throw "SIMION $name batch $index completion is invalid."}}
+          finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+          if($RetentionClass-ne'compact'-and-not$retainedTrajectoryOutputs.Contains([string]$completedBatch.trajectory)){
+            [void]$retainedTrajectoryOutputs.Add([string]$completedBatch.trajectory)
+          }
+          foreach($path in @([string]$completedRecord.specification.stdout,[string]$completedBatch.state,[string]$completedBatch.summary)+$(if($mechanicalExitEnabled){@([string]$completedBatch.mechanical)}else{@()})){
+            if(-not$checkpointOutputs.Contains($path)){[void]$checkpointOutputs.Add($path)}
+          }
+          $receipt=Join-Path $resultDir ("simion_batch_completion__{0}__batch_{1:D2}.json"-f$name,$index)
+          $receiptOutputs=@(@([string]$completedRecord.specification.stdout,[string]$completedBatch.state,[string]$completedBatch.summary)+$(if($mechanicalExitEnabled){@([string]$completedBatch.mechanical)}else{@()})+$(if($RetentionClass-ne'compact'){@([string]$completedBatch.trajectory)}else{@()})|ForEach-Object{
+            $relative=[IO.Path]::GetRelativePath($runDir,$_).Replace('\','/')
+            if($relative-eq'..'-or$relative.StartsWith('../')-or[IO.Path]::IsPathRooted($relative)){
+              throw 'SIMION completed batch output escapes its owner run.'
+            }
+            $relative
+          })
+          Write-RunJson -Atomic -Path $receipt -Value ([ordered]@{
+            schema_version=1;role='multipole_simion_completed_batch';case=$name;batch_index=$index
+            particle_id_min=[int]$completedBatch.batch.particle_id_min
+            particle_id_max=[int]$completedBatch.batch.particle_id_max
+            particle_count=[int]$completedRecord.specification.scheduler_batch.count
+            retention_class=$RetentionClass;outputs=$receiptOutputs
+          })
+          if(-not$batchCompletionReceipts.Contains($receipt)){[void]$batchCompletionReceipts.Add($receipt)}
+      }
+      $wave=Invoke-SimionBatchPhase -DispatchPlanPath $dispatchPlan `
+        -RunDir $runDir -UsagePath $resourceUsage -PrepareRemaining $prepareRemaining `
+        -FirstSpecification $firstSpecification -Replan $replanAction -OnProcessCompleted $checkpointAction
+      $batchRuns=@($wave.prepared.batch_runs)
       $failed=@($wave.processes|Where-Object{$_.exit_code-ne 0})
-      if($failed.Count-ne 0){throw "SIMION $name batch wave failed: $($failed.name -join ',')"}
+      if($wave.resource_budget_exceeded-or$failed.Count-ne 0){
+        if($wave.resource_budget_exceeded){$script:resourceBudgetExceeded=$true}
+        $reason=if($wave.resource_budget_exceeded){"SIMION $name batch wave resource budget exceeded."}else{"SIMION $name batch wave failed: $($failed.name -join ',')"}
+        throw $reason
+      }
     }
-    # A joined first worker belongs only to this case, never to a subsequent control.
-    $script:existingFormalProcessRecords=@()
-    if($batchRuns.Count-gt 1){
+    if($batchRuns.Count-gt 1-or($continuationPredecessor-and-not$caseRunsNative[$name])){
       if($script:retainedFormalBatchOutputs.ContainsKey($name)){
         $retained=$script:retainedFormalBatchOutputs[$name]
         $firstBatch=$batchRuns[0]
@@ -1120,6 +1350,7 @@ origin_z_mm=$origin, backward_escape_plane_mm=$backwardEscape}
           @{output=$caseTrajectory;property='trajectory';required=$false},
           @{output=$caseMechanical;property='mechanical';required=$mechanicalExitEnabled}
         )){
+          if($continuationPredecessor-and$RetentionClass-eq'compact'-and$merge.property-eq'trajectory'){continue}
           $existingBatchPaths=@($batchRuns|ForEach-Object{
             $path=[string]$_.($merge.property)
             if(Test-Path -LiteralPath $path){$path}
@@ -1182,8 +1413,10 @@ output.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n',encoding='utf
   }
 
   # All cases share one heavy flight stage; internal workers do not acquire grants.
-  $hostExecutionLease=Update-HostResourceStage -Lease $hostExecutionLease -Stage flight `
-    -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
+  if(-not$continuationAllReuse){
+    $hostExecutionLease=Update-HostResourceStage -Lease $hostExecutionLease -Stage flight `
+      -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
+  }
   $control=$null;$controlName=$null
   if($segmented){
     $primaryName='axial_acceleration_rf_on';$controlName='zero_axial_drop_rf_on'
@@ -1255,6 +1488,7 @@ output.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n',encoding='utf
     }
   }
   # Flight workers have joined; publication returns to the ordinary light stage.
+  Set-RfRunPhase 'diagnostics'
   $hostExecutionLease=Update-HostResourceStage -Lease $hostExecutionLease -Stage postprocess `
     -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
   $exitStatePlot=Join-Path $resultDir 'exit_state_diagnostics.png'
@@ -1324,47 +1558,33 @@ print(json.dumps(result,allow_nan=False))
     }
     $controlTransmission=[double]$controlCaseSummary.transmission
   }
-  [ordered]@{schema_version=1;role='multipole_simion_finite_3d_transport_summary';status=$scientificStatus;
+  Set-RfRunPhase 'finalization'
+  $summaryDocument=[ordered]@{schema_version=1;role='multipole_simion_finite_3d_transport_summary';status=$scientificStatus;run_id=$RunId;
     native_execution_complete=$true;checks=$scientificChecks;
     qualification_status=$qualification;project_id=$ProjectId;design_profile_id=$DesignProfileId;
     parent_resolved_design_sha256=$resolvedHash;primary_transmission=$primaryTransmission;
     case_set=$CaseSet;
     control_transmission=$controlTransmission;
-    model_level='L3';formal_gate_passed=$false}|
-    ConvertTo-Json -Depth 5|Set-Content -LiteralPath $summary -Encoding UTF8
-  $retentionActions=Apply-RunArtifactRetention -Python $python -RepoRoot $manifestRepoRoot `
-    -RunConfig $runConfig
-  if(-not(Complete-ResourceUsage -RunDir $runDir -UsagePath $resourceUsage)){
-    $resourceBudgetExceeded=$true
-    throw 'SIMION compact final retained-byte budget exceeded.'
-  }
+    model_level='L3';formal_gate_passed=$false;execution_status='completed';data_validity='valid';
+    scientific_result=$qualification;failure_stage=$null;failure_reason=$null;recovery_action='none';
+    phase_timings_seconds=$phaseTimings;elapsed_before_finalization_seconds=$runTimer.Elapsed.TotalSeconds;
+    continuation_predecessor=$(if($continuationPredecessor){$continuationPredecessor}else{$null});
+    reused_fly_batches=$(if($continuationPredecessor){[int]$continuation.replay.reusable_unit_count}else{0});
+    scheduled_fly_batches=$(if($continuationPredecessor){[int]$continuation.replay.replay_unit_count}else{$null})}
   $resourceProfile=$null
   $caseResourceUsage=[ordered]@{}
-  $caseResourceUsage[$primaryName]=$resourceUsage
-  if($null-ne$control){
+  if($caseRunsNative[$primaryName]){
+    $caseResourceUsage[$primaryName]=$resourceUsage
+  }
+  if($null-ne$control-and$caseRunsNative[$controlName]){
     $controlResourceUsage=Join-Path $resultDir "resource_usage__$controlName.json"
-    if(-not(Complete-ResourceUsage -RunDir $runDir -UsagePath $controlResourceUsage)){
-      $resourceBudgetExceeded=$true
-      throw 'SIMION control compact final retained-byte budget exceeded.'
-    }
     $caseResourceUsage[$controlName]=$controlResourceUsage
   }
-  foreach($caseName in $caseResourceUsage.Keys){
-    $caseUsage=Get-Content -LiteralPath $caseResourceUsage[$caseName] -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
-    $caseUsage.case_name=$caseName
-    $caseUsage.measurement_scope='single_transport_case_not_all_run_cases'
-    Write-ResourceUsage -Usage $caseUsage -Path $caseResourceUsage[$caseName]
-  }
+  $resourceItems=@($caseResourceUsage.Keys|ForEach-Object{@{case_name=[string]$_;path=(Convert-WorkflowOwnerPath $ownerContext $caseResourceUsage[$_])}})
+  $profileRequest=$null
   if($null-ne$dispatchPlan-and$resourceIdentityWasUnknown){
     $resourceProfile=Join-Path $resultDir 'simion_resource_profile.json'
-    Push-Location $codeRoot
-    try{
-      $env:PYTHONPATH=$codeRoot
-      & $python -m common.simion.resource_profile publish --run-id $RunId `
-        --resource-usage $resourceUsage --dispatch-plan $dispatchPlan --output $resourceProfile
-      $resourceProfileExit=$LASTEXITCODE
-    }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
-    if($resourceProfileExit-ne 0){throw 'SIMION resource profile publication failed.'}
+    $profileRequest=@{usage_path=(Convert-WorkflowOwnerPath $ownerContext $resourceObservationUsage);dispatch_plan=(Convert-WorkflowOwnerPath $ownerContext $dispatchPlan);output=(Convert-WorkflowOwnerPath $ownerContext $resourceProfile)}
   }
   $outputs=@($summary,$metrics,$resourceUsage,$exitStatePlot,$exitStatePlotManifest,
     (Join-Path $solverDir 'quad_monolithic.pa0'),
@@ -1375,6 +1595,10 @@ print(json.dumps(result,allow_nan=False))
     (Join-Path $resultDir "trajectory_samples__$primaryName.csv"),
     (Join-Path $resultDir "particle_state_contract__$primaryName.json"))
   $outputs+=@($caseResourceUsage.Values|Where-Object{$_-ne$resourceUsage})
+  $outputs+=@($checkpointOutputs)
+  $outputs+=@($fieldCheckpointOutputs|Select-Object -Unique)
+  $outputs+=@($batchCompletionReceipts)
+  $outputs+=@($retainedTrajectoryOutputs)
   if($null-ne$control){
     $outputs+=@(
       (Join-Path $resultDir "simion_summary__$controlName.json"),
@@ -1386,39 +1610,129 @@ print(json.dumps(result,allow_nan=False))
   if($mechanicalExitEnabled){$outputs+=@(Get-ChildItem -LiteralPath $resultDir -File -Filter 'mechanical_exit*'|Select-Object -ExpandProperty FullName)}
   $outputs+=@(Get-ChildItem -LiteralPath $logDir -Recurse -File|Select-Object -ExpandProperty FullName)
   if(Test-Path -LiteralPath $evaluation){$outputs+=$evaluation}
-  if($resourceProfile){$outputs+=$resourceProfile}
-  if($publishedPaBasisManifest){$outputs+=$publishedPaBasisManifest}
   $outputs=@($outputs|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf})
-  $outputs+=$retentionActions
-  Write-VerifiedRunManifest -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig `
-    -Status $scientificStatus -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
+  if($resourceProfile){$outputs+=$resourceProfile}
+  $requiredPaths=@($metrics,$primaryState,(Join-Path $resultDir "simion_summary__$primaryName.json"),$exitStatePlot,$exitStatePlotManifest)
+  if($null-ne$control){$requiredPaths+=@((Join-Path $resultDir "particle_states__$controlName.csv"),(Join-Path $resultDir "simion_summary__$controlName.json"))}
+  if(Test-Path -LiteralPath $evaluation){$requiredPaths+=$evaluation}
+  $writerCompletion=Get-RfSimionStoppedWriterCompletion -HostLease $hostExecutionLease -NativeOperations $nativeOperations -State $hostReleaseState
+  $hostReleased=$hostReleaseState.released
+  $ownerOutputs=@($outputs|ForEach-Object{Convert-WorkflowOwnerPath $ownerContext $_}|Where-Object{
+    $_.StartsWith($physicalRunDir.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase)
+  }|Select-Object -Unique)
+  $deferFinalization=$true
+  $null=Complete-RunArtifactPowerShellOwner -Context $ownerContext -Status $scientificStatus -Summary $summaryDocument `
+    -OutputPaths $ownerOutputs -RequiredOutputPaths $requiredPaths -WriterCompletion $writerCompletion -WritersStopped $true `
+    -ResourceUsagePaths $resourceItems -ResourceProfile $profileRequest -OriginalFailure $null
+  $deferFinalization=$false;$continuationCapacity=$null
+  Write-Output "MULTIPOLE_SIMION_WORKFLOW_RESULT=$ResultPath"
   $hostExecutionOutcome=$scientificStatus
   $resultMarker=if($scientificStatus-eq'success'){'PASS'}else{'FAIL'}
   Write-Output "MULTIPOLE_SIMION_RESOLVED=$resultMarker PROJECT=$ProjectId PROFILE=$DesignProfileId RUN_ID=$RunId PARENT_SHA256=$resolvedHash QUALIFICATION=$qualification"
 }catch{
   $simionRunFailure=$_
   $hostExecutionOutcome=if($resourceBudgetExceeded){'interrupted'}else{'failed'}
+  Set-RfRunPhase ''
+  $failureData=$simionRunFailure.Exception.Data
+  $waveWriterUnknown=($failureData.Contains('simion_wave_writer_completion_confirmed')-and
+    -not[bool]$failureData['simion_wave_writer_completion_confirmed'])-or
+    $failureData.Contains('simion_wave_drain_error')
+  if($failureData.Contains('simion_first_batch_drain_error')-or
+    [bool]$failureData['simion_first_batch_writer_unknown']-or$waveWriterUnknown-or
+    [bool]$failureData['rf_host_release_unconfirmed']){
+    $script:writerCompletionUnknown=$true
+    try {
+      Write-RunJson -Path $summary -Value @{schema_version=1;role='multipole_simion_finite_3d_transport_summary';status='writer_completion_unknown';reason=$simionRunFailure.Exception.Message;drain_error=$(if($failureData.Contains('simion_wave_drain_error')){[string]$failureData['simion_wave_drain_error']}else{[string]$failureData['simion_first_batch_drain_error']})}
+      Write-RunJson -Atomic -Path $ResultPath -Depth 12 -Value @{schema_version=1;role='run_artifact_workflow_result';status='failed';
+        execution_status='writer_completion_unknown';data_validity='unknown';scientific_result='NOT_EVALUATED';failure_stage=$phaseName;
+        failure_reason=$simionRunFailure.Exception.Message;recovery_action=$(if([bool]$failureData['rf_host_release_unconfirmed']){'inspect_host_release'}else{'inspect_writer_completion'});result_path=$ResultPath;
+        run_directory=$physicalRunDir;phase_timings_seconds=$phaseTimings;total_elapsed_seconds=$runTimer.Elapsed.TotalSeconds}
+    } catch { $simionRunFailure.Exception.Data['writer_unknown_result_error']=[string]$_ }
+    throw $simionRunFailure
+  }
+  if($null-ne$ownerContext-and$ownerContext.completion_written){throw $simionRunFailure}
   try{
-    Complete-FailedRun -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig -Summary $summary `
-      -SummaryRole 'multipole_simion_finite_3d_transport_summary' -Reason $simionRunFailure.Exception.Message `
-      -Software @('SIMION 2020','Python 3.11') `
-      -Status $(if($resourceBudgetExceeded){'interrupted'}else{'failed'}) `
-      -FailureClass $(if($resourceBudgetExceeded){'resource_budget_exceeded'}else{''}) `
-      -ResourceUsagePath $(if($null-ne(Get-Variable resourceUsage -ErrorAction SilentlyContinue)){$resourceUsage}else{''})
+    $failureDetails=@{}
+    if($simionRunFailure.Exception.Data['simion_additional_checkpoint_error']){
+      $failureDetails.additional_checkpoint_error=[string]$simionRunFailure.Exception.Data['simion_additional_checkpoint_error']
+    }
+    $ownerReady=$null-ne(Get-Variable workflowRequestPath -ErrorAction SilentlyContinue)-and(Test-Path -LiteralPath $workflowRequestPath)
+    if($ownerReady){
+      $currentConfig=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+      $ownerReady=$currentConfig.inputs-is[Collections.IDictionary]-and$currentConfig.inputs.Contains('execution_request')-and
+        $currentConfig.inputs.execution_request-ceq$workflowRequestPath
+    }
+    if($ownerReady){
+      $failedSummary=[ordered]@{schema_version=1;role='multipole_simion_finite_3d_transport_summary';status=$hostExecutionOutcome;run_id=$RunId;
+        execution_status='failed';data_validity='unknown';scientific_result='NOT_EVALUATED';failure_stage=$phaseName;
+        failure_reason=$simionRunFailure.Exception.Message;recovery_action='use_explicit_predecessor_new_run';
+        phase_timings_seconds=$phaseTimings;elapsed_before_finalization_seconds=$runTimer.Elapsed.TotalSeconds}
+      foreach($key in $failureDetails.Keys){$failedSummary[$key]=$failureDetails[$key]}
+      $failureOutputs=@(foreach($directory in @($resultDir,$logDir,$solverDir)){
+        if(Test-Path -LiteralPath $directory){Get-ChildItem -LiteralPath $directory -Recurse -File|Select-Object -ExpandProperty FullName}
+      })
+      $failureUsage=@(Get-ChildItem -LiteralPath $resultDir -File -Filter 'resource_usage*.json'|ForEach-Object{
+        @{case_name=$_.BaseName;path=(Convert-WorkflowOwnerPath $ownerContext $_.FullName)}
+      })
+      $writerCompletion=Get-RfSimionStoppedWriterCompletion -HostLease $hostExecutionLease -NativeOperations $nativeOperations -State $hostReleaseState
+  $hostReleased=$hostReleaseState.released
+      $deferFinalization=$true
+      $null=Complete-RunArtifactPowerShellOwner -Context $ownerContext -Status $hostExecutionOutcome -Summary $failedSummary `
+        -OutputPaths $failureOutputs -WriterCompletion $writerCompletion -WritersStopped $true `
+        -ResourceUsagePaths $failureUsage -OriginalFailure $simionRunFailure
+      $deferFinalization=$false;$continuationCapacity=$null
+      Write-Output "MULTIPOLE_SIMION_WORKFLOW_RESULT=$ResultPath"
+    }else{
+      Complete-FailedRun -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig -Summary $summary `
+        -SummaryRole 'multipole_simion_finite_3d_transport_summary' -Reason $simionRunFailure.Exception.Message `
+        -Software @('SIMION 2020','Python 3.11') -Status $hostExecutionOutcome -AdditionalSummaryProperties $failureDetails
+      Write-RunJson -Atomic -Path $ResultPath -Depth 12 -Value @{schema_version=1;role='run_artifact_workflow_result';status=$hostExecutionOutcome;
+        execution_status='failed';data_validity='unknown';scientific_result='NOT_EVALUATED';failure_stage=$phaseName;
+        failure_reason=$simionRunFailure.Exception.Message;recovery_action='inspect_failure';result_path=$ResultPath;
+        run_directory=$physicalRunDir;phase_timings_seconds=$phaseTimings;total_elapsed_seconds=$runTimer.Elapsed.TotalSeconds}
+    }
   }catch{
-    $simionRunFailure.Exception.Data['failure_closure_error']=$_.Exception.Message
-    Write-Warning "SIMION failure closure also failed: $($_.Exception.Message)"
+    $closureFailure=$_
+    $simionRunFailure.Exception.Data['failure_closure_error']=$closureFailure.Exception.Message
+    if($closureFailure.Exception.Data['rf_host_release_unconfirmed']){
+      $script:deferFinalization=$true
+      $hostReleaseState.unknown=$true
+      $simionRunFailure.Exception.Data['host_release_error']=$closureFailure.Exception.Message
+      $blockedSummary=@{execution_status='host_release_unconfirmed';failure_stage='host_release';failure_reason=$closureFailure.Exception.Message;
+        recovery_action='inspect_host_release';secondary_errors=@($closureFailure.Exception.Message);
+        phase_timings_seconds=$phaseTimings;total_elapsed_seconds=$runTimer.Elapsed.TotalSeconds}
+      try{
+        $null=Complete-RunArtifactPowerShellOwner -Context $ownerContext -Status failed -Summary $blockedSummary `
+          -WriterCompletion @{operations=@($nativeOperations);resource_releases=@()} -WritersStopped $false -OriginalFailure $simionRunFailure
+      }catch{
+        if($_.Exception.Message-notmatch'native writer completion is unknown'){
+          $simionRunFailure.Exception.Data['host_unknown_result_error']=[string]$_
+        }
+      }
+    }
+    Write-Warning "SIMION failure closure also failed: $($closureFailure.Exception.Message)"
   }
   throw $simionRunFailure
 }finally{
+  if(-not$script:writerCompletionUnknown-and-not$hostReleaseState.unknown){
   try { Remove-RunPackageExecutionAlias -Package $package } catch {
     Write-Warning "Could not remove short execution alias after SIMION run: $($_.Exception.Message)"
   }
-  try{Exit-HostExecutionLease -Lease $hostExecutionLease -Outcome $hostExecutionOutcome -RunId $RunId}
+  try{if(-not$hostReleased){Exit-HostExecutionLease -Lease $hostExecutionLease -Outcome $hostExecutionOutcome -RunId $RunId}}
   catch{
     if($null-eq$simionRunFailure){throw}
     $simionRunFailure.Exception.Data['host_release_error']=$_.Exception.Message
     Write-Warning "SIMION host cleanup also failed: $($_.Exception.Message)"
+  }
+  foreach($stream in $continuationGuards){$stream.Dispose()}
+  if($null-ne$fieldCheckpointGuard){
+    try{Close-RfSimionFieldCheckpointGuard -Context $fieldCheckpointGuard}
+    catch{if($null-eq$simionRunFailure){throw};$simionRunFailure.Exception.Data['field_guard_cleanup_error']=[string]$_}
+  }
+  if($null-ne$continuationCapacity-and-not$deferFinalization){
+    try{Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $continuationCapacity|Out-Null}
+    catch{if($null-eq$simionRunFailure){throw};$simionRunFailure.Exception.Data['capacity_release_error']=[string]$_}
+  }
   }
 }
 # Preserve the public launcher's scientific-failure signal after releasing the grant.

@@ -176,6 +176,8 @@ def resolve_simion_layout_template(
     for role, manifest_role, expected_sha in (
         ("iob", "template_iob", registry["iob_sha256"]),
         ("con", "template_con", registry["con_sha256"]),
+        ("placeholder_pa0", "template_placeholder_pa0",
+         manifest_inputs.get("template_placeholder_pa0", {}).get("sha256", "")),
     ):
         manifest_record = manifest_inputs.get(manifest_role, {})
         path = relocated_manifest_path(

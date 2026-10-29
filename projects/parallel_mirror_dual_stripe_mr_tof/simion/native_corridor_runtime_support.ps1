@@ -4,6 +4,30 @@ $nativeCorridorRepoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 . (Join-Path $nativeCorridorRepoRoot 'common\simion\short_pa_path_support.ps1')
 . (Join-Path $nativeCorridorRepoRoot 'common\simion\native_fast_adjust_runtime_support.ps1')
 
+function Protect-MrtofContinuationEvidence {
+  param([string]$Parent,$Session,[string]$Python,[string]$RepoRoot,$Guards)
+  function Get-MrtofContinuationProjection {
+    Push-Location -LiteralPath $RepoRoot;$saved=$env:PYTHONPATH
+    try {
+      $env:PYTHONPATH=$RepoRoot
+      $output=& $Python -B -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_continuation --predecessor-run-dir $Parent --protection-projection
+      if($LASTEXITCODE-ne0){throw 'Continuation protection projection failed.'}
+      return (($output -join "`n")|ConvertFrom-Json -AsHashtable -Depth 100)
+    } finally {$env:PYTHONPATH=$saved;Pop-Location}
+  }
+  $before=Get-MrtofContinuationProjection
+  $protected=@($before.run_directories)+@($before.files)
+  $Session=(Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $Session -ProtectedPaths @($protected|Select-Object -Unique)).session
+  foreach($path in @($before.files|Select-Object -Unique)){
+    $Guards.Add([IO.File]::Open([string]$path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
+  }
+  $after=Get-MrtofContinuationProjection
+  if((ConvertTo-Json -InputObject $before -Depth 100 -Compress)-cne(ConvertTo-Json -InputObject $after -Depth 100 -Compress)){
+    throw 'Continuation protection projection changed after admission.'
+  }
+  return $Session
+}
+
 # Production adapter for run_two_prism_trial: only standalone source copies
 # enter SIMION; the native family belongs to a flight or its sequential workflow.
 function New-NativeCorridorRuntimeFamily {
@@ -17,7 +41,8 @@ function New-NativeCorridorRuntimeFamily {
     [Parameter(Mandatory)][string]$RepoRoot,
     [Parameter(Mandatory)][string]$SimionExe,
     [Parameter(Mandatory)]$ResourceLease,
-    [Parameter(Mandatory)][string]$RunId
+    [Parameter(Mandatory)][string]$RunId,
+    [Collections.Generic.List[object]]$NativeOperationObservations=$null,[scriptblock]$InvokeNativeOperation=$null
   )
   return New-NativeFastAdjustRuntimeFamily -GenerationDirectory $BankGenerationDirectory `
     -ExpectedCacheKey $CacheKey -ExpectedGenerationSha256 $GenerationSha256 `
@@ -25,7 +50,8 @@ function New-NativeCorridorRuntimeFamily {
     -RawName 'mrtof_analyzer_corridor.pa#' -FamilyPrefix 'mrtof_analyzer_corridor' `
     -ExpectedResponseIds @(1..8) -DestinationDirectory $DestinationDirectory `
     -Python $Python -RepoRoot $RepoRoot -SimionExe $SimionExe -ResourceLease $ResourceLease `
-    -RunId $RunId -ReceiptRole 'mrtof_private_native_corridor_family'
+    -RunId $RunId -ReceiptRole 'mrtof_private_native_corridor_family' `
+    -NativeOperationObservations $NativeOperationObservations -InvokeNativeOperation $InvokeNativeOperation
 }
 
 function Get-NativeAcceleratorRuntimeFamily {
@@ -110,7 +136,8 @@ function Get-NativeCorridorRuntimeFamily {
     [Parameter(Mandatory)][string]$CacheKey,[Parameter(Mandatory)][string]$GenerationSha256,
     [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot,
     [Parameter(Mandatory)][string]$SimionExe,[Parameter(Mandatory)]$ResourceLease,
-    [Parameter(Mandatory)][string]$RunId
+    [Parameter(Mandatory)][string]$RunId,
+    [Collections.Generic.List[object]]$NativeOperationObservations=$null,[scriptblock]$InvokeNativeOperation=$null
   )
   if([string]$CapacityWorkflowSession.status-ne'active'-or[string]::IsNullOrWhiteSpace([string]$Session.lease_id)-or
      [string]$Session.lease_id-ne[string]$CapacityWorkflowSession.lease_id){
@@ -226,11 +253,12 @@ function Get-ManagedNativeCorridorRuntimeFamily {
     [Parameter(Mandatory)][string]$BankGenerationDirectory,[Parameter(Mandatory)][string]$CacheKey,
     [Parameter(Mandatory)][string]$GenerationSha256,[Parameter(Mandatory)][string]$Python,
     [Parameter(Mandatory)][string]$RepoRoot,[Parameter(Mandatory)][string]$SimionExe,
-    [Parameter(Mandatory)]$ResourceLease,[Parameter(Mandatory)][string]$RunId)
+    [Parameter(Mandatory)]$ResourceLease,[Parameter(Mandatory)][string]$RunId,
+    [Collections.Generic.List[object]]$NativeOperationObservations=$null,[scriptblock]$InvokeNativeOperation=$null)
   $directory=Assert-NativeCorridorRuntimeSessionDirectory -Session $Session
   $reused=$null-ne$Session.runtime
   if(-not$reused-and(Test-Path -LiteralPath $Session.checkpoint_path)){
-    $open=@{};foreach($key in $PSBoundParameters.Keys){if($key-notin@('ResourceLease','RunId')){$open[$key]=$PSBoundParameters[$key]}}
+    $open=@{};foreach($key in $PSBoundParameters.Keys){if($key-notin@('ResourceLease','RunId','NativeOperationObservations','InvokeNativeOperation')){$open[$key]=$PSBoundParameters[$key]}}
     Open-NativeCorridorRuntimeCheckpoint @open
     $reused=$true
   }
@@ -246,7 +274,8 @@ function Get-ManagedNativeCorridorRuntimeFamily {
     $runtime=New-NativeCorridorRuntimeFamily -BankGenerationDirectory $BankGenerationDirectory `
       -CacheKey $CacheKey -GenerationSha256 $GenerationSha256 `
       -DestinationDirectory $Session.execution_alias -Python $Python -RepoRoot $RepoRoot -SimionExe $SimionExe `
-      -ResourceLease $ResourceLease -RunId $RunId
+      -ResourceLease $ResourceLease -RunId $RunId `
+      -NativeOperationObservations $NativeOperationObservations -InvokeNativeOperation $InvokeNativeOperation
     $ResourceLease=$runtime.resource_lease
     Protect-ManagedNativeFamily -Session $Session -FreshGeneration
     $members=@(Get-NativeRuntimeInventory -Directory $directory -Python $Python -RepoRoot $RepoRoot)

@@ -16,7 +16,7 @@
 | 构造母群、释放与粒子身份 | [离子释放](ion_release/README.md) |
 | 计算峰宽、比较场或配对粒子数据 | [公共分析](analysis/README.md) |
 | 维护COMSOL启动器与共享小模型 | [COMSOL实现](comsol/README.md) |
-| 维护SIMION执行、PA缓存、批次与恢复 | [SIMION实现](simion/README.md) |
+| 维护SIMION执行、PA缓存、批次与恢复 | [SIMION实现](simion/README.md)；批次协调使用 `Invoke-SimionBatchPhase`，科学物化和接受条件由调用方提供 |
 | 维护STEP导入、SolidWorks生成和引用检查 | [SolidWorks桥接](solidworks/README.md) |
 | 定位源码与artifact路径 | [路径机制](paths/README.md) |
 
@@ -247,10 +247,12 @@ PID与创建时间继续识别后代，确认相关进程退出才回收。状�
 本次采样合计37.6740721 s，外层127.286349 s包含准入等未细分开销，且同时有L2背景负载，不能据此
 宣称求解或整个调度器提速。旧轮57.0983365 s调度观测中的长退出间隔未完整分段，也不计入采样收益。
 
-单进程观察器`Invoke-ResourceBudgetedProcess`只接收调用者在冻结边界解析的`-Limits`对象，
-观察收据记录完整limits；`Complete-ResourceUsage`只读取已有usage收据收尾，不重新解析预算。
+单进程观察器`Invoke-ResourceBudgetedProcess`接收调用者在冻结边界解析的`-Limits`对象，
+观察收据记录完整limits；没有项目工程预算的入口可显式传`-Limits $null`，仍跟踪进程身份、退出及公共物理危险，
+不生成usage或虚构预算。`Complete-ResourceUsage`只读取已有usage收据收尾，不重新解析预算。
 启动后的身份或采样异常先沿同一实际Process句柄等待根进程自然退出，再抛回原ErrorRecord；
-异常Data中的`observed_process_exit_confirmed`／`observed_process_returncode`仅证明该直接根进程。
+异常Data中的`observed_process_exit_confirmed`／`observed_process_returncode`仅证明该直接根进程；
+`observed_process_id`／`observed_process_started_at_utc_ticks`保留同一handle实际取得的身份，未取得启动时刻则为null。
 等待自身失败时明确为未确认，并把次错保留在`observed_process_wait_error`；调用者不能据此释放
 仍可能被使用的输入保护或执行载荷清理。这不替代host owner释放，也不证明任意后代进程已经停止。
 Python向PowerShell传递派生预算可使用任务临时JSON，解析后由调用者finally清理；冻结的工程预算仍是输入权威。

@@ -39,6 +39,51 @@ function New-FrontendFlightSpecification {
   }
 }
 
+function Write-FrontendBatchCheckpoint {
+  <# Retain a small natural-exit fact; the stopped owner binds it once at terminal publication. #>
+  param([Parameter(Mandatory)]$Record,[Parameter(Mandatory)][string]$Phase,
+    [Parameter(Mandatory)][string]$RunDirectory,[Parameter(Mandatory)][string]$RunConfig,
+    [Parameter(Mandatory)][string]$WorkbenchReceiptPath,[Parameter(Mandatory)][string]$DispatchPlanPath,
+    [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot)
+  if($null-eq$Record.exit_code-or[int]$Record.exit_code-ne0){return}
+  if(-not(Test-Path -LiteralPath $WorkbenchReceiptPath -PathType Leaf)-or
+     -not(Test-Path -LiteralPath $DispatchPlanPath -PathType Leaf)){return}
+  $workbench=Get-Content -LiteralPath $WorkbenchReceiptPath -Raw|ConvertFrom-Json -Depth 100
+  $cases=@($workbench.batches|Where-Object{[string]$_.case_id-ceq[string]$Record.name})
+  if($cases.Count-ne1){return} # Replanning may have failed before the final case existed.
+  $case=$cases[0]
+  if([string]$Record.name-cnotmatch'^[A-Za-z0-9_-]+$'-or$Phase-cnotmatch'^[a-z][a-z0-9_]*$'){throw 'Invalid frontend checkpoint identity.'}
+  $stdout=[string]$Record.specification.stdout
+  if(-not(Test-Path -LiteralPath $stdout -PathType Leaf)){throw 'Completed frontend batch has no stdout.'}
+  $directory=Join-Path $RunDirectory "results/frontend_batch_completion/$Phase"
+  New-Item -ItemType Directory -Path $directory -Force|Out-Null
+  $receipt=Join-Path $directory ($Record.name+'.json')
+  $range=@($case.source_row_range)
+  if($range.Count-ne2){throw 'Completed frontend batch lacks its source row range.'}
+  $fact=[ordered]@{schema_version=1;role='frontend_batch_natural_completion';
+    phase=$Phase;case_id=[string]$Record.name;exit_code=0;natural_exit=$true;
+    stdout_relative_path=[IO.Path]::GetRelativePath($RunDirectory,$stdout);
+    count=[int]$case.count;source_row_range=@([int]$range[0],[int]$range[1])}
+  if($Record.PSObject.Properties.Name-contains'observed_process_cpu_percent'){
+    $fact.resource_observation=@{peak_bytes=[long]$Record.peak_managed_memory_bytes;
+      process_cpu_percent=[double]$Record.observed_process_cpu_percent;
+      background_cpu_percent=[double]$Record.observed_background_cpu_percent}
+  }
+  if($case.PSObject.Properties.Name-contains'control_records'){
+    $controls=@($case.control_records|ForEach-Object{[string]$_.path})+@([string]$case.iob_path,[string]$case.iob_reopen_record.path)
+  }else{
+    $controls=@(foreach($kind in @('program','particles','build_spec','iob')){
+      $item=$case.outputs.$kind
+      if($null-eq$item){throw "Completed frontend batch lacks $kind."}
+      [string]$item.path
+    })
+  }
+  foreach($path in $controls){
+    if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Completed frontend batch lacks control $path."}
+  }
+  Write-RunJson -Path $receipt -Value $fact -Atomic
+}
+
 function Invoke-FrontendIobBuild {
   [CmdletBinding()]
   param(
@@ -82,7 +127,8 @@ function Invoke-FrontendFlightPhase {
     $ContinuationWorkbench=$null,
     [string]$WorkbenchReceiptPath='',
     $Prepared=$null,
-    [scriptblock]$IobVerification=$null
+    [scriptblock]$IobVerification=$null,
+    [scriptblock]$OnProcessCompleted=$null
   )
   $context=@{Python=$Python;RepoRoot=$RepoRoot;RunDirectory=$RunDirectory}
   $native=@{RunDirectory=$RunDirectory;SimionExe=$SimionExe;Limits=$Limits;Phase=$Phase;Python=$Python;RepoRoot=$RepoRoot}
@@ -113,23 +159,25 @@ function Invoke-FrontendFlightPhase {
   $plan=Get-Content -LiteralPath $dispatch -Raw|ConvertFrom-Json -Depth 100
   $initial=if($null-ne$ContinuationWorkbench){$ContinuationWorkbench}else{Invoke-FrontendRuntimePython @context -Name "$Phase.materialize-initial" `
     -Arguments (@('-m',$RuntimeModule,'materialize-batches')+$phaseArgs+@('--batch-plan',$dispatch)) -Json}
-  $formalIndex=$null;$processRecords=@()
+  $formalIndex=$null;$firstSpecification=$null;$replan=$null;$afterDrain=$null
   if((-not$recovery)-and$plan.estimation.kind-eq'formal_first_batch_observation'){
+    $provisional=Join-Path $RunDirectory "results/$Phase.provisional_dispatch_plan.json"
+    Copy-Item -LiteralPath $dispatch -Destination $provisional
     $first=@($initial.batches)[0]
-    Invoke-FrontendIobBuild @native -Case $first
+    $null=Invoke-FrontendIobBuild @native -Case $first
+    # Publish the original formal interval and its built controls before it can
+    # start. A later replan failure must retain the actual first-batch identity.
+    if($WorkbenchReceiptPath){Write-RunJson -Path $WorkbenchReceiptPath -Value $initial -Depth 100}
     $formalIndex=[int]$first.index
-    $formal=Start-ObservedFormalProcess -DispatchPlanPath $dispatch `
-      -ProcessSpecification (New-FrontendFlightSpecification -Case $first -SimionExe $SimionExe)
-    $processRecords=@($formal.process_record)
-  }
-  # Once observation has started a worker, every preparation exit must return
-  # it to the public runner before the owner can publish a terminal manifest.
-  try{
-    if($null-ne$formalIndex){
-      $firstBatchCompleted=[bool]$formal.process_record.completed
-      if($formal.resource_budget_exceeded-or($firstBatchCompleted-and(-not$formal.completed_naturally-or[int]$formal.exit_code-ne0))){
-        throw "Frontend $Phase formal work failed."
+    $afterDrain={
+      if($IobVerification){
+        & $IobVerification -Operation after_first_fly -Case $first -BuildResult $null -Phase $Phase -RunDirectory $RunDirectory `
+          -SimionExe $SimionExe -Limits $Limits -Python $Python -RepoRoot $RepoRoot
       }
+    }
+    $replan={
+      param($formal)
+      $firstBatchCompleted=[bool]$formal.process_record.completed
       $adaptive=$scheduler+@('--observed-formal-peak-bytes',"$($formal.observed_peak_process_tree_working_set_bytes)",
         '--observed-formal-cpu-percent',"$($formal.observed_process_cpu_percent)",
         '--observed-background-cpu-percent',"$($formal.observed_background_cpu_percent)",
@@ -137,6 +185,34 @@ function Invoke-FrontendFlightPhase {
       if($firstBatchCompleted){$adaptive+='--first-batch-completed'}
       Invoke-FrontendRuntimePython @context -Name "$Phase.dispatch-followup" -Arguments $adaptive
     }
+    $firstSpecification=New-FrontendFlightSpecification -Case $first -SimionExe $SimionExe
+  }
+  if($recovery-and$plan.PSObject.Properties['estimation']-and$plan.estimation.PSObject.Properties['recovered_missing_observation']-and
+      [bool]$plan.estimation.recovered_missing_observation){
+    $replayPlan=Get-Content -LiteralPath $ContinuationPlanPath -Raw|ConvertFrom-Json -Depth 100
+    $replayKeys=@($replayPlan.units|Where-Object{$_.action-eq'replay'}|ForEach-Object{[string]$_.key})
+    if($replayKeys.Count-gt0){
+      $missing=@($initial.batches|Where-Object{[string]$_.case_id-ceq$replayKeys[0]})
+      if($missing.Count-ne1){throw 'Unobserved recovered dispatch lacks its unique missing unit.'}
+      $first=$missing[0];$formalIndex=[int]$first.index
+      $null=Invoke-FrontendIobBuild @native -Case $first
+      if($WorkbenchReceiptPath){Write-RunJson -Path $WorkbenchReceiptPath -Value $initial -Depth 100}
+      $firstSpecification=New-FrontendFlightSpecification -Case $first -SimionExe $SimionExe
+      $replan={param($formal)
+        $arguments=@('-m','common.simion.resource_scheduler','--recovered-missing-plan',$dispatch,'--output',$dispatch,
+          '--observed-formal-peak-bytes',[string]$formal.observed_peak_process_tree_working_set_bytes,
+          '--observed-formal-cpu-percent',[string]$formal.observed_process_cpu_percent,
+          '--observed-background-cpu-percent',[string]$formal.observed_background_cpu_percent,
+          '--available-memory-bytes',[string]$formal.available_memory_bytes,
+          '--total-physical-memory-bytes',[string]$formal.total_physical_memory_bytes)
+        if($formal.process_record.completed){$arguments+='--first-batch-completed'}
+        Invoke-FrontendRuntimePython @context -Name "$Phase.recovered-missing-dispatch" -Arguments $arguments
+      }
+      $afterDrain={if($IobVerification){& $IobVerification -Operation after_first_fly -Case $first -BuildResult $null -Phase $Phase -RunDirectory $RunDirectory -SimionExe $SimionExe -Limits $Limits -Python $Python -RepoRoot $RepoRoot}}
+    }
+  }
+  $prepareRemaining={
+    param($formal)
     $materialized=if($recovery){$initial}else{Invoke-FrontendRuntimePython @context -Name "$Phase.materialize-complete" `
       -Arguments (@('-m',$RuntimeModule,'materialize-batches')+$phaseArgs+@('--batch-plan',$dispatch)) -Json}
     if($materialized.coverage-ne'complete_population'-or@($materialized.pending_particle_ids).Count){throw 'Final frontend dispatch does not cover the complete mother source.'}
@@ -162,49 +238,30 @@ function Invoke-FrontendFlightPhase {
     # run can retain already complete batches through its normal manifest.
     if($WorkbenchReceiptPath){Write-RunJson -Path $WorkbenchReceiptPath -Value $materialized -Depth 100}
     foreach($case in $pending){
-      Invoke-FrontendIobBuild @native -Case $case
+      $null=Invoke-FrontendIobBuild @native -Case $case
       if($WorkbenchReceiptPath){Write-RunJson -Path $WorkbenchReceiptPath -Value $materialized -Depth 100}
     }
-    if((-not$recovery)-and$null-ne$materialized.gui_case){Invoke-FrontendIobBuild @native -Case $materialized.gui_case}
+    if((-not$recovery)-and$null-ne$materialized.gui_case){$null=Invoke-FrontendIobBuild @native -Case $materialized.gui_case}
     $specifications=@($pending|ForEach-Object{New-FrontendFlightSpecification -Case $_ -SimionExe $SimionExe})
-  }catch{
-    $preparationFailure=$_
-    if($processRecords.Count){
-      try{
-        $null=Invoke-ResourceBudgetedProcesses -DispatchPlanPath $dispatch -RunDir $RunDirectory -UsagePath $usage `
-          -ProcessSpecifications @() -ExistingProcessRecords $processRecords
-      }catch{Write-Warning "Frontend first-batch drain failed: $_"}
-      if($IobVerification){
-        try{
-          & $IobVerification -Operation after_first_fly -Case $first -BuildResult $null -Phase $Phase -RunDirectory $RunDirectory `
-            -SimionExe $SimionExe -Limits $Limits -Python $Python -RepoRoot $RepoRoot
-        }catch{Write-Warning "Frontend first-batch controls changed: $_"}
-      }
-    }
-    throw $preparationFailure
+    [pscustomobject]@{pending=$specifications;materialized=$materialized}
   }
-  if($recovery-and$specifications.Count-eq0){
-    # Reused work has no process or resource-usage receipt in this run.
+  $wave=Invoke-SimionBatchPhase -DispatchPlanPath $dispatch -RunDir $RunDirectory -UsagePath $usage `
+    -FirstSpecification $firstSpecification -Replan $replan -PrepareRemaining $prepareRemaining -AfterDrain $afterDrain `
+    -OnProcessCompleted $OnProcessCompleted
+  $materialized=$wave.prepared.materialized
+  if($wave.resource_budget_exceeded-or@($wave.processes|Where-Object{[int]$_.exit_code-ne0}).Count){
+    try{throw "Frontend $Phase batch flight failed."}catch{
+      $_.Exception.Data['simion_wave_writer_completion_confirmed']=-not[bool]$wave.resource_budget_exceeded
+      throw
+    }
+  }
+  if($recovery-and@($wave.prepared.pending).Count-eq0-and@($wave.processes).Count-eq0){
     $materialized|Add-Member -NotePropertyName native_process_records -NotePropertyValue @() -Force
     return $materialized
   }
-  $wave=Invoke-ResourceBudgetedProcesses -DispatchPlanPath $dispatch -RunDir $RunDirectory -UsagePath $usage `
-    -ProcessSpecifications $specifications -ExistingProcessRecords $processRecords
-  $controlFailure=$null
-  if($null-ne$formalIndex-and$IobVerification){
-    try{
-      & $IobVerification -Operation after_first_fly -Case $first -BuildResult $null -Phase $Phase -RunDirectory $RunDirectory `
-        -SimionExe $SimionExe -Limits $Limits -Python $Python -RepoRoot $RepoRoot
-    }catch{$controlFailure=$_}
-  }
-  if($wave.resource_budget_exceeded-or@($wave.processes|Where-Object{[int]$_.exit_code-ne0}).Count){
-    if($controlFailure){Write-Warning ([string]$controlFailure)}
-    throw "Frontend $Phase batch flight failed."
-  }
-  if($controlFailure){throw $controlFailure}
   $materialized|Add-Member -NotePropertyName native_process_records -NotePropertyValue @($wave.processes) -Force
   Complete-ResourceUsage -RunDir $RunDirectory -UsagePath $usage|Out-Null
-  if($null-ne$formalIndex){
+  if($null-ne$formalIndex-and-not$recovery){
     $profileName=if($Phase-eq'extraction'){'simion_resource_profile.json'}else{"$Phase.simion_resource_profile.json"}
     Invoke-FrontendRuntimePython @context -Name "$Phase.resource-profile-publish" -Arguments @(
       '-m','common.simion.resource_profile','publish','--run-id',([IO.Path]::GetFileName($RunDirectory)),

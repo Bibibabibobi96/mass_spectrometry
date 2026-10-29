@@ -363,3 +363,28 @@ function ConvertTo-RfSimionLuaConfig {
         -SharedProgramPath $SharedProgramPath
     return $luaConfig
 }
+
+function Write-RfSimionPreparedFlyIdentity {
+    param([Parameter(Mandatory)]$CoreConfig,[Parameter(Mandatory)][string]$Path,
+          [Parameter(Mandatory)][string]$CaseName,[Parameter(Mandatory)]$SourcePackage,
+          [Parameter(Mandatory)][string[]]$SourceRelativePaths,[Parameter(Mandatory)][string]$ProgramSourcePath,
+          [Parameter(Mandatory)][string[]]$NativeFlyArguments)
+    # Exclude only transport/output locations. All physical and numerical values
+    # are consumed from this same core config by the Lua and native arguments.
+    $physical=[ordered]@{}
+    foreach($key in $CoreConfig.Keys){
+        if($key-notin@('iob','fly2','source_states','particle_state_csv','trajectory_csv','summary_json')){$physical[$key]=$CoreConfig[$key]}
+    }
+    $projection=[ordered]@{}
+    foreach($key in $CoreConfig.Keys){$projection[$key]=if($physical.Contains($key)){$CoreConfig[$key]}else{'@'+$key}}
+    $physical.lua_configuration=ConvertTo-RfSimionLuaConfig -CoreConfig $projection -SharedProgramPath $ProgramSourcePath
+    $physical.native_fly_arguments=@($NativeFlyArguments)
+    $source=[ordered]@{}
+    foreach($name in $SourceRelativePaths){
+        $canonical=$name.Replace('\','/')
+        $matches=@($SourcePackage.files|Where-Object{$_.relative_path.Replace('\','/')-ceq$canonical})
+        if($matches.Count-ne1){throw "RF frozen source dependency is missing: $canonical"}
+        $source[$canonical]=[string]$matches[0].sha256
+    }
+    Write-RunJson -Path $Path -Value @{schema_version=1;role='multipole_simion_fly_physics';source_modules=$source;cases=@{$CaseName=$physical}} -Depth 20
+}

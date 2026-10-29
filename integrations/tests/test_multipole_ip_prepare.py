@@ -193,6 +193,8 @@ class MultipoleIPPreparationTests(unittest.TestCase):
         self.assertGreater(row["kinetic_energy_eV"], 0.)  # raw interpolation fixture energy is deliberately zero
         self.assertIsNone(row["phase_reference_id"])
         self.assertEqual(admission["mother_fates"][2]["terminal_reason"], "unknown")
+        self.assertEqual({fate["particle_weight"] for fate in admission["mother_fates"].values()},
+                         {row["particle_weight"]})
         self.assertEqual(admission["census"]["non_exit_particle_ids"], [9])
         for name in ("clock_authority", "instrument_epoch"):
             self.assertEqual((self.run / f"inputs/{name}.json").read_bytes(), (self.source / f"inputs/{name}.json").read_bytes())

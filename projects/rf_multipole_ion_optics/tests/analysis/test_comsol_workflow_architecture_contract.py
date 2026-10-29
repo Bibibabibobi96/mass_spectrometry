@@ -709,6 +709,57 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
 class ComsolSolverNumericsFailureTests(unittest.TestCase):
+    def test_simion_failed_closure_unconfirmed_host_preserves_owner_and_primary_error(self) -> None:
+        command = r"""
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. (Join-Path $PWD 'common/contracts/run_artifact_workflow.ps1')
+. (Join-Path $PWD 'projects/rf_multipole_ion_optics/runtime/simion_execution.ps1')
+$root=$env:RF_CLOSURE_ROOT;$physicalRunDir=$root;$runDir=$root;$resultDir=$root;$logDir=$root;$solverDir=$root
+New-Item -ItemType Directory (Join-Path $root 'logs')|Out-Null
+$runConfig=Join-Path $root 'run_config.json';$workflowRequestPath=Join-Path $root 'request.json'
+$manifestPath=Join-Path $root 'run_manifest.json';'{"schema_version":1,"status":"checkpoint"}'|Set-Content $manifestPath
+$manifestBefore=[IO.File]::ReadAllText($manifestPath)
+'{}'|Set-Content $workflowRequestPath
+@{inputs=@{execution_request=$workflowRequestPath}}|ConvertTo-Json|Set-Content $runConfig
+$ResultPath=Join-Path $root 'result.json';$summary=Join-Path $root 'summary.json'
+$ownerContext=@{run_directory=$root;result_path=$ResultPath;request_path=$workflowRequestPath;completion_written=$false;session=@{status='active'}}
+$hostExecutionLease=@{inherited=$false;token='owned-token'};$hostReleaseState=@{released=$false;completion=$null;unknown=$false}
+$nativeOperations=@(@{operation_id='fly';resource_release_id='simion';observation=@{exit_confirmed=$true;returncode=0;process_id=71;process_started_at_utc_ticks=[long]12345}})
+$script:releases=0;$script:cleanups=0
+function Exit-HostResourceStage {param($Lease,[switch]$PassThru);$script:releases++;throw 'injected host release failure'}
+function Exit-HostExecutionLease {$script:cleanups++;throw 'host released twice'}
+function Remove-RunPackageExecutionAlias {$script:cleanups++;throw 'unknown host alias removed'}
+function Exit-ArtifactWorkflowCapacitySession {$script:cleanups++;throw 'unknown host capacity released'}
+function Close-RfSimionFieldCheckpointGuard {$script:cleanups++;throw 'unknown host source guard released'}
+function Set-RfRunPhase {}
+$package=@{};$resourceBudgetExceeded=$false;$hostReleased=$false;$deferFinalization=$false;$script:writerCompletionUnknown=$false
+$fieldCheckpointGuard=@{};$continuationGuards=@();$continuationCapacity=@{status='active'}
+$RunId='fixture';$ProjectId='rf_multipole_ion_optics';$phaseName='analysis';$phaseTimings=@{};$runTimer=[Diagnostics.Stopwatch]::StartNew()
+$tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($env:RF_TRANSPORT_RUNNER,[ref]$tokens,[ref]$errors)
+$owner=@($ast.EndBlock.Statements|Where-Object{$_-is[Management.Automation.Language.TryStatementAst]-and$_.CatchClauses.Count-and$_.CatchClauses[0].Extent.Text.Contains('$simionRunFailure=$_')})[-1]
+$tail=$owner.CatchClauses[0].Extent.Text+'finally'+$owner.Finally.Extent.Text
+$caught=$null;try{. ([scriptblock]::Create("try{throw [InvalidOperationException]::new('original solver failure')}"+$tail))}catch{$caught=$_}
+if($null-eq$caught-or$caught.Exception.Message-cne'original solver failure'){throw 'Primary failure was replaced'}
+if($caught.Exception.Data['failure_closure_error']-cne'injected host release failure'-or$caught.Exception.Data['host_release_error']-cne'injected host release failure'){throw 'Host/closure facts were lost'}
+if($script:releases-ne1-or$script:cleanups-ne0-or-not$hostReleaseState.unknown-or-not$deferFinalization){throw 'Unknown host ownership was released'}
+if(Test-Path (Join-Path $root 'results/execution_completion.json')){throw 'Unconfirmed host published completion'}
+if([IO.File]::ReadAllText($manifestPath)-cne$manifestBefore){throw 'Unconfirmed host changed parent terminal authority'}
+if(-not$nativeOperations[0].observation.exit_confirmed){throw 'A stopped native worker was changed to running'}
+"""
+        with tempfile.TemporaryDirectory(prefix="rf-host-unknown-") as directory:
+            environment = os.environ.copy()
+            environment.update(RF_CLOSURE_ROOT=directory, RF_TRANSPORT_RUNNER=str(
+                PROJECT_ROOT / "runtime/run_simion_finite_3d_transport.ps1"))
+            result = _run_pwsh(command, environment)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            transport = json.loads((Path(directory) / "result.json").read_text(encoding="utf-8-sig"))
+            self.assertEqual(transport["execution_status"], "host_release_unconfirmed")
+            self.assertEqual((transport["recovery_action"], transport["resume_action"]),
+                             ("inspect_host_release", "inspect_host_release"))
+            self.assertEqual(transport["failure_reason"], "injected host release failure")
+            self.assertEqual(transport["exception"]["message"], "original solver failure")
+            self.assertIn("injected host release failure", transport["secondary_errors"])
+
     def test_transport_closure_and_host_errors_preserve_original_failure(self) -> None:
         command = r"""
 $ErrorActionPreference='Stop'
@@ -726,6 +777,17 @@ function Complete-FailedRun {
     $script:closureAttempted=$true
     if($script:failClosure){throw 'manifest publication failed'}
 }
+function Complete-RunArtifactPowerShellOwner {
+    $script:closureAttempted=$true
+    if($script:failClosure){throw 'manifest publication failed'}
+}
+function Get-RfSimionStoppedWriterCompletion {
+    # Isolate publication and finally cleanup errors here. The actual shared
+    # owned/inherited release contract has its own public behavior regression.
+    return @{operations=@();resource_releases=@()}
+}
+function Set-RfRunPhase($Next) {}
+function Write-RunJson {param($Path,$Value,[switch]$Atomic,$Depth)}
 function Exit-HostExecutionLease {
     $script:releaseAttempted=$true
     if($script:failRelease){throw 'host release failed'}
@@ -734,9 +796,22 @@ function Remove-RunPackageExecutionAlias {$script:aliasRemoved=$true}
 $python='unused'; $manifestRepoRoot='unused'; $runConfig='unused'; $summary='unused'
 $package=@{}; $hostExecutionLease=@{}; $hostExecutionOwnsLease=$true
 $resourceBudgetExceeded=$false; $RunId='fixture'; $resourceUsage='unused'
+$script:writerCompletionUnknown=$false;$hostReleased=$false;$deferFinalization=$false
+$ownerContext=$null;$hostReleaseState=@{released=$false;completion=$null;unknown=$false};$nativeOperations=@();$fieldCheckpointGuard=$null
+$continuationGuards=@();$continuationCapacity=$null;$phaseName='flight';$phaseTimings=@{};$runTimer=[Diagnostics.Stopwatch]::StartNew()
+$ResultPath=Join-Path $env:RF_CLOSURE_ROOT 'result.json';$physicalRunDir=$env:RF_CLOSURE_ROOT
+$resultDir=$physicalRunDir;$logDir=$physicalRunDir;$solverDir=$physicalRunDir
 $cases=@(@($true,$false,$false),@($true,$true,$false),@($true,$false,$true),
     @($true,$true,$true),@($false,$false,$false),@($false,$false,$true))
-$results=@(foreach($case in $cases){
+$readyCases=if($env:RF_IS_SIMION-eq'1'){@($false,$true)}else{@($false)}
+$results=@(foreach($ready in $readyCases){foreach($case in $cases){
+    if($ready){
+      $ownerContext=@{completion_written=$false}
+      $workflowRequestPath=Join-Path $physicalRunDir 'request.json'
+      [IO.File]::WriteAllText($workflowRequestPath,'{}')
+      $runConfig=Join-Path $physicalRunDir 'run_config.json'
+      @{inputs=@{execution_request=$workflowRequestPath}}|ConvertTo-Json|Set-Content -LiteralPath $runConfig -Encoding utf8
+    }else{$ownerContext=$null;Remove-Variable workflowRequestPath -ErrorAction SilentlyContinue}
     $primary=$case[0]; $script:failClosure=$case[1]; $script:failRelease=$case[2]
     $comsolRunFailure=$null; $simionRunFailure=$null
     $script:closureAttempted=$false; $script:releaseAttempted=$false; $script:aliasRemoved=$false
@@ -745,25 +820,28 @@ $results=@(foreach($case in $cases){
     $handler=[scriptblock]::Create('try {'+$body+'} catch '+
         $outer[0].CatchClauses[0].Body.Extent.Text+' finally '+$outer[0].Finally.Extent.Text)
     $failure=$null
-    try{& $handler}catch{$failure=$_}
+    try{if($env:RF_IS_SIMION-eq'1'){$null=& $handler}else{& $handler}}catch{$failure=$_}
     [ordered]@{message=$(if($failure){$failure.Exception.Message}else{$null})
         type=$(if($failure){$failure.Exception.GetType().Name}else{$null})
         closure_error=$(if($failure){$failure.Exception.Data['failure_closure_error']}else{$null})
         host_error=$(if($failure){$failure.Exception.Data['host_release_error']}else{$null})
         closure_attempted=$script:closureAttempted;release_attempted=$script:releaseAttempted
         alias_removed=$script:aliasRemoved}
-})
+}})
 ConvertTo-Json -InputObject $results -Compress
 """
         for name in ("run_finite_3d_transport.ps1", "run_simion_finite_3d_transport.ps1"):
-            with self.subTest(runner=name):
+            with self.subTest(runner=name), tempfile.TemporaryDirectory(prefix="rf-closure-") as directory:
                 environment = os.environ.copy()
                 environment["RF_TRANSPORT_RUNNER"] = str(PROJECT_ROOT / "runtime" / name)
+                environment["RF_CLOSURE_ROOT"] = directory
+                environment["RF_IS_SIMION"] = "1" if "simion" in name else "0"
                 result = _run_pwsh(command, environment)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 records = json.loads(result.stdout.splitlines()[-1])
-                self.assertEqual(len(records), 6)
+                self.assertEqual(len(records), 12 if "simion" in name else 6)
                 for index, record in enumerate(records):
+                    index %= 6
                     self.assertTrue(record["release_attempted"])
                     self.assertTrue(record["alias_removed"])
                     self.assertEqual(record["closure_attempted"], index < 4)

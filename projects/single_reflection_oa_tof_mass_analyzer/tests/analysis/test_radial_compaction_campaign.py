@@ -38,6 +38,46 @@ def managed_process_fixture(exit_code: int = 0) -> dict:
 
 
 class RadialCompactionCampaignTests(unittest.TestCase):
+    def test_default_owner_result_is_retained_and_cannot_be_overwritten(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run_id = "20261029_120000__test__simion__retained"
+            request = {"package": {"run_id": run_id}, "payload": {"pa_handoff_output": None}}
+            expected = root / "scratch" / "workflow_results" / run_id / "result.json"
+            def owner(command, **kwargs):
+                self.assertEqual(Path(command[command.index("-ResultPath") + 1]), expected)
+                expected.write_text('{"status":"failed"}', encoding="utf-8")
+                kwargs["stderr"].write_text("owner failure", encoding="utf-8")
+                return subprocess.CompletedProcess(command, 1), None
+            with patch.object(radial, "ARTIFACT_ROOT", root), patch.object(radial, "run_observed_process", side_effect=owner) as launch:
+                with self.assertRaisesRegex(RuntimeError, "owner failure"):
+                    radial._invoke_workflow_owner(request)
+                self.assertEqual(radial.load_json(expected)["status"], "failed")
+                with self.assertRaisesRegex(ValueError, "already exists"):
+                    radial._invoke_workflow_owner(request)
+                self.assertEqual(launch.call_count, 1)
+
+    def test_finalization_uses_frozen_request_and_retained_result(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run_id = "20261029_120000__test__simion__finalize"
+            request_path = root / "runs" / run_id / "inputs" / "execution_request.json"
+            request_path.parent.mkdir(parents=True)
+            request_path.write_text(json.dumps({"package": {"project": radial.PROJECT_ID,
+                "mode": "simion_radial_compaction"}, "payload": {}}), encoding="utf-8")
+            result_path = root / "scratch" / "workflow_results" / run_id / "result.json"
+            result_path.parent.mkdir(parents=True)
+            result_path.write_text("{}", encoding="utf-8")
+            def owner(command, **kwargs):
+                self.assertIn("-ResumeFinalization", command)
+                self.assertEqual(Path(command[command.index("-RequestPath") + 1]), request_path)
+                self.assertEqual(Path(command[command.index("-ResultPath") + 1]),
+                                 root / "scratch" / "workflow_results" / run_id / "result.json")
+                return subprocess.CompletedProcess(command, 0), None
+            with patch.object(radial, "ARTIFACT_ROOT", root), patch.object(radial, "run_observed_process", side_effect=owner), \
+                    patch.object(sys, "argv", ["run_campaign", "--run-id", run_id, "--resume-finalization"]):
+                radial.main()
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.baseline = json.loads(
@@ -94,10 +134,15 @@ class RadialCompactionCampaignTests(unittest.TestCase):
                    "native_calls": [], "build_calls": [], "stage_calls": [], "owner_requests": []}
         original_request = radial._prepare_execution_request
         source_id = radial.EXTRA_SOURCE_IDS[0]
+        analysis_id = "projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/analysis.py"
+        analysis_source = root / "analysis_fixture.py"
+        analysis_source.write_text("# software analysis revision 1\n", encoding="utf-8")
+        control["analysis_source"] = analysis_source
 
         def request(*args, **kwargs):
             value = original_request(*args, **kwargs)
-            value["source_sha256"] = {source_id: value["source_sha256"][source_id]}
+            value["source_sha256"] = {source_id: value["source_sha256"][source_id],
+                                      analysis_id: radial.sha256(analysis_source)}
             return value
 
         def freeze(code, artifact, python, **kwargs):
@@ -105,10 +150,16 @@ class RadialCompactionCampaignTests(unittest.TestCase):
             target.parent.mkdir(parents=True)
             shutil.copyfile(Path(radial.__file__), target)
             digest = radial.sha256(target)
+            analysis_target = code / analysis_id
+            analysis_target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(analysis_source, analysis_target)
+            analysis_digest = radial.sha256(analysis_target)
             return {"schema_version": 2, "role": "oa_tof_candidate_execution_source_closure",
                     "code_root": str(code), "runtime": {"python_executable": str(python),
                     "python_sha256": radial.sha256(python), "candidate_artifact_root": str(artifact)}, "sources": [{"source_id": source_id,
-                    "source_sha256": digest, "sha256": digest, "bytes": target.stat().st_size}]}
+                    "source_sha256": digest, "sha256": digest, "bytes": target.stat().st_size},
+                    {"source_id": analysis_id, "source_sha256": analysis_digest, "sha256": analysis_digest,
+                     "bytes": analysis_target.stat().st_size}]}
 
         def owner(request):
             """Software lifecycle fixture; the real common owner is tested separately."""
@@ -233,17 +284,17 @@ class RadialCompactionCampaignTests(unittest.TestCase):
                 "_prepare_execution_request": {"side_effect": request},
                 "_invoke_workflow_owner": {"side_effect": owner},
                 "_run_guarded_flight": {"side_effect": fly},
-                "_canonical_metrics": {"return_value": {"mass_resolution": 1000.0, "significant_kde_modes": 1}},
                 "prepare": {},
                 "_build_case": {"side_effect": build},
                 "run_observed_process": {"side_effect": observe},
                 "run_managed_python_process": {"side_effect": managed},
-                "analyze_simion_log": {"side_effect": analyze},
                 "plan_simion_case_dispatch": {"side_effect": dispatch},
                 "discover_case_resource_profiles": {"return_value": []},
                 "run_heavy_function": {"side_effect": stage},
             }.items():
                 stack.enter_context(patch.object(radial, name, **kwargs))
+            stack.enter_context(patch.object(radial.analysis, "canonical_metrics", return_value={"mass_resolution": 1000.0, "significant_kde_modes": 1}))
+            stack.enter_context(patch.object(radial.analysis, "analyze_simion_log", side_effect=analyze))
             yield control
 
     def run_fixture(self, root: Path, suffix: str, parent: Path | None = None,
@@ -669,6 +720,39 @@ def run(case_root, run_id, context, managed):
                 self.assertEqual(control["native_calls"], ["shield200"])
                 self.assertEqual(control["build_calls"], ["shield200"])
 
+    def test_analysis_source_change_reuses_native_units_across_generations(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.software_campaign(root) as control:
+                parent = self.run_fixture(root, "analysis-parent")
+                control["analysis_source"].write_text("# software analysis revision 2\n", encoding="utf-8")
+                control["native_calls"].clear()
+                control["build_calls"].clear()
+                child = self.run_fixture(root, "analysis-child", parent)
+                self.run_fixture(root, "analysis-grandchild", child)
+                self.assertEqual(control["native_calls"], [])
+                self.assertEqual(control["build_calls"], [])
+                old = radial.load_json(parent / "run_config.json")
+                new = radial.load_json(child / "run_config.json")
+                self.assertNotEqual(old["context_sha256"], new["context_sha256"])
+                receipt = radial.load_json(child / "cases/shield260/results/actual_native.json")
+                self.assertEqual(receipt["context_sha256"], new["context_sha256"])
+                self.assertIsNotNone(receipt["reused_from_receipt"])
+
+    def test_flight_dependency_comparison_keeps_science_and_driver_identity(self) -> None:
+        original = {"inputs": {"campaign": "same"}, "campaign_driver_sha256": "same",
+                    "simion_sha256": "same", "python_sha256": "same", "sources": {
+                        "common/analysis/peak_metrics.py": "old", "physical.lua": "same"}}
+        changed = copy.deepcopy(original)
+        changed["sources"]["common/analysis/peak_metrics.py"] = "new"
+        self.assertTrue(radial._same_flight_dependencies(changed, original))
+        for section, key in (("sources", "physical.lua"), ("inputs", "campaign")):
+            altered = copy.deepcopy(changed)
+            altered[section][key] = "different"
+            self.assertFalse(radial._same_flight_dependencies(altered, original))
+        changed["campaign_driver_sha256"] = "different"
+        self.assertFalse(radial._same_flight_dependencies(changed, original))
+
     def test_zero_exit_without_native_completion_is_not_reusable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -743,7 +827,11 @@ def run(case_root, run_id, context, managed):
                     output_paths=[Path(row["path"]) for row in manifest["outputs"]],
                     virtual_documents={parent / "summary.json": summary},
                 )
-                publish_terminal_state(parent, summary, rewritten)
+                # Construct a self-consistent but semantically wrong external asset.
+                # Production terminal publication correctly refuses this rewrite.
+                from common.contracts.recorded_file_removal import write_json_atomic
+                write_json_atomic(parent / "summary.json", summary)
+                write_json_atomic(parent / "run_manifest.json", rewritten)
                 with self.assertRaisesRegex(ValueError, "native unit identity differs"):
                     self.run_fixture(root, "identity-rejected", parent)
 
@@ -1136,7 +1224,7 @@ def run(case_root, run_id, context, managed):
             case_root = root / "cases/case"
             case = {"case_root": case_root, "simion_dir": case_root / "simion", "case_id": "case",
                     "run_id": "software-fixture", "context_sha256": "A" * 64, "replay_units": {"actual": native}}
-            with patch.object(radial, "_canonical_metrics", return_value={}), \
+            with patch.object(radial.analysis, "canonical_metrics", return_value={}), \
                     patch.object(radial, "_run_guarded_flight") as fly, \
                     patch.object(radial, "run_managed_python_process") as managed:
                 result = radial._fly(case, "actual", Path(sys.executable), 3, 8)

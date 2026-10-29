@@ -43,7 +43,7 @@ class IonProcessorEnergyComparisonTests(unittest.TestCase):
         before = self.fixture.source.read_bytes()
         report = self._compare()
         self.assertEqual(report["ip_counts"], {"source": 3, "transferred": 2, "not_transferred": 1})
-        self.assertEqual(report["ip_lost_particle_ids"], [9])
+        self.assertEqual(report["ip_not_transferred_particle_ids"], [9])
         self.assertEqual(report["ip_transferred_particle_ids"], [1, 7])
         self.assertIsNone(report["centroid_match_accepted"])
         measured = report["ip_exit"]["directional_energy"]

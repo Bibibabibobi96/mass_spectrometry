@@ -345,7 +345,8 @@ def export_field_diagnostics(run: Path, output_directory: Path | None = None) ->
     metadata_path = output/"field_diagnostics.json"
     if metadata_path.exists():
         raise FileExistsError("native field diagnostics already exported; use a new run")
-    source = run/"simion/native_field_samples.csv"
+    from projects.dual_pressure_rectilinear_ion_processor.analysis.batching import analysis_source_record, native_field_sample_path
+    source = native_field_sample_path(run)
     rows = read_field_samples(source, config)
     fits = []
     rf_stages = {r["stage_id"] for r in config["stages"] if r["component"] == "rf_only_peak"}
@@ -421,7 +422,7 @@ def export_field_diagnostics(run: Path, output_directory: Path | None = None) ->
                                           "coefficient_names_use_local_axes": True},
                 "units": {"position": "mm", "time": "us", "potential": "V", "electric_field": "V/mm"},
                 "sample_count": len(rows), "electrode_samples_masked": sum(r["electrode"] for r in rows),
-                "raw_samples_sha256": file_sha256(source),
+                "raw_samples_sha256": analysis_source_record(run, source)["sha256"],
                 "resolved_config_sha256": file_sha256(run/"inputs/resolved_model.json"),
                 "native_field_identity": c["native_field"], "sampling_and_plot_config": config,
                 "native_timing": c.get("native_timing", {"policy":"legacy_requested_quench", "scope":"historical frozen native query; no zero alignment retroactively applied"}),

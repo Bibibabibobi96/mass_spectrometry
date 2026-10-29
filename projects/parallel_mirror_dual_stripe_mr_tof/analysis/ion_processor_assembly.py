@@ -295,8 +295,12 @@ def compile_materializable_fields(request: dict) -> dict:
     manifest_path = Path(request["replacement_assembly_manifest"]).resolve()
     owner = manifest_path.parent
     manifest = _read(manifest_path)
-    if manifest.get("status") != "success" or manifest.get("project") != "parallel_mirror_dual_stripe_mr_tof":
-        raise ValueError("replacement assembly must belong to a successful sealed MR preparation")
+    identity = (manifest.get("project"), manifest.get("mode"))
+    if manifest.get("status") != "success" or not (
+        identity[0] == "parallel_mirror_dual_stripe_mr_tof"
+        or identity == ("instrument_assembly", "accelerator_interface_preparation")
+    ):
+        raise ValueError("replacement assembly must belong to a successful sealed MR or instrument assembly preparation")
     inputs = {
         "replacement_manifest": str(manifest_path),
         "replacement_emitter": str(Path(__file__).resolve()),

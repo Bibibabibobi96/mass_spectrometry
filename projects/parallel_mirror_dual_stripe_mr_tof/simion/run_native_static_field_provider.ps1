@@ -154,6 +154,7 @@ try{
         $lease=Enter-HostResourceStage -Role SIMION -Stage prepare -Budget $budget -RunId $runId
         $sourceLimits=if($isCollisionOverlay){$plan.resource_limits}else{$plan.levels.parent.resource_limits}
         $limits=@{};foreach($key in $sourceLimits.Keys){$limits[$key]=$sourceLimits[$key]}
+        $limits.wall_clock_seconds=[double]$sourceLimits.wall_clock_seconds_by_solver.simion
         $limits.process_tree_working_set_bytes=[Math]::Max([int64]$limits.process_tree_working_set_bytes,2*[int64]$collision.pa_bytes)
         $limits.transient_run_directory_bytes=[int64]$plan.committed_new_bytes
         $limits.compact_final_retained_bytes=[int64]$plan.final_retained_estimate_bytes
@@ -178,6 +179,7 @@ try{
         foreach($key in $level.resource_budget.Keys){$budget[$key]=$level.resource_budget[$key]}
         $lease=Enter-HostResourceStage -Role SIMION -Stage prepare -Budget $budget -RunId $runId
         $limits=@{};foreach($key in $level.resource_limits.Keys){$limits[$key]=$level.resource_limits[$key]}
+        $limits.wall_clock_seconds=[double]$level.resource_limits.wall_clock_seconds_by_solver.simion
         $limits.transient_run_directory_bytes=[int64]$plan.committed_new_bytes
         $limits.compact_final_retained_bytes=[int64]$plan.final_retained_estimate_bytes
         $working=Join-Path $pkg.run_dir ('simion/'+$label)

@@ -18,6 +18,7 @@ from common.simion.batch_continuation import WholeUnitReplayUnit, build_whole_un
 from common.simion.particle_batching import batch_plan_from_dispatch
 from integrations.runtime.single_flight_source import GLOBAL_COLUMNS
 from integrations.workflows.single_reflection_flight.census import read_native_evidence
+from common.simion.native_completion import frontend_batch_completion_path, validate_frontend_batch_completion
 
 
 def _read(path: Path, label: str) -> dict[str, Any]:
@@ -93,6 +94,31 @@ def _phase_paths(parent: Path, phase: str) -> tuple[Path, Path, str]:
         return (parent / "results" / "full_instrument.dispatch_plan.json",
                 parent / "results" / "single_reflection" / "workbench_preparation.json", "full_instrument")
     raise ValueError("single-reflection continuation phase is invalid")
+
+
+def recover_provisional_dispatch(preparation: Mapping[str, Any], phase: str) -> dict[str, Any] | None:
+    """Reconstruct the original first interval only from bound natural-exit measurements."""
+    from common.simion.resource_scheduler import plan_recovered_formal_followup
+
+    parent, _, records, _ = _parent(preparation)
+    _, workbench_path, workbench_phase = _phase_paths(parent, phase)
+    if phase == 'default_replay' or workbench_path.resolve() not in records:
+        return None
+    _bound_parent_file(workbench_path, records, 'provisional workbench')
+    workbench = _read(workbench_path, 'provisional workbench')
+    if workbench.get('coverage') != 'initial_formal_batch_only':
+        return None
+    cases=workbench.get('batches')
+    if not isinstance(cases,list) or len(cases)!=1:
+        raise ValueError('provisional workbench requires exactly one formal case')
+    case=_published_case(cases[0])
+    provisional=parent/'results'/f'{workbench_phase}.provisional_dispatch_plan.json'
+    _bound_parent_file(provisional,records,'provisional dispatch')
+    receipt=frontend_batch_completion_path(parent,workbench_phase,str(case['case_id']))
+    _bound_parent_file(receipt,records,'provisional formal completion')
+    validate_frontend_batch_completion(receipt,phase=workbench_phase,case_id=str(case['case_id']),
+        stdout=Path(case['stdout']),count=int(case['count']),row_range=case['source_row_range'])
+    return plan_recovered_formal_followup(_read(provisional,'provisional dispatch'),_read(receipt,'formal completion'))
 
 
 def freeze_phase_inputs(preparation: Mapping[str, Any], run: Path, phase: str) -> dict[str, Any] | None:
@@ -263,6 +289,12 @@ def prepare_phase_continuation(preparation: Mapping[str, Any], current_workbench
     _, _, expected_workbench_phase = _phase_paths(parent, phase)
     parent_dispatch = _read(record_path(frozen["dispatch_record"]), "frozen final dispatch")
     parent_workbench = _read(record_path(frozen["workbench_record"]), "frozen workbench receipt")
+    recovered_dispatch=recover_provisional_dispatch(preparation,phase)
+    if recovered_dispatch is not None:
+        parent_dispatch=recovered_dispatch
+        recovered_path=run/'inputs'/'continuation'/phase/'recovered_dispatch_plan.json'
+        recovered_path.write_text(json.dumps(recovered_dispatch,indent=2)+'\n',encoding='utf-8',newline='\n')
+        frozen['dispatch_record']=file_record(recovered_path)
     parent_workbench["batches"] = [_published_case(case) for case in parent_workbench["batches"]]
     if current_workbench.get("role") != "single_reflection_workbench_preparation":
         raise ValueError("current single-reflection workbench receipt is required")
@@ -274,8 +306,17 @@ def prepare_phase_continuation(preparation: Mapping[str, Any], current_workbench
     _same_identity(current_workbench.get("source_record", {}), source_record, "source")
     _same_identity(parent_workbench.get("source_record", {}), source_record, "source")
     source_ids = _source_ids(source_record)
+    _, parent_manifest, parent_records, _ = _parent(preparation)
+    legacy_execution = parent / 'results' / 'single_reflection' / 'flight_execution_records.json'
+    legacy_rows = []
+    if parent_manifest.get('status') == 'success' and legacy_execution.resolve() in parent_records:
+        _bound_parent_file(legacy_execution, parent_records, 'legacy flight execution records')
+        legacy_rows = json.loads(legacy_execution.read_text(encoding='utf-8-sig'))
+        if not isinstance(legacy_rows, list):
+            raise ValueError('legacy flight execution records are invalid')
     batches = _fixed_batches(parent_dispatch, source_ids)
-    current_cases, parent_cases = _cases(current_workbench, batches, source_ids), _cases(parent_workbench, batches, source_ids)
+    current_cases = _cases(current_workbench, batches, source_ids)
+    parent_cases = _cases(parent_workbench, batches[:1] if recovered_dispatch is not None else batches, source_ids)
     if current_workbench.get("flight") != parent_workbench.get("flight"):
         raise ValueError("single-reflection continuation flight differs")
     if current_workbench.get("clock_epoch_id") != parent_workbench.get("clock_epoch_id"):
@@ -290,7 +331,14 @@ def prepare_phase_continuation(preparation: Mapping[str, Any], current_workbench
     reusable_cases: list[dict[str, Any]] = []
     for batch in batches:
         key, low, high = batch["key"], batch["low"], batch["high"]
-        current_case, parent_case = current_cases[(low, high)], parent_cases[(low, high)]
+        current_case = current_cases[(low, high)]
+        parent_case = parent_cases.get((low, high))
+        if parent_case is None and recovered_dispatch is not None:
+            units.append(WholeUnitReplayUnit(key,(Path('results/missing.log'),),False))
+            completion.append({'key':key,'source_row_range':[low,high],'is_complete':False})
+            continue
+        if parent_case is None:
+            raise ValueError('single-reflection continuation parent case is missing')
         current_outputs, parent_outputs = current_case.get("outputs"), parent_case.get("outputs")
         preview = current_case.get("preview")
         if not isinstance(parent_outputs, Mapping):
@@ -343,6 +391,33 @@ def prepare_phase_continuation(preparation: Mapping[str, Any], current_workbench
                 paths = [stdout, *(record_path(parent_outputs[name]) for name in ("program", "particles", "build_spec", "iob"))]
         except (KeyError, OSError, UnicodeError, ValueError):
             complete, paths = False, []
+        if complete:
+            receipt_phase = 'default_replay' if phase == 'default_replay' else expected_workbench_phase
+            receipt = frontend_batch_completion_path(parent, receipt_phase, str(parent_case['case_id']))
+            if receipt.resolve() not in parent_records:
+                candidates = [path for path in parent_records if path.name == receipt.name
+                              and path.parent.name == receipt_phase and path.parent.parent.name == 'frontend_batch_completion']
+                if len(candidates) > 1:
+                    raise ValueError('frontend batch completion has ambiguous manifest bindings')
+                if candidates:
+                    receipt = candidates[0]
+            if receipt.resolve() in parent_records:
+                _bound_parent_file(receipt, parent_records, 'frontend batch completion')
+                validate_frontend_batch_completion(receipt, phase=receipt_phase, case_id=str(parent_case['case_id']),
+                    stdout=stdout, count=int(parent_case['count']), row_range=[low, high])
+                paths.append(receipt)
+            else:
+                if 'continuation_source' in parent_case:
+                    raise ValueError('inherited frontend completion is not manifest-bound')
+                expected_phase = 'discovery' if phase == 'discovery' else phase
+                matches = [row for row in legacy_rows if isinstance(row, dict) and row.get('phase') == expected_phase
+                           and row.get('exit_code') == 0 and row.get('controls_unchanged') is True
+                           and isinstance(row.get('stdout_path'), str)
+                           and Path(row['stdout_path']).resolve() == stdout.resolve()]
+                if len(matches) == 1:
+                    paths.append(legacy_execution)
+                else:
+                    complete, paths = False, []
         units.append(WholeUnitReplayUnit(key, tuple(path.resolve() for path in paths) if complete else (Path("results/missing.log"),), complete))
         completion.append({"key": key, "source_row_range": [low, high], "is_complete": complete})
         if complete:

@@ -600,7 +600,7 @@ function Update-RepositoryProcessObservation {
 function Invoke-ResourceBudgetedProcess {
   [CmdletBinding()]
   param(
-    [Parameter(Mandatory)][pscustomobject]$Limits,[Parameter(Mandatory)][string]$RunDir,
+    [Parameter(Mandatory)][AllowNull()][pscustomobject]$Limits,[Parameter(Mandatory)][string]$RunDir,
     [Parameter(Mandatory)][string]$UsagePath,[Parameter(Mandatory)][string]$FilePath,
     [Parameter(Mandatory)][string[]]$ArgumentList,[string]$WorkingDirectory='',
     [string]$RedirectStandardOutput='',[string]$RedirectStandardError='',[hashtable]$Environment=@{}
@@ -623,7 +623,7 @@ function Invoke-ResourceBudgetedProcess {
     Assert-HostResourceHeavyStage
   }
   $process=Start-Process @startArguments
-  $failure=$null;$rootExitConfirmed=$false;$rootReturnCode=$null
+  $failure=$null;$rootExitConfirmed=$false;$rootReturnCode=$null;$rootProcessStartedAtUtcTicks=$null
   try{
     $rootProcessStartedAtUtcTicks=[int64]$process.StartTime.ToUniversalTime().Ticks
     $trackedProcessIds=@([int]$process.Id)
@@ -654,9 +654,11 @@ function Invoke-ResourceBudgetedProcess {
     $rootReturnCode=[int]$process.ExitCode
     $null=Update-RepositoryProcessObservation -Observation $observation -Sample $sample -Final
     $usage=$observation.usage
-    if(-not$danger){$usage.status=$(if($process.ExitCode-eq0){'running'}else{'process_failed'})}
-    try{Write-ResourceUsage -Usage $usage -Path $UsagePath}catch{
-      Write-Warning "RESOURCE_OBSERVATION_WARNING=finalization_failed ERROR=$($_.Exception.Message)" -WarningAction Continue
+    if($null-ne$usage){
+      if(-not$danger){$usage.status=$(if($process.ExitCode-eq0){'running'}else{'process_failed'})}
+      try{Write-ResourceUsage -Usage $usage -Path $UsagePath}catch{
+        Write-Warning "RESOURCE_OBSERVATION_WARNING=finalization_failed ERROR=$($_.Exception.Message)" -WarningAction Continue
+      }
     }
   }catch{$failure=$_}finally{
     # Observation failure must not return the caller's input guards while this
@@ -674,9 +676,14 @@ function Invoke-ResourceBudgetedProcess {
   if($null-ne$failure){
     $failure.Exception.Data['observed_process_exit_confirmed']=[bool]$rootExitConfirmed
     $failure.Exception.Data['observed_process_returncode']=$rootReturnCode
+    $failure.Exception.Data['observed_process_id']=[int]$process.Id
+    $failure.Exception.Data['observed_process_started_at_utc_ticks']=$rootProcessStartedAtUtcTicks
     throw $failure
   }
-  return [pscustomobject]@{exit_code=$process.ExitCode;resource_budget_exceeded=$danger;limit_name=$usage.limit_name;usage_path=$UsagePath}
+  return [pscustomobject]@{exit_code=$process.ExitCode;resource_budget_exceeded=$danger;
+    limit_name=$(if($danger){'system_available_memory'}elseif($null-ne$usage){$usage.limit_name}else{$null});
+    usage_path=$(if($null-ne$usage){$UsagePath}else{$null});
+    root_process_id=[int]$process.Id;root_process_started_at_utc_ticks=$rootProcessStartedAtUtcTicks}
 }
 
 function Assert-RepositoryProcessSpecification {
@@ -706,7 +713,8 @@ function Start-RepositoryScheduledProcess {
   # scans the same runtime directory after its frozen observation window.
   if($Specification.PSObject.Properties.Name-contains'prepare'-and
       $null-ne$Specification.prepare){
-    $null=& $Specification.prepare $Specification
+    try{$null=& $Specification.prepare $Specification}
+    catch{$_.Exception.Data['simion_native_launch_not_attempted']=$true;throw}
   }
   $arguments=@{
     FilePath=[string]$Specification.file_path;ArgumentList=@($Specification.argument_list)
@@ -717,13 +725,18 @@ function Start-RepositoryScheduledProcess {
     $arguments.WorkingDirectory=[string]$Specification.working_directory
   }
   $started=Get-RepositoryUtcNow;$process=Start-Process @arguments
-  return [pscustomobject]@{
+  try{return [pscustomobject]@{
     name=[string]$Specification.name;specification=$Specification;process=$process
     root_process_id=[int]$process.Id;root_process_started_at_utc_ticks=[int64]$process.StartTime.ToUniversalTime().Ticks;started_at=$started
     tracked_process_ids=@([int]$process.Id)
     tracked_process_started_at_utc_ticks=@{([string]$process.Id)=[int64]$process.StartTime.ToUniversalTime().Ticks}
     active=$true;completed=$false
     exit_code=$null;peak_working_set_bytes=[int64]0;peak_managed_memory_bytes=[int64]0;pressure_terminated=$false
+  }}catch{
+    # Start-Process returned, but the immutable identity could not be built.
+    # The caller must not infer that this writer has stopped.
+    $_.Exception.Data['simion_first_batch_writer_unknown']=$true
+    throw
   }
 }
 
@@ -823,6 +836,7 @@ function Start-ObservedFormalProcess {
     $logicalProcessors=[int]$plan.host.logical_processors
   }
   $record=Start-RepositoryScheduledProcess -Specification $ProcessSpecification
+  try {
   Write-RepositorySchedulerEvent -Event 'BATCH_STARTED' -Record $record -ActiveCount 1 `
     -Details @{OBSERVATION_SECONDS=$seconds;MEASUREMENT='FIRST_FORMAL_BATCH'}
   $previousTicks=[int64]0;$previousTicksByProcessId=@{};$previousAt=$record.started_at
@@ -997,6 +1011,159 @@ function Start-ObservedFormalProcess {
     available_memory_bytes=Get-RepositoryAvailableMemoryBytes
     total_physical_memory_bytes=[int64][MultipoleMemoryStatus]::TotalBytes()
   }
+  } catch {
+    $failure=$_
+    $failure.Exception.Data['simion_first_batch_process_record']=$record
+    if(-not$record.completed){
+      $failure.Exception.Data['simion_first_batch_writer_unknown']=$true
+    }else{
+      try{$record.process.Dispose()}catch{$failure.Exception.Data['simion_first_batch_dispose_error']=[string]$_}
+    }
+    throw $failure
+  }
+}
+
+function Invoke-SimionFormalObservation {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$DispatchPlanPath,
+    [Parameter(Mandatory)][string]$RunDir,
+    [Parameter(Mandatory)][string]$UsagePath,
+    [Parameter(Mandatory)]$ProcessSpecification,
+    [Parameter(Mandatory)][scriptblock]$Replan,
+    [scriptblock]$OnStarted=$null,
+    [scriptblock]$OnDrained=$null,
+    [scriptblock]$AfterDrain=$null,
+    [scriptblock]$OnProcessCompleted=$null
+  )
+  $formal=$null
+  try {
+    $formal=Start-ObservedFormalProcess -DispatchPlanPath $DispatchPlanPath -ProcessSpecification $ProcessSpecification
+    if($OnStarted){$null=& $OnStarted $formal.process_record}
+    if($formal.resource_budget_exceeded-or($formal.process_record.completed-and
+        (-not$formal.completed_naturally-or[int]$formal.exit_code-ne0))){throw 'Formal first batch did not continue or complete safely.'}
+    $null=& $Replan $formal
+  } catch {
+    $failure=$_
+    $processRecord=if($null-ne$formal){$formal.process_record}else{$failure.Exception.Data['simion_first_batch_process_record']}
+    if($null-ne$processRecord){
+      Invoke-ObservedPreparationFailureDrain -Failure $failure -DispatchPlanPath $DispatchPlanPath -RunDir $RunDir `
+        -UsagePath $UsagePath -ProcessRecords @($processRecord) -OnDrained $OnDrained -AfterDrain $AfterDrain -OnProcessCompleted $OnProcessCompleted
+    }
+    if($failure.Exception.Data['simion_first_batch_writer_unknown']){
+      $failure.Exception.Data['simion_first_batch_drain_error']='First-batch process identity or completion is unconfirmed.'
+    }elseif($failure.Exception.Data['simion_native_launch_not_attempted']){
+      $failure.Exception.Data['simion_wave_writer_completion_confirmed']=$true
+    }
+    throw $failure
+  }
+  return $formal
+}
+
+function Invoke-ObservedPreparationFailureDrain {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$Failure,
+    [Parameter(Mandatory)][string]$DispatchPlanPath,
+    [Parameter(Mandatory)][string]$RunDir,
+    [Parameter(Mandatory)][string]$UsagePath,
+    [Parameter(Mandatory)][object[]]$ProcessRecords,
+    [scriptblock]$AfterDrain=$null,
+    [scriptblock]$OnDrained=$null,
+    [scriptblock]$OnProcessCompleted=$null
+  )
+  $stopped=$false
+  try {
+    $drainArgs=@{DispatchPlanPath=$DispatchPlanPath;RunDir=$RunDir;UsagePath=$UsagePath;
+      ProcessSpecifications=@();ExistingProcessRecords=$ProcessRecords}
+    if($OnProcessCompleted){$drainArgs.OnProcessCompleted=$OnProcessCompleted}
+    $drainResult=Invoke-ResourceBudgetedProcesses @drainArgs
+    if($drainResult.resource_budget_exceeded){throw 'First-batch drain did not confirm writer completion.'}
+    $Failure.Exception.Data['simion_first_batch_writer_unknown']=$false
+    $Failure.Exception.Data['simion_wave_writer_completion_confirmed']=$true
+    $stopped=$true
+    if($OnDrained){ $null=& $OnDrained $drainResult }
+  } catch {
+    $Failure.Exception.Data['simion_first_batch_drain_error']=[string]$_
+    Write-Warning "First-batch drain failed: $_"
+  }
+  if($AfterDrain-and$stopped){try { $null=& $AfterDrain } catch {
+    $Failure.Exception.Data['simion_first_batch_verification_error']=[string]$_
+    Write-Warning "First-batch verification failed: $_"
+  }}
+  throw $Failure
+}
+
+function Invoke-SimionBatchPhase {
+  <# Coordinate one owner-prepared batch wave; scientific inputs stay with its owner. #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$DispatchPlanPath,
+    [Parameter(Mandatory)][string]$RunDir,
+    [Parameter(Mandatory)][string]$UsagePath,
+    [Parameter(Mandatory)][scriptblock]$PrepareRemaining,
+    $FirstSpecification=$null,
+    [scriptblock]$Replan=$null,
+    [scriptblock]$OnStarted=$null,
+    [scriptblock]$OnDrained=$null,
+    [scriptblock]$AfterDrain=$null,
+    [scriptblock]$OnProcessCompleted=$null
+  )
+  $formal=$null;$existing=@()
+  if($null-ne$FirstSpecification){
+    if($null-eq$Replan){throw 'Formal first batch requires a replan callback.'}
+    $formal=Invoke-SimionFormalObservation -DispatchPlanPath $DispatchPlanPath -RunDir $RunDir -UsagePath $UsagePath `
+      -ProcessSpecification $FirstSpecification -Replan $Replan -OnStarted $OnStarted -OnDrained $OnDrained `
+      -AfterDrain $AfterDrain -OnProcessCompleted $OnProcessCompleted
+    $existing=@($formal.process_record)
+  }
+  try {
+    $prepared=& $PrepareRemaining $formal
+    if($null-eq$prepared-or-not($prepared.PSObject.Properties.Name-contains'pending')){
+      throw 'Batch preparation must return an object with a pending specification array.'
+    }
+    $pending=@($prepared.pending)
+  } catch {
+    if($existing.Count){
+      Invoke-ObservedPreparationFailureDrain -Failure $_ -DispatchPlanPath $DispatchPlanPath -RunDir $RunDir `
+        -UsagePath $UsagePath -ProcessRecords $existing -OnDrained $OnDrained -AfterDrain $AfterDrain `
+        -OnProcessCompleted $OnProcessCompleted
+    }
+    $_.Exception.Data['simion_wave_writer_completion_confirmed']=$true
+    throw
+  }
+  if($pending.Count-eq0-and$existing.Count-eq0){
+    return [pscustomobject]@{resource_budget_exceeded=$false;processes=@();formal=$formal;prepared=$prepared}
+  }
+  try {
+    $wave=Invoke-ResourceBudgetedProcesses -DispatchPlanPath $DispatchPlanPath -RunDir $RunDir -UsagePath $UsagePath `
+      -ProcessSpecifications $pending -ExistingProcessRecords $existing -OnProcessCompleted $OnProcessCompleted
+  } catch {
+    $failure=$_
+    if($AfterDrain-and$failure.Exception.Data['simion_wave_writer_completion_confirmed']){
+      try{$null=& $AfterDrain}catch{
+        $failure.Exception.Data['simion_wave_verification_error']=[string]$_
+        Write-Warning "Batch verification failed: $_"
+      }
+    }
+    throw $failure
+  }
+  if($AfterDrain-and-not$wave.resource_budget_exceeded){
+    try{$null=& $AfterDrain}catch{
+      if(@($wave.processes|Where-Object{$null-ne$_.exit_code-and[int]$_.exit_code-ne0}).Count){
+        $verificationFailure=$_
+        try{throw 'Native batch wave failed.'}catch{
+          $_.Exception.Data['simion_wave_verification_error']=[string]$verificationFailure
+          $_.Exception.Data['simion_wave_writer_completion_confirmed']=$true
+          throw
+        }
+      }
+      $_.Exception.Data['simion_wave_writer_completion_confirmed']=$true
+      throw
+    }
+  }
+  return [pscustomobject]@{resource_budget_exceeded=[bool]$wave.resource_budget_exceeded;
+    processes=@($wave.processes);formal=$formal;prepared=$prepared}
 }
 
 function Invoke-ResourceBudgetedProcesses {
@@ -1011,8 +1178,15 @@ function Invoke-ResourceBudgetedProcesses {
     # Optional caller-owned durable checkpoint publication.  It is invoked
     # only after a worker has exited naturally with a record available; the
     # callback must fail closed if its immutable receipt cannot be published.
-    [scriptblock]$OnProcessCompleted=$null
+    [scriptblock]$OnProcessCompleted=$null,
+    [switch]$NoFailureDrain
   )
+  # Keep admitted records visible to the error path even if plan validation or
+  # a later batch's preparation fails after the formal worker has started.
+  $running=[Collections.ArrayList]::new()
+  foreach($record in $ExistingProcessRecords){if(-not$record.completed){$null=$running.Add($record)}}
+  $launchInProgress=$false;$checkpointFailure=$null
+  try {
   # A completed first batch needs only receipt publication; pending or live
   # workers still require the original heavy permission before dispatch.
   if($ProcessSpecifications.Count-gt0-or@($ExistingProcessRecords|Where-Object{-not$_.completed}).Count-gt0){
@@ -1036,7 +1210,7 @@ function Invoke-ResourceBudgetedProcesses {
   }
   $pending=[Collections.ArrayList]::new()
   foreach($spec in $ProcessSpecifications){Assert-RepositoryProcessSpecification $spec;$null=$pending.Add($spec)}
-  $running=[Collections.ArrayList]::new();$completed=[Collections.ArrayList]::new()
+  $completed=[Collections.ArrayList]::new()
   foreach($record in $ExistingProcessRecords){
     if(-not($record.PSObject.Properties.Name-contains'peak_managed_memory_bytes')){
       # A first formal worker can be handed from an older in-memory runner
@@ -1045,7 +1219,7 @@ function Invoke-ResourceBudgetedProcesses {
       $record|Add-Member -NotePropertyName peak_managed_memory_bytes `
         -NotePropertyValue ([int64]$record.peak_working_set_bytes) -Force
     }
-    if($record.completed){$null=$completed.Add($record)}else{$null=$running.Add($record)}
+    if($record.completed){$null=$completed.Add($record)}
   }
   if($null-ne$OnProcessCompleted){
     foreach($record in @($completed)){
@@ -1053,7 +1227,12 @@ function Invoke-ResourceBudgetedProcesses {
       # writes a receipt object to the pipeline.  The scheduler's contract is
       # a single result object, so callback output must not leak into callers
       # such as $waveResult (where it would turn the result into an array).
-      $null = & $OnProcessCompleted $record
+      try{$null = & $OnProcessCompleted $record}
+      catch{
+        if($null-eq$checkpointFailure){$checkpointFailure=$_}
+        else{$checkpointFailure.Exception.Data['simion_additional_checkpoint_error']=[string]$_}
+        $pending.Clear()
+      }
     }
   }
   if($pending.Count+$running.Count+$completed.Count-lt 1){throw 'No formal process was supplied.'}
@@ -1178,14 +1357,20 @@ function Invoke-ResourceBudgetedProcesses {
       $aggregateManagedMemory+=[int64]$sample.managed_memory_bytes
       if($record.active){$null=$nextRunning.Add($record);continue}
       $record.process.WaitForExit()
-      $record.completed=$true
-      $record.exit_code=$(if($record.pressure_terminated){$null}else{[int]$record.process.ExitCode})
+      $exitCode=$(if($record.pressure_terminated){$null}else{[int]$record.process.ExitCode})
       $record.process.Dispose()
+      $record.exit_code=$exitCode
+      $record.completed=$true
       if(-not$record.pressure_terminated){
         $null=$completed.Add($record)
         $null=$completedThisCycle.Add($record)
         if($null-ne$OnProcessCompleted){
-          $null = & $OnProcessCompleted $record
+          try{$null = & $OnProcessCompleted $record}
+          catch{
+            if($null-eq$checkpointFailure){$checkpointFailure=$_}
+            else{$checkpointFailure.Exception.Data['simion_additional_checkpoint_error']=[string]$_}
+            $pending.Clear()
+          }
         }
       }
     }
@@ -1352,8 +1537,10 @@ function Invoke-ResourceBudgetedProcesses {
         $resourcePauseActive=$false;$resourcePauseReason=$null
       }
       $spec=$nextSpecification;$null=$pending.Remove($spec)
+      $launchInProgress=$true
       $launched=Start-RepositoryScheduledProcess -Specification $spec
       $null=$running.Add($launched)
+      $launchInProgress=$false
       $peakConcurrency=[math]::Max($peakConcurrency,$running.Count)
       Write-RepositorySchedulerEvent -Event 'BATCH_STARTED' -Record $launched `
         -ActiveCount $running.Count -PendingCount $pending.Count `
@@ -1444,7 +1631,8 @@ function Invoke-ResourceBudgetedProcesses {
     }
   }
   if($null-ne$memoryObservation){$usage.per_process_memory_observation=$memoryObservation}
-  if($ExistingProcessRecords.Count-gt 0){
+  if($ExistingProcessRecords.Count-gt 0-and
+      $ExistingProcessRecords[0].PSObject.Properties.Name-contains'completed_during_observation'){
     $first=$ExistingProcessRecords[0]
     $usage.first_formal_observation=[ordered]@{
       process=[string]$first.name;peak_working_set_bytes=[int64]$first.peak_working_set_bytes
@@ -1457,9 +1645,48 @@ function Invoke-ResourceBudgetedProcesses {
     }
   }
   Write-ResourceUsage -Usage $usage -Path $UsagePath
+  if($null-ne$checkpointFailure){
+    $checkpointFailure.Exception.Data['simion_wave_writer_completion_confirmed']=(-not$unschedulable)
+    throw $checkpointFailure
+  }
   return [pscustomobject]@{
     resource_budget_exceeded=$unschedulable;limit_name=$usage.limit_name
     processes=@($completed|ForEach-Object{[pscustomobject]@{name=$_.name;exit_code=$_.exit_code}})
+  }
+  } catch {
+    $failure=$_
+    if($null-ne$checkpointFailure-and-not[object]::ReferenceEquals($failure.Exception,$checkpointFailure.Exception)){
+      $checkpointFailure.Exception.Data['simion_wave_followup_error']=[string]$failure
+      $failure=$checkpointFailure
+    }
+    if($launchInProgress-and$failure.Exception.Data['simion_native_launch_not_attempted']){$launchInProgress=$false}
+    $active=@($running|Where-Object{-not$_.completed})
+    if(-not$NoFailureDrain-and$active.Count){
+      try {
+        # No pending sibling or checkpoint callback is retried here. The
+        # existing owner observes the already-started processes to completion.
+        $drainArgs=@{DispatchPlanPath=$DispatchPlanPath;RunDir=$RunDir;UsagePath=$UsagePath;
+          ProcessSpecifications=@();ExistingProcessRecords=$active;NoFailureDrain=$true}
+        if($null-ne$OnProcessCompleted){$drainArgs.OnProcessCompleted=$OnProcessCompleted}
+        $drained=Invoke-ResourceBudgetedProcesses @drainArgs
+        if(-not$drained.resource_budget_exceeded-and-not$launchInProgress){
+          $failure.Exception.Data['simion_wave_writer_completion_confirmed']=$true
+        }
+      } catch {
+        $failure.Exception.Data['simion_wave_drain_error']=[string]$_
+        if($_.Exception.Data['simion_wave_writer_completion_confirmed']-and-not$launchInProgress){
+          $failure.Exception.Data['simion_wave_writer_completion_confirmed']=$true
+        }
+        Write-Warning "SIMION batch drain failed: $_"
+      }
+    } elseif(-not$launchInProgress-and$active.Count-eq0-and
+        -not$failure.Exception.Data.Contains('simion_wave_writer_completion_confirmed')) {
+      $failure.Exception.Data['simion_wave_writer_completion_confirmed']=$true
+    }
+    if(-not$failure.Exception.Data.Contains('simion_wave_writer_completion_confirmed')){
+      $failure.Exception.Data['simion_wave_writer_completion_confirmed']=$false
+    }
+    throw $failure
   }
 }
 

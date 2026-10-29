@@ -101,6 +101,27 @@ print(json.dumps({'source_directory':str(p),'source_transaction':transaction_rec
   }elseif($existing.Count-ne0){throw 'Native execution family directory must be empty.'}
   $privateRaw=$null;$privateResponse=$null;$nativeWritesStopped=$true
   $controller=Join-Path $destination ($FamilyPrefix+'.pa0')
+  function Test-NativeRuntimeWriterCompletion {
+    param($Completion,$Observation)
+    if($null-eq$Completion-or$null-eq$Observation-or-not$Observation.exit_confirmed){return $false}
+    # Direct PowerShell owners attest their actual root and drained pipes;
+    # they do not have a Python launcher/worker to attest.
+    $role=if($Completion-is[Collections.IDictionary]){$Completion['role']}
+      elseif($Completion.PSObject.Properties['role']){$Completion.role}else{$null}
+    if($role-eq'powershell_process_completion'){
+      return $Completion.exit_confirmed-eq$true-and$Completion.stdout_drained-eq$true-and
+        $Completion.stderr_drained-eq$true-and
+        ($Completion.process_id-is[int]-or$Completion.process_id-is[long])-and$Completion.process_id-gt0-and
+        ($Completion.process_started_at_utc_ticks-is[int]-or$Completion.process_started_at_utc_ticks-is[long])-and
+        $Completion.process_started_at_utc_ticks-gt0-and
+        $Completion.process_id-eq$Observation.process_id-and
+        $Completion.process_started_at_utc_ticks-eq$Observation.process_started_at_utc_ticks-and
+        ($Completion.returncode-is[int]-or$Completion.returncode-is[long])-and
+        $Completion.returncode-eq$Observation.returncode
+    }
+    return $Completion.ownership_confirmed-and$Completion.worker_exit_confirmed-and
+      $Completion.launcher_exit_confirmed-and$Completion.stdout_drained-and$Completion.stderr_drained
+  }
   function Invoke-NativeRuntimeCommand {
     param([string[]]$Arguments,[string]$OperationId,[ref]$Stopped)
     $operation=@{operation_id=$OperationId;observation=@{exit_confirmed=$false;returncode=$null}}
@@ -112,19 +133,15 @@ print(json.dumps({'source_directory':str(p),'source_transaction':transaction_rec
         $operation.observation=$observed.observation
         $operation.managed_process_completion=$observed.managed_process_completion
         $completion=$observed.managed_process_completion
-        $Stopped.Value=$completion.ownership_confirmed-and$completion.worker_exit_confirmed-and
-          $completion.launcher_exit_confirmed-and$completion.stdout_drained-and$completion.stderr_drained-and
-          $operation.observation.exit_confirmed
-        if(-not$Stopped.Value){throw 'Native runtime operation has no confirmed native and Python worker completion.'}
+        $Stopped.Value=Test-NativeRuntimeWriterCompletion $completion $operation.observation
+        if(-not$Stopped.Value){throw 'Native runtime operation has no confirmed owned writer completion.'}
       }catch{
         if($_.Exception.Data.Contains('native_operation_observation')){
           $observed=$_.Exception.Data['native_operation_observation']
           $operation.observation=$observed.observation
           $operation.managed_process_completion=$observed.managed_process_completion
           $completion=$observed.managed_process_completion
-          $Stopped.Value=$null-ne$completion-and$completion.ownership_confirmed-and$completion.worker_exit_confirmed-and
-            $completion.launcher_exit_confirmed-and$completion.stdout_drained-and$completion.stderr_drained-and
-            $operation.observation.exit_confirmed
+          $Stopped.Value=Test-NativeRuntimeWriterCompletion $completion $operation.observation
         }
         throw
       }

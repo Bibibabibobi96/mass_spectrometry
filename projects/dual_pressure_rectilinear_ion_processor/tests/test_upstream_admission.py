@@ -23,6 +23,21 @@ PROJECT = Path(__file__).resolve().parents[1]
 
 
 class AdmissionTests(unittest.TestCase):
+    def test_source_protection_projection_includes_clock_and_producer_owner(self):
+        from projects.dual_pressure_rectilinear_ion_processor.analysis.upstream_admission import injected_source_protection_paths
+        paths = injected_source_protection_paths(self.inputs / "injected_source.json")
+        self.assertIn(self.inputs.resolve(), paths)
+        self.assertIn(self.producer.resolve(), paths)
+        consumer = self.run / "changed_authority_consumer"
+        for folder in ("inputs", "simion", "results", "logs"):
+            (consumer / folder).mkdir(parents=True)
+        vendor = self.run / "inert_vendor_protection_fixture"
+        (vendor / "examples/collision_hs1").mkdir(parents=True)
+        (vendor / "examples/collision_hs1/collision_hs1.lua").write_text(HS1_SOURCE_FIXTURE)
+        functional.write_json(consumer / "run_config.json", dict(inputs={}))
+        with self.assertRaisesRegex(ValueError, "protection authorities changed"):
+            functional.prepare(consumer, PROJECT, vendor, injected_source=self.inputs / "injected_source.json",
+                               protected_injected_paths=paths[:-1])
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -229,6 +244,64 @@ class AdmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "every mother ID"):
             self.load()
 
+    def test_known_mother_weights_must_match_transferred_states(self):
+        path = self.inputs/"mother_fates.csv"
+        with path.open(newline="", encoding="utf-8") as stream:
+            rows = list(csv.DictReader(stream))
+        for row in rows:
+            row["particle_weight"] = "2" if row["particle_id"] == "2" else "1"
+        with path.open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(stream, fieldnames=FATE_COLUMNS)
+            writer.writeheader()
+            writer.writerows(rows)
+        self.refresh("mother_fates", "mother_fates.csv")
+        with self.assertRaisesRegex(ValueError, "identity/frame/clock/mechanical exit"):
+            self.load()
+
+    def test_published_handoff_uses_public_reference_and_freezes_its_authority(self):
+        result = self.load()["producer_result"]
+        root = self.run/"preparation"
+        output = root/"results/multipole_ip"
+        output.mkdir(parents=True)
+        source = output/"ip_injected_source.json"
+        source.write_text(json.dumps(self.contract), encoding="utf-8")
+        receipt_path = output/"preparation_receipt.json"
+        receipt_path.write_text(json.dumps(dict(role="multipole_ip_preparation", status="success",
+            source=dict(manifest=self.contract["producer_manifest"]), injected_source=file_record(source),
+            producer_result=result)), encoding="utf-8")
+        (root/"run_manifest.json").write_text(json.dumps(dict(run_id=root.name, project="instrument_assembly",
+            mode="multipole_ip_preparation", status="success", inputs={},
+            outputs=[file_record(source), file_record(receipt_path)])), encoding="utf-8")
+        with patch("projects.rf_multipole_ion_optics.core.component_port.load_transport_producer_result",
+                   side_effect=AssertionError("private producer reader must not run")):
+            admission = load_injected_source(source)
+            self.assertEqual(admission["producer_result"], result)
+            destination = self.run/"frozen"
+            (destination/"inputs").mkdir(parents=True)
+            from projects.dual_pressure_rectilinear_ion_processor.analysis.upstream_admission import freeze_injected_source
+            freeze_injected_source(admission, destination)
+            frozen = load_injected_source(destination/"inputs/injected_source.json")
+            self.assertEqual(frozen["producer_result"], result)
+            from common.contracts.write_run_manifest import TERMINAL_JOURNAL_NAME
+            journal = root/TERMINAL_JOURNAL_NAME
+            journal.write_text("{}", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "terminal publication is incomplete"):
+                load_injected_source(destination/"inputs/injected_source.json")
+            journal.unlink()
+            receipt_path.write_text("{}", encoding="utf-8")
+            with self.assertRaises(AssertionError):
+                load_injected_source(destination/"inputs/injected_source.json")
+
+    def test_in_progress_production_handoff_is_rejected(self):
+        root = self.run/"in_progress"
+        output = root/"results/multipole_ip"
+        output.mkdir(parents=True)
+        (root/"run_config.json").write_text(json.dumps(dict(mode="multipole_ip_preparation")), encoding="utf-8")
+        source = output/"ip_injected_source.json"
+        source.write_text(json.dumps(self.contract), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "not completed terminal publication"):
+            load_injected_source(source)
+
     def test_species_cannot_be_replaced_by_ip_default(self):
         rows = [dict(row, mass_amu=524., mass_to_charge_Th=mass_to_charge_th(524., 1),
                      kinetic_energy_eV=kinetic_energy_ev(524., 2000., 10., -20.)) for row in self.rows]
@@ -292,6 +365,24 @@ class AdmissionTests(unittest.TestCase):
         self.assertEqual(summary["status"], "success")
         self.assertFalse(summary["solver_executed"])
         self.assertEqual(summary["mother_particle_count"], 3)
+        config_path = consumer/"run_config.json"
+        run_config = json.loads(config_path.read_text(encoding="utf-8"))
+        run_config.update(run_id=consumer.name, project="dual_pressure_rectilinear_ion_processor", mode="native_electrode_functional")
+        config_path.write_text(json.dumps(run_config), encoding="utf-8")
+        manifest = dict(status="success", project=run_config["project"], run_id=consumer.name,
+            mode=run_config["mode"], run_config=file_record(config_path),
+            inputs={p.name: file_record(p) for p in (consumer/"inputs").iterdir() if p.is_file()},
+            outputs=[file_record(consumer/"summary.json")])
+        (consumer/"run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        from projects.dual_pressure_rectilinear_ion_processor.analysis.component_exit import export_component_exit
+        output = self.run/"zero_exit_export"
+        receipt = export_component_exit(consumer, output, source_instance_id="ip", target_instance_id="mr")
+        self.assertEqual(receipt["status"], "zero_exit")
+        self.assertEqual(receipt["not_transferred_particle_ids"], [2, 9, 42])
+        self.assertEqual(receipt["producer_result"]["functional_status"], "upstream_empty")
+        with (output/"source_census.csv").open(newline="", encoding="utf-8") as stream:
+            rows = list(csv.DictReader(stream))
+        self.assertEqual([row["terminal_reason"] for row in rows], ["acceptance_surface", "solver_stop", "acceptance_surface"])
 
     def test_analyzer_uses_actual_arrival_birth_species_and_conditional_population(self):
         consumer, config = self.prepare_consumer()

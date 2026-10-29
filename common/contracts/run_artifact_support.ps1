@@ -3,6 +3,38 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'require_powershell7.ps1')
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'host_execution_lease.ps1')
 
+function Enter-RunTerminalConsumptionGuard {
+  <# Share the writer's existing one-byte publication lock during consumption.
+     FileStream.Lock and Python msvcrt.locking use the same Windows byte-range
+     lock. Holding only run_manifest.json would still allow a pending journal
+     to be written before the writer discovers that replacement is blocked. #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RunDirectory,
+    [ValidateRange(0,3600)][double]$TimeoutSeconds=30
+  )
+  if(-not$IsWindows){throw 'Terminal consumption guard requires Windows byte-range locking.'}
+  $root=(Resolve-Path -LiteralPath $RunDirectory).Path
+  $stream=[IO.File]::Open((Join-Path $root '.run_terminal_publication.lock'),
+    [IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::ReadWrite)
+  $acquired=$false
+  try{
+    if($stream.Length-eq0){$stream.WriteByte(0);$stream.Flush()}
+    $deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while(-not$acquired){
+      try{$stream.Lock(0,1);$acquired=$true}
+      catch [IO.IOException]{
+        if([DateTime]::UtcNow-ge$deadline){throw "Terminal publication is busy: $root"}
+        Start-Sleep -Milliseconds 50
+      }
+    }
+    if(Test-Path -LiteralPath (Join-Path $root '.run_terminal_publication.json')){
+      throw 'Run terminal publication is incomplete; replay its journal.'
+    }
+    return $stream
+  }catch{$stream.Dispose();throw}
+}
+
 function Invoke-RunToolRootContext {
   [CmdletBinding()]
   param(
@@ -430,16 +462,10 @@ function Write-VerifiedRunManifest {
         -RunConfig $RunConfig
     }
   }
-  $manifestDirectory=Split-Path -Parent $Manifest
-  $manifestName=[IO.Path]::GetFileNameWithoutExtension($Manifest)
-  $manifestExtension=[IO.Path]::GetExtension($Manifest)
-  $candidateManifest=Join-Path $manifestDirectory `
-    ('.{0}.{1}.candidate{2}'-f$manifestName,[guid]::NewGuid().ToString('N'),$manifestExtension)
   $manifestPublished=$false
   try{
     Write-RunManifest -Python $Python -RepoRoot $RepoRoot -RunConfig $RunConfig `
-      -Status $Status -Software $Software -Manifest $candidateManifest -Outputs $Outputs -PassThru
-    Move-Item -LiteralPath $candidateManifest -Destination $Manifest -Force
+      -Status $Status -Software $Software -Manifest $Manifest -Outputs $Outputs -PassThru
     $manifestPublished=$true
     if($null-ne$capacityLifecycle-and-not$DeferCapacityFinalization){
       $capacityFinal=Invoke-RunCapacityLifecycleAdapter -Python $Python -RepoRoot $RepoRoot `
@@ -457,8 +483,6 @@ function Write-VerifiedRunManifest {
       throw "Verified $Status run manifest was published, but capacity ledger finalization failed; the run remains writing for recovery: $($_.Exception.Message)"
     }
     throw "Could not publish verified $Status run manifest: $($_.Exception.Message)"
-  }finally{
-    Remove-Item -LiteralPath $candidateManifest -Force -ErrorAction SilentlyContinue
   }
 }
 

@@ -5,6 +5,25 @@ from __future__ import annotations
 from typing import Any
 
 
+def project_direct_velocity(*, particle_id: int, time_us: float, position_mm: list[float],
+                            velocity_m_s: list[float], energy_ev: float, mass_amu: float,
+                            charge_state: int, beam_position_mm: list[float],
+                            beam_direction: list[float], weight: float, color: int) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Project caller-selected 6D to a Lua state and direct-velocity standard beam.
+
+    The caller owns coordinate transforms and clock epoch. The beam direction
+    is supplied in its target frame; its magnitude is not used to infer energy.
+    IDs here are solver ordinals, with original identity retained by the caller.
+    """
+    if any(len(values) != 3 for values in (position_mm, velocity_m_s, beam_position_mm, beam_direction)):
+        raise ValueError("particle position and velocity require three components")
+    state = dict(particle_id=particle_id, t=time_us, x=position_mm[0], y=position_mm[1], z=position_mm[2],
+                 vx=velocity_m_s[0]/1000, vy=velocity_m_s[1]/1000, vz=velocity_m_s[2]/1000, ke=energy_ev)
+    beam = dict(tob=time_us, mass=mass_amu, charge=charge_state, x=beam_position_mm[0], y=beam_position_mm[1],
+                z=beam_position_mm[2], direction=beam_direction, ke=energy_ev, cwf=weight, color=color)
+    return state, beam
+
+
 def render_standard_beams(beams: list[dict[str, Any]]) -> str:
     """Render standard_beam records whose values are already in SIMION coordinates."""
     lines = ["particles {", "  coordinates = 0,"]

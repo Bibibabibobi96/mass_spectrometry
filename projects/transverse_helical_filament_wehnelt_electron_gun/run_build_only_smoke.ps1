@@ -307,6 +307,7 @@ try {
     resource_budget_support = 'common\resource_budget_support.ps1'
     artifact_support = 'common\contracts\run_artifact_support.ps1'
     manifest_writer = 'common\contracts\write_run_manifest.py'
+    capacity_protection = 'common\contracts\capacity_protection.py'
     recorded_file_removal = 'common\contracts\recorded_file_removal.py'
     manifest_verifier = 'common\contracts\verify_run_manifest.py'
     artifact_naming = 'common\contracts\artifact_naming.py'

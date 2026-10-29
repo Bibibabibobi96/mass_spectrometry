@@ -61,7 +61,7 @@ writer与verifier共用保留策略入口，独立消费时仍重新验证完整
 ### Python工作流的公共生命周期owner
 
 `run_artifact_workflow.ps1 -RequestPath <request> -ResultPath <result>`是项目CLI调用的内部adapter，
-供OA径向压缩与候选设计共用。项目负责纯计划、预算来源、科学状态和源码闭包；公共owner只组合现有
+供OA径向压缩、候选设计及现有PowerShell生产owner共用。项目负责纯计划、预算来源、科学状态和源码闭包；公共owner只组合现有
 容量session、`New-RunPackage`、retention、manifest journal和容量收尾，不按科学mode分支，也不在
 整段prepared调用外持light主机token。各实际heavy操作继续使用原资源入口。
 owner从live公共`Resolve-HostResourceStatePath`取得实际控制面路径（保留既有显式覆盖），通过
@@ -74,6 +74,26 @@ owner从live公共`Resolve-HostResourceStatePath`取得实际控制面路径（�
 非空commitment_inputs文件身份、protected_paths/protected_cache_keys；`prepared`声明module、固定function
 `execute_prepared_run`、import_root和entrypoint文件身份。所有文件身份复用`file_record`的
 `path/exists/bytes/sha256`，必须存在且内容一致。缺少预算来源不能用零或默认物理尺寸补齐。
+
+已创建package/session的PowerShell入口调用`Initialize-RunArtifactPowerShellOwner`，传入Python、RepoRoot、
+Package、CapacitySession、冻结EntrypointPath（可复用EntrypointRecord）、CommitmentInputPaths和Software。
+它沿同一run写现有request/session运输文件，不再创建package或资源session；ResultPath默认进入
+`scratch/workflow_results/<run_id>/result.json`。已有执行alias只在公共边界映射到artifact永久路径，外部来源保持原路径。
+`prepared={owner_kind:'powershell',entrypoint:<record>}`复用同一completion合同；
+`Complete-RunArtifactPowerShellOwner`接收Status、Summary、OutputPaths、RequiredOutputPaths、实际WriterCompletion、
+显式WritersStopped及OriginalFailure，先持久保存现有wait/completion，再进入同一finalization-only机制。
+实际native operation保留PID、创建时间、已知退出码和原host释放／继承收据；没有native的复用／分析路径保持空operations和releases。
+未知写者只更新run外Result并拒绝发布；Context的completion_written/finalized供正常异常收尾复用，不重复发行completion。
+未知完成的Result保留调用方已有阶段、数据／科学结论和恢复动作，原始`exception`与`secondary_errors`分别记录。
+例如native已退出但host release未确认时报告`host_release_unconfirmed`／`inspect_host_release`，保留原保护；
+没有完整wait／completion事实的原CLI恢复仍拒绝推进，不能凭这些诊断字段发布终态。
+IP、prepared_joint、OA→MR及RF生产入口消费这组API，删除各自被替代的retention/publication/seal控制。
+
+PowerShell request的capacity可显式携带`ownership`（owned/inherited）和真实`session_owner`；省略时保持原owned合同。
+继承容量的child不减少父承诺、不释放父lease；heavy child只完成自己的retention和科学终态，Result明确
+`capacity_finalized=false`及`parent_capacity_owner_finalize`。父owner仍活动时可重放child收尾；
+父保护已失效而尚无ready封存事实时返回原父owner处理，不猜测新授权。父owner已沿原机制封存为ready后，
+重复恢复只核对既有终态和账本；父session及父终态不被child改写。
 
 owner只创建一个容量session，冻结请求为`inputs/execution_request.json`并绑定初始checkpoint输入，
 将session运输快照写入`logs/capacity_session.json`。项目prepared固定接收四个路径：
@@ -88,7 +108,7 @@ retention_preserve_paths、manifest_extra_fields、writer_completion与原except
 `writer_completion.operations`只列实际启动的写操作，每项有唯一operation_id、真实
 `observation {exit_confirmed, returncode}`和resource_release_id；resource_releases以唯一release_id
 绑定实际公共资源owner的完整completion_receipt。一个pool release可以供多个操作引用。Python bridge
-事实与直接PS owner字段按其真实来源保留，不能为直接PS补造bridge字段。unknown、inherited、重复身份、
+事实与直接PS owner字段按其真实来源保留，不能为直接PS补造bridge字段。unknown、Python bridge继承、重复身份、
 冲突或未闭合引用均拒绝封存；单独exit0、任意writers_stopped布尔值或全pool释放不替代局部写进程证明。
 
 owner还须独立确认实际prepared worker已退出且日志停止写入；Windows启动器shim退出不是这一事实。
@@ -122,6 +142,13 @@ retention receipt绑定这些小型恢复输入及原session快照：无receipt�
 原计划及最多一个unlink后进度写入间隙，不重新扫描扩删；complete核验后原字节复用。
 `preflight_pending`属于原中断run清理owner，不能据此猜出本工作流的第二份计划。终态journal存在时
 只调用原journal重放；已有终态先完整比对当前文件与原manifest，summary/manifest不得重建时间戳。
+终态 journal 发布、重放和标准 manifest 原子替换共用 run 内的进程级文件锁；锁文件本身不是账本，
+进程异常退出时由操作系统释放锁。锁内再次检查 journal 与已有终态，拒绝覆盖不同的已发布终态；
+正常 checkpoint 仍可更新。锁不改变 writer 停止证明、保留或容量准入要求。
+未迁移的历史私有 manifest 写者不自动参与此锁。
+PowerShell 消费者可用`Enter-RunTerminalConsumptionGuard -RunDirectory <source-run>`持有同一发布锁，
+在锁内验证来源终态、manifest和PA防写保护，完成消费及发布后`Dispose()`；IP正式场复用使用此入口，
+避免已验证的大载荷在下游重复读取。该锁不代替原生退出证据或PA字节验证。
 
 原lease有效时仍续同一session。若它已过期或缺失且仍需写收尾JSON，先用既有`register-writing`按当前
 文件元数据登记精确run驻留字节，再通过原公共入口申请全新收尾session，保护run和原依赖；不复活旧lease，
@@ -133,6 +160,7 @@ retention receipt绑定这些小型恢复输入及原session快照：无receipt�
 ### 文件身份与读取
 
 `verify_run_manifest.verified_successful_run_reference`核对调用方声明的project／mode及成功状态，
+并拒绝尚有终态发布journal的run，即使调用方已经传入manifest；
 再从manifest的inputs／outputs选择唯一匹配路径并校验其原始字节；不读取其他载荷或把run config当第二记录权威。
 接口准备与MR组件直接使用这一校验，组件不再为了消费记录而导入integration命令入口。
 
@@ -633,6 +661,9 @@ clock epoch ID、species ID和phase reference ID是开放的受控标识，不�
 需要消费状态的入口调用[`load_component_particle_state_csv`](component_particle_state.py)，一次读取、解析和校验后
 返回按原行序的typed `rows`及原有`report`；整数、实数与可空字段按Schema解析，标识字符串不转数值。
 `validate_component_particle_state_csv`复用同一入口并仅返回报告；读取不会重写输入字节。
+IP接收已发布准备run时复用`verified_successful_run_reference`、`verify_record`及终态journal检查，
+验证manifest绑定的状态包、准备receipt和原生产者身份；IP冻结副本保留准备manifest及原包引用。
+历史未发布准备包仍沿原RF生产者验证路径，不把未绑定的JSON当作发布证据。
 
 `mass_amu`、`charge_state`和三维速度是物理主字段；`mass_to_charge_Th`与`kinetic_energy_eV`只是便于
 交换和审计的派生字段。validator使用`particle_physics.kinetic_energy_ev`中的唯一非相对论公式和冻结容差

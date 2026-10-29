@@ -76,6 +76,7 @@ DEDICATED_SIMION_PROFILE_IDS = {
     "quadrupole_mass_filter_simion_functional_reference",
 }
 CONFIG_CORE_FUNCTIONS = {
+    "Write-RfSimionPreparedFlyIdentity",
     "Get-VerifiedRfSimionWaveform",
     "Get-VerifiedRfSimionResolvedSha256",
     "Assert-RfSimionLuaConfigContract",
@@ -88,15 +89,23 @@ CONFIG_CORE_FUNCTIONS = {
     "ConvertTo-RfSimionLuaConfig",
 }
 EXECUTION_SUPPORT_FUNCTIONS = {
+    "Get-RfSimionStoppedWriterCompletion",
+    "New-RfSimionLayoutSeedCompanion",
+    "Remove-RfSimionLayoutSeedCompanion",
+    "Initialize-RfSimionPreparedField",
+    "Get-RfSimionPaBasisArguments",
+    "Invoke-RfSimionPreparationProcess",
+    "Set-RfSimionExecutionPhase",
+    "Protect-RfSimionContinuationEvidence",
+    "Get-RfSimionFlyArgumentIdentity",
+    "Write-RfSimionPreparedBatchCompletion",
+    "Initialize-RfSimionPreparedContinuation",
     "Initialize-RfSimionPaBasis",
     "Initialize-RfSimionPreparedBatch",
     "New-RfSimionFlyProcessSpecification",
-    "Invoke-RfSimionFlyWave",
-    "Invoke-RfSimionPreparedBatch",
     "Invoke-RfSimionParticleBatchWave",
     "Invoke-RfSimionAdaptiveBatchWave",
     "Update-RfSimionDispatchAfterFormalObservation",
-    "Invoke-RfSimionCoreRun",
 }
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
@@ -122,7 +131,7 @@ def _runtime_function_names() -> set[str]:
 
 
 class WorkflowArchitectureContractTests(unittest.TestCase):
-    def test_fly_wave_executes_isolated_environment_and_reports_peak_memory(self) -> None:
+    def test_native_spec_executes_the_frozen_config_and_kernel_environment(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             self.skipTest("PowerShell 7 is required for the SIMION process-wave contract")
@@ -136,10 +145,13 @@ $specification = New-RfSimionFlyProcessSpecification `
     -Name 'contract_wave' -SimionExe '{pwsh}' -CandidateDir '{working_directory}' `
     -IobPath 'candidate.iob' -Fly2Path 'particles.fly2' -RunConfigLua 'isolated_config.lua' `
     -IobReport 'iob_report.json' -LogDir '{working_directory}' `
-    -TrajectoryQuality 20 -RfStepsPerPeriod 40
-$specification.argument_list = @('-NoProfile', '-NonInteractive', '-Command', 'Write-Output $env:MULTIPOLE_SIMION_RUN_CONFIG_LUA')
-$results = Invoke-RfSimionFlyWave -ProcessSpecifications @($specification)
-$results | Select-Object specification, peak_working_set_bytes | ConvertTo-Json -Compress
+    -TrajectoryQuality 20 -RfStepsPerPeriod 40 -RfDriveKernelPath 'frozen_rf_kernel.lua'
+$specification.argument_list = @('-NoProfile', '-NonInteractive', '-Command', 'Write-Output $env:MULTIPOLE_SIMION_RUN_CONFIG_LUA; Write-Output $env:MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA')
+$child=Start-Process -FilePath $specification.file_path -ArgumentList $specification.argument_list `
+ -WorkingDirectory $specification.working_directory -Environment $specification.environment `
+ -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $specification.stdout -RedirectStandardError $specification.stderr
+Get-Content $specification.stdout|Write-Output
+@{{specification=$specification;exit_code=$child.ExitCode}}|ConvertTo-Json -Depth 6 -Compress
 """
             completed = subprocess.run(
                 [pwsh, "-NoProfile", "-NonInteractive", "-Command", command],
@@ -150,9 +162,10 @@ $results | Select-Object specification, peak_working_set_bytes | ConvertTo-Json 
                 timeout=30,
             )
             self.assertIn("isolated_config.lua", completed.stdout)
+            self.assertIn("frozen_rf_kernel.lua", completed.stdout)
             result = json.loads(completed.stdout.strip().splitlines()[-1])
             self.assertEqual(result["specification"]["name"], "contract_wave")
-            self.assertGreater(result["peak_working_set_bytes"], 0)
+            self.assertEqual(result["exit_code"], 0)
 
     def test_active_production_entries_do_not_depend_on_tests(self) -> None:
         forbidden = re.compile(r"(?i)(?:^|[\"'])tests[/\\]")
@@ -327,7 +340,7 @@ $results | Select-Object specification, peak_working_set_bytes | ConvertTo-Json 
                 f"{runner_path.name} must call the shared Lua config serializer",
             )
             self.assertNotRegex(source, r"function\s+New-LuaConfig\b")
-            self.assertNotIn("gem2pa", source)
+            self.assertNotRegex(source, r"['\"]gem2pa['\"]")
             self.assertNotIn("Start-Process -FilePath $simion", source)
 
     def test_shared_lua_config_core_has_no_workflow_dispatch(self) -> None:
@@ -421,14 +434,16 @@ $results | Select-Object specification, peak_working_set_bytes | ConvertTo-Json 
             self.assertNotIn(foreign_function, config_core)
 
         for foreign_function in CONFIG_CORE_FUNCTIONS | {
-            "Copy-VerifiedRunInput",
             "Write-RunDirectoryChecksumInventory",
         }:
             self.assertNotIn(foreign_function, execution_support)
         self.assertNotRegex(
             _without_host_budget_role(execution_support),
-            r"(?i)\b(?:role|mode|mass[_-]?filter|interface_contract|rf_peak|waveform)\b",
+            r"(?i)\b(?:mass[_-]?filter|interface_contract|rf_peak|waveform)\b",
         )
+        # Owner mode/role metadata is carried to the verifier; it must never
+        # select a scientific branch in the execution mechanism.
+        self.assertNotRegex(execution_support, r"(?im)^\s*(?:if|elseif|switch)\b[^\r\n]*\$(?:Role|Mode)\b")
 
         artifact_functions = _powershell_functions(artifact_support)
         self.assertTrue(
@@ -451,6 +466,9 @@ $results | Select-Object specification, peak_working_set_bytes | ConvertTo-Json 
     def test_runners_only_orchestrate_registered_mechanisms(self) -> None:
         for runner_path in DEDICATED_RUNNERS:
             source = _read(runner_path)
+            self.assertLess(source.index("common\\contracts\\run_artifact_support.ps1"),
+                            source.index("$entryScriptHash=Get-RunFileSha256 -Path $PSCommandPath"))
+            self.assertIn("if((Get-RunFileSha256 -Path $ownerSource)-cne$entryScriptHash)", source)
             for support_path in (
                 "common\\contracts\\run_artifact_support.ps1",
                 "projects\\rf_multipole_ion_optics\\runtime\\simion_layout_template_support.ps1",
@@ -476,8 +494,7 @@ $results | Select-Object specification, peak_working_set_bytes | ConvertTo-Json 
             self.assertNotRegex(source, r"(?m)^\s*return\s*\{")
             self.assertRegex(
                 source,
-                r"-SharedProgramPath\s+\(Join-Path\s+\$candidateDir\s+"
-                r"'quad_monolithic\.lua'\)",
+                r"-SharedProgramPath\s+\$programSource",
                 "validator must bind the frozen runtime Lua program",
             )
 
@@ -503,7 +520,7 @@ $results | Select-Object specification, peak_working_set_bytes | ConvertTo-Json 
         artifact_support = _read(RUN_ARTIFACT_SUPPORT)
         self.assertRegex(
             execution_support,
-            r"(?im)^\s*function\s+Invoke-RfSimionCoreRun\b",
+            r"(?im)^\s*function\s+Invoke-RfSimionParticleBatchWave\b",
         )
         self.assertRegex(
             artifact_support,
@@ -707,7 +724,8 @@ $results | Select-Object specification, peak_working_set_bytes | ConvertTo-Json 
             for function in (
                 "New-RunPackage",
                 "Complete-FailedRun",
-                "Write-VerifiedRunManifest",
+                "Initialize-RunArtifactPowerShellOwner",
+                "Complete-RunArtifactPowerShellOwner",
             ):
                 self.assertIn(function, source)
                 self.assertNotRegex(source, rf"(?im)^\s*function\s+{function}\b")

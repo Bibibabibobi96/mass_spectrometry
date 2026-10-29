@@ -44,19 +44,11 @@ class CapacityProtectionLeaseError(RuntimeError):
 
 
 @contextmanager
-def capacity_decision_lock(root: Path, *, timeout_seconds: float = 30.0):
-    """Serialize only protection registration and cleanup decisions.
-
-    The retained lock file is harmless; the kernel lock, not file existence,
-    owns exclusion and is released automatically if a process exits.
-    """
-
+def process_file_lock(path: Path, *, timeout_seconds: float = 30.0):
+    """Hold an OS-owned exclusive lock, automatically released on exit."""
     if timeout_seconds < 0:
-        raise ValueError("capacity decision lock timeout must be nonnegative")
-    root = root.absolute()
-    if not root.is_dir():
-        raise ValueError("artifact root must exist")
-    path = root / PROTECTION_LEASE_DIRECTORY / CAPACITY_DECISION_LOCK_NAME
+        raise ValueError("process lock timeout must be nonnegative")
+    path = path.absolute()
     path.parent.mkdir(parents=True, exist_ok=True)
     stream = path.open("a+b")
     deadline = time.monotonic() + timeout_seconds
@@ -74,7 +66,7 @@ def capacity_decision_lock(root: Path, *, timeout_seconds: float = 30.0):
                     break
                 except OSError:
                     if time.monotonic() >= deadline:
-                        raise TimeoutError(f"capacity decision lock is held: {path}")
+                        raise TimeoutError(f"process lock is held: {path}")
                     time.sleep(0.05)
             try:
                 yield
@@ -90,7 +82,7 @@ def capacity_decision_lock(root: Path, *, timeout_seconds: float = 30.0):
                     break
                 except BlockingIOError:
                     if time.monotonic() >= deadline:
-                        raise TimeoutError(f"capacity decision lock is held: {path}")
+                        raise TimeoutError(f"process lock is held: {path}")
                     time.sleep(0.05)
             try:
                 yield
@@ -98,6 +90,17 @@ def capacity_decision_lock(root: Path, *, timeout_seconds: float = 30.0):
                 fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
     finally:
         stream.close()
+
+
+@contextmanager
+def capacity_decision_lock(root: Path, *, timeout_seconds: float = 30.0):
+    """Serialize protection registration and cleanup decisions."""
+    root = root.absolute()
+    if not root.is_dir():
+        raise ValueError("artifact root must exist")
+    with process_file_lock(root / PROTECTION_LEASE_DIRECTORY / CAPACITY_DECISION_LOCK_NAME,
+                           timeout_seconds=timeout_seconds):
+        yield
 
 
 def parse_utc_timestamp(value: object) -> tuple[float, str] | None:

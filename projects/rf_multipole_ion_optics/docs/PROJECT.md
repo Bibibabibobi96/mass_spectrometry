@@ -7,6 +7,52 @@
 
 ## 当前结论
 
+有限三维 SIMION 运行器在每个批次的进程实际退出后核验原生 Fly 完成、摘要粒子数和局部终态 ID，
+并原子保存批次完成 receipt；owner 排空后由终态 manifest 绑定实际保留的 receipt、状态、摘要与 stdout。
+重规划首批使用对应批次的稳定文件名。receipt 发布错误延后到已启动同批自然收尾之后传播。
+开启机械出口时绑定其状态；qualification 和 solver_review 还要求批次轨迹并在终态 manifest 绑定；
+compact 指标与出口诊断只消费状态和摘要。
+PA basis identity、Fly 物理投影和源状态也冻结进运行输入；逐批源生成器及其共享依赖由 code inventory 绑定。
+finite 3D、interface readiness 与 mass-filter 的正式批次通过公共 `Invoke-SimionBatchPhase` 统一首批观察、重规划与派发；
+项目 owner 继续负责 IOB 准备、批输入和结果合并。
+`workflows/no_collision_transport/run_simion.ps1` 的 `-ContinuationPredecessorManifestPath` 显式指定同项目终态前驱；
+新 run 验证冻结 Fly 输入和原批分区，并通过公共 whole-unit plan 引用被容量保护及只读锁保护的完整批次。
+全复用跳过 PA、IOB 和原生飞行；缺失的完整批次重飞。旧 run 若缺少完整批次 receipt 或冻结身份则不能复用。
+这是软件完成证据，不代表科学通过。
+三条 SIMION 消费者共用 `runtime/simion_field_checkpoint_support.ps1` 的原 producer 场检查点：
+正常入口默认 `solver_review`，显式 campaign 的 retention 声明仍优先。
+`-NativeFieldRunPath` 可独立于粒子源/Fly 前驱指定原终态场 owner；静态 GEM（含 include）、网格、
+fractional surface、实际 Refine 参数和 SIMION 身份一致时不重求场。
+原 manifest 绑定 Refine 完成事实及完整 PA family；读取先投影小元数据，再沿既有容量和公共 PA 保护取得原载荷。
+Refine 已完成而布局失败仍保留场；Program 或注册模板改变时仅重建必要 IOB。
+布局准备须经现有原生 inspector 从永久 IOB 路径真实加载通过；只有 build 成功或旧 receipt 缺少 inspect 事实时，
+场仍可复用，但必须重建并检查 IOB。旧 partial 前驱没有 manifest 绑定的已完成场检查点时明确失败关闭：
+提供相同场身份的 `-NativeFieldRunPath`，或从保留场的新 producer 继续；已处置或未知旧场不能直接复用。
+合法完整 Fly 的原 receipt 复用保持有效，全部 Fly 已复用不受该新增场检查点边界影响。
+全部 Fly 已复用时不读取场、不构建 IOB。旧 `simion_pa_basis_policy` 的 ensure/publish 协议已删除；
+当前 fractional 几何不支持 surface=none 的 standalone cache 导出，显式旧策略报错并指向原 producer 检查点，
+不改变 surface 或静默忽略 `require_existing`。新增场身份仅核对实际原生输入的小文件，PA 验证复用公共受保护读取，
+不创建第二账本或复制不可变 cache 原生 family。原字段/布局准备事实不授予数值或科学资格。
+有限三维原 CLI 的 `-ResumeFinalization -RunId` 读取 run 外小 Result，沿公共 owner 只恢复收尾；
+阶段与总耗时随结果输出。显式前驱新 run 可复用完整 Fly 后重做分析，父终态保持原身份。
+finite、`interface_readiness/run_simion.ps1` 与 `mass_filter_reference/run_simion.ps1` 使用公共
+`Initialize-RunArtifactPowerShellOwner`／`Complete-RunArtifactPowerShellOwner` 绑定已有
+package、容量 session、冻结 PS 入口、原生退出和实际 host release；项目保留器件执行与 host 归属判断，
+不再自行拼装同义 request、wait、completion 或收尾恢复器。公共路径映射保留原 producer 来源，
+收尾失败继续使用同一小 Result，未知 writer／host release 不释放原保护。
+后两条原 CLI 的 `-ResumeFinalization -RunId [-ArtifactRootPath ...] [-ResultPath ...]` 不要求源表或其他科学必填参数，
+不进入场或 Fly 准备；默认小 Result 位于项目 `scratch/workflow_results/<run_id>/result.json`。
+已完成原生批次的原 PID／启动时刻与实际 host release 统一经 `simion_execution.ps1` 传入公共 owner；
+三入口只共享该实际事实桥，不复制发布或恢复控制。两正式 CLI 的 publication／seal 失败和 unknown writer
+已用无求解器 fixture 验证原 CLI 恢复、负科学结果保留和重复恢复终态字节不变，未据此补授真实器件资格。
+2026-10-30 的小型原生机制验收用 66.228 秒完成新建 9³ fractional 场、Refine=1、封存和 alias 清理，
+再由 child 完成必要 IOB 重绑定、原生 inspect 与 N=1 探索粒子 Fly；恢复 Refine=0，PA 写入被 guard 拒绝，
+父 manifest 字节不变且 child 封存。producer／consumer 为 `20261030_012708__test__simion__rf-field-` 前缀下
+的 `producer-d34d8b1b`／`consumer-d34d8b1b`；[原生结果](../../../../artifacts/projects/rf_multipole_ion_optics/runs/20261030_012708__test__simion__rf-field-consumer-d34d8b1b/summary.json)
+与原日志保留。此前 TOF=0 splat 在 toy Program 显式 `maxdt=0.01 us`
+（约 0.0044 mm/step）的限步对照中消失，终态 TOF=0.1 us、正确实例起始 splat=0。
+该 fixture 未改变生产默认数值，只证明本次场／IOB／受保护 Fly 机制；不授予全尺度数值、器件性能或 Formal 资格。
+
 下表原生功能结果来自冻结旧几何；当前schema 3裸杆与新壳体不继承这些资格。
 当前具名runtime与活动campaign均未获新裸杆几何的商业执行授权；历史run ID须重新定义并明确授权，旧冻结证据不自动继承。
 

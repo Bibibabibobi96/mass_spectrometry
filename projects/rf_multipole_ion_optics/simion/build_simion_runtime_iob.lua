@@ -4,8 +4,10 @@
 local iob_path = assert(arg[1], 'runtime IOB path is required')
 local program_source = assert(arg[2], 'runtime Program source path is required')
 local fly2_source = assert(arg[3], 'runtime Fly2 source path is required')
-local pa_path = iob_path:gsub('%.[iI][oO][bB]$', '.pa0')
-assert(pa_path ~= iob_path, 'runtime IOB must use the .iob extension')
+local implicit_pa_path = iob_path:gsub('%.[iI][oO][bB]$', '.pa0')
+assert(implicit_pa_path ~= iob_path, 'runtime IOB must use the .iob extension')
+-- A reusable IOB must retain its producer-owned PA after a short run alias is removed.
+local pa_path = arg[4] or implicit_pa_path
 local program_output = iob_path:gsub('%.[iI][oO][bB]$', '.lua')
 local fly2_output = iob_path:gsub('%.[iI][oO][bB]$', '.fly2')
 

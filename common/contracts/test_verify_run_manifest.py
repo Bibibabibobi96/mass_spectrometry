@@ -75,6 +75,7 @@ $Python='Invoke-PublicationFixturePython';$PythonExe=$Python
 $results=@()
 foreach($script:attempt in $case.attempts){
  $status=$script:attempt.status;$script:writerCalls=0;$script:verifierCalls=0
+ Remove-Item -LiteralPath $manifestPath -Force -ErrorAction SilentlyContinue
  Write-RunJson -Path $runConfig -Value @{
   schema_version=1;run_id='20261029_120000__test__python__producer-manifest'
   project=$case.project;mode=$case.mode;inputs=@{}
@@ -135,6 +136,11 @@ ConvertTo-Json -InputObject @($results) -Depth 8 -Compress
             (root / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
             self.assertEqual(verify_run_manifest.verified_successful_run_reference(
                 root, path.name, project="assembly", mode="prepare"), path)
+            journal = root / write_run_manifest.TERMINAL_JOURNAL_NAME
+            journal.write_text("{}", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "terminal publication is incomplete"):
+                invoke(manifest)
+            journal.unlink()
             path.write_text("[]", encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "SHA-256"):
                 invoke(manifest)
@@ -184,6 +190,7 @@ Write-RunJson -Value @{logs=@('single');count=1} -Path (Join-Path $Output 'objec
             listing.write_text(json.dumps([str(files[1])], ensure_ascii=False), encoding="utf-8")
             for source in (str(listing), "-"):
                 with self.subTest(source=source):
+                    (root / "run_manifest.json").unlink(missing_ok=True)
                     result = subprocess.run(
                         [sys.executable, str(Path(write_run_manifest.__file__)), "--run-config", str(config),
                          "--status", "success", "--output", str(files[0]), "--output-list-json", source],

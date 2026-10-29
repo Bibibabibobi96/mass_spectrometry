@@ -149,7 +149,7 @@ Write-Output 'RECEIPTS=PASS'
             self.assertIn("RECEIPTS=PASS", outcome.stdout)
 
     def invoke_fixture(self, root: Path, payload: dict, *, retention: str = "compact", host_state: str | None = None,
-                       observation_failure: bool = False, failure_stage: str | None = None) -> tuple[dict, Path, Path, subprocess.CompletedProcess[str]]:
+                       observation_failure: bool = False, failure_stage: str | None = None, project: str = PROJECT) -> tuple[dict, Path, Path, subprocess.CompletedProcess[str]]:
         artifacts = root / "artifacts"
         artifacts.mkdir()
         initialize_capacity_ledger(artifacts, objects=[])
@@ -163,12 +163,12 @@ Write-Output 'RECEIPTS=PASS'
         budget = root / "budget.json"
         committed = payload.get("fixture_commitment_bytes", 1048576)
         budget.write_text(json.dumps({"peak_bytes": committed}), encoding="utf-8")
-        project_root = artifacts / "projects" / PROJECT
+        project_root = artifacts / "projects" / project
         run = project_root / "runs/20261028_120000__test__python__workflow-fixture"
         request = {
             "schema_version": 1, "role": "run_artifact_workflow_request", "repository_root": str(REPO),
             "python_executable": sys.executable,
-            "package": {"project": PROJECT, "run_id": run.name, "mode": "software", "artifact_project_root": str(project_root),
+            "package": {"project": project, "run_id": run.name, "mode": "software", "artifact_project_root": str(project_root),
                         "software": ["Python"], "retention_class": retention, "retention_reason": "review fixture" if retention != "compact" else ""},
             "capacity": {"committed_new_bytes": committed, "commitment_inputs": [file_record(budget)], "protected_paths": [], "protected_cache_keys": []},
             "prepared": {"module": "fixture_callback", "function": "execute_prepared_run", "import_root": str(root), "entrypoint": file_record(callback)},
@@ -248,6 +248,344 @@ try{{$null=Invoke-RunArtifactWorkflow -RequestPath '{run / 'inputs/execution_req
 catch{{Write-Output $_.Exception.Message;exit 7}}
 """)
         return json.loads((root / "result.json").read_text(encoding="utf-8-sig")), outcome
+
+    def test_powershell_owner_all_reuse_resumes_after_owner_exits(self) -> None:
+        # Exercise the real capacity session and journal with an owner that has
+        # no native writers (the RF all-reuse path). The publishing failure is
+        # injected before journal creation; a second PowerShell process resumes.
+        with tempfile.TemporaryDirectory(prefix="workflow-ps-owner-") as directory:
+            root = Path(directory)
+            _, run, _, _ = self.invoke_fixture(root, {}, failure_stage="retention_before")
+            request_path = run / "inputs/execution_request.json"
+            request = json.loads(request_path.read_text(encoding="utf-8-sig"))
+            entry = run / "inputs/owner.ps1"
+            entry.write_text("# frozen all-reuse owner fixture\n", encoding="utf-8")
+            request["prepared"] = {"owner_kind": "powershell", "entrypoint": file_record(entry)}
+            request_path.write_text(json.dumps(request), encoding="utf-8")
+            completion_path = run / "results/execution_completion.json"
+            completion = json.loads(completion_path.read_text(encoding="utf-8-sig"))
+            completion["execution_request"] = file_record(request_path)
+            completion["writer_completion"] = {"operations": [], "resource_releases": []}
+            completion["resource_usage_paths"] = []
+            completion["resource_profile"] = None
+            completion_path.write_text(json.dumps(completion), encoding="utf-8")
+            (root / "result.json").unlink()
+            initial = self.run_ps(root, f""". '{OWNER}'
+function Invoke-ArtifactCapacityGate {{ return @{{satisfied=$true;fixture_admission=$true}} }}
+$wait=@{{schema_version=1;role='run_artifact_powershell_owner_wait';owner_pid=$PID;
+  owner_start_utc_ticks=(Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks;
+  native_writers_confirmed=$true;exception=$null;observation_error=$null}}
+Write-RunJson -Atomic -Path '{run / 'logs/prepared_wait.json'}' -Value $wait
+function Publish-WorkflowTerminal {{ throw 'fixture publication failure' }}
+try{{$null=Invoke-RunArtifactWorkflow -RequestPath '{request_path}' -ResultPath '{root / 'result.json'}' -ResumeFinalization}}catch{{Write-Output $_.Exception.Message;exit 7}}
+""")
+            self.assertEqual(initial.returncode, 7, initial.stdout + initial.stderr)
+            self.assertTrue((root / "result.json").exists(), initial.stdout + initial.stderr)
+            self.assertFalse((run / "run_manifest.json").read_text(encoding="utf-8-sig").find('"status": "success"') >= 0)
+            result, resumed = self.resume_fixture(root, run)
+            self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+            self.assertEqual(result["status"], "success")
+
+    def test_ip_original_cli_replays_public_owner_after_publication_or_seal_failure(self) -> None:
+        project = "dual_pressure_rectilinear_ion_processor"
+        cli = REPO / "projects" / project / "simion/run_functional.ps1"
+        for failure in ("publication", "seal", "unknown"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory(prefix="ip-owner-recovery-") as directory:
+                root = Path(directory)
+                _, run, _, _ = self.invoke_fixture(root, {}, project=project, retention="solver_review", failure_stage="retention_before")
+                config_path = run / "run_config.json"
+                config = json.loads(config_path.read_text(encoding="utf-8-sig"))
+                config["mode"] = "native_electrode_functional"
+                config_path.write_text(json.dumps(config), encoding="utf-8")
+                for relative in ("inputs/execution_request.json", "results/execution_completion.json", "logs/prepared_wait.json"):
+                    (run / relative).unlink()
+                entry = run / "inputs/run_functional.ps1"
+                shutil.copyfile(cli, entry)
+                budget = run / "inputs/runtime_profiles.json"
+                budget.write_text('{"fixture_budget_bytes":1048576}', encoding="utf-8")
+                result_path = run.parent.parent / "scratch/workflow_results" / run.name / "result.json"
+                hook = "function Publish-WorkflowTerminal { throw 'IP_PUBLICATION_SENTINEL' }" if failure == "publication" else ""
+                if failure == "seal":
+                    hook = """$actualCapacity=${function:Invoke-RunCapacityCommand}
+function Invoke-RunCapacityCommand {
+ param($Python,$RepoRoot,$Arguments,$FailureLabel)
+ if('seal-stopped-payload'-in$Arguments){throw 'IP_SEAL_SENTINEL'}
+ & $actualCapacity @PSBoundParameters
+}
+"""
+                execution = "writer_completion_unknown" if failure == "unknown" else "completed"
+                validity = "unknown" if failure == "unknown" else "valid"
+                science = "unknown" if failure == "unknown" else "passed"
+                first = self.run_ps(root, f""". '{OWNER}'
+function Invoke-ArtifactCapacityGate {{ return @{{satisfied=$true;fixture_admission=$true}} }}
+function Invoke-ResourceBudgetedProcess {{throw 'NATIVE_MUST_NOT_START'}}
+$session=Get-Content '{run / 'logs/capacity_session.json'}' -Raw|ConvertFrom-Json
+$package=@{{run_config='{config_path}';run_dir='{run}';artifact_run_dir='{run}'}}
+$context=Initialize-RunArtifactPowerShellOwner -Python '{sys.executable}' -RepoRoot '{REPO}' -Package $package -CapacitySession $session -EntrypointPath '{entry}' -CommitmentInputPaths @('{budget}') -Software @('Python')
+{hook}
+try {{
+ $outcome=Complete-RunArtifactPowerShellOwner -Context $context -Status success -Summary @{{role='ion_processor_functional_summary';execution_status='{execution}';data_validity='{validity}';science_status='{science}';phase_durations_seconds=@{{analysis=0.1}};total_elapsed_seconds=0.1}} -OutputPaths @('{run / 'results/science.json'}') -WriterCompletion @{{operations=@();resource_releases=@()}} -WritersStopped ${str(failure != 'unknown').lower()}
+ throw 'Expected closeout injection did not fail'
+}} catch {{
+ if($_.Exception.Message-notmatch'IP_PUBLICATION_SENTINEL|IP_SEAL_SENTINEL|writer completion is unknown'){{throw}}
+ if($context.completion_written-ne${str(failure != 'unknown').lower()}){{throw 'Completion persistence state differs'}}
+}}
+""")
+                self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+                result = json.loads(result_path.read_text(encoding="utf-8-sig"))
+                self.assertEqual(result["resume_action"], "inspect_writer_completion" if failure == "unknown" else "resume_finalization")
+                if failure == "unknown":
+                    self.assertEqual(result["execution_status"], "writer_completion_unknown")
+                    self.assertEqual(result["data_validity"], "unknown")
+                    self.assertEqual(result["recovery_action"], "inspect_writer_completion")
+                    self.assertEqual(result["phase_timings_seconds"], {"analysis": 0.1})
+                terminal_before = (run / "run_manifest.json").read_bytes()
+                command = [PWSH, "-NoProfile", "-File", str(cli), "-RunId", run.name,
+                           "-ResultPath", str(result_path), "-ResumeFinalization"]
+                resumed = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=90)
+                if failure == "unknown":
+                    self.assertNotEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+                    self.assertEqual((run / "run_manifest.json").read_bytes(), terminal_before)
+                    self.assertIn(run.resolve(), load_capacity_protection_leases(root / "artifacts")["protected_paths"])
+                    continue
+                self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+                result = json.loads(result_path.read_text(encoding="utf-8-sig"))
+                self.assertTrue(result["terminal_published"] and result["capacity_finalized"] and result["lease_released"])
+                self.assertEqual(result["scientific_result"], "passed")
+                self.assertGreaterEqual(result["total_elapsed_seconds"], 0.1)
+                if failure == "seal":
+                    self.assertEqual((run / "run_manifest.json").read_bytes(), terminal_before)
+                manifest_bytes = (run / "run_manifest.json").read_bytes()
+                summary_bytes = (run / "summary.json").read_bytes()
+                repeated = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=90)
+                self.assertEqual(repeated.returncode, 0, repeated.stdout + repeated.stderr)
+                self.assertEqual((run / "run_manifest.json").read_bytes(), manifest_bytes)
+                self.assertEqual((run / "summary.json").read_bytes(), summary_bytes)
+                self.assertEqual((root / "callback_count.txt").read_text(), "1")
+
+    def test_powershell_unknown_host_preserves_owner_reason_primary_and_secondary(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="workflow-host-unconfirmed-") as directory:
+            root = Path(directory)
+            _, run, _, _ = self.invoke_fixture(root, {}, retention="solver_review", failure_stage="retention_before")
+            for relative in ("inputs/execution_request.json", "results/execution_completion.json", "logs/prepared_wait.json"):
+                (run / relative).unlink()
+            entry = run / "inputs/owner.ps1"
+            entry.write_text("# inert frozen owner; no native execution\n", encoding="utf-8")
+            budget = run / "inputs/budget.json"
+            budget.write_text('{"peak_bytes":1048576}', encoding="utf-8")
+            raw = run / "results/raw.csv"
+            raw.write_text("inert complete raw fixture retained unchanged\n", encoding="utf-8")
+            original_raw = raw.read_bytes()
+            original_manifest = (run / "run_manifest.json").read_bytes()
+            original_summary = (run / "summary.json").read_bytes()
+            result_path = root / "host_result.json"
+            outcome = self.run_ps(root, f""". '{OWNER}'
+$session=Get-Content '{run / 'logs/capacity_session.json'}' -Raw|ConvertFrom-Json
+$leasePath=[string]$session.lease.path;$leaseBefore=[Convert]::ToBase64String([IO.File]::ReadAllBytes($leasePath))
+$package=@{{run_config='{run / 'run_config.json'}';run_dir='{run}';artifact_run_dir='{run}'}}
+$context=Initialize-RunArtifactPowerShellOwner -Python '{sys.executable}' -RepoRoot '{REPO}' -Package $package -CapacitySession $session -ResultPath '{result_path}' -EntrypointPath '{entry}' -CommitmentInputPaths @('{budget}') -Software @('Python')
+function Apply-RunArtifactRetention {{throw 'RETENTION_MUST_NOT_RUN'}}
+function Publish-WorkflowTerminal {{throw 'TERMINAL_MUST_NOT_RUN'}}
+function Exit-ArtifactWorkflowCapacitySession {{throw 'LEASE_MUST_NOT_RELEASE'}}
+try{{throw 'PRIMARY_ANALYSIS_SENTINEL'}}catch{{$primary=$_}}
+$summary=@{{execution_status='host_release_unconfirmed';data_validity='valid';science_status='not_passed';failure_stage='host_release';failure_reason='HOST_RELEASE_SENTINEL';recovery_action='inspect_host_release';secondary_errors=@('HOST_RELEASE_SENTINEL');phase_timings_seconds=@{{analysis=0.2}};total_elapsed_seconds=0.3}}
+$guard=[IO.File]::Open('{raw}',[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+try{{
+ try{{Complete-RunArtifactPowerShellOwner -Context $context -Status failed -Summary $summary -WriterCompletion @{{operations=@();resource_releases=@()}} -WritersStopped $false -OriginalFailure $primary|Out-Null;throw 'unknown host accepted'}}catch{{if($_.Exception.Message-notmatch'writer completion is unknown'){{throw}}}}
+ $blocked=$false;try{{$writer=[IO.File]::Open('{raw}',[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::ReadWrite);$writer.Dispose()}}catch{{$blocked=$true}}
+ if(-not$blocked){{throw 'owner guard was lost'}}
+}}finally{{$guard.Dispose()}}
+if($context.completion_written-or$context.finalized){{throw 'unknown host claimed completion'}}
+if([Convert]::ToBase64String([IO.File]::ReadAllBytes($leasePath))-cne$leaseBefore){{throw 'host failure changed capacity protection'}}
+""")
+            self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)
+            result = json.loads(result_path.read_text(encoding="utf-8-sig"))
+            self.assertEqual((result["status"], result["writers_confirmed"]), ("failed", False))
+            self.assertEqual((result["execution_status"], result["data_validity"], result["scientific_result"]),
+                             ("host_release_unconfirmed", "valid", "not_passed"))
+            self.assertEqual(result["failure_stage"], "host_release")
+            self.assertEqual(result["failure_reason"], "HOST_RELEASE_SENTINEL")
+            self.assertEqual(result["resume_action"], "inspect_host_release")
+            self.assertEqual(result["recovery_action"], "inspect_host_release")
+            self.assertEqual(result["exception"]["message"], "PRIMARY_ANALYSIS_SENTINEL")
+            self.assertEqual(result["exception"]["notes"], [])
+            self.assertEqual(result["secondary_errors"], ["HOST_RELEASE_SENTINEL"])
+            self.assertEqual(result["phase_timings_seconds"], {"analysis": 0.2})
+            self.assertEqual(result["total_elapsed_seconds"], 0.3)
+            self.assertEqual(raw.read_bytes(), original_raw)
+            self.assertEqual((run / "run_manifest.json").read_bytes(), original_manifest)
+            self.assertEqual((run / "summary.json").read_bytes(), original_summary)
+            self.assertFalse((run / "results/execution_completion.json").exists())
+            self.assertFalse((run / "logs/prepared_wait.json").exists())
+
+    def test_powershell_inherited_grant_is_rechecked_across_processes(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="workflow-ps-inherited-") as directory:
+            root = Path(directory)
+            _, run, _, _ = self.invoke_fixture(root, {}, failure_stage="retention_before")
+            request_path = run / "inputs/execution_request.json"
+            request = json.loads(request_path.read_text(encoding="utf-8-sig"))
+            entry = run / "inputs/owner.ps1"
+            entry.write_text("# frozen inherited owner fixture\n", encoding="utf-8")
+            request["prepared"] = {"owner_kind": "powershell", "entrypoint": file_record(entry)}
+            request_path.write_text(json.dumps(request), encoding="utf-8")
+            completion_path = run / "results/execution_completion.json"
+            completion = json.loads(completion_path.read_text(encoding="utf-8-sig"))
+            completion["execution_request"] = file_record(request_path)
+            completion["resource_usage_paths"] = []
+            completion["resource_profile"] = None
+            completion_path.write_text(json.dumps(completion), encoding="utf-8")
+            (root / "result.json").unlink()
+            child = root / "inherited_child.ps1"
+            child.write_text(f""". '{OWNER}'
+$ErrorActionPreference='Stop'
+function Invoke-ArtifactCapacityGate {{ return @{{satisfied=$true;fixture_admission=$true}} }}
+if($args[0]-eq'first'){{
+  $proc=Start-Process -FilePath '{sys.executable}' -ArgumentList @('-c','pass') -PassThru
+  $ticks=$proc.StartTime.ToUniversalTime().Ticks;$proc.WaitForExit()
+  $grant=Invoke-HostResourceTransaction -Request @{{operation='inherit';token=$env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN}} -StatePath $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH
+  $completion=Get-Content -Raw '{completion_path}'|ConvertFrom-Json -AsHashtable
+  $completion.writer_completion=@{{operations=@(@{{operation_id='native';observation=@{{exit_confirmed=$true;returncode=$proc.ExitCode;process_id=$proc.Id;process_started_at_utc_ticks=$ticks}};resource_release_id='simion'}});
+    resource_releases=@(@{{release_id='simion';completion_receipt=@{{host_release=@{{inherited=$true;token=$grant.token;result=@{{status=$grant.status;token=$grant.token}};error=$null}}}}}})}}
+  Write-RunJson -Atomic -Path '{completion_path}' -Value $completion -Depth 64
+  Write-RunJson -Atomic -Path '{run / 'logs/prepared_wait.json'}' -Value @{{schema_version=1;role='run_artifact_powershell_owner_wait';owner_pid=$PID;owner_start_utc_ticks=(Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks;native_writers_confirmed=$true;exception=$null;observation_error=$null}}
+  function Publish-WorkflowTerminal {{ throw 'fixture publication failure' }}
+}}
+try{{$null=Invoke-RunArtifactWorkflow -RequestPath '{request_path}' -ResultPath '{root / 'result.json'}' -ResumeFinalization}}catch{{Write-Output $_.Exception.Message;exit 7}}
+""", encoding="utf-8")
+            outcome = self.run_ps(root, f""". '{OWNER}'
+$ErrorActionPreference='Stop'
+[Environment]::SetEnvironmentVariable('MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN',[NullString]::Value,'Process')
+$lease=Enter-HostResourceStage -Role SIMION -Stage flight -StatePath '{root / 'host.json'}' -Budget (Get-HostResourceBudget -Role SIMION -Stage flight)
+try{{
+ & '{PWSH}' -NoProfile -File '{child}' first
+ if($LASTEXITCODE-ne7){{throw 'initial publication did not fail'}}
+ & '{PWSH}' -NoProfile -File '{child}' resume
+ if($LASTEXITCODE-ne0){{throw 'inherited recovery failed'}}
+ $terminalHash=(Get-FileHash -Algorithm SHA256 '{run / 'run_manifest.json'}').Hash
+}}finally{{Exit-HostResourceStage -Lease $lease}}
+& '{PWSH}' -NoProfile -File '{child}' resume
+if($LASTEXITCODE-ne7){{throw 'expired inherited grant was accepted'}}
+if((Get-FileHash -Algorithm SHA256 '{run / 'run_manifest.json'}').Hash-ne$terminalHash){{throw 'terminal was changed'}}
+""")
+            self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)
+            self.assertEqual(json.loads((root / "result.json").read_text(encoding="utf-8-sig"))["status"], "failed")
+
+    def test_public_powershell_owner_preserves_inherited_capacity_until_parent_seals(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="workflow-inherited-capacity-") as directory:
+            root = Path(directory)
+            _, run, _, _ = self.invoke_fixture(root, {}, retention="solver_review", failure_stage="retention_before")
+            for relative in ("inputs/execution_request.json", "results/execution_completion.json", "logs/prepared_wait.json"):
+                (run / relative).unlink()
+            entry = run / "inputs/owner.ps1"
+            entry.write_text("# inert frozen PowerShell owner fixture\n", encoding="utf-8")
+            budget = run / "inputs/budget.json"
+            budget.write_text('{"peak_bytes":1048576}', encoding="utf-8")
+            payload = run / "results/retained.pa0"
+            payload.write_bytes(b"inert native-format payload fixture; no solver executed")
+            parent = root / "parent_summary.json"
+            parent.write_text('{"status":"success","fixture_parent":true}', encoding="utf-8")
+            outcome = self.run_ps(root, f""". '{OWNER}'
+function Invoke-ArtifactCapacityGate {{ return @{{satisfied=$true;fixture_admission=$true}} }}
+$old=Get-Content '{run / 'logs/capacity_session.json'}' -Raw|ConvertFrom-Json
+Exit-ArtifactWorkflowCapacitySession -Python '{sys.executable}' -RepoRoot '{REPO}' -Session $old|Out-Null
+$session=Enter-ArtifactWorkflowCapacitySession -Python '{sys.executable}' -RepoRoot '{REPO}' -ArtifactRoot '{root / 'artifacts'}' -RunDirectory '{run}' -CommittedNewBytes 1048576 -ProtectedPaths @('{run}') -Owner 'fixture-existing-parent-owner'
+$leasePath=[string]$session.lease.path;$leaseBytes=[IO.File]::ReadAllBytes($leasePath);$parentBytes=[IO.File]::ReadAllBytes('{parent}')
+$package=@{{run_config='{run / 'run_config.json'}';run_dir='{run}';artifact_run_dir='{run}'}}
+$context=Initialize-RunArtifactPowerShellOwner -Python '{sys.executable}' -RepoRoot '{REPO}' -Package $package -CapacitySession $session -EntrypointPath '{entry}' -CommitmentInputPaths @('{budget}') -Software @('Python') -OwnCapacitySession $false
+$actualPublisher=${{function:Publish-WorkflowTerminal}}
+function Publish-WorkflowTerminal {{throw 'INHERITED_PUBLICATION_SENTINEL'}}
+try {{Complete-RunArtifactPowerShellOwner -Context $context -Status success -Summary @{{execution_status='completed';data_validity='valid';scientific_result='fixture_only'}} -OutputPaths @('{payload}','{run / 'results/science.json'}') -WriterCompletion @{{operations=@();resource_releases=@()}} -WritersStopped $true|Out-Null;throw 'injection not reached'}}catch{{if($_.Exception.Message-ne'INHERITED_PUBLICATION_SENTINEL'){{throw}}}}
+Set-Item Function:Publish-WorkflowTerminal $actualPublisher
+$first=Invoke-RunArtifactWorkflow -RequestPath $context.request_path -ResultPath $context.result_path -ResumeFinalization
+if($first.status-ne'success'-or$first.capacity_finalized-or$first.lease_released-or$first.resume_action-ne'parent_capacity_owner_finalize'){{throw 'inherited child claimed parent finalization'}}
+if([Convert]::ToBase64String([IO.File]::ReadAllBytes($leasePath))-cne[Convert]::ToBase64String($leaseBytes)){{throw 'child changed parent lease or commitment'}}
+$manifestBytes=[IO.File]::ReadAllBytes('{run / 'run_manifest.json'}');$summaryBytes=[IO.File]::ReadAllBytes('{run / 'summary.json'}')
+$second=Invoke-RunArtifactWorkflow -RequestPath $context.request_path -ResultPath $context.result_path -ResumeFinalization
+if($second.capacity_finalized-or$second.resume_action-ne'parent_capacity_owner_finalize'){{throw 'repeat child stole parent finalization'}}
+Exit-ArtifactWorkflowCapacitySession -Python '{sys.executable}' -RepoRoot '{REPO}' -Session $session|Out-Null
+$blocked=$false
+try{{Invoke-RunArtifactWorkflow -RequestPath $context.request_path -ResultPath $context.result_path -ResumeFinalization|Out-Null}}catch{{$blocked=$true}}
+if(-not$blocked){{throw 'missing parent authority was accepted'}}
+$result=Get-Content $context.result_path -Raw|ConvertFrom-Json
+if($result.resume_action-ne'parent_capacity_owner_finalize'){{throw 'missing parent recovery action'}}
+& '{sys.executable}' -m common.contracts.run_capacity_lifecycle --action seal-stopped-payload --artifact-root '{root / 'artifacts'}' --run-config '{run / 'run_config.json'}' --owner '{PROJECT}' --confirm-writing-stopped --retention-reason 'review fixture'|Out-Null
+if($LASTEXITCODE-ne0){{throw 'actual parent sealing failed'}}
+$closed=Invoke-RunArtifactWorkflow -RequestPath $context.request_path -ResultPath $context.result_path -ResumeFinalization
+if(-not$closed.capacity_finalized-or$closed.lease_released-or$closed.status-ne'success'){{throw 'parent ready state was not reused'}}
+foreach($pair in @(@('{run / 'run_manifest.json'}',$manifestBytes),@('{run / 'summary.json'}',$summaryBytes),@('{parent}',$parentBytes))){{if([Convert]::ToBase64String([IO.File]::ReadAllBytes($pair[0]))-cne[Convert]::ToBase64String($pair[1])){{throw 'terminal evidence was rewritten'}}}}
+""")
+            self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)
+
+    def test_public_powershell_failed_owner_retains_complete_batches_and_latest_scope(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="workflow-complete-batch-retention-") as directory:
+            root = Path(directory)
+            _, run, _, _ = self.invoke_fixture(root, {}, retention="solver_review", failure_stage="retention_before")
+            for relative in ("inputs/execution_request.json", "results/execution_completion.json", "logs/prepared_wait.json"):
+                (run / relative).unlink()
+            entry = run / "inputs/owner.ps1"
+            entry.write_text("# inert frozen owner fixture\n", encoding="utf-8")
+            budget = run / "inputs/budget.json"
+            budget.write_text('{"peak_bytes":1048576}', encoding="utf-8")
+            complete = run / "logs/simion__batch1.stdout.log"
+            incomplete = run / "logs/simion__batch2.stdout.log"
+            complete.write_text("status,Fly completed. 1 splats, 0.1 seconds\n", encoding="utf-8")
+            incomplete.write_text("started\n", encoding="utf-8")
+            external = root / "artifacts/projects" / PROJECT / "runs/20261028_115959__test__python__dependency/results/evidence.txt"
+            external.parent.mkdir(parents=True)
+            external.write_text("existing protected dependency fixture", encoding="utf-8")
+            outcome = self.run_ps(root, f""". '{OWNER}'
+function Invoke-ArtifactCapacityGate {{ return @{{satisfied=$true;fixture_admission=$true}} }}
+$session=Get-Content '{run / 'logs/capacity_session.json'}' -Raw|ConvertFrom-Json
+$package=@{{run_config='{run / 'run_config.json'}';run_dir='{run}';artifact_run_dir='{run}'}}
+$context=Initialize-RunArtifactPowerShellOwner -Python '{sys.executable}' -RepoRoot '{REPO}' -Package $package -CapacitySession $session -EntrypointPath '{entry}' -CommitmentInputPaths @('{budget}') -Software @('Python')
+$context.session=(Update-ArtifactWorkflowCapacitySession -Python '{sys.executable}' -RepoRoot '{REPO}' -Session $context.session -ProtectedPaths @('{external}')).session
+$request=Get-Content $context.request_path -Raw|ConvertFrom-Json -AsHashtable
+$request.capacity.protected_paths=@($context.session.protected_paths)
+Write-RunJson -Atomic -Path $context.request_path -Value $request -Depth 64
+$result=Complete-RunArtifactPowerShellOwner -Context $context -Status failed -Summary @{{execution_status='failed';data_validity='unknown';scientific_result='fixture_failure'}} -OutputPaths @('{complete}','{incomplete}','{run / 'results/science.json'}') -RequiredOutputPaths @('{complete}','{external}') -WriterCompletion @{{operations=@();resource_releases=@()}} -WritersStopped $true
+if($result.status-ne'failed'-or-not$result.terminal_published-or-not$result.capacity_finalized){{throw 'failed scientific result did not finish retention'}}
+$snapshot=Get-Content '{run / 'logs/capacity_session.json'}' -Raw|ConvertFrom-Json
+if('{external}'-notin@($snapshot.protected_paths)){{throw 'latest source scope was not persisted'}}
+""")
+            self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)
+            self.assertTrue(complete.exists())
+            self.assertFalse(incomplete.exists())
+            action = json.loads((run / "retention_actions.json").read_text(encoding="utf-8-sig"))
+            self.assertEqual([item["path"] for item in action["preserved"]], [complete.relative_to(run).as_posix()])
+
+    def test_rf_original_cli_resumes_existing_owner_completion(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="workflow-rf-cli-") as directory:
+            root = Path(directory)
+            _, run, _, _ = self.invoke_fixture(root, {}, failure_stage="retention_before", project="rf_multipole_ion_optics")
+            request_path = run / "inputs/execution_request.json"
+            request = json.loads(request_path.read_text(encoding="utf-8-sig"))
+            entry = run / "inputs/owner.ps1"
+            entry.write_text("# frozen all-reuse owner fixture\n", encoding="utf-8")
+            request["prepared"] = {"owner_kind": "powershell", "entrypoint": file_record(entry)}
+            request_path.write_text(json.dumps(request), encoding="utf-8")
+            completion_path = run / "results/execution_completion.json"
+            completion = json.loads(completion_path.read_text(encoding="utf-8-sig"))
+            completion.update(execution_request=file_record(request_path), writer_completion={"operations": [], "resource_releases": []},
+                              resource_usage_paths=[], resource_profile=None)
+            completion_path.write_text(json.dumps(completion), encoding="utf-8")
+            (root / "result.json").unlink()
+            initial = self.run_ps(root, f""". '{OWNER}'
+Write-RunJson -Atomic -Path '{run / 'logs/prepared_wait.json'}' -Value @{{schema_version=1;role='run_artifact_powershell_owner_wait';owner_pid=$PID;owner_start_utc_ticks=(Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks;native_writers_confirmed=$true;exception=$null;observation_error=$null}}
+""")
+            self.assertEqual(initial.returncode, 0, initial.stdout + initial.stderr)
+            fixture_repo = root / "simulation_repo"
+            shutil.copytree(REPO / "common", fixture_repo / "common", ignore=shutil.ignore_patterns("__pycache__"))
+            relative = Path("projects/rf_multipole_ion_optics/workflows/no_collision_transport/run_simion.ps1")
+            cli = fixture_repo / relative
+            cli.parent.mkdir(parents=True)
+            shutil.copyfile(REPO / relative, cli)
+            outcome = subprocess.run([PWSH, "-NoProfile", "-File", str(cli), "-ResumeFinalization", "-RunId", run.name,
+                                      "-PythonExe", sys.executable, "-ResultPath", str(root / "result.json")],
+                                     cwd=fixture_repo, capture_output=True, text=True, encoding="utf-8", timeout=90)
+            self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)
+            self.assertIn("MULTIPOLE_SIMION_FINALIZATION=success", outcome.stdout)
+            self.assertEqual(json.loads((root / "result.json").read_text(encoding="utf-8-sig"))["status"], "success")
+            self.assertEqual((root / "callback_count.txt").read_text(), "1")
 
     def test_retention_pending_and_expired_pre_retention_resume_without_prepared(self) -> None:
         for stage, lease_state in (("retention_pending", "active"), ("retention_before", "expired"),

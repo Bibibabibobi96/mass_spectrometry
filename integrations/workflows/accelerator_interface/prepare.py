@@ -39,6 +39,35 @@ verified_preparation_reference = partial(
 )
 
 
+def preflight_joint_analysis(design_run: Path, source_run: Path, contract_path: Path) -> None:
+    """Validate the selected analysis and measured source before a new field solve."""
+    from common.contracts.component_particle_state import load_component_particle_state_csv
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import validate_component_exit_binding
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_analysis import validate_measured_peak_source_reference
+
+    design_run, source_run, contract_path = map(Path, (design_run, source_run, contract_path))
+    reference = verified_preparation_reference(design_run, "inputs/reference_trajectory.json")
+    receipt_path = verified_preparation_reference(design_run, "results/ion_processor_exit/component_exit_receipt.json")
+    state_path = verified_preparation_reference(design_run, "results/ion_processor_exit/component_particle_state.csv")
+    receipt = _read(receipt_path)
+    validate_component_exit_binding(receipt)
+    if Path(receipt["source_run"]).resolve() != source_run.resolve():
+        raise ValueError("Design measured source differs from the selected IP run")
+    verify_record("design measured states", receipt["outputs"]["component_states"], base_dir=receipt_path.parent)
+    from common.contracts.verify_run_manifest import record_path
+    if record_path(receipt["outputs"]["component_states"], base_dir=receipt_path.parent).resolve() != state_path.resolve():
+        raise ValueError("Design measured state identity differs")
+    table = load_component_particle_state_csv(state_path)
+    if table.report["clock_epoch_ids"] != [receipt["clock_epoch_id"]]:
+        raise ValueError("Design measured state clock differs")
+    contract = _read(contract_path)
+    validate_execution_contract(_read(reference), contract, allow_controller_budget=True)
+    peak = contract.get("peak_analysis")
+    if peak is not None:
+        validate_measured_peak_source_reference(peak, contract_path.parent, receipt,
+            {int(row["particle_id"]): row for row in table.rows})
+
+
 def load_selection(path: Path, provider: str | None) -> tuple[str, dict[str, Any]]:
     """Resolve the explicit provider choice; no fallback for unknown providers."""
     registry = _read(path)
@@ -68,9 +97,11 @@ def _resolve_ip_matching(*, source_run: Path, results: Path, inputs: Path,
     request = _read(Path(frozen['accelerator_request']['path']))
     plan = derive_assembly_scope(_read(Path(frozen['composition_plan']['path'])), local_scope=request.get('local_scope'))
     connection = resolve_ip_mr_connection(plan)
-    export_component_exit(source_run, results / "ion_processor_exit",
+    exported = export_component_exit(source_run, results / "ion_processor_exit",
         source_instance_id=connection["upstream"]["instance_id"],
         target_instance_id=connection["downstream"]["instance_id"])
+    if exported["status"] == "zero_exit":
+        return exported
     return resolve_matching_request(
         component_receipt=results / "ion_processor_exit/component_exit_receipt.json",
         trajectory_contract=Path(frozen["reference_trajectory"]["path"]),
@@ -103,7 +134,13 @@ def prepare_joint_flight(*, reference_run: Path,
     prepare_handoff(matching, assembly["composition_plan"], interface_results / "mrtof_handoff")
     from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import validate_configs, derive_native_timing
     seed_config = prepared_geometry["seed_configs"]
-    seed_config["source_profile"] = "functional"
+    if source.get("source_profile") == "upstream":
+        # The resolved model is bound to the measured IP run. Its source is an
+        # admitted population, not an ion-release sampling specification.
+        seed_config["source_profile"] = "upstream"
+        seed_config["injected_source"] = source["injected_source"]
+    else:
+        seed_config["source_profile"] = "functional"
     seed_config["native_timing"] = derive_native_timing(seed_config["baseline"])
     validate_configs(seed_config)
     seed_directory = Path(assembly["source_config_paths"]["baseline"]).parent
@@ -112,15 +149,6 @@ def prepare_joint_flight(*, reference_run: Path,
         "source_model": file_record(source_model), "matching_request": file_record(assembly_request),
         "energy_seed": assembly["energy_seed"], "geometry_changes": assembly["geometry_changes"],
         "qualification": "configuration_validated_only_not_flight_or_energy_match",
-    })
-    _write(output / "provider_execution_recipe.json", {
-        "schema_version": 1, "role": "ion_processor_standalone_candidate_execution_recipe",
-        "entrypoint": str(REPO / "projects/dual_pressure_rectilinear_ion_processor/simion/run_functional.ps1"),
-        "configuration_directory": str(seed_directory), "source_profile": "functional",
-        "requires_new_run_id": True, "reuse_old_native_field": False,
-        "configuration_validation": "PASS", "execution_performed": False,
-        "execution_scope": "fresh standalone IP Refine and N100 flight before later joint replay",
-        "dispatch": "existing_repository_resource_scheduler_automatic_concurrency",
     })
     plan_path = Path(assembly["field_plan_path"])
     receipt = {
@@ -131,9 +159,9 @@ def prepare_joint_flight(*, reference_run: Path,
         "reference_materialization": references["reference_materialization"], "numerics": references["numerics"],
         "field_plan": file_record(plan_path),
         "required_before_flight": [
-            "Run the new standalone IP operating point and verify measured exit energy and time focus.",
-            "Replace historical handoff states with the newly measured source; do not rescale the existing CSV.",
-            "Build/refine every new parent/local/collision field and seal identities, then bind those assets.",
+            "Bind the explicitly selected measured IP source and preserve its original states, mother cohort and clock.",
+            "If the declared experiment requires a different upstream operating point, first obtain its measured source through the IP owner; do not rescale existing states.",
+            "Build/refine required missing parent/local/collision fields or validate matching sealed assets, then bind them to this design.",
             "Verify geometry clearances, field support/transition, actual IOB priorities and source initialization.",
         ],
     }
@@ -370,6 +398,13 @@ def prepare_interface(*, source_run: Path | None, reference_mr_run: Path,
     joint = None
     if selected == ION_PROCESSOR:
         matching = _resolve_ip_matching(source_run=source_run, results=results, inputs=inputs, frozen=frozen)
+        if matching.get("role") == "ion_processor_component_exit_export" and matching.get("status") == "zero_exit":
+            receipt = dict(schema_version=1, role="mrtof_accelerator_interface_preparation", status="zero_exit",
+                           selected_provider=selected, solver_executed=False, joint_simulation_executed=False,
+                           reference_requirements=target, inputs=frozen, source_exit=matching,
+                           qualification="zero transferred particles; no MR matching, field or flight qualification")
+            _write(results / "accelerator_interface_preparation.json", receipt)
+            return receipt
         joint = prepare_joint_flight(reference_run=reference_mr_run,
                                      interface_results=results, frozen_inputs=inputs, lua_executable=lua_executable,
                                      matching=matching)
@@ -435,6 +470,8 @@ def finalize_interface(*, source_run: Path, reference_mr_run: Path, design_run: 
             if not native_numerics_match(field_binding, Path(frozen["reference_trajectory"]["path"])):
                 raise ValueError("new native field Refine numerics differ from the selected execution contract")
     matching = _resolve_ip_matching(source_run=source_run, results=results, inputs=inputs, frozen=frozen)
+    if matching.get("role") == "ion_processor_component_exit_export" and matching.get("status") == "zero_exit":
+        raise ValueError("IP source has zero transferred particles; joint workbench and flight cannot run")
     design_plan = design_receipt["joint_preparation"]["assembly"]["composition_plan"]
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import prepare_handoff
     prepare_handoff(matching, design_plan, results / "mrtof_handoff")

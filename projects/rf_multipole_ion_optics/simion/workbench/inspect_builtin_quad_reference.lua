@@ -19,6 +19,15 @@ local run_config_path = assert(os.getenv('MULTIPOLE_SIMION_RUN_CONFIG_LUA'),
 record('STAGE=after_environment_contract')
 record('STAGE=before_run_config_load')
 local expected = assert(dofile(run_config_path), 'run config did not return a table')
+local cell_x, cell_y, cell_z = expected.expected_pa_cell_mm_x,
+  expected.expected_pa_cell_mm_y, expected.expected_pa_cell_mm_z
+if cell_x ~= nil or cell_y ~= nil or cell_z ~= nil then
+  assert(type(cell_x) == 'number' and type(cell_y) == 'number' and type(cell_z) == 'number'
+    and cell_x > 0 and cell_y > 0 and cell_z > 0, 'complete positive PA cell xyz contract required')
+else
+  cell_x = assert(expected.expected_pa_cell_mm, 'PA cell size contract missing')
+  cell_y, cell_z = cell_x, cell_x
+end
 record('STAGE=after_run_config_load')
 
 record('IOB=%s', iob_path)
@@ -48,9 +57,9 @@ for index = 1, #simion.wb.instances do
   assert(pa.nx == expected.expected_pa_nx and pa.ny == expected.expected_pa_ny and
          pa.nz == expected.expected_pa_nz,
     'candidate PA dimensions differ from the resolved geometry contract')
-  assert(math.abs(pa.dx_mm - expected.expected_pa_cell_mm) < 1e-12 and
-         math.abs(pa.dy_mm - expected.expected_pa_cell_mm) < 1e-12 and
-         math.abs(pa.dz_mm - expected.expected_pa_cell_mm) < 1e-12,
+  assert(math.abs(pa.dx_mm - cell_x) < 1e-12 and
+         math.abs(pa.dy_mm - cell_y) < 1e-12 and
+         math.abs(pa.dz_mm - cell_z) < 1e-12,
     'candidate PA cell size differs from the resolved geometry contract')
   record('STAGE=after_instance_%d_contract_check', index)
 end

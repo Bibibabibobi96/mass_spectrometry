@@ -58,8 +58,13 @@
 | CAD导出 | [`cad/ms_export_oatof_to_solidworks.m`](cad/ms_export_oatof_to_solidworks.m) | 读取指定模型与合同 |
 | 项目门禁 | [`verify_project.ps1`](verify_project.ps1)，选择 `-Level` | 按证据等级执行 |
 
+静态Python测试通过公共计时runner即时报告失败和逐测试耗时，原测试发现范围保持完整。
+
 所有workflow从本表导航；目录内不再复制合同和资格说明。命令行细节由入口的`--help`/参数块给出，
 SIMION运行边界见[`docs/SIMION.md`](docs/SIMION.md)，Formal与开放任务见[`docs/PROJECT.md`](docs/PROJECT.md)。
+径向紧凑化和单个结构Candidate将公共owner的小Result保留在项目`scratch/workflow_results/<run_id>/result.json`。
+收尾中断时分别通过原入口的`--resume-finalization`（径向入口同时指定`--run-id`，Candidate指定run目录）
+复用冻结request和Result；显式PA handoff Result可用`--owner-result`指定。该动作只恢复收尾，不重新飞行。
 Candidate campaign从仓库根通过以下模块查看参数，再提供表中要求的显式输入：
 
 ```powershell

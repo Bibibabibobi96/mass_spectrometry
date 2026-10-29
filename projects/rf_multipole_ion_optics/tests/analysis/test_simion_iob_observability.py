@@ -32,13 +32,46 @@ class SimionIobObservabilityTests(unittest.TestCase):
             "$iobStdoutPath = Join-Path $LogDir 'simion_iob_stdout.txt'",
             "$iobStderrPath = Join-Path $LogDir 'simion_iob_stderr.txt'",
             "$iobExitCodePath = Join-Path $LogDir 'simion_iob_exit_code.txt'",
-            "$inspectProcess = Start-Process -FilePath $SimionExe",
-            "-RedirectStandardOutput $iobStdoutPath -RedirectStandardError $iobStderrPath",
+            "$inspectProcess=Invoke-RfSimionPreparationProcess -Name inspect_runtime_iob",
+            "-Stdout $iobStdoutPath -Stderr $iobStderrPath",
             "Set-Content -LiteralPath $iobExitCodePath -Encoding ASCII",
             "SIMION IOB runtime contract failed with exit code",
         ):
             self.assertIn(token, source)
         self.assertNotIn("& $SimionExe --nogui --noprompt lua $InspectScript", source)
+
+    def test_managed_inspection_keeps_kernel_exit_code_and_stopped_facts(self) -> None:
+        script = r"""
+$ErrorActionPreference='Stop'
+. (Join-Path $PWD 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $PWD 'projects/rf_multipole_ion_optics/runtime/simion_execution.ps1')
+function Invoke-ResourceBudgetedProcess {
+ param($ArgumentList,$Environment,$RedirectStandardOutput,$RedirectStandardError)
+ if($Environment.MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA-cne'kernel.lua'){throw 'Kernel input was not explicit'}
+ $inspect=$ArgumentList-contains'inspect.lua'
+ if($inspect-and(Test-Path (Join-Path $env:RF_TEST_TEMP 'fixture.pa0'))){throw 'placeholder survived into true IOB inspection'}
+ if(-not$inspect-and-not(Test-Path (Join-Path $env:RF_TEST_TEMP 'fixture.pa0'))){throw 'template load companion absent'}
+ if(-not$inspect-and$ArgumentList[-1]-cne'C:\permanent\quad_monolithic.pa0'){throw 'IOB lost permanent producer controller'}
+ 'fixture probe'|Set-Content $RedirectStandardOutput
+ ''|Set-Content $RedirectStandardError
+ [pscustomobject]@{exit_code=$(if($inspect){7}else{0});resource_budget_exceeded=$false;root_process_id=44;root_process_started_at_utc_ticks=123}
+}
+$seed=Join-Path $env:RF_TEST_TEMP 'registered_seed.pa0';'software-only seed'|Set-Content $seed
+$operations=[Collections.Generic.List[object]]::new();$caught=$false
+try{Initialize-RfSimionPreparedBatch -SimionExe unused -CandidateDir $env:RF_TEST_TEMP -IobPath (Join-Path $env:RF_TEST_TEMP 'fixture.iob') -Fly2Path source.fly2 `
+ -IobBuilderScript builder.lua -ProgramSourcePath program.lua -RunConfigLua config.lua -InspectScript inspect.lua -IobReport report.txt `
+ -LogDir $env:RF_TEST_TEMP -RfDriveKernelPath kernel.lua -ControllerPath 'C:\permanent\quad_monolithic.pa0' -NativeOperations $operations -TemplateSeedPaPath $seed}
+catch{if(-not$_.Exception.Message.Contains('IOB runtime contract failed with exit code 7')){throw};$caught=$true}
+if(-not$caught-or(Get-Content (Join-Path $env:RF_TEST_TEMP 'simion_iob_exit_code.txt') -Raw).Trim()-cne'7'){throw 'Probe exit was not retained'}
+if($operations.Count-ne2-or-not$operations[0].observation.exit_confirmed-or$operations[0].observation.returncode-ne0-or$operations[1].observation.returncode-ne7){throw 'Managed native completion facts changed'}
+'MANAGED_IOB=PASS'
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,
+                env={**os.environ, "RF_TEST_TEMP": directory}, capture_output=True,
+                text=True, encoding="utf-8", errors="replace", timeout=25)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("MANAGED_IOB=PASS", result.stdout)
 
     def test_iob_report_is_opened_and_flushed_before_runtime_load(self) -> None:
         source = INSPECT_SCRIPT.read_text(encoding="utf-8")

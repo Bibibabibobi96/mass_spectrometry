@@ -180,8 +180,19 @@ class ResolvedDesignConsumerContractTest(unittest.TestCase):
             self.assertIn("[string]$PythonExe", source)
             self.assertIn("New-RunPackage -Python $python", source)
             self.assertIn("provenance=[ordered]@{parent_resolved_design_sha256=$resolvedHash", source)
-            self.assertIn("Write-VerifiedRunManifest", source)
+            if "simion" in name:
+                self.assertIn("Initialize-RunArtifactPowerShellOwner", source)
+                self.assertIn("Complete-RunArtifactPowerShellOwner -Context $ownerContext", source)
+                self.assertIn("-EntrypointRecord @{path=$ownerSource;exists=$true;bytes=[long]$ownerRecord.Length;sha256=$entryScriptHash}", source)
+                self.assertNotIn("Complete-RfWorkflowOwner", source)
+            else:
+                self.assertIn("Write-VerifiedRunManifest", source)
             self.assertEqual(source.count("Complete-FailedRun"), 1)
+
+        round_rod = (MULTIPOLE / "runtime/run_round_rod_field_screen.ps1").read_text(encoding="utf-8")
+        self.assertIn("status='checkpoint'", round_rod)
+        self.assertLess(round_rod.index("--status checkpoint"), round_rod.index("--status success"))
+        self.assertIn("--status failed", round_rod)
         comsol = (ROOT / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1").read_text(
             encoding="utf-8"
         )

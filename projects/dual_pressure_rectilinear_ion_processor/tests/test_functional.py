@@ -307,6 +307,9 @@ class FunctionalContractTests(unittest.TestCase):
         policy = repo / "common/contracts" / functional.POLICY_PATH.name
         policy.parent.mkdir(parents=True)
         shutil.copyfile(functional.POLICY_PATH, policy)
+        schema = Path("common/contracts/schemas/simion_batch_continuation.schema.json")
+        (repo / schema).parent.mkdir(parents=True)
+        shutil.copyfile(PROJECT.parents[1] / schema, repo / schema)
         shutil.copyfile(PROJECT.parents[1] / "common/host_resource_policy.json", repo / "common/host_resource_policy.json")
         for name in ("baseline", "numerics", "source", "acceptance", "native_operating_point"):
             value = self.config[name]
@@ -713,6 +716,9 @@ print(json.dumps(dict(alpha=rows[0].interpolation_alpha, lower=rows[0].lower_anc
     def test_prepare_exploration_freezes_selected_profile_and_source(self) -> None:
         project, vendor = self.make_prepare_fixture()
         functional.prepare(self.run, project, vendor, source_profile="exploration")
+        schema = Path("common/contracts/schemas/simion_batch_continuation.schema.json")
+        self.assertEqual((self.run / "inputs/code" / schema).read_bytes(),
+                         (PROJECT.parents[1] / schema).read_bytes())
         resolved = functional.read_json(self.run / "inputs/resolved_model.json")
         config = functional.read_json(self.run / "run_config.json")
         expected = functional.read_json(PROJECT / "config/source_exploration.json")
@@ -786,6 +792,63 @@ print(json.dumps(dict(alpha=rows[0].interpolation_alpha, lower=rows[0].lower_anc
         self.write_events(rows)
         with self.assertRaises((ValueError, AssertionError)):
             functional.analyze(self.run)
+
+
+class NativeFieldReferenceTests(unittest.TestCase):
+    def test_source_projection_and_child_publication_reference_owner_without_payload_rereads(self) -> None:
+        from common.contracts import verify_run_manifest, write_run_manifest
+        from projects.dual_pressure_rectilinear_ion_processor.analysis import batching
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            parent = root / "20261029_120000__test__simion__field-owner-fixture"
+            child = root / "20261029_120001__test__simion__field-consumer-fixture"
+            model = {"native_projection": {"electrode_ids": list(range(1, 16))},
+                     "numerics": {"refine_convergence_v": 1e-5}}
+            for run in (parent, child):
+                for directory in ("inputs", "simion", "logs"):
+                    (run / directory).mkdir(parents=True, exist_ok=True)
+                (run / "simion/processor.gem").write_text("inert geometry fixture\n", encoding="utf-8")
+            functional.write_json(parent / "inputs/resolved_model.json", model)
+            functional.write_json(parent / "inputs/numerics.json", model["numerics"])
+            (parent / "logs/refine.log").write_text("Fast adjust Refining completed\n", encoding="utf-8")
+            family = [parent / "simion" / ("processor.pa" + suffix)
+                      for suffix in ["#", *map(str, range(16)), "-surf"]]
+            for path in family:
+                path.write_bytes(b"inert native payload fixture")
+            functional.write_json(parent / "run_config.json", dict(run_id=parent.name, project=functional.PROJECT,
+                mode="native_electrode_functional", inputs={str(index): str(parent / relative) for index, relative in
+                enumerate(("inputs/resolved_model.json", "inputs/numerics.json", "simion/processor.gem"))}))
+            write_run_manifest.publish_run_manifest(parent / "run_config.json", "success",
+                output_paths=[*family, parent / "logs/refine.log"])
+            actual_hash = write_run_manifest.file_sha256
+            actual_subprocess = functional.subprocess.run
+
+            def no_payload_hash(path: Path) -> str:
+                self.assertNotIn(Path(path).resolve(), family, "PA identity was read outside its immutable owner guard")
+                return actual_hash(path)
+
+            def projected_verifier(arguments: list[str], **options: object) -> subprocess.CompletedProcess:
+                self.assertFalse(any(str(path) in arguments for path in family), "projection reselected the guarded payload")
+                return actual_subprocess(arguments, **options)
+
+            with patch.object(functional, "file_sha256", side_effect=no_payload_hash), \
+                 patch.object(functional.subprocess, "run", side_effect=projected_verifier), \
+                 patch.object(write_run_manifest, "file_sha256", side_effect=no_payload_hash):
+                external = functional._native_field_binding(child, copy.deepcopy(model), parent, PROJECT.parents[1])
+                self.assertEqual(set(external), {"native_field_manifest", "native_field_consumption"})
+                consumption = json.loads((child / "inputs/native_field_consumption.json").read_text())
+                self.assertEqual(len(consumption["family_records"]), len(family))
+                self.assertEqual(consumption["payload_validation"], "launcher_immutable_source_guard_required_before_native_use")
+                functional.write_json(child / "run_config.json", dict(run_id=child.name, project=functional.PROJECT,
+                    mode="native_electrode_functional", inputs=external))
+                manifest = batching.publish_manifest(child, "success")
+                self.assertFalse({Path(record["path"]).resolve() for record in manifest["inputs"].values()} & set(family))
+                with patch.object(sys, "argv", ["verify_run_manifest", str(child / "run_manifest.json"),
+                        "--require-status", "success", "--require-project", functional.PROJECT]):
+                    verify_run_manifest.main()
+            (parent / ".run_terminal_publication.json").write_text("{}", encoding="utf-8")
+            with self.assertRaises(subprocess.CalledProcessError):
+                functional._native_field_binding(child, copy.deepcopy(model), parent, PROJECT.parents[1])
 
 
 if __name__ == "__main__":

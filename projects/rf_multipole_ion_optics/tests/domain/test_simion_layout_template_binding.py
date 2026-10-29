@@ -76,6 +76,8 @@ class SimionLayoutTemplateBindingTests(unittest.TestCase):
         iob_path.parent.mkdir(parents=True, exist_ok=True)
         iob_path.write_bytes(b"minimal registered IOB fixture\n")
         con_path.write_bytes(b"minimal registered CON fixture\n")
+        seed_path = iob_path.with_suffix(".pa0")
+        seed_path.write_bytes(b"software-only registered seed fixture")
 
         _write_json(
             run_root / "run_config.json",
@@ -136,6 +138,7 @@ class SimionLayoutTemplateBindingTests(unittest.TestCase):
                         "path": str(iob_path),
                         "sha256": _sha256(iob_path),
                     },
+                    "template_placeholder_pa0": {"path": str(seed_path), "sha256": _sha256(seed_path)},
                     "template_con": {
                         "path": str(con_path),
                         "sha256": _sha256(con_path),
@@ -175,6 +178,7 @@ class SimionLayoutTemplateBindingTests(unittest.TestCase):
         )
         self.assertEqual(Path(result["bundle"]["iob"]["path"]).suffix, ".iob")
         self.assertEqual(Path(result["bundle"]["con"]["path"]).suffix, ".con")
+        self.assertEqual(Path(result["bundle"]["placeholder_pa0"]["path"]).suffix, ".pa0")
 
     def test_retired_alias_resolves_with_original_artifact_owner(self) -> None:
         from projects.rf_multipole_ion_optics.runtime import simion_layout_template

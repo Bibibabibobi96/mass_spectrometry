@@ -1329,6 +1329,34 @@ def execute_prepared_run(
     })
 
 
+def resume_candidate_finalization(run_root: Path, owner_result: Path | None = None) -> tuple[Path, dict[str, Any]]:
+    """Resume only the existing public owner's publication, without executing stages."""
+    run_root = Path(run_root).resolve(strict=True)
+    request_path = run_root / "inputs" / "execution_request.json"
+    request = load_json(request_path)
+    package = request["package"]
+    expected = Path(package["artifact_project_root"]).resolve() / "runs" / package["run_id"]
+    if (package["project"] != "single_reflection_oa_tof_mass_analyzer"
+            or package["mode"] != "design_candidate" or expected != run_root):
+        raise ValueError("finalization request is not this candidate run")
+    result_path = (Path(owner_result).resolve(strict=True) if owner_result else
+                   run_root.parent.parent / "scratch" / "workflow_results" / run_root.name / "result.json")
+    result_path = result_path.resolve(strict=True)
+    with tempfile.TemporaryDirectory(prefix="oatof_candidate_finalize_") as directory:
+        log_path = Path(directory) / "owner.log"
+        try:
+            _run_command(_powershell(str(REPO_ROOT / "common/contracts/run_artifact_workflow.ps1"),
+                                     ["-RequestPath", str(request_path), "-ResultPath", str(result_path),
+                                      "-ResumeFinalization"]), log_path)
+        except RuntimeError as exc:
+            details = log_path.read_text(encoding="utf-8", errors="replace") if log_path.is_file() else str(exc)
+            raise CandidateWorkflowError(f"finalization failed: {details}; result: {result_path}", run_root) from exc
+    result = load_json(result_path)
+    if not (result.get("terminal_published") and result.get("capacity_finalized") and result.get("lease_released")):
+        raise CandidateWorkflowError(f"public lifecycle owner remains incomplete: {result}; result: {result_path}", run_root)
+    return run_root, load_json(run_root / "summary.json")
+
+
 def run_candidate_workflow(
     plan_path: Path, simion_exe: str, stage_executor: StageExecutor = execute_stage, *,
     reuse_parent: Path | None = None, reuse_through: str | None = None,
@@ -1350,7 +1378,11 @@ def run_candidate_workflow(
         request["package"]["retention_reason"] += " Explicit PA producer handoff retains the actual public owner Result."
     with tempfile.TemporaryDirectory(prefix="oatof_candidate_owner_") as directory:
         request_path = Path(directory) / "request.json"
-        result_path = pa_handoff_output if pa_handoff_output is not None else Path(directory) / "result.json"
+        result_path = (pa_handoff_output if pa_handoff_output is not None else
+                       run_root.parent.parent / "scratch" / "workflow_results" / run_root.name / "result.json")
+        result_path.parent.mkdir(parents=True, exist_ok=True)
+        if result_path.exists():
+            raise ValueError(f"Workflow Result already exists: {result_path}")
         write_json_atomic(request_path, request)
         failure = None
         try:
@@ -1360,10 +1392,10 @@ def run_candidate_workflow(
         except BaseException as error:
             failure = error
         if not result_path.is_file():
-            raise CandidateWorkflowError(f"public lifecycle owner did not return completion: {failure}", run_root) from failure
+            raise CandidateWorkflowError(f"public lifecycle owner did not return completion: {failure}; result: {result_path}", run_root) from failure
         result = load_json(result_path)
         if not (result.get("terminal_published") and result.get("capacity_finalized") and result.get("lease_released")):
-            raise CandidateWorkflowError(f"public lifecycle owner remains incomplete: {result}", run_root) from failure
+            raise CandidateWorkflowError(f"public lifecycle owner remains incomplete: {result}; result: {result_path}", run_root) from failure
         summary = load_json(run_root / "summary.json")
         if summary["status"] == "interrupted":
             raise CandidateWorkflowInterrupted(run_root) from failure

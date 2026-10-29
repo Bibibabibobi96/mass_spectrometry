@@ -44,8 +44,155 @@ function Test-WorkflowPathWithin {
     $pathValue.StartsWith($rootPath+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)
 }
 
+function New-WorkflowOwnerFileRecord {
+  param([Parameter(Mandatory)][string]$Path)
+  $actual=[IO.Path]::GetFullPath($Path);$item=Get-Item -LiteralPath $actual
+  if($item.PSIsContainer){throw 'PowerShell owner evidence must be a file.'}
+  return @{path=$actual;exists=$true;bytes=[long]$item.Length;sha256=(Get-FileHash -LiteralPath $actual -Algorithm SHA256).Hash}
+}
+
+function Convert-WorkflowOwnerPath {
+  param([Collections.IDictionary]$Context,[string]$Path)
+  $actual=[IO.Path]::GetFullPath($Path)
+  $execution=[string]$Context.execution_run_directory
+  if($execution-and(Test-WorkflowPathWithin $actual $execution)){
+    return [IO.Path]::GetFullPath((Join-Path $Context.run_directory ([IO.Path]::GetRelativePath($execution,$actual))))
+  }
+  return $actual
+}
+
+function Initialize-RunArtifactPowerShellOwner {
+  <# Bind an existing package/session to the public finalizer before native work.
+     This does not create a second run, lease, executor or recovery state. #>
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)]$Package,[Parameter(Mandatory)]$CapacitySession,
+    [string]$ResultPath='',[Parameter(Mandatory)][string]$EntrypointPath,
+    $EntrypointRecord=$null,
+    [Parameter(Mandatory)][string[]]$CommitmentInputPaths,[string[]]$Software=@(),
+    [bool]$OwnCapacitySession=$true)
+  $config=Get-Content -LiteralPath $Package.run_config -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+  $projectRoot=Join-Path (Join-Path ([string]$CapacitySession.artifact_root) 'projects') ([string]$config.project)
+  $runRoot=[IO.Path]::GetFullPath((Join-Path $projectRoot ('runs/'+$config.run_id)))
+  if(-not(Test-Path -LiteralPath $runRoot -PathType Container)){throw 'PowerShell owner package directory is missing.'}
+  $paths=@{execution_run_directory=[IO.Path]::GetFullPath([string]$Package.run_dir);run_directory=$runRoot}
+  $entry=Convert-WorkflowOwnerPath $paths $EntrypointPath
+  if(-not(Test-WorkflowPathWithin $entry (Join-Path $runRoot 'inputs'))){throw 'PowerShell owner entrypoint must be frozen inside its inputs.'}
+  $entryRecord=if($null-ne$EntrypointRecord){@{path=(Convert-WorkflowOwnerPath $paths $EntrypointRecord.path);
+    exists=$EntrypointRecord.exists;bytes=$EntrypointRecord.bytes;sha256=$EntrypointRecord.sha256}}else{New-WorkflowOwnerFileRecord $entry}
+  if([IO.Path]::GetFullPath([string]$entryRecord.path)-ine$entry-or-not$entryRecord.exists-or
+     [long]$entryRecord.bytes-ne(Get-Item -LiteralPath $entry).Length-or[string]$entryRecord.sha256-notmatch'^[A-Fa-f0-9]{64}$'){
+    throw 'Frozen PowerShell owner entrypoint record differs.'
+  }
+  $expectedOwner="run-artifact-workflow:{0}:{1}"-f$config.project,$config.run_id
+  if($OwnCapacitySession-and[string]$CapacitySession.owner-cne$expectedOwner){throw 'PowerShell owner capacity session has another owner.'}
+  if([string]$CapacitySession.status-cne'active'){throw 'PowerShell owner requires its actual active capacity session.'}
+  if(-not$ResultPath){$ResultPath=Join-Path $projectRoot ('scratch/workflow_results/'+$config.run_id+'/result.json')}
+  $ResultPath=[IO.Path]::GetFullPath($ResultPath)
+  if(Test-WorkflowPathWithin $ResultPath $runRoot){throw 'PowerShell owner Result must remain outside its run.'}
+  if(Test-Path -LiteralPath $ResultPath){throw 'PowerShell owner Result already exists; resume its original run.'}
+  [IO.Directory]::CreateDirectory((Split-Path -Parent $ResultPath))|Out-Null
+  $budgetInputs=@($CommitmentInputPaths|ForEach-Object{New-WorkflowOwnerFileRecord (Convert-WorkflowOwnerPath $paths $_)})
+  if(-not$budgetInputs.Count){throw 'PowerShell owner requires its frozen budget authority.'}
+  $request=[ordered]@{schema_version=1;role='run_artifact_workflow_request';repository_root=$RepoRoot;python_executable=$Python;
+    package=[ordered]@{project=$config.project;run_id=$config.run_id;mode=$config.mode;artifact_project_root=$projectRoot;
+      software=@($Software);retention_class=$config.artifact_retention.class;retention_reason=$config.artifact_retention.reason};
+    capacity=[ordered]@{committed_new_bytes=[long]$CapacitySession.committed_new_bytes;commitment_inputs=$budgetInputs;
+      protected_paths=@($CapacitySession.protected_paths);protected_cache_keys=@($CapacitySession.protected_cache_keys);
+      ownership=$(if($OwnCapacitySession){'owned'}else{'inherited'});session_owner=[string]$CapacitySession.owner};
+    prepared=[ordered]@{owner_kind='powershell';entrypoint=$entryRecord};payload=@{}}
+  $requestPath=Join-Path $runRoot 'inputs/execution_request.json'
+  if(Test-Path -LiteralPath $requestPath){throw 'PowerShell owner execution request already exists.'}
+  Write-RunJson -Atomic -Path $requestPath -Value $request -Depth 64
+  Write-RunJson -Atomic -Path (Join-Path $runRoot 'logs/capacity_session.json') -Value $CapacitySession -Depth 64
+  foreach($name in @($config.inputs.Keys)){
+    if($config.inputs[$name]-is[string]){
+      $inputPath=[string]$config.inputs[$name]
+      if(-not[IO.Path]::IsPathFullyQualified($inputPath)){$inputPath=Join-Path $paths.execution_run_directory $inputPath}
+      $config.inputs[$name]=Convert-WorkflowOwnerPath $paths $inputPath
+    }
+  }
+  $config.inputs.execution_request=$requestPath
+  Write-RunJson -Atomic -Path (Join-Path $runRoot 'run_config.json') -Value $config -Depth 64
+  Write-RunJson -Atomic -Path $ResultPath -Value @{schema_version=1;role='run_artifact_workflow_result';status='pending';
+    stage='prepared';run_directory=$runRoot;execution_request=$requestPath;resume_action='inspect_writer_completion'} -Depth 64
+  return @{python=$Python;repo_root=$RepoRoot;request_path=$requestPath;result_path=$ResultPath;
+    run_directory=$runRoot;execution_run_directory=$paths.execution_run_directory;session=$CapacitySession;
+    own_capacity_session=$OwnCapacitySession;completion_written=$false;finalized=$false;finalization_started=$false}
+}
+
+function Complete-RunArtifactPowerShellOwner {
+  <# Persist actual stopped-writer facts, then invoke the existing finalizer. #>
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][Collections.IDictionary]$Context,
+    [Parameter(Mandatory)][ValidateSet('success','failed','interrupted')][string]$Status,
+    [Parameter(Mandatory)][Collections.IDictionary]$Summary,
+    [string[]]$OutputPaths=@(),[string[]]$RequiredOutputPaths=@(),[string[]]$RetentionPreservePaths=@(),
+    [Parameter(Mandatory)][Collections.IDictionary]$WriterCompletion,
+    [Parameter(Mandatory)][bool]$WritersStopped,$OriginalFailure=$null,
+    [object[]]$ResourceUsagePaths=@(),$ResourceProfile=$null)
+  $root=[string]$Context.run_directory
+  if($Context.completion_written){throw 'PowerShell owner completion is already persisted; resume its original Result.'}
+  $exception=if($null-ne$OriginalFailure){@{type=$OriginalFailure.Exception.GetType().FullName;message=$OriginalFailure.Exception.Message;notes=@()}}else{$null}
+  Write-RunJson -Atomic -Path (Join-Path $root 'logs/capacity_session.json') -Value $Context.session -Depth 64
+  if(-not$WritersStopped){
+    $unknownReason=if($Summary.Contains('failure_reason')){$Summary.failure_reason}elseif($null-ne$OriginalFailure){$OriginalFailure.Exception.Message}else{'Native writer completion is unknown.'}
+    $unknownRecovery=if($Summary.Contains('recovery_action')){$Summary.recovery_action}else{'inspect_writer_completion'}
+    Write-RunJson -Atomic -Path $Context.result_path -Value @{schema_version=1;role='run_artifact_workflow_result';status='failed';
+      stage='writer_completion';run_directory=$root;writers_confirmed=$false;resume_action=$unknownRecovery;
+      execution_status=$(if($Summary.Contains('execution_status')){$Summary.execution_status}else{'writer_completion_unknown'});
+      data_validity=$(if($Summary.Contains('data_validity')){$Summary.data_validity}else{'unknown'});
+      scientific_result=$(if($Summary.Contains('scientific_result')){$Summary.scientific_result}elseif($Summary.Contains('science_status')){$Summary.science_status}else{'NOT_EVALUATED'});
+      failure_stage=$(if($Summary.Contains('failure_stage')){$Summary.failure_stage}else{'writer_completion'});
+      failure_reason=$unknownReason;recovery_action=$unknownRecovery;result_path=[string]$Context.result_path;
+      exception=$exception;secondary_errors=@(if($Summary.Contains('secondary_errors')){$Summary.secondary_errors|ForEach-Object{[string]$_}});
+      phase_timings_seconds=$(if($Summary.Contains('phase_timings_seconds')){$Summary.phase_timings_seconds}elseif($Summary.Contains('phase_durations_seconds')){$Summary.phase_durations_seconds}else{@{}});
+      total_elapsed_seconds=$(if($Summary.Contains('total_elapsed_seconds')){$Summary.total_elapsed_seconds}else{$null})} -Depth 64
+    throw 'PowerShell owner native writer completion is unknown; retain its resources.'
+  }
+  Assert-WorkflowWriterCompletion $WriterCompletion -PowerShellOwner
+  $preserve=@($RetentionPreservePaths|ForEach-Object{Convert-WorkflowOwnerPath $Context $_})
+  if($Status-ne'success'){
+    # Keep only the existing retention owner's recognized, completed batch
+    # logs. Incomplete logs retain their original failed-run policy. This
+    # reads bounded log tails, never PA payloads or scientific trajectories.
+    $ownerRunRoot=$root
+    $completedLogs=Invoke-RunToolRootContext -RepoRoot $Context.repo_root -Operation {
+      & $Context.python -B -c 'import json,sys;from pathlib import Path;from common.simion.native_completion import recoverable_batch_logs,has_recoverable_batch_completion;print(json.dumps([str(p) for p in sorted(recoverable_batch_logs(Path(sys.argv[1]))) if has_recoverable_batch_completion(p)]))' $ownerRunRoot
+      if($LASTEXITCODE-ne0){throw 'Completed batch log retention selection failed.'}
+    }
+    $preserve+=@(($completedLogs-join"`n")|ConvertFrom-Json)
+  }
+  $configPath=Join-Path $root 'run_config.json'
+  $config=Get-Content -LiteralPath $configPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+  $summaryDocument=[ordered]@{};foreach($name in $Summary.Keys){$summaryDocument[$name]=$Summary[$name]}
+  $summaryDocument.run_id=$config.run_id;$summaryDocument.status=$Status
+  $waitPath=Join-Path $root 'logs/prepared_wait.json'
+  $completionPath=Join-Path $root 'results/execution_completion.json'
+  Write-RunJson -Atomic -Path $waitPath -Value @{schema_version=1;role='run_artifact_powershell_owner_wait';owner_pid=$PID;
+    owner_start_utc_ticks=(Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks;
+    native_writers_confirmed=$true;exception=$exception;observation_error=$null} -Depth 64
+  $completion=[ordered]@{schema_version=1;role='run_artifact_workflow_completion';run_id=$config.run_id;project=$config.project;
+    execution_request=(New-WorkflowOwnerFileRecord $Context.request_path);run_config=(New-WorkflowOwnerFileRecord $configPath);
+    status=$Status;summary=$summaryDocument;output_paths=@($OutputPaths|ForEach-Object{Convert-WorkflowOwnerPath $Context $_});
+    required_output_paths=@($RequiredOutputPaths|ForEach-Object{Convert-WorkflowOwnerPath $Context $_});
+    retention_preserve_paths=@($preserve|Sort-Object -Unique);manifest_extra_fields=@{};writer_completion=$WriterCompletion;exception=$exception;
+    resource_usage_paths=@($ResourceUsagePaths|ForEach-Object{@{path=(Convert-WorkflowOwnerPath $Context $_.path);case_name=$_.case_name}});
+    resource_profile=$(if($null-ne$ResourceProfile){@{dispatch_plan=(Convert-WorkflowOwnerPath $Context $ResourceProfile.dispatch_plan);
+      output=(Convert-WorkflowOwnerPath $Context $ResourceProfile.output);usage_path=(Convert-WorkflowOwnerPath $Context $ResourceProfile.usage_path)}}else{$null})}
+  Write-RunJson -Atomic -Path $completionPath -Value $completion -Depth 64
+  $Context.completion_written=$true
+  Write-RunJson -Atomic -Path $Context.result_path -Value @{schema_version=1;role='run_artifact_workflow_result';status='pending';
+    stage='completion';run_directory=$root;execution_request=$Context.request_path;writers_confirmed=$true;
+    exception=$exception;resume_action='resume_finalization'} -Depth 64
+  $Context.finalization_started=$true
+  $outcome=Invoke-RunArtifactWorkflow -RequestPath $Context.request_path -ResultPath $Context.result_path -ResumeFinalization
+  $Context.finalized=$true;$Context.finalization_started=$false
+  return $outcome
+}
+
 function Assert-WorkflowWriterCompletion {
-  param($Completion)
+  param($Completion,[switch]$PowerShellOwner)
   Assert-WorkflowFields $Completion @('operations','resource_releases') 'Writer completion'
   if($Completion.operations-isnot[array]-or$Completion.resource_releases-isnot[array]){
     throw 'Writer completion collections must be arrays.'
@@ -75,11 +222,12 @@ function Assert-WorkflowWriterCompletion {
     }
     $hostRelease=$receipt.host_release
     Assert-WorkflowFields $hostRelease @('inherited','token','result','error') 'Host release'
-    if($hostRelease.inherited-isnot[bool]-or$hostRelease.inherited-or
+    if($hostRelease.inherited-isnot[bool]-or($hostRelease.inherited-and-not$PowerShellOwner)-or
        $hostRelease.token-isnot[string]-or[string]::IsNullOrWhiteSpace($hostRelease.token)-or
        $null-ne$hostRelease.error){throw 'Resource owner release is unconfirmed or inherited.'}
     Assert-WorkflowFields $hostRelease.result @('status','token') 'Released transaction'
-    if($hostRelease.result.status-cne'released'-or$hostRelease.result.token-cne$hostRelease.token){
+    $expectedStatus=if($hostRelease.inherited){'acquired'}else{'released'}
+    if($hostRelease.result.status-cne$expectedStatus-or$hostRelease.result.token-cne$hostRelease.token){
       throw 'Resource owner release identity or terminal state differs.'
     }
     if($tokens.ContainsKey($hostRelease.token)){throw 'Resource release token is duplicated.'}
@@ -91,7 +239,13 @@ function Assert-WorkflowWriterCompletion {
     Assert-WorkflowFields $operation @('operation_id','observation','resource_release_id') 'Writer operation'
     if($operation.operation_id-isnot[string]-or[string]::IsNullOrWhiteSpace($operation.operation_id)-or
        $operations.ContainsKey($operation.operation_id)){throw 'Writer operation identity is missing or duplicated.'}
-    Assert-WorkflowFields $operation.observation @('exit_confirmed','returncode') 'Native observation'
+    if($PowerShellOwner){
+      Assert-WorkflowFields $operation.observation @('exit_confirmed','returncode','process_id','process_started_at_utc_ticks') 'PowerShell native observation'
+      if(($operation.observation.process_id-isnot[int]-and$operation.observation.process_id-isnot[long])-or
+         [long]$operation.observation.process_id-le0-or
+         ($operation.observation.process_started_at_utc_ticks-isnot[int]-and$operation.observation.process_started_at_utc_ticks-isnot[long])-or
+         [long]$operation.observation.process_started_at_utc_ticks-le0){throw 'PowerShell native process identity is invalid.'}
+    }else{Assert-WorkflowFields $operation.observation @('exit_confirmed','returncode') 'Native observation'}
     if($operation.observation.exit_confirmed-isnot[bool]-or-not$operation.observation.exit_confirmed-or
        $operation.observation.returncode-isnot[long]-and$operation.observation.returncode-isnot[int]){
       throw 'Native writer completion is unconfirmed.'
@@ -188,8 +342,8 @@ for value in completion["output_paths"]:
     elif path.resolve() not in removed: raise ValueError(f"workflow output disappeared without retention evidence: {path}")
 summary = dict(completion["summary"], writers_stopped=True)
 summary_path = root / "summary.json"
-outputs = list(dict.fromkeys([*outputs, summary_path, completion_path, session_path, wait_path, retention_path,
-                            root / "logs/prepared_stdout.log", root / "logs/prepared_stderr.log"]))
+logs = [] if request["prepared"].get("owner_kind") == "powershell" else [root / "logs/prepared_stdout.log", root / "logs/prepared_stderr.log"]
+outputs = list(dict.fromkeys([*outputs, summary_path, completion_path, session_path, wait_path, retention_path, *logs]))
 manifest = build_run_manifest(config_path, completion["status"], software=request["package"]["software"],
     output_paths=outputs, virtual_documents={summary_path: summary}, extra_fields=completion["manifest_extra_fields"])
 if any(not item["exists"] for item in manifest["outputs"]): raise ValueError("workflow terminal output is missing")
@@ -224,7 +378,7 @@ else: publish_terminal_state(root, summary, manifest)
 '@
   Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
     $PSNativeCommandUseErrorActionPreference=$false
-    & $Python -B -c $publisher $CompletionPath $SessionPath $WaitPath ([string]$MaximumRunBytes)
+    & $Python -B -c $publisher $CompletionPath $SessionPath $WaitPath ([string]$MaximumRunBytes) | Out-Host
     if($LASTEXITCODE-ne0){throw "Workflow terminal publication failed; exit_code=$LASTEXITCODE; retain the existing journal for recovery."}
   }
 }
@@ -273,7 +427,8 @@ function Invoke-RunArtifactWorkflow {
     if($NextStage){$result.last_completed_stage=$previous;$result.stage=$NextStage}
   }
   $session=$null;$package=$null;$writersConfirmed=$false;$preparedStarted=[bool]$ResumeFinalization;$failure=$null
-  $maximumRunBytes=$null;$python=$null;$repo=$null
+  $maximumRunBytes=$null;$python=$null;$repo=$null;$powershellOwner=$false;$completion=$null
+  $inheritedCapacity=$false;$inheritedAlreadyReady=$false;$requiresParentOwner=$false
   try{
     $requestFile=(Resolve-Path -LiteralPath $RequestPath).Path
     $requestHash=(Get-FileHash -LiteralPath $requestFile -Algorithm SHA256).Hash
@@ -281,8 +436,22 @@ function Invoke-RunArtifactWorkflow {
     Assert-WorkflowFields $request @('schema_version','role','repository_root','python_executable','package','capacity','prepared','payload') 'Workflow request'
     if($request.schema_version-ne1-or$request.role-cne'run_artifact_workflow_request'){throw 'Workflow request identity differs.'}
     Assert-WorkflowFields $request.package @('project','run_id','mode','artifact_project_root','software','retention_class','retention_reason') 'Workflow package'
-    Assert-WorkflowFields $request.capacity @('committed_new_bytes','commitment_inputs','protected_paths','protected_cache_keys') 'Workflow capacity'
-    Assert-WorkflowFields $request.prepared @('module','function','import_root','entrypoint') 'Prepared call'
+    $capacityFields=@('committed_new_bytes','commitment_inputs','protected_paths','protected_cache_keys')
+    if($request.capacity.Contains('ownership')-or$request.capacity.Contains('session_owner')){$capacityFields+=@('ownership','session_owner')}
+    Assert-WorkflowFields $request.capacity $capacityFields 'Workflow capacity'
+    $powershellOwner=$request.prepared-is[Collections.IDictionary]-and$request.prepared.Contains('owner_kind')-and
+      $request.prepared.owner_kind-ceq'powershell'
+    if($powershellOwner){
+      Assert-WorkflowFields $request.prepared @('owner_kind','entrypoint') 'PowerShell owner'
+      if(-not$ResumeFinalization){throw 'PowerShell owner finalization requires its existing run.'}
+    }else{Assert-WorkflowFields $request.prepared @('module','function','import_root','entrypoint') 'Prepared call'}
+    if($request.capacity.Contains('ownership')){
+      if(-not$powershellOwner-or$request.capacity.ownership-notin@('owned','inherited')-or
+         $request.capacity.session_owner-isnot[string]-or[string]::IsNullOrWhiteSpace($request.capacity.session_owner)){
+        throw 'Workflow capacity ownership is invalid.'
+      }
+      $inheritedCapacity=$request.capacity.ownership-ceq'inherited'
+    }
     $budget=$request.capacity.committed_new_bytes
     if($budget-isnot[long]-and$budget-isnot[int]-or$budget-lt0){throw 'Workflow capacity requires a known nonnegative integer commitment.'}
     foreach($name in @('commitment_inputs','protected_paths','protected_cache_keys')){
@@ -291,8 +460,8 @@ function Invoke-RunArtifactWorkflow {
     if(-not$request.capacity.commitment_inputs.Count){throw 'Workflow capacity requires its budget authority inputs.'}
     if(-not$ResumeFinalization){foreach($record in $request.capacity.commitment_inputs){Assert-WorkflowFileRecord $record}}
     $call=$request.prepared
-    if($call.module-isnot[string]-or$call.module-notmatch'^[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$'-or
-       $call.module-eq'__main__'-or$call.function-cne'execute_prepared_run'){throw 'Workflow prepared call is invalid.'}
+    if(-not$powershellOwner-and($call.module-isnot[string]-or$call.module-notmatch'^[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$'-or
+       $call.module-eq'__main__'-or$call.function-cne'execute_prepared_run')){throw 'Workflow prepared call is invalid.'}
     if(-not$ResumeFinalization){
       $importRoot=(Resolve-Path -LiteralPath $call.import_root).Path
       Assert-WorkflowFileRecord $call.entrypoint (Join-Path $importRoot ($call.module.Replace('.','/')+'.py'))
@@ -321,7 +490,7 @@ function Invoke-RunArtifactWorkflow {
       $initial=Get-Content -LiteralPath $package.run_config -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
       $sessionPath=Join-Path $runRoot 'logs/capacity_session.json'
       $session=Get-Content -LiteralPath $sessionPath -Raw -Encoding UTF8|ConvertFrom-Json
-      $expectedOwner="run-artifact-workflow:{0}:{1}"-f$request.package.project,$request.package.run_id
+      $expectedOwner=if($request.capacity.Contains('session_owner')){[string]$request.capacity.session_owner}else{"run-artifact-workflow:{0}:{1}"-f$request.package.project,$request.package.run_id}
       if($session.role-cne'artifact_workflow_capacity_session'-or$session.owner-cne$expectedOwner-or
          [IO.Path]::GetFullPath($session.artifact_root)-ine$artifactRoot){throw 'Workflow recovery session identity differs.'}
       if(Test-Path -LiteralPath $ResultPath -PathType Leaf){
@@ -338,6 +507,10 @@ function Invoke-RunArtifactWorkflow {
       }
       $completionPath=Join-Path $runRoot 'results/execution_completion.json'
       $waitPath=Join-Path $runRoot 'logs/prepared_wait.json'
+      if($powershellOwner){
+        if(-not(Test-WorkflowPathWithin $call.entrypoint.path $package.input_dir)){throw 'PowerShell owner source is outside frozen inputs.'}
+        Assert-WorkflowFileRecord $call.entrypoint
+      }
     }else{
     Set-WorkflowStage admission
     $session=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repo -ArtifactRoot $artifactRoot `
@@ -372,31 +545,85 @@ function Invoke-RunArtifactWorkflow {
     Set-WorkflowStage completion
     $wait=Get-Content -LiteralPath $waitPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
     $result.exception=$wait.exception
-    $process=$wait.managed_process
-    if($wait.role-cne'run_artifact_prepared_wait'-or$null-ne$wait.observation_error-or
-       $process.role-cne'repository_managed_python_completion'-or
-       ($process.exit_code-isnot[int]-and$process.exit_code-isnot[long])){throw 'Prepared process completion is unconfirmed.'}
-    foreach($fact in @('ownership_confirmed','worker_exit_confirmed','launcher_exit_confirmed','stdout_drained','stderr_drained')){
-      if($process[$fact]-isnot[bool]-or-not$process[$fact]){throw "Prepared process $fact is unconfirmed."}
+    if($powershellOwner){
+      Assert-WorkflowFields $wait @('schema_version','role','owner_pid','owner_start_utc_ticks','native_writers_confirmed','exception','observation_error') 'PowerShell owner wait'
+      if($wait.schema_version-ne1-or$wait.role-cne'run_artifact_powershell_owner_wait'-or
+         $wait.native_writers_confirmed-isnot[bool]-or-not$wait.native_writers_confirmed-or$null-ne$wait.observation_error-or
+         $wait.owner_pid-isnot[int]-and$wait.owner_pid-isnot[long]-or$wait.owner_start_utc_ticks-isnot[long]-and$wait.owner_start_utc_ticks-isnot[int]){
+        throw 'PowerShell native writer completion is unconfirmed.'
+      }
+      if([int]$wait.owner_pid-eq$PID){
+        if((Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks-ne[long]$wait.owner_start_utc_ticks){throw 'PowerShell owner start identity differs.'}
+      }else{
+        $owner=Get-Process -Id ([int]$wait.owner_pid) -ErrorAction SilentlyContinue
+        if($null-ne$owner-and$owner.StartTime.ToUniversalTime().Ticks-eq[long]$wait.owner_start_utc_ticks){throw 'PowerShell owner is still active.'}
+      }
+    }else{
+      $process=$wait.managed_process
+      if($wait.role-cne'run_artifact_prepared_wait'-or$null-ne$wait.observation_error-or
+         $process.role-cne'repository_managed_python_completion'-or
+         ($process.exit_code-isnot[int]-and$process.exit_code-isnot[long])){throw 'Prepared process completion is unconfirmed.'}
+      foreach($fact in @('ownership_confirmed','worker_exit_confirmed','launcher_exit_confirmed','stdout_drained','stderr_drained')){
+        if($process[$fact]-isnot[bool]-or-not$process[$fact]){throw "Prepared process $fact is unconfirmed."}
+      }
+      $result.prepared_exit_code=$process.exit_code
     }
-    $result.prepared_exit_code=$process.exit_code
     $completion=Get-Content -LiteralPath $completionPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
-    Assert-WorkflowFields $completion @('schema_version','role','run_id','project','execution_request','run_config',
+    $completionFields=@('schema_version','role','run_id','project','execution_request','run_config',
       'status','summary','output_paths','required_output_paths','retention_preserve_paths',
-      'manifest_extra_fields','writer_completion','exception') 'Workflow completion'
+      'manifest_extra_fields','writer_completion','exception')
+    if($powershellOwner){$completionFields+=@('resource_usage_paths','resource_profile')}
+    Assert-WorkflowFields $completion $completionFields 'Workflow completion'
     if($null-ne$completion.exception){$result.exception=$completion.exception}
     if($completion.schema_version-ne1-or$completion.role-cne'run_artifact_workflow_completion'-or
        $completion.run_id-cne$request.package.run_id-or$completion.project-cne$request.package.project-or
        $completion.status-notin@('success','failed','interrupted')){throw 'Workflow completion identity or status differs.'}
     Assert-WorkflowFileRecord $completion.execution_request $frozenRequest
     Assert-WorkflowFileRecord $completion.run_config $package.run_config
-    Assert-WorkflowWriterCompletion $completion.writer_completion
+    Assert-WorkflowWriterCompletion $completion.writer_completion -PowerShellOwner:$powershellOwner
+    if($powershellOwner){
+      if($inheritedCapacity){
+        $existingManifest=Get-Content -LiteralPath (Join-Path $runRoot 'run_manifest.json') -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+        if($existingManifest.status-in@('success','failed','interrupted')-and-not(Test-Path -LiteralPath (Join-Path $runRoot '.run_terminal_publication.json'))){
+          $existingCapacity=Get-WorkflowRecoveryState -Python $python -RepoRoot $repo -ArtifactRoot $artifactRoot `
+            -RunRoot $runRoot -LeaseId $session.lease_id -Owner $request.package.project
+          $inheritedAlreadyReady=$existingCapacity.entry.status-ceq'ready'
+        }
+      }
+      foreach($release in $completion.writer_completion.resource_releases){
+        if($release.completion_receipt.host_release.inherited){
+          $token=[string]$release.completion_receipt.host_release.token
+          if(-not$inheritedAlreadyReady){
+            $grant=Invoke-HostResourceTransaction -StatePath $hostStatePath -Request @{operation='inherit';token=$token}
+            if($grant.status-cne'acquired'-or$grant.token-cne$token){$requiresParentOwner=$true;throw 'Inherited PowerShell host grant is unconfirmed; return to its parent owner.'}
+          }
+        }
+      }
+    }
     if($completion.summary-isnot[Collections.IDictionary]-or$completion.summary.status-cne$completion.status-or
        $completion.summary.run_id-cne$completion.run_id){throw 'Workflow scientific summary identity differs.'}
-    if($completion.status-eq'success'-and($null-ne$result.exception-or$result.prepared_exit_code-ne0)){
+    if($completion.status-eq'success'-and($null-ne$result.exception-or(-not$powershellOwner-and$result.prepared_exit_code-ne0)-or
+       ($powershellOwner-and@($completion.writer_completion.operations|Where-Object{[int]$_.observation.returncode-ne0}).Count))){
       throw 'Successful completion contradicts the prepared process result.'
     }
     if($completion.manifest_extra_fields-isnot[Collections.IDictionary]){throw 'Workflow manifest extras must be an object.'}
+    if($powershellOwner){
+      if($completion.resource_usage_paths-isnot[array]){throw 'PowerShell resource usage paths must be an array.'}
+      foreach($item in $completion.resource_usage_paths){
+        Assert-WorkflowFields $item @('case_name','path') 'PowerShell resource usage'
+        if($item.case_name-isnot[string]-or-not(Test-WorkflowPathWithin $item.path $runRoot)-or
+           -not(Test-Path -LiteralPath $item.path -PathType Leaf)){throw 'PowerShell resource usage path differs.'}
+      }
+      if($null-ne$completion.resource_profile){
+        Assert-WorkflowFields $completion.resource_profile @('dispatch_plan','output','usage_path') 'PowerShell resource profile'
+        if(-not(Test-WorkflowPathWithin $completion.resource_profile.dispatch_plan $runRoot)-or
+           -not(Test-Path -LiteralPath $completion.resource_profile.dispatch_plan -PathType Leaf)-or
+           -not(Test-WorkflowPathWithin $completion.resource_profile.output $runRoot)-or
+           $completion.resource_profile.usage_path-notin@($completion.resource_usage_paths.path)){
+          throw 'PowerShell resource profile paths differ.'
+        }
+      }
+    }
     $reserved=@('schema_version','role','run_id','project','mode','status','recorded_at_utc','host','python','software','run_config','inputs','outputs','artifact_retention','formal_eligible')
     if(@($completion.manifest_extra_fields.Keys|Where-Object{$_-in$reserved}).Count){throw 'Workflow manifest extras override public fields.'}
     foreach($name in @('output_paths','required_output_paths','retention_preserve_paths')){
@@ -410,8 +637,10 @@ function Invoke-RunArtifactWorkflow {
             $removedByRetention=@($action.removed|Where-Object{(Join-Path $runRoot $_.path)-ieq$path}).Count-eq1
           }
         }
+        $deferredProfile=$powershellOwner-and$null-ne$completion.resource_profile-and$name-eq'output_paths'-and
+          $path-ieq$completion.resource_profile.output
         if($path-isnot[string]-or-not[IO.Path]::IsPathFullyQualified($path)-or
-           (-not(Test-Path -LiteralPath $path -PathType Leaf)-and-not$removedByRetention)){
+           (-not(Test-Path -LiteralPath $path -PathType Leaf)-and-not$removedByRetention-and-not$deferredProfile)){
           throw "Workflow declared output is missing: $path"
         }
         if($name-ne'required_output_paths'-and-not(Test-WorkflowPathWithin $path $runRoot)){throw 'Workflow output escapes the run.'}
@@ -469,6 +698,9 @@ function Invoke-RunArtifactWorkflow {
           $maximumRunBytes=[long]$recovery.entry.bytes+[long]$recovery.lease.committed_new_bytes
           $result.recovery_maximum_run_bytes=$maximumRunBytes
         }
+      }elseif($inheritedCapacity){
+        if(-not$inheritedAlreadyReady){$requiresParentOwner=$true;throw 'Inherited capacity owner is no longer active; return to its parent owner for finalization.'}
+        $session.status='released'
       }elseif($terminalWithoutJournal){
         # A fully published terminal run needs no further run writes. The
         # lifecycle owner's fresh protection check still governs sealing.
@@ -492,7 +724,7 @@ function Invoke-RunArtifactWorkflow {
         Write-RunJson -Path $ResultPath -Value $result -Depth 64 -Atomic
       }
     }
-    if(-not$terminalWithoutJournal){
+    if(-not$terminalWithoutJournal-and-not$inheritedCapacity){
       $null=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repo -Session $session
     }
     Set-WorkflowStage retention
@@ -501,10 +733,38 @@ function Invoke-RunArtifactWorkflow {
     $null=Apply-RunArtifactRetention -Python $python -RepoRoot $repo -RunConfig $package.run_config `
       -PreservePaths $completion.retention_preserve_paths -FailedRun:($completion.status-ne'success') `
       -RecoveryInputs $recoveryInputs -Resume:($ResumeFinalization-and$hasRetention) -MaximumRunBytes $maximumRunBytes
+    if($powershellOwner-and-not$terminalWithoutJournal-and-not(Test-Path -LiteralPath (Join-Path $runRoot '.run_terminal_publication.json'))){
+      Set-WorkflowStage resource_finalization
+      foreach($item in $completion.resource_usage_paths){
+        $usage=Get-Content -LiteralPath $item.path -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+        $usage.case_name=$item.case_name;$usage.measurement_scope='single_transport_case_not_all_run_cases'
+        Write-ResourceUsage -Usage $usage -Path $item.path
+        if(-not(Complete-ResourceUsage -RunDir $runRoot -UsagePath $item.path)){throw 'PowerShell resource usage finalization failed.'}
+      }
+      if($null-ne$completion.resource_profile){
+        Push-Location $repo
+        try{& $python -m common.simion.resource_profile publish --run-id $completion.run_id `
+          --resource-usage $completion.resource_profile.usage_path --dispatch-plan $completion.resource_profile.dispatch_plan `
+          --output $completion.resource_profile.output | Out-Null
+          if($LASTEXITCODE-ne0){throw 'PowerShell resource profile publication failed.'}}
+        finally{Pop-Location}
+      }
+    }
     Set-WorkflowStage publication
     Publish-WorkflowTerminal -Python $python -RepoRoot $repo -CompletionPath $completionPath -SessionPath $sessionPath -WaitPath $waitPath `
       -MaximumRunBytes $maximumRunBytes
     $result.terminal_published=$true
+    if($inheritedCapacity){
+      $result.capacity_ownership='inherited'
+      if($request.package.retention_class-eq'compact'-and-not$inheritedAlreadyReady){
+        Set-WorkflowStage capacity_finalization
+        $null=Invoke-RunCapacityLifecycleAdapter -Python $python -RepoRoot $repo -Action finalize-ready -ArtifactRoot $artifactRoot -RunConfig $package.run_config
+        $result.capacity_finalized=$true
+      }else{$result.capacity_finalized=$inheritedAlreadyReady}
+      $result.resume_action=if($result.capacity_finalized){$null}else{'parent_capacity_owner_finalize'}
+      $result.status=$completion.status
+      Set-WorkflowStage complete
+    }else{
     if($request.package.retention_class-eq'compact'){
       Set-WorkflowStage capacity_finalization
       $null=Invoke-RunCapacityLifecycleAdapter -Python $python -RepoRoot $repo -Action finalize-ready -ArtifactRoot $artifactRoot -RunConfig $package.run_config
@@ -534,6 +794,7 @@ function Invoke-RunArtifactWorkflow {
     }
     $result.status=$completion.status
     Set-WorkflowStage complete
+    }
   }catch{
     $failure=$_
     if($null-eq$result.exception-and$_.Exception.Data.Contains('prepared_exception')){
@@ -541,7 +802,7 @@ function Invoke-RunArtifactWorkflow {
     }
     if($null-eq$result.exception){$result.exception=@{type=$_.Exception.GetType().FullName;message=$_.Exception.Message;notes=@()}}
     else{$result.secondary_errors+=@($_.Exception.Message)}
-    $result.resume_action=if($writersConfirmed){'resume_finalization'}elseif($preparedStarted){'inspect_writer_completion'}else{'correct_request_and_use_new_run'}
+    $result.resume_action=if($requiresParentOwner){'parent_capacity_owner_finalize'}elseif($writersConfirmed){'resume_finalization'}elseif($preparedStarted){'inspect_writer_completion'}else{'correct_request_and_use_new_run'}
     # No writer was launched before package/preparation setup failed. Once a
     # writer starts, unknown completion must retain the existing protection.
     if($null-ne$session-and-not$preparedStarted){
@@ -553,6 +814,19 @@ function Invoke-RunArtifactWorkflow {
   $result.writers_confirmed=$writersConfirmed
   Set-WorkflowStage
   $result.elapsed_seconds=$timingBoundary.seconds
+  if($powershellOwner){
+    $summaryFields=if($null-ne$completion-and$completion.Contains('summary')-and$completion.summary-is[Collections.IDictionary]){$completion.summary}else{@{}}
+    $result.execution_status=if($null-ne$failure){'finalization_failed'}elseif($summaryFields.Contains('execution_status')){$summaryFields.execution_status}else{$result.status}
+    $result.data_validity=if($summaryFields.Contains('data_validity')){$summaryFields.data_validity}else{'unknown'}
+    $result.scientific_result=if($summaryFields.Contains('scientific_result')){$summaryFields.scientific_result}elseif($summaryFields.Contains('science_status')){$summaryFields.science_status}else{'NOT_EVALUATED'}
+    $result.failure_stage=if($null-ne$failure){$result.stage}elseif($summaryFields.Contains('failure_stage')){$summaryFields.failure_stage}else{$null}
+    $result.failure_reason=if($null-ne$failure){$failure.Exception.Message}elseif($summaryFields.Contains('failure_reason')){$summaryFields.failure_reason}else{$null}
+    $result.recovery_action=if($null-ne$failure-or($inheritedCapacity-and-not$result.capacity_finalized)){$result.resume_action}elseif($summaryFields.Contains('recovery_action')){$summaryFields.recovery_action}else{$null}
+    $result.result_path=[IO.Path]::GetFullPath($ResultPath)
+    $result.phase_timings_seconds=if($summaryFields.Contains('phase_timings_seconds')){$summaryFields.phase_timings_seconds}elseif($summaryFields.Contains('phase_durations_seconds')){$summaryFields.phase_durations_seconds}else{@{}}
+    $priorElapsed=if($summaryFields.Contains('elapsed_before_finalization_seconds')){[double]$summaryFields.elapsed_before_finalization_seconds}elseif($summaryFields.Contains('total_elapsed_seconds')){[double]$summaryFields.total_elapsed_seconds}else{0.0}
+    $result.total_elapsed_seconds=$priorElapsed+$result.elapsed_seconds
+  }
   try{Write-RunJson -Path $ResultPath -Value $result -Depth 64 -Atomic}
   catch{
     if($null-eq$failure){throw}

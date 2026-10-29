@@ -1,8 +1,9 @@
+[CmdletBinding(DefaultParameterSetName='Execute')]
 param(
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true,ParameterSetName='Execute')]
     [ValidateNotNullOrEmpty()]
     [string]$SourceIonPath,
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true,ParameterSetName='Execute')]
     [ValidateNotNullOrEmpty()]
     [string]$SolverNumericsContractPath,
     [Nullable[int]]$RfStepsPerPeriod = $null,
@@ -11,11 +12,17 @@ param(
     [string]$ArtifactRootPath = '',
     [string]$PythonExe = '',
     [string]$SimionExe = '',
+    [string]$ContinuationPredecessorManifestPath = '',
+    [string]$NativeFieldRunPath = '',
+    [string]$ResultPath = '',
+    [Parameter(Mandatory=$true,ParameterSetName='Resume')][switch]$ResumeFinalization,
     [switch]$Exploration
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$execution=@{clock=[Diagnostics.Stopwatch]::StartNew();phase='prepare';phase_started=0.0;phase_seconds=[ordered]@{};elapsed_seconds=0.0}
+$executionStatus='failed';$dataValidity='unavailable';$scienceStatus='not_evaluated';$failureStage=$null
 $modeName = 'mass_filter_reference'
 $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
@@ -30,17 +37,31 @@ $python = if ($PythonExe) {
 } else {
     Join-Path $repoRoot '.venv\Scripts\python.exe'
 }
+if($ResumeFinalization){
+    if(-not$RunId){throw 'Finalization recovery requires the original RunId.'}
+    Push-Location $repoRoot
+    try{& $python -m common.contracts.artifact_naming run $RunId|Out-Null;if($LASTEXITCODE-ne0){throw 'Recovery requires a valid original RunId.'}}finally{Pop-Location}
+    if(-not$ResultPath){$ResultPath=Join-Path $artifactRoot "scratch/workflow_results/$RunId/result.json"}
+    . (Join-Path $repoRoot 'common/contracts/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization
+    $outcome=Invoke-RunArtifactWorkflow -RequestPath (Join-Path $artifactRoot "runs/$RunId/inputs/execution_request.json") -ResultPath $ResultPath -ResumeFinalization
+    Write-Output "RF_FINALIZATION=$($outcome.status) RUN_ID=$RunId RESULT=$ResultPath"
+    if($outcome.status-ne'success'){exit 1};return
+}
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+$entryScriptHash=Get-RunFileSha256 -Path $PSCommandPath
 . (Join-Path $projectRoot 'runtime\frozen_python_package.ps1')
 . (Join-Path $repoRoot 'projects\rf_multipole_ion_optics\runtime\simion_layout_template_support.ps1')
 . (Join-Path $projectRoot 'runtime\simion_run_config.ps1')
 . (Join-Path $projectRoot 'runtime\simion_execution.ps1')
+. (Join-Path $projectRoot 'runtime\simion_field_checkpoint_support.ps1')
 if ([string]::IsNullOrWhiteSpace($RunId)) {
     $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__sim__simion__rf-mass-filter__reference'
 }
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunId $RunId `
     -Project 'rf_multipole_ion_optics' -Mode $modeName -Software @('SIMION 2020','Python 3.11') `
-    -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled `
+    -RetentionContractEnabled -RetentionClass solver_review `
+    -RetentionReason 'Producer-owned fractional SIMION field and IOB retained for explicit continuation; no scientific qualification.' `
+    -CapacityLedgerLifecycleEnabled `
     -AdditionalDirectories @('simion') -UseShortExecutionPath
 $runDir = $package.run_dir
 $candidateDir = Join-Path $runDir 'simion'
@@ -57,6 +78,12 @@ $simion = if ($SimionExe) {
 
 $hostExecutionLease = $null
 $hostExecutionOutcome = 'failed'
+$writerCompletionUnknown = $false
+$massFilterFailure = $null
+$continuation=$null
+$ownerContext=$null;$ownerCapacity=$null;$hostReleaseState=@{released=$false;completion=$null};$deferFinalization=$false
+$fieldContext=$null;$nativePreparation=[Collections.Generic.List[object]]::new()
+$completedBatchOutputs=[Collections.Generic.List[string]]::new()
 try {
     $sourceIon = [IO.Path]::GetFullPath($SourceIonPath)
     if (-not (Test-Path -LiteralPath $sourceIon -PathType Leaf)) {
@@ -108,7 +135,13 @@ try {
         'common\analysis\peak_metrics.py',
         'projects\rf_multipole_ion_optics\workflows\mass_filter_reference\theory.py',
         'projects\rf_multipole_ion_optics\core\family_contract.py',
-        'projects\rf_multipole_ion_optics\config\contracts\family_contract.json'
+        'projects\rf_multipole_ion_optics\config\contracts\family_contract.json',
+        'projects\rf_multipole_ion_optics\workflows\mass_filter_reference\render_simion_source.py',
+        'projects\rf_multipole_ion_optics\runtime\simion_particle_source.py',
+        'projects\rf_multipole_ion_optics\runtime\particle_source_preflight.py',
+        'projects\rf_multipole_ion_optics\core\interface_geometry.py',
+        'common\contracts\particle_physics.py','common\contracts\particle_count_policy.py',
+        'common\contracts\particle_count_policy.json','common\simion\__init__.py','common\simion\particle_source.py'
     )
     $frozenAnalysisPackage = New-FrozenPythonPackage `
         -SourceRoot $repoRoot -CodeRoot (Join-Path $inputDir 'analysis_runtime') `
@@ -155,6 +188,8 @@ try {
     $programSource = Copy-VerifiedRunInput `
         -Source (Join-Path $repoRoot 'projects\rf_multipole_ion_optics\simion\simion_transport.lua') `
         -Destination (Join-Path $candidateDir 'multipole_runtime_program.lua')
+    $rfDriveKernel=Copy-VerifiedRunInput -Source (Join-Path $repoRoot 'common/simion/rf_drive.lua') `
+        -Destination (Join-Path $inputDir 'multipole_rf_drive_kernel.lua')
     $iobBuilder = Copy-VerifiedRunInput `
         -Source (Join-Path $repoRoot 'projects\rf_multipole_ion_optics\simion\build_simion_runtime_iob.lua') `
         -Destination (Join-Path $candidateDir 'build_simion_runtime_iob.lua')
@@ -162,19 +197,14 @@ try {
     $sourceStatesLua = Join-Path $inputDir 'source_states.lua'
     Push-Location $repoRoot
     try {
-        & $python -m `
-            projects.rf_multipole_ion_optics.workflows.mass_filter_reference.render_simion_source `
-            --ion-table $particlePath --fly2 $flyPath --source-states-lua $sourceStatesLua
-        if ($LASTEXITCODE -ne 0) {
-            throw 'Mass-scan ION11 projection failed.'
-        }
+        Invoke-IsolatedFrozenPythonModule -Python $python -Package $frozenAnalysisPackage `
+            -Module 'projects.rf_multipole_ion_optics.workflows.mass_filter_reference.render_simion_source' `
+            -Arguments @('--ion-table',$particlePath,'--fly2',$flyPath,'--source-states-lua',$sourceStatesLua) `
+            -ForbiddenRoots @($repoRoot,$projectRoot)|Out-Null
     } finally {
         Pop-Location
     }
-    Copy-VerifiedRunInput -Source $templateIob `
-        -Destination (Join-Path $candidateDir 'quad_monolithic.iob') | Out-Null
-    Copy-VerifiedRunInput -Source $templateCon `
-        -Destination (Join-Path $candidateDir 'quad_monolithic.con') | Out-Null
+
 
     $resolved = Get-Content -LiteralPath $frozenResolved -Raw -Encoding UTF8 | ConvertFrom-Json
     $numericalMode = Get-Content -LiteralPath $frozenMode -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -276,8 +306,13 @@ try {
             simion_layout_registration_manifest = $templateManifest
             simion_layout_template_iob = $templateIob
             simion_layout_template_con = $templateCon
+            simion_layout_template_placeholder_pa0 = $template.placeholder_pa0
             simion_iob_builder = $iobBuilder
             simion_program_source = $programSource
+            simion_rf_drive_kernel = $rfDriveKernel
+            simion_gem = Join-Path $candidateDir 'quad_monolithic.gem'
+            simion_gem_include = Join-Path $candidateDir 'quad_include.gem'
+            simion_fly2 = $flyPath
             simion_dispatch_request = $dispatchRequest
             simion_resource_profiles = $resourceProfiles
             simion_repository_dispatch_plan = $dispatchPlan
@@ -332,14 +367,90 @@ try {
             ([string]$entry.relative_path -replace '[^A-Za-z0-9]+','_').Trim('_')
         $runConfig.inputs[$name] = [string]$entry.path
     }
+    $runConfig.inputs.simion_field_identity=Join-Path $inputDir 'simion_field_identity.json'
+$fieldArguments=Get-RfSimionPaBasisArguments
+$fieldIdentity=New-RfSimionFieldIdentity -GemPath $runConfig.inputs.simion_gem -GemIncludePaths @($runConfig.inputs.simion_gem_include) `
+    -SimionExe $simion -Grid @([int]$coreConfig.expected_pa_nx,[int]$coreConfig.expected_pa_ny,[int]$coreConfig.expected_pa_nz) `
+    -CellMm @([double]$coreConfig.expected_pa_cell_mm,[double]$coreConfig.expected_pa_cell_mm,[double]$coreConfig.expected_pa_cell_mm) `
+    -ResponseIds @(@($coreConfig.rod_electrodes)+@($coreConfig.static_electrodes)|ForEach-Object{[int]$_.electrode_id}) `
+    -Gem2PaArguments $fieldArguments.gem2pa -RefineArguments $fieldArguments.refine
+Write-RunJson -Path $runConfig.inputs.simion_field_identity -Value $fieldIdentity -Depth 12
+$runConfig.inputs.simion_fly_physics=Join-Path $inputDir 'simion_fly_physics.json'
+    Write-RfSimionPreparedFlyIdentity -CoreConfig $coreConfig -CaseName 'mass_filter_reference' `
+        -Path $runConfig.inputs.simion_fly_physics -SourcePackage $frozenAnalysisPackage -ProgramSourcePath $programSource `
+        -NativeFlyArguments @(Get-RfSimionFlyArgumentIdentity -CoreConfig $coreConfig) `
+        -SourceRelativePaths @('projects/rf_multipole_ion_optics/workflows/mass_filter_reference/render_simion_source.py',
+            'projects/rf_multipole_ion_optics/runtime/simion_particle_source.py',
+            'projects/rf_multipole_ion_optics/runtime/particle_source_preflight.py',
+            'projects/rf_multipole_ion_optics/core/interface_geometry.py','common/simion/particle_source.py',
+            'common/contracts/particle_physics.py','common/contracts/particle_count_policy.py','common/contracts/particle_count_policy.json')
+    $lifecycle=Get-Content -LiteralPath $runConfigPath -Raw|ConvertFrom-Json -AsHashtable
+    foreach($key in @('artifact_retention','capacity_ledger_lifecycle')){if($lifecycle.ContainsKey($key)){$runConfig[$key]=$lifecycle[$key]}}
+    $runConfig.schema_version=$lifecycle.schema_version
     $runConfig | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
+    if($ContinuationPredecessorManifestPath){
+        $continuation=Initialize-RfSimionPreparedContinuation -ManifestPath $ContinuationPredecessorManifestPath `
+            -RunDir $package.artifact_run_dir -ArtifactRoot (Split-Path (Split-Path $artifactRoot -Parent) -Parent) `
+            -PythonExe $python -RepositoryRoot $repoRoot -RunConfig $runConfig -RunConfigPath $runConfigPath `
+            -CapacityOwner ("run-artifact-workflow:rf_multipole_ion_optics:{0}"-f$RunId) -CaseName 'mass_filter_reference' -BatchPlanPath $batchPlan -DispatchPlanPath $dispatchPlan `
+            -InputNames @('resolved_design','particle_table','simion_field_identity',
+                'simion_program_source','simion_rf_drive_kernel','simion_iob_builder','simion_gem','simion_gem_include','simion_fly2','source_states',
+                'simion_layout_template_iob','simion_layout_template_con')
+        $batchPlanDocument=Get-Content -LiteralPath $batchPlan -Raw|ConvertFrom-Json
+        $dispatchPlanDocument=Get-Content -LiteralPath $dispatchPlan -Raw|ConvertFrom-Json
+    }
 
     $luaConfig = ConvertTo-RfSimionLuaConfig -CoreConfig $coreConfig `
-        -SharedProgramPath (Join-Path $candidateDir 'quad_monolithic.lua')
+        -SharedProgramPath $programSource
     # Windows PowerShell 5.1 writes a BOM for UTF8; SIMION Lua 5.1 treats it as source text.
     $luaConfig | Set-Content -LiteralPath $runConfigLua -Encoding ASCII
 
     $inspectScript = Join-Path $projectRoot 'simion\workbench\inspect_builtin_quad_reference.lua'
+
+$ownerCapacity=if($null-ne$continuation){$continuation.capacity}else{
+    Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot (Split-Path (Split-Path $artifactRoot -Parent) -Parent) `
+        -RunDirectory $package.artifact_run_dir -CommittedNewBytes 0 -Owner ("run-artifact-workflow:rf_multipole_ion_optics:{0}"-f$RunId)
+}
+$ownerSource=Copy-VerifiedRunInput -Source $PSCommandPath -Destination (Join-Path $package.artifact_run_dir 'inputs/powershell_owner.ps1')
+if((Get-RunFileSha256 -Path $ownerSource)-cne$entryScriptHash){throw 'Frozen PowerShell owner differs from launched source.'}
+$runConfig.inputs.powershell_owner=$ownerSource
+$runConfig.inputs.simion_execution_owner=Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'runtime/simion_execution.ps1') -Destination (Join-Path $inputDir 'simion_execution_owner.ps1')
+Write-RunJson -Path $runConfigPath -Value $runConfig -Depth 20
+. (Join-Path $repoRoot 'common/contracts/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization
+$ownerContext=Initialize-RunArtifactPowerShellOwner -Python $python -RepoRoot $repoRoot -Package $package -CapacitySession $ownerCapacity `
+    -ResultPath $ResultPath -EntrypointPath $ownerSource -CommitmentInputPaths @($frozenNumericalContract) -Software @('SIMION 2020','Python 3.11')
+$ResultPath=$ownerContext.result_path
+$runConfig.inputs.execution_request=$ownerContext.request_path
+if($null-eq$continuation-or-not$continuation.all_reused){$hostExecutionLease = Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId}
+else{$hostExecutionLease=Enter-HostExecutionLease -Role GATE -Stage postprocess -RunId $RunId}
+if($null-eq$continuation-or-not$continuation.all_reused){
+    Set-RfSimionExecutionPhase -Context $execution -Name field_and_layout
+    $fieldSource=if($NativeFieldRunPath){$NativeFieldRunPath}elseif($null-ne$continuation){$continuation.predecessor}else{''}
+    $existingRuns=if($null-ne$continuation){@($continuation.chain)}else{@()}
+    $capacity=$ownerCapacity
+    $preparation=@{SimionExe=$simion;CandidateDir=$candidateDir;IobPath=[string]$coreConfig.iob;Fly2Path=$flyPath;
+        IobBuilderScript=$iobBuilder;ProgramSourcePath=$programSource;RunConfigLua=$runConfigLua;InspectScript=$inspectScript;
+        IobReport=$iobReport;LogDir=$logDir;RfDriveKernelPath=$rfDriveKernel}
+    $fieldContext=Initialize-RfSimionPreparedField -Package $package -IdentityPath $runConfig.inputs.simion_field_identity `
+        -Preparation $preparation -HostLease $hostExecutionLease -TemplateIobPath $templateIob -TemplateConPath $templateCon `
+        -PythonExe $python -RepositoryRoot $repoRoot -ArtifactRoot (Split-Path (Split-Path $artifactRoot -Parent) -Parent) `
+        -Owner $runConfig.project -NativeOperations $nativePreparation -SourceRunPath $fieldSource `
+        -ExistingProtectedRuns $existingRuns -CapacitySession $capacity -TemplateSeedPaPath $template.placeholder_pa0
+    $ownerCapacity=$fieldContext.capacity;$ownerContext.session=$ownerCapacity
+    $request=Get-Content $ownerContext.request_path -Raw|ConvertFrom-Json -AsHashtable
+    $request.capacity.protected_paths=@($ownerCapacity.protected_paths)
+    Write-RunJson -Atomic -Path $ownerContext.request_path -Value $request -Depth 64
+    if($null-ne$continuation){$continuation.capacity=$ownerCapacity}
+    $coreConfig.iob=[string]$fieldContext.iob_path
+    (ConvertTo-RfSimionLuaConfig -CoreConfig $coreConfig -SharedProgramPath $programSource) |
+        Set-Content -LiteralPath $runConfigLua -Encoding ASCII
+    if($fieldContext.source_reused){
+        $runConfig.inputs.simion_field_checkpoint=[string]$fieldContext.checkpoint_path
+        $runConfig.inputs.simion_field_producer_manifest=[string]$fieldContext.producer_manifest
+    }
+    Write-RunJson -Path $runConfigPath -Value $runConfig -Depth 20
+}
+
     function New-MassFilterBatchRuns {
       param([Parameter(Mandatory)]$PlanDocument,[bool]$ReuseFirst=$false)
       $runs=@();$singleComplete=([int]$PlanDocument.batch_count-eq1-and
@@ -372,11 +483,11 @@ try {
             New-Item -ItemType Directory -Path $batchLogDir -Force | Out-Null
             Push-Location $repoRoot
             try {
-                & $python -m projects.rf_multipole_ion_optics.workflows.mass_filter_reference.render_simion_source `
-                    --ion-table $particlePath --particle-id-min ([int]$batch.particle_id_min) `
-                    --particle-id-max ([int]$batch.particle_id_max) --fly2 $batchFly `
-                    --source-states-lua $batchStates
-                if ($LASTEXITCODE -ne 0) { throw "Mass-scan batch source projection failed: $batchIndex" }
+                Invoke-IsolatedFrozenPythonModule -Python $python -Package $frozenAnalysisPackage `
+                    -Module 'projects.rf_multipole_ion_optics.workflows.mass_filter_reference.render_simion_source' `
+                    -Arguments @('--ion-table',$particlePath,'--particle-id-min',[string][int]$batch.particle_id_min,
+                        '--particle-id-max',[string][int]$batch.particle_id_max,'--fly2',$batchFly,'--source-states-lua',$batchStates) `
+                    -ForbiddenRoots @($repoRoot,$projectRoot)|Out-Null
             } finally {
                 Pop-Location
             }
@@ -389,7 +500,7 @@ try {
             -ParticleStateCsv $batchState -TrajectoryCsv $batchTrajectory -SummaryJson $batchSummary
         if (-not $singleComplete -and -not ($ReuseFirst -and $batchIndex -eq 1)) {
             (ConvertTo-RfSimionLuaConfig -CoreConfig $batchConfig `
-                -SharedProgramPath (Join-Path $candidateDir 'quad_monolithic.lua')) |
+                -SharedProgramPath $programSource) |
                 Set-Content -LiteralPath $batchLua -Encoding ASCII
         }
         $runs += [pscustomobject]@{
@@ -401,9 +512,10 @@ try {
       }
       return @($runs)
     }
-    $batchRuns=@(New-MassFilterBatchRuns -PlanDocument $batchPlanDocument)
+    Set-RfSimionExecutionPhase -Context $execution -Name flight
+$batchRuns=@(New-MassFilterBatchRuns -PlanDocument $batchPlanDocument)
     $resourceUsage = Join-Path $resultDir 'simion_resource_usage.json'
-    $hostExecutionLease = Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
+
     $waveArguments = @{
         HostLease=$hostExecutionLease; SimionExe=$simion; CandidateDir=$candidateDir
         IobPath=[string]$coreConfig.iob; RootFly2Path=[string]$coreConfig.fly2
@@ -412,7 +524,11 @@ try {
         TrajectoryQuality=[int]$coreConfig.trajectory_quality; RfStepsPerPeriod=[int]$coreConfig.rf_steps_per_period
         BatchRuns=$batchRuns; BatchPlanPath=$batchPlan; DispatchPlanPath=$dispatchPlan
         RunDir=$runDir; UsagePath=$resourceUsage; PythonExe=$python; RepositoryRoot=$repoRoot
+        CaseName='mass_filter_reference';CompletionOutputs=$completedBatchOutputs
+    Prepared=$true;NativeOperations=$nativePreparation
+        RfDriveKernelPath=$rfDriveKernel
     }
+    if($null-ne$continuation){$waveArguments.ContinuationUnits=$continuation.units;$waveArguments.ContinuationRequested=$true}
     $wave = Invoke-RfSimionAdaptiveBatchWave -WaveArguments $waveArguments -BatchRuns ([ref]$batchRuns) `
         -DispatchPlan $dispatchPlanDocument `
         -DispatchRequestPath $dispatchRequest -ResourceProfilesPath $resourceProfiles `
@@ -420,19 +536,21 @@ try {
         -PrepareReplannedBatches { param($plan) New-MassFilterBatchRuns -PlanDocument $plan -ReuseFirst $true }
     $hostExecutionLease=$wave.lease; $batchRuns=@($wave.batches)
     $waveReceipt=$wave.receipt; $resourceProfile=$wave.resource_profile
+Set-RfSimionExecutionPhase -Context $execution -Name analysis
 
     $summary = Get-Content -LiteralPath $summaryJson -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($summary.particles -ne $expectedParticles -or $summary.collision_model -ne 'none' -or
         $summary.parent_resolved_design_sha256 -cne $coreConfig.parent_resolved_design_sha256) {
         throw "SIMION mass-filter execution integrity failed: $($summary | ConvertTo-Json -Compress)"
     }
+    $dataValidity='valid_raw_outputs'
     Push-Location $repoRoot
     try {
         & $python -m common.contracts.particle_state `
             --state $particleStateCsv --particles $particlePath --source-format ion11 `
             --contract $frozenInterface --axial-offset-mm 0 `
             --frequency-hz ([double]$coreConfig.frequency_hz) `
-            --phase-rad ([double]$coreConfig.phase_deg * [Math]::PI / 180) `
+            --phase-rad ([double]$coreConfig.phase_rad) `
             --solver SIMION --output $stateContractReport
         if ($LASTEXITCODE -ne 0) {
             throw 'Particle-state contract gate failed.'
@@ -481,7 +599,12 @@ try {
     Write-RunDirectoryChecksumInventory -Directory $candidateDir -OutputPath $shaPath `
         -ExcludedPatterns @('trj*.tmp')
 
-    $rootSummary = [ordered]@{
+    Set-RfSimionExecutionPhase -Context $execution -Name finalize
+$executionStatus='completed';$dataValidity='valid';$scienceStatus=if($physicalDecision-eq'PASS'){'functional_pass'}else{'functional_fail'}
+$rootSummary = [ordered]@{
+    execution_status=$executionStatus;data_validity=$dataValidity;science_status=$scienceStatus
+    failure_stage=$null;reason=$null;recovery_action=$null;result_path=$ResultPath
+    phase_seconds=$execution.phase_seconds;elapsed_seconds=$execution.elapsed_seconds;timing_scope='through_terminal_publication_preparation'
         schema_version = 1
         role = 'rf_quadrupole_mass_filter_summary'
         status = 'success'
@@ -499,6 +622,12 @@ try {
         mass_response = 'results/mass-response__simion.csv'
         metrics = 'results/mass-filter__simion-functional-metrics.json'
         figure = 'results/mass-response__simion-passband.png'
+        continuation_predecessor=$(if($null-ne$continuation){$continuation.predecessor}else{$null})
+        reused_fly_batches=$(if($null-ne$continuation){$continuation.units.Count}else{0})
+    field_producer_manifest=$(if($null-ne$fieldContext-and$fieldContext.source_reused){$fieldContext.producer_manifest}elseif($null-ne$fieldContext){Join-Path $package.artifact_run_dir 'run_manifest.json'}else{$null})
+    field_reused=$(if($null-ne$fieldContext){[bool]$fieldContext.source_reused}else{$null})
+    field_grid=$fieldIdentity.grid;field_cell_mm=$fieldIdentity.cell_mm;particle_source=$particlePath
+    flight_scope='explicit frozen particle-table source; finite fractional monolithic field; reused batches retain original provenance'
     }
     $rootSummary | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $runSummary -Encoding UTF8
     $manifestOutputs = @(
@@ -517,26 +646,97 @@ try {
         )
     }
     $manifestOutputs += $resourceUsage
+    $manifestOutputs += @($completedBatchOutputs)
+if($null-ne$fieldContext){$manifestOutputs+=@($fieldContext.output_paths)}
     if ($resourceProfile) { $manifestOutputs += $resourceProfile }
-    $manifestOutputs = @($manifestOutputs | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -Unique)
-    $retentionActions = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot `
-        -RunConfig $runConfigPath
-    Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfigPath -Status success `
-        -Software @('SIMION 2020','Python 3.11') -Outputs ($manifestOutputs+@($retentionActions))
-    $hostExecutionOutcome = 'success'
+    $ownerPrefixes=@([IO.Path]::GetFullPath($runDir).TrimEnd('\')+'\',[IO.Path]::GetFullPath($package.artifact_run_dir).TrimEnd('\')+'\')
+$manifestOutputs = @($manifestOutputs | Where-Object {
+    $output=[IO.Path]::GetFullPath($_)
+    (Test-Path -LiteralPath $output -PathType Leaf)-and@($ownerPrefixes|Where-Object{$output.StartsWith($_,[StringComparison]::OrdinalIgnoreCase)}).Count
+} | Select-Object -Unique)
+    $rootSummary.scientific_result=$scienceStatus;$rootSummary.data_validity=$dataValidity
+$rootSummary.phase_timings_seconds=$execution.phase_seconds;$rootSummary.elapsed_before_finalization_seconds=$execution.elapsed_seconds
+$writers=Get-RfSimionStoppedWriterCompletion -HostLease $hostExecutionLease -NativeOperations $nativePreparation -State $hostReleaseState
+$deferFinalization=$true
+$null=Complete-RunArtifactPowerShellOwner -Context $ownerContext -Status success -Summary $rootSummary -OutputPaths $manifestOutputs `
+    -WriterCompletion $writers -WritersStopped $true `
+    -ResourceUsagePaths @(@($resourceUsage)|Where-Object{$_-and(Test-Path -LiteralPath $_)}|ForEach-Object{@{case_name='mass_filter_reference';path=$_}})
+$deferFinalization=$false;$ownerCapacity=$null
+$hostExecutionOutcome = 'success'
     "EXECUTION=PASS DECISION=$physicalDecision RUN_ID=$RunId HITS=$($summary.hits) " +
         "TRANSMISSION=$($summary.transmission)"
 }
 catch {
-    Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfigPath -Summary $runSummary `
-        -SummaryRole 'rf_quadrupole_mass_filter_summary' -Reason $_.Exception.Message `
-        -Software @('SIMION 2020','Python 3.11')
-    throw
+    $massFilterFailure = $_
+    if($null-eq$fieldContext-and$massFilterFailure.Exception.Data.Contains('rf_field_context')){$fieldContext=$massFilterFailure.Exception.Data['rf_field_context']}
+    if($null-ne$ownerContext-and$ownerContext.completion_written){$executionStatus='finalization_failed';$failureStage='finalization';throw $massFilterFailure}
+    if($null-ne$ownerContext-and$null-ne$fieldContext-and$null-ne$fieldContext.capacity){
+        $ownerCapacity=$fieldContext.capacity;$ownerContext.session=$ownerCapacity
+        try{
+            $request=Get-Content $ownerContext.request_path -Raw|ConvertFrom-Json -AsHashtable
+            $request.capacity.protected_paths=@($ownerCapacity.protected_paths)
+            Write-RunJson -Atomic -Path $ownerContext.request_path -Value $request -Depth 64
+            if($fieldContext.source_reused){
+                $runConfig.inputs.simion_field_checkpoint=[string]$fieldContext.checkpoint_path
+                $runConfig.inputs.simion_field_producer_manifest=[string]$fieldContext.producer_manifest
+                Write-RunJson -Path $runConfigPath -Value $runConfig -Depth 20
+            }
+        }catch{$massFilterFailure.Exception.Data['field_binding_closeout_error']=[string]$_}
+    }
+
+    $executionStatus='failed';$failureStage=$execution.phase
+    Set-RfSimionExecutionPhase -Context $execution
+    $recovery="Use this CLI with a new -RunId and -ContinuationPredecessorManifestPath '$(Join-Path $package.artifact_run_dir 'run_manifest.json')'."
+    $data = $massFilterFailure.Exception.Data
+    $writerCompletionUnknown = [bool]$data['simion_first_batch_writer_unknown'] -or
+        $data.Contains('rf_host_release_unconfirmed') -or $data.Contains('simion_first_batch_drain_error') -or $data.Contains('simion_wave_drain_error') -or
+        ($data.Contains('simion_wave_writer_completion_confirmed') -and -not [bool]$data['simion_wave_writer_completion_confirmed'])
+    if ($writerCompletionUnknown) {
+        $executionStatus='writer_completion_unknown'
+        $recovery='Confirm writer exit and host release, then finish owner publication before creating a continuation run.'
+        try { Write-RunJson -Path $runSummary -Value @{schema_version=1;role='rf_quadrupole_mass_filter_summary';status='writer_completion_unknown';execution_status=$executionStatus;data_validity=$dataValidity;science_status=$scienceStatus;failure_stage=$failureStage;recovery_action=$recovery;result_path=$ResultPath;phase_seconds=$execution.phase_seconds;elapsed_seconds=$execution.elapsed_seconds;timing_scope='through_failure_capture';reason=$massFilterFailure.Exception.Message;drain_error=[string]($data['simion_wave_drain_error'] ?? $data['simion_first_batch_drain_error'])} }
+        catch { $massFilterFailure.Exception.Data['writer_unknown_result_error'] = [string]$_ }
+        if($null-ne$ownerContext){
+            try{
+                $null=Complete-RunArtifactPowerShellOwner -Context $ownerContext -Status failed -Summary @{} `
+                    -WriterCompletion @{operations=@();resource_releases=@()} -WritersStopped $false -OriginalFailure $massFilterFailure
+            }catch{if($_.Exception.Message-notmatch'native writer completion is unknown'){$massFilterFailure.Exception.Data['writer_unknown_transport_error']=[string]$_}}
+        }
+    } else {
+        try {
+            if($null-ne$ownerContext){
+                $failedSummary=@{schema_version=1;role='rf_quadrupole_mass_filter_summary';run_id=$RunId;status='failed';execution_status=$executionStatus;
+                    data_validity=$dataValidity;scientific_result=$scienceStatus;failure_stage=$failureStage;failure_reason=$massFilterFailure.Exception.Message;
+                    recovery_action=$recovery;result_path=$ResultPath;phase_timings_seconds=$execution.phase_seconds;elapsed_before_finalization_seconds=$execution.elapsed_seconds}
+                $writers=Get-RfSimionStoppedWriterCompletion -HostLease $hostExecutionLease -NativeOperations $nativePreparation -State $hostReleaseState
+                $failureOutputs=@(foreach($folder in @($resultDir,$logDir,$candidateDir)){Get-ChildItem $folder -Recurse -File|Select-Object -ExpandProperty FullName})
+                $deferFinalization=$true
+                $null=Complete-RunArtifactPowerShellOwner -Context $ownerContext -Status failed -Summary $failedSummary -OutputPaths $failureOutputs `
+                    -WriterCompletion $writers -WritersStopped $true -OriginalFailure $massFilterFailure
+                $deferFinalization=$false;$ownerCapacity=$null
+            }else{
+                Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfigPath -Summary $runSummary `
+                    -SummaryRole 'rf_quadrupole_mass_filter_summary' -Reason $massFilterFailure.Exception.Message -Software @('SIMION 2020','Python 3.11') -FailureStage $failureStage
+            }
+        }catch{if($_.Exception.Data['rf_host_release_unconfirmed']){$writerCompletionUnknown=$true};$massFilterFailure.Exception.Data['failure_closure_error']=[string]$_}
+
+    }
+    throw $massFilterFailure
 } finally {
-    try { Remove-RunPackageExecutionAlias -Package $package } catch {
-        Write-Warning "Could not remove short execution alias after mass-filter SIMION run: $($_.Exception.Message)"
+    if(-not$writerCompletionUnknown){
+        try{
+            if(-not$hostReleaseState.released){$null=Get-RfSimionStoppedWriterCompletion -HostLease $hostExecutionLease -NativeOperations $nativePreparation -State $hostReleaseState}
+        }catch{if($null-eq$massFilterFailure){throw};$massFilterFailure.Exception.Data['host_release_error']=[string]$_}
+        if($hostReleaseState.released){
+            if($null-ne$fieldContext-and$null-ne$fieldContext.guard){Close-RfSimionFieldCheckpointGuard -Context $fieldContext.guard}
+            if($null-ne$continuation){foreach($guard in $continuation.guards){$guard.Dispose()}}
+            if($null-ne$ownerCapacity-and-not$deferFinalization){
+                try{Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $ownerCapacity|Out-Null}
+                catch{if($null-eq$massFilterFailure){throw};$massFilterFailure.Exception.Data['capacity_release_error']=[string]$_}
+            }
+            try{Remove-RunPackageExecutionAlias -Package $package}catch{Write-Warning "Could not remove short execution alias: $_"}
+        }
     }
-    if ($null -ne $hostExecutionLease) {
-        Exit-HostExecutionLease -Lease $hostExecutionLease -Outcome $hostExecutionOutcome -RunId $RunId
-    }
+    Set-RfSimionExecutionPhase -Context $execution
+    Write-Host "RF_EXECUTION_STATUS=$executionStatus DATA_VALIDITY=$dataValidity SCIENCE_STATUS=$scienceStatus FAILURE_STAGE=$failureStage RESULT=$ResultPath ELAPSED_SECONDS=$($execution.elapsed_seconds)"
 }

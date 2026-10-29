@@ -36,6 +36,8 @@ class ManagedProcessCompletionTests(unittest.TestCase):
 param($Support,$Python,$Root,$Scenario,[int]$Code)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 . $Support
+$withoutLimits=$Scenario.StartsWith('no_limits')
+if($withoutLimits){$Scenario=$Scenario-replace'^no_limits_?','';if(-not$Scenario){$Scenario='normal'}}
 $script:original=[IO.IOException]::new('TEST_ONLY observation failed')
 $script:waitError=[IO.IOException]::new('TEST_ONLY owned handle wait failed')
 $script:owned=$null;$script:birth=0;$script:samples=0;$script:updates=0;$script:stops=@()
@@ -72,6 +74,7 @@ function Stop-ManagedSolverProcesses {
 }
 $limits=[pscustomobject]@{wall_clock_seconds=60;transient_run_directory_bytes=1GB;
  process_tree_working_set_bytes=1GB;minimum_system_available_memory_bytes=1}
+if($withoutLimits){$limits=$null}
 $caught=$null;$result=$null;$atReturn=$null
 try{
  try{
@@ -84,10 +87,13 @@ try{
  while($null-ne$waitCause-and-not[object]::ReferenceEquals($waitCause,$script:waitError)){$waitCause=$waitCause.InnerException}
  $atReturn=@{pid=$script:owned.Id;birth=$script:birth;exited=$script:owned.HasExited;
   completed=(Test-Path -LiteralPath (Join-Path $Root 'completed.json'));result=$result;stops=$script:stops;
+  usage_exists=(Test-Path -LiteralPath (Join-Path $Root 'usage.json'));
   same_exception=($null-ne$caught-and[object]::ReferenceEquals($caught.Exception,$script:original));
   same_wait_error=[object]::ReferenceEquals($waitCause,$script:waitError);
   error=$(if($null-ne$caught){$caught.Exception.Message});
   exit_confirmed=$(if($null-ne$caught){$caught.Exception.Data['observed_process_exit_confirmed']});
+  observed_pid=$(if($null-ne$caught){$caught.Exception.Data['observed_process_id']});
+  observed_birth=$(if($null-ne$caught){$caught.Exception.Data['observed_process_started_at_utc_ticks']});
   returncode=$(if($null-ne$caught){$caught.Exception.Data['observed_process_returncode']})}
 }finally{
  # The red version may return early; the fixture still joins its real root before deleting files.
@@ -106,26 +112,40 @@ Path(sys.argv[1], 'completed.json').write_text(json.dumps({'pid': os.getpid()}),
 raise SystemExit(int(sys.argv[2]))
 """
         scenarios = [(name, 7) for name in ("sample1", "sample2", "observation1", "observation2", "wait_error")]
-        for scenario, code in scenarios + [("normal", 0), ("normal", 7), ("danger", 7)]:
+        for scenario, code in scenarios + [("normal", 0), ("normal", 7), ("danger", 7),
+                                          ("no_limits", 0), ("no_limits", 7),
+                                          ("no_limits_sample1", 7), ("no_limits_danger", 7)]:
             with self.subTest(scenario=scenario, code=code), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 (root / "root.py").write_text(worker, encoding="utf-8")
                 result = self.run_script(script, sys._base_executable, root, scenario, code)
-                self.assertEqual(result["exited"], scenario != "wait_error", result)
-                self.assertEqual(result["completed"], scenario != "wait_error", result)
+                unbudgeted = scenario.startswith("no_limits")
+                behavior = scenario.removeprefix("no_limits").removeprefix("_") or "normal" if unbudgeted else scenario
+                self.assertEqual(result["exited"], behavior != "wait_error", result)
+                self.assertEqual(result["completed"], behavior != "wait_error", result)
                 self.assertGreater(result["birth"], 0)
                 self.assertEqual(result["pid"], json.loads((root / "completed.json").read_text())["pid"])
-                if scenario in {"normal", "danger"}:
+                if behavior in {"normal", "danger"}:
                     self.assertIsNone(result["error"], result)
                     self.assertEqual(result["result"]["exit_code"], code)
-                    self.assertEqual(result["result"]["resource_budget_exceeded"], scenario == "danger")
+                    self.assertEqual(result["result"]["resource_budget_exceeded"], behavior == "danger")
+                    self.assertEqual(result["result"]["root_process_id"], result["pid"])
+                    self.assertEqual(result["result"]["root_process_started_at_utc_ticks"], result["birth"])
                 else:
                     self.assertTrue(result["same_exception"], result)
                     self.assertEqual(result["error"], "TEST_ONLY observation failed")
-                    self.assertEqual(result["exit_confirmed"], scenario != "wait_error", result)
-                    self.assertEqual(result["returncode"], None if scenario == "wait_error" else code)
-                    self.assertEqual(result["same_wait_error"], scenario == "wait_error", result)
-                if scenario == "danger":
+                    self.assertEqual(result["exit_confirmed"], behavior != "wait_error", result)
+                    self.assertEqual(result["returncode"], None if behavior == "wait_error" else code)
+                    self.assertEqual(result["observed_pid"], result["pid"])
+                    self.assertEqual(result["observed_birth"], result["birth"])
+                    self.assertEqual(result["same_wait_error"], behavior == "wait_error", result)
+                if unbudgeted:
+                    self.assertFalse(result["usage_exists"], result)
+                    if result["result"] is not None:
+                        self.assertIsNone(result["result"]["usage_path"], result)
+                        if behavior != "danger":
+                            self.assertIsNone(result["result"]["limit_name"], result)
+                if behavior == "danger":
                     self.assertEqual(result["result"]["limit_name"], "system_available_memory")
                     self.assertEqual(result["stops"], [{"ids": [result["pid"]], "births": {str(result["pid"]): result["birth"]}}])
                 else:

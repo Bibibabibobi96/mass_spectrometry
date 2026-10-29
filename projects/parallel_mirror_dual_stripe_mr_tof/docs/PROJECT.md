@@ -4,6 +4,9 @@
 推导见[理论索引](theory/index.md)。完整接口迁移、已完成研究、实现修复及原始证据链接冻结在
 [文档收口里程碑](history/20261026__assembly-documentation-consolidation.md)，历史语气不作为当前执行指令。
 
+项目门禁由[verify_project.ps1](../verify_project.ps1)进入，逐测试输出耗时并保留失败传播；
+不同门禁等级和实际选择范围仍以该入口为准，不把软件门禁通过当作求解或科学资格。
+
 ## 当前决策与完成边界
 
 主设计为对称会聚双镜、五次项偏置Stripe及保留实体的接地线性Stripe。
@@ -35,6 +38,14 @@ MR拥有Prism、镜组、Stripe、检测、系统布局约束与匹配判据；�
 OA／IP准备、普通OA→MR飞行及prepared-joint执行已切换到直属
 [集成状态](../../../integrations/docs/INTEGRATION.md#oaip接口准备与绑定)对应入口，旧公开准备／trial入口已删除。
 MR继续提供真实几何、场、匹配与执行科学合同，不保留第二套跨器件组装器。
+
+IP替换场计划接受成功封存的`instrument_assembly/accelerator_interface_preparation`准备结果，
+同时保留原MR owner的合法历史准备资产；准备receipt及各实际消费记录仍按原封存合同验证。
+该接线修复不代表已求场、飞行或取得科学资格。
+
+实测IP→MR源和分析复用公共粒子源的六维速度投影与母群census。原ID、时钟与转交状态继续保留；
+完整母群权重可得时分别报告全链与转交条件下的加权效率，历史缺失母群权重时全链加权结果不可计算。
+未知权重或未知终态不推断为单位权重或物理损失；软件诊断完成不授予整束性能或Formal资格。
 
 prepared-joint组件及工作点采集消费接口准备记录时，直接调用公共manifest的唯一记录校验，不再导入integration准备CLI。
 仍要求原instrument_assembly／accelerator_interface_preparation成功身份，以及实际消费路径的唯一记录、字节数和SHA；
@@ -307,7 +318,7 @@ MR专属staged工作点及候选控制仍从[操作说明](SIMION.md)选择。
 电势对电压线性、轨迹不线性；响应组合仍核验几何、网格及边界身份，不用旧y350或粗档响应冒充新y360细场。
 
 `nonaccelerator_scale`非1时，Python静态与Lua运行的电极缩放定义尚不一致；当前scale=1不受影响，
-其他值须先明确科学定义再统一投影。完整批续算由公共API按冻结前驱manifest绑定，不扫描祖先、
+其他值须先明确科学定义再统一投影。完整批续算由公共API按冻结前驱manifest绑定，不搜索未声明来源、
 复制旧日志或把复用Fly说成新run执行；不完整批整批重跑。
 
 ## 电场表示与数值资格
@@ -367,6 +378,14 @@ S1单独-0.1 V对Ey改善弱且空间相位变差，保留负结果，不重复�
 
 当前场、响应库、GUI和CAD按公共owner及实际消费者保护；旧场退役、容量异常及重建路径见
 [收口前记录](history/20261026__assembly-documentation-consolidation.md)，不得由运行终态推断可删除。
+prepared joint 续跑按冻结 Fly 依赖判断批次复用；已验证的 v1 峰分析合同可在新 run 中
+切换为完整验证的 v2 分析合同，历史合同和结果保留原身份。已完成批次须有 owner 的退出
+证据；历史成功批仅在现有终态、聚合 usage 和已核验的原 owner 版本共同支持时兼容。
+IP→MR 新场工作流在求场前验证设计绑定的真实 handoff、粒子绝对时钟与共同脉冲；
+预检不代表求场或科学资格通过。
+OA→MR 和 prepared joint 共用 MR `Protect-MrtofContinuationEvidence`：沿显式 manifest 绑定投影多代来源，
+先追加容量保护，再对实际文件持 share-read 防写锁并复核投影，直至 writer 停止；仅直接前驱不能代表全部祖先。
+固定原批区间续飞时，已知资源画像须覆盖最大缺批；否则实际观测最大缺批并以原分区单 lane 续跑。
 `run_native_corridor_response_bank.ps1`新建receipt recipe使用schema 2及显式`source_location=payload`；
 其声明库存同时保留raw、8个原生response、8个standalone和receipt。已有v1响应库按公共严格版本reader读取，
 仍要求原source的manifest身份、publication pin及冻结bank身份；不会用当前编译器输出冒用旧cache key。

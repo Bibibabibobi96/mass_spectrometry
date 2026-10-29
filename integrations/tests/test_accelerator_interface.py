@@ -37,6 +37,407 @@ def reference_fixture(root, *, frame_id="astral.xyz.v2"):
 
 
 class AcceleratorInterfaceTests(unittest.TestCase):
+    def test_full_joint_finalization_routes_only_to_existing_flight_owner(self):
+        powershell = shutil.which("pwsh")
+        if not powershell:
+            self.skipTest("PowerShell 7 required")
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / "finalization.ps1"
+            script.write_text(r'''param($Entry)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
+$branch=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$ResumeFinalization'},$true)
+if($null-eq$branch){throw 'Missing original CLI recovery branch'}
+$body=(@($branch.Clauses[0].Item2.Statements|Where-Object{$_-isnot[Management.Automation.Language.ReturnStatementAst]}|ForEach-Object{$_.Extent.Text})-join"`n")
+$ResumeFinalization=$true;$FullJoint=$true;$RunId='existing-flight';$ResultPath='external-result';$PythonExe='python-runtime';$repoRoot='repository'
+$PSBoundParameters.Clear()
+foreach($key in @('ResumeFinalization','FullJoint','RunId','ResultPath')){$PSBoundParameters[$key]=(Get-Variable -Name $key -ValueOnly)}
+$script:calls=0;$script:inject=$false
+function Invoke-JointOwnerStage {
+ param($Script,$Arguments)
+ $script:calls++
+ if($Script-ne(Join-Path $repoRoot 'integrations/workflows/prepared_joint/execute.ps1')-or
+    -not$Arguments.ResumeFinalization-or$Arguments.RunId-ne$RunId-or$Arguments.ResultPath-ne$ResultPath-or
+    $Arguments.PythonExe-ne$PythonExe-or$Arguments.Count-ne5){throw 'Recovery forwarded new scientific or native inputs'}
+ if($script:inject){throw 'original owner finalization error'}
+}
+Invoke-Expression $body
+if($script:calls-ne1){throw 'Recovery did not reach the original owner exactly once'}
+$script:inject=$true;$caught=$false
+try{Invoke-Expression $body}catch{$caught=$_.Exception.Message-eq'original owner finalization error'}
+if(-not$caught){throw 'Recovery failure was swallowed'}
+$PSBoundParameters.SimionExe='must-not-start';$caught=$false
+try{Invoke-Expression $body}catch{$caught=$_.Exception.Message-like'*omit scientific*'}
+if(-not$caught-or$script:calls-ne2){throw 'Recovery accepted a new solver option'}
+'FULL_JOINT_FINALIZATION=PASS'
+''', encoding="utf-8")
+            result = subprocess.run([powershell, "-NoProfile", "-File", str(script),
+                str(REPO / "integrations/workflows/accelerator_interface/execute.ps1")],
+                cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("FULL_JOINT_FINALIZATION=PASS", result.stdout)
+
+    def test_ip_negative_result_requires_complete_published_execution(self):
+        powershell = shutil.which("pwsh")
+        if not powershell:
+            self.skipTest("PowerShell 7 required")
+        from projects.dual_pressure_rectilinear_ion_processor.tests.test_component_exit import ComponentExitTests
+        fixture = ComponentExitTests("test_complete_negative_native_exports_81_states_and_preserves_19_losses_and_failed_result")
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        fixture._negative_population()
+        fixture.summary.update(execution_status="completed", data_validity="valid", science_status="not_passed",
+                               analysis_exit_code=2, native_completed=True, diagnostics_complete=True)
+        fixture._write_json("summary.json", fixture.summary)
+        fixture._seal()
+        script = fixture.root / "ip_status.ps1"
+        script.write_text(r'''param($Entry,$Repo,$Run)
+$ErrorActionPreference='Stop'
+$ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
+$definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Assert-CompletedIpScientificFailure'},$true)
+Invoke-Expression $definition.Extent.Text
+function Invoke-RunToolRootContext {param($RepoRoot,$Operation) & $Operation}
+$repoRoot=$Repo;$python=Join-Path $Repo '.venv/Scripts/python.exe'
+$summary=Assert-CompletedIpScientificFailure -Run $Run
+if($summary.analysis_exit_code-ne2){throw 'wrong status'}
+''', encoding="utf-8")
+        command = [powershell, "-NoProfile", "-File", str(script),
+                   str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(REPO), str(fixture.run)]
+        okay = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(okay.returncode, 0, okay.stdout + okay.stderr)
+        fixture.summary["diagnostics_complete"] = False
+        fixture._write_json("summary.json", fixture.summary)
+        fixture._seal()
+        bad = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertNotEqual(bad.returncode, 0)
+        self.assertIn("not a verified completed scientific negative", bad.stderr)
+
+    def test_full_joint_uses_measured_mp_source_and_preserves_failure_policy(self):
+        powershell = shutil.which("pwsh")
+        if not powershell:
+            self.skipTest("PowerShell 7 required")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = root / "source_dispatch.ps1"
+            script.write_text(r'''param($Entry,$Root,$Scenario)
+$ErrorActionPreference='Stop'
+$ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
+$definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-FullJoint'},$true)
+Invoke-Expression $definition.Extent.Text
+function New-AcceleratorInterfaceRunId {param($Provider) 'final'}
+function Invoke-JointAnalysisPreflight {param($Design,$Source,$Contract)}
+function Assert-JointFieldRunId {param($Id)}
+function Write-FullJointFailure {param($Stage,$Flight,$Reason,$Elapsed)}
+function Write-FullJointFlightResult {param($Workbench,$Flight,$Elapsed)}
+function Get-JointDesignReceipt {param($Run) return @{status='prepared'}}
+function Get-MultipoleIpPreparation {param($Run,$ConfigurationDirectory)
+  if($ConfigurationDirectory-ne$Root){throw 'configuration was not forwarded'}
+  return @{exit_count=$(if($Scenario-eq'zero'){0}else{1});mother_count=2;source=@{run_id='mp-original';case_id='rf_on'}}
+}
+function Assert-CompletedIpScientificFailure {param($Run)
+  if($Scenario-eq'unsafe'){throw 'incomplete diagnostics'}
+  return @{status='failed';analysis_exit_code=2}
+}
+$script:calls=[Collections.Generic.List[string]]::new()
+function Invoke-JointOwnerStage {param($Script,$Arguments)
+  if($Arguments.ContainsKey('Request')){$script:calls.Add('source');return}
+  if($Arguments.ContainsKey('InjectedSource')){
+    $script:calls.Add('ip')
+    if($Arguments.InjectedSource-ne(Join-Path $workspaceRoot 'artifacts/projects/instrument_assembly/runs/mp/results/multipole_ip/ip_injected_source.json')){throw 'source package differs'}
+    if($Scenario-in@('negative','unsafe','no-policy')){throw 'Analysis or required diagnostics incomplete; see frozen summary and logs'}
+    if($Scenario-eq'seal-failure'){throw 'stopped payload sealing failed'}
+    return
+  }
+  if($Arguments.ContainsKey('MatchingRequestPath')){
+    $script:calls.Add('design')
+    if($Arguments.IonProcessorRunPath-ne(Join-Path $workspaceRoot 'artifacts/projects/dual_pressure_rectilinear_ion_processor/runs/ip')){throw 'IP identity not forwarded'}
+    $p=Join-Path $workspaceRoot 'artifacts/projects/instrument_assembly/runs/design'
+    New-Item -ItemType Directory -Force (Join-Path $p 'results/joint_flight/assembly')|Out-Null
+    Set-Content (Join-Path $p 'run_manifest.json') '{}'
+    Set-Content (Join-Path $p 'results/accelerator_interface_preparation.json') '{}'
+    Set-Content (Join-Path $p 'results/joint_flight/assembly/assembly_preparation.json') '{}'
+    return
+  }
+  if($Arguments.ContainsKey('RequestPath')){
+    $script:calls.Add('field');New-Item -ItemType Directory -Force $Arguments.RunDirectory|Out-Null
+    Set-Content (Join-Path $Arguments.RunDirectory 'run_manifest.json') '{}';return
+  }
+  if($Arguments.ContainsKey('FinalizeJointWorkbench')){
+    $script:calls.Add('binding');$p=Join-Path $workspaceRoot 'artifacts/projects/instrument_assembly/runs/final'
+    New-Item -ItemType Directory -Force $p|Out-Null;Set-Content (Join-Path $p 'run_manifest.json') '{}';return
+  }
+  $script:calls.Add('flight')
+}
+$workspaceRoot=$Root;$repoRoot=$Root;$AcceleratorProvider='dual_pressure_rectilinear_ion_processor'
+$MultipoleIpRequestPath=Join-Path $Root 'request.json';Set-Content $MultipoleIpRequestPath '{}'
+$MultipoleIpRunId='mp';$IonProcessorRunId='ip';$IonProcessorConfigurationDirectory=$Root;$IonProcessorFieldRunPath=''
+$ContinueOnIpScientificFailure=$Scenario-in@('negative','unsafe','seal-failure');$IonProcessorRunPath=''
+$MatchingRequestPath='matching';$ContractPath='observation';$ReferenceMrRunPath='reference'
+$FieldRequestPath=Join-Path $Root 'field.json';Set-Content $FieldRequestPath '{"run_id":"field"}'
+$RunId='design';$LuaExe='';$PythonExe='';$SimionExe='';$FinalizeJointWorkbench=$false
+$PreparedInterfaceRunPath='';$JointFieldRunPath='';$PreparedJointWorkbenchRunPath='';$ContinuationPredecessorManifestPath=''
+$failed=$false;try {Invoke-FullJoint} catch {$failed=$true}
+$expected=if($Scenario-eq'zero'){'source'}elseif($Scenario-in@('unsafe','no-policy','seal-failure')){'source,ip'}else{'source,ip,design,field,binding,flight'}
+if(($script:calls -join ',')-ne$expected-or$failed-ne($Scenario-in@('unsafe','no-policy','seal-failure'))){throw "unexpected sequence $script:calls failure=$failed"}
+Write-Output 'MP_IP_JOINT=PASS'
+''', encoding="utf-8")
+            for scenario in ("normal", "zero", "negative", "unsafe", "no-policy", "seal-failure"):
+                case = root / scenario
+                case.mkdir()
+                result = subprocess.run([powershell, "-NoProfile", "-File", str(script),
+                    str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(case), scenario],
+                    cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("MP_IP_JOINT=PASS", result.stdout)
+
+    def test_multipole_source_validates_published_receiver_geometry(self):
+        powershell = shutil.which("pwsh")
+        if not powershell:
+            self.skipTest("PowerShell 7 required")
+        from integrations.tests.test_multipole_ip_prepare import MultipoleIPPreparationTests, write_json
+        from common.contracts.rigid_transform import RigidTransform
+        fixture = MultipoleIPPreparationTests("test_current_three_component_parent_derives_both_scopes_without_repositioning")
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        fixture.execute()
+        root = fixture.run
+        model = json.loads((fixture.receiver / "inputs/resolved_model.json").read_text())
+        configuration = fixture.root / "configuration"
+        configuration.mkdir()
+        for name in ("baseline", "numerics"):
+            write_json(configuration / f"{name}.json", model[name])
+        frame = model["baseline"]["clock"]["frame_id"]
+        write_json(configuration / "coordinate_transform.json", RigidTransform.identity(frame).to_contract())
+        result = root / "results/multipole_ip"
+        write_json(root / "run_manifest.json", dict(project="instrument_assembly", mode="multipole_ip_preparation",
+            status="success", inputs={}, outputs=[file_record(result / "preparation_receipt.json"),
+                                                   file_record(result / "ip_injected_source.json")]))
+        script = fixture.root / "validate.ps1"
+        script.write_text(r'''param($Entry,$Repo,$Run,$Config)
+$ErrorActionPreference='Stop'
+$ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
+$definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Get-MultipoleIpPreparation'},$true)
+Invoke-Expression $definition.Extent.Text
+function Invoke-RunToolRootContext {param($RepoRoot,$Operation) & $Operation}
+$repoRoot=$Repo;$python=Join-Path $Repo '.venv/Scripts/python.exe'
+$receipt=Get-MultipoleIpPreparation -Run $Run -ConfigurationDirectory $Config
+if($receipt.exit_count-ne1){throw 'wrong receipt'}
+''', encoding="utf-8")
+        command = [powershell, "-NoProfile", "-File", str(script),
+                   str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(REPO), str(root), str(configuration)]
+        result_ok = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(result_ok.returncode, 0, result_ok.stdout + result_ok.stderr)
+        model["baseline"]["native_geometry"]["domain_start_x_mm"] += 1
+        write_json(configuration / "baseline.json", model["baseline"])
+        result_bad = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertNotEqual(result_bad.returncode, 0)
+        self.assertIn("receiver configuration", result_bad.stderr)
+
+    def test_full_joint_field_request_reaches_real_provider_without_native_execution(self):
+        powershell = shutil.which("pwsh")
+        if not powershell:
+            self.skipTest("PowerShell 7 required")
+        from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_ion_processor_assembly import AssemblyTests
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ion_processor_assembly as assembly
+        from integrations.workflows.accelerator_interface.geometry import prepare_ion_processor_assembly
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_connection
+
+        fixture = AssemblyTests("test_seed_target_geometry_and_oa_removed")
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        root = fixture.root
+        reference = Path(fixture.request["field_assembly_reference"]["numerical_plan"]["path"])
+        numerical_plan = json.loads(reference.read_text())
+        numerical_plan.update(resource_budget={"cpu_cores": 8, "memory_bytes": 8589934592, "io_slots": 1},
+                              resource_limits={"automatic_retry_count": 0})
+        reference.write_text(json.dumps(numerical_plan), encoding="utf-8")
+        fixture.request["field_assembly_reference"]["numerical_plan"] = file_record(reference)
+        fixture.trajectory["simion"]["numerical_profiles"] = {
+            "native_static_field": {"refine": {"convergence_v": 1e-5}},
+            "grid_generation": {"spacing_quantum_mm": 0.01},
+        }
+        paths = [fixture.write(name + ".json", value) for name, value in
+                 (("source", fixture.source), ("trajectory", fixture.trajectory), ("request", fixture.request))]
+        assembly_dir = root / "results/joint_flight/assembly"
+        assembly_dir.parent.mkdir(parents=True)
+        with patch.object(assembly, "_analyzer_geometry_lines", return_value=["e(2) { box3d(1,2,3,4,5,6) }"]):
+            prepare_ion_processor_assembly(fixture.source, fixture.trajectory, fixture.request,
+                connection=resolve_ip_mr_connection(fixture.request["composition_plan"]),
+                input_paths=paths, output_directory=assembly_dir)
+        (root / "results/accelerator_interface_preparation.json").write_text(
+            json.dumps({"status": "prepared", "inputs": {}}), encoding="utf-8")
+        manifest = dict(status="success", project="instrument_assembly", mode="accelerator_interface_preparation",
+                        inputs={}, outputs=[file_record(path) for path in root.rglob("*") if path.is_file()])
+        (root / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        template = root / "field_template.json"
+        template.write_text(json.dumps(dict(schema_version=1, role="mrtof_native_static_field_provider_request",
+            run_id="20261029_120000__sim__simion__field-fixture", numerical_contract_path=str(root / "trajectory.json"),
+            ion_processor_local_grid=dict(box_mm=[0, -227, -0.5, 4, -31.5, 14], pitch_mm=[0.05, 0.1, 0.05],
+                                         active_box_mm=[[-3.5, 3.5], [-226.5, -32], [-0.25, 13.75]]),
+            surface_allowance_bytes_per_level=1024)), encoding="utf-8")
+        script = root / "real_field.ps1"
+        script.write_text(r'''param($Entry,$Repo,$Root,$Template)
+$ErrorActionPreference='Stop'
+$ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
+foreach($name in @('Invoke-FullJoint','Write-FullJointFlightResult','Write-FullJointFailure','Get-JointSourceStart','Assert-JointFieldRunId')){
+  $definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
+  Invoke-Expression $definition.Extent.Text
+}
+function New-AcceleratorInterfaceRunId {param($Provider) 'final'}
+function Invoke-JointAnalysisPreflight {param($Design,$Source,$Contract)}
+function Invoke-RunToolRootContext {param($RepoRoot,$Operation) & $Operation}
+function Get-JointDesignReceipt {param($Run) Get-Content (Join-Path $Run 'results/accelerator_interface_preparation.json') -Raw|ConvertFrom-Json -AsHashtable}
+$script:ownerCalls=0
+function Invoke-JointOwnerStage {
+  param($Script,$Arguments)
+  $script:ownerCalls++
+  if($Arguments.ContainsKey('RequestPath')){
+    $output=@(& $Script -RequestPath $Arguments.RequestPath -RunDirectory $Arguments.RunDirectory)
+    $plan=($output-join"`n")|ConvertFrom-Json
+    if($plan.project-ne'parallel_mirror_dual_stripe_mr_tof'-or$plan.run_id-ne'20261029_120000__sim__simion__field-fixture'-or$plan.fly_authorized-ne$false){throw 'provider plan mismatch'}
+    New-Item -ItemType Directory -Force $Arguments.RunDirectory|Out-Null
+    Set-Content (Join-Path $Arguments.RunDirectory 'run_manifest.json') '{}'
+  }elseif($Arguments.ContainsKey('FinalizeJointWorkbench')){
+    $p=Join-Path $workspaceRoot 'artifacts/projects/instrument_assembly/runs/final';New-Item -ItemType Directory -Force $p|Out-Null;Set-Content (Join-Path $p 'run_manifest.json') '{}'
+  }else{
+    $p=Join-Path $workspaceRoot ('artifacts/projects/instrument_assembly/runs/'+$Arguments.RunId);New-Item -ItemType Directory -Force $p|Out-Null;Set-Content (Join-Path $p 'summary.json') '{"status":"success","diagnostics":"fixture","actual_native_batch_count":0,"reused_batch_count":1}'
+  }
+}
+$repoRoot=$Repo;$workspaceRoot=$Root;$PreparedInterfaceRunPath=$Root;$JointFieldRunPath='';$python=Join-Path $Repo '.venv/Scripts/python.exe'
+$AcceleratorProvider='dual_pressure_rectilinear_ion_processor';$IonProcessorRunPath='source';$ReferenceMrRunPath='reference'
+$MatchingRequestPath='';$FieldRequestPath=$Template;$ContractPath='observation';$RunId='';$LuaExe='';$PythonExe='';$SimionExe=''
+$PreparedJointWorkbenchRunPath='';$ContinuationPredecessorManifestPath='';$FinalizeJointWorkbench=$false
+Invoke-FullJoint
+$before=$script:ownerCalls
+$bad=Get-Content $Template -Raw|ConvertFrom-Json -AsHashtable;$bad.run_id='field-fixture';$bad|ConvertTo-Json -Depth 20|Set-Content $Template
+$rejected=$false
+try{Invoke-FullJoint}catch{$rejected=$true}
+if(-not$rejected-or$script:ownerCalls-ne$before){throw 'invalid field run_id was not rejected before any owner stage'}
+Write-Output 'REAL_FIELD_PROVIDER=PASS'
+''', encoding="utf-8")
+        result = subprocess.run([powershell, "-NoProfile", "-File", str(script),
+            str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(REPO), str(root), str(template)],
+            cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("REAL_FIELD_PROVIDER=PASS", result.stdout)
+
+    def test_zero_ip_exit_stops_before_matching(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            def write(name, value):
+                path = root / name
+                path.write_text(json.dumps(value), encoding="utf-8")
+                return {"path": str(path)}
+            frozen = dict(
+                accelerator_dependency=write("dependency.json", dict(api_version=2,
+                    provider_project_id="dual_pressure_rectilinear_ion_processor", execution_scope="prepare_only_no_solver",
+                    provider_callable="export_component_exit", provider_module="projects/dual_pressure_rectilinear_ion_processor/analysis/component_exit.py")),
+                accelerator_request=write("request.json", {}), composition_plan=write("plan.json", {}),
+            )
+            zero = dict(role="ion_processor_component_exit_export", status="zero_exit",
+                        counts=dict(source=3, transferred=0, not_transferred=3))
+            connection = dict(upstream=dict(instance_id="ip"), downstream=dict(instance_id="mr"))
+            with patch('integrations.workflows.accelerator_interface.prepare.derive_assembly_scope', return_value={}), \
+                 patch('projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff.resolve_ip_mr_connection', return_value=connection), \
+                 patch('projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff.resolve_matching_request', side_effect=AssertionError('must not match')), \
+                 patch('projects.dual_pressure_rectilinear_ion_processor.analysis.component_exit.export_component_exit', return_value=zero):
+                self.assertEqual(_resolve_ip_matching(source_run=root, results=root, inputs=root, frozen=frozen), zero)
+
+    def test_full_joint_dispatches_actual_owner_sequence_and_stops_on_failure(self):
+        powershell = shutil.which("pwsh")
+        if not powershell:
+            self.skipTest("PowerShell 7 required")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = root / "dispatch.ps1"
+            script.write_text(r'''param($Entry,$Root,$Fail)
+$ErrorActionPreference='Stop'
+$ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
+$definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-FullJoint'},$true)
+Invoke-Expression $definition.Extent.Text
+foreach($name in @('Write-FullJointFlightResult','Write-FullJointFailure','Get-JointSourceStart')){
+  $definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
+  Invoke-Expression $definition.Extent.Text
+}
+function New-AcceleratorInterfaceRunId { param($Provider) return 'final' }
+function Invoke-JointAnalysisPreflight {param($Design,$Source,$Contract) if($Fail-eq'preflight'){throw 'clock mismatch'}}
+function Assert-JointFieldRunId { param($Id) }
+function Get-JointDesignReceipt { param($Run) return Get-Content (Join-Path $Run 'results/accelerator_interface_preparation.json') -Raw|ConvertFrom-Json -AsHashtable }
+$script:calls=[Collections.Generic.List[string]]::new()
+function Invoke-JointOwnerStage {
+  param($Script,$Arguments)
+  $name=if($Arguments.ContainsKey('MatchingRequestPath')){'design'}elseif($Arguments.ContainsKey('RequestPath')){'field'}elseif($Arguments.ContainsKey('FinalizeJointWorkbench')){'binding'}else{'flight'}
+  $script:calls.Add($name)
+  if($name-eq$Fail){throw 'injected stage failure'}
+  if($name-eq'design'){
+    $p=Join-Path $workspaceRoot 'artifacts/projects/instrument_assembly/runs/design'
+    New-Item -ItemType Directory -Force (Join-Path $p 'results/joint_flight/assembly')|Out-Null
+    Set-Content (Join-Path $p 'run_manifest.json') '{}'
+    Set-Content (Join-Path $p 'results/joint_flight/assembly/assembly_preparation.json') '{}'
+    Set-Content (Join-Path $p 'results/accelerator_interface_preparation.json') '{"status":"prepared"}'
+  }elseif($name-eq'field'){
+    $r=Get-Content $Arguments.RequestPath -Raw|ConvertFrom-Json
+    if($r.replacement_assembly_manifest-ne(Join-Path $workspaceRoot 'artifacts/projects/instrument_assembly/runs/design/run_manifest.json')){throw 'design binding differs'}
+    if($r.ion_processor_local_grid.pitch_mm[0]-ne0.05){throw 'field inputs changed'}
+    New-Item -ItemType Directory -Force $Arguments.RunDirectory|Out-Null
+    Set-Content (Join-Path $Arguments.RunDirectory 'run_manifest.json') '{}'
+  }elseif($name-eq'binding'){
+    $p=Join-Path $workspaceRoot 'artifacts/projects/instrument_assembly/runs/final'
+    New-Item -ItemType Directory -Force $p|Out-Null
+    Set-Content (Join-Path $p 'run_manifest.json') '{}'
+  }elseif($name-eq'flight'){
+    $p=Join-Path $workspaceRoot ('artifacts/projects/instrument_assembly/runs/'+$Arguments.RunId)
+    $d=Join-Path $p 'results/diagnostics';New-Item -ItemType Directory -Force $d|Out-Null
+    @{status='success';diagnostics=$d;actual_native_batch_count=0;reused_batch_count=2}|ConvertTo-Json|Set-Content (Join-Path $p 'summary.json')
+    Set-Content (Join-Path $d 'diagnostics_receipt.json') '{"status":"complete_recorded_diagnostics","counts":{"detected":2},"detector_peak":{"fwhm_us":0.1}}'
+  }
+}
+$workspaceRoot=$Root;$repoRoot=$Root;$AcceleratorProvider='dual_pressure_rectilinear_ion_processor'
+$IonProcessorRunPath='source';$MatchingRequestPath='matching';$ContractPath='observation';$ReferenceMrRunPath='reference'
+$FieldRequestPath=Join-Path $Root 'field.json';$RunId='design';$LuaExe='';$PythonExe='';$SimionExe=''
+$FinalizeJointWorkbench=$false;$PreparedInterfaceRunPath='';$JointFieldRunPath=''
+$PreparedJointWorkbenchRunPath='';$ContinuationPredecessorManifestPath=''
+Set-Content $FieldRequestPath '{"run_id":"field","ion_processor_local_grid":{"pitch_mm":[0.05,0.1,0.05]}}'
+try { Invoke-FullJoint } catch { if(-not$Fail){throw} }
+$expected=if($Fail-eq'preflight'){@('design')}elseif($Fail){@('design','field')}else{@('design','field','binding','flight')}
+if(($script:calls -join ',')-ne($expected -join ',')){throw "wrong sequence: $script:calls"}
+if(-not$Fail){
+  $script:calls.Clear();$PreparedInterfaceRunPath=Join-Path $workspaceRoot 'artifacts/projects/instrument_assembly/runs/design'
+  $JointFieldRunPath=Join-Path $workspaceRoot 'artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/field'
+  $MatchingRequestPath='';$FieldRequestPath=''
+  Invoke-FullJoint
+  if(($script:calls -join ',')-ne'binding,flight'){throw "reuse ran extra stages: $script:calls"}
+  $script:calls.Clear();$PreparedJointWorkbenchRunPath=Join-Path $workspaceRoot 'artifacts/projects/instrument_assembly/runs/final'
+  $PreparedInterfaceRunPath='';$JointFieldRunPath='';$ContinuationPredecessorManifestPath='predecessor'
+  $exit=Join-Path $PreparedJointWorkbenchRunPath 'results/ion_processor_exit';$binding=Join-Path $PreparedJointWorkbenchRunPath 'results/joint_workbench'
+  New-Item -ItemType Directory -Force $exit,$binding|Out-Null
+  Set-Content (Join-Path $exit 'component_exit_receipt.json') '{"inputs":{"inputs/injected_source.json":{}}}'
+  Set-Content (Join-Path $binding 'static_field_binding.json') '{"parent":{"grid":{"origin_mm":[0,1,2],"pitch_mm":[1,1,1],"dimensions":[2,2,2]}},"refinement_windows":[]}'
+  $direct=@(Invoke-FullJoint)
+  if(($script:calls -join ',')-ne'flight'){throw "workbench reuse ran extra stages: $script:calls"}
+  if(-not($direct -match 'DATA_VALIDITY=recorded_diagnostics_complete SCIENCE=not_qualified SOURCE=upstream_injected_population.*NATIVE_BATCHES=0 REUSED_BATCHES=2')){throw 'execution, source, scientific status or reuse not reported'}
+  if(-not($direct -match 'fwhm_us.*0.1')-or-not($direct -match 'origin_mm')){throw 'peak or field scope not reported'}
+  $failed=Join-Path $Root 'failed';New-Item -ItemType Directory -Force $failed|Out-Null
+  Set-Content (Join-Path $failed 'summary.json') '{"status":"failed","failure_stage":"automatic_joint_diagnostics","reason":"real analysis failure"}'
+  $failure=@(Write-FullJointFailure -Stage flight_and_analysis -Flight $failed -Reason generic -Elapsed 1 2>&1)
+  if(-not($failure -match 'STAGE=automatic_joint_diagnostics.*RECOVERY=use_prepared_joint_analysis_without_fly.*real analysis failure')){throw 'failed analysis did not expose actual stage and recovery'}
+  $script:calls.Clear();$PreparedJointWorkbenchRunPath='';$PreparedInterfaceRunPath=Join-Path $workspaceRoot 'artifacts/projects/instrument_assembly/runs/design'
+  $JointFieldRunPath='';$FieldRequestPath=Join-Path $Root 'field.json'
+  Set-Content (Join-Path $PreparedInterfaceRunPath 'results/accelerator_interface_preparation.json') '{"status":"zero_exit","source_exit":{"inputs":{"inputs/injected_source.json":{}},"counts":{"source":3,"not_transferred":3}}}'
+  $zero=@(Invoke-FullJoint)
+  if($script:calls.Count-ne0-or-not($zero -match 'FULL_JOINT=ZERO_EXIT.*SOURCE=upstream_injected_population.*MOTHER=3.*FLY=False')){throw 'zero exit source or stopping differs'}
+}
+Write-Output 'FULL_JOINT_DISPATCH=PASS'
+''', encoding="utf-8")
+            for failure in ("", "field", "preflight"):
+                case = root / (failure or "success")
+                case.mkdir()
+                result = subprocess.run([powershell, "-NoProfile", "-File", str(script),
+                    str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(case), failure],
+                    cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("FULL_JOINT_DISPATCH=PASS", result.stdout)
+
     def test_actual_iob_entry_verifies_live_assets_once_after_guards_and_before_vendor(self):
         powershell = shutil.which("pwsh")
         if not powershell:
@@ -329,6 +730,7 @@ $package=@{run_config=(Join-Path $Run 'run_config.json');summary=(Join-Path $Run
 $repoRoot=$Repo;$workspaceRoot=Split-Path -Parent $Run;$python=$Python
 $terminalized=$false;$stage='fixture';$software=@('Python inert boundary');$extraOutputs=@()
 $AcceleratorProvider='orthogonal_accelerator';$RunId=Split-Path -Leaf $Run
+$receipt=@{status='prepared'}
 $capacitySession=@{active=$true};$lease=$null;$paGuards=[Collections.Generic.List[IO.FileStream]]::new()
 $log=Join-Path $Run 'logs/prepare.log'
 $script:firstRetention=$true;$script:released=$false;$script:finalized=$false
@@ -401,10 +803,12 @@ $errors=$null;$tokens=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
 $commands=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.CommandElements[0].Extent.Text-eq'$python'},$true))
-if($commands.Count-ne3){throw 'expected preparation, live-asset verification and field-audit Python calls'}
+if($commands.Count-eq0){throw 'expected Python calls in accelerator interface owner'}
 foreach($call in $commands){if($call.CommandElements[1].Extent.Text-ne'-B'){throw 'snapshot call permits bytecode'}}
 $python=$Python;$arguments=@('-c','import sys; assert sys.dont_write_bytecode; print("SNAPSHOT_BYTECODE_DISABLED=PASS")')
-. ([scriptblock]::Create($commands[0].Extent.Text))
+$preparation=@($commands|Where-Object{$_.Extent.Text.Contains('@arguments')})
+if($preparation.Count-ne1){throw 'actual preparation command missing'}
+. ([scriptblock]::Create($preparation[0].Extent.Text))
 if($LASTEXITCODE-ne0){throw 'actual preparation command did not disable bytecode'}
 """
         with tempfile.TemporaryDirectory() as directory:
@@ -485,6 +889,12 @@ if($LASTEXITCODE-ne0){throw 'actual preparation command did not disable bytecode
         return fixture, reference, result, inputs, sources, matching
 
     def test_ip_design_prepares_only_assembly_field_plan_and_real_handoff(self):
+        self._check_ip_design_preparation(upstream=False)
+
+    def test_ip_design_accepts_admitted_upstream_source_without_resampling(self):
+        self._check_ip_design_preparation(upstream=True)
+
+    def _check_ip_design_preparation(self, *, upstream):
         lua = shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe"
         if not Path(lua).is_file():
             self.skipTest("plain Lua unavailable")
@@ -499,6 +909,18 @@ if($LASTEXITCODE-ne0){throw 'actual preparation command did not disable bytecode
         references = dict(reference_materialization=file_record(materialization),
                           numerics=dict(trajectory_quality=3,maximum_step_us=.004,full_path_timeout_us=100))
         configs = load_config()
+        if upstream:
+            # This is the resolved-model representation written by IP prepare
+            # for an already admitted population, not an ion-release spec.
+            admitted_source = dict(frame_id=configs['baseline']['clock']['frame_id'],
+                particle_count=100, mother_particle_count=120,
+                species=dict(mass_amu=524.0, charge_state=1))
+            admission = dict(clock_epoch_id='instrument_epoch',
+                particle_ids=list(range(1,101)), mother_particle_count=120)
+            matching['source_model']['source'] = copy.deepcopy(admitted_source)
+            matching['source_model']['source_profile'] = 'upstream'
+            matching['source_model']['injected_source'] = copy.deepcopy(admission)
+            configs['source'] = copy.deepcopy(admitted_source)
         # Keep the fixture's measured source/clock; supply the actual provider
         # voltage author fields so this boundary also executes its frozen Lua.
         matching['source_model']['native_operating_point'] = copy.deepcopy(configs['native_operating_point'])
@@ -535,7 +957,7 @@ if($LASTEXITCODE-ne0){throw 'actual preparation command did not disable bytecode
         freeze.assert_called_once_with(reference,inputs,compiler_contract=matching['inputs']['trajectory_contract'])
         design = result/'joint_flight'
         self.assertEqual({path.name for path in design.iterdir()},
-                         {'assembly','provider_execution_recipe.json','joint_preparation_receipt.json'})
+                         {'assembly','joint_preparation_receipt.json'})
         self.assertEqual(json.loads((design/'joint_preparation_receipt.json').read_text()),receipt)
         self.assertEqual(receipt['reference_materialization'],references['reference_materialization'])
         self.assertEqual(receipt['numerics'],references['numerics'])
@@ -547,9 +969,6 @@ if($LASTEXITCODE-ne0){throw 'actual preparation command did not disable bytecode
         for path,content in frozen_configs.items(): self.assertEqual(path.read_bytes(),content)
         self.assertEqual(Path(matching['source_model_path']).read_bytes(),original_model)
         self.assertEqual(matching['rows'],original_states)
-        execution = json.loads((design/'provider_execution_recipe.json').read_text())
-        self.assertEqual(execution['configuration_directory'],str(Path(receipt['assembly']['source_config_paths']['baseline']).parent))
-        self.assertFalse(execution['execution_performed'])
         self.assertFalse(receipt['solver_executed'])
         self.assertFalse({'measured_source','workbench_build_contract','future_workbench_build_arguments',
                           'source_adapter_materialized','runtime_adapter_materialized','field_assembly_materialized',

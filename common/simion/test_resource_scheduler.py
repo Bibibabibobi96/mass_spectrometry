@@ -13,6 +13,9 @@ from common.simion.resource_scheduler import (
     RESOURCE_IDENTITY_KEYS,
     format_dispatch_decision_event,
     plan_adaptive_followup,
+    plan_recovered_formal_followup,
+    prepare_fixed_partition_dispatch,
+    calibrate_recovered_missing_plan,
     plan_runtime_dispatch,
     plan_simion_case_dispatch,
     plan_simion_dispatch,
@@ -23,6 +26,103 @@ GIB = 1024**3
 
 
 class ResourceSchedulerTests(unittest.TestCase):
+    def test_fixed_partition_calibrates_largest_missing_unit_and_keeps_all_intervals(self) -> None:
+        initial = plan_simion_dispatch(self.request(), [], available_memory_bytes=10*GIB,
+            total_physical_memory_bytes=20*GIB, logical_processors=8)
+        batches = [dict(index=i, particle_id_min=low, particle_id_max=high, count=high-low+1,
+                        simion_particle_id_offset=low-1) for i, (low, high) in enumerate(((1,500),(501,2500),(2501,5000)),1)]
+        fixed = dict(role="simion_single_wave_particle_batch_plan", coverage="complete_population",
+                     particle_count=5000, batches=batches)
+        pending = [2, 3]
+        plan = prepare_fixed_partition_dispatch(initial, fixed, pending)
+        self.assertEqual(plan["estimation"]["observed_missing_batch_index"], 3)
+        self.assertEqual(plan["waves"][0]["batches"], batches)
+        calibrated = calibrate_recovered_missing_plan(plan, GIB, observed_cpu_percent=8, background_cpu_percent=0,
+            available_memory_bytes=10*GIB, total_physical_memory_bytes=20*GIB, observed_completed=False)
+        self.assertEqual(calibrated["waves"][0]["batches"], batches)
+        self.assertEqual(calibrated["estimation"]["observed_missing_batch_index"], 3)
+        self.assertGreaterEqual(calibrated["estimation"]["per_process_memory_budget_bytes"], GIB)
+        self.assertEqual(calibrated["limits"]["maximum_concurrency"], 1)
+        reuse = prepare_fixed_partition_dispatch(calibrated, fixed, [2])
+        self.assertEqual(reuse["estimation"]["kind"], "observed_formal_batch")
+        self.assertEqual(reuse["limits"]["maximum_concurrency"], 1)
+        too_small = json.loads(json.dumps(calibrated))
+        too_small["estimation"]["observed_missing_batch_index"] = 1
+        reprobe = prepare_fixed_partition_dispatch(too_small, fixed, [2])
+        self.assertEqual(reprobe["estimation"]["kind"], "formal_first_batch_observation")
+        self.assertEqual(reprobe["estimation"]["observed_missing_batch_index"], 2)
+        self.assertEqual(reprobe["waves"][0]["batches"], batches)
+        self.assertEqual(reprobe["limits"]["maximum_concurrency"], 1)
+        exact = plan_simion_dispatch(self.request(), [self.profile()],
+            available_memory_bytes=10*GIB, total_physical_memory_bytes=20*GIB,
+            logical_processors=8)
+        exact["estimation"]["observed_batch_work_units"] = 500
+        reprobe = prepare_fixed_partition_dispatch(exact, fixed, [2, 3])
+        self.assertEqual(reprobe["estimation"]["kind"], "formal_first_batch_observation")
+        self.assertNotIn("observed_peak_bytes", reprobe["estimation"])
+        self.assertEqual(reprobe["estimation"]["observed_missing_batch_index"], 3)
+        recalibrated = calibrate_recovered_missing_plan(reprobe, GIB,
+            observed_cpu_percent=8, background_cpu_percent=0,
+            available_memory_bytes=10*GIB, total_physical_memory_bytes=20*GIB,
+            observed_completed=False)
+        self.assertEqual(recalibrated["waves"][0]["batches"], batches)
+        self.assertEqual(recalibrated["estimation"]["observed_missing_batch_index"], 3)
+        self.assertEqual(recalibrated["limits"]["maximum_concurrency"], 1)
+        exact["estimation"]["observed_batch_work_units"] = True
+        with self.assertRaisesRegex(ValueError, "work-unit count is invalid"):
+            prepare_fixed_partition_dispatch(exact, fixed, [2])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); dispatch = root/"dispatch.json"; partition = root/"batch.json"
+            dispatch.write_text(json.dumps(initial), encoding="utf-8")
+            partition.write_text(json.dumps(fixed), encoding="utf-8")
+            result = subprocess.run([sys.executable, "-m", "common.simion.resource_scheduler",
+                "--prepare-fixed-recovery-plan", str(dispatch), "--fixed-batch-plan", str(partition),
+                "--replay-batch-index", "2", "--replay-batch-index", "3", "--output", str(dispatch)],
+                cwd=Path(__file__).resolve().parents[2], timeout=30, capture_output=True, text=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+            self.assertEqual(json.loads(dispatch.read_text())["estimation"]["observed_missing_batch_index"], 3)
+        plan["estimation"]["observed_missing_batch_index"] = 2
+        with self.assertRaisesRegex(ValueError, "cannot cover"):
+            calibrate_recovered_missing_plan(plan, GIB, observed_cpu_percent=8, background_cpu_percent=0,
+                available_memory_bytes=10*GIB, total_physical_memory_bytes=20*GIB, observed_completed=False)
+
+    def test_recovered_formal_followup_preserves_observed_first_interval(self) -> None:
+        initial=plan_simion_dispatch(self.request(),[],available_memory_bytes=10*GIB,
+            total_physical_memory_bytes=20*GIB,logical_processors=8)
+        first=initial['waves'][0]['batches'][0]
+        completion=dict(natural_exit=True,exit_code=0,count=first['count'],
+            source_row_range=[first['particle_id_min'],first['particle_id_max']],
+            resource_observation=dict(peak_bytes=GIB,process_cpu_percent=8,background_cpu_percent=0))
+        final=plan_recovered_formal_followup(initial,completion)
+        self.assertEqual(final['waves'][0]['batches'][0],first)
+        self.assertEqual(final['waves'][0]['coverage'],'complete_population')
+        fallback=plan_recovered_formal_followup(initial,{**completion,'resource_observation':None})
+        self.assertTrue(fallback['estimation']['recovered_missing_observation'])
+        self.assertEqual(fallback['waves'][0]['batches'][0],first)
+        self.assertEqual(sum(b['count'] for b in fallback['waves'][0]['batches']),5000)
+        self.assertGreater(len(fallback['waves'][0]['batches']),2)
+        self.assertTrue(all(b['count']<=first['count'] for b in fallback['waves'][0]['batches'][1:]))
+        calibrated=calibrate_recovered_missing_plan(fallback,GIB,observed_cpu_percent=8,background_cpu_percent=0,
+            available_memory_bytes=10*GIB,total_physical_memory_bytes=20*GIB,observed_completed=False)
+        self.assertEqual(calibrated['waves'][0]['batches'],fallback['waves'][0]['batches'])
+        self.assertEqual(calibrated['limits']['maximum_concurrency'],1)
+        self.assertEqual(calibrated['estimation']['observed_peak_bytes'],GIB)
+        with tempfile.TemporaryDirectory() as directory:
+            source=Path(directory)/'fallback.json';output=Path(directory)/'calibrated.json'
+            source.write_text(json.dumps(fallback),encoding='utf-8')
+            result=subprocess.run([sys.executable,'-m','common.simion.resource_scheduler',
+                '--recovered-missing-plan',str(source),'--output',str(output),
+                '--observed-formal-peak-bytes',str(GIB),'--observed-formal-cpu-percent','8',
+                '--observed-background-cpu-percent','0','--available-memory-bytes',str(10*GIB),
+                '--total-physical-memory-bytes',str(20*GIB)],cwd=Path(__file__).resolve().parents[2],
+                timeout=30,capture_output=True,text=True,check=False)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertEqual(json.loads(output.read_text())['waves'][0]['batches'],fallback['waves'][0]['batches'])
+        for bad in ({**completion,'exit_code':1},{**completion,'source_row_range':[2,first['particle_id_max']]},
+                    {**completion,'resource_observation':'invented'}):
+            with self.assertRaises(ValueError):
+                plan_recovered_formal_followup(initial,bad)
+
     def test_physical_danger_limits_are_frozen_from_shared_host_policy(self) -> None:
         policy = json.loads(Path(__file__).resolve().parents[1].joinpath("host_resource_policy.json").read_text())
         plan = plan_simion_dispatch(self.request(), [], available_memory_bytes=10 * GIB,

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import os
+import shutil
 import sys
 from pathlib import Path
 import tempfile
@@ -46,6 +47,176 @@ class BatchingTests(unittest.TestCase):
 
     def save_config(self) -> None:
         functional.write_json(self.run/"inputs/resolved_model.json",self.config)
+
+    def test_partial_replay_restores_raw_and_archived_workers_and_replays_missing(self) -> None:
+        parent = Path(self.temp.name)/"parent"
+        for name in ("inputs", "results", "logs", "simion_batch_0001", "simion_batch_0002", "simion_batch_0003"):
+            (parent/name).mkdir(parents=True)
+        batches = [dict(index=i, particle_id_min=(i-1)*2+1, particle_id_max=i*2, count=2,
+                        simion_particle_id_offset=(i-1)*2) for i in (1, 2, 3)]
+        functional.write_json(parent/"results/simion_execution_batch_plan.json", dict(particle_count=6, batches=batches))
+        config = dict(source=dict(particle_count=6))
+        functional.write_json(parent/"inputs/resolved_model.json", dict(native_field=dict(directory="fixture")))
+        (parent/"simion").mkdir()
+        (parent/"simion/native_field_samples.csv").write_text("field fixture\n", encoding="utf-8")
+        names = ("events.csv", "samples.csv", "extraction_steps.csv", "extraction_impulses.csv")
+        for batch in batches:
+            index = batch["index"]
+            folder = f"simion_batch_{index:04d}"
+            functional.write_json(parent/folder/"batch_input.json", dict(batch=batch, source_global_ids=[index*2-1, index*2]))
+            (self.run/folder).mkdir()
+            functional.write_json(self.run/folder/"batch_input.json", dict(batch=batch, source_global_ids=[index*2-1, index*2]))
+            if index == 3:
+                continue
+            functional.write_json(parent/f"results/native_batch_completion_{index:04d}.json",
+                                  dict(role="ion_processor_native_batch_completion", completed=True, exit_code=0, batch=batch))
+            (parent/f"logs/flight_batch_{index:04d}.log").write_text("ION_PROCESSOR_END\nstatus,Fly completed. 2 splats, 2.19 seconds\n", encoding="utf-8")
+            for name in (*names, "collision_rng_seeds.csv", "hs1_bound_parameters.csv"):
+                (parent/folder/name).write_text(f"fixture {index} {name}\n", encoding="utf-8")
+        folder = "simion_batch_0002"
+        prefix = "results/merged_worker_csv_batch_0002"
+        archive = parent/(prefix+".zip")
+        sources = []
+        with zipfile.ZipFile(archive, "w") as bundle:
+            for name in names:
+                path = parent/folder/name
+                record = write_run_manifest.file_record(path)
+                record["path"] = f"{folder}/{name}"
+                sources.append(record)
+                bundle.write(path, record["path"])
+                path.unlink()
+        archive_plan = parent/(prefix+"_archive_plan.json")
+        functional.write_json(archive_plan, dict(role="ion_processor_worker_csv_archive_plan", status="verified",
+            source_files=sources, archive=dict(path=prefix+".zip")))
+        functional.write_json(parent/(prefix+"_archive_receipt.json"), dict(role="ion_processor_worker_csv_archive_receipt",
+            status="complete", plan_sha256=file_sha256(archive_plan), removed_files=[row["path"] for row in sources]))
+        functional.write_json(parent/"run_config.json", dict(run_id=parent.name))
+        records = [write_run_manifest.file_record(path) for path in parent.rglob("*") if path.is_file() and path.name != "run_config.json"]
+        manifest = dict(run_config=write_run_manifest.file_record(parent/"run_config.json"), inputs={}, outputs=records)
+        functional.write_json(parent/"run_manifest.json", dict(role="simulation_run_manifest", project=functional.PROJECT,
+            mode="native_electrode_functional", run_id=parent.name, status="failed", **manifest))
+        before = {path: path.read_bytes() for path in parent.rglob("*") if path.is_file()}
+        with patch.object(batching, "continuation_ancestry", return_value=[parent]), patch.object(batching, "_validate_continuation_science", return_value=(manifest, config)):
+            plan = batching.prepare_partial_batch_replay(self.run, parent)
+        self.assertEqual([row["action"] for row in plan["units"]], ["reuse", "reuse", "replay"])
+        with patch.object(batching, "frozen_release_states", return_value=[dict(particle_id=i) for i in range(1, 7)]):
+            result = batching.restore_reusable_batches(self.run)
+        self.assertEqual(result["restored_batch_indices"], [1, 2])
+        self.assertEqual((self.run/folder/"events.csv").read_text(), "fixture 2 events.csv\n")
+        self.assertFalse((self.run/"simion_batch_0001/events.csv").exists())
+        self.assertFalse((self.run/"simion_batch_0003/events.csv").exists())
+        self.assertEqual(before, {path: path.read_bytes() for path in parent.rglob("*") if path.is_file()})
+        # If this child also fails, the next run follows its bound prior plan;
+        # already reused units remain at the original owner instead of re-flying.
+        functional.write_json(self.run/"results/simion_execution_batch_plan.json", dict(particle_count=6, batches=batches))
+        config_record = functional.read_json(self.run/"run_config.json")
+        inputs = {key: write_run_manifest.file_record(Path(value)) for key, value in config_record["inputs"].items()}
+        outputs = [write_run_manifest.file_record(path) for path in self.run.rglob("*")
+                   if path.is_file() and path.name not in {"run_manifest.json", "run_config.json"}]
+        child_manifest = dict(role="simulation_run_manifest", project=functional.PROJECT, mode="native_electrode_functional",
+            run_id=self.run.name, status="failed", run_config=write_run_manifest.file_record(self.run/"run_config.json"),
+            inputs=inputs, outputs=outputs)
+        functional.write_json(self.run/"run_manifest.json", child_manifest)
+        grandchild = Path(self.temp.name)/"grandchild"
+        for name in ("inputs", "results", "logs", "simion"):
+            (grandchild/name).mkdir(parents=True)
+        functional.write_json(grandchild/"run_config.json", dict(inputs={}, parameters={}))
+        with patch.object(batching, "_validate_continuation_science", return_value=(child_manifest, config)):
+            resumed = batching.prepare_partial_batch_replay(grandchild, self.run)
+        self.assertEqual([row["action"] for row in resumed["units"]], ["reuse", "reuse", "replay"])
+        self.assertEqual(batching._partial_unit_source(resumed["units"][0]), parent)
+        (parent/"simion_batch_0001/events.csv").unlink()
+        missing_child = Path(self.temp.name)/"missing-child"
+        for name in ("inputs", "results", "logs", "simion"):
+            (missing_child/name).mkdir(parents=True)
+        functional.write_json(missing_child/"run_config.json", dict(inputs={}, parameters={}))
+        with patch.object(batching, "continuation_ancestry", return_value=[parent]), patch.object(batching, "_validate_continuation_science", return_value=(manifest, config)):
+            missing = batching.prepare_partial_batch_replay(missing_child, parent)
+        self.assertEqual([row["action"] for row in missing["units"]], ["replay", "reuse", "replay"])
+
+    def test_completed_population_reanalysis_binds_parent_and_never_materializes_native_assets(self) -> None:
+        # Inert fixture: the predecessor's exact merge and terminal facts are
+        # verified by the real continuation planner, not a simulated solver.
+        prior = Path(self.temp.name) / "20261029_120000__test__simion__parent"
+        for name in ("inputs", "simion", "results", "logs"):
+            (prior / name).mkdir(parents=True)
+        for name in ("processor.gem", "runtime.lua", "collision_hs1.lua", "native_drive.lua",
+                     "simion_rf_drive.lua", "voltage_waveforms.lua", "extraction_force_audit.lua",
+                     "processor.fly2", "source_states.lua"):
+            (self.run / "simion" / name).write_text("fixture " + name, encoding="utf-8")
+            (prior / "simion" / name).write_bytes((self.run / "simion" / name).read_bytes())
+        functional.write_json(prior / "inputs/resolved_model.json", self.config)
+        functional.write_json(prior / "inputs/runtime_profiles.json", functional.read_json(self.run / "inputs/runtime_profiles.json"))
+        functional.write_json(prior / "run_config.json", dict(run_id=prior.name, mode="native_electrode_functional"))
+        functional.write_json(self.run / "run_config.json", dict(inputs={}, parameters={}))
+        plan = dict(particle_count=100, batches=[dict(index=1, count=100, particle_id_min=1,
+            particle_id_max=100, simion_particle_id_offset=0)])
+        functional.write_json(prior / "results/simion_execution_batch_plan.json", plan)
+        functional.write_json(prior / "results/batch_merge_receipt.json", dict(role="ion_processor_batch_merge", all_ids_closed=True, particle_count=100, batch_count=1))
+        functional.write_json(prior / "results/batch_input_validation_receipt.json", dict(role="ion_processor_batch_input_validation", status="validated_before_sample_merge", particle_count=100))
+        functional.write_json(prior / "results/simion_batch_resource_usage.json", dict(role="fixture"))
+        (prior / "logs/flight.log").write_text("BATCH_LOG index=1 offset=0\nION_PROCESSOR_END\nstatus,Fly completed. 100 splats, 2.19 seconds\n", encoding="utf-8")
+        for name in ("events.csv", "samples.csv", "collision_rng_seeds.csv", "hs1_bound_parameters.csv", "extraction_steps.csv", "extraction_impulses.csv", "native_field_samples.csv"):
+            (prior / "simion" / name).write_text("inert fixture\n", encoding="utf-8")
+        files = [path for path in prior.rglob("*") if path.is_file() and path.name != "run_config.json"]
+        manifest = dict(role="simulation_run_manifest", project=functional.PROJECT, mode="native_electrode_functional",
+            run_id=prior.name, status="failed", run_config=write_run_manifest.file_record(prior / "run_config.json"),
+            inputs={}, outputs=[write_run_manifest.file_record(path) for path in files])
+        functional.write_json(prior / "run_manifest.json", manifest)
+        before = {path: path.read_bytes() for path in prior.rglob("*") if path.is_file()}
+        with patch.object(sys, "argv", ["functional", "prepare-continuation", "--run", str(self.run), "--baseline-run", str(prior)]):
+            functional.main()
+        result = functional.read_json(self.run / "inputs/simion_whole_unit_replay_plan.json")
+        self.assertEqual(result["reusable_unit_count"], 1)
+        self.assertEqual(batching.native_data_directory(self.run), prior / "simion")
+        self.assertFalse((self.run / "simion/events.csv").exists())
+        self.assertEqual(before, {path: path.read_bytes() for path in prior.rglob("*") if path.is_file()})
+        self.assertEqual(functional.read_json(self.run / "run_config.json")["parameters"]["continuation_predecessor"], str(prior))
+        child_manifest = dict(role="simulation_run_manifest", project=functional.PROJECT, mode="native_electrode_functional",
+            run_id=self.run.name, status="failed", run_config=write_run_manifest.file_record(self.run / "run_config.json"),
+            inputs={"continuation_plan": write_run_manifest.file_record(self.run / "inputs/simion_whole_unit_replay_plan.json"),
+                    "continuation_predecessor_manifest": write_run_manifest.file_record(prior / "run_manifest.json")}, outputs=[])
+        functional.write_json(self.run / "run_manifest.json", child_manifest)
+        self.assertEqual(batching.continuation_ancestry(self.run), [self.run, prior])
+        grandchild = Path(self.temp.name) / "grandchild"
+        shutil.copytree(self.run, grandchild)
+        batching.prepare_completed_reanalysis(grandchild, self.run)
+        config = functional.read_json(grandchild / "run_config.json")
+        self.assertEqual(config["parameters"]["continuation_predecessor"], str(self.run))
+        self.assertEqual(config["inputs"]["continuation_origin_manifest"], str(prior / "run_manifest.json"))
+        self.assertEqual(batching.native_data_directory(grandchild), prior / "simion")
+        grandchild_manifest = dict(role="simulation_run_manifest", project=functional.PROJECT, mode="native_electrode_functional",
+            run_id=grandchild.name, status="failed", run_config=write_run_manifest.file_record(grandchild / "run_config.json"),
+            inputs={"continuation_plan": write_run_manifest.file_record(grandchild / "inputs/simion_whole_unit_replay_plan.json"),
+                    "continuation_predecessor_manifest": write_run_manifest.file_record(self.run / "run_manifest.json"),
+                    "continuation_origin_manifest": write_run_manifest.file_record(prior / "run_manifest.json")}, outputs=[])
+        functional.write_json(grandchild / "run_manifest.json", grandchild_manifest)
+        self.assertEqual(batching.continuation_ancestry(grandchild), [grandchild, self.run, prior])
+        child_manifest["inputs"]["continuation_predecessor_manifest"]["sha256"] = "0" * 64
+        functional.write_json(self.run / "run_manifest.json", child_manifest)
+        with self.assertRaisesRegex(ValueError, "not bound"):
+            batching.continuation_ancestry(self.run)
+        # A bound but tampered output cannot be treated as completed.
+        (prior / "simion/events.csv").write_text("tampered", encoding="utf-8")
+        with self.assertRaisesRegex(Exception, "hash differs"):
+            batching.prepare_completed_reanalysis(self.run, prior)
+
+    def test_scientific_dispatch_identity_precedes_iob_materialization(self) -> None:
+        processor = self.run / "simion/processor.lua"
+        frozen_runtime = self.run / "simion/runtime.lua"
+        frozen_runtime.write_bytes(processor.read_bytes())
+        retain = batching.frozen_runtime_profile(self.run)["retain_batch_trajectories"]
+        before = set(self.run.rglob("*"))
+        early = batching.dispatch_request_for_field(
+            self.run, self.config, "A" * 64, retain, processor_program=frozen_runtime
+        )
+        self.assertEqual(before, set(self.run.rglob("*")))
+        self.assertEqual(early, batching.prepare_request(self.run))
+        frozen_runtime.write_bytes(b"different frozen program")
+        changed = batching.dispatch_request_for_field(
+            self.run, self.config, "A" * 64, retain, processor_program=frozen_runtime
+        )
+        self.assertNotEqual(early["case_input_sha256"], changed["case_input_sha256"])
 
     def test_runtime_budget_identity_is_explicit_and_legacy_is_replay_only(self) -> None:
         current = self.run / "inputs/runtime_profiles.json"
@@ -303,6 +474,48 @@ class BatchingTests(unittest.TestCase):
         _,seeds=batching._rows(self.run/"simion/collision_rng_seeds.csv")
         self.assertEqual([int(r["global_particle_id"]) for r in seeds],list(range(1,101)))
         self.assertEqual(len(batching._rows(self.run/"simion/hs1_bound_parameters.csv")[1]),2)
+
+    def test_partial_replay_merges_archived_and_new_workers_with_original_ids(self) -> None:
+        _, dispatch = self.planning()
+        plan = self.materialize(dispatch)
+        self.populate(plan)
+        self.assertGreater(len(plan["batches"]), 1)
+        functional.write_json(self.run/"results/simion_execution_batch_plan.json", plan)
+        functional.write_json(self.run/"results/batch_input_validation_receipt.json", dict(role="fixture"))
+        (self.run/"simion/native_field_samples.csv").write_text("field fixture\n", encoding="utf-8")
+        first = plan["batches"][0]
+        functional.write_json(self.run/"results/native_batch_completion_0001.json", dict(
+            role="ion_processor_native_batch_completion", completed=True, exit_code=0, batch=first))
+        batching._archive_merged_worker_csv(self.run, first)
+        parent = Path(self.temp.name)/"parent"
+        shutil.copytree(self.run, parent)
+        functional.write_json(parent/"run_config.json", dict(run_id=parent.name))
+        records = [write_run_manifest.file_record(path) for path in parent.rglob("*") if path.is_file() and path.name != "run_config.json"]
+        manifest = dict(run_config=write_run_manifest.file_record(parent/"run_config.json"), inputs={}, outputs=records)
+        functional.write_json(parent/"run_manifest.json", dict(role="simulation_run_manifest", project=functional.PROJECT,
+            mode="native_electrode_functional", run_id=parent.name, status="failed", **manifest))
+        before = {path: path.read_bytes() for path in parent.rglob("*") if path.is_file()}
+        for folder in self.run.glob("simion_batch_*"):
+            shutil.rmtree(folder)
+        for path in (self.run/"results").iterdir():
+            if path.is_file(): path.unlink()
+        functional.write_json(self.run/"run_config.json", dict(inputs={}, parameters={}))
+        with patch.object(batching, "continuation_ancestry", return_value=[parent]), patch.object(batching, "_validate_continuation_science", return_value=(manifest, self.config)):
+            continuation = batching.prepare_partial_batch_replay(self.run, parent)
+        self.assertEqual(continuation["reusable_unit_count"], 1)
+        self.assertEqual(continuation["replay_unit_count"], len(plan["batches"])-1)
+        batching.restore_reusable_batches(self.run)
+        path = self.run/"results/simion_execution_batch_plan.json"
+        functional.write_json(path, plan)
+        batching.materialize_batches(self.run, path)
+        pending = dict(plan, batches=plan["batches"][1:])
+        self.populate(pending)
+        merged = batching.merge_batches(self.run, path)
+        self.assertEqual(merged["particle_count"], 100)
+        self.assertEqual([int(row["particle_id"]) for row in batching._rows(self.run/"simion/events.csv")[1] if row["event"] == "terminal"], list(range(1, 101)))
+        self.assertFalse((self.run/"simion_batch_0001/processor.iob").exists())
+        self.assertFalse((self.run/"simion_batch_0001/events.csv").exists())
+        self.assertEqual(before, {path: path.read_bytes() for path in parent.rglob("*") if path.is_file()})
 
     def test_injected_merge_preserves_original_sparse_ids_and_seeds_without_rebasing(self) -> None:
         _, complete = self.planning()

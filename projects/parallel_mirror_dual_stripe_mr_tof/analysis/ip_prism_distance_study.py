@@ -15,7 +15,7 @@ import shutil
 import sys
 
 from common.contracts.particle_count_policy import load_particle_count_policy, POLICY_PATH
-from common.contracts.write_run_manifest import build_run_manifest, file_record, write_json_atomic
+from common.contracts.write_run_manifest import file_record, publish_run_manifest
 from common.contracts import artifact_retention, run_capacity_lifecycle
 from common.simion import resource_profile, resource_scheduler, particle_batching
 from common.simion.particle_source import render_standard_beams
@@ -987,9 +987,8 @@ def analyze_replay_package(run: Path) -> dict:
 def publish_manifest(run: Path,status: str) -> None:
     config=read_json(run/"run_config.json")
     frozen={Path(p).resolve() for p in config["inputs"].values()}
-    outputs=[p for p in run.rglob("*") if p.is_file() and p.resolve() not in frozen and p.name not in {"run_config.json","run_manifest.json"}]
-    manifest=build_run_manifest(run/"run_config.json",status,software=["SIMION 2020","Python 3.11"],output_paths=outputs)
-    write_json_atomic(run/"run_manifest.json",manifest)
+    outputs=[p for p in run.rglob("*") if p.is_file() and p.resolve() not in frozen and p.name not in {"run_config.json","run_manifest.json",".run_terminal_publication.lock"}]
+    publish_run_manifest(run/"run_config.json",status,software=["SIMION 2020","Python 3.11"],output_paths=outputs)
 
 
 def _completed_native_stage(source_run: Path):

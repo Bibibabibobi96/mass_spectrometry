@@ -1,13 +1,13 @@
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName='Run')]
 param(
-  [Parameter(Mandatory)][string]$GeometryReviewRunPath,
-  [Parameter(Mandatory)][string]$MirrorRunPath,
-  [Parameter(Mandatory)][string]$StripeRunPath,
-  [Parameter(Mandatory)][string]$AcceleratorProviderReceiptPath,
-  [Parameter(Mandatory)][string]$CompositionPlanPath,
+  [Parameter(Mandatory,ParameterSetName='Run')][string]$GeometryReviewRunPath,
+  [Parameter(Mandatory,ParameterSetName='Run')][string]$MirrorRunPath,
+  [Parameter(Mandatory,ParameterSetName='Run')][string]$StripeRunPath,
+  [Parameter(Mandatory,ParameterSetName='Run')][string]$AcceleratorProviderReceiptPath,
+  [Parameter(Mandatory,ParameterSetName='Run')][string]$CompositionPlanPath,
   [string]$LocalScopePath='',
-  [Parameter(Mandatory)][double]$Prism1VoltageV,
-  [Parameter(Mandatory)][double]$Prism2VoltageV,
+  [Parameter(Mandatory,ParameterSetName='Run')][double]$Prism1VoltageV,
+  [Parameter(Mandatory,ParameterSetName='Run')][double]$Prism2VoltageV,
   [Nullable[double]]$Stripe1VoltageV=$null,
   [Nullable[double]]$Stripe2VoltageV=$null,
   [string]$NativeCorridorBankRunPath='',
@@ -31,6 +31,8 @@ param(
   [string]$NativeRuntimeCheckpoint='',
   [pscustomobject]$InheritedHostResourceLease=$null,
   [switch]$RetainGuiWorkbench,
+  [Parameter(Mandatory,ParameterSetName='Resume')][switch]$ResumeFinalization,
+  [string]$ResultPath='',
   [string]$RunId='',
   [string]$SimionExe='',
   [string]$PythonExe='',
@@ -39,6 +41,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
+$runClock=[Diagnostics.Stopwatch]::StartNew();$nativePhaseTimings=[ordered]@{}
 
 function Copy-RequiredInput {
   param([string]$Source,[string]$Destination,[string]$Label)
@@ -49,6 +52,7 @@ function Format-InvariantNumber {
   param([Parameter(Mandatory)][double]$Value)
   [string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$Value)
 }
+
 function Invoke-ProjectPython {
   param([string[]]$Arguments)
   Push-Location -LiteralPath $script:pythonRoot;$saved=$env:PYTHONPATH
@@ -69,6 +73,9 @@ function Invoke-SimionStage {
   foreach($argument in $Arguments){$start.ArgumentList.Add($argument)}
   $process=[Diagnostics.Process]::Start($start)
   $writerCompletion.stopped=$false
+  $nativeObservation=@{exit_confirmed=$false;returncode=$null;process_id=[int]$process.Id;process_started_at_utc_ticks=[long]$process.StartTime.ToUniversalTime().Ticks}
+  $nativeOperations.Add(@{operation_id=$Stage;resource_release_id='simion';observation=$nativeObservation})
+  $nativeCompletion=@{role='powershell_process_completion';process_id=$nativeObservation.process_id;process_started_at_utc_ticks=$nativeObservation.process_started_at_utc_ticks;exit_confirmed=$false;returncode=$null;stdout_drained=$false;stderr_drained=$false}
   $logWriter=$null
   try{
     $logWriter=[IO.StreamWriter]::new((Join-Path $logDir "$Stage.log"),$false,[Text.UTF8Encoding]::new($false))
@@ -119,25 +126,22 @@ function Invoke-SimionStage {
       if(-not$progressed){Start-Sleep -Milliseconds 20}
     }
     $process.WaitForExit()
+    $nativePhaseTimings[$Stage]=$elapsed.Elapsed.TotalSeconds
     $writerCompletion.stopped=$true
+    $nativeObservation.exit_confirmed=$true;$nativeObservation.returncode=[int]$process.ExitCode
+    $nativeCompletion.exit_confirmed=$true;$nativeCompletion.returncode=[int]$process.ExitCode
+    $nativeCompletion.stdout_drained=[bool]$streams[0].Done;$nativeCompletion.stderr_drained=[bool]$streams[1].Done
     Write-Host ("SIMION_STAGE=EXIT STAGE={0} EXIT_CODE={1} ELAPSED_S={2:F1}" -f $Stage,$process.ExitCode,$elapsed.Elapsed.TotalSeconds)
     if($process.ExitCode-ne 0){throw "SIMION stage failed: $Stage"}
     # SIMION can report a guarded PA save failure while returning exit zero.
     if($reportedError){
       throw "SIMION stage reported an error despite exit zero: $Stage"
     }
+    return @{observation=$nativeObservation;managed_process_completion=$nativeCompletion}
+  }catch{
+    $_.Exception.Data['native_operation_observation']=@{observation=$nativeObservation;managed_process_completion=$nativeCompletion}
+    throw
   }finally{if($null-ne$logWriter){$logWriter.Dispose()};$process.Dispose()}
-}
-function Publish-OaMrFailureManifest {
-  param([ValidateSet('failed','interrupted')][string]$Status,[string]$Reason,[hashtable]$Evidence=@{})
-  $value=[ordered]@{schema_version=1;role='mrtof_finite_3d_two_prism_voltage_trial';status=$Status;reason=$Reason;failure_stage=$failureStage}
-  foreach($key in $Evidence.Keys){$value[$key]=$Evidence[$key]}
-  Write-RunJson -Path $summary -Value $value
-  $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
-  $outputs=@(Get-ChildItem -LiteralPath $runDir -Recurse -File|Where-Object{
-    $_.Name-notin@('run_config.json','run_manifest.json')
-  }|ForEach-Object{$_.FullName})
-  Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status $Status -Software @('SIMION 2020','Python 3.11') -Outputs $outputs -DeferCapacityFinalization
 }
 function Remove-TemporarySolverDirectory {
   param([string]$Path)
@@ -180,6 +184,16 @@ $repoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
 $script:pythonRoot=$repoRoot
 $workspaceRoot=Split-Path -Parent $repoRoot
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
+. (Join-Path $repoRoot 'common/contracts/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
+if($ResumeFinalization){
+  if(-not$RunId){throw 'Finalization recovery requires the existing RunId.'}
+  $projectArtifacts=Join-Path $workspaceRoot "artifacts/projects/$projectId"
+  if(-not$ResultPath){$ResultPath=Join-Path $projectArtifacts "scratch/workflow_results/$RunId/result.json"}
+  $result=Invoke-RunArtifactWorkflow -RequestPath (Join-Path $projectArtifacts "runs/$RunId/inputs/execution_request.json") -ResultPath $ResultPath -ResumeFinalization
+  Write-Output $result
+  if($result.status-ne'success'){throw 'OA-MR finalization remains incomplete; inspect Result recovery action.'}
+  return
+}
 $simion=if($SimionExe){[IO.Path]::GetFullPath($SimionExe)}else{Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'}
 if(-not(Test-Path -LiteralPath $python -PathType Leaf)){throw "Python executable is missing: $python"}
 foreach($value in @($Prism1VoltageV,$Prism2VoltageV)){if([double]::IsNaN($value)-or[double]::IsInfinity($value)){throw 'Prism voltages must be finite'}}
@@ -373,7 +387,8 @@ $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-
 $runDir=$package.run_dir;$resultDir=$package.result_dir;$logDir=$package.log_dir;$solverDir=Join-Path $runDir 'simion'
 $artifactSolverDir=Join-Path ([string]$package.artifact_run_dir) 'simion'
 $runConfig=$package.run_config;$summary=$package.summary;$artifactRoot=Join-Path $workspaceRoot 'artifacts'
-$terminalPublicationAttempted=$false;$terminalStatus='interrupted';$failureStage='preflight';$resourceLease=$InheritedHostResourceLease;$ownsHostResourceLease=$null-eq$InheritedHostResourceLease;$hostOutcome='failed';$temporarySolverDir=$null;$temporaryAcceleratorRuntimeSession=$null
+$terminalStatus='interrupted';$failureStage='preflight';$resourceLease=$InheritedHostResourceLease;$ownsHostResourceLease=$null-eq$InheritedHostResourceLease;$hostOutcome='failed';$temporarySolverDir=$null;$temporaryAcceleratorRuntimeSession=$null
+$owner=$null;$ownerOutputs=@();$nativeOperations=[Collections.Generic.List[object]]::new();$resourceReleases=[Collections.Generic.List[object]]::new()
 $terminalPublicationClosed=$false;$failureRecord=$null
 $closeoutErrors=[Collections.Generic.List[object]]::new()
 # Local fact only: a native call that throws before its completion evidence
@@ -391,34 +406,44 @@ $batchContinuationPlan=$null;$batchContinuationPlanPath=$null;$replayBatchIndexe
 $checkpointOutputs=[Collections.Generic.List[string]]::new()
 $earlyAberrationReport=$null
 $trajectorySamples=$null;$trajectorySampleReceipt=$null
-$trajectoryPayloadNeedsSeal=$false
 $deferredHostCompletionNotification=$false
 $fixedMirrorStripeAuthority=$null;$fixedMirrorStripeAuthorityLocal=$null
 $stripeOperatingProvenance=$null
 $nativeRuntimeReceiptPath=$null;$nativeBankFrozenInputs=@();$nativeRuntime=$null
 $guiWorkbenchDirectory=$null
 $staticPaGuards=[Collections.Generic.List[IO.FileStream]]::new()
+$continuationEvidenceGuards=[Collections.Generic.List[IO.FileStream]]::new()
+$continuationParent=$null
 $retainGuiWorkbenchFiles=($null-ne$NativeCorridorRuntimeSession)-or$RetainGuiWorkbench
 try{
+  if($BatchContinuationRunPath){$continuationParent=(Resolve-Path -LiteralPath $BatchContinuationRunPath).Path}
   if($ownsCapacitySession){
     $failureStage='capacity_startup'
-    $initialProtectedRuns=@($mirrorRun,$stripeRun,$acceleratorRun,$nativeCorridorRun,$nativeBankGeneration,$nativeRuntimeCheckpointOwner)
+    $initialProtectedRuns=@($mirrorRun,$stripeRun,$acceleratorRun,$nativeCorridorRun,$nativeBankGeneration,$nativeRuntimeCheckpointOwner,$continuationParent)
     $initialProtectedRuns=@($initialProtectedRuns|Where-Object{$null-ne$_}|Select-Object -Unique)
     $initialOutputCommitment=if($null-eq$trajectoryRecording){[int64]26214400}else{[int64]$trajectoryRecording.output_budget_bytes}
     $capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
       -ArtifactRoot $artifactRoot -RunDirectory $package.artifact_run_dir `
       -CommittedNewBytes $initialOutputCommitment -ProtectedPaths $initialProtectedRuns `
-      -ProtectedCacheKeys @() -Owner "mrtof-two-prism-trial:$RunId"
+      -ProtectedCacheKeys @() -Owner "run-artifact-workflow:${projectId}:$RunId"
+  }
+  if($continuationParent){
+    if(-not$ownsCapacitySession){$capacitySession=(Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession -ProtectedPaths @($continuationParent)).session}
   }
   $failureStage='freeze_executable_dependencies'
   $dependencyPath=Join-Path $repoRoot 'integrations/config/runtime_dependencies.json'
   $frozen=Freeze-ConsumerDependencies -RepoRoot $repoRoot -ContractPath $dependencyPath -InputDir (Join-Path $runDir 'inputs') -OwnerId $projectId -ConsumerId oa_mr
   $script:pythonRoot=[string]$frozen.execution_root
+  $entryIdentity=@($frozen.identities|Where-Object{$_.source_repo_path-ceq'integrations/workflows/oa_mr/execute.ps1'})
+  $frozenEntryRecord=if($entryIdentity.Count-eq1){@{path=$entryIdentity[0].snapshot_path;exists=$true;bytes=[long](Get-Item -LiteralPath $entryIdentity[0].snapshot_path).Length;sha256=$entryIdentity[0].sha256}}else{$null}
   if([string]::IsNullOrWhiteSpace($ContractPath)){
     $trajectoryContractInput=Join-Path $script:pythonRoot 'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json'
   }
   $providerSimionRoot=Join-Path $script:pythonRoot 'projects/parallel_mirror_dual_stripe_mr_tof/simion'
   . (Join-Path $providerSimionRoot 'native_corridor_runtime_support.ps1')
+  if($continuationParent){
+    $capacitySession=Protect-MrtofContinuationEvidence -Parent $continuationParent -Session $capacitySession -Python $python -RepoRoot $script:pythonRoot -Guards $continuationEvidenceGuards
+  }
   $configuration=Get-Content -LiteralPath $runConfig -Raw|ConvertFrom-Json -AsHashtable
   if($configuration.project-ne$projectId-or$configuration.mode-ne'oa_mr'){throw 'OA-MR run owner or mode differs.'}
   $configuration.inputs=[ordered]@{code_inventory=$frozen.code_inventory_path;dependency_contract=$frozen.dependency_contract_path}
@@ -646,14 +671,20 @@ try{
     if(-not[string]::IsNullOrWhiteSpace($BatchContinuationRunPath)){
       $continuationRoot=Join-Path ([string]$package.artifact_run_dir) 'inputs/mrtof_batch_continuation'
       Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_continuation',
-        '--predecessor-run-dir',(Resolve-Path -LiteralPath $BatchContinuationRunPath).Path,
+        '--predecessor-run-dir',$continuationParent,
         '--current-run-config',$runConfig,'--output-dir',$continuationRoot)
+      if(Test-Path -LiteralPath (Join-Path $continuationParent '.run_terminal_publication.json')){throw 'Continuation predecessor terminal publication became incomplete.'}
       $batchContinuationPlanPath=Join-Path $continuationRoot 'simion_whole_unit_replay_plan.json'
       $batchContinuationPlan=Get-Content -Raw -LiteralPath $batchContinuationPlanPath|ConvertFrom-Json
       if([int]$batchContinuationPlan.completed_particle_count+[int]$batchContinuationPlan.replay_particle_count-ne[int]$trial.source_particle_count){
         throw 'MR-TOF continuation plan differs from the frozen cohort.'
       }
       $batchPlanPath=[string]$batchContinuationPlan.batch_plan.path
+      if($batchContinuationPlan.PSObject.Properties['recovered_formal_dispatch']-and$null-ne$batchContinuationPlan.recovered_formal_dispatch){
+        $runtimeDispatchPlanPath=Join-Path $resultDir 'simion_repository_dispatch_plan.json'
+        Copy-VerifiedRunInput -Source ([string]$batchContinuationPlan.recovered_formal_dispatch.path) -Destination $runtimeDispatchPlanPath|Out-Null
+        $checkpointConfig.inputs.simion_repository_dispatch_plan=$runtimeDispatchPlanPath
+      }
       $checkpointConfig.inputs.simion_whole_unit_replay_plan=$batchContinuationPlanPath
       $checkpointConfig.inputs.simion_execution_batch_plan=$batchPlanPath
       $checkpointConfig.parameters.continuation_completed_particle_count=[int]$batchContinuationPlan.completed_particle_count
@@ -667,9 +698,29 @@ try{
       if($null-eq$batchContinuationPlan){$initialBatchPlan.batches|ForEach-Object{[int]$_.index}}
       else{$batchContinuationPlan.batches|Where-Object{$_.action-eq'replay'}|ForEach-Object{[int]$_.index}}
     )
+    if($null-ne$batchContinuationPlan-and$replayBatchIndexes.Count-gt0){
+      $currentDispatch=Get-Content -LiteralPath $runtimeDispatchPlanPath -Raw|ConvertFrom-Json
+      $largestMissing=(@($initialBatchPlan.batches|Where-Object{$replayBatchIndexes-contains[int]$_.index})|Measure-Object -Property count -Maximum).Maximum
+      $covered=0
+      if($currentDispatch.estimation.kind-eq'exact_resource_profile'){$covered=[int]$currentDispatch.estimation.observed_batch_work_units}
+      elseif($currentDispatch.estimation.kind-eq'observed_formal_batch'){
+        $priorIndex=if($currentDispatch.estimation.PSObject.Properties['observed_missing_batch_index']){[int]$currentDispatch.estimation.observed_missing_batch_index}else{1}
+        $covered=[int]$currentDispatch.waves[0].batches[$priorIndex-1].count
+      }
+      if($currentDispatch.estimation.kind-ne'formal_first_batch_observation'-and$covered-lt$largestMissing){
+        Invoke-ProjectPython -Arguments @('-m','common.simion.resource_scheduler','--request',$dispatchRequestPath,'--output',$runtimeDispatchPlanPath)
+      }
+      $fixedArguments=@('-m','common.simion.resource_scheduler','--prepare-fixed-recovery-plan',$runtimeDispatchPlanPath,'--fixed-batch-plan',$batchPlanPath,'--output',$runtimeDispatchPlanPath)
+      foreach($index in $replayBatchIndexes){$fixedArguments+=@('--replay-batch-index',[string]$index)}
+      Invoke-ProjectPython -Arguments $fixedArguments
+      $checkpointConfig.inputs.simion_repository_dispatch_plan=$runtimeDispatchPlanPath
+      Write-RunJson -Path $runConfig -Value $checkpointConfig
+    }
     if($null-ne$batchContinuationPlan){
       foreach($entry in @($batchContinuationPlan.batches|Where-Object{$_.action-eq'reuse'})){
         $checkpointConfig.inputs[('reused_batch_{0:D3}_log'-f[int]$entry.index)]=[string]$entry.terminal_outputs[0].path
+        if(@($entry.terminal_outputs).Count-gt1){$checkpointConfig.inputs[('reused_batch_{0:D3}_owner_exit'-f[int]$entry.index)]=[string]$entry.terminal_outputs[1].path}
+        if(@($entry.terminal_outputs).Count-gt2){$checkpointConfig.inputs[('reused_batch_{0:D3}_owner_manifest'-f[int]$entry.index)]=[string]$entry.terminal_outputs[2].path}
       }
       Write-RunJson -Path $runConfig -Value $checkpointConfig
     }
@@ -734,6 +785,10 @@ try{
   $capacitySession=$sessionUpdate.session
   $startup=[pscustomobject]@{schema_version=1;role='artifact_workflow_capacity_session_startup';status='active';ownership=$(if($ownsCapacitySession){'owned__child_releases'}else{'inherited__child_must_not_release'});session=$capacitySession;renewal=$sessionUpdate.renewal;admission_gate=$sessionUpdate.admission_gate}
   $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json';Write-RunJson -Path $startupPath -Depth 14 -Value $startup
+  $owner=Initialize-RunArtifactPowerShellOwner -Python $python -RepoRoot $repoRoot -Package $package -CapacitySession $capacitySession `
+    -OwnCapacitySession:$ownsCapacitySession -ResultPath $ResultPath -EntrypointPath (Join-Path $script:pythonRoot 'integrations/workflows/oa_mr/execute.ps1') -EntrypointRecord $frozenEntryRecord `
+    -CommitmentInputPaths @($contract,$startupPath) -Software @('SIMION 2020','Python 3.11')
+  $invokeRuntimeNative={param($ArgumentList,$OperationId) Invoke-SimionStage -Stage $OperationId -Arguments $ArgumentList -ResourceLease $resourceLease -RegisterHostProcess $ownsHostResourceLease}
   if($requiresNativeExecution){
   # IOB/Fly2/Lua companions are small reproducibility inputs, so every shared-
   # runtime workflow keeps them even under compact retention.  Static PA assets
@@ -817,12 +872,12 @@ try{
       $nativeRuntime=Get-NativeCorridorRuntimeFamily -Session $NativeCorridorRuntimeSession `
         -CapacityWorkflowSession $capacitySession -BankGenerationDirectory $nativeBankGeneration `
         -CacheKey $nativeBankKey -GenerationSha256 ([string]$nativeBankCache.generation_sha256) `
-        -Python $python -RepoRoot $script:pythonRoot -SimionExe $simion -ResourceLease $resourceLease -RunId $RunId
+        -Python $python -RepoRoot $script:pythonRoot -SimionExe $simion -ResourceLease $resourceLease -RunId $RunId -InvokeNativeOperation $invokeRuntimeNative
     }else{
     $nativeRuntime=New-NativeCorridorRuntimeFamily -BankGenerationDirectory $nativeBankGeneration `
       -CacheKey $nativeBankKey -GenerationSha256 ([string]$nativeBankCache.generation_sha256) `
       -DestinationDirectory (Join-Path $temporarySolverDir 'native_corridor') -Python $python -RepoRoot $script:pythonRoot `
-      -SimionExe $simion -ResourceLease $resourceLease -RunId $RunId
+      -SimionExe $simion -ResourceLease $resourceLease -RunId $RunId -InvokeNativeOperation $invokeRuntimeNative
     }
     $resourceLease=$nativeRuntime.resource_lease
     $writerCompletion.stopped=$true
@@ -860,7 +915,7 @@ try{
       $temporaryIob,$iobProgramPath,$iobFly2Path,$sidecar,(Join-Path $solverDir 'mrtof_three_component_candidate.voltage_map.lua'),
       (Join-Path $solverDir 'native_corridor_priority_contract.lua'))+$nativeOriginArguments
     $failureStage='build_temporary_iob'
-    Invoke-SimionStage -Stage 'build_temporary_iob' -Arguments $buildArguments -ResourceLease $resourceLease -RegisterHostProcess $ownsHostResourceLease
+    Invoke-SimionStage -Stage 'build_temporary_iob' -Arguments $buildArguments -ResourceLease $resourceLease -RegisterHostProcess $ownsHostResourceLease|Out-Null
     $temporaryFly2=[IO.Path]::ChangeExtension($temporaryIob,'.fly2')
     if(-not(Test-RunFilesIdentical -Left $fly2Input -Right $temporaryFly2)){throw 'Shared IOB companion Fly2 differs from the frozen source.'}
   }
@@ -870,7 +925,7 @@ try{
       $resourceLease=Update-HostResourceStage -Lease $resourceLease -Stage 'mrtof_flight' `
         -Budget (Get-HostResourceBudget -Role SIMION -Stage 'mrtof_flight') -RetainedMemoryBytes 0
     }
-    Invoke-SimionStage -Stage 'native_two_prism_flight' -Arguments @('--nogui','--noprompt','lua',(Join-Path $solverDir 'run_iob_flight.lua'),$temporaryIob) -ResourceLease $resourceLease -RegisterHostProcess $ownsHostResourceLease
+    Invoke-SimionStage -Stage 'native_two_prism_flight' -Arguments @('--nogui','--noprompt','lua',(Join-Path $solverDir 'run_iob_flight.lua'),$temporaryIob) -ResourceLease $resourceLease -RegisterHostProcess $ownsHostResourceLease|Out-Null
   }else{
     if($replayBatchIndexes.Count-gt0){
     $batchRuntimeRoot=Join-Path ([IO.Path]::GetTempPath()) ('mrtof_batch_runtime_'+[guid]::NewGuid().ToString('N'))
@@ -933,7 +988,7 @@ try{
         $batchRecords[$index]=New-MrtofBatchRecord -PlannedBatch $planned
       }else{
         $reused=@($batchContinuationPlan.batches|Where-Object{[int]$_.index-eq$index-and$_.action-eq'reuse'})
-        if($reused.Count-ne1-or@($reused[0].terminal_outputs).Count-ne1){throw 'MR-TOF continuation requires one sealed whole-batch log.'}
+        if($reused.Count-ne1-or@($reused[0].terminal_outputs).Count-notin@(1,2,3)){throw 'MR-TOF continuation requires a sealed whole-batch log and owner exit evidence.'}
         $batchRecords[$index]=[pscustomobject]@{
           index=$index;count=[int]$planned.count;offset=([int]$reused[0].offset+$(if($bunchSelectionRequested){$BunchParticleIdMin-1}else{0}))
           stdout=[string]$reused[0].terminal_outputs[0].path;stderr=$null;scheduler_batch=$planned
@@ -951,21 +1006,21 @@ try{
         -Budget (Get-HostResourceBudget -Role SIMION -Stage 'mrtof_flight') -RetainedMemoryBytes 0
     }
     $dispatch=Get-Content -Raw -LiteralPath $runtimeDispatchPlanPath|ConvertFrom-Json
-    $resourceIdentityWasUnknown=[string]$dispatch.estimation.kind-eq'formal_first_batch_observation'
-    $existingRecords=@()
-    $formalBatchIndex=$null
+    $recoverObservation=$null-ne$batchContinuationPlan-and$dispatch.estimation.PSObject.Properties['recovered_missing_observation']-and[bool]$dispatch.estimation.recovered_missing_observation
+    $resourceIdentityWasUnknown=[string]$dispatch.estimation.kind-eq'formal_first_batch_observation'-and-not$recoverObservation
+    $formalBatchIndex=$null;$firstSpec=$null;$replan=$null
     if([string]$dispatch.estimation.kind-eq'formal_first_batch_observation'-and$replayBatchIndexes.Count-gt0){
-      $formalBatchIndex=[int]$replayBatchIndexes[0]
+      $formalBatchIndex=if($recoverObservation-and$dispatch.estimation.PSObject.Properties['observed_missing_batch_index']){[int]$dispatch.estimation.observed_missing_batch_index}else{[int]$replayBatchIndexes[0]}
       $firstSpec=Get-MrtofBatchProcessSpecification -Record $batchRecords[$formalBatchIndex]
-      $writerCompletion.stopped=$false
-      $formal=Start-ObservedFormalProcess -DispatchPlanPath $runtimeDispatchPlanPath -ProcessSpecification $firstSpec
+      $replanState=[pscustomobject]@{replayIndexes=$replayBatchIndexes}
+      $replan={
+      param($formal)
       $firstBatchCompleted=[bool]$formal.process_record.completed
-      $writerCompletion.stopped=$firstBatchCompleted
-      if($formal.resource_budget_exceeded-or($firstBatchCompleted-and(-not$formal.completed_naturally-or[int]$formal.exit_code-ne0))){throw 'MR-TOF formal first batch did not complete or continue safely.'}
-      $adaptiveArguments=@('-m','common.simion.resource_scheduler','--request',$dispatchRequestPath,'--profiles',$resourceProfilesPath,'--output',$runtimeDispatchPlanPath,'--observed-formal-peak-bytes',([string]$formal.observed_peak_process_tree_working_set_bytes),'--observed-formal-cpu-percent',([string]$formal.observed_process_cpu_percent),'--observed-background-cpu-percent',([string]$formal.observed_background_cpu_percent),'--available-memory-bytes',([string]$formal.available_memory_bytes),'--total-physical-memory-bytes',([string]$formal.total_physical_memory_bytes))
+      $adaptiveArguments=@('-m','common.simion.resource_scheduler')
+      if($recoverObservation){$adaptiveArguments+=@('--recovered-missing-plan',$runtimeDispatchPlanPath)}else{$adaptiveArguments+=@('--request',$dispatchRequestPath,'--profiles',$resourceProfilesPath)}
+      $adaptiveArguments+=@('--output',$runtimeDispatchPlanPath,'--observed-formal-peak-bytes',([string]$formal.observed_peak_process_tree_working_set_bytes),'--observed-formal-cpu-percent',([string]$formal.observed_process_cpu_percent),'--observed-background-cpu-percent',([string]$formal.observed_background_cpu_percent),'--available-memory-bytes',([string]$formal.available_memory_bytes),'--total-physical-memory-bytes',([string]$formal.total_physical_memory_bytes))
       if($firstBatchCompleted){$adaptiveArguments+='--first-batch-completed'}
       Invoke-ProjectPython -Arguments $adaptiveArguments
-      $existingRecords=@($formal.process_record)
       if($firstBatchCompleted){Publish-MrtofFirstBatchAberration -Record $batchRecords[$formalBatchIndex]}
       if($null-eq$batchContinuationPlan){
         Invoke-ProjectPython -Arguments @('-m','common.simion.particle_batching','--from-dispatch-plan',$runtimeDispatchPlanPath,'--output',$batchPlanPath)
@@ -985,14 +1040,9 @@ try{
         # Once the repository scheduler expands it, every new interval must
         # enter this same wave; continuation plans already carry their own
         # frozen replay set and therefore do not use this branch.
-        $replayBatchIndexes=@($replanned.batches|ForEach-Object{[int]$_.index})
+        $replanState.replayIndexes=@($replanned.batches|ForEach-Object{[int]$_.index})
       }
-    }
-    $finalBatchPlan=Get-Content -Raw -LiteralPath $batchPlanPath|ConvertFrom-Json
-    if($null-ne$formalBatchIndex){
-      $checkpointConfig=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
-      $checkpointConfig.inputs.simion_execution_batch_plan=if($null-eq$batchContinuationPlan){Join-Path ([string]$package.artifact_run_dir) 'results/simion_execution_batch_plan.json'}else{$batchPlanPath}
-      Write-RunJson -Path $runConfig -Value $checkpointConfig
+      }
     }
     $checkpointAction={
       param($completedRecord)
@@ -1000,12 +1050,27 @@ try{
         if(-not[string]::IsNullOrWhiteSpace($path)-and(Test-Path -LiteralPath $path -PathType Leaf)-and-not$checkpointOutputs.Contains($path)){[void]$checkpointOutputs.Add($path)}
       }
       $completedBatchIndex=[int]$completedRecord.specification.scheduler_batch.index
+      $nativeOperations.Add(@{operation_id="simion.batch.$completedBatchIndex";resource_release_id='simion';observation=@{
+        exit_confirmed=[bool]$completedRecord.completed;returncode=[int]$completedRecord.exit_code;process_id=[int]$completedRecord.root_process_id;
+        process_started_at_utc_ticks=[long]$completedRecord.root_process_started_at_utc_ticks}})
+
+      $exitDirectory=Join-Path $resultDir ('batches/batch_{0:D3}'-f$completedBatchIndex)
+      New-Item -ItemType Directory -Path $exitDirectory -Force|Out-Null
+      $exitPath=Join-Path $exitDirectory 'owner_exit.json'
+      Write-RunJson -Path $exitPath -Value ([ordered]@{schema_version=1;role='simion_batch_owner_exit';batch_index=$completedBatchIndex;completed=$true;exit_code=[int]$completedRecord.exit_code})
+      if(-not$checkpointOutputs.Contains($exitPath)){[void]$checkpointOutputs.Add($exitPath)}
       if($batchRecords.ContainsKey($completedBatchIndex)){
         Publish-MrtofFirstBatchAberration -Record $batchRecords[$completedBatchIndex]
       }
-      Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig `
-        -Manifest (Join-Path $runDir 'run_manifest.json') -Status checkpoint `
-        -Software @('SIMION 2020','Python 3.11') -Outputs @($checkpointOutputs)|Out-Null
+    }
+    $prepareRemaining={
+      param($formal)
+      if($null-ne$formal){$replayBatchIndexes=@($replanState.replayIndexes)}
+    $finalBatchPlan=Get-Content -Raw -LiteralPath $batchPlanPath|ConvertFrom-Json
+    if($null-ne$formalBatchIndex){
+      $checkpointConfig=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+      $checkpointConfig.inputs.simion_execution_batch_plan=if($null-eq$batchContinuationPlan){Join-Path ([string]$package.artifact_run_dir) 'results/simion_execution_batch_plan.json'}else{$batchPlanPath}
+      Write-RunJson -Path $runConfig -Value $checkpointConfig
     }
     if($null-ne$formalBatchIndex){
       Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig `
@@ -1016,13 +1081,16 @@ try{
       $index=[int]$_.index
       $replayBatchIndexes-contains$index-and($null-eq$formalBatchIndex-or$index-ne$formalBatchIndex)
     }|ForEach-Object{Get-MrtofBatchProcessSpecification -Record $batchRecords[[int]$_.index]})
-    if($pendingSpecs.Count-eq0-and$existingRecords.Count-eq0){
-      $batchWaveResult=[pscustomobject]@{resource_budget_exceeded=$false;processes=@()}
-    }else{
-      $writerCompletion.stopped=$false
-      $batchWaveResult=Invoke-ResourceBudgetedProcesses -DispatchPlanPath $runtimeDispatchPlanPath -RunDir $runDir -UsagePath $batchResourceUsagePath -ProcessSpecifications $pendingSpecs -ExistingProcessRecords $existingRecords -OnProcessCompleted $checkpointAction
-      $writerCompletion.stopped=-not[bool]$batchWaveResult.resource_budget_exceeded
+      [pscustomobject]@{pending=$pendingSpecs;final=$finalBatchPlan;replayIndexes=$replayBatchIndexes}
     }
+    $writerCompletion.stopped=$false
+    $batchWaveResult=Invoke-SimionBatchPhase -DispatchPlanPath $runtimeDispatchPlanPath -RunDir $runDir -UsagePath $batchResourceUsagePath `
+      -FirstSpecification $firstSpec -Replan $replan -PrepareRemaining $prepareRemaining -OnProcessCompleted $checkpointAction `
+      -OnStarted {param($record) $writerCompletion.stopped=$false} `
+      -OnDrained {param($result) $writerCompletion.stopped=-not[bool]$result.resource_budget_exceeded}
+    $writerCompletion.stopped=-not[bool]$batchWaveResult.resource_budget_exceeded
+    $finalBatchPlan=$batchWaveResult.prepared.final
+    $replayBatchIndexes=@($batchWaveResult.prepared.replayIndexes)
     if($batchWaveResult.resource_budget_exceeded-or@($batchWaveResult.processes|Where-Object{[int]$_.exit_code-ne0}).Count-ne0){throw 'MR-TOF SIMION batch wave failed or exceeded the repository resource budget.'}
     if(Test-Path -LiteralPath $batchResourceUsagePath -PathType Leaf){Complete-ResourceUsage -RunDir $runDir -UsagePath $batchResourceUsagePath|Out-Null}
     if($resourceIdentityWasUnknown-and(Test-Path -LiteralPath $batchResourceUsagePath -PathType Leaf)){
@@ -1090,6 +1158,8 @@ try{
   if($staticFieldRequested){$summaryQualification=if($staticFieldMode-eq'native_static_pa'){if($isBunchFlight){'candidate_native_static_bunch__not_formal'}else{'single_center_native_static_trial__not_formal'}}else{if($isBunchFlight){'candidate_static_comsol_bunch__not_formal'}else{'single_center_static_comsol_trial__not_formal'}}}
   if($isSafeExitOnly){$summaryQualification='accelerator_exit_envelope_diagnostic__no_detector_performance_qualification'}
   $summaryValue=[ordered]@{schema_version=1;role='mrtof_finite_3d_two_prism_voltage_trial';status='success';qualification=$summaryQualification;source_particle_count=[int]$trial.source_particle_count;source_cohort=$trial.source_cohort;source_y_offset_from_accelerator_axis_mm=$trial.source_y_offset_from_accelerator_axis_mm;dispatch=$dispatchSummary;stripe_biases_v=@($trial.stripe_biases_v);prism_voltages_v=@($Prism1VoltageV,$Prism2VoltageV);stripe_operating_provenance=$stripeOperatingProvenance;response_regions=@();accelerator_pulse=$trial.accelerator_pulse;accelerator_pulse_diagnostic=$observed.accelerator_pulse_diagnostic;transport_status=$observed.status;cohort_analysis=$cohortAnalysis;collection_gate=$collectionGate;extraction_diagnostic=$observedExtraction;residuals=$observedResiduals;reason=$summaryReason}
+  $summaryValue.execution_status='completed';$summaryValue.data_validity='valid';$summaryValue.scientific_result=[string]$observed.status
+  $summaryValue.failure_stage=$null;$summaryValue.failure_reason=$null;$summaryValue.recovery_action='none';$summaryValue.result_path=$owner.result_path
   if($isBunchFlight){$summaryValue.batch_recovery=[ordered]@{native_batches_executed=$replayBatchIndexes.Count;reused_batches=@($finalBatchPlan.batches).Count-$replayBatchIndexes.Count;plan=$batchContinuationPlanPath}}
   if($staticFieldRequested){$summaryValue.field_binding=$trial.field_binding}
   Write-RunJson -Path $summary -Depth 100 -Value $summaryValue
@@ -1280,17 +1350,7 @@ try{
       Write-Output "SOURCE_Z_ENERGY_TIMING_DIAGNOSTIC=PASS OUTPUT=$sourceTimingDiagnostic"
     } *>&1|Tee-Object -FilePath $sourceTimingDiagnosticLog|Out-Host
   }
-  $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
-  $failureStage='capacity_terminal'
-  $protectedCacheKeys=@($nativeBankKey)
-  if($staticFieldRequested){$protectedCacheKeys=@()}
-  $terminalCommitment=if($ownsCapacitySession){[int64]0}else{[int64]$capacitySession.committed_new_bytes}
-  $terminal=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
-    -Session $capacitySession -ProtectedCacheKeys $protectedCacheKeys `
-    -RemainingCommittedNewBytes $terminalCommitment
-  $capacitySession=$terminal.session
-  $terminalPath=Join-Path $resultDir 'artifact_capacity_gate_terminal.json';Write-RunJson -Path $terminalPath -Depth 14 -Value $terminal
-  $manifestOutputs=@($summary,$observation,$trialReceipt,$voltageReceipt,$posePath,$startupPath,$terminalPath,$retention)
+  $manifestOutputs=@($summary,$observation,$trialReceipt,$voltageReceipt,$posePath,$startupPath)
   if($null-ne$trajectorySamples){$manifestOutputs+=@($trajectorySamples,$trajectorySampleReceipt)}
   if($null-ne$sourceTimingDiagnostic){$manifestOutputs+=@($sourceTimingDiagnostic,$sourceTimingDiagnosticLog)}
   if($null-ne$collectionGatePath){$manifestOutputs+=$collectionGatePath}
@@ -1301,44 +1361,42 @@ try{
   foreach($path in @($dispatchRequestPath,$resourceProfilesPath,$runtimeDispatchPlanPath,$(if($null-eq$batchContinuationPlan){$batchPlanPath}),$batchResourceUsagePath,$batchMergeReceipt,$resourceProfilePath)){
     if($null-ne$path-and(Test-Path -LiteralPath $path -PathType Leaf)){$manifestOutputs+=$path}
   }
-  if($isBunchFlight){foreach($index in $replayBatchIndexes){$record=$batchRecords[$index];foreach($path in @($record.stdout,$record.stderr)){if($null-ne$path-and(Test-Path -LiteralPath $path -PathType Leaf)){$manifestOutputs+=$path}}}}
+  if($isBunchFlight){foreach($index in $replayBatchIndexes){$record=$batchRecords[$index];$exitPath=Join-Path $resultDir ('batches/batch_{0:D3}/owner_exit.json'-f[int]$index);foreach($path in @($record.stdout,$record.stderr,$exitPath)){if($null-ne$path-and(Test-Path -LiteralPath $path -PathType Leaf)){$manifestOutputs+=$path}}}}
   if($null-ne$capacityProtectionRenewalPath){$manifestOutputs+=$capacityProtectionRenewalPath}
   if($null-ne$guiWorkbenchReceipt){$manifestOutputs+=$guiWorkbenchReceipt}
   if($guiWorkbenchOutputs.Count){$manifestOutputs+=@($guiWorkbenchOutputs)}
-  # The public writer publishes and reads back identities once. Capacity sealing
-  # is separate for every owned run, including compact frozen native fixtures.
-  Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $manifestOutputs -DeferCapacityFinalization
-  $terminalPublicationClosed=$true
-  $terminalPublicationAttempted=$true;$terminalStatus='success'
-  $trajectoryPayloadNeedsSeal=$ownsCapacitySession
-  if(-not$ownsCapacitySession){
-    # A child never releases its live parent's lease. Current parent consumers
-    # require light ready evidence; oversized children fail capacity explicitly.
-    $null=Invoke-RunCapacityLifecycleAdapter -Python $python -RepoRoot $repoRoot -Action finalize-ready -ArtifactRoot $artifactRoot -RunConfig $runConfig
-    $hostOutcome='success';Write-Host "MRTOF_TWO_PRISM_TRIAL=PASS RUN_ID=$RunId TRANSPORT=$($observed.status)"
-  }
+  $ownerOutputs=@($manifestOutputs)
+  $terminalStatus='success';$hostOutcome='success'
 }catch{
   $failureRecord=$_
-  if($writerCompletion.stopped-and-not$terminalPublicationAttempted){
-    $terminalPublicationAttempted=$true;$terminalStatus='failed'
+  if($failureRecord.Exception.Data['simion_first_batch_writer_unknown']-or
+     $failureRecord.Exception.Data['simion_first_batch_drain_error']-or
+     ($failureRecord.Exception.Data.Contains('simion_wave_writer_completion_confirmed')-and
+      -not$failureRecord.Exception.Data['simion_wave_writer_completion_confirmed'])){
+    $writerCompletion.stopped=$false
+  }elseif($failureRecord.Exception.Data['simion_wave_writer_completion_confirmed']){
+    $writerCompletion.stopped=$true
+  }
+  if(-not$writerCompletion.stopped){
+    try {
+      Write-RunJson -Path (Join-Path $resultDir 'writer_completion_unknown.json') -Value ([ordered]@{
+        schema_version=1;role='writer_completion_unknown';status='unknown';reason=$failureRecord.Exception.Message
+        drain_error=$failureRecord.Exception.Data['simion_first_batch_drain_error']
+        verification_error=$failureRecord.Exception.Data['simion_first_batch_verification_error']
+      })
+    } catch { $failureRecord.Exception.Data['writer_unknown_result_error']=[string]$_ }
+  }
+  $terminalStatus='failed'
+  if($writerCompletion.stopped){
     try{
-    # SIMION trajectory replay caches are disposable even when the GUI IOB is
-    # retained.  Remove them before compact failure publication so an
-    # interrupted flight cannot strand the run in the capacity ledger.
-    if($null-ne$temporarySolverDir-and(Test-Path -LiteralPath $temporarySolverDir -PathType Container)){
-      foreach($trajectoryCache in @(Get-ChildItem -LiteralPath $temporarySolverDir -File -Filter 'trj*.tmp')){
-        [IO.File]::Delete($trajectoryCache.FullName)
+      if($null-ne$temporarySolverDir-and(Test-Path -LiteralPath $temporarySolverDir -PathType Container)){
+        foreach($trajectoryCache in @(Get-ChildItem -LiteralPath $temporarySolverDir -File -Filter 'trj*.tmp')){[IO.File]::Delete($trajectoryCache.FullName)}
       }
-    }
-    $failureEvidence=@{
-      invocation_position=[string]$failureRecord.InvocationInfo.PositionMessage
-      script_stack_trace=[string]$failureRecord.ScriptStackTrace
-    }
-    Publish-OaMrFailureManifest -Status failed -Reason $failureRecord.Exception.Message -Evidence $failureEvidence
-    $terminalPublicationClosed=$true
-    $trajectoryPayloadNeedsSeal=$ownsCapacitySession
-    if(-not$ownsCapacitySession){$null=Invoke-RunCapacityLifecycleAdapter -Python $python -RepoRoot $repoRoot -Action finalize-ready -ArtifactRoot $artifactRoot -RunConfig $runConfig}
-    }catch{$closeoutErrors.Add(@{stage='failure_publication';error=$_})}
+      $failureSummary=[ordered]@{schema_version=1;role='mrtof_finite_3d_two_prism_voltage_trial';status='failed';reason=$failureRecord.Exception.Message;failure_stage=$failureStage;
+        execution_status='failed';data_validity='unknown';scientific_result='not_evaluated';recovery_action='new_run_with_explicit_predecessor';result_path=$(if($null-ne$owner){$owner.result_path}else{$summary})}
+      Write-RunJson -Path $summary -Value $failureSummary
+      $ownerOutputs=@(Get-ChildItem -LiteralPath $runDir -Recurse -File|Where-Object{$_.Name-notin@('run_config.json','run_manifest.json','.run_terminal_publication.lock')}|ForEach-Object{$_.FullName})
+    }catch{$closeoutErrors.Add(@{stage='failure_result';error=$_})}
   }
   throw $failureRecord
 }finally{
@@ -1346,14 +1404,8 @@ try{
   foreach($guard in $staticPaGuards){
     try{$guard.Dispose()}catch{$closeoutErrors.Add(@{stage='guard_release';error=$_})}
   }
-  if(-not$terminalPublicationAttempted-and(Test-Path -LiteralPath $runConfig -PathType Leaf)){
-    $terminalPublicationAttempted=$true;$terminalStatus='interrupted'
-    try{
-    Publish-OaMrFailureManifest -Status interrupted -Reason 'Runner stopped before terminal evidence publication.'
-    $terminalPublicationClosed=$true
-    $trajectoryPayloadNeedsSeal=$ownsCapacitySession;$hostOutcome='interrupted'
-    if(-not$ownsCapacitySession){$null=Invoke-RunCapacityLifecycleAdapter -Python $python -RepoRoot $repoRoot -Action finalize-ready -ArtifactRoot $artifactRoot -RunConfig $runConfig}
-    }catch{$closeoutErrors.Add(@{stage='interrupted_publication';error=$_})}
+  foreach($guard in $continuationEvidenceGuards){
+    try{$guard.Dispose()}catch{$closeoutErrors.Add(@{stage='continuation_guard_release';error=$_})}
   }
   if($null-ne$temporaryAcceleratorRuntimeSession){
     try{Suspend-NativeCorridorRuntimeSession -Session $temporaryAcceleratorRuntimeSession}
@@ -1361,10 +1413,13 @@ try{
   }
   }
   $hostReleaseRequired=$false;$hostReleased=$false
-  if($ownsHostResourceLease-and$null-ne$resourceLease){
+  if($writerCompletion.stopped-and$ownsHostResourceLease-and$null-ne$resourceLease){
     $hostReleaseRequired=-not[bool]$resourceLease.inherited
     try{
       $release=Exit-HostResourceStage -Lease $resourceLease -PassThru
+      if($nativeOperations.Count){$resourceReleases.Add(@{release_id='simion';completion_receipt=@{host_release=@{
+        inherited=[bool]$resourceLease.inherited;token=[string]$resourceLease.token;result=@{status=[string]$release.status;token=[string]$release.token};error=$null}}})}
+
       if($hostReleaseRequired){
         if($null-eq$release-or[string]$release.status-ne'released'-or[string]$release.token-ne[string]$resourceLease.token){
           throw 'OA-MR host release did not confirm its owned token was released.'
@@ -1373,10 +1428,15 @@ try{
       }
     }catch{$closeoutErrors.Add(@{stage='host_release';error=$_})}
   }
+  if($writerCompletion.stopped-and-not$ownsHostResourceLease-and$nativeOperations.Count){
+    try{
+      $inheritedRelease=Invoke-HostResourceTransaction -Request @{operation='inherit';token=[string]$resourceLease.token}
+      $resourceReleases.Add(@{release_id='simion';completion_receipt=@{host_release=@{inherited=$true;token=[string]$resourceLease.token;result=@{status=[string]$inheritedRelease.status;token=[string]$inheritedRelease.token};error=$null}}})
+    }catch{$closeoutErrors.Add(@{stage='inherited_host_confirmation';error=$_});$writerCompletion.stopped=$false}
+  }
   # A retained host record is not a release. Unknown writers retain their
   # paths and capacity protection; exiting PowerShell does not preserve guards.
   $writersStopped=$writerCompletion.stopped-and(-not$hostReleaseRequired-or$hostReleased)
-  $capacityReleased=$false
   if($writersStopped){
   foreach($path in @($batchRuntimeRoot,$(if(-not$retainGuiWorkbenchFiles){$temporarySolverDir}))){
     if($null-ne$path){
@@ -1384,24 +1444,27 @@ try{
       catch{$closeoutErrors.Add(@{stage='temporary_directory';error=$_})}
     }
   }
-  if($ownsCapacitySession-and$null-ne$capacitySession){
+  if($null-ne$owner){
     try{
-      $null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession
-      $capacityReleased=[string]$capacitySession.status-eq'released'
-      if(-not$capacityReleased){throw 'OA-MR capacity session was not released.'}
-    }catch{$closeoutErrors.Add(@{stage='capacity_release';error=$_})}
-  }
-  if($trajectoryPayloadNeedsSeal-and$terminalPublicationClosed-and$capacityReleased){
-    try{
-      Invoke-ProjectPython -Arguments @('-m','common.contracts.run_capacity_lifecycle','--action','seal-stopped-payload','--artifact-root',$artifactRoot,'--run-config',(Join-Path ([string]$package.artifact_run_dir) 'run_config.json'),'--owner',$projectId,'--confirm-writing-stopped','--retention-reason',$(if($trajectoryRetentionReason){$trajectoryRetentionReason}else{'Retain stopped OA-MR scientific evidence and frozen reconstruction inputs.'}))
-      $hostOutcome=$terminalStatus
-    }catch{
-      $closeoutErrors.Add(@{stage='seal_stopped_payload';error=$_})
-      Write-Host "MRTOF_TWO_PRISM_TRIAL=FAIL RUN_ID=$RunId STAGE=seal_stopped_payload SCIENTIFIC_MANIFEST=retained"
-    }
+      $summaryDocument=Get-Content -LiteralPath $summary -Raw|ConvertFrom-Json -AsHashtable
+      $summaryDocument.elapsed_before_finalization_seconds=$runClock.Elapsed.TotalSeconds
+      $summaryDocument.phase_timings_seconds=$nativePhaseTimings
+      $ownerResult=Complete-RunArtifactPowerShellOwner -Context $owner -Status $terminalStatus -Summary $summaryDocument -OutputPaths @($ownerOutputs) `
+        -WritersStopped $true -WriterCompletion @{operations=@($nativeOperations|ForEach-Object{$_});resource_releases=@($resourceReleases|ForEach-Object{$_})} -OriginalFailure $failureRecord
+      $terminalPublicationClosed=[bool]$ownerResult.terminal_published
+      if($ownerResult.stage-ne'complete'){throw 'OA-MR finalization is incomplete; use ResumeFinalization.'}
+    }catch{$closeoutErrors.Add(@{stage='public_finalization';error=$_})}
+  }elseif($ownsCapacitySession-and$null-ne$capacitySession){
+    try{$null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession}catch{$closeoutErrors.Add(@{stage='capacity_release';error=$_})}
   }
   try{Remove-RunPackageExecutionAlias -Package $package}
   catch{$closeoutErrors.Add(@{stage='execution_alias';error=$_})}
+  }elseif($null-ne$owner){
+    try{
+      $unknown=[ordered]@{schema_version=1;role='mrtof_finite_3d_two_prism_voltage_trial';status='writer_completion_unknown';failure_stage=$failureStage;recovery_action='inspect_writer_completion'}
+      $null=Complete-RunArtifactPowerShellOwner -Context $owner -Status failed -Summary $unknown -OutputPaths @() -WritersStopped $false `
+        -WriterCompletion @{operations=@();resource_releases=@()} -OriginalFailure $failureRecord
+    }catch{$closeoutErrors.Add(@{stage='writer_completion';error=$_})}
   }elseif($null-eq$failureRecord-and$closeoutErrors.Count-eq0){
     try{throw 'OA-MR writer completion is unknown; run paths and capacity protection retained.'}
     catch{$closeoutErrors.Add(@{stage='writer_completion';error=$_})}
@@ -1416,7 +1479,7 @@ try{
     $reportedFailure.Exception.Data['oa_mr_closeout_errors']=@($closeoutErrors|ForEach-Object{@{stage=$_.stage;message=$_.error.Exception.Message}})
     foreach($errorRecord in $closeoutErrors){Write-Warning "OA-MR closeout $($errorRecord.stage): $($errorRecord.error.Exception.Message)" -WarningAction Continue}
     if($null-eq$failureRecord){throw $reportedFailure}
-  }elseif($writersStopped-and$trajectoryPayloadNeedsSeal-and$terminalPublicationClosed-and$capacityReleased-and$terminalStatus-eq'success'){
-    Write-Host "MRTOF_TWO_PRISM_TRIAL=PASS RUN_ID=$RunId TRANSPORT=$($observed.status)"
+  }elseif($writersStopped-and$terminalPublicationClosed-and$terminalStatus-eq'success'){
+    Write-Host "MRTOF_TWO_PRISM_TRIAL=PASS RUN_ID=$RunId TRANSPORT=$($observed.status) RESULT=$($owner.result_path) CAPACITY_FINALIZED=$($ownerResult.capacity_finalized) RECOVERY=$($ownerResult.recovery_action)"
   }
 }

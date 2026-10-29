@@ -514,6 +514,144 @@ def plan_simion_dispatch(
     }
 
 
+def plan_recovered_formal_followup(plan: dict[str, Any], completion: dict[str, Any]) -> dict[str, Any]:
+    """Replan only after a retained first unit's measured, natural completion.
+
+    The caller must first verify that the receipt and provisional plan are
+    bound to the predecessor manifest.  This function never invents resource
+    measurements or launches the first unit again.
+    """
+    if completion.get("natural_exit") is not True or type(completion.get("exit_code")) is not int or completion["exit_code"] != 0:
+        raise ValueError("recovered formal batch requires a successful natural exit")
+    if plan.get('estimation',{}).get('kind') != 'formal_first_batch_observation':
+        raise ValueError('recovered provisional plan must require formal observation')
+    batches = plan.get("waves", [{}])[0].get("batches", [])
+    if len(batches) != 1:
+        raise ValueError("recovered provisional plan must contain exactly one formal batch")
+    first = batches[0]
+    total=_positive_int(plan.get('particle_count'),'particle_count')
+    first_count=_positive_int(first.get('count'),'formal batch count')
+    if first.get('particle_id_min') != 1 or first.get('particle_id_max') != first_count or first_count>total:
+        raise ValueError('recovered formal batch must be a valid source-row prefix')
+    if (completion.get("source_row_range") != [first.get("particle_id_min"), first.get("particle_id_max")]
+            or completion.get("count") != first.get("count")):
+        raise ValueError("recovered formal batch differs from its original interval")
+    observation = completion.get("resource_observation")
+    if observation is None or (isinstance(observation, dict) and type(observation.get('peak_bytes')) is int
+                               and observation['peak_bytes'] == 0):
+        # Keep each missing worker no larger than the original formal worker.
+        # Observe the first missing interval before dispatching its siblings.
+        count=total
+        result=json.loads(json.dumps(plan))
+        remaining=count-first['count']
+        tail=[]
+        while remaining:
+            size=min(first['count'],remaining);tail.append(size);remaining-=size
+        later=_batches_from_counts(tail,first['count'],'particles')
+        for batch in later:
+            batch['index']+=1
+        result['waves'][0]['batches']=[dict(first),*later]
+        result['waves'][0]['batch_count']=len(result['waves'][0]['batches'])
+        result['waves'][0]['coverage']='complete_population'
+        result['estimation']['recovered_missing_observation']=True
+        return result
+    if not isinstance(observation, dict):
+        raise ValueError("recovered formal batch resource observation is invalid")
+    return plan_adaptive_followup(plan, observation.get("peak_bytes"),
+        observed_cpu_percent=observation.get("process_cpu_percent"),
+        background_cpu_percent=observation.get("background_cpu_percent"), first_batch_completed=True)
+
+
+def prepare_fixed_partition_dispatch(plan: dict[str, Any], batch_plan: dict[str, Any],
+                                     replay_indices: list[int]) -> dict[str, Any]:
+    """Schedule original whole units under a covering profile or new observation."""
+    batches = batch_plan.get("batches")
+    total = _positive_int(plan.get("particle_count"), "particle_count")
+    if (batch_plan.get("role") != "simion_single_wave_particle_batch_plan"
+            or batch_plan.get("coverage") not in {None, "complete_population"} or batch_plan.get("particle_count", total) != total
+            or not isinstance(batches, list) or not batches):
+        raise ValueError("fixed partition must cover the frozen population")
+    first = 1
+    for index, batch in enumerate(batches, 1):
+        count = _positive_int(batch.get("count"), "batch count")
+        if (batch.get("index") != index or batch.get("particle_id_min") != first
+                or batch.get("particle_id_max") != first+count-1
+                or batch.get("simion_particle_id_offset", first-1) != first-1):
+            raise ValueError("fixed partition batch interval differs")
+        first += count
+    if first != total+1 or not replay_indices or len(set(replay_indices)) != len(replay_indices):
+        raise ValueError("fixed partition replay selection differs")
+    if any(type(index) is not int or not 1 <= index <= len(batches) for index in replay_indices):
+        raise ValueError("fixed partition replay index differs")
+    observed = max(replay_indices, key=lambda index: (batches[index-1]["count"], -index))
+    kind = plan.get("estimation", {}).get("kind")
+    if kind == "exact_resource_profile":
+        covered = plan["estimation"].get("observed_batch_work_units")
+    elif kind == "observed_formal_batch":
+        prior_batches = plan.get("waves", [{}])[0].get("batches", [])
+        prior_index = plan["estimation"].get("observed_missing_batch_index", 1)
+        if type(prior_index) is not int or not 1 <= prior_index <= len(prior_batches):
+            raise ValueError("prior observed batch index differs")
+        covered = prior_batches[prior_index-1].get("count")
+    elif kind == "formal_first_batch_observation":
+        covered = None
+    else:
+        raise ValueError("fixed partition dispatch estimation differs")
+    if covered is not None:
+        if type(covered) is not int or covered <= 0:
+            raise ValueError("resource observation work-unit count is invalid")
+        if covered < batches[observed-1]["count"]:
+            covered = None
+    if covered is None and kind != "formal_first_batch_observation":
+        # An exact profile for a smaller worker cannot bound this whole unit.
+        # Return to the existing observation path without changing the frozen
+        # partition or extrapolating the smaller worker's memory footprint.
+        host = plan["host"]
+        plan = plan_simion_dispatch(_request_from_dispatch_plan(plan), [],
+            available_memory_bytes=host.get("available_memory_bytes"),
+            total_physical_memory_bytes=host.get("total_physical_memory_bytes"),
+            logical_processors=host["logical_processors"])
+    result = json.loads(json.dumps(plan))
+    result["waves"][0].update(batches=json.loads(json.dumps(batches)), batch_count=len(batches), coverage="complete_population")
+    if covered is None:
+        result["estimation"]["recovered_missing_observation"] = True
+        result["estimation"]["observed_missing_batch_index"] = observed
+        result["estimation"]["replay_batch_indices"] = list(replay_indices)
+    result["limits"]["maximum_concurrency"] = 1
+    return result
+
+
+def calibrate_recovered_missing_plan(plan: dict[str, Any], observed_peak_bytes: int, *,
+                                     observed_cpu_percent: float, background_cpu_percent: float,
+                                     available_memory_bytes: int, total_physical_memory_bytes: int,
+                                     observed_completed: bool) -> dict[str, Any]:
+    """Apply actual missing-worker observation while retaining frozen intervals."""
+    if plan.get('estimation',{}).get('recovered_missing_observation') is not True:
+        raise ValueError('dispatch does not require recovered missing-worker observation')
+    batches=plan['waves'][0]['batches']
+    fixed_index = plan["estimation"].get("observed_missing_batch_index")
+    if fixed_index is None:
+        if len(batches)<2 or any(batch['count']>batches[0]['count'] for batch in batches[1:]):
+            raise ValueError('recovered missing intervals exceed the original worker')
+    else:
+        replay = plan["estimation"].get("replay_batch_indices")
+        if (type(fixed_index) is not int or not isinstance(replay, list) or fixed_index not in replay
+                or any(type(index) is not int or not 1 <= index <= len(batches) for index in replay)
+                or any(batches[index-1]["count"] > batches[fixed_index-1]["count"] for index in replay)):
+            raise ValueError("observed missing batch cannot cover the fixed replay units")
+    result=plan_adaptive_followup(plan,observed_peak_bytes,observed_cpu_percent=observed_cpu_percent,
+        background_cpu_percent=background_cpu_percent,available_memory_bytes=available_memory_bytes,
+        total_physical_memory_bytes=total_physical_memory_bytes,first_batch_completed=observed_completed)
+    result['waves'][0]['batches']=json.loads(json.dumps(batches))
+    result['waves'][0]['batch_count']=len(batches)
+    result['limits']['maximum_concurrency']=1
+    result['estimation']['recovered_missing_observation_completed']=True
+    if fixed_index is not None:
+        result['estimation']['observed_missing_batch_index'] = fixed_index
+        result['estimation']['replay_batch_indices'] = replay
+    return result
+
+
 def plan_adaptive_followup(
     plan: dict[str, Any], observed_peak_bytes: int, *,
     observed_cpu_percent: float = 0.0, background_cpu_percent: float = 0.0,
@@ -746,6 +884,10 @@ def main() -> int:
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--request", type=Path)
     source.add_argument("--prepared-plan", type=Path)
+    source.add_argument("--recovered-missing-plan", type=Path)
+    source.add_argument("--prepare-fixed-recovery-plan", type=Path)
+    parser.add_argument("--fixed-batch-plan", type=Path)
+    parser.add_argument("--replay-batch-index", type=int, action="append", default=[])
     parser.add_argument("--profiles", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--available-memory-bytes", type=int)
@@ -756,7 +898,23 @@ def main() -> int:
     parser.add_argument("--observed-background-cpu-percent", type=float, default=0.0)
     parser.add_argument("--first-batch-completed", action="store_true")
     args = parser.parse_args()
-    if args.prepared_plan:
+    if args.prepare_fixed_recovery_plan:
+        if args.fixed_batch_plan is None or not args.replay_batch_index:
+            parser.error("fixed recovery preparation requires the batch plan and replay indices")
+        plan = prepare_fixed_partition_dispatch(
+            json.loads(args.prepare_fixed_recovery_plan.read_text(encoding="utf-8-sig")),
+            json.loads(args.fixed_batch_plan.read_text(encoding="utf-8-sig")), args.replay_batch_index)
+    elif args.recovered_missing_plan:
+        if (args.observed_formal_peak_bytes is None or args.available_memory_bytes is None
+                or args.total_physical_memory_bytes is None):
+            parser.error('recovered missing calibration requires actual peak and host memory observations')
+        plan = calibrate_recovered_missing_plan(
+            json.loads(args.recovered_missing_plan.read_text(encoding='utf-8-sig')),
+            args.observed_formal_peak_bytes, observed_cpu_percent=args.observed_formal_cpu_percent,
+            background_cpu_percent=args.observed_background_cpu_percent,
+            available_memory_bytes=args.available_memory_bytes, total_physical_memory_bytes=args.total_physical_memory_bytes,
+            observed_completed=args.first_batch_completed)
+    elif args.prepared_plan:
         prepared = json.loads(args.prepared_plan.read_text(encoding="utf-8-sig"))
         plan = plan_runtime_dispatch(
             prepared, available_memory_bytes=args.available_memory_bytes,
@@ -771,7 +929,7 @@ def main() -> int:
             total_physical_memory_bytes=args.total_physical_memory_bytes,
             logical_processors=args.logical_processors,
         )
-    if args.observed_formal_peak_bytes is not None:
+    if args.observed_formal_peak_bytes is not None and not args.recovered_missing_plan and not args.prepare_fixed_recovery_plan:
         plan = plan_adaptive_followup(
             plan, args.observed_formal_peak_bytes,
             observed_cpu_percent=args.observed_formal_cpu_percent,
@@ -781,7 +939,11 @@ def main() -> int:
             first_batch_completed=args.first_batch_completed,
         )
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
+    if args.recovered_missing_plan or args.prepare_fixed_recovery_plan:
+        from common.contracts.recorded_file_removal import write_json_atomic
+        write_json_atomic(args.output,plan)
+    else:
+        args.output.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
     print(format_dispatch_decision_event(plan))
     print(f"SIMION_REPOSITORY_DISPATCH_PLAN=PASS FIELD_KIND={plan['field_kind']} WAVES={len(plan['waves'])}")
     return 0

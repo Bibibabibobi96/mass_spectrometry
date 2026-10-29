@@ -250,6 +250,8 @@ IP完整五层普通场、已物化场及纯响应的历史证明可以递归经
 以下是MR原生场提供者的请求合同，入口为
 [run_native_static_field_provider.ps1](../simion/run_native_static_field_provider.ps1)；
 跨项目Finalize和飞行仍由[接口准备与绑定](../../../integrations/docs/INTEGRATION.md#oaip接口准备与绑定)负责。
+原生场进程的墙钟观测阈值从冻结的`wall_clock_seconds_by_solver.simion`投影给公共观测器；
+该阈值只产生告警，不改变Refine停止条件或中断健康进程。
 
 该provider若已完整发布并核验summary／manifest，仅最后的容量封存失败，保持原run及原终态，
 不重新调用provider的`-Approved`入口。owner先确认本次writer已退出、host许可已释放且无活动容量保护，

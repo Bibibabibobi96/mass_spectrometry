@@ -144,7 +144,9 @@ assert(ion_px_mm==1 and ion_py_mm==2 and ion_pz_mm==3 and ion_vx_mm==4 and ion_v
         self.assertIn("-RetentionClass $trajectoryRetentionClass -RetentionReason $trajectoryRetentionReason", runner)
         self.assertIn("$manifestOutputs+=@($trajectorySamples,$trajectorySampleReceipt)", runner)
         self.assertIn("'extract-trajectory','--log',$rawLog", runner)
-        self.assertIn("'seal-stopped-payload'", runner)
+        self.assertIn("Complete-RunArtifactPowerShellOwner -Context $owner", runner)
+        self.assertIn("-OwnCapacitySession:$ownsCapacitySession", runner)
+        self.assertNotIn("Apply-RunArtifactRetention", runner)
         self.assertIn("$committedNewBytes+=[int64]$trajectoryRecording.output_budget_bytes", runner)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
@@ -156,23 +158,35 @@ $errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile('integrations/workflows/oa_mr/execute.ps1',[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
 $ownerTry=@($ast.EndBlock.Statements|Where-Object{$_-is[Management.Automation.Language.TryStatementAst]})[-1]
-$trajectoryPayloadNeedsSeal=$true;$deferredHostCompletionNotification=$true;$terminalStatus='success'
-$terminalPublicationAttempted=$true;$terminalPublicationClosed=$true
-$writerCompletion=[pscustomobject]@{stopped=$true};$staticPaGuards=@();$temporaryAcceleratorRuntimeSession=$null
+$deferredHostCompletionNotification=$true;$terminalStatus='success'
+$terminalPublicationClosed=$false
+$writerCompletion=[pscustomobject]@{stopped=$true};$staticPaGuards=@();$continuationEvidenceGuards=[Collections.Generic.List[IO.FileStream]]::new();$temporaryAcceleratorRuntimeSession=$null
 $ownsHostResourceLease=$false;$resourceLease=$null;$ownsCapacitySession=$true;$capacitySession=@{status='active'}
 $batchRuntimeRoot=$null;$temporarySolverDir=$null;$retainGuiWorkbenchFiles=$false
 $failureRecord=$null;$closeoutErrors=[Collections.Generic.List[object]]::new();$python='fixture';$repoRoot='root'
 $artifactRoot='root';$package=@{artifact_run_dir='run'};$projectId='mr';$trajectoryRetentionReason='review'
-$RunId='fixture';$observed=@{status='bunch_observed'};$hostOutcome='failed'
+$RunId='fixture';$observed=@{status='bunch_observed'};$hostOutcome='success'
+$owner=@{result_path='outside-result.json'};$ownerOutputs=@();$summary='inert-summary'
+$nativeOperations=[Collections.Generic.List[object]]::new();$resourceReleases=[Collections.Generic.List[object]]::new()
+$runClock=[Diagnostics.Stopwatch]::StartNew();$nativePhaseTimings=[ordered]@{}
 $calls=[Collections.Generic.List[string]]::new()
 function Write-Host {param($Object);$calls.Add([string]$Object)}
 function Write-Warning {param($Message,$WarningAction)}
+function Get-Content {param($LiteralPath,[switch]$Raw) '{"schema_version":1,"role":"inert_recording_summary"}'}
 function Exit-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session);$calls.Add('capacity');$Session.status='released'}
 function Invoke-HostExecutionCompletionNotification {param($Outcome,$RunId);$calls.Add('notify:'+ $Outcome)}
 function Remove-RunPackageExecutionAlias {param($Package);$calls.Add('alias_removed')}
 """
-                command += "function Invoke-ProjectPython {param($Arguments);$calls.Add('seal');"
-                command += "throw 'seal fixture failure'" if fail else "return"
+                # Only the public lifecycle boundary is inert here. Its real
+                # retention/publication/repeat recovery is covered by the
+                # assembly CLI recovery and common owner behavior tests.
+                command += """function Complete-RunArtifactPowerShellOwner {
+ param($Context,$Status,$Summary,$OutputPaths,$WritersStopped,$WriterCompletion,$OriginalFailure)
+ if(-not$WritersStopped-or$WriterCompletion.operations.Count-or$WriterCompletion.resource_releases.Count){throw 'recording fixture must not fabricate native processes'}
+ Exit-ArtifactWorkflowCapacitySession -Session $capacitySession
+ $calls.Add('seal')
+"""
+                command += "throw 'seal fixture failure'" if fail else "$calls.Add('complete');return @{status=$Status;stage='complete';terminal_published=$true;capacity_finalized=$true;recovery_action=$null}"
                 command += "}\n$caught=$false;$message=$null;try{. ([scriptblock]::Create('try{}finally'+$ownerTry.Finally.Extent.Text))}"
                 command += "catch{$caught=$true;$message=$_.Exception.Message}\n"
                 command += "@{calls=@($calls);caught=$caught;outcome=$hostOutcome;message=$message}|ConvertTo-Json -Compress"
@@ -187,11 +201,16 @@ function Remove-RunPackageExecutionAlias {param($Package);$calls.Add('alias_remo
                 self.assertIn(notification, calls)
                 self.assertIn("alias_removed", calls)
                 reports = [call for call in calls if call.startswith("MRTOF_TWO_PRISM_TRIAL=")]
-                self.assertEqual(len(reports), 1)
-                self.assertIn("TRIAL=FAIL" if fail else "TRIAL=PASS", reports[0])
+                self.assertEqual(len(reports), 0 if fail else 1)
+                if fail:
+                    self.assertNotIn("complete", calls)
+                else:
+                    self.assertIn("TRIAL=PASS", reports[0])
+                    self.assertLess(calls.index("seal"), calls.index("complete"))
                 self.assertLess(calls.index("capacity"), calls.index("seal"))
                 self.assertLess(calls.index("seal"), calls.index(notification))
-                self.assertLess(calls.index("seal"), calls.index(reports[0]))
+                if reports:
+                    self.assertLess(calls.index("complete"), calls.index(reports[0]))
 
 
 if __name__ == "__main__":

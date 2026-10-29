@@ -2,10 +2,19 @@ from __future__ import annotations
 
 import unittest
 
-from common.simion.particle_source import render_source_states, render_standard_beams
+from common.simion.particle_source import project_direct_velocity, render_source_states, render_standard_beams
 
 
 class StandardBeamTests(unittest.TestCase):
+    def test_direct_velocity_projection_preserves_six_dimensions_and_target_frame(self) -> None:
+        state, beam = project_direct_velocity(particle_id=7, time_us=12.5, position_mm=[1., 2., 3.],
+            velocity_m_s=[100., -200., 300.], energy_ev=4., mass_amu=524., charge_state=1,
+            beam_position_mm=[8., 9., 10.], beam_direction=[-200., 300., 100.], weight=3.5, color=0)
+        self.assertEqual(state, dict(particle_id=7, t=12.5, x=1., y=2., z=3., vx=.1, vy=-.2, vz=.3, ke=4.))
+        self.assertEqual(beam["direction"], [-200., 300., 100.])
+        self.assertEqual((beam["x"], beam["y"], beam["z"], beam["cwf"]), (8., 9., 10., 3.5))
+        self.assertIn("direction = vector(-200.0,300.0,100.0)", render_standard_beams([beam]))
+
     def test_source_state_precision_default_is_legacy_and_17_roundtrips(self) -> None:
         value = 1.2345678901234567
         state = dict(particle_id=7, t=value, x=value, y=value, z=value, vx=value, vy=value, vz=value, ke=value)

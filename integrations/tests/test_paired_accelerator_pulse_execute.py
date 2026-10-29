@@ -18,6 +18,61 @@ OWNER = ROOT / 'integrations/workflows/paired_accelerator_pulse/execute.ps1'
 
 
 class PairedPulseOwnerTests(unittest.TestCase):
+    def test_baseline_reuse_rebinds_ancestor_outputs_from_hashtable_cases(self):
+        script=r'''param($Owner)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$null,[ref]$null)
+$loop=$ast.Find({param($n)$n-is[Management.Automation.Language.ForEachStatementAst]-and$n.Extent.Text.StartsWith('foreach($unit in $continuation.workbench.batches)')},$true)
+if($null-eq$loop){throw 'owner rebinding missing'}
+$continuation=@{workbench=@{batches=@(@{continuation_source=@{terminal_outputs=@(@{path='ancestor.log'},@{path='ancestor.fact'})}},@{case_id='new'})}}
+$config=@{inputs=@{}};$reuseIndex=0
+. ([scriptblock]::Create($loop.Extent.Text))
+if($config.inputs.reused_baseline_0-ne'ancestor.log'-or$config.inputs.reused_baseline_1-ne'ancestor.fact'){throw 'ancestor evidence not rebound'}
+exit 0
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            wrapper=Path(directory)/'rebind.ps1';wrapper.write_text(script,encoding='utf-8')
+            result=subprocess.run(['pwsh','-NoProfile','-File',str(wrapper),str(OWNER)],cwd=ROOT,capture_output=True,text=True,encoding='utf-8',timeout=30)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
+    def test_public_replay_launches_only_missing_units(self):
+        script=r'''param($Owner,$Root,$Scenario)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$null,[ref]$null)
+$branch=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'-not$reusedReplay'-and$n.Extent.Text.Contains('plan_simion_replay_continuation')},$true)
+if($null-eq$branch){throw 'public replay branch missing'}
+$package=@{run_config=(Join-Path $Root 'run_config.json');artifact_run_dir=$Root;result_dir=$Root}
+'{"inputs":{}}'|Set-Content $package.run_config
+$workbench=[pscustomobject]@{batches=@([pscustomobject]@{case_id='a'},[pscustomobject]@{case_id='b'})}
+$Python='unused';$RepoRoot='unused';$frozen=@{execution_root='unused'};$planPath='unused';$stagesPath='unused';$workbenchPath=Join-Path $Root 'workbench.json';$dispatchPath='unused'
+$PredecessorManifest='parent';$reusedReplay=$false;$nativeExecuted=$false;$lease=@{};$budget=@{host_budgets=@{simion_flight=@{}}};$script:starts=@()
+function Invoke-PulsePython {param($Code,$Arguments)
+ if($Code.Contains('plan_simion_replay_continuation')){
+  $second=if($Scenario-eq'zero'){'reuse'}else{'replay'}
+  return @{plan_record=@{path='plan'};plan=@{units=@(@{key='a';action='reuse';terminal_outputs=@(@{path='old-a.log'})},@{key='b';action=$second;terminal_outputs=@(@{path='old-b.log'})})}}
+ }
+ return @{}
+}
+function Write-RunJson {param($Path,$Value,$Depth) $Value|ConvertTo-Json -Depth 30|Set-Content $Path}
+function New-FrontendFlightSpecification {param($Case,$SimionExe) return @{name=$Case.case_id}}
+function Update-HostResourceStage {param($Lease,$Stage,$Budget,$RetainedMemoryBytes) return @{}}
+function Get-HostResourceBudget {param($Role,$Stage) return @{}}
+function Invoke-ResourceBudgetedProcesses {param($DispatchPlanPath,$RunDir,$UsagePath,$ProcessSpecifications,$OnProcessCompleted) $script:starts=@($ProcessSpecifications|ForEach-Object{$_.name});return @{resource_budget_exceeded=$false;processes=@(@{name='b';exit_code=0})}}
+function Complete-ResourceUsage {param($RunDir,$UsagePath)}
+$SimionExe='unused'
+. ([scriptblock]::Create($branch.Extent.Text))
+$expect=if($Scenario-eq'zero'){''}else{'b'}
+if(($script:starts-join',')-ne$expect){throw 'incorrect replay launch set'}
+if($workbench.batches[0].default_replay_stdout-ne'old-a.log'){throw 'lost reused output'}
+exit 0
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            wrapper=Path(directory)/'replay.ps1';wrapper.write_text(script,encoding='utf-8')
+            for scenario in ('partial','zero'):
+                result=subprocess.run(['pwsh','-NoProfile','-File',str(wrapper),str(OWNER),directory,scenario],
+                    cwd=ROOT,capture_output=True,text=True,encoding='utf-8',timeout=30)
+                self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
     def capacity_isolated_owner(self, root):
         """Startup capacity admission is inert; lease and lifecycle operations remain real."""
         source=OWNER.read_text(encoding='utf-8')
@@ -159,7 +214,7 @@ $package=New-RunPackage -Python $Python -RepoRoot $RepoRoot -ArtifactRoot (Join-
  -AdditionalDirectories @('comsol','simion') -UseShortExecutionPath
 $capacity=Enter-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -ArtifactRoot $ArtifactRoot `
  -RunDirectory $package.artifact_run_dir -CommittedNewBytes 0 -Owner ('test-pulse:'+$RunId)
-$terminalized=$false;$lease=$null;$guard=$null;$failure=$null;$DryRun=$false;$reusedParticleSolution=$false;$reusedBaseline=$false;$reusedReplay=$false;$reusedParticleExports=$false;$nativeExecuted=$false;$paGuards=@()
+$terminalized=$false;$writerUnknown=$false;$lease=$null;$guard=$null;$failure=$null;$DryRun=$false;$reusedParticleSolution=$false;$reusedBaseline=$false;$reusedReplay=$false;$reusedParticleExports=$false;$nativeExecuted=$false;$paGuards=@()
 $plan=@{particle_count=2};$stage='inert_particle_export';$failureText=''
 $payload=Join-Path $package.artifact_run_dir 'comsol/paired_accelerator_pulse.mph'
 [IO.File]::WriteAllBytes($payload,[Text.Encoding]::UTF8.GetBytes('TEST_ONLY_INERT_CPT_MODEL_IDENTITY'))
@@ -246,6 +301,7 @@ function Invoke-PulsePython {
   return @{particle_model=$particle;particle_exports=$exports;simion_baseline=$baseline;simion_replay=$replay}
  }
  if($Code.Contains('materialize_simion_continuation')){return $null}
+  if($Code.Contains('plan_simion_replay_continuation')){return $null}
  if($Code.Contains('compare_paired_accelerator_pulse')){return @{TEST_ONLY=$true}}
  if($Code.Contains('validate_pa_family_cache_generation')){return @{files=@(@{name='paired_static_on.pa';bytes=10;sha256='TEST_ONLY'})}}
  if($Code.Contains('collect_simion_batches')){$script:collected++;return @{TEST_ONLY=$true}}
@@ -264,9 +320,9 @@ function Update-HostResourceStage {param($Lease,$Stage,$Budget,$RetainedMemoryBy
 function Exit-HostResourceStage {param($Lease)}
 function Get-HostResourceBudget {param($Role,$Stage)return @{}}
 function Register-PulseInputs {}
-function Invoke-FrontendFlightPhase {param($RunDirectory,$ProjectRunsRoot,$RepoRoot,$Python,$RuntimeModule,$SimionExe,$Limits,$Phase,$RuntimeInputArguments,$WorkbenchReceiptPath,$IobVerification)$script:simionCalls++;return @{batches=@($case);native_process_records=@(@{TEST_ONLY=$true})}}
+function Invoke-FrontendFlightPhase {param($RunDirectory,$ProjectRunsRoot,$RepoRoot,$Python,$RuntimeModule,$SimionExe,$Limits,$Phase,$RuntimeInputArguments,$WorkbenchReceiptPath,$IobVerification,$OnProcessCompleted)$script:simionCalls++;return @{batches=@($case);native_process_records=@(@{TEST_ONLY=$true})}}
 function Invoke-ResourceBudgetedProcesses {
- param($DispatchPlanPath,$RunDir,$UsagePath,$ProcessSpecifications)
+ param($DispatchPlanPath,$RunDir,$UsagePath,$ProcessSpecifications,$OnProcessCompleted)
  if($ProcessSpecifications.Count-ne1-or$ProcessSpecifications[0].argument_list[-1]-ne$oldIob){throw 'Replay did not use the original saved IOB defaults'}
  $expectedStdout=Join-Path $run 'logs/borrowed.replay.stdout.log'
  $expectedStderr=Join-Path $run 'logs/borrowed.replay.stderr.log'

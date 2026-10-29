@@ -72,7 +72,7 @@ class MassFilterSimionContractTests(unittest.TestCase):
         runner = runner_path.read_text(encoding="utf-8")
         parameter_block = runner[: runner.index("Set-StrictMode")]
 
-        self.assertIn("[Parameter(Mandatory = $true)]", parameter_block)
+        self.assertIn("[Parameter(Mandatory = $true,ParameterSetName='Execute')]", parameter_block)
         self.assertIn("[string]$SourceIonPath", parameter_block)
         for forbidden_parameter in (
             "$Mode",
@@ -112,7 +112,8 @@ class MassFilterSimionContractTests(unittest.TestCase):
         self.assertIn("$physicalDecision = [string]$massMetrics.status", runner)
         self.assertIn("status = 'success'", runner)
         self.assertIn("physical_decision = $physicalDecision", runner)
-        self.assertIn("Write-VerifiedRunManifest", runner)
+        self.assertIn("Complete-RunArtifactPowerShellOwner -Context $ownerContext -Status success -Summary $rootSummary", runner)
+        self.assertIn("$rootSummary.scientific_result=$scienceStatus", runner)
         self.assertIn("Complete-FailedRun", runner)
         self.assertIn("analyzer exit/status mismatch", runner)
 

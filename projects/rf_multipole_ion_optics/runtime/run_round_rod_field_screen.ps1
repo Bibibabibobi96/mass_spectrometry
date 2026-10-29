@@ -107,9 +107,9 @@ $task = Join-Path $repoRoot 'projects\rf_multipole_ion_optics\comsol\solve_round
   }
   formal_gate_passed = $false
 } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfig -Encoding UTF8
-[ordered]@{ schema_version=1; role='multipole_round_rod_field_screen_summary'; status='interrupted' } |
+[ordered]@{ schema_version=1; role='multipole_round_rod_field_screen_summary'; status='checkpoint' } |
   ConvertTo-Json | Set-Content -LiteralPath $summary -Encoding UTF8
-& $python $manifestWriter --run-config $runConfig --status interrupted --software 'COMSOL 6.4' --software 'MATLAB R2025b' --software 'Python 3.11' --output $summary
+& $python $manifestWriter --run-config $runConfig --status checkpoint --software 'COMSOL 6.4' --software 'MATLAB R2025b' --software 'Python 3.11' --output $summary
 if ($LASTEXITCODE -ne 0) { throw 'Initial run manifest failed.' }
 
 $environmentNames = @('MULTIPOLE_RESOLVED_DESIGN','MULTIPOLE_ROUND_ROD_SCREEN','MULTIPOLE_ROUND_ROD_SAMPLES')

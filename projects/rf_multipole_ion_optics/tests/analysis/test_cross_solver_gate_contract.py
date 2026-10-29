@@ -557,6 +557,7 @@ class CandidateGateParameterContractTests(unittest.TestCase):
             quote = lambda value: "'" + str(value).replace("'", "''") + "'"
             support = root / "common/host_execution_lease.ps1"
             support.parent.mkdir()
+            shutil.copyfile(REPO_ROOT / "common/gate_unittest.py", support.parent / "gate_unittest.py")
             support.write_text(". " + quote(REPO_ROOT / "common/host_execution_lease.ps1") + "\n",
                                encoding="utf-8")
             modules = {}
@@ -582,7 +583,7 @@ class CandidateGateParameterContractTests(unittest.TestCase):
                 "$arguments = @($args)\n"
                 "[IO.File]::AppendAllText($env:RF_GATE_COMMAND_EVENTS, "
                 "((ConvertTo-Json -Compress -InputObject $arguments) + [Environment]::NewLine))\n"
-                "if ($arguments.Count -ge 2 -and $arguments[0] -eq '-m' -and $arguments[1] -eq 'unittest') {\n"
+                "if ($arguments.Count -ge 2 -and $arguments[0] -eq '-m' -and $arguments[1] -eq 'common.gate_unittest') {\n"
                 "  & $env:RF_GATE_REAL_PYTHON @arguments\n  exit $LASTEXITCODE\n}\nexit 0\n",
                 encoding="utf-8",
             )
@@ -626,13 +627,13 @@ class CandidateGateParameterContractTests(unittest.TestCase):
                 result = observed["result"]
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 commands = observed["commands"]
-                physical = [" ".join(command) for command in commands if command[:2] != ["-m", "unittest"]]
+                physical = [" ".join(command) for command in commands if command[:2] != ["-m", "common.gate_unittest"]]
                 self.assertEqual(len(physical), len(expected))
                 for command, required in zip(physical, expected):
                     self.assertIn(required, command)
-                unittest_commands = [command for command in commands if command[:2] == ["-m", "unittest"]]
+                unittest_commands = [command for command in commands if command[:2] == ["-m", "common.gate_unittest"]]
                 selected = [observed["modules"]["new_area/test_forwarded.py"]] if changed else []
-                self.assertEqual(unittest_commands, [["-m", "unittest", *selected]] if changed else [])
+                self.assertEqual(unittest_commands, [["-m", "common.gate_unittest", *selected]] if changed else [])
                 self.assertEqual(observed["executed"], selected)
                 self.assertIn("PROJECT_GATE=PASS", result.stdout)
 
@@ -642,8 +643,8 @@ class CandidateGateParameterContractTests(unittest.TestCase):
                 observed = self.invoke_project_gate_fixture("Static", changed=True, failure=failure)
                 result = observed["result"]
                 expected = sorted(observed["modules"].values())
-                calls = [command for command in observed["commands"] if command[:2] == ["-m", "unittest"]]
-                self.assertEqual(calls, [["-m", "unittest", *expected]])
+                calls = [command for command in observed["commands"] if command[:2] == ["-m", "common.gate_unittest"]]
+                self.assertEqual(calls, [["-m", "common.gate_unittest", *expected]])
                 self.assertEqual(sorted(observed["executed"]), expected)
                 if not failure:
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

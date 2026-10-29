@@ -112,7 +112,7 @@ if($PrepareOnly){
 . (Join-Path $RepoRoot 'common/simion/short_pa_path_support.ps1')
 . (Join-Path $frozen.execution_root 'integrations/workflows/single_reflection_flight/field_stage.ps1')
 $artifacts=Join-Path (Split-Path -Parent $RepoRoot) 'artifacts'
-$lease=$null;$capacity=$WorkflowCapacitySession;$ownsCapacity=($null-eq$WorkflowCapacitySession);$okay=$false;$stageElapsed=$null
+$lease=$null;$capacity=$WorkflowCapacitySession;$ownsCapacity=($null-eq$WorkflowCapacitySession);$okay=$false;$stageElapsed=$null;$writerUnknown=$false
 $downstreamExecution=@()
 $workbenchExecution=@()
 $allWorkbenchExecution=@()
@@ -559,7 +559,9 @@ try {
       $materialized=Invoke-FrontendFlightPhase -RunDirectory $OutputDirectory -ProjectRunsRoot (Split-Path -Parent $OutputDirectory) `
         -RepoRoot $frozen.execution_root -Python $Python -RuntimeModule integrations.workflows.single_reflection_flight.runtime `
         -SimionExe $simion -Limits $limits -Phase $workbenchPhase -RuntimeInputArguments $fullRuntimeInputs -Prepared $prepared `
-        -WorkbenchReceiptPath $workbenchReceiptPath -IobVerification ${function:Confirm-InstrumentIobVerification} @continuationArguments
+        -WorkbenchReceiptPath $workbenchReceiptPath -IobVerification ${function:Confirm-InstrumentIobVerification} `
+        -OnProcessCompleted {param($record) Write-FrontendBatchCheckpoint -Record $record -Phase $workbenchPhase -RunDirectory $OutputDirectory `
+          -RunConfig $configPath -WorkbenchReceiptPath $workbenchReceiptPath -DispatchPlanPath (Join-Path $OutputDirectory "results/$workbenchPhase.dispatch_plan.json") -Python $Python -RepoRoot $RepoRoot} @continuationArguments
       $lease=Update-HostResourceStage -Lease $lease -Stage postprocess -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
       $workbench=$materialized|ConvertTo-Json -Depth 100|ConvertFrom-Json -AsHashtable -Depth 100
       $workbenchExecution=@($workbench.batches|Where-Object{-not$_.ContainsKey('continuation_source')}|ForEach-Object{$_.native_workbench_execution})
@@ -604,7 +606,14 @@ try {
           # Baseline post-check is the replay pre-check; only log destinations changed.
           if($specifications.Count){$lease=Update-HostResourceStage -Lease $lease -Stage flight -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0}
           $replay=if($specifications.Count){Invoke-ResourceBudgetedProcesses -DispatchPlanPath (Join-Path $OutputDirectory "results/$workbenchPhase.dispatch_plan.json") `
-            -RunDir $OutputDirectory -UsagePath (Join-Path $phaseDirectory resource_usage.json) -ProcessSpecifications $specifications}else{@{resource_budget_exceeded=$false;processes=@()}}
+            -RunDir $OutputDirectory -UsagePath (Join-Path $phaseDirectory resource_usage.json) -ProcessSpecifications $specifications `
+            -OnProcessCompleted {param($record) Write-FrontendBatchCheckpoint -Record $record -Phase 'default_replay' -RunDirectory $OutputDirectory `
+              -RunConfig $configPath -WorkbenchReceiptPath $workbenchReceiptPath -DispatchPlanPath (Join-Path $OutputDirectory "results/$workbenchPhase.dispatch_plan.json") -Python $Python -RepoRoot $RepoRoot}}else{@{resource_budget_exceeded=$false;processes=@()}}
+          if($replay.resource_budget_exceeded){
+            try{throw 'Saved-default replay exceeded the resource budget; writer completion is unconfirmed.'}catch{
+              $_.Exception.Data['simion_wave_writer_completion_confirmed']=$false;throw
+            }
+          }
           $replayFailed=($replay.resource_budget_exceeded-or@($replay.processes|Where-Object{[int]$_.exit_code-ne0}).Count)
           if(-not$replayFailed-and$specifications.Count){Complete-ResourceUsage -RunDir $OutputDirectory -UsagePath (Join-Path $phaseDirectory resource_usage.json)|Out-Null}
           if($specifications.Count){$lease=Update-HostResourceStage -Lease $lease -Stage postprocess -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0}
@@ -665,7 +674,20 @@ try {
   }
   if($Fly){Write-NativeExecutionEvidence -Records $flightExecution -Path $flightEvidencePath}
   $okay=$true
+} catch {
+  $failure=$_
+  $data=$failure.Exception.Data
+  $writerUnknown=([bool]$data['simion_first_batch_writer_unknown']-or[bool]$data['simion_first_batch_drain_error']-or
+    ($data.Contains('simion_wave_writer_completion_confirmed')-and-not[bool]$data['simion_wave_writer_completion_confirmed']))
+  if($writerUnknown){
+    try{Write-RunJson -Path (Join-Path $resultDirectory 'writer_completion_unknown.json') -Value @{
+      schema_version=1;role='writer_completion_unknown';status='unknown';reason=$failure.Exception.Message
+      drain_error=[string]$data['simion_first_batch_drain_error'];wave_drain_error=[string]$data['simion_wave_drain_error']
+    }}catch{$failure.Exception.Data['writer_unknown_result_error']=[string]$_}
+  }
+  throw $failure
 } finally {
+  if(-not$writerUnknown){
   # The caller still owns terminal publication. Bind actual evidence on both
   # success and failure, then release both public sessions even if binding fails.
   try {
@@ -750,6 +772,7 @@ try {
         }
       }
     }
+  }
   }
 }
 if($Fly){

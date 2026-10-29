@@ -8,6 +8,10 @@ Paper 1 专用研究准备API的归属与退出条件见[分析说明](../analys
 
 ## 当前状态
 
+径向紧凑化及结构Candidate的公共owner Result保留在项目scratch的`workflow_results/<run_id>/result.json`；
+原入口的finalization-only恢复使用该Result与run内冻结request，不重飞或改变父运行的科学终态。
+显式PA交接Result仍由调用者指定。该软件接线不构成新求解或Formal验收。
+
 本项目当前生命周期、capability与Formal asset状态为`formal`，限于原子发布的524 Da、+1设计：
 双级环栈反射镜（10+5环），初始能量`5±0.4 eV`。Formal坐标以检测器有效面中心和精确一阶时间焦点
 为`z=0`，`+z`从加速器指向反射器；SIMION局部PA通过IOB变换映射到同一坐标。
@@ -311,6 +315,13 @@ frozen worker 内分析，未登记孤立的 native operation／release；父输
 截图依赖的 GUI 复验；原 GUI r3 保持 failed／未验收，不留作本轮后续任务。其私有 PA 经用户精确批准后
 由[原 owner 退役][radial-gui-retirement]，保留全部小证据与重建输入；保留 IOB 须重建 PA 后才能再用。
 命令行通过不代替截图与四实例实际检查，不授予新的 GUI 等价或 Formal 资格；跨版本恢复校验未降低。
+
+径向完整批恢复区分只在Fly后使用的公共峰指标、求解器日志诊断和径向分析模块；
+单次Fly的日志分析、CSV及峰指标发布已从混合driver移入径向分析模块。它们变化时重做分析，保留已封存完整Fly单元；
+科学输入、SIMION、Python和其余执行源码身份仍须匹配，新运行记录自身context并引用前驱收据。
+当前driver同时负责物理执行和分析，其任何代码变化仍使旧driver的恢复被拒绝；不能把这两项模块的
+豁免推广到混合职责源码，也不能宣称全部场／飞行／分析依赖已拆分。上述接线为软件行为回归，
+不追认不同driver的历史结果可恢复或授予新的原生资格。
 
 ## 已知兼容边界
 

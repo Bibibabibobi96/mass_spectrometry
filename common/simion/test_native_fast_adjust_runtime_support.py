@@ -199,6 +199,24 @@ $knownCallback={param($ArgumentList,$OperationId)
     stdout_drained=$true;stderr_drained=$true}}
 }
 Run-Fixture 'callback-known' (Join-Path $Root 'known') 'known' $true $knownCallback
+$powershellCallback={param($ArgumentList,$OperationId)
+ $out=Join-Path $Root 'native.stdout';$err=Join-Path $Root 'native.stderr'
+ $worker=Start-Process -FilePath (Get-Process -Id $PID).Path -WindowStyle Hidden -PassThru `
+  -ArgumentList (@('-NoProfile','-File',$Shim)+$ArgumentList) -RedirectStandardOutput $out -RedirectStandardError $err
+ $started=$worker.StartTime.ToUniversalTime().Ticks
+ $worker.WaitForExit()
+ $completion=@{role='powershell_process_completion';process_id=[int]$worker.Id;process_started_at_utc_ticks=[long]$started;
+  exit_confirmed=$worker.HasExited;returncode=[int]$worker.ExitCode;stdout_drained=$true;stderr_drained=$true}
+ if($script:badIdentity){$completion.process_started_at_utc_ticks++}
+ return @{observation=@{exit_confirmed=$worker.HasExited;returncode=[int]$worker.ExitCode;
+  process_id=[int]$worker.Id;process_started_at_utc_ticks=[long]$started};managed_process_completion=$completion}
+}
+$script:badIdentity=$false
+Run-Fixture 'powershell-known' (Join-Path $Root 'ps-known') 'ps-known' $true $powershellCallback
+$script:badIdentity=$true
+Run-Fixture 'powershell-wrong-identity' (Join-Path $Root 'ps-wrong') 'ps-wrong' $true $powershellCallback
+# No live writer remains in this deliberately rejected fixture.
+Remove-ShortPaCopy -Path (Join-Path $Root 'ps-wrong/ps-wrong.pa#')
 $unknownCallback={param($ArgumentList,$OperationId)
  &$Shim @ArgumentList
  return @{observation=@{exit_confirmed=$true;returncode=[int]$LASTEXITCODE};
@@ -226,7 +244,8 @@ $report.ToArray()|ConvertTo-Json -Depth 12|Set-Content -LiteralPath (Join-Path $
                 self.assertEqual([r["observation"] for r in rows[label]["operations"]],
                                  [{"exit_confirmed": True, "returncode": 0}] * 2)
             for label, row in rows.items():
-                if label in {"first", "second", "native-failure", "callback-known", "callback-unknown", "unknown-protection"}:
+                if label in {"first", "second", "native-failure", "callback-known", "callback-unknown", "unknown-protection",
+                             "powershell-known", "powershell-wrong-identity"}:
                     continue
                 self.assertEqual(row["status"], "rejected", row)
                 self.assertEqual(row["operations"], [])
@@ -235,6 +254,10 @@ $report.ToArray()|ConvertTo-Json -Depth 12|Set-Content -LiteralPath (Join-Path $
             self.assertEqual(rows["native-failure"]["operations"][-1]["observation"],
                              {"exit_confirmed": True, "returncode": 9})
             self.assertEqual(rows["callback-unknown"]["status"], "rejected")
+            self.assertEqual(rows["powershell-known"]["status"], "pass", rows["powershell-known"])
+            self.assertEqual(len(rows["powershell-known"]["operations"]), 2)
+            self.assertEqual(rows["powershell-wrong-identity"]["status"], "rejected")
+            self.assertEqual(len(rows["powershell-wrong-identity"]["operations"]), 1)
             self.assertEqual(len(rows["callback-unknown"]["operations"]), 1)
             self.assertEqual(rows["unknown-protection"], {"label": "unknown-protection",
                 "raw_exists": True, "source_guard_count": 1, "response_created": False})

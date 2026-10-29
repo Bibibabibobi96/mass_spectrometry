@@ -16,7 +16,9 @@ from common.contracts.machine_contracts import load_json, sha256
 from common.contracts.recorded_file_removal import write_json_atomic
 from common.contracts.write_run_manifest import (
     TERMINAL_JOURNAL_NAME,
+    TERMINAL_LOCK_NAME,
     build_run_manifest,
+    publish_run_manifest,
     publish_terminal_state,
     replay_terminal_publication,
 )
@@ -50,7 +52,8 @@ def _output_files(run_root: Path) -> list[Path]:
     return sorted(
         path
         for path in run_root.rglob("*")
-        if path.is_file() and path not in excluded and not path.is_relative_to(run_root / "inputs")
+        if path.is_file() and path.name not in {TERMINAL_LOCK_NAME, TERMINAL_JOURNAL_NAME}
+        and path not in excluded and not path.is_relative_to(run_root / "inputs")
     )
 
 
@@ -75,18 +78,19 @@ def _write_manifest(
     if "campaign_binding" in config:
         extras["campaign_binding"] = config["campaign_binding"]
     virtual = {run_root / "summary.json": summary} if summary is not None else None
-    manifest = build_run_manifest(
+    publisher = publish_run_manifest if summary is None else build_run_manifest
+    arguments = dict(
+        actual_root=run_root, recorded_root=recorded_root, virtual_documents=virtual,
+        extra_fields=extras, allow_missing_inputs=True,
+    )
+    if summary is None:
+        arguments["allow_provisional"] = True
+    manifest = publisher(
         config_path,
         status,
         output_paths=_output_files(run_root) if output_paths is None else output_paths,
-        actual_root=run_root,
-        recorded_root=recorded_root,
-        virtual_documents=virtual,
-        extra_fields=extras,
-        allow_missing_inputs=True,
+        **arguments,
     )
-    if summary is None:
-        write_json_atomic(run_root / "run_manifest.json", manifest)
     return manifest
 
 
@@ -322,7 +326,7 @@ def finalize_candidate_run(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     run_root = run_root.resolve()
     if (run_root / TERMINAL_JOURNAL_NAME).is_file():
-        return replay_terminal_publication(run_root)
+        return replay_terminal_publication(run_root, allow_provisional=True)
     if status not in TERMINAL_STATUSES:
         raise ValueError(f"unsupported candidate terminal status: {status}")
     config = load_json(run_root / "run_config.json")
@@ -342,4 +346,4 @@ def finalize_candidate_run(
     if not publish:
         return summary, {}
     manifest = _write_manifest(run_root, status, summary=summary)
-    return publish_terminal_state(run_root, summary, manifest)
+    return publish_terminal_state(run_root, summary, manifest, allow_provisional=True)
