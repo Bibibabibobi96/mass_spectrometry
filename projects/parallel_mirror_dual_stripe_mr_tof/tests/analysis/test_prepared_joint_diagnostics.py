@@ -18,13 +18,73 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_sou
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight import main, merge_measured_event_logs
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_diagnostics import (
-    _design_reference, _prism_rows, _prism_statistics, _snapshot_rows, analyze_prepared_joint_flight,
+    _design_reference, _prism_rows, _prism_statistics, _save_figure, _snapshot_rows, analyze_prepared_joint_flight,
     _trajectory_lifetimes, _validate_birth_clock_projection, build_prism_figure,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis import test_measured_component_source as fixtures
 
 
 class PreparedJointDiagnosticsTests(unittest.TestCase):
+    def test_figure_export_preserves_names_dpi_records_and_closes(self) -> None:
+        from matplotlib import pyplot as plt
+        from PIL import Image
+        from xml.etree import ElementTree
+
+        figure, axis = plt.subplots(figsize=(2, 1))
+        self.addCleanup(plt.close, figure)
+        axis.plot([0, 1], [1, 0])
+        metadata = {"schema_version": 1, "counts": {"mother": 3}}
+        _save_figure(figure, self.root / "diagnostic.v1", metadata)
+        with Image.open(self.root / "diagnostic.png") as image:
+            self.assertEqual(image.format, "PNG")
+            self.assertEqual(image.size, (360, 180))
+            self.assertEqual(image.getpixel((0, 0)), (255, 255, 255, 255))
+        svg = ElementTree.parse(self.root / "diagnostic.svg").getroot()
+        self.assertEqual((svg.attrib["width"], svg.attrib["height"]), ("144pt", "72pt"))
+        actual = json.loads((self.root / "diagnostic.metadata.json").read_text())
+        self.assertEqual(actual, dict(metadata, figure_role="diagnostic.v1", figure_size_inches=[2, 1],
+                                     dpi=180, outputs={ext: file_record(self.root / f"diagnostic.{ext}")
+                                                       for ext in ("png", "svg")}))
+        self.assertFalse(plt.fignum_exists(figure.number))
+
+    def test_figure_export_failure_preserves_existing_files_and_closes(self) -> None:
+        from matplotlib import pyplot as plt
+
+        for failure in ("collision", "render", "metadata"):
+            with self.subTest(failure=failure):
+                directory = self.root / failure
+                directory.mkdir()
+                target = directory / "figure"
+                figure, _ = plt.subplots(figsize=(2, 1))
+                self.addCleanup(plt.close, figure)
+                if failure == "collision":
+                    protected = target.with_suffix(".svg")
+                    protected.write_bytes(b"existing figure")
+                    with self.assertRaises(FileExistsError):
+                        _save_figure(figure, target, {})
+                    self.assertEqual(protected.read_bytes(), b"existing figure")
+                    self.assertFalse(target.with_suffix(".png").exists())
+                elif failure == "render":
+                    original = figure.savefig
+
+                    def fail_svg(stream, **kwargs):
+                        if kwargs.get("format") == "svg" or str(stream).endswith(".svg"):
+                            raise OSError("render failure")
+                        return original(stream, **kwargs)
+
+                    with patch.object(figure, "savefig", side_effect=fail_svg), \
+                         self.assertRaisesRegex(OSError, "render failure"):
+                        _save_figure(figure, target, {})
+                    self.assertEqual(list(directory.iterdir()), [])
+                else:
+                    with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_diagnostics._write",
+                               side_effect=OSError("metadata failure")), \
+                         self.assertRaisesRegex(OSError, "metadata failure"):
+                        _save_figure(figure, target, {})
+                    self.assertEqual({path.suffix for path in directory.iterdir()}, {".png", ".svg"})
+                self.assertFalse(target.with_suffix(".metadata.json").exists())
+                self.assertFalse(plt.fignum_exists(figure.number))
+
     def setUp(self) -> None:
         self.fixture = fixtures.MeasuredComponentSourceTests("test_irregular_ids_birth_offsets_and_exact_six_dimensions")
         self.fixture.setUp()

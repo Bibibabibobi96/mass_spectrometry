@@ -29,6 +29,54 @@ def _state(pid: int, time: float, event: str, reason: str, z: float) -> dict:
 
 
 class LocalPrismDiagnosticsTests(unittest.TestCase):
+    def test_figure_export_preserves_names_dpi_and_closes(self) -> None:
+        from matplotlib import pyplot as plt
+        from PIL import Image
+        from xml.etree import ElementTree
+
+        figure, axis = plt.subplots(figsize=(2, 1))
+        self.addCleanup(plt.close, figure)
+        axis.plot([0, 1], [1, 0])
+        diagnostics._save_figure(figure, self.run / "local.v1")
+        with Image.open(self.run / "local.png") as image:
+            self.assertEqual(image.format, "PNG")
+            self.assertEqual(image.size, (400, 200))
+            self.assertEqual(image.getpixel((0, 0)), (255, 255, 255, 255))
+        svg = ElementTree.parse(self.run / "local.svg").getroot()
+        self.assertEqual((svg.attrib["width"], svg.attrib["height"]), ("144pt", "72pt"))
+        self.assertFalse(plt.fignum_exists(figure.number))
+
+    def test_figure_export_failure_preserves_existing_files_and_closes(self) -> None:
+        from matplotlib import pyplot as plt
+
+        for collision in (True, False):
+            with self.subTest(collision=collision):
+                directory = self.run / str(collision)
+                directory.mkdir()
+                target = directory / "figure"
+                figure, _ = plt.subplots(figsize=(2, 1))
+                self.addCleanup(plt.close, figure)
+                if collision:
+                    protected = target.with_suffix(".svg")
+                    protected.write_bytes(b"existing figure")
+                    with self.assertRaises(FileExistsError):
+                        diagnostics._save_figure(figure, target)
+                    self.assertEqual(protected.read_bytes(), b"existing figure")
+                    self.assertFalse(target.with_suffix(".png").exists())
+                else:
+                    original = figure.savefig
+
+                    def fail_svg(stream, **kwargs):
+                        if kwargs["format"] == "svg":
+                            raise OSError("render failure")
+                        return original(stream, **kwargs)
+
+                    with patch.object(figure, "savefig", side_effect=fail_svg), \
+                         self.assertRaisesRegex(OSError, "render failure"):
+                        diagnostics._save_figure(figure, target)
+                    self.assertEqual(list(directory.iterdir()), [])
+                self.assertFalse(plt.fignum_exists(figure.number))
+
     def test_table_snapshot_reads_once_and_preserves_raw_byte_provenance(self) -> None:
         import hashlib
 

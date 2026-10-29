@@ -14,6 +14,7 @@ from typing import Any
 
 import numpy as np
 
+from common.analysis.figure_export import export_figures
 from common.analysis.population_moments import population_pair_moments
 
 from common.contracts.file_identity import file_sha256
@@ -333,9 +334,10 @@ def _energy_drift_rows(cases: list[dict[str, Any]], mass_u: float, charge_state:
 def _save_figure(figure: Any, path: Path) -> None:
     from matplotlib import pyplot as plt
 
-    for extension in ("png", "svg"):
-        figure.savefig(path.with_suffix(f".{extension}"), format=extension, dpi=200, facecolor="white")
-    plt.close(figure)
+    try:
+        export_figures({path.with_suffix(""): figure}, formats=("png", "svg"), dpi=200, facecolor="white")
+    finally:
+        plt.close(figure)
 
 
 def compute_longitudinal_chirp(rows: list[dict[str, Any]]) -> dict[str, Any]:

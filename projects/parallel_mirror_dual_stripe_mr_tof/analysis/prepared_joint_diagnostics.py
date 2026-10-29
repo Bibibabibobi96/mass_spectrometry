@@ -20,6 +20,7 @@ matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 from matplotlib.patches import Rectangle
 
+from common.analysis.figure_export import export_figures
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record
@@ -348,14 +349,13 @@ def _record_birth_clock_projection(output: Path, lifetimes: dict, authority: dic
 
 
 def _save_figure(figure, path: Path, metadata: dict) -> None:
-    outputs = {}
-    for extension in ("png", "svg"):
-        target = path.with_suffix("."+extension)
-        figure.savefig(target, dpi=180, facecolor="white")
-        outputs[extension] = file_record(target)
-    _write(path.with_suffix(".metadata.json"), dict(metadata, figure_role=path.name,
-           figure_size_inches=list(figure.get_size_inches()), dpi=180, outputs=outputs))
-    plt.close(figure)
+    try:
+        records = export_figures({path.with_suffix(""): figure}, formats=("png", "svg"), dpi=180, facecolor="white")
+        outputs = {record["format"]: file_record(Path(record["path"])) for record in records}
+        _write(path.with_suffix(".metadata.json"), dict(metadata, figure_role=path.name,
+               figure_size_inches=list(figure.get_size_inches()), dpi=180, outputs=outputs))
+    finally:
+        plt.close(figure)
 
 
 def build_prism_figure(rows: list[dict], mother_count: int, design: dict):
