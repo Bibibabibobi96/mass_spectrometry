@@ -520,13 +520,14 @@ function Wait-HostResourceProcess {
 
 function Exit-HostResourceStage {
   [CmdletBinding()]
-  param([Parameter(Mandatory)]$Lease)
+  param([Parameter(Mandatory)]$Lease, [switch]$PassThru)
   try {
     if (-not $Lease.inherited) {
       $request=@{operation='release';token=$Lease.token}
       if($Lease.completed_work_processes.Count-gt0){$request.completed_work_processes=@($Lease.completed_work_processes)}
       $result = Invoke-HostResourceTransaction -StatePath $Lease.state_path -Request $request
       Write-Host "HOST_RESOURCE=RELEASE ROLE=$($Lease.role) STAGE=$($Lease.stage) STATUS=$($result.status)"
+      if ($PassThru) { return $result }
     }
   } finally {
     if ($Lease.environment_set) {

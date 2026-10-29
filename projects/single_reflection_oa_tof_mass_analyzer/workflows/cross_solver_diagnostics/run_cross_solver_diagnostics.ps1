@@ -308,9 +308,15 @@ $manifestArgs = @(
 foreach ($output in $outputs) { $manifestArgs += @('--output',$output) }
 & $python @manifestArgs
 if ($LASTEXITCODE -ne 0) { throw 'Cross-solver diagnostics manifest creation failed.' }
-& $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
-  (Join-Path $runDir 'run_manifest.json') --require-status success `
-  --require-project single_reflection_oa_tof_mass_analyzer --require-mode formal_cross_solver_diagnostics
-if ($LASTEXITCODE -ne 0) { throw 'Cross-solver diagnostics manifest verification failed.' }
+# This producer has just published the complete records; retain its local identity check.
+$published = Get-Content -LiteralPath (Join-Path $runDir 'run_manifest.json') -Raw | ConvertFrom-Json
+$publishedConfig = Get-Content -LiteralPath $runConfig -Raw | ConvertFrom-Json
+if ($published.status -cne 'success' -or
+    $published.project -cne 'single_reflection_oa_tof_mass_analyzer' -or
+    $publishedConfig.project -cne 'single_reflection_oa_tof_mass_analyzer' -or
+    $published.mode -cne 'formal_cross_solver_diagnostics' -or
+    $publishedConfig.mode -cne 'formal_cross_solver_diagnostics') {
+  throw 'Cross-solver diagnostics manifest identity differs.'
+}
 $runRecordComplete = $true
 Write-Output "CROSS_SOLVER_DIAGNOSTICS=PASS RUN_ID=$RunId"

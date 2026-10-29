@@ -283,12 +283,18 @@ def _verify_generation_file(
     *,
     role: str,
     inventory_is_verified: bool,
+    verify_payload: bool,
 ) -> dict[str, Any]:
     name = str(expected["name"])
     manifest_record = manifest_records.get(name.lower())
     if manifest_record != dict(expected):
         raise StandalonePaResponseSetError(f"{role} is not exactly covered by manifest")
     if inventory_is_verified:
+        return manifest_record
+    if not verify_payload:
+        path = root / name
+        if not path.is_file() or path.stat().st_size != expected["bytes"]:
+            raise StandalonePaResponseSetError(f"{role} file or byte length differs from receipt")
         return manifest_record
     try:
         verify_immutable_payload_record(root, expected)
@@ -305,8 +311,13 @@ def validate_standalone_pa_response_set(
     expected_response_ids: Sequence[int] | None = None,
     expected_policy_id: str = POLICY_ID,
     inventory_is_verified: bool = False,
+    verify_payload: bool = True,
 ) -> tuple[StandalonePaRecord, ...]:
-    """Validate a published response receipt and return standalone records only."""
+    """Validate the receipt; optionally defer PA bytes to a guarded materializer.
+
+    Metadata selection still verifies the small receipt's own manifest identity.
+    It does not establish that the selected PA payload is safe to consume.
+    """
 
     root = Path(generation_directory)
     if not root.is_dir():
@@ -335,7 +346,8 @@ def validate_standalone_pa_response_set(
     if (
         not isinstance(receipt, dict)
         or set(receipt) != {"schema_version", "role", "policy_id", "exporter", "responses"}
-        or receipt["schema_version"] != SCHEMA_VERSION
+        or type(receipt["schema_version"]) is not int
+        or receipt["schema_version"] not in (1, SCHEMA_VERSION)
         or receipt["role"] != ROLE
         or receipt["policy_id"] != expected_policy_id
     ):
@@ -357,6 +369,8 @@ def validate_standalone_pa_response_set(
             raise StandalonePaResponseSetError("standalone response entry fields differ")
         source = _receipt_record(value["source"], role="native response source")
         retained_source = records.get(source["name"].lower())
+        if receipt["schema_version"] == 1 and retained_source is None:
+            raise StandalonePaResponseSetError("v1 native response source is not exactly covered by manifest")
         if retained_source is not None and retained_source != source:
             raise StandalonePaResponseSetError("retained native response source identity differs from receipt")
         standalone = _receipt_record(
@@ -383,15 +397,21 @@ def validate_standalone_pa_response_set(
     if expected_ids != tuple(export.response_id for export in normalized_exports):
         raise StandalonePaResponseSetError("standalone response ids differ from expected set")
 
-    for export, (_, standalone) in zip(
+    for export, (source, standalone) in zip(
         normalized_exports, normalized_receipt_records, strict=True
     ):
+        if receipt["schema_version"] == 1:
+            _verify_generation_file(
+                root, records, source, role=f"native response source {export.response_id}",
+                inventory_is_verified=inventory_is_verified, verify_payload=verify_payload,
+            )
         verified = _verify_generation_file(
             root,
             records,
             standalone,
             role=f"standalone response {export.response_id}",
             inventory_is_verified=inventory_is_verified,
+            verify_payload=verify_payload,
         )
         selected.append(
             StandalonePaRecord(
@@ -411,6 +431,7 @@ def select_standalone_pa_records(
     *,
     expected_response_ids: Sequence[int] | None = None,
     expected_policy_id: str = POLICY_ID,
+    verify_payload: bool = True,
 ) -> tuple[StandalonePaRecord, ...]:
     """Return only validated standalone ``.pa`` files for runtime copying."""
 
@@ -420,6 +441,7 @@ def select_standalone_pa_records(
         receipt_name,
         expected_response_ids=expected_response_ids,
         expected_policy_id=expected_policy_id,
+        verify_payload=verify_payload,
     )
     if any(
         not record.name.lower().endswith(".pa")

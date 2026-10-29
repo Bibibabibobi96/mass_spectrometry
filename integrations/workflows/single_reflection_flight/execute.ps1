@@ -204,8 +204,11 @@ function Initialize-InstrumentIobPaCopies {
     if(-not(Test-Path -LiteralPath $destination -PathType Leaf)){
       $null=New-ShortPaCopy -Source ([string]$source.path) -Destination $destination `
         -ExpectedBytes ([long]$source.bytes) -ExpectedSha256 ([string]$source.sha256) -GuardDestinationReadOnly
-      try {$null=Publish-ShortPaCopyDestination -Path $destination}
+      try {$null=Publish-ShortPaCopyDestination -Path $destination -KeepDestinationGuard}
       catch {Remove-ShortPaCopy -Path $destination;throw}
+      # Track the transferred owner before any later capacity update can fail.
+      $paGuards.Add($destination)
+      $null=Protect-ImmutablePaSource -Source $destination -ExpectedBytes ([long]$source.bytes) -ExpectedSha256 ([string]$source.sha256)
       $updated=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $capacity `
         -RemainingCommittedNewBytes ([long]$capacity.committed_new_bytes-[long]$source.bytes)
       $script:capacity=$updated.session

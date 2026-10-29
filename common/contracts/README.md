@@ -58,6 +58,78 @@ writer与verifier共用保留策略入口，独立消费时仍重新验证完整
 冻结执行快照中的公共IOB占位模板属于必需输入，所有已引用槽位均须保留；该分类不适用于运行目录中
 同名的普通求解PA。它们的来源与用途见[模板说明](../simion/assets/iob_instance_seeds/README.md)。
 
+### Python工作流的公共生命周期owner
+
+`run_artifact_workflow.ps1 -RequestPath <request> -ResultPath <result>`是项目CLI调用的内部adapter，
+供OA径向压缩与候选设计共用。项目负责纯计划、预算来源、科学状态和源码闭包；公共owner只组合现有
+容量session、`New-RunPackage`、retention、manifest journal和容量收尾，不按科学mode分支，也不在
+整段prepared调用外持light主机token。各实际heavy操作继续使用原资源入口。
+owner从live公共`Resolve-HostResourceStatePath`取得实际控制面路径（保留既有显式覆盖），通过
+`MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH`传给prepared及其冻结worker，避免默认路径随code_root
+漂移。实际路径只记在执行context，不添加到科学输入，也不因此创建或申请第二资源账本。
+
+请求为schema 1、role `run_artifact_workflow_request`，固定包含`repository_root`、`python_executable`、
+`package`、`capacity`、`prepared`和不透明科学`payload`。`package`声明project/run_id/mode、
+`artifact_project_root`、software、retention_class/reason；`capacity`声明非负整数committed_new_bytes、
+非空commitment_inputs文件身份、protected_paths/protected_cache_keys；`prepared`声明module、固定function
+`execute_prepared_run`、import_root和entrypoint文件身份。所有文件身份复用`file_record`的
+`path/exists/bytes/sha256`，必须存在且内容一致。缺少预算来源不能用零或默认物理尺寸补齐。
+
+owner只创建一个容量session，冻结请求为`inputs/execution_request.json`并绑定初始checkpoint输入，
+将session运输快照写入`logs/capacity_session.json`。项目prepared固定接收四个路径：
+`run_config_path, capacity_session_path, execution_request_path, completion_path`；后者固定为
+`results/execution_completion.json`。prepared冻结科学输入和既有source closure，在该闭包中执行，
+只能扩展科学输入/参数，不能改公共retention或capacity生命周期。运输快照不是第二账本；全workflow保留
+初始冷缓存峰值承诺，各builder只续期或扩大同一session保护范围，不用旧快照缩减承诺。
+
+completion为schema 1、role `run_artifact_workflow_completion`，包含run_id/project、execution_request
+和run_config文件身份、项目决定的status/summary、output_paths、required_output_paths、
+retention_preserve_paths、manifest_extra_fields、writer_completion与原exception。项目不自行发布终态。
+`writer_completion.operations`只列实际启动的写操作，每项有唯一operation_id、真实
+`observation {exit_confirmed, returncode}`和resource_release_id；resource_releases以唯一release_id
+绑定实际公共资源owner的完整completion_receipt。一个pool release可以供多个操作引用。Python bridge
+事实与直接PS owner字段按其真实来源保留，不能为直接PS补造bridge字段。unknown、inherited、重复身份、
+冲突或未闭合引用均拒绝封存；单独exit0、任意writers_stopped布尔值或全pool释放不替代局部写进程证明。
+
+owner还须独立确认实际prepared worker已退出且日志停止写入；Windows启动器shim退出不是这一事实。
+全部完成证据通过后才由公共owner给最终summary加`writers_stopped=true`。required_output_paths在保留前后
+都必须存在；它不自动获得保留豁免。retention_preserve_paths仅透传既有retention API，由原边界检查
+run-local路径、类别和completed恢复日志。被保留策略移除的可选输出必须有对应receipt，不接受无解释消失。
+
+终态journal完成后，compact沿`finalize-ready`再释放session；solver_review/qualification先把同session
+承诺置零并释放，再沿原owner/reason调用`seal-stopped-payload`，因为该入口拒绝任何活动保护。释放后
+不得再向run追加日志、summary或usage；seal失败留下writing登记和已发布科学终态，交原owner恢复。
+成功封存的实际返回收据保存在run外ResultPath的`stopped_payload_receipt`，供显式生产者交接使用；
+不重建账本快照、不重复调用封存，也不向已封存run补写收据。compact结果不含此字段。
+未知writer保留checkpoint/writing和原容量保护，不续活过期lease、不后台无限延长；错误与收尾状态写在
+run外的ResultPath中，避免封存后改变已登记字节。生命周期错误不能覆盖原科学异常或改写已有科学终态。
+
+Result的`elapsed_seconds`与`timing`使用同一单调时钟，覆盖本次owner调用到写出结果之前的实际阶段，
+同名阶段再次进入时累计；失败阶段包含本次异常收尾，恢复调用另计，不继承上一轮耗时。
+`prepared`包含实际worker的准备、求解和分析等待，不能当作纯compute；更细时间须查该worker的原生
+日志／阶段记录。未经过的阶段不填零，最终结果序列化及外层PowerShell启动不计入该范围。
+`last_completed_stage`只在进入下一阶段时更新；失败时`resume_action=resume_finalization`表示已确认
+writer完成、可按下述同owner接口继续收尾，`inspect_writer_completion`表示先核实未知writer，
+`correct_request_and_use_new_run`表示尚未启动prepared时修正输入并使用新run；这些提示不授予绕过恢复校验的权限。
+
+收尾失败后，由同一内部adapter使用`-ResumeFinalization -RequestPath <run>/inputs/execution_request.json`
+和`-ResultPath <稳定的run外结果路径>`恢复。首次恢复不依赖项目调用方已清理的临时ResultPath；应明确选择
+一个可保留的稳定路径。冻结request可从终态前checkpoint的`run_config.json`之`inputs.execution_request`，
+或checkpoint manifest的同名输入记录定位。此后若恢复再次失败，必须复用这一个稳定ResultPath直到收尾完成，
+再清理该运输文件，以保留已创建恢复session的身份。它重验冻结request/config/completion、实际worker等待证据和资源释放事实，
+不再导入prepared、复制科学输入或启动原生工具，也不要求旧的live计划/预算来源仍与当前版本相同。
+retention receipt绑定这些小型恢复输入及原session快照：无receipt时由原保留owner形成计划；pending只续
+原计划及最多一个unlink后进度写入间隙，不重新扫描扩删；complete核验后原字节复用。
+`preflight_pending`属于原中断run清理owner，不能据此猜出本工作流的第二份计划。终态journal存在时
+只调用原journal重放；已有终态先完整比对当前文件与原manifest，summary/manifest不得重建时间戳。
+
+原lease有效时仍续同一session。若它已过期或缺失且仍需写收尾JSON，先用既有`register-writing`按当前
+文件元数据登记精确run驻留字节，再通过原公共入口申请全新收尾session，保护run和原依赖；不复活旧lease，
+不再申请科学冷峰值。新承诺取公共policy的`light_evidence_budget_bytes`，仅用于收尾元数据的新写入，
+不是重载荷轻量资格豁免。retention与publisher在原子写前限制同一run的合计驻留/临时峰值不超过登记基线
+加该承诺。新session只原子记录到上述稳定的run外ResultPath，原session快照不改；重试复用此恢复session。
+已完整发布且仅需账本finalize/seal时无需新run写租约，仍服从原生命周期owner的实时保护检查。
+
 ### 文件身份与读取
 
 `strict_json.py`提供机器JSON的公共表示检查：`load_json_object`读取UTF-8（可带BOM）对象，
@@ -109,6 +181,10 @@ producer关闭载荷后，writer CLI计算全部身份并检查保留合同，�
 原子写入后读回小型manifest与内存记录完整比对，公共发布器不再另起verifier重复全文读取同批载荷。
 这是同次发布的工作复用，不是跨消费边界缓存。`build_run_manifest`纯构建API仍可记录缺失输出，
 供虚拟文档/失败证据构建；它本身不提供CLI的完整发布保证。
+MR原生场provider、IP私有GUI准备和oaTOF跨求解器诊断在同次完整公共发布后只读取小型manifest，
+保留各自原有的status以及适用的project／mode约束；后两项同时核对run config，比较保持大小写敏感。
+这三处不再另起全文verifier。私有build-plus-write publisher、发布后路径变换和独立下游消费的验证仍保留；
+不能仅因上游调用过writer就跨越这些不同边界复用本次发布证明。
 `verify_run_manifest.py`作为独立消费入口仍默认复核run config、全部输入、全部输出和适用的保留合同。已经冻结的
 历史run若有不再被下游读取的大型记录丢失或损坏，下游可用具名`--consumer-projection-id`，并逐项提供
 `--consumed-input NAME PATH`／`--consumed-output PATH`；入口仍复核manifest状态、run config、项目／模式等
@@ -200,6 +276,9 @@ artifact布局检查接受该精确台账文件并复用台账校验器；租约
 公共租约按解析后的路径身份比较保护范围，保留父／子覆盖和未创建子路径的保护；不改写已有租约路径表示或key保护。
 公共PA布局检查复用owner的只读事务校验入口，接受严格事务元数据及具名key锁；未完成的非空payload、
 build-scratch或未知文件仍不能作为干净缓存布局通过，不调用会修改台账的maintenance审计。
+已发布代的XOR恢复树也由原cache owner验证身份；布局层只按其已验证记录检查精确目录／文件集合，
+拒绝多余内容与reparse。默认不读取PA或大parity载荷，显式deep对当前代执行一次完整校验；
+其他恢复代只验证owner元数据，不重复扫描旧PA。
 
 维护的容量判据与startup一致：`resident_bytes + committed_new_bytes <= target_bytes`，并满足
 `free_bytes >= minimum_free_bytes + committed_new_bytes`。apply结束时重新读取承诺，不能以规划时的旧租约
@@ -212,8 +291,9 @@ build-scratch或未知文件仍不能作为干净缓存布局通过，不调用�
 pending、损坏收据和目标专属收据的身份/目标冲突仍失败关闭；摘要只编码路径，不读取 PA 载荷。
 
 容量达标与生命周期闭合是不同判据。`satisfied=true`只表示本次容量判据通过，不表示所有历史`writing`
-已恢复、所有缓存已有退休入口或工作区外部范围均已实时计量。当前仍需补齐的闭环是：由既有run/PA/review
-owner入口根据真实证据产生可重放的收尾决定，由同一maintenance消费；文字`recovery_task`不是可执行规则。
+已恢复、所有缓存已有退休入口或工作区外部范围均已实时计量。历史对象的闭合须由既有run/PA/review
+owner根据真实证据产生可重放的收尾决定，再由同一maintenance消费；缺少owner或停写证据时保留占用，
+不将其报告为已闭合。文字`recovery_task`不是可执行规则。
 新增重型产物必须在写入前绑定owner、已注册的收尾能力及有限恢复期限，并在发布前复核，不得靠文档承诺。
 历史checkpoint不自动改写为失败；活动消费者与已封存证据仍须保护。验收须覆盖中断重放、缺owner或处置能力
 拒绝新建、未知路径拒绝准入、单对象失败后继续独立对象，以及保留期到期后的实际处置；仅缩减台账占用
@@ -260,8 +340,12 @@ owner 必须先确认本次写入进程及子进程已结束，并承诺续算�
 同一 owner 的 completed-experiment 退役可用重复 `--selected-heavy-path <run-relative-path>`
 （PowerShell 包装器为 `-SelectedHeavyPaths`）选择原封存 manifest 中非空、唯一的重载荷子集。
 plan/apply 重新核对同一选择及完整保留库存，收据沿用原格式并记录 `selected_heavy_paths`；
-默认仍退役全部重载荷。子集模式不调用 `finalize-ready`，会提示公共容量 reseal 尚待完成；
-owner 随后沿用原 owner、保留理由和 pin，通过上述 `seal-stopped-payload` 登记剩余重载荷。
+默认仍退役全部重载荷。启用容量生命周期的子集模式在同一执行租约内自动调用
+`run_capacity_lifecycle --action reseal-retired-payload --owner <project> --confirm-writing-stopped`，
+从原已封存账本决定取得保留理由，沿同一seal实现登记剩余载荷，保留pin和复核职责。
+它不接受新保留理由；即使总字节未变化，也完整核对退役收据和保留库存。
+删除后容量收尾失败会明确报告pending；恢复只重放上述reseal动作，不重复删除。
+未启用容量生命周期的历史范围不推断新保留决定，仍由原owner显式完成容量交接。
 所有下游引用、活动 consumer 与租约保护保持原判据，子集选择不绕过这些检查。
 
 退役读取配置中的完整`file_record`（`path/exists/bytes/sha256`，可选`source_path`来源说明）时，
@@ -285,6 +369,12 @@ PA cache 的锁、build-lock 与 staging 目录则是可复用 runtime state：P
 
 ### 容量登记、租约与退休
 
+已登记cache目录与role的唯一数据合同为[`artifact_cache_contract.py`](artifact_cache_contract.py)，
+布局检查、历史校准和容量owner共同消费；底层账本不导入布局检查CLI。
+[`gui_source_protection.py`](gui_source_protection.py)统一从current GUI收据投影显式来源保护，
+维护摘要只在单次调用中复用投影，退役决定重新读取当前收据，不保留跨调用缓存。
+该投影不新增保留类别，也不把收据存在解释为GUI验收已完成。
+
 台账只使用三类对象：`light_evidence`保留必要证据，`published_cache`保存公共可复用重型资产，
 `rebuildable_payload`保存可重建载荷。对象状态只使用`writing/ready/retirement_pending/retired`；pin必须说明理由，
 发布缓存必须绑定SHA-256代际。`writing`必须登记`owner/recovery_reason/review_deadline`，可列出消费者；到期后按下文startup规则判断：影响当前输入或使容量不可判定时失败关闭，无关对象保留占用并报告精确路径warning；
@@ -302,13 +392,28 @@ PA cache 的锁、build-lock 与 staging 目录则是可复用 runtime state：P
 共享输入只计一次。调用方不得传裸`KnownMeasuredBytes/MaximumNewArtifactBytes/RequiredHeadroomBytes`，也不得覆盖
 `TargetGiB/MinimumFreeGiB`。
 
+会话建立或提高新增空间承诺时，若结构化startup receipt仅因`TARGET_CAPACITY_EXCEEDED`或
+`MINIMUM_FREE_CAPACITY_UNAVAILABLE`拒绝，会话保留同一owner、输入scope和租约，续期后尝试一次
+既有owner maintenance，再续期并重新执行startup。全部活动承诺只计一次；仍不足时失败关闭，
+不循环维护、不降低水位。直接`Invoke-ArtifactCapacityGate`与startup CLI仍只执行单次判断。
+自动维护先检查台账和当前租约；损坏、缺失、scope不完整或未知承诺直接失败，不从异常文本猜原因。
+每个owner动作及计划删除目标开始前重读租约和scope；过期租约不得续活，不扩大TTL或closure deadline。
+续期位于维护前和重准入前，没有常驻heartbeat；调用方仍须在既有租约有效期和owner保护边界内完成工作。
+
+成功receipt的`pressure_maintenance`保留初始拒绝、维护结果、阶段和耗时；该计时从首次拒绝后开始，
+与单次startup CLI计时分开。失败保留初始原因、后续错误和失败阶段；会话建立失败仍尝试释放容量租约，
+结果写入异常的`capacity_lease_cleanup`。主机租约释放错误以`host_execution_lease_cleanup`附加，
+不能覆盖原容量或CLI错误，也不能继续维护或准入。承诺增长后失败仍保留已登记的较大承诺，按原工作流收尾。
+
 startup只查询磁盘空闲并读取台账、当前租约和全部活动承诺；不遍历artifact、run或缓存，不哈希PA，
 不做历史清理。缺失/损坏台账、当前租约scope不完整、未知承诺、影响当前输入或使容量不可判定的writing复核逾期、
 以及空间不足都明确失败关闭；无关逾期writing只报告warning。
 startup与maintenance均报告总耗时和分段耗时；正常目标为5秒，超过5秒或60秒只发性能warning，不改变安全结论。历史发现只由显式一次性`legacy_capacity_calibration.py --workspace-root <simulation_repo>`
 执行，不能从日常路径隐式触发。它同时登记artifact根、仓库`scratch/`、`generated/`和工作区`scratch/`三个外部
 受管范围；前两项只在校准时计量，工作区`scratch/`若尚未登记则由maintenance做一次范围计量，之后启动仅使用冻结的台账数值。`legacy_capacity_backfill.py`
-只承担历史恢复，不能提供日常准入或容量水位覆盖。
+只承担历史发现与恢复，其Python API和CLI均拒绝日常startup/maintenance，日常收据只能由
+`reconcile_artifact_capacity`执行。旧日常planner、apply分支和账本转发别名已移除；
+对应回归直接验证当前owner，历史发现与收据恢复仍由原入口负责。
 
 CLI的`timing.total_seconds`从入口计时，包含maintenance的全部owner continuation；
 `owner_actions`按动作名完整记录结果，包括`partial_run_retirement`，对应耗时归入`owner.<动作名>`阶段。
@@ -324,6 +429,12 @@ partial-retirement在原容量锁内一次建立run与路径索引，索引引�
 该记录所列完整路径和字节数及已封存的代际/manifest 路径，不重新读取或哈希 PA payload；仅在该元数据不一致
 时才升级为受影响成员的身份诊断。随后复用既有 sealed disposition、处置收据和重放路径；日常启动与维护不扫描
 这些范围，也不会为它们推断 owner、终态或删除资格。
+
+maintenance激活授权时，文档读取、校验、归档或对象激活失败记录到原owner结果的
+`failed_count/failures`，彼此独立的对象继续。重复或重叠授权整组拒绝；原账本consumer连接的目标
+作为同一原子组验证，失败组不贡献任何批准路径，也不留下部分内存修改。
+已完成授权归档复用同一文档身份校验，并核对账本及收据中的完整disposition和owner；
+错误文档与原收据保留不动。账本无效或最终发布失败仍使整个owner动作失败，容量达标不代表授权已全部闭环。
 
 历史仓库 source `scratch/` 的删除只能使用`historical_source_scratch_retirement.py`：它要求
 校准外部范围、owner批准证据及其SHA-256，并在证据中逐项列出规范化的`retirement_targets`直接子范围（文件或目录）。入口拒绝
@@ -359,9 +470,9 @@ maintenance先处理`ready`、未pin且无租约保护的`rebuildable_payload`�
 项目生产调用仍不得覆盖全局准入水位，物理空闲底线和policy文件保持不变。
 
 PowerShell 的 `Invoke-ArtifactCapacityGate` 与 `Enter-ArtifactWorkflowCapacitySession` 必须满足公共
-容量判据；startup 与 maintenance 均失败关闭，不提供容量 warning 放行选项。空间不足时先沿既有
-maintenance 清理机制恢复容量，再重新准入；startup 本身不删除载荷。会话提高新增空间承诺时也须
-重新准入，历史会话中的 warning 字段不能绕过。容量工作耗时的性能 warning 不改变该硬判据，
+容量判据；startup与maintenance均失败关闭，不提供容量warning放行选项。会话按上述受保护压力恢复
+流程处理空间不足；startup本身不删除载荷，历史会话中的warning字段不能绕过重新准入。容量耗时的
+性能warning不改变该硬判据，
 CPU、内存和时间的运行策略由各自既有边界管理，不与容量准入混用。
 
 maintenance 默认只返回聚合 receipt：`resident_bytes`、`free_bytes`、`capacity_gap_bytes`及
@@ -638,9 +749,9 @@ python common/contracts/write_formal_asset_manifest.py `
   --asset formal_results_manifest=results/SHA256SUMS.csv
 ```
 
-结构门禁默认不读取大二进制；正式发布或资产变更后再运行
+结构门禁（包括公共PA缓存）默认只查元数据和大小，不声明载荷内容正确；正式发布或资产变更后再
 从仓库根运行`python -m common.contracts.verify_artifact_layout <artifacts-projects-root> --verify-hashes`
-做完整哈希复核。正式结果本体不复制回
+做完整哈希复核。`--cache-entry`窄消费验证始终核对载荷哈希；它不继承结构预览的浅检查范围。正式结果本体不复制回
 来源run；为便于独立交付，可在结果包保留三份小型来源JSON快照，但它们不能替代原始run或正式清单。
 只复核当前正式发布而不审计旧run命名时使用`--formal-only --repository-root <repository-root>`。
 

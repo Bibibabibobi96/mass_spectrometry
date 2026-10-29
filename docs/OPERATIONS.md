@@ -150,9 +150,14 @@ ledger-only日常startup/maintenance。首次校准或台账失准时，必须�
 .\.venv\Scripts\python.exe -m common.contracts.verify_artifact_layout ..\artifacts\projects
 ```
 
-它检查目录合同、`run_id/archive_id`、三件套和manifest身份；项目 artifact 默认不读取大二进制，
-但已注册的公共 SIMION PA-family cache 会对其当前 generation 的完整 payload 做字节级验证。因此它适合
-每次产物整理后运行，但不放进不具备本机artifacts的GitHub Workflow。命名合同单元测试仍属于轻量门禁。
+它默认检查目录合同、`run_id/archive_id`、三件套、manifest身份和文件类型/大小；公共SIMION缓存也不默认
+读取完整PA。需核对载荷内容时显式增加`--verify-hashes`，该标志同时覆盖公共缓存；metadata通过不代表
+载荷内容已验证。显式`--cache-entry`是冻结输入的消费边界，始终完整核对哈希，不受该默认范围影响。
+因此结构检查适合每次产物整理后运行，但不放进不具备本机artifacts的GitHub Workflow；命名合同单元测试仍属于轻量门禁。
+
+公共根识别既有`execution_aliases`与具名当前`host_resources.sqlite3`：alias沿原owner校验junction目标，
+不递归遍历目标；数据库只检查具名普通文件，不把动态大小当内容身份。历史备份和一次性任务目录
+仍须按其owner受管归档或处置，不能为使结构门禁通过而一并放行。
 
 公共 PA-family generation 是不可变发布介质，不是求解器可写工作目录。原生 family 成员及其物化副本
 不能交给供应商进程；已发布 ordinary standalone PA 的受护直接只读消费与必要独立副本，统一遵循

@@ -14,8 +14,10 @@ from typing import Any, Iterable
 
 if __package__:
     from .recorded_file_removal import remove_recorded_files, write_json_atomic
+    from .file_identity import file_sha256
 else:
     from recorded_file_removal import remove_recorded_files, write_json_atomic
+    from file_identity import file_sha256
 
 POLICY_PATH = Path(__file__).with_name("artifact_retention.json")
 
@@ -252,6 +254,8 @@ def load_run_retention(run_config_path: Path) -> tuple[Path, Retention]:
 def _execute_removals(
     run_dir: Path, retention: Retention, removed: list[dict[str, Any]],
     preserved: list[dict[str, Any]],
+    *, recovery_inputs: list[dict[str, Any]] | None = None,
+    maximum_run_bytes: int | None = None,
 ) -> Path:
     """Publish the exact discard list without reading disposable payload bytes."""
     action_path = run_dir / "retention_actions.json"
@@ -280,14 +284,133 @@ def _execute_removals(
         "removed_file_count": 0, "removed_bytes": 0,
         "removed": removed, "preserved": preserved,
     }
+    if recovery_inputs is not None:
+        action["recovery_inputs"] = recovery_inputs
 
-    write_json_atomic(action_path, action)
+    _write_retention_action(action_path, action, maximum_run_bytes)
     for item in remove_recorded_files(run_dir, removed, identities_verified=True):
         action["removed_file_count"] += 1
         action["removed_bytes"] += item["bytes"]
-        write_json_atomic(action_path, action)
+        _write_retention_action(action_path, action, maximum_run_bytes)
     action["status"] = "complete"
-    write_json_atomic(action_path, action)
+    _write_retention_action(action_path, action, maximum_run_bytes)
+    return action_path
+
+
+def _write_retention_action(path: Path, action: dict[str, Any], maximum_run_bytes: int | None) -> None:
+    if maximum_run_bytes is not None:
+        if type(maximum_run_bytes) is not int or maximum_run_bytes < 0:
+            raise ValueError("retention recovery byte ceiling is invalid")
+        current = sum(item.stat().st_size for item in path.parent.rglob("*") if item.is_file())
+        temporary = len((json.dumps(action, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
+        if current + temporary > maximum_run_bytes:
+            raise ValueError("retention recovery metadata exceeds admitted run byte ceiling")
+    write_json_atomic(path, action)
+
+
+def _recovery_input_records(run_config: Path, inputs: Iterable[Path]) -> list[dict[str, Any]]:
+    """Bind small owner evidence, without hashing disposable native payloads."""
+    sources = [run_config, *inputs]
+    if any(path.is_symlink() for path in sources):
+        raise ValueError("retention recovery input is a symbolic link")
+    paths = sorted({path.resolve() for path in sources})
+    records = []
+    for path in paths:
+        if not path.is_file() or path.is_symlink():
+            raise ValueError(f"retention recovery input is not a regular file: {path}")
+        records.append(dict(path=str(path), exists=True, bytes=path.stat().st_size, sha256=file_sha256(path)))
+    return records
+
+
+def _resume_removals(
+    run_dir: Path, retention: Retention, inputs: list[dict[str, Any]],
+    preserve_paths: set[Path], *, failed_run: bool,
+    maximum_run_bytes: int | None,
+) -> Path:
+    """Continue only the original receipt, including one unlink/write gap."""
+    action_path = run_dir / "retention_actions.json"
+    action = json.loads(action_path.read_text(encoding="utf-8-sig"))
+    if isinstance(action, dict) and action.get("status") == "preflight_pending":
+        raise ValueError("preflight_pending must return to its original reconciliation owner")
+    required = {"schema_version", "role", "retention_class", "status", "removed_file_count",
+                "removed_bytes", "removed", "preserved", "recovery_inputs"}
+    if (not isinstance(action, dict) or set(action) != required or action["schema_version"] != 1
+            or action["role"] != "artifact_retention_actions" or action["retention_class"] != retention.class_id
+            or action["status"] not in {"pending", "complete"}):
+        raise ValueError("retention recovery receipt differs")
+    if action["recovery_inputs"] != inputs:
+        raise ValueError("retention recovery input identity differs")
+    manifest_path = run_dir / "run_manifest.json"
+    if (action["status"] != "complete" and manifest_path.is_file()
+            and json.loads(manifest_path.read_text(encoding="utf-8-sig")).get("status") != "checkpoint"):
+        raise ValueError("retention recovery cannot modify a terminal run")
+    policy = load_policy()
+    allowed = set(policy["classes"][retention.class_id]["allowed_roles"])
+    seen: set[str] = set()
+    for section in ("removed", "preserved"):
+        if not isinstance(action[section], list):
+            raise ValueError("retention recovery records must be lists")
+        for record in action[section]:
+            if not isinstance(record, dict) or set(record) != {"path", "bytes", "retention_role", "action"}:
+                raise ValueError("retention recovery record differs")
+            relative = record["path"]
+            if (not isinstance(relative, str) or not relative or Path(relative).is_absolute()
+                    or Path(relative).as_posix() != relative or ".." in Path(relative).parts
+                    or relative.casefold() in seen or type(record["bytes"]) is not int or record["bytes"] < 0):
+                raise ValueError("retention recovery record path or size differs")
+            seen.add(relative.casefold())
+            path = run_dir / relative
+            path.resolve().relative_to(run_dir)
+            if path.is_symlink() or record["retention_role"] != classify_file(path, bytes_count=record["bytes"], policy=policy):
+                raise ValueError("retention recovery record type differs")
+            if section == "preserved":
+                completion = _simion_completion_api()
+                expected = ("retained_completed_native_trace_for_recovery" if completion.recoverable_batch_log_kind(path) == "trace"
+                            else "retained_completed_simion_batch_log_for_recovery")
+                if (path.resolve() not in preserve_paths or not path.is_file() or path.stat().st_size != record["bytes"]
+                        or not completion.has_recoverable_batch_completion(path) or record["action"] != expected):
+                    raise ValueError("retention recovery preserved evidence differs")
+            elif record["action"] == "removed_incomplete_native_trace_before_terminal_manifest":
+                if not failed_run or _simion_completion_api().recoverable_batch_log_kind(path) is None:
+                    raise ValueError("retention recovery removal is not authorized by the failed run")
+            elif record["action"] != "removed_before_terminal_manifest" or record["retention_role"] in allowed:
+                raise ValueError("retention recovery removal is not authorized by the frozen class")
+    if {str((run_dir / item["path"]).resolve()) for item in action["preserved"]} != {str(path) for path in preserve_paths}:
+        raise ValueError("retention recovery preserve selection differs")
+    removed = action["removed"]
+    count = action["removed_file_count"]
+    if (type(count) is not int or not 0 <= count <= len(removed)
+            or type(action["removed_bytes"]) is not int
+            or action["removed_bytes"] != sum(item["bytes"] for item in removed[:count])):
+        raise ValueError("retention recovery progress differs")
+    if action["status"] == "complete" and count != len(removed):
+        raise ValueError("retention recovery completion differs")
+    # A sequential unlink can precede its progress write by exactly one record.
+    missing_next = count < len(removed) and not (run_dir / removed[count]["path"]).exists()
+    for index, item in enumerate(removed):
+        path = run_dir / item["path"]
+        if index < count or (index == count and missing_next):
+            if path.exists():
+                raise ValueError("retention removed file reappeared")
+        elif not path.is_file() or path.stat().st_size != item["bytes"]:
+            raise ValueError("retention remaining file identity changed")
+    planned = {(run_dir / item["path"]).resolve() for item in removed}
+    for path in run_dir.rglob("*"):
+        if path.is_file() and path.resolve() not in planned | preserve_paths:
+            if classify_file(path, policy=policy) not in allowed:
+                raise ValueError("retention found forbidden payload outside the original plan")
+    if action["status"] == "complete":
+        return action_path  # Exact replay does not rewrite completed evidence.
+    if missing_next:
+        action["removed_file_count"] += 1
+        action["removed_bytes"] += removed[count]["bytes"]
+        _write_retention_action(action_path, action, maximum_run_bytes)
+    for item in remove_recorded_files(run_dir, removed[action["removed_file_count"]:], identities_verified=True):
+        action["removed_file_count"] += 1
+        action["removed_bytes"] += item["bytes"]
+        _write_retention_action(action_path, action, maximum_run_bytes)
+    action["status"] = "complete"
+    _write_retention_action(action_path, action, maximum_run_bytes)
     return action_path
 
 
@@ -319,6 +442,8 @@ def _publish_removal_preflight(
 def apply_retention(
     run_config_path: Path, *, preserve_paths: Iterable[Path] = (),
     remove_paths: Iterable[Path] = (), failed_run: bool = False,
+    recovery_inputs: Iterable[Path] = (), resume: bool = False,
+    maximum_run_bytes: int | None = None,
 ) -> Path:
     """Remove only future-run files forbidden by its frozen retention class."""
 
@@ -326,6 +451,14 @@ def apply_retention(
     if run_dir.parent.name != "runs":
         raise ValueError("run_config must be a direct child of a runs/<run_id> directory")
     manifest_path = run_dir / "run_manifest.json"
+    recovery_inputs = tuple(recovery_inputs)
+    input_records = _recovery_input_records(run_config_path, recovery_inputs) if recovery_inputs or resume else None
+    if resume:
+        if tuple(remove_paths):
+            raise ValueError("retention recovery cannot supply a new removal selection")
+        return _resume_removals(run_dir, retention, input_records,
+                               {path.resolve() for path in preserve_paths}, failed_run=failed_run,
+                               maximum_run_bytes=maximum_run_bytes)
     if manifest_path.is_file():
         manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
         if manifest.get("status") != "checkpoint":
@@ -390,7 +523,8 @@ def apply_retention(
             "action": "removed_before_terminal_manifest",
         }
         removed.append(record)
-    return _execute_removals(run_dir, retention, removed, preserved)
+    return _execute_removals(run_dir, retention, removed, preserved, recovery_inputs=input_records,
+                             maximum_run_bytes=maximum_run_bytes)
 
 
 def main() -> None:
@@ -401,6 +535,9 @@ def main() -> None:
     apply_parser.add_argument("--preserve-path", action="append", type=Path, default=[])
     apply_parser.add_argument("--remove-path", action="append", type=Path, default=[])
     apply_parser.add_argument("--failed-run", action="store_true")
+    apply_parser.add_argument("--recovery-input", action="append", type=Path, default=[])
+    apply_parser.add_argument("--resume", action="store_true")
+    apply_parser.add_argument("--maximum-run-bytes", type=int)
     args = parser.parse_args()
     if args.command == "apply":
         action_path = apply_retention(
@@ -408,6 +545,8 @@ def main() -> None:
             preserve_paths=args.preserve_path,
             remove_paths=args.remove_path,
             failed_run=args.failed_run,
+            recovery_inputs=args.recovery_input, resume=args.resume,
+            maximum_run_bytes=args.maximum_run_bytes,
         )
         action = json.loads(action_path.read_text(encoding="utf-8"))
         print(

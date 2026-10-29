@@ -68,6 +68,7 @@ function Invoke-SimionStage {
   $start.StandardErrorEncoding=[Text.UTF8Encoding]::new($false)
   foreach($argument in $Arguments){$start.ArgumentList.Add($argument)}
   $process=[Diagnostics.Process]::Start($start)
+  $writerCompletion.stopped=$false
   $logWriter=$null
   try{
     $logWriter=[IO.StreamWriter]::new((Join-Path $logDir "$Stage.log"),$false,[Text.UTF8Encoding]::new($false))
@@ -118,6 +119,7 @@ function Invoke-SimionStage {
       if(-not$progressed){Start-Sleep -Milliseconds 20}
     }
     $process.WaitForExit()
+    $writerCompletion.stopped=$true
     Write-Host ("SIMION_STAGE=EXIT STAGE={0} EXIT_CODE={1} ELAPSED_S={2:F1}" -f $Stage,$process.ExitCode,$elapsed.Elapsed.TotalSeconds)
     if($process.ExitCode-ne 0){throw "SIMION stage failed: $Stage"}
     # SIMION can report a guarded PA save failure while returning exit zero.
@@ -372,6 +374,11 @@ $runDir=$package.run_dir;$resultDir=$package.result_dir;$logDir=$package.log_dir
 $artifactSolverDir=Join-Path ([string]$package.artifact_run_dir) 'simion'
 $runConfig=$package.run_config;$summary=$package.summary;$artifactRoot=Join-Path $workspaceRoot 'artifacts'
 $terminalPublicationAttempted=$false;$terminalStatus='interrupted';$failureStage='preflight';$resourceLease=$InheritedHostResourceLease;$ownsHostResourceLease=$null-eq$InheritedHostResourceLease;$hostOutcome='failed';$temporarySolverDir=$null;$temporaryAcceleratorRuntimeSession=$null
+$terminalPublicationClosed=$false;$failureRecord=$null
+$closeoutErrors=[Collections.Generic.List[object]]::new()
+# Local fact only: a native call that throws before its completion evidence
+# cannot authorize retention, payload deletion or capacity sealing.
+$writerCompletion=[pscustomobject]@{stopped=$true}
 $capacitySession=$CapacityWorkflowSession;$ownsCapacitySession=$null-eq$CapacityWorkflowSession
 $capacityProtectionRenewalPath=$null
 $guiWorkbenchIob=$null;$guiWorkbenchReceipt=$null
@@ -805,6 +812,7 @@ try{
   $iobFly2Path=$fly2Input
   $failureStage='prepare_native_corridor_runtime_family'
   if(-not$staticFieldRequested){
+    $writerCompletion.stopped=$false
     if($null-ne$NativeCorridorRuntimeSession){
       $nativeRuntime=Get-NativeCorridorRuntimeFamily -Session $NativeCorridorRuntimeSession `
         -CapacityWorkflowSession $capacitySession -BankGenerationDirectory $nativeBankGeneration `
@@ -817,6 +825,7 @@ try{
       -SimionExe $simion -ResourceLease $resourceLease -RunId $RunId
     }
     $resourceLease=$nativeRuntime.resource_lease
+    $writerCompletion.stopped=$true
     # The receipt binds the durable checkpoint controller.  Do not embed the
     # disposable execution junction in an IOB that outlives materialization;
     # SIMION opens pa1..pa8 lazily during Fast Adjust.
@@ -829,10 +838,12 @@ try{
     $failureStage='prepare_accelerator_runtime_family'
     $acceleratorSession=$NativeCorridorRuntimeSession
     if($null-eq$acceleratorSession){$temporaryAcceleratorRuntimeSession=[pscustomobject]@{};$acceleratorSession=$temporaryAcceleratorRuntimeSession}
+    $writerCompletion.stopped=$false
     $acceleratorRuntime=Get-NativeAcceleratorRuntimeFamily -Session $acceleratorSession `
       -ProviderReceiptPath $acceleratorProviderBinding -Python $python -RepoRoot $script:pythonRoot `
       -SimionExe $simion -ResourceLease $resourceLease -RunId $RunId
     $resourceLease=$acceleratorRuntime.resource_lease;$sourceAccelerator=[string]$acceleratorRuntime.controller_path
+    $writerCompletion.stopped=$true
     $persistentAcceleratorController=if($null-ne$acceleratorRuntime.PSObject.Properties['persistent_controller_path']){[string]$acceleratorRuntime.persistent_controller_path}else{$sourceAccelerator}
     $iobAcceleratorInput=$sourceAccelerator
     $nativeOrigins=@(@($pose.origins_mm.analyzer),@($nativeBankCache.identity.grid_phase.origin_mm),@($pose.origins_mm.accelerator),@($pose.origins_mm.detector))
@@ -946,8 +957,10 @@ try{
     if([string]$dispatch.estimation.kind-eq'formal_first_batch_observation'-and$replayBatchIndexes.Count-gt0){
       $formalBatchIndex=[int]$replayBatchIndexes[0]
       $firstSpec=Get-MrtofBatchProcessSpecification -Record $batchRecords[$formalBatchIndex]
+      $writerCompletion.stopped=$false
       $formal=Start-ObservedFormalProcess -DispatchPlanPath $runtimeDispatchPlanPath -ProcessSpecification $firstSpec
       $firstBatchCompleted=[bool]$formal.process_record.completed
+      $writerCompletion.stopped=$firstBatchCompleted
       if($formal.resource_budget_exceeded-or($firstBatchCompleted-and(-not$formal.completed_naturally-or[int]$formal.exit_code-ne0))){throw 'MR-TOF formal first batch did not complete or continue safely.'}
       $adaptiveArguments=@('-m','common.simion.resource_scheduler','--request',$dispatchRequestPath,'--profiles',$resourceProfilesPath,'--output',$runtimeDispatchPlanPath,'--observed-formal-peak-bytes',([string]$formal.observed_peak_process_tree_working_set_bytes),'--observed-formal-cpu-percent',([string]$formal.observed_process_cpu_percent),'--observed-background-cpu-percent',([string]$formal.observed_background_cpu_percent),'--available-memory-bytes',([string]$formal.available_memory_bytes),'--total-physical-memory-bytes',([string]$formal.total_physical_memory_bytes))
       if($firstBatchCompleted){$adaptiveArguments+='--first-batch-completed'}
@@ -1006,7 +1019,9 @@ try{
     if($pendingSpecs.Count-eq0-and$existingRecords.Count-eq0){
       $batchWaveResult=[pscustomobject]@{resource_budget_exceeded=$false;processes=@()}
     }else{
+      $writerCompletion.stopped=$false
       $batchWaveResult=Invoke-ResourceBudgetedProcesses -DispatchPlanPath $runtimeDispatchPlanPath -RunDir $runDir -UsagePath $batchResourceUsagePath -ProcessSpecifications $pendingSpecs -ExistingProcessRecords $existingRecords -OnProcessCompleted $checkpointAction
+      $writerCompletion.stopped=-not[bool]$batchWaveResult.resource_budget_exceeded
     }
     if($batchWaveResult.resource_budget_exceeded-or@($batchWaveResult.processes|Where-Object{[int]$_.exit_code-ne0}).Count-ne0){throw 'MR-TOF SIMION batch wave failed or exceeded the repository resource budget.'}
     if(Test-Path -LiteralPath $batchResourceUsagePath -PathType Leaf){Complete-ResourceUsage -RunDir $runDir -UsagePath $batchResourceUsagePath|Out-Null}
@@ -1293,6 +1308,7 @@ try{
   # The public writer publishes and reads back identities once. Capacity sealing
   # is separate for every owned run, including compact frozen native fixtures.
   Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $manifestOutputs -DeferCapacityFinalization
+  $terminalPublicationClosed=$true
   $terminalPublicationAttempted=$true;$terminalStatus='success'
   $trajectoryPayloadNeedsSeal=$ownsCapacitySession
   if(-not$ownsCapacitySession){
@@ -1303,8 +1319,9 @@ try{
   }
 }catch{
   $failureRecord=$_
-  if(-not$terminalPublicationAttempted){
+  if($writerCompletion.stopped-and-not$terminalPublicationAttempted){
     $terminalPublicationAttempted=$true;$terminalStatus='failed'
+    try{
     # SIMION trajectory replay caches are disposable even when the GUI IOB is
     # retained.  Remove them before compact failure publication so an
     # interrupted flight cannot strand the run in the capacity ledger.
@@ -1318,45 +1335,88 @@ try{
       script_stack_trace=[string]$failureRecord.ScriptStackTrace
     }
     Publish-OaMrFailureManifest -Status failed -Reason $failureRecord.Exception.Message -Evidence $failureEvidence
+    $terminalPublicationClosed=$true
     $trajectoryPayloadNeedsSeal=$ownsCapacitySession
     if(-not$ownsCapacitySession){$null=Invoke-RunCapacityLifecycleAdapter -Python $python -RepoRoot $repoRoot -Action finalize-ready -ArtifactRoot $artifactRoot -RunConfig $runConfig}
+    }catch{$closeoutErrors.Add(@{stage='failure_publication';error=$_})}
   }
-  throw
+  throw $failureRecord
 }finally{
-  foreach($guard in $staticPaGuards){$guard.Dispose()}
+  if($writerCompletion.stopped){
+  foreach($guard in $staticPaGuards){
+    try{$guard.Dispose()}catch{$closeoutErrors.Add(@{stage='guard_release';error=$_})}
+  }
   if(-not$terminalPublicationAttempted-and(Test-Path -LiteralPath $runConfig -PathType Leaf)){
     $terminalPublicationAttempted=$true;$terminalStatus='interrupted'
+    try{
     Publish-OaMrFailureManifest -Status interrupted -Reason 'Runner stopped before terminal evidence publication.'
+    $terminalPublicationClosed=$true
     $trajectoryPayloadNeedsSeal=$ownsCapacitySession;$hostOutcome='interrupted'
     if(-not$ownsCapacitySession){$null=Invoke-RunCapacityLifecycleAdapter -Python $python -RepoRoot $repoRoot -Action finalize-ready -ArtifactRoot $artifactRoot -RunConfig $runConfig}
+    }catch{$closeoutErrors.Add(@{stage='interrupted_publication';error=$_})}
   }
-  if($null-ne$temporaryAcceleratorRuntimeSession){Suspend-NativeCorridorRuntimeSession -Session $temporaryAcceleratorRuntimeSession}
+  if($null-ne$temporaryAcceleratorRuntimeSession){
+    try{Suspend-NativeCorridorRuntimeSession -Session $temporaryAcceleratorRuntimeSession}
+    catch{$closeoutErrors.Add(@{stage='runtime_suspend';error=$_})}
+  }
+  }
+  $hostReleaseRequired=$false;$hostReleased=$false
   if($ownsHostResourceLease-and$null-ne$resourceLease){
-    $topLevelLease=-not[bool]$resourceLease.inherited
-    Exit-HostResourceStage -Lease $resourceLease
-    if($topLevelLease){
-      if($trajectoryPayloadNeedsSeal){$deferredHostCompletionNotification=$true}
-      else{Invoke-HostExecutionCompletionNotification -Outcome $hostOutcome -RunId $RunId}
+    $hostReleaseRequired=-not[bool]$resourceLease.inherited
+    try{
+      $release=Exit-HostResourceStage -Lease $resourceLease -PassThru
+      if($hostReleaseRequired){
+        if($null-eq$release-or[string]$release.status-ne'released'-or[string]$release.token-ne[string]$resourceLease.token){
+          throw 'OA-MR host release did not confirm its owned token was released.'
+        }
+        $hostReleased=$true;$deferredHostCompletionNotification=$true
+      }
+    }catch{$closeoutErrors.Add(@{stage='host_release';error=$_})}
+  }
+  # A retained host record is not a release. Unknown writers retain their
+  # paths and capacity protection; exiting PowerShell does not preserve guards.
+  $writersStopped=$writerCompletion.stopped-and(-not$hostReleaseRequired-or$hostReleased)
+  $capacityReleased=$false
+  if($writersStopped){
+  foreach($path in @($batchRuntimeRoot,$(if(-not$retainGuiWorkbenchFiles){$temporarySolverDir}))){
+    if($null-ne$path){
+      try{Remove-TemporarySolverDirectory -Path $path}
+      catch{$closeoutErrors.Add(@{stage='temporary_directory';error=$_})}
     }
   }
-  if($null-ne$batchRuntimeRoot-and(Test-Path -LiteralPath $batchRuntimeRoot -PathType Container)){Remove-TemporarySolverDirectory -Path $batchRuntimeRoot}
-  if($null-ne$temporarySolverDir-and-not$retainGuiWorkbenchFiles){Remove-TemporarySolverDirectory -Path $temporarySolverDir}
   if($ownsCapacitySession-and$null-ne$capacitySession){
-    $null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession
+    try{
+      $null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession
+      $capacityReleased=[string]$capacitySession.status-eq'released'
+      if(-not$capacityReleased){throw 'OA-MR capacity session was not released.'}
+    }catch{$closeoutErrors.Add(@{stage='capacity_release';error=$_})}
   }
-  try{
-  if($trajectoryPayloadNeedsSeal){
+  if($trajectoryPayloadNeedsSeal-and$terminalPublicationClosed-and$capacityReleased){
     try{
       Invoke-ProjectPython -Arguments @('-m','common.contracts.run_capacity_lifecycle','--action','seal-stopped-payload','--artifact-root',$artifactRoot,'--run-config',(Join-Path ([string]$package.artifact_run_dir) 'run_config.json'),'--owner',$projectId,'--confirm-writing-stopped','--retention-reason',$(if($trajectoryRetentionReason){$trajectoryRetentionReason}else{'Retain stopped OA-MR scientific evidence and frozen reconstruction inputs.'}))
       $hostOutcome=$terminalStatus
-      if($terminalStatus-eq'success'){Write-Host "MRTOF_TWO_PRISM_TRIAL=PASS RUN_ID=$RunId TRANSPORT=$($observed.status)"}
-      if($deferredHostCompletionNotification){Invoke-HostExecutionCompletionNotification -Outcome $hostOutcome -RunId $RunId}
     }catch{
-      $hostOutcome='failed'
+      $closeoutErrors.Add(@{stage='seal_stopped_payload';error=$_})
       Write-Host "MRTOF_TWO_PRISM_TRIAL=FAIL RUN_ID=$RunId STAGE=seal_stopped_payload SCIENTIFIC_MANIFEST=retained"
-      if($deferredHostCompletionNotification){Invoke-HostExecutionCompletionNotification -Outcome $hostOutcome -RunId $RunId}
-      throw
     }
   }
-  }finally{Remove-RunPackageExecutionAlias -Package $package}
+  try{Remove-RunPackageExecutionAlias -Package $package}
+  catch{$closeoutErrors.Add(@{stage='execution_alias';error=$_})}
+  }elseif($null-eq$failureRecord-and$closeoutErrors.Count-eq0){
+    try{throw 'OA-MR writer completion is unknown; run paths and capacity protection retained.'}
+    catch{$closeoutErrors.Add(@{stage='writer_completion';error=$_})}
+  }
+  if($null-ne$failureRecord-or$closeoutErrors.Count){$hostOutcome='failed'}
+  if($deferredHostCompletionNotification){
+    try{Invoke-HostExecutionCompletionNotification -Outcome $hostOutcome -RunId $RunId}
+    catch{$closeoutErrors.Add(@{stage='completion_notification';error=$_})}
+  }
+  if($closeoutErrors.Count){
+    $reportedFailure=if($null-ne$failureRecord){$failureRecord}else{$closeoutErrors[0].error}
+    $reportedFailure.Exception.Data['oa_mr_closeout_errors']=@($closeoutErrors|ForEach-Object{@{stage=$_.stage;message=$_.error.Exception.Message}})
+    foreach($errorRecord in $closeoutErrors){Write-Warning "OA-MR closeout $($errorRecord.stage): $($errorRecord.error.Exception.Message)" -WarningAction Continue}
+    if($null-eq$failureRecord){throw $reportedFailure}
+  }elseif($writersStopped-and$trajectoryPayloadNeedsSeal-and$terminalPublicationClosed-and$capacityReleased-and$terminalStatus-eq'success'){
+    Write-Host "MRTOF_TWO_PRISM_TRIAL=PASS RUN_ID=$RunId TRANSPORT=$($observed.status)"
+  }
 }

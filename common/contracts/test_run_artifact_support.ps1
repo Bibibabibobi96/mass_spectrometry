@@ -15,6 +15,32 @@ function Assert-Equal {
   }
 }
 
+function Test-RunJsonAtomic {
+  param([string]$Root)
+  $directory=Join-Path $Root 'atomic-json'
+  New-Item -ItemType Directory -Path $directory -Force|Out-Null
+  $ordinary=Join-Path $directory 'ordinary.json'
+  $atomic=Join-Path $directory 'atomic.json'
+  foreach($value in @(@{value=@()},@{value=@('独立')},@{value=@{nested=@{leaf=@('one','two')}}})){
+    Write-RunJson -Path $ordinary -Value $value -Depth 12
+    Write-RunJson -Path $atomic -Value $value -Depth 12 -Atomic
+    Assert-Equal ([Convert]::ToBase64String([IO.File]::ReadAllBytes($atomic))) `
+      ([Convert]::ToBase64String([IO.File]::ReadAllBytes($ordinary))) 'Atomic JSON changed UTF8/depth/array serialization.'
+  }
+  foreach($value in @([object[]]@(),[object[]]@('one'))){
+    Write-RunJson -Path $ordinary -Value $value -Depth 12
+    Write-RunJson -Path $atomic -Value $value -Depth 12 -Atomic
+    Assert-Equal ([IO.File]::ReadAllText($atomic)) ([IO.File]::ReadAllText($ordinary)) 'Atomic root array changed.'
+  }
+  $blocked=Join-Path $directory 'directory-target'
+  New-Item -ItemType Directory -Path $blocked|Out-Null
+  $failed=$false
+  try{Write-RunJson -Path $blocked -Value @{value='cannot replace directory'} -Atomic}catch{$failed=$true}
+  Assert-Equal $failed $true 'Atomic JSON must preserve replacement failure.'
+  Assert-Equal (Test-Path -LiteralPath $blocked -PathType Container) $true 'Atomic failure changed the prior target.'
+  Assert-Equal (@(Get-ChildItem -LiteralPath $directory -Filter '.run-json-*.tmp' -Force).Count) 0 'Atomic JSON leaked its temporary.'
+}
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $projectRoot = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer'
@@ -32,6 +58,7 @@ try {
   $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=Join-Path $testRoot 'host.sqlite3'
   $env:SIMULATION_PYTHON_EXE=$python
   . (Join-Path $PSScriptRoot 'run_artifact_support.ps1')
+  Test-RunJsonAtomic -Root $testRoot
   & {
     $fixturePath=Join-Path $testRoot 'named_arguments/retention_actions.json'
     New-Item -ItemType Directory -Path (Split-Path -Parent $fixturePath) -Force|Out-Null

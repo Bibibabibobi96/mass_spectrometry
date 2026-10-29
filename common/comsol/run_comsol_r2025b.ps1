@@ -31,7 +31,8 @@ param(
     [string]$RunId = '',
     [pscustomobject]$Limits = $null,
     [string]$RunDir = '',
-    [string]$UsagePath = ''
+    [string]$UsagePath = '',
+    [string]$CompletionPath = ''
 )
 
 Set-StrictMode -Version Latest
@@ -61,6 +62,12 @@ $solverBudget.exclusive_resources = @(
     @($solverBudget.exclusive_resources) + 'comsol-server-session' | Select-Object -Unique
 )
 $stageBudgets.solver = $solverBudget
+$completionFile = if ($CompletionPath) { [IO.Path]::GetFullPath($CompletionPath) } else { '' }
+if ($completionFile -and (Test-Path -LiteralPath $completionFile)) {
+    throw "COMSOL completion receipt already exists: $completionFile"
+}
+$launcherCompletions = [Collections.Generic.List[object]]::new()
+$taskFailure = $null
 $resourceLease = Enter-HostResourceStage -Role COMSOL -Stage prepare `
     -Budget $stageBudgets.prepare -RunId $RunId
 try {
@@ -176,6 +183,8 @@ try {
         $attemptObservation = New-RepositoryProcessObservation -Limits $Limits -RunDir $RunDir -UsagePath $UsagePath
         $launcherProcess = Start-ComsolLauncherProcess -FilePath $launcher `
             -Arguments $launcherArguments
+        $launcherCompletion = @{operation_id="launcher-attempt-$attempt";observation=@{exit_confirmed=$false;returncode=$null}}
+        $launcherCompletions.Add($launcherCompletion)
         $launcherStartedUtc = $launcherProcess.StartTime.ToUniversalTime()
         $attemptObservation.tracked_ids = @([int]$launcherProcess.Id)
         $attemptObservation.tracked_ticks = @{([string]$launcherProcess.Id)=$launcherStartedUtc.Ticks}
@@ -304,6 +313,17 @@ try {
             Start-Sleep -Seconds $StartupRetryDelaySeconds
         }
         } finally {
+            # A launcher exit is separate from the scheduler's proof that all
+            # registered descendants have released their reservation.
+            try {
+                if ($launcherProcess.HasExited) {
+                    $nativeExit = $launcherProcess.ExitCode
+                    $launcherCompletion.observation.exit_confirmed = $true
+                    $launcherCompletion.observation.returncode = $nativeExit
+                }
+            } catch {
+                Write-Warning "COMSOL_LAUNCHER_EXIT_UNCONFIRMED=$($_.Exception.Message)" -WarningAction Continue
+            }
             if ($null -ne $attemptObservation.last_sample -and $null -ne $attemptObservation.usage) {
                 try {
                     $null = Update-RepositoryProcessObservation -Observation $attemptObservation -Sample $attemptObservation.last_sample -Final
@@ -342,6 +362,44 @@ finally {
 }
 
 throw "LiveLink task did not create its report after $StartupAttempts clean startup attempts: $report"
+} catch {
+    $taskFailure = $_
+    throw
 } finally {
-    Exit-HostResourceStage -Lease $resourceLease | Out-Null
+    $hostRelease = @{inherited=[bool]$resourceLease.inherited;token=[string]$resourceLease.token;result=$null;error=$null}
+    $closeoutFailure = $null
+    try {
+        $hostRelease.result = Exit-HostResourceStage -Lease $resourceLease -PassThru
+        if ($completionFile -and -not $hostRelease.inherited -and
+            ($null -eq $hostRelease.result -or $hostRelease.result.status -ne 'released' -or
+             $hostRelease.result.token -ne $hostRelease.token)) {
+            throw 'COMSOL_HOST_RELEASE_UNCONFIRMED'
+        }
+    } catch {
+        $hostRelease.error = $_.Exception.Message
+        $closeoutFailure = $_
+    }
+    if ($completionFile) {
+        $temporaryCompletion = $completionFile + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
+        try {
+            $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($completionFile))
+            $receipt = @{schema_version=1;role='comsol_launcher_completion';run_id=$RunId;operations=@($launcherCompletions.ToArray());host_release=$hostRelease}
+            [IO.File]::WriteAllText($temporaryCompletion, ($receipt | ConvertTo-Json -Depth 30), [Text.UTF8Encoding]::new($false))
+            [IO.File]::Move($temporaryCompletion, $completionFile)
+        } catch {
+            if ($null -eq $closeoutFailure) { $closeoutFailure = $_ }
+        } finally {
+            if ([IO.File]::Exists($temporaryCompletion)) {
+                try { [IO.File]::Delete($temporaryCompletion) } catch {
+                    Write-Warning "COMSOL_RECEIPT_TEMP_RETAINED=$temporaryCompletion ERROR=$($_.Exception.Message)" -WarningAction Continue
+                }
+            }
+        }
+    }
+    if ($null -ne $closeoutFailure) {
+        if ($null -ne $taskFailure) {
+            $taskFailure.Exception.Data['comsol_closeout_error'] = $closeoutFailure.Exception.Message
+            Write-Warning "COMSOL_CLOSEOUT_ERROR=$($closeoutFailure.Exception.Message)" -WarningAction Continue
+        } else { throw $closeoutFailure }
+    }
 }

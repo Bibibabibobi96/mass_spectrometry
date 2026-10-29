@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import tempfile
 import time
 import warnings
 from pathlib import Path
@@ -14,6 +15,9 @@ from typing import Any, Callable
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 from common.contracts.machine_contracts import load_json, sha256
+from common.contracts.recorded_file_removal import write_json_atomic
+from common.contracts.verify_run_manifest import verify_record
+from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
 from common.contracts.particle_count_policy import validate_standard_particle_count
 from common.contracts.stage_reuse import validate_and_write_stage_reuse, write_stage_receipt
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_run_lifecycle import (
@@ -23,6 +27,10 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_run_life
     update_candidate_progress,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import frozen_source_path, verify_candidate_source_closure
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import (
+    freeze_pa_producer_handoffs, plan_pa_producer_handoffs, validate_artifact_capacity,
+)
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.simion_component_pa_plan import compile_component_pa_plan, sum_component_commitments
 
 
 StageExecutor = Callable[[dict[str, Any], dict[str, Any], str], dict[str, Any]]
@@ -137,6 +145,73 @@ def _ps_arguments(values: dict[str, Any]) -> list[str]:
     for key, value in values.items():
         result.extend([f"-{key}", str(value)])
     return result
+
+
+def _run_managed_stage_command(
+    command: list[str], log_path: Path, plan: dict[str, Any], receipt_path: Path,
+    role: str, environment: dict[str, str] | None = None,
+) -> None:
+    """Carry the actual native and host-owner receipts across the PS boundary."""
+    writer = plan.get("writer_completion")
+    failure = None
+    try:
+        _run_command(command, log_path, environment)
+    except BaseException as error:
+        failure = error
+    try:
+        if writer is not None:
+            release_id = receipt_path.stem
+            if not receipt_path.is_file():
+                writer["operations"].append({"operation_id": release_id,
+                    "observation": {"exit_confirmed": False, "returncode": None},
+                    "resource_release_id": release_id})
+            else:
+                receipt = load_json(receipt_path)
+                if receipt.get("schema_version") != 1 or receipt.get("role") != role or receipt.get("run_id") != plan["run_id"]:
+                    raise RuntimeError(f"native completion identity differs: {receipt_path}")
+                if role in {"oatof_component_build_completion", "oatof_candidate_flight_process_result"} and receipt.get("context_sha256") != plan["context_sha256"]:
+                    raise RuntimeError(f"native completion scientific context differs: {receipt_path}")
+                if role == "oatof_candidate_flight_process_result":
+                    operations = [{"operation_id": "flight", "observation": {
+                        "exit_confirmed": receipt.get("native_exit_confirmed", False),
+                        "returncode": receipt.get("native_returncode")},
+                        "managed_process_completion": receipt.get("managed_process_completion")}]
+                else:
+                    operations = receipt["operations"]
+                for operation in operations:
+                    observation = operation["observation"]
+                    if role in {"oatof_component_build_completion", "oatof_candidate_flight_process_result"}:
+                        managed = operation.get("managed_process_completion") or {}
+                        if (managed.get("schema_version") != 1
+                                or managed.get("role") != "repository_managed_python_completion"
+                                or type(managed.get("exit_code")) is not int
+                                or any(managed.get(key) is not True for key in (
+                                    "ownership_confirmed", "worker_exit_confirmed", "launcher_exit_confirmed",
+                                    "stdout_drained", "stderr_drained"))
+                                or type(managed.get("worker_process_id")) is not int
+                                or managed["worker_process_id"] <= 0
+                                or type(managed.get("worker_started_at_utc_ticks")) is not int
+                                or managed["worker_started_at_utc_ticks"] <= 0):
+                            raise RuntimeError(f"managed writer completion is unconfirmed: {operation['operation_id']}")
+                        if managed["exit_code"] and failure is None:
+                            failure = RuntimeError(f"managed writer failed ({managed['exit_code']}): {operation['operation_id']}")
+                    writer["operations"].append({
+                        "operation_id": f"{release_id}.{operation['operation_id']}",
+                        "observation": {key: observation.get(key) for key in ("exit_confirmed", "returncode")},
+                        "resource_release_id": release_id,
+                    })
+                if operations:
+                    writer["resource_releases"].append({"release_id": release_id, "completion_receipt": receipt})
+    except BaseException as receipt_error:
+        if writer is not None:
+            writer["operations"].append({"operation_id": receipt_path.stem + ".unconfirmed",
+                "observation": {"exit_confirmed": False, "returncode": None},
+                "resource_release_id": receipt_path.stem})
+        if failure is None:
+            raise
+        failure.add_note(f"Native completion validation also failed: {receipt_error}")
+    if failure is not None:
+        raise failure
 
 
 def _require_pass_report(path: Path) -> None:
@@ -275,9 +350,12 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
                 ),
                 "-ReportPath",
                 str(build_report),
+                "-RunId", plan["run_id"],
+                "-CompletionPath", str(logs / "comsol_build_completion.json"),
             ],
         )
-        _run_command(build_command, logs / "comsol_build_launcher.log", environment)
+        _run_managed_stage_command(build_command, logs / "comsol_build_launcher.log", plan,
+                                   logs / "comsol_build_completion.json", "comsol_launcher_completion", environment)
         _require_pass_report(build_report)
         analysis_request = Path(_report_value(build_report, "PYTHON_ANALYSIS_REQUEST"))
         if not analysis_request.is_file():
@@ -312,9 +390,12 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
                 ),
                 "-ReportPath",
                 str(sync_report),
+                "-RunId", plan["run_id"],
+                "-CompletionPath", str(logs / "comsol_sync_completion.json"),
             ],
         )
-        _run_command(sync_command, logs / "comsol_sync_launcher.log", sync_environment)
+        _run_managed_stage_command(sync_command, logs / "comsol_sync_launcher.log", plan,
+                                   logs / "comsol_sync_completion.json", "comsol_launcher_completion", sync_environment)
         _require_pass_report(sync_report)
         return {
             "model": stage["model_path"], "build_report": str(build_report),
@@ -347,23 +428,23 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
             str(template),
             "-ParticleSeed",
             str(plan.get("run_instance", {}).get("particle_source_seed", "")),
+            "-CapacitySessionPath", plan["capacity_session_path"],
+            "-ComponentPlanPath", plan["component_plan_path"],
+            "-CompletionPath", str(logs / "simion_build_completion.json"),
+            "-ContextSha256", plan["context_sha256"],
+            "-ParticleCount", "100",
         ]
-        _run_command(
+        if plan.get("producer_handoff_path"):
+            arguments.extend(["-ProducerHandoffPath", plan["producer_handoff_path"]])
+        _run_managed_stage_command(
             _powershell(
                 frozen_source_path(closure, "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_formal_delivery.ps1"), arguments
             ),
             logs / "simion_build.log",
+            plan, logs / "simion_build_completion.json", "oatof_component_build_completion",
         )
         iob = Path(stage["output_dir"]) / "oatof_ideal_grounded.iob"
-        verify = frozen_source_path(
-            closure,
-            "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/verify_iob_runtime_contract.ps1",
-        )
-        _run_command(
-            _powershell(verify, ["-IobPath", str(iob), "-SimionExe", simion_exe]),
-            logs / "simion_runtime_verify.log",
-        )
-        runtime_report = logs / "simion_runtime_verify.log"
+        runtime_report = Path(stage["output_dir"]) / "build_logs" / "canonical_iob_verification.txt"
         _require_pass_report(runtime_report)
         summary = Path(stage["output_dir"]) / "stage_summary.json"
         if load_json(summary).get("status") != "success":
@@ -386,7 +467,7 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
         analyzer = frozen_source_path(
             closure, "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/analyze_ideal_field_log.ps1"
         )
-        _run_command(
+        _run_managed_stage_command(
             _powershell(
                 transport,
                 [
@@ -403,9 +484,16 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
                     "-ExpectedParticleCount", "100",
                     "-ExpectedTrajectoryQuality", "8",
                     "-DetectorRadiusMm", str(detector_radius_mm),
+                    "-RuntimeReceiptPath", str(Path(stage["output_dir"]) / "simion_runtime_receipt.json"),
+                    "-CapacitySessionPath", plan["capacity_session_path"],
+                    "-CompletionPath", str(logs / "simion_flight_completion.json"),
+                    "-ContextSha256", plan["context_sha256"],
+                    "-RunId", plan["run_id"],
+                    "-PythonExe", closure["runtime"]["python_executable"],
                 ],
             ),
             logs / "simion_transport_launcher.log",
+            plan, logs / "simion_flight_completion.json", "oatof_candidate_flight_process_result",
         )
         transport_record = load_json(transport_summary)
         if (
@@ -449,9 +537,12 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
                 ),
                 "-ReportPath",
                 str(report),
+                "-RunId", plan["run_id"],
+                "-CompletionPath", str(logs / "cad_completion.json"),
             ],
         )
-        _run_command(command, logs / "cad_launcher.log", environment)
+        _run_managed_stage_command(command, logs / "cad_launcher.log", plan,
+                                   logs / "cad_completion.json", "comsol_launcher_completion", environment)
         _require_pass_report(report)
         cad_report = Path(stage["output_dir"]) / "oaTOF_solidworks_export_report.json"
         if not cad_report.is_file():
@@ -774,13 +865,15 @@ def _failure_results(
     return _remaining_results(stages, prefix)
 
 
-def run_candidate_workflow(
+def _execute_candidate_stages(
     plan_path: Path,
     simion_exe: str,
     stage_executor: StageExecutor = execute_stage,
     *,
     reuse_parent: Path | None = None,
     reuse_through: str | None = None,
+    initialized_config_path: Path | None = None,
+    execution_context: dict[str, Any] | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     if (reuse_parent is None) != (reuse_through is None):
         raise ValueError("reuse_parent and reuse_through must be supplied together")
@@ -792,9 +885,30 @@ def run_candidate_workflow(
             "candidate plan is not execution-ready: "
             f"{prepared_plan.get('status', 'missing status')}"
         )
-    run_root = start_candidate_run(plan_path)
+    run_root = start_candidate_run(plan_path, initialized_config_path=initialized_config_path)
     runtime_plan_path = run_root / "candidate_workflow_plan.json"
     runtime_plan = load_json(runtime_plan_path)
+    if execution_context is not None:
+        runtime_plan.update(execution_context)
+        component_path = run_root / "inputs" / "component_pa_plan.json"
+        write_json_atomic(component_path, execution_context["component_pa_plan"])
+        runtime_plan["component_plan_path"] = str(component_path)
+        config_path = run_root / "run_config.json"
+        config = load_json(config_path)
+        config["inputs"]["component_pa_plan"] = str(component_path)
+        config["input_sha256"]["component_pa_plan"] = sha256(component_path)
+        if handoff_plan := execution_context.get("pa_producer_handoffs"):
+            bound = freeze_pa_producer_handoffs(run_root, handoff_plan,
+                expected_cache_keys={item["cache_key"] for item in execution_context["component_pa_plan"]["components"] if item["cacheable"]},
+                capacity_session=load_json(Path(execution_context["capacity_session_path"])))
+            config["pa_producer_handoffs"] = {key: bound[key] for key in ("path", "exists", "bytes", "sha256")}
+            runtime_plan["producer_handoff_path"] = bound["path"]
+            for index, record in enumerate(bound["frozen_input_records"]):
+                name = f"pa_producer_handoff_{index}"
+                config["inputs"][name] = record["path"]
+                config["input_sha256"][name] = record["sha256"]
+        write_json_atomic(config_path, config)
+        refresh_candidate_provisional_manifest(run_root)
     stages = runtime_plan["stages"]
     results: list[dict[str, Any]] = []
     current_stage = "orchestration"
@@ -1016,7 +1130,7 @@ def run_candidate_workflow(
                 refresh_candidate_provisional_manifest(run_root)
         _verify_frozen_run_inputs(run_root)
         current_stage = stages[-1]["stage_id"]
-        summary, _ = finalize_candidate_run(run_root, "success", results)
+        summary, _ = finalize_candidate_run(run_root, "success", results, publish=initialized_config_path is None)
         return run_root, summary
     except KeyboardInterrupt as exc:
         interrupted = _failure_results(
@@ -1026,8 +1140,11 @@ def run_candidate_workflow(
             status="interrupted",
             error=str(exc),
         )
-        finalize_candidate_run(run_root, "interrupted", interrupted, current_stage)
-        raise CandidateWorkflowInterrupted(run_root) from exc
+        summary, _ = finalize_candidate_run(run_root, "interrupted", interrupted, current_stage,
+                                           publish=initialized_config_path is None)
+        error = CandidateWorkflowInterrupted(run_root)
+        error.summary = summary
+        raise error from exc
     except StageTimedOut as exc:
         failed = _failure_results(
             stages,
@@ -1037,8 +1154,11 @@ def run_candidate_workflow(
             error=str(exc),
             failure_class="timeout",
         )
-        finalize_candidate_run(run_root, "failed", failed, current_stage)
-        raise CandidateWorkflowTimedOut(run_root) from exc
+        summary, _ = finalize_candidate_run(run_root, "failed", failed, current_stage,
+                                           publish=initialized_config_path is None)
+        error = CandidateWorkflowTimedOut(run_root)
+        error.summary = summary
+        raise error from exc
     except Exception as exc:
         failed = _failure_results(
             stages,
@@ -1047,5 +1167,206 @@ def run_candidate_workflow(
             status="failed",
             error=str(exc),
         )
-        finalize_candidate_run(run_root, "failed", failed, current_stage)
-        raise CandidateWorkflowError(str(exc), run_root) from exc
+        summary, _ = finalize_candidate_run(run_root, "failed", failed, current_stage,
+                                           publish=initialized_config_path is None)
+        error = CandidateWorkflowError(str(exc), run_root)
+        error.summary = summary
+        raise error from exc
+
+
+def _prepare_execution_request(
+    plan_path: Path, simion_exe: str, reuse_parent: Path | None, reuse_through: str | None,
+    pa_producer_handoffs: list[tuple[Path, Path]] | None = None,
+) -> dict[str, Any]:
+    """Read the frozen plan and reserve disk from its explicit authorities."""
+    plan_path = plan_path.resolve(strict=True)
+    plan = load_json(plan_path)
+    if plan.get("status") != "EXECUTION_READY":
+        raise ValueError(f"candidate plan is not execution-ready: {plan.get('status')}")
+    if (reuse_parent is None) != (reuse_through is None) or (
+        reuse_through is not None and reuse_through not in REUSABLE_STAGES
+    ):
+        raise ValueError("candidate reuse requires a parent and a declared stage boundary")
+    closure = plan["execution_source_closure"]
+    verify_candidate_source_closure(closure)
+    for name, record in plan["candidate_inputs"].items():
+        path = Path(record["path"])
+        if not path.is_file() or sha256(path) != str(record["sha256"]).upper():
+            raise ValueError(f"planned candidate input changed before admission: {name}")
+    code_root = Path(closure["code_root"]).resolve(strict=True)
+    resolved_path = Path(plan["candidate_inputs"]["candidate_resolved_geometry.json"]["path"])
+    runtime_path = Path(plan["candidate_inputs"]["candidate_runtime.json"]["path"])
+    capacity = validate_artifact_capacity(load_json(runtime_path))
+    if capacity != plan.get("artifact_capacity"):
+        raise ValueError("candidate disk commitment differs from its frozen runtime contract")
+    component_plan = compile_component_pa_plan(
+        load_json(resolved_path), repository_root=code_root, simion_exe=Path(simion_exe).resolve(strict=True),
+    )
+    template_path = plan_path.parent / "run_config.template.json"
+    run_root = Path(plan["run_root"]).resolve()
+    cache_keys = {item["cache_key"] for item in component_plan["components"] if item["cacheable"]}
+    handoff_plan = plan_pa_producer_handoffs(pa_producer_handoffs, expected_cache_keys=cache_keys,
+        artifact_root=run_root.parents[3]) if pa_producer_handoffs else None
+    protected = [str(plan_path.parent)]
+    if reuse_parent is not None:
+        # The existing reuse validator later proves each exact consumed file.
+        # Protect the explicit predecessor before admission can reclaim it.
+        protected.append(str(reuse_parent.resolve(strict=True)))
+    if handoff_plan:
+        protected.extend(handoff_plan["protected_paths"])
+    entrypoint = Path(frozen_source_path(closure,
+        "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_workflow.py"))
+    return {
+        "schema_version": 1, "role": "run_artifact_workflow_request",
+        "repository_root": str(REPO_ROOT), "python_executable": closure["runtime"]["python_executable"],
+        "package": {
+            "project": "single_reflection_oa_tof_mass_analyzer", "run_id": plan["run_id"],
+            "mode": "design_candidate", "artifact_project_root": str(run_root.parent.parent),
+            "software": ["COMSOL", "SIMION", "SolidWorks"], "retention_class": "solver_review",
+            "retention_reason": "Candidate MPH, CAD and private SIMION delivery remain available for explicit structural review; no promotion is authorized.",
+        },
+        "capacity": {
+            "committed_new_bytes": sum_component_commitments([component_plan]) + sum(
+                capacity[key] for key in ("comsol_bytes", "cad_bytes", "evidence_bytes")),
+            "commitment_inputs": [file_record(path) for path in (plan_path, template_path, runtime_path, resolved_path)]
+                + (handoff_plan["source_records"] if handoff_plan else []),
+            "protected_paths": sorted(set(protected)),
+            "protected_cache_keys": sorted(cache_keys),
+        },
+        "prepared": {
+            "module": "projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow",
+            "function": "execute_prepared_run", "import_root": str(code_root), "entrypoint": file_record(entrypoint),
+        },
+        "payload": {"plan": file_record(plan_path), "run_config_template": file_record(template_path),
+                    "simion_executable": file_record(Path(simion_exe).resolve(strict=True)),
+                    "component_pa_plan": component_plan,
+                    "pa_producer_handoffs": handoff_plan,
+                    "reuse_parent": str(reuse_parent.resolve()) if reuse_parent else None,
+                    "reuse_through": reuse_through},
+    }
+
+
+def execute_prepared_run(
+    run_config_path: Path, capacity_session_path: Path,
+    execution_request_path: Path, completion_path: Path,
+) -> None:
+    """Execute the admitted root; the public owner alone publishes its terminal state."""
+    run_config_path = Path(run_config_path).resolve(strict=True)
+    run_root = run_config_path.parent
+    execution_request_path = Path(execution_request_path).resolve(strict=True)
+    request = load_json(execution_request_path)
+    initial = load_json(run_config_path)
+    require_completed_terminal_publication(run_root / "run_manifest.json")
+    manifest = load_json(run_root / "run_manifest.json")
+    if (execution_request_path != run_root / "inputs" / "execution_request.json"
+            or manifest.get("status") != "checkpoint" or manifest.get("run_id") != run_root.name
+            or manifest.get("role") != "simulation_run_manifest"
+            or manifest.get("project") != "single_reflection_oa_tof_mass_analyzer"
+            or Path(manifest["run_config"]["path"]).resolve() != run_config_path
+            or request["package"]["run_id"] != run_root.name
+            or initial.get("inputs") != {"execution_request": str(execution_request_path)}):
+        raise ValueError("candidate public package checkpoint differs")
+    verify_record("initialized run config", manifest["run_config"])
+    verify_record("execution request", manifest["inputs"]["execution_request"])
+    summary_record = [record for record in manifest["outputs"]
+                      if Path(record["path"]).resolve() == run_root / "summary.json"]
+    if len(summary_record) != 1:
+        raise ValueError("candidate initialization summary is not uniquely manifest-bound")
+    verify_record("initialized summary", summary_record[0])
+    initial_summary = load_json(run_root / "summary.json")
+    if initial_summary.get("role") != "run_package_initialization_summary" or initial_summary.get("status") != "checkpoint":
+        raise ValueError("candidate initialization summary differs")
+    session = load_json(Path(capacity_session_path).resolve(strict=True))
+    if (session.get("schema_version") != 1 or session.get("role") != "artifact_workflow_capacity_session" or session.get("status") != "active"
+            or not session.get("lease_id")
+            or run_root not in {Path(value).resolve() for value in session.get("protected_paths", [])}
+            or Path(session["artifact_root"]).resolve() != Path(initial["capacity_ledger_lifecycle"]["artifact_root"]).resolve()):
+        raise ValueError("candidate root is not protected by the admitted capacity session")
+    payload = request["payload"]
+    for name in ("plan", "run_config_template", "simion_executable"):
+        verify_record(name, payload[name])
+    writer_completion: dict[str, Any] = {"operations": [], "resource_releases": []}
+    summary = None
+    exception = None
+    try:
+        _, summary = _execute_candidate_stages(
+            Path(payload["plan"]["path"]), payload["simion_executable"]["path"],
+            reuse_parent=Path(payload["reuse_parent"]) if payload["reuse_parent"] else None,
+            reuse_through=payload["reuse_through"], initialized_config_path=run_config_path,
+            execution_context={"capacity_session_path": str(capacity_session_path),
+                               "component_pa_plan": payload["component_pa_plan"],
+                               "pa_producer_handoffs": payload.get("pa_producer_handoffs"),
+                               "context_sha256": sha256(execution_request_path).lower(),
+                               "writer_completion": writer_completion},
+        )
+    except BaseException as error:
+        summary = getattr(error, "summary", None)
+        exception = {"type": type(error).__name__, "message": str(error), "notes": list(getattr(error, "__notes__", []))}
+        if summary is None:
+            # No stage result is invented when preparation itself failed.
+            summary = {"schema_version": 1, "role": "oa_tof_candidate_run_summary", "status": "failed",
+                       "failure_stage": "preparation", "candidate_decision": "candidate_rejected",
+                       "promotion_authorized": False, "performance_claim_allowed": False, "stages": []}
+    summary = dict(summary, run_id=run_root.name)
+    if load_json(run_root / "run_manifest.json").get("lifecycle_state") == "provisional":
+        refresh_candidate_provisional_manifest(run_root, checkpoint=True)
+    outputs = sorted(path for path in run_root.rglob("*") if path.is_file()
+                     and not path.is_relative_to(run_root / "inputs")
+                     and path.name not in {"run_config.json", "run_manifest.json"})
+    required = [Path(value) for stage in summary.get("stages", [])
+                for value in stage.get("evidence", {}).values()
+                if isinstance(value, str) and Path(value).is_file()]
+    write_json_atomic(Path(completion_path), {
+        "schema_version": 1, "role": "run_artifact_workflow_completion",
+        "run_id": run_root.name, "project": "single_reflection_oa_tof_mass_analyzer",
+        "execution_request": file_record(execution_request_path), "run_config": file_record(run_config_path),
+        "status": summary["status"], "summary": summary,
+        "output_paths": [str(path) for path in outputs], "required_output_paths": [str(path) for path in required],
+        "retention_preserve_paths": [],
+        "manifest_extra_fields": {"lifecycle_state": "terminal", "promotion_authorized": False,
+                                  "execution_source_closure": load_json(run_config_path).get("execution_source_closure", {})},
+        "writer_completion": writer_completion, "exception": exception,
+    })
+
+
+def run_candidate_workflow(
+    plan_path: Path, simion_exe: str, stage_executor: StageExecutor = execute_stage, *,
+    reuse_parent: Path | None = None, reuse_through: str | None = None,
+    pa_handoff_output: Path | None = None, pa_producer_handoffs: list[tuple[Path, Path]] | None = None,
+) -> tuple[Path, dict[str, Any]]:
+    if stage_executor is not execute_stage:
+        if pa_handoff_output is not None or pa_producer_handoffs:
+            raise ValueError("PA producer handoff requires the public lifecycle owner")
+        # Explicit injected executors exercise the existing scientific engine
+        # without launching commercial tools; production always uses the owner.
+        return _execute_candidate_stages(plan_path, simion_exe, stage_executor,
+                                         reuse_parent=reuse_parent, reuse_through=reuse_through)
+    request = _prepare_execution_request(plan_path, simion_exe, reuse_parent, reuse_through, pa_producer_handoffs)
+    run_root = Path(request["package"]["artifact_project_root"]) / "runs" / request["package"]["run_id"]
+    if pa_handoff_output is not None:
+        pa_handoff_output = pa_handoff_output.resolve()
+        if pa_handoff_output.exists() or pa_handoff_output.is_relative_to(run_root.parent):
+            raise ValueError("PA handoff output must be a new path outside the candidate runs directory")
+        request["package"]["retention_reason"] += " Explicit PA producer handoff retains the actual public owner Result."
+    with tempfile.TemporaryDirectory(prefix="oatof_candidate_owner_") as directory:
+        request_path = Path(directory) / "request.json"
+        result_path = pa_handoff_output if pa_handoff_output is not None else Path(directory) / "result.json"
+        write_json_atomic(request_path, request)
+        failure = None
+        try:
+            _run_command(_powershell(str(REPO_ROOT / "common/contracts/run_artifact_workflow.ps1"),
+                                     ["-RequestPath", str(request_path), "-ResultPath", str(result_path)]),
+                         Path(directory) / "owner.log")
+        except BaseException as error:
+            failure = error
+        if not result_path.is_file():
+            raise CandidateWorkflowError(f"public lifecycle owner did not return completion: {failure}", run_root) from failure
+        result = load_json(result_path)
+        if not (result.get("terminal_published") and result.get("capacity_finalized") and result.get("lease_released")):
+            raise CandidateWorkflowError(f"public lifecycle owner remains incomplete: {result}", run_root) from failure
+        summary = load_json(run_root / "summary.json")
+        if summary["status"] == "interrupted":
+            raise CandidateWorkflowInterrupted(run_root) from failure
+        if summary["status"] != "success" or failure is not None:
+            raise CandidateWorkflowError(str(result.get("exception") or failure), run_root) from failure
+        return run_root, summary

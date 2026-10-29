@@ -23,6 +23,7 @@ from common.contracts.run_capacity_lifecycle import (
     resume_partial_retirements,
     resume_terminal_runs,
     seal_checkpoint,
+    reseal_retired_payload,
     retire_misplaced_light_run,
 )
 from common.contracts.solver_review_retirement import (
@@ -191,6 +192,66 @@ class RunCapacityLifecycleTests(unittest.TestCase):
             self.assertEqual(load_capacity_ledger(root), ledger)
             with self.assertRaisesRegex(ValueError, "cannot become light_evidence"):
                 finalize_ready(root, config)
+
+    def test_automatic_reseal_preserves_decision_and_rechecks_equal_size_inventory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initialize_capacity_ledger(root, objects=[])
+            run, config = self.retired_failed_fixture(root, retained_evidence=True, additional_payload=True)
+            original_entry = dict(load_capacity_ledger(root)["objects"][0])
+            result = reseal_retired_payload(root, config, owner="p", writing_stopped=True)
+            entry = load_capacity_ledger(root)["objects"][0]
+            self.assertEqual(entry, {**original_entry, "bytes": result["bytes"]})
+            self.assertEqual(reseal_retired_payload(root, config, owner="p", writing_stopped=True), result)
+            before = capacity_ledger.resolve_ledger_path(root).read_bytes()
+            # Identical total bytes are not proof that the preserved inventory matches.
+            evidence = run / "samples.csv"
+            content = evidence.read_bytes()
+            evidence.write_bytes(b"X" + content[1:])
+            with self.assertRaises((ValueError, RuntimeError)):
+                reseal_retired_payload(root, config, owner="p", writing_stopped=True)
+            self.assertEqual(capacity_ledger.resolve_ledger_path(root).read_bytes(), before)
+
+    def test_automatic_reseal_rejects_unconfirmed_and_new_protection(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initialize_capacity_ledger(root, objects=[])
+            run, config = self.retired_failed_fixture(root, additional_payload=True)
+            before = capacity_ledger.resolve_ledger_path(root).read_bytes()
+            for options in ({"owner": "p"}, {"owner": "wrong", "writing_stopped": True}):
+                with self.subTest(options=options), self.assertRaises(ValueError):
+                    reseal_retired_payload(root, config, **options)
+            capacity_protection.create_capacity_protection_lease(
+                root, lease_id="new-consumer", owner="test", ttl_seconds=3600, protected_paths=[run])
+            with self.assertRaisesRegex(ValueError, "active protection"):
+                reseal_retired_payload(root, config, owner="p", writing_stopped=True)
+            self.assertEqual(capacity_ledger.resolve_ledger_path(root).read_bytes(), before)
+
+    def test_automatic_reseal_publication_failure_recovers_without_repeating_deletion(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initialize_capacity_ledger(root, objects=[])
+            run, config = self.retired_failed_fixture(root, additional_payload=True)
+            before_files = {path.relative_to(run).as_posix(): path.read_bytes()
+                            for path in run.rglob("*") if path.is_file()}
+            before_ledger = capacity_ledger.resolve_ledger_path(root).read_bytes()
+            with patch.object(run_capacity_lifecycle, "write_json_atomic", side_effect=OSError("TEST_ONLY ledger publication")):
+                with self.assertRaisesRegex(OSError, "ledger publication"):
+                    reseal_retired_payload(root, config, owner="p", writing_stopped=True)
+            self.assertEqual(capacity_ledger.resolve_ledger_path(root).read_bytes(), before_ledger)
+            command = [sys.executable, "-m", "common.contracts.run_capacity_lifecycle",
+                       "--action", "reseal-retired-payload", "--artifact-root", str(root),
+                       "--run-config", str(config), "--owner", "p", "--confirm-writing-stopped"]
+            for _ in range(2):
+                result = subprocess.run(command, cwd=Path(__file__).resolve().parents[2],
+                    capture_output=True, text=True, check=True, timeout=30)
+                self.assertEqual(json.loads(result.stdout)["bytes"], sum(map(len, before_files.values())))
+                self.assertEqual(before_files, {path.relative_to(run).as_posix(): path.read_bytes()
+                                               for path in run.rglob("*") if path.is_file()})
+            rejected = subprocess.run(command + ["--retention-reason", "new reason"],
+                cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True, timeout=30)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("preserves its original retention reason", rejected.stderr)
 
     def test_second_owner_batch_reseals_exact_remaining_inventory_once(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

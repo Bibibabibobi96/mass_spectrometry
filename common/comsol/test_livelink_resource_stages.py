@@ -19,7 +19,7 @@ function Get-HostResourceBudget { param($Role,$Stage) return @{schema_version=1;
 function Enter-HostResourceStage {
     param($Role,$Stage,$Budget,$RunId)
     Write-Event "enter:${Stage}:unknown=$($Budget.unknown_peak)"
-    return @{token='isolated-test'}
+    return @{token='isolated-test';inherited=($env:STAGE_RELEASE -eq 'inherited')}
 }
 function Update-HostResourceStage {
     param($Lease,$Stage,$Budget,$RetainedMemoryBytes)
@@ -35,7 +35,14 @@ function Register-HostResourceProcess {
     Write-Event "register:$ProcessId"
     if ($env:STAGE_SCENARIO -eq 'registration_failure') { throw 'registration failed' }
 }
-function Exit-HostResourceStage { param($Lease) Write-Event 'exit' }
+function Exit-HostResourceStage {
+    param($Lease,[switch]$PassThru)
+    Write-Event 'exit'
+    if($env:STAGE_RELEASE -eq 'error'){throw 'TEST_ONLY release failed'}
+    if($PassThru -and -not $Lease.inherited){
+        return @{status=$(if($env:STAGE_RELEASE -eq 'retained'){'retained'}else{'released'});token=$Lease.token}
+    }
+}
 function Receive-HostResourceStage {
     param($Lease)
     if (-not $global:FakeLauncherProcess.HasExited) { throw 'scheduler polled while launcher is running' }
@@ -124,6 +131,7 @@ class LiveLinkResourceStageTests(unittest.TestCase):
     def run_scenario(
         self, scenario: str, *, supplied_budget: int = 0, assembly_mode: str | None = None,
         crash_scenario: str | None = None, observation_scenario: str | None = None,
+        completion: bool = False, release: str = '',
     ) -> tuple[int, list[str], str]:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -245,6 +253,7 @@ function Update-RepositoryProcessObservation {
 $global:FakeLaunchCount=0
 $global:FakeServerLive=$false
 $arguments=@{TaskScript=(Join-Path $PSScriptRoot 'task.m');ReportPath=(Join-Path $PSScriptRoot 'logs/report.txt');StartupRetryDelaySeconds=1;RunId='test-resource-stages'}
+if($env:STAGE_COMPLETION -eq '1'){$arguments.CompletionPath=Join-Path $PSScriptRoot 'completion.json'}
 if($env:OBSERVATION_SCENARIO-in@('ordinary','metric_failure')){
  $arguments.Limits=[pscustomobject]@{wall_clock_seconds=1;process_tree_working_set_bytes=1;transient_run_directory_bytes=1;minimum_system_available_memory_bytes=1;compact_final_retained_bytes=1}
  $arguments.RunDir=$PSScriptRoot;$arguments.UsagePath=Join-Path $PSScriptRoot 'logs/usage.json'
@@ -276,8 +285,11 @@ try { & $path @arguments } finally {
                                STAGE_SUPPLIED_BUDGET=str(int(supplied_budget)),
                                STAGE_ASSEMBLY_MODE=assembly_mode or '',
                                CRASH_SCENARIO=crash_scenario or '', OBSERVATION_SCENARIO=observation_scenario or '')
+            environment.update(STAGE_COMPLETION='1' if completion else '0', STAGE_RELEASE=release)
             if crash_scenario:
                 environment["FAKE_LAUNCHER"] = str(shutil.which("pwsh"))
+            if scenario == 'prelaunch_failure':
+                environment['FAKE_LAUNCHER'] = str(root / 'missing.exe')
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-File", str(wrapper)], cwd=root, env=environment,
                 capture_output=True, creationflags=self.creation_flags, timeout=30,
@@ -289,6 +301,24 @@ try { & $path @arguments } finally {
             self.assertIn(probe, completed.stdout, output)
             self.assertIn(probe, completed.stderr, output)
             entries = events.read_text(encoding="utf-8-sig").splitlines() if events.exists() else []
+            if completion:
+                receipt = json.loads((root / 'completion.json').read_text(encoding='utf-8'))
+                self.assertEqual(receipt['schema_version'], 1)
+                self.assertEqual(receipt['role'], 'comsol_launcher_completion')
+                self.assertEqual(receipt['run_id'], 'test-resource-stages')
+                self.assertEqual(len(receipt['operations']), 0 if scenario == 'prelaunch_failure' else 1)
+                for operation in receipt['operations']:
+                    self.assertTrue(operation['observation']['exit_confirmed'])
+                    self.assertIsInstance(operation['observation']['returncode'], int)
+                self.assertEqual(receipt['host_release']['token'], 'isolated-test')
+                self.assertEqual(receipt['host_release']['inherited'], release == 'inherited')
+                if release == 'error':
+                    self.assertEqual(receipt['host_release']['error'], 'TEST_ONLY release failed')
+                elif release == 'inherited':
+                    self.assertIsNone(receipt['host_release']['result'])
+                else:
+                    self.assertEqual(receipt['host_release']['result']['status'], release or 'released')
+                self.assertEqual(list(root.glob('completion.json.*.tmp')), [])
             if observation_scenario:
                 output += "\nOBSERVATION_EVENTS=" + repr(entries)
             if observation_scenario:
@@ -315,6 +345,25 @@ try { & $path @arguments } finally {
                     self.assertFalse(source.exists())
                     self.assertEqual(destination.read_bytes(), expected)
             return completed.returncode, entries, output
+
+    def test_completion_receipt_keeps_native_and_actual_release_separate(self) -> None:
+        for release in ('', 'retained', 'error', 'inherited'):
+            with self.subTest(release=release):
+                code, _, output = self.run_scenario('success', completion=True, release=release)
+                self.assertEqual(code == 0, release in ('', 'inherited'), output)
+
+    def test_completion_release_error_preserves_original_task_failure(self) -> None:
+        code, _, output = self.run_scenario('task_failure', completion=True, release='error')
+        self.assertNotEqual(code, 0, output)
+        self.assertIn('R2025b LiveLink task failed', output)
+        self.assertIn('COMSOL_CLOSEOUT_ERROR=TEST_ONLY release failed', output)
+
+    def test_completion_receipt_records_real_child_exit_and_no_fictitious_launch(self) -> None:
+        code, _, output = self.run_scenario('success', crash_scenario='success', completion=True)
+        self.assertEqual(code, 0, output)
+        code, _, output = self.run_scenario('prelaunch_failure', completion=True)
+        self.assertNotEqual(code, 0, output)
+        self.assertIn('COMSOL MATLAB launcher not found', output)
 
     def test_actual_server_cleanup_requires_owned_ancestry_and_retained_creation(self) -> None:
         """Role candidates are inert pwsh PIDs; ancestry and stop operations are real."""

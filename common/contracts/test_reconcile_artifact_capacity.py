@@ -111,6 +111,16 @@ def create_capacity_protection_lease(root: Path, **kwargs):
 
 
 class MaintenanceTargetCliTest(unittest.TestCase):
+    def test_legacy_owner_rejects_daily_requests_without_discovery(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with patch.object(capacity, "_directory_bytes", side_effect=AssertionError("legacy discovery ran")):
+                for mode in ("startup", "maintenance"):
+                    with self.subTest(mode=mode), self.assertRaisesRegex(ValueError, "reconcile_artifact_capacity"):
+                        _plan(root, target_bytes=100, minimum_free_bytes=0, execution_mode=mode)
+                    with self.assertRaisesRegex(ValueError, "reconcile_artifact_capacity"):
+                        apply({"execution_mode": mode})
+
     def test_maintenance_reconciles_execution_alias_root_without_scanning_targets(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -430,7 +440,7 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
                     },
                 ],
             )
-            receipt = plan(
+            receipt = normal_capacity.plan(
                 root, target_bytes=0, minimum_free_bytes=0,
                 execution_mode="maintenance", capacity_ledger=ledger,
             )
@@ -446,7 +456,7 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
                 capacity_ledger.retire_capacity_object(
                     root, path="cache/generation", bytes_removed=3,
                 )
-            protected_receipt = plan(
+            protected_receipt = normal_capacity.plan(
                 root, target_bytes=0, minimum_free_bytes=0,
                 execution_mode="maintenance", capacity_ledger=ledger,
             )
@@ -479,27 +489,17 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             (root / "projects").mkdir()
             ledger = root / "common" / "capacity_ledger.json"
             ledger.parent.mkdir(exist_ok=True)
-            ledger.write_text(json.dumps({
-                "schema_version": 2,
-                "role": "artifact_capacity_ledger",
-                "status": "calibrated",
-                "complete": True,
-                "artifact_root": str(root),
-                "resident_bytes": 1000,
-                "external_scopes": [],
-                "objects": [{
-                    "path": "projects/existing", "class": "light_evidence",
-                    "bytes": 1000, "status": "ready", "pin": False,
-                }],
-            }), encoding="utf-8")
+            _initialize_fixture_ledger(root, objects=[{
+                "path": "projects/existing", "class": "light_evidence",
+                "bytes": 1000, "status": "ready", "pin": False,
+            }])
             create_capacity_protection_lease(
                 root, lease_id="current", owner="test", ttl_seconds=3600,
                 protected_paths=[root / "projects"], committed_new_bytes=100,
             )
-            with patch.object(capacity, "_directory_bytes", side_effect=AssertionError("startup scanned")):
-                receipt = plan(
+            with patch.object(Path, "rglob", side_effect=AssertionError("startup scanned")):
+                receipt = normal_capacity.plan(
                     root, target_bytes=2000, minimum_free_bytes=0,
-                    maximum_new_artifact_bytes=100,
                     execution_mode="startup",
                     capacity_ledger=ledger,
                     capacity_protection_lease_id="current",
@@ -551,12 +551,12 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
     def test_startup_fails_closed_without_trusted_ledger_or_current_lease(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            receipt = plan(
-                root, target_bytes=2000, minimum_free_bytes=0,
-                maximum_new_artifact_bytes=100, execution_mode="startup",
-            )
+            with self.assertRaisesRegex(ValueError, "requires capacity_protection_lease_id"):
+                normal_capacity.plan(root, target_bytes=2000, minimum_free_bytes=0)
+            receipt = normal_capacity.plan(root, target_bytes=2000, minimum_free_bytes=0,
+                capacity_protection_lease_id="missing")
             self.assertFalse(receipt["satisfied"])
-            self.assertEqual(receipt["blocking_reason"], "SAFETY_DECISION_UNAVAILABLE")
+            self.assertEqual(receipt["blocking_reason"], "CAPACITY_LEDGER_REQUIRED")
             self.assertFalse(receipt["candidate_discovery_performed"])
 
     def test_increased_commitment_survives_failed_startup_revalidation(self) -> None:
@@ -575,9 +575,9 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
                 now=datetime.fromtimestamp(started.timestamp() + 60, timezone.utc),
             )
             with patch.object(capacity.shutil, "disk_usage", return_value=Mock(free=150)):
-                receipt = plan(
+                receipt = normal_capacity.plan(
                     root, target_bytes=1000, minimum_free_bytes=0,
-                    maximum_new_artifact_bytes=200, execution_mode="startup",
+                    execution_mode="startup",
                     capacity_protection_lease_id="growing",
                 )
             self.assertFalse(receipt["satisfied"])
@@ -623,24 +623,17 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             payload_bytes = payload.stat().st_size
             ledger = root / "common" / "capacity_ledger.json"
             ledger.parent.mkdir(exist_ok=True)
-            ledger.write_text(json.dumps({
-                "schema_version": 2, "role": "artifact_capacity_ledger",
-                "status": "calibrated", "complete": True,
-                "artifact_root": str(root), "resident_bytes": payload_bytes,
-                "external_scopes": [],
-                "objects": [{
-                    "path": "projects/p/runs/rebuildable",
-                    "class": "rebuildable_payload", "bytes": payload_bytes,
-                    "status": "ready",
-                }],
-            }), encoding="utf-8")
-            with patch.object(capacity, "_directory_bytes", side_effect=AssertionError("maintenance scanned")):
-                receipt = plan(
+            _initialize_fixture_ledger(root, objects=[{
+                "path": "projects/p/runs/rebuildable", "class": "rebuildable_payload",
+                "bytes": payload_bytes, "status": "ready", "pin": False,
+            }])
+            with patch.object(Path, "rglob", side_effect=AssertionError("maintenance scanned")):
+                receipt = normal_capacity.plan(
                     root, target_bytes=1, minimum_free_bytes=0,
                     execution_mode="maintenance", capacity_ledger=ledger,
                 )
                 self.assertEqual(receipt["measurement_mode"], "LEDGER_MAINTENANCE")
-                applied = apply(receipt)
+            applied = normal_capacity.apply(receipt)
             self.assertFalse(target.exists())
             self.assertEqual(applied["removed_bytes"], payload_bytes)
 
@@ -673,7 +666,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
                     bytes_count=1, status="retirement_pending",
                 )
             with self.assertRaises(ValueError):
-                capacity.retire_capacity_object(root, path="runs/old", bytes_removed=30)
+                capacity_ledger.retire_capacity_object(root, path="runs/old", bytes_removed=30)
 
     def test_ledger_retirement_updates_resident_bytes_without_scanning(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -685,11 +678,11 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
                 bytes_count=30, status="ready",
             )
             with self.assertRaisesRegex(ValueError, "one complete object"):
-                capacity.retire_capacity_object(
+                capacity_ledger.retire_capacity_object(
                     root, path="runs/old", bytes_removed=20,
                 )
             with patch.object(capacity, "_directory_bytes", side_effect=AssertionError("ledger scanned")):
-                entry = capacity.retire_capacity_object(
+                entry = capacity_ledger.retire_capacity_object(
                     root, path="runs/old", bytes_removed=30,
                 )
             self.assertEqual(entry["status"], "retired")
@@ -1213,16 +1206,16 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
                 }],
             }
             ledger.write_text(json.dumps({**base, "resident_bytes": 2}), encoding="utf-8")
-            self.assertIsNone(capacity._load_capacity_ledger(root, ledger))
+            self.assertIsNone(capacity_ledger.load_capacity_ledger(root, ledger))
             duplicate = dict(base)
             duplicate["resident_bytes"] = 2
             duplicate["objects"] = [*base["objects"], dict(base["objects"][0])]
             ledger.write_text(json.dumps(duplicate), encoding="utf-8")
-            self.assertIsNone(capacity._load_capacity_ledger(root, ledger))
+            self.assertIsNone(capacity_ledger.load_capacity_ledger(root, ledger))
             ledger.write_text(
                 json.dumps({**base, "unclassified_bytes": 1}), encoding="utf-8",
             )
-            self.assertIsNone(capacity._load_capacity_ledger(root, ledger))
+            self.assertIsNone(capacity_ledger.load_capacity_ledger(root, ledger))
 
     def test_ledger_removal_does_not_hold_decision_lock_during_io(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1248,8 +1241,8 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
                 target.rmdir()
                 return root / "receipt.json", 7
 
-            with patch.object(capacity, "_remove_tree_with_receipt", side_effect=remove_without_global_lock):
-                result = capacity._apply_ledger_object(root, {
+            with patch.object(normal_capacity, "_remove_ledger_target", side_effect=remove_without_global_lock):
+                result = normal_capacity._apply_ledger_object(root, {
                     "path": str(target), "operation": "retire_ledger_object",
                 }, ledger)
             self.assertEqual(result["bytes"], 7)

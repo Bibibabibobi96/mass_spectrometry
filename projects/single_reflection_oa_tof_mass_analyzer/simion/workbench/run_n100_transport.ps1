@@ -9,6 +9,12 @@ param(
   [Parameter(Mandatory = $true)][string]$SummaryPath,
   [Parameter(Mandatory = $true)][string]$AnalyzerScript,
   [Parameter(Mandatory = $true)][string]$ResolvedContractPath,
+  [Parameter(Mandatory)][string]$RuntimeReceiptPath,
+  [Parameter(Mandatory)][string]$CapacitySessionPath,
+  [Parameter(Mandatory)][string]$CompletionPath,
+  [Parameter(Mandatory)][string]$ContextSha256,
+  [Parameter(Mandatory)][string]$RunId,
+  [Parameter(Mandatory)][string]$PythonExe,
   [int]$ExpectedParticleCount = 100,
   [int]$ExpectedTrajectoryQuality = 8,
   [double]$DetectorRadiusMm = 40
@@ -17,10 +23,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$hostRole = 'SIMION'
-. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
-$hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage prepare
-try {
+. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 
 if ($ExpectedParticleCount -ne 100) {
   throw 'This shared OA-TOF transport helper is the fixed N=100 functional tier.'
@@ -45,23 +48,25 @@ $ion = (Resolve-Path -LiteralPath $IonPath).Path
 $analyzer = (Resolve-Path -LiteralPath $AnalyzerScript).Path
 $resolvedContract = (Resolve-Path -LiteralPath $ResolvedContractPath).Path
 
-$hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage flight `
-  -Budget (Get-HostResourceBudget -Role $hostRole -Stage flight) -RetainedMemoryBytes 0
-$process = Start-Process -FilePath $SimionExe -ArgumentList @(
+$nativeArguments = @(
   '--default-num-particles', [string]$ExpectedParticleCount, '--nogui', 'fly',
   '--trajectory-quality', [string]$ExpectedTrajectoryQuality, '--retain-trajectories', '0',
   '--particles', $ion,
   '--adjustable', "trajectory_quality=$ExpectedTrajectoryQuality",
   '--adjustable', 'trajectory_log_enable=1',
   $iob
-) -WorkingDirectory (Split-Path -Parent $iob) -WindowStyle Hidden -Wait -PassThru `
-  -RedirectStandardOutput $LogPath -RedirectStandardError $ErrorPath
-if ($process.ExitCode -ne 0) {
-  throw "SIMION N=100 transport failed with exit code $($process.ExitCode): $ErrorPath"
+)
+$flightRequestPath=Join-Path (Split-Path -Parent $CompletionPath) 'candidate_n100_flight_request.json'
+if(Test-Path -LiteralPath $flightRequestPath){throw 'Candidate N100 flight request already exists.'}
+Write-RunJson -Path $flightRequestPath -Value @{
+  schema_version=1;role='oatof_candidate_flight_request';executable=[IO.Path]::GetFullPath($SimionExe);
+  argv=$nativeArguments;cwd=(Split-Path -Parent $iob);stdout=[IO.Path]::GetFullPath($LogPath);
+  stderr=[IO.Path]::GetFullPath($ErrorPath);result_receipt=[IO.Path]::GetFullPath($CompletionPath);
+  warning_seconds=1800;context_sha256=$ContextSha256;run_id=$RunId;case_id='design_candidate';mode='native'
 }
+& (Join-Path $PSScriptRoot 'run_candidate_flight.ps1') -ExecutionRequestPath $flightRequestPath `
+  -RuntimeReceiptPath $RuntimeReceiptPath -CapacitySessionPath $CapacitySessionPath -PythonExe $PythonExe -RepositoryRoot $repoRoot
 
-$hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage postprocess `
-  -Budget (Get-HostResourceBudget -Role $hostRole -Stage postprocess) -RetainedMemoryBytes 0
 $diagnostics = & $analyzer -Log $LogPath -IonFile $ion -Mode 'candidate_n100_transport' `
   -Distribution 'fixedN100' -DetectorRadiusMm $DetectorRadiusMm -ParticleCsv $ParticleCsv
 if ($LASTEXITCODE -ne 0) { throw 'SIMION N=100 transport diagnostics failed.' }
@@ -98,7 +103,3 @@ $summary = [ordered]@{
 }
 $summary | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $SummaryPath -Encoding UTF8
 "OATOF_SIMION_N100_TRANSPORT=PASS IONS=$ExpectedParticleCount SUMMARY=$SummaryPath"
-
-} finally {
-  Exit-HostExecutionLease -Lease $hostExecutionLease
-}

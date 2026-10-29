@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import io
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from datetime import date, timedelta
 from contextlib import redirect_stdout
@@ -32,6 +34,248 @@ WRITING_DUTIES = {
 
 
 class DailyCapacityReconcileTest(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell Core is required")
+    def test_host_release_failure_preserves_original_error_and_stops_pressure_recovery(self) -> None:
+        repo = Path(__file__).resolve().parents[2]
+        script = r'''
+$ErrorActionPreference='Stop'
+$RepoRoot=$env:CAPACITY_FIXTURE_REPO
+. (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
+$results=@(foreach($scenario in @('receipt','native','success','workflow_initial','workflow')){
+  & {
+    param($Scenario)
+    $script:releaseCount=0
+    $script:capacityCount=0
+    $script:renewCount=0
+    function Enter-HostExecutionLease { return [pscustomobject]@{} }
+    function Exit-HostExecutionLease {
+      param($Lease)
+      $script:releaseCount++
+      if($Scenario-ne'workflow'-or$script:releaseCount-eq2){throw 'fixture host release failure'}
+    }
+    function Update-ArtifactWorkflowCapacitySession { param($Python,$RepoRoot,$Session) $script:renewCount++ }
+    function Invoke-RunCapacityCommand {
+      param($Python,$RepoRoot,$Arguments,$FailureLabel)
+      $script:capacityCount++
+      if($Scenario-eq'native'){throw 'fixture native failure'}
+      $mode=$Arguments[[array]::IndexOf($Arguments,'--execution-mode')+1]
+      return (@{role='artifact_capacity_gate';execution_mode=$mode;
+        capacity_protection_lease_id='fixture';measurement_mode='LEDGER_MAINTENANCE';
+        satisfied_after_apply=($Scenario-eq'success');blocking_reason='TARGET_CAPACITY_EXCEEDED';
+        resident_bytes=12;total_active_lease_committed_new_bytes=2;projected_bytes=14;
+        target_bytes=10;free_bytes=100;capacity_gap_bytes=4;removed=@{bytes=0}}|ConvertTo-Json -Compress)
+    }
+    $result=@{scenario=$Scenario;failure=$null;cleanup=$null;stage=$null;receipt=$null}
+    try{
+      if($Scenario-like'workflow*'){
+        $session=[pscustomobject]@{artifact_root=$RepoRoot;lease_id='fixture';protected_paths=@();protected_cache_keys=@()}
+        Invoke-ArtifactWorkflowCapacityAdmission -Python fixture -RepoRoot $RepoRoot -Session $session|Out-Null
+      }else{
+        Invoke-ArtifactCapacityGate -Python fixture -RepoRoot $RepoRoot -ArtifactRoot $RepoRoot -CapacityProtectionLeaseId fixture|Out-Null
+      }
+    }catch{
+      $result.failure=$_.Exception.Message
+      $result.cleanup=$_.Exception.Data['host_execution_lease_cleanup']
+      $result.receipt=$_.Exception.Data['capacity_receipt']
+      if($null-ne$_.Exception.Data['pressure_maintenance']){
+        $result.stage=$_.Exception.Data['pressure_maintenance'].stage
+        $result.cleanup=$_.Exception.InnerException.Data['host_execution_lease_cleanup']
+      }
+    }
+    $result.capacity_calls=$script:capacityCount
+    $result.release_calls=$script:releaseCount
+    $result.renew_calls=$script:renewCount
+    [pscustomobject]$result
+  } $scenario
+})
+Write-Output ('HOST_RELEASE_RESULT='+($results|ConvertTo-Json -Depth 15 -Compress))
+'''
+        completed = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=repo,
+                                   env=dict(os.environ, CAPACITY_FIXTURE_REPO=str(repo)),
+                                   capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        line = next(line for line in completed.stdout.splitlines() if line.startswith("HOST_RELEASE_RESULT="))
+        results = {row["scenario"]: row for row in json.loads(line.split("=", 1)[1])}
+        for scenario, result in results.items():
+            with self.subTest(scenario=scenario):
+                expected_calls = 2 if scenario == "workflow" else 1
+                self.assertEqual(result["capacity_calls"], expected_calls, result)
+                self.assertEqual(result["release_calls"], expected_calls, result)
+                self.assertEqual(result["renew_calls"], 1 if scenario == "workflow" else 0, result)
+                if scenario == "success":
+                    self.assertEqual(result["failure"], "fixture host release failure")
+                    continue
+                self.assertEqual(result["cleanup"], {"status": "failed", "error": "fixture host release failure"})
+                if scenario == "native":
+                    self.assertEqual(result["failure"], "fixture native failure")
+                elif scenario == "workflow":
+                    self.assertEqual(result["stage"], "maintenance")
+                    self.assertIn("after TARGET_CAPACITY_EXCEEDED", result["failure"])
+                    self.assertIn("CAPACITY_TARGET_NOT_MET", result["failure"])
+                else:
+                    self.assertIn("TARGET_CAPACITY_EXCEEDED", result["failure"])
+                    self.assertEqual(result["receipt"]["capacity_protection_lease_id"], "fixture")
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell Core is required")
+    def test_workflow_pressure_relief_uses_one_protected_pass_and_fresh_admission(self) -> None:
+        """Run the real PS session/CLI/ledger against byte-sized TEMP objects."""
+        repo = Path(__file__).resolve().parents[2]
+        cases = (
+            ("accepted", True, 1, 2), ("still_full", False, 1, 2),
+            ("minimum_free", True, 1, 2), ("unrelated_owner_failure", True, 1, 2),
+            ("invalid_ledger", False, 0, 1), ("invalid_lease", False, 0, 1),
+            ("missing_scope", False, 0, 1), ("maintenance_failure", False, 1, 1),
+            ("renewal_failure", False, 1, 1), ("expired_before_renewal", False, 1, 1),
+            ("cleanup_failure", False, 1, 2),
+        )
+        with tempfile.TemporaryDirectory(prefix="capacity_pressure_session_") as temporary:
+            workspace = Path(temporary)
+            driver = workspace / "fixture_cli.py"
+            driver.write_text(textwrap.dedent('''\
+                import json, sys
+                from datetime import datetime, timedelta
+                from pathlib import Path
+                from common.contracts import reconcile_artifact_capacity as capacity
+                from common.contracts import capacity_protection as protection
+                args = sys.argv[1:]
+                root = Path(args[args.index("--artifact-root") + 1])
+                scenario = root.name
+                events = root / "events.jsonl"
+                def record(event):
+                    with events.open("a", encoding="utf-8") as stream:
+                        stream.write(json.dumps(event) + "\\n")
+                action = next((name for name in ("create", "renew", "delete")
+                               if "--" + name + "-protection-lease" in args), None)
+                mode = args[args.index("--execution-mode") + 1] if "--execution-mode" in args else None
+                if mode == "startup" and scenario in {"invalid_lease", "missing_scope"}:
+                    lease_path = next((root / "common/capacity_protection_leases").glob("*.json"))
+                    lease = json.loads(lease_path.read_text(encoding="utf-8"))
+                    if scenario == "invalid_lease": lease["committed_new_bytes"] = -1
+                    else: lease["protected_paths"] = ["future_run"]
+                    lease_path.write_text(json.dumps(lease), encoding="utf-8")
+                try:
+                    leases = protection.load_capacity_protection_leases(root)
+                    active = sum(row.get("status") == "active" for row in leases["audit"])
+                except Exception:
+                    active = None
+                record({"action": action, "mode": mode, "active_leases": active})
+                policy = capacity._capacity_policy()
+                policy.update(target_gib=(5 if scenario in {"still_full", "cleanup_failure"} else 100 if scenario == "minimum_free" else 10) / capacity.GIB,
+                              minimum_free_gib=(1 if scenario == "minimum_free" else 0) / capacity.GIB)
+                capacity._capacity_policy = lambda: policy
+                if scenario == "minimum_free":
+                    disk_usage = capacity.shutil.disk_usage
+                    capacity.shutil.disk_usage = lambda path: disk_usage(path)._replace(
+                        free=1 if (root / "disposable").exists() else 9)
+                if scenario == "unrelated_owner_failure":
+                    def fail_owner(_root): raise ValueError("unrelated historical fixture")
+                    capacity._audit_pa_transaction_owner = fail_owner
+                if scenario == "maintenance_failure" and mode == "maintenance":
+                    def fail_plan(*args, **kwargs): raise RuntimeError("fixture maintenance failure")
+                    capacity._maintenance_plan = fail_plan
+                if scenario == "renewal_failure" and action == "renew" and not (root / "disposable").exists():
+                    def fail_renewal(*args, **kwargs): raise ValueError("fixture lease renewal failure")
+                    protection.renew_capacity_protection_lease = fail_renewal
+                if scenario == "expired_before_renewal" and action == "renew" and not (root / "disposable").exists():
+                    lease_path = next((root / "common/capacity_protection_leases").glob("*.json"))
+                    lease = json.loads(lease_path.read_text(encoding="utf-8"))
+                    lease["expires_at_utc"] = (datetime.fromisoformat(lease["created_at_utc"].replace("Z", "+00:00"))
+                                                + timedelta(milliseconds=1)).isoformat()
+                    lease_path.write_text(json.dumps(lease), encoding="utf-8")
+                if scenario == "cleanup_failure" and action == "delete":
+                    def fail_cleanup(*args, **kwargs): raise ValueError("fixture lease cleanup failure")
+                    protection.delete_capacity_protection_lease = fail_cleanup
+                check = capacity._assert_maintenance_input_lease
+                def observed_check(*args, **kwargs):
+                    check(*args, **kwargs)
+                    assert (root / "input").read_bytes() == b"keep"
+                    record({"guard": "active", "input_preserved": True})
+                capacity._assert_maintenance_input_lease = observed_check
+                sys.argv = ["fixture-capacity", *args]
+                capacity.main()
+                '''), encoding="utf-8")
+            for scenario, accepted, maintenance_count, startup_count in cases:
+                with self.subTest(scenario=scenario):
+                    root = workspace / scenario
+                    root.mkdir()
+                    (root / "input").write_bytes(b"keep")
+                    (root / "disposable").write_bytes(b"disposal")
+                    capacity_ledger.initialize_capacity_ledger(root, objects=[
+                        {"path": name, "class": "rebuildable_payload", "bytes": size,
+                         "status": "ready", "pin": False, **READY_DUTIES}
+                        for name, size in (("input", 4), ("disposable", 8))
+                    ])
+                    if scenario == "invalid_ledger":
+                        (root / capacity.CAPACITY_LEDGER_RELATIVE_PATH).write_text("invalid JSON", encoding="utf-8")
+                    quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+                    script = f'''
+$ErrorActionPreference='Stop'
+. {quote(repo / 'common/contracts/run_artifact_support.ps1')}
+$fixturePython={quote(sys.executable)}
+$fixtureDriver={quote(driver)}
+function Invoke-PressureFixturePython {{
+  param([Parameter(ValueFromRemainingArguments)]$NativeArguments)
+  & $fixturePython $fixtureDriver @($NativeArguments | Select-Object -Skip 2)
+  $global:LASTEXITCODE=$LASTEXITCODE
+}}
+$result=@{{accepted=$false;initial_reason=$null;failure=$null;pressure_stage=$null;cleanup=$null}}
+try {{
+  $session=Enter-ArtifactWorkflowCapacitySession -Python Invoke-PressureFixturePython -RepoRoot {quote(repo)} `
+    -ArtifactRoot {quote(root)} -RunDirectory {quote(root / 'future_run')} `
+    -CommittedNewBytes 2 -Owner fixture -LeaseTtlSeconds 120 -ProtectedPaths @({quote(root / 'input')})
+  $result.accepted=$true
+  $result.admission=$session.startup_gate
+  Exit-ArtifactWorkflowCapacitySession -Python Invoke-PressureFixturePython -RepoRoot {quote(repo)} -Session $session|Out-Null
+}} catch {{
+  $result.failure=$_.Exception.Message
+  $attempt=$_.Exception.Data['pressure_maintenance']
+  if($null-ne$attempt){{$result.initial_reason=$attempt.trigger_reason;$result.pressure_stage=$attempt.stage}}
+  $result.cleanup=$_.Exception.Data['capacity_lease_cleanup']
+}}
+Write-Output ('PRESSURE_RESULT='+($result|ConvertTo-Json -Depth 30 -Compress))
+'''
+                    environment = dict(os.environ, PYTHONDONTWRITEBYTECODE="1",
+                                       MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN="",
+                                       MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root / "host.sqlite3"),
+                                       SIMULATION_PYTHON_EXE=sys.executable)
+                    completed = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=repo,
+                                               env=environment, capture_output=True, text=True,
+                                               encoding="utf-8", timeout=90, check=False)
+                    self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+                    line = next(line for line in completed.stdout.splitlines() if line.startswith("PRESSURE_RESULT="))
+                    result = json.loads(line.split("=", 1)[1])
+                    self.assertEqual(result["accepted"], accepted, result)
+                    events = [json.loads(line) for line in (root / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+                    self.assertEqual(sum(row.get("mode") == "maintenance" for row in events), maintenance_count, result)
+                    self.assertEqual(sum(row.get("mode") == "startup" for row in events), startup_count, result)
+                    self.assertEqual((root / "input").read_bytes(), b"keep")
+                    remaining_leases = list((root / "common/capacity_protection_leases").glob("*.json"))
+                    self.assertEqual(len(remaining_leases), 1 if scenario == "cleanup_failure" else 0)
+                    if maintenance_count:
+                        self.assertTrue(all(row["active_leases"] == 1 for row in events if row.get("mode") in {"startup", "maintenance"}))
+                        self.assertTrue(any(row.get("guard") == "active" for row in events), events)
+                    if accepted:
+                        admission = result["admission"]
+                        self.assertEqual(admission["total_active_lease_committed_new_bytes"], 2)
+                        self.assertEqual(admission["projected_bytes"], 6)
+                        self.assertEqual(admission["pressure_maintenance"]["stage"], "admitted")
+                        self.assertEqual(admission["pressure_maintenance"]["maintenance"]["removed"]["bytes"], 8)
+                        if scenario == "unrelated_owner_failure":
+                            self.assertIn("unrelated historical fixture", str(admission["pressure_maintenance"]["maintenance"]["owner_action_failures"]))
+                    else:
+                        self.assertEqual(result["cleanup"]["status"], "failed" if scenario == "cleanup_failure" else "released", result)
+                        if maintenance_count:
+                            self.assertEqual(result["initial_reason"], "TARGET_CAPACITY_EXCEEDED")
+                            self.assertIn("after TARGET_CAPACITY_EXCEEDED", result["failure"])
+                    if scenario in {"maintenance_failure", "renewal_failure"}:
+                        self.assertIn("fixture " + ("maintenance" if scenario == "maintenance_failure" else "lease renewal") + " failure", result["failure"])
+                    if scenario == "expired_before_renewal":
+                        self.assertIn("expired and cannot be renewed", result["failure"])
+                        self.assertEqual(result["pressure_stage"], "renew_before_readmission")
+                    if scenario == "cleanup_failure":
+                        self.assertIn("TARGET_CAPACITY_EXCEEDED", result["failure"])
+                        self.assertIn("fixture lease cleanup failure", result["cleanup"]["error"])
+
     def test_startup_cli_apply_evaluates_admission_once(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

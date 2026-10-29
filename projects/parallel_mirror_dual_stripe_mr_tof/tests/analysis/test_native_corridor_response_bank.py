@@ -6,6 +6,7 @@ import subprocess
 from tempfile import TemporaryDirectory
 import unittest
 
+from common.simion.pa_family_cache import PAFamilyCacheError, advance_pa_family_cache_transaction
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_response_bank import (
     NATIVE_RESPONSE_NAMES,
@@ -117,6 +118,113 @@ Write-Output 'CONTINUATION_FIXTURE=PASS'
         self.assertEqual(names[9:17], STANDALONE_RESPONSE_NAMES)
         self.assertEqual(names[-1], RECEIPT_NAME)
         self.assertNotIn("mrtof_analyzer_corridor.pa0", names)
+
+    def test_runner_recipe_is_current_and_declares_native_sources_in_payload(self) -> None:
+        script = r'''
+param($Source,$RepoRoot,$Output)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[System.Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
+$commands=@($ast.FindAll({param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName()-eq'Write-RunJson' -and $n.Extent.Text.Contains('-Path $responseReceiptPath')},$true))
+if($commands.Count-ne1){throw 'Expected one actual response recipe writer'}
+$responseReceiptPath=$Output
+function Write-RunJson {param($Path,$Depth,$Value) $Value|ConvertTo-Json -Depth $Depth|Set-Content -LiteralPath $Path -Encoding utf8}
+Invoke-Expression $commands[0].Extent.Text
+'''
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = root / 'fixture.ps1'
+            fixture.write_text(script, encoding='utf-8')
+            output = root / 'recipe.json'
+            result = subprocess.run(['pwsh', '-NoProfile', '-NonInteractive', '-File', str(fixture),
+                str(PROJECT / 'simion/run_native_corridor_response_bank.ps1'), str(PROJECT.parents[1]), str(output)],
+                cwd=PROJECT, capture_output=True, text=True, encoding='utf-8', timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            recipe = json.loads(output.read_text(encoding='utf-8-sig'))
+            names = response_bank_filenames()
+            for export in recipe['exports']:
+                self.assertIn(export['source_name'], names)
+                self.assertIn(export['standalone_name'], names)
+            fixture_identity = {
+                'geometry': {'fixture': True}, 'gem': {'sha256': 'A' * 64},
+                'basis_namespace': {'ids': list(range(1, 9))}, 'mesh': [1, 1, 1],
+                'grid_phase': [0, 0, 0], 'surface': 'none',
+                'simion_identity': {'release': 'fixture'}, 'refine_policy': {'fixture': True},
+                'builder_identity': {'sha256': 'B' * 64},
+            }
+            state = advance_pa_family_cache_transaction(root / 'cache', fixture_identity, names,
+                owner='software-fixture', response_receipt=recipe)
+            self.assertEqual(state.action_required, 'build')
+            self.assertEqual(recipe['schema_version'], 2)
+            self.assertEqual(recipe['source_location'], 'payload')
+            old_recipe = dict(recipe, schema_version=1)
+            del old_recipe['source_location']
+            with self.assertRaisesRegex(PAFamilyCacheError, 'require schema_version 2'):
+                advance_pa_family_cache_transaction(root / 'other-cache', fixture_identity, names,
+                    owner='software-fixture', response_receipt=old_recipe)
+
+    def test_runner_preserves_registered_v1_recipe_during_explicit_continuation(self) -> None:
+        script = r'''
+param($Source,$RepoRoot,$CacheRoot,$Key,$Root,$Recover)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$transactionCacheKey=$Key;$resultDir=$Root;$continuationOutputs=@();$correctPublication=$false
+$probe=[pscustomobject]@{cache_key=$Key;disposition='miss'}
+$transaction=Get-Content -LiteralPath (Join-Path $CacheRoot ".transactions/$Key/transaction.json") -Raw|ConvertFrom-Json -Depth 60
+$RecoverMembers=if($Recover-eq'yes'){@('mrtof_analyzer_corridor.response8.pa')}else{@()}
+$sourceText=Get-Content -LiteralPath $Source -Raw
+$start=$sourceText.IndexOf("`$responseReceiptPath=''")
+$end=$sourceText.IndexOf('  # A resumed transaction already occupies', $start)
+function Write-RunJson {param($Path,$Depth,$Value) $Value|ConvertTo-Json -Depth $Depth|Set-Content -LiteralPath $Path -Encoding utf8}
+Invoke-Expression $sourceText.Substring($start,$end-$start)
+if($responseReceiptPath){throw 'Registered recipe was replaced by a new recipe'}
+$ast=[System.Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
+$fallback=$ast.Find({param($n) $n -is [System.Management.Automation.Language.IfStatementAst] -and $n.Extent.Text.Contains("'--write-receipt-directory',`$build") -and $n.Extent.Text.StartsWith('if(-not$responseReceiptPath')},$true)
+if($null-eq$fallback){throw 'Missing existing receipt dispatch'}
+$build='unused';$bankModule='unused';$script:fallbackCalls=0
+function Invoke-ProjectPython {param($Arguments) $script:fallbackCalls++}
+Invoke-Expression $fallback.Extent.Text
+if($fallbackCalls){throw 'Registered receipt was written outside the public owner'}
+'''
+        names = response_bank_filenames()
+        fixture_identity = {
+            'geometry': {'fixture': True}, 'gem': {'sha256': 'A' * 64},
+            'basis_namespace': {'ids': list(range(1, 9))}, 'mesh': [1, 1, 1],
+            'grid_phase': [0, 0, 0], 'surface': 'none',
+            'simion_identity': {'release': 'fixture'}, 'refine_policy': {'fixture': True},
+            'builder_identity': {'sha256': 'B' * 64},
+        }
+        for recover in ('no', 'yes'):
+            with self.subTest(explicit_member_recovery=recover), TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                cache = root / 'cache'
+                exporter = root / 'export.lua'
+                exporter.write_text('-- fixture')
+                recipe = {'schema_version': 2, 'source_location': 'payload', 'receipt_name': RECEIPT_NAME,
+                    'exporter_path': str(exporter), 'exports': [dict(response_id=i,
+                        source_name=NATIVE_RESPONSE_NAMES[i-1], standalone_name=STANDALONE_RESPONSE_NAMES[i-1])
+                        for i in range(1, 9)]}
+                state = advance_pa_family_cache_transaction(cache, fixture_identity, names,
+                    owner='original-owner', response_receipt=recipe)
+                transaction_path = state.transaction_directory / 'transaction.json'
+                document = json.loads(transaction_path.read_text())
+                legacy = dict(recipe, schema_version=1)
+                del legacy['source_location']
+                document['response_receipt'] = legacy
+                transaction_path.write_text(json.dumps(document), encoding='utf-8')
+                before = transaction_path.read_bytes()
+                fixture = root / 'fixture.ps1'
+                fixture.write_text(script, encoding='utf-8')
+                result = subprocess.run(['pwsh', '-NoProfile', '-NonInteractive', '-File', str(fixture),
+                    str(PROJECT / 'simion/run_native_corridor_response_bank.ps1'), str(PROJECT.parents[1]),
+                    str(cache), state.cache_key, str(root), recover],
+                    cwd=PROJECT, capture_output=True, text=True, encoding='utf-8', timeout=30)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(transaction_path.read_bytes(), before)
+                for name in state.missing_files:
+                    (state.build_directory / name).write_bytes(name.encode())
+                sealed = advance_pa_family_cache_transaction(cache, fixture_identity, names, owner='original-owner')
+                self.assertEqual(sealed.action_required, 'verify')
+                self.assertEqual(json.loads((state.build_directory / RECEIPT_NAME).read_text())['schema_version'], 2)
+                self.assertEqual(json.loads(transaction_path.read_text())['response_receipt'], legacy)
 
     def test_cache_identity_excludes_run_specific_freeze_manifest_hash(self) -> None:
         source = (PROJECT / 'analysis/native_corridor_response_bank.py').read_text(encoding='utf-8-sig')

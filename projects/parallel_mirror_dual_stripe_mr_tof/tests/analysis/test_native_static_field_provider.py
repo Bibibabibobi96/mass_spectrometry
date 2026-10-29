@@ -1637,5 +1637,238 @@ class RefinedPayloadPublicationTest(unittest.TestCase):
         self.assertTrue((self.root / "results/field_binding.json").is_file())
 
 
+class NativeProviderCloseoutTest(unittest.TestCase):
+    """Execute the actual runner catch/finally, without entering a native stage."""
+
+    def closeout_fixture(self, failure: str, *, primary_error: bool = True,
+                         normal_release_index: int | None = None) -> dict:
+        import shutil
+        import subprocess
+        import sys
+
+        powershell = shutil.which("pwsh")
+        if powershell is None:
+            self.skipTest("PowerShell 7 required")
+        repo = Path(__file__).resolve().parents[4]
+        runner = repo / "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_native_static_field_provider.ps1"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            script = root / "closeout.ps1"
+            script.write_text(r"""
+param($Runner,$Root,$FailureMode,$python,$PrimaryError,$NormalReleaseIndex)
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw ($errors|Out-String)}
+$outer=@($ast.EndBlock.Statements|Where-Object {$_-is[Management.Automation.Language.TryStatementAst]})
+if($outer.Count-ne1){throw 'Expected one production terminal boundary'}
+# Install only project-local functions; shared boundaries below are explicit seams.
+foreach($fn in @($ast.EndBlock.Statements|Where-Object {$_-is[Management.Automation.Language.FunctionDefinitionAst]})){
+ . ([scriptblock]::Create($fn.Extent.Text))
+}
+$script:events=[Collections.Generic.List[string]]::new()
+$RunDirectory=$Root;$repo=$Root;$artifacts=$Root;$runId='fixture'
+$pkg=@{run_config=(Join-Path $Root 'run_config.json');summary=(Join-Path $Root 'summary.json')}
+$plan=@{execution_order=@('parent');project='parallel_mirror_dual_stripe_mr_tof'}
+$software=@('software fixture');$reason='retained completed fixture'
+$parentDone=$true;$windowDone=$true;$levelStatus=@{parent=@{completed=$true}}
+$fieldBinding=$null;$responseBasis=$null;$watch=[Diagnostics.Stopwatch]::StartNew();$timings=@{}
+$status='failed';$stage='parent_refine';$failure=$null;$failureRecord=$null
+$lease=@{inherited=$false;token='owned'};$capacity=@{fixture=$true};$parentGuard=$null
+$guard=[pscustomobject]@{}
+$guard|Add-Member ScriptMethod Dispose {
+ $script:events.Add('guard')
+ if($FailureMode-eq'guard'){throw 'SECONDARY_GUARD'}
+}
+$overlayGuards=@($guard)
+function Exit-HostResourceStage {param($Lease,[switch]$PassThru)
+ $script:events.Add('host_release')
+ if($FailureMode-eq'lease'){throw 'SECONDARY_RELEASE'}
+ if($PassThru){@{status=$(if($FailureMode-eq'retained'){'retained'}else{'released'});token=$Lease.token}}
+}
+function Write-RunJson {param($Path,$Value,$Depth)
+ $script:events.Add('summary');if($FailureMode-eq'publication'){throw 'SECONDARY_PUBLICATION'}
+}
+function Apply-RunArtifactRetention {$script:events.Add('retention')}
+function Write-RunManifest {
+ $script:events.Add('manifest')
+ @{status=$status}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $Root 'run_manifest.json') -Encoding utf8
+}
+function Invoke-RunToolRootContext {param($RepoRoot,$Operation)
+ $script:events.Add($(if($Operation.ToString().Contains('seal-stopped-payload')){'seal'}else{'verify'}))
+}
+function Exit-ArtifactWorkflowCapacitySession {$script:events.Add('capacity_release')}
+function Remove-RunPackageExecutionAlias {$script:events.Add('alias')}
+$catchText=($outer[0].CatchClauses|ForEach-Object {$_.Extent.Text})-join"`n"
+$body=if($PrimaryError-eq'yes'){"throw [IO.IOException]::new('ORIGINAL_NATIVE_FAILURE')"}else{"`$status='success'"}
+if($NormalReleaseIndex-ne'none'){
+ $releaseCalls=@($outer[0].Body.FindAll({param($node)
+  $node-is[Management.Automation.Language.CommandAst]-and
+  $node.GetCommandName()-in@('Exit-HostResourceStage','Exit-NativeProviderHostStage')
+ },$true))
+ if($releaseCalls.Count-ne3){throw 'Expected all three normal production release sites'}
+ $release=$releaseCalls[[int]$NormalReleaseIndex].Parent
+ $statements=@($release.Parent.Statements)
+ $clear=$statements[[array]::IndexOf($statements,$release)+1]
+ if($clear.Extent.Text-ne'$lease=$null'){throw 'Expected lease clear after actual release'}
+ $body=$release.Extent.Text+';'+$clear.Extent.Text+';$script:events.Add("normal_release_completed");$status="success"'
+}
+$code="try {"+$body+"} "+$catchText+" finally "+$outer[0].Finally.Extent.Text
+$caught=$null
+try{. ([scriptblock]::Create($code))}catch{$caught=$_}
+$data=@{};if($null-ne$caught){foreach($key in $caught.Exception.Data.Keys){$data[[string]$key]=[string]$caught.Exception.Data[$key]}}
+@{error=$(if($null-ne$caught){$caught.Exception.Message});type=$(if($null-ne$caught){$caught.Exception.GetType().FullName});data=$data;
+ events=@($script:events)}|ConvertTo-Json -Depth 12 -Compress
+""", encoding="utf-8")
+            result = subprocess.run(
+                [powershell, "-NoProfile", "-File", str(script), str(runner), str(root), failure, sys.executable,
+                 "yes" if primary_error else "no",
+                 "none" if normal_release_index is None else str(normal_release_index)],
+                cwd=repo, check=False, capture_output=True, text=True, encoding="utf-8", timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            return json.loads(result.stdout)
+
+    def test_terminal_cleanup_preserves_primary_error_and_finishes_safe_cleanup(self) -> None:
+        for failure in ("guard", "lease", "publication"):
+            with self.subTest(failure=failure):
+                result = self.closeout_fixture(failure)
+                self.assertEqual(result["error"], "ORIGINAL_NATIVE_FAILURE")
+                self.assertEqual(result["type"], "System.IO.IOException")
+                self.assertIn("SECONDARY_", str(result["data"]))
+                if failure == "lease":
+                    self.assertNotIn("manifest", result["events"])
+                    self.assertNotIn("capacity_release", result["events"])
+                    self.assertNotIn("alias", result["events"])
+                else:
+                    self.assertIn("capacity_release", result["events"])
+                    self.assertIn("alias", result["events"])
+
+    def test_retained_host_owner_does_not_publish_or_release_capacity(self) -> None:
+        result = self.closeout_fixture("retained")
+        self.assertEqual(result["error"], "ORIGINAL_NATIVE_FAILURE")
+        for operation in ("summary", "retention", "manifest", "seal", "capacity_release", "alias"):
+            self.assertNotIn(operation, result["events"])
+
+    def test_cleanup_failure_without_primary_error_still_fails(self) -> None:
+        for failure in ("guard", "lease", "publication"):
+            with self.subTest(failure=failure):
+                result = self.closeout_fixture(failure, primary_error=False)
+                self.assertIn("SECONDARY_", result["error"])
+                self.assertNotIn("ORIGINAL_NATIVE_FAILURE", result["error"])
+
+    def test_normal_stage_release_keeps_lease_until_confirmed(self) -> None:
+        for index in range(3):
+            for failure in ("", "retained", "lease"):
+                with self.subTest(release_site=index, failure=failure):
+                    result = self.closeout_fixture(failure, primary_error=False, normal_release_index=index)
+                    if not failure:
+                        self.assertIsNone(result["error"])
+                        self.assertEqual(result["events"].count("host_release"), 1)
+                        self.assertIn("normal_release_completed", result["events"])
+                        self.assertIn("seal", result["events"])
+                        continue
+                    self.assertIn("unconfirmed" if failure == "retained" else "SECONDARY_RELEASE", result["error"])
+                    self.assertEqual(result["events"].count("host_release"), 2)
+                    for operation in ("normal_release_completed", "guard", "summary", "retention",
+                                      "manifest", "seal", "capacity_release", "alias"):
+                        self.assertNotIn(operation, result["events"])
+
+    def test_published_provider_seal_failure_uses_existing_cli_without_native_reentry(self) -> None:
+        """Compose the actual terminal boundary with public seal-only recovery."""
+        import shutil
+        import subprocess
+        import sys
+        from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
+
+        powershell = shutil.which("pwsh")
+        if powershell is None:
+            self.skipTest("PowerShell 7 required")
+        repo = Path(__file__).resolve().parents[4]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            artifact_root = root / "artifacts"
+            artifact_root.mkdir()
+            initialize_capacity_ledger(artifact_root, objects=[])
+            script = root / "terminal.ps1"
+            script.write_text(r"""
+param($repo,$python,$artifacts)
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. (Join-Path $repo 'common/contracts/run_artifact_support.ps1')
+$runner=Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/simion/run_native_static_field_provider.ps1'
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($runner,[ref]$tokens,[ref]$errors)
+$outer=@($ast.EndBlock.Statements|Where-Object {$_-is[Management.Automation.Language.TryStatementAst]})
+if($errors.Count-or$outer.Count-ne1){throw 'Invalid production terminal boundary'}
+$project='parallel_mirror_dual_stripe_mr_tof'
+$runId='20261029_020000__test__python__provider-seal-fixture'
+$reason='Production ordinary-static C0 parent/local fields retained for downstream native trajectory consumption.'
+$software=@('Python 3.11','SIMION 2020')
+$pkg=New-RunPackage -Python $python -RepoRoot $repo -ArtifactRoot (Join-Path $artifacts ('projects/'+$project)) `
+ -RunId $runId -Project $project -Mode native_static_field_provider -Software $software `
+ -RetentionContractEnabled -RetentionClass solver_review -RetentionReason $reason `
+ -CapacityLedgerLifecycleEnabled -CapacityLedgerArtifactRoot $artifacts -AdditionalDirectories @('simion')
+$RunDirectory=$pkg.artifact_run_dir
+# Synthetic completed payload: this exercises publication, never a vendor or physical claim.
+[IO.File]::WriteAllText((Join-Path $RunDirectory 'simion/field.pa'),'completed software fixture')
+$plan=@{execution_order=@('parent');project=$project}
+$status='success';$stage='binding_publication';$failure=$null;$failureRecord=$null
+$parentDone=$true;$windowDone=$true;$levelStatus=@{parent=@{completed=$true}}
+$fieldBinding=$null;$responseBasis=$null;$watch=[Diagnostics.Stopwatch]::StartNew();$timings=@{}
+$lease=$null;$capacity=@{fixture=$true};$parentGuard=$null;$overlayGuards=@()
+$script:nativeCalls=0;$script:capacityReleases=0;$script:aliases=0
+function Invoke-ResourceBudgetedProcess {$script:nativeCalls++;throw 'Native reentry is forbidden'}
+function Exit-ArtifactWorkflowCapacitySession {$script:capacityReleases++}
+$originalAlias=${function:Remove-RunPackageExecutionAlias}
+function Remove-RunPackageExecutionAlias {param($Package);$script:aliases++;& $originalAlias -Package $Package}
+$originalRootContext=${function:Invoke-RunToolRootContext}
+function Invoke-RunToolRootContext {param($RepoRoot,$Operation)
+ if($Operation.ToString().Contains('seal-stopped-payload')){throw 'TEST_ONLY seal unavailable after publication'}
+ & $originalRootContext -RepoRoot $RepoRoot -Operation $Operation
+}
+$caught=$null
+try{. ([scriptblock]::Create($outer[0].Finally.Extent.Text.Trim().TrimStart('{').TrimEnd('}')))}catch{$caught=$_}
+if($null-eq$caught-or$caught.Exception.Message-ne'TEST_ONLY seal unavailable after publication'){
+ throw ('Unexpected closeout error: '+[string]$caught)
+}
+'RESULT='+(@{native_calls=$script:nativeCalls;capacity_releases=$script:capacityReleases;aliases=$script:aliases;
+ run_directory=$RunDirectory;error=$caught.Exception.Message}|ConvertTo-Json -Compress)
+""", encoding="utf-8")
+            result = subprocess.run(
+                [powershell, "-NoProfile", "-File", str(script), str(repo), sys.executable, str(artifact_root)],
+                cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=60, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            outcome = json.loads(next(line[7:] for line in result.stdout.splitlines() if line.startswith("RESULT=")))
+            self.assertEqual((outcome["native_calls"], outcome["capacity_releases"], outcome["aliases"]), (0, 1, 1))
+            run = Path(outcome["run_directory"])
+            self.assertEqual(load_capacity_ledger(artifact_root)["objects"][0]["status"], "writing")
+            config = json.loads((run / "run_config.json").read_text(encoding="utf-8-sig"))
+            before = {path.relative_to(run): path.read_bytes() for path in run.rglob("*") if path.is_file()}
+            command = [sys.executable, "-B", "-m", "common.contracts.run_capacity_lifecycle",
+                       "--action", "seal-stopped-payload", "--artifact-root", str(artifact_root),
+                       "--run-config", str(run / "run_config.json"), "--owner", config["project"],
+                       "--confirm-writing-stopped", "--retention-reason", config["artifact_retention"]["reason"]]
+            ledger = None
+            for _ in range(2):
+                sealed = subprocess.run(command, cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
+                self.assertEqual(sealed.returncode, 0, sealed.stdout + sealed.stderr)
+                receipt = json.loads(sealed.stdout)
+                self.assertEqual((receipt["action"], receipt["status"], receipt["run_status"]), ("seal_stopped_payload", "ready", "success"))
+                self.assertTrue(receipt["ledger_entry"]["pin"])
+                current = load_capacity_ledger(artifact_root)
+                if ledger is not None:
+                    self.assertEqual(current, ledger)
+                ledger = current
+                self.assertEqual(before, {path.relative_to(run): path.read_bytes() for path in run.rglob("*") if path.is_file()})
+            verified = subprocess.run(
+                [sys.executable, "-B", "-m", "common.contracts.verify_run_manifest", str(run / "run_manifest.json"), "--require-status", "success"],
+                cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False,
+            )
+            self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

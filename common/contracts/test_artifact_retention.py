@@ -7,6 +7,9 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
+
+from common.contracts import artifact_retention as retention_owner
 
 from common.contracts.artifact_retention import (
     apply_retention,
@@ -51,6 +54,98 @@ class ArtifactRetentionTests(unittest.TestCase):
 
     def test_default_class_is_compact(self) -> None:
         self.assertEqual(load_policy()["default_class"], "compact")
+
+    def test_resume_retention_uses_original_plan_after_unrecorded_unlink(self) -> None:
+        self.write_config("compact", None)
+        first, second = self.run / "first.pa0", self.run / "second.pa0"
+        first.write_bytes(b"first")
+        second.write_bytes(b"second")
+        proof = self.run / "completion.json"
+        proof.write_text('{"writers":"stopped"}', encoding="utf-8")
+        writer = retention_owner.write_json_atomic
+
+        def fail_progress(path, value):
+            if value.get("status") == "pending" and value.get("removed_file_count") == 1:
+                raise OSError("fixture retention progress publication failed")
+            writer(path, value)
+
+        with mock.patch.object(retention_owner, "write_json_atomic", fail_progress):
+            with self.assertRaisesRegex(OSError, "progress publication"):
+                apply_retention(self.config, recovery_inputs=[proof])
+        self.assertFalse(first.exists())
+        self.assertTrue(second.exists())
+        receipt = self.run / "retention_actions.json"
+        prior = json.loads(receipt.read_text())
+        self.assertEqual(prior["removed_file_count"], 0)
+        apply_retention(self.config, recovery_inputs=[proof], resume=True)
+        self.assertFalse(second.exists())
+        done = receipt.read_bytes()
+        action = json.loads(done)
+        self.assertEqual(action["removed"], prior["removed"])
+        self.assertEqual((action["removed_file_count"], action["removed_bytes"]), (2, 11))
+        apply_retention(self.config, recovery_inputs=[proof], resume=True)
+        self.assertEqual(receipt.read_bytes(), done)
+
+    def test_resume_retention_rejects_changed_proof_or_extra_removal_before_mutation(self) -> None:
+        self.write_config("compact", None)
+        payload = self.run / "field.pa0"
+        payload.write_bytes(b"field")
+        proof = self.run / "completion.json"
+        proof.write_text("original", encoding="utf-8")
+        with mock.patch.object(retention_owner, "remove_recorded_files", side_effect=OSError("fixture before unlink")):
+            with self.assertRaises(OSError):
+                apply_retention(self.config, recovery_inputs=[proof])
+        receipt = self.run / "retention_actions.json"
+        original = receipt.read_bytes()
+        proof.write_text("modified", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "recovery input"):
+            apply_retention(self.config, recovery_inputs=[proof], resume=True)
+        proof.write_text("original", encoding="utf-8")
+        new_payload = self.run / "unplanned.pa0"
+        new_payload.write_bytes(b"new")
+        with self.assertRaisesRegex(ValueError, "outside.*plan"):
+            apply_retention(self.config, recovery_inputs=[proof], resume=True)
+        self.assertEqual(receipt.read_bytes(), original)
+        self.assertEqual(payload.read_bytes(), b"field")
+        self.assertEqual(new_payload.read_bytes(), b"new")
+
+    def test_resume_retention_rejects_corrupt_plan_progress_and_terminal_mutation(self) -> None:
+        self.write_config("compact", None)
+        payload = self.run / "field.pa0"
+        payload.write_bytes(b"field")
+        proof = self.run / "completion.json"
+        proof.write_text("original", encoding="utf-8")
+        with mock.patch.object(retention_owner, "remove_recorded_files", side_effect=OSError("before unlink")):
+            with self.assertRaises(OSError):
+                apply_retention(self.config, recovery_inputs=[proof])
+        receipt = self.run / "retention_actions.json"
+        original = json.loads(receipt.read_text())
+        for label in ("duplicate", "escape", "counter", "preflight", "terminal"):
+            with self.subTest(label=label):
+                changed = json.loads(json.dumps(original))
+                if label == "duplicate": changed["removed"] *= 2
+                elif label == "escape": changed["removed"][0]["path"] = "../field.pa0"
+                elif label == "counter": changed["removed_file_count"] = 1
+                elif label == "preflight": changed["status"] = "preflight_pending"
+                else: (self.run / "run_manifest.json").write_text('{"status":"success"}', encoding="utf-8")
+                receipt.write_text(json.dumps(changed), encoding="utf-8")
+                before = receipt.read_bytes()
+                with self.assertRaises(ValueError):
+                    apply_retention(self.config, recovery_inputs=[proof], resume=True)
+                self.assertEqual(receipt.read_bytes(), before)
+                self.assertEqual(payload.read_bytes(), b"field")
+
+    def test_retention_atomic_json_respects_aggregate_run_byte_ceiling(self) -> None:
+        self.write_config("compact", None)
+        payload = self.run / "field.pa0"
+        payload.write_bytes(b"field")
+        proof = self.run / "completion.json"
+        proof.write_text("original", encoding="utf-8")
+        baseline = sum(path.stat().st_size for path in self.run.iterdir())
+        with self.assertRaisesRegex(ValueError, "admitted run byte ceiling"):
+            apply_retention(self.config, recovery_inputs=[proof], maximum_run_bytes=baseline)
+        self.assertFalse((self.run / "retention_actions.json").exists())
+        self.assertEqual(payload.read_bytes(), b"field")
 
     def test_frozen_iob_template_survives_compact_but_solved_pa_does_not(self) -> None:
         self.write_config("compact", None)

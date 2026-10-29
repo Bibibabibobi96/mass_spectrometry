@@ -15,9 +15,176 @@ import uuid
 
 HELPER = Path(__file__).with_name("short_pa_path_support.ps1")
 
+# Count successful complete identity reads while delegating to the real readers.
+# Copy traffic and SIMION reads are deliberately outside this logical byte count.
+PA_HASH_READ_COUNTERS = r'''
+$script:paHashReads=[Collections.Generic.List[object]]::new()
+$script:paOriginalOpenHash=${function:Get-OpenPaStreamSha256}
+$script:paOriginalImmutableHash=${function:Get-ImmutablePaSourceVerificationSha256}
+function Get-OpenPaStreamSha256 {
+ param($Stream)
+ $value=& $script:paOriginalOpenHash -Stream $Stream
+ $script:paHashReads.Add(@{path=$Stream.Name;bytes=[int64]$Stream.Length;reader='stream'})
+ return $value
+}
+function Get-ImmutablePaSourceVerificationSha256 {
+ param($Stream,$Length)
+ $value=& $script:paOriginalImmutableHash -Stream $Stream -Length $Length
+ if($Length-ge$global:MassSpectrometryShortPaUnbufferedThresholdBytes){
+  $script:paHashReads.Add(@{path=$Stream.Name;bytes=[int64]$Length;reader='unbuffered'})
+ }
+ return $value
+}
+function Get-FileHash {
+ param($LiteralPath,$Algorithm='SHA256')
+ $value=Microsoft.PowerShell.Utility\Get-FileHash -LiteralPath $LiteralPath -Algorithm $Algorithm
+ $script:paHashReads.Add(@{path=$LiteralPath;bytes=[int64](Get-Item -LiteralPath $LiteralPath).Length;reader='buffered_path'})
+ return $value
+}
+'''
+
 
 @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell test")
 class ShortPaPathSupportTest(unittest.TestCase):
+    def test_published_copy_hands_off_verified_handle_without_second_payload_read(self) -> None:
+        for size in (97, 8 * 1024 * 1024 + 37):
+            with self.subTest(size=size), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                source, destination = root / 'source.pa', root / 'copy.pa'
+                payload = b'x' * size
+                source.write_bytes(payload)
+                digest = hashlib.sha256(payload).hexdigest().upper()
+                script = r'''
+. $env:PA_HELPER
+''' + PA_HASH_READ_COUNTERS + r'''
+$path=New-ShortPaCopy -Source $env:PA_SOURCE -Destination $env:PA_DESTINATION `
+ -ExpectedBytes ([int64]$env:PA_BYTES) -ExpectedSha256 $env:PA_SHA -GuardDestinationReadOnly
+$before=$global:MassSpectrometryShortPaCopies[$path].destination_guard
+$arguments=@{Path=$path}
+# The baseline measurement exercises the old public call with its old signature.
+if((Get-Command Publish-ShortPaCopyDestination).Parameters.ContainsKey('KeepDestinationGuard')){$arguments.KeepDestinationGuard=$true}
+$published=Publish-ShortPaCopyDestination @arguments
+$protected=Protect-ImmutablePaSource -Source $path -ExpectedBytes ([int64]$env:PA_BYTES) -ExpectedSha256 $env:PA_SHA
+$sameHandle=[object]::ReferenceEquals($before,$global:MassSpectrometryImmutablePaSourceGuards[$path].stream)
+$blocked=@()
+foreach($operation in @('write','delete','replace')){
+ try{
+  if($operation-eq'write'){$s=[IO.File]::OpenWrite($path);$s.Dispose()}
+  elseif($operation-eq'delete'){[IO.File]::Delete($path)}
+  else{[IO.File]::Move($env:PA_SOURCE,$path,$true)}
+ }catch [IO.IOException]{$blocked+=$operation}
+ catch [UnauthorizedAccessException]{$blocked+=$operation}
+}
+$checks=@($script:paHashReads)
+Unprotect-ImmutablePaSource -Source $path|Out-Null
+[IO.File]::SetAttributes($path,[IO.FileAttributes]::Normal)
+$writer=[IO.File]::OpenWrite($path);$writer.Dispose()
+if($global:MassSpectrometryShortPaCopies.Count-or$global:MassSpectrometryShortPaSourceGuards.Count-or$global:MassSpectrometryImmutablePaSourceGuards.Count){throw 'registry leaked'}
+@{same_handle=$sameHandle;already_protected=$protected.already_protected;blocked=$blocked;reads=$checks}|ConvertTo-Json -Depth 6 -Compress
+'''
+                completed = subprocess.run(
+                    ['pwsh', '-NoProfile', '-Command', script], cwd=HELPER.parents[2],
+                    capture_output=True, text=True, encoding='utf-8', check=False, timeout=60,
+                    env={**os.environ, 'PA_HELPER': str(HELPER), 'PA_SOURCE': str(source),
+                         'PA_DESTINATION': str(destination), 'PA_SHA': digest, 'PA_BYTES': str(size)},
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                result = json.loads(completed.stdout)
+                print(f'PA_PUBLICATION_READS size={size} reads={len(result["reads"])} '
+                      f'bytes={sum(row["bytes"] for row in result["reads"])} '
+                      f'same_handle={result["same_handle"]}')
+                self.assertEqual(len(result['reads']), 2)
+                self.assertEqual(sum(row['bytes'] for row in result['reads']), 2 * size)
+                self.assertTrue(result['same_handle'])
+                self.assertTrue(result['already_protected'])
+                self.assertEqual(result['blocked'], ['write', 'delete', 'replace'])
+                self.assertEqual({row['reader'] for row in result['reads']},
+                                 {'unbuffered'} if size >= 8 * 1024 * 1024 else {'stream'})
+
+    def test_handoff_rejects_unverified_or_closed_guards_and_preserves_owners(self) -> None:
+        with tempfile.TemporaryDirectory(prefix='simion_pa_links_handoff_') as directory:
+            root = Path(directory)
+            source = root / 'source.pa'
+            source.write_bytes(b'original')
+            script = r'''
+. $env:PA_HELPER
+$source=$env:PA_SOURCE;$root=Split-Path -Parent $source
+$hash=(Get-FileHash -LiteralPath $source).Hash
+$late=New-ShortPaCopy -Source $source -Destination (Join-Path $root late.pa)
+[IO.File]::WriteAllText($late,'modified')
+$null=Protect-ShortPaCopyDestination -Path $late
+if((Get-ShortPaCopyIdentity -Path $late).identity_guarded){throw 'late guard granted identity'}
+$rejected=$false
+try{Publish-ShortPaCopyDestination -Path $late -KeepDestinationGuard|Out-Null}
+catch{if($_.Exception.Message-notlike'*SHA256*'){throw};$rejected=$true}
+if(-not$rejected){throw 'changed late guard published'}
+Remove-ShortPaCopy -Path $late
+$closed=New-ShortPaCopy -Source $source -Destination (Join-Path $root closed.pa) -GuardDestinationReadOnly
+$global:MassSpectrometryShortPaCopies[$closed].destination_guard.Dispose()
+$rejected=$false
+try{Publish-ShortPaCopyDestination -Path $closed -KeepDestinationGuard|Out-Null}
+catch{if($_.Exception.Message-notlike'*not live*'){throw};$rejected=$true}
+if(-not$rejected){throw 'closed guard published'}
+Remove-ShortPaCopy -Path $closed
+$first=New-ShortPaCopy -Source $source -Destination (Join-Path $root first.pa) -GuardDestinationReadOnly
+$second=New-ShortPaCopy -Source $source -Destination (Join-Path $root second.pa) -GuardDestinationReadOnly
+$null=Protect-ImmutablePaSource -Source $first -ExpectedBytes 8 -ExpectedSha256 $hash
+$old=$global:MassSpectrometryShortPaCopies[$first].destination_guard
+$rejected=$false
+try{Publish-ShortPaCopyDestination -Path $first -KeepDestinationGuard|Out-Null}
+catch{if($_.Exception.Message-notlike'*already has an immutable owner*'){throw};$rejected=$true}
+if(-not$rejected-or-not$old.CanRead-or$global:MassSpectrometryShortPaSourceGuards[$source].reference_count-ne2){throw 'failed handoff changed owners'}
+Unprotect-ImmutablePaSource -Source $first|Out-Null
+Publish-ShortPaCopyDestination -Path $first -KeepDestinationGuard|Out-Null
+if($global:MassSpectrometryShortPaSourceGuards[$source].reference_count-ne1){throw 'copy reference lost'}
+# A second immutable owner overlaps its own handle with the existing source
+# guard. Releasing it must not release the copy owner's source handle.
+Protect-ImmutablePaSource -Source $source -ExpectedBytes 8 -ExpectedSha256 $hash|Out-Null
+Unprotect-ImmutablePaSource -Source $source|Out-Null
+$blocked=$false
+try{$writer=[IO.File]::OpenWrite($source);$writer.Dispose()}catch [IO.IOException]{$blocked=$true}
+if(-not$blocked){throw 'overlap release unguarded source'}
+Remove-ShortPaCopy -Path $second
+$writer=[IO.File]::OpenWrite($source);$writer.Dispose()
+if(-not$old.CanRead){throw 'removing other copy closed published target'}
+Unprotect-ImmutablePaSource -Source $first|Out-Null
+[IO.File]::SetAttributes($first,[IO.FileAttributes]::Normal)
+if($global:MassSpectrometryShortPaCopies.Count-or$global:MassSpectrometryShortPaSourceGuards.Count-or$global:MassSpectrometryImmutablePaSourceGuards.Count){throw 'registry leaked'}
+'''
+            completed = subprocess.run(
+                ['pwsh', '-NoProfile', '-Command', script], cwd=HELPER.parents[2],
+                capture_output=True, text=True, encoding='utf-8', check=False, timeout=60,
+                env={**os.environ, 'PA_HELPER': str(HELPER), 'PA_SOURCE': str(source)},
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_first_target_reader_failure_does_not_fallback_or_leak(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source, destination = Path(directory) / 'source.pa', Path(directory) / 'copy.pa'
+            source.write_bytes(b'original')
+            script = r'''
+. $env:PA_HELPER
+$original=${function:Get-ImmutablePaSourceVerificationSha256}
+function Get-ImmutablePaSourceVerificationSha256 {
+ param($Stream,$Length)
+ if($Stream.Name-eq$env:PA_DESTINATION){throw 'TARGET_PERSISTENT_READER_FAILED'}
+ & $original -Stream $Stream -Length $Length
+}
+$rejected=$false
+try{New-ShortPaCopy -Source $env:PA_SOURCE -Destination $env:PA_DESTINATION -GuardDestinationReadOnly|Out-Null}
+catch{if($_.Exception.Message-ne'TARGET_PERSISTENT_READER_FAILED'){throw};$rejected=$true}
+if(-not$rejected-or(Test-Path -LiteralPath $env:PA_DESTINATION)){throw 'bad target survived'}
+if($global:MassSpectrometryShortPaCopies.Count-or$global:MassSpectrometryShortPaSourceGuards.Count){throw 'guard leaked'}
+$s=[IO.File]::OpenWrite($env:PA_SOURCE);$s.Dispose()
+'''
+            completed = subprocess.run(
+                ['pwsh', '-NoProfile', '-Command', script], cwd=HELPER.parents[2],
+                capture_output=True, text=True, encoding='utf-8', check=False, timeout=60,
+                env={**os.environ, 'PA_HELPER': str(HELPER), 'PA_SOURCE': str(source),
+                     'PA_DESTINATION': str(destination)},
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+
     def test_immutable_guard_uses_one_key_for_short_expanded_and_ps_relative_paths(self) -> None:
         from projects.rf_multipole_ion_optics.tests.domain.test_simion_runner_contract import _short_windows_path
 

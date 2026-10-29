@@ -32,6 +32,7 @@ from common.contracts.test_artifact_identity_archive import (
 from common.simion.pa_family_cache import (
     VERIFICATION_EVIDENCE_ROLE,
     advance_pa_family_cache_transaction,
+    validate_pa_family_cache_generation,
 )
 
 
@@ -77,7 +78,7 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             "builder_identity": {"source_sha256": "C" * 64},
         }
 
-    def write_common_pa_family_cache(self, artifacts: Path) -> Path:
+    def write_common_pa_family_cache(self, artifacts: Path, *, recovery_policy: str = "none") -> Path:
         cache_root = artifacts / "common" / "simion" / "pa_family_cache"
         producer = artifacts / "projects" / "fixture" / "runs" / RUN_ID
         config = producer / "run_config.json"
@@ -95,16 +96,16 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
         )
         arguments = (cache_root, self._common_pa_family_identity(), ("family.pa0",))
         building = advance_pa_family_cache_transaction(
-            *arguments, owner="layout-test", producer_run_config=config, recovery_policy="none",
+            *arguments, owner="layout-test", producer_run_config=config, recovery_policy=recovery_policy,
         )
         (building.build_directory / "family.pa0").write_text("PA family\n", encoding="utf-8")
-        prepared = advance_pa_family_cache_transaction(*arguments, recovery_policy="none")
+        prepared = advance_pa_family_cache_transaction(*arguments, recovery_policy=recovery_policy)
         verifier = producer / "verify_fixture.txt"
         output = producer / "verification_output.txt"
         verifier.write_text("layout fixture verifier", encoding="utf-8")
         output.write_text("layout fixture verification passed", encoding="utf-8")
         publication = advance_pa_family_cache_transaction(
-            *arguments, recovery_policy="none", verification_evidence={
+            *arguments, recovery_policy=recovery_policy, verification_evidence={
                 "schema_version": 1, "role": VERIFICATION_EVIDENCE_ROLE, "status": "pass",
                 "cache_key": prepared.cache_key, "inventory_sha256": prepared.inventory_sha256,
                 "solver_release": "SIMION 2020",
@@ -201,6 +202,60 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "unexpected top-level"):
                 verify_artifacts_root(projects)
 
+    @unittest.skipUnless(os.name == "nt", "execution aliases use Windows directory junctions")
+    def test_common_execution_aliases_require_internal_junctions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory) / "artifacts"
+            projects = artifacts / "projects"
+            projects.mkdir(parents=True)
+            aliases = artifacts / "common" / "execution_aliases"
+            aliases.mkdir(parents=True)
+            target = projects / "fixture"
+            target.mkdir()
+            sentinel = target / "payload.txt"
+            sentinel.write_text("target stays untouched", encoding="utf-8")
+            alias = aliases / "run_fixture"
+            for destination, accepted in ((target, True), (Path(directory), False)):
+                result = subprocess.run(
+                    ["pwsh", "-NoProfile", "-Command",
+                     "New-Item -ItemType Junction -Path $env:LAYOUT_ALIAS -Target $env:LAYOUT_TARGET | Out-Null"],
+                    cwd=directory,
+                    env={**os.environ, "LAYOUT_ALIAS": str(alias), "LAYOUT_TARGET": str(destination)},
+                    text=True, capture_output=True, check=False, timeout=30,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                try:
+                    if accepted:
+                        verify_artifacts_root(projects)
+                    else:
+                        with self.assertRaisesRegex(AssertionError, "invalid execution aliases"):
+                            verify_artifacts_root(projects)
+                finally:
+                    os.rmdir(alias)
+                self.assertEqual(sentinel.read_text(encoding="utf-8"), "target stays untouched")
+            alias.mkdir()
+            with self.assertRaisesRegex(AssertionError, "invalid execution aliases"):
+                verify_artifacts_root(projects)
+
+    def test_common_host_resource_database_is_exact_regular_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            projects = Path(directory) / "artifacts" / "projects"
+            projects.mkdir(parents=True)
+            common = projects.parent / "common"
+            common.mkdir()
+            database = common / "host_resources.sqlite3"
+            database.write_bytes(b"layout does not open the mutable resource database")
+            verify_artifacts_root(projects)
+            backup = common / "host_resources.pre-reboot-20260924.sqlite3"
+            backup.write_bytes(b"unregistered historical snapshot")
+            with self.assertRaisesRegex(AssertionError, "unexpected common artifact entries"):
+                verify_artifacts_root(projects)
+            backup.unlink()
+            database.unlink()
+            database.mkdir()
+            with self.assertRaisesRegex(AssertionError, "host resource database must be a regular file"):
+                verify_artifacts_root(projects)
+
     def test_artifacts_root_accepts_only_valid_common_pa_family_cache(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory) / "artifacts"
@@ -220,6 +275,178 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             family.write_text("tampered\n", encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "generation differs"):
                 verify_artifacts_root(projects)
+
+    def test_common_layout_reads_metadata_by_default_and_deep_audit_rejects_same_size_change(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory) / "artifacts"
+            projects = artifacts / "projects"
+            projects.mkdir(parents=True)
+            generation = self.write_common_pa_family_cache(artifacts)
+            with patch("common.simion.pa_family_cache._verify_payload_record",
+                       side_effect=AssertionError("layout read payload bytes")):
+                verify_artifacts_root(projects)
+            family = generation / "family.pa0"
+            family.chmod(family.stat().st_mode | 0o200)
+            before = family.read_bytes()
+            family.write_bytes(b"X" + before[1:])
+            verify_artifacts_root(projects)  # Metadata PASS does not assert payload content.
+            with self.assertRaisesRegex(AssertionError, "generation differs"):
+                verify_artifacts_root(projects, verify_hashes=True)
+            family.write_bytes(before)
+            verify_artifacts_root(projects, verify_hashes=True)
+
+    def test_common_layout_accepts_published_parity_without_default_payload_reads(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory) / "artifacts"
+            projects = artifacts / "projects"
+            projects.mkdir(parents=True)
+            generation = self.write_common_pa_family_cache(artifacts, recovery_policy="xor")
+            manifest = validate_pa_family_cache_generation(generation, verify_payload=False)
+            with patch("common.simion.pa_family_cache._verify_payload_record",
+                       side_effect=AssertionError("metadata read PA or parity payload")):
+                verify_artifacts_root(projects)
+            with patch("common.contracts.verify_artifact_layout.validate_pa_family_cache_generation",
+                       wraps=validate_pa_family_cache_generation) as verify:
+                verify_artifacts_root(projects, verify_hashes=True)
+            self.assertEqual(verify.call_count, 1)
+            self.assertTrue(verify.call_args.kwargs["verify_payload"])
+            parity = generation.parents[1] / "recovery" / generation.name / manifest["redundancy"]["groups"][0]["bundle"] / "payload.xor"
+            parity.chmod(parity.stat().st_mode | 0o200)
+            before = parity.read_bytes()
+            parity.write_bytes(b"X" + before[1:])
+            verify_artifacts_root(projects)
+            with self.assertRaisesRegex(AssertionError, "generation differs"):
+                verify_artifacts_root(projects, verify_hashes=True)
+
+    def test_common_layout_rejects_unregistered_recovery_tree_entries(self) -> None:
+        for mutation in ("empty", "unregistered", "generation", "group", "file", "manifest"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                artifacts = Path(directory) / "artifacts"
+                projects = artifacts / "projects"
+                projects.mkdir(parents=True)
+                policy = "none" if mutation in {"empty", "unregistered"} else "xor"
+                generation = self.write_common_pa_family_cache(artifacts, recovery_policy=policy)
+                recovery = generation.parents[1] / "recovery"
+                if mutation == "empty":
+                    recovery.mkdir()
+                elif mutation == "unregistered":
+                    (recovery / generation.name / "unregistered").mkdir(parents=True)
+                elif mutation == "generation":
+                    (recovery / ("A" * 64)).mkdir()
+                elif mutation == "group":
+                    (recovery / generation.name / "unregistered").mkdir()
+                else:
+                    group = next((recovery / generation.name).iterdir())
+                    if mutation == "file":
+                        (group / "unregistered.txt").write_text("not declared", encoding="utf-8")
+                    else:
+                        metadata = group / "xor_parity_manifest.json"
+                        metadata.chmod(metadata.stat().st_mode | 0o200)
+                        metadata.write_text("{}", encoding="utf-8")
+                with self.assertRaisesRegex(AssertionError, "generation differs"):
+                    verify_artifacts_root(projects)
+
+    @unittest.skipUnless(os.name == "nt", "directory reparse test uses Windows junctions")
+    def test_common_layout_rejects_recovery_directory_reparse_points(self) -> None:
+        for level in ("root", "generation", "group", "broken-root"):
+            with self.subTest(level=level), tempfile.TemporaryDirectory() as directory:
+                artifacts = Path(directory) / "artifacts"
+                projects = artifacts / "projects"
+                projects.mkdir(parents=True)
+                policy = "none" if level == "broken-root" else "xor"
+                generation = self.write_common_pa_family_cache(artifacts, recovery_policy=policy)
+                recovery = generation.parents[1] / "recovery"
+                if level == "broken-root":
+                    recovery.mkdir()
+                target = recovery if level in {"root", "broken-root"} else recovery / generation.name
+                if level == "group":
+                    target = next(target.iterdir())
+                moved = Path(directory) / "original-recovery"
+                target.rename(moved)
+                result = subprocess.run(
+                    ["pwsh", "-NoProfile", "-Command",
+                     "New-Item -ItemType Junction -Path $env:LAYOUT_ALIAS -Target $env:LAYOUT_TARGET | Out-Null"],
+                    env={**os.environ, "LAYOUT_ALIAS": str(target), "LAYOUT_TARGET": str(moved)},
+                    cwd=directory, capture_output=True, text=True, check=False, timeout=30,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                if level == "broken-root":
+                    moved.rmdir()
+                try:
+                    with self.assertRaisesRegex(AssertionError, "generation differs"), patch(
+                        "common.contracts.verify_artifact_layout.validate_pa_family_cache_generation",
+                        side_effect=AssertionError("followed recovery reparse before rejecting it"),
+                    ):
+                        verify_artifacts_root(projects)
+                finally:
+                    os.rmdir(target)
+                    if moved.exists():
+                        moved.rename(target)
+
+    def test_common_layout_rejects_casefold_duplicate_recovery_generation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory) / "artifacts"
+            projects = artifacts / "projects"
+            projects.mkdir(parents=True)
+            generation = self.write_common_pa_family_cache(artifacts, recovery_policy="xor")
+            recovery = generation.parents[1] / "recovery"
+            recovered = next(recovery.iterdir())
+            original_iterdir = Path.iterdir
+
+            def case_sensitive_listing(path: Path):
+                if path == recovery:
+                    # Windows cannot create this pair; model a case-sensitive filesystem's listing.
+                    return iter((recovered, recovered.with_name(recovered.name.swapcase())))
+                return original_iterdir(path)
+
+            with patch.object(Path, "iterdir", case_sensitive_listing):
+                with self.assertRaisesRegex(AssertionError, "generation differs") as caught:
+                    verify_artifacts_root(projects)
+            self.assertIn("duplicate case-insensitive", str(caught.exception.__cause__))
+
+    def test_recovery_projection_validates_noncurrent_generations_only_by_metadata(self) -> None:
+        from common.contracts.verify_artifact_layout import _verify_pa_family_recovery_tree
+        from common.simion.pa_family_cache import publish_pa_family_cache, repair_pa_family_cache_generation
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            (source / "family.pa0").write_bytes(b"PA family\n")
+            old = publish_pa_family_cache(root / "cache", self._common_pa_family_identity(), source, ("family.pa0",)).generation_directory
+            damaged = old / "family.pa0"
+            damaged.chmod(damaged.stat().st_mode | 0o200)
+            damaged.write_bytes(b"bad")
+            current = repair_pa_family_cache_generation(old).generation_directory
+            with patch("common.contracts.verify_artifact_layout.validate_pa_family_cache_generation",
+                       wraps=validate_pa_family_cache_generation) as verify:
+                manifest = _verify_pa_family_recovery_tree(
+                    current.parents[1], [old, current], current, verify_hashes=True
+                )
+            self.assertEqual(manifest["generation_sha256"], current.name)
+            calls = {call.args[0]: call.kwargs["verify_payload"] for call in verify.call_args_list}
+            self.assertEqual(calls, {old: False, current: True})
+            self.assertEqual(verify.call_count, 2)
+
+    def test_cli_propagates_explicit_hash_scope_to_common_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory) / "artifacts"
+            projects = artifacts / "projects"
+            projects.mkdir(parents=True)
+            generation = self.write_common_pa_family_cache(artifacts)
+            family = generation / "family.pa0"
+            family.chmod(family.stat().st_mode | 0o200)
+            data = family.read_bytes()
+            family.write_bytes(b"X" + data[1:])
+            # Formal-only avoids requiring an unrelated producer run fixture
+            # while still exercising main's real common-root hash forwarding.
+            for arguments, rejects in (([], False), (["--verify-hashes"], True)):
+                with patch.object(sys, "argv", ["layout", str(projects), "--formal-only", *arguments]), redirect_stdout(io.StringIO()):
+                    if rejects:
+                        with self.assertRaisesRegex(AssertionError, "generation differs"):
+                            main()
+                    else:
+                        main()
 
     def test_artifacts_root_preserves_disposal_receipts_but_rejects_payloads(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -265,6 +492,29 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             metadata.write_bytes(original)
             invalid_lock = cache / ".locks" / "unregistered.pa0"
             invalid_lock.write_bytes(b"not a lock")
+            with self.assertRaisesRegex(AssertionError, "invalid PA-family lock file"):
+                verify_artifacts_root(projects)
+
+    def test_common_pa_build_locks_follow_the_registered_lock_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory) / "artifacts"
+            projects = artifacts / "projects"
+            projects.mkdir(parents=True)
+            locks = artifacts / "common" / "simion" / "pa_family_cache" / ".build-locks"
+            locks.mkdir(parents=True)
+            lock = locks / ("A" * 64 + ".lock")
+            original = b"kernel lock storage"
+            lock.write_bytes(original)
+            verify_artifacts_root(projects)
+            self.assertEqual(lock.read_bytes(), original)
+
+            invalid = locks / "unregistered.lock"
+            invalid.write_bytes(b"")
+            with self.assertRaisesRegex(AssertionError, "invalid PA-family lock file"):
+                verify_artifacts_root(projects)
+            invalid.unlink()
+            non_file = locks / ("B" * 64 + ".lock")
+            non_file.mkdir()
             with self.assertRaisesRegex(AssertionError, "invalid PA-family lock file"):
                 verify_artifacts_root(projects)
 

@@ -580,6 +580,7 @@ try {
         -Outputs ($outputs+@($retentionActions))
     "STATUS=PASS RUN_ID=$RunId HITS=$($solverSummary.hits) TRANSMISSION=$($solverSummary.transmission)"
 } catch {
+    $interfaceFailure = $_
     $failureReason = "$failureStage`: $($_.Exception.Message)"
     try {
         Complete-FailedRun -Python $python -RepoRoot $repoRoot `
@@ -599,9 +600,10 @@ try {
                 -Software $software -Outputs @($failedOutputs|Select-Object -Unique)
         }
     } catch {
-        throw "COMSOL interface failure closure also failed: $($_.Exception.Message)"
+        $interfaceFailure.Exception.Data['failure_closure_error'] = $_.Exception.Message
+        Write-Warning "COMSOL interface failure closure also failed: $($_.Exception.Message)"
     }
-    throw
+    throw $interfaceFailure
 } finally {
     Restore-RunEnvironment -Names $environmentNames -Snapshot $environmentSnapshot
     try { Remove-RunPackageExecutionAlias -Package $package } catch {

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping, TypeAlias
 
 from common.contracts.artifact_naming import validate_run_id
+from common.contracts.artifact_retention import validate_retention
 from common.contracts.file_identity import file_sha256
 
 
@@ -144,7 +145,7 @@ def _validate_live_manifest(root: Path, project: str) -> None:
     manifest = _load_json(root / "run_manifest.json", "live run manifest")
     summary = _load_json(root / "summary.json", "live run summary")
     if (
-        manifest.get("schema_version") != 1
+        manifest.get("schema_version") not in {1, 2}
         or manifest.get("role") != "simulation_run_manifest"
         or manifest.get("run_id") != root.name
         or manifest.get("project") != project
@@ -153,6 +154,15 @@ def _validate_live_manifest(root: Path, project: str) -> None:
         or summary.get("status") not in {"interrupted", "running"}
     ):
         raise StageReuseError("existing run manifest is not a live provisional manifest")
+    if manifest["schema_version"] == 2:
+        config = _load_json(root / "run_config.json", "live run config")
+        try:
+            retention = validate_retention(config.get("artifact_retention"))
+        except ValueError as error:
+            raise StageReuseError(f"live v2 retention contract is invalid: {error}") from error
+        expected = {"policy_version": retention.policy_version, "class": retention.class_id, "reason": retention.reason}
+        if config.get("schema_version") != 2 or manifest.get("artifact_retention") != expected:
+            raise StageReuseError("live v2 manifest and run config retention differ")
 
 def write_stage_receipt(
     run_root: str | Path,

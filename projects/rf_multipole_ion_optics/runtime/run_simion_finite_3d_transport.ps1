@@ -261,6 +261,7 @@ $runConfig=$package.run_config;$summary=$package.summary;$manifestRepoRoot=$repo
 $resourceBudgetExceeded=$false
 . (Join-Path $repoRoot 'common\host_execution_lease.ps1')
 $hostExecutionOutcome='failed'
+$simionRunFailure=$null
 $hostExecutionLease=Enter-HostResourceStage -Role SIMION -Stage prepare -RunId $RunId `
   -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare)
 
@@ -1395,19 +1396,30 @@ print(json.dumps(result,allow_nan=False))
   $resultMarker=if($scientificStatus-eq'success'){'PASS'}else{'FAIL'}
   Write-Output "MULTIPOLE_SIMION_RESOLVED=$resultMarker PROJECT=$ProjectId PROFILE=$DesignProfileId RUN_ID=$RunId PARENT_SHA256=$resolvedHash QUALIFICATION=$qualification"
 }catch{
+  $simionRunFailure=$_
   $hostExecutionOutcome=if($resourceBudgetExceeded){'interrupted'}else{'failed'}
-  Complete-FailedRun -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig -Summary $summary `
-    -SummaryRole 'multipole_simion_finite_3d_transport_summary' -Reason $_.Exception.Message `
-    -Software @('SIMION 2020','Python 3.11') `
-    -Status $(if($resourceBudgetExceeded){'interrupted'}else{'failed'}) `
-    -FailureClass $(if($resourceBudgetExceeded){'resource_budget_exceeded'}else{''}) `
-    -ResourceUsagePath $(if($null-ne(Get-Variable resourceUsage -ErrorAction SilentlyContinue)){$resourceUsage}else{''})
-  throw
+  try{
+    Complete-FailedRun -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig -Summary $summary `
+      -SummaryRole 'multipole_simion_finite_3d_transport_summary' -Reason $simionRunFailure.Exception.Message `
+      -Software @('SIMION 2020','Python 3.11') `
+      -Status $(if($resourceBudgetExceeded){'interrupted'}else{'failed'}) `
+      -FailureClass $(if($resourceBudgetExceeded){'resource_budget_exceeded'}else{''}) `
+      -ResourceUsagePath $(if($null-ne(Get-Variable resourceUsage -ErrorAction SilentlyContinue)){$resourceUsage}else{''})
+  }catch{
+    $simionRunFailure.Exception.Data['failure_closure_error']=$_.Exception.Message
+    Write-Warning "SIMION failure closure also failed: $($_.Exception.Message)"
+  }
+  throw $simionRunFailure
 }finally{
   try { Remove-RunPackageExecutionAlias -Package $package } catch {
     Write-Warning "Could not remove short execution alias after SIMION run: $($_.Exception.Message)"
   }
-  Exit-HostExecutionLease -Lease $hostExecutionLease -Outcome $hostExecutionOutcome -RunId $RunId
+  try{Exit-HostExecutionLease -Lease $hostExecutionLease -Outcome $hostExecutionOutcome -RunId $RunId}
+  catch{
+    if($null-eq$simionRunFailure){throw}
+    $simionRunFailure.Exception.Data['host_release_error']=$_.Exception.Message
+    Write-Warning "SIMION host cleanup also failed: $($_.Exception.Message)"
+  }
 }
 # Preserve the public launcher's scientific-failure signal after releasing the grant.
 if($hostExecutionOutcome-eq'failed'){exit 1}

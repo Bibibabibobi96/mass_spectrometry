@@ -63,6 +63,31 @@ def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
     os.killpg(process.pid, signal.SIGKILL)
 
 
+def _wait_after_observation_failure(process: subprocess.Popen[bytes], failure: BaseException) -> None:
+    """Keep the original failure while the owned root finishes naturally."""
+    failure.observed_process_exit_confirmed = False
+    failure.observed_process_returncode = None
+    interrupted = False
+    while True:
+        try:
+            returncode = process.wait()
+        except KeyboardInterrupt:
+            if not interrupted:
+                failure.add_note(f"OBSERVED_PROCESS_WAIT_INTERRUPTED pid={process.pid}; waiting for natural exit")
+                interrupted = True
+        except BaseException as wait_error:
+            failure.add_note(
+                f"OBSERVED_PROCESS_EXIT_UNCONFIRMED pid={process.pid}; "
+                f"wait failed: {type(wait_error).__name__}: {wait_error}; do not seal outputs"
+            )
+            return
+        else:
+            failure.observed_process_exit_confirmed = True
+            failure.observed_process_returncode = returncode
+            failure.add_note(f"OBSERVED_PROCESS_ROOT_EXITED pid={process.pid} returncode={returncode}")
+            return
+
+
 def run_observed_process(
     command: Sequence[str], *, cwd: Path, stdout: Path, stderr: Path,
     environment: Mapping[str, str] | None = None,
@@ -83,6 +108,12 @@ def run_observed_process(
     A ``None`` peak means that the host cannot expose Windows working-set
     information; callers must then use the scheduler's conservative
     unknown-profile route.
+
+    Observation failures wait for this root process without a deadline, then
+    re-raise the same exception. Its ``observed_process_exit_confirmed`` and
+    ``observed_process_returncode`` attributes describe that wait; an OS wait
+    failure leaves confirmation false. This is not proof that descendants have
+    exited: callers still need their existing process-owner completion checks.
     """
     if not command:
         raise ValueError("observed process command cannot be empty")
@@ -108,30 +139,46 @@ def run_observed_process(
         popen_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         popen_options["start_new_session"] = True
-    with stdout.open("wb") as out, stderr.open("wb") as err:
-        process = subprocess.Popen(
-            list(command), cwd=cwd, stdout=out, stderr=err, env=environment,
-            **popen_options,
-        )
-        while process.poll() is None:
-            observed = process_working_set_bytes(process.pid)
-            if observed is not None:
-                peak = observed if peak is None else max(peak, observed)
-            elapsed = time.monotonic() - started
-            if not warned and warning_seconds is not None and elapsed > warning_seconds:
-                warnings.warn(
-                    f"OBSERVED_PROCESS_WARNING elapsed_seconds={elapsed:.3f} "
-                    f"warning_seconds={warning_seconds:.3f} pid={process.pid}",
-                    RuntimeWarning,
-                    stacklevel=2,
+    process = None
+    observation_failure = None
+    try:
+        with stdout.open("wb") as out, stderr.open("wb") as err:
+            try:
+                process = subprocess.Popen(
+                    list(command), cwd=cwd, stdout=out, stderr=err, env=environment,
+                    **popen_options,
                 )
-                warned = True
-            if hard_deadline_seconds is not None and elapsed > hard_deadline_seconds:
-                _terminate_process_tree(process)
-                process.wait()
-                raise subprocess.TimeoutExpired(command, hard_deadline_seconds)
-            time.sleep(sample_interval_seconds)
-        observed = process_working_set_bytes(process.pid)
-        if observed is not None:
-            peak = observed if peak is None else max(peak, observed)
+                while process.poll() is None:
+                    observed = process_working_set_bytes(process.pid)
+                    if observed is not None:
+                        peak = observed if peak is None else max(peak, observed)
+                    elapsed = time.monotonic() - started
+                    if not warned and warning_seconds is not None and elapsed > warning_seconds:
+                        warnings.warn(
+                            f"OBSERVED_PROCESS_WARNING elapsed_seconds={elapsed:.3f} "
+                            f"warning_seconds={warning_seconds:.3f} pid={process.pid}",
+                            RuntimeWarning,
+                            stacklevel=2,
+                        )
+                        warned = True
+                    if hard_deadline_seconds is not None and elapsed > hard_deadline_seconds:
+                        _terminate_process_tree(process)
+                        process.wait()
+                        raise subprocess.TimeoutExpired(command, hard_deadline_seconds)
+                    time.sleep(sample_interval_seconds)
+                observed = process_working_set_bytes(process.pid)
+                if observed is not None:
+                    peak = observed if peak is None else max(peak, observed)
+            except BaseException as error:
+                observation_failure = error
+                if process is not None:
+                    _wait_after_observation_failure(process, error)
+                raise
+    except BaseException as error:
+        if observation_failure is not None and error is not observation_failure:
+            observation_failure.add_note(f"Observed process log close failed: {type(error).__name__}: {error}")
+            raise observation_failure
+        if observation_failure is None and process is not None:
+            _wait_after_observation_failure(process, error)
+        raise
     return subprocess.CompletedProcess(list(command), process.returncode), peak

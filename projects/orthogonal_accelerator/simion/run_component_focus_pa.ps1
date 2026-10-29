@@ -31,6 +31,8 @@ try{
    if($transaction.action_required-ne'build'){throw "Focus PA transaction cannot build: $($transaction.action_required)"}
    $stage='native_build';$temporary=[string]$transaction.scratch_directory;$gem=Join-Path $temporary 'focus.gem';Set-Content -LiteralPath $gem -Value ([string]$planDocument.gem) -Encoding ascii
    $raw=Join-Path $transaction.build_directory 'orthogonal_accelerator_focus.pa#';$lease=Enter-HostExecutionLease -Role SIMION -Stage pa_refine -RunId $RunId
+   $nativeVerified=$false
+   try{
    Push-Location $temporary;try{&$SimionExe --nogui --noprompt lua $frozenBuilder $gem $raw $electrodeCount 2>&1|Tee-Object (Join-Path $package.log_dir 'build_component_focus_pa.log');if($LASTEXITCODE-ne0){throw 'Native focus controller build failed'}}finally{Pop-Location}
    $stage='export_standalone_responses';$buildAlias=New-RunExecutionAlias -TargetDirectory ([string]$transaction.build_directory)
    foreach($responseId in 1..$electrodeCount){
@@ -40,11 +42,14 @@ try{
      if($LASTEXITCODE-ne0){throw "Standalone focus response export failed for ID $responseId"}
    }
    Remove-RunExecutionAlias -ExecutionAlias ([string]$buildAlias.execution_alias) -TargetDirectory ([string]$buildAlias.target_directory);$buildAlias=$null
-   Exit-HostExecutionLease -Lease $lease -Outcome success -RunId $RunId;$lease=$null
    $stage='seal_and_verify';$sealedText=@(Invoke-RootPython @('-m','projects.orthogonal_accelerator.analysis.component_focus_pa_cache','--action','advance-transaction','--cache-root',$cacheRoot,'--plan',$plan,'--builder',$frozenBuilder,'--simion-executable',$SimionExe,'--owner',$capacity.owner,'--response-receipt',$responseReceiptRecipe);$null)|Out-String;$sealed=($sealedText.Trim()|ConvertFrom-Json)
    if($sealed.action_required-ne'verify'){throw "Focus PA transaction cannot verify: $($sealed.action_required)"}
    $grid=@();for($i=0;$i-lt3;$i++){$grid+=([int]([math]::Round([double]$domain[$i]/[double]$mesh[$i]))+1)};$verificationOutput=Join-Path $package.log_dir 'verify_component_focus_pa.log';&$SimionExe --nogui --noprompt lua $frozenVerifier $raw $electrodeCount $grid[0] $grid[1] $grid[2] 2>&1|Tee-Object $verificationOutput;if($LASTEXITCODE-ne0){throw 'Native focus controller verification failed'}
    $verificationEvidence=Join-Path $package.result_dir 'component_focus_pa_verification.json';[ordered]@{schema_version=1;role='simion_pa_family_verification';status='pass';cache_key=[string]$sealed.cache_key;inventory_sha256=[string]$sealed.inventory_sha256;solver_release='SIMION 2020';verifier_path=(Resolve-Path $frozenVerifier).Path;verifier_sha256=(Get-FileHash $frozenVerifier -Algorithm SHA256).Hash;verification_output_path=(Resolve-Path $verificationOutput).Path;verification_output_sha256=(Get-FileHash $verificationOutput -Algorithm SHA256).Hash}|ConvertTo-Json -Depth 8|Set-Content $verificationEvidence -Encoding utf8
+   $nativeVerified=$true
+   }finally{
+     if($lease){Exit-HostExecutionLease -Lease $lease -Outcome $(if($nativeVerified){'success'}else{'failed'}) -RunId $RunId;$lease=$null}
+   }
    $stage='publish';$publicationText=@(Invoke-RootPython @('-m','projects.orthogonal_accelerator.analysis.component_focus_pa_cache','--action','advance-transaction','--cache-root',$cacheRoot,'--plan',$plan,'--builder',$frozenBuilder,'--simion-executable',$SimionExe,'--owner',$capacity.owner,'--verification-evidence',$verificationEvidence,'--response-receipt',$responseReceiptRecipe);$null)|Out-String;$publication=($publicationText.Trim()|ConvertFrom-Json);if($publication.action_required-ne'complete'){throw "Focus PA transaction did not complete publication: $($publication.action_required)"}
  }
  $stage='prepare_shared_private_runtime'

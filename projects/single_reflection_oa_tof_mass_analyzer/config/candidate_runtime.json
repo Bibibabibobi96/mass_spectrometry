@@ -1,5 +1,20 @@
 {
   "schema_version": 1,
   "role": "oa_tof_candidate_runtime",
-  "simion_template_run_id": "20260802_125000__build__simion__candidate-layout-template"
+  "simion_template_run_id": "20260802_125000__build__simion__candidate-layout-template",
+  "artifact_capacity": {
+    "comsol_bytes": 4294967296,
+    "cad_bytes": 67108864,
+    "evidence_bytes": 67108864,
+    "basis": {
+      "release_stamp": "20260729_112246",
+      "asset_manifest_sha256": "910191ebfce128347d85675cafeb8e0552579f379713f14e1815e2b0f729e67d",
+      "saved_mph_bytes": 986349231,
+      "cad_export_files": 52,
+      "cad_export_bytes": 2597818,
+      "results_files": 6,
+      "results_bytes": 346329,
+      "policy": "Explicit engineering reservation for the current Candidate geometry and save strategy: 4 GiB covers about 4.35 saved MPH copies including staging; CAD and evidence each reserve 64 MiB. PA bytes are planned separately. These are not measured peaks or guarantees for future geometry. Reassess explicitly when geometry scope or save strategy expands; retention eligibility is unchanged."
+    }
+  }
 }

@@ -149,33 +149,49 @@ assert(ion_px_mm==1 and ion_py_mm==2 and ion_pz_mm==3 and ion_vx_mm==4 and ion_v
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_complete_entry_status_waits_for_payload_seal(self):
-        runner = (PROJECT.parents[1] / "integrations/workflows/oa_mr/execute.ps1").read_text(encoding="utf-8")
-        start = runner.rindex("  try{\n  if($trajectoryPayloadNeedsSeal){")
-        block = runner[start:runner.rindex("\n}")]
         for fail in (False, True):
             with self.subTest(fail=fail):
                 command = """$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile('integrations/workflows/oa_mr/execute.ps1',[ref]$null,[ref]$errors)
+if($errors.Count){throw ($errors|Out-String)}
+$ownerTry=@($ast.EndBlock.Statements|Where-Object{$_-is[Management.Automation.Language.TryStatementAst]})[-1]
 $trajectoryPayloadNeedsSeal=$true;$deferredHostCompletionNotification=$true;$terminalStatus='success'
+$terminalPublicationAttempted=$true;$terminalPublicationClosed=$true
+$writerCompletion=[pscustomobject]@{stopped=$true};$staticPaGuards=@();$temporaryAcceleratorRuntimeSession=$null
+$ownsHostResourceLease=$false;$resourceLease=$null;$ownsCapacitySession=$true;$capacitySession=@{status='active'}
+$batchRuntimeRoot=$null;$temporarySolverDir=$null;$retainGuiWorkbenchFiles=$false
+$failureRecord=$null;$closeoutErrors=[Collections.Generic.List[object]]::new();$python='fixture';$repoRoot='root'
 $artifactRoot='root';$package=@{artifact_run_dir='run'};$projectId='mr';$trajectoryRetentionReason='review'
 $RunId='fixture';$observed=@{status='bunch_observed'};$hostOutcome='failed'
 $calls=[Collections.Generic.List[string]]::new()
 function Write-Host {param($Object);$calls.Add([string]$Object)}
+function Write-Warning {param($Message,$WarningAction)}
+function Exit-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session);$calls.Add('capacity');$Session.status='released'}
 function Invoke-HostExecutionCompletionNotification {param($Outcome,$RunId);$calls.Add('notify:'+ $Outcome)}
 function Remove-RunPackageExecutionAlias {param($Package);$calls.Add('alias_removed')}
 """
                 command += "function Invoke-ProjectPython {param($Arguments);$calls.Add('seal');"
                 command += "throw 'seal fixture failure'" if fail else "return"
-                command += "}\n$caught=$false;try{\n" + block + "\n}catch{$caught=$true}\n"
-                command += "@{calls=@($calls);caught=$caught;outcome=$hostOutcome}|ConvertTo-Json -Compress"
+                command += "}\n$caught=$false;$message=$null;try{. ([scriptblock]::Create('try{}finally'+$ownerTry.Finally.Extent.Text))}"
+                command += "catch{$caught=$true;$message=$_.Exception.Message}\n"
+                command += "@{calls=@($calls);caught=$caught;outcome=$hostOutcome;message=$message}|ConvertTo-Json -Compress"
                 result = subprocess.run(["pwsh", "-NoProfile", "-Command", command], cwd=PROJECT.parents[1], capture_output=True, text=True, encoding="utf-8", timeout=20)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 observed = json.loads(result.stdout)
-                self.assertEqual(observed["calls"][0], "seal")
+                calls = observed["calls"]
                 self.assertEqual(observed["caught"], fail)
+                self.assertEqual(observed["message"], "seal fixture failure" if fail else None)
                 self.assertEqual(observed["outcome"], "failed" if fail else "success")
-                self.assertEqual(observed["calls"][-2], "notify:failed" if fail else "notify:success")
-                self.assertEqual(observed["calls"][-1], "alias_removed")
-                self.assertIn("TRIAL=FAIL" if fail else "TRIAL=PASS", observed["calls"][1])
+                notification = "notify:failed" if fail else "notify:success"
+                self.assertIn(notification, calls)
+                self.assertIn("alias_removed", calls)
+                reports = [call for call in calls if call.startswith("MRTOF_TWO_PRISM_TRIAL=")]
+                self.assertEqual(len(reports), 1)
+                self.assertIn("TRIAL=FAIL" if fail else "TRIAL=PASS", reports[0])
+                self.assertLess(calls.index("capacity"), calls.index("seal"))
+                self.assertLess(calls.index("seal"), calls.index(notification))
+                self.assertLess(calls.index("seal"), calls.index(reports[0]))
 
 
 if __name__ == "__main__":

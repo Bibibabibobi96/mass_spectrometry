@@ -162,18 +162,22 @@ builder把每个成员先写到返回的确定性scratch，再以原子改名落
 不重新Refine。生产`artifacts/`缺少可信容量ledger时在修改payload前失败关闭；首次事务还必须给出显式
 owner和`--producer-run-config`。common只对这个小型、冻结的运行配置记录路径和一次性SHA-256，随后续作和
 缓存命中不再读取它，更不会为此读取PA；因此每个新PA在产生重载荷前已有来源、责任人和恢复入口。fixture可在其外独立运行。
+发布向key范围迁入recovery或payload前，沿既有容量入口登记同generation的`published_cache/writing`范围。
+发布异常分别保留journal、重记transaction和已登记writing key的实际驻留字节；次级记账错误附在原异常上，
+不遮盖原错。generation及pointer完成后才转ready并沿原交接归属；相同current pointer重放不再改写。
 原生构建或审计在两次advance之间失败时，owner确认原生写者已返回后，在释放容量承诺前调用
 同一`advance-transaction --record-stage-only`（Python参数`record_stage_only=True`）。它只接受已存在、
 同owner与producer的building事务，在原锁内通过文件大小重记该事务及其payload／working容量；
 不创建事务、读PA或重算哈希，不封存或推进发布，保留原状态与科学失败。单反射owner若连该记账也
 失败，在原失败summary说明待收尾，保留现有公共保护租约与承诺，延后stopped-payload seal，不洗成发布成功。
 
-尚未封存的`building`事务可在同一`advance-transaction`显式传`--producer-handoff <json>`
-（Python参数`producer_handoff`），交给新的受管producer继续缺失成员构建，不提供求解器checkpoint续算。
+尚未发布的`building / prepared`事务可在同一`advance-transaction`显式传`--producer-handoff <json>`
+（Python参数`producer_handoff`），交给新的受管producer继续构建或验证，不提供求解器checkpoint续算。
 请求为schema 1，含新run的`inputs/`下三份冻结record：`transaction_record`、`predecessor_manifest`、
 `stopped_receipt`，以及当前`capacity_lease_id/capacity_lease_owner`。三份record核验冻结字节和SHA-256，
 按JSON对象解析，不以文件大小限制合法manifest。stopped receipt必须来自公共
-`seal-stopped-payload`，与前驱manifest的run／状态及当前ready、pinned owner账本一致；owner负责在封存前
+`seal-stopped-payload`，与前驱manifest的run／状态及当前ready、pinned owner账本一致；前驱run必须已声明
+`solver_review`或`qualification`保留合同，`compact`不能事后借交接保留重载荷。owner负责在封存前
 实际确认writer及后代退出。已停止的`checkpoint`保持原科学状态，不改写为成功或失败。
 停止receipt以`run_config`记录封存时实际配置；handoff核对它与原transaction producer属于同一run路径，
 并验证当前配置字节。原producer SHA保留为开始构建时的来源记录；正常生命周期补齐依赖或收尾元数据
@@ -181,10 +185,17 @@ owner和`--producer-run-config`。common只对这个小型、冻结的运行配�
 停止时配置身份随冻结receipt保留，不改历史文件。
 调用同时以`--owner`和`--producer-run-config`声明新责任人；新run必须已登记，当前workflow租约须保护
 该run及cache，其他活跃key／事务／前驱路径保护仍拒绝。cache identity和文件清单保持完全相同。
-仅空inventory、无verification／generation的事务允许交接；原owner／producer与冻结前驱记录保存在
-同一事务的`producer_handoff`审计记录，新owner／producer一次原子写入。之后普通`building`分支登记容量，
-中断后重放相同请求或由新owner普通advance收敛，不增加状态机。scratch不读、不复制、不视为完成成员；
-已封存或发布的事务拒绝新交接，缺成员仍返回`build`，完整构建后仍须原生审计及正常验证发布。
+原owner／producer与冻结前驱记录保存在同一事务的`producer_handoff`审计记录，新owner／producer一次
+原子写入并登记容量；该次调用只交接，不封存或发布。缺成员返回`build`，成员齐全或已封存则返回`verify`，
+保留原inventory；`prepared`还须核验并保留原验证证据。完整文件存在不代表科学验证通过。
+已有同generation的writing key范围随这次已验证交接同步责任人；同步中断沿已提交journal续作，
+不接管外来owner或改写既有ready范围。
+新owner随后普通advance才进入封存／验证／发布：未验证资产须提交绑定inventory的原生审计；已有有效
+`prepared`证据可直接完成原发布步骤。中断后重放同一交接或普通advance收敛，不增加状态机。
+build-scratch在验证证据持久保存后才按原机制清理，使接续验证仍可使用原native basis；交接不读取或复制
+scratch，也不把它视为完整成员。已发布事务拒绝新交接，部分单元仍由调用方按原构建边界重做。
+已有member／retained-inventory／publication-metadata恢复journal的事务仍由各自既有恢复合同处理；
+普通producer handoff拒绝覆盖这些journal绑定的owner，不改写原恢复授权。
 
 尚未验证的封存成员与其轻量receipt身份不一致时，owner可在同一个`advance-transaction`调用中传入
 `--member-recovery <json>`（Python参数`member_recovery`）。请求固定为schema v1、role
@@ -244,10 +255,17 @@ CLI 返回 `publication_metadata_correction_receipt` 供运行器冻结。原生
 owner先登记规范，等待声明成员齐全，在原锁内取得实际来源与保留响应的字节身份；schema 2 receipt中的
 source是构建来源记录，不要求导出用的原生PA永久留在generation。standalone响应仍须属于发布manifest，
 并按其库存核验。若source同样被保留，其名称／大小／SHA须与manifest记录相等，选择器不因此读取源PA。
-writer复用该次inventory，计算小receipt身份并持久化事务库存后，才清理同owner的scratch。
+writer复用该次inventory，计算小receipt身份并持久化事务库存；科学verification已通过并持久化为prepared后，
+才清理同owner的scratch，保证尚未完成验证的交接仍保留实际构建来源。
 相同规范或普通 advance 均可重放已登记事务；已经封存时只核对元数据，不再次扫描 PA。
+prepared发布在目录移动前失败时，重放复用逐值相同的既有只读manifest；不同内容、间接路径或非文件
+明确拒绝，不为重放解除只读或覆盖原manifest。该规则同时覆盖xor与无冗余发布策略。
 规范变化、已有未归属 receipt 或失败的写入均不能发布；未封存的中断写入由 owner 按原规范重建。
-新活动入口只消费当前格式；旧schema证据留在历史冻结输入，不增加fallback或改写已发布generation。
+新提交的recipe及新写receipt均为schema 2。reader另严格支持已有schema 1：recipe保留原四字段和版本，
+其source与standalone都必须是声明的payload成员；receipt的原生source必须逐值匹配manifest，默认读取还核验源字节。
+这对应原v1作者的payload语义，不推测缺失来源。v2来源可只作provenance的规则不变；未知版本、布尔版本或额外字段拒绝。
+已封存v1事务及generation只读不改写，原publication pin／owner／inventory证明仍必需；未封存v1事务由原owner普通advance继续，
+新生成receipt为v2，原recipe身份保留。缺generation或未完成库存不会因版本可读而升级为ready／published。
 前端仅保留独立响应与必要小记录；仍有真实原生消费者的OA／MR继续保留其声明的raw载荷，不按扩展名统一删除。
 
 [`native_fast_adjust_runtime_support.ps1`](native_fast_adjust_runtime_support.ps1)和
@@ -255,6 +273,11 @@ writer复用该次inventory，计算小receipt身份并持久化事务库存后�
 standalone 响应重组为一套受管、只读的私有原生 Fast Adjust family。控制器只执行一次`solutions={0}`；响应
 逐个从 standalone `.pa` 复制到全新`.paN`对象，不再次Refine，也不打开已发布generation中的原生`.paN`。
 首次构造核对generation身份及小型response receipt字节；PA载荷沿现有短副本记录核对，不额外扫描整库。
+同一helper的显式`Transaction`参数集也接受公共loader验证的受管未发布库存：调用方必须给出实际
+transaction路径、库存SHA、当前producer与活动容量session；真实lease须覆盖该run和cache key。
+它沿相同guarded copy逐个构造私有响应，不伪造generation。可选逐响应验证回调只在该响应的私有
+standalone副本仍受护时执行；全部响应验证完成后，调用方才向原公共事务提交verification并发布。
+是否已完成重场构建由项目的原manifest与实际构建记录证明，helper的roundtrip不能替代Refine完成证据。
 同一场身份的后续K、电压、粒子源、TE1和GUI只复用producer-owned checkpoint，不按trial重复重组。
 该边界已由 OA provider `20261003_152000__sim__simion__mrtof-oa-private-runtime-provider-r04` 与 MRTOF
 safe-exit `20261003_153100__sim__simion__mrtof-oa-private-runtime-safe-exit-n100` 真实贯通：后者复用既有
@@ -373,6 +396,13 @@ surface 拒绝与不可变缓存边界均是本仓库实现，不应表述为 SI
 | `Remove-ShortPaCopyDirectory -Path <directory>` | 仅清理系统临时目录下匹配前缀的已登记独立副本并释放源句柄；默认前缀为 `simion_pa_links_` |
 
 PA登记与释放共用`GetFullPath`规范化键；已有输入先按PowerShell当前位置解析，8.3短名和展开名不另建记录。
+`New-ShortPaCopy -GuardDestinationReadOnly`在首次目标身份校验时取得并持续持有同一read handle；
+大目标使用既有无缓冲读取。`Publish-ShortPaCopyDestination -KeepDestinationGuard`将该实际句柄转入
+现immutable owner，随后Protect不再读同一载荷；曾可写、后来才加guard的目标不能据此复用身份。
+独立`Confirm-ShortPaCopyIdentity`与默认response selector仍完整核验。源guard的已验证身份只在持续
+有效且身份一致时复用；两个owner用重叠独立read handles，不相互Dispose。
+selector的`verify_payload=False`仅供随后有guard的物化选择；小response receipt自身SHA、manifest、
+响应命名／ID／次序及大小仍核验，不能作为PA已验收证明。
 这复用[既有.NET路径语义](https://learn.microsoft.com/en-us/dotnet/api/system.io.path.getfullpath?view=net-10.0)（2026-10-26核对），不改变长PA运输、复制或哈希协议。
 
 `Get-ImmutablePaSourceVerificationSha256` 的大文件路径在源保护句柄持续持有期间，从运行源码根通过
@@ -545,6 +575,15 @@ PA family 的可恢复发布／复用由[`pa_family_cache.py`](pa_family_cache.p
 独立、明确的放弃决定，才可同时提供`hard_deadline_seconds`与
 `hard_deadline_action="terminate_process_tree"`；Windows通过`taskkill /T`处置该根进程及其子进程。
 这不是资源调度、健康诊断或普通运行预算的替代入口。
+
+采样、告警回调或等待间隔抛出异常（含`KeyboardInterrupt`）时，观察器保持日志句柄打开，沿
+[Python 3.11 `Popen.wait()`](https://docs.python.org/3.11/library/subprocess.html#subprocess.Popen.wait)
+等待本次直接启动的根进程自然退出，再抛出原异常；等待期间再次收到`KeyboardInterrupt`仍继续等待。
+已启动进程的异常附`observed_process_exit_confirmed`与`observed_process_returncode`，分别表示根进程退出
+是否得到确认及其原生退出码。等待本身失败时前者为false、后者为null，note明确标记
+`OBSERVED_PROCESS_EXIT_UNCONFIRMED`；日志关闭的第二个错误也保留在note，不替换原错误。
+根进程退出不证明脱离它的后代已停止；调用者仍须满足已有进程owner的后代完成判据，未知状态不得封存或清理输出。
+相邻测试使用短小Python子进程验证持续写入、非零退出、观察异常与清理异常，不构成真实SIMION验收。
 
 `particle_batching.merge_rebased_particle_csvs`按列名`particle_id`恢复ID，保留原列顺序和批次／事件行顺序。
 消费者可直接合并原CSV，不需为ID列重排物化中间表；项目母群、终态和碰撞校验仍由原消费者负责。

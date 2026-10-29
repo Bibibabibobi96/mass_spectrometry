@@ -634,12 +634,9 @@ def _runtime_checkpoint_members(
 
 def _assert_runtime_retirement_unprotected(artifact_root: Path, target: Path) -> None:
     """Reuse the current-GUI owner's explicit source protection projection."""
-    from common.contracts.reconcile_artifact_capacity import (
-        _current_gui_source_paths, _current_gui_source_retention,
-    )
+    from common.contracts.gui_source_protection import current_gui_source_retention
 
-    _current_gui_source_paths.cache_clear()
-    if _current_gui_source_retention(artifact_root, target):
+    if current_gui_source_retention(artifact_root, target):
         raise RetirementError("stopped runtime remains a current GUI source")
 
 

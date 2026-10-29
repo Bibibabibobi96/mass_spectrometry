@@ -137,6 +137,7 @@ $staticPaGuards=[Collections.Generic.List[IO.FileStream]]::new()
 $bunchSourceLocal=$SourceReceipt;$bunchSourceContract=Get-Content $SourceReceipt -Raw|ConvertFrom-Json
 $bunchSelectionRequested=$false;$RetainGuiWorkbench=$Case-eq'gui_missing';$retainGuiWorkbenchFiles=$RetainGuiWorkbench
 $ownsHostResourceLease=$false;$resourceLease=@{};$ownsCapacitySession=$false
+$writerCompletion=[pscustomobject]@{stopped=$true}
 $capacitySession=@{committed_new_bytes=26214400};$trajectoryRecording=$null
 $NativeCorridorRuntimeSession=if($Case-eq'zero'){@{caller_owned=$true;directory=$Root}}else{$null}
 $nativeRuntimeCheckpointPath=$null
@@ -1148,6 +1149,8 @@ $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $ownsCapacitySession=$Owned-eq'True';$ownsHostResourceLease=$false
 $trajectoryRecording=$null;$trajectoryRetentionReason='';$trajectoryPayloadNeedsSeal=$false
 $terminalPublicationAttempted=$false;$terminalStatus='interrupted';$deferredHostCompletionNotification=$false
+$terminalPublicationClosed=$false;$failureRecord=$null;$closeoutErrors=[Collections.Generic.List[object]]::new()
+$writerCompletion=[pscustomobject]@{stopped=$true}
 $python='python';$repoRoot='repo';$runDir=$Root;$resultDir=$Root;$logDir=$Root
 $runConfig=Join-Path $Root run_config.json;$summary=Join-Path $Root summary.json
 '{}'|Set-Content $runConfig
@@ -1160,6 +1163,7 @@ $isBunchFlight=$false;$staticFieldRequested=$false;$nativeBankKey='fixture'
 $staticPaGuards=@();$temporaryAcceleratorRuntimeSession=$null;$temporarySolverDir=$null;$batchRuntimeRoot=$null
 $retainGuiWorkbenchFiles=$false;$manifestOutputs=@();$script:calls=[Collections.Generic.List[string]]::new()
 function Write-Host {param($Object)}
+function Write-Warning {param($Message,$WarningAction)}
 function Write-RunJson {param($Path,$Value) $script:calls.Add('summary:'+$Value.status)}
 function Write-VerifiedRunManifest {param($Python,$RepoRoot,$RunConfig,$Status,$Software,$Outputs,[switch]$DeferCapacityFinalization)
  if(-not$DeferCapacityFinalization){throw 'terminal writer must defer capacity finalization'}
@@ -1178,7 +1182,7 @@ function Invoke-RunCapacityLifecycleAdapter {param($Python,$RepoRoot,$Action,$Ar
  $script:calls.Add('light:'+ $Action);if($Failure-eq'light'){throw 'light capacity failed'}
 }
 function Remove-RunPackageExecutionAlias {param($Package)}
-function Exit-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session) $script:calls.Add('release')}
+function Exit-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session) $script:calls.Add('release');$Session.status='released'}
 function Invoke-ProjectPython {param($Arguments)
  $script:calls.Add('seal')
  if($Arguments-notcontains'seal-stopped-payload'-or$Arguments[-1]-eq''){throw 'wrong seal authority or missing reason'}
@@ -1210,6 +1214,163 @@ function Invoke-ProjectPython {param($Arguments)
                     self.assertLess(observed["calls"].index("release"), observed["calls"].index("seal"))
                 if not owned:
                     self.assertIn("light:finalize-ready", observed["calls"])
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_closeout_preserves_primary_error_and_isolates_safe_owner_actions(self):
+        """Run the actual catch/finally; only external owners are inert fixtures."""
+        command = r"""
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile('integrations/workflows/oa_mr/execute.ps1',[ref]$tokens,[ref]$errors)
+if($errors.Count){throw ($errors|Out-String)}
+$ownerTry=@($ast.EndBlock.Statements|Where-Object{$_-is[Management.Automation.Language.TryStatementAst]})[-1]
+$tail=$ownerTry.CatchClauses[0].Extent.Text+'finally'+$ownerTry.Finally.Extent.Text
+function Invoke-Fixture {
+ param($Fault,$Primary,$Stopped,$Owned,$Tail)
+ $script:fault=$Fault;$script:events=[Collections.Generic.List[string]]::new()
+ $terminalPublicationAttempted=-not$Primary;$terminalPublicationClosed=-not$Primary
+ $terminalStatus='success';$failureStage='science';$failureRecord=$null
+ $closeoutErrors=[Collections.Generic.List[object]]::new();$writerCompletion=[pscustomobject]@{stopped=$Stopped}
+ $trajectoryPayloadNeedsSeal=$Owned-and-not$Primary;$hostOutcome='failed';$deferredHostCompletionNotification=$false
+ $ownsHostResourceLease=$Owned;$resourceLease=@{inherited=$false;token='fixture-token'}
+ $ownsCapacitySession=$Owned;$capacitySession=@{status='active'}
+ $temporarySolverDir=$null;$temporaryAcceleratorRuntimeSession=@{};$batchRuntimeRoot=[string]$PWD
+ $retainGuiWorkbenchFiles=$false;$runConfig=Join-Path $PWD 'README.md';$python='inert';$repoRoot=[string]$PWD
+ $artifactRoot='inert';$projectId='instrument_assembly';$package=@{artifact_run_dir='inert'};$RunId='inert'
+ $trajectoryRetentionReason='fixture';$observed=@{status='inert'}
+ $guard1=[pscustomobject]@{};$guard1|Add-Member ScriptMethod Dispose {
+  $script:events.Add('guard1');if($script:fault-in@('guard','multiple')){throw 'guard failed'}
+ }
+ $guard2=[pscustomobject]@{};$guard2|Add-Member ScriptMethod Dispose {$script:events.Add('guard2')}
+ $staticPaGuards=@($guard1,$guard2)
+ function Publish-OaMrFailureManifest {param($Status,$Reason,$Evidence)
+  $script:events.Add('publish');if($script:fault-eq'publish'){throw 'publish failed'}
+ }
+ function Invoke-RunCapacityLifecycleAdapter {param($Python,$RepoRoot,$Action,$ArtifactRoot,$RunConfig) $script:events.Add('light')}
+ function Suspend-NativeCorridorRuntimeSession {param($Session)
+  $script:events.Add('runtime');if($script:fault-eq'runtime'){throw 'runtime failed'}
+ }
+ function Exit-HostResourceStage {param($Lease,[switch]$PassThru)
+  $script:events.Add('host');if($script:fault-eq'host'){throw 'host failed'}
+  if(-not$PassThru){throw 'Actual release receipt required'}
+  return @{status=$(if($script:fault-eq'host_retained'){'acquired'}else{'released'});token=$Lease.token}
+ }
+ function Invoke-HostExecutionCompletionNotification {param($Outcome,$RunId) $script:events.Add('notify')}
+ function Remove-TemporarySolverDirectory {param($Path)
+  $script:events.Add('temp');if($script:fault-in@('temp','multiple')){throw 'temp failed'}
+ }
+ function Exit-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session)
+  $script:events.Add('capacity');if($script:fault-eq'capacity'){throw 'capacity failed'}
+  if($script:fault-ne'capacity_unreleased'){$Session.status='released'}
+ }
+ function Invoke-ProjectPython {param($Arguments)
+  $script:events.Add('seal');if($script:fault-eq'seal'){throw 'seal failed'}
+ }
+ function Remove-RunPackageExecutionAlias {param($Package)
+  $script:events.Add('alias');if($script:fault-in@('alias','multiple')){throw 'alias failed'}
+ }
+ function Write-Host {param($Object)}
+ function Write-Warning {param($Message,$WarningAction)}
+ $caught=$null;$secondary=@()
+ $body=if($Primary){"try{throw 'science failed'}"}else{'try{}'}
+ try{. ([scriptblock]::Create($body+$Tail))}catch{
+  $caught=$_.Exception.Message
+  if($_.Exception.Data.Contains('oa_mr_closeout_errors')){$secondary=@($_.Exception.Data['oa_mr_closeout_errors'])}
+ }
+ @{fault=$Fault;primary=$Primary;stopped=$Stopped;owned=$Owned;error=$caught;secondary=$secondary;
+   calls=@($script:events);capacity_status=$capacitySession.status}
+}
+$rows=@(foreach($fault in @('none','publish','guard','runtime','host','host_retained','temp','capacity','capacity_unreleased','seal','alias','multiple')){
+ Invoke-Fixture $fault $true $true $true $tail
+})
+$rows+=@(Invoke-Fixture 'guard' $false $true $true $tail)
+$rows+=@(Invoke-Fixture 'none' $false $true $true $tail)
+$rows+=@(Invoke-Fixture 'none' $true $false $true $tail)
+$rows+=@(Invoke-Fixture 'none' $true $true $false $tail)
+$rows|ConvertTo-Json -Depth 8 -Compress
+"""
+        result = subprocess.run(["pwsh", "-NoProfile", "-Command", command], cwd=REPO,
+                                capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        rows = json.loads(result.stdout)
+        for row in rows:
+            with self.subTest(**{key: row[key] for key in ("fault", "primary", "stopped", "owned")}):
+                calls = row["calls"]
+                if row["primary"]:
+                    self.assertEqual(row["error"], "science failed")
+                elif row["fault"] == "none":
+                    self.assertIsNone(row["error"])
+                else:
+                    self.assertIn("guard failed", row["error"])
+                if not row["stopped"]:
+                    self.assertEqual(calls, ["host", "notify"])
+                    self.assertEqual(row["capacity_status"], "active")
+                    continue
+                for expected in ("guard1", "guard2", "runtime"):
+                    self.assertIn(expected, calls)
+                if not row["owned"]:
+                    self.assertNotIn("host", calls)
+                    self.assertNotIn("capacity", calls)
+                    self.assertNotIn("seal", calls)
+                    self.assertIn("light", calls)
+                    self.assertIn("alias", calls)
+                    continue
+                self.assertIn("host", calls)
+                if row["fault"] in ("host", "host_retained"):
+                    self.assertFalse(set(calls) & {"temp", "capacity", "seal", "alias"})
+                    self.assertEqual(row["capacity_status"], "active")
+                else:
+                    for expected in ("temp", "capacity", "alias"):
+                        self.assertIn(expected, calls)
+                    self.assertEqual("seal" in calls, row["fault"] not in
+                                     ("publish", "capacity", "capacity_unreleased"))
+                if row["fault"] != "none":
+                    self.assertTrue(row["secondary"])
+                if row["fault"] == "multiple":
+                    self.assertEqual([item["stage"] for item in row["secondary"]],
+                                     ["guard_release", "temporary_directory", "execution_alias"])
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_native_stop_fact_requires_actual_wait_even_for_nonzero_exit(self):
+        """Small Python roots exercise the existing native helper without SIMION."""
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            command = r"""param($Python,$Root)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile('integrations/workflows/oa_mr/execute.ps1',[ref]$tokens,[ref]$errors)
+$helper=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-SimionStage'},$true)
+. ([scriptblock]::Create($helper.Extent.Text))
+$simion=$Python;$solverDir=$Root;$logDir=$Root
+function Register-HostResourceProcess {param($Lease,$ProcessId)
+ if($script:inject){$script:child=[Diagnostics.Process]::GetProcessById($ProcessId);throw 'registration failed'}
+}
+function Write-Host {param($Object)}
+$rows=@(foreach($case in @('zero','nonzero','unknown')){
+ $script:inject=$case-eq'unknown';$script:child=$null;$writerCompletion=[pscustomobject]@{stopped=$true}
+ $code=if($case-eq'unknown'){'import time; time.sleep(0.25)'}elseif($case-eq'nonzero'){'raise SystemExit(7)'}else{'pass'}
+ $errorText=$null
+ try{Invoke-SimionStage -Stage $case -Arguments @('-B','-c',$code) -ResourceLease @{}}
+ catch{$errorText=$_.Exception.Message}
+ $fact=[bool]$writerCompletion.stopped
+ # The test owns the deliberately unobserved root and waits for its natural end.
+ if($null-ne$script:child){try{$script:child.WaitForExit()}finally{$script:child.Dispose()}}
+ @{case=$case;stopped=$fact;error=$errorText}
+})
+$rows|ConvertTo-Json -Compress
+"""
+            # Use the actual interpreter root, not the Windows venv launcher shim.
+            invocation = "& {" + command + "} " + " ".join(
+                "'" + str(value).replace("'", "''") + "'" for value in (sys._base_executable, root))
+            result = subprocess.run(["pwsh", "-NoProfile", "-Command", invocation], cwd=REPO,
+                                    capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            rows = {row["case"]: row for row in json.loads(result.stdout)}
+            self.assertEqual([rows[key]["stopped"] for key in ("zero", "nonzero", "unknown")],
+                             [True, True, False])
+            self.assertIsNone(rows["zero"]["error"])
+            self.assertIn("SIMION stage failed", rows["nonzero"]["error"])
+            self.assertIn("registration failed", rows["unknown"]["error"])
 
     def test_compact_postprocess_does_not_transition_a_finished_solver_lease(self):
         self.assertNotIn("-Stage 'mrtof_postprocess'", self.source)

@@ -4,6 +4,9 @@ import tempfile
 import unittest
 import json
 from pathlib import Path
+from unittest.mock import patch
+
+from projects.single_reflection_oa_tof_mass_analyzer.analysis import sync_geometry_contract
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_contract import (
     PROJECT_ROOT,
@@ -16,13 +19,41 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_cont
 )
 from common.contracts.machine_contracts import sha256
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import (
+    BASELINE_PATH,
+    MODE_PATH,
     NUMERICS_PATH,
     derive_simion_geometry,
     resolve_contract,
+    resolve_contract_documents,
+    serialized,
 )
 
 
 class SyncGeometryContractTests(unittest.TestCase):
+    def test_document_resolution_preserves_path_serialization_and_inputs(self) -> None:
+        documents = [json.loads(path.read_text(encoding="utf-8"))
+                     for path in (BASELINE_PATH, MODE_PATH, NUMERICS_PATH)]
+        before = json.dumps(documents)
+        original = resolve_contract()
+        resolved = resolve_contract_documents(*documents, input_identity=original["inputs"])
+        self.assertEqual(serialized(resolved), serialized(original))
+        self.assertEqual(json.dumps(documents), before)
+        self.assertIsNot(resolved["inputs"], original["inputs"])
+
+    def test_document_resolution_rejects_the_same_invalid_numerics(self) -> None:
+        baseline, mode, numerics = [json.loads(path.read_text(encoding="utf-8"))
+                                   for path in (BASELINE_PATH, MODE_PATH, NUMERICS_PATH)]
+        for value in (None, "unknown", ["free"]):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as directory:
+                numerics["comsol"]["solver_steps"] = value
+                path = Path(directory) / "numerics.json"
+                path.write_text(json.dumps(numerics), encoding="utf-8")
+                with self.assertRaises(ValueError) as from_path:
+                    resolve_contract(numerics_path=path)
+                with self.assertRaises(ValueError) as from_documents:
+                    resolve_contract_documents(baseline, mode, numerics, input_identity={})
+                self.assertEqual(str(from_path.exception), str(from_documents.exception))
+
     def test_baseline_derived_geometry_matches_published_contract(self) -> None:
         self.assertEqual(resolve_contract()["derived"], load_contract()["derived"])
 
@@ -154,6 +185,33 @@ class SyncGeometryContractTests(unittest.TestCase):
             rendered["authorities"]["optimization_envelope"]["sha256"],
             sha256(PROJECT_ROOT / "config" / "optimization_envelope.json"),
         )
+        self.assertEqual(
+            rendered["authorities"]["candidate_runtime"]["sha256"],
+            sha256(PROJECT_ROOT / "config" / "candidate_runtime.json"),
+        )
+
+    def test_runtime_authority_drift_is_detected_and_only_its_binding_is_refreshed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "config").mkdir()
+            campaign = root / "config" / "experiment_campaign.json"
+            runtime = root / "config" / "candidate_runtime.json"
+            campaign.write_bytes((PROJECT_ROOT / "config" / campaign.name).read_bytes())
+            runtime.write_bytes((PROJECT_ROOT / "config" / runtime.name).read_bytes())
+            envelope = render_optimization_envelope()
+            with patch.object(sync_geometry_contract, "PROJECT_ROOT", root):
+                sync_geometry_contract.update(campaign, render_authority_document(campaign, envelope), True)
+                before = campaign.read_bytes()
+                runtime.write_bytes(runtime.read_bytes() + b"\n")
+                rendered = render_authority_document(campaign, envelope)
+                with self.assertRaisesRegex(SystemExit, "STALE=config[/\\\\]experiment_campaign.json"):
+                    sync_geometry_contract.update(campaign, rendered, False)
+                self.assertEqual(campaign.read_bytes(), before)
+                sync_geometry_contract.update(campaign, rendered, True)
+                expected = json.loads(before)
+                expected["authorities"]["candidate_runtime"]["sha256"] = sha256(runtime)
+                self.assertEqual(json.loads(campaign.read_text()), expected)
+                self.assertFalse(sync_geometry_contract.update(campaign, rendered, False))
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ large payload merely to delete it.
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 import hashlib
 import json
 import re
@@ -268,10 +269,8 @@ def author_owner_disposition(
         }
 
 
-def load_legacy_owner_disposition(root: Path, document_path: Path) -> dict[str, Any]:
-    """Return a verified ledger candidate from one fixed governance document."""
-
-    root = root.resolve(strict=False)
+def _load_owner_disposition_metadata(document_path: Path) -> dict[str, Any]:
+    """Validate sealed authority without requiring an already-retired payload."""
     try:
         document = json.loads(document_path.read_text(encoding="utf-8-sig"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -303,13 +302,6 @@ def load_legacy_owner_disposition(root: Path, document_path: Path) -> dict[str, 
         raise ValueError("owner disposition owner differs from target namespace")
     if partial_run:
         _run_target(target_relative)
-    target = root
-    for part in Path(target_relative).parts:
-        target = target / part
-        if _link_or_reparse(target):
-            raise ValueError("owner disposition target path traverses a symbolic link")
-    if not target.is_dir():
-        raise ValueError("owner disposition target is not a regular directory")
     evidence = document.get("authority_evidence")
     disposition = document.get("disposition")
     if not isinstance(evidence, dict) or set(evidence) != {"path"}:
@@ -348,8 +340,28 @@ def load_legacy_owner_disposition(root: Path, document_path: Path) -> dict[str, 
     expected_id = hashlib.sha256(_canonical(identity_seed).encode("utf-8")).hexdigest().upper()
     if disposition["id"].upper() != expected_id or document_path.name != f"{expected_id}.json":
         raise ValueError("owner disposition id or filename differs")
-    declared = {item["path"]: item["bytes"] for item in records}
-    if partial_run:
+    return {
+        "path": target_relative, "class": "rebuildable_payload", "bytes": sum(item["bytes"] for item in records),
+        "status": "ready", "pin": False, "owner_hint": owner.strip(),
+        "explicit_user_abandonment": version == 3,
+        "partial_run": partial_run,
+        "disposition": {"id": expected_id, "generation": disposition["generation"].upper(),
+                        "manifest_path": manifest_path, "files": records},
+    }
+
+
+def load_legacy_owner_disposition(root: Path, document_path: Path) -> dict[str, Any]:
+    """Return a metadata-validated candidate with its current payload checked."""
+    candidate = _load_owner_disposition_metadata(document_path)
+    target = root.resolve(strict=False)
+    for part in Path(candidate["path"]).parts:
+        target = target / part
+        if _link_or_reparse(target):
+            raise ValueError("owner disposition target path traverses a symbolic link")
+    if not target.is_dir():
+        raise ValueError("owner disposition target is not a regular directory")
+    declared = {item["path"]: item["bytes"] for item in candidate["disposition"]["files"]}
+    if candidate["partial_run"]:
         for relative, bytes_count in declared.items():
             item = _regular_target_file(target, relative)
             if item.stat().st_size != bytes_count:
@@ -360,18 +372,10 @@ def load_legacy_owner_disposition(root: Path, document_path: Path) -> dict[str, 
             if item.is_symlink():
                 raise ValueError("owner disposition target contains a symbolic link")
             if item.is_file():
-                relative = item.relative_to(target).as_posix()
-                actual[relative] = item.stat().st_size
+                actual[item.relative_to(target).as_posix()] = item.stat().st_size
         if actual != declared:
             raise ValueError("owner disposition inventory differs from target")
-    return {
-        "path": target_relative, "class": "rebuildable_payload", "bytes": sum(item["bytes"] for item in records),
-        "status": "ready", "pin": False, "owner_hint": owner.strip(),
-        "explicit_user_abandonment": version == 3,
-        "partial_run": partial_run,
-        "disposition": {"id": expected_id, "generation": disposition["generation"].upper(),
-                        "manifest_path": manifest_path, "files": records},
-    }
+    return candidate
 
 
 def _activate_candidate(
@@ -494,17 +498,89 @@ def _activate_partial_candidate(
     } if changed else None
 
 
+def _archive_completed_disposition(
+    root: Path, ledger: dict[str, Any], document_path: Path, candidate: dict[str, Any],
+) -> bool:
+    """Move an already-completed authorization into its existing receipt."""
+    if candidate["partial_run"]:
+        return False
+    disposition = candidate["disposition"]
+    disposition_id, target_path = disposition["id"], candidate["path"]
+    authorization = {"owner": candidate["owner_hint"], "target_path": target_path,
+                     "authority_evidence": {"path": disposition["manifest_path"]}}
+    entry = next((item for item in ledger["objects"] if item.get("path") == target_path), None)
+    receipt_path = root / "common/capacity_disposal_receipts" / f"ledger_disposition_{disposition_id}.json"
+    if (entry is None or entry.get("status") != "retired"
+            or entry.get("disposition", {}).get("id") != disposition_id or not receipt_path.is_file()):
+        return False
+    if entry.get("disposition") != disposition or entry.get("owner") != candidate["owner_hint"]:
+        raise ValueError("completed owner disposition differs from its sealed ledger authorization")
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8-sig"))
+    if not isinstance(receipt, dict) or not isinstance(receipt.get("disposition"), dict):
+        raise ValueError("completed owner disposition receipt schema differs")
+    if (receipt.get("role") != "artifact_capacity_disposal_receipt" or receipt.get("status") != "complete"
+            or receipt["disposition"] != disposition
+            or receipt.get("target_path") != str((root / target_path).resolve(strict=False))):
+        raise ValueError("completed owner disposition receipt identity or status differs")
+    existing = receipt.get("owner_disposition_authorization")
+    if existing is not None and existing != authorization:
+        raise ValueError("completed owner disposition receipt authorization conflicts")
+    if existing is None:
+        receipt["owner_disposition_authorization"] = authorization
+        write_json_atomic(receipt_path, receipt)
+    document_path.unlink()
+    return True
+
+
+def _activation_groups(records: list[dict[str, Any]], ledger: dict[str, Any]) -> list[list[int]]:
+    """Close dependencies using the original ledger, before any trial mutation."""
+    neighbors: dict[int, set[int]] = {index: set() for index in range(len(records))}
+    for left, record in enumerate(records):
+        target = record["target_path"]
+        if target is None:
+            continue
+        consumers = {
+            consumer for entry in ledger["objects"]
+            if _ranges_overlap(target, entry["path"])
+            for consumer in entry.get("consumers", [])
+        }
+        for right, other in enumerate(records):
+            other_target = other["target_path"]
+            if left == right or other_target is None:
+                continue
+            if _ranges_overlap(target, other_target) or any(
+                _ranges_overlap(consumer, other_target) for consumer in consumers
+            ):
+                neighbors[left].add(right)
+                neighbors[right].add(left)
+    groups, remaining = [], set(neighbors)
+    while remaining:
+        pending, group = [min(remaining)], set()
+        while pending:
+            index = pending.pop()
+            if index in group:
+                continue
+            group.add(index)
+            pending.extend(neighbors[index] - group)
+        groups.append(sorted(group))
+        remaining -= group
+    return groups
+
+
 def activate_owner_dispositions(root: Path) -> dict[str, Any]:
     """Bind sealed owner decisions into the existing retirement path.
 
     It never discovers candidates or infers owner authority.  Maintenance
     consumes an exact owner-provided disposition before it plans deletion.
+    Independent objects continue after a document-local failure. Consumer-linked
+    approvals are one transaction; none can borrow an unsuccessful approval.
     """
 
     root = root.resolve(strict=False)
     directory = root / "common" / "capacity_calibration" / "owner_dispositions"
     if not directory.exists():
-        return {"activated_count": 0, "activated_bytes": 0}
+        return {"activated_count": 0, "activated_bytes": 0, "archived_document_count": 0,
+                "failed_count": 0, "failures": []}
     if not directory.is_dir() or directory.is_symlink():
         raise ValueError("owner disposition directory is not a regular directory")
     with capacity_protection.capacity_decision_lock(root):
@@ -512,78 +588,80 @@ def activate_owner_dispositions(root: Path) -> dict[str, Any]:
         if ledger is None:
             raise ValueError("capacity ledger is missing or invalid")
         archived_count = 0
+        records: list[dict[str, Any]] = []
         for document_path in sorted(directory.glob("*.json")):
+            record: dict[str, Any] = {"document_path": str(document_path), "target_path": None,
+                                      "raw": None, "candidate": None, "failure": None}
             try:
                 raw = json.loads(document_path.read_text(encoding="utf-8-sig"))
-                if raw.get("scope") == "partial_run_heavy_files":
-                    continue
-                disposition = raw["disposition"]
-                disposition_id = disposition["id"].upper()
-                target_path = _relative(raw["target_path"])
-                authorization = {
-                    "owner": raw["owner"], "target_path": target_path,
-                    "authority_evidence": raw["authority_evidence"],
-                }
-            except (KeyError, TypeError, ValueError, OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-                raise ValueError("owner disposition document is unreadable") from exc
-            entry = next((item for item in ledger["objects"] if item.get("path") == target_path), None)
-            receipt_path = root / "common" / "capacity_disposal_receipts" / f"ledger_disposition_{disposition_id}.json"
-            if (
-                entry is None or entry.get("status") != "retired"
-                or entry.get("disposition", {}).get("id") != disposition_id
-                or not receipt_path.is_file()
+                if not isinstance(raw, dict):
+                    raise ValueError("owner disposition document must be an object")
+                record["raw"] = raw
+                record["target_path"] = _relative(raw.get("target_path"))
+            except (KeyError, TypeError, ValueError, OSError, UnicodeDecodeError) as exc:
+                record["failure"] = {"stage": "read", "error": str(exc)}
+            records.append(record)
+        # Even an invalid duplicate with a readable target must quarantine its
+        # peer. File ordering never chooses one of two overlapping authorities.
+        for index, record in enumerate(records):
+            if record["target_path"] is not None and any(
+                other != index and records[other]["target_path"] is not None
+                and _ranges_overlap(record["target_path"], records[other]["target_path"])
+                for other in range(len(records))
             ):
-                continue
-            try:
-                receipt = json.loads(receipt_path.read_text(encoding="utf-8-sig"))
-            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-                raise ValueError("completed owner disposition receipt is unreadable") from exc
-            if (
-                receipt.get("role") != "artifact_capacity_disposal_receipt"
-                or receipt.get("status") != "complete"
-                or receipt.get("disposition", {}).get("id") != disposition_id
-                or receipt.get("target_path") != str((root / target_path).resolve(strict=False))
-            ):
-                continue
-            existing_authorization = receipt.get("owner_disposition_authorization")
-            if existing_authorization is not None and existing_authorization != authorization:
-                raise ValueError("completed owner disposition receipt authorization conflicts")
-            if existing_authorization is None:
-                receipt["owner_disposition_authorization"] = authorization
-                write_json_atomic(receipt_path, receipt)
-            document_path.unlink()
-            archived_count += 1
-
-        approved: list[tuple[Path, dict[str, Any]]] = []
-        seen: set[str] = set()
-        for document_path in sorted(directory.glob("*.json")):
-            candidate = load_legacy_owner_disposition(root, document_path)
-            if candidate["path"] in seen:
-                raise ValueError("multiple owner dispositions target one managed range")
-            seen.add(candidate["path"])
-            approved.append((document_path, candidate))
-        if not approved:
-            return {"activated_count": 0, "activated_bytes": 0,
-                    "archived_document_count": archived_count}
+                record["failure"] = record["failure"] or {
+                    "stage": "conflict", "error": "multiple owner dispositions overlap one managed range"}
+        pending = []
+        for record in records:
+            if record["failure"] is None:
+                stage = "validate"
+                document_path = Path(record["document_path"])
+                try:
+                    metadata = _load_owner_disposition_metadata(document_path)
+                    stage = "archive"
+                    if _archive_completed_disposition(root, ledger, document_path, metadata):
+                        archived_count += 1
+                        continue
+                    stage = "validate"
+                    record["candidate"] = load_legacy_owner_disposition(root, document_path)
+                except (KeyError, TypeError, ValueError, OSError, UnicodeDecodeError) as exc:
+                    record["failure"] = {"stage": stage, "error": str(exc)}
+            pending.append(record)
+        records = pending
         activated: list[dict[str, Any]] = []
-        approved_paths = {
-            candidate["path"] for _, candidate in approved if not candidate["partial_run"]
-        }
-        for _, candidate in approved:
-            if candidate["partial_run"]:
-                activated_entry = _activate_partial_candidate(root, ledger, candidate)
-            else:
-                activated_entry = _activate_candidate(
-                    root, ledger, candidate, approved_paths=approved_paths,
-                )
-            if activated_entry is not None:
-                activated.append(activated_entry)
+        failures: list[dict[str, Any]] = []
+        for group in _activation_groups(records, ledger):
+            if not any(records[index]["failure"] for index in group):
+                trial, group_activated = deepcopy(ledger), []
+                approved_paths = {records[index]["candidate"]["path"] for index in group
+                                  if not records[index]["candidate"]["partial_run"]}
+                for index in group:
+                    candidate = records[index]["candidate"]
+                    try:
+                        entry = (_activate_partial_candidate(root, trial, candidate) if candidate["partial_run"]
+                                 else _activate_candidate(root, trial, candidate, approved_paths=approved_paths))
+                        if entry is not None:
+                            group_activated.append(entry)
+                    except (ValueError, RuntimeError, OSError) as exc:
+                        records[index]["failure"] = {"stage": "activate", "error": str(exc)}
+                        break
+                else:
+                    ledger = trial
+                    activated.extend(group_activated)
+                    continue
+            related = [records[index]["document_path"] for index in group if records[index]["failure"]]
+            for index in group:
+                record = records[index]
+                failures.append({"document_path": record["document_path"], "target_path": record["target_path"],
+                                 **(record["failure"] or {"stage": "dependency_group", "error": "linked owner approval did not activate"}),
+                                 "related_document_paths": related})
         if activated:
             write_json_atomic(capacity_ledger.resolve_ledger_path(root), ledger)
     return {
         "activated_count": len(activated),
         "activated_bytes": sum(item["bytes"] for item in activated),
         "archived_document_count": archived_count,
+        "failed_count": len(failures), "failures": failures,
     }
 
 

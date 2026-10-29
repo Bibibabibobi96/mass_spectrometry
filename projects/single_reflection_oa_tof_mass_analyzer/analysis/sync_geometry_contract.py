@@ -267,6 +267,10 @@ def render_authority_document(path: Path, optimization_envelope: str) -> str:
             "config/optimization_envelope.json",
             optimization_envelope.encode("utf-8"),
         ),
+        "candidate_runtime": (
+            "config/candidate_runtime.json",
+            (PROJECT_ROOT / "config" / "candidate_runtime.json").read_bytes(),
+        ),
     }
     for label, (expected_path, content) in bindings.items():
         authority = document["authorities"].get(label)

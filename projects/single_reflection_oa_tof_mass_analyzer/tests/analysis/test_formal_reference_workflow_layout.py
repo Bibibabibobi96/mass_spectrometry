@@ -11,6 +11,27 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class FormalReferenceWorkflowLayoutTests(unittest.TestCase):
+    def test_managed_builder_source_gate_requires_deferred_stage_summary(self):
+        gate = (PROJECT_ROOT / "workflows/formal_reference/verify_geometry_contract.ps1").read_text(encoding="utf-8")
+        builder = (PROJECT_ROOT / "simion/workbench/build_formal_delivery.ps1").read_text(encoding="utf-8")
+        helpers = "\n".join(re.findall(r"(?ms)^function Assert-(?:Not)?Contains\([^\n]*\n.*?^\}", gate))
+        checks = "\n".join(line for line in gate.splitlines() if line.startswith("Assert-Contains $deliveryBuilder"))
+        guard = "if (-not $candidateMode -or -not $DeferRunFinalization)"
+        for kind, source in (("current", builder), ("false_summary", builder.replace("run_finalization_deferred=$true", "run_finalization_deferred=$false")),
+                             ("missing_guard", builder.replace(guard, "if ($false)"))):
+            with self.subTest(kind=kind):
+                payload = base64.b64encode(source.encode("utf-8")).decode("ascii")
+                script = "$ErrorActionPreference='Stop'\n" + helpers + "\n" + (
+                    "$deliveryBuilder=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + payload + "'))\n"
+                ) + checks
+                result = subprocess.run(["pwsh", "-NoProfile", "-Command",
+                    "$ErrorActionPreference='Stop'; & ([scriptblock]::Create([Console]::In.ReadToEnd()))"],
+                    input=script, cwd=PROJECT_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                if kind == "current":
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+
     def _detector_source_gate(self, comsol: str) -> subprocess.CompletedProcess:
         """Execute the actual PowerShell source-binding checks, without native tools."""
         gate = (PROJECT_ROOT / "workflows/formal_reference/verify_geometry_contract.ps1").read_text(encoding="utf-8")

@@ -7,11 +7,13 @@ param(
   [string]$ContractPath = '',
   [string]$CandidateBaselinePath = '',
   [string]$CandidateTextDir = '',
-  [string]$ReusableComponentDir = '',
-  [string]$ReuseComponents = '',
-  [string]$ReusableParticleDir = '',
   [string]$ParticleSeed = '',
-  [switch]$ResumeRefinedReflectron,
+  [Parameter(Mandatory)][string]$CapacitySessionPath,
+  [Parameter(Mandatory)][string]$ComponentPlanPath,
+  [string]$ProducerHandoffPath = '',
+  [Parameter(Mandatory)][string]$CompletionPath,
+  [Parameter(Mandatory)][ValidatePattern('^[a-fA-F0-9]{64}$')][string]$ContextSha256,
+  [Parameter(Mandatory)][ValidateSet(100,1000)][int]$ParticleCount,
   [switch]$DeferRunFinalization
 )
 
@@ -33,21 +35,25 @@ else {
 $formalBaselinePath = Join-Path $projectRoot 'config\baseline.json'
 $modePath = Join-Path $projectRoot 'config\modes\formal.json'
 $formalContractPath = Join-Path $projectRoot 'config\resolved_geometry.json'
+. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+$nativeOperations=[Collections.Generic.List[object]]::new()
+$producerComponents=[Collections.Generic.List[object]]::new()
+$hostExecutionLease=$null;$hostRelease=$null;$buildFailure=$null
+$expectedRunRoot=[IO.Path]::GetFullPath((Join-Path $artifactRoot ('runs/'+$RunId)))
+$CompletionPath=[IO.Path]::GetFullPath($CompletionPath)
+if(-not$CompletionPath.StartsWith(($expectedRunRoot+[IO.Path]::DirectorySeparatorChar),[StringComparison]::OrdinalIgnoreCase)){
+  throw 'Build completion must be a record inside the managed run.'
+}
+if(Test-Path -LiteralPath $CompletionPath){throw 'Build completion already exists; use a fresh run.'}
+try {
 $candidateMode = -not [string]::IsNullOrWhiteSpace($ContractPath)
 . (Join-Path $projectRoot 'oatof_lifecycle_preflight.ps1')
 if (-not $candidateMode) { Assert-OaTofFormalAssetsReadable -ProjectRoot $projectRoot }
 if ($candidateMode -and [string]::IsNullOrWhiteSpace($TemplateIob)) { throw 'Candidate build requires an explicit frozen non-Formal TemplateIob.' }
 if ($candidateMode -and $TemplateIob -match '(?i)formal') { throw 'Candidate TemplateIob must not reference a Formal path.' }
-$reuseComponentNames = @($ReuseComponents -split ',' | ForEach-Object { $_.Trim().ToLowerInvariant() } | Where-Object { $_ })
-$unknownReuseComponents = @($reuseComponentNames | Where-Object { $_ -notin @('accelerator','reflectron','flight_tube','detector') })
-if ($unknownReuseComponents.Count -gt 0) { throw "Unknown reusable SIMION component: $($unknownReuseComponents -join ', ')" }
-if ($reuseComponentNames.Count -gt 0) {
-  if (-not $candidateMode) { throw 'SIMION component reuse is available only for Candidate builds.' }
-  if ([string]::IsNullOrWhiteSpace($ReusableComponentDir) -or
-      -not (Test-Path -LiteralPath $ReusableComponentDir -PathType Container)) {
-    throw 'ReusableComponentDir must identify an existing SIMION delivery directory.'
-  }
-  $ReusableComponentDir = (Resolve-Path -LiteralPath $ReusableComponentDir).Path
+if (-not $candidateMode -or -not $DeferRunFinalization) {
+  throw 'PA construction requires the managed Candidate workflow and its existing capacity session.'
 }
 if ($ParticleSeed -notmatch '^-?\d+$') { throw 'ParticleSeed is required and must be an explicit integer run-instance input.' }
 $particleSeedValue = [int]$ParticleSeed
@@ -73,7 +79,55 @@ else {
 }
 
 . (Join-Path $repoRoot 'common\host_execution_lease.ps1')
+. (Join-Path $repoRoot 'common\simion\native_fast_adjust_runtime_support.ps1')
+. (Join-Path $repoRoot 'common\resource_budget_support.ps1')
+$capacitySession=Get-Content -LiteralPath $CapacitySessionPath -Raw|ConvertFrom-Json -Depth 80
+$runRoot=Join-Path $artifactRoot ('runs/'+$RunId)
+if($capacitySession.role-ne'artifact_workflow_capacity_session'-or$capacitySession.status-ne'active'-or
+  [IO.Path]::GetFullPath($runRoot)-notin@($capacitySession.protected_paths)){
+  throw 'PA construction requires the active workflow session protecting this exact run.'
+}
+$scope=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession
+$capacitySession=$scope.session
+$cacheRoot=Join-Path ([string]$capacitySession.artifact_root) 'common/simion/pa_family_cache'
+$planCode=@'
+import json,sys
+from pathlib import Path
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.simion_component_pa_plan import compile_component_pa_plan
+contract,plan,repo,exe=map(Path,sys.argv[1:])
+actual=compile_component_pa_plan(json.loads(contract.read_text(encoding='utf-8-sig')),repository_root=repo,simion_exe=exe)
+assert actual==json.loads(plan.read_text(encoding='utf-8-sig')), 'frozen component plan differs from the actual builder sources or geometry'
+'@
+Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+  & $python -B -c $planCode $contractPath $ComponentPlanPath $repoRoot $SimionExe
+  if($LASTEXITCODE-ne0){throw 'Frozen component PA plan validation failed.'}
+}
+$componentPlan=Get-Content -LiteralPath $ComponentPlanPath -Raw|ConvertFrom-Json -Depth 80
+$scope=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession `
+  -ProtectedCacheKeys @($componentPlan.components|Where-Object cacheable|ForEach-Object{[string]$_.cache_key})
+$capacitySession=$scope.session
+$producerHandoffs=@{}
+if($ProducerHandoffPath){
+  $handoffCode=@'
+import json,sys
+from pathlib import Path
+from common.contracts.verify_run_manifest import verify_record
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import load_pa_producer_handoffs
+path,run,plan,session=map(Path,sys.argv[1:])
+record=json.loads((run/'run_config.json').read_text(encoding='utf-8-sig'))['pa_producer_handoffs']
+assert Path(record['path']).resolve()==path.resolve(), 'PA handoff index differs from the run input'
+verify_record('PA producer handoff index',record)
+keys={row['cache_key'] for row in json.loads(plan.read_text(encoding='utf-8-sig'))['components'] if row['cacheable']}
+print(json.dumps(load_pa_producer_handoffs(path,run,expected_cache_keys=keys,capacity_session=json.loads(session.read_text(encoding='utf-8-sig')))))
+'@
+  $handoffText=@(Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+    & $python -B -c $handoffCode $ProducerHandoffPath $runRoot $ComponentPlanPath $CapacitySessionPath
+    if($LASTEXITCODE-ne0){throw 'Frozen producer handoff inputs failed validation.'}
+  })
+  $producerHandoffs=($handoffText-join"`n")|ConvertFrom-Json -AsHashtable -Depth 80
+}
 $hostExecutionLease = Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
+$outputAlias=$null
 try {
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
   if ([string]::IsNullOrWhiteSpace($RunId)) {
@@ -83,12 +137,12 @@ if ([string]::IsNullOrWhiteSpace($OutputDir)) {
 }
 $outputFull = [IO.Path]::GetFullPath($OutputDir)
 $runsRoot = [IO.Path]::GetFullPath((Join-Path $artifactRoot 'runs'))
-if (-not $outputFull.StartsWith($runsRoot, [StringComparison]::OrdinalIgnoreCase)) {
+if (-not $outputFull.StartsWith(([IO.Path]::GetFullPath($runRoot)+[IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase)) {
   throw 'OutputDir must remain under runs; promotion to formal is a separate gate.'
 }
 if (Test-Path -LiteralPath $outputFull) {
   $existing = @(Get-ChildItem -LiteralPath $outputFull -Force)
-  if (-not $DeferRunFinalization -or ($existing.Count -ne 0 -and -not $ResumeRefinedReflectron)) {
+  if ($existing.Count -ne 0) {
     throw "Output directory already exists or is not empty; no automatic overwrite is allowed: $outputFull"
   }
 }
@@ -96,11 +150,13 @@ else {
   New-Item -ItemType Directory -Path $outputFull | Out-Null
 }
 
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
-if (-not $candidateMode) {
-  & $python -m projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_contract --write
-  if ($LASTEXITCODE -ne 0) { throw 'SIMION text synchronization failed.' }
-}
+$outputAlias=New-RunExecutionAlias -TargetDirectory $outputFull `
+  -ExecutionRoot (Join-Path ([string]$capacitySession.artifact_root) 'common/execution_aliases')
+$runtimeOutput=[string]$outputAlias.execution_alias
+$buildLogs=Join-Path $outputFull 'build_logs'
+New-Item -ItemType Directory -Path $buildLogs|Out-Null
+$nativeSequence=0
+$script:allOperationsStopped=$true
 $contract = Get-Content -LiteralPath $contractPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $geometry = $contract.geometry_mm
 $accelerator = $contract.geometry_derivation.accelerator
@@ -108,6 +164,63 @@ $build = $contract.simion_geometry_build
 $detector = $contract.simion_detector_marker
 $source = $contract.particle_source
 $voltage = $contract.electrodes_V
+
+function Invoke-OwnedSimionArguments {
+  param([string[]]$ArgumentList,[string]$OperationId)
+  $observationPath=Join-Path $buildLogs ($OperationId+'.native.json')
+  $request=@{command=@($SimionExe)+@($ArgumentList);cwd=$outputFull;
+    stdout=(Join-Path $buildLogs ($OperationId+'.stdout.log'));stderr=(Join-Path $buildLogs ($OperationId+'.stderr.log'));
+    observation=$observationPath}
+  $code=@'
+from common.host_resource_python import await_managed_process_start
+await_managed_process_start()
+import json,sys,time
+from pathlib import Path
+from common.simion.process_observation import run_observed_process
+from common.contracts.recorded_file_removal import write_json_atomic
+r=json.loads(sys.argv[1]);d={'exit_confirmed':False,'returncode':None};started=time.perf_counter();exit_code=1
+try:
+    p,peak=run_observed_process(r['command'],cwd=Path(r['cwd']),stdout=Path(r['stdout']),stderr=Path(r['stderr']),warning_seconds=1800)
+    d.update(exit_confirmed=True,returncode=p.returncode,native_peak_working_set_bytes=peak);exit_code=0 if p.returncode==0 else 1
+except BaseException as error:
+    d.update(exit_confirmed=getattr(error,'observed_process_exit_confirmed',False),returncode=getattr(error,'observed_process_returncode',None),error=f'{type(error).__name__}: {error}')
+finally:
+    d['native_elapsed_seconds']=time.perf_counter()-started;write_json_atomic(Path(r['observation']),d)
+raise SystemExit(exit_code)
+'@
+  $observed=@{observation=@{exit_confirmed=$false;returncode=$null};managed_process_completion=$null}
+  $script:allOperationsStopped=$false
+  try{
+    $observed.managed_process_completion=Invoke-RepositoryManagedPythonProcess -Python $python `
+      -ArgumentList @('-B','-c',$code,($request|ConvertTo-Json -Depth 8 -Compress)) -WorkingDirectory $repoRoot `
+      -StandardOutputPath (Join-Path $buildLogs ($OperationId+'.helper.stdout.log')) `
+      -StandardErrorPath (Join-Path $buildLogs ($OperationId+'.helper.stderr.log'))
+    $receipt=$observed.managed_process_completion
+    $script:allOperationsStopped=$receipt.ownership_confirmed-and$receipt.worker_exit_confirmed-and
+      $receipt.launcher_exit_confirmed-and$receipt.stdout_drained-and$receipt.stderr_drained
+    if(Test-Path -LiteralPath $observationPath){$observed.observation=Get-Content -LiteralPath $observationPath -Raw|ConvertFrom-Json -AsHashtable}
+    $script:allOperationsStopped=$script:allOperationsStopped-and$observed.observation.exit_confirmed
+    if(-not$script:allOperationsStopped-or$receipt.exit_code-ne0-or$observed.observation.returncode-ne0){
+      $detail=$(if($observed.observation.Contains('error')){$observed.observation.error}else{''})
+      throw "Native component operation failed: $OperationId (worker=$($receipt.exit_code), native=$($observed.observation.returncode)): $detail"
+    }
+    return $observed
+  }catch{
+    $originalError=$_
+    if($_.Exception.Data.Contains('managed_python_completion')){
+      $observed.managed_process_completion=$_.Exception.Data['managed_python_completion']
+      $receipt=$observed.managed_process_completion
+      $script:allOperationsStopped=$receipt.ownership_confirmed-and$receipt.worker_exit_confirmed-and
+        $receipt.launcher_exit_confirmed-and$receipt.stdout_drained-and$receipt.stderr_drained
+    }
+    if(Test-Path -LiteralPath $observationPath){
+      try{$observed.observation=Get-Content -LiteralPath $observationPath -Raw|ConvertFrom-Json -AsHashtable}catch{}
+    }
+    $script:allOperationsStopped=$script:allOperationsStopped-and$observed.observation.exit_confirmed
+    $originalError.Exception.Data['native_operation_observation']=$observed
+    throw $originalError
+  }
+}
 
 function Invoke-SimionLua([string]$Script, [object[]]$Arguments, [switch]$Refines) {
   if ($Refines) {
@@ -119,9 +232,20 @@ function Invoke-SimionLua([string]$Script, [object[]]$Arguments, [switch]$Refine
   # the interactive "Continue loading anyway?" prompt.  --noprompt accepts
   # the default continuation; the runtime contract still verifies every PA
   # filename, dimension, grid, transform, and priority after the save.
-  & $SimionExe --nogui --noprompt lua $Script @Arguments
-  if ($LASTEXITCODE -ne 0) {
-    throw "SIMION Lua failed with exit code ${LASTEXITCODE}: $Script"
+  $script:nativeSequence++
+  $name=('{0:D3}_{1}'-f$script:nativeSequence,[IO.Path]::GetFileNameWithoutExtension($Script))
+  $operation=@{operation_id=$name;observation=@{exit_confirmed=$false;returncode=$null}}
+  $nativeOperations.Add($operation)
+  try{
+    $argumentsText=@($Arguments|ForEach-Object{if($_-is[IFormattable]){$_.ToString($null,[Globalization.CultureInfo]::InvariantCulture)}else{[string]$_}})
+    $observed=Invoke-OwnedSimionArguments -ArgumentList (@('--nogui','--noprompt','lua',$Script)+$argumentsText) -OperationId $name
+    $operation.observation=$observed.observation;$operation.managed_process_completion=$observed.managed_process_completion
+  }catch{
+    if($_.Exception.Data.Contains('native_operation_observation')){
+      $observed=$_.Exception.Data['native_operation_observation'];$operation.observation=$observed.observation
+      $operation.managed_process_completion=$observed.managed_process_completion
+    }
+    throw
   }
   if ($Refines) {
     $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
@@ -129,59 +253,40 @@ function Invoke-SimionLua([string]$Script, [object[]]$Arguments, [switch]$Refine
   }
 }
 
-function Copy-ReusablePaSet([string]$Stem) {
-  $files = @(Get-ChildItem -LiteralPath $ReusableComponentDir -File | Where-Object { $_.Name -like "$Stem.pa*" })
-  if (-not ($files.Name -contains "$Stem.pa#") -or -not ($files.Name -contains "$Stem.pa0")) {
-    throw "Reusable SIMION component is incomplete: $Stem"
-  }
-  foreach ($file in $files) {
-    Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $outputFull $file.Name)
-  }
-}
-
-function Assert-CompleteRefinedReflectronSet([int]$MaxElectrode) {
-  $base = Join-Path $outputFull 'reflectron.pa#'
+function Assert-GeneratedReflectronSet([string]$Directory,[int]$MaxElectrode) {
+  $base = Join-Path $Directory 'reflectron.pa#'
   if (-not (Test-Path -LiteralPath $base -PathType Leaf)) {
-    throw 'Cannot resume reflectron: reflectron.pa# is missing.'
+    throw 'Generated reflectron.pa# is missing.'
   }
   $basisBytes = (Get-Item -LiteralPath $base).Length
   foreach ($electrode in 1..$MaxElectrode) {
-    $path = Join-Path $outputFull "reflectron.pa$electrode"
+    $path = Join-Path $Directory "reflectron.pa$electrode"
     if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or
         (Get-Item -LiteralPath $path).Length -ne $basisBytes) {
-      throw "Cannot resume reflectron: pa$electrode is missing or incomplete."
+      throw "Generated reflectron pa$electrode is missing or incomplete."
     }
   }
-  if (-not (Test-Path -LiteralPath (Join-Path $outputFull 'reflectron.pa0') -PathType Leaf)) {
-    throw 'Cannot resume reflectron: reflectron.pa0 is missing.'
+  if (-not (Test-Path -LiteralPath (Join-Path $Directory 'reflectron.pa0') -PathType Leaf)) {
+    throw 'Generated reflectron.pa0 is missing.'
   }
 }
 
-function Invoke-ReflectronFastAdjust {
-  Invoke-SimionLua (Join-Path $projectRoot 'simion\reflectron\build_reflectron_variant.lua') @(
-    (Join-Path $projectRoot 'simion\reflectron\oatof_reflectron_ideal_10_5.gem'),
-    (Join-Path $outputFull 'reflectron.pa#'), (Join-Path $textDir 'oatof_resolved.lua'), 'adjust-only'
-  )
-}
-
-function Invoke-SegmentedReflectronRefine([int]$MaxElectrode) {
+function Invoke-SegmentedReflectronRefine([string]$Directory,[int]$MaxElectrode) {
   $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
     -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
   $singleRefiner = Join-Path $projectRoot 'simion\reflectron\refine_single_pa.lua'
   foreach ($electrode in 0..$MaxElectrode) {
     Invoke-SimionLua $singleRefiner @(
-      (Join-Path $outputFull "reflectron.pa$electrode")
+      (Join-Path $Directory "reflectron.pa$electrode")
     )
   }
   $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
     -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
 }
 
-$acceleratorStem = Join-Path $outputFull 'accelerator.pa#'
-if ($reuseComponentNames -contains 'accelerator') {
-  Copy-ReusablePaSet 'accelerator'
-}
-else {
+function Build-OwnedComponent([string]$Role,[string]$Directory) {
+if($Role-eq'accelerator'){
+  $acceleratorStem=Join-Path $Directory 'accelerator.pa#'
   Invoke-SimionLua -Refines (Join-Path $repoRoot 'projects\orthogonal_accelerator\simion\build_two_zone_pa.lua') @(
   (Join-Path $repoRoot 'projects\orthogonal_accelerator\simion\two_zone_accelerator.gem'), $acceleratorStem,
   $build.accelerator.cell_xy_mm, $build.accelerator.cell_z_mm,
@@ -196,69 +301,244 @@ else {
   0, 0, 0, 0 # This instrument workflow builds the declared closed shield; no side-port dimensions.
   )
 }
-
-$reflectronStem = Join-Path $outputFull 'reflectron.pa#'
+elseif($Role-eq'reflectron'){
+$reflectronStem = Join-Path $Directory 'reflectron.pa#'
 $maxReflectronElectrode = 4 + [int]$contract.rings.stage1_count + [int]$contract.rings.stage2_count
-if ($ResumeRefinedReflectron) {
-  if (-not $candidateMode -or -not $DeferRunFinalization) {
-    throw 'ResumeRefinedReflectron requires a deferred Candidate build.'
-  }
-  Assert-CompleteRefinedReflectronSet $maxReflectronElectrode
-  Invoke-SegmentedReflectronRefine $maxReflectronElectrode
-  Invoke-ReflectronFastAdjust
-}
-elseif ($reuseComponentNames -contains 'reflectron') {
-  Copy-ReusablePaSet 'reflectron'
-}
-else {
   Invoke-SimionLua -Refines (Join-Path $projectRoot 'simion\reflectron\build_reflectron_variant.lua') @(
   (Join-Path $projectRoot 'simion\reflectron\oatof_reflectron_ideal_10_5.gem'), $reflectronStem,
   (Join-Path $textDir 'oatof_resolved.lua'),
   'initialize-only'
   )
-  Assert-CompleteRefinedReflectronSet $maxReflectronElectrode
-  Invoke-SegmentedReflectronRefine $maxReflectronElectrode
-  Invoke-ReflectronFastAdjust
+  Assert-GeneratedReflectronSet $Directory $maxReflectronElectrode
+  Invoke-SegmentedReflectronRefine $Directory $maxReflectronElectrode
 }
-
-$flightTubeStem = Join-Path $outputFull 'flight_tube_ground.pa#'
-if ($reuseComponentNames -contains 'flight_tube') {
-  Copy-ReusablePaSet 'flight_tube_ground'
-}
-else {
+elseif($Role-eq'flight_tube'){
+  $flightTubeStem = Join-Path $Directory 'flight_tube_ground.pa#'
   Invoke-SimionLua -Refines (Join-Path $projectRoot 'simion\workbench\build_flight_tube_variant.lua') @(
   (Join-Path $projectRoot 'simion\workbench\oatof_flight_tube_ground.gem'), $flightTubeStem,
   (Join-Path $textDir 'oatof_resolved.lua')
   )
 }
-
-$detectorStem = Join-Path $outputFull 'detector_ground.pa#'
-if ($reuseComponentNames -contains 'detector') {
-  Copy-ReusablePaSet 'detector_ground'
-}
-else {
+elseif($Role-eq'detector'){
+  $detectorStem = Join-Path $Directory 'detector_ground.pa#'
   Invoke-SimionLua -Refines (Join-Path $projectRoot 'simion\workbench\build_detector_variant.lua') @(
   (Join-Path $projectRoot 'simion\workbench\oatof_detector_ground.gem'), $detectorStem,
   (Join-Path $textDir 'oatof_resolved.lua')
   )
 }
+else{throw "Unknown component role: $Role"}
+}
+
+function Invoke-ComponentCache([string[]]$Arguments,[string]$Name) {
+  $stdout=Join-Path $buildLogs ($Name+'.json')
+  $stderr=Join-Path $buildLogs ($Name+'.stderr.log')
+  $operation=@{operation_id=('cache_'+$Name);operation_kind='python_metadata';
+    observation=@{exit_confirmed=$false;returncode=$null};managed_process_completion=$null}
+  $nativeOperations.Add($operation)
+  $code='from common.host_resource_python import await_managed_process_start; await_managed_process_start(); import runpy; runpy.run_module("common.simion.pa_family_cache",run_name="__main__")'
+  $script:allOperationsStopped=$false
+  try{
+    $operation.managed_process_completion=Invoke-RepositoryManagedPythonProcess -Python $python `
+      -ArgumentList (@('-B','-c',$code)+$Arguments) -WorkingDirectory $repoRoot `
+      -StandardOutputPath $stdout -StandardErrorPath $stderr
+  }catch{
+    if($_.Exception.Data.Contains('managed_python_completion')){
+      $operation.managed_process_completion=$_.Exception.Data['managed_python_completion']
+    }
+    throw
+  }finally{
+    $receipt=$operation.managed_process_completion
+    if($null-ne$receipt){
+      $script:allOperationsStopped=$receipt.ownership_confirmed-and$receipt.worker_exit_confirmed-and
+        $receipt.launcher_exit_confirmed-and$receipt.stdout_drained-and$receipt.stderr_drained
+      $operation.observation=@{exit_confirmed=[bool]$script:allOperationsStopped;returncode=$receipt.exit_code}
+    }
+  }
+  if(-not$script:allOperationsStopped-or$receipt.exit_code-ne0){throw "Component cache operation failed: $Name (worker=$($receipt.exit_code); see $stderr)"}
+  return Get-Content -LiteralPath $stdout -Raw|ConvertFrom-Json -Depth 80
+}
+
+$componentReceipts=@()
+foreach($component in $componentPlan.components){
+  $watch=[Diagnostics.Stopwatch]::StartNew()
+  $role=[string]$component.role;$stem=[string]$component.stem
+  if(-not$component.cacheable){
+    Build-OwnedComponent $role $runtimeOutput
+    $componentReceipts+=@{role=$role;source='fresh_frozen_fractional_gem';cache_hit=$false;
+      controller_path=(Join-Path $outputFull ($stem+'.pa0'));wall_seconds=$watch.Elapsed.TotalSeconds}
+    continue
+  }
+  $identityPath=Join-Path $buildLogs ($role+'_identity.json')
+  Write-RunJson -Path $identityPath -Value $component.identity -Depth 80
+  $cacheArgs=@('--cache-root',$cacheRoot,'--identity',$identityPath,'--filenames',($component.expected_files-join','))
+  $producerComponent=@{cache_key=[string]$component.cache_key;role=$role;response_ids=@($component.response_ids);
+    response_build_operation_ids=@()}
+  $producerComponents.Add($producerComponent)
+  $handoff=$producerHandoffs[[string]$component.cache_key]
+  if($null-ne$handoff-and$handoff.response_build_complete){
+    $producerComponent.response_build_completion=$handoff.response_build_completion
+  }
+  $private=$null
+  $privateArguments=@{
+    ExpectedCacheKey=[string]$component.cache_key;ReceiptName=($stem+'.standalone_responses.json');RawName=($stem+'.pa#');
+    FamilyPrefix=$stem;ExpectedResponseIds=@($component.response_ids|ForEach-Object{[int]$_});
+    DestinationDirectory=$runtimeOutput;RequireEmptyFamilyNamespace=$true;Python=$python;RepoRoot=$repoRoot;
+    SimionExe=$SimionExe;ResourceLease=$hostExecutionLease;RunId=$RunId;NativeOperationObservations=$nativeOperations;
+    InvokeNativeOperation={param($ArgumentList,$OperationId) Invoke-OwnedSimionArguments -ArgumentList $ArgumentList -OperationId $OperationId}
+  }
+  $probe=Invoke-ComponentCache ($cacheArgs+@('--action','probe')) ($role+'_probe')
+  $cacheHit=$probe.disposition-eq'hit'
+  if($null-ne$handoff-and$cacheHit){throw 'Producer handoff cannot replace a published component; select ordinary published reuse.'}
+  if(-not$cacheHit){
+    if($probe.disposition-ne'miss'){throw "Component cache cannot be reused: $role $($probe.disposition)"}
+    $recipePath=Join-Path $buildLogs ($role+'_response_recipe.json')
+    $receiptName=$stem+'.standalone_responses.json'
+    Write-RunJson -Path $recipePath -Depth 12 -Value @{
+      schema_version=2;receipt_name=$receiptName;
+      exporter_path=(Join-Path $repoRoot 'common/simion/export_standalone_pa.lua');source_location='build_scratch';
+      exports=@($component.response_ids|ForEach-Object{@{response_id=[int]$_;source_name=($stem+'.pa'+$_);standalone_name=($stem+'.response'+$_+'.pa')}})
+    }
+    $transactionArgs=$cacheArgs+@('--action','advance-transaction','--owner',$RunId,
+      '--producer-run-config',(Join-Path $runRoot 'run_config.json'))
+    if($null-ne$handoff){
+      if($handoff.has_sealed_inventory-and-not$handoff.response_build_complete){
+        throw "Sealed component $role lacks manifest-bound completed response-build evidence. Preserve $cacheRoot/.transactions/$($component.cache_key)/transaction.json; disposition requires the existing advance-transaction --cancel-unpublished-transaction contract with explicit cancellation and no active consumers."
+      }
+      $transaction=Invoke-ComponentCache ($transactionArgs+@('--producer-handoff',[string]$handoff.request_path)) ($role+'_handoff')
+    }else{
+      $transaction=Invoke-ComponentCache ($transactionArgs+@('--response-receipt',$recipePath)) ($role+'_begin')
+    }
+    if($null-eq$handoff-and$transaction.action_required-ne'build'){
+      throw 'An unfinished PA transaction requires its explicit public producer handoff; file presence cannot authorize resumption.'
+    }
+    $scratch=[string]$transaction.scratch_directory;$payload=[string]$transaction.build_directory
+    $scratchAlias=$null
+    try{
+      $verifier=Join-Path $PSScriptRoot 'verify_component_pa.lua'
+      $verificationOutput=$null
+      $reuseScratch=$false
+      if($null-ne$handoff-and$handoff.response_build_complete-and-not$transaction.inventory_sha256){
+        $nativeNames=@(0..$component.response_ids.Count|ForEach-Object{$stem+'.pa'+$_})
+        $payloadNames=@($component.expected_files|Where-Object{$_-ne$receiptName})
+        $reuseScratch=@($nativeNames|Where-Object{-not(Test-Path -LiteralPath (Join-Path $scratch $_) -PathType Leaf)}).Count-eq0-and
+          @($payloadNames|Where-Object{-not(Test-Path -LiteralPath (Join-Path $scratch $_) -PathType Leaf)-and
+            -not(Test-Path -LiteralPath (Join-Path $payload $_) -PathType Leaf)}).Count-eq0
+        if($reuseScratch){
+          # A stopped move may have landed some unsealed members already.
+          # Restore the same owned unit for its original full-field verifier.
+          foreach($name in $payloadNames){
+            if(-not(Test-Path -LiteralPath (Join-Path $scratch $name))){
+              Move-Item -LiteralPath (Join-Path $payload $name) -Destination (Join-Path $scratch $name)
+            }
+          }
+        }
+      }
+      $rebuild=-not$reuseScratch-and($transaction.action_required-eq'build'-or($null-ne$handoff-and-not$handoff.response_build_complete))
+      if($rebuild-or$reuseScratch){
+        # Only an unsealed, exclusively handed-off producer scratch is reset.
+        # The public inventory is never cleared or made writable here.
+        if($transaction.inventory_sha256){throw 'A sealed transaction cannot be rebuilt by the component builder.'}
+        if($rebuild){
+          $producerComponent.Remove('response_build_completion')
+          $scratchNames=@($stem+'.pa#',$stem+'.pa+',$stem+'.pa_')+@(0..$component.response_ids.Count|ForEach-Object{$stem+'.pa'+$_})+
+            @($component.response_ids|ForEach-Object{$stem+'.response'+$_+'.pa'})
+          foreach($name in $scratchNames){
+            $path=Join-Path $scratch $name
+            if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path -Force}
+          }
+        }
+        $scratchAlias=New-RunExecutionAlias -TargetDirectory $scratch `
+          -ExecutionRoot (Join-Path ([string]$capacitySession.artifact_root) 'common/execution_aliases')
+        $nativeScratch=[string]$scratchAlias.execution_alias
+        if($rebuild){
+          $responseOperationStart=$nativeOperations.Count
+          Build-OwnedComponent $role $nativeScratch
+          foreach($id in $component.response_ids){
+            Invoke-SimionLua (Join-Path $repoRoot 'common/simion/export_standalone_pa.lua') @(
+              (Join-Path $nativeScratch ($stem+'.pa'+$id)),(Join-Path $nativeScratch ($stem+'.response'+$id+'.pa')))
+          }
+          $producerComponent.response_build_operation_ids=@($nativeOperations.ToArray()|Select-Object -Skip $responseOperationStart|ForEach-Object{$_.operation_id})
+        }
+        Invoke-SimionLua $verifier (@((Join-Path $nativeScratch $stem),$nativeScratch,$component.response_ids.Count)+
+          @($component.grid.dimensions)+@($component.grid.cell_mm)+@([string]$component.grid.symmetry_type))
+        $verificationOutput=Join-Path $buildLogs ('{0:D3}_verify_component_pa.stdout.log'-f$script:nativeSequence)
+        foreach($name in $component.expected_files){
+          if($name-eq$receiptName){continue}
+          Move-Item -LiteralPath (Join-Path $scratch $name) -Destination (Join-Path $payload $name) -Force
+        }
+        Remove-RunExecutionAlias -ExecutionAlias $scratchAlias.execution_alias -TargetDirectory $scratch
+        $scratchAlias=$null
+      }
+      $transaction=Invoke-ComponentCache $transactionArgs ($role+'_seal')
+      if($transaction.action_required-ne'complete'){
+        if($transaction.action_required-ne'verify'){throw 'Component transaction did not reach verification.'}
+        if($null-eq$verificationOutput){
+          $private=New-NativeFastAdjustRuntimeFamily @privateArguments `
+            -TransactionPath (Join-Path $transaction.transaction_directory 'transaction.json') `
+            -ExpectedInventorySha256 ([string]$transaction.inventory_sha256) -ExpectedOwner $RunId `
+            -ProducerRunConfig (Join-Path $runRoot 'run_config.json') -CapacitySessionPath $CapacitySessionPath `
+            -GetResponseVerificationArguments {
+              param($FamilyStem,$StandalonePath,$ResponseId)
+              return @('--nogui','--noprompt','lua',$verifier,$FamilyStem,$runtimeOutput,[string]$component.response_ids.Count)+
+                @($component.grid.dimensions|ForEach-Object{[string]$_})+@($component.grid.cell_mm|ForEach-Object{[string]$_})+
+                @([string]$component.grid.symmetry_type,[string]$ResponseId,$StandalonePath)
+            }
+          $hostExecutionLease=$private.resource_lease
+          $verificationOutput=Join-Path $buildLogs ($role+'_handoff_verification.log')
+          $verifiedText=@($component.response_ids|ForEach-Object{
+            [IO.File]::ReadAllText((Join-Path $buildLogs ($stem+'.verify.response.'+$_+'.stdout.log')))
+          })-join"`n"
+          [IO.File]::WriteAllText($verificationOutput,$verifiedText,[Text.UTF8Encoding]::new($false))
+        }
+        $evidence=Join-Path $buildLogs ($role+'_verification.json')
+        Write-RunJson -Path $evidence -Depth 8 -Value @{
+          schema_version=1;role='simion_pa_family_verification';status='pass';cache_key=$component.cache_key;
+          inventory_sha256=$transaction.inventory_sha256;solver_release='SIMION 2020';verifier_path=$verifier;
+          verifier_sha256=(Get-FileHash -LiteralPath $verifier -Algorithm SHA256).Hash;
+          verification_output_path=$verificationOutput;verification_output_sha256=(Get-FileHash -LiteralPath $verificationOutput -Algorithm SHA256).Hash
+        }
+        $transaction=Invoke-ComponentCache ($transactionArgs+@('--verification-evidence',$evidence)) ($role+'_publish')
+      }
+      if($transaction.action_required-ne'complete'){throw 'Component transaction did not publish.'}
+      $probe=$transaction
+    }catch{
+      $componentFailure=$_
+      if($script:allOperationsStopped){
+        try{$null=Invoke-ComponentCache ($transactionArgs+@('--record-stage-only')) ($role+'_failed_inventory')}
+        catch{Write-Warning "Component accounting failed after the original error: $_"}
+      }
+      throw $componentFailure
+    }finally{
+      if($null-ne$scratchAlias-and$script:allOperationsStopped){Remove-RunExecutionAlias -ExecutionAlias $scratchAlias.execution_alias -TargetDirectory $scratch}
+    }
+  }
+  if($null-eq$private){
+    $privateArguments.ResourceLease=$hostExecutionLease
+    $private=New-NativeFastAdjustRuntimeFamily @privateArguments -GenerationDirectory ([string]$probe.generation_directory) `
+      -ExpectedGenerationSha256 ([string]$probe.generation_sha256)
+  }else{
+    $private.receipt.generation_directory=[string]$probe.generation_directory
+    $private.receipt.generation_sha256=[string]$probe.generation_sha256
+  }
+  $hostExecutionLease=$private.resource_lease
+  # Apply the existing provider's ordered voltage projection to the fresh
+  # private controller. The immutable cache contains unit responses only.
+  $adjusted=Join-Path (Split-Path -Parent $private.controller_path) 'operating.pa0'
+  $assignments=@($component.response_ids|ForEach-Object{
+    $value=[double]$component.operating_voltages_v.([string]$_)
+    ([string]$_+'='+$value.ToString('G17',[Globalization.CultureInfo]::InvariantCulture))
+  })
+  Invoke-SimionLua (Join-Path $repoRoot 'common/simion/voltageize_pa0.lua') (@($private.controller_path,$adjusted)+$assignments)
+  Move-Item -LiteralPath $adjusted -Destination $private.controller_path -Force
+  $private.receipt.controller_path=Join-Path $outputFull ($stem+'.pa0')
+  $componentReceipts+=@{role=$role;source='published_standalone_responses';cache_hit=$cacheHit;
+    controller_path=$private.receipt.controller_path;asset=$private.receipt;wall_seconds=$watch.Elapsed.TotalSeconds}
+  $scope=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession
+  $capacitySession=$scope.session
+}
 
 $ionGenerator = Join-Path $PSScriptRoot 'generate_comsol_consistent_ions.ps1'
-if (-not [string]::IsNullOrWhiteSpace($ReusableParticleDir)) {
-  if (-not $candidateMode -or -not (Test-Path -LiteralPath $ReusableParticleDir -PathType Container)) {
-    throw 'ReusableParticleDir is available only for Candidate builds and must identify an existing directory.'
-  }
-  foreach ($particleCount in @(100, 1000)) {
-    $name = "oatof_comsol_524amu_gaussian_N$particleCount.ion"
-    $sourceIon = Join-Path $ReusableParticleDir $name
-    if (-not (Test-Path -LiteralPath $sourceIon -PathType Leaf)) {
-      throw "Reusable particle table is missing: $sourceIon"
-    }
-    Copy-Item -LiteralPath $sourceIon -Destination (Join-Path $outputFull $name)
-  }
-}
-else {
-  foreach ($particleCount in @(100, 1000)) {
+  foreach ($particleCount in @($ParticleCount)) {
     $ionPath = Join-Path $outputFull "oatof_comsol_524amu_gaussian_N$particleCount.ion"
     & $ionGenerator -N $particleCount -MassAmu $contract.validation_target.mass_amu -Charge 1 `
       -EnergyMeanEv $contract.validation_target.initial_energy_mean_ev `
@@ -268,12 +548,6 @@ else {
       -CenterYmm $source.center_y_mm -CenterZmm $source.center_z_mm `
       -Seed $particleSeedValue -Output $ionPath | Out-Null
   }
-}
-$n100Ion = Join-Path $outputFull 'oatof_comsol_524amu_gaussian_N100.ion'
-$n1000Ion = Join-Path $outputFull 'oatof_comsol_524amu_gaussian_N1000.ion'
-& $python (Join-Path $repoRoot 'common\contracts\particle_count_policy.py') `
-  --prefix-n100 $n100Ion --prefix-n1000 $n1000Ion
-if ($LASTEXITCODE -ne 0) { throw 'N=100 source is not the deterministic N=1000 prefix.' }
 
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\SIMION_DELIVERY_CHECKLIST.md') `
   -Destination (Join-Path $outputFull 'SIMION_DELIVERY_CHECKLIST.md')
@@ -285,21 +559,8 @@ Copy-Item -LiteralPath $contractPath -Destination (Join-Path $outputFull 'resolv
 $resolvedLua = Join-Path $textDir 'oatof_resolved.lua'
 Copy-Item -LiteralPath $resolvedLua -Destination (Join-Path $outputFull 'oatof_resolved.lua')
 
-$runRoot = if ((Split-Path -Leaf $outputFull) -eq 'simion') { Split-Path -Parent $outputFull } else { $outputFull }
-if ([string]::IsNullOrWhiteSpace($RunId)) { $RunId = Split-Path -Leaf $runRoot }
 & $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
-if (-not $DeferRunFinalization) {
-  $runConfigPath = Join-Path $runRoot 'run_config.json'
-  $runConfig = [ordered]@{
-    schema_version = 1; role = 'oa_tof_simion_delivery_run_config'
-    run_id = $RunId; project = 'single_reflection_oa_tof_mass_analyzer'; mode = 'formal_delivery_candidate'
-    project_root = $projectRoot
-    inputs = [ordered]@{baseline=$baselinePath; resolved_geometry=$contractPath; mode=$modePath; candidate_mode=$candidateMode}
-    output_dir = $outputFull; overwrite = $false
-  }
-  $runConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
-}
 
 $template = $TemplateIob
 if ([string]::IsNullOrWhiteSpace($template)) {
@@ -322,10 +583,30 @@ $iobOutput = Join-Path $outputFull 'oatof_ideal_grounded.iob'
 Copy-Item -LiteralPath $template -Destination $iobOutput
 Copy-Item -LiteralPath $templateCon -Destination ([IO.Path]::ChangeExtension($iobOutput, '.con'))
 Invoke-SimionLua (Join-Path $PSScriptRoot 'build_formal_iob.lua') @(
-  (Join-Path $outputFull 'oatof_resolved.lua'), $iobOutput, $iobOutput,
+  (Join-Path $runtimeOutput 'oatof_resolved.lua'), (Join-Path $runtimeOutput 'oatof_ideal_grounded.iob'), (Join-Path $runtimeOutput 'oatof_ideal_grounded.iob'),
   (Join-Path $textDir 'oatof_ideal_grounded.lua'),
-  (Join-Path $textDir 'oatof_ideal_grounded.fly2')
+  (Join-Path $textDir 'oatof_ideal_grounded.fly2'),
+  (Join-Path $runtimeOutput 'reflectron.pa0'),
+  (Join-Path $runtimeOutput 'accelerator.pa0')
 )
+Remove-RunExecutionAlias -ExecutionAlias $outputAlias.execution_alias -TargetDirectory $outputFull
+$outputAlias=$null
+# Independent canonical reload proves the persisted workbench has no alias
+# dependency before its immutable inventory is accepted for a later Fly.
+$savedEnvironment=Save-RunEnvironment -Names @('OATOF_SIMION_IOB_PATH','OATOF_SIMION_IOB_REPORT',
+  'OATOF_SIMION_EXPECTED_QUALITY','OATOF_SIMION_EXPECTED_INSTANCES','OATOF_SIMION_PROGRAM_LOAD_REPORT','OATOF_SIMION_TEMPLATE_STRUCTURE_ONLY')
+try{
+  $env:OATOF_SIMION_IOB_PATH=$iobOutput
+  $env:OATOF_SIMION_IOB_REPORT=Join-Path $buildLogs 'canonical_iob_verification.txt'
+  $env:OATOF_SIMION_EXPECTED_QUALITY=[string]$contract.simion_runtime.trajectory_quality
+  $env:OATOF_SIMION_EXPECTED_INSTANCES='4'
+  $env:OATOF_SIMION_PROGRAM_LOAD_REPORT=Join-Path $buildLogs 'canonical_program_load.txt'
+  $env:OATOF_SIMION_TEMPLATE_STRUCTURE_ONLY='0'
+  Invoke-SimionLua (Join-Path $PSScriptRoot 'verify_iob_runtime_contract.lua') @()
+  if(-not(Select-String -LiteralPath $env:OATOF_SIMION_IOB_REPORT -Pattern '^STATUS=PASS$' -Quiet)){
+    throw 'Canonical workbench reload did not verify.'
+  }
+}finally{Restore-RunEnvironment -Names @($savedEnvironment.Keys) -Snapshot $savedEnvironment}
 
 foreach ($required in @('oatof_ideal_grounded.iob','oatof_ideal_grounded.con','oatof_ideal_grounded.lua','oatof_ideal_grounded.fly2')) {
   if (-not (Test-Path -LiteralPath (Join-Path $outputFull $required) -PathType Leaf)) {
@@ -334,7 +615,18 @@ foreach ($required in @('oatof_ideal_grounded.iob','oatof_ideal_grounded.con','o
 }
 $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage postprocess `
   -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
-$manifestScript = Join-Path $repoRoot 'common\contracts\write_run_manifest.py'
+$runtimeFiles=@(Get-ChildItem -LiteralPath $outputFull -Recurse -File|Where-Object{
+  $_.Name-match'\.pa(?:\d+|#|-surf)?$'
+}|Sort-Object FullName|ForEach-Object{@{path=$_.FullName;bytes=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}})
+$runtimeReceipt=Join-Path $outputFull 'simion_runtime_receipt.json'
+Write-RunJson -Path $runtimeReceipt -Depth 80 -Value @{
+  schema_version=1;role='oatof_simion_private_runtime';status='verified';run_id=$RunId;context_sha256=$ContextSha256;
+  output_directory=$outputFull;component_plan_sha256=(Get-FileHash -LiteralPath $ComponentPlanPath -Algorithm SHA256).Hash;
+  simion_executable_sha256=(Get-FileHash -LiteralPath $SimionExe -Algorithm SHA256).Hash;
+  components=$componentReceipts;files=$runtimeFiles;published_native_members_opened=$false;
+  canonical_iob_verified=$true;execution_alias_removed=$true;
+  iob=@{path=$iobOutput;bytes=(Get-Item -LiteralPath $iobOutput).Length;sha256=(Get-FileHash -LiteralPath $iobOutput -Algorithm SHA256).Hash}
+}
 $shaPath = Join-Path $outputFull 'SHA256SUMS.csv'
 # The build manifest records the checksum file, so the checksum file cannot in
 # turn include the manifest without a circular hash dependency.  Write the
@@ -345,18 +637,35 @@ $hashes = Get-ChildItem -LiteralPath $outputFull -File | Where-Object {
   [pscustomobject]@{file=$_.Name; bytes=$_.Length; sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}
 }
 $hashes | Export-Csv -LiteralPath $shaPath -NoTypeInformation -Encoding UTF8
-$summaryPath = if ($DeferRunFinalization) { Join-Path $outputFull 'stage_summary.json' } else { Join-Path $runRoot 'summary.json' }
-[ordered]@{schema_version=1;role='oa_tof_simion_delivery_summary';status='success';delivery_dir='simion';run_finalization_deferred=[bool]$DeferRunFinalization;reused_components=$reuseComponentNames;reusable_component_dir=$ReusableComponentDir;resumed_refined_reflectron=[bool]$ResumeRefinedReflectron} |
-  ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
-if (-not $DeferRunFinalization) {
-  & $python $manifestScript --run-config $runConfigPath --manifest (Join-Path $runRoot 'run_manifest.json') --status success --software 'SIMION 2020' `
-    --output $iobOutput --output (Join-Path $outputFull 'oatof_ideal_grounded.lua') `
-    --output (Join-Path $outputFull 'oatof_ideal_grounded.fly2') `
-    --output $shaPath --output $summaryPath
-  if ($LASTEXITCODE -ne 0) { throw 'Run-manifest generation failed.' }
-}
+$summaryPath=Join-Path $outputFull 'stage_summary.json'
+Write-RunJson -Path $summaryPath -Depth 12 -Value @{schema_version=1;role='oa_tof_simion_delivery_summary';
+  status='success';delivery_dir='simion';run_finalization_deferred=$true;
+  runtime_receipt=$runtimeReceipt;components=$componentReceipts;particle_count=$ParticleCount}
 "STATUS=PASS OUTPUT_DIR=$outputFull FILES=$($hashes.Count)"
 
+} catch {
+  $buildFailure=$_;throw
 } finally {
-  Exit-HostExecutionLease -Lease $hostExecutionLease
+  $hostRelease=@{inherited=[bool]$hostExecutionLease.inherited;token=[string]$hostExecutionLease.token;result=$null;error=$null}
+  try{$hostRelease.result=Exit-HostResourceStage -Lease $hostExecutionLease -PassThru}
+  catch{
+    $hostRelease.error=$_.Exception.Message
+    if($null-ne$buildFailure){Write-Warning "Host release failed after the original build error: $_"}else{throw}
+  }
+  finally{
+    if($null-ne$outputAlias-and$script:allOperationsStopped){
+      try{Remove-RunExecutionAlias -ExecutionAlias $outputAlias.execution_alias -TargetDirectory $outputFull}
+      catch{if($null-ne$buildFailure){Write-Warning "Execution alias cleanup failed after the original build error: $_"}else{throw}}
+    }
+  }
+}
+}catch{$buildFailure=$_;throw}
+finally{
+  $completion=@{schema_version=1;role='oatof_component_build_completion';run_id=$RunId;context_sha256=$ContextSha256;
+    operations=@($nativeOperations.ToArray());components=@($producerComponents.ToArray());host_release=$hostRelease;
+    exception=$(if($null-ne$buildFailure){$buildFailure.Exception.Message}else{$null})}
+  try{
+    Write-RunJson -Path $CompletionPath -Value $completion -Depth 64 -Atomic
+  }
+  catch{if($null-ne$buildFailure){Write-Warning "Build completion write failed after original failure: $_"}else{throw}}
 }

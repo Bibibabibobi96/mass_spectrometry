@@ -149,6 +149,44 @@ COMSOL公共入口已支持准备、求解和后处理边界，具体调用见
 此入口不再获取旧mutex；内层阶段继承
 父申请不会自动缩减其全程预算。当前接入不表示所有项目或内部求解阶段都已经完成资源细分。
 
+Python重阶段通过[`host_resource_python.py`](host_resource_python.py)现有request/result通道执行；
+`run_heavy_function`的成功值仍使用原Path/tuple编码，失败仍向父调用者抛`RuntimeError`，同时保留worker的
+异常类型、消息、notes及其明确提供的`observed_process_exit_confirmed`/`observed_process_returncode`。
+缺失、损坏的结果或成功结果后的bridge非零退出均标为退出未确认，不能据此封存科学输出。
+父进程通信异常不会主动杀死健康的PowerShell owner；它关闭请求输入、排空输出并等待同一进程句柄自然退出，
+再抛原异常。二次中断或等待故障保留未确认状态及必要IPC目录；清理次错只附加说明，不覆盖主错。
+`bridge_process_exit_confirmed`只证明直接bridge根进程；worker携带的观测状态也只覆盖它原来声明的进程，
+均不替代既有主机owner对后代退出的判据，不构成求解成功或物理资格。尚未确认停止的写入者不得进入retention或终态封存。
+`Exit-HostResourceStage -PassThru`原样返回本次释放事务；默认控制台输出与环境恢复不变，继承调用不返回
+释放结果。bridge在同一个call结果中附加`host_release`，保留`inherited`、token、原事务`result`及释放
+`error`；只有非继承、无释放错误且同token的`released`响应才确认owner释放，仍保留的预约不能报告成功。
+`run_heavy_function(..., completion_receipt=空字典)`将本次bridge根退出和host释放事实写入调用者提供的
+独立容器，正常返回值类型不变；失败异常也带`host_release`与`host_release_confirmed`，释放次错不替换worker主错。
+继承的直接调用只报告继承身份，没有owner释放证明；每次调用须使用新的空容器，避免复用旧证明。
+host释放不能覆盖worker明确报告的原生退出未知，也不替代局部PA guard所需的实际写入进程退出证据。
+CLI reentry在原前台输出流报告释放结果，释放未确认时非零退出，不另建结果文件。
+
+受控Python helper使用`common.host_resource_python.await_managed_process_start()`作为首个操作，随后才能
+导入项目或启动native工作。公共`Invoke-RepositoryManagedPythonProcess`以同一stdio完成nonce、实际worker
+PID与创建身份的READY／ACK握手；Python调用方使用`run_managed_python_process`沿既有内部bridge访问它。
+两入口均不申请、继承核验或释放资源许可，不设置heavy reentry；科学入口仍负责既有准入。
+父端确认worker属于本次launcher后持有其实际进程句柄，等待worker退出并将两条输出流按原始字节排空到日志。
+因此`.venv`启动器退出、或worker先写completion后继续写stderr，都不能使日志提前封存。
+返回的`repository_managed_python_completion`分别报告ownership、worker／launcher退出与两流drain；Python异常的
+`managed_python_completion`或PowerShell异常Data中的同名值保留失败时已确认的事实。
+`ack_attempted`在发送ACK之前置true；发送错误可能发生在worker已收到ACK之后，不能解释为工作从未启动。
+此收据只证明实际worker与launcher退出及日志排空，不声明任意后代退出。初始归属未确认或错误ACK不得
+启动受控工作。项目另核对实际native根的原生终态；native未知不得发布或执行retention，保留run及容量保护，
+不能声称PowerShell退出后其FileShare句柄仍保持。
+当前受控SIMION脚本使用同进程的`simion.command()`／PA API，没有主动外部fork；
+依据[官方CLI说明](https://simion.com/info/command_line_interface.html)，由直接Popen根writer的完成事实判定本地PA写入结束。
+该合同不覆盖任意程序派生独立写入者，适用的host释放判据仍由原调度器负责。
+创建时间沿用现host接口的.NET UTC ticks（D19），通过Windows
+[`GetCurrentProcess`](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getcurrentprocess)和
+[`GetProcessTimes`](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes)
+读取，并按[`FromFileTimeUtc`](https://learn.microsoft.com/en-us/dotnet/api/system.datetime.fromfiletimeutc)相同epoch转换，
+不经浮点Unix时间舍入。官方API核验于2026-10-28；这是基于官方API的受控worker归属协议，不是任意进程树捕获保证。
+
 SIMION公共执行器在原生refine/fly启动或进入内部飞行批次调度前通过`Assert-HostResourceHeavyStage`核验同一父许可；
 已知内部调用refine的Lua由调用入口设置重阶段，不能仅按Lua命令名判断其开销。
 内部worker仍由既有SIMION规划器按实时CPU和内存准入，不逐worker申请主机许可，也不传递第二套动态额度文件。
@@ -185,8 +223,25 @@ PID与创建时间继续识别后代，确认相关进程退出才回收。状�
 
 ### 进程观测与预算
 
+并行执行器每轮有活动worker时，由`Get-RepositoryProcessSnapshot`统一枚举一次`Get-Process`和
+`Win32_Process`；CIM失败时同轮只抓一次原生父PID表。`Get-ManagedSolverProcessSample -ProcessSnapshot`
+复用该轮枚举，各family仍分别复核创建身份、投影可能归属的父链并读取工作集、private、两者最大值及CPU。
+快照不跨轮保存，标量读取也不构成全机同一时刻的原子测量。独立调用省略快照时仍按进程枚举、创建身份
+复核、父关系枚举的原顺序执行；无关进程的未知身份不会扩大为其他family的失败。
+2026-10-29在i9-9900K／16逻辑处理器、PowerShell 7.6.9上，最终冻结双臂重测保全完整源码与18个
+交替样本。BASE为80,292 B混合工作树快照，不是Git 3005980；NEW为82,265 B的当前实现。
+1、4、8个worker各三对采样的中位数分别为397.6261→456.7082 ms（+14.86%）、
+2787.6528→1023.5216 ms（−63.28%）及4766.7381→2379.6709 ms（−50.08%）。全机进程与CIM枚举
+均从每轮N次降至一次，六类完整返回字典相同；单worker没有改善，健康进程和危险处理策略不变。
+本次采样合计37.6740721 s，外层127.286349 s包含准入等未细分开销，且同时有L2背景负载，不能据此
+宣称求解或整个调度器提速。旧轮57.0983365 s调度观测中的长退出间隔未完整分段，也不计入采样收益。
+
 单进程观察器`Invoke-ResourceBudgetedProcess`只接收调用者在冻结边界解析的`-Limits`对象，
 观察收据记录完整limits；`Complete-ResourceUsage`只读取已有usage收据收尾，不重新解析预算。
+启动后的身份或采样异常先沿同一实际Process句柄等待根进程自然退出，再抛回原ErrorRecord；
+异常Data中的`observed_process_exit_confirmed`／`observed_process_returncode`仅证明该直接根进程。
+等待自身失败时明确为未确认，并把次错保留在`observed_process_wait_error`；调用者不能据此释放
+仍可能被使用的输入保护或执行载荷清理。这不替代host owner释放，也不证明任意后代进程已经停止。
 Python向PowerShell传递派生预算可使用任务临时JSON，解析后由调用者finally清理；冻结的工程预算仍是输入权威。
 
 墙钟、目录体积、进程树工作集或可用内存预算越限，每类只写一次`RESOURCE_BUDGET_WARNING`，

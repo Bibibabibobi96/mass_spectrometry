@@ -304,6 +304,144 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
             self.assertEqual(objects[0]["status"], "ready")
             self.assertIn("disposition", objects[0])
 
+    def _activation_ranges(self, root: Path, names: tuple[str, ...], *, linked: bool = False) -> dict[str, Path]:
+        documents, entries = {}, []
+        for name in names:
+            target = root / "projects/instrument/runs" / name
+            target.mkdir(parents=True)
+            documents[name] = _write_owner_disposition(root, target)
+            entries.append({
+                "path": target.relative_to(root).as_posix(), "class": "rebuildable_payload",
+                "bytes": sum(path.stat().st_size for path in target.rglob("*") if path.is_file()),
+                "status": "writing", "pin": False, "owner": "instrument",
+                "recovery_reason": "run_manifest_not_terminal", "review_deadline": "2026-10-22",
+                **({"consumers": ["projects/instrument/runs/b/payload.bin"]} if linked and name == "a" else {}),
+            })
+        capacity_ledger.initialize_capacity_ledger(root, objects=entries, external_scopes=[])
+        return documents
+
+    def test_bad_owner_documents_do_not_block_independent_same_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            documents = self._activation_ranges(root, ("good",))
+            for name, content in (("list", "[]"), ("null", "null"), ("broken", "{")):
+                documents["good"].with_name(name + ".json").write_text(content, encoding="utf-8")
+            outcome = legacy_owner_disposition.activate_owner_dispositions(root)
+            self.assertEqual(outcome["activated_count"], 1)
+            self.assertEqual(outcome["failed_count"], 3)
+            self.assertEqual({Path(item["document_path"]).stem for item in outcome["failures"]}, {"list", "null", "broken"})
+            self.assertTrue(all(item["stage"] == "read" for item in outcome["failures"]))
+            replay = legacy_owner_disposition.activate_owner_dispositions(root)
+            self.assertEqual((replay["activated_count"], replay["failed_count"]), (0, 3))
+
+    def test_duplicate_target_quarantines_all_authorizations_but_not_independent_range(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            documents = self._activation_ranges(root, ("a", "c"))
+            documents["a"].with_name("duplicate.json").write_bytes(documents["a"].read_bytes())
+            outcome = legacy_owner_disposition.activate_owner_dispositions(root)
+            self.assertEqual((outcome["activated_count"], outcome["failed_count"]), (1, 2))
+            by_path = {entry["path"]: entry for entry in capacity_ledger.load_capacity_ledger(root)["objects"]}
+            self.assertEqual(by_path["projects/instrument/runs/a"]["status"], "writing")
+            self.assertEqual(by_path["projects/instrument/runs/c"]["status"], "ready")
+
+    def test_failed_linked_group_is_atomic_and_independent_range_can_activate(self) -> None:
+        for order in (("a", "b", "c"), ("c", "b", "a")):
+            with self.subTest(order=order), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                documents = self._activation_ranges(root, order, linked=True)
+                capacity_ledger.record_capacity_object(
+                    root, path="projects/instrument/runs/b", object_class="rebuildable_payload",
+                    bytes_count=sum(path.stat().st_size for path in (root / "projects/instrument/runs/b").rglob("*") if path.is_file()),
+                    status="writing", pin=True, pin_reason="must keep", owner="instrument",
+                    recovery_reason="run_manifest_not_terminal", review_deadline="2026-10-22")
+                before = capacity_ledger.load_capacity_ledger(root)
+                grouping = legacy_owner_disposition._activation_groups
+                with mock.patch.object(legacy_owner_disposition, "_activation_groups", side_effect=(
+                    lambda records, ledger: [list(reversed(group)) for group in reversed(grouping(records, ledger))]
+                ) if order[0] == "c" else grouping):
+                    outcome = legacy_owner_disposition.activate_owner_dispositions(root)
+                self.assertEqual((outcome["activated_count"], outcome["failed_count"]), (1, 2))
+                after = capacity_ledger.load_capacity_ledger(root)
+                for name in ("a", "b"):
+                    path = "projects/instrument/runs/" + name
+                    self.assertEqual(next(row for row in before["objects"] if row["path"] == path),
+                                     next(row for row in after["objects"] if row["path"] == path))
+                self.assertEqual({item["document_path"] for item in outcome["failures"]}, {str(documents["a"]), str(documents["b"])})
+
+    def test_valid_linked_group_activates_together(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._activation_ranges(root, ("a", "b"), linked=True)
+            outcome = legacy_owner_disposition.activate_owner_dispositions(root)
+            self.assertEqual((outcome["activated_count"], outcome["failed_count"]), (2, 0))
+            self.assertTrue(all(entry["status"] == "ready" for entry in capacity_ledger.load_capacity_ledger(root)["objects"]))
+
+    def test_bad_completed_receipt_does_not_archive_or_block_independent_range(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            documents = self._activation_ranges(root, ("a", "c"))
+            candidate = legacy_owner_disposition.load_legacy_owner_disposition(root, documents["a"])
+            ledger = capacity_ledger.load_capacity_ledger(root)
+            for index, item in enumerate(ledger["objects"]):
+                if item["path"] == candidate["path"]:
+                    ledger["objects"][index] = {"path": candidate["path"], "class": "rebuildable_payload",
+                        "bytes": candidate["bytes"], "status": "retired", "pin": False, "owner": "instrument",
+                        "disposition": candidate["disposition"], "retired_at_utc": "2026-10-22T00:00:00Z"}
+            capacity_ledger.initialize_capacity_ledger(root, objects=ledger["objects"], overwrite=True)
+            receipt = root / "common/capacity_disposal_receipts" / f"ledger_disposition_{candidate['disposition']['id']}.json"
+            receipt.parent.mkdir(parents=True)
+            receipt.write_text("null", encoding="utf-8")
+            outcome = legacy_owner_disposition.activate_owner_dispositions(root)
+            self.assertEqual((outcome["activated_count"], outcome["archived_document_count"], outcome["failed_count"]), (1, 0, 1))
+            self.assertEqual(outcome["failures"][0]["stage"], "archive")
+            self.assertTrue(documents["a"].is_file())
+            self.assertEqual(receipt.read_text(), "null")
+
+    def test_activation_ledger_publication_failure_remains_global(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._activation_ranges(root, ("a", "c"))
+            path = capacity_ledger.resolve_ledger_path(root)
+            before = path.read_bytes()
+            with mock.patch.object(legacy_owner_disposition, "write_json_atomic", side_effect=OSError("fixture ledger publication")):
+                with self.assertRaisesRegex(OSError, "ledger publication"):
+                    legacy_owner_disposition.activate_owner_dispositions(root)
+            self.assertEqual(path.read_bytes(), before)
+
+    def test_completed_archive_revalidates_authority_and_preserves_bad_document(self) -> None:
+        for corruption in ("owner", "evidence", "schema", "inventory", "receipt_inventory", "ledger_inventory"):
+            with self.subTest(corruption=corruption), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                documents = self._activation_ranges(root, ("a", "c"))
+                candidate = legacy_owner_disposition.load_legacy_owner_disposition(root, documents["a"])
+                ledger = capacity_ledger.load_capacity_ledger(root)
+                for index, item in enumerate(ledger["objects"]):
+                    if item["path"] == candidate["path"]:
+                        ledger["objects"][index] = {"path": candidate["path"], "class": "rebuildable_payload",
+                            "bytes": candidate["bytes"], "status": "retired", "pin": False, "owner": "instrument",
+                            "disposition": json.loads(json.dumps(candidate["disposition"])), "retired_at_utc": "2026-10-22T00:00:00Z"}
+                        if corruption == "ledger_inventory":
+                            ledger["objects"][index]["disposition"]["generation"] = "F" * 64
+                capacity_ledger.initialize_capacity_ledger(root, objects=ledger["objects"], overwrite=True)
+                receipt = root / "common/capacity_disposal_receipts" / f"ledger_disposition_{candidate['disposition']['id']}.json"
+                receipt_data = {"role": "artifact_capacity_disposal_receipt", "status": "complete",
+                                "disposition": candidate["disposition"], "target_path": str((root / candidate["path"]).resolve())}
+                if corruption == "receipt_inventory": receipt_data["disposition"]["generation"] = "F" * 64
+                _write_json(receipt, receipt_data)
+                document = json.loads(documents["a"].read_text())
+                if corruption == "owner": document["owner"] = "wrong-owner"
+                elif corruption == "evidence": document["authority_evidence"]["path"] = "payload.bin"
+                elif corruption == "schema": document["schema_version"] = 99
+                elif corruption == "inventory": document["disposition"]["files"][0]["bytes"] += 1
+                _write_json(documents["a"], document)
+                before_document, before_receipt = documents["a"].read_bytes(), receipt.read_bytes()
+                outcome = legacy_owner_disposition.activate_owner_dispositions(root)
+                self.assertEqual((outcome["activated_count"], outcome["archived_document_count"], outcome["failed_count"]), (1, 0, 1))
+                self.assertEqual(documents["a"].read_bytes(), before_document)
+                self.assertEqual(receipt.read_bytes(), before_receipt)
+                self.assertEqual(outcome["failures"][0]["target_path"], candidate["path"])
+
     def test_explicit_abandonment_allows_only_retired_external_consumer(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "artifacts"

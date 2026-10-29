@@ -165,6 +165,7 @@ New-Item -ItemType Directory -Force -Path $solverProgressDir|Out-Null
 $hostExecutionOutcome='failed'
 $hostExecutionLease=Enter-HostExecutionLease -Role COMSOL -Stage prepare -RunId $RunId
 $hostExecutionOwnsLease=-not$hostExecutionLease.inherited
+$comsolRunFailure=$null
 
 try{
   $codeRoot=Join-Path $inputDir 'code'
@@ -637,20 +638,31 @@ try{
     }
   }
   $hostExecutionOutcome=if($resourceBudgetExceeded){'interrupted'}else{'failed'}
-  Complete-FailedRun -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig -Summary $summary `
-    -SummaryRole 'multipole_finite_3d_transport_summary' -Reason $comsolRunFailure.Exception.Message `
-    -Software @('COMSOL 6.4','MATLAB R2025b','Python 3.11') `
-    -Status $(if($resourceBudgetExceeded){'interrupted'}else{'failed'}) `
-    -FailureClass $(if($resourceBudgetExceeded){'resource_budget_exceeded'}else{''}) `
-    -ResourceUsagePath $(if($null-ne(Get-Variable resourceUsage -ErrorAction SilentlyContinue)){$resourceUsage}else{''})
-  throw
+  try{
+    Complete-FailedRun -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig -Summary $summary `
+      -SummaryRole 'multipole_finite_3d_transport_summary' -Reason $comsolRunFailure.Exception.Message `
+      -Software @('COMSOL 6.4','MATLAB R2025b','Python 3.11') `
+      -Status $(if($resourceBudgetExceeded){'interrupted'}else{'failed'}) `
+      -FailureClass $(if($resourceBudgetExceeded){'resource_budget_exceeded'}else{''}) `
+      -ResourceUsagePath $(if($null-ne(Get-Variable resourceUsage -ErrorAction SilentlyContinue)){$resourceUsage}else{''})
+  }catch{
+    $comsolRunFailure.Exception.Data['failure_closure_error']=$_.Exception.Message
+    Write-Warning "COMSOL failure closure also failed: $($_.Exception.Message)"
+  }
+  throw $comsolRunFailure
 }finally{
   try { Remove-RunPackageExecutionAlias -Package $package } catch {
     Write-Warning "Could not remove short execution alias after COMSOL run: $($_.Exception.Message)"
   }
-  if($null-ne$hostExecutionLease){
-    Exit-HostExecutionLease -Lease $hostExecutionLease -Outcome $hostExecutionOutcome -RunId $RunId
-  }elseif($hostExecutionOwnsLease){
-    Invoke-HostExecutionCompletionNotification -Outcome $hostExecutionOutcome -RunId $RunId
+  try{
+    if($null-ne$hostExecutionLease){
+      Exit-HostExecutionLease -Lease $hostExecutionLease -Outcome $hostExecutionOutcome -RunId $RunId
+    }elseif($hostExecutionOwnsLease){
+      Invoke-HostExecutionCompletionNotification -Outcome $hostExecutionOutcome -RunId $RunId
+    }
+  }catch{
+    if($null-eq$comsolRunFailure){throw}
+    $comsolRunFailure.Exception.Data['host_release_error']=$_.Exception.Message
+    Write-Warning "COMSOL host cleanup also failed: $($_.Exception.Message)"
   }
 }

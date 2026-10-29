@@ -98,6 +98,26 @@ function Test-RepositoryDiskCapacity {
   return $check
 }
 
+function Get-RepositoryProcessSnapshot {
+  <# Share whole-host enumeration within one scheduler poll, never across polls.
+     Process scalar properties are still read by each family sampler. #>
+  [CmdletBinding()]
+  param([object[]]$Processes)
+  if(-not $PSBoundParameters.ContainsKey('Processes')){
+    $Processes=@(Get-Process -ErrorAction SilentlyContinue)
+  }
+  $cimProcesses=@()
+  $parentSnapshot=$null
+  try{$cimProcesses=@(Get-CimInstance Win32_Process -ErrorAction Stop)}catch{
+    $parentSnapshot=Get-HostResourceProcessParents
+  }
+  return [pscustomobject]@{
+    processes=$Processes
+    cim_processes=$cimProcesses
+    parent_snapshot=$parentSnapshot
+  }
+}
+
 function Get-ManagedSolverProcessSample {
   <#
     Return the unique live process family belonging to one scheduler launch.
@@ -111,9 +131,10 @@ function Get-ManagedSolverProcessSample {
     [Parameter(Mandatory)][int[]]$RootProcessIds,
     [int[]]$TrackedProcessIds=@(),
     [hashtable]$RootProcessStartedAtUtcTicks=@{},
-    [hashtable]$TrackedProcessStartedAtUtcTicks=@{}
+    [hashtable]$TrackedProcessStartedAtUtcTicks=@{},
+    [psobject]$ProcessSnapshot
   )
-  $processes=@(Get-Process -ErrorAction SilentlyContinue)
+  $processes=if($null-ne$ProcessSnapshot){@($ProcessSnapshot.processes)}else{@(Get-Process -ErrorAction SilentlyContinue)}
   $byId=@{}
   foreach($process in $processes){$byId[[int]$process.Id]=$process}
   $expectedStartTicks=@{}
@@ -157,17 +178,18 @@ function Get-ManagedSolverProcessSample {
   # while its solver child is still active.  Win32_Process retains the child
   # record's ParentProcessId, so use it first to keep that child in this
   # launch family rather than prematurely declaring the formal batch done.
-  try{
-    foreach($process in @(Get-CimInstance Win32_Process -ErrorAction Stop)){
+  # Standalone calls keep Get-Process -> birth checks -> parent enumeration.
+  if($null-eq$ProcessSnapshot){$ProcessSnapshot=Get-RepositoryProcessSnapshot -Processes $processes}
+  if($null-eq$ProcessSnapshot.parent_snapshot){
+    foreach($process in $ProcessSnapshot.cim_processes){
       $parentByChild[[int]$process.ProcessId]=[int]$process.ParentProcessId
       if($process.PSObject.Properties.Name -contains 'ExecutablePath' -and
           (Test-HostResourceConsoleProcess -ImagePath ([string]$process.ExecutablePath))){
         $null=$systemConsoleHostProcessIds.Add([int]$process.ProcessId)
       }
     }
-  }catch{
-    $parentByChild=@{}
-    $parentSnapshot=Get-HostResourceProcessParents
+  }else{
+    $parentSnapshot=$ProcessSnapshot.parent_snapshot
     $ancestryComplete=[bool]$parentSnapshot.complete
     # Unknown identity matters only along a possible owned ancestry chain.
     # Keep descendants behind an unresolved intermediate node as candidates;
@@ -258,6 +280,111 @@ function Get-ManagedSolverProcessSample {
     total_processor_time_ticks=$cpuTicks
     processor_time_ticks_by_process_id=$cpuTicksByProcessId
   }
+}
+
+function Invoke-RepositoryManagedPythonProcess {
+  <# Controlled Python workers identify their actual process before any work.
+     Waiting that handle and draining both pipes also covers output written
+     after a completion file. No grant, deadline, kill or tree-wide claim. #>
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string[]]$ArgumentList,
+    [Parameter(Mandatory)][string]$WorkingDirectory,[Parameter(Mandatory)][string]$StandardOutputPath,
+    [Parameter(Mandatory)][string]$StandardErrorPath,[hashtable]$Environment=@{})
+  $nonce=[guid]::NewGuid().ToString('N')
+  $start=[Diagnostics.ProcessStartInfo]::new()
+  $start.FileName=$Python;$start.WorkingDirectory=$WorkingDirectory;$start.UseShellExecute=$false;$start.CreateNoWindow=$true
+  $start.RedirectStandardInput=$true;$start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true
+  $start.StandardInputEncoding=[Text.UTF8Encoding]::new($false);$start.StandardOutputEncoding=[Text.UTF8Encoding]::new($false)
+  foreach($argument in $ArgumentList){$start.ArgumentList.Add($argument)}
+  foreach($key in $Environment.Keys){$start.Environment[$key]=[string]$Environment[$key]}
+  $start.Environment['MASS_SPECTROMETRY_MANAGED_PROCESS_NONCE']=$nonce
+  $start.Environment['PYTHONIOENCODING']='utf-8'
+  $launcher=$null;$worker=$null;$outStream=$null;$errStream=$null;$outTask=$null;$errTask=$null;$failure=$null
+  $readyBuffer=[IO.MemoryStream]::new();$readyAccepted=$false
+  $receipt=[ordered]@{schema_version=1;role='repository_managed_python_completion';nonce=$nonce;
+    launcher_process_id=$null;worker_process_id=$null;worker_started_at_utc_ticks=$null;
+    ownership_confirmed=$false;worker_exit_confirmed=$false;launcher_exit_confirmed=$false;
+    exit_code=$null;stdout_drained=$false;stderr_drained=$false;ack_attempted=$false}
+  try{
+    $outStream=[IO.File]::Open($StandardOutputPath,[IO.FileMode]::Create,[IO.FileAccess]::Write,[IO.FileShare]::Read)
+    $errStream=[IO.File]::Open($StandardErrorPath,[IO.FileMode]::Create,[IO.FileAccess]::Write,[IO.FileShare]::Read)
+    $launcher=[Diagnostics.Process]::Start($start);$receipt.launcher_process_id=[int]$launcher.Id
+    $launcherBirth=[int64]$launcher.StartTime.ToUniversalTime().Ticks
+    $errTask=$launcher.StandardError.BaseStream.CopyToAsync($errStream)
+    # Read only the bounded ASCII JSON frame, then stream raw remaining bytes
+    # directly to disk. StreamReader read-ahead would hide buffered log bytes.
+    while($true){
+      $next=$launcher.StandardOutput.BaseStream.ReadByte()
+      if($next-lt0){throw 'Managed worker exited before READY.'}
+      $readyBuffer.WriteByte([byte]$next)
+      if($readyBuffer.Length-gt1024){throw 'Managed READY frame exceeds its bounded identity format.'}
+      if($next-eq10){break}
+    }
+    $line=[Text.Encoding]::UTF8.GetString($readyBuffer.ToArray())
+    $ready=$line|ConvertFrom-Json -AsHashtable
+    if($ready-isnot[Collections.IDictionary]){throw 'Managed READY must be an object.'}
+    $readyFields=($ready.Keys|Sort-Object)-join','
+    if($readyFields-cne'nonce,pid,role,schema_version,started'-or
+       $ready.schema_version-ne1-or$ready.role-cne'repository_managed_process_ready'-or$ready.nonce-cne$nonce-or
+       ($ready.schema_version-isnot[long]-and$ready.schema_version-isnot[int])-or
+       ($ready.pid-isnot[long]-and$ready.pid-isnot[int])-or[int]$ready.pid-le0-or
+       $ready.started-isnot[string]-or$ready.started-notmatch'^[0-9]{19}$'){
+      throw 'Managed worker did not provide this launch identity as its first output.'
+    }
+    $readyAccepted=$true;$outTask=$launcher.StandardOutput.BaseStream.CopyToAsync($outStream)
+    $sample=Get-ManagedSolverProcessSample -RootProcessIds @([int]$launcher.Id) `
+      -RootProcessStartedAtUtcTicks @{([string]$launcher.Id)=$launcherBirth}
+    $workerId=[int]$ready.pid;$workerBirth=[int64]$ready.started
+    if(-not$sample.ancestry_complete-or$sample.active_process_ids-notcontains$workerId-or
+       -not$sample.tracked_process_started_at_utc_ticks.ContainsKey([string]$workerId)-or
+       [int64]$sample.tracked_process_started_at_utc_ticks[[string]$workerId]-ne$workerBirth){
+      throw 'Managed worker ancestry or creation identity is unconfirmed; work was not acknowledged.'
+    }
+    $candidate=[Diagnostics.Process]::GetProcessById($workerId)
+    try{
+      $null=$candidate.Handle
+      if([int64]$candidate.StartTime.ToUniversalTime().Ticks-ne$workerBirth){throw 'Managed worker changed before ACK.'}
+      $worker=$candidate
+    }finally{if($null-eq$worker){$candidate.Dispose()}}
+    $receipt.worker_process_id=$workerId;$receipt.worker_started_at_utc_ticks=$workerBirth;$receipt.ownership_confirmed=$true
+    $ready.role='repository_managed_process_ack'
+    # A write error may occur after the worker received ACK; do not report it
+    # as an unattempted start. The same owned handles are settled in finally.
+    $receipt.ack_attempted=$true
+    $launcher.StandardInput.WriteLine(($ready|ConvertTo-Json -Compress));$launcher.StandardInput.Close()
+  }catch{
+    $failure=$_
+  }finally{
+    # EOF also cancels an unacknowledged worker without starting its work.
+    if($null-ne$launcher){try{$launcher.StandardInput.Close()}catch{
+      if($null-eq$failure){$failure=$_}else{$failure.Exception.Data['managed_stdin_close_error']=$_.Exception.Message}
+    }}
+    if($null-ne$launcher-and$null-eq$outTask){try{
+      if(-not$readyAccepted){$prefix=$readyBuffer.ToArray();$outStream.Write($prefix,0,$prefix.Length)}
+      $outTask=$launcher.StandardOutput.BaseStream.CopyToAsync($outStream)
+    }catch{if($null-eq$failure){$failure=$_}else{$failure.Exception.Data['managed_stdout_start_error']=$_.Exception.Message}}}
+    foreach($entry in @(@{process=$worker;field='worker_exit_confirmed'},@{process=$launcher;field='launcher_exit_confirmed'})){
+      if($null-eq$entry.process){continue}
+      try{
+        $entry.process.WaitForExit();$receipt[$entry.field]=$entry.process.HasExited
+        if($entry.field-eq'worker_exit_confirmed'){$receipt.exit_code=[int]$entry.process.ExitCode}
+      }catch{if($null-eq$failure){$failure=$_}else{$failure.Exception.Data['managed_root_wait_error']=$_.Exception.Message}}
+    }
+    try{
+      if($null-ne$outTask){
+        $null=$outTask.GetAwaiter().GetResult();$outStream.Flush();$receipt.stdout_drained=$true
+      }
+    }catch{if($null-eq$failure){$failure=$_}else{$failure.Exception.Data['managed_stdout_drain_error']=$_.Exception.Message}}
+    try{if($null-ne$errTask){$null=$errTask.GetAwaiter().GetResult();$errStream.Flush();$receipt.stderr_drained=$true}}
+    catch{if($null-eq$failure){$failure=$_}else{$failure.Exception.Data['managed_stderr_drain_error']=$_.Exception.Message}}
+    foreach($resource in @($worker,$launcher,$outStream,$errStream,$readyBuffer)){
+      if($null-ne$resource){try{$resource.Dispose()}catch{
+        if($null-eq$failure){$failure=$_}else{$failure.Exception.Data['managed_close_error']=$_.Exception.Message}
+      }}
+    }
+  }
+  if($null-ne$failure){$failure.Exception.Data['managed_python_completion']=[pscustomobject]$receipt;throw $failure}
+  return [pscustomobject]$receipt
 }
 
 function Test-ManagedRootProcessIsLive {
@@ -496,37 +623,58 @@ function Invoke-ResourceBudgetedProcess {
     Assert-HostResourceHeavyStage
   }
   $process=Start-Process @startArguments
-  $rootProcessStartedAtUtcTicks=[int64]$process.StartTime.ToUniversalTime().Ticks
-  $trackedProcessIds=@([int]$process.Id)
-  $trackedProcessStartedAtUtcTicks=@{([string]$process.Id)=$rootProcessStartedAtUtcTicks}
-  $processSpecification=[pscustomobject]@{file_path=$FilePath}
-  $danger=$false;$managedActive=$true
-  while($managedActive){
-    $sample=Get-ManagedSolverProcessSample -RootProcessIds @([int]$process.Id) `
-      -TrackedProcessIds $trackedProcessIds -RootProcessStartedAtUtcTicks @{
-        ([string]$process.Id)=$rootProcessStartedAtUtcTicks
-      } -TrackedProcessStartedAtUtcTicks $trackedProcessStartedAtUtcTicks
-    $trackedProcessIds=@($sample.tracked_process_ids)
-    if($sample.PSObject.Properties.Name-contains'tracked_process_started_at_utc_ticks'){$trackedProcessStartedAtUtcTicks=$sample.tracked_process_started_at_utc_ticks}
-    $managedActive=Test-RepositoryManagedProcessIsActive -Specification $processSpecification `
-      -RootProcessId ([int]$process.Id) -RootProcessStartedAtUtcTicks $rootProcessStartedAtUtcTicks -Sample $sample
-    if(-not$managedActive-and-not(Test-RepositorySimionProcessSpecification -Specification $processSpecification)){
-      $managedActive=Test-ManagedRootProcessIsLive -ProcessId ([int]$process.Id) -ExpectedStartedAtUtcTicks $rootProcessStartedAtUtcTicks
+  $failure=$null;$rootExitConfirmed=$false;$rootReturnCode=$null
+  try{
+    $rootProcessStartedAtUtcTicks=[int64]$process.StartTime.ToUniversalTime().Ticks
+    $trackedProcessIds=@([int]$process.Id)
+    $trackedProcessStartedAtUtcTicks=@{([string]$process.Id)=$rootProcessStartedAtUtcTicks}
+    $processSpecification=[pscustomobject]@{file_path=$FilePath}
+    $danger=$false;$managedActive=$true
+    while($managedActive){
+      $sample=Get-ManagedSolverProcessSample -RootProcessIds @([int]$process.Id) `
+        -TrackedProcessIds $trackedProcessIds -RootProcessStartedAtUtcTicks @{
+          ([string]$process.Id)=$rootProcessStartedAtUtcTicks
+        } -TrackedProcessStartedAtUtcTicks $trackedProcessStartedAtUtcTicks
+      $trackedProcessIds=@($sample.tracked_process_ids)
+      if($sample.PSObject.Properties.Name-contains'tracked_process_started_at_utc_ticks'){$trackedProcessStartedAtUtcTicks=$sample.tracked_process_started_at_utc_ticks}
+      $managedActive=Test-RepositoryManagedProcessIsActive -Specification $processSpecification `
+        -RootProcessId ([int]$process.Id) -RootProcessStartedAtUtcTicks $rootProcessStartedAtUtcTicks -Sample $sample
+      if(-not$managedActive-and-not(Test-RepositorySimionProcessSpecification -Specification $processSpecification)){
+        $managedActive=Test-ManagedRootProcessIsLive -ProcessId ([int]$process.Id) -ExpectedStartedAtUtcTicks $rootProcessStartedAtUtcTicks
+      }
+      $observed=Update-RepositoryProcessObservation -Observation $observation -Sample $sample
+      if($observed.physical_danger-and$managedActive){
+        $danger=$true
+        Stop-ManagedSolverProcesses -ProcessIds $trackedProcessIds -ExpectedStartedAtUtcTicks $trackedProcessStartedAtUtcTicks
+        break
+      }
+      if($managedActive){Start-Sleep -Milliseconds 500}
     }
-    $observed=Update-RepositoryProcessObservation -Observation $observation -Sample $sample
-    if($observed.physical_danger-and$managedActive){
-      $danger=$true
-      Stop-ManagedSolverProcesses -ProcessIds $trackedProcessIds -ExpectedStartedAtUtcTicks $trackedProcessStartedAtUtcTicks
-      break
+    $process.WaitForExit();$rootExitConfirmed=$process.HasExited
+    $rootReturnCode=[int]$process.ExitCode
+    $null=Update-RepositoryProcessObservation -Observation $observation -Sample $sample -Final
+    $usage=$observation.usage
+    if(-not$danger){$usage.status=$(if($process.ExitCode-eq0){'running'}else{'process_failed'})}
+    try{Write-ResourceUsage -Usage $usage -Path $UsagePath}catch{
+      Write-Warning "RESOURCE_OBSERVATION_WARNING=finalization_failed ERROR=$($_.Exception.Message)" -WarningAction Continue
     }
-    if($managedActive){Start-Sleep -Milliseconds 500}
+  }catch{$failure=$_}finally{
+    # Observation failure must not return the caller's input guards while this
+    # directly owned root still writes. This handle does not attest descendants.
+    if(-not$rootExitConfirmed){
+      try{
+        $process.WaitForExit();$rootExitConfirmed=$process.HasExited
+        $rootReturnCode=[int]$process.ExitCode
+      }catch{
+        if($null-eq$failure){$failure=$_}
+        else{$failure.Exception.Data['observed_process_wait_error']=$_}
+      }
+    }
   }
-  if(-not$process.HasExited){$process.WaitForExit()}
-  $null=Update-RepositoryProcessObservation -Observation $observation -Sample $sample -Final
-  $usage=$observation.usage
-  if(-not$danger){$usage.status=$(if($process.ExitCode-eq0){'running'}else{'process_failed'})}
-  try{Write-ResourceUsage -Usage $usage -Path $UsagePath}catch{
-    Write-Warning "RESOURCE_OBSERVATION_WARNING=finalization_failed ERROR=$($_.Exception.Message)" -WarningAction Continue
+  if($null-ne$failure){
+    $failure.Exception.Data['observed_process_exit_confirmed']=[bool]$rootExitConfirmed
+    $failure.Exception.Data['observed_process_returncode']=$rootReturnCode
+    throw $failure
   }
   return [pscustomobject]@{exit_code=$process.ExitCode;resource_budget_exceeded=$danger;limit_name=$usage.limit_name;usage_path=$UsagePath}
 }
@@ -991,8 +1139,10 @@ function Invoke-ResourceBudgetedProcesses {
     $now=Get-RepositoryUtcNow;$nextRunning=[Collections.ArrayList]::new()
     $completedThisCycle=[Collections.ArrayList]::new()
     $aggregateWorkingSet=[int64]0;$aggregateManagedMemory=[int64]0
+    $processSnapshot=$null
+    if($running.Count-gt0){$processSnapshot=Get-RepositoryProcessSnapshot}
     foreach($record in @($running)){
-      $sampleArgs=@{RootProcessIds=@($record.root_process_id);TrackedProcessIds=$record.tracked_process_ids}
+      $sampleArgs=@{RootProcessIds=@($record.root_process_id);TrackedProcessIds=$record.tracked_process_ids;ProcessSnapshot=$processSnapshot}
       $recordRootStartedAtUtcTicks=[int64]0
       if($record.PSObject.Properties.Name -contains 'root_process_started_at_utc_ticks'){
         $recordRootStartedAtUtcTicks=[int64]$record.root_process_started_at_utc_ticks

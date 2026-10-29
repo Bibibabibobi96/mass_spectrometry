@@ -74,6 +74,7 @@ $global:calls|ConvertTo-Json -Compress
 
     def test_apply_finalizes_opted_in_terminal_under_same_lease(self) -> None:
         self._check_wrapper("apply", enabled=True, expected=["enter", "retire", "finalize", "exit"])
+        self._check_wrapper("subset", enabled=True, expected=["enter", "retire", "reseal", "exit"])
 
     def test_nonapply_and_legacy_do_not_finalize(self) -> None:
         for mode, enabled, expected in (
@@ -81,7 +82,7 @@ $global:calls|ConvertTo-Json -Compress
             ("apply", False, ["enter", "retire", "exit"]),
             ("apply", None, ["enter", "retire", "exit"]),
             ("checkpoint", True, ["enter", "retire", "exit"]),
-            ("subset", True, ["enter", "retire", "exit"]),
+            ("subset", False, ["enter", "retire", "exit"]),
         ):
             with self.subTest(mode=mode, enabled=enabled):
                 self._check_wrapper(mode, enabled=enabled, expected=expected)
@@ -111,7 +112,7 @@ $global:calls|ConvertTo-Json -Compress
 function Enter-HostExecutionLease { $global:calls.Add('enter'); return @{id='fixture'} }
 function Exit-HostExecutionLease { param($Lease); $global:calls.Add('exit') }
 """, encoding="utf-8")
-            config = {} if enabled is None else {"capacity_ledger_lifecycle": {"enabled": enabled}}
+            config = {} if enabled is None else {"project":"p", "capacity_ledger_lifecycle": {"enabled": enabled}}
             (root / "run_config.json").write_text(json.dumps(config), encoding="utf-8")
             harness = root / "check.ps1"
             harness.write_text("""
@@ -122,7 +123,11 @@ Write-Host 'UTF8:缂栫爜杈圭晫'
 $global:calls = [Collections.Generic.List[string]]::new()
 function python {
   if ($args -contains 'common.contracts.run_capacity_lifecycle') {
-    $global:calls.Add('finalize'); '{"status":"ready"}'
+    if($args-contains'reseal-retired-payload'){
+      if($args-notcontains'--confirm-writing-stopped'-or$args-notcontains'p'-or$args-contains'--retention-reason'){throw 'reseal authority differs'}
+      $global:calls.Add('reseal')
+    }else{$global:calls.Add('finalize')}
+    '{"status":"ready"}'
     $global:LASTEXITCODE = $(if ($Mode -eq 'finalize_fail') {9} else {0})
   } else {
     if($Mode -eq 'subset' -and ($args -notcontains '--selected-heavy-path' -or $args -notcontains 'simion/analyzer.pa0')) {throw 'subset selection was not forwarded'}
@@ -190,6 +195,12 @@ class SolverReviewRetirementTest(unittest.TestCase):
         self.temp.cleanup()
 
     def test_wrapper_real_retirement_updates_opted_in_ledger(self) -> None:
+        self._real_wrapper_retirement(partial=False)
+
+    def test_wrapper_real_two_partial_batches_reseal_without_manual_step(self) -> None:
+        self._real_wrapper_retirement(partial=True)
+
+    def _real_wrapper_retirement(self, *, partial: bool) -> None:
         """Real Python deletion and finalization; only the lease boundary is isolated."""
         pwsh = shutil.which("pwsh")
         if not pwsh:
@@ -220,21 +231,39 @@ function Enter-HostExecutionLease {
 function Exit-HostExecutionLease { param($Lease) }
 """, encoding="utf-8")
         repository = Path(__file__).resolve().parents[2]
-        result = subprocess.run([
+        command = [
             pwsh, "-NoLogo", "-NoProfile", "-File", str(wrapper),
             "-ArtifactRoot", str(self.artifacts), "-RepositoryRoot", str(repository),
             "-TargetRun", str(self.target), "-Owner", "p",
             "-OwnerAbandonmentReason", "completed tiny experiment without consumers", "-Apply",
-        ], cwd=repository, capture_output=True, text=True, encoding="utf-8", timeout=60, check=False)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        receipt = json.loads(result.stdout)  # Reject a second finalize-ready JSON document.
-        self.assertEqual(receipt["lifecycle_status"], "completed_experiment_payload_retired")
-        self.assertGreater(receipt["removed_bytes"], 0)
-        self.assertFalse((self.target / "simion/analyzer.pa0").exists())
-        ledger = load_capacity_ledger(self.artifacts)
-        entry = next(item for item in ledger["objects"] if item["path"].endswith(self.target.name))
-        self.assertEqual((entry["status"], entry["class"], entry["pin"]), ("ready", "light_evidence", False))
-        self.assertEqual(entry["bytes"], sum(path.stat().st_size for path in self.target.rglob("*") if path.is_file()))
+        ]
+        original_entry = dict(load_capacity_ledger(self.artifacts)["objects"][0])
+        original_manifest = manifest_path.read_bytes()
+        first_receipt = None
+        for selection in (["simion/analyzer.pa0", "simion/accelerator.pa0"] if partial else [None]):
+            result = subprocess.run(command + (["-SelectedHeavyPaths", selection] if selection else []),
+                cwd=repository, capture_output=True, text=True, encoding="utf-8", timeout=60, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            receipt = json.loads(result.stdout)  # Reject a second lifecycle JSON document.
+            self.assertEqual(receipt["lifecycle_status"], "completed_experiment_payload_retired")
+            self.assertGreater(receipt["removed_bytes"], 0)
+            self.assertFalse((self.target / (selection or "simion/analyzer.pa0")).exists())
+            ledger = load_capacity_ledger(self.artifacts)
+            entry = next(item for item in ledger["objects"] if item["path"].endswith(self.target.name))
+            expected = ("ready", "rebuildable_payload", True) if partial else ("ready", "light_evidence", False)
+            self.assertEqual((entry["status"], entry["class"], entry["pin"]), expected)
+            actual = sum(path.stat().st_size for path in self.target.rglob("*") if path.is_file())
+            self.assertEqual(entry["bytes"], actual)
+            self.assertEqual(ledger["resident_bytes"], actual)
+            self.assertEqual(manifest_path.read_bytes(), original_manifest)
+            if partial:
+                self.assertEqual(entry, {**original_entry, "bytes": actual})
+                initial_receipt = self.target / "solver_review_retirement_receipt.json"
+                if first_receipt is not None:
+                    self.assertEqual(initial_receipt.read_bytes(), first_receipt)
+                first_receipt = initial_receipt.read_bytes()
+        if partial:
+            self.assertTrue((self.target / "simion/detector.pa#").is_file())
 
     def test_structured_references_resolves_target_once_for_nested_strings(self) -> None:
         resolved = self.target.resolve()

@@ -251,6 +251,30 @@ IP完整五层普通场、已物化场及纯响应的历史证明可以递归经
 [run_native_static_field_provider.ps1](../simion/run_native_static_field_provider.ps1)；
 跨项目Finalize和飞行仍由[接口准备与绑定](../../../integrations/docs/INTEGRATION.md#oaip接口准备与绑定)负责。
 
+该provider若已完整发布并核验summary／manifest，仅最后的容量封存失败，保持原run及原终态，
+不重新调用provider的`-Approved`入口。owner先确认本次writer已退出、host许可已释放且无活动容量保护，
+再用冻结`run_config.json`中的owner、artifact root及原保留理由调用已有公共收尾：
+
+```powershell
+$configPath=(Resolve-Path '<既有run>/run_config.json').Path
+$config=Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+python -B -m common.contracts.run_capacity_lifecycle --action seal-stopped-payload `
+  --artifact-root $config.capacity_ledger_lifecycle.artifact_root --run-config $configPath `
+  --owner $config.project --confirm-writing-stopped --retention-reason $config.artifact_retention.reason
+if($LASTEXITCODE-ne0){throw 'Provider capacity sealing remains incomplete.'}
+```
+
+这是同一原run的容量收尾，不执行GEM／Refine／Fly，不修改科学文件；`ready`只固定保留占用，
+也不能把原命令的封存失败改称整轮成功。输入、输出或终态发布尚不完整时不能用此命令跳过验证。
+后续科学运行仍建立新身份；`CompletedFieldProviderManifest`不是当前native provider的恢复参数。
+公开封存命令的保护、幂等与保留合同见[公共容量收尾](../../../common/contracts/README.md)。
+本项目终态边界保留原始ErrorRecord，释放／guard／发布／别名清理次错附在异常Data中。
+正常或异常路径的host释放未确认为同token的`released`时，不清除租约引用，异常收尾再读取实际释放结果；
+仍未确认时不发布终态或撤销容量／执行别名保护；
+保留项由原owner确认写入停止后处理，不声称PowerShell退出后文件句柄锁仍持续存在。
+长期软件回归组合实际PowerShell终态边界、公共retention／manifest核验和seal-only CLI，
+验证失败后重入的0原生调用、原文件字节不变及重复封存不重复计账；不构成真实求场验收。
+
 同一公共`run_native_static_field_provider.ps1`还接受ordinary IP细窗下游扩域请求：
 在既有schema 1 provider request中声明
 `reuse_source_levels=["parent","window_1","window_2","window_3"]`及

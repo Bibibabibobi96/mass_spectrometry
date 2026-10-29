@@ -7,11 +7,15 @@ import hashlib
 import json
 import math
 import re
+import stat
 from pathlib import Path
 
 from common.contracts import capacity_protection as protection
 from common.contracts import capacity_ledger
 from common.contracts.artifact_retention import validate_retention
+from common.contracts.artifact_cache_contract import (
+    INTEGRATION_CACHE_ROLES, INTEGRATION_CACHE_ROOT_BY_ROLE,
+)
 
 from common.contracts.artifact_naming import (
     validate_archive_id,
@@ -21,12 +25,15 @@ from common.contracts.artifact_naming import (
 )
 
 from common.contracts.file_identity import file_sha256
+from common.contracts.execution_aliases import execution_alias_root_is_valid
 
 from common.simion.pa_family_cache import (
     PAFamilyCacheError,
+    RECOVERY_DIRECTORY,
     load_pa_family_cache_transaction,
     validate_pa_family_cache_generation,
 )
+from common.simion.immutable_pa_parity import MANIFEST_FILENAME, PARITY_FILENAME
 from common.simion.cache_generation import (
     generation_input as cache_generation_input,
     generation_sha256,
@@ -53,39 +60,6 @@ ALLOWED_PROJECT_ENTRIES = {
 }
 ALLOWED_ARTIFACT_ROOT_ENTRIES = {"common", "projects"}
 REQUIRED_RUN_FILES = {"run_config.json", "summary.json", "run_manifest.json"}
-INTEGRATION_CACHE_ROLES = {
-    "simion_single_flight_frontend": {"simion_single_flight_frontend_pa_cache"},
-    "simion_single_flight_upstream_bridge": {
-        "simion_single_flight_upstream_bridge_pa_cache"
-    },
-    "simion_single_flight_connector_collision": {
-        "simion_single_flight_connector_collision_pa_cache"
-    },
-    "simion_single_flight_accelerator_main": {
-        "simion_single_flight_accelerator_main_pa_cache"
-    },
-    "simion_single_flight_accelerator_entrance_local": {
-        "simion_single_flight_accelerator_entrance_local_pa_cache"
-    },
-    "simion_single_flight_accelerator_entrance_zone_collision": {
-        "simion_single_flight_accelerator_entrance_zone_collision_pa_cache"
-    },
-    "simion_accelerator_overlay": {
-        "simion_accelerator_overlay_pa_cache",
-        "simion_accelerator_entrance_overlay_pa_cache",
-        "simion_accelerator_intermediate_overlay_pa_cache",
-    },
-    "simion_oatof_downstream_pa": {
-        "simion_oatof_flight_tube_pa_cache",
-        "simion_oatof_reflectron_pa_cache",
-    },
-    "verified_pulse": {"rf_oatof_verified_pulse_timing_receipt"},
-}
-INTEGRATION_CACHE_ROOT_BY_ROLE = {
-    role: root
-    for root, roles in INTEGRATION_CACHE_ROLES.items()
-    for role in roles
-}
 CACHE_SHA256 = re.compile(r"[A-Fa-f0-9]{64}")
 PA_FAMILY_CACHE_NODE_SHA256 = re.compile(r"^[A-Fa-f0-9]{64}$")
 PA_FAMILY_CACHE_RUNTIME_DIRECTORIES = {".locks", ".staging"}
@@ -786,13 +760,71 @@ def _load_pa_family_cache_pointer(pointer_path: Path, cache_key: str) -> str:
     return generation
 
 
-def verify_common_pa_family_cache(cache_root: Path) -> None:
+def _verify_pa_family_recovery_tree(
+    key_root: Path, generation_nodes: list[Path], selected: Path, *, verify_hashes: bool
+) -> dict | None:
+    """Project owner-validated recovery records onto the exact regular tree."""
+    recovery = key_root / RECOVERY_DIRECTORY
+    try:
+        recovery.lstat()
+    except FileNotFoundError:
+        return None
+
+    def regular(path: Path, *, directory: bool) -> bool:
+        info = path.lstat()
+        kind = stat.S_ISDIR if directory else stat.S_ISREG
+        return kind(info.st_mode) and not (
+            getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
+        )
+
+    if not regular(recovery, directory=True):
+        raise PAFamilyCacheError("PA cache recovery must be a regular directory")
+    generations = {path.name.casefold(): path for path in generation_nodes}
+    recovery_nodes = list(recovery.iterdir())
+    if not recovery_nodes:
+        raise PAFamilyCacheError("PA cache recovery tree is empty")
+    if len({path.name.casefold() for path in recovery_nodes}) != len(recovery_nodes):
+        raise PAFamilyCacheError("duplicate case-insensitive PA cache recovery generation")
+    selected_manifest = None
+    for recovered in recovery_nodes:
+        generation = generations.get(recovered.name.casefold())
+        if (generation is None or not regular(recovered, directory=True)
+                or not regular(generation, directory=True)):
+            raise PAFamilyCacheError("PA cache recovery generation is unregistered or non-regular")
+        groups = list(recovered.iterdir())
+        for group in groups:
+            if not regular(group, directory=True):
+                raise PAFamilyCacheError("PA cache recovery group must be a regular directory")
+            members = list(group.iterdir())
+            if ({path.name for path in members} != {MANIFEST_FILENAME, PARITY_FILENAME}
+                    or any(not regular(path, directory=False) for path in members)):
+                raise PAFamilyCacheError("PA cache recovery bundle inventory differs")
+        # Current deep audit is performed once. Historical recovery generations
+        # need their owner's metadata identity, not another old PA payload scan.
+        manifest = validate_pa_family_cache_generation(
+            generation, verify_payload=verify_hashes and generation == selected
+        )
+        if (manifest["cache_key"].casefold() != key_root.name.casefold()
+                or manifest["generation_sha256"].casefold() != recovered.name.casefold()):
+            raise PAFamilyCacheError("PA cache recovery generation identity differs")
+        expected = {group["bundle"] for group in manifest.get("redundancy", {}).get("groups", [])}
+        if not expected or {group.name for group in groups} != expected:
+            raise PAFamilyCacheError("PA cache recovery groups differ from the generation")
+        if generation == selected:
+            selected_manifest = manifest
+    return selected_manifest
+
+
+def verify_common_pa_family_cache(cache_root: Path, verify_hashes: bool = False) -> None:
     """Validate the single registered common SIMION PA-family cache root.
 
     The common cache is a disposable performance layer, but its active payload
     is still a possible run input.  Its layout is therefore intentionally
     narrower than a project artifact root: only content-addressed keys and
     registered owner transaction metadata and empty staging directories are admitted.
+    Layout checks validate names, sizes and manifest identity. Explicit hash
+    verification additionally reads payload bytes; input consumers still use
+    the cache owner's full verifier independently of this layout projection.
     """
 
     if not cache_root.exists():
@@ -819,7 +851,7 @@ def verify_common_pa_family_cache(cache_root: Path) -> None:
                             or not member.is_dir() or any(member.iterdir())):
                         raise AssertionError(f"{member}: unexpected PA-family transaction payload")
             continue
-        if node.name == ".locks":
+        if node.name in {".locks", ".build-locks"}:
             if not node.is_dir() or node.is_symlink():
                 raise AssertionError(f"{node}: invalid PA-family lock directory")
             # Lock bytes are kernel-lock storage, not a JSON identity document.
@@ -840,7 +872,7 @@ def verify_common_pa_family_cache(cache_root: Path) -> None:
         key_names.add(normalized_key)
         expected_entries = {"current_generation.json", "generations"}
         actual_entries = {item.name for item in node.iterdir()}
-        if actual_entries != expected_entries:
+        if not expected_entries <= actual_entries or actual_entries - expected_entries - {RECOVERY_DIRECTORY}:
             raise AssertionError(f"{node}: PA-family cache key layout differs")
         generations = node / "generations"
         if not generations.is_dir():
@@ -877,7 +909,15 @@ def verify_common_pa_family_cache(cache_root: Path) -> None:
         if selected is None or not selected.is_dir():
             raise AssertionError(f"{node}: PA-family cache current generation is missing")
         try:
-            manifest = validate_pa_family_cache_generation(selected)
+            manifest = _verify_pa_family_recovery_tree(
+                node, generation_nodes, selected, verify_hashes=verify_hashes
+            )
+            if manifest is None:
+                manifest = validate_pa_family_cache_generation(selected, verify_payload=verify_hashes)
+            if any((selected / record["name"]).is_symlink()
+                   or (selected / record["name"]).stat().st_size != record["bytes"]
+                   for record in manifest["files"]):
+                raise PAFamilyCacheError("PA cache payload type or byte count differs")
         except PAFamilyCacheError as exc:
             raise AssertionError(f"{selected}: PA-family cache generation differs") from exc
         if (
@@ -887,7 +927,7 @@ def verify_common_pa_family_cache(cache_root: Path) -> None:
             raise AssertionError(f"{selected}: PA-family cache pointer differs from manifest")
 
 
-def verify_artifacts_root(projects: Path) -> None:
+def verify_artifacts_root(projects: Path, verify_hashes: bool = False) -> None:
     """Reject unregistered files or sibling trees beside artifacts/projects."""
     if projects.name != "projects" or not projects.is_dir():
         raise AssertionError("artifact layout root must be the artifacts/projects directory")
@@ -901,14 +941,28 @@ def verify_artifacts_root(projects: Path) -> None:
     if common.exists():
         allowed_common = {
             "simion", "capacity_protection_leases", "capacity_disposal_receipts",
-            "capacity_calibration",
+            "capacity_calibration", "execution_aliases", "host_resources.sqlite3",
             capacity_ledger.CAPACITY_LEDGER_RELATIVE_PATH.name,
         }
+        common_entries = {item.name for item in common.iterdir()} if common.is_dir() else set()
         if (
             not common.is_dir()
-            or ({item.name for item in common.iterdir()} - allowed_common)
+            or (common_entries - allowed_common)
         ):
             raise AssertionError("artifacts/common: unexpected common artifact entries")
+        aliases = common / "execution_aliases"
+        if "execution_aliases" in common_entries and (
+            not aliases.is_dir() or aliases.is_symlink()
+            or getattr(aliases.lstat(), "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
+            or not execution_alias_root_is_valid(artifacts, aliases)
+        ):
+            raise AssertionError("artifacts/common: invalid execution aliases")
+        database = common / "host_resources.sqlite3"
+        if "host_resources.sqlite3" in common_entries and (
+            not database.is_file() or database.is_symlink()
+            or getattr(database.lstat(), "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
+        ):
+            raise AssertionError("host resource database must be a regular file")
         ledger_path = artifacts / capacity_ledger.CAPACITY_LEDGER_RELATIVE_PATH
         if ledger_path.exists() and (
             not ledger_path.is_file() or ledger_path.is_symlink()
@@ -932,7 +986,7 @@ def verify_artifacts_root(projects: Path) -> None:
         if simion.exists():
             if not simion.is_dir() or {item.name for item in simion.iterdir()} != {"pa_family_cache"}:
                 raise AssertionError("artifacts/common/simion: unexpected common SIMION artifact entries")
-            verify_common_pa_family_cache(simion / "pa_family_cache")
+            verify_common_pa_family_cache(simion / "pa_family_cache", verify_hashes=verify_hashes)
         leases = common / "capacity_protection_leases"
         if leases.exists():
             try:
@@ -1019,10 +1073,10 @@ def main() -> None:
                 raise AssertionError("cache generation pointer differs from frozen payload")
         print(
             "CACHE_ENTRY=PASS "
-            f"ROLE={args.expected_cache_role} KEY={args.expected_cache_key}"
+            f"ROLE={args.expected_cache_role} KEY={args.expected_cache_key} HASHES=True"
         )
         return
-    verify_artifacts_root(projects)
+    verify_artifacts_root(projects, verify_hashes=args.verify_hashes)
     repository_root = args.repository_root.resolve() if args.repository_root else None
     project_dirs = [project for project in projects.iterdir() if project.is_dir()]
     if args.project:
@@ -1036,7 +1090,7 @@ def main() -> None:
         print(f"FORMAL_ASSET_LAYOUT=PASS PROJECTS={len(project_dirs)} HASHES={args.verify_hashes}")
         return
     totals = [verify_project(project, args.verify_hashes, repository_root) for project in project_dirs]
-    print(f"ARTIFACT_LAYOUT=PASS PROJECTS={len(totals)} RUNS={sum(x for x, _ in totals)} ARCHIVES={sum(y for _, y in totals)}")
+    print(f"ARTIFACT_LAYOUT=PASS PROJECTS={len(totals)} RUNS={sum(x for x, _ in totals)} ARCHIVES={sum(y for _, y in totals)} HASHES={args.verify_hashes}")
 
 
 if __name__ == "__main__":

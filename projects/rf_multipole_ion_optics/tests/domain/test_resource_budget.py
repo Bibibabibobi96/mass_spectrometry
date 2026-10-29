@@ -389,6 +389,7 @@ class ResourceBudgetTests(unittest.TestCase):
                     f". '{support}';{HOST_PERMIT_FIXTURE}"
                     "$script:now=[datetimeoffset]'2026-10-27T00:00:00Z';"
                     "$script:firstWorkerAt=$null;$script:workers=@{};$script:nextPid=100;$script:disposed=0;"
+                    "function Get-RepositoryProcessSnapshot {};"
                     "function Get-CimInstance {throw 'Policy fixture queried host CIM'};"
                     "function Start-Process {throw 'Policy fixture launched a native worker'};"
                     "function Get-RepositoryUtcNow {$script:now};"
@@ -746,6 +747,161 @@ if($scenario-eq'inherited_light'){
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
+    def test_process_snapshot_preserves_complete_family_sample(self) -> None:
+        """Sharing enumeration retains identity, scoped unknowns, console and meters."""
+        support = REPO_ROOT / "common/resource_budget_support.ps1"
+        command = f". '{support}';" + r"""
+$birth=[datetime]::new(2026,10,28,0,0,0,[DateTimeKind]::Utc)
+$script:events=[Collections.Generic.List[string]]::new()
+function New-TestProcess($Id,$Working,$Private,$Cpu,$Path) {
+ $p=[pscustomobject]@{Id=$Id;WorkingSet64=$Working;PrivateMemorySize64=$Private;
+   TotalProcessorTime=[timespan]::FromTicks($Cpu);Path=$Path}
+ $p|Add-Member ScriptProperty StartTime {$script:events.Add('birth');$birth}
+ $p
+}
+$root=New-TestProcess 101 10 30 7 ''
+$child=New-TestProcess 102 40 20 11 ''
+$console=New-TestProcess 103 5 8 3 (Join-Path $env:SystemRoot 'System32/conhost.exe')
+$unknown=[pscustomobject]@{Id=104;Path=''}
+$unknown|Add-Member ScriptProperty StartTime {throw 'TEST_ONLY inaccessible birth'}
+$script:processes=@($root,$child,$console,$unknown)
+function Get-Process {$script:events.Add('process');$script:processes}
+function Get-HostResourceNativeProcessCreationTicks {param($ProcessId);$null}
+function Get-CimInstance {
+ $script:events.Add('cim')
+ if($script:scenario-ne'cim'){throw 'TEST_ONLY CIM unavailable'}
+ foreach($entry in @(@(101,0),@(102,101),@(103,101),@(104,0))){
+  [pscustomobject]@{ProcessId=$entry[0];ParentProcessId=$entry[1]}
+ }
+}
+function Get-HostResourceProcessParents {
+ $script:events.Add('fallback')
+ $parents=[Collections.Generic.Dictionary[int,int]]::new()
+ $parents[101]=0;$parents[102]=$(if($script:scenario-eq'reused_tracked'){0}else{101});$parents[103]=101
+ $parents[104]=$(if($script:scenario-eq'owned_unknown'){101}else{0})
+ [pscustomobject]@{parents=$parents;complete=($script:scenario-ne'incomplete');
+   started_at_utc_ticks=$birth.AddSeconds(1).Ticks}
+}
+$results=@()
+foreach($script:scenario in @('cim','fallback','owned_unknown','incomplete','reused_root','reused_tracked')){
+ $script:events.Clear()
+ $args=@{RootProcessIds=@(101);RootProcessStartedAtUtcTicks=@{'101'=$birth.Ticks}}
+ if($script:scenario-eq'reused_root'){$args.RootProcessStartedAtUtcTicks['101']=$birth.Ticks-1}
+ if($script:scenario-eq'reused_tracked'){
+  $args.TrackedProcessIds=@(102);$args.TrackedProcessStartedAtUtcTicks=@{'102'=($birth.Ticks-1)}
+  # A reused PID no longer belongs to the old parent; neither parent table reconnects it.
+ }
+ $independent=Get-ManagedSolverProcessSample @args
+ $cimIndex=$script:events.IndexOf('cim')
+ if($script:events[0]-ne'process'-or$cimIndex-lt2-or
+   @($script:events.GetRange(1,$cimIndex-1)|Where-Object {$_-ne'birth'}).Count){
+  throw ('Standalone enumeration order changed: '+($script:events-join','))
+ }
+ $snapshot=Get-RepositoryProcessSnapshot
+ $before=$script:events.Count
+ $shared=Get-ManagedSolverProcessSample @args -ProcessSnapshot $snapshot
+ $newEvents=@($script:events|Select-Object -Skip $before)
+ if(@($newEvents|Where-Object {$_-in@('process','cim','fallback')}).Count){throw 'Shared sample re-enumerated'}
+ $results+=@{scenario=$script:scenario;independent=$independent;shared=$shared}
+}
+$results|ConvertTo-Json -Depth 12 -Compress
+"""
+        completed = subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+            cwd=REPO_ROOT, check=False, capture_output=True, text=True, encoding="utf-8", timeout=20,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        samples = json.loads(completed.stdout)
+        for case in samples:
+            with self.subTest(scenario=case["scenario"]):
+                self.assertEqual(case["shared"], case["independent"])
+                sample = case["shared"]
+                if case["scenario"] == "reused_root":
+                    self.assertEqual(sample["active_process_ids"], [])
+                    continue
+                expected_ids = [101, 103] if case["scenario"] == "reused_tracked" else [101, 102, 103]
+                self.assertEqual(sample["active_process_ids"], expected_ids)
+                self.assertEqual(sample["system_console_host_process_ids"], [103])
+                self.assertEqual(sample["managed_memory_bytes"], 38 if len(expected_ids) == 2 else 78)
+                self.assertEqual(sample["working_set_bytes"], 15 if len(expected_ids) == 2 else 55)
+                self.assertEqual(sample["private_bytes"], 38 if len(expected_ids) == 2 else 58)
+                self.assertEqual(sample["total_processor_time_ticks"], 10 if len(expected_ids) == 2 else 21)
+                self.assertEqual(sample["ancestry_complete"], case["scenario"] not in {"owned_unknown", "incomplete"})
+                self.assertEqual(sample["unknown_ancestry_process_ids"], [104] if case["scenario"] == "owned_unknown" else [])
+
+    def test_parallel_wave_enumerates_once_per_poll_and_refreshes(self) -> None:
+        """The real dispatch loop shares both successful and fallback observations."""
+        support = REPO_ROOT / "common/resource_budget_support.ps1"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch = root / "dispatch.json"
+            dispatch.write_text(json.dumps({
+                "role": "simion_repository_dispatch_plan",
+                "estimation": {"kind": "exact_resource_profile"},
+                "limits": dispatch_limits(maximum_concurrency=8),
+            }), encoding="utf-8")
+            command = f". '{support}';{HOST_PERMIT_FIXTURE}$directory='{root}';$dispatch='{dispatch}';" + r"""
+function Get-SystemCpuPercent {0.0}
+function Get-RepositoryAvailableMemoryBytes {[int64](64GB)}
+function Stop-ManagedSolverProcesses {throw 'Unexpected termination'}
+function Start-Sleep {param($Milliseconds);$script:sleeps++}
+function Get-Process {
+ $script:enumerations++
+ if($script:sleeps-eq0){$script:observed}
+}
+function Get-CimInstance {
+ $script:cimCalls++
+ if($script:fallback){throw 'TEST_ONLY CIM unavailable'}
+ if($script:sleeps-eq0){foreach($p in $script:observed){
+  [pscustomobject]@{ProcessId=$p.Id;ParentProcessId=0}
+ }}
+}
+function Get-HostResourceProcessParents {
+ $script:fallbackCalls++
+ $parents=[Collections.Generic.Dictionary[int,int]]::new()
+ foreach($p in $script:observed){$parents[$p.Id]=0}
+ [pscustomobject]@{parents=$parents;complete=$true;started_at_utc_ticks=[datetime]::UtcNow.Ticks}
+}
+$results=@()
+foreach($count in @(1,4,8)){
+ foreach($script:fallback in @($false,$true)){
+  $script:enumerations=0;$script:cimCalls=0;$script:fallbackCalls=0;$script:sleeps=0
+  $script:waited=0;$script:disposed=0;$script:observed=@();$records=@()
+  foreach($index in 1..$count){
+   $process=[pscustomobject]@{Id=(100+$index);StartTime=[datetime]::new(2026,10,28,0,0,0,[DateTimeKind]::Utc);
+    Path='';WorkingSet64=10;PrivateMemorySize64=20;TotalProcessorTime=[timespan]::FromTicks(30);ExitCode=0}
+   $process|Add-Member ScriptMethod WaitForExit {$script:waited++}
+   $process|Add-Member ScriptMethod Dispose {$script:disposed++}
+   $script:observed+=@($process)
+   $records+=@([pscustomobject]@{name="worker$index";process=$process;
+    specification=[pscustomobject]@{file_path='fixture.exe'};root_process_id=$process.Id;
+    root_process_started_at_utc_ticks=$process.StartTime.Ticks;tracked_process_ids=@($process.Id);
+    started_at=[datetimeoffset]::UtcNow;active=$true;completed=$false;exit_code=$null;
+    pressure_terminated=$false;peak_working_set_bytes=0;peak_managed_memory_bytes=0;
+    completed_during_observation=$false;observed_process_cpu_percent=0;observed_background_cpu_percent=0})
+  }
+  $result=Invoke-ResourceBudgetedProcesses -DispatchPlanPath $dispatch -RunDir $directory `
+   -UsagePath (Join-Path $directory 'usage.json') -ProcessSpecifications @() -ExistingProcessRecords $records
+  if($result.processes.Count-ne$count-or$script:waited-ne$count-or$script:disposed-ne$count){throw 'Incomplete wave'}
+  $results+=@{workers=$count;fallback=$script:fallback;enumerations=$script:enumerations;
+    cim=$script:cimCalls;parents=$script:fallbackCalls;sleeps=$script:sleeps}
+ }
+}
+'RESULT='+($results|ConvertTo-Json -Compress)
+"""
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT, check=False, capture_output=True, text=True, encoding="utf-8", timeout=20,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            results = json.loads(next(line[7:] for line in completed.stdout.splitlines() if line.startswith("RESULT=")))
+            for result in results:
+                with self.subTest(workers=result["workers"], fallback=result["fallback"]):
+                    self.assertEqual(result["enumerations"], 2)
+                    self.assertEqual(result["cim"], 2)
+                    self.assertEqual(result["parents"], 2 if result["fallback"] else 0)
+                    self.assertEqual(result["sleeps"], 1)
+
     def test_native_parent_observation_marks_missing_ancestry_without_stopping_root(self) -> None:
         support = REPO_ROOT / "common/resource_budget_support.ps1"
         command = (
@@ -886,6 +1042,7 @@ if($sample.active_process_ids-contains424242-or$sample.active_process_ids-contai
                 f". '{support}';{HOST_PERMIT_FIXTURE}"
                 "function Get-RepositoryAvailableMemoryBytes{return [int64](64GB)};"
                 "function Get-SystemCpuPercent{return [double]0};"
+                "function Get-RepositoryProcessSnapshot {};"
                 "function Get-ManagedSolverProcessSample{"
                 "param([int[]]$RootProcessIds,[int[]]$TrackedProcessIds,"
                 "[hashtable]$RootProcessStartedAtUtcTicks,[hashtable]$TrackedProcessStartedAtUtcTicks);"
@@ -1240,6 +1397,7 @@ if($sample.active_process_ids-contains424242-or$sample.active_process_ids-contai
                         "root_process_id=$script:nextPid;started_at=(Get-RepositoryUtcNow);tracked_process_ids=@($script:nextPid);"
                         "active=$true;completed=$false;exit_code=$null;peak_working_set_bytes=[int64]0;"
                         "peak_managed_memory_bytes=[int64]0;pressure_terminated=$false}};"
+                        "function Get-RepositoryProcessSnapshot {};"
                         "function Get-ManagedSolverProcessSample {param([int[]]$RootProcessIds,[int[]]$TrackedProcessIds);"
                         "[pscustomobject]@{tracked_process_ids=@($RootProcessIds[0]);active_process_ids=@($RootProcessIds[0]);"
                         "working_set_bytes=1073741824;private_bytes=2147483648;managed_memory_bytes=2147483648;"
@@ -1334,6 +1492,7 @@ Write-Output 'TERMINATION_FAILURE=PASS'
                 "function Get-RepositoryAvailableMemoryBytes {[int64](32GB)};"
                 # These workers execute directly: keep this failure test independent
                 # of machine-wide WMI latency; descendant tracking has its own tests.
+                "function Get-RepositoryProcessSnapshot {};"
                 "function Get-ManagedSolverProcessSample {param($RootProcessIds,$TrackedProcessIds);"
                 "$live=@(Get-Process -Id $RootProcessIds -ErrorAction SilentlyContinue);"
                 "[pscustomobject]@{tracked_process_ids=@($RootProcessIds);"
@@ -2536,7 +2695,7 @@ function Get-CimInstance {{throw 'TEST_ONLY forced CIM denial for hidden launche
 $originalSample=${{function:Get-ManagedSolverProcessSample}}
 function Get-ManagedSolverProcessSample {{
     param([int[]]$RootProcessIds,[int[]]$TrackedProcessIds,
-          [hashtable]$RootProcessStartedAtUtcTicks,[hashtable]$TrackedProcessStartedAtUtcTicks)
+          [hashtable]$RootProcessStartedAtUtcTicks,[hashtable]$TrackedProcessStartedAtUtcTicks,$ProcessSnapshot)
     $sample=& $originalSample @PSBoundParameters
     if(Test-Path -LiteralPath '{identities}'){{
         $owned=@(Get-Content -LiteralPath '{identities}' -Raw | ConvertFrom-Json)
@@ -2633,6 +2792,7 @@ exit 0
                 "active=$true;completed=$false;exit_code=$null;peak_working_set_bytes=[int64]0;"
                 "peak_managed_memory_bytes=[int64]0;pressure_terminated=$false};"
                 "};"
+                "function Get-RepositoryProcessSnapshot {};"
                 "function Get-ManagedSolverProcessSample {param([int[]]$RootProcessIds);"
                 "[pscustomobject]@{tracked_process_ids=@($RootProcessIds);active_process_ids=@($RootProcessIds);"
                 "tracked_process_started_at_utc_ticks=@{};working_set_bytes=0;private_bytes=0;"

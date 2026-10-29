@@ -393,10 +393,14 @@ def seal_checkpoint(
             raise ValueError("checkpoint sealing requires a checkpoint manifest")
         stopped_run_config = file_record(run_dir / "run_config.json") if retain_payload else None
         total, records = _inventory(run_dir)
-        if retain_payload and entry["status"] == "ready" and total != int(entry["bytes"]):
-            if not (run_dir / RECEIPT_NAME).is_file():
+        if retain_payload and entry["status"] == "ready":
+            size_changed = total != int(entry["bytes"])
+            if not (run_dir / RECEIPT_NAME).is_file() and size_changed:
                 raise ValueError("sealed stopped payload resident bytes changed; owner must investigate")
-            accounting_reconciliation = _verify_retired_payload_remainder(run_dir, config, owner, entry, records)
+            if (run_dir / RECEIPT_NAME).is_file():
+                reconciliation = _verify_retired_payload_remainder(run_dir, config, owner, entry, records)
+                if size_changed:
+                    accounting_reconciliation = reconciliation
         if not retain_payload and (total > budget or any(
             classify_file(run_dir / item["path"], bytes_count=item["bytes"]) in HEAVY_RETENTION_ROLES
             for item in records
@@ -430,6 +434,30 @@ def seal_checkpoint(
         **({"run_config": stopped_run_config} if retain_payload else {}),
         **({"accounting_reconciliation": accounting_reconciliation} if accounting_reconciliation is not None else {}),
     }
+
+
+def reseal_retired_payload(
+    artifact_root: Path, run_config: Path, *, owner: str, writing_stopped: bool = False,
+) -> dict[str, Any]:
+    """Close a completed partial retirement using its original retention decision.
+
+    No caller-supplied replacement reason is accepted. The normal sealing owner
+    rechecks the decision, receipt, inventory and live protections under its lock.
+    """
+    root = artifact_root.resolve(strict=True)
+    run_dir, _, _ = _run_context(root, run_config)
+    relative = run_dir.relative_to(root).as_posix()
+    ledger = capacity_ledger.load_capacity_ledger(root)
+    entry = next((item for item in (ledger or {}).get("objects", []) if item["path"] == relative), None)
+    reason = str((entry or {}).get("retention_reason", ""))
+    if (entry is None or entry.get("owner") != owner or entry.get("status") != "ready"
+            or entry.get("class") != "rebuildable_payload" or entry.get("pin") is not True
+            or not reason.startswith(SEALED_PAYLOAD_REASON_PREFIX)
+            or not reason[len(SEALED_PAYLOAD_REASON_PREFIX):].strip()
+            or not (run_dir / RECEIPT_NAME).is_file()):
+        raise ValueError("retirement reseal requires the original pinned, sealed payload owner decision and receipt")
+    return seal_checkpoint(root, run_config, owner=owner, writing_stopped=writing_stopped,
+                           retain_payload=True, retention_reason=reason[len(SEALED_PAYLOAD_REASON_PREFIX):])
 
 
 def _legacy_terminal_run_entries(
@@ -1015,7 +1043,7 @@ def retire_misplaced_light_run(artifact_root: Path, run_config: Path, *,
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--action", choices=("register-writing-range", "register-writing", "assert-retention", "finalize-ready", "seal-checkpoint", "seal-stopped-payload", "retire-misplaced-light-run"), required=True)
+    parser.add_argument("--action", choices=("register-writing-range", "register-writing", "assert-retention", "finalize-ready", "seal-checkpoint", "seal-stopped-payload", "reseal-retired-payload", "retire-misplaced-light-run"), required=True)
     parser.add_argument("--artifact-root", type=Path, required=True)
     parser.add_argument("--run-config", type=Path)
     parser.add_argument("--run-directory", type=Path)
@@ -1044,6 +1072,7 @@ def main() -> int:
         "finalize-ready": finalize_ready,
         "seal-checkpoint": seal_checkpoint,
         "seal-stopped-payload": seal_checkpoint,
+        "reseal-retired-payload": reseal_retired_payload,
     }[args.action]
     try:
         if args.action == "register-writing-range":
@@ -1053,7 +1082,12 @@ def main() -> int:
         else:
             if args.run_config is None or args.run_directory is not None:
                 raise ValueError(f"{args.action} requires --run-config only")
-            if args.action in {"seal-checkpoint", "seal-stopped-payload"}:
+            if args.action == "reseal-retired-payload":
+                if args.retention_reason is not None:
+                    raise ValueError("retirement reseal preserves its original retention reason")
+                result = action(args.artifact_root, args.run_config, owner=args.owner,
+                                writing_stopped=args.confirm_writing_stopped)
+            elif args.action in {"seal-checkpoint", "seal-stopped-payload"}:
                 result = action(args.artifact_root, args.run_config, owner=args.owner,
                                 writing_stopped=args.confirm_writing_stopped,
                                 retain_payload=args.action == "seal-stopped-payload",

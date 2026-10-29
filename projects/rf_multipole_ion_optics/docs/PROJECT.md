@@ -80,6 +80,12 @@
 直线外推补造命中。[供应商CLI回调检查](../../../../artifacts/projects/rf_multipole_ion_optics/runs/20261027_133140__test__cad__multipole-enclosure/results/agent4_callback_acceptance.json)
 覆盖4场景及重复run；无PA夹具只验证回调状态机，不建立真实PA边界backoff或Fly资格，未实际越面仍为未观测。
 
+接口就绪 COMSOL 入口及有限三维 COMSOL／SIMION 运行器的失败发布若再次异常，仍传播原始错误及类型，
+并在异常的`failure_closure_error`中保留发布失败原因；有限三维入口的host释放异常另记`host_release_error`。
+没有原始失败时，host释放异常仍向外传播，不能变成成功。环境恢复／别名清理及原资源释放继续沿各自入口执行。
+实际PowerShell catch／finally回归覆盖正常路径、主错与发布／释放再次失败，不调用商业求解器，
+不改变这些workflow的科学输入、成功判据或现有资格。
+
 ## 机器权威
 
 | 职责 | 入口 |

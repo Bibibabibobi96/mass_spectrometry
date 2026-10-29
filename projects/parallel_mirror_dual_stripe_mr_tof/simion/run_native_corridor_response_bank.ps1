@@ -386,13 +386,14 @@ try {
   $probe=if($correctPublication){[pscustomobject]@{cache_key=$transaction.cache_key;disposition='publication_metadata_correction'}}else{Invoke-CacheProbe -IdentityPath $identityPath}
   if($TransactionCacheKey-and[string]$probe.cache_key-cne$TransactionCacheKey.ToUpperInvariant()){throw 'Frozen response-bank transaction key differs.'}
   $responseReceiptPath=''
+  $registeredResponseReceipt=$TransactionCacheKey-and$null-ne$transaction.PSObject.Properties['response_receipt']
   $receiptAlreadyPresent=Test-Path -LiteralPath (Join-Path $cacheRoot ('.transactions/'+[string]$probe.cache_key+'/payload/mrtof_analyzer_corridor.standalone_responses.json'))
-  # Continue legacy sealed receipts as they stand; new builds and explicit
-  # member recovery let the common owner derive receipt from its sole scan.
-  if(-not$correctPublication-and[string]$probe.disposition-ne'hit'-and(-not$receiptAlreadyPresent-or$RecoverMembers.Count-gt0)){
+  # The public owner validates and replays a registered recipe unchanged,
+  # including after explicit member recovery; new recipes use schema 2.
+  if(-not$registeredResponseReceipt-and-not$correctPublication-and[string]$probe.disposition-ne'hit'-and(-not$receiptAlreadyPresent-or$RecoverMembers.Count-gt0)){
     $responseReceiptPath=Join-Path $resultDir 'response_bank_receipt_recipe.json'
     Write-RunJson -Path $responseReceiptPath -Depth 20 -Value ([ordered]@{
-      schema_version=1;receipt_name='mrtof_analyzer_corridor.standalone_responses.json'
+      schema_version=2;source_location='payload';receipt_name='mrtof_analyzer_corridor.standalone_responses.json'
       exporter_path=(Join-Path $repoRoot 'common\simion\export_standalone_pa.lua')
       exports=@(1..8|ForEach-Object{[ordered]@{
         response_id=$_;source_name=('mrtof_analyzer_corridor.pa{0}'-f$_)
@@ -472,7 +473,7 @@ try {
       Build-RawGeometry -BuildDirectory $build -ScratchDirectory $scratch
       $coarseBasisDirectory=[string]$coarseBank.directory
       foreach($identifier in 1..8){Build-DetachedResponse -ResponseId $identifier -BuildDirectory $build -ScratchDirectory $scratch -CoarseBasisDirectory $coarseBasisDirectory -Coarse $coarse}
-      if(-not$responseReceiptPath){Invoke-ProjectPython -Arguments @('-m',$bankModule,'--write-receipt-directory',$build)|Out-Null}
+      if(-not$responseReceiptPath-and-not$registeredResponseReceipt){Invoke-ProjectPython -Arguments @('-m',$bankModule,'--write-receipt-directory',$build)|Out-Null}
       $evidence='';continue
     }
     if([string]$state.action_required-eq'verify'){

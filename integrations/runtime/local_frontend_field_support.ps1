@@ -4,7 +4,8 @@ $ErrorActionPreference='Stop'
 function Invoke-LocalFrontendFieldCompositions {
   <# Project the published standalone inputs once for all three working points.
      Public helpers retain source write/delete guards until the last native
-     process has exited and the frozen identities have been checked again. #>
+     process has exited. Private inputs retain their first verified read guard
+     across every working point; outputs are separate new files. #>
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$SelectionPath,
@@ -15,14 +16,14 @@ function Invoke-LocalFrontendFieldCompositions {
   )
   $records=@((Get-Content -LiteralPath $SelectionPath -Raw|ConvertFrom-Json).records)
   $directory=Join-Path ([IO.Path]::GetTempPath()) ('simion_pa_links_local_fields_'+[guid]::NewGuid().ToString('N').Substring(0,12))
-  $projected=@{};$copied=@();$sourceChecks=@()
+  $projected=@{};$copied=@();$sourceChecks=@();$preserveActiveInputs=$false;$compositionFailure=$null
   try {
     foreach($record in $records){
       $source=[string]$record.path
       if($projected.ContainsKey($source)){throw 'Duplicate standalone response source.'}
       $projected[$source]=New-ShortPaCopy -Source $source `
         -Destination (Join-Path $directory ('r{0}.pa'-f[int]$record.response_id)) `
-        -ExpectedBytes ([int64]$record.bytes) -ExpectedSha256 ([string]$record.sha256)
+        -ExpectedBytes ([int64]$record.bytes) -ExpectedSha256 ([string]$record.sha256) -GuardDestinationReadOnly
       $copied+=$record
     }
     foreach($job in $Compositions){
@@ -32,22 +33,41 @@ function Invoke-LocalFrontendFieldCompositions {
       $arguments=@('--nogui','--noprompt','lua',$ComposerPath,[string]$projected[[string]$job.base],[string]$job.output)
       foreach($term in $job.terms){$arguments+=([string]$projected[[string]$term.path]+','+([double]$term.coefficient).ToString('G17',[Globalization.CultureInfo]::InvariantCulture))}
       & $InvokeNative $arguments $OutputDirectory ('local_field_compose_'+$job.kind)
-      # Reuse is valid only while the disposable inputs remain byte-identical.
+      # The first verification's actual read guard must remain live; acquiring
+      # a guard after a writable interval is not proof of the original bytes.
       foreach($source in @($used|Select-Object -Unique)){
-        $null=Confirm-ShortPaCopyIdentity -Path ([string]$projected[$source])
+        $identity=Get-ShortPaCopyIdentity -Path ([string]$projected[$source])
+        if(-not$identity.identity_guarded){throw 'Local field input lost its verified read guard.'}
       }
     }
+  } catch {
+    $compositionFailure=$_
+    if($_.Exception.Data.Contains('observed_process_exit_confirmed')-and
+       $_.Exception.Data['observed_process_exit_confirmed']-is[bool]-and
+       -not$_.Exception.Data['observed_process_exit_confirmed']){
+      $preserveActiveInputs=$true
+      $_.Exception.Data['local_field_preserved_input_directory']=$directory
+    }
+    throw
   } finally {
-    try {
-      foreach($record in $copied){
-        $check=Protect-ImmutablePaSource -Source ([string]$record.path) `
-          -ExpectedBytes ([int64]$record.bytes) -ExpectedSha256 ([string]$record.sha256)
-        try{$sourceChecks+=$check}finally{
-          if(-not$check.already_protected){$null=Unprotect-ImmutablePaSource -Source ([string]$record.path)}
+    if(-not$preserveActiveInputs){
+      try {
+        try {
+          foreach($record in $copied){
+            $check=Protect-ImmutablePaSource -Source ([string]$record.path) `
+              -ExpectedBytes ([int64]$record.bytes) -ExpectedSha256 ([string]$record.sha256)
+            try{$sourceChecks+=$check}finally{
+              if(-not$check.already_protected){$null=Unprotect-ImmutablePaSource -Source ([string]$record.path)}
+            }
+          }
+        } finally {
+          Remove-ShortPaCopyDirectory -Path $directory
         }
+      }catch{
+        if($null-eq$compositionFailure){throw}
+        $compositionFailure.Exception.Data['local_field_cleanup_error']=$_
+        Write-Warning "Local field input cleanup failed; original composition error is retained: $_" -WarningAction Continue
       }
-    } finally {
-      Remove-ShortPaCopyDirectory -Path $directory
     }
   }
   return [pscustomobject]@{response_copies=$copied.Count;response_copy_bytes=[int64](($copied|Measure-Object -Property bytes -Sum).Sum);
@@ -74,7 +94,7 @@ function Invoke-LocalFrontendFieldStage {
   # The orchestration owner imports the live public helpers before loading
   # this frozen stage. Reloading host helpers from a run snapshot would derive
   # a second host ledger beside that snapshot instead of retaining its lease.
-  foreach($required in @('Invoke-RunToolRootContext','Write-RunJson','Update-ArtifactWorkflowCapacitySession','Invoke-ResourceBudgetedProcess','Update-HostResourceStage','Get-HostResourceBudget','New-ShortPaCopy','Confirm-ShortPaCopyIdentity','Protect-ImmutablePaSource','Unprotect-ImmutablePaSource','Remove-ShortPaCopyDirectory')){
+  foreach($required in @('Invoke-RunToolRootContext','Write-RunJson','Update-ArtifactWorkflowCapacitySession','Invoke-ResourceBudgetedProcess','Update-HostResourceStage','Get-HostResourceBudget','New-ShortPaCopy','Get-ShortPaCopyIdentity','Protect-ImmutablePaSource','Unprotect-ImmutablePaSource','Remove-ShortPaCopyDirectory')){
     if(-not(Get-Command $required -ErrorAction SilentlyContinue)){throw "Local field stage requires the caller's live public helper: $required"}
   }
   $run=[IO.Path]::GetFullPath($RunDirectory)
@@ -134,6 +154,7 @@ print(json.dumps(build_field_plan(*map(Path,sys.argv[1:4]))))
   $probe=Invoke-LocalFieldPython -Arguments ($cacheArgs+@('--action','probe')) -Name 'local_field_cache_probe'
   $published=$false;$refinePerformed=$false
   $HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage pa_refine -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
+  $stageFailure=$null
   try {
     if($probe.disposition-eq'hit'){$generation=[string]$probe.generation_directory}
     elseif($probe.disposition-ne'miss'){throw "Local field cache is not reusable: $($probe.disposition)"}
@@ -191,7 +212,7 @@ print(json.dumps(build_field_plan(*map(Path,sys.argv[1:4]))))
       }
     }
     $selection=Join-Path $inputsDir 'local_frontend_standalone_selection.json'
-    $null=Invoke-LocalFieldPython -Arguments @('-m','integrations.runtime.standalone_pa_family','--directory',$generation,'--prefix','frontend','--response-ids',($plan.mode_ids-join','),'--manifest',(Join-Path $generation 'cache_manifest.json'),'--output',$selection) -Name 'local_field_select'
+    $null=Invoke-LocalFieldPython -Arguments @('-m','integrations.runtime.standalone_pa_family','--directory',$generation,'--prefix','frontend','--response-ids',($plan.mode_ids-join','),'--manifest',(Join-Path $generation 'cache_manifest.json'),'--output',$selection,'--metadata-only') -Name 'local_field_select'
     $composeCode=@'
 import json,sys
 from pathlib import Path
@@ -228,7 +249,22 @@ print(json.dumps({'compositions':jobs,'mode_states_v':states,'field_bank':bank,'
     }
     Write-RunJson -Path $receipt -Depth 20 -Value @{schema_version=1;role='rf_oatof_local_frontend_field_stage';status='success';cache_key=$plan.cache_key;generation_directory=$generation;selection_path=$selection;field_bank_path=$bank;field_bank_record=@{path=$bank;bytes=(Get-Item -LiteralPath $bank).Length;sha256=(Get-FileHash -LiteralPath $bank -Algorithm SHA256).Hash};working_points=$records;cache_identity_record=@{path=$identityPath;bytes=(Get-Item -LiteralPath $identityPath).Length;sha256=(Get-FileHash -LiteralPath $identityPath -Algorithm SHA256).Hash};refine_performed=$refinePerformed;refine_policy='official_defaults';mode_count=$plan.mode_count;model_id=$plan.model_id;response_normalization=$composition.response_normalization;published_native_members_opened=$false;response_copies=$isolation.response_copies;input_isolation=$isolation;fly_performed=$false;validation_scope='native_reopen_grid_and_declared_basis_samples_only__not_field_convergence';aperture_topology_gate='required_before_fly_by_caller'}
     return [pscustomobject]@{field_paths=$paths;field_bank=$bank;cache_receipt=$receipt;cache_key=$plan.cache_key;generation_directory=$generation;selection=$selection}
+  } catch {
+    $stageFailure=$_
+    throw
   } finally {
-    $HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage prepare -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
+    $writerUnknown=($null-ne$stageFailure-and
+      $stageFailure.Exception.Data.Contains('observed_process_exit_confirmed')-and
+      $stageFailure.Exception.Data['observed_process_exit_confirmed']-is[bool]-and
+      -not$stageFailure.Exception.Data['observed_process_exit_confirmed'])
+    if(-not$writerUnknown){
+      try{
+        $HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage prepare -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
+      }catch{
+        if($null-eq$stageFailure){throw}
+        $stageFailure.Exception.Data['local_field_stage_transition_error']=$_
+        Write-Warning "Local field stage transition failed; original operation error is retained: $_" -WarningAction Continue
+      }
+    }
   }
 }

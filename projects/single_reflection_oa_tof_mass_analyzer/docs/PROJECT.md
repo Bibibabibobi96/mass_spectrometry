@@ -193,6 +193,124 @@ Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`�
 理想源的[残差／束宽](history/20260827__ideal-source-residual-and-width-comparison.md)与
 [斜率比较](history/20260827__synthetic-affine-slope-scan.md)仅证明受控一维机制，不授权真实三维接受或性能声明。
 
+径向压缩入口的构建父进程与单次 Fly 均以 1800 s 作耗时告警，不以该阈值终止健康求解。
+恢复接口使用新 `--run-id` 与显式 `--resume-from`，读取父运行冻结合同与公共 whole-unit continuation
+校验过的完整 Fly 单元。原生退出码为零仍须具有唯一完成记录且 splat 数等于冻结粒子数；分析失败
+可以重做分析，错误身份摘要、部分日志和未被父 manifest 绑定的裸 receipt 均不能跳过 Fly。
+硬杀后尚未发布的单元按未完成重算；本主题不另建逐单元 checkpoint，以保留现有终态发布和恢复合同。
+
+新建运行可用同一入口的 `--campaign` 选择具名已授权合同，默认合同仍为现有生产配置；任何显式
+`--campaign` 与 `--resume-from` 同时使用都会拒绝。续跑不回读活动默认合同，冻结复制期间的输入漂移
+也会失败关闭。纯计划运行具有专用 plan summary，并不能作为科学恢复前驱。软件夹具已覆盖跨两代
+恢复、只重算未完成单元、父运行字节不变、并发异常汇总及未知进程退出阻止终态发布。
+恢复同时要求相同的源码闭包和执行器身份；分析源码升级后不能隐式复用旧单元。这是当前保守合同的
+明确成本，不另建跨版本豁免或修改旧终态。
+
+运行先由公共容量 owner 准入并建立新 package，再冻结输入与既有源码闭包。实际科学 worker 只消费
+冻结目录，使用公共 READY／ACK 握手确认实际 Python worker 的身份、退出和日志排空；启动器退出
+不能代替该证明。worker 的内部完成记录只有在这些事实确认后才原子交给唯一公共终态发布入口。
+一个 mode 的所有 case 均有已验证完整单元时，直接在该冻结 worker 重做分析，不启动求解器资源
+bridge；尚需 Fly 的混合或全新 case 仍由原整 pool 调度。真实公共 writer 合同回归覆盖全复用时
+operations 与 resource releases 均为空，避免给没有启动原生操作的阶段登记孤立释放记录。
+软件故障注入已验证“记录已写但 worker 状态未知”不发布、不退役；真实冻结导入回归同时确认了
+调度库绝对路径继承，未建立冻结目录私有调度库。
+非计划构建还须冻结具名 Candidate runtime 选择、已验证的 layout 注册证据和原同名 IOB／CON 对。
+首次准入保护注册与源文件所属 run，实际 builder 消费 `inputs/template` 中的副本；恢复使用父运行
+冻结选择，不回读活动 runtime 或最新 template。注册身份复用原 `prepare_candidate_run` 校验入口，
+不再为读取验证器反向依赖 design CLI。
+共享源码闭包同时补齐容量 policy。冻结目录中的正式 builder `-File` 软件回归已越过实际容量续期、
+plan 验证和 cache begin，到首个原生调用由明确 Python 替身退出；这只验证启动前执行依赖与失败传播，
+不证明后继 Lua／GEM 或真实 Refine／Fly 已通过。
+资源 pool 的新 Python 进程重新导入冻结模块时，也从同一冻结 request 绑定所选解释器和产物根；
+真实公共 bridge 回归已验证 Fly 参数不会落到不存在的 `inputs/code/.venv`。分析直接调用既有
+`analyze_simion_log`，沿原 CSV 序列化和严格 JSON 规则；与原 CLI 的诊断及 CSV 字节等价，
+不再为每次分析启动额外运输进程或保留重复观察日志。
+原生普通 `.log`、stderr、完整单元 receipt 与 ION 仍列为 required outputs；这些普通日志已由公共
+retention 分类保留，不再误传仅用于特定 batch TRACE 的 `retention_preserve_paths`。
+长期回归实际调用公共 retention，验证旧投影被拒且修正后 required 文件逐字节保留。
+
+实际非计划路径预检发现生产 campaign 的旧 seed `20260713` 与其绑定的 D300 母群 SHA 不一致。
+现仅将该 seed 修为具名 reference run 所记录的 `20260729`，母群 SHA、阈值与物理设计保持原值。
+`20260810_121500__benchmark__cross__cpu-formal-n1000` 的 `run_config` 与其前驱
+`20260729_112246__sim__cross__vnext-n1000-r2` 均记录该 seed；现公共生成器逐字节重建同一
+N1000 母群（`D3004697…7179`）及 N100 前缀（`3BD65B6C…F26D`）。长期回归走实际 case 准备及
+ION 生成入口，旧 seed 无法满足母群 SHA；其他合同的 seed 未改。
+
+PA 路线保留原物理设置：仅 surface=none 的 accelerator／reflectron 使用公共 raw 与 standalone
+response 缓存，随后构造当前运行的私有 family；fractional 的 tube／detector 每个新运行从冻结 GEM
+重新构建。容量预算计入全部潜在 case，共用一个持续 session。既有 ThreadPool 只执行共享调度器
+批准的波次，SIMION 资源 profile 来自实际原生进程，不能由 PowerShell 包装进程峰值代替。
+完成判据分别保留直接 SIMION 进程自然退出、实际 Python worker 同句柄退出与双流排空，以及
+资源 owner 的释放事实；worker 非零不能被 native 零退出码覆盖。当前受护输入句柄只覆盖其
+PowerShell owner 存活期，未知退出阻止发布和退役，不声明句柄跨 owner 退出仍保持。
+未发布PA交接沿同一builder的显式`ProducerHandoffPath`消费冻结映射。共享prepare helper保留原公共owner
+Result的完整字节，并将其中实际`stopped_payload_receipt`确定性投影给公共六字段交接合同；每次消费均
+核对投影原值、前驱manifest、当前session与保护范围，不从`resume-from`或文件存在推断授权。
+现有设计入口`workflows/design_candidate/run_candidate.py`与径向入口
+`workflows/radial_compaction/run_campaign.py`均接受重复的
+`--pa-producer-handoff TRANSACTION OWNER_RESULT`。准入前用同一prepare helper轻验小证据：精确重复去重，
+同key冲突或不属于本次全部编译plan的key拒绝；前驱与原验证证据所属run进入同一容量保护范围。
+准入后只冻结一次并将全部小输入登记到run manifest，builder验证整份映射后仅消费当前case的key交集。
+容量承诺仍覆盖全计划，部分单元重建不会借交接缩减预算。
+生产者需在启动时显式给`--pa-handoff-output RUN_EXTERNAL_RESULT`，公共owner直接将原始Result写到该新路径，
+成功或已确认停写的失败均保留原字节；不会将派生receipt冒充原输出。该选项预声明`solver_review`与用途，
+径向默认`compact`保持不变，设计入口原`solver_review`保持。两个交接选项均不允许与`--dry-run`组合；
+consumer输入与既有父run恢复独立，父run参数本身不授权PA交接。
+构建completion按component绑定cache key、完整响应命名空间及实际构建／导出operation IDs；只有全部
+native与实际Python worker成功退出且双流已排空才记录完成集合。完整未发布库存经原官方私有family
+重组与逐响应verifier验证后发布，不重复heavy response Refine；原prepared验证证据有效且被前驱
+manifest绑定时直接沿公共发布阶段继续。未封存且缺成员的component整体重做，不复用其部分响应。
+完整原scratch在Refine／导出后、verification或成员移动时中断，可重跑原全响应验证再移入发布payload。
+再次交接只在新completion引用本run inputs内的原始build completion；引用由当前manifest绑定并在下次
+冻结时保持扁平，原run身份与原operation不变，新completion仅记录自己实际执行的验证与worker。
+已封存却没有原科学完成证明的库存明确拒绝，保留原owner和只读成员；处置须沿现有公共显式取消合同，
+普通交接不冒充用户取消。旧run缺少上述completion绑定时不追认科学成功。该接线的软件夹具使用惰性
+原生命令替身，只验证身份、调度与发布时序；真实交接场等价和GUI验收单独执行并记录。
+2026-10-28 的[正式 CLI 计划运行][radial-owner-dry-run]已贯通真实容量准入、两层实际 Python worker、
+compact retention、终态 manifest 和账本收尾：10 个静态 case，0 Fly／0 Refine，命令墙钟 28.394670 s；
+独立完整 manifest 验证覆盖 70 个输出，账本为 ready，租约已释放，保留 5,506,448 B 小证据。
+该轮只证明计划运行的 metadata 链，不提供真实 PA、Fly 或 GUI 验收结论，不改变 Formal。
+首个 N100 实际入口在启动原生工具前暴露了缺失冻结 runtime 配置，保留的
+`20261029_000006__test__simion__radial-n100-first` 为 failed 终态，0 Fly／0 Refine；
+独立完整 manifest 验证通过 16 个输出，容量 lease 已释放、账本 ready。该失败促成上述模板输入闭合，
+不以软件修复或失败收尾通过替代下一新 run 的真实 PA/Fly 验收。
+随后 `20261029_001733__test__simion__radial-n100-first-r2` 以原网格、电压、quality 8 与 D300 母群的
+N100 前缀完成 shield260 的实际场及原条件自然触发的四个理想场归因模式，每个模式 100 splats、
+原生退出码 0；`best_accepted_case=null`，仍是原接受阈值下的负结果，不授予 Candidate／Formal 资格。
+首次完整命令为 420.236871 s、exit 1：原生工作已完成，但普通日志被误传为特殊 TRACE 保留路径，
+因此公共 retention 在创建任何收据前拒绝收尾。该未封存运行经一次明确授权的 metadata 更正，
+仅清空该列表并列入原 completion 字节备份及字段差异审计；科学 summary、五份原生日志、输入与
+143 个源码文件保持原身份。更正耗时 3.102785 s，既有 owner 的 finalization-only 收尾耗时
+9.394539 s、exit 0，未再构建或 Fly。独立完整 manifest 验证通过 558 个输出；公共 compact
+删除 38 个可重建私有载荷、释放 1,275,410,616 B，账本 ready，原容量 lease 已释放。
+714 个保留原文件 SHA 核对一致，原 completion 与更正审计保存在该 run 的 `results/` 并由终态
+manifest 绑定。此轮只作为含历史收尾缺陷的构建成本参照；后继同源码重复运行、显式恢复及 GUI
+验收须分别报告，不能把其总墙钟差全解释为缓存收益。
+同一修复后源码与冻结 context 的 `20261029_005100__test__simion__radial-n100-warm-a` 和
+`20261029_010000__test__simion__radial-n100-warm-b` 随后分别以 243.841993 s、252.231317 s
+自然完成全链，均为 exit 0，独立完整 manifest 各验证 280 个输出。每轮两个 heavy cache 命中，
+ground 保持 fresh；六条原生 Refine 完成记录来自两个私有 controller 与 ground 的四次解，
+不把 warm 运行称为零 Refine。五份粒子 CSV 字节相等，canonical 指标精确相等；诊断仅有三个
+run 路径字段不同。两轮 best accepted case 均为空、容量已释放，实际保留 4,483,222／4,483,225 B。
+随后显式父 B 的 `20261029_010500__analysis__python__radial-n100-reanalysis` 已证实零原生构建／
+Fly／Refine 和父全部 442 个文件 SHA 不变，但 70.673763 s 后因旧调用方留下五个孤立资源释放
+记录而被公共 owner 拒绝首次封存，不能把该原命令列为完整恢复 PASS。经明确授权，一次性更正
+仅把五个已经真实启动、同句柄退出的 analysis PS bridge 证据投影为相应操作，并保留原 completion
+字节和审计；没有补造原生操作、改变科学结果或资源释放事实。更正 2.851977 s、既有 owner
+finalization-only 收尾 7.231395 s、exit 0；独立完整 manifest 验证 33 个输出，父 442 与子 190 个
+原文件 SHA 不变、五份 CSV 和指标相等，账本 ready、原 lease 释放，保留 3,560,082 B。
+上述全复用分支修复与公共 writer 合同回归已通过 49 项软件测试。后续真实部分构建故障与 prepared
+发布故障保留原失败，未完整导出的组件整体重建；发布前遗漏的 key recovery 容量登记由原 cache
+owner 修复。修后 [P3 恢复][radial-p3-recovery] 以新 run 自然完成，重用原两组 heavy response，
+仍实际构建私有 controller 与 ground，并完成同源 N100 的五种模式。CSV 与 canonical 指标与前驱
+一致，实际活动缓存／run 记账闭合；这不将 retired transaction 的历史 bytes 当作当前 journal 盘占。
+[P4 重分析][radial-p4-reanalysis] 随后从该冻结父运行自然闭合，零 Build／Fly／Refine，五模式在同一
+frozen worker 内分析，未登记孤立的 native operation／release；父输入、CSV 和指标保持原身份。
+两轮仍为 best accepted case 为空的功能验收，不晋升 Candidate／Formal。用户已取消本次截图故障排查及
+截图依赖的 GUI 复验；原 GUI r3 保持 failed／未验收，不留作本轮后续任务。其私有 PA 经用户精确批准后
+由[原 owner 退役][radial-gui-retirement]，保留全部小证据与重建输入；保留 IOB 须重建 PA 后才能再用。
+命令行通过不代替截图与四实例实际检查，不授予新的 GUI 等价或 Formal 资格；跨版本恢复校验未降低。
+
 ## 已知兼容边界
 
 现有 Formal MPH 保持 Generalized-α／Strict；源码修复及下列诊断候选不追溯修改资产身份或资格。
@@ -280,3 +398,7 @@ SHA、身份、资格和声明边界；迁移后按根README独立裁剪的可�
 
 [reflectron-api-isolation]: ../../../../artifacts/projects/instrument_assembly/runs/20261026_045007__test__simion__reflectron-api-isolation/summary.json
 [geometry-only-evidence]: ../../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261026_075441__test__comsol__geo/summary.json
+[radial-owner-dry-run]: ../../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261028_230441__test__simion__radial-owner-dry-run/summary.json
+[radial-p3-recovery]: ../../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261029_040300__test__simion__radial-handoff-p3/summary.json
+[radial-p4-reanalysis]: ../../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261029_073507__test__simion__radial-p4-reanalysis/summary.json
+[radial-gui-retirement]: ../../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261029_083000__test__simion__radial-p3-gui-r3/solver_review_retirement_receipt.json

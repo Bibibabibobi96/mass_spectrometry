@@ -26,7 +26,7 @@ from common.contracts.artifact_retention import (
     validate_retention,
 )
 from common.contracts.recorded_file_removal import write_json_atomic
-from common.contracts.verify_artifact_layout import INTEGRATION_CACHE_ROLES
+from common.contracts.artifact_cache_contract import INTEGRATION_CACHE_ROLES
 
 
 SHA256 = re.compile(r"^[A-Fa-f0-9]{64}$")

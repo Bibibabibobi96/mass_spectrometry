@@ -261,11 +261,13 @@ try{
     def test_streams_one_guarded_source_and_releases_it_before_next(self) -> None:
         bank = {
             'cache_key': 'A' * 64, 'generation_sha256': 'B' * 64,
+            'source_transaction': None,
             'raw': {'name': 'field.pa#', 'bytes': 3, 'sha256': 'C' * 64},
             'responses': [dict(response_id=i, name=f'field.response{i}.pa', bytes=3, sha256='D' * 64) for i in range(1, 9)],
         }
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
+            bank['source_directory'] = str(root)
             script = """
 param($Support,$Root,$Bank)
 $ErrorActionPreference='Stop'

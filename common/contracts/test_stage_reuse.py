@@ -204,6 +204,35 @@ class StageReuseTest(unittest.TestCase):
                 allow_provisional_manifest=True,
             )
 
+    def test_v2_live_receipt_preserves_the_existing_retention_contract(self) -> None:
+        from common.contracts.write_run_manifest import build_run_manifest
+
+        retention = {"policy_version": 1, "class": "solver_review", "reason": "software stage receipt fixture"}
+        config = {"schema_version": 2, "run_id": PARENT_ID, "project": PROJECT,
+                  "inputs": {}, "artifact_retention": retention}
+        self._write_json(self.parent_config, config)
+        self._write_summary("running", "success")
+        manifest = build_run_manifest(self.parent_config, "interrupted", output_paths=self._all_outputs(),
+                                      extra_fields={"lifecycle_state": "provisional"})
+        self.assertEqual(manifest["schema_version"], 2)
+        self._write_json(self.parent / "run_manifest.json", manifest)
+        receipt = write_stage_receipt(self.parent, project=PROJECT, stage_id=STAGE,
+            context=self.parent_context, outputs={"model": self.output}, allow_provisional_manifest=True)
+        self.assertEqual(receipt, self.receipt)
+        for field, value in (("schema_version", 3), ("status", "success"), ("lifecycle_state", "terminal"),
+                             ("artifact_retention", {**retention, "reason": "different"})):
+            invalid = {**manifest, field: value}
+            self._write_json(self.parent / "run_manifest.json", invalid)
+            with self.subTest(field=field), self.assertRaises(StageReuseError):
+                write_stage_receipt(self.parent, project=PROJECT, stage_id=STAGE,
+                    context=self.parent_context, outputs={"model": self.output}, allow_provisional_manifest=True)
+        self._write_json(self.parent / "run_manifest.json", manifest)
+        for invalid_retention in ({}, {**retention, "class": "not-a-retention-class"}):
+            self._write_json(self.parent_config, {**config, "artifact_retention": invalid_retention})
+            with self.subTest(retention=invalid_retention), self.assertRaisesRegex(StageReuseError, "retention contract is invalid"):
+                write_stage_receipt(self.parent, project=PROJECT, stage_id=STAGE,
+                    context=self.parent_context, outputs={"model": self.output}, allow_provisional_manifest=True)
+
     def test_summary_and_manifest_status_must_match_and_be_terminal(self) -> None:
         for summary_status, manifest_status in (
             ("failed", "success"),

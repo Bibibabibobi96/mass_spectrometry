@@ -44,7 +44,6 @@ class SimionRunnerContractTests(unittest.TestCase):
                          source.index("  $retentionActions=Apply-RunArtifactRetention", source.index("  $scientificStatus="))]
         publication = source[source.index("  Write-VerifiedRunManifest -Python $python -RepoRoot $manifestRepoRoot", source.index("  $outputs+=$retentionActions")):
                              source.index("}catch{", source.index("  $outputs+=$retentionActions"))]
-        failure = source[source.rindex("}catch{")+len("}catch{"):source.rindex("}finally{")]
         terminal = source[source.rindex("\nif($hostExecutionOutcome-eq'failed')"):]
         for scenario in ("pass", "scientific_fail", "evaluation_error"):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
@@ -65,6 +64,15 @@ class SimionRunnerContractTests(unittest.TestCase):
                 script.write_text(f"""$ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $codeRoot='{escaped_repo}';$python='{escaped_python}';$manifestRepoRoot=$codeRoot
+$tokens=$null;$parseErrors=$null
+$runnerAst=[Management.Automation.Language.Parser]::ParseFile(
+ (Join-Path $codeRoot 'projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1'),[ref]$tokens,[ref]$parseErrors)
+if($parseErrors.Count){{throw 'Production runner does not parse'}}
+$scientificTry=@($runnerAst.EndBlock.Statements|Where-Object {{
+ $_-is[Management.Automation.Language.TryStatementAst]-and$_.Body.Extent.Text.Contains("`$scientificStatus='success'")
+}})
+if($scientificTry.Count-ne1){{throw 'Scientific publication owner is ambiguous'}}
+$failureBody=[scriptblock]::Create(($scientificTry[0].CatchClauses[-1].Body.Statements|ForEach-Object {{$_.Extent.Text}})-join"`n")
 $resultDir=$PWD.Path;$runConfig='unused';$resourceBudgetExceeded=$false;$hostExecutionOutcome='failed'
 $ProjectId='rf_multipole_ion_optics';$DesignProfileId='fixture';$RunId='fixture'
 $resolvedHash='fixture';$primaryTransmission=0.5;$controlTransmission=0.1;$CaseSet='paired'
@@ -85,7 +93,7 @@ try {{
  $result=Get-Content $summary -Raw|ConvertFrom-Json
  @{published=$true;manifest=$published;summary=$result;outcome=$hostExecutionOutcome}|ConvertTo-Json -Depth 10 -Compress
 }catch{
-""" + failure + """
+ . $failureBody
 }finally{
  Set-Content -LiteralPath (Join-Path $resultDir 'grant_released.txt') -Value 'released'
 }

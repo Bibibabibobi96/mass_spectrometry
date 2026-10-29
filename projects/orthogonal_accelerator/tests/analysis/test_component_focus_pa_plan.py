@@ -1,4 +1,8 @@
 from __future__ import annotations
+import json
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -11,6 +15,87 @@ from projects.orthogonal_accelerator.analysis.component_focus_pa_cache import ex
 
 
 class ComponentFocusPAPlanTests(unittest.TestCase):
+    def test_native_verifier_stays_in_build_lease_and_failure_cannot_publish(self) -> None:
+        project = Path(__file__).resolve().parents[2]
+        repo = project.parents[1]
+        runner = project / 'simion/run_component_focus_pa.ps1'
+        with tempfile.TemporaryDirectory(prefix='focus-pa-lease-') as directory:
+            root = Path(directory)
+            fixture = root / 'native.py'
+            fixture.write_text(
+                "import os,sys\nfrom pathlib import Path\n"
+                "name=Path(sys.argv[4]).name\n"
+                "assert os.environ.get('FOCUS_FIXTURE_LEASE')=='active', 'native operation has no lease'\n"
+                "with Path(os.environ['FOCUS_FIXTURE_EVENTS']).open('a') as stream: stream.write('native:'+name+'\\n')\n"
+                "print('explicit software native fixture',flush=True)\n"
+                "raise SystemExit(int(os.environ['FOCUS_FIXTURE_EXIT']) if name=='verify.lua' else 0)\n",
+                encoding='utf-8',
+            )
+            shim = root / 'native.cmd'
+            shim.write_text(f'@echo off\n"{sys._base_executable}" "{fixture}" %*\nexit /b %errorlevel%\n', encoding='utf-8')
+            driver = root / 'driver.ps1'
+            driver.write_text(r"""
+param($Runner,$Root,$Native,$Code)
+$ErrorActionPreference='Stop';$PSNativeCommandUseErrorActionPreference=$false
+$work=Join-Path $Root ('case'+$Code);New-Item -ItemType Directory $work|Out-Null
+$env:FOCUS_FIXTURE_EVENTS=Join-Path $work 'events.txt';$env:FOCUS_FIXTURE_EXIT=$Code
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$tokens,[ref]$errors)
+if($errors){throw $errors[0]}
+$branch=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.IfStatementAst]-and
+ $n.Clauses[0].Item1.Extent.Text-eq'$probe.disposition-eq''hit'''-and$n.ElseClause.Statements.Count-gt1},$true))
+if($branch.Count-ne1){throw 'Expected the unique production cache-miss native branch.'}
+$body=$branch[0].ElseClause.Extent.Text
+$production=[scriptblock]::Create($body.Substring(1,$body.Length-2))
+$probe=@{disposition='miss'};$cacheRoot=Join-Path $work 'cache';$plan='fixture-plan';$SimionExe=$Native
+$RunId='fixture';$capacity=@{owner='fixture'};$responseReceiptRecipe='fixture-recipe';$electrodeCount=2
+$planDocument=@{gem='explicit software geometry fixture'};$domain=@(2,2,2);$mesh=@(1,1,1)
+$package=@{artifact_run_dir=$work;run_config='fixture-config';log_dir=$work;result_dir=$work}
+$frozenBuilder=Join-Path $work 'build.lua';$frozenVerifier=Join-Path $work 'verify.lua';$frozenExporter=Join-Path $work 'export.lua'
+foreach($path in @($frozenBuilder,$frozenVerifier,$frozenExporter)){Set-Content -LiteralPath $path -Value '-- software fixture'}
+$scratch=Join-Path $work 'scratch';$payload=Join-Path $work 'payload'
+New-Item -ItemType Directory $scratch,$payload|Out-Null
+$lease=$null;$buildAlias=$null;$verificationEvidence=$null
+function Enter-HostExecutionLease {param($Role,$Stage,$RunId)
+ if($Role-ne'SIMION'-or$Stage-ne'pa_refine'){throw 'Wrong native admission stage'}
+ $env:FOCUS_FIXTURE_LEASE='active';Add-Content $env:FOCUS_FIXTURE_EVENTS 'acquire';return @{token='fixture'}
+}
+function Exit-HostExecutionLease {param($Lease,$Outcome,$RunId)
+ if($env:FOCUS_FIXTURE_LEASE-ne'active'){throw 'Duplicate native release'}
+ Add-Content $env:FOCUS_FIXTURE_EVENTS ('release:'+$Outcome);$env:FOCUS_FIXTURE_LEASE='released'
+}
+function New-RunExecutionAlias {param($TargetDirectory);return @{execution_alias=$TargetDirectory;target_directory=$TargetDirectory}}
+function Remove-RunExecutionAlias {param($ExecutionAlias,$TargetDirectory)}
+function Invoke-RootPython {param([string[]]$Arguments)
+ if($Arguments-contains'--verification-evidence'){
+  if($env:FOCUS_FIXTURE_LEASE-ne'released'){throw 'Publication preceded native release'}
+  Add-Content $env:FOCUS_FIXTURE_EVENTS 'publish';return '{"action_required":"complete"}'
+ }
+ if($Arguments-contains'--producer-run-config'){
+  return (@{action_required='build';scratch_directory=$scratch;build_directory=$payload}|ConvertTo-Json -Compress)
+ }
+ return '{"action_required":"verify","cache_key":"fixture-key","inventory_sha256":"fixture-inventory"}'
+}
+$failure=$null
+try{. $production}catch{$failure=$_.Exception.Message}
+@{error=$failure;events=@(Get-Content $env:FOCUS_FIXTURE_EVENTS);lease_cleared=($null-eq$lease)}|
+ ConvertTo-Json -Depth 8|Set-Content (Join-Path $work 'report.json') -Encoding utf8
+""", encoding='utf-8')
+            for code in (0, 7):
+                with self.subTest(native_exit=code):
+                    process = subprocess.run(['pwsh', '-NoProfile', '-File', str(driver), str(runner), str(root), str(shim), str(code)],
+                        cwd=repo, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False, timeout=60)
+                    self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+                    result = json.loads((root / f'case{code}/report.json').read_text(encoding='utf-8-sig'))
+                    expected = ['acquire', 'native:build.lua', 'native:export.lua', 'native:export.lua', 'native:verify.lua',
+                                'release:success' if code == 0 else 'release:failed']
+                    self.assertEqual(result['events'], expected + (['publish'] if code == 0 else []))
+                    self.assertTrue(result['lease_cleared'])
+                    if code == 0:
+                        self.assertIsNone(result['error'])
+                    else:
+                        self.assertEqual(result['error'], 'Native focus controller verification failed')
+
     def test_focus_is_inside_domain_and_closed_end_is_padded(self) -> None:
         root=Path(__file__).resolve().parents[2]
         plan=derive(root/'config'/'two_zone_component_focus_campaign.json')

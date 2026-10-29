@@ -45,7 +45,7 @@
     },
     "candidate_runtime": {
       "path": "config/candidate_runtime.json",
-      "sha256": "BF9E393A5D43E3FC8E394BA2DB74EBBE85AF2003F6E19CEF9198D745E720E40B"
+      "sha256": "99A5D75D7A3C6D01A715A68E1E23144267534978CBA7FAE39F3946EDFB4F3466"
     }
   },
   "allowed_variation_axes": [

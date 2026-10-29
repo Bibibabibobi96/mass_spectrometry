@@ -11,11 +11,11 @@ import shutil
 import time
 from contextlib import contextmanager
 from datetime import date
-from functools import lru_cache
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from common.contracts import capacity_ledger
+from common.contracts.gui_source_protection import current_gui_source_paths, current_gui_source_retention
 from common.contracts import capacity_protection as protection
 from common.contracts.execution_aliases import execution_alias_root_is_valid
 from common.contracts.historical_source_scratch_retirement import apply as apply_source_scratch_disposition
@@ -398,46 +398,6 @@ def _current_gui_review_retention(item: dict[str, Any], target: Path) -> bool:
     return False
 
 
-@lru_cache(maxsize=8)
-def _current_gui_source_paths(root_text: str) -> tuple[str, ...]:
-    """Index explicit current-GUI source paths once per maintenance process."""
-
-    root = Path(root_text)
-    sources: set[str] = set()
-    for review_root in root.glob("projects/*/reviews"):
-        if not review_root.is_dir() or review_root.is_symlink():
-            continue
-        for package in review_root.glob("current_*"):
-            if not package.is_dir() or package.is_symlink():
-                continue
-            for name in ("inspection_receipt.json", "release_receipt.json"):
-                receipt = _load_object(package / name)
-                if receipt is None or receipt.get("status") not in {"ready", "materialized"}:
-                    continue
-                source_run = receipt.get("source_run")
-                if isinstance(source_run, str) and source_run:
-                    sources.add(str((review_root.parent / "runs" / source_run).resolve(strict=False)))
-                for value in (
-                    receipt.get("trajectory_log"), receipt.get("materialization"),
-                    receipt.get("observation"),
-                    receipt.get("native_runtime", {}).get("checkpoint")
-                    if isinstance(receipt.get("native_runtime"), dict) else None,
-                ):
-                    if isinstance(value, str) and value:
-                        sources.add(str(Path(value).resolve(strict=False)))
-    return tuple(sorted(sources))
-
-
-def _current_gui_source_retention(root: Path, target: Path) -> bool:
-    """Return whether a current GUI receipt explicitly names this source tree."""
-
-    target_resolved = target.resolve(strict=False)
-    return any(
-        target_resolved == Path(source) or target_resolved in Path(source).parents
-        for source in _current_gui_source_paths(str(root.resolve(strict=False)))
-    )
-
-
 def _consumer_has_active_protection(
     root: Path, consumers: object, leases: dict[str, Any],
 ) -> bool:
@@ -481,6 +441,7 @@ def _maintenance_management_summary(
     planned_paths = {str(item["path"]) for item in planned}
     aggregates: dict[tuple[str, str, str], dict[str, int]] = {}
     blocked: list[dict[str, Any]] = []
+    gui_sources = current_gui_source_paths(root)
     for item in ledger["objects"]:
         if item.get("status") == "retired":
             continue
@@ -496,7 +457,7 @@ def _maintenance_management_summary(
         reason: str | None = None
         if item["status"] == "writing" and (
             _current_gui_review_retention(item, target)
-            or _current_gui_source_retention(root, target)
+            or current_gui_source_retention(root, target, sources=gui_sources)
         ):
             action, reason = "retain_current_gui_until_owner_closure", "current_receipted_gui_review"
         elif item["status"] == "writing":
@@ -569,12 +530,19 @@ def _maintenance_plan(
     root: Path, *, target_bytes: int, minimum_free_bytes: int,
     protected_paths: Iterable[Path],
     protected_cache_keys: Iterable[str], capacity_ledger_path: Path | None,
+    capacity_protection_lease_id: str | None = None,
 ) -> dict[str, Any]:
     policy = _capacity_policy()
     timings = _timings(policy)
     with timings.phase("ledger_and_leases"):
         ledger = capacity_ledger.load_capacity_ledger(root, capacity_ledger_path)
         leases = protection.load_capacity_protection_leases(root)
+    required_paths = tuple(protected_paths)
+    required_keys = tuple(protected_cache_keys)
+    if capacity_protection_lease_id:
+        _assert_maintenance_input_lease(
+            root, capacity_protection_lease_id, required_paths, required_keys,
+        )
     if ledger is None:
         return _finish({
             "schema_version": 1, "role": "artifact_capacity_gate",
@@ -610,8 +578,8 @@ def _maintenance_plan(
         }, timings, "maintenance")
     required_free = minimum_free_bytes + int(leases["committed_new_bytes"])
     candidates = _ledger_candidates(
-        root, ledger, [*protected_paths, *leases["protected_paths"]],
-        [*protected_cache_keys, *leases["protected_cache_keys"]], policy,
+        root, ledger, [*required_paths, *leases["protected_paths"]],
+        [*required_keys, *leases["protected_cache_keys"]], policy,
     )
     limit = min(
         target_bytes - int(leases["committed_new_bytes"]),
@@ -652,10 +620,28 @@ def _maintenance_plan(
         "projected_bytes": projected, "satisfied": projected <= limit,
         "capacity_ledger": str(ledger_location.absolute()),
         "protection_lease_audit": leases["audit"],
+        "capacity_protection_lease_id": capacity_protection_lease_id,
+        "required_input_paths": [str(path) for path in required_paths],
+        "required_input_cache_keys": list(required_keys),
         "management_summary": management_summary,
         "historical_closure_summary": historical_closure,
         "measurement_mode": "LEDGER_MAINTENANCE",
     }, timings, "maintenance")
+
+
+def _assert_maintenance_input_lease(
+    root: Path, lease_id: str, required_paths: Iterable[Path],
+    required_cache_keys: Iterable[str],
+) -> None:
+    """Fail closed before the next mutation if workflow input protection changed."""
+    leases = protection.load_capacity_protection_leases(root)
+    current = next((item for item in leases["audit"]
+                    if item.get("lease_id") == lease_id and item.get("status") == "active"), None)
+    if current is None:
+        raise ValueError("protected maintenance requires an active current lease")
+    required = _required_scope(root, current, required_paths, required_cache_keys)
+    if required[2] or required[3]:
+        raise ValueError("protected maintenance current lease scope is incomplete")
 
 
 def _reconcile_execution_alias_root(root: Path) -> dict[str, int]:
@@ -809,6 +795,7 @@ def plan(
         root, target_bytes=target_bytes, minimum_free_bytes=minimum_free_bytes,
         protected_paths=protected_paths, protected_cache_keys=protected_cache_keys,
         capacity_ledger_path=capacity_ledger,
+        capacity_protection_lease_id=capacity_protection_lease_id,
     )
 
 
@@ -1148,6 +1135,7 @@ def activate_owner_dispositions(root: Path) -> dict[str, Any]:
 
 def _run_maintenance_owner_actions(
     root: Path, timings: _PhaseTimings,
+    *, protection_check: Callable[[], None] | None = None,
 ) -> tuple[dict[str, dict[str, int]], list[dict[str, str]]]:
     """Run independent owner continuations without masking later safe work."""
 
@@ -1181,6 +1169,8 @@ def _run_maintenance_owner_actions(
     results: dict[str, dict[str, int]] = {}
     failures: list[dict[str, str]] = []
     for name, action, fallback in actions:
+        if protection_check is not None:
+            protection_check()
         try:
             with timings.phase(f"owner.{name}"):
                 results[name] = action(root)
@@ -1208,6 +1198,7 @@ def _historical_closure_summary(
     run_statuses: dict[Path, str] = {}
     lease_state = leases if leases is not None else protection.load_capacity_protection_leases(root)
     groups: dict[tuple[str, str, str, str], dict[str, int]] = {}
+    gui_sources = current_gui_source_paths(root)
     for item in ledger["objects"]:
         if item.get("status") != "writing":
             continue
@@ -1216,7 +1207,7 @@ def _historical_closure_summary(
         reason = str(item.get("recovery_reason", "unknown"))
         category = "owner_evidence_not_recognized"
         route = "owner_evidence_review"
-        if _current_gui_source_retention(root, target):
+        if current_gui_source_retention(root, target, sources=gui_sources):
             category, route = "normal_managed_retention", "owner_disposition_after_gui_review"
         elif reason == "structured_nonterminal_run_reference" or item.get("consumers"):
             if _consumer_has_active_protection(root, item.get("consumers"), lease_state):
@@ -1307,6 +1298,12 @@ def apply(receipt: dict[str, Any]) -> dict[str, Any]:
     failed: list[dict[str, Any]] = []
     with timings.phase("apply"):
         for item in receipt["planned"]:
+            if receipt.get("capacity_protection_lease_id"):
+                _assert_maintenance_input_lease(
+                    root, receipt["capacity_protection_lease_id"],
+                    (Path(path) for path in receipt.get("required_input_paths", ())),
+                    receipt.get("required_input_cache_keys", ()),
+                )
             try:
                 removed.append(_apply_ledger_object(root, item, ledger_path))
             except (OSError, ValueError, RuntimeError, protection.CapacityProtectionLeaseError) as exc:
@@ -1577,7 +1574,29 @@ def main() -> None:
         owner_action_failures: list[dict[str, str]] = []
         owner_actions: dict[str, dict[str, int]] = {}
         if args.execution_mode == "maintenance" and args.apply:
-            owner_actions, owner_action_failures = _run_maintenance_owner_actions(args.artifact_root, timings)
+            protection_check = None
+            if args.capacity_protection_lease_id:
+                # Automatic pressure relief must not run recovery mutations to
+                # turn a damaged ledger or lost input lease into admissibility.
+                with timings.phase("protected_maintenance_preflight"):
+                    admission = plan(
+                        args.artifact_root, target_bytes=int(target_gib * GIB),
+                        minimum_free_bytes=int(policy["minimum_free_gib"] * GIB),
+                        protected_paths=args.protect_path, protected_cache_keys=args.protect_cache_key,
+                        capacity_ledger=args.capacity_ledger,
+                        capacity_protection_lease_id=args.capacity_protection_lease_id,
+                    )
+                    if admission["blocking_reason"] not in {
+                        None, "TARGET_CAPACITY_EXCEEDED", "MINIMUM_FREE_CAPACITY_UNAVAILABLE",
+                    }:
+                        raise ValueError(f"protected maintenance preflight rejected: {admission['blocking_reason']}")
+                protection_check = lambda: _assert_maintenance_input_lease(
+                    args.artifact_root, args.capacity_protection_lease_id,
+                    args.protect_path, args.protect_cache_key,
+                )
+            owner_actions, owner_action_failures = _run_maintenance_owner_actions(
+                args.artifact_root, timings, protection_check=protection_check,
+            )
         with timings.phase("plan"):
             receipt = plan(
                 args.artifact_root,

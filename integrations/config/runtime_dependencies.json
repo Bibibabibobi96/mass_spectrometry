@@ -1264,6 +1264,32 @@
             "paired_accelerator_pulse",
             "single_reflection_flight"
           ]
+        },
+        {
+          "id": "common_contracts_artifact_cache_contract_py",
+          "source_repo_path": "common/contracts/artifact_cache_contract.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_contracts_gui_source_protection_py",
+          "source_repo_path": "common/contracts/gui_source_protection.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight"
+          ]
         }
       ]
     },

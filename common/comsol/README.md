@@ -100,6 +100,17 @@ launcher 启动后立即登记 PID；等待报告和 Compute 期间复用公共�
 判据保持不变。项目调用方若仍持有全程独占父申请，内层继承该预算，不能借分阶段调用缩减父预算；
 要启用阶段间并行，项目运行器须在调用前释放准备阶段申请，并在返回后为自身验证与发布另取预算。
 
+生命周期调用方可传`-CompletionPath`指定不存在的收据路径。入口在资源释放后原子写入
+`comsol_launcher_completion`：逐次实际启动的launcher记录原生退出事实，`host_release`原样携带公共
+调度器的释放结果。launcher退出与全部后代资源释放是两个事实；继承父申请时本层不产生独立释放证明，
+调用方仍须取得父owner的最终收据。缺失、retained、释放异常或未知进程不能成为解除产物保护的依据。
+此收据不代替任务报告、科学成功判据或GUI验收。释放与收据发布失败保留原任务异常；无原异常时失败关闭。
+
+[连接生命周期实测](../../../artifacts/projects/instrument_assembly/runs/20261029_075812__test__comsol__connection-lifecycle-smoke/summary.json)
+已由公共 workflow owner 验证：冻结的现入口执行一次连接测试，launcher 退出 0，非继承 host token
+实际释放，完整 manifest 与容量终态闭合。最终 bootstrap 报告为 `STATUS=PASS`，不从被覆盖的
+中间文本推导版本号或模型计数；此测试未创建／加载模型、Study 或 Compute，不提供物理或 GUI 资格。
+
 可选`-Limits -RunDir -UsagePath`传入已冻结预算及其受管计量位置；普通耗时、进程树工作集、目录体积和
 可用内存预算越限只告警。目录计量沿公共采样间隔，不在每轮进程观测时递归扫描。
 未传`Limits`时仍观察物理危险，但不生成usage文件或虚构工程预算。危险保留量和持续时间只读取

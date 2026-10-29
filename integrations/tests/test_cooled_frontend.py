@@ -238,12 +238,17 @@ class CooledFrontendTests(unittest.TestCase):
                 cooled_runtime.finalize_field_stage(next_run,plan,resumed)
             for name in resumed["missing_files"]:
                 (Path(resumed["build_directory"])/name).write_bytes(b"INERT_COMPLETED_MEMBER"*4)
+            scratch=Path(resumed["scratch_directory"])
+            native_source=scratch/"inert_native_basis.pa0"
+            native_source.write_bytes(b"INERT_SOURCE_NOT_A_SOLVED_PA")
             sealed=cooled_runtime.advance_field_cache(next_run,plan)
             self.assertEqual(sealed["action_required"],"verify")
-            self.assertFalse(Path(sealed["scratch_directory"]).exists())
+            # Sealing the inventory alone does not complete verification.
+            self.assertEqual(native_source.read_bytes(),b"INERT_SOURCE_NOT_A_SOLVED_PA")
             verification=next_run/"inputs/inert_verification.txt"
             verification.write_text("INERT_NO_NATIVE_CLAIM")
             published=cooled_runtime.advance_field_cache(next_run,plan,verification)
+            self.assertFalse(scratch.exists())
             result=cooled_runtime.finalize_field_stage(next_run,plan,published)
             with patch.object(cooled_runtime,"file_sha256",wraps=cooled_runtime.file_sha256) as checked:
                 hit=cooled_runtime.advance_field_cache(next_run,plan)

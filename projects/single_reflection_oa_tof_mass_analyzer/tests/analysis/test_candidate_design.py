@@ -15,6 +15,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 from common.contracts.machine_contracts import load_json, sha256
 from common.contracts import write_run_manifest as terminal_publication
+from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
+from common.contracts.capacity_protection import load_capacity_protection_leases
 from common.contracts.verify_artifact_layout import verify_project
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_run_lifecycle import finalize_candidate_run, start_candidate_run
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import (
@@ -29,10 +31,12 @@ from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import (
     _registered_candidate_template,
     prepare_candidate_run,
+    validate_artifact_capacity,
     validate_workflow,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_formal_promotion import prepare as prepare_promotion
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate as candidate_entry
+from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate_workflow as candidate_workflow
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow import (
     CandidateWorkflowError,
     CandidateWorkflowInterrupted,
@@ -48,6 +52,339 @@ from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.
 
 
 class CandidateDesignTests(unittest.TestCase):
+    def test_candidate_entry_forwards_explicit_pa_handoff_and_rejects_dry_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            pairs = [[root / "transaction1.json", root / "result1.json"], [root / "transaction2.json", root / "result2.json"]]
+            output = root / "retained_owner_result.json"
+            argv = ["run_candidate", "--request", str(root / "request.json"), "--run-id", "20261029_030000__test__cross__handoff-cli",
+                "--particle-source-seed", "7", "--simion-exe", sys.executable, "--pa-handoff-output", str(output)]
+            for pair in pairs:
+                argv.extend(["--pa-producer-handoff", *map(str, pair)])
+            with mock.patch.object(sys, "argv", argv), mock.patch.object(candidate_entry, "prepare_execution", return_value=root / "plan.json"), \
+                    mock.patch.object(candidate_entry, "run_candidate_workflow", return_value=(root / "run", {"candidate_decision": "candidate_rejected"})) as execute:
+                candidate_entry.main()
+                self.assertEqual(execute.call_args.kwargs["pa_handoff_output"], output)
+                self.assertEqual(execute.call_args.kwargs["pa_producer_handoffs"], pairs)
+            with mock.patch.object(sys, "argv", [*argv, "--dry-run"]), mock.patch.object(candidate_entry, "prepare_execution") as prepare:
+                with self.assertRaises(SystemExit) as error:
+                    candidate_entry.main()
+                self.assertEqual(error.exception.code, 2)
+                prepare.assert_not_called()
+            with mock.patch.object(candidate_entry, "prepare_execution", return_value=root / "plan.json"), \
+                    mock.patch.object(candidate_entry, "run_candidate_workflow", return_value=(root, {})) as execute:
+                candidate_entry.execute_request(root / "request.json", "unused", simion_executable=Path(sys.executable),
+                    particle_source_seed=7, pa_handoff_output=output, pa_producer_handoffs=pairs)
+                self.assertEqual(execute.call_args.kwargs["pa_producer_handoffs"], pairs)
+
+    def test_candidate_pa_handoff_output_preserves_actual_owner_bytes_and_failure(self):
+        for failed in (False, True):
+            with self.subTest(failed=failed), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                run = root / "artifacts/projects/fixture/runs/20261029_030001__test__cross__handoff"
+                result_path = root / "owner_result.json"
+                request = {"package": {"artifact_project_root": str(run.parent.parent), "run_id": run.name,
+                    "retention_class": "solver_review", "retention_reason": "original reason"}}
+                raw = b'{ "terminal_published":true,"capacity_finalized":true,"lease_released":true,"exception":"original failure" }\n'
+                original = RuntimeError("owner exit 7")
+                def owner(command, _log):
+                    self.assertEqual(Path(command[command.index("-ResultPath") + 1]), result_path)
+                    sent = load_json(Path(command[command.index("-RequestPath") + 1]))
+                    self.assertEqual(sent["package"]["retention_class"], "solver_review")
+                    self.assertIn("Explicit PA producer handoff", sent["package"]["retention_reason"])
+                    run.mkdir(parents=True)
+                    (run / "summary.json").write_text(json.dumps({"status": "failed" if failed else "success"}), encoding="utf-8")
+                    result_path.write_bytes(raw)
+                    if failed:
+                        raise original
+                with mock.patch.object(candidate_workflow, "_prepare_execution_request", return_value=request), \
+                        mock.patch.object(candidate_workflow, "_run_command", side_effect=owner):
+                    if failed:
+                        with self.assertRaises(CandidateWorkflowError) as error:
+                            run_candidate_workflow(root / "plan", sys.executable, pa_handoff_output=result_path)
+                        self.assertIs(error.exception.__cause__, original)
+                    else:
+                        self.assertEqual(run_candidate_workflow(root / "plan", sys.executable, pa_handoff_output=result_path)[0], run)
+                    self.assertEqual(result_path.read_bytes(), raw)
+                with mock.patch.object(candidate_workflow, "_prepare_execution_request", return_value=request), \
+                        mock.patch.object(candidate_workflow, "_run_command") as launch:
+                    with self.assertRaisesRegex(ValueError, "new path outside"):
+                        run_candidate_workflow(root / "plan", sys.executable, pa_handoff_output=result_path)
+                    with self.assertRaisesRegex(ValueError, "new path outside"):
+                        run_candidate_workflow(root / "plan", sys.executable,
+                            pa_handoff_output=run.parent / "prior_run/transport.json")
+                    launch.assert_not_called()
+
+    def test_candidate_registers_all_shared_handoff_inputs_before_scientific_stages(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, plan_path = self.native_workflow_plan(root, "20261029_030002")
+            request = candidate_workflow._prepare_execution_request(plan_path, sys.executable, None, None)
+            handoff_plan = {"sources": ["explicit fixture selection"]}
+            session_path = root / "session.json"
+            session_path.write_text('{"fixture": "selected session"}', encoding="utf-8")
+            def freeze(run, selected, **kwargs):
+                self.assertIs(selected, handoff_plan)
+                self.assertEqual(kwargs["capacity_session"], {"fixture": "selected session"})
+                self.assertEqual(kwargs["expected_cache_keys"], set(request["capacity"]["protected_cache_keys"]))
+                folder = run / "inputs/pa_producer_handoffs"
+                folder.mkdir()
+                index, proof = folder / "handoffs.json", folder / "original_result.json"
+                index.write_text('{"fixture": "index"}', encoding="utf-8")
+                proof.write_text('{"fixture": "original result"}', encoding="utf-8")
+                return {**terminal_publication.file_record(index), "frozen_input_records": [
+                    terminal_publication.file_record(proof), terminal_publication.file_record(index)]}
+            def stop(stage, plan, _simion):
+                self.assertEqual(stage["stage_id"], "static_inputs")
+                config = load_json(Path(plan["run_root"]) / "run_config.json")
+                self.assertEqual(plan["producer_handoff_path"], config["pa_producer_handoffs"]["path"])
+                for name in ("pa_producer_handoff_0", "pa_producer_handoff_1"):
+                    self.assertEqual(config["input_sha256"][name], sha256(Path(config["inputs"][name])))
+                raise RuntimeError("input registration checked before science")
+            with mock.patch.object(candidate_workflow, "freeze_pa_producer_handoffs", side_effect=freeze) as shared:
+                with self.assertRaisesRegex(CandidateWorkflowError, "input registration checked"):
+                    candidate_workflow._execute_candidate_stages(plan_path, sys.executable, stop, execution_context={
+                        "component_pa_plan": request["payload"]["component_pa_plan"], "pa_producer_handoffs": handoff_plan,
+                        "capacity_session_path": str(session_path)})
+                shared.assert_called_once()
+            manifest = load_json(Path(load_json(plan_path)["run_root"]) / "run_manifest.json")
+            self.assertIn("pa_producer_handoff_0", manifest["inputs"])
+            self.assertIn("pa_producer_handoff_1", manifest["inputs"])
+
+    @staticmethod
+    def managed_completion_fixture(exit_code=0):
+        return {"schema_version": 1, "role": "repository_managed_python_completion",
+            "ownership_confirmed": True, "worker_exit_confirmed": True, "launcher_exit_confirmed": True,
+            "stdout_drained": True, "stderr_drained": True, "exit_code": exit_code,
+            "worker_process_id": 123, "worker_started_at_utc_ticks": 456}
+
+    def test_stage_completion_preserves_actual_failure_and_never_fills_unknown_facts(self):
+        for kind in ("closed", "missing", "wrong_context", "malformed", "unknown_worker", "wrong_worker_identity"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                path = root / "build.json"
+                plan = {"run_id": "fixture", "context_sha256": "a" * 64,
+                        "writer_completion": {"operations": [], "resource_releases": []}}
+                original = RuntimeError("original native exit 7")
+                receipt = {"schema_version": 1, "role": "oatof_component_build_completion", "run_id": "fixture",
+                    "context_sha256": ("b" if kind == "wrong_context" else "a") * 64,
+                    "operations": [{"operation_id": "native", "observation": {"exit_confirmed": True, "returncode": 7},
+                                    "managed_process_completion": self.managed_completion_fixture(1)}],
+                    "host_release": {"inherited": False, "token": "fixture-token", "result": {"status": "released", "token": "fixture-token"}, "error": None}}
+                if kind == "unknown_worker":
+                    receipt["operations"][0]["managed_process_completion"]["worker_exit_confirmed"] = False
+                if kind == "wrong_worker_identity":
+                    receipt["operations"][0]["managed_process_completion"]["worker_started_at_utc_ticks"] = None
+                if kind != "missing":
+                    path.write_text("{" if kind == "malformed" else json.dumps(receipt), encoding="utf-8")
+                with mock.patch.object(candidate_workflow, "_run_command", side_effect=original):
+                    with self.assertRaises(RuntimeError) as caught:
+                        candidate_workflow._run_managed_stage_command(["fixture"], root / "log.txt", plan, path,
+                                                                      "oatof_component_build_completion")
+                self.assertIs(caught.exception, original)
+                writer = plan["writer_completion"]
+                self.assertEqual(len(writer["operations"]), 1)
+                if kind == "closed":
+                    self.assertEqual(writer["operations"][0]["observation"], {"exit_confirmed": True, "returncode": 7})
+                    self.assertEqual(writer["resource_releases"][0]["completion_receipt"], receipt)
+                else:
+                    self.assertFalse(writer["operations"][0]["observation"]["exit_confirmed"])
+                    self.assertIsNone(writer["operations"][0]["observation"]["returncode"])
+                    self.assertEqual(writer["resource_releases"], [])
+                    if kind != "missing":
+                        self.assertIn("Native completion validation also failed", original.__notes__[0])
+
+    def test_stage_completion_does_not_accept_native_zero_after_actual_worker_failure(self):
+        for role in ("oatof_component_build_completion", "oatof_candidate_flight_process_result"):
+            with self.subTest(role=role), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                path = root / "completion.json"
+                managed = self.managed_completion_fixture(1)
+                receipt = {"schema_version": 1, "role": role, "run_id": "fixture", "context_sha256": "a" * 64,
+                    "host_release": {"inherited": False, "token": "fixture-token",
+                        "result": {"status": "released", "token": "fixture-token"}, "error": None}}
+                if role == "oatof_component_build_completion":
+                    receipt["operations"] = [{"operation_id": "native", "observation": {
+                        "exit_confirmed": True, "returncode": 0}, "managed_process_completion": managed}]
+                else:
+                    receipt.update(native_exit_confirmed=True, native_returncode=0, managed_process_completion=managed)
+                path.write_text(json.dumps(receipt), encoding="utf-8")
+                plan = {"run_id": "fixture", "context_sha256": "a" * 64,
+                    "writer_completion": {"operations": [], "resource_releases": []}}
+                with mock.patch.object(candidate_workflow, "_run_command"):
+                    with self.assertRaisesRegex(RuntimeError, "managed writer failed \\(1\\)"):
+                        candidate_workflow._run_managed_stage_command([], root / "log", plan, path, role)
+                self.assertEqual(plan["writer_completion"]["operations"][0]["observation"],
+                                 {"exit_confirmed": True, "returncode": 0})
+                self.assertEqual(plan["writer_completion"]["resource_releases"][0]["completion_receipt"], receipt)
+
+    def test_managed_request_uses_frozen_disk_authorities_before_creating_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _, plan_path = self.native_workflow_plan(Path(directory), "20261028_130000")
+            request = candidate_workflow._prepare_execution_request(plan_path, sys.executable, None, None)
+            plan = load_json(plan_path)
+            self.assertFalse(Path(plan["run_root"]).exists())
+            expected = candidate_workflow.sum_component_commitments([request["payload"]["component_pa_plan"]])
+            expected += sum(plan["artifact_capacity"][key] for key in ("comsol_bytes", "cad_bytes", "evidence_bytes"))
+            self.assertEqual(request["capacity"]["committed_new_bytes"], expected)
+            self.assertEqual(request["package"]["run_id"], plan["run_id"])
+            self.assertEqual(request["prepared"]["import_root"], plan["execution_source_closure"]["code_root"])
+            runtime = Path(plan["candidate_inputs"]["candidate_runtime.json"]["path"])
+            self.assertIn(terminal_publication.file_record(runtime), request["capacity"]["commitment_inputs"])
+            pairs = [(Path(directory) / "transaction.json", Path(directory) / "owner_result.json")]
+            handoff = {"source_records": [terminal_publication.file_record(plan_path)],
+                       "protected_paths": [str(Path(directory) / "prior-run")], "sources": []}
+            with mock.patch.object(candidate_workflow, "plan_pa_producer_handoffs", return_value=handoff) as preflight:
+                selected = candidate_workflow._prepare_execution_request(plan_path, sys.executable, None, None, pairs)
+                self.assertEqual(preflight.call_args.args[0], pairs)
+                self.assertEqual(preflight.call_args.kwargs["expected_cache_keys"], set(request["capacity"]["protected_cache_keys"]))
+                self.assertEqual(preflight.call_args.kwargs["artifact_root"], Path(plan["run_root"]).parents[3])
+                self.assertEqual(selected["payload"]["pa_producer_handoffs"], handoff)
+                self.assertIn(handoff["protected_paths"][0], selected["capacity"]["protected_paths"])
+                self.assertEqual(selected["capacity"]["committed_new_bytes"], expected)
+                self.assertEqual(selected["capacity"]["commitment_inputs"][-1], handoff["source_records"][0])
+            with mock.patch.object(candidate_workflow, "plan_pa_producer_handoffs", side_effect=ValueError("unknown component")):
+                with self.assertRaisesRegex(ValueError, "unknown component"):
+                    candidate_workflow._prepare_execution_request(plan_path, sys.executable, None, None, pairs)
+            self.assertFalse(Path(plan["run_root"]).exists())
+            document = load_json(runtime)
+            document["artifact_capacity"]["comsol_bytes"] *= 2
+            runtime.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "planned candidate input changed before admission"):
+                candidate_workflow._prepare_execution_request(plan_path, sys.executable, None, None)
+            self.assertFalse(Path(plan["run_root"]).exists())
+
+    def test_real_public_owner_runs_prepared_candidate_in_one_admitted_root(self):
+        # The actual project callback and public owner run; only commercial
+        # scientific stages are replaced by an explicit software executor.
+        for failed in (False, True):
+            with self.subTest(failed=failed), tempfile.TemporaryDirectory(prefix="candidate-owner-") as directory:
+                root = Path(directory)
+                artifact_project, plan_path = self.native_workflow_plan(root, "20261028_130100")
+                artifacts = artifact_project.parent.parent
+                initialize_capacity_ledger(artifacts, objects=[])
+                request = candidate_workflow._prepare_execution_request(plan_path, sys.executable, None, None)
+                # This explicit software callback has a separate import root;
+                # copy the common handshake bootstrap from the frozen closure.
+                (root / "common/contracts").mkdir(parents=True)
+                for relative in ("common/host_resource_python.py", "common/contracts/recorded_file_removal.py", "common/contracts/file_identity.py"):
+                    shutil.copyfile(Path(request["prepared"]["import_root"]) / relative, root / relative)
+                callback = root / "candidate_fixture.py"
+                callback.write_text("import sys\nfrom pathlib import Path\nsys.path.insert(0," + repr(request["prepared"]["import_root"]) + ")\n" + r'''
+from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate_workflow as workflow
+original = workflow._execute_candidate_stages
+def fixture(stage, plan, _simion):
+    root = Path(plan['run_root'])
+    if FAIL and stage['stage_id'] == 'simion_candidate':
+        raise RuntimeError('deliberate software stage failure')
+    if stage['stage_id'] == 'static_inputs':
+        particle = Path(stage['pending_output']); particle.write_text('fixture particle\n')
+        return {'particle_table': str(particle)}
+    output = root/'results'/('fixture_' + stage['stage_id'] + '.txt')
+    output.write_text('software fixture; no solver result\n')
+    return {'model' if stage['stage_id']=='comsol_candidate' else 'report': str(output)}
+def injected(*args, **kwargs):
+    kwargs['stage_executor'] = fixture
+    return original(*args, **kwargs)
+def execute_prepared_run(*args):
+    workflow._execute_candidate_stages = injected
+    workflow.execute_prepared_run(*args)
+'''.replace("FAIL", repr(failed)), encoding="utf-8")
+                request["prepared"] = {"module": "candidate_fixture", "function": "execute_prepared_run",
+                    "import_root": str(root), "entrypoint": terminal_publication.file_record(callback)}
+                request_path, result_path = root / "request.json", root / "result.json"
+                request_path.write_text(json.dumps(request), encoding="utf-8")
+                driver = root / "driver.ps1"
+                driver.write_text(f". '{REPO_ROOT / 'common/contracts/run_artifact_workflow.ps1'}'\n"
+                    "function Invoke-ArtifactCapacityGate { return @{satisfied=$true;fixture_admission=$true} }\n"
+                    f"$null=Invoke-RunArtifactWorkflow -RequestPath '{request_path}' -ResultPath '{result_path}'\n", encoding="utf-8")
+                process = subprocess.run(["pwsh", "-NoProfile", "-File", str(driver)], cwd=REPO_ROOT,
+                    capture_output=True, text=True, encoding="utf-8", check=False, timeout=300)
+                diagnostics = "\n".join(path.read_text(encoding="utf-8", errors="replace")[-4000:]
+                                        for path in artifacts.rglob("prepared_stderr.log"))
+                self.assertEqual(process.returncode, 0, process.stdout + process.stderr + diagnostics)
+                result = load_json(result_path)
+                self.assertEqual(result["status"], "failed" if failed else "success", result)
+                self.assertTrue(result["terminal_published"] and result["capacity_finalized"] and result["lease_released"])
+                run = Path(load_json(plan_path)["run_root"])
+                config = load_json(run / "run_config.json")
+                self.assertEqual(config["schema_version"], 2)
+                self.assertEqual(config["run_id"], request["package"]["run_id"])
+                self.assertTrue(config["capacity_ledger_lifecycle"]["enabled"])
+                self.assertEqual(config["artifact_retention"]["class"], "solver_review")
+                self.assertEqual(load_json(run / "summary.json")["status"], result["status"])
+                objects = load_capacity_ledger(artifacts)["objects"]
+                self.assertEqual(len(objects), 1)
+                self.assertNotEqual(objects[0]["status"], "writing")
+                self.assertFalse(load_capacity_protection_leases(artifacts)["protected_paths"])
+                completion = load_json(run / "results/execution_completion.json")
+                self.assertEqual(completion["writer_completion"], {"operations": [], "resource_releases": []})
+                if failed:
+                    self.assertIn("deliberate software stage failure", completion["exception"]["message"])
+
+    def test_frozen_sources_import_managed_build_and_lifecycle_without_live_repo(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            closure = freeze_candidate_source_closure(root / "code", root / "artifacts")
+            result = subprocess.run([
+                sys.executable, "-B", "-c",
+                "from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate_workflow; "
+                "from projects.single_reflection_oa_tof_mass_analyzer.analysis import simion_component_pa_plan; "
+                "from common.contracts import reconcile_artifact_capacity, verify_artifact_layout, capacity_ledger, solver_review_retirement; "
+                "from pathlib import Path; "
+                "solver_review_retirement._assert_runtime_retirement_unprotected(Path.cwd()/'empty-artifacts', Path.cwd()/'empty-artifacts/run'); "
+                "print('FROZEN_IMPORT_PASS')",
+            ], cwd=closure["code_root"], capture_output=True, text=True, check=False, timeout=60,
+                env={key: value for key, value in os.environ.items() if key != "PYTHONPATH"})
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("FROZEN_IMPORT_PASS", result.stdout)
+
+    def test_artifact_capacity_requires_explicit_positive_bytes_and_basis(self):
+        runtime = load_json(PROJECT_ROOT / "config" / "candidate_runtime.json")
+        capacity = validate_artifact_capacity(runtime)
+        self.assertEqual(capacity["comsol_bytes"], 4 * 1024**3)
+        for missing in ("artifact_capacity", "comsol_bytes", "cad_bytes", "evidence_bytes", "basis"):
+            invalid = json.loads(json.dumps(runtime))
+            if missing == "artifact_capacity":
+                del invalid[missing]
+            else:
+                del invalid["artifact_capacity"][missing]
+            with self.subTest(missing=missing), self.assertRaises(ValueError):
+                validate_artifact_capacity(invalid)
+        for value in (0, -1, True, 1.5, "4294967296"):
+            invalid = json.loads(json.dumps(runtime))
+            invalid["artifact_capacity"]["comsol_bytes"] = value
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                validate_artifact_capacity(invalid)
+
+    def test_source_closure_explicit_workflow_extras_share_freezing_and_identity(self):
+        extra = "common/simion/batch_continuation.py"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            closure = freeze_candidate_source_closure(
+                root / "code", root / "artifacts",
+                extra_source_ids=(extra, extra, RELATIVE_PATHS[0]),
+            )
+            records = {item["source_id"]: item for item in closure["sources"]}
+            self.assertEqual(len(records), len(RELATIVE_PATHS) + 1)
+            self.assertEqual(records[extra]["source_sha256"], sha256(REPO_ROOT / extra))
+            frozen = Path(frozen_source_path(closure, extra))
+            self.assertEqual(frozen.read_bytes(), (REPO_ROOT / extra).read_bytes())
+            verify_candidate_source_closure(closure)
+            frozen.write_bytes(frozen.read_bytes() + b"\n# modified fixture\n")
+            with self.assertRaisesRegex(ValueError, "frozen candidate source changed"):
+                verify_candidate_source_closure(closure)
+
+    def test_source_closure_rejects_invalid_extras_before_copy(self):
+        for extra in ("../outside.py", str(Path(__file__).resolve()), "absent_source.py"):
+            with self.subTest(extra=extra), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                with self.assertRaises(ValueError):
+                    freeze_candidate_source_closure(
+                        root / "code", root / "artifacts", extra_source_ids=(extra,),
+                    )
+                self.assertFalse((root / "code").exists())
+
     def test_frozen_path_resolution_does_not_rehash_or_scan(self):
         from projects.single_reflection_oa_tof_mass_analyzer.analysis import candidate_source_closure as module
         closure = {"schema_version": 2, "role": module.ROLE,
@@ -633,6 +970,7 @@ class CandidateDesignTests(unittest.TestCase):
             self.assertEqual(
                 set(plan["candidate_inputs"]),
                 {"candidate_baseline.json", "candidate_resolved_geometry.json", "candidate_solver_numerics.json", "candidate_diff.json",
+                 "candidate_runtime.json",
                  "candidate_proposal.json", "design_request.json",
                  "candidate_simion_resolved_lua", "candidate_simion_program", "candidate_simion_fly2"},
             )
@@ -1105,7 +1443,7 @@ class CandidateDesignTests(unittest.TestCase):
             self.assertEqual(
                 set(manifest["inputs"]),
                 {"candidate_baseline.json", "candidate_resolved_geometry.json", "candidate_solver_numerics.json", "candidate_diff.json",
-                 "candidate_proposal.json", "design_request.json",
+                 "candidate_proposal.json", "design_request.json", "candidate_runtime.json",
                  "candidate_simion_resolved_lua", "candidate_simion_program", "candidate_simion_fly2"},
             )
             self.assertEqual(verify_project(artifact_root), (1, 0))
@@ -1524,6 +1862,10 @@ class CandidateDesignTests(unittest.TestCase):
             )
             run_root = start_candidate_run(Path(plan["planning_root"]) / "candidate_workflow_plan.json")
             runtime_plan = load_json(run_root / "candidate_workflow_plan.json")
+            runtime_plan.update(capacity_session_path=str(run_root / "logs/capacity_session.json"),
+                                component_plan_path=str(run_root / "inputs/component_pa_plan.json"),
+                                producer_handoff_path=str(run_root / "inputs/pa_producer_handoffs/handoffs.json"),
+                                context_sha256="a" * 64)
             stage = next(item for item in runtime_plan["stages"] if item["stage_id"] == "simion_candidate")
             commands = []
 
@@ -1543,6 +1885,11 @@ class CandidateDesignTests(unittest.TestCase):
             frozen_builder.relative_to(run_root / "inputs" / "code")
             root_argument = command.index("-ArtifactProjectRoot") + 1
             self.assertEqual(Path(command[root_argument]).resolve(), artifact_root.resolve())
+            for name, key in (("CapacitySessionPath", "capacity_session_path"),
+                              ("ComponentPlanPath", "component_plan_path"), ("ContextSha256", "context_sha256"),
+                              ("ProducerHandoffPath", "producer_handoff_path")):
+                self.assertEqual(command[command.index("-" + name) + 1], runtime_plan[key])
+            self.assertEqual(command[command.index("-ParticleCount") + 1], "100")
 
     def test_shared_builder_negative_contracts_fail_before_output_creation(self):
         builder = PROJECT_ROOT / "simion" / "workbench" / "build_formal_delivery.ps1"
@@ -1558,14 +1905,27 @@ class CandidateDesignTests(unittest.TestCase):
             nonformal_template = root_path / "candidate_template.iob"
             nonformal_template.write_bytes(b"template")
             cases = [
-                (shared + ["-TemplateIob", str(nonformal_template)], "ParticleSeed is required"),
-                (shared + ["-ParticleSeed", "7"], "Candidate build requires an explicit frozen non-Formal TemplateIob"),
-                (shared + ["-ParticleSeed", "7", "-TemplateIob", str(root_path / "formal_template.iob")], "Candidate TemplateIob must not reference a Formal path"),
+                (shared + ["-TemplateIob", str(nonformal_template)], "ParticleSeed is required", True),
+                (shared + ["-ParticleSeed", "7"], "Candidate build requires an explicit frozen non-Formal TemplateIob", True),
+                (shared + ["-ParticleSeed", "7", "-TemplateIob", str(root_path / "formal_template.iob")], "Candidate TemplateIob must not reference a Formal path", True),
+                (shared + ["-ParticleSeed", "7", "-TemplateIob", str(nonformal_template)],
+                 "PA construction requires the managed Candidate workflow and its existing capacity session", False),
             ]
-            for ordinal, (arguments, expected) in enumerate(cases):
+            for ordinal, (arguments, expected, deferred) in enumerate(cases):
                 output = root_path / f"output_{ordinal}"
+                artifact_project = root_path / "artifacts/projects/single_reflection_oa_tof_mass_analyzer"
+                run_id = f"20261028_14000{ordinal}__test__simion__negative-builder"
+                completion = artifact_project / "runs" / run_id / "logs/build_completion.json"
+                completion.parent.mkdir(parents=True)
+                managed = ["-ArtifactProjectRoot", str(artifact_project), "-RunId", run_id,
+                    "-CapacitySessionPath", str(root_path / "absent_session.json"),
+                    "-ComponentPlanPath", str(root_path / "absent_plan.json"),
+                    "-CompletionPath", str(completion), "-ContextSha256", "a" * 64,
+                    "-ParticleCount", "100"]
+                if deferred:
+                    managed.append("-DeferRunFinalization")
                 result = subprocess.run(
-                    ["pwsh", "-NoProfile", "-File", str(builder), "-OutputDir", str(output), *arguments],
+                    ["pwsh", "-NoProfile", "-File", str(builder), "-OutputDir", str(output), *managed, *arguments],
                     cwd=REPO_ROOT, capture_output=True, timeout=20,
                 )
                 self.assertNotEqual(result.returncode, 0)

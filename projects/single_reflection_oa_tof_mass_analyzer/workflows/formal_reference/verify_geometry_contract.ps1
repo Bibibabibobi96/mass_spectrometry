@@ -235,7 +235,8 @@ Assert-Contains $deliveryBuilder '[string]$CandidateBaselinePath' 'SIMION candid
 Assert-Contains $deliveryBuilder '[string]$CandidateTextDir' 'SIMION candidate generated-text option'
 Assert-Contains $deliveryBuilder 'if (-not $candidateMode)' 'SIMION formal synchronization isolation'
 Assert-Contains $deliveryBuilder '[switch]$DeferRunFinalization' 'SIMION integrated-run finalization deferral'
-Assert-Contains $deliveryBuilder 'run_finalization_deferred=[bool]$DeferRunFinalization' 'SIMION stage-only summary identity'
+Assert-Contains $deliveryBuilder 'if (-not $candidateMode -or -not $DeferRunFinalization)' 'SIMION managed stage-only admission'
+Assert-Contains $deliveryBuilder 'run_finalization_deferred=$true' 'SIMION stage-only summary identity'
 # COMSOL detector source authority: static wiring only, not native geometry evidence.
 Assert-Contains $comsol "p.set('detector_x', sprintf('%.17g[mm]', contract.coordinate_convention.detector_x)" 'COMSOL direct detector x parameter'
 Assert-Contains $comsol "p.set('detector_z', sprintf('%.17g[mm]', geometryMm.detector_z)" 'COMSOL direct detector z parameter'

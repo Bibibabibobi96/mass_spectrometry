@@ -23,7 +23,7 @@
   },
   "fixed_contract": {
     "particle_count": 1000,
-    "particle_source_seed": 20260713,
+    "particle_source_seed": 20260729,
     "particle_table_sha256": "D300469758FED94E2771C1C9CA36AFF38128F42163523F3611D65990D5587179",
     "trajectory_quality": 8,
     "shared_shield_rule": "The field-free and reflectron shields use the same geometry_mm.flight_tube_r and geometry_mm.flight_tube_wall values.",

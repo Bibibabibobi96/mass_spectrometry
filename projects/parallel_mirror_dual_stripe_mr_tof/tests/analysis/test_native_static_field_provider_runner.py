@@ -48,6 +48,9 @@ $ErrorActionPreference='Stop'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
+foreach($fn in @($ast.EndBlock.Statements|Where-Object {$_-is[Management.Automation.Language.FunctionDefinitionAst]})){
+ . ([scriptblock]::Create($fn.Extent.Text))
+}
 $blocks=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.ForEachStatementAst]-and $n.Variable.Extent.Text-eq'$occupancyName'-and $n.Condition.Extent.Text-eq'$occupancyNames'-and $n.Extent.Text.Contains("`$stage=`$occupancyName+'_gem2pa'")},$true))
 if($blocks.Count-ne1){throw 'Collision-only block not unique'}
 $names=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.AssignmentStatementAst]-and $n.Left.Extent.Text-eq'$occupancyNames'},$true))
@@ -66,8 +69,8 @@ $RunDirectory=$Root;$pkg=@{run_dir=$Root};$runId='pure-collision';$exe='mock-sim
 $levelStatus=[ordered]@{};$timings=[ordered]@{};$script:calls=@();$script:exits=0
 foreach($name in $expectedNames){$null=New-Item -ItemType Directory -Path (Join-Path $Root ('simion/'+$name))}
 function Get-HostResourceBudget {param($Role,$Stage) if($Role-ne'SIMION'-or$Stage-ne'prepare'){throw 'Wrong host stage'};return @{memory_bytes=16}}
-function Enter-HostResourceStage {param($Role,$Stage,$Budget,$RunId) return @{}}
-function Exit-HostResourceStage {param($Lease) $script:exits++}
+function Enter-HostResourceStage {param($Role,$Stage,$Budget,$RunId) return @{inherited=$false;token='fixture'}}
+function Exit-HostResourceStage {param($Lease,[switch]$PassThru) $script:exits++;if($PassThru){@{status='released';token=$Lease.token}}}
 function Update-HostResourceStage {throw 'Collision must not Refine'}
 function Copy-Item {throw 'Collision must not copy any PA'}
 function Write-RunJson {throw "Unexpected budget transport materialization"}
@@ -114,6 +117,9 @@ $ErrorActionPreference='Stop'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
+foreach($fn in @($ast.EndBlock.Statements|Where-Object {$_-is[Management.Automation.Language.FunctionDefinitionAst]})){
+ . ([scriptblock]::Create($fn.Extent.Text))
+}
 $mode=@($ast.FindAll({param($node) $node-is[Management.Automation.Language.AssignmentStatementAst]-and $node.Left.Extent.Text-eq'$isComposition'},$true))
 $choice=@($ast.FindAll({param($node) $node-is[Management.Automation.Language.IfStatementAst]-and $node.Extent.Text.Contains("$"+'stage='+"'compose_static_fields'")},$true))
 if($mode.Count-ne1-or$choice.Count-ne1){throw 'Composition assignment/branch not unique'}
@@ -126,9 +132,9 @@ $lease=$null;$timings=[ordered]@{};$levelStatus=[ordered]@{};$parentDone=$false;
 $script:calls=@();$script:stages=@();$script:exits=0
 foreach($name in @('inputs','results','logs')){$null=New-Item -ItemType Directory -Path (Join-Path $Root $name)}
 function Get-HostResourceBudget {param($Role,$Stage) $script:stages+=@{action='budget';role=$Role;stage=$Stage};return @{}}
-function Enter-HostResourceStage {param($Role,$Stage,$Budget,$RunId) $script:stages+=@{action='enter';role=$Role;stage=$Stage};return @{stage=$Stage}}
+function Enter-HostResourceStage {param($Role,$Stage,$Budget,$RunId) $script:stages+=@{action='enter';role=$Role;stage=$Stage};return @{stage=$Stage;inherited=$false;token='fixture'}}
 function Update-HostResourceStage {throw 'Composition must not switch to Refine/crop'}
-function Exit-HostResourceStage {param($Lease) $script:exits++}
+function Exit-HostResourceStage {param($Lease,[switch]$PassThru) $script:exits++;if($PassThru){@{status='released';token=$Lease.token}}}
 function Write-RunJson {throw "Unexpected budget transport materialization"}
 function Invoke-ResourceBudgetedProcess {
  param($Limits,$RunDir,$UsagePath,$FilePath,$WorkingDirectory,$ArgumentList,$RedirectStandardOutput,$RedirectStandardError)
@@ -258,6 +264,9 @@ $ErrorActionPreference='Stop'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
+foreach($fn in @($ast.EndBlock.Statements|Where-Object {$_-is[Management.Automation.Language.FunctionDefinitionAst]})){
+ . ([scriptblock]::Create($fn.Extent.Text))
+}
 $loop=@($ast.FindAll({param($node) $node-is[Management.Automation.Language.ForEachStatementAst]-and $node.Extent.Text.Contains('$level=$plan.levels[$label]')},$true))
 if($loop.Count-ne1){throw 'Execution loop not unique.'}
 $plan=Get-Content -LiteralPath (Join-Path $Root 'plan.json') -Raw|ConvertFrom-Json -AsHashtable
@@ -268,9 +277,9 @@ $timings=[ordered]@{};$levelStatus=[ordered]@{};$script:calls=@()
 foreach($name in @('inputs','logs','results')){$null=New-Item -ItemType Directory -Path (Join-Path $Root $name)}
 foreach($label in $plan.execution_order){$null=New-Item -ItemType Directory -Path (Join-Path $Root ('simion/'+$label))}
 function Get-HostResourceBudget {param($Role,$Stage) return @{}}
-function Enter-HostResourceStage {param($Role,$Stage,$Budget,$RunId) return @{stage=$Stage}}
-function Update-HostResourceStage {param($Lease,$Stage,$Budget,$RetainedMemoryBytes) return @{stage=$Stage}}
-function Exit-HostResourceStage {param($Lease)}
+function Enter-HostResourceStage {param($Role,$Stage,$Budget,$RunId) return @{stage=$Stage;inherited=$false;token='fixture'}}
+function Update-HostResourceStage {param($Lease,$Stage,$Budget,$RetainedMemoryBytes) return @{stage=$Stage;inherited=$Lease.inherited;token=$Lease.token}}
+function Exit-HostResourceStage {param($Lease,[switch]$PassThru) if($PassThru){@{status='released';token=$Lease.token}}}
 function Write-RunJson {param($Path,$Value,$Depth) $Value|ConvertTo-Json -Depth $Depth|Set-Content -LiteralPath $Path}
 function Invoke-ResourceBudgetedProcess {
  param($Limits,$RunDir,$UsagePath,$FilePath,$WorkingDirectory,$ArgumentList,$RedirectStandardOutput,$RedirectStandardError)

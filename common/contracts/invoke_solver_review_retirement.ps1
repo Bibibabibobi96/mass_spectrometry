@@ -97,17 +97,18 @@ try {
   & $python @arguments --apply
   if ($LASTEXITCODE -ne 0) { throw "solver_review retirement failed with exit code $LASTEXITCODE" }
   try {
-    if ($SelectedHeavyPaths.Count -gt 0) {
-      Write-Warning 'Partial payload retirement complete; public capacity reseal pending. Use seal-stopped-payload with the original owner and retention reason.'
-    } else {
     $runConfig = Join-Path $TargetRun 'run_config.json'
     $config = Get-Content -LiteralPath $runConfig -Raw | ConvertFrom-Json -AsHashtable
     if ($config.ContainsKey('capacity_ledger_lifecycle') -and
         $config['capacity_ledger_lifecycle']['enabled'] -eq $true -and -not $RuntimeCheckpoint) {
       # Keep the retirement receipt as the wrapper's sole JSON stdout document.
-      $null = & $python -m common.contracts.run_capacity_lifecycle --action finalize-ready --artifact-root $ArtifactRoot --run-config $runConfig
-      if ($LASTEXITCODE -ne 0) { throw "finalize-ready failed with exit code $LASTEXITCODE" }
-    }
+      if ($SelectedHeavyPaths.Count -gt 0) {
+        $null = & $python -m common.contracts.run_capacity_lifecycle --action reseal-retired-payload `
+          --artifact-root $ArtifactRoot --run-config $runConfig --owner ([string]$config.project) --confirm-writing-stopped
+      } else {
+        $null = & $python -m common.contracts.run_capacity_lifecycle --action finalize-ready --artifact-root $ArtifactRoot --run-config $runConfig
+      }
+      if ($LASTEXITCODE -ne 0) { throw "capacity lifecycle closure failed with exit code $LASTEXITCODE" }
     }
   } catch {
     throw "Payload retirement completed, but capacity ledger finalization is pending; recover with run_capacity_lifecycle, do not repeat deletion. $($_.Exception.Message)"

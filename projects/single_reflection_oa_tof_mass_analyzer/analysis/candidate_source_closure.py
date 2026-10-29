@@ -17,6 +17,51 @@ ROLE = "oa_tof_candidate_execution_source_closure"
 # This is intentionally an auditable allowlist, not dependency discovery.
 # Keep paths repository-relative and use forward slashes in the machine record.
 RELATIVE_PATHS = (
+    "common/host_resource_python.py",
+    "common/host_resource_python.ps1",
+    "common/contracts/run_artifact_support.ps1",
+    "common/contracts/artifact_identity_archive.py",
+    "common/contracts/artifact_cache_contract.py",
+    "common/contracts/gui_source_protection.py",
+    "common/contracts/artifact_retention.py",
+    "common/contracts/artifact_retention.json",
+    "common/contracts/artifact_capacity_policy.json",
+    "common/contracts/capacity_ledger.py",
+    "common/contracts/capacity_protection.py",
+    "common/contracts/execution_aliases.py",
+    "common/contracts/expected_values.py",
+    "common/contracts/frozen_inputs.py",
+    "common/contracts/historical_source_scratch_retirement.py",
+    "common/contracts/legacy_owner_disposition.py",
+    "common/contracts/particle_physics.py",
+    "common/contracts/reconcile_artifact_capacity.py",
+    "common/contracts/recorded_file_removal.py",
+    "common/contracts/run_capacity_lifecycle.py",
+    "common/contracts/solver_review_retirement.py",
+    "common/contracts/stage_reuse.py",
+    "common/contracts/validate_design_request.py",
+    "common/contracts/verify_artifact_layout.py",
+    "common/contracts/verify_run_manifest.py",
+    "common/contracts/write_run_manifest.py",
+    "common/contracts/schemas/design_variable_catalog.schema.json",
+    "common/simion/__init__.py",
+    "common/simion/cache_generation.py",
+    "common/simion/immutable_pa_parity.py",
+    "common/simion/native_completion.py",
+    "common/simion/pa_family_cache.py",
+    "common/simion/standalone_pa_response_set.py",
+    "common/simion/short_pa_path_support.ps1",
+    "common/simion/native_fast_adjust_runtime_support.ps1",
+    "common/simion/assemble_native_fast_adjust_family.lua",
+    "common/simion/export_standalone_pa.lua",
+    "common/simion/voltageize_pa0.lua",
+    "projects/single_reflection_oa_tof_mass_analyzer/analysis/candidate_source_closure.py",
+    "projects/single_reflection_oa_tof_mass_analyzer/analysis/compile_candidate_design.py",
+    "projects/single_reflection_oa_tof_mass_analyzer/analysis/oatof_oaaccelerator_coupling.py",
+    "projects/single_reflection_oa_tof_mass_analyzer/analysis/reflectron_dual_stage_solver.py",
+    "projects/single_reflection_oa_tof_mass_analyzer/analysis/simion_component_pa_plan.py",
+    "projects/single_reflection_oa_tof_mass_analyzer/simion/reflectron/refine_single_pa.lua",
+    "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/verify_component_pa.lua",
     "common/simion/process_observation.py",
     "projects/rf_multipole_ion_optics/core/grounded_shield.py",
     "common/simion/aperture.py",
@@ -100,6 +145,7 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_formal_delivery.ps1",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_formal_iob.lua",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/run_n100_transport.ps1",
+    "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/run_candidate_flight.ps1",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/oatof_detector_ground.gem",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/oatof_flight_tube_ground.gem",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/verify_iob_runtime_contract.lua",
@@ -145,6 +191,8 @@ def freeze_candidate_source_closure(
     code_root: Path,
     artifact_root: Path,
     python_executable: Path | None = None,
+    *,
+    extra_source_ids: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Copy the declared closure and return its immutable execution record."""
     code_root = code_root.resolve()
@@ -157,9 +205,20 @@ def freeze_candidate_source_closure(
         consumer_project_id=PROJECT_ROOT.name, required_variant="two_zone",
     )
 
+    if not isinstance(extra_source_ids, tuple) or any(
+        not isinstance(source_id, str) or not source_id for source_id in extra_source_ids
+    ):
+        raise ValueError("extra candidate source ids must be a tuple of relative paths")
+    declarations = list(RELATIVE_PATHS)
+    for source_id in extra_source_ids:
+        normalized = source_id.replace("\\", "/")
+        _source_path(normalized)
+        if normalized not in declarations:
+            declarations.append(normalized)
+
     records: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for declared in RELATIVE_PATHS:
+    for declared in declarations:
         source_id = declared.replace("\\", "/")
         if source_id in seen:
             raise ValueError(f"duplicate candidate source id: {source_id}")

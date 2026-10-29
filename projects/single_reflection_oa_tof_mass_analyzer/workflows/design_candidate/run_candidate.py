@@ -174,6 +174,8 @@ def execute_request(
     stage_executor: Any = None,
     campaign_table: Path | None = None,
     campaign_selection: Path | None = None,
+    pa_handoff_output: Path | None = None,
+    pa_producer_handoffs: list[tuple[Path, Path]] | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     executable = simion_executable.resolve(strict=True)
     plan = prepare_execution(
@@ -188,6 +190,8 @@ def execute_request(
         "reuse_parent": reuse_parent,
         "reuse_through": reuse_through,
     }
+    if pa_handoff_output is not None or pa_producer_handoffs:
+        kwargs.update(pa_handoff_output=pa_handoff_output, pa_producer_handoffs=pa_producer_handoffs)
     if stage_executor is not None:
         kwargs["stage_executor"] = stage_executor
     return run_candidate_workflow(
@@ -206,9 +210,16 @@ def main() -> None:
     parser.add_argument("--reuse-parent", type=Path)
     parser.add_argument("--reuse-through", choices=REUSABLE_STAGES)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--pa-handoff-output", type=Path,
+                        help="Preserve the actual lifecycle owner Result outside the run for an explicit PA handoff")
+    parser.add_argument("--pa-producer-handoff", type=Path, nargs=2, action="append", metavar=("TRANSACTION", "OWNER_RESULT"))
     parser.add_argument("--campaign-table", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--campaign-selection", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.dry_run and (args.pa_handoff_output is not None or args.pa_producer_handoff):
+        parser.error("PA producer handoff requires execution; it cannot be combined with --dry-run")
+    if args.pa_handoff_output is not None and args.pa_handoff_output.exists():
+        parser.error("--pa-handoff-output must be a new path")
     try:
         plan = prepare_execution(
             args.request,
@@ -228,6 +239,8 @@ def main() -> None:
             str(simion_executable),
             reuse_parent=args.reuse_parent,
             reuse_through=args.reuse_through,
+            pa_handoff_output=args.pa_handoff_output,
+            pa_producer_handoffs=args.pa_producer_handoff,
         )
     except CandidateWorkflowInterrupted as exc:
         raise SystemExit(130) from exc

@@ -33,6 +33,8 @@ def main() -> int:
     parser.add_argument("--receipt-name", default="standalone_response_set.json")
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--metadata-only", action="store_true",
+                        help="Defer PA byte verification to the guarded materializer; still verify the receipt.")
     args = parser.parse_args()
 
     response_ids = parse_response_ids(args.response_ids)
@@ -44,6 +46,7 @@ def main() -> int:
         manifest,
         args.receipt_name,
         expected_response_ids=response_ids,
+        verify_payload=not args.metadata_only,
     )
     records = [
         {

@@ -1,4 +1,4 @@
-local resolved_path=assert(arg[1], 'usage: build_formal_iob.lua RESOLVED_LUA OUTPUT_IOB TEMPLATE_IOB PROGRAM FLY2')
+local resolved_path=assert(arg[1], 'usage: build_formal_iob.lua RESOLVED_LUA OUTPUT_IOB TEMPLATE_IOB PROGRAM FLY2 [REFLECTRON_PA0 ACCELERATOR_PA0]')
 io.stdout:setvbuf('no')
 local output=assert(arg[2], 'output IOB is required')
 local template=assert(arg[3], 'template IOB is required')
@@ -8,8 +8,11 @@ local contract=assert(dofile(resolved_path), 'resolved contract did not return a
 local instances=assert(contract.derived.simion_instances, 'resolved SIMION instances are missing')
 assert(#instances==4, 'resolved contract must define four SIMION instances')
 local f=output:match('^(.*[\\/])') or ''
-local reflectron_pa=f..'reflectron.pa0'
-local accelerator_pa=f..'accelerator.pa0'
+assert(#arg == 5 or #arg == 7, 'both heavy controller paths must be supplied together')
+local reflectron_pa=arg[6] or f..'reflectron.pa0'
+local accelerator_pa=arg[7] or f..'accelerator.pa0'
+assert(reflectron_pa:match('reflectron%.pa0$') and accelerator_pa:match('accelerator%.pa0$'),
+  'heavy controller paths must retain the component family names')
 local flight_tube_pa=f..'flight_tube_ground.pa0'
 local detector_pa=f..'detector_ground.pa0'
 local function read_file(path,label)

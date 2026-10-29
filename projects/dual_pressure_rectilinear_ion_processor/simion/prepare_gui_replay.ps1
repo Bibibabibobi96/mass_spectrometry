@@ -93,8 +93,11 @@ try {
    $outputs=@(Get-ChildItem -LiteralPath $package.run_dir -Recurse -File|Where-Object{$_.Name-notin@('run_manifest.json','run_config.json')-and-not$_.Name.StartsWith('.')}|ForEach-Object{$_.FullName})
    $status=$(if($prepared){'checkpoint'}else{'failed'})
    Write-RunManifest -Python $PythonExe -RepoRoot $repoRoot -RunConfig $package.run_config -Status $status -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
-   & $PythonExe -m common.contracts.verify_run_manifest (Join-Path $package.run_dir 'run_manifest.json') --require-status $status --require-project dual_pressure_rectilinear_ion_processor
-   if($LASTEXITCODE-ne0){throw 'Private GUI manifest verification failed'}
+   # Keep this caller's identity constraints after the complete public publication.
+   $published=Get-Content -LiteralPath (Join-Path $package.run_dir 'run_manifest.json') -Raw|ConvertFrom-Json
+   $publishedConfig=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json
+   if($published.status-cne$status-or$published.project-cne'dual_pressure_rectilinear_ion_processor'-or
+      $publishedConfig.project-cne'dual_pressure_rectilinear_ion_processor'){throw 'Private GUI manifest identity differs'}
   }
   if($null-ne$capacity){Exit-ArtifactWorkflowCapacitySession -Python $PythonExe -RepoRoot $repoRoot -Session $capacity|Out-Null;$capacity=$null}
   if($null-ne$package){

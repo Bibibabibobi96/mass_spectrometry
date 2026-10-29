@@ -61,6 +61,7 @@ def _write_manifest(
     *,
     provisional: bool = False,
     summary: dict[str, Any] | None = None,
+    output_paths: list[Path] | None = None,
 ) -> dict[str, Any]:
     recorded_root = recorded_root or run_root
     config_path = run_root / "run_config.json"
@@ -77,7 +78,7 @@ def _write_manifest(
     manifest = build_run_manifest(
         config_path,
         status,
-        output_paths=_output_files(run_root),
+        output_paths=_output_files(run_root) if output_paths is None else output_paths,
         actual_root=run_root,
         recorded_root=recorded_root,
         virtual_documents=virtual,
@@ -145,7 +146,10 @@ def _summary(status: str, stage_results: list[dict[str, Any]], failure_stage: st
     }
 
 
-def start_candidate_run(plan_path: Path, *, provisional_manifest: bool = True) -> Path:
+def start_candidate_run(
+    plan_path: Path, *, provisional_manifest: bool = True,
+    initialized_config_path: Path | None = None,
+) -> Path:
     plan_path = plan_path.resolve()
     plan = load_json(plan_path)
     if plan.get("role") != "oa_tof_candidate_run_plan":
@@ -158,11 +162,24 @@ def start_candidate_run(plan_path: Path, *, provisional_manifest: bool = True) -
         raise ValueError("candidate plan is not located at its declared planning root")
     if run_root.parent.name != "runs" or run_root.name != run_id:
         raise ValueError("candidate run root does not match runs/<run_id>")
-    if run_root.exists():
+    if run_root.exists() and initialized_config_path is None:
         raise FileExistsError(f"candidate run already exists: {run_root}")
+    initial = None
+    if initialized_config_path is not None:
+        if initialized_config_path.resolve(strict=True) != run_root / "run_config.json":
+            raise ValueError("admitted package differs from the candidate root")
+        initial = load_json(initialized_config_path)
+        if (initial.get("schema_version") != 2 or initial.get("run_id") != run_id
+                or initial.get("project") != "single_reflection_oa_tof_mass_analyzer"
+                or initial.get("mode") != "design_candidate"
+                or initial.get("parameters", {}).get("lifecycle_stage") != "run_package_initialized"
+                or initial.get("capacity_ledger_lifecycle", {}).get("enabled") is not True
+                or set(initial.get("inputs", {})) != {"execution_request"}):
+            raise ValueError("candidate requires the fresh public initialized package")
     if plan["formal_root"].get("mutation_allowed") or plan["promotion"].get("included"):
         raise ValueError("candidate plan requests forbidden formal mutation or promotion")
-    if plan["formal_baseline_sha256_at_planning"].lower() != sha256(FORMAL_BASELINE_PATH).lower():
+    baseline = Path(plan.get("formal_baseline_path_at_planning", FORMAL_BASELINE_PATH))
+    if plan["formal_baseline_sha256_at_planning"].lower() != sha256(baseline).lower():
         raise ValueError("formal baseline changed after candidate planning; regenerate the plan")
     verify_candidate_source_closure(plan.get("execution_source_closure", {}))
     config_template = load_json(planning_root / "run_config.template.json")
@@ -187,6 +204,11 @@ def start_candidate_run(plan_path: Path, *, provisional_manifest: bool = True) -
     write_json_atomic(staging / "candidate_workflow_plan.json", runtime_plan)
 
     run_config = _rewrite_paths(config_template, planning_root, run_root)
+    if initial is not None:
+        run_config = {**initial, **run_config, "schema_version": 2,
+                      "inputs": {**initial["inputs"], **run_config["inputs"]}}
+        request_path = Path(initial["inputs"]["execution_request"])
+        run_config["input_sha256"]["execution_request"] = sha256(request_path)
     run_config["execution_source_closure"] = runtime_plan["execution_source_closure"]
     run_config["started_at_utc"] = runtime_plan["started_at_utc"]
     write_json_atomic(staging / "run_config.json", run_config)
@@ -197,10 +219,29 @@ def start_candidate_run(plan_path: Path, *, provisional_manifest: bool = True) -
         "orchestration_not_completed",
     )
     write_json_atomic(staging / "summary.json", provisional)
-    if provisional_manifest:
+    if provisional_manifest and initial is None:
         _write_manifest(staging, "interrupted", run_root, provisional=True)
     run_root.parent.mkdir(parents=True, exist_ok=True)
-    os.replace(staging, run_root)
+    if initial is None:
+        os.replace(staging, run_root)
+    else:
+        # Only the owner's initial package exists; never replace its request,
+        # capacity record, or launcher logs with a second run package.
+        for path in (staging / "inputs").iterdir():
+            target = run_root / "inputs" / path.name
+            if target.exists():
+                raise FileExistsError(f"candidate input collides with admitted package: {target}")
+            os.replace(path, target)
+        for name in ("comsol", "simion", "cad", "results", "logs"):
+            (run_root / name).mkdir(exist_ok=True)
+        for name in ("candidate_workflow_plan.json", "run_config.json", "summary.json"):
+            os.replace(staging / name, run_root / name)
+        # This staging directory was created above and now contains empty dirs.
+        for child in staging.iterdir():
+            child.rmdir()
+        staging.rmdir()
+        if provisional_manifest:
+            _write_manifest(run_root, "interrupted", provisional=True)
     try:
         verify_candidate_source_closure(
             load_json(run_root / "candidate_workflow_plan.json")[
@@ -221,12 +262,8 @@ def start_candidate_run(plan_path: Path, *, provisional_manifest: bool = True) -
                 for stage in stages[1:]
             ],
         ]
-        finalize_candidate_run(
-            run_root,
-            "failed",
-            failed,
-            stages[0]["stage_id"],
-        )
+        if initial is None:
+            finalize_candidate_run(run_root, "failed", failed, stages[0]["stage_id"])
         raise
     return run_root
 
@@ -261,13 +298,18 @@ def update_candidate_progress(
     return summary
 
 
-def refresh_candidate_provisional_manifest(run_root: Path) -> dict[str, Any]:
+def refresh_candidate_provisional_manifest(run_root: Path, *, checkpoint: bool = False) -> dict[str, Any]:
     """Rebind the live interrupted manifest after progress or inputs change."""
     root = run_root.resolve()
     summary = load_json(root / "summary.json")
     if summary.get("status") not in {"interrupted", "running"}:
         raise ValueError("only a live candidate run may refresh its provisional manifest")
-    return _write_manifest(root, "interrupted", provisional=True)
+    # Stage-reuse's legacy live projection remains interrupted/provisional.
+    # After the engine returns, the public owner needs a checkpoint before
+    # retention. Bind only coordinator evidence here: native outputs may still
+    # have unknown writers and are hashed only after the owner verifies proof.
+    return _write_manifest(root, "checkpoint" if checkpoint else "interrupted", provisional=True,
+                           output_paths=[root / "summary.json"] if checkpoint else None)
 
 
 def finalize_candidate_run(
@@ -275,6 +317,8 @@ def finalize_candidate_run(
     status: str,
     stage_results: list[dict[str, Any]],
     failure_stage: str | None = None,
+    *,
+    publish: bool = True,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     run_root = run_root.resolve()
     if (run_root / TERMINAL_JOURNAL_NAME).is_file():
@@ -295,5 +339,7 @@ def finalize_candidate_run(
     if status != "success" and not failure_stage:
         raise ValueError("non-success candidate runs require failure_stage")
     summary = _summary(status, stage_results, failure_stage)
+    if not publish:
+        return summary, {}
     manifest = _write_manifest(run_root, status, summary=summary)
     return publish_terminal_state(run_root, summary, manifest)

@@ -22,6 +22,65 @@ EXECUTE = REPO / 'integrations/workflows/single_reflection_flight/execute.ps1'
 
 @unittest.skipUnless(shutil.which('pwsh'), 'PowerShell 7 is required')
 class SingleReflectionExecuteTests(unittest.TestCase):
+    def test_iob_copy_initializer_hands_off_guard_before_capacity_debit(self):
+        from common.contracts.write_run_manifest import file_record
+        from common.simion.test_short_pa_path_support import PA_HASH_READ_COUNTERS
+
+        for mode in ('fresh', 'capacity_failure', 'existing_good', 'existing_bad'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                source, destination = root / 'source.pa', root / 'copy.pa'
+                source.write_bytes(b'fixed-PA')
+                if mode.startswith('existing'):
+                    destination.write_bytes(b'wrong-PA' if mode == 'existing_bad' else source.read_bytes())
+                prepared = root / 'prepared.json'
+                prepared.write_text(json.dumps({'iob_pa_copies': [
+                    {'source_record': file_record(source), 'destination': str(destination)}
+                ]}), encoding='utf-8', newline='\n')
+                script = r'''
+. (Join-Path $env:TEST_REPO 'common/simion/short_pa_path_support.ps1')
+''' + PA_HASH_READ_COUNTERS + r'''
+$ast=[Management.Automation.Language.Parser]::ParseFile($env:TEST_EXECUTE,[ref]$null,[ref]$null)
+$definition=$ast.Find({param($node)$node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Initialize-InstrumentIobPaCopies'},$true)
+. ([scriptblock]::Create($definition.Extent.Text))
+$Python='fixture';$RepoRoot=$env:TEST_REPO;$capacity=@{committed_new_bytes=0}
+$paGuards=[Collections.Generic.List[string]]::new();$script:updates=0
+function Update-ArtifactWorkflowCapacitySession {
+ param($Python,$RepoRoot,$Session,$RemainingCommittedNewBytes)
+ $script:updates++
+ if($script:updates-eq2-and$env:TEST_MODE-eq'capacity_failure'){throw 'CAPACITY_DEBIT_FAILED'}
+ $Session.committed_new_bytes=$RemainingCommittedNewBytes
+ return @{session=$Session}
+}
+$caught=''
+try{Initialize-InstrumentIobPaCopies (Get-Content $env:TEST_PREPARED -Raw|ConvertFrom-Json -AsHashtable)}
+catch{$caught=$_.Exception.Message}
+$checks=@($script:paHashReads);$guardCount=$paGuards.Count
+foreach($path in $paGuards){
+ if(-not$global:MassSpectrometryImmutablePaSourceGuards[$path].stream.CanRead){throw 'transferred guard lost'}
+ Unprotect-ImmutablePaSource -Source $path|Out-Null
+ [IO.File]::SetAttributes($path,[IO.FileAttributes]::Normal)
+}
+if($global:MassSpectrometryShortPaCopies.Count-or$global:MassSpectrometryShortPaSourceGuards.Count-or$global:MassSpectrometryImmutablePaSourceGuards.Count){throw 'copy owner leaked'}
+@{caught=$caught;guards=$guardCount;reads=$checks;updates=$script:updates}|ConvertTo-Json -Depth 5 -Compress
+'''
+                completed = subprocess.run(
+                    ['pwsh', '-NoProfile', '-Command', script], cwd=REPO,
+                    capture_output=True, text=True, encoding='utf-8', check=False, timeout=30,
+                    env={**os.environ, 'TEST_REPO': str(REPO), 'TEST_EXECUTE': str(EXECUTE),
+                         'TEST_MODE': mode, 'TEST_PREPARED': str(prepared)},
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                result = json.loads(completed.stdout)
+                self.assertEqual(result['guards'], 0 if mode == 'existing_bad' else 1)
+                self.assertEqual(len(result['reads']), 1 if mode.startswith('existing') else 2)
+                if mode == 'capacity_failure':
+                    self.assertEqual(result['caught'], 'CAPACITY_DEBIT_FAILED')
+                elif mode == 'existing_bad':
+                    self.assertIn('SHA256 differs', result['caught'])
+                else:
+                    self.assertEqual(result['caught'], '')
+
     def test_public_prepare_registers_field_continuation_frozen_closure(self):
         from common.contracts.write_run_manifest import file_record
         from integrations.tests.test_single_reflection_preparation import (

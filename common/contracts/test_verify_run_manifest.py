@@ -19,6 +19,101 @@ REPO_ROOT = Path(__file__).parents[2]
 
 class ManifestOutputListTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_same_producer_publication_checks_metadata_without_second_payload_reader(self):
+        callers = (
+            ("parallel_mirror_dual_stripe_mr_tof/simion/run_native_static_field_provider.ps1",
+             "Write-RunManifest", "if($null-ne$capacity)", "parallel_mirror_dual_stripe_mr_tof", "native_fixture", ("success", "failed", "interrupted"), ()),
+            ("dual_pressure_rectilinear_ion_processor/simion/prepare_gui_replay.ps1",
+             "Write-RunManifest", "", "dual_pressure_rectilinear_ion_processor", "gui_fixture", ("checkpoint", "failed"), ("project",)),
+            ("single_reflection_oa_tof_mass_analyzer/workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1",
+             "& $python @manifestArgs", "$runRecordComplete", "single_reflection_oa_tof_mass_analyzer", "formal_cross_solver_diagnostics", ("success",), ("project", "mode")),
+        )
+        with tempfile.TemporaryDirectory(prefix="producer_manifest_boundary_") as directory:
+            root = Path(directory)
+            script = root / "publication.ps1"
+            script.write_text(r'''param($RepoRoot,$RealPython,$Root,$CasePath)
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
+$case=Get-Content -LiteralPath $CasePath -Raw|ConvertFrom-Json
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($case.runner,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw ($errors|Out-String)}
+$starts=@($ast.FindAll({param($n)
+ $n-is[Management.Automation.Language.PipelineAst]-and$n.Extent.Text.StartsWith($case.start)
+},$true))
+if($starts.Count-ne1){throw 'Expected one actual producer publication boundary'}
+$statements=@($starts[0].Parent.Statements)
+$selected=@();$collect=$false
+foreach($statement in $statements){
+ if($statement-eq$starts[0]){$collect=$true}
+ if($collect-and$case.end-and$statement.Extent.Text.StartsWith($case.end)){break}
+ if($collect){$selected+=$statement.Extent.Text}
+}
+$publication=[scriptblock]::Create(($selected-join"`n"))
+$RunDirectory=$Root;$runDir=$Root;$repo=$RepoRoot
+$runConfig=Join-Path $Root 'run_config.json'
+$manifestPath=Join-Path $Root 'run_manifest.json'
+$pkg=@{run_dir=$Root;run_config=$runConfig};$package=$pkg
+$outputs=@(Join-Path $Root 'result.txt');$software=@('software fixture')
+[IO.File]::WriteAllText($outputs[0],'closed payload')
+function Invoke-PublicationFixturePython {
+ if(($args-join' ')-match 'verify_run_manifest'){
+  $script:verifierCalls++;throw 'SECOND_PAYLOAD_READER'
+ }
+ $script:writerCalls++
+ if($args-contains'--output-list-json'){@($input)|& $RealPython @args}else{& $RealPython @args}
+ if($LASTEXITCODE-ne0){throw 'Public writer failed'}
+ if($script:attempt.document-ne'none'){
+  $path=if($script:attempt.document-eq'manifest'){$manifestPath}else{$runConfig}
+  $document=Get-Content -LiteralPath $path -Raw|ConvertFrom-Json -AsHashtable
+  $document[$script:attempt.field]=$script:attempt.value
+  Write-RunJson -Path $path -Value $document
+ }
+}
+$Python='Invoke-PublicationFixturePython';$PythonExe=$Python
+$results=@()
+foreach($script:attempt in $case.attempts){
+ $status=$script:attempt.status;$script:writerCalls=0;$script:verifierCalls=0
+ Write-RunJson -Path $runConfig -Value @{
+  schema_version=1;run_id='20261029_120000__test__python__producer-manifest'
+  project=$case.project;mode=$case.mode;inputs=@{}
+ }
+ $manifestArgs=@((Join-Path $RepoRoot 'common/contracts/write_run_manifest.py'),
+  '--run-config',$runConfig,'--status',$status,'--output',$outputs[0])
+ $caught=$null
+ try{$null=. $publication}catch{$caught=$_.Exception.Message}
+ $results+=@{accepted=($null-eq$caught);error=$caught;writer_calls=$script:writerCalls;verifier_calls=$script:verifierCalls}
+}
+ConvertTo-Json -InputObject @($results) -Depth 8 -Compress
+''', encoding="utf-8", newline="\n")
+            for relative, start, end, project, mode, statuses, identity_fields in callers:
+                with self.subTest(caller=relative):
+                    attempts = [dict(status=status, document="none", field="", value="") for status in statuses]
+                    for field in ("status", *identity_fields):
+                        for document in (("manifest",) if field == "status" else ("manifest", "config")):
+                            expected = statuses[0] if field == "status" else {"project": project, "mode": mode}[field]
+                            for value in ("wrong", expected.upper()):
+                                attempts.append(dict(status=statuses[0], document=document, field=field, value=value))
+                    case_path = root / "case.json"
+                    case_path.write_text(json.dumps(dict(
+                        runner=str(REPO_ROOT / "projects" / relative), start=start, end=end,
+                        project=project, mode=mode, attempts=attempts,
+                    )), encoding="utf-8")
+                    result = subprocess.run(
+                        ["pwsh", "-NoProfile", "-File", str(script), str(REPO_ROOT), sys.executable, str(root), str(case_path)],
+                        cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=40,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    actual = json.loads(result.stdout)
+                    self.assertEqual(len(actual), len(attempts))
+                    for attempt, observed in zip(attempts, actual, strict=True):
+                        with self.subTest(attempt=attempt):
+                            self.assertEqual(observed["writer_calls"], 1, observed)
+                            self.assertEqual(observed["verifier_calls"], 0, observed)
+                            self.assertEqual(observed["accepted"], attempt["document"] == "none", observed)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_public_json_writer_preserves_array_shape_for_all_cardinalities(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -105,6 +200,13 @@ Write-RunJson -Value @{logs=@('single');count=1} -Path (Join-Path $Output 'objec
                     with self.assertRaisesRegex(SystemExit, "missing run outputs"):
                         write_run_manifest.main()
                     self.assertEqual(manifest.read_bytes(), b"previous publication")
+            configuration = json.loads(config.read_text(encoding="utf-8"))
+            configuration["inputs"] = {"required": str(root / "missing-input.txt")}
+            config.write_text(json.dumps(configuration), encoding="utf-8")
+            with patch.object(sys, "argv", ["writer", "--run-config", str(config), "--status", "success"]):
+                with self.assertRaisesRegex(SystemExit, "missing run inputs"):
+                    write_run_manifest.main()
+            self.assertEqual(manifest.read_bytes(), b"previous publication")
             (root / write_run_manifest.TERMINAL_JOURNAL_NAME).write_text("{}")
             with patch.object(sys, "argv", ["writer", "--run-config", str(config), "--status", "success"]):
                 with self.assertRaisesRegex(SystemExit, "publication is incomplete"):

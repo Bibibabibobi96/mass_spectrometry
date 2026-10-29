@@ -53,6 +53,33 @@ function Assert-VerifiedRunRecordHash {
   }
 }
 
+function Invoke-RunCapacityCommand {
+  <# Preserve native capacity diagnostics without mixing them into JSON stdout. #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string[]]$Arguments,[Parameter(Mandatory)][string]$FailureLabel
+  )
+  Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
+    $PSNativeCommandUseErrorActionPreference=$false
+    $captured=@(& $Python @Arguments 2>&1)
+    $exitCode=$LASTEXITCODE
+    $stdout=@($captured|Where-Object{$_-isnot[Management.Automation.ErrorRecord]})
+    $stderr=@($captured|Where-Object{$_-is[Management.Automation.ErrorRecord]})
+    if($exitCode-ne0){
+      $details=@{stdout=($stdout-join"`n");stderr=($stderr-join"`n")}
+      foreach($stream in @('stdout','stderr')){
+        if($details[$stream].Length-gt4096){$details[$stream]='[truncated tail] '+$details[$stream].Substring($details[$stream].Length-4096)}
+      }
+      $failure=[InvalidOperationException]::new("$FailureLabel; exit_code=$exitCode; stdout=$($details.stdout); stderr=$($details.stderr)")
+      $failure.Data['native_exit_code']=$exitCode
+      throw $failure
+    }
+    foreach($errorLine in $stderr){Write-Error -Message ([string]$errorLine) -ErrorAction Continue}
+    $stdout
+  }
+}
+
 function Invoke-ArtifactCapacityGate {
   <# Invoke the repository-owned artifact reconciler and require an applied
      receipt.  This is deliberately a lifecycle adapter: projects supply their
@@ -79,6 +106,7 @@ function Invoke-ArtifactCapacityGate {
   # Light admission is not a cache-consumption or deletion lock; the reconciler
   # must separately enforce artifact protection and retention rules.
   $capacityLease=Enter-HostExecutionLease -Role GATE
+  $capacityFailure=$null
   try{
   $arguments=@(
     '-m','common.contracts.reconcile_artifact_capacity',
@@ -100,25 +128,94 @@ function Invoke-ArtifactCapacityGate {
   if(-not[string]::IsNullOrWhiteSpace($CapacityProtectionLeaseId)){
     $arguments+=@('--capacity-protection-lease-id',$CapacityProtectionLeaseId)
   }
-  $output=@(Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
-    & $Python @arguments
-    if($LASTEXITCODE-ne 0){throw "Artifact capacity gate exit_code=$LASTEXITCODE"}
-  })
+  $output=@(Invoke-RunCapacityCommand -Python $Python -RepoRoot $RepoRoot -Arguments $arguments `
+    -FailureLabel 'Artifact capacity gate failed')
   $receipt=((@($output)-join "`n")|ConvertFrom-Json)
   if($receipt.satisfied_after_apply -ne $true){
     if($ExecutionMode-eq'maintenance'){
       # The CLI's ordinary maintenance output is aggregate-only; exact disposal
       # records remain in their owner receipts, not on the launcher hot path.
-      throw ("Artifact capacity gate blocked maintenance: CAPACITY_TARGET_NOT_MET; resident_bytes={0}; free_bytes={1}; capacity_gap_bytes={2}; target_bytes={3}; removed_bytes={4}" -f $receipt.resident_bytes,$receipt.free_bytes,$receipt.capacity_gap_bytes,$receipt.target_bytes,$receipt.removed.bytes)
+      $message=("Artifact capacity gate blocked maintenance: CAPACITY_TARGET_NOT_MET; resident_bytes={0}; free_bytes={1}; capacity_gap_bytes={2}; target_bytes={3}; removed_bytes={4}" -f $receipt.resident_bytes,$receipt.free_bytes,$receipt.capacity_gap_bytes,$receipt.target_bytes,$receipt.removed.bytes)
+    }else{
+      $reason=[string]$receipt.blocking_reason
+      if([string]::IsNullOrWhiteSpace($reason)){$reason='UNSPECIFIED'}
+      $message=("Artifact capacity gate blocked startup: {0}; resident_bytes={1}; active_commitment_bytes={2}; projected_bytes={3}; target_bytes={4}" -f $reason,$receipt.resident_bytes,$receipt.total_active_lease_committed_new_bytes,$receipt.projected_bytes,$receipt.target_bytes)
     }
-    $reason=[string]$receipt.blocking_reason
-    if([string]::IsNullOrWhiteSpace($reason)){$reason='UNSPECIFIED'}
-    throw ("Artifact capacity gate blocked startup: {0}; resident_bytes={1}; active_commitment_bytes={2}; projected_bytes={3}; target_bytes={4}" -f $reason,$receipt.resident_bytes,$receipt.total_active_lease_committed_new_bytes,$receipt.projected_bytes,$receipt.target_bytes)
+    $failure=[InvalidOperationException]::new($message)
+    $failure.Data['capacity_receipt']=$receipt
+    throw $failure
   }
   # The JSON root is one object; NoEnumerate wraps it and changes nested-array access.
   Write-Output $receipt
+  }catch{
+    $capacityFailure=$_
+    throw
   }finally{
-    Exit-HostExecutionLease -Lease $capacityLease
+    try{Exit-HostExecutionLease -Lease $capacityLease}catch{
+      if($null-eq$capacityFailure){throw}
+      $capacityFailure.Exception.Data['host_execution_lease_cleanup']=@{status='failed';error=$_.Exception.Message}
+      Write-Warning -WarningAction Continue "CAPACITY_HOST_LEASE_CLEANUP_FAILED error=$($_.Exception.Message)"
+    }
+  }
+}
+
+function Invoke-ArtifactWorkflowCapacityAdmission {
+  <# A workflow owns the lease, so it can renew that same protection while
+     requesting one maintenance pass. A direct gate remains one decision. #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][pscustomobject]$Session
+  )
+  $parameters=@{Python=$Python;RepoRoot=$RepoRoot;ArtifactRoot=[string]$Session.artifact_root;
+    ProtectedPaths=@($Session.protected_paths);ProtectedCacheKeys=@($Session.protected_cache_keys);
+    CapacityProtectionLeaseId=[string]$Session.lease_id}
+  try{return (Invoke-ArtifactCapacityGate @parameters -ExecutionMode startup)}catch{
+    $initialFailure=$_
+    if($null-ne$initialFailure.Exception.Data['host_execution_lease_cleanup']){throw}
+    $receipt=$initialFailure.Exception.Data['capacity_receipt']
+    if($null-eq$receipt-or
+       $null-eq$receipt.PSObject.Properties['role']-or$receipt.role-ne'artifact_capacity_gate'-or
+       $null-eq$receipt.PSObject.Properties['execution_mode']-or$receipt.execution_mode-ne'startup'-or
+       $null-eq$receipt.PSObject.Properties['capacity_protection_lease_id']-or
+       $receipt.capacity_protection_lease_id-ne$Session.lease_id-or
+       $null-eq$receipt.PSObject.Properties['blocking_reason']-or
+       $receipt.blocking_reason-notin@('TARGET_CAPACITY_EXCEEDED','MINIMUM_FREE_CAPACITY_UNAVAILABLE')){throw}
+  }
+  $timer=[Diagnostics.Stopwatch]::StartNew()
+  $attempt=[ordered]@{trigger_reason=[string]$receipt.blocking_reason;initial_admission=$receipt;
+    stage='renew_before_maintenance';maintenance=$null;elapsed_seconds=$null}
+  try{
+    # Renewal never changes commitment, scope or the original closure deadline.
+    Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $Session|Out-Null
+    $attempt.stage='maintenance'
+    try{$attempt.maintenance=Invoke-ArtifactCapacityGate @parameters -ExecutionMode maintenance}catch{
+      if($null-ne$_.Exception.Data['host_execution_lease_cleanup']){throw}
+      $maintenance=$_.Exception.Data['capacity_receipt']
+      if($null-eq$maintenance-or
+         $null-eq$maintenance.PSObject.Properties['measurement_mode']-or
+         $maintenance.measurement_mode-ne'LEDGER_MAINTENANCE'){throw}
+      # An applied pass may still lack space. Only a fresh startup decision can
+      # admit this workflow; an owner-local failure is retained in the receipt.
+      $attempt.maintenance=$maintenance
+    }
+    $attempt.stage='renew_before_readmission'
+    Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $Session|Out-Null
+    $attempt.stage='readmission'
+    $admission=Invoke-ArtifactCapacityGate @parameters -ExecutionMode startup
+    $attempt.stage='admitted'
+    $admission|Add-Member -NotePropertyName pressure_maintenance -NotePropertyValue $attempt
+    return $admission
+  }catch{
+    $failure=[InvalidOperationException]::new(
+      "Capacity pressure relief failed at $($attempt.stage) after $($attempt.trigger_reason): $($_.Exception.Message)",
+      $_.Exception)
+    $failure.Data['pressure_maintenance']=$attempt
+    $failure.Data['initial_admission_error']=$initialFailure.Exception.Message
+    throw $failure
+  }finally{
+    $timer.Stop()
+    $attempt.elapsed_seconds=$timer.Elapsed.TotalSeconds
   }
 }
 
@@ -170,45 +267,29 @@ function Enter-ArtifactWorkflowCapacitySession {
   foreach($path in $paths){$arguments+=@('--protect-path',$path)}
   foreach($key in $ProtectedCacheKeys){$arguments+=@('--protect-cache-key',$key)}
   try{
-    $leaseOutput=@(Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
-      $PSNativeCommandUseErrorActionPreference=$false
-      $captured=@(& $Python @arguments 2>&1)
-      $exitCode=$LASTEXITCODE
-      $stdout=@($captured|Where-Object{$_-isnot[Management.Automation.ErrorRecord]})
-      $stderr=@($captured|Where-Object{$_-is[Management.Automation.ErrorRecord]})
-      if($exitCode-ne0){
-        # Bound the exception payload, not the native command's successful JSON.
-        # Keep stream labels and the real exit code so a CLI failure is actionable.
-        $details=@{stdout=($stdout-join"`n");stderr=($stderr-join"`n")}
-        foreach($stream in @('stdout','stderr')){
-          if($details[$stream].Length-gt4096){$details[$stream]='[truncated tail] '+$details[$stream].Substring($details[$stream].Length-4096)}
-        }
-        throw "Workflow capacity lease creation failed; exit_code=$exitCode; stdout=$($details.stdout); stderr=$($details.stderr)"
-      }
-      foreach($errorLine in $stderr){Write-Error -Message ([string]$errorLine) -ErrorAction Continue}
-      $stdout
-    })
-    # The active lease is the single reservation source.
-    $gateParameters=@{Python=$Python;RepoRoot=$RepoRoot;ArtifactRoot=$ArtifactRoot;
-      ProtectedPaths=$paths;ProtectedCacheKeys=$ProtectedCacheKeys;
-      CapacityProtectionLeaseId=$leaseId;ExecutionMode='startup'}
-    $gate=Invoke-ArtifactCapacityGate @gateParameters
-    return [pscustomobject]@{schema_version=1;role='artifact_workflow_capacity_session';
+    $leaseOutput=@(Invoke-RunCapacityCommand -Python $Python -RepoRoot $RepoRoot -Arguments $arguments `
+      -FailureLabel 'Workflow capacity lease creation failed')
+    # The active lease is the single reservation source, including pressure relief.
+    $session=[pscustomobject]@{schema_version=1;role='artifact_workflow_capacity_session';
       status='active';
       artifact_root=[IO.Path]::GetFullPath($ArtifactRoot);lease_id=$leaseId;
       owner=$Owner;lease_ttl_seconds=$LeaseTtlSeconds;committed_new_bytes=$CommittedNewBytes;
       protected_paths=@($paths);protected_cache_keys=@($ProtectedCacheKeys|Select-Object -Unique);
-      lease=((@($leaseOutput)-join"`n")|ConvertFrom-Json);startup_gate=$gate}
+      lease=((@($leaseOutput)-join"`n")|ConvertFrom-Json);startup_gate=$null}
+    $session.startup_gate=Invoke-ArtifactWorkflowCapacityAdmission -Python $Python -RepoRoot $RepoRoot -Session $session
+    return $session
   }catch{
+    $sessionFailure=$_
     try{
-      Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
-        & $Python -m common.contracts.reconcile_artifact_capacity --artifact-root $ArtifactRoot `
-          --delete-protection-lease $leaseId|Out-Null
-      }
+      Invoke-RunCapacityCommand -Python $Python -RepoRoot $RepoRoot -Arguments @(
+        '-m','common.contracts.reconcile_artifact_capacity','--artifact-root',$ArtifactRoot,
+        '--delete-protection-lease',$leaseId) -FailureLabel 'Workflow capacity lease cleanup failed'|Out-Null
+      $sessionFailure.Exception.Data['capacity_lease_cleanup']=@{lease_id=$leaseId;status='released'}
     }catch{
+      $sessionFailure.Exception.Data['capacity_lease_cleanup']=@{lease_id=$leaseId;status='failed';error=$_.Exception.Message}
       Write-Warning "CAPACITY_WORKFLOW_LEASE_CLEANUP_FAILED lease_id=$leaseId error=$($_.Exception.Message)"
     }
-    throw
+    throw $sessionFailure
   }
 }
 
@@ -228,9 +309,8 @@ function Update-ArtifactWorkflowCapacitySession {
   if($null-ne$RemainingCommittedNewBytes){$arguments+=@('--committed-new-bytes',([string]$RemainingCommittedNewBytes))}
   foreach($path in $ProtectedPaths){$arguments+=@('--protect-path',$path)}
   foreach($key in $ProtectedCacheKeys){$arguments+=@('--protect-cache-key',$key)}
-  $output=@(Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
-    & $Python @arguments;if($LASTEXITCODE-ne0){throw 'Workflow capacity lease renewal failed.'}
-  })
+  $output=@(Invoke-RunCapacityCommand -Python $Python -RepoRoot $RepoRoot -Arguments $arguments `
+    -FailureLabel 'Workflow capacity lease renewal failed')
   if($null-ne$RemainingCommittedNewBytes){$Session.committed_new_bytes=[int64]$RemainingCommittedNewBytes}
   $Session.protected_paths=@(@($Session.protected_paths)+@($ProtectedPaths)|Select-Object -Unique)
   $Session.protected_cache_keys=@(@($Session.protected_cache_keys)+@($ProtectedCacheKeys)|Select-Object -Unique)
@@ -238,11 +318,7 @@ function Update-ArtifactWorkflowCapacitySession {
   if($null-ne$RemainingCommittedNewBytes-and[int64]$RemainingCommittedNewBytes-gt$priorCommitment){
     # The larger commitment is already durable.  Re-admission may fail, but
     # failure leaves the conservative larger reservation visible to peers.
-    $gate=Invoke-ArtifactCapacityGate -Python $Python -RepoRoot $RepoRoot `
-      -ArtifactRoot ([string]$Session.artifact_root) `
-      -ProtectedPaths @($Session.protected_paths) `
-      -ProtectedCacheKeys @($Session.protected_cache_keys) `
-      -CapacityProtectionLeaseId ([string]$Session.lease_id) -ExecutionMode startup
+    $gate=Invoke-ArtifactWorkflowCapacityAdmission -Python $Python -RepoRoot $RepoRoot -Session $Session
   }
   return [pscustomobject]@{session=$Session;renewal=((@($output)-join"`n")|ConvertFrom-Json);admission_gate=$gate}
 }
@@ -254,20 +330,38 @@ function Exit-ArtifactWorkflowCapacitySession {
     [Parameter(Mandatory)][pscustomobject]$Session
   )
   if([string]$Session.status-ne'active'){return [pscustomobject]@{deleted=$false;status=[string]$Session.status}}
-  $output=@(Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
-    & $Python -m common.contracts.reconcile_artifact_capacity `
-      --artifact-root ([string]$Session.artifact_root) `
-      --delete-protection-lease ([string]$Session.lease_id)
-    if($LASTEXITCODE-ne0){throw 'Workflow capacity lease deletion failed.'}
-  })
+  $output=@(Invoke-RunCapacityCommand -Python $Python -RepoRoot $RepoRoot -Arguments @(
+    '-m','common.contracts.reconcile_artifact_capacity','--artifact-root',[string]$Session.artifact_root,
+    '--delete-protection-lease',[string]$Session.lease_id) -FailureLabel 'Workflow capacity lease deletion failed')
   $Session.status='released'
   return ((@($output)-join"`n")|ConvertFrom-Json)
 }
 
 function Write-RunJson {
   [CmdletBinding()]
-  param([Parameter(Mandatory)][AllowEmptyCollection()][object]$Value,[Parameter(Mandatory)][string]$Path,[int]$Depth=8)
-  ConvertTo-Json -InputObject $Value -Depth $Depth | Set-Content -LiteralPath $Path -Encoding UTF8
+  param([Parameter(Mandatory)][AllowEmptyCollection()][object]$Value,[Parameter(Mandatory)][string]$Path,[int]$Depth=8,
+    [switch]$Atomic)
+  if(-not$Atomic){
+    ConvertTo-Json -InputObject $Value -Depth $Depth | Set-Content -LiteralPath $Path -Encoding UTF8
+    return
+  }
+  $destination=[IO.Path]::GetFullPath($Path)
+  $temporary=Join-Path ([IO.Path]::GetDirectoryName($destination)) ('.run-json-'+[guid]::NewGuid().ToString('N')+'.tmp')
+  $failure=$null
+  try{
+    ConvertTo-Json -InputObject $Value -Depth $Depth | Set-Content -LiteralPath $temporary -Encoding UTF8
+    $stream=[IO.File]::Open($temporary,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+    try{$stream.Flush($true)}finally{$stream.Dispose()}
+    [IO.File]::Move($temporary,$destination,$true)
+  }catch{$failure=$_;throw}
+  finally{
+    if([IO.File]::Exists($temporary)){
+      try{[IO.File]::Delete($temporary)}catch{
+        if($null-eq$failure){throw}
+        $failure.Exception.Data['run_json_temporary_cleanup_error']=$_.Exception.Message
+      }
+    }
+  }
 }
 
 function Write-RunManifest {
@@ -692,7 +786,10 @@ function Apply-RunArtifactRetention {
     [Parameter(Mandatory)][string]$RunConfig,
     [string[]]$PreservePaths=@(),
     [string[]]$RemovePaths=@(),
-    [switch]$FailedRun
+    [switch]$FailedRun,
+    [string[]]$RecoveryInputs=@(),
+    [switch]$Resume,
+    [Nullable[long]]$MaximumRunBytes=$null
   )
   $arguments=@('apply','--run-config',$RunConfig)
   foreach($path in $PreservePaths){
@@ -706,6 +803,9 @@ function Apply-RunArtifactRetention {
     }
   }
   if($FailedRun){$arguments+='--failed-run'}
+  foreach($path in $RecoveryInputs){$arguments+=@('--recovery-input',$path)}
+  if($Resume){$arguments+='--resume'}
+  if($null-ne$MaximumRunBytes){$arguments+=@('--maximum-run-bytes',[string]$MaximumRunBytes)}
   $output=Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
     & $Python (Join-Path $RepoRoot 'common\contracts\artifact_retention.py') @arguments
     if($LASTEXITCODE-ne 0){throw 'Run artifact retention failed.'}

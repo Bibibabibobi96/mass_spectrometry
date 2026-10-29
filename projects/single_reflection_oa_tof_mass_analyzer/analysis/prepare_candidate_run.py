@@ -25,6 +25,278 @@ WORKFLOW_PATH = PROJECT_ROOT / "config" / "candidate_workflow.json"
 FORMAL_BASELINE_PATH = PROJECT_ROOT / "config" / "baseline.json"
 FORMAL_RESOLVED_PATH = PROJECT_ROOT / "config" / "resolved_geometry.json"
 FORMAL_NUMERICS_PATH = PROJECT_ROOT / "config" / "formal_solver_numerics.json"
+RUNTIME_PATH = PROJECT_ROOT / "config" / "candidate_runtime.json"
+
+
+def plan_pa_producer_handoffs(pairs: list[tuple[Path, Path]], *, expected_cache_keys: set[str], artifact_root: Path) -> dict:
+    """Read explicit small owner inputs before admission; never inspect a PA."""
+    from common.contracts.write_run_manifest import file_record
+    from common.simion.pa_family_cache import load_pa_family_cache_transaction
+
+    artifact_root = artifact_root.resolve(strict=True)
+    cache = artifact_root / "common/simion/pa_family_cache"
+    sources, records, protected = {}, {}, set()
+    for transaction_path, result_path in pairs:
+        transaction_path, result_path = transaction_path.resolve(strict=True), result_path.resolve(strict=True)
+        key = transaction_path.parent.name
+        if key not in expected_cache_keys or transaction_path != cache / ".transactions" / key / "transaction.json":
+            raise ValueError("PA producer handoff key is absent from the compiled component plans")
+        source = dict(transaction_path=str(transaction_path), owner_result_path=str(result_path))
+        if key in sources:
+            if sources[key] != source:
+                raise ValueError("PA producer handoff has conflicting inputs for the same cache key")
+            continue
+        transaction = load_pa_family_cache_transaction(cache, key)
+        predecessor = Path(transaction["producer"]["run_config_path"]).resolve().parent
+        result = load_json(result_path)
+        if (transaction["status"] not in {"building", "prepared"}
+                or result.get("schema_version") != 1 or result.get("role") != "run_artifact_workflow_result"
+                or result.get("stage") != "complete" or not isinstance(result.get("stopped_payload_receipt"), dict)
+                or Path(result.get("run_directory", "")).resolve() != predecessor
+                or any(result.get(flag) is not True for flag in ("terminal_published", "capacity_finalized", "lease_released"))):
+            raise ValueError("PA producer handoff requires its completed public owner result and stopped payload receipt")
+        protected.add(predecessor)
+        for value in (transaction.get("verification") or {}).values():
+            if not isinstance(value, str):
+                continue
+            try:
+                parts = Path(value).resolve().relative_to(artifact_root).parts
+            except (ValueError, OSError):
+                continue
+            if len(parts) >= 4 and parts[0] == "projects" and parts[2] == "runs":
+                protected.add(artifact_root.joinpath(*parts[:4]))
+        for path in (transaction_path, result_path, predecessor / "run_manifest.json"):
+            records[str(path)] = file_record(path)
+            if records[str(path)]["exists"] is not True:
+                raise ValueError("PA producer handoff requires its predecessor manifest")
+        sources[key] = source
+    return dict(sources=list(sources.values()), source_records=list(records.values()),
+                protected_paths=[str(path) for path in sorted(protected)], declared_cache_keys=sorted(expected_cache_keys))
+
+
+def load_pa_producer_handoffs(path: Path, run_root: Path, *, expected_cache_keys: set[str], capacity_session: dict) -> dict:
+    """Validate frozen owner results and their exact public-receipt projections."""
+    from common.contracts.verify_run_manifest import verify_record
+
+    run_root = run_root.resolve()
+    if not path.resolve().is_relative_to(run_root / "inputs"):
+        raise ValueError("PA producer handoff map must be a frozen input of this run")
+    document = load_json(path)
+    if (document.get("schema_version") != 1 or document.get("role") != "oatof_pa_producer_handoffs"
+            or document.get("run_id") != run_root.name or not isinstance(document.get("entries"), dict)
+            or not document["entries"] or not isinstance(document.get("declared_cache_keys"), list)
+            or document["declared_cache_keys"] != sorted(set(document["declared_cache_keys"]))
+            or not set(document["entries"]) <= set(document["declared_cache_keys"])
+            or not expected_cache_keys <= set(document["declared_cache_keys"])):
+        raise ValueError("PA producer handoff map identity differs")
+    result = {}
+    for key, entry in document["entries"].items():
+        records = {name: entry[name] for name in ("request", "owner_result")}
+        for label, record in records.items():
+            if not Path(record["path"]).resolve().is_relative_to(run_root / "inputs"):
+                raise ValueError("PA producer handoff evidence must remain in frozen inputs")
+            verify_record(label, record)
+        request = load_json(Path(records["request"]["path"]))
+        if (request.get("capacity_lease_id") != capacity_session["lease_id"]
+                or request.get("capacity_lease_owner") != capacity_session["owner"]):
+            raise ValueError("PA producer handoff must use the current workflow capacity session")
+        evidence = {}
+        for name in ("transaction_record", "predecessor_manifest", "stopped_receipt"):
+            record = request[name]
+            if not Path(record["path"]).resolve().is_relative_to(run_root / "inputs"):
+                raise ValueError("PA producer handoff evidence must remain in frozen inputs")
+            verify_record(name, record)
+            evidence[name] = load_json(Path(record["path"]))
+        predecessor = Path(evidence["transaction_record"]["producer"]["run_config_path"]).resolve().parent
+        owner_result = load_json(Path(records["owner_result"]["path"]))
+        if (owner_result.get("schema_version") != 1 or owner_result.get("role") != "run_artifact_workflow_result"
+                or owner_result.get("stage") != "complete"
+                or any(owner_result.get(flag) is not True for flag in ("terminal_published", "capacity_finalized", "lease_released"))
+                or Path(owner_result.get("run_directory", "")).resolve() != predecessor
+                or owner_result.get("stopped_payload_receipt") != evidence["stopped_receipt"]
+                or evidence["transaction_record"]["cache_key"] != key):
+            raise ValueError("PA stopped receipt is not the exact projection of the frozen public owner result")
+        if str(predecessor) not in capacity_session["protected_paths"]:
+            raise ValueError("PA predecessor must be protected by the current workflow session")
+        build_complete = False
+        original_completion = None
+        if proof := entry.get("build_completion"):
+            if not Path(proof["path"]).resolve().is_relative_to(run_root / "inputs"):
+                raise ValueError("PA producer completion must remain in frozen inputs")
+            verify_record("producer build completion", proof)
+            manifest_records = [*evidence["predecessor_manifest"].get("outputs", []),
+                                *evidence["predecessor_manifest"].get("inputs", {}).values()]
+            bound = [row for row in manifest_records if Path(row["path"]).resolve() == Path(proof["source_path"]).resolve()]
+            if not bound or any(any(row.get(name) != proof[name] for name in ("bytes", "sha256")) for row in bound):
+                raise ValueError("PA producer build completion is not bound by the predecessor manifest")
+            build = load_json(Path(proof["path"]))
+            components = [row for row in build.get("components", []) if row["cache_key"] == key]
+            if (build.get("role") != "oatof_component_build_completion" or build.get("schema_version") != 1
+                    or build.get("run_id") != predecessor.name or len(components) != 1):
+                raise ValueError("PA producer build completion component identity differs")
+            component = components[0]
+            transaction = evidence["transaction_record"]
+            original_completion = proof
+            if reference := component.get("response_build_completion"):
+                original_completion = entry["original_build_completion"]
+                if (not Path(reference["path"]).resolve().is_relative_to(predecessor / "inputs")
+                        or Path(original_completion["source_path"]).resolve() != Path(reference["path"]).resolve()
+                        or not Path(original_completion["path"]).resolve().is_relative_to(run_root / "inputs")
+                        or any(original_completion[name] != reference[name] for name in ("bytes", "sha256"))):
+                    raise ValueError("PA original build reference differs from its frozen source")
+                bound = [row for row in manifest_records if Path(row["path"]).resolve() == Path(reference["path"]).resolve()]
+                if not bound or any(any(row.get(name) != reference[name] for name in ("bytes", "sha256")) for row in bound):
+                    raise ValueError("PA original build reference is not bound by the predecessor manifest")
+                verify_record("original PA build completion", original_completion)
+                build = load_json(Path(original_completion["path"]))
+                validate_run_id(build["run_id"])
+                components = [row for row in build.get("components", []) if row["cache_key"] == key]
+                if (build.get("schema_version") != 1 or build.get("role") != "oatof_component_build_completion"
+                        or len(components) != 1 or components[0].get("response_build_completion")):
+                    raise ValueError("PA original build proof must be a flat native completion, not a reference chain")
+                component = components[0]
+            if (component["response_ids"] != transaction["identity"]["basis_namespace"]["electrode_ids"]
+                    or component["role"] != transaction["identity"]["geometry"]["role"]):
+                raise ValueError("PA producer build completion response namespace differs")
+            ids = component["response_build_operation_ids"]
+            operations = build["operations"]
+            by_id = {row["operation_id"]: row for row in operations}
+            if len(by_id) != len(operations) or len(set(ids)) != len(ids):
+                raise ValueError("PA producer build operation IDs are ambiguous")
+            build_complete = bool(ids)
+            for operation_id in ids:
+                operation = by_id[operation_id]
+                native, worker = operation["observation"], operation["managed_process_completion"]
+                build_complete &= (native.get("exit_confirmed") is True and native.get("returncode") == 0
+                    and worker.get("schema_version") == 1 and worker.get("role") == "repository_managed_python_completion"
+                    and all(type(worker.get(name)) is int and worker[name] > 0 for name in (
+                        "worker_process_id", "worker_started_at_utc_ticks", "launcher_process_id"))
+                    and worker.get("exit_code") == 0 and all(worker.get(flag) is True for flag in (
+                        "ownership_confirmed", "worker_exit_confirmed", "launcher_exit_confirmed", "stdout_drained", "stderr_drained")))
+            if transaction["status"] == "prepared":
+                verification = transaction["verification"]
+                inherited_verification = False
+                prior = transaction.get("producer_handoff", {}).get("request", {}).get("transaction_record")
+                if prior:
+                    bound = [row for row in manifest_records if Path(row["path"]).resolve() == Path(prior["path"]).resolve()]
+                    if (Path(prior["path"]).resolve().is_relative_to(predecessor / "inputs") and bound
+                            and all(all(row.get(name) == prior[name] for name in ("bytes", "sha256")) for row in bound)):
+                        verify_record("prior prepared transaction", prior)
+                        previous = load_json(Path(prior["path"]))
+                        inherited_verification = (previous.get("status") == "prepared" and previous.get("cache_key") == key
+                            and previous.get("identity") == transaction["identity"] and previous.get("verification") == verification)
+                # A later owner may have retried only publication. Its already
+                # frozen prepared snapshot binds the unchanged original proof;
+                # the public handoff still revalidates the actual script/log SHA.
+                if not inherited_verification:
+                    for path_key, hash_key in (("verifier_path", "verifier_sha256"), ("verification_output_path", "verification_output_sha256")):
+                        matches = [row for row in manifest_records if Path(row["path"]).resolve() == Path(verification[path_key]).resolve()]
+                        if not matches or any(row["sha256"] != verification[hash_key] for row in matches):
+                            raise ValueError("Prepared PA verification is not bound by the predecessor manifest")
+                        for record in matches:
+                            verify_record("prepared PA verification", record)
+        if key in expected_cache_keys:
+            result[key] = dict(request_path=str(records["request"]["path"]), response_build_complete=build_complete,
+                has_sealed_inventory=bool(evidence["transaction_record"]["files"]),
+                response_build_completion=original_completion if build_complete else None)
+    return result
+
+
+def freeze_pa_producer_handoffs(run_root: Path, handoff_plan: dict, *, expected_cache_keys: set[str], capacity_session: dict) -> dict:
+    """Freeze explicit transaction/result pairs; retain raw Result provenance."""
+    from common.contracts.frozen_inputs import freeze_file
+    from common.contracts.recorded_file_removal import write_json_atomic
+    from common.contracts.verify_run_manifest import verify_record
+    from common.contracts.write_run_manifest import file_record
+    from common.simion.pa_family_cache import load_pa_family_cache_transaction
+
+    run_root = run_root.resolve()
+    if handoff_plan["declared_cache_keys"] != sorted(expected_cache_keys):
+        raise ValueError("PA producer handoff allowed keys differ from the compiled component plans")
+    for record in handoff_plan["source_records"]:
+        verify_record("planned PA producer handoff input", record)
+    sources = handoff_plan["sources"]
+    if (capacity_session.get("role") != "artifact_workflow_capacity_session" or capacity_session.get("status") != "active"
+            or str(run_root) not in capacity_session["protected_paths"] or not sources):
+        raise ValueError("PA handoff freezing requires the admitted run and its current capacity session")
+    destination = run_root / "inputs/pa_producer_handoffs"
+    destination.mkdir()
+    entries, frozen_records = {}, []
+    cache = Path(capacity_session["artifact_root"]).resolve() / "common/simion/pa_family_cache"
+    for source in sources:
+        if set(source) != {"transaction_path", "owner_result_path"}:
+            raise ValueError("PA handoff requires explicit transaction and public owner-result paths")
+        transaction_path = Path(source["transaction_path"]).resolve(strict=True)
+        key = transaction_path.parent.name
+        if (key not in expected_cache_keys or key in entries
+                or transaction_path != cache / ".transactions" / key / "transaction.json"):
+            raise ValueError("PA handoff transaction is not a unique selected governed component")
+        transaction = load_pa_family_cache_transaction(cache, key)
+        predecessor = Path(transaction["producer"]["run_config_path"]).resolve().parent
+        folder = destination / key
+        folder.mkdir()
+        owner_result = freeze_file(Path(source["owner_result_path"]), folder / "owner_result.json")
+        # This is a deterministic projection, never a second stopped-writer
+        # authority: every consumer compares it with the retained raw Result.
+        stopped_path = folder / "stopped_receipt.json"
+        write_json_atomic(stopped_path, load_json(Path(owner_result["path"]))["stopped_payload_receipt"])
+        request = dict(schema_version=1,
+            transaction_record=freeze_file(transaction_path, folder / "transaction.json"),
+            predecessor_manifest=freeze_file(predecessor / "run_manifest.json", folder / "predecessor_manifest.json"),
+            stopped_receipt=file_record(stopped_path), capacity_lease_id=capacity_session["lease_id"],
+            capacity_lease_owner=capacity_session["owner"])
+        planned = {Path(record["path"]).resolve(): record for record in handoff_plan["source_records"]}
+        for record in (owner_result, request["transaction_record"], request["predecessor_manifest"]):
+            original = planned[Path(record["source_path"]).resolve()]
+            if any(record[name] != original[name] for name in ("bytes", "sha256")):
+                raise ValueError(f"Frozen PA handoff source differs from its planned byte identity: {record['source_path']}")
+        request_path = folder / "request.json"
+        write_json_atomic(request_path, request)
+        entries[key] = dict(request=file_record(request_path), owner_result=owner_result)
+        frozen_records.extend([owner_result, request["transaction_record"], request["predecessor_manifest"],
+                               request["stopped_receipt"], entries[key]["request"]])
+        manifest = load_json(Path(request["predecessor_manifest"]["path"]))
+        completions = []
+        for record in manifest.get("outputs", []):
+            candidate = Path(record["path"])
+            if candidate.name not in {"build_completion.json", "simion_build_completion.json"}:
+                continue
+            verify_record("producer build completion", record)
+            build = load_json(candidate)
+            if build.get("run_id") != predecessor.name or build.get("role") != "oatof_component_build_completion":
+                continue
+            if any(row.get("cache_key") == key and (row.get("response_build_operation_ids") or row.get("response_build_completion"))
+                   for row in build.get("components", [])):
+                completions.append(candidate)
+        if len(completions) > 1:
+            raise ValueError("PA producer has ambiguous completed response builds")
+        if completions:
+            entries[key]["build_completion"] = freeze_file(completions[0], folder / "build_completion.json")
+            frozen_records.append(entries[key]["build_completion"])
+            component = next(row for row in load_json(completions[0])["components"] if row["cache_key"] == key)
+            if reference := component.get("response_build_completion"):
+                verify_record("original PA build completion", reference)
+                entries[key]["original_build_completion"] = freeze_file(Path(reference["path"]), folder / "original_build_completion.json")
+                frozen_records.append(entries[key]["original_build_completion"])
+    path = destination / "handoffs.json"
+    write_json_atomic(path, dict(schema_version=1, role="oatof_pa_producer_handoffs", run_id=run_root.name,
+                                declared_cache_keys=sorted(expected_cache_keys), entries=entries))
+    load_pa_producer_handoffs(path, run_root, expected_cache_keys=expected_cache_keys, capacity_session=capacity_session)
+    record = file_record(path)
+    return {**record, "frozen_input_records": [*frozen_records, record]}
+
+
+def validate_artifact_capacity(runtime: dict) -> dict:
+    """Read the explicit execution reservation, independent of field identity."""
+    capacity = runtime.get("artifact_capacity")
+    if not isinstance(capacity, dict):
+        raise ValueError("candidate runtime requires explicit artifact_capacity")
+    for key in ("comsol_bytes", "cad_bytes", "evidence_bytes"):
+        if type(capacity.get(key)) is not int or capacity[key] <= 0:
+            raise ValueError(f"artifact_capacity.{key} must be explicit positive bytes")
+    if not isinstance(capacity.get("basis"), dict) or not capacity["basis"].get("policy"):
+        raise ValueError("artifact_capacity requires its measured source and engineering policy")
+    return capacity
 
 
 def validate_workflow(workflow: dict) -> None:
@@ -225,6 +497,8 @@ def prepare_candidate_run(
     if any(not path.is_file() for path in primary_sources):
         raise FileNotFoundError("candidate baseline, resolved contract, and diff must all exist")
     sources = _candidate_sources(candidate_baseline, candidate_resolved, candidate_diff)
+    artifact_capacity = validate_artifact_capacity(load_json(RUNTIME_PATH))
+    sources["candidate_runtime.json"] = RUNTIME_PATH
     if any(_inside(path, formal_root) for path in sources.values()):
         raise ValueError("candidate inputs must not be sourced from formal artifacts")
     if (
@@ -352,9 +626,11 @@ def prepare_candidate_run(
         "run_root": str(run_root),
         "formal_root": {"path": str(formal_root), "mutation_allowed": False},
         "formal_baseline_sha256_at_planning": sha256(FORMAL_BASELINE_PATH),
+        "formal_baseline_path_at_planning": str(FORMAL_BASELINE_PATH.resolve()),
         "candidate_inputs": {key: {"path": str(path), "sha256": sha256(path)} for key, path in frozen.items()},
         **({"campaign_binding": campaign_binding} if campaign_binding is not None else {}),
         "execution_source_closure": source_closure,
+        "artifact_capacity": artifact_capacity,
         "stages": [
             {
                 "stage_id": "static_inputs",
@@ -460,6 +736,7 @@ def prepare_candidate_run(
         "run_id": run_id,
         "project": "single_reflection_oa_tof_mass_analyzer",
         "mode": "design_candidate",
+        "artifact_capacity": artifact_capacity,
         "run_instance": {
             "particle_source_seed": particle_source_seed,
             "particle_count": 100,

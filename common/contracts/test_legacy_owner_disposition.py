@@ -147,6 +147,40 @@ class OwnerDispositionAuthoringTests(unittest.TestCase):
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(legacy_owner_disposition.main(arguments), 0)
 
+    def test_partial_activation_failure_discards_earlier_file_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            run, heavy, preserved = self._run(root)
+            self._initialize(root, run, heavy, preserved)
+            second = heavy.with_name("z-field.pa0")
+            second.write_bytes(b"second payload")
+            manifest = json.loads((run / "run_manifest.json").read_text())
+            manifest["outputs"].append({"path": "simion/z-field.pa0", "bytes": second.stat().st_size, "sha256": "B" * 64})
+            (run / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            other, other_heavy, _ = self._run(root, "independent")
+            for path in (second, other_heavy):
+                capacity_ledger.record_capacity_object(
+                    root, path=path, object_class="rebuildable_payload", bytes_count=path.stat().st_size,
+                    status="writing", owner="instrument", recovery_reason="run_contract_missing_or_invalid",
+                    review_deadline="2026-10-22")
+            self._author(root, run)
+            self._author(root, other)
+            capacity_ledger.record_capacity_object(
+                root, path=second, object_class="rebuildable_payload", bytes_count=second.stat().st_size,
+                status="writing", owner="instrument", recovery_reason="run_contract_missing_or_invalid",
+                review_deadline="2026-10-22", pin=True, pin_reason="new protection")
+            before = capacity_ledger.load_capacity_ledger(root)
+            outcome = legacy_owner_disposition.activate_owner_dispositions(root)
+            self.assertEqual((outcome["activated_count"], outcome["failed_count"]), (1, 1))
+            after = capacity_ledger.load_capacity_ledger(root)
+            for path in (heavy, second):
+                relative = path.relative_to(root).as_posix()
+                self.assertEqual(next(row for row in before["objects"] if row["path"] == relative),
+                                 next(row for row in after["objects"] if row["path"] == relative))
+            other_entry = next(row for row in after["objects"] if row["path"] == other_heavy.relative_to(root).as_posix())
+            self.assertEqual(other_entry["recovery_task"], "explicit_user_authorized_abandonment")
+            self.assertTrue(heavy.exists() and second.exists() and other_heavy.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

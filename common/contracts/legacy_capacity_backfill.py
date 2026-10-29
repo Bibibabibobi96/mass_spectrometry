@@ -1,4 +1,4 @@
-"""Keep an artifact scope below a governed capacity watermark.
+"""Explicit historical artifact discovery and governed recovery.
 
 The gate is deliberately conservative.  It only ever removes reconstructible
 material.  Candidates receive a deletion priority from the checked-in policy:
@@ -6,7 +6,8 @@ lower-priority material is evicted first, then the oldest item within that
 same priority. Reusable cache age means its last recorded successful
 consumption, falling back to its generation publication time when no such
 record exists. Formal evidence, active runs, and explicitly protected paths
-are never candidates.
+are never candidates. Daily startup and maintenance belong exclusively to
+reconcile_artifact_capacity; this owner rejects those requests and receipts.
 """
 
 from __future__ import annotations
@@ -18,12 +19,10 @@ import os
 import shutil
 import sys
 import time
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from common.contracts import capacity_ledger
 from common.contracts import reconcile_artifact_capacity as daily_capacity
 from common.contracts import capacity_protection as protection
 from common.contracts.artifact_retention import classify_file, validate_retention
@@ -37,7 +36,6 @@ GIB = 1024**3
 TERMINAL = {"success", "completed", "failed", "interrupted", "cancelled", "aborted"}
 POLICY_PATH = Path(__file__).with_name("legacy_capacity_backfill_policy.json")
 DISPOSAL_RECEIPT_DIRECTORY = Path("common") / "capacity_disposal_receipts"
-CAPACITY_LEDGER_RELATIVE_PATH = capacity_ledger.CAPACITY_LEDGER_RELATIVE_PATH
 HEAVY_RETENTION_ROLES = {"solver_native_binary", "dense_trajectory", "large_optional"}
 LEGACY_INITIALIZATION_SUMMARY = {
     "schema_version": 1,
@@ -45,56 +43,6 @@ LEGACY_INITIALIZATION_SUMMARY = {
     "status": "checkpoint",
     "reason": "Run package initialized; task-specific inputs are not frozen yet.",
 }
-
-
-class _PhaseTimings:
-    """Bounded timing receipt; thresholds warn but never alter safety decisions."""
-
-    def __init__(self, warning_seconds: float = 5.0, review_seconds: float = 60.0) -> None:
-        self.started = time.perf_counter()
-        self.phases: dict[str, float] = {}
-        self.warning_seconds = float(warning_seconds)
-        self.review_seconds = float(review_seconds)
-
-    @contextmanager
-    def phase(self, name: str):
-        started = time.perf_counter()
-        try:
-            yield
-        finally:
-            self.phases[name] = self.phases.get(name, 0.0) + time.perf_counter() - started
-
-    def finish(self) -> dict[str, Any]:
-        total = time.perf_counter() - self.started
-        warnings: list[dict[str, Any]] = []
-        for name, seconds in [("total", total), *self.phases.items()]:
-            if seconds > self.review_seconds:
-                code, threshold = "PERFORMANCE_REVIEW_REQUIRED", self.review_seconds
-            elif seconds > self.warning_seconds:
-                code, threshold = "PERFORMANCE_WARNING", self.warning_seconds
-            else:
-                continue
-            warnings.append({
-                "scope": "total" if name == "total" else "phase",
-                "name": name, "seconds": round(seconds, 6),
-                "threshold_seconds": threshold, "code": code,
-            })
-        return {
-            "total_seconds": round(total, 6),
-            "phases_seconds": {key: round(value, 6) for key, value in self.phases.items()},
-            "performance_warnings": warnings,
-        }
-
-
-def _finish_timed_receipt(receipt: dict[str, Any], timings: _PhaseTimings, mode: str) -> dict[str, Any]:
-    receipt["execution_mode"] = mode
-    receipt["timing"] = timings.finish()
-    return receipt
-
-
-_load_capacity_ledger = capacity_ledger.load_capacity_ledger
-record_capacity_object = capacity_ledger.record_capacity_object
-retire_capacity_object = capacity_ledger.retire_capacity_object
 
 
 def _load_baseline_measurement(path: Path | None, expected_sha256: str | None) -> int | None:
@@ -113,169 +61,6 @@ def _load_baseline_measurement(path: Path | None, expected_sha256: str | None) -
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise ValueError("capacity baseline receipt lacks a valid measured byte count")
     return value
-
-
-def _startup_capacity_gate(
-    root: Path, *, target_bytes: int, minimum_free_bytes: int,
-    required_headroom_bytes: int, protected_paths: Iterable[Path],
-    protected_cache_keys: Iterable[str], known_measured_bytes: int | None,
-    maximum_new_artifact_bytes: int | None, capacity_ledger: Path | None,
-    capacity_protection_lease_id: str | None,
-) -> dict[str, Any]:
-    """Make the launch decision without scanning runs, caches, or PA payloads."""
-
-    timings = _PhaseTimings()
-    with timings.phase("disk_usage"):
-        free_bytes = shutil.disk_usage(root).free
-    with timings.phase("ledger_and_leases"):
-        ledger = _load_capacity_ledger(root, capacity_ledger)
-        leases = protection.load_capacity_protection_leases(root)
-    explicit_paths = [str(Path(item).absolute()) for item in protected_paths]
-    explicit_keys = sorted({str(item).lower() for item in protected_cache_keys})
-    commitment = int(leases.get("committed_new_bytes", 0))
-    if known_measured_bytes is not None and maximum_new_artifact_bytes is None:
-        raise ValueError("known capacity fast path requires maximum new bytes")
-    if known_measured_bytes is not None and known_measured_bytes < 0:
-        raise ValueError("known measured bytes must be nonnegative")
-    if maximum_new_artifact_bytes is None:
-        maximum_new_artifact_bytes = 0
-    if maximum_new_artifact_bytes < 0:
-        raise ValueError("maximum new artifact bytes must be nonnegative")
-    current_lease = next((
-        item for item in leases.get("audit", ())
-        if item.get("status") == "active"
-        and item.get("lease_id") == capacity_protection_lease_id
-    ), None)
-    baseline = known_measured_bytes
-    if baseline is None and ledger is not None:
-        baseline = int(ledger["resident_bytes"])
-    current_commitment = 0 if current_lease is None else int(current_lease.get("committed_new_bytes", 0))
-    lease_is_trusted = current_lease is not None and current_commitment >= maximum_new_artifact_bytes
-    required_free = minimum_free_bytes + required_headroom_bytes + commitment
-    projected = None if baseline is None else baseline + maximum_new_artifact_bytes
-    safe = (
-        projected is not None
-        and projected + required_headroom_bytes <= target_bytes
-        and free_bytes >= required_free
-        and lease_is_trusted
-    )
-    return _finish_timed_receipt({
-        "schema_version": 1, "role": "artifact_capacity_gate",
-        "artifact_root": str(root), "target_bytes": target_bytes,
-        "required_headroom_bytes": required_headroom_bytes,
-        "minimum_free_bytes": minimum_free_bytes,
-        "free_bytes_before": free_bytes,
-        "known_measured_bytes": baseline,
-        "maximum_new_artifact_bytes": maximum_new_artifact_bytes,
-        "estimated_upper_bound_bytes": projected,
-        "required_free_bytes": required_free,
-        "free_deficit_bytes": max(0, required_free - free_bytes),
-        "protected_paths": explicit_paths,
-        "protected_cache_keys": explicit_keys,
-        "protection_lease_audit": leases["audit"],
-        "capacity_protection_lease_id": capacity_protection_lease_id,
-        "capacity_ledger": str((capacity_ledger or root / CAPACITY_LEDGER_RELATIVE_PATH).absolute()),
-        "ledger_status": "accepted" if ledger is not None else "missing_or_invalid",
-        "measurement_mode": "STARTUP_LEDGER" if ledger is not None else "STARTUP_BLOCKED_LEDGER_REQUIRED",
-        "candidate_discovery_performed": False, "candidate_count": None,
-        "planned": [], "projected_bytes": projected, "satisfied": safe,
-        "blocking_reason": None if safe else "SAFETY_DECISION_UNAVAILABLE",
-    }, timings, "startup")
-
-
-def _ledger_candidates(
-    root: Path, ledger: dict[str, Any], protected_paths: Iterable[Path],
-    protected_cache_keys: Iterable[str], policy: dict[str, Any],
-) -> list[dict[str, Any]]:
-    """Build maintenance candidates from ledger records only."""
-
-    protected = tuple(Path(item).absolute() for item in protected_paths)
-    keys = {str(item).lower() for item in protected_cache_keys}
-    candidates: list[dict[str, Any]] = []
-    for item in ledger.get("objects", []):
-        if not isinstance(item, dict) or item.get("class") not in {
-            "published_cache", "rebuildable_payload",
-        }:
-            continue
-        if item.get("status") != "ready" or item.get("pin") is True:
-            continue
-        raw_path = item.get("path")
-        if not isinstance(raw_path, str):
-            continue
-        try:
-            target, _ = capacity_ledger.capacity_object_path(root, raw_path)
-        except (OSError, RuntimeError, ValueError):
-            continue
-        if protection.path_is_protected(target, protected) or target.name.lower() in keys:
-            continue
-        value = item.get("bytes")
-        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-            continue
-        candidates.append({
-            "level": "RUN_PAYLOAD" if item["class"] == "rebuildable_payload" else "L2",
-            "operation": "retire_ledger_object",
-            "reason": f"ledger_ready_{item['class']}",
-            "path": str(target), "bytes": value,
-            "timestamp": float(item.get("last_used_epoch", 0) or 0),
-            "ledger_record": item,
-            "deletion_priority": int(policy.get("rebuildable_payload_priority", 20)),
-        })
-    return sorted(candidates, key=lambda item: (item["deletion_priority"], item["timestamp"], item["path"]))
-
-
-def _plan_from_ledger(
-    root: Path, *, target_bytes: int, minimum_free_bytes: int,
-    required_headroom_bytes: int, protected_paths: Iterable[Path],
-    protected_cache_keys: Iterable[str], capacity_ledger: Path | None,
-) -> dict[str, Any]:
-    """Plan maintenance without enumerating runs or cache payloads."""
-
-    timings = _PhaseTimings()
-    with timings.phase("ledger_and_leases"):
-        ledger = _load_capacity_ledger(root, capacity_ledger)
-        leases = protection.load_capacity_protection_leases(root)
-    if ledger is None:
-        return _finish_timed_receipt({
-            "schema_version": 1, "role": "artifact_capacity_gate",
-            "artifact_root": str(root), "target_bytes": target_bytes,
-            "required_headroom_bytes": required_headroom_bytes,
-            "minimum_free_bytes": minimum_free_bytes,
-            "measurement_mode": "MAINTENANCE_LEDGER_REQUIRED",
-            "candidate_discovery_performed": False, "candidate_count": None,
-            "planned": [], "satisfied": False,
-            "blocking_reason": "SAFETY_DECISION_UNAVAILABLE",
-        }, timings, "maintenance")
-    with timings.phase("disk_usage"):
-        free_bytes = shutil.disk_usage(root).free
-    commitment = int(leases.get("committed_new_bytes", 0))
-    measured = int(ledger["resident_bytes"])
-    required_free = minimum_free_bytes + required_headroom_bytes + commitment
-    candidates = _ledger_candidates(
-        root, ledger, [*protected_paths, *leases["protected_paths"]],
-        [*protected_cache_keys, *leases["protected_cache_keys"]], _capacity_policy(),
-    )
-    projected = measured
-    limit = min(target_bytes - required_headroom_bytes, measured - max(0, required_free - free_bytes))
-    planned: list[dict[str, Any]] = []
-    for candidate in candidates:
-        if projected <= limit:
-            break
-        planned.append(candidate)
-        projected -= int(candidate["bytes"])
-    return _finish_timed_receipt({
-        "schema_version": 1, "role": "artifact_capacity_gate",
-        "artifact_root": str(root), "target_bytes": target_bytes,
-        "required_headroom_bytes": required_headroom_bytes,
-        "minimum_free_bytes": minimum_free_bytes,
-        "free_bytes_before": free_bytes,
-        "measured_bytes": measured, "required_free_bytes": required_free,
-        "candidate_discovery_performed": True, "candidate_count": len(candidates),
-        "planned": planned, "planned_bytes": sum(int(item["bytes"]) for item in planned),
-        "projected_bytes": projected, "satisfied": projected <= limit,
-        "capacity_ledger": str((capacity_ledger or root / CAPACITY_LEDGER_RELATIVE_PATH).absolute()),
-        "protection_lease_audit": leases["audit"],
-        "measurement_mode": "LEDGER_MAINTENANCE",
-    }, timings, "maintenance")
 
 
 def _published_cache_identity(pointer_path: Path) -> tuple[str, str] | None:
@@ -1157,38 +942,6 @@ def resume_pending_disposals(root: Path) -> list[dict[str, Any]]:
     return completed
 
 
-def _apply_ledger_object(root: Path, item: dict[str, Any], ledger_path: Path) -> dict[str, Any]:
-    """Mark retirement under lock, remove outside it, then finalize under lock."""
-
-    target, _ = capacity_ledger.capacity_object_path(root, str(item["path"]))
-    receipt_path = root / DISPOSAL_RECEIPT_DIRECTORY / (
-        f"ledger_{hashlib.sha256(str(target).encode('utf-8')).hexdigest()[:16]}.json"
-    )
-    expected_bytes = capacity_ledger.mark_retirement_pending(
-        root, path=target, ledger_path=ledger_path,
-    )
-    try:
-        receipt, removed_bytes = _remove_tree_with_receipt(
-            root, target, reason="ledger_object_retirement", receipt_path=receipt_path,
-        )
-    except Exception as exc:
-        capacity_ledger.record_retirement_error(
-            root, path=target, ledger_path=ledger_path,
-            error=f"{type(exc).__name__}: {exc}",
-        )
-        raise
-    if removed_bytes != expected_bytes:
-        capacity_ledger.record_retirement_error(
-            root, path=target, ledger_path=ledger_path,
-            error=f"removed byte count {removed_bytes} differs from ledger {expected_bytes}",
-        )
-        raise ValueError("removed byte count differs from the calibrated ledger")
-    capacity_ledger.finalize_retirement(
-        root, path=target, removed_bytes=removed_bytes, ledger_path=ledger_path,
-    )
-    return {"path": str(target), "bytes": removed_bytes, "disposal_receipt": str(receipt)}
-
-
 def _remove_unmanaged_run_with_receipt(root: Path, run_dir: Path) -> tuple[Path, int]:
     return _remove_tree_with_receipt(
         root, run_dir, reason="old_unmanaged_unreferenced_run",
@@ -1226,9 +979,7 @@ def plan(root: Path, *, target_bytes: int, minimum_free_bytes: int,
          rebuildable_success_build_runs: Iterable[Path] = (),
          known_measured_bytes: int | None = None,
          maximum_new_artifact_bytes: int | None = None,
-         execution_mode: str = "startup",
-         capacity_ledger: Path | None = None,
-         capacity_protection_lease_id: str | None = None) -> dict[str, Any]:
+         execution_mode: str = "legacy-backfill") -> dict[str, Any]:
     """Plan disposal with explicit byte budgets; CLI defaults belong to policy."""
 
     # Keep the caller's absolute spelling.  On Windows, resolve() can rewrite
@@ -1237,49 +988,12 @@ def plan(root: Path, *, target_bytes: int, minimum_free_bytes: int,
     root = root.absolute()
     if not root.is_dir():
         raise ValueError("artifact root must exist")
-    if execution_mode not in {"startup", "maintenance", "legacy-backfill"}:
-        raise ValueError("execution mode must be startup, maintenance, or legacy-backfill")
-    if execution_mode != "startup" and (known_measured_bytes is None) != (maximum_new_artifact_bytes is None):
+    if execution_mode != "legacy-backfill":
+        raise ValueError("daily startup/maintenance requires reconcile_artifact_capacity")
+    if (known_measured_bytes is None) != (maximum_new_artifact_bytes is None):
         raise ValueError("known capacity fast path requires both byte values")
-    if known_measured_bytes is not None and (
-        known_measured_bytes < 0 or maximum_new_artifact_bytes is None
-        or maximum_new_artifact_bytes < 0
-    ):
+    if known_measured_bytes is not None and (known_measured_bytes < 0 or maximum_new_artifact_bytes < 0):
         raise ValueError("known capacity fast-path bytes must be nonnegative")
-    if execution_mode == "startup":
-        return _startup_capacity_gate(
-            root,
-            target_bytes=target_bytes,
-            minimum_free_bytes=minimum_free_bytes,
-            required_headroom_bytes=required_headroom_bytes,
-            protected_paths=protected_paths,
-            protected_cache_keys=protected_cache_keys,
-            known_measured_bytes=known_measured_bytes,
-            maximum_new_artifact_bytes=maximum_new_artifact_bytes,
-            capacity_ledger=capacity_ledger,
-            capacity_protection_lease_id=capacity_protection_lease_id,
-        )
-    if execution_mode == "maintenance" and capacity_ledger is not None:
-        return _plan_from_ledger(
-            root, target_bytes=target_bytes, minimum_free_bytes=minimum_free_bytes,
-            required_headroom_bytes=required_headroom_bytes,
-            protected_paths=protected_paths, protected_cache_keys=protected_cache_keys,
-            capacity_ledger=capacity_ledger,
-        )
-    if execution_mode == "maintenance":
-        # Historical exhaustive discovery is an explicit backfill operation;
-        # normal maintenance cannot silently fall through to it.
-        timings = _PhaseTimings()
-        return _finish_timed_receipt({
-            "schema_version": 1, "role": "artifact_capacity_gate",
-            "artifact_root": str(root), "target_bytes": target_bytes,
-            "required_headroom_bytes": required_headroom_bytes,
-            "minimum_free_bytes": minimum_free_bytes,
-            "measurement_mode": "MAINTENANCE_LEDGER_REQUIRED",
-            "candidate_discovery_performed": False, "candidate_count": None,
-            "planned": [], "satisfied": False,
-            "blocking_reason": "SAFETY_DECISION_UNAVAILABLE",
-        }, timings, "maintenance")
     explicit_protected = tuple(path.absolute() for path in protected_paths)
     explicit_keys = {
         str(key).lower() for key in protected_cache_keys
@@ -1424,40 +1138,8 @@ def plan(root: Path, *, target_bytes: int, minimum_free_bytes: int,
 
 
 def apply(receipt: dict[str, Any]) -> dict[str, Any]:
-    if receipt.get("measurement_mode") == "LEDGER_MAINTENANCE":
-        root = Path(receipt["artifact_root"])
-        ledger_path = Path(receipt["capacity_ledger"])
-        removed: list[dict[str, Any]] = []
-        for item in receipt.get("planned", []):
-            if item.get("operation") != "retire_ledger_object":
-                continue
-            removed.append(_apply_ledger_object(root, item, ledger_path))
-        ledger = _load_capacity_ledger(root, ledger_path)
-        outcome = dict(receipt)
-        outcome.update(
-            applied=True, removed=removed,
-            removed_bytes=sum(int(item["bytes"]) for item in removed),
-            measured_after_bytes=None if ledger is None else int(ledger["resident_bytes"]),
-            free_bytes_after=shutil.disk_usage(root).free,
-        )
-        outcome["satisfied_after_apply"] = bool(
-            ledger is not None and int(ledger["resident_bytes"]) + int(receipt["required_headroom_bytes"])
-            <= int(receipt["target_bytes"])
-            and outcome["free_bytes_after"] >= int(receipt["required_free_bytes"])
-        )
-        return outcome
-    if receipt.get("execution_mode") == "startup":
-        # Startup is a bounded admission decision.  It must never fall through
-        # into the historical maintenance scanner merely because --apply was
-        # supplied by a lifecycle adapter.
-        outcome = dict(receipt)
-        outcome.update(
-            applied=bool(receipt.get("satisfied")),
-            removed=[], removed_bytes=0,
-            free_bytes_after=shutil.disk_usage(Path(receipt["artifact_root"])).free,
-            satisfied_after_apply=bool(receipt.get("satisfied")),
-        )
-        return outcome
+    if receipt.get("execution_mode") in {"startup", "maintenance"} or receipt.get("measurement_mode") == "LEDGER_MAINTENANCE":
+        raise ValueError("daily receipts must be applied by reconcile_artifact_capacity")
     # Active SIMION does not prohibit cleanup: plan() excludes every cache key
     # mentioned by a non-terminal manifest, and the plan is refreshed here to
     # close the interval between a capacity decision and deletion.  This keeps
@@ -1590,8 +1272,6 @@ def main() -> None:
         "--execution-mode", choices=("legacy-backfill",), default="legacy-backfill",
         help="explicit historical discovery/recovery only; daily admission uses reconcile_artifact_capacity",
     )
-    parser.add_argument("--capacity-ledger", type=Path)
-    parser.add_argument("--capacity-protection-lease-id")
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
     if args.resume_pending_disposals:
@@ -1687,9 +1367,7 @@ def main() -> None:
                        protected_cache_keys=args.protect_cache_key,
                        known_measured_bytes=baseline if baseline is not None else args.known_measured_bytes,
                        maximum_new_artifact_bytes=args.maximum_new_artifact_bytes,
-                       execution_mode=args.execution_mode,
-                       capacity_ledger=args.capacity_ledger,
-                       capacity_protection_lease_id=args.capacity_protection_lease_id)
+                       execution_mode=args.execution_mode)
         if args.apply:
             receipt = apply(receipt)
     except protection.CapacityProtectionLeaseError as exc:

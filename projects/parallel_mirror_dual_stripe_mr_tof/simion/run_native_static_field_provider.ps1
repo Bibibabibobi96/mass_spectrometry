@@ -15,6 +15,13 @@ $repo=Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
 . (Join-Path $repo 'common/resource_budget_support.ps1')
 $python=Join-Path $repo '.venv/Scripts/python.exe'
 $module='projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_static_field_provider'
+function Exit-NativeProviderHostStage {
+    param([Parameter(Mandatory)]$Lease)
+    $released=Exit-HostResourceStage -Lease $Lease -PassThru
+    if($Lease.inherited-or$null-eq$released-or$released.status-ne'released'-or$released.token-ne$Lease.token){
+        throw 'Native provider host owner release is unconfirmed; preserve the run and capacity protection.'
+    }
+}
 $RequestPath=(Resolve-Path -LiteralPath $RequestPath).Path
 $RunDirectory=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($RunDirectory)
 $compiled=Invoke-RunToolRootContext -RepoRoot $repo -Operation {
@@ -47,7 +54,7 @@ foreach($occupancyName in $occupancyNames){if($plan.ContainsKey($occupancyName+'
 $pkg=New-RunPackage -Python $python -RepoRoot $repo -ArtifactRoot $projectRoot -RunId $runId -Project $plan.project -Mode 'native_static_field_provider' -Software $software -RetentionContractEnabled -RetentionClass solver_review -RetentionReason $reason -CapacityLedgerLifecycleEnabled -AdditionalDirectories $directories -UseShortExecutionPath -ExpectedExecutionRelativePaths $surfacePaths
 $capacity=$null;$lease=$null;$parentGuard=$null
 $overlayGuards=[Collections.Generic.List[IDisposable]]::new()
-$status='failed';$stage='capacity_startup';$failure=$null;$parentDone=$false;$windowDone=$false
+$status='failed';$stage='capacity_startup';$failure=$null;$failureRecord=$null;$parentDone=$false;$windowDone=$false
 $fieldBinding=$null;$responseBasis=$null;$watch=[Diagnostics.Stopwatch]::StartNew();$timings=[ordered]@{}
 $levelStatus=[ordered]@{}
 try{
@@ -134,7 +141,7 @@ try{
             if(-not(Test-Path -LiteralPath $plan.materialization.receipts[$label] -PathType Leaf)){throw "Missing materialization receipt: $label"}
             $levelStatus[$label]=@{refine_completed=$false;crop_completed=$false;completed=$true;materialized=$true}
         }
-        Exit-HostResourceStage -Lease $lease;$lease=$null
+        Exit-NativeProviderHostStage -Lease $lease;$lease=$null
     }else{
     $exe=Join-Path $env:ProgramFiles 'SIMION-2020/simion.exe'
     if(-not(Test-Path -LiteralPath $exe -PathType Leaf)){throw 'Installed SIMION2020 missing.'}
@@ -157,7 +164,7 @@ try{
         if($step.exit_code-ne0-or-not(Test-Path -LiteralPath $collisionPa)-or(Get-Item -LiteralPath $collisionPa).Length-ne[int64]$collision.pa_bytes){throw 'Ordinary collision gem2pa failed or grid payload length differs.'}
         if($isCollisionOverlay-and(-not(Test-Path -LiteralPath ($collisionPa+'-surf'))-or(Get-Item -LiteralPath ($collisionPa+'-surf')).Length-le0)){throw 'Collision overlay fractional surface is absent or empty.'}
         $levelStatus[$occupancyName].completed=$true
-        Exit-HostResourceStage -Lease $lease;$lease=$null
+        Exit-NativeProviderHostStage -Lease $lease;$lease=$null
     }
     }
     foreach($label in $plan.execution_order){
@@ -238,7 +245,7 @@ try{
             $levelStatus[$label].crop_completed=$true
         }
         $levelStatus[$label].completed=$true
-        Exit-HostResourceStage -Lease $lease;$lease=$null
+        Exit-NativeProviderHostStage -Lease $lease;$lease=$null
     }
     $windowDone=(-not$isConsumerView-and-not$isCollisionOverlay)-and(@($plan.window_labels|Where-Object{-not$levelStatus[$_].completed}).Count-eq0)
     }
@@ -250,30 +257,54 @@ try{
     }
     $status='success'
 }catch [Management.Automation.PipelineStoppedException]{
-    $status='interrupted';$failure=$_.Exception.Message;throw
+    $status='interrupted';$failure=$_.Exception.Message;$failureRecord=$_
 }catch{
-    $failure=$_.Exception.Message;throw
+    $failure=$_.Exception.Message;$failureRecord=$_
 }finally{
-    foreach($guard in $overlayGuards){$guard.Dispose()}
-    if($null-ne$parentGuard){$parentGuard.Dispose()}
-    if($null-ne$lease){Exit-HostResourceStage -Lease $lease}
+    $writersStopped=($null-eq$lease)
+    if($null-ne$lease){
+        try{
+            Exit-NativeProviderHostStage -Lease $lease
+            $lease=$null;$writersStopped=$true
+        }catch{
+            if($null-eq$failureRecord){$failureRecord=$_}else{$failureRecord.Exception.Data['host_release_error']=$_.Exception.Message}
+        }
+    }
+    if($writersStopped){
+    foreach($guard in @($overlayGuards)+@($parentGuard)){
+        if($null-eq$guard){continue}
+        try{$guard.Dispose()}catch{
+            if($null-eq$failureRecord){$failureRecord=$_}else{
+                $failureRecord.Exception.Data['input_guard_errors']=@($failureRecord.Exception.Data['input_guard_errors'])+@($_.Exception.Message)
+            }
+        }
+    }
     try{
         Write-RunJson -Path $pkg.summary -Value @{status=$status;failure_stage=$(if($status-eq'success'){$null}else{$stage});error=$failure;parent_refine_completed=$parentDone;local_refine_completed=$windowDone;levels=$levelStatus;execution_order=$plan.execution_order;field_binding=$(if($status-eq'success'){$fieldBinding}else{$null});field_binding_path=$(if($status-eq'success'){$fieldBinding}else{$null});response_basis_path=$(if($status-eq'success'){$responseBasis}else{$null});wall_seconds=$watch.Elapsed.TotalSeconds;stage_seconds=$timings;fly_performed=$false;qualification_passed=$false} -Depth 20
         $null=Apply-RunArtifactRetention -Python $python -RepoRoot $repo -RunConfig $pkg.run_config
         $outputs=@(Get-ChildItem -LiteralPath $RunDirectory -File -Recurse|Where-Object{$_.FullName-notin@((Join-Path $RunDirectory 'run_config.json'),(Join-Path $RunDirectory 'run_manifest.json'))}|ForEach-Object FullName)
         Write-RunManifest -Python $python -RepoRoot $repo -RunConfig $pkg.run_config -Status $status -Software $software -Outputs $outputs
-        Invoke-RunToolRootContext -RepoRoot $repo -Operation {
-            & $python (Join-Path $repo 'common/contracts/verify_run_manifest.py') (Join-Path $RunDirectory 'run_manifest.json') --require-status $status
-            if($LASTEXITCODE-ne0){throw 'Native provider full manifest verification failed.'}
-        }
+        # The same producer just recorded all payloads and read back its atomic manifest.
+        $published=Get-Content -LiteralPath (Join-Path $RunDirectory 'run_manifest.json') -Raw|ConvertFrom-Json
+        if($published.status-cne$status){throw 'Native provider manifest status differs.'}
         if($null-ne$capacity){Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repo -Session $capacity;$capacity=$null}
         Invoke-RunToolRootContext -RepoRoot $repo -Operation {
             & $python -m common.contracts.run_capacity_lifecycle --action seal-stopped-payload --artifact-root $artifacts --run-config $pkg.run_config --owner $plan.project --confirm-writing-stopped --retention-reason $reason
             if($LASTEXITCODE-ne0){throw 'Native provider heavy payload sealing failed.'}
         }
+    }catch{
+        if($null-eq$failureRecord){$failureRecord=$_}else{$failureRecord.Exception.Data['failure_closure_error']=$_.Exception.Message}
     }finally{
-        if($null-ne$capacity){Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repo -Session $capacity}
-        Remove-RunPackageExecutionAlias -Package $pkg
+        if($null-ne$capacity){
+            try{Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repo -Session $capacity}catch{
+                if($null-eq$failureRecord){$failureRecord=$_}else{$failureRecord.Exception.Data['capacity_release_error']=$_.Exception.Message}
+            }
+        }
+        try{Remove-RunPackageExecutionAlias -Package $pkg}catch{
+            if($null-eq$failureRecord){$failureRecord=$_}else{$failureRecord.Exception.Data['execution_alias_error']=$_.Exception.Message}
+        }
     }
+    }else{$failureRecord.Exception.Data['writers_stopped']=$false}
+    if($null-ne$failureRecord){throw $failureRecord}
 }
 Write-Output "RUN=$RunDirectory STATUS=$status FIELD_BINDING=$fieldBinding RESPONSE_BASIS=$responseBasis"

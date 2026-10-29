@@ -65,7 +65,9 @@ assert(raw_path == output:gsub('%.[pP][aA]0$', '.pa#'),
   'raw and controller must share one private family prefix')
 assert(not exists(output), 'controller output already exists')
 local raw = assert(simion.pas:open(raw_path), 'cannot open private raw PA#')
-assert(raw.nx >= 3 and raw.ny >= 3 and raw.nz >= 3, 'native family grid is too small')
+assert(raw.nx >= 3 and raw.ny >= 3 and (raw.nz >= 3 or
+  (raw.nz == 1 and raw.symmetry_type == '2dcylindrical')),
+  'native family grid must be 3D or a 2D cylindrical plane')
 raw:refine{solutions={0}}
 raw:close()
 assert(exists(output), 'solutions={0} did not create the controller')

@@ -1082,7 +1082,7 @@ def approve_published_cache_retirement(
     root = root.resolve(strict=False)
     target, relative = capacity_object_path(root, path)
     if expected_project_owner is not None:
-        from common.contracts.verify_artifact_layout import INTEGRATION_CACHE_ROLES
+        from common.contracts.artifact_cache_contract import INTEGRATION_CACHE_ROLES
         parts = Path(relative).parts
         if (len(parts) != 5 or parts[:3] != ("projects", expected_project_owner, "cache")
                 or parts[3] not in {*INTEGRATION_CACHE_ROLES, "simion_pa_basis"}

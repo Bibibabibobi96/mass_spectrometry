@@ -85,22 +85,6 @@ function Get-OpenPaStreamSha256 {
   }
 }
 
-function Confirm-OpenPaStreamSha256 {
-  param(
-    [Parameter(Mandatory)][IO.FileStream]$Stream,
-    [Parameter(Mandatory)][string]$ExpectedSha256,
-    [ValidateRange(1,10)][int]$VerificationAttempts=3
-  )
-  $observed=@()
-  for($attempt=1;$attempt-le$VerificationAttempts;$attempt++){
-    $actual=Get-OpenPaStreamSha256 -Stream $Stream
-    $observed+=$actual
-    if($actual-eq$ExpectedSha256){return $true}
-    if($attempt-lt$VerificationAttempts){Start-Sleep -Milliseconds 200}
-  }
-  throw "Open PA source SHA256 did not return to its frozen identity after $VerificationAttempts attempts: expected=$ExpectedSha256 observed=$($observed-join',')"
-}
-
 function Get-ImmutablePaSourceVerificationSha256 {
   param(
     [Parameter(Mandatory)][IO.FileStream]$Stream,
@@ -183,7 +167,19 @@ function Protect-ImmutablePaSource {
     if([int64]$stream.Length-ne$ExpectedBytes){
       throw "Immutable PA source byte length differs from its frozen identity: $sourcePath"
     }
-    $actualHash=Get-ImmutablePaSourceVerificationSha256 -Stream $stream -Length $ExpectedBytes
+    # Open our own handle while the original verified source guard is still
+    # live. Ownership remains separate, with no interval permitting a writer.
+    $copySource=$global:MassSpectrometryShortPaSourceGuards[$sourcePath]
+    $canReuse=($null-ne$copySource-and
+      $null-ne$copySource.PSObject.Properties['verification_kind']-and
+      ($copySource.verification_kind-eq'locked_unbuffered_manifest_hash'-or
+       ($copySource.verification_kind-eq'locked_source_stream'-and
+        $ExpectedBytes-lt$global:MassSpectrometryShortPaUnbufferedThresholdBytes))-and
+      $copySource.stream.CanRead-and[long]$copySource.stream.Length-eq$ExpectedBytes-and
+      [long]$copySource.length-eq$ExpectedBytes-and$copySource.sha256-eq$expectedHash)
+    $actualHash=if($canReuse){$expectedHash}else{
+      Get-ImmutablePaSourceVerificationSha256 -Stream $stream -Length $ExpectedBytes
+    }
     if(-not[string]::Equals($actualHash,$expectedHash,[StringComparison]::Ordinal)){
       throw "Immutable PA source SHA256 differs from its frozen identity: $sourcePath"
     }
@@ -341,6 +337,7 @@ function New-ShortPaCopy {
       throw "Short PA source SHA256 differs from its frozen identity: $sourcePath"
     }
   }
+  $destinationGuard=$null
   try {
     $verified=$false
     $lastFailure='verification did not run'
@@ -360,21 +357,35 @@ function New-ShortPaCopy {
         $destinationPath,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::Read
       )
       try{$flushStream.Flush($true)}finally{$flushStream.Dispose()}
-      $destinationItem=Get-Item -LiteralPath $destinationPath -Force
-      $destinationHash=(Get-FileHash -LiteralPath $destinationPath -Algorithm SHA256).Hash
-      if([int64]$destinationItem.Length-eq$sourceLength -and
+      if($MarkDestinationReadOnly-or$GuardDestinationReadOnly){
+        $attributes=[IO.File]::GetAttributes($destinationPath)
+        [IO.File]::SetAttributes($destinationPath,$attributes-bor[IO.FileAttributes]::ReadOnly)
+      }
+      $verificationStream=[IO.File]::Open(
+        $destinationPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read
+      )
+      try{
+        $destinationLength=[int64]$verificationStream.Length
+        $destinationHash=Get-ImmutablePaSourceVerificationSha256 -Stream $verificationStream -Length $destinationLength
+        if($destinationLength-eq$sourceLength -and
          [int64]$sourceGuard.Length-eq$sourceLength -and
          $destinationHash-eq$sourceHash){
-        $verified=$true
-        break
-      }
-      $lastFailure="attempt=$attempt source_bytes=$($sourceGuard.Length) destination_bytes=$($destinationItem.Length) destination_matches=$($destinationHash-eq$sourceHash) source_sha256=$sourceHash destination_sha256=$destinationHash"
+          $verified=$true
+          if($GuardDestinationReadOnly){
+            # Retain the exact handle used by the first identity verification.
+            $destinationGuard=$verificationStream;$verificationStream=$null
+          }
+        }
+      }finally{if($null-ne$verificationStream){$verificationStream.Dispose()}}
+      if($verified){break}
+      $lastFailure="attempt=$attempt source_bytes=$($sourceGuard.Length) destination_bytes=$destinationLength destination_matches=$($destinationHash-eq$sourceHash) source_sha256=$sourceHash destination_sha256=$destinationHash"
       if($attempt-lt$VerificationAttempts){Start-Sleep -Milliseconds 200}
     }
     if(-not$verified){
       throw "Short PA copy verification failed after $VerificationAttempts attempts: $destinationPath ($lastFailure)"
     }
   } catch {
+    if($null-ne$destinationGuard){$destinationGuard.Dispose()}
     if($newSourceGuard-and[int]$sourceGuardRecord.reference_count-eq0){
       $sourceGuard.Dispose()
       $global:MassSpectrometryShortPaSourceGuards.Remove($sourcePath)
@@ -386,20 +397,7 @@ function New-ShortPaCopy {
     }
     throw
   }
-  $destinationGuard=$null
   try{
-    if($MarkDestinationReadOnly-or$GuardDestinationReadOnly){
-      $attributes=[IO.File]::GetAttributes($destinationPath)
-      [IO.File]::SetAttributes($destinationPath,$attributes-bor[IO.FileAttributes]::ReadOnly)
-    }
-    if($GuardDestinationReadOnly){
-      # A live read-only handle shared only for reads is a stronger invariant
-      # than a filesystem attribute: no solver process can reopen this PA for
-      # writing or deletion until the owning runner releases the guard.
-      $destinationGuard=[IO.File]::Open(
-        $destinationPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read
-      )
-    }
     $sourceGuardRecord.reference_count=[int]$sourceGuardRecord.reference_count+1
     $global:MassSpectrometryShortPaCopies[$destinationPath]=[pscustomobject]@{
       source=$sourcePath
@@ -407,6 +405,7 @@ function New-ShortPaCopy {
       source_bytes=$sourceLength
       source_guard_key=$sourcePath
       destination_guard=$destinationGuard
+      verified_destination_guard=$destinationGuard
       destination_write_guarded=[bool]$GuardDestinationReadOnly
       destination_marked_read_only=[bool]($MarkDestinationReadOnly-or$GuardDestinationReadOnly)
     }
@@ -533,6 +532,9 @@ function Get-ShortPaCopyIdentity {
     sha256=[string]$record.source_sha256
     destination_read_only=$attributeReadOnly
     destination_write_guarded=[bool]$record.destination_write_guarded
+    identity_guarded=($null-ne$record.PSObject.Properties['verified_destination_guard']-and
+      $null-ne$record.destination_guard-and
+      [object]::ReferenceEquals($record.verified_destination_guard,$record.destination_guard))
   }
 }
 
@@ -606,12 +608,11 @@ function Protect-ShortPaCopyDestination {
 
 function Publish-ShortPaCopyDestination {
   <# Convert one verified private PA copy into a persistent read-only artifact.
-     The copy remains byte-independent from its cache source.  This closes the
-     live no-write handles only after re-reading both sides, unregisters the
-     disposable-copy bookkeeping, and deliberately leaves the destination in
-     place for a manifest to bind. #>
+     The copy remains byte-independent from its cache source. The disposable
+     bookkeeping ends here. Only an identity verified under the
+     same continuously held handle can avoid another payload read. #>
   [CmdletBinding()]
-  param([Parameter(Mandatory)][string]$Path)
+  param([Parameter(Mandatory)][string]$Path,[switch]$KeepDestinationGuard)
   $destination=[IO.Path]::GetFullPath($Path)
   if(-not$global:MassSpectrometryShortPaCopies.ContainsKey($destination)){
     throw "Short PA copy is not registered: $destination"
@@ -621,15 +622,37 @@ function Publish-ShortPaCopyDestination {
     throw "Short PA source guard is missing: $($record.source_guard_key)"
   }
   $sourceGuardRecord=$global:MassSpectrometryShortPaSourceGuards[[string]$record.source_guard_key]
-  $identity=Confirm-ShortPaCopyIdentity -Path $destination
-  $sourceActual=Get-ImmutablePaSourceVerificationSha256 -Stream $sourceGuardRecord.stream `
-    -Length ([int64]$sourceGuardRecord.length)
+  $identity=Get-ShortPaCopyIdentity -Path $destination
+  if(-not$identity.identity_guarded){$identity=Confirm-ShortPaCopyIdentity -Path $destination}
+  $sourceCanReuse=($null-ne$sourceGuardRecord.PSObject.Properties['verification_kind']-and
+    ($sourceGuardRecord.verification_kind-eq'locked_unbuffered_manifest_hash'-or
+     ($sourceGuardRecord.verification_kind-eq'locked_source_stream'-and
+      [long]$sourceGuardRecord.length-lt$global:MassSpectrometryShortPaUnbufferedThresholdBytes))-and
+    $sourceGuardRecord.stream.CanRead-and
+    [long]$sourceGuardRecord.stream.Length-eq[long]$record.source_bytes-and
+    $sourceGuardRecord.sha256-eq$record.source_sha256)
+  $sourceActual=if($sourceCanReuse){[string]$sourceGuardRecord.sha256}else{
+    Get-ImmutablePaSourceVerificationSha256 -Stream $sourceGuardRecord.stream `
+      -Length ([int64]$sourceGuardRecord.length)
+  }
   if(-not[string]::Equals($sourceActual,[string]$record.source_sha256,[StringComparison]::OrdinalIgnoreCase)){
     throw "Short PA source differs from its frozen identity before publication: $($record.source)"
   }
-  if($null-ne$record.destination_guard){$record.destination_guard.Dispose();$record.destination_guard=$null}
+  if([int]$sourceGuardRecord.reference_count-lt1){throw 'Short PA source has no live copy reference.'}
   $attributes=[IO.File]::GetAttributes($destination)
   [IO.File]::SetAttributes($destination,$attributes-bor[IO.FileAttributes]::ReadOnly)
+  if($KeepDestinationGuard){
+    if(-not$identity.identity_guarded){
+      throw 'Persistent guard handoff requires a continuously verified destination guard.'
+    }
+    if($global:MassSpectrometryImmutablePaSourceGuards.ContainsKey($destination)){
+      throw "Persistent PA destination already has an immutable owner: $destination"
+    }
+    $global:MassSpectrometryImmutablePaSourceGuards[$destination]=[pscustomobject]@{
+      stream=$record.destination_guard;bytes=[int64]$identity.bytes;sha256=[string]$identity.sha256
+    }
+    $record.destination_guard=$null
+  }elseif($null-ne$record.destination_guard){$record.destination_guard.Dispose();$record.destination_guard=$null}
   $global:MassSpectrometryShortPaCopies.Remove($destination)
   $sourceGuardRecord.reference_count=[int]$sourceGuardRecord.reference_count-1
   if([int]$sourceGuardRecord.reference_count-lt0){throw "Short PA source guard reference count became negative: $($record.source)"}
@@ -712,23 +735,6 @@ function Remove-ShortPaCopyDirectory {
       throw "Short-PA link directory contains an unregistered entry: $directory"
     }
     [IO.Directory]::Delete($directory,$false)
-  }
-}
-
-function Remove-PrivatePaFamilyDirectory {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)][string]$Path,
-    [string]$ExpectedNamePrefix='simion_pa_family_'
-  )
-  $directory=[IO.Path]::GetFullPath($Path)
-  $temporaryRoot=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar)
-  if(-not $directory.StartsWith($temporaryRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or
-     -not([IO.Path]::GetFileName($directory).StartsWith($ExpectedNamePrefix,[StringComparison]::Ordinal))){
-    throw "Refusing to remove unverified private PA-family directory: $directory"
-  }
-  if(Test-Path -LiteralPath $directory -PathType Container){
-    Remove-Item -LiteralPath $directory -Recurse -Force
   }
 }
 

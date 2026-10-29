@@ -23,6 +23,34 @@ def load(path: Path) -> dict:
 
 class DependencyTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
+    def test_shared_capacity_contracts_import_from_actual_frozen_snapshot(self) -> None:
+        """Import the real consumers with cwd and search path detached from live code."""
+        with tempfile.TemporaryDirectory() as directory:
+            inputs = Path(directory) / "inputs"
+            script = f"""
+. '{DEPENDENCIES}'
+$null=Freeze-ConsumerDependencies -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId prepared_joint
+"""
+            freeze = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=120)
+            self.assertEqual(freeze.returncode, 0, freeze.stdout + freeze.stderr)
+            detached = inputs / "runtime_snapshot"
+            code = '''
+import sys
+from pathlib import Path
+from common.contracts import capacity_ledger, solver_review_retirement, verify_artifact_layout
+from common.contracts import artifact_cache_contract, gui_source_protection
+root=Path(sys.argv[1]).resolve()
+for module in (capacity_ledger,solver_review_retirement,verify_artifact_layout,artifact_cache_contract,gui_source_protection):
+    Path(module.__file__).resolve().relative_to(root)
+solver_review_retirement._assert_runtime_retirement_unprotected(root/'absent_artifacts',root/'absent_artifacts/projects/p/runs/source')
+'''
+            probe = subprocess.run([sys.executable, "-B", "-c", code, str(detached)], cwd=detached,
+                env=dict(os.environ, PYTHONPATH=""), capture_output=True, text=True,
+                encoding="utf-8", timeout=30)
+            self.assertEqual(probe.returncode, 0, probe.stdout + probe.stderr)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
     def test_prepared_snapshot_can_freeze_dependency_without_live_repository(self) -> None:
         """The PS freezer resolves its shared implementation from the snapshot."""
         with tempfile.TemporaryDirectory() as directory:

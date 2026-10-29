@@ -709,6 +709,126 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
 class ComsolSolverNumericsFailureTests(unittest.TestCase):
+    def test_transport_closure_and_host_errors_preserve_original_failure(self) -> None:
+        command = r"""
+$ErrorActionPreference='Stop'
+$tokens=$null; $parseErrors=$null
+$ast=[System.Management.Automation.Language.Parser]::ParseFile(
+    $env:RF_TRANSPORT_RUNNER,[ref]$tokens,[ref]$parseErrors)
+if($parseErrors.Count){throw 'Runner parse failed'}
+$outer=@($ast.FindAll({param($node)
+    $node -is [System.Management.Automation.Language.TryStatementAst] -and
+    @($node.CatchClauses).Count -eq 1 -and
+    $node.CatchClauses[0].Body.Extent.Text.Contains('Complete-FailedRun')
+},$true))
+if($outer.Count-ne 1){throw 'Expected one actual transport failure boundary'}
+function Complete-FailedRun {
+    $script:closureAttempted=$true
+    if($script:failClosure){throw 'manifest publication failed'}
+}
+function Exit-HostExecutionLease {
+    $script:releaseAttempted=$true
+    if($script:failRelease){throw 'host release failed'}
+}
+function Remove-RunPackageExecutionAlias {$script:aliasRemoved=$true}
+$python='unused'; $manifestRepoRoot='unused'; $runConfig='unused'; $summary='unused'
+$package=@{}; $hostExecutionLease=@{}; $hostExecutionOwnsLease=$true
+$resourceBudgetExceeded=$false; $RunId='fixture'; $resourceUsage='unused'
+$cases=@(@($true,$false,$false),@($true,$true,$false),@($true,$false,$true),
+    @($true,$true,$true),@($false,$false,$false),@($false,$false,$true))
+$results=@(foreach($case in $cases){
+    $primary=$case[0]; $script:failClosure=$case[1]; $script:failRelease=$case[2]
+    $comsolRunFailure=$null; $simionRunFailure=$null
+    $script:closureAttempted=$false; $script:releaseAttempted=$false; $script:aliasRemoved=$false
+    $body=if($primary){"throw [InvalidOperationException]::new('original solver failure')"}
+        else{'$hostExecutionOutcome="success"'}
+    $handler=[scriptblock]::Create('try {'+$body+'} catch '+
+        $outer[0].CatchClauses[0].Body.Extent.Text+' finally '+$outer[0].Finally.Extent.Text)
+    $failure=$null
+    try{& $handler}catch{$failure=$_}
+    [ordered]@{message=$(if($failure){$failure.Exception.Message}else{$null})
+        type=$(if($failure){$failure.Exception.GetType().Name}else{$null})
+        closure_error=$(if($failure){$failure.Exception.Data['failure_closure_error']}else{$null})
+        host_error=$(if($failure){$failure.Exception.Data['host_release_error']}else{$null})
+        closure_attempted=$script:closureAttempted;release_attempted=$script:releaseAttempted
+        alias_removed=$script:aliasRemoved}
+})
+ConvertTo-Json -InputObject $results -Compress
+"""
+        for name in ("run_finite_3d_transport.ps1", "run_simion_finite_3d_transport.ps1"):
+            with self.subTest(runner=name):
+                environment = os.environ.copy()
+                environment["RF_TRANSPORT_RUNNER"] = str(PROJECT_ROOT / "runtime" / name)
+                result = _run_pwsh(command, environment)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                records = json.loads(result.stdout.splitlines()[-1])
+                self.assertEqual(len(records), 6)
+                for index, record in enumerate(records):
+                    self.assertTrue(record["release_attempted"])
+                    self.assertTrue(record["alias_removed"])
+                    self.assertEqual(record["closure_attempted"], index < 4)
+                    if index < 4:
+                        self.assertEqual(record["message"], "original solver failure")
+                        self.assertEqual(record["type"], "InvalidOperationException")
+                        self.assertEqual(record["closure_error"], "manifest publication failed" if index in (1, 3) else None)
+                        self.assertEqual(record["host_error"], "host release failed" if index in (2, 3) else None)
+                    else:
+                        self.assertEqual(record["message"], "host release failed" if index == 5 else None)
+
+    def test_interface_failure_closure_preserves_original_error(self) -> None:
+        environment = os.environ.copy()
+        environment["RF_INTERFACE_RUNNER"] = str(RUNNER)
+        command = r"""
+$ErrorActionPreference='Stop'
+$tokens=$null; $parseErrors=$null
+$ast=[System.Management.Automation.Language.Parser]::ParseFile(
+    $env:RF_INTERFACE_RUNNER,[ref]$tokens,[ref]$parseErrors)
+if($parseErrors.Count){throw 'Runner parse failed'}
+$outer=@($ast.FindAll({param($node)
+    $node -is [System.Management.Automation.Language.TryStatementAst] -and
+    @($node.CatchClauses).Count -eq 1 -and
+    $node.CatchClauses[0].Body.Extent.Text.Contains('Complete-FailedRun')
+},$true))
+if($outer.Count-ne 1){throw 'Expected one actual interface failure boundary'}
+$handler=[scriptblock]::Create(
+    "try { throw [InvalidOperationException]::new('original solver failure') } catch " +
+    $outer[0].CatchClauses[0].Body.Extent.Text +
+    ' finally ' + $outer[0].Finally.Extent.Text)
+function Complete-FailedRun {
+    $script:closureAttempted=$true
+    if($script:failClosure){throw 'manifest publication failed'}
+}
+function Restore-RunEnvironment {$script:environmentRestored=$true}
+function Remove-RunPackageExecutionAlias {$script:aliasRemoved=$true}
+$python='unused'; $repoRoot='unused'; $package=@{run_config='unused';summary='unused'}
+$summaryRole='unused'; $software=@(); $failureStage='solver'
+$ReleaseConstructionGate=$false; $environmentNames=@(); $environmentSnapshot=@{}
+$results=@(foreach($script:failClosure in @($false,$true)){
+    $script:closureAttempted=$false; $script:environmentRestored=$false
+    $script:aliasRemoved=$false
+    try { & $handler; throw 'Unexpected success' } catch {
+        [ordered]@{message=$_.Exception.Message;type=$_.Exception.GetType().Name
+            closure_error=$_.Exception.Data['failure_closure_error']
+            closure_attempted=$script:closureAttempted
+            environment_restored=$script:environmentRestored
+            alias_removed=$script:aliasRemoved}
+    }
+})
+ConvertTo-Json -InputObject $results -Compress
+"""
+        result = _run_pwsh(command, environment)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        records = json.loads(result.stdout.splitlines()[-1])
+        self.assertEqual(len(records), 2)
+        for record in records:
+            self.assertEqual(record["message"], "original solver failure")
+            self.assertEqual(record["type"], "InvalidOperationException")
+            self.assertTrue(record["closure_attempted"])
+            self.assertTrue(record["environment_restored"])
+            self.assertTrue(record["alias_removed"])
+        self.assertIsNone(records[0]["closure_error"])
+        self.assertEqual(records[1]["closure_error"], "manifest publication failed")
+
     def test_bundle_artifact_array_freezes_all_entries_without_nesting(self) -> None:
         runner = _read(RUNNER)
         self.assertIn(

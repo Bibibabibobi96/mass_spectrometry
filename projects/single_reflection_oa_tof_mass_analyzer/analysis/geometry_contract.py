@@ -238,6 +238,25 @@ def resolve_contract(
     baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
     mode = json.loads(mode_path.read_text(encoding="utf-8"))
     numerics = json.loads(numerics_path.read_text(encoding="utf-8"))
+    return resolve_contract_documents(baseline, mode, numerics, input_identity={
+        "baseline": _input_label(baseline_path, "candidate_baseline.json"),
+        "baseline_sha256": _sha256(baseline_path),
+        "mode": _input_label(mode_path, "candidate_science_mode.json"),
+        "mode_sha256": _sha256(mode_path),
+        "solver_numerics": _input_label(numerics_path, "candidate_solver_numerics.json"),
+        "solver_numerics_sha256": _sha256(numerics_path),
+    })
+
+
+def resolve_contract_documents(
+    baseline: dict[str, Any], mode: dict[str, Any], numerics: dict[str, Any], *,
+    input_identity: dict[str, Any],
+) -> dict[str, Any]:
+    """Resolve already loaded inputs using the same physical projection.
+
+    The caller supplies the frozen input labels and hashes. This pure boundary
+    permits capacity planning before a managed run is admitted or created.
+    """
     _validate_layers(baseline, mode, numerics)
     geometry = baseline["geometry_mm"]
     accelerator = baseline["geometry_derivation"]["accelerator"]
@@ -287,16 +306,7 @@ def resolve_contract(
     return {
         "schema_version": 1,
         "role": "oa_tof_resolved_contract_do_not_edit",
-        "inputs": {
-            "baseline": _input_label(baseline_path, "candidate_baseline.json"),
-            "baseline_sha256": _sha256(baseline_path),
-            "mode": _input_label(mode_path, "candidate_science_mode.json"),
-            "mode_sha256": _sha256(mode_path),
-            "solver_numerics": _input_label(
-                numerics_path, "candidate_solver_numerics.json"
-            ),
-            "solver_numerics_sha256": _sha256(numerics_path),
-        },
+        "inputs": dict(input_identity),
         "coordinate_convention": coordinate,
         "geometry_derivation": baseline["geometry_derivation"],
         "geometry_mm": geometry,

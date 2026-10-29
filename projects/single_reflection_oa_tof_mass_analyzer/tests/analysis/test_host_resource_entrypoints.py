@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -31,6 +32,56 @@ function Exit-HostExecutionLease {
 
 @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "PowerShell 7 required")
 class HostResourceEntrypointTests(unittest.TestCase):
+    def test_fixed_n100_forwards_actual_inputs_to_guarded_flight_boundary(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="n100-guard-route-") as directory:
+            root = Path(directory)
+            workbench = root / "projects/oa/simion/workbench"
+            workbench.mkdir(parents=True)
+            transport = workbench / "run_n100_transport.ps1"
+            transport.write_bytes((PROJECT / "simion/workbench/run_n100_transport.ps1").read_bytes())
+            support = root / "common/contracts/run_artifact_support.ps1"
+            support.parent.mkdir(parents=True)
+            support.write_text("function Write-RunJson {param($Path,$Value) $Value|ConvertTo-Json -Depth 32|Set-Content -LiteralPath $Path -Encoding utf8}\n", encoding="utf-8")
+            (workbench / "run_candidate_flight.ps1").write_text(r'''
+param($ExecutionRequestPath,$RuntimeReceiptPath,$CapacitySessionPath,$PythonExe,$RepositoryRoot)
+$request=Get-Content -LiteralPath $ExecutionRequestPath -Raw|ConvertFrom-Json
+@{request=$request;runtime=$RuntimeReceiptPath;session=$CapacitySessionPath;python=$PythonExe;repo=$RepositoryRoot}|
+ ConvertTo-Json -Depth 32|Set-Content -LiteralPath $env:OA_TEST_CAPTURE -Encoding utf8
+throw 'deliberate guard boundary rejection'
+''', encoding="utf-8")
+            inputs = {}
+            for key, suffix in (("IobPath", ".iob"), ("IonPath", ".ion"),
+                                ("AnalyzerScript", ".ps1"), ("ResolvedContractPath", ".json"),
+                                ("RuntimeReceiptPath", ".json"), ("CapacitySessionPath", ".json")):
+                path = root / (key + suffix)
+                path.write_text("fixture", encoding="utf-8")
+                inputs[key] = str(path)
+            inputs["SimionExe"] = sys.executable
+            inputs["PythonExe"] = sys.executable
+            for key in ("LogPath", "ErrorPath", "DiagnosticsPath", "ParticleCsv", "SummaryPath", "CompletionPath"):
+                inputs[key] = str(root / "outputs" / (key + ".json"))
+            inputs.update(RunId="fixture-run", ContextSha256="a" * 64)
+            captured = root / "captured.json"
+            result = subprocess.run(["pwsh", "-NoProfile", "-File", str(transport),
+                *[value for key, item in inputs.items() for value in ("-" + key, item)]], cwd=root,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=45,
+                env=dict(os.environ, OA_TEST_CAPTURE=str(captured)), check=False)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("deliberate guard boundary rejection", result.stderr)
+            record = json.loads(captured.read_text(encoding="utf-8-sig"))
+            self.assertEqual(record["runtime"], inputs["RuntimeReceiptPath"])
+            self.assertEqual(record["session"], inputs["CapacitySessionPath"])
+            self.assertEqual(record["python"], sys.executable)
+            self.assertEqual(Path(record["repo"]), root)
+            request = record["request"]
+            self.assertEqual(request["context_sha256"], "a" * 64)
+            self.assertEqual(request["run_id"], "fixture-run")
+            self.assertEqual(request["result_receipt"], inputs["CompletionPath"])
+            self.assertEqual(request["argv"], ["--default-num-particles", "100", "--nogui", "fly",
+                "--trajectory-quality", "8", "--retain-trajectories", "0", "--particles", inputs["IonPath"],
+                "--adjustable", "trajectory_quality=8", "--adjustable", "trajectory_log_enable=1", inputs["IobPath"]])
+            self.assertFalse(Path(inputs["ParticleCsv"]).exists())
+
     def run_failure(self, relative: str, arguments: list[str], *, nested: bool = False) -> str:
         with tempfile.TemporaryDirectory(prefix="oa_resource_entry_test_") as directory:
             root = Path(directory)
@@ -79,14 +130,9 @@ class HostResourceEntrypointTests(unittest.TestCase):
         self.assertEqual(output.count("TEST_LEASE_EXIT=SIMION"), 1, output)
 
     def test_direct_flight_entrypoints_select_permission_and_release(self) -> None:
-        transport_arguments = [value for name in (
-            "SimionExe", "IobPath", "IonPath", "LogPath", "ErrorPath", "DiagnosticsPath",
-            "ParticleCsv", "SummaryPath", "AnalyzerScript", "ResolvedContractPath",
-        ) for value in ("-" + name, "absent-fixture-input")]
         cases = (
             ("workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1", [], "SIMION"),
             ("workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1", ["-ReanalyzeOnly"], "GATE"),
-            ("simion/workbench/run_n100_transport.ps1", transport_arguments, "SIMION"),
             ("workflows/formal_reference/run_formal_validation.ps1", [], "SIMION"),
             ("simion/workbench/run_ideal_field_diagnostic.ps1", ["-AnalyzeOnly"], "SIMION"),
             ("tests/simion/run_field_idealization_sweep.ps1", [], "SIMION"),
@@ -99,8 +145,6 @@ class HostResourceEntrypointTests(unittest.TestCase):
                     self.assertEqual(output.count(f"TEST_LEASE_ENTER={role}"), 1, output)
                     self.assertEqual(output.count(f"TEST_LEASE_EXIT={role}"), 1, output)
                     self.assertIn(f"TEST_LEASE_INHERITED={nested}", output)
-                    if relative.endswith("run_n100_transport.ps1"):
-                        self.assertIn("Required SIMION transport input is missing", output)
 
     def test_refining_lua_builders_switch_stage_and_propagate_failure(self) -> None:
         script = r"""
@@ -123,7 +167,14 @@ function Invoke-NativeFixture {
   $script:events.Add('native')
   $global:LASTEXITCODE=if($script:fail){7}else{0}
 }
+function Invoke-OwnedSimionArguments {
+ param($ArgumentList,$OperationId)
+ Invoke-NativeFixture
+ if($script:fail){throw 'Native component operation failed: fixture'}
+ return @{observation=@{exit_confirmed=$true;returncode=0};managed_process_completion=@{fixture=$true}}
+}
 $SimionExe='Invoke-NativeFixture';$outputFull=$env:TEMP
+$script:nativeSequence=0;$nativeOperations=[Collections.Generic.List[object]]::new()
 $stageWallSeconds=@{}
 foreach($fail in @($false,$true)) {
   $script:fail=$fail;$script:events=[Collections.Generic.List[string]]::new()
@@ -132,7 +183,7 @@ foreach($fail in @($false,$true)) {
   try {
     if($env:OA_TEST_FUNCTION -eq 'Invoke-Builder') { Invoke-Builder 'fixture.lua' @() 'fixture' }
     else { Invoke-SimionLua 'fixture.lua' @() -Refines }
-  } catch { if($_.Exception.Message -notlike 'SIMION *failed*'){throw};$caught=$true }
+  } catch { if($_.Exception.Message -notlike 'SIMION *failed*'-and$_.Exception.Message-notlike'Native component operation failed:*'){throw};$caught=$true }
   if($caught -ne $fail){throw 'Native failure was swallowed'}
   $expected=if($fail){'pa_refine,native'}else{'pa_refine,native,prepare'}
   if(($script:events -join ',') -ne $expected){throw "Wrong stage order: $script:events"}
@@ -191,8 +242,7 @@ foreach($nested in @($false,$true)) {
                 self.assertIn("HANDOFF=PASS", result.stdout)
 
     def test_direct_flights_have_stage_boundaries_and_builder_marks_real_refine(self) -> None:
-        for relative in ("simion/workbench/run_n100_transport.ps1",
-                         "simion/workbench/run_parameterized_geometry_smoke.ps1",
+        for relative in ("simion/workbench/run_parameterized_geometry_smoke.ps1",
                          "simion/workbench/run_ideal_field_diagnostic.ps1",
                          "tests/simion/run_field_idealization_sweep.ps1",
                          "workflows/formal_reference/run_formal_validation.ps1",
@@ -210,6 +260,14 @@ foreach($nested in @($false,$true)) {
             self.assertIn("-Refines", line)
         iob_line = next(line for line in builder.splitlines() if "Invoke-SimionLua" in line and "build_formal_iob.lua" in line)
         self.assertNotIn("-Refines", iob_line)
+        transport = (PROJECT / "simion/workbench/run_n100_transport.ps1").read_text(encoding="utf-8")
+        self.assertNotIn("Start-Process", transport)
+        self.assertIn("'run_candidate_flight.ps1'", transport)
+        flight = (PROJECT / "simion/workbench/run_candidate_flight.ps1").read_text(encoding="utf-8")
+        self.assertLess(flight.index("Enter-HostExecutionLease -Role SIMION -Stage flight"),
+                        flight.index("Invoke-RepositoryManagedPythonProcess"))
+        for name in ("RuntimeReceiptPath", "CapacitySessionPath", "PythonExe", "RepositoryRoot"):
+            self.assertIn("-" + name, transport)
 
     def test_frozen_scheduler_closure_uses_bound_python_and_shared_inheritance(self) -> None:
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import (
@@ -255,7 +313,8 @@ try {
   $transport='./projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/run_n100_transport.ps1'
   $arguments=@{SimionExe='absent';IobPath='absent';IonPath='absent';LogPath='absent';ErrorPath='absent';
     DiagnosticsPath='absent';ParticleCsv='absent';SummaryPath='absent';AnalyzerScript='absent';
-    ResolvedContractPath='absent';ExpectedParticleCount=99}
+    ResolvedContractPath='absent';ExpectedParticleCount=99;RuntimeReceiptPath='absent';CapacitySessionPath='absent';
+    CompletionPath='absent';ContextSha256='absent';RunId='absent';PythonExe='absent'}
   $expectedFailure=$false
   try { & $transport @arguments } catch { $expectedFailure=$_.Exception.Message -like '*fixed N=100*' }
   if(-not $expectedFailure){throw 'Frozen transport did not reach its input validation'}

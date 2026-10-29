@@ -45,6 +45,67 @@ def _object(
 
 
 class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
+    def test_protected_maintenance_preflight_rejects_invalid_state_before_owner_mutations(self) -> None:
+        for invalid, reason in (("ledger", "CAPACITY_LEDGER_REQUIRED"),
+                                ("lease", "CURRENT_LEASE_REQUIRED"),
+                                ("scope", "CURRENT_LEASE_SCOPE_INCOMPLETE")):
+            with self.subTest(invalid=invalid), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                capacity_ledger.initialize_capacity_ledger(root, objects=[])
+                create_capacity_protection_lease(
+                    root, lease_id="current", owner="fixture", ttl_seconds=60,
+                    protected_paths=[root / "protected"], committed_new_bytes=0,
+                )
+                if invalid == "ledger":
+                    (root / capacity.CAPACITY_LEDGER_RELATIVE_PATH).write_text("damaged", encoding="utf-8")
+                with (patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "1"}),
+                      patch.object(capacity, "_run_maintenance_owner_actions") as owners,
+                      patch.object(sys, "argv", [
+                          "capacity", "--artifact-root", str(root), "--execution-mode", "maintenance", "--apply",
+                          "--capacity-protection-lease-id", "missing" if invalid == "lease" else "current",
+                          "--protect-path", str(root / ("unprotected" if invalid == "scope" else "protected")),
+                      ]), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as stderr):
+                    with self.assertRaises(SystemExit) as failure:
+                        capacity.main()
+                self.assertEqual(failure.exception.code, 2)
+                self.assertIn(reason, stderr.getvalue())
+                owners.assert_not_called()
+
+    def test_lost_workflow_lease_stops_next_owner_and_first_retirement(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "input").write_bytes(b"keep")
+            (root / "disposable").write_bytes(b"discard")
+            capacity_ledger.initialize_capacity_ledger(root, objects=[
+                _object("input", bytes_count=4), _object("disposable", bytes_count=7),
+            ])
+            create_capacity_protection_lease(
+                root, lease_id="current", owner="fixture", ttl_seconds=60,
+                protected_paths=[root / "input"], committed_new_bytes=1,
+            )
+            receipt = capacity.plan(root, target_bytes=5, minimum_free_bytes=0, execution_mode="maintenance",
+                                    protected_paths=[root / "input"], capacity_protection_lease_id="current")
+
+            def first_owner(_root):
+                capacity.protection.delete_capacity_protection_lease(root, lease_id="current")
+                return {}
+
+            with (patch.object(capacity, "_recover_capacity_ledger_owner", side_effect=first_owner),
+                  patch.object(capacity, "activate_owner_dispositions") as second_owner):
+                with self.assertRaisesRegex(ValueError, "active current lease"):
+                    capacity._run_maintenance_owner_actions(
+                        root, capacity._timings(), protection_check=lambda: capacity._assert_maintenance_input_lease(
+                            root, "current", [root / "input"], (),
+                        ),
+                    )
+                second_owner.assert_not_called()
+            with patch.object(capacity, "_apply_ledger_object") as removal:
+                with self.assertRaisesRegex(ValueError, "active current lease"):
+                    capacity.apply(receipt)
+                removal.assert_not_called()
+            self.assertEqual((root / "input").read_bytes(), b"keep")
+            self.assertTrue((root / "disposable").exists())
+
     def test_cli_preview_and_unleased_apply_never_run_mutations(self) -> None:
         mutators = (
             "activate_owner_dispositions", "_register_workspace_scratch_scope",

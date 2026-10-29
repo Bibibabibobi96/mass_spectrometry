@@ -5,6 +5,7 @@ import contextlib
 import hashlib
 import io
 import json
+import os
 import math
 from pathlib import Path
 import re
@@ -155,6 +156,7 @@ class LocalFrontendFieldSupportTests(unittest.TestCase):
 
     def run_protected_composition(self, failure='none', mode_count=5):
         """Exercise real public copy/guard cleanup with a non-vendor callback."""
+        from common.simion.test_short_pa_path_support import PA_HASH_READ_COUNTERS
         pwsh=shutil.which('pwsh')
         if not pwsh:
             self.skipTest('PowerShell 7 unavailable')
@@ -181,9 +183,22 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 . (Join-Path $Repo 'common/simion/short_pa_path_support.ps1')
 . $Support
+""" + PA_HASH_READ_COUNTERS + """
 $records=@((Get-Content (Join-Path $Root 'selection.json') -Raw|ConvertFrom-Json).records)
 $jobs=@(Get-Content (Join-Path $Root 'jobs.json') -Raw|ConvertFrom-Json)
-$script:calls=@();$script:tempDirectories=@();$caught='';$result=$null
+$script:calls=@();$script:tempDirectories=@();$caught='';$result=$null;$preserved='';$cleanupError=''
+if($Failure-eq'cleanup'){
+ $originalRemove=${function:Remove-ShortPaCopyDirectory}
+ function Remove-ShortPaCopyDirectory {param($Path)
+  & $originalRemove -Path $Path
+  throw 'CONTROLLED_CLEANUP_SECONDARY'
+ }
+}
+$tamperedBytes=$null
+if($Failure-eq'tamper_before_copy'){
+ $tamperedBytes=[IO.File]::ReadAllBytes([string]$records[0].path)
+ [IO.File]::WriteAllBytes([string]$records[0].path,[byte[]](@(88)*$tamperedBytes.Length))
+}
 try {
  $result=Invoke-LocalFrontendFieldCompositions -SelectionPath (Join-Path $Root 'selection.json') -Compositions $jobs -ComposerPath 'SYNTHETIC_NOT_VENDOR.lua' -OutputDirectory $Root -InvokeNative {
   param($Arguments,$Directory,$Name)
@@ -191,6 +206,7 @@ try {
   foreach($path in $paths){
    if($path-in@($records|ForEach-Object{$_.path})){throw 'published path passed to native callback'}
    if(-not(Test-Path -LiteralPath $path)){throw 'private input missing'}
+   if(-not(Get-ShortPaCopyIdentity -Path $path).identity_guarded){throw 'private input lacks verified guard'}
    $script:tempDirectories+=Split-Path -Parent $path
   }
   foreach($record in $records){
@@ -200,11 +216,37 @@ try {
    if(-not$blocked){throw 'published source was writable during native callback'}
   }
   $script:calls+=,@{name=$Name;paths=$paths;directory=$Directory}
-  if($Failure-eq'native'){throw 'CONTROLLED_NATIVE_CALLBACK_FAILURE'}
-  if($Failure-eq'private_mutation'){[IO.File]::WriteAllText($paths[0],'CONTROLLED_PRIVATE_COPY_MUTATION')}
+  if($Failure-in@('native','cleanup')){throw 'CONTROLLED_NATIVE_CALLBACK_FAILURE'}
+  if($Failure-in@('confirmed','unknown')){
+   $error=[InvalidOperationException]::new('CONTROLLED_OBSERVER_FAILURE')
+   $error.Data['observed_process_exit_confirmed']=($Failure-eq'confirmed')
+   throw $error
+  }
+  if($Failure-eq'private_mutation'){
+   try{[IO.File]::WriteAllText($paths[0],'CONTROLLED_PRIVATE_COPY_MUTATION')}
+   catch{throw 'CONTROLLED_PRIVATE_COPY_WRITE_BLOCKED'}
+   throw 'Private input accepted a native write'
+  }
   [IO.File]::WriteAllText([string]$Arguments[5],'SYNTHETIC_OUTPUT_NOT_PA')
  }
-}catch{$caught=$_.Exception.Message}
+}catch{
+ $caught=$_.Exception.Message
+ $preserved=[string]$_.Exception.Data['local_field_preserved_input_directory']
+ if($_.Exception.Data.Contains('local_field_cleanup_error')){$cleanupError=$_.Exception.Data['local_field_cleanup_error'].Exception.Message}
+}
+$identityReads=@($script:paHashReads)
+if($null-ne$tamperedBytes){[IO.File]::WriteAllBytes([string]$records[0].path,$tamperedBytes)}
+if($Failure-eq'unknown'){
+ if(-not$preserved-or-not(Test-Path -LiteralPath $preserved)-or$global:MassSpectrometryShortPaCopies.Count-ne$records.Count){throw 'unknown writer inputs were cleaned'}
+ foreach($record in $records){
+  $blocked=$false
+  try{$writer=[IO.File]::OpenWrite([string]$record.path);$writer.Dispose()}catch [IO.IOException]{$blocked=$true}
+  if(-not$blocked){throw 'unknown source guard released before owner handling'}
+ }
+ # This fixture never starts a process; it now owns disposal of the deliberately
+ # retained inert inputs after observing the failure receipt.
+ Remove-ShortPaCopyDirectory -Path $preserved
+}
 foreach($record in $records){
  if((Get-FileHash -LiteralPath ([string]$record.path)).Hash-ne[string]$record.sha256){throw 'published bytes changed'}
  $writer=[IO.File]::Open([string]$record.path,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::ReadWrite);$writer.Dispose()
@@ -213,12 +255,13 @@ foreach($directory in @($script:tempDirectories|Select-Object -Unique)){
  if(Test-Path -LiteralPath $directory){throw 'temporary copies not cleaned'}
 }
 if($global:MassSpectrometryShortPaCopies.Count-or$global:MassSpectrometryShortPaSourceGuards.Count-or$global:MassSpectrometryImmutablePaSourceGuards.Count){throw 'guard registry leaked'}
-@{caught=$caught;result=$result;calls=$script:calls;source_unchanged=$true;temporary_copies_removed=$true}|ConvertTo-Json -Depth 10 -Compress
+@{caught=$caught;result=$result;calls=$script:calls;reads=$identityReads;preserved=$preserved;cleanup_error=$cleanupError;source_unchanged=$true;temporary_copies_removed=$true}|ConvertTo-Json -Depth 10 -Compress
 """, encoding='utf-8', newline='\n')
             completed=subprocess.run([pwsh,'-NoProfile','-File',str(script),str(ROOT),str(SUPPORT),str(root),failure],
                                      capture_output=True,text=True,encoding='utf-8',check=False,cwd=ROOT,timeout=60)
             self.assertEqual(completed.returncode,0,completed.stderr)
-            return json.loads(completed.stdout)
+            # A secondary cleanup warning is diagnostic, not the JSON receipt.
+            return json.loads(completed.stdout[completed.stdout.index('{'):])
 
     def test_native_composition_uses_one_guarded_copy_set_for_all_working_points(self):
         for count in (5,6):
@@ -231,16 +274,41 @@ if($global:MassSpectrometryShortPaCopies.Count-or$global:MassSpectrometryShortPa
                 paths=[call['paths'][0] for call in output['calls']]
                 self.assertEqual(len(set(paths)),1)
                 self.assertTrue(output['result']['temporary_copies_removed'])
+                print(f'PA_COMPOSITION_READS inputs={count} reads={len(output["reads"])} '
+                      f'bytes={sum(row["bytes"] for row in output["reads"])}')
+                self.assertEqual(len(output['reads']), 2 * count)
+                self.assertEqual(sum(row['bytes'] for row in output['reads']),
+                                 2 * output['result']['response_copy_bytes'])
 
     def test_native_failure_and_private_mutation_preserve_sources_and_release_guards(self):
         for failure,message in (('native','CONTROLLED_NATIVE_CALLBACK_FAILURE'),
-                                ('private_mutation','Short PA destination SHA256')):
+                                ('private_mutation','CONTROLLED_PRIVATE_COPY_WRITE_BLOCKED')):
             with self.subTest(failure=failure):
                 output=self.run_protected_composition(failure)
                 self.assertIn(message,output['caught'])
                 self.assertEqual(len(output['calls']),1)
                 self.assertTrue(output['source_unchanged'])
                 self.assertTrue(output['temporary_copies_removed'])
+
+    def test_observer_unknown_retains_inputs_but_confirmed_and_prelaunch_failures_clean(self):
+        for failure in ('unknown', 'confirmed', 'native'):
+            with self.subTest(failure=failure):
+                output = self.run_protected_composition(failure)
+                self.assertEqual(bool(output['preserved']), failure == 'unknown')
+                self.assertEqual(output['caught'], 'CONTROLLED_NATIVE_CALLBACK_FAILURE'
+                                 if failure == 'native' else 'CONTROLLED_OBSERVER_FAILURE')
+                self.assertEqual(len(output['calls']), 1)
+
+    def test_metadata_selected_same_size_damage_rejects_before_native_consumption(self):
+        output = self.run_protected_composition('tamper_before_copy')
+        self.assertIn('SHA256 differs', output['caught'])
+        self.assertEqual(output['calls'], [])
+        self.assertTrue(output['temporary_copies_removed'])
+
+    def test_cleanup_failure_does_not_replace_original_composition_error(self):
+        output = self.run_protected_composition('cleanup')
+        self.assertEqual(output['caught'], 'CONTROLLED_NATIVE_CALLBACK_FAILURE')
+        self.assertEqual(output['cleanup_error'], 'CONTROLLED_CLEANUP_SECONDARY')
 
     def test_rod_sample_interior_check_uses_common_radial_axes_in_native_mr(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -364,6 +432,63 @@ if(Test-Path (Join-Path $Snapshot 'artifacts')){throw 'private host ledger creat
                                     capture_output=True, text=True, encoding='utf-8', check=False, cwd=ROOT, timeout=30)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('LIVE_HOST_CONTEXT=PASS', result.stdout)
+
+    def test_stage_preserves_primary_failure_and_does_not_downgrade_unknown_writer(self):
+        """Run the real stage with inert plan transport and a failing host transition."""
+        for mode in ('unknown', 'confirmed', 'prelaunch'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                for name in ('inputs', 'logs'):
+                    (root / name).mkdir()
+                (root / 'run_config.json').write_text('{}', encoding='utf-8')
+                script = r'''
+. (Join-Path $env:TEST_REPO 'common/simion/short_pa_path_support.ps1')
+. (Join-Path $env:TEST_REPO 'integrations/runtime/local_frontend_field_support.ps1')
+function Write-RunJson {param($Path,$Value,$Depth)}
+function Get-HostResourceBudget {param($Role,$Stage) return @{}}
+function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session,$ProtectedCacheKeys) return @{session=$Session}}
+function Invoke-ResourceBudgetedProcess {throw 'Native must not start in this fixture'}
+$script:prepareCalls=0
+function Update-HostResourceStage {
+ param($Lease,$Stage,$Budget,$RetainedMemoryBytes)
+ if($Stage-eq'prepare'){$script:prepareCalls++;throw 'STAGE_PREPARE_SECONDARY'}
+ return $Lease
+}
+$script:primary=[InvalidOperationException]::new('STAGE_OPERATION_PRIMARY')
+$script:primary.Data['local_field_preserved_input_directory']='fixture-owned-inputs'
+if($env:TEST_MODE-ne'prelaunch'){
+ $script:primary.Data['observed_process_exit_confirmed']=($env:TEST_MODE-eq'confirmed')
+}
+function Invoke-RunToolRootContext {
+ param($RepoRoot,$Operation)
+ # These are explicit inert Python transport responses, not PA/solver results.
+ if($Name-eq'local_field_plan'){
+  [IO.File]::WriteAllText($stdout,'{"recipe":{"exporter_path":""},"identity":{},"cache_key":"fixture","filenames":[],"mode_ids":[1]}')
+ }elseif($Name-eq'local_field_cache_probe'){
+  [IO.File]::WriteAllText($stdout,(@{disposition='hit';generation_directory=$env:TEST_RUN}|ConvertTo-Json -Compress))
+ }elseif($Name-eq'local_field_select'){throw $script:primary}
+ else{throw "Unexpected Python boundary: $Name"}
+}
+$lease=@{token='inert'};$capacity=@{committed_new_bytes=0};$caught=$null
+try{
+ Invoke-LocalFrontendFieldStage -Python 'NOT_STARTED' -RepoRoot $env:TEST_REPO -RunDirectory $env:TEST_RUN `
+  -PreparedDirectory $env:TEST_RUN -SimionExe 'NOT_STARTED' -HostLease ([ref]$lease) -CapacitySession ([ref]$capacity) -Limits @{}|Out-Null
+}catch{$caught=$_}
+@{message=$caught.Exception.Message;same_exception=[object]::ReferenceEquals($caught.Exception,$script:primary);
+ retained_path=$caught.Exception.Data['local_field_preserved_input_directory'];prepare_calls=$script:prepareCalls;
+ secondary=if($caught.Exception.Data.Contains('local_field_stage_transition_error')){$caught.Exception.Data['local_field_stage_transition_error'].Exception.Message}else{$null}}|ConvertTo-Json -Compress
+'''
+                result = subprocess.run(['pwsh', '-NoProfile', '-Command', script],
+                                        capture_output=True, text=True, encoding='utf-8', check=False,
+                                        cwd=ROOT, timeout=30, env={**os.environ, 'TEST_REPO': str(ROOT),
+                                                                 'TEST_RUN': str(root), 'TEST_MODE': mode})
+                self.assertEqual(result.returncode, 0, result.stderr)
+                evidence = json.loads(result.stdout[result.stdout.index('{'):])
+                self.assertEqual(evidence['message'], 'STAGE_OPERATION_PRIMARY')
+                self.assertTrue(evidence['same_exception'])
+                self.assertEqual(evidence['retained_path'], 'fixture-owned-inputs')
+                self.assertEqual(evidence['prepare_calls'], 0 if mode == 'unknown' else 1)
+                self.assertEqual(evidence['secondary'], None if mode == 'unknown' else 'STAGE_PREPARE_SECONDARY')
 
     def run_verifier(self, failure, mode_count=5):
         if not LUA.is_file():
