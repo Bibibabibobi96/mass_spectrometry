@@ -220,8 +220,13 @@ run instance冻结。`--resume-from <旧run目录>`保持相同配置和seed，�
 
 `ideal_acceptance_300mm_simion_candidate.py`是这一个已选`300 mm / 4 mm`理想轴向点进入真实场的唯一
 候选编译器。它不重搜参数，必须绑定已发布的理想场configuration、manifest和已通过独立粒子检验的
-selected result；`--run-dir`原子发布一个`CANDIDATE_ONLY`候选，`--output`只用于临时单文件检查。集成
-侧的`three_zone_ideal_acceptance_300mm_square_v1`与`..._cylindrical_v1`必须消费同一候选的四个轴向平面、
+selected result；`--run-dir`原子发布一个`CANDIDATE_ONLY`候选，`--output`只用于临时单文件检查。
+
+编译时核对父manifest中的`experiment`、`reference_config`及唯一selected-result记录，消费父冻结
+configuration与reference；显式`--configuration`可以是同字节副本，但身份不符立即拒绝。普通编译、
+网格闭合及发布记录使用同一父输入权威，不回读活动reference；父输入缺失或漂移不能用当前配置补齐。
+直接回归见`tests/analysis/test_ideal_acceptance_300mm_simion_candidate.py`，不把软件输入绑定通过当作真实场验证。
+集成侧的`three_zone_ideal_acceptance_300mm_square_v1`与`..._cylindrical_v1`必须消费同一候选的四个轴向平面、
 电位和反射器工作点；二者只允许改变横截面。候选的坐标会整体平移到现有多极杆直连端口，内部长度、
 场强和相对焦点不变；这不是额外加上一段300 mm连接器。真实方/圆场、孔径收集、轴场等价和数值收敛
 仍需由对应SIMION运行单独验证。

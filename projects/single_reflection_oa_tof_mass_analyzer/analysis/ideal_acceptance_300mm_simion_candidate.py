@@ -26,6 +26,8 @@ from scipy.optimize import root
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import load_json, validate_schema
+from common.contracts.verify_run_manifest import record_path, verify_record
+from common.contracts.write_run_manifest import require_completed_terminal_publication
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_theory import (
     axial_time_coefficients,
 )
@@ -81,19 +83,37 @@ def _write_exclusive_json(path: Path, document: Mapping[str, Any]) -> None:
         stream.write("\n")
 
 
-def _manifest_contains(manifest: dict[str, Any], path: Path) -> bool:
-    """Return whether a manifest output records this exact immutable file."""
+def _load_frozen_parent_inputs(
+    configuration_path: Path, run_manifest_path: Path, selected_result_path: Path,
+) -> tuple[Path, dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Consume the parent's recorded experiment and reference, never live defaults."""
 
-    for record in manifest.get("outputs", []):
-        if not isinstance(record, dict) or "path" not in record:
-            continue
-        try:
-            recorded_path = Path(str(record["path"])).resolve()
-        except OSError:
-            continue
-        if recorded_path == path.resolve() and record.get("sha256") == file_sha256(path):
-            return True
-    return False
+    require_completed_terminal_publication(run_manifest_path)
+    manifest = _load(run_manifest_path)
+    if (manifest.get("role") != "simulation_run_manifest"
+            or manifest.get("status") != "success"
+            or manifest.get("project") != PROJECT_ID
+            or manifest.get("mode") != "ideal_acceptance_theory"):
+        raise ValueError("parent must be a successful ideal_acceptance_theory run")
+    parent = run_manifest_path.resolve().parent
+    inputs = manifest.get("inputs", {})
+    paths = {}
+    for name in ("experiment", "reference_config"):
+        record = inputs.get(name)
+        if not isinstance(record, dict):
+            raise ValueError(f"parent manifest input is missing: {name}")
+        verify_record(name, record, base_dir=parent)
+        paths[name] = record_path(record, base_dir=parent)
+    verify_record("supplied configuration", {
+        **inputs["experiment"], "path": str(configuration_path.resolve()),
+    })
+    selected_records = [record for record in manifest.get("outputs", [])
+                        if record_path(record, base_dir=parent) == selected_result_path.resolve()]
+    if len(selected_records) != 1:
+        raise ValueError("parent manifest must bind exactly one selected result")
+    verify_record("selected result", selected_records[0], base_dir=parent)
+    return (paths["experiment"], _load(paths["experiment"]),
+            _load(paths["reference_config"]), _load(selected_result_path))
 
 
 def _number(value: Any, *, label: str, positive: bool = False) -> float:
@@ -117,18 +137,29 @@ def compile_ideal_acceptance_300mm_candidate(
     the same axial field.
     """
 
-    configuration = _load(configuration_path)
-    manifest = _load(run_manifest_path)
-    selected = _load(selected_result_path)
+    configuration_path, configuration, reference, selected = _load_frozen_parent_inputs(
+        configuration_path, run_manifest_path, selected_result_path,
+    )
+    return _compile_selected_candidate(
+        configuration, reference, selected, configuration_path=configuration_path,
+        run_manifest_path=run_manifest_path, selected_result_path=selected_result_path,
+        total_length_mm=total_length_mm,
+    )
+
+
+def _compile_selected_candidate(
+    configuration: dict[str, Any], reference: dict[str, Any], selected: dict[str, Any],
+    *, configuration_path: Path, run_manifest_path: Path, selected_result_path: Path,
+    total_length_mm: float,
+) -> dict[str, Any]:
+    """Project the verified selected point without changing its scientific formulas."""
+
     if (
         configuration.get("role") != "ideal_acceptance_theory"
         or _number(configuration.get("design", {}).get("total_acceleration_length_mm"), label="total acceleration length") != total_length_mm
-        or manifest.get("status") != "success"
-        or manifest.get("project") != "single_reflection_oa_tof_mass_analyzer"
         or selected.get("full_width_mm") != 4
         or selected.get("theoretical_population_pass") is not True
         or selected.get("independent_particle_pass") is not True
-        or not _manifest_contains(manifest, selected_result_path)
     ):
         raise ValueError(f"{total_length_mm:g} mm ideal-acceptance evidence is not a frozen 4 mm pass")
     point = selected.get("point")
@@ -139,9 +170,6 @@ def compile_ideal_acceptance_300mm_candidate(
     source_point = point.get("design_source")
     if not all(isinstance(value, dict) for value in (state, inner, source_point)):
         raise ValueError("selected ideal-acceptance state is incomplete")
-    project_root = Path(__file__).resolve().parents[1]
-    reference_path = (project_root / str(configuration.get("reference_config"))).resolve()
-    reference = _load(reference_path)
     reference_source = reference.get("source")
     reference_outer = reference.get("outer")
     if not isinstance(reference_source, dict) or not isinstance(reference_outer, dict):
@@ -243,15 +271,14 @@ def compile_grid_realized_ideal_acceptance_300mm_candidate(
     field validation or a new global design search.
     """
 
-    base = compile_ideal_acceptance_300mm_candidate(
-        configuration_path, run_manifest_path, selected_result_path, total_length_mm=total_length_mm
+    configuration_path, configuration, reference, selected = _load_frozen_parent_inputs(
+        configuration_path, run_manifest_path, selected_result_path,
     )
-    configuration = _load(configuration_path)
-    reference_path = (
-        Path(__file__).resolve().parents[1]
-        / str(configuration["reference_config"])
-    ).resolve()
-    reference = _load(reference_path)
+    base = _compile_selected_candidate(
+        configuration, reference, selected, configuration_path=configuration_path,
+        run_manifest_path=run_manifest_path, selected_result_path=selected_result_path,
+        total_length_mm=total_length_mm,
+    )
     source_values = base["source_identity"]["frozen_source"]
     source = NumericalSourceSpec(
         mass_to_charge_th=float(source_values["mass_to_charge_th"]),
@@ -523,15 +550,13 @@ def publish_ideal_acceptance_300mm_candidate(
             config, manifest, selected, axial_grid_z_mm=axial_grid_z_mm,
             total_length_mm=total_length_mm,
         )
-    candidate = _portable_candidate(
-        compiler(configuration_path, run_manifest_path, selected_result_path),
-        workspace_root=workspace_root,
+    compiled = compiler(configuration_path, run_manifest_path, selected_result_path)
+    configuration_path = Path(compiled["campaign"]["file"]["path"])
+    reference_path = record_path(
+        _load(run_manifest_path)["inputs"]["reference_config"],
+        base_dir=run_manifest_path.parent,
     )
-    configuration = _load(configuration_path)
-    reference_path = (
-        Path(__file__).resolve().parents[1]
-        / str(configuration["reference_config"])
-    ).resolve()
+    candidate = _portable_candidate(compiled, workspace_root=workspace_root)
     code_inputs = {
         "candidate_compiler_source": Path(__file__).resolve(),
         "candidate_output_schema": REPOSITORY_ROOT
