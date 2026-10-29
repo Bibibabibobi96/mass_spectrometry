@@ -47,7 +47,7 @@ def execute_prepared_run(config_path, session_path, request_path, completion_pat
     config["parameters"] = {"fixture": True}
     config_path.write_text(json.dumps(config), encoding="utf-8")
     output = root / "results/science.json"
-    output.write_text(json.dumps({"capacity_session": session["lease_id"],
+    output.write_text(json.dumps({"capacity_session": session["lease_id"], "worker_process_id": os.getpid(),
         "host_resource_state_path": os.environ["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"]}), encoding="utf-8")
     outputs, required, preserve = [str(output)], [str(output)], []
     if payload.get("disposable"):
@@ -464,7 +464,10 @@ catch{{Write-Output $_.Exception.Message;exit 7}}
             receipt = json.loads((run / "logs/prepared_wait.json").read_text(encoding="utf-8-sig"))["managed_process"]
             self.assertTrue(receipt["ownership_confirmed"] and receipt["worker_exit_confirmed"])
             self.assertTrue(receipt["stdout_drained"] and receipt["stderr_drained"])
-            self.assertNotEqual(receipt["worker_process_id"], receipt["launcher_process_id"])
+            actual_worker = json.loads((run / "results/science.json").read_text())["worker_process_id"]
+            self.assertEqual(receipt["worker_process_id"], actual_worker)
+            self.assertGreater(receipt["launcher_process_id"], 0)
+            self.assertTrue(receipt["launcher_exit_confirmed"])
             manifest = json.loads((run / "run_manifest.json").read_text(encoding="utf-8-sig"))
             before = {path: file_record(run / path) for path in ("logs/prepared_stdout.log", "logs/prepared_stderr.log")}
             time.sleep(.15)

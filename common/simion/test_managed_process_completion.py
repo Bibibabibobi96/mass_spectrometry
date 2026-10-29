@@ -152,10 +152,10 @@ try{
 'COMPLETION='+(@{receipt=$receipt;error=$errorText}|ConvertTo-Json -Depth 30 -Compress)
 '''
         worker = """from pathlib import Path
-import subprocess,sys,time
+import os,subprocess,sys,time
 from common.simion.process_observation import run_observed_process
 root=Path(sys.argv[2])
-(root/'work_started').write_text('started')
+(root/'work_started').write_text(str(os.getpid()))
 result,_=run_observed_process([sys._base_executable,'-B','-c',"import time;time.sleep(.15);print('native finished')"],cwd=root,stdout=root/'native.log',stderr=root/'native.err')
 assert result.returncode==0
 (root/'completion').write_text('complete')
@@ -189,7 +189,8 @@ raise SystemExit(int(sys.argv[3]))
                     self.assertTrue(receipt["ownership_confirmed"])
                     self.assertTrue(receipt["worker_exit_confirmed"])
                     self.assertEqual(receipt["exit_code"], code)
-                    self.assertNotEqual(receipt["launcher_process_id"], receipt["worker_process_id"])
+                    self.assertEqual(receipt["worker_process_id"], int((root / "work_started").read_text()))
+                    self.assertGreater(receipt["launcher_process_id"], 0)
                     self.assertEqual((root / "completion").read_text(), "complete")
                     self.assertIn("late stdout 中文 3", (root / "stdout.log").read_text(encoding="utf-8"))
                     self.assertIn("late stderr 中文 3", (root / "stderr.log").read_text(encoding="utf-8"))
