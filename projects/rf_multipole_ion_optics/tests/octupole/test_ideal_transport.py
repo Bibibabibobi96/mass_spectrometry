@@ -33,6 +33,7 @@ class OctupoleIdealTransportTests(unittest.TestCase):
             REPO_ROOT, "rf_multipole_ion_optics", 'octupole_no_acceleration_full_length'
         )["resolved_design"]
         cls.contract = l1_l2_transport_contract_from_resolved_design(resolved)
+        cls.resolved = resolved
         cls.request = json.loads(
             (
                 PROJECT_ROOT / "variants" / "octupole" / "config" / "requests" / "mechanical_base.json"
@@ -88,14 +89,15 @@ class OctupoleIdealTransportTests(unittest.TestCase):
     def test_round_rod_l2_functional_gate(self):
         screen = {
             "field_solve_drive_V": 100.0,
-            "selected_candidate": {
-                "rod_radius_ratio": 0.36, "rod_radius_mm": 1.44,
-                "rod_center_radius_mm": 5.44, "minimum_adjacent_surface_gap_mm": 1.28,
+            "project_id": self.contract["project_id"], "radial_order_n": 4, "electrode_count": 8,
+            "candidates": [{
+                "rod_radius_ratio": 0.5,
                 "parasitic_harmonic_score": 0.005,
+                "field_metric_checks": {"minimum_main_boundary_amplitude": True, "maximum_cross_radius_harmonic_spread": True},
                 "boundary_cosine_coefficients_V": {"4": 100.0, "12": -0.3, "20": 0.2},
-            },
+            }],
         }
-        metrics, rows = evaluate_round_rod_contract(self.contract, screen)
+        metrics, rows = evaluate_round_rod_contract(self.contract, screen, self.resolved)
         self.assertEqual(metrics["status"], "PASS")
         self.assertEqual(len(rows), 200)
         self.assertEqual(len({row["particle_id"] for row in rows}), 100)

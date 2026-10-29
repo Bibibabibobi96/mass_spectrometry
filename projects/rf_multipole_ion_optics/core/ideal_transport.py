@@ -300,13 +300,49 @@ def evaluate_contract(contract: dict[str, Any]) -> tuple[dict[str, Any], list[di
 
 
 def evaluate_round_rod_contract(
-    contract: dict[str, Any], screen_metrics: dict[str, Any]
+    contract: dict[str, Any], screen_metrics: dict[str, Any], resolved_design: dict[str, Any], *,
+    minimum_adjacent_gap_mm: float = 0.0,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Evaluate finite transport in the fitted 2D circular-rod field."""
+    """Evaluate the screen candidate matching the already-governed rod geometry."""
     validate_contract(contract)
-    selected = screen_metrics["selected_candidate"]
+    identity = resolved_design["identity"]
+    geometry = resolved_design["geometry_mm"]
+    if (screen_metrics.get("project_id") != contract["project_id"]
+            or screen_metrics.get("radial_order_n") != identity["radial_order_n"]
+            or screen_metrics.get("electrode_count") != identity["electrode_count"]
+            or identity["radial_order_n"] != contract["multipole"]["radial_order_n"]
+            or identity["electrode_count"] != contract["multipole"]["electrode_count"]
+            or not math.isclose(float(geometry["inscribed_radius_r0"]),
+                                float(contract["geometry_mm"]["inscribed_radius_r0"]), rel_tol=0, abs_tol=1e-12)):
+        raise ValueError("field screen, transport and resolved design geometry differ")
+    ratio = float(geometry["rod_radius_ratio"])
+    candidates = [candidate for candidate in screen_metrics["candidates"]
+                  if math.isclose(float(candidate["rod_radius_ratio"]), ratio, rel_tol=0, abs_tol=1e-12)]
+    if len(candidates) != 1:
+        raise ValueError("field screen must contain exactly one candidate for the resolved rod radius ratio")
+    selected = candidates[0]
+    if not all(selected.get("field_metric_checks", {}).get(key) is True for key in
+               ("minimum_main_boundary_amplitude", "maximum_cross_radius_harmonic_spread")):
+        raise ValueError("resolved rod candidate fails the field-screen physical checks")
+    rods = geometry["rod_array"]["rods"]
+    if len(rods) != identity["electrode_count"]:
+        raise ValueError("resolved rod array count differs from its identity")
+    gaps = [math.hypot(float(left["center_x_mm"])-float(right["center_x_mm"]),
+                       float(left["center_y_mm"])-float(right["center_y_mm"]))
+            - float(left["radius_mm"]) - float(right["radius_mm"])
+            for left, right in zip(rods, rods[1:] + rods[:1], strict=True)]
+    minimum_gap = min(gaps)
+    if (not math.isfinite(minimum_gap) or minimum_gap <= 0 or not math.isfinite(minimum_adjacent_gap_mm)
+            or minimum_adjacent_gap_mm < 0 or minimum_gap < minimum_adjacent_gap_mm):
+        raise ValueError("resolved rod geometry violates the field-screen minimum adjacent gap")
     coefficients = selected["boundary_cosine_coefficients_V"]
+    expected_orders = {str(identity["radial_order_n"] * multiplier) for multiplier in (1, 3, 5)}
+    if (set(coefficients) != expected_orders
+            or any(not math.isfinite(float(value)) for value in coefficients.values())):
+        raise ValueError("field-screen harmonic coefficients are incomplete or nonfinite")
     source_drive = float(screen_metrics["field_solve_drive_V"])
+    if not math.isfinite(source_drive) or source_drive <= 0:
+        raise ValueError("field-screen drive must be finite and positive")
     scale = float(contract["rf"]["amplitude_V_peak"]) / source_drive
     field_terms = [(int(order), float(value) * scale) for order, value in coefficients.items()]
     particles = source_particles(contract)
@@ -329,18 +365,16 @@ def evaluate_round_rod_contract(
         "role": "multipole_round_rod_l2_transport_metrics",
         "project_id": contract["project_id"],
         "model_level": "L2",
-        "selected_geometry": {
-            key: selected[key] for key in (
-                "rod_radius_ratio", "rod_radius_mm", "rod_center_radius_mm",
-                "minimum_adjacent_surface_gap_mm", "parasitic_harmonic_score",
-            )
-        },
+        "selected_geometry": {"rod_radius_ratio": ratio, "rod_radius_mm": float(geometry["rod_radius"]),
+                              "rod_center_radius_mm": float(geometry["rod_center_radius"]),
+                              "minimum_adjacent_surface_gap_mm": minimum_gap,
+                              "parasitic_harmonic_score": selected["parasitic_harmonic_score"]},
         "field_terms_boundary_cosine_V": {str(order): value for order, value in field_terms},
         "cases": cases,
         "rf_minus_zero_transmission": improvement,
         "checks": checks,
         "status": "PASS" if all(checks.values()) else "FAIL",
-        "claim_limit": "Fitted 2D COMSOL circular-rod field extended uniformly along z; no fringe field, 3D solver tracking, collisions, Candidate or Formal claim.",
+        "claim_limit": "Fitted finite cosine harmonics of a 2D COMSOL circular-rod field with a grounded screen boundary, extended uniformly along z; sine harmonics are omitted. This is not the full bare-enclosure field; no fringe field, 3D solver tracking, collisions, Candidate or Formal claim.",
     }
     return metrics, all_rows
 

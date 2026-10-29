@@ -33,6 +33,7 @@ class HexapoleIdealTransportTests(unittest.TestCase):
             REPO_ROOT, "rf_multipole_ion_optics", 'hexapole_no_acceleration_full_length'
         )["resolved_design"]
         cls.contract = l1_l2_transport_contract_from_resolved_design(resolved)
+        cls.resolved = resolved
         cls.request = json.loads(
             (
                 PROJECT_ROOT / "variants" / "hexapole" / "config" / "requests" / "mechanical_base.json"
@@ -63,7 +64,7 @@ class HexapoleIdealTransportTests(unittest.TestCase):
     def test_round_rod_screen_recovers_boundary_normalized_harmonic(self):
         screen = json.loads((PROJECT_ROOT / "variants" / "hexapole" / "config" / "round_rod_field_screen.json").read_text(encoding="utf-8"))
         rows = []
-        for ratio, parasitic in ((0.45, 0.03), (0.5, 0.01)):
+        for ratio, parasitic in ((0.45, 0.001), (0.5, 0.01)):
             for radius_mm in (
                 fraction * screen["geometry_mm"]["inscribed_radius_r0"]
                 for fraction in screen["sampling"]["radius_fraction_of_r0"]
@@ -80,22 +81,28 @@ class HexapoleIdealTransportTests(unittest.TestCase):
         selected = min(
             result["candidates"], key=lambda item: item["parasitic_harmonic_score"]
         )
-        self.assertEqual(selected["rod_radius_ratio"], 0.5)
-        self.assertAlmostEqual(
-            selected["harmonics"]["normalized_a9_over_a3"], 0.01, places=10
-        )
+        self.assertEqual(selected["rod_radius_ratio"], 0.45)
+        metrics, _ = evaluate_round_rod_contract(self.contract, result, self.resolved)
+        self.assertEqual(metrics["selected_geometry"]["rod_radius_ratio"], 0.5)
+        self.assertAlmostEqual(metrics["selected_geometry"]["rod_radius_mm"], self.resolved["geometry_mm"]["rod_radius"])
+        without_match = dict(result, candidates=[selected])
+        with self.assertRaisesRegex(ValueError, "exactly one candidate"):
+            evaluate_round_rod_contract(self.contract, without_match, self.resolved)
+        with self.assertRaisesRegex(ValueError, "exactly one candidate"):
+            evaluate_round_rod_contract(self.contract, dict(result, candidates=result["candidates"] + [result["candidates"][1]]), self.resolved)
 
     def test_round_rod_l2_functional_gate(self):
         screen = {
             "field_solve_drive_V": 100.0,
-            "selected_candidate": {
-                "rod_radius_ratio": 0.55, "rod_radius_mm": 2.2,
-                "rod_center_radius_mm": 6.2, "minimum_adjacent_surface_gap_mm": 1.8,
+            "project_id": self.contract["project_id"], "radial_order_n": 3, "electrode_count": 6,
+            "candidates": [{
+                "rod_radius_ratio": 0.5,
                 "parasitic_harmonic_score": 0.004,
+                "field_metric_checks": {"minimum_main_boundary_amplitude": True, "maximum_cross_radius_harmonic_spread": True},
                 "boundary_cosine_coefficients_V": {"3": 100.0, "9": -0.2, "15": 0.1},
-            },
+            }],
         }
-        metrics, rows = evaluate_round_rod_contract(self.contract, screen)
+        metrics, rows = evaluate_round_rod_contract(self.contract, screen, self.resolved)
         self.assertEqual(metrics["status"], "PASS")
         self.assertEqual(len(rows), 200)
         self.assertEqual(len({row["particle_id"] for row in rows}), 100)
