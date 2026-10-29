@@ -1,0 +1,140 @@
+CHANGED_GATE_INPUT_SOURCE=EXPLICIT_CHANGED_PATH
+CHANGED_GATE_INPUTS=COUNT=2 PATHS=projects/rf_quadrupole_ion_optics/docs/PROJECT.md,projects/rf_quadrupole_ion_optics/tests/analysis/test_comsol_workflow_architecture_contract.py
+GATE_CONCURRENCY=1 MODE=explicit LOGICAL_PROCESSORS=16
+GATE_STAGE=RUN NAME=repository_hygiene REASON=always
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=repository_hygiene PID=7324 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=7324 INHERITED=True
+WORKSPACE_HYGIENE=SKIP REASON=standalone_repository_checkout
+REPOSITORY_HYGIENE=PASS TRACKED_FILES=2433
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=repository_hygiene STATUS=released
+GATE_STAGE=PASS NAME=repository_hygiene ELAPSED_SECONDS=5.954
+GATE_STAGE=RUN NAME=repository_text_bytes REASON=always
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=repository_text_bytes PID=7324 INHERITED=False
+REPOSITORY_TEXT_BYTES=PASS FILES=1947
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=repository_text_bytes STATUS=released
+GATE_STAGE=PASS NAME=repository_text_bytes ELAPSED_SECONDS=3.974
+GATE_STAGE=RUN NAME=documentation REASON=documentation_or_project_docs_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=documentation PID=7324 INHERITED=False
+REVIEW: docs/LIFECYCLE.md:336: scratch path in prose/code span; review evidence lifetime
+REVIEW: integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:33: broken relative link '../../runtime/verify_single_flight_pa_cache_readiness.py'
+REVIEW: .agents/skills/grill-me/SKILL.md: no incoming link from an active Markdown document (code consumers not assessed)
+REVIEW: common/contracts/README.md: over 400 lines; review navigation and responsibilities
+REVIEW: common/simion/README.md: over 400 lines; review navigation and responsibilities
+REVIEW: docs/COMSOL_API.md: over 400 lines; review navigation and responsibilities
+REVIEW: docs/DEVELOPMENT_STANDARDS.md: over 400 lines; review navigation and responsibilities
+REVIEW: docs/multipoles/quadrupole.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/adiabatic_drift_and_original_ion_foil.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/dual_stripe_non_tilt_design.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/implementation_and_validation.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/injection_prism_source_and_calibration.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/isochronous_mirror_design.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/simion/README.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/publication/prior_art_equation_claim_chart_20260825.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/theory/conditional_phase_space_focusability.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/theory/dual_stage_reflectron.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/theory/oatof_oaaccelerator_coupling.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/theory/source_to_detector_phase_space_framework.md: over 400 lines; review navigation and responsibilities
+REVIEW: repeated substantial paragraph: projects/rf_hexapole_ion_optics/README.md, projects/rf_octupole_ion_optics/README.md
+DOCUMENTATION_LINKS: files=289 errors=0 review=22
+
+MarkdownFiles        : 289
+HistoryArchives      : 175
+AuthorityEntries     : 8
+Mode                 : StructureOnly
+ComsolReferenceBytes : 22877
+STATUS               : PASS
+
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=documentation STATUS=released
+GATE_STAGE=PASS NAME=documentation ELAPSED_SECONDS=11.63
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=gate_matplotlib_cache PID=7324 INHERITED=False
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=gate_matplotlib_cache STATUS=released
+GATE_MATPLOTLIB_CACHE=READY PATH=C:\Users\Liao\AppData\Local\Temp\changed_gate_9edc32b720eb48a7a0a8b6c88c17a9e4\matplotlib
+GATE_PROCESS=START NAME=development_standards PID=4124
+GATE_PROCESS=COMPLETE NAME=development_standards EXIT_CODE=0 ELAPSED_SECONDS=15.323 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=ruff_changed_python PID=29724
+GATE_PROCESS=COMPLETE NAME=ruff_changed_python EXIT_CODE=0 ELAPSED_SECONDS=5.145 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=rf_quadrupole_generated_publications PID=26316
+GATE_PROCESS=COMPLETE NAME=rf_quadrupole_generated_publications EXIT_CODE=0 ELAPSED_SECONDS=13.531 LOG_REPLAY=PENDING
+GATE_STAGE=RUN NAME=development_standards REASON=source_code_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=development_standards PID=4124 INHERITED=False
+DEVELOPMENT_STANDARDS=PASS ERRORS=0 REVIEW_SIGNALS=576
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=development_standards STATUS=released
+GATE_STAGE=PASS NAME=development_standards ELAPSED_SECONDS=14.203
+GATE_STAGE=RUN NAME=ruff_changed_python REASON=existing_python_source_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=ruff_changed_python PID=29724 INHERITED=False
+All checks passed!
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=ruff_changed_python STATUS=released
+GATE_STAGE=PASS NAME=ruff_changed_python ELAPSED_SECONDS=3.978
+GATE_STAGE=SKIP NAME=project_registry REASON=no_route_match
+GATE_STAGE=RUN NAME=rf_quadrupole_generated_publications REASON=quadrupole_path_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=rf_quadrupole_generated_publications PID=26316 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=26316 INHERITED=True
+RESOLVED_DESIGN=PASS PROFILE=official
+RESOLVED_DESIGN=PASS PROFILE=interface
+RESOLVED_DESIGN=PASS PROFILE=mass_filter
+SIMION_GEOMETRY_SYNC=PASS
+STATUS=PASS
+MULTIPOLE_RUNTIME_PROFILE=PASS PROJECT=rf_quadrupole_ion_optics PROFILE=no_acceleration_full_length
+PROJECT_GATE=PASS PROJECT=rf_quadrupole_ion_optics LEVEL=Freshness
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=rf_quadrupole_generated_publications STATUS=released
+GATE_STAGE=PASS NAME=rf_quadrupole_generated_publications ELAPSED_SECONDS=12.399
+GATE_STAGE=SKIP NAME=host_resource_scheduler_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=host_resource_adapter_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=livelink_resource_stages_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=longitudinal_fit_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=tof_error_budget_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=documentation_link_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=livelink_failure_classification REASON=no_route_match
+GATE_STAGE=SKIP NAME=livelink_environment REASON=no_route_match
+GATE_STAGE=SKIP NAME=common_contracts REASON=no_route_match
+GATE_STAGE=SKIP NAME=expected_values_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=gate_contract_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=cloc_contract_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=python_dependency_contract REASON=no_route_match
+GATE_STAGE=SKIP NAME=simion_common REASON=no_route_match
+GATE_STAGE=SKIP NAME=multipole_common REASON=no_route_match
+GATE_STAGE=SKIP NAME=multipole_foundation REASON=no_route_match
+GATE_STAGE=SKIP NAME=integration_common REASON=no_route_match
+GATE_STAGE=SKIP NAME=rf_multipole_to_single_reflection_oatof_integration REASON=no_route_match
+GATE_STAGE=SKIP NAME=solidworks_common REASON=no_route_match
+GATE_STAGE=SKIP NAME=orthogonal_accelerator_static REASON=no_route_match
+GATE_STAGE=SKIP NAME=parallel_mirror_dual_stripe_mr_tof_static REASON=no_route_match
+GATE_STAGE=SKIP NAME=single_reflection_oa_tof_mass_analyzer_static REASON=no_route_match
+GATE_STAGE=RUN NAME=rf_quadrupole_ion_optics_static REASON=rf_quadrupole_path_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=rf_quadrupole_ion_optics_static PID=7324 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=7324 INHERITED=True
+QUADRUPOLE_FRESHNESS=PREVALIDATED
+{
+  "a_at_tune_mass": 0.22988782765406462,
+  "axis_common_mode_offset_V": -8.0,
+  "dc_differential_V": 45.52602987935551,
+  "ideal_scanline": {
+    "q_cal": 0.6964829222134838,
+    "q_in": 0.6827291735098723,
+    "q_out": 0.7108022091906631,
+    "resolving_power_stability": 24.819748718056726,
+    "u_over_v": 0.162804703
+  },
+  "mode_status": "n100_dual_solver_revalidation_pending",
+  "q_at_tune_mass": 0.7060233009794091,
+  "rf_differential_V_peak_to_peak": 559.27168,
+  "rf_differential_V_zero_to_peak": 279.63584,
+  "scope": "L0 ideal-field contract validation only; no solver or mass-response qualification",
+  "status": "PASS",
+  "u_over_v": 0.162804703
+}
+QUADRUPOLE_L0_REFERENCE=PASS
+QUADRUPOLE_MASS_FILTER_L1_CONTRACT=PASS
+ENTRY_APERTURE_L0=PASS DESIGN_VALUE_AVAILABLE=false
+PROJECT_GATE=PASS PROJECT=rf_quadrupole_ion_optics LEVEL=Core
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=rf_quadrupole_ion_optics_static STATUS=released
+GATE_STAGE=PASS NAME=rf_quadrupole_ion_optics_static ELAPSED_SECONDS=7.542
+GATE_STAGE=SKIP NAME=rf_hexapole_ion_optics_static REASON=no_route_match
+GATE_STAGE=SKIP NAME=rf_octupole_ion_optics_static REASON=no_route_match
+GATE_STAGE=SKIP NAME=dual_pressure_rectilinear_ion_processor_static REASON=no_route_match
+GATE_STAGE=SKIP NAME=dual_cone_tandem_quadrupole_ion_interface_static REASON=no_route_match
+GATE_STAGE=SKIP NAME=transverse_helical_filament_wehnelt_electron_gun_static REASON=no_route_match
+GATE_STAGE=SKIP NAME=apertured_tube_electron_impact_ion_source_static REASON=no_route_match
+CHANGED_GATE=PASS PYTHON=3.11 CHANGED_PATHS=2 FULL_SCOPE=False

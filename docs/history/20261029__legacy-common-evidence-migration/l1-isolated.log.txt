@@ -1,0 +1,530 @@
+CHANGED_GATE_INPUT_SOURCE=GIT_DIFF_BASE=HEAD:52d2b2b8f162b8f478ddc0be2c8dd06c8e8084a2;UNTRACKED=git_ls_files
+CHANGED_GATE_INPUTS=COUNT=16 PATHS=common/comsol/README.md,common/contracts/README.md,common/contracts/run_artifact_support.ps1,common/contracts/solver_review_retirement.py,common/contracts/test_simion_refine_policy.py,common/contracts/test_solver_review_retirement.py,common/contracts/test_verify_run_manifest.py,common/simion/build_dirichlet_patch_basis.lua,common/simion/build_dirichlet_patch_operating_pa.lua,common/simion/README.md,common/simion/short_pa_path_support.ps1,common/simion/test_short_pa_path_support.py,common/simion/test_standalone_pa_composition_tools.py,docs/COMSOL_API.md,projects/single_reflection_oa_tof_mass_analyzer/docs/COMSOL.md,projects/single_reflection_oa_tof_mass_analyzer/docs/PROJECT.md
+GATE_CONCURRENCY=2 MODE=explicit LOGICAL_PROCESSORS=16
+GATE_STAGE=RUN NAME=repository_hygiene REASON=always
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=repository_hygiene PID=20796 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=20796 INHERITED=True
+WORKSPACE_HYGIENE=SKIP REASON=standalone_repository_checkout
+REPOSITORY_HYGIENE=PASS TRACKED_FILES=2433
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=repository_hygiene STATUS=released
+GATE_STAGE=PASS NAME=repository_hygiene ELAPSED_SECONDS=5.384
+GATE_STAGE=RUN NAME=repository_text_bytes REASON=always
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=repository_text_bytes PID=20796 INHERITED=False
+REPOSITORY_TEXT_BYTES=PASS FILES=1947
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=repository_text_bytes STATUS=released
+GATE_STAGE=PASS NAME=repository_text_bytes ELAPSED_SECONDS=3.631
+GATE_STAGE=RUN NAME=documentation REASON=documentation_or_project_docs_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=documentation PID=20796 INHERITED=False
+REVIEW: docs/LIFECYCLE.md:336: scratch path in prose/code span; review evidence lifetime
+REVIEW: integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:33: broken relative link '../../runtime/verify_single_flight_pa_cache_readiness.py'
+REVIEW: .agents/skills/grill-me/SKILL.md: no incoming link from an active Markdown document (code consumers not assessed)
+REVIEW: common/contracts/README.md: over 400 lines; review navigation and responsibilities
+REVIEW: common/simion/README.md: over 400 lines; review navigation and responsibilities
+REVIEW: docs/COMSOL_API.md: over 400 lines; review navigation and responsibilities
+REVIEW: docs/DEVELOPMENT_STANDARDS.md: over 400 lines; review navigation and responsibilities
+REVIEW: docs/multipoles/quadrupole.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/adiabatic_drift_and_original_ion_foil.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/dual_stripe_non_tilt_design.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/implementation_and_validation.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/injection_prism_source_and_calibration.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/isochronous_mirror_design.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/simion/README.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/publication/prior_art_equation_claim_chart_20260825.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/theory/conditional_phase_space_focusability.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/theory/dual_stage_reflectron.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/theory/oatof_oaaccelerator_coupling.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/theory/source_to_detector_phase_space_framework.md: over 400 lines; review navigation and responsibilities
+REVIEW: repeated substantial paragraph: projects/rf_hexapole_ion_optics/README.md, projects/rf_octupole_ion_optics/README.md
+DOCUMENTATION_LINKS: files=289 errors=0 review=22
+
+MarkdownFiles        : 289
+HistoryArchives      : 175
+AuthorityEntries     : 8
+Mode                 : StructureOnly
+ComsolReferenceBytes : 22877
+STATUS               : PASS
+
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=documentation STATUS=released
+GATE_STAGE=PASS NAME=documentation ELAPSED_SECONDS=9.302
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=gate_matplotlib_cache PID=20796 INHERITED=False
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=gate_matplotlib_cache STATUS=released
+GATE_MATPLOTLIB_CACHE=READY PATH=C:\Users\Liao\AppData\Local\Temp\changed_gate_18caba860a4f40de93353cd977e2dcd9\matplotlib
+GATE_PROCESS=START NAME=development_standards PID=27220
+GATE_PROCESS=START NAME=ruff_changed_python PID=22100
+GATE_PROCESS=COMPLETE NAME=ruff_changed_python EXIT_CODE=0 ELAPSED_SECONDS=4.878 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=rf_quadrupole_generated_publications PID=27912
+GATE_PROCESS=COMPLETE NAME=development_standards EXIT_CODE=0 ELAPSED_SECONDS=13.885 LOG_REPLAY=PENDING
+GATE_PROCESS=COMPLETE NAME=rf_quadrupole_generated_publications EXIT_CODE=0 ELAPSED_SECONDS=12.565 LOG_REPLAY=PENDING
+GATE_STAGE=RUN NAME=development_standards REASON=source_code_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=development_standards PID=27220 INHERITED=False
+DEVELOPMENT_STANDARDS=PASS ERRORS=0 REVIEW_SIGNALS=575
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=development_standards STATUS=released
+GATE_STAGE=PASS NAME=development_standards ELAPSED_SECONDS=12.845
+GATE_STAGE=RUN NAME=ruff_changed_python REASON=existing_python_source_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=ruff_changed_python PID=22100 INHERITED=False
+All checks passed!
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=ruff_changed_python STATUS=released
+GATE_STAGE=PASS NAME=ruff_changed_python ELAPSED_SECONDS=3.837
+GATE_STAGE=SKIP NAME=project_registry REASON=no_route_match
+GATE_STAGE=RUN NAME=rf_quadrupole_generated_publications REASON=common_contracts_direct_dependency_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=rf_quadrupole_generated_publications PID=27912 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=27912 INHERITED=True
+RESOLVED_DESIGN=PASS PROFILE=official
+RESOLVED_DESIGN=PASS PROFILE=interface
+RESOLVED_DESIGN=PASS PROFILE=mass_filter
+SIMION_GEOMETRY_SYNC=PASS
+STATUS=PASS
+MULTIPOLE_RUNTIME_PROFILE=PASS PROJECT=rf_quadrupole_ion_optics PROFILE=no_acceleration_full_length
+PROJECT_GATE=PASS PROJECT=rf_quadrupole_ion_optics LEVEL=Freshness
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=rf_quadrupole_generated_publications STATUS=released
+GATE_STAGE=PASS NAME=rf_quadrupole_generated_publications ELAPSED_SECONDS=11.62
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=gate_matplotlib_cache PID=20796 INHERITED=False
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=gate_matplotlib_cache STATUS=released
+GATE_MATPLOTLIB_CACHE=READY PATH=C:\Users\Liao\AppData\Local\Temp\changed_gate_83ef86054117432cb2473ec8cad68834\matplotlib
+GATE_PROCESS=START NAME=common_contracts PID=12496
+GATE_PROCESS=START NAME=simion_common PID=25572
+GATE_PROCESS=COMPLETE NAME=simion_common EXIT_CODE=0 ELAPSED_SECONDS=70.323 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=multipole_common PID=22912
+GATE_PROCESS=COMPLETE NAME=common_contracts EXIT_CODE=0 ELAPSED_SECONDS=182.121 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=multipole_foundation PID=29624
+GATE_PROCESS=COMPLETE NAME=multipole_foundation EXIT_CODE=0 ELAPSED_SECONDS=6.525 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=rf_multipole_to_single_reflection_oatof_integration PID=6440
+GATE_PROCESS=COMPLETE NAME=multipole_common EXIT_CODE=1 ELAPSED_SECONDS=266.234 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=single_reflection_oa_tof_mass_analyzer_static PID=29152
+GATE_PROCESS=COMPLETE NAME=rf_multipole_to_single_reflection_oatof_integration EXIT_CODE=0 ELAPSED_SECONDS=287.7 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=rf_quadrupole_ion_optics_static PID=7620
+GATE_PROCESS=COMPLETE NAME=rf_quadrupole_ion_optics_static EXIT_CODE=0 ELAPSED_SECONDS=9.266 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=rf_hexapole_ion_optics_static PID=18972
+GATE_PROCESS=COMPLETE NAME=rf_hexapole_ion_optics_static EXIT_CODE=0 ELAPSED_SECONDS=25.586 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=rf_octupole_ion_optics_static PID=25872
+GATE_PROCESS=COMPLETE NAME=single_reflection_oa_tof_mass_analyzer_static EXIT_CODE=0 ELAPSED_SECONDS=177.427 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=dual_cone_tandem_quadrupole_ion_interface_static PID=20072
+GATE_PROCESS=COMPLETE NAME=dual_cone_tandem_quadrupole_ion_interface_static EXIT_CODE=0 ELAPSED_SECONDS=22.243 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=transverse_helical_filament_wehnelt_electron_gun_static PID=27592
+GATE_PROCESS=COMPLETE NAME=rf_octupole_ion_optics_static EXIT_CODE=0 ELAPSED_SECONDS=28.504 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=apertured_tube_electron_impact_ion_source_static PID=19348
+GATE_PROCESS=COMPLETE NAME=apertured_tube_electron_impact_ion_source_static EXIT_CODE=0 ELAPSED_SECONDS=8.408 LOG_REPLAY=PENDING
+GATE_PROCESS=COMPLETE NAME=transverse_helical_filament_wehnelt_electron_gun_static EXIT_CODE=0 ELAPSED_SECONDS=24.945 LOG_REPLAY=PENDING
+GATE_STAGE=SKIP NAME=host_resource_scheduler_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=host_resource_adapter_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=livelink_resource_stages_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=longitudinal_fit_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=tof_error_budget_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=documentation_link_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=livelink_failure_classification REASON=no_route_match
+GATE_STAGE=SKIP NAME=livelink_environment REASON=no_route_match
+GATE_STAGE=RUN NAME=common_contracts REASON=common_contracts_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=common_contracts PID=12496 INHERITED=False
+..........................................................................................usage: reconcile_artifact_capacity [-h] --artifact-root ARTIFACT_ROOT
+                                   [--restore-retired-disposition-receipt RESTORE_RETIRED_DISPOSITION_RECEIPT]
+                                   [--restore-retired-path-key-receipt RESTORE_RETIRED_PATH_KEY_RECEIPT]
+                                   [--expected-ledger-sha256 EXPECTED_LEDGER_SHA256]
+                                   [--expected-receipt-sha256 EXPECTED_RECEIPT_SHA256]
+                                   [--create-protection-lease CREATE_PROTECTION_LEASE]
+                                   [--renew-protection-lease RENEW_PROTECTION_LEASE]
+                                   [--delete-protection-lease DELETE_PROTECTION_LEASE]
+                                   [--lease-owner LEASE_OWNER]
+                                   [--lease-ttl-seconds LEASE_TTL_SECONDS]
+                                   [--committed-new-bytes COMMITTED_NEW_BYTES]
+                                   [--protect-path PROTECT_PATH]
+                                   [--protect-cache-key PROTECT_CACHE_KEY]
+                                   [--execution-mode {startup,maintenance}]
+                                   [--maintenance-target-gib MAINTENANCE_TARGET_GIB]
+                                   [--capacity-ledger CAPACITY_LEDGER]
+                                   [--capacity-protection-lease-id CAPACITY_PROTECTION_LEASE_ID]
+                                   [--apply] [--detailed-output]
+reconcile_artifact_capacity: error: unrecognized arguments: --maximum-new-artifact-bytes 1
+usage: reconcile_artifact_capacity [-h] --artifact-root ARTIFACT_ROOT
+                                   [--restore-retired-disposition-receipt RESTORE_RETIRED_DISPOSITION_RECEIPT]
+                                   [--restore-retired-path-key-receipt RESTORE_RETIRED_PATH_KEY_RECEIPT]
+                                   [--expected-ledger-sha256 EXPECTED_LEDGER_SHA256]
+                                   [--expected-receipt-sha256 EXPECTED_RECEIPT_SHA256]
+                                   [--create-protection-lease CREATE_PROTECTION_LEASE]
+                                   [--renew-protection-lease RENEW_PROTECTION_LEASE]
+                                   [--delete-protection-lease DELETE_PROTECTION_LEASE]
+                                   [--lease-owner LEASE_OWNER]
+                                   [--lease-ttl-seconds LEASE_TTL_SECONDS]
+                                   [--committed-new-bytes COMMITTED_NEW_BYTES]
+                                   [--protect-path PROTECT_PATH]
+                                   [--protect-cache-key PROTECT_CACHE_KEY]
+                                   [--execution-mode {startup,maintenance}]
+                                   [--maintenance-target-gib MAINTENANCE_TARGET_GIB]
+                                   [--capacity-ledger CAPACITY_LEDGER]
+                                   [--capacity-protection-lease-id CAPACITY_PROTECTION_LEASE_ID]
+                                   [--apply] [--detailed-output]
+reconcile_artifact_capacity: error: unrecognized arguments: --target-gib 1
+usage: reconcile_artifact_capacity [-h] --artifact-root ARTIFACT_ROOT
+                                   [--restore-retired-disposition-receipt RESTORE_RETIRED_DISPOSITION_RECEIPT]
+                                   [--restore-retired-path-key-receipt RESTORE_RETIRED_PATH_KEY_RECEIPT]
+                                   [--expected-ledger-sha256 EXPECTED_LEDGER_SHA256]
+                                   [--expected-receipt-sha256 EXPECTED_RECEIPT_SHA256]
+                                   [--create-protection-lease CREATE_PROTECTION_LEASE]
+                                   [--renew-protection-lease RENEW_PROTECTION_LEASE]
+                                   [--delete-protection-lease DELETE_PROTECTION_LEASE]
+                                   [--lease-owner LEASE_OWNER]
+                                   [--lease-ttl-seconds LEASE_TTL_SECONDS]
+                                   [--committed-new-bytes COMMITTED_NEW_BYTES]
+                                   [--protect-path PROTECT_PATH]
+                                   [--protect-cache-key PROTECT_CACHE_KEY]
+                                   [--execution-mode {startup,maintenance}]
+                                   [--maintenance-target-gib MAINTENANCE_TARGET_GIB]
+                                   [--capacity-ledger CAPACITY_LEDGER]
+                                   [--capacity-protection-lease-id CAPACITY_PROTECTION_LEASE_ID]
+                                   [--apply] [--detailed-output]
+reconcile_artifact_capacity: error: unrecognized arguments: --minimum-free-gib 1
+.................................................................................................................................................................................................usage: legacy_capacity_backfill [-h] --artifact-root ARTIFACT_ROOT
+                                [--snapshot-published-pa-cache-keys | --audit-checkpoint-terminalization | --resume-pending-disposals | --create-protection-lease CREATE_PROTECTION_LEASE | --renew-protection-lease RENEW_PROTECTION_LEASE | --delete-protection-lease DELETE_PROTECTION_LEASE]
+                                [--lease-owner LEASE_OWNER]
+                                [--lease-ttl-seconds LEASE_TTL_SECONDS]
+                                [--committed-new-bytes COMMITTED_NEW_BYTES]
+                                [--required-headroom-bytes REQUIRED_HEADROOM_BYTES]
+                                [--protect-path PROTECT_PATH]
+                                [--protect-cache-key PROTECT_CACHE_KEY]
+                                [--known-measured-bytes KNOWN_MEASURED_BYTES]
+                                [--maximum-new-artifact-bytes MAXIMUM_NEW_ARTIFACT_BYTES]
+                                [--capacity-baseline-receipt CAPACITY_BASELINE_RECEIPT]
+                                [--capacity-baseline-receipt-sha256 CAPACITY_BASELINE_RECEIPT_SHA256]
+                                [--execution-mode {legacy-backfill}]
+                                [--capacity-ledger CAPACITY_LEDGER]
+                                [--capacity-protection-lease-id CAPACITY_PROTECTION_LEASE_ID]
+                                [--apply]
+legacy_capacity_backfill: error: --apply requires the shared HostExecutionLease; use Invoke-ArtifactCapacityGate from PowerShell 7
+........s.........................................................................................usage: reconcile [-h] (--run-root RUN_ROOT | --run-dir RUN_DIR) [--apply]
+                 [--permit-manifest-drift] [--max-apply-runs MAX_APPLY_RUNS]
+                 [--summary-only]
+reconcile: error: --max-apply-runs requires --apply and a positive value
+.....................warning: LF will be replaced by CRLF in .gitattributes.
+The file will have its original line endings in your working directory
+warning: CRLF will be replaced by LF in bad.json.
+The file will have its original line endings in your working directory
+.................usage: lifecycle [-h] --action
+                 {register-writing-range,register-writing,assert-retention,finalize-ready,seal-checkpoint,seal-stopped-payload,retire-misplaced-light-run}
+                 --artifact-root ARTIFACT_ROOT [--run-config RUN_CONFIG]
+                 [--run-directory RUN_DIRECTORY] [--owner OWNER]
+                 [--confirm-writing-stopped]
+                 [--retention-reason RETENTION_REASON]
+                 [--backup-manifest BACKUP_MANIFEST] [--apply]
+lifecycle: error: --apply requires the shared HostExecutionLease
+.............................................................................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 672 tests in 176.681s
+
+OK (skipped=1)
+{}
+RUN_MANIFEST=PASS PATH=C:\Users\Liao\AppData\Local\Temp\tmp81mw3fns\run_manifest.json
+RUN_MANIFEST_VERIFY=PASS SCOPE=full PROJECT=fixture RUN_ID=20261017_120000__test__python__manifest-read-reuse OUTPUTS=2
+RUN_MANIFEST_VERIFY=PASS SCOPE=full PROJECT=fixture RUN_ID=20261017_120000__test__python__manifest-read-reuse OUTPUTS=2
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=common_contracts STATUS=released
+GATE_STAGE=PASS NAME=common_contracts ELAPSED_SECONDS=181.143
+GATE_STAGE=SKIP NAME=expected_values_tests REASON=covered_by_common_contracts
+GATE_STAGE=SKIP NAME=gate_contract_tests REASON=covered_by_common_contracts
+GATE_STAGE=SKIP NAME=cloc_contract_tests REASON=covered_by_common_contracts
+GATE_STAGE=SKIP NAME=python_dependency_contract REASON=covered_by_common_contracts
+GATE_STAGE=RUN NAME=simion_common REASON=common_simion_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=simion_common PID=25572 INHERITED=False
+.............................................s.sss.....................................................................................................................................................................................................................ss...............
+----------------------------------------------------------------------
+Ran 280 tests in 65.077s
+
+OK (skipped=6)
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=simion_common STATUS=released
+GATE_STAGE=PASS NAME=simion_common ELAPSED_SECONDS=69.378
+GATE_STAGE=RUN NAME=multipole_common REASON=common_simion_dependency_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=multipole_common PID=22912 INHERITED=False
+...................................................................................Exception in thread Thread-2 (_readerthread):
+Traceback (most recent call last):
+  File "C:\Users\Liao\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1038, in _bootstrap_inner
+    self.run()
+  File "C:\Users\Liao\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 975, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\Liao\AppData\Local\Programs\Python\Python311\Lib\subprocess.py", line 1550, in _readerthread
+    buffer.append(fh.read())
+                  ^^^^^^^^^
+  File "<frozen codecs>", line 322, in decode
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0xa1 in position 206: invalid start byte
+RUN_MANIFEST=PASS PATH=C:\Users\Liao\AppData\Local\Temp\tmpywf22ijp\artifacts\projects\rf_hexapole_ion_optics\runs\20260729_120001__test__python__transport-failure\run_manifest.json
+RUN_MANIFEST=PASS PATH=C:\Users\Liao\AppData\Local\Temp\tmpywf22ijp\artifacts\projects\rf_hexapole_ion_optics\runs\20260729_120001__test__python__transport-failure\run_manifest.json
+RUN_MANIFEST=PASS PATH=C:\Users\Liao\AppData\Local\Temp\tmppz6th8cn\artifacts\projects\rf_hexapole_ion_optics\runs\20260729_120000__test__python__transport-success\run_manifest.json
+RUN_MANIFEST=PASS PATH=C:\Users\Liao\AppData\Local\Temp\tmppz6th8cn\artifacts\projects\rf_hexapole_ion_optics\runs\20260729_120000__test__python__transport-success\run_manifest.json
+E.......................................................................................................................................................F.......................................................................................................................................................................................
+======================================================================
+ERROR: test_failure_finalization_keeps_all_partial_evidence (test_failed_run_manifest.FailedRunManifestTest.test_failure_finalization_keeps_all_partial_evidence)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\common\multipole\test_failed_run_manifest.py", line 99, in test_failure_finalization_keeps_all_partial_evidence
+    subprocess.run(
+  File "C:\Users\Liao\AppData\Local\Programs\Python\Python311\Lib\subprocess.py", line 569, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['pwsh', '-NoProfile', '-NonInteractive', '-Command', ". 'C:\\Users\\Liao\\Documents\\Codex\\commit-validation-20261022\\repo\\common\\contracts\\run_artifact_support.ps1'; Complete-FailedRun -Python 'C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe' -RepoRoot 'C:\\Users\\Liao\\Documents\\Codex\\commit-validation-20261022\\repo' -RunConfig 'C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpnrj99_fn\\runs\\20260723_120000__sim__simion__partial-evidence\\run_config.json' -Summary 'C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpnrj99_fn\\runs\\20260723_120000__sim__simion__partial-evidence\\summary.json' -SummaryRole 'fixture_summary' -Reason 'physical gate failed' -Software @('Python 3.11')"]' returned non-zero exit status 1.
+
+======================================================================
+FAIL: test_parallel_wave_tracks_worker_after_short_lived_launcher_exits (test_resource_budget.ResourceBudgetTests.test_parallel_wave_tracks_worker_after_short_lived_launcher_exits)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\common\multipole\test_resource_budget.py", line 2152, in test_parallel_wave_tracks_worker_after_short_lived_launcher_exits
+    completed = subprocess.run(
+                ^^^^^^^^^^^^^^^
+  File "C:\Users\Liao\AppData\Local\Programs\Python\Python311\Lib\subprocess.py", line 548, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Liao\AppData\Local\Programs\Python\Python311\Lib\subprocess.py", line 1224, in communicate
+    sts = self.wait(timeout=self._remaining_time(endtime))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Liao\AppData\Local\Programs\Python\Python311\Lib\subprocess.py", line 1260, in wait
+    return self._wait(timeout=timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Liao\AppData\Local\Programs\Python\Python311\Lib\subprocess.py", line 1544, in _wait
+    raise TimeoutExpired(self.args, timeout)
+subprocess.TimeoutExpired: Command '['pwsh', '-NoProfile', '-NonInteractive', '-Command', ". 'C:\\Users\\Liao\\Documents\\Codex\\commit-validation-20261022\\repo\\common\\multipole\\resource_budget_support.ps1';function Assert-HostResourceHeavyStage {};function Get-SystemCpuPercent {0.0};function Get-RepositoryAvailableMemoryBytes {[int64](64GB)};$child=(Get-Process -Id $PID).Path;$spec=[pscustomobject]@{name='launcher';file_path=$child;argument_list=@('-NoProfile','-Command','Start-Process -FilePath $env:ComSpec -ArgumentList @(''/c'',''timeout /t 2 /nobreak >nul'') -WindowStyle Hidden');stdout='C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym\\stdout.log';stderr='C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym\\stderr.log';environment=@{};working_directory='C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym'};$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath 'C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym\\dispatch.json' -RunDir 'C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym' -UsagePath 'C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym\\usage.json' -ProcessSpecifications @($spec);if($r.resource_budget_exceeded-or$r.processes[0].exit_code-ne0){exit 3}"]' timed out after 15.0 seconds
+
+SOURCE_MODEL_COMPARISON=PASS PARTICLES=2
+MULTIPOLE_ENGINEERING_REANALYSIS=NOT_EVALUATED_DO_NOT_PROGRESS OUTPUT=C:\Users\Liao\AppData\Local\Temp\tmp88m7y3s9\result.json
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\common\multipole\test_resource_budget.py", line 2161, in test_parallel_wave_tracks_worker_after_short_lived_launcher_exits
+    self.fail(f"{exc}\n{scheduler_log.read_text(encoding='utf-8', errors='replace')}")
+AssertionError: Command '['pwsh', '-NoProfile', '-NonInteractive', '-Command', ". 'C:\\Users\\Liao\\Documents\\Codex\\commit-validation-20261022\\repo\\common\\multipole\\resource_budget_support.ps1';function Assert-HostResourceHeavyStage {};function Get-SystemCpuPercent {0.0};function Get-RepositoryAvailableMemoryBytes {[int64](64GB)};$child=(Get-Process -Id $PID).Path;$spec=[pscustomobject]@{name='launcher';file_path=$child;argument_list=@('-NoProfile','-Command','Start-Process -FilePath $env:ComSpec -ArgumentList @(''/c'',''timeout /t 2 /nobreak >nul'') -WindowStyle Hidden');stdout='C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym\\stdout.log';stderr='C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym\\stderr.log';environment=@{};working_directory='C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym'};$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath 'C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym\\dispatch.json' -RunDir 'C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym' -UsagePath 'C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym\\usage.json' -ProcessSpecifications @($spec);if($r.resource_budget_exceeded-or$r.processes[0].exit_code-ne0){exit 3}"]' timed out after 15.0 seconds
+SIMION_RESOURCE_EVENT=BATCH_STARTED PROCESS=launcher ACTIVE=1 PENDING=0 MAXIMUM_CONCURRENCY=1
+
+
+----------------------------------------------------------------------
+Ran 419 tests in 259.756s
+
+FAILED (failures=1, errors=1)
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=multipole_common STATUS=released
+Exception: C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\common\gate_catalog_support.ps1:187
+Line |
+ 187 |              throw "Gate catalog command failed with exit code $LASTEX …
+     |              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | Gate catalog command failed with exit code 1.
+GATE_STAGE=RUN NAME=multipole_foundation REASON=common_simion_dependency_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=multipole_foundation PID=29624 INHERITED=False
+MULTIPOLE_FAMILY_FOUNDATION=PASS PROJECTS=3 ORDERS=2,3,4 API=frozen VALIDATION=n100_dual_solver_pass
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=multipole_foundation STATUS=released
+GATE_STAGE=PASS NAME=multipole_foundation ELAPSED_SECONDS=5.462
+GATE_STAGE=SKIP NAME=integration_common REASON=no_route_match
+GATE_STAGE=RUN NAME=rf_multipole_to_single_reflection_oatof_integration REASON=common_contracts_direct_dependency_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=rf_multipole_to_single_reflection_oatof_integration PID=6440 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=6440 INHERITED=True
+All checks passed!
+.....................................................................................................................................................................................................................................................................................................................................................................................................s.............................................................................................................................s..s............s.............................................................................................................................s......................................................................................................................................s................................................................................s...ss............................................................................
+----------------------------------------------------------------------
+Ran 954 tests in 276.606s
+
+OK (skipped=9)
+INTEGRATION_GATE=PASS FAMILY=rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=rf_multipole_to_single_reflection_oatof_integration STATUS=released
+GATE_STAGE=PASS NAME=rf_multipole_to_single_reflection_oatof_integration ELAPSED_SECONDS=286.792
+GATE_STAGE=SKIP NAME=solidworks_common REASON=no_route_match
+GATE_STAGE=SKIP NAME=orthogonal_accelerator_static REASON=no_route_match
+GATE_STAGE=SKIP NAME=parallel_mirror_dual_stripe_mr_tof_static REASON=no_route_match
+GATE_STAGE=RUN NAME=single_reflection_oa_tof_mass_analyzer_static REASON=single_reflection_oa_tof_mass_analyzer_path_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=single_reflection_oa_tof_mass_analyzer_static PID=29152 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=prepare PID=29152 INHERITED=True
+RESOLVED_GEOMETRY=PASS
+GEOMETRY_TEXT_SYNC=PASS
+ACCELERATOR_TIME_FOCUS_SELF_TEST=PASS
+REFLECTRON_DUAL_STAGE_SELF_TEST=PASS
+OATOF_OAACCELERATOR_COUPLING_SELF_TEST=PASS
+GEOMETRY_CONTRACT_STATUS=PASS
+ACCELERATOR_AXIS_X_MM=-48.8
+DETECTOR_X_MM=48.8
+DETECTOR_RADIUS_MM=40
+GEOMETRY_DERIVATION_STATUS=PASS
+DERIVED_NOMINAL_D2_PENETRATION_MM=39.5536431798285
+DERIVED_D2_RAW_MM=96.1562733845782
+DERIVED_L_REFLECTRON_RAW_MM=216.156273384578
+DERIVED_V_MIRROR_RAW_V=2531.19993695355
+ENGINEERING_LENGTH_DECIMALS_MM=4
+ENGINEERING_L_REFLECTRON_MM=216.1563
+ENGINEERING_V_MIRROR_V=2531.1999
+FORMAL_VALIDATION_STATUS=PASS
+FLIGHT=PASS CASE=one MODE=actual
+FLIGHT=PASS CASE=two MODE=actual
+..........................................................................................................................................................................................................................................................................................................................................................................s.........................
+----------------------------------------------------------------------
+Ran 388 tests in 166.869s
+
+OK (skipped=1)
+RADIAL_COMPACTION=DRY_RUN CASES=10 ROOT=C:\Users\Liao\AppData\Local\Temp\tmpwjfclga2\runs\20260914_160001__sim__simion__plan-fixture
+usage: run_compensation [-h] --case-dir CASE_DIR [--simion-exe SIMION_EXE]
+                        [--trajectory-quality TRAJECTORY_QUALITY]
+                        [--regularization REGULARIZATION]
+
+Close the SIMION reflectron axis-field voltage-compensation loop.
+
+options:
+  -h, --help            show this help message and exit
+  --case-dir CASE_DIR
+  --simion-exe SIMION_EXE
+  --trajectory-quality TRAJECTORY_QUALITY
+  --regularization REGULARIZATION
+PROJECT_GATE=PASS PROJECT=single_reflection_oa_tof_mass_analyzer LEVEL=Static ELAPSED_SECONDS=171.361
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=single_reflection_oa_tof_mass_analyzer_static STATUS=released
+GATE_STAGE=PASS NAME=single_reflection_oa_tof_mass_analyzer_static ELAPSED_SECONDS=176.556
+GATE_STAGE=RUN NAME=rf_quadrupole_ion_optics_static REASON=common_contracts_direct_dependency_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=rf_quadrupole_ion_optics_static PID=7620 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=7620 INHERITED=True
+QUADRUPOLE_FRESHNESS=PREVALIDATED
+{
+  "a_at_tune_mass": 0.22988782765406462,
+  "axis_common_mode_offset_V": -8.0,
+  "dc_differential_V": 45.52602987935551,
+  "ideal_scanline": {
+    "q_cal": 0.6964829222134838,
+    "q_in": 0.6827291735098723,
+    "q_out": 0.7108022091906631,
+    "resolving_power_stability": 24.819748718056726,
+    "u_over_v": 0.162804703
+  },
+  "mode_status": "n100_dual_solver_revalidation_pending",
+  "q_at_tune_mass": 0.7060233009794091,
+  "rf_differential_V_peak_to_peak": 559.27168,
+  "rf_differential_V_zero_to_peak": 279.63584,
+  "scope": "L0 ideal-field contract validation only; no solver or mass-response qualification",
+  "status": "PASS",
+  "u_over_v": 0.162804703
+}
+QUADRUPOLE_L0_REFERENCE=PASS
+QUADRUPOLE_MASS_FILTER_L1_CONTRACT=PASS
+ENTRY_APERTURE_L0=PASS DESIGN_VALUE_AVAILABLE=false
+PROJECT_GATE=PASS PROJECT=rf_quadrupole_ion_optics LEVEL=Core
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=rf_quadrupole_ion_optics_static STATUS=released
+GATE_STAGE=PASS NAME=rf_quadrupole_ion_optics_static ELAPSED_SECONDS=8.092
+GATE_STAGE=RUN NAME=rf_hexapole_ion_optics_static REASON=common_contracts_direct_dependency_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=rf_hexapole_ion_optics_static PID=18972 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=18972 INHERITED=True
+......................
+----------------------------------------------------------------------
+Ran 22 tests in 18.707s
+
+OK
+PROJECT_GATE=PASS PROJECT=rf_hexapole_ion_optics LEVEL=Static
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=rf_hexapole_ion_optics_static STATUS=released
+GATE_STAGE=PASS NAME=rf_hexapole_ion_optics_static ELAPSED_SECONDS=24.596
+GATE_STAGE=RUN NAME=rf_octupole_ion_optics_static REASON=common_contracts_direct_dependency_changed
+HOST_RESOURCE=WAIT REASON=snapshot_contention OPERATION=request WAIT_SECONDS=2
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=rf_octupole_ion_optics_static PID=25872 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=25872 INHERITED=True
+.............................
+----------------------------------------------------------------------
+Ran 29 tests in 19.264s
+
+OK
+PROJECT_GATE=PASS PROJECT=rf_octupole_ion_optics LEVEL=Static
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=rf_octupole_ion_optics_static STATUS=released
+GATE_STAGE=PASS NAME=rf_octupole_ion_optics_static ELAPSED_SECONDS=27.591
+GATE_STAGE=SKIP NAME=dual_pressure_rectilinear_ion_processor_static REASON=no_route_match
+GATE_STAGE=RUN NAME=dual_cone_tandem_quadrupole_ion_interface_static REASON=common_contracts_direct_dependency_changed
+HOST_RESOURCE=WAIT REASON=snapshot_contention OPERATION=request WAIT_SECONDS=2
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=dual_cone_tandem_quadrupole_ion_interface_static PID=20072 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=20072 INHERITED=True
+RESOLVED_GEOMETRY=PASS PATH=C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\projects\dual_cone_tandem_quadrupole_ion_interface\config\resolved_geometry.json
+..............................
+----------------------------------------------------------------------
+Ran 30 tests in 12.521s
+
+OK
+SIMION_TRAJECTORY_PROJECTION=PASS PATH=C:\Users\Liao\AppData\Local\Temp\tmp11r24pu3\diagnostic.png
+All checks passed!
+PROJECT_GATE=PASS PROJECT=dual_cone_tandem_quadrupole_ion_interface LEVEL=Static
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=dual_cone_tandem_quadrupole_ion_interface_static STATUS=released
+GATE_STAGE=PASS NAME=dual_cone_tandem_quadrupole_ion_interface_static ELAPSED_SECONDS=21.292
+GATE_STAGE=RUN NAME=transverse_helical_filament_wehnelt_electron_gun_static REASON=common_contracts_direct_dependency_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=transverse_helical_filament_wehnelt_electron_gun_static PID=27592 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=27592 INHERITED=True
+.................................................
+----------------------------------------------------------------------
+Ran 49 tests in 18.157s
+
+OK
+All checks passed!
+PROJECT_GATE=PASS PROJECT=transverse_helical_filament_wehnelt_electron_gun LEVEL=Static
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=transverse_helical_filament_wehnelt_electron_gun_static STATUS=released
+GATE_STAGE=PASS NAME=transverse_helical_filament_wehnelt_electron_gun_static ELAPSED_SECONDS=23.829
+GATE_STAGE=RUN NAME=apertured_tube_electron_impact_ion_source_static REASON=common_contracts_direct_dependency_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=apertured_tube_electron_impact_ion_source_static PID=19348 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=19348 INHERITED=True
+......................
+----------------------------------------------------------------------
+Ran 22 tests in 1.779s
+
+OK
+All checks passed!
+PROJECT_GATE=PASS PROJECT=apertured_tube_electron_impact_ion_source LEVEL=Static
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=apertured_tube_electron_impact_ion_source_static STATUS=released
+GATE_STAGE=PASS NAME=apertured_tube_electron_impact_ion_source_static ELAPSED_SECONDS=7.484
+GATE_STAGE=FAIL NAME=multipole_common EXIT_CODE=1 DIAGNOSTIC_TAIL_BEGIN
+GATE_STAGE=RUN NAME=multipole_common REASON=common_simion_dependency_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=multipole_common PID=22912 INHERITED=False
+...................................................................................Exception in thread Thread-2 (_readerthread):
+Traceback (most recent call last):
+  File "C:\Users\Liao\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1038, in _bootstrap_inner
+    self.run()
+  File "C:\Users\Liao\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 975, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\Liao\AppData\Local\Programs\Python\Python311\Lib\subprocess.py", line 1550, in _readerthread
+    buffer.append(fh.read())
+                  ^^^^^^^^^
+  File "<frozen codecs>", line 322, in decode
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0xa1 in position 206: invalid start byte
+RUN_MANIFEST=PASS PATH=C:\Users\Liao\AppData\Local\Temp\tmpywf22ijp\artifacts\projects\rf_hexapole_ion_optics\runs\20260729_120001__test__python__transport-failure\run_manifest.json
+RUN_MANIFEST=PASS PATH=C:\Users\Liao\AppData\Local\Temp\tmpywf22ijp\artifacts\projects\rf_hexapole_ion_optics\runs\20260729_120001__test__python__transport-failure\run_manifest.json
+RUN_MANIFEST=PASS PATH=C:\Users\Liao\AppData\Local\Temp\tmppz6th8cn\artifacts\projects\rf_hexapole_ion_optics\runs\20260729_120000__test__python__transport-success\run_manifest.json
+RUN_MANIFEST=PASS PATH=C:\Users\Liao\AppData\Local\Temp\tmppz6th8cn\artifacts\projects\rf_hexapole_ion_optics\runs\20260729_120000__test__python__transport-success\run_manifest.json
+E.......................................................................................................................................................F.......................................................................................................................................................................................
+======================================================================
+ERROR: test_failure_finalization_keeps_all_partial_evidence (test_failed_run_manifest.FailedRunManifestTest.test_failure_finalization_keeps_all_partial_evidence)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\common\multipole\test_failed_run_manifest.py", line 99, in test_failure_finalization_keeps_all_partial_evidence
+    subprocess.run(
+  File "C:\Users\Liao\AppData\Local\Programs\Python\Python311\Lib\subprocess.py", line 569, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['pwsh', '-NoProfile', '-NonInteractive', '-Command', ". 'C:\\Users\\Liao\\Documents\\Codex\\commit-validation-20261022\\repo\\common\\contracts\\run_artifact_support.ps1'; Complete-FailedRun -Python 'C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe' -RepoRoot 'C:\\Users\\Liao\\Documents\\Codex\\commit-validation-20261022\\repo' -RunConfig 'C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpnrj99_fn\\runs\\20260723_120000__sim__simion__partial-evidence\\run_config.json' -Summary 'C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpnrj99_fn\\runs\\20260723_120000__sim__simion__partial-evidence\\summary.json' -SummaryRole 'fixture_summary' -Reason 'physical gate failed' -Software @('Python 3.11')"]' returned non-zero exit status 1.
+
+======================================================================
+FAIL: test_parallel_wave_tracks_worker_after_short_lived_launcher_exits (test_resource_budget.ResourceBudgetTests.test_parallel_wave_tracks_worker_after_short_lived_launcher_exits)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\common\multipole\test_resource_budget.py", line 2152, in test_parallel_wave_tracks_worker_after_short_lived_launcher_exits
+    completed = subprocess.run(
+                ^^^^^^^^^^^^^^^
+  File "C:\Users\Liao\AppData\Local\Programs\Python\Python311\Lib\subprocess.py", line 548, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Liao\AppData\Local\Programs\Python\Python311\Lib\subprocess.py", line 1224, in communicate
+    sts = self.wait(timeout=self._remaining_time(endtime))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Liao\AppData\Local\Programs\Python\Python311\Lib\subprocess.py", line 1260, in wait
+    return self._wait(timeout=timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Liao\AppData\Local\Programs\Python\Python311\Lib\subprocess.py", line 1544, in _wait
+    raise TimeoutExpired(self.args, timeout)
+subprocess.TimeoutExpired: Command '['pwsh', '-NoProfile', '-NonInteractive', '-Command', ". 'C:\\Users\\Liao\\Documents\\Codex\\commit-validation-20261022\\repo\\common\\multipole\\resource_budget_support.ps1';function Assert-HostResourceHeavyStage {};function Get-SystemCpuPercent {0.0};function Get-RepositoryAvailableMemoryBytes {[int64](64GB)};$child=(Get-Process -Id $PID).Path;$spec=[pscustomobject]@{name='launcher';file_path=$child;argument_list=@('-NoProfile','-Command','Start-Process -FilePath $env:ComSpec -ArgumentList @(''/c'',''timeout /t 2 /nobreak >nul'') -WindowStyle Hidden');stdout='C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym\\stdout.log';stderr='C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym\\stderr.log';environment=@{};working_directory='C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym'};$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath 'C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym\\dispatch.json' -RunDir 'C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym' -UsagePath 'C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym\\usage.json' -ProcessSpecifications @($spec);if($r.resource_budget_exceeded-or$r.processes[0].exit_code-ne0){exit 3}"]' timed out after 15.0 seconds
+
+SOURCE_MODEL_COMPARISON=PASS PARTICLES=2
+MULTIPOLE_ENGINEERING_REANALYSIS=NOT_EVALUATED_DO_NOT_PROGRESS OUTPUT=C:\Users\Liao\AppData\Local\Temp\tmp88m7y3s9\result.json
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\common\multipole\test_resource_budget.py", line 2161, in test_parallel_wave_tracks_worker_after_short_lived_launcher_exits
+    self.fail(f"{exc}\n{scheduler_log.read_text(encoding='utf-8', errors='replace')}")
+AssertionError: Command '['pwsh', '-NoProfile', '-NonInteractive', '-Command', ". 'C:\\Users\\Liao\\Documents\\Codex\\commit-validation-20261022\\repo\\common\\multipole\\resource_budget_support.ps1';function Assert-HostResourceHeavyStage {};function Get-SystemCpuPercent {0.0};function Get-RepositoryAvailableMemoryBytes {[int64](64GB)};$child=(Get-Process -Id $PID).Path;$spec=[pscustomobject]@{name='launcher';file_path=$child;argument_list=@('-NoProfile','-Command','Start-Process -FilePath $env:ComSpec -ArgumentList @(''/c'',''timeout /t 2 /nobreak >nul'') -WindowStyle Hidden');stdout='C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym\\stdout.log';stderr='C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym\\stderr.log';environment=@{};working_directory='C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym'};$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath 'C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym\\dispatch.json' -RunDir 'C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym' -UsagePath 'C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpmajfotym\\usage.json' -ProcessSpecifications @($spec);if($r.resource_budget_exceeded-or$r.processes[0].exit_code-ne0){exit 3}"]' timed out after 15.0 seconds
+SIMION_RESOURCE_EVENT=BATCH_STARTED PROCESS=launcher ACTIVE=1 PENDING=0 MAXIMUM_CONCURRENCY=1
+
+
+----------------------------------------------------------------------
+Ran 419 tests in 259.756s
+
+FAILED (failures=1, errors=1)
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=multipole_common STATUS=released
+Exception: C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\common\gate_catalog_support.ps1:187
+Line |
+ 187 |              throw "Gate catalog command failed with exit code $LASTEX …
+     |              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | Gate catalog command failed with exit code 1.
+GATE_STAGE=FAIL NAME=multipole_common DIAGNOSTIC_TAIL_END

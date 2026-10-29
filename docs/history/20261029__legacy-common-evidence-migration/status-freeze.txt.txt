@@ -1,0 +1,243 @@
+ M README.md
+ M common/comsol/README.md
+ M common/contracts/README.md
+ M common/contracts/run_artifact_support.ps1
+ M common/contracts/schemas/composition_plan.schema.json
+ M common/contracts/schemas/integration_artifact_identity.schema.json
+ M common/contracts/schemas/integration_registry.schema.json
+ M common/contracts/schemas/multipole_design_request.schema.json
+ M common/contracts/schemas/multipole_resolved_design.schema.json
+ M common/contracts/solver_review_retirement.py
+ M common/contracts/test_simion_refine_policy.py
+ M common/contracts/test_solver_review_retirement.py
+ M common/contracts/test_verify_changed.py
+ M common/contracts/test_verify_run_manifest.py
+ M common/gate_catalog.json
+ M common/integration/README.md
+ M common/integration/resolve_connection.py
+ M common/integration/test_resolve_connection.py
+ M common/multipole/compile_design_request.py
+ M common/multipole/component_port.py
+ M common/multipole/run_simion_finite_3d_transport.ps1
+ M common/multipole/runtime_profile.py
+ M common/multipole/simion_geometry.py
+ M common/multipole/simion_transport.lua
+ M common/multipole/test_component_port.py
+ M common/multipole/test_runtime_profile.py
+ M common/multipole/test_simion_geometry.py
+ M common/simion/README.md
+ M common/simion/build_dirichlet_patch_basis.lua
+ M common/simion/build_dirichlet_patch_operating_pa.lua
+ M common/simion/short_pa_path_support.ps1
+ M common/simion/test_short_pa_path_support.py
+ M common/simion/test_standalone_pa_composition_tools.py
+ M common/verify_changed.ps1
+ M docs/COMPONENT_CONNECTION_ARCHITECTURE.md
+ M docs/COMSOL_API.md
+ M docs/REPOSITORY_ARCHITECTURE.md
+ M docs/ROADMAP.md
+ M integrations/registry.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/plot_single_flight_spatial_six_panel.py
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_adapter_profiles.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_hexapole_direct_mating_gap_0mm_runtime_binding.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_accelerator_port_100x150_gap_102p4mm_runtime_binding.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_accelerator_port_100x200_gap_102p4mm_runtime_binding.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_accelerator_port_100x250_gap_102p4mm_runtime_binding.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_aperture_050x020_direct_mating_gap_0mm_runtime_binding.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_aperture_050x050_direct_mating_gap_0mm_runtime_binding.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_aperture_100x150_direct_mating_gap_0mm_runtime_binding.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_aperture_100x200_direct_mating_gap_0mm_runtime_binding.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_aperture_100x250_direct_mating_gap_0mm_runtime_binding.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_cylindrical_sideport_100x090_direct_mating_gap_0mm_runtime_binding.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_cylindrical_sideport_100x090_gap_102p4mm_runtime_binding.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_cylindrical_sideport_100x150_gap_102p4mm_runtime_binding.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_cylindrical_sideport_100x200_gap_102p4mm_runtime_binding.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_cylindrical_sideport_100x250_gap_102p4mm_runtime_binding.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_direct_mating_gap_0mm_runtime_binding.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_direct_mating_gap_102p4mm_runtime_binding.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_direct_mating_gap_12p8mm_runtime_binding.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_direct_mating_gap_25p6mm_runtime_binding.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_direct_mating_gap_3p2mm_runtime_binding.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_direct_mating_gap_51p2mm_runtime_binding.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_direct_mating_gap_6p4mm_runtime_binding.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_quadrupole_direct_mating_gap_0mm_runtime_binding.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_runtime_dependencies.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_runtime_implementation.json
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/INTEGRATION.md
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/RUNNING.md
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/run_artifacts.ps1
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/run_single_flight.ps1
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/runtime_binding.ps1
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/single_flight_frontend.py
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/single_flight_source.py
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/stages/comsol/run_pre_pulse_interface_transport.ps1
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/stages/comsol/run_pulse_capture.ps1
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/stages/cross_solver/run_analyzer_transport.ps1
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/tests/test_analyzer_transport.py
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/tests/test_domain_split_runner_contract.py
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/tests/test_family_dependency_resolution.py
+ D integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/tests/test_local_frontend_analysis.py
+ D integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/tests/test_local_frontend_execute.py
+ D integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/tests/test_local_frontend_field_support.py
+ D integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/tests/test_local_frontend_replay.py
+ D integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/tests/test_local_frontend_runtime.py
+ D integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/tests/test_local_frontend_workflow.py
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/tests/test_runtime_run_local_contract.py
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/tests/test_standalone_field_bank.py
+ M integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/family_source_closure/execute.ps1
+ D integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/local_frontend/analyze.py
+ D integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/local_frontend/execute.ps1
+ D integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/local_frontend/prepare.py
+ D integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/local_frontend/replay.py
+ D integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/local_frontend/runtime.py
+ M projects/dual_pressure_rectilinear_ion_processor/analysis/extraction_phase_space_comparison.py
+ M projects/dual_pressure_rectilinear_ion_processor/analysis/functional.py
+ M projects/dual_pressure_rectilinear_ion_processor/analysis/guide_interface.py
+ M projects/dual_pressure_rectilinear_ion_processor/analysis/native_geometry.py
+ M projects/dual_pressure_rectilinear_ion_processor/docs/PROJECT.md
+ M projects/dual_pressure_rectilinear_ion_processor/docs/SIMION.md
+ M projects/dual_pressure_rectilinear_ion_processor/tests/analysis/test_guide_interface.py
+ M projects/dual_pressure_rectilinear_ion_processor/tests/test_electrode_contours.py
+ M projects/dual_pressure_rectilinear_ion_processor/tests/test_extraction_phase_space_comparison.py
+ M projects/dual_pressure_rectilinear_ion_processor/tests/test_native_geometry.py
+ M projects/orthogonal_accelerator/config/component_contract.json
+ M projects/orthogonal_accelerator/docs/PROJECT.md
+ M projects/parallel_mirror_dual_stripe_mr_tof/analysis/downstream_fixed_grid_workpoint.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/analysis/downstream_workpoint_checkpoint.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/analysis/downstream_workpoint_iteration.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/analysis/ion_processor_assembly.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/analysis/ip_prism_distance_study.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/analysis/ip_prism_focus_diagnostics.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/analysis/ip_prism_local_diagnostics.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/analysis/joint_flight_preparation.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/analysis/measured_component_analysis.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_static_field_provider.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/analysis/prepare_accelerator_interface.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/analysis/prepared_joint_diagnostics.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/analysis/prepared_joint_trial.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_downstream_workpoint_iteration.ps1
+ M projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_native_candidate_chain.ps1
+ M projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_native_candidate_condition.ps1
+ M projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_native_corridor_bunch_screening.ps1
+ D projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_prepare_accelerator_interface.ps1
+ M projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_source_z_energy_timing_diagnostic.ps1
+ M projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_two_prism_segmented_coverage.ps1
+ M projects/parallel_mirror_dual_stripe_mr_tof/analysis/source_z_energy_timing_diagnostic.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/analysis/static_field_binding.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md
+ M projects/parallel_mirror_dual_stripe_mr_tof/simion/README.md
+ M projects/parallel_mirror_dual_stripe_mr_tof/simion/ip_prism_local.lua
+ M projects/parallel_mirror_dual_stripe_mr_tof/simion/run_native_static_field_provider.ps1
+ D projects/parallel_mirror_dual_stripe_mr_tof/simion/run_two_prism_trial.ps1
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_downstream_fixed_grid_workpoint.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_downstream_workpoint_checkpoint.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_downstream_workpoint_iteration.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_downstream_workpoint_iteration_runner.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_ion_processor_assembly.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_ip_prism_distance_study.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_ip_prism_focus_diagnostics.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_ip_prism_local_callbacks.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_ip_prism_local_diagnostics.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_joint_flight_preparation.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_managed_analysis_runner_contracts.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_measured_component_analysis.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_candidate_chain_runner.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_candidate_condition_runner.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_static_field_provider.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_static_field_provider_runner.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_prepare_accelerator_interface.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_prepared_joint_diagnostics.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_prepared_joint_trial.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_prism_runner_contract_matrix.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_source_z_energy_timing_diagnostic.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_static_field_binding.py
+ M projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_trajectory_recording.py
+ D projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_two_prism_trial_runner.py
+ M projects/rf_octupole_ion_optics/config/design_profiles.json
+ M projects/rf_octupole_ion_optics/config/runtime_profiles.json
+ M projects/single_reflection_oa_tof_mass_analyzer/docs/COMSOL.md
+ M projects/single_reflection_oa_tof_mass_analyzer/docs/PROJECT.md
+?? common/contracts/schemas/assembly_recipe.schema.json
+?? common/contracts/schemas/component_geometry_interface.schema.json
+?? common/integration/resolve_assembly.py
+?? common/integration/test_integration_registry.py
+?? common/integration/test_resolve_assembly.py
+?? common/multipole/campaigns/.transport_campaign_test_7mp7kheu.tmp
+?? integrations/README.md
+?? integrations/config/experiments/cooled_frontend/execution_budget.json
+?? integrations/config/experiments/cooled_frontend/mesh_check_budget.json
+?? integrations/config/experiments/cooled_frontend/three_zone_field_seed.json
+?? integrations/config/experiments/cooled_frontend/three_zone_field_source.json
+?? integrations/config/experiments/cooled_frontend/three_zone_mesh_check.json
+?? integrations/config/experiments/cooled_frontend/three_zone_reference.json
+?? integrations/config/experiments/cooled_frontend/two_zone_field_seed.json
+?? integrations/config/experiments/guide_oa_three_zone_functional.json
+?? integrations/config/experiments/guide_oa_three_zone_functional_budget.json
+?? integrations/config/runtime_dependencies.json
+?? integrations/docs/INTEGRATION.md
+?? integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/frontend_flight_support.ps1
+?? integrations/runtime/dependencies.ps1
+?? integrations/tests/test_accelerator_interface.py
+?? integrations/tests/test_accelerator_interface_geometry.py
+?? integrations/tests/test_cooled_frontend.py
+?? integrations/tests/test_cooled_frontend_analysis.py
+?? integrations/tests/test_cooled_frontend_execute.py
+?? integrations/tests/test_cooled_frontend_field_design.py
+?? integrations/tests/test_cooled_frontend_mesh_check.py
+?? integrations/tests/test_cooled_frontend_pulse.py
+?? integrations/tests/test_cooled_frontend_reference.py
+?? integrations/tests/test_cooled_geometry_overlay.py
+?? integrations/tests/test_dependencies.py
+?? integrations/tests/test_local_frontend_analysis.py
+?? integrations/tests/test_local_frontend_execute.py
+?? integrations/tests/test_local_frontend_field_support.py
+?? integrations/tests/test_local_frontend_focus.py
+?? integrations/tests/test_local_frontend_replay.py
+?? integrations/tests/test_local_frontend_runtime.py
+?? integrations/tests/test_local_frontend_workflow.py
+?? integrations/tests/test_oa_mr_execute.py
+?? integrations/tests/test_prepared_joint_execute.py
+?? integrations/verify_integration.ps1
+?? integrations/workflows/accelerator_interface/execute.ps1
+?? integrations/workflows/accelerator_interface/geometry.py
+?? integrations/workflows/accelerator_interface/prepare.py
+?? integrations/workflows/cooled_frontend/__init__.py
+?? integrations/workflows/cooled_frontend/analyze.py
+?? integrations/workflows/cooled_frontend/cooled_frontend.lua
+?? integrations/workflows/cooled_frontend/execute.ps1
+?? integrations/workflows/cooled_frontend/field_design.py
+?? integrations/workflows/cooled_frontend/geometry.py
+?? integrations/workflows/cooled_frontend/mesh_check.py
+?? integrations/workflows/cooled_frontend/plot_geometry.py
+?? integrations/workflows/cooled_frontend/prepare.py
+?? integrations/workflows/cooled_frontend/program.py
+?? integrations/workflows/cooled_frontend/pulse.py
+?? integrations/workflows/cooled_frontend/reference.py
+?? integrations/workflows/cooled_frontend/reference_support.ps1
+?? integrations/workflows/cooled_frontend/runtime.py
+?? integrations/workflows/cooled_frontend/sample_field.lua
+?? integrations/workflows/cooled_frontend/sample_mesh.lua
+?? integrations/workflows/local_frontend/analyze.py
+?? integrations/workflows/local_frontend/execute.ps1
+?? integrations/workflows/local_frontend/focus.py
+?? integrations/workflows/local_frontend/prepare.py
+?? integrations/workflows/local_frontend/replay.py
+?? integrations/workflows/local_frontend/runtime.py
+?? integrations/workflows/oa_mr/execute.ps1
+?? integrations/workflows/prepared_joint/execute.ps1
+?? projects/dual_pressure_rectilinear_ion_processor/analysis/assembly_interface.py
+?? projects/dual_pressure_rectilinear_ion_processor/analysis/cooled_buncher.py
+?? projects/dual_pressure_rectilinear_ion_processor/analysis/spatial_crossings.py
+?? projects/dual_pressure_rectilinear_ion_processor/tests/analysis/test_assembly_interface.py
+?? projects/dual_pressure_rectilinear_ion_processor/tests/test_cooled_buncher.py
+?? projects/orthogonal_accelerator/analysis/assembly_interface.py
+?? projects/orthogonal_accelerator/tests/analysis/test_assembly_interface.py
+?? projects/parallel_mirror_dual_stripe_mr_tof/analysis/assembly_interface.py
+?? projects/parallel_mirror_dual_stripe_mr_tof/simion/ip_prism_lens_contact.lua
+?? projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_assembly_interface.py
+?? projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_ip_prism_collision_fixture.py
+?? projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_ip_prism_lens_contact.py
+?? projects/parallel_mirror_dual_stripe_mr_tof/tests/simion/test_ip_prism_collision_fixture.lua
+?? projects/rf_octupole_ion_optics/config/qualification/through_exit_functional_budget.json
+?? projects/rf_octupole_ion_optics/config/requests/through_exit.json
+?? projects/rf_octupole_ion_optics/config/through_exit_optimization_envelope.json

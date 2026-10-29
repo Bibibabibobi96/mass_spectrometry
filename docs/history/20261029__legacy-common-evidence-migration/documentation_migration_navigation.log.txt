@@ -1,0 +1,33 @@
+REVIEW: docs/LIFECYCLE.md:336: scratch path in prose/code span; review evidence lifetime
+REVIEW: integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:33: broken relative link '../../runtime/verify_single_flight_pa_cache_readiness.py'
+REVIEW: .agents/skills/grill-me/SKILL.md: no incoming link from an active Markdown document (code consumers not assessed)
+REVIEW: common/contracts/README.md: over 400 lines; review navigation and responsibilities
+REVIEW: common/simion/README.md: over 400 lines; review navigation and responsibilities
+REVIEW: docs/COMSOL_API.md: over 400 lines; review navigation and responsibilities
+REVIEW: docs/DEVELOPMENT_STANDARDS.md: over 400 lines; review navigation and responsibilities
+REVIEW: docs/multipoles/quadrupole.md: over 400 lines; review navigation and responsibilities
+REVIEW: integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/INTEGRATION.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/dual_pressure_rectilinear_ion_processor/docs/PROJECT.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/adiabatic_drift_and_original_ion_foil.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/dual_stripe_non_tilt_design.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/implementation_and_validation.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/injection_prism_source_and_calibration.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/isochronous_mirror_design.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/simion/README.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/publication/prior_art_equation_claim_chart_20260825.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/theory/conditional_phase_space_focusability.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/theory/dual_stage_reflectron.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/theory/oatof_oaaccelerator_coupling.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/theory/source_to_detector_phase_space_framework.md: over 400 lines; review navigation and responsibilities
+REVIEW: repeated substantial paragraph: projects/rf_hexapole_ion_optics/README.md, projects/rf_octupole_ion_optics/README.md
+DOCUMENTATION_LINKS: files=291 errors=0 review=24
+
+MarkdownFiles        : 291
+HistoryArchives      : 175
+AuthorityEntries     : 8
+Mode                 : StructureOnly
+ComsolReferenceBytes : 22877
+STATUS               : PASS
+

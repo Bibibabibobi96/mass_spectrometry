@@ -1,0 +1,14 @@
+{
+  "status": "complete",
+  "checkout": "C:\\Users\\Liao\\Documents\\Codex\\commit-validation-20261022\\repo",
+  "checkout_logical_bytes": 203358893,
+  "test_artifact_root": "C:\\Users\\Liao\\Documents\\Codex\\commit-validation-20261022\\artifacts",
+  "test_artifact_logical_bytes": 24577,
+  "removed_generated_fixture_logical_bytes": 4014,
+  "python_alias_removed_only": true,
+  "primary_python_retained": true,
+  "free_bytes_before": 698986528768,
+  "free_bytes_after": 699196153856,
+  "rebuild": "git checkout 986d0c86 plus documented tests",
+  "retained": "Primary workspace changes, test failure/recheck logs, immutable-commit CLOC report; no solver assets removed"
+}

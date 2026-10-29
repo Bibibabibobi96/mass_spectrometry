@@ -1,0 +1,6 @@
+5025cb8ba1d3a7983fce3687c316b2808bde904e fix(contracts): preserve JSON array cardinality
+c0e3b1b43247601695514cb237ae4845911a9876 fix(contracts): keep frozen input manifests as provenance
+eb914af12edd812f9c4f3ab26e8d780251f215b1 fix(simion): use explicit Python for immutable PA checks
+55f9250348c6338230228a96aaed1d5429fb61c7 feat(simion): expose Dirichlet solve controls
+ecd57d883b35afd0021ba16440f4207eeaf745b2 docs(comsol): clarify field and event validation boundaries
+986d0c86fc1b40697c4a2c829511cf21b5bf6368 test(rf-quadrupole): isolate precommercial failure artifacts

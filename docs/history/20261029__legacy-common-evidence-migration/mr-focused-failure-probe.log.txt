@@ -1,0 +1,358 @@
+CHILD_RESULT 0 STDOUT {"history_quality":"trusted","flight":3,"quality":"trusted","candidate":1,"factor":1.0,"anchor":"C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp4bpobwuw\\child.json"}
+ STDERR 
+CHILD_RESULT 0 STDOUT {"flight":3,"factor":0.25,"quality":"poor","candidate":1,"history_quality":"poor","anchor":"C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp4bpobwuw\\child.json"}
+ STDERR 
+CHILD_RESULT 0 STDOUT {"quality":"unmeasured","flight":3,"history_quality":"unmeasured","anchor":"C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp4bpobwuw\\child.json","factor":1.0,"candidate":1}
+ STDERR 
+test_accepted_staged_candidate_quality_controls_next_step_factor (projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_downstream_workpoint_iteration_runner.WorkpointBootstrapTests.test_accepted_staged_candidate_quality_controls_next_step_factor) ... ok
+CHILD_RESULT 0 STDOUT {
+  "config": {
+    "inputs": {
+      "seed_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpofxw1_l4\\new-inputs\\seed_manifest.json",
+      "p1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpofxw1_l4\\new-inputs\\p1_response.json",
+      "prepared_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpofxw1_l4\\new-inputs\\prepared_manifest.json",
+      "prepared_initial_proposal": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpofxw1_l4\\new-inputs\\prepared_initial_proposal.json",
+      "trajectory_contract": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpofxw1_l4\\new-inputs\\trajectory_contract.json",
+      "p2_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpofxw1_l4\\new-inputs\\p2_response.json",
+      "prism_controller_policy": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpofxw1_l4\\new-inputs\\prism_controller_policy.json",
+      "resume_parent_checkpoint": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpofxw1_l4\\new-inputs\\resume_parent_checkpoint_manifest.json",
+      "prepared_target_authority": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpofxw1_l4\\new-inputs\\prepared_target_authority.json",
+      "resume_parent_bootstrap": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpofxw1_l4\\new-inputs\\resume_parent_bootstrap.json",
+      "s1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpofxw1_l4\\new-inputs\\new-S1.json"
+    },
+    "parameters": {
+      "imported_columns": 1
+    }
+  },
+  "restored": true,
+  "verified": true,
+  "replayed": true,
+  "failure": null,
+  "protected": true
+}
+ STDERR 
+CHILD_RESULT 0 STDOUT {
+  "protected": true,
+  "failure": null,
+  "verified": true,
+  "replayed": true,
+  "restored": true,
+  "config": {
+    "parameters": {
+      "controller_resume_changes": {
+        "advance_multiplier": {
+          "previous": 1.0,
+          "current": 1.0
+        },
+        "maximum_iterations": {
+          "previous": 5,
+          "current": 30
+        },
+        "preserved_candidate_count": 3,
+        "change_kind": "execution_budget_only"
+      },
+      "imported_columns": 1
+    },
+    "inputs": {
+      "prepared_initial_proposal": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp4001wp2x\\new-inputs\\prepared_initial_proposal.json",
+      "s1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp4001wp2x\\new-inputs\\new-S1.json",
+      "resume_parent_bootstrap": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp4001wp2x\\new-inputs\\resume_parent_bootstrap.json",
+      "p2_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp4001wp2x\\new-inputs\\p2_response.json",
+      "resume_parent_checkpoint": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp4001wp2x\\new-inputs\\resume_parent_checkpoint_manifest.json",
+      "seed_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp4001wp2x\\new-inputs\\seed_manifest.json",
+      "prism_controller_policy": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp4001wp2x\\new-inputs\\prism_controller_policy.json",
+      "p1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp4001wp2x\\new-inputs\\p1_response.json",
+      "previous_controller_contract": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp4001wp2x\\new-inputs\\previous_controller_contract.json",
+      "trajectory_contract": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp4001wp2x\\new-inputs\\trajectory_contract.json",
+      "prepared_target_authority": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp4001wp2x\\new-inputs\\prepared_target_authority.json",
+      "prepared_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp4001wp2x\\new-inputs\\prepared_manifest.json"
+    }
+  }
+}
+ STDERR 
+CHILD_RESULT 0 STDOUT {
+  "replayed": false,
+  "config": {
+    "inputs": {
+      "p2_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpq278gfm5\\new-inputs\\p2_response.json",
+      "prepared_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpq278gfm5\\new-inputs\\prepared_manifest.json",
+      "prepared_target_authority": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpq278gfm5\\new-inputs\\prepared_target_authority.json",
+      "prism_controller_policy": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpq278gfm5\\new-inputs\\prism_controller_policy.json",
+      "p1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpq278gfm5\\new-inputs\\p1_response.json",
+      "prepared_initial_proposal": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpq278gfm5\\new-inputs\\prepared_initial_proposal.json",
+      "trajectory_contract": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpq278gfm5\\new-inputs\\trajectory_contract.json",
+      "s1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpq278gfm5\\new-inputs\\new-S1.json",
+      "seed_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpq278gfm5\\new-inputs\\seed_manifest.json"
+    },
+    "parameters": {
+      "imported_columns": 0
+    }
+  },
+  "verified": true,
+  "failure": "Prepared resume differs beyond an explicit total candidate budget increase.",
+  "protected": false,
+  "restored": false
+}
+ STDERR Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\projects\parallel_mirror_dual_stripe_mr_tof\analysis\downstream_workpoint_iteration.py", line 242, in assert_bounded_controller_resume
+    raise CandidateContractError("controller resume requires a nondecreasing integer total budget and preserved debits")
+projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference.CandidateContractError: controller resume requires a nondecreasing integer total budget and preserved debits
+
+CHILD_RESULT 0 STDOUT {
+  "replayed": false,
+  "verified": true,
+  "failure": "Prepared resume differs beyond an explicit total candidate budget increase.",
+  "restored": false,
+  "protected": false,
+  "config": {
+    "inputs": {
+      "trajectory_contract": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp9a9fo9or\\new-inputs\\trajectory_contract.json",
+      "prism_controller_policy": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp9a9fo9or\\new-inputs\\prism_controller_policy.json",
+      "s1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp9a9fo9or\\new-inputs\\new-S1.json",
+      "prepared_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp9a9fo9or\\new-inputs\\prepared_manifest.json",
+      "seed_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp9a9fo9or\\new-inputs\\seed_manifest.json",
+      "p1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp9a9fo9or\\new-inputs\\p1_response.json",
+      "prepared_target_authority": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp9a9fo9or\\new-inputs\\prepared_target_authority.json",
+      "p2_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp9a9fo9or\\new-inputs\\p2_response.json",
+      "prepared_initial_proposal": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp9a9fo9or\\new-inputs\\prepared_initial_proposal.json"
+    },
+    "parameters": {
+      "imported_columns": 0
+    }
+  }
+}
+ STDERR Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\projects\parallel_mirror_dual_stripe_mr_tof\analysis\downstream_workpoint_iteration.py", line 254, in assert_bounded_controller_resume
+    raise CandidateContractError("controller resume differs beyond advance and candidate limit")
+projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference.CandidateContractError: controller resume differs beyond advance and candidate limit
+
+CHILD_RESULT 0 STDOUT {
+  "verified": false,
+  "replayed": false,
+  "failure": "Prepared resume requires a sealed prior parent and a new RunId.",
+  "restored": false,
+  "config": {
+    "inputs": {
+      "s1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp83rgfe74\\new-inputs\\new-S1.json",
+      "trajectory_contract": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp83rgfe74\\new-inputs\\trajectory_contract.json",
+      "seed_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp83rgfe74\\new-inputs\\seed_manifest.json",
+      "prism_controller_policy": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp83rgfe74\\new-inputs\\prism_controller_policy.json",
+      "prepared_initial_proposal": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp83rgfe74\\new-inputs\\prepared_initial_proposal.json",
+      "prepared_target_authority": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp83rgfe74\\new-inputs\\prepared_target_authority.json",
+      "p2_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp83rgfe74\\new-inputs\\p2_response.json",
+      "prepared_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp83rgfe74\\new-inputs\\prepared_manifest.json",
+      "p1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp83rgfe74\\new-inputs\\p1_response.json"
+    },
+    "parameters": {
+      "imported_columns": 0
+    }
+  },
+  "protected": false
+}
+ STDERR 
+CHILD_RESULT 0 STDOUT {
+  "verified": true,
+  "failure": "Prepared resume prepared_manifest differs; changed authority requires fresh columns.",
+  "restored": false,
+  "protected": false,
+  "config": {
+    "parameters": {
+      "imported_columns": 0
+    },
+    "inputs": {
+      "prepared_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpbr6sw_wv\\new-inputs\\prepared_manifest.json",
+      "seed_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpbr6sw_wv\\new-inputs\\seed_manifest.json",
+      "p2_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpbr6sw_wv\\new-inputs\\p2_response.json",
+      "s1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpbr6sw_wv\\new-inputs\\new-S1.json",
+      "prepared_initial_proposal": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpbr6sw_wv\\new-inputs\\prepared_initial_proposal.json",
+      "trajectory_contract": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpbr6sw_wv\\new-inputs\\trajectory_contract.json",
+      "prepared_target_authority": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpbr6sw_wv\\new-inputs\\prepared_target_authority.json",
+      "p1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpbr6sw_wv\\new-inputs\\p1_response.json",
+      "prism_controller_policy": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpbr6sw_wv\\new-inputs\\prism_controller_policy.json"
+    }
+  },
+  "replayed": false
+}
+ STDERR 
+CHILD_RESULT 0 STDOUT {
+  "verified": true,
+  "restored": false,
+  "replayed": false,
+  "failure": "Prepared resume seed_manifest differs; changed authority requires fresh columns.",
+  "protected": false,
+  "config": {
+    "parameters": {
+      "imported_columns": 0
+    },
+    "inputs": {
+      "prepared_target_authority": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpfod8fpme\\new-inputs\\prepared_target_authority.json",
+      "prepared_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpfod8fpme\\new-inputs\\prepared_manifest.json",
+      "prism_controller_policy": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpfod8fpme\\new-inputs\\prism_controller_policy.json",
+      "p1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpfod8fpme\\new-inputs\\p1_response.json",
+      "s1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpfod8fpme\\new-inputs\\new-S1.json",
+      "prepared_initial_proposal": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpfod8fpme\\new-inputs\\prepared_initial_proposal.json",
+      "trajectory_contract": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpfod8fpme\\new-inputs\\trajectory_contract.json",
+      "p2_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpfod8fpme\\new-inputs\\p2_response.json",
+      "seed_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpfod8fpme\\new-inputs\\seed_manifest.json"
+    }
+  }
+}
+ STDERR 
+CHILD_RESULT 0 STDOUT {
+  "replayed": false,
+  "verified": true,
+  "failure": "Prepared resume differs beyond an explicit total candidate budget increase.",
+  "config": {
+    "inputs": {
+      "prepared_target_authority": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpbnzrxibd\\new-inputs\\prepared_target_authority.json",
+      "trajectory_contract": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpbnzrxibd\\new-inputs\\trajectory_contract.json",
+      "prepared_initial_proposal": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpbnzrxibd\\new-inputs\\prepared_initial_proposal.json",
+      "s1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpbnzrxibd\\new-inputs\\new-S1.json",
+      "p2_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpbnzrxibd\\new-inputs\\p2_response.json",
+      "p1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpbnzrxibd\\new-inputs\\p1_response.json",
+      "prism_controller_policy": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpbnzrxibd\\new-inputs\\prism_controller_policy.json",
+      "seed_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpbnzrxibd\\new-inputs\\seed_manifest.json",
+      "prepared_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpbnzrxibd\\new-inputs\\prepared_manifest.json"
+    },
+    "parameters": {
+      "imported_columns": 0
+    }
+  },
+  "protected": false,
+  "restored": false
+}
+ STDERR Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\projects\parallel_mirror_dual_stripe_mr_tof\analysis\downstream_workpoint_iteration.py", line 233, in assert_bounded_controller_resume
+    old_loop = old["downstream_fixed_grid_workpoint_profile"]["automatic_iteration"]
+               ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyError: 'downstream_fixed_grid_workpoint_profile'
+
+CHILD_RESULT 0 STDOUT {
+  "protected": false,
+  "failure": "Prepared resume prepared_target_authority differs; changed authority requires fresh columns.",
+  "config": {
+    "inputs": {
+      "trajectory_contract": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmptxzkjd3k\\new-inputs\\trajectory_contract.json",
+      "p2_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmptxzkjd3k\\new-inputs\\p2_response.json",
+      "prepared_target_authority": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmptxzkjd3k\\new-inputs\\prepared_target_authority.json",
+      "prepared_initial_proposal": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmptxzkjd3k\\new-inputs\\prepared_initial_proposal.json",
+      "p1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmptxzkjd3k\\new-inputs\\p1_response.json",
+      "s1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmptxzkjd3k\\new-inputs\\new-S1.json",
+      "prepared_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmptxzkjd3k\\new-inputs\\prepared_manifest.json",
+      "seed_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmptxzkjd3k\\new-inputs\\seed_manifest.json",
+      "prism_controller_policy": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmptxzkjd3k\\new-inputs\\prism_controller_policy.json"
+    },
+    "parameters": {
+      "imported_columns": 0
+    }
+  },
+  "verified": true,
+  "restored": false,
+  "replayed": false
+}
+ STDERR 
+CHILD_RESULT 0 STDOUT {
+  "verified": true,
+  "config": {
+    "parameters": {
+      "imported_columns": 0
+    },
+    "inputs": {
+      "prism_controller_policy": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpid3ug3r8\\new-inputs\\prism_controller_policy.json",
+      "p1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpid3ug3r8\\new-inputs\\p1_response.json",
+      "prepared_initial_proposal": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpid3ug3r8\\new-inputs\\prepared_initial_proposal.json",
+      "p2_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpid3ug3r8\\new-inputs\\p2_response.json",
+      "prepared_target_authority": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpid3ug3r8\\new-inputs\\prepared_target_authority.json",
+      "seed_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpid3ug3r8\\new-inputs\\seed_manifest.json",
+      "s1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpid3ug3r8\\new-inputs\\new-S1.json",
+      "trajectory_contract": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpid3ug3r8\\new-inputs\\trajectory_contract.json",
+      "prepared_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpid3ug3r8\\new-inputs\\prepared_manifest.json"
+    }
+  },
+  "protected": false,
+  "failure": "Prepared resume prepared_initial_proposal differs; changed authority requires fresh columns.",
+  "restored": false,
+  "replayed": false
+}
+ STDERR 
+CHILD_RESULT 0 STDOUT {
+  "replayed": false,
+  "protected": false,
+  "verified": true,
+  "failure": "Prepared resume p1_response differs; changed authority requires fresh columns.",
+  "config": {
+    "inputs": {
+      "s1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp_sg9sirn\\new-inputs\\new-S1.json",
+      "prepared_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp_sg9sirn\\new-inputs\\prepared_manifest.json",
+      "p1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp_sg9sirn\\new-inputs\\p1_response.json",
+      "trajectory_contract": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp_sg9sirn\\new-inputs\\trajectory_contract.json",
+      "prism_controller_policy": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp_sg9sirn\\new-inputs\\prism_controller_policy.json",
+      "seed_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp_sg9sirn\\new-inputs\\seed_manifest.json",
+      "prepared_target_authority": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp_sg9sirn\\new-inputs\\prepared_target_authority.json",
+      "prepared_initial_proposal": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp_sg9sirn\\new-inputs\\prepared_initial_proposal.json",
+      "p2_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmp_sg9sirn\\new-inputs\\p2_response.json"
+    },
+    "parameters": {
+      "imported_columns": 0
+    }
+  },
+  "restored": false
+}
+ STDERR 
+CHILD_RESULT 0 STDOUT {
+  "restored": false,
+  "replayed": false,
+  "config": {
+    "inputs": {
+      "prepared_initial_proposal": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpu8g70qo8\\new-inputs\\prepared_initial_proposal.json",
+      "seed_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpu8g70qo8\\new-inputs\\seed_manifest.json",
+      "prepared_target_authority": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpu8g70qo8\\new-inputs\\prepared_target_authority.json",
+      "s1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpu8g70qo8\\new-inputs\\new-S1.json",
+      "p2_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpu8g70qo8\\new-inputs\\p2_response.json",
+      "prism_controller_policy": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpu8g70qo8\\new-inputs\\prism_controller_policy.json",
+      "prepared_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpu8g70qo8\\new-inputs\\prepared_manifest.json",
+      "p1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpu8g70qo8\\new-inputs\\p1_response.json",
+      "trajectory_contract": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpu8g70qo8\\new-inputs\\trajectory_contract.json"
+    },
+    "parameters": {
+      "imported_columns": 0
+    }
+  },
+  "failure": "Prepared resume p2_response differs; changed authority requires fresh columns.",
+  "verified": true,
+  "protected": false
+}
+ STDERR 
+CHILD_RESULT 0 STDOUT {
+  "protected": false,
+  "config": {
+    "inputs": {
+      "prepared_target_authority": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpxr27pxtt\\new-inputs\\prepared_target_authority.json",
+      "trajectory_contract": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpxr27pxtt\\new-inputs\\trajectory_contract.json",
+      "seed_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpxr27pxtt\\new-inputs\\seed_manifest.json",
+      "p2_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpxr27pxtt\\new-inputs\\p2_response.json",
+      "prepared_manifest": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpxr27pxtt\\new-inputs\\prepared_manifest.json",
+      "prepared_initial_proposal": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpxr27pxtt\\new-inputs\\prepared_initial_proposal.json",
+      "prism_controller_policy": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpxr27pxtt\\new-inputs\\prism_controller_policy.json",
+      "p1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpxr27pxtt\\new-inputs\\p1_response.json",
+      "s1_response": "C:\\Users\\Liao\\AppData\\Local\\Temp\\tmpxr27pxtt\\new-inputs\\new-S1.json"
+    },
+    "parameters": {
+      "imported_columns": 0
+    }
+  },
+  "failure": "Prepared resume prism_controller_policy differs; changed authority requires fresh columns.",
+  "verified": true,
+  "replayed": false,
+  "restored": false
+}
+ STDERR 
+test_prepared_checkpoint_reuses_original_restore_and_rejects_changed_authority (projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_downstream_workpoint_iteration_runner.WorkpointBootstrapTests.test_prepared_checkpoint_reuses_original_restore_and_rejects_changed_authority) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 22.434s
+
+OK

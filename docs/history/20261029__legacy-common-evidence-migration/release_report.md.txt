@@ -1,0 +1,92 @@
+# 工作区分主题提交与验证报告
+
+提交范围：`52d2b2b8f162b8f478ddc0be2c8dd06c8e8084a2` → `986d0c86fc1b40697c4a2c829511cf21b5bf6368`，18个源码/文档文件，6个主题，已普通推送 `origin/master`；远端SHA读回与本地相同，ahead/behind=0/0，暂存区为空。
+
+```text
+5025cb8ba1d3a7983fce3687c316b2808bde904e fix(contracts): preserve JSON array cardinality
+c0e3b1b43247601695514cb237ae4845911a9876 fix(contracts): keep frozen input manifests as provenance
+eb914af12edd812f9c4f3ab26e8d780251f215b1 fix(simion): use explicit Python for immutable PA checks
+55f9250348c6338230228a96aaed1d5429fb61c7 feat(simion): expose Dirichlet solve controls
+ecd57d883b35afd0021ba16440f4207eeaf745b2 docs(comsol): clarify field and event validation boundaries
+986d0c86fc1b40697c4a2c829511cf21b5bf6368 test(rf-quadrupole): isolate precommercial failure artifacts
+```
+
+## 验证与边界
+
+先验证16文件隔离快照，后仅增加四极杆夹具隔离修复与PROJECT说明2文件。提交前逐文件核对快照和主工作区原始SHA，提交后核对全部18文件的Git规范字节与测试快照一致。所有检查使用Python 3.11、公共主机资源准入；完整串行L1/L2使用MaxConcurrency=1。没有启动商业求解或GUI，没有新增L3/物理资格。
+
+| 检查 | 实际结果 |
+|---|---|
+| 首轮并行L1 | 多极杆公共回归1 failure/1 error：子进程异常和15秒超时；两项原样复验2/2通过，5.504s；未改超时/断言 |
+| 完整串行L1，16文件 | PASS，18个阶段；`l1-serial.log` |
+| 完整串行L2首次执行 | **非零退出**：MR Static与四极杆Static失败，其他阶段通过；没有把本轮改写成PASS |
+| MR首次分析回归 | 1592项，1 failure/1 error、36 skip；30秒超时和合法预算恢复拒绝；失败夹具自行mock公共JSON writer，不调用本次修改的writer |
+| MR两项原样复验 | 2/2 PASS，22.434s；完整子进程输出见`mr-focused-failure-probe.log` |
+| MR失败所在完整模块 | 111项，PASS、1 skip，294.882s；实现和阈值未改 |
+| MR剩余验收 | 公共Core：42项PASS及PowerShell解析/Lua脚本PASS；solver-free适配发现：0个Python测试，正常退出；补齐首次分析失败后未执行的检查 |
+| 四极杆首次Static | 230项、1 failure：测试向checkout侧artifact根写入但未初始化账本，先被容量保护拒绝 |
+| 四极杆夹具修复 | 临时artifact根与合法独立账本；临时runner只替换两行路径定位并校验唯一匹配；原拒绝、失败三件套、manifest和环境恢复断言保留；生产保护不改 |
+| 增量L1，新增2文件 | PASS；`l1-quad-fixture.log` |
+| 四极杆完整Static复验 | 230项全部PASS，135.425s；`quad-static-recheck.log` |
+| 其他工作区轻量检查 | 122个改动Python文件Ruff PASS；开发标准ERRORS=0；迁移文档结构检查291文件errors=0/review=24 |
+
+复验覆盖了原失败项及原先因MR早退未执行的静态检查；**未重新运行完整L2到单次零退出**。MR首次失败未稳定复现，未进一步归因到宿主/导入/启动压力，也没有为获得PASS而改校验阈值；原始失败日志保留。该边界已在每个提交正文记录。Dirichlet选项回归使用PA doubles，只证明接口与边界标志/电势保持，不授予原生Refine精度、离子飞行或性能资格。
+
+## 未纳入提交
+
+保留 226 条工作区状态记录，详见[remaining-worktree.txt](remaining-worktree.txt)。OA→MR迁移、IP/prepared_joint真实链、冷却前端、through-exit新模型及MR首接触候选等尚未闭合，不把静态PASS代替真实链完成。4份迁移导航修复随相应主题保留，待原任务恢复后继续。没有回退其他任务改动，没有提交PA/MPH、结果、日志或一次性实现。
+
+## CLOC
+
+公共入口：`common/report_cloc_delta.ps1 -Base 52d2b2b8f162b8f478ddc0be2c8dd06c8e8084a2 -Current 986d0c86fc1b40697c4a2c829511cf21b5bf6368`。工具2.10；不可变提交到提交统计，不包括保留工作区内容。完整输出见[cloc-final.log](cloc-final.log)。以下每格为基线 → 结果 (delta)。
+
+### total
+
+| language | files | blank | comment | code |
+|---|---:|---:|---:|---:|
+| JSON | 511 → 511 (+0) | 0 → 0 (+0) | 0 → 0 (+0) | 50828 → 50828 (+0) |
+| Lua | 95 → 95 (+0) | 426 → 426 (+0) | 741 → 748 (+7) | 10079 → 10119 (+40) |
+| MATLAB | 120 → 120 (+0) | 1012 → 1012 (+0) | 2199 → 2199 (+0) | 14551 → 14551 (+0) |
+| PowerShell | 155 → 155 (+0) | 1224 → 1224 (+0) | 1456 → 1456 (+0) | 48487 → 48489 (+2) |
+| Python | 876 → 876 (+0) | 24695 → 24710 (+15) | 17173 → 17300 (+127) | 299509 → 299708 (+199) |
+| SIMION | 10 → 10 (+0) | 35 → 35 (+0) | 81 → 81 (+0) | 246 → 246 (+0) |
+| TOML | 1 → 1 (+0) | 4 → 4 (+0) | 0 → 0 (+0) | 24 → 24 (+0) |
+| YAML | 2 → 2 (+0) | 4 → 4 (+0) | 1 → 1 (+0) | 120 → 120 (+0) |
+| SUM | 1770 → 1770 (+0) | 27400 → 27415 (+15) | 21651 → 21785 (+134) | 423844 → 424085 (+241) |
+
+### production
+
+| language | files | blank | comment | code |
+|---|---:|---:|---:|---:|
+| JSON | 507 → 507 (+0) | 0 → 0 (+0) | 0 → 0 (+0) | 50718 → 50718 (+0) |
+| Lua | 79 → 79 (+0) | 333 → 333 (+0) | 656 → 663 (+7) | 8336 → 8376 (+40) |
+| MATLAB | 78 → 78 (+0) | 543 → 543 (+0) | 1671 → 1671 (+0) | 10542 → 10542 (+0) |
+| PowerShell | 147 → 147 (+0) | 1169 → 1169 (+0) | 1434 → 1434 (+0) | 47131 → 47133 (+2) |
+| Python | 443 → 443 (+0) | 14309 → 14309 (+0) | 9251 → 9252 (+1) | 167569 → 167570 (+1) |
+| SIMION | 10 → 10 (+0) | 35 → 35 (+0) | 81 → 81 (+0) | 246 → 246 (+0) |
+| TOML | 1 → 1 (+0) | 4 → 4 (+0) | 0 → 0 (+0) | 24 → 24 (+0) |
+| YAML | 2 → 2 (+0) | 4 → 4 (+0) | 1 → 1 (+0) | 120 → 120 (+0) |
+| SUM | 1267 → 1267 (+0) | 16397 → 16397 (+0) | 13094 → 13102 (+8) | 284686 → 284729 (+43) |
+
+### tests
+
+| language | files | blank | comment | code |
+|---|---:|---:|---:|---:|
+| JSON | 4 → 4 (+0) | 0 → 0 (+0) | 0 → 0 (+0) | 110 → 110 (+0) |
+| Lua | 16 → 16 (+0) | 93 → 93 (+0) | 85 → 85 (+0) | 1743 → 1743 (+0) |
+| MATLAB | 42 → 42 (+0) | 469 → 469 (+0) | 528 → 528 (+0) | 4009 → 4009 (+0) |
+| PowerShell | 8 → 8 (+0) | 55 → 55 (+0) | 22 → 22 (+0) | 1356 → 1356 (+0) |
+| Python | 433 → 433 (+0) | 10386 → 10401 (+15) | 7922 → 8048 (+126) | 131940 → 132138 (+198) |
+| SUM | 503 → 503 (+0) | 11003 → 11018 (+15) | 8557 → 8683 (+126) | 139158 → 139356 (+198) |
+
+完整过滤口径：
+
+```text
+FILTER=extensions=.py,.m,.ps1,.lua,.gem,.fly2,.json,.toml,.yml,.yaml,.c,.h,.cc,.cpp,.cxx,.hpp,.cs,.java,.js,.jsx,.ts,.tsx,.go,.rs,.rb,.php,.swift,.kt,.kts,.sh,.bash,.zsh,.bat,.cmd;excluded_components=.git,.venv,.tmp,artifacts,generated,vendor,vendors,third_party,third-party,thirdparty,run,runs;excluded_lifecycle_paths=any/docs/history/**|root/scratch/**|artifacts/projects/<project>/(archive|scratch)/**;language_overrides=.m:MATLAB|.fly2:Lua|.gem:SIMION_GEM;production=execution_profile_entrypoint|run_*.ps1|verify_*.ps1|tests/support(non-test-named);tests=fixture|test_support|testing_support_path|test_*.(py|ps1|m|lua)|*_test.py|*Test.m|*.Tests.*;unclassified=other_code_below_test_or_tests_path;worktree_source=git_tracked_plus_nonignored_untracked
+```
+
+## 临时内容清理
+
+移除接管的验证worktree及其Python junction：worktree逻辑字节 203,358,893；移除仅有测试账本/锁文件的artifact空壳 24,577 字节；另清理已确认测试遗留的4014字节fixture。主Python环境保留，未删除任何求解器资产。全部可由Git提交和测试重建；证据日志与CLOC报告保留。
+
+同卷可用空间观测 698,986,528,768 → 699,196,153,856 字节，差值 +209,625,088；可能包含并发系统活动，不等同于独占物理释放量。精确范围见[cleanup.json](cleanup.json)。

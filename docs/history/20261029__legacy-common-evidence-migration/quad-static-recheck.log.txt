@@ -1,0 +1,36 @@
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=7324 INHERITED=False
+RESOLVED_DESIGN=PASS PROFILE=official
+RESOLVED_DESIGN=PASS PROFILE=interface
+RESOLVED_DESIGN=PASS PROFILE=mass_filter
+SIMION_GEOMETRY_SYNC=PASS
+STATUS=PASS
+MULTIPOLE_RUNTIME_PROFILE=PASS PROJECT=rf_quadrupole_ion_optics PROFILE=no_acceleration_full_length
+{
+  "a_at_tune_mass": 0.22988782765406462,
+  "axis_common_mode_offset_V": -8.0,
+  "dc_differential_V": 45.52602987935551,
+  "ideal_scanline": {
+    "q_cal": 0.6964829222134838,
+    "q_in": 0.6827291735098723,
+    "q_out": 0.7108022091906631,
+    "resolving_power_stability": 24.819748718056726,
+    "u_over_v": 0.162804703
+  },
+  "mode_status": "n100_dual_solver_revalidation_pending",
+  "q_at_tune_mass": 0.7060233009794091,
+  "rf_differential_V_peak_to_peak": 559.27168,
+  "rf_differential_V_zero_to_peak": 279.63584,
+  "scope": "L0 ideal-field contract validation only; no solver or mass-response qualification",
+  "status": "PASS",
+  "u_over_v": 0.162804703
+}
+QUADRUPOLE_L0_REFERENCE=PASS
+QUADRUPOLE_MASS_FILTER_L1_CONTRACT=PASS
+ENTRY_APERTURE_L0=PASS DESIGN_VALUE_AVAILABLE=false
+......................................................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 230 tests in 135.425s
+
+OK
+PROJECT_GATE=PASS PROJECT=rf_quadrupole_ion_optics LEVEL=Static
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=unclassified STATUS=released

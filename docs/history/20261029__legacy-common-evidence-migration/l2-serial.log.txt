@@ -1,0 +1,760 @@
+GATE_CONCURRENCY=1 MODE=explicit LOGICAL_PROCESSORS=16
+GATE_STAGE=RUN NAME=documentation
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=documentation PID=2384 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=2384 INHERITED=True
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=2384 INHERITED=True
+WORKSPACE_HYGIENE=SKIP REASON=standalone_repository_checkout
+REPOSITORY_HYGIENE=PASS TRACKED_FILES=2433
+REVIEW: docs/LIFECYCLE.md:336: scratch path in prose/code span; review evidence lifetime
+REVIEW: integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:33: broken relative link '../../runtime/verify_single_flight_pa_cache_readiness.py'
+REVIEW: .agents/skills/grill-me/SKILL.md: no incoming link from an active Markdown document (code consumers not assessed)
+REVIEW: common/contracts/README.md: over 400 lines; review navigation and responsibilities
+REVIEW: common/simion/README.md: over 400 lines; review navigation and responsibilities
+REVIEW: docs/COMSOL_API.md: over 400 lines; review navigation and responsibilities
+REVIEW: docs/DEVELOPMENT_STANDARDS.md: over 400 lines; review navigation and responsibilities
+REVIEW: docs/multipoles/quadrupole.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/adiabatic_drift_and_original_ion_foil.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/dual_stripe_non_tilt_design.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/implementation_and_validation.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/injection_prism_source_and_calibration.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/isochronous_mirror_design.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/simion/README.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/publication/prior_art_equation_claim_chart_20260825.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/theory/conditional_phase_space_focusability.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/theory/dual_stage_reflectron.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/theory/oatof_oaaccelerator_coupling.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/theory/source_to_detector_phase_space_framework.md: over 400 lines; review navigation and responsibilities
+REVIEW: repeated substantial paragraph: projects/rf_hexapole_ion_optics/README.md, projects/rf_octupole_ion_optics/README.md
+DOCUMENTATION_LINKS: files=289 errors=0 review=22
+
+MarkdownFiles        : 289
+HistoryArchives      : 175
+AuthorityEntries     : 8
+Mode                 : Full
+ComsolReferenceBytes : 22877
+STATUS               : PASS
+
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=documentation STATUS=released
+GATE_STAGE=PASS NAME=documentation ELAPSED_SECONDS=12.033
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=gate_matplotlib_cache PID=2384 INHERITED=False
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=gate_matplotlib_cache STATUS=released
+GATE_MATPLOTLIB_CACHE=READY PATH=C:\Users\Liao\AppData\Local\Temp\repository_integration_gate_84433b77f1cc4367a3dce996834ba746\matplotlib
+GATE_PROCESS=START NAME=repository_text_bytes PID=9108
+GATE_PROCESS=COMPLETE NAME=repository_text_bytes EXIT_CODE=0 ELAPSED_SECONDS=4.796 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=development_standards PID=20988
+GATE_PROCESS=COMPLETE NAME=development_standards EXIT_CODE=0 ELAPSED_SECONDS=11.228 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=ruff_all PID=20948
+GATE_PROCESS=COMPLETE NAME=ruff_all EXIT_CODE=0 ELAPSED_SECONDS=4.76 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=host_resource_scheduler_tests PID=29668
+GATE_PROCESS=COMPLETE NAME=host_resource_scheduler_tests EXIT_CODE=0 ELAPSED_SECONDS=52.726 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=host_resource_adapter_tests PID=31060
+GATE_PROCESS=COMPLETE NAME=host_resource_adapter_tests EXIT_CODE=0 ELAPSED_SECONDS=47.515 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=livelink_resource_stages_tests PID=8380
+GATE_PROCESS=COMPLETE NAME=livelink_resource_stages_tests EXIT_CODE=0 ELAPSED_SECONDS=45.544 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=tof_error_budget_tests PID=5512
+GATE_PROCESS=COMPLETE NAME=tof_error_budget_tests EXIT_CODE=0 ELAPSED_SECONDS=5.385 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=documentation_link_tests PID=29356
+GATE_PROCESS=COMPLETE NAME=documentation_link_tests EXIT_CODE=0 ELAPSED_SECONDS=5.202 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=project_registry PID=30732
+GATE_PROCESS=COMPLETE NAME=project_registry EXIT_CODE=0 ELAPSED_SECONDS=5.518 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=livelink_failure_classification PID=30024
+GATE_PROCESS=COMPLETE NAME=livelink_failure_classification EXIT_CODE=0 ELAPSED_SECONDS=4.138 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=livelink_environment PID=30964
+GATE_PROCESS=COMPLETE NAME=livelink_environment EXIT_CODE=0 ELAPSED_SECONDS=4.186 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=rf_quadrupole_generated_publications PID=28192
+GATE_PROCESS=COMPLETE NAME=rf_quadrupole_generated_publications EXIT_CODE=0 ELAPSED_SECONDS=10.546 LOG_REPLAY=PENDING
+GATE_STAGE=RUN NAME=repository_text_bytes
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=repository_text_bytes PID=9108 INHERITED=False
+REPOSITORY_TEXT_BYTES=PASS FILES=1947
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=repository_text_bytes STATUS=released
+GATE_STAGE=PASS NAME=repository_text_bytes ELAPSED_SECONDS=3.991
+GATE_STAGE=RUN NAME=development_standards
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=development_standards PID=20988 INHERITED=False
+DEVELOPMENT_STANDARDS=PASS ERRORS=0 REVIEW_SIGNALS=575
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=development_standards STATUS=released
+GATE_STAGE=PASS NAME=development_standards ELAPSED_SECONDS=10.44
+GATE_STAGE=RUN NAME=ruff_all
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=ruff_all PID=20948 INHERITED=False
+All checks passed!
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=ruff_all STATUS=released
+GATE_STAGE=PASS NAME=ruff_all ELAPSED_SECONDS=4.069
+GATE_STAGE=RUN NAME=host_resource_scheduler_tests
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=host_resource_scheduler_tests PID=29668 INHERITED=False
+........................................................................
+----------------------------------------------------------------------
+Ran 72 tests in 48.274s
+
+OK
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=host_resource_scheduler_tests STATUS=released
+GATE_STAGE=PASS NAME=host_resource_scheduler_tests ELAPSED_SECONDS=52.017
+GATE_STAGE=RUN NAME=host_resource_adapter_tests
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=host_resource_adapter_tests PID=31060 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=test-prepare PID=31060 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=nested-known PID=31060 INHERITED=True
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=test-analyze PID=31060 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=theory_compute PID=31060 INHERITED=False
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=theory_compute STATUS=released
+HOST_RESOURCE=ACQUIRED ROLE=SIMION STAGE=mrtof_postprocess PID=31060 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=31060 INHERITED=True
+HOST_RESOURCE=RELEASE ROLE=SIMION STAGE=mrtof_postprocess STATUS=released
+HIDDEN_FIXTURE_STAGES=native-snapshot-start
+native-snapshot-complete
+acquired
+released
+next-request-released
+HOST_RESOURCE=ACQUIRED ROLE=COMSOL STAGE=solver PID=31060 INHERITED=False
+HOST_RESOURCE=RELEASE ROLE=COMSOL STAGE=solver STATUS=released
+HOST_EXECUTION_LEASE_TEST=PASS MODE=ISOLATED_STAGE_LEDGER
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=host_resource_adapter_tests STATUS=released
+GATE_STAGE=PASS NAME=host_resource_adapter_tests ELAPSED_SECONDS=46.785
+GATE_STAGE=RUN NAME=livelink_resource_stages_tests
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=livelink_resource_stages_tests PID=8380 INHERITED=False
+...............................
+----------------------------------------------------------------------
+Ran 31 tests in 41.202s
+
+OK
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=livelink_resource_stages_tests STATUS=released
+GATE_STAGE=PASS NAME=livelink_resource_stages_tests ELAPSED_SECONDS=44.831
+GATE_STAGE=RUN NAME=tof_error_budget_tests
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=tof_error_budget_tests PID=5512 INHERITED=False
+................
+----------------------------------------------------------------------
+Ran 16 tests in 0.934s
+
+OK
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=tof_error_budget_tests STATUS=released
+GATE_STAGE=PASS NAME=tof_error_budget_tests ELAPSED_SECONDS=4.574
+GATE_STAGE=RUN NAME=documentation_link_tests
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=documentation_link_tests PID=29356 INHERITED=False
+...............
+----------------------------------------------------------------------
+Ran 15 tests in 0.791s
+
+OK
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=documentation_link_tests STATUS=released
+GATE_STAGE=PASS NAME=documentation_link_tests ELAPSED_SECONDS=4.398
+GATE_STAGE=RUN NAME=project_registry
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=project_registry PID=30732 INHERITED=False
+PROJECT_REGISTRY=PASS PROJECTS=10 PATH=C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\config\project_registry.json
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=project_registry STATUS=released
+GATE_STAGE=PASS NAME=project_registry ELAPSED_SECONDS=4.73
+GATE_STAGE=RUN NAME=livelink_failure_classification
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=livelink_failure_classification PID=30024 INHERITED=False
+LIVELINK_FAILURE_CLASSIFICATION=PASS
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=livelink_failure_classification STATUS=released
+GATE_STAGE=PASS NAME=livelink_failure_classification ELAPSED_SECONDS=3.422
+GATE_STAGE=RUN NAME=livelink_environment
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=livelink_environment PID=30964 INHERITED=False
+LIVELINK_ENVIRONMENT_PREFLIGHT=PASS
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=livelink_environment STATUS=released
+GATE_STAGE=PASS NAME=livelink_environment ELAPSED_SECONDS=3.452
+GATE_STAGE=RUN NAME=rf_quadrupole_generated_publications
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=rf_quadrupole_generated_publications PID=28192 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=28192 INHERITED=True
+RESOLVED_DESIGN=PASS PROFILE=official
+RESOLVED_DESIGN=PASS PROFILE=interface
+RESOLVED_DESIGN=PASS PROFILE=mass_filter
+SIMION_GEOMETRY_SYNC=PASS
+STATUS=PASS
+MULTIPOLE_RUNTIME_PROFILE=PASS PROJECT=rf_quadrupole_ion_optics PROFILE=no_acceleration_full_length
+PROJECT_GATE=PASS PROJECT=rf_quadrupole_ion_optics LEVEL=Freshness
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=rf_quadrupole_generated_publications STATUS=released
+GATE_STAGE=PASS NAME=rf_quadrupole_generated_publications ELAPSED_SECONDS=9.806
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=gate_matplotlib_cache PID=2384 INHERITED=False
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=gate_matplotlib_cache STATUS=released
+GATE_MATPLOTLIB_CACHE=READY PATH=C:\Users\Liao\AppData\Local\Temp\repository_integration_gate_8afa21138a874bafb2b32691c1eab309\matplotlib
+GATE_PROCESS=START NAME=longitudinal_fit_tests PID=28308
+GATE_PROCESS=COMPLETE NAME=longitudinal_fit_tests EXIT_CODE=0 ELAPSED_SECONDS=5.903 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=common_contracts PID=3376
+GATE_PROCESS=COMPLETE NAME=common_contracts EXIT_CODE=0 ELAPSED_SECONDS=183.457 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=simion_common PID=21092
+GATE_PROCESS=COMPLETE NAME=simion_common EXIT_CODE=0 ELAPSED_SECONDS=69.789 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=multipole_common PID=26440
+GATE_PROCESS=COMPLETE NAME=multipole_common EXIT_CODE=0 ELAPSED_SECONDS=280.212 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=multipole_foundation PID=23932
+GATE_PROCESS=COMPLETE NAME=multipole_foundation EXIT_CODE=0 ELAPSED_SECONDS=6.707 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=integration_common PID=26540
+GATE_PROCESS=COMPLETE NAME=integration_common EXIT_CODE=0 ELAPSED_SECONDS=9.406 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=rf_multipole_to_single_reflection_oatof_integration PID=25668
+GATE_PROCESS=COMPLETE NAME=rf_multipole_to_single_reflection_oatof_integration EXIT_CODE=0 ELAPSED_SECONDS=337.966 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=solidworks_common PID=29332
+GATE_PROCESS=COMPLETE NAME=solidworks_common EXIT_CODE=0 ELAPSED_SECONDS=5.505 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=orthogonal_accelerator_static PID=29304
+GATE_PROCESS=COMPLETE NAME=orthogonal_accelerator_static EXIT_CODE=0 ELAPSED_SECONDS=11.978 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=parallel_mirror_dual_stripe_mr_tof_static PID=18208
+GATE_PROCESS=COMPLETE NAME=parallel_mirror_dual_stripe_mr_tof_static EXIT_CODE=1 ELAPSED_SECONDS=1727.828 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=single_reflection_oa_tof_mass_analyzer_static PID=24676
+GATE_PROCESS=COMPLETE NAME=single_reflection_oa_tof_mass_analyzer_static EXIT_CODE=0 ELAPSED_SECONDS=212.93 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=rf_quadrupole_ion_optics_static PID=27780
+GATE_PROCESS=COMPLETE NAME=rf_quadrupole_ion_optics_static EXIT_CODE=1 ELAPSED_SECONDS=147.83 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=rf_hexapole_ion_optics_static PID=28224
+GATE_PROCESS=COMPLETE NAME=rf_hexapole_ion_optics_static EXIT_CODE=0 ELAPSED_SECONDS=28.096 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=rf_octupole_ion_optics_static PID=1604
+GATE_PROCESS=COMPLETE NAME=rf_octupole_ion_optics_static EXIT_CODE=0 ELAPSED_SECONDS=28.933 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=dual_pressure_rectilinear_ion_processor_static PID=6380
+GATE_PROCESS=COMPLETE NAME=dual_pressure_rectilinear_ion_processor_static EXIT_CODE=0 ELAPSED_SECONDS=115.091 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=dual_cone_tandem_quadrupole_ion_interface_static PID=7120
+GATE_PROCESS=COMPLETE NAME=dual_cone_tandem_quadrupole_ion_interface_static EXIT_CODE=0 ELAPSED_SECONDS=22.55 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=transverse_helical_filament_wehnelt_electron_gun_static PID=6972
+GATE_PROCESS=COMPLETE NAME=transverse_helical_filament_wehnelt_electron_gun_static EXIT_CODE=0 ELAPSED_SECONDS=30.359 LOG_REPLAY=PENDING
+GATE_PROCESS=START NAME=apertured_tube_electron_impact_ion_source_static PID=12580
+GATE_PROCESS=COMPLETE NAME=apertured_tube_electron_impact_ion_source_static EXIT_CODE=0 ELAPSED_SECONDS=9.364 LOG_REPLAY=PENDING
+GATE_STAGE=RUN NAME=longitudinal_fit_tests
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=longitudinal_fit_tests PID=28308 INHERITED=False
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.002s
+
+OK
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=longitudinal_fit_tests STATUS=released
+GATE_STAGE=PASS NAME=longitudinal_fit_tests ELAPSED_SECONDS=5.196
+GATE_STAGE=RUN NAME=common_contracts
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=common_contracts PID=3376 INHERITED=False
+..........................................................................................usage: reconcile_artifact_capacity [-h] --artifact-root ARTIFACT_ROOT
+                                   [--restore-retired-disposition-receipt RESTORE_RETIRED_DISPOSITION_RECEIPT]
+                                   [--restore-retired-path-key-receipt RESTORE_RETIRED_PATH_KEY_RECEIPT]
+                                   [--expected-ledger-sha256 EXPECTED_LEDGER_SHA256]
+                                   [--expected-receipt-sha256 EXPECTED_RECEIPT_SHA256]
+                                   [--create-protection-lease CREATE_PROTECTION_LEASE]
+                                   [--renew-protection-lease RENEW_PROTECTION_LEASE]
+                                   [--delete-protection-lease DELETE_PROTECTION_LEASE]
+                                   [--lease-owner LEASE_OWNER]
+                                   [--lease-ttl-seconds LEASE_TTL_SECONDS]
+                                   [--committed-new-bytes COMMITTED_NEW_BYTES]
+                                   [--protect-path PROTECT_PATH]
+                                   [--protect-cache-key PROTECT_CACHE_KEY]
+                                   [--execution-mode {startup,maintenance}]
+                                   [--maintenance-target-gib MAINTENANCE_TARGET_GIB]
+                                   [--capacity-ledger CAPACITY_LEDGER]
+                                   [--capacity-protection-lease-id CAPACITY_PROTECTION_LEASE_ID]
+                                   [--apply] [--detailed-output]
+reconcile_artifact_capacity: error: unrecognized arguments: --maximum-new-artifact-bytes 1
+usage: reconcile_artifact_capacity [-h] --artifact-root ARTIFACT_ROOT
+                                   [--restore-retired-disposition-receipt RESTORE_RETIRED_DISPOSITION_RECEIPT]
+                                   [--restore-retired-path-key-receipt RESTORE_RETIRED_PATH_KEY_RECEIPT]
+                                   [--expected-ledger-sha256 EXPECTED_LEDGER_SHA256]
+                                   [--expected-receipt-sha256 EXPECTED_RECEIPT_SHA256]
+                                   [--create-protection-lease CREATE_PROTECTION_LEASE]
+                                   [--renew-protection-lease RENEW_PROTECTION_LEASE]
+                                   [--delete-protection-lease DELETE_PROTECTION_LEASE]
+                                   [--lease-owner LEASE_OWNER]
+                                   [--lease-ttl-seconds LEASE_TTL_SECONDS]
+                                   [--committed-new-bytes COMMITTED_NEW_BYTES]
+                                   [--protect-path PROTECT_PATH]
+                                   [--protect-cache-key PROTECT_CACHE_KEY]
+                                   [--execution-mode {startup,maintenance}]
+                                   [--maintenance-target-gib MAINTENANCE_TARGET_GIB]
+                                   [--capacity-ledger CAPACITY_LEDGER]
+                                   [--capacity-protection-lease-id CAPACITY_PROTECTION_LEASE_ID]
+                                   [--apply] [--detailed-output]
+reconcile_artifact_capacity: error: unrecognized arguments: --target-gib 1
+usage: reconcile_artifact_capacity [-h] --artifact-root ARTIFACT_ROOT
+                                   [--restore-retired-disposition-receipt RESTORE_RETIRED_DISPOSITION_RECEIPT]
+                                   [--restore-retired-path-key-receipt RESTORE_RETIRED_PATH_KEY_RECEIPT]
+                                   [--expected-ledger-sha256 EXPECTED_LEDGER_SHA256]
+                                   [--expected-receipt-sha256 EXPECTED_RECEIPT_SHA256]
+                                   [--create-protection-lease CREATE_PROTECTION_LEASE]
+                                   [--renew-protection-lease RENEW_PROTECTION_LEASE]
+                                   [--delete-protection-lease DELETE_PROTECTION_LEASE]
+                                   [--lease-owner LEASE_OWNER]
+                                   [--lease-ttl-seconds LEASE_TTL_SECONDS]
+                                   [--committed-new-bytes COMMITTED_NEW_BYTES]
+                                   [--protect-path PROTECT_PATH]
+                                   [--protect-cache-key PROTECT_CACHE_KEY]
+                                   [--execution-mode {startup,maintenance}]
+                                   [--maintenance-target-gib MAINTENANCE_TARGET_GIB]
+                                   [--capacity-ledger CAPACITY_LEDGER]
+                                   [--capacity-protection-lease-id CAPACITY_PROTECTION_LEASE_ID]
+                                   [--apply] [--detailed-output]
+reconcile_artifact_capacity: error: unrecognized arguments: --minimum-free-gib 1
+.................................................................................................................................................................................................usage: legacy_capacity_backfill [-h] --artifact-root ARTIFACT_ROOT
+                                [--snapshot-published-pa-cache-keys | --audit-checkpoint-terminalization | --resume-pending-disposals | --create-protection-lease CREATE_PROTECTION_LEASE | --renew-protection-lease RENEW_PROTECTION_LEASE | --delete-protection-lease DELETE_PROTECTION_LEASE]
+                                [--lease-owner LEASE_OWNER]
+                                [--lease-ttl-seconds LEASE_TTL_SECONDS]
+                                [--committed-new-bytes COMMITTED_NEW_BYTES]
+                                [--required-headroom-bytes REQUIRED_HEADROOM_BYTES]
+                                [--protect-path PROTECT_PATH]
+                                [--protect-cache-key PROTECT_CACHE_KEY]
+                                [--known-measured-bytes KNOWN_MEASURED_BYTES]
+                                [--maximum-new-artifact-bytes MAXIMUM_NEW_ARTIFACT_BYTES]
+                                [--capacity-baseline-receipt CAPACITY_BASELINE_RECEIPT]
+                                [--capacity-baseline-receipt-sha256 CAPACITY_BASELINE_RECEIPT_SHA256]
+                                [--execution-mode {legacy-backfill}]
+                                [--capacity-ledger CAPACITY_LEDGER]
+                                [--capacity-protection-lease-id CAPACITY_PROTECTION_LEASE_ID]
+                                [--apply]
+legacy_capacity_backfill: error: --apply requires the shared HostExecutionLease; use Invoke-ArtifactCapacityGate from PowerShell 7
+........s.........................................................................................usage: reconcile [-h] (--run-root RUN_ROOT | --run-dir RUN_DIR) [--apply]
+                 [--permit-manifest-drift] [--max-apply-runs MAX_APPLY_RUNS]
+                 [--summary-only]
+reconcile: error: --max-apply-runs requires --apply and a positive value
+.....................warning: LF will be replaced by CRLF in .gitattributes.
+The file will have its original line endings in your working directory
+warning: CRLF will be replaced by LF in bad.json.
+The file will have its original line endings in your working directory
+.................usage: lifecycle [-h] --action
+                 {register-writing-range,register-writing,assert-retention,finalize-ready,seal-checkpoint,seal-stopped-payload,retire-misplaced-light-run}
+                 --artifact-root ARTIFACT_ROOT [--run-config RUN_CONFIG]
+                 [--run-directory RUN_DIRECTORY] [--owner OWNER]
+                 [--confirm-writing-stopped]
+                 [--retention-reason RETENTION_REASON]
+                 [--backup-manifest BACKUP_MANIFEST] [--apply]
+lifecycle: error: --apply requires the shared HostExecutionLease
+.............................................................................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 672 tests in 178.301s
+
+OK (skipped=1)
+{}
+RUN_MANIFEST=PASS PATH=C:\Users\Liao\AppData\Local\Temp\tmpw7sek4uw\run_manifest.json
+RUN_MANIFEST_VERIFY=PASS SCOPE=full PROJECT=fixture RUN_ID=20261017_120000__test__python__manifest-read-reuse OUTPUTS=2
+RUN_MANIFEST_VERIFY=PASS SCOPE=full PROJECT=fixture RUN_ID=20261017_120000__test__python__manifest-read-reuse OUTPUTS=2
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=common_contracts STATUS=released
+GATE_STAGE=PASS NAME=common_contracts ELAPSED_SECONDS=182.758
+GATE_STAGE=RUN NAME=simion_common
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=simion_common PID=21092 INHERITED=False
+.............................................s.sss.....................................................................................................................................................................................................................ss...............
+----------------------------------------------------------------------
+Ran 280 tests in 64.513s
+
+OK (skipped=6)
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=simion_common STATUS=released
+GATE_STAGE=PASS NAME=simion_common ELAPSED_SECONDS=68.861
+GATE_STAGE=RUN NAME=multipole_common
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=multipole_common PID=26440 INHERITED=False
+RUN_MANIFEST=PASS PATH=C:\Users\Liao\AppData\Local\Temp\tmpnw4_h5x4\artifacts\projects\rf_hexapole_ion_optics\runs\20260729_120001__test__python__transport-failure\run_manifest.json
+RUN_MANIFEST=PASS PATH=C:\Users\Liao\AppData\Local\Temp\tmpnw4_h5x4\artifacts\projects\rf_hexapole_ion_optics\runs\20260729_120001__test__python__transport-failure\run_manifest.json
+RUN_MANIFEST=PASS PATH=C:\Users\Liao\AppData\Local\Temp\tmpoby7e7xc\artifacts\projects\rf_hexapole_ion_optics\runs\20260729_120000__test__python__transport-success\run_manifest.json
+RUN_MANIFEST=PASS PATH=C:\Users\Liao\AppData\Local\Temp\tmpoby7e7xc\artifacts\projects\rf_hexapole_ion_optics\runs\20260729_120000__test__python__transport-success\run_manifest.json
+SOURCE_MODEL_COMPARISON=PASS PARTICLES=2
+MULTIPOLE_ENGINEERING_REANALYSIS=NOT_EVALUATED_DO_NOT_PROGRESS OUTPUT=C:\Users\Liao\AppData\Local\Temp\tmpvajq_bxr\result.json
+...................................................................................................................................................................................................................................................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 419 tests in 266.763s
+
+OK
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=multipole_common STATUS=released
+GATE_STAGE=PASS NAME=multipole_common ELAPSED_SECONDS=279.315
+GATE_STAGE=RUN NAME=multipole_foundation
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=multipole_foundation PID=23932 INHERITED=False
+MULTIPOLE_FAMILY_FOUNDATION=PASS PROJECTS=3 ORDERS=2,3,4 API=frozen VALIDATION=n100_dual_solver_pass
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=multipole_foundation STATUS=released
+GATE_STAGE=PASS NAME=multipole_foundation ELAPSED_SECONDS=5.707
+GATE_STAGE=RUN NAME=integration_common
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=integration_common PID=26540 INHERITED=False
+.....................................
+----------------------------------------------------------------------
+Ran 37 tests in 4.333s
+
+OK
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=integration_common STATUS=released
+GATE_STAGE=PASS NAME=integration_common ELAPSED_SECONDS=8.434
+GATE_STAGE=RUN NAME=rf_multipole_to_single_reflection_oatof_integration
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=rf_multipole_to_single_reflection_oatof_integration PID=25668 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=25668 INHERITED=True
+All checks passed!
+.....................................................................................................................................................................................................................................................................................................................................................................................................s.............................................................................................................................s..s............s.............................................................................................................................s......................................................................................................................................s................................................................................s...ss............................................................................
+----------------------------------------------------------------------
+Ran 954 tests in 327.100s
+
+OK (skipped=9)
+INTEGRATION_GATE=PASS FAMILY=rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=rf_multipole_to_single_reflection_oatof_integration STATUS=released
+GATE_STAGE=PASS NAME=rf_multipole_to_single_reflection_oatof_integration ELAPSED_SECONDS=337.038
+GATE_STAGE=RUN NAME=solidworks_common
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=solidworks_common PID=29332 INHERITED=False
+..
+----------------------------------------------------------------------
+Ran 2 tests in 0.006s
+
+OK
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=solidworks_common STATUS=released
+GATE_STAGE=PASS NAME=solidworks_common ELAPSED_SECONDS=4.241
+GATE_STAGE=RUN NAME=orthogonal_accelerator_static
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=orthogonal_accelerator_static PID=29304 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=29304 INHERITED=True
+........................................................................................................
+----------------------------------------------------------------------
+Ran 104 tests in 4.484s
+
+OK
+ACCELERATOR_REQUIRED_PARAMETERS=PASS cases=26
+PROJECT_GATE=PASS PROJECT=orthogonal_accelerator LEVEL=Static COMMERCIAL_SOLVER_EXECUTED=false
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=orthogonal_accelerator_static STATUS=released
+GATE_STAGE=PASS NAME=orthogonal_accelerator_static ELAPSED_SECONDS=10.945
+GATE_STAGE=RUN NAME=parallel_mirror_dual_stripe_mr_tof_static
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=parallel_mirror_dual_stripe_mr_tof_static PID=18208 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=18208 INHERITED=True
+PROJECT_REGISTRY=PASS PROJECTS=10 PATH=C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\config\project_registry.json
+MRTOF_PRECLOSURE=stripe_preclosure:proposed
+PREPARED_JOINT_DIAGNOSTICS=PASS
+ELECTRICAL_STEP_GROUP=mirror_positive_a_ground_shield
+ELECTRICAL_STEP_GROUP=linear_stripe
+.............................................................sss..s..................................................................................................................................................................Es.........................................F....................................................................................................................ssssssssssssssssss.......................................................................................................s..........................................................................................................................................................................................................................................................................................s..................s.....................................................................................................................s..ssssss.......ss..............................................................................................................................................................................................................................................................................................................................usage: diagnostic [-h] [--run-dir RUN_DIR]
+                  [--completed-run-config COMPLETED_RUN_CONFIG]
+                  [--observation OBSERVATION]
+                  [--batch-merge-receipt BATCH_MERGE_RECEIPT]
+                  [--first-batch-log FIRST_BATCH_LOG]
+                  [--source-receipt SOURCE_RECEIPT]
+                  [--te1-reference TE1_REFERENCE] [--build-te1-reference]
+                  [--mirror-point MIRROR_POINT]
+                  [--first-diagnostic FIRST_DIAGNOSTIC]
+                  [--first-coordinate FIRST_COORDINATE]
+                  [--second-diagnostic SECOND_DIAGNOSTIC]
+                  [--second-coordinate SECOND_COORDINATE]
+                  [--te1-coordinate TE1_COORDINATE]
+                  [--mirror-period MIRROR_PERIOD]
+                  [--mirror-correction MIRROR_CORRECTION]
+                  [--contract CONTRACT] [--compare-baseline COMPARE_BASELINE]
+                  [--compare-probe COMPARE_PROBE]
+                  [--compare-root COMPARE_ROOT]
+                  [--baseline-focus-diagnostic BASELINE_FOCUS_DIAGNOSTIC]
+                  [--probe-focus-diagnostic PROBE_FOCUS_DIAGNOSTIC]
+                  [--root-focus-diagnostic ROOT_FOCUS_DIAGNOSTIC]
+                  [--baseline-coordinate BASELINE_COORDINATE]
+                  [--probe-coordinate PROBE_COORDINATE]
+                  [--root-coordinate ROOT_COORDINATE] --output OUTPUT
+diagnostic: error: supply exactly one complete analysis, TE1 variation, root, or comparison mode
+.............................................................................................................................................s........................................................................................................................................................................................
+======================================================================
+ERROR: test_accepted_staged_candidate_quality_controls_next_step_factor (test_downstream_workpoint_iteration_runner.WorkpointBootstrapTests.test_accepted_staged_candidate_quality_controls_next_step_factor)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\projects\parallel_mirror_dual_stripe_mr_tof\tests\analysis\test_downstream_workpoint_iteration_runner.py", line 681, in test_accepted_staged_candidate_quality_controls_next_step_factor
+    result = subprocess.run(["pwsh", "-NoProfile", "-File", str(path),
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Liao\AppData\Local\Programs\Python\Python311\Lib\subprocess.py", line 548, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Liao\AppData\Local\Programs\Python\Python311\Lib\subprocess.py", line 1205, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Liao\AppData\Local\Programs\Python\Python311\Lib\subprocess.py", line 1581, in _communicate
+    raise TimeoutExpired(self.args, orig_timeout)
+subprocess.TimeoutExpired: Command '['pwsh', '-NoProfile', '-File', 'C:\\Users\\Liao\\AppData\\Local\\Temp\\tmprqr63z6q\\quality.ps1', 'C:\\Users\\Liao\\Documents\\Codex\\commit-validation-20261022\\repo\\projects\\parallel_mirror_dual_stripe_mr_tof\\analysis\\run_downstream_workpoint_iteration.ps1', 'C:\\Users\\Liao\\AppData\\Local\\Temp\\tmprqr63z6q', 'trusted']' timed out after 30 seconds
+
+======================================================================
+FAIL: test_prepared_checkpoint_reuses_original_restore_and_rejects_changed_authority (test_downstream_workpoint_iteration_runner.WorkpointBootstrapTests.test_prepared_checkpoint_reuses_original_restore_and_rejects_changed_authority) (scenario='budget_valid')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\projects\parallel_mirror_dual_stripe_mr_tof\tests\analysis\test_downstream_workpoint_iteration_runner.py", line 344, in test_prepared_checkpoint_reuses_original_restore_and_rejects_changed_authority
+    self.assertIsNone(observed['failure'])
+AssertionError: 'Prepared resume differs beyond an explicit total candidate budget increase.' is not None
+
+----------------------------------------------------------------------
+Ran 1592 tests in 1707.491s
+
+FAILED (failures=1, errors=1, skipped=36)
+MRTOF_TWO_PRISM_TRIAL_ANALYZE=FAIL STATUS=accelerator_geometric_exit_invalid
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=parallel_mirror_dual_stripe_mr_tof_static STATUS=released
+Exception: C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\projects\parallel_mirror_dual_stripe_mr_tof\verify_project.ps1:49
+Line |
+  49 |  … $LASTEXITCODE -ne 0) { throw 'MR-TOF Python analysis tests failed.' }
+     |                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | MR-TOF Python analysis tests failed.
+GATE_STAGE=RUN NAME=single_reflection_oa_tof_mass_analyzer_static
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=single_reflection_oa_tof_mass_analyzer_static PID=24676 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=prepare PID=24676 INHERITED=True
+RESOLVED_GEOMETRY=PASS
+GEOMETRY_TEXT_SYNC=PASS
+ACCELERATOR_TIME_FOCUS_SELF_TEST=PASS
+REFLECTRON_DUAL_STAGE_SELF_TEST=PASS
+OATOF_OAACCELERATOR_COUPLING_SELF_TEST=PASS
+GEOMETRY_CONTRACT_STATUS=PASS
+ACCELERATOR_AXIS_X_MM=-48.8
+DETECTOR_X_MM=48.8
+DETECTOR_RADIUS_MM=40
+GEOMETRY_DERIVATION_STATUS=PASS
+DERIVED_NOMINAL_D2_PENETRATION_MM=39.5536431798285
+DERIVED_D2_RAW_MM=96.1562733845782
+DERIVED_L_REFLECTRON_RAW_MM=216.156273384578
+DERIVED_V_MIRROR_RAW_V=2531.19993695355
+ENGINEERING_LENGTH_DECIMALS_MM=4
+ENGINEERING_L_REFLECTRON_MM=216.1563
+ENGINEERING_V_MIRROR_V=2531.1999
+FORMAL_VALIDATION_STATUS=PASS
+FLIGHT=PASS CASE=one MODE=actual
+FLIGHT=PASS CASE=two MODE=actual
+..........................................................................................................................................................................................................................................................................................................................................................................s.........................
+----------------------------------------------------------------------
+Ran 388 tests in 200.625s
+
+OK (skipped=1)
+RADIAL_COMPACTION=DRY_RUN CASES=10 ROOT=C:\Users\Liao\AppData\Local\Temp\tmpw5_1ns49\runs\20260914_160001__sim__simion__plan-fixture
+usage: run_compensation [-h] --case-dir CASE_DIR [--simion-exe SIMION_EXE]
+                        [--trajectory-quality TRAJECTORY_QUALITY]
+                        [--regularization REGULARIZATION]
+
+Close the SIMION reflectron axis-field voltage-compensation loop.
+
+options:
+  -h, --help            show this help message and exit
+  --case-dir CASE_DIR
+  --simion-exe SIMION_EXE
+  --trajectory-quality TRAJECTORY_QUALITY
+  --regularization REGULARIZATION
+PROJECT_GATE=PASS PROJECT=single_reflection_oa_tof_mass_analyzer LEVEL=Static ELAPSED_SECONDS=206.176
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=single_reflection_oa_tof_mass_analyzer_static STATUS=released
+GATE_STAGE=PASS NAME=single_reflection_oa_tof_mass_analyzer_static ELAPSED_SECONDS=211.875
+GATE_STAGE=RUN NAME=rf_quadrupole_ion_optics_static
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=rf_quadrupole_ion_optics_static PID=27780 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=27780 INHERITED=True
+QUADRUPOLE_FRESHNESS=PREVALIDATED
+{
+  "a_at_tune_mass": 0.22988782765406462,
+  "axis_common_mode_offset_V": -8.0,
+  "dc_differential_V": 45.52602987935551,
+  "ideal_scanline": {
+    "q_cal": 0.6964829222134838,
+    "q_in": 0.6827291735098723,
+    "q_out": 0.7108022091906631,
+    "resolving_power_stability": 24.819748718056726,
+    "u_over_v": 0.162804703
+  },
+  "mode_status": "n100_dual_solver_revalidation_pending",
+  "q_at_tune_mass": 0.7060233009794091,
+  "rf_differential_V_peak_to_peak": 559.27168,
+  "rf_differential_V_zero_to_peak": 279.63584,
+  "scope": "L0 ideal-field contract validation only; no solver or mass-response qualification",
+  "status": "PASS",
+  "u_over_v": 0.162804703
+}
+QUADRUPOLE_L0_REFERENCE=PASS
+QUADRUPOLE_MASS_FILTER_L1_CONTRACT=PASS
+ENTRY_APERTURE_L0=PASS DESIGN_VALUE_AVAILABLE=false
+..............................F.......................................................................................................................................................................................................
+======================================================================
+FAIL: test_precommercial_contract_failure_produces_verified_failed_triplet (test_comsol_workflow_architecture_contract.ComsolSolverNumericsFailureTests.test_precommercial_contract_failure_produces_verified_failed_triplet)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\projects\rf_quadrupole_ion_optics\tests\analysis\test_comsol_workflow_architecture_contract.py", line 955, in test_precommercial_contract_failure_produces_verified_failed_triplet
+    self.assertEqual(result.returncode, 0, result.stderr)
+AssertionError: 1 != 0 : usage: run_capacity_lifecycle.py [-h] --action
+                                 {register-writing-range,register-writing,assert-retention,finalize-ready,seal-checkpoint,seal-stopped-payload,retire-misplaced-light-run}
+                                 --artifact-root ARTIFACT_ROOT
+                                 [--run-config RUN_CONFIG]
+                                 [--run-directory RUN_DIRECTORY]
+                                 [--owner OWNER] [--confirm-writing-stopped]
+                                 [--retention-reason RETENTION_REASON]
+                                 [--backup-manifest BACKUP_MANIFEST] [--apply]
+run_capacity_lifecycle.py: error: capacity ledger is missing, incomplete, or uncalibrated; initialize it through the explicit initialize/backfill API
+Exception: Run capacity lifecycle register-writing-range failed.
+
+
+----------------------------------------------------------------------
+Ran 230 tests in 136.078s
+
+FAILED (failures=1)
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=rf_quadrupole_ion_optics_static STATUS=released
+Exception: C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\projects\rf_quadrupole_ion_optics\verify_project.ps1:77
+Line |
+  77 |  if ($LASTEXITCODE -ne 0) { throw 'Python analysis tests failed.' }
+     |                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | Python analysis tests failed.
+GATE_STAGE=RUN NAME=rf_hexapole_ion_optics_static
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=rf_hexapole_ion_optics_static PID=28224 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=28224 INHERITED=True
+......................
+----------------------------------------------------------------------
+Ran 22 tests in 20.835s
+
+OK
+PROJECT_GATE=PASS PROJECT=rf_hexapole_ion_optics LEVEL=Static
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=rf_hexapole_ion_optics_static STATUS=released
+GATE_STAGE=PASS NAME=rf_hexapole_ion_optics_static ELAPSED_SECONDS=27.042
+GATE_STAGE=RUN NAME=rf_octupole_ion_optics_static
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=rf_octupole_ion_optics_static PID=1604 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=1604 INHERITED=True
+.............................
+----------------------------------------------------------------------
+Ran 29 tests in 21.823s
+
+OK
+PROJECT_GATE=PASS PROJECT=rf_octupole_ion_optics LEVEL=Static
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=rf_octupole_ion_optics_static STATUS=released
+GATE_STAGE=PASS NAME=rf_octupole_ion_optics_static ELAPSED_SECONDS=27.921
+GATE_STAGE=RUN NAME=dual_pressure_rectilinear_ion_processor_static
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=dual_pressure_rectilinear_ion_processor_static PID=6380 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=6380 INHERITED=True
+RUN_MANIFEST_VERIFY=PASS SCOPE=full PROJECT=dual_pressure_rectilinear_ion_processor RUN_ID=20261017_120000__test__simion__manifest-fixture OUTPUTS=8
+RUN_MANIFEST_VERIFY=PASS SCOPE=full PROJECT=dual_pressure_rectilinear_ion_processor RUN_ID=20261017_120000__test__simion__manifest-fixture OUTPUTS=306
+No extracted ions: explicit diagnostic figure generated.
+{"plane_z_mm": 0, "packet_time_us": 0.9975, "source_count": 1, "extracted_count": 1, "not_extracted_ids": [], "packet_status": "available", "time_selection": {"algorithm": "first_arrival_minus_half_measured_record_interval_v1", "first_arrival_us": 1.0, "measured_record_interval_us": 0.0050000000000000044, "common_support_start_us": 0.99, "first_arrival_margin_us": 0.0024999999999999467}, "observed_crossing": {"t_us": {"n": 1, "mean": 1.0, "std_population": 0.0, "min": 1.0, "max": 1.0, "median": 1.0}, "x_mm": {"n": 1, "mean": 0.1, "std_population": 0.0, "min": 0.1, "max": 0.1, "median": 0.1}, "y_mm": {"n": 1, "mean": 170.0, "std_population": 0.0, "min": 170.0, "max": 170.0, "median": 170.0}, "z_mm": {"n": 1, "mean": 0.0, "std_population": 0.0, "min": 0.0, "max": 0.0, "median": 0.0}, "vx_mm_us": {"n": 1, "mean": 0.0, "std_population": 0.0, "min": 0.0, "max": 0.0, "median": 0.0}, "vy_mm_us": {"n": 1, "mean": 0.0, "std_population": 0.0, "min": 0.0, "max": 0.0, "median": 0.0}, "vz_mm_us": {"n": 1, "mean": -1.0, "std_population": 0.0, "min": -1.0, "max": -1.0, "median": -1.0}, "Ex_eV": {"n": 1, "mean": 0.0, "std_population": 0.0, "min": 0.0, "max": 0.0, "median": 0.0}, "Ey_eV": {"n": 1, "mean": 0.0, "std_population": 0.0, "min": 0.0, "max": 0.0, "median": 0.0}, "Ez_eV": {"n": 1, "mean": 2.715438649002292, "std_population": 0.0, "min": 2.715438649002292, "max": 2.715438649002292, "median": 2.715438649002292}, "Etotal_eV": {"n": 1, "mean": 2.715438649002292, "std_population": 0.0, "min": 2.715438649002292, "max": 2.715438649002292, "median": 2.715438649002292}}, "common_time_packet": {"x_mm": {"n": 1, "mean": 0.1, "std_population": 0.0, "min": 0.1, "max": 0.1, "median": 0.1}, "y_mm": {"n": 1, "mean": 170.0, "std_population": 0.0, "min": 170.0, "max": 170.0, "median": 170.0}, "z_mm": {"n": 1, "mean": 0.0024999999999999467, "std_population": 0.0, "min": 0.0024999999999999467, "max": 0.0024999999999999467, "median": 0.0024999999999999467}, "vx_mm_us": {"n": 1, "mean": 0.0, "std_population": 0.0, "min": 0.0, "max": 0.0, "median": 0.0}, "vy_mm_us": {"n": 1, "mean": 0.0, "std_population": 0.0, "min": 0.0, "max": 0.0, "median": 0.0}, "vz_mm_us": {"n": 1, "mean": -1.0, "std_population": 0.0, "min": -1.0, "max": -1.0, "median": -1.0}}, "interpolation": {"maximum_gap_us": 0.0050000000000000044, "acceptance_event_upper_brackets": 1}, "sample_csv_rows_read": 2, "energy_definition": "Ei = 0.5 * mass * vi^2; axis energies are nonnegative and retain any bulk drift. Acceleration is -z.", "scope": "Extracted ions conditional on this run source. Common time is automatically selected before the first z=0 arrival. No packet is propagated past termination."}
+.........................................................................................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 265 tests in 106.307s
+
+OK
+PROJECT_GATE=PASS PROJECT=dual_pressure_rectilinear_ion_processor LEVEL=Static
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=dual_pressure_rectilinear_ion_processor_static STATUS=released
+GATE_STAGE=PASS NAME=dual_pressure_rectilinear_ion_processor_static ELAPSED_SECONDS=114.08
+GATE_STAGE=RUN NAME=dual_cone_tandem_quadrupole_ion_interface_static
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=dual_cone_tandem_quadrupole_ion_interface_static PID=7120 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=7120 INHERITED=True
+RESOLVED_GEOMETRY=PASS PATH=C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\projects\dual_cone_tandem_quadrupole_ion_interface\config\resolved_geometry.json
+..............................
+----------------------------------------------------------------------
+Ran 30 tests in 14.584s
+
+OK
+SIMION_TRAJECTORY_PROJECTION=PASS PATH=C:\Users\Liao\AppData\Local\Temp\tmp1rlr2rbq\diagnostic.png
+All checks passed!
+PROJECT_GATE=PASS PROJECT=dual_cone_tandem_quadrupole_ion_interface LEVEL=Static
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=dual_cone_tandem_quadrupole_ion_interface_static STATUS=released
+GATE_STAGE=PASS NAME=dual_cone_tandem_quadrupole_ion_interface_static ELAPSED_SECONDS=21.528
+GATE_STAGE=RUN NAME=transverse_helical_filament_wehnelt_electron_gun_static
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=transverse_helical_filament_wehnelt_electron_gun_static PID=6972 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=6972 INHERITED=True
+.................................................
+----------------------------------------------------------------------
+Ran 49 tests in 23.017s
+
+OK
+All checks passed!
+PROJECT_GATE=PASS PROJECT=transverse_helical_filament_wehnelt_electron_gun LEVEL=Static
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=transverse_helical_filament_wehnelt_electron_gun_static STATUS=released
+GATE_STAGE=PASS NAME=transverse_helical_filament_wehnelt_electron_gun_static ELAPSED_SECONDS=29.279
+GATE_STAGE=RUN NAME=apertured_tube_electron_impact_ion_source_static
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=apertured_tube_electron_impact_ion_source_static PID=12580 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=12580 INHERITED=True
+......................
+----------------------------------------------------------------------
+Ran 22 tests in 2.027s
+
+OK
+All checks passed!
+PROJECT_GATE=PASS PROJECT=apertured_tube_electron_impact_ion_source LEVEL=Static
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=apertured_tube_electron_impact_ion_source_static STATUS=released
+GATE_STAGE=PASS NAME=apertured_tube_electron_impact_ion_source_static ELAPSED_SECONDS=8.263
+GATE_STAGE=FAIL NAME=parallel_mirror_dual_stripe_mr_tof_static EXIT_CODE=1 DIAGNOSTIC_TAIL_BEGIN
+GATE_STAGE=RUN NAME=parallel_mirror_dual_stripe_mr_tof_static
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=parallel_mirror_dual_stripe_mr_tof_static PID=18208 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=18208 INHERITED=True
+PROJECT_REGISTRY=PASS PROJECTS=10 PATH=C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\config\project_registry.json
+MRTOF_PRECLOSURE=stripe_preclosure:proposed
+PREPARED_JOINT_DIAGNOSTICS=PASS
+ELECTRICAL_STEP_GROUP=mirror_positive_a_ground_shield
+ELECTRICAL_STEP_GROUP=linear_stripe
+.............................................................sss..s..................................................................................................................................................................Es.........................................F....................................................................................................................ssssssssssssssssss.......................................................................................................s..........................................................................................................................................................................................................................................................................................s..................s.....................................................................................................................s..ssssss.......ss..............................................................................................................................................................................................................................................................................................................................usage: diagnostic [-h] [--run-dir RUN_DIR]
+                  [--completed-run-config COMPLETED_RUN_CONFIG]
+                  [--observation OBSERVATION]
+                  [--batch-merge-receipt BATCH_MERGE_RECEIPT]
+                  [--first-batch-log FIRST_BATCH_LOG]
+                  [--source-receipt SOURCE_RECEIPT]
+                  [--te1-reference TE1_REFERENCE] [--build-te1-reference]
+                  [--mirror-point MIRROR_POINT]
+                  [--first-diagnostic FIRST_DIAGNOSTIC]
+                  [--first-coordinate FIRST_COORDINATE]
+                  [--second-diagnostic SECOND_DIAGNOSTIC]
+                  [--second-coordinate SECOND_COORDINATE]
+                  [--te1-coordinate TE1_COORDINATE]
+                  [--mirror-period MIRROR_PERIOD]
+                  [--mirror-correction MIRROR_CORRECTION]
+                  [--contract CONTRACT] [--compare-baseline COMPARE_BASELINE]
+                  [--compare-probe COMPARE_PROBE]
+                  [--compare-root COMPARE_ROOT]
+                  [--baseline-focus-diagnostic BASELINE_FOCUS_DIAGNOSTIC]
+                  [--probe-focus-diagnostic PROBE_FOCUS_DIAGNOSTIC]
+                  [--root-focus-diagnostic ROOT_FOCUS_DIAGNOSTIC]
+                  [--baseline-coordinate BASELINE_COORDINATE]
+                  [--probe-coordinate PROBE_COORDINATE]
+                  [--root-coordinate ROOT_COORDINATE] --output OUTPUT
+diagnostic: error: supply exactly one complete analysis, TE1 variation, root, or comparison mode
+.............................................................................................................................................s........................................................................................................................................................................................
+======================================================================
+ERROR: test_accepted_staged_candidate_quality_controls_next_step_factor (test_downstream_workpoint_iteration_runner.WorkpointBootstrapTests.test_accepted_staged_candidate_quality_controls_next_step_factor)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\projects\parallel_mirror_dual_stripe_mr_tof\tests\analysis\test_downstream_workpoint_iteration_runner.py", line 681, in test_accepted_staged_candidate_quality_controls_next_step_factor
+    result = subprocess.run(["pwsh", "-NoProfile", "-File", str(path),
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Liao\AppData\Local\Programs\Python\Python311\Lib\subprocess.py", line 548, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Liao\AppData\Local\Programs\Python\Python311\Lib\subprocess.py", line 1205, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Liao\AppData\Local\Programs\Python\Python311\Lib\subprocess.py", line 1581, in _communicate
+    raise TimeoutExpired(self.args, orig_timeout)
+subprocess.TimeoutExpired: Command '['pwsh', '-NoProfile', '-File', 'C:\\Users\\Liao\\AppData\\Local\\Temp\\tmprqr63z6q\\quality.ps1', 'C:\\Users\\Liao\\Documents\\Codex\\commit-validation-20261022\\repo\\projects\\parallel_mirror_dual_stripe_mr_tof\\analysis\\run_downstream_workpoint_iteration.ps1', 'C:\\Users\\Liao\\AppData\\Local\\Temp\\tmprqr63z6q', 'trusted']' timed out after 30 seconds
+
+======================================================================
+FAIL: test_prepared_checkpoint_reuses_original_restore_and_rejects_changed_authority (test_downstream_workpoint_iteration_runner.WorkpointBootstrapTests.test_prepared_checkpoint_reuses_original_restore_and_rejects_changed_authority) (scenario='budget_valid')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\projects\parallel_mirror_dual_stripe_mr_tof\tests\analysis\test_downstream_workpoint_iteration_runner.py", line 344, in test_prepared_checkpoint_reuses_original_restore_and_rejects_changed_authority
+    self.assertIsNone(observed['failure'])
+AssertionError: 'Prepared resume differs beyond an explicit total candidate budget increase.' is not None
+
+----------------------------------------------------------------------
+Ran 1592 tests in 1707.491s
+
+FAILED (failures=1, errors=1, skipped=36)
+MRTOF_TWO_PRISM_TRIAL_ANALYZE=FAIL STATUS=accelerator_geometric_exit_invalid
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=parallel_mirror_dual_stripe_mr_tof_static STATUS=released
+Exception: C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\projects\parallel_mirror_dual_stripe_mr_tof\verify_project.ps1:49
+Line |
+  49 |  … $LASTEXITCODE -ne 0) { throw 'MR-TOF Python analysis tests failed.' }
+     |                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | MR-TOF Python analysis tests failed.
+GATE_STAGE=FAIL NAME=parallel_mirror_dual_stripe_mr_tof_static DIAGNOSTIC_TAIL_END
+GATE_STAGE=FAIL NAME=rf_quadrupole_ion_optics_static EXIT_CODE=1 DIAGNOSTIC_TAIL_BEGIN
+GATE_STAGE=RUN NAME=rf_quadrupole_ion_optics_static
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=rf_quadrupole_ion_optics_static PID=27780 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=27780 INHERITED=True
+QUADRUPOLE_FRESHNESS=PREVALIDATED
+{
+  "a_at_tune_mass": 0.22988782765406462,
+  "axis_common_mode_offset_V": -8.0,
+  "dc_differential_V": 45.52602987935551,
+  "ideal_scanline": {
+    "q_cal": 0.6964829222134838,
+    "q_in": 0.6827291735098723,
+    "q_out": 0.7108022091906631,
+    "resolving_power_stability": 24.819748718056726,
+    "u_over_v": 0.162804703
+  },
+  "mode_status": "n100_dual_solver_revalidation_pending",
+  "q_at_tune_mass": 0.7060233009794091,
+  "rf_differential_V_peak_to_peak": 559.27168,
+  "rf_differential_V_zero_to_peak": 279.63584,
+  "scope": "L0 ideal-field contract validation only; no solver or mass-response qualification",
+  "status": "PASS",
+  "u_over_v": 0.162804703
+}
+QUADRUPOLE_L0_REFERENCE=PASS
+QUADRUPOLE_MASS_FILTER_L1_CONTRACT=PASS
+ENTRY_APERTURE_L0=PASS DESIGN_VALUE_AVAILABLE=false
+..............................F.......................................................................................................................................................................................................
+======================================================================
+FAIL: test_precommercial_contract_failure_produces_verified_failed_triplet (test_comsol_workflow_architecture_contract.ComsolSolverNumericsFailureTests.test_precommercial_contract_failure_produces_verified_failed_triplet)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\projects\rf_quadrupole_ion_optics\tests\analysis\test_comsol_workflow_architecture_contract.py", line 955, in test_precommercial_contract_failure_produces_verified_failed_triplet
+    self.assertEqual(result.returncode, 0, result.stderr)
+AssertionError: 1 != 0 : usage: run_capacity_lifecycle.py [-h] --action
+                                 {register-writing-range,register-writing,assert-retention,finalize-ready,seal-checkpoint,seal-stopped-payload,retire-misplaced-light-run}
+                                 --artifact-root ARTIFACT_ROOT
+                                 [--run-config RUN_CONFIG]
+                                 [--run-directory RUN_DIRECTORY]
+                                 [--owner OWNER] [--confirm-writing-stopped]
+                                 [--retention-reason RETENTION_REASON]
+                                 [--backup-manifest BACKUP_MANIFEST] [--apply]
+run_capacity_lifecycle.py: error: capacity ledger is missing, incomplete, or uncalibrated; initialize it through the explicit initialize/backfill API
+Exception: Run capacity lifecycle register-writing-range failed.
+
+
+----------------------------------------------------------------------
+Ran 230 tests in 136.078s
+
+FAILED (failures=1)
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=rf_quadrupole_ion_optics_static STATUS=released
+Exception: C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\projects\rf_quadrupole_ion_optics\verify_project.ps1:77
+Line |
+  77 |  if ($LASTEXITCODE -ne 0) { throw 'Python analysis tests failed.' }
+     |                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | Python analysis tests failed.
+GATE_STAGE=FAIL NAME=rf_quadrupole_ion_optics_static DIAGNOSTIC_TAIL_END

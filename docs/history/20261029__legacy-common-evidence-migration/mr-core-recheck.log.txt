@@ -1,0 +1,28 @@
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=7324 INHERITED=True
+PROJECT_REGISTRY=PASS PROJECTS=10 PATH=C:\Users\Liao\Documents\Codex\commit-validation-20261022\repo\config\project_registry.json
+..........................................
+----------------------------------------------------------------------
+Ran 42 tests in 190.674s
+
+OK
+CANDIDATE_PLANE_EVENTS=PASS parameterized_turn_phase_K25p5 switch_rejected
+MRTOF_NATIVE_FAST_ADJUST begin corridor=true accelerator=true
+MRTOF_NATIVE_FAST_ADJUST complete corridor=true accelerator=true
+MRTOF_CANDIDATE: status=prototype geometry=native_corridor_4_instance corridor_fast_adjust=8_channel accelerator_fast_adjust=profile_sized
+MRTOF_NATIVE_FAST_ADJUST begin corridor=true accelerator=false
+MRTOF_NATIVE_FAST_ADJUST complete corridor=true accelerator=false
+MRTOF_NATIVE_FAST_ADJUST begin corridor=true accelerator=true
+MRTOF_NATIVE_FAST_ADJUST complete corridor=true accelerator=true
+MRTOF_CANDIDATE: status=prototype geometry=native_corridor_4_instance corridor_fast_adjust=8_channel accelerator_fast_adjust=profile_sized
+CANDIDATE_VOLTAGE_MAP=PASS native_corridor_4_roles voltage_mapping fast_adjust accelerator_pulse
+PASS positive mirror turn is phase origin
+PASS half-integer target returns at opposite mirror turn
+PASS target is constructor data rather than a hidden K limit
+PASS slow y zero is diagnostic and does not terminate phase counting
+PASS coordinate return reports continuous K from the latest same-side period
+PASS central crossings are diagnostics only
+PASS same-side repeated reflection fails closed
+PASS zero velocity without reversal is not a turn
+PASS invalid phase contracts fail closed
+PASS mirror_cycle_counter: 9 synthetic turn-phase tests; no solver flight
+PROJECT_GATE=PASS PROJECT=parallel_mirror_dual_stripe_mr_tof LEVEL=Core COMMERCIAL_SOLVER_EXECUTED=false

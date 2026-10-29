@@ -1,0 +1,7 @@
+test_failure_finalization_keeps_all_partial_evidence (common.multipole.test_failed_run_manifest.FailedRunManifestTest.test_failure_finalization_keeps_all_partial_evidence) ... ok
+test_parallel_wave_tracks_worker_after_short_lived_launcher_exits (common.multipole.test_resource_budget.ResourceBudgetTests.test_parallel_wave_tracks_worker_after_short_lived_launcher_exits) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 5.504s
+
+OK
