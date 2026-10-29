@@ -1,0 +1,6 @@
+Main task TEMP cleanup after formal evidence commit 3e7b80da and preserved final report/index objects.
+REMOVED path=C:\Users\Liao\AppData\Local\Temp\codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6
+FILES=1116 LOGICAL_REMOVED_BYTES=27696328 JSON_FILES=164 INTERNAL_DIRECTORIES=293
+ELAPSED_SECONDS=1.6914546
+Fresh normal-user CIM found no other exact-path consumer; no reparse entries. All69 committed evidence payloads reverified against the frozen manifest. Full190-item report and four necessary cleanup/failure records matched their staged Git objects before deletion.
+All agents stopped main TEMP consumers; CI watcher uses only repo cwd/tool output. Earlier public gate D09/D10 removal is excluded from this fresh inventory; no double counting. No volume-free delta measured. Canonical runs, scientific evidence, caches, protection and central ledger untouched.

@@ -1,0 +1,39 @@
+L1 PID contract correction — independent terminal observation
+Scope: 2 changed test files; 6 selected stages; no production change.
+Original parent 3596 / root-owned exec session 96206. Root consumed original terminal exit 0.
+Summary: PASS; start=2026-10-29T04:51:37.4109000Z; finish=2026-10-29T05:19:44.0656193Z; elapsed_seconds=1686.655631
+Selected 6: PASS=6; NOT_APPLICABLE=36
+Top-level unittest runners=2, tests=1220, skipped=7, failures=0, errors=0.
+Counts are executed top-level unittest summaries, not unique methods; no nested fixture/replayed duplicate counting.
+Stage | status | stage elapsed_seconds | parent process_elapsed_seconds | resource wait | execution | cleanup
+repository_hygiene | PASS | 12.066245 | None | 8.6938395 | 1.750176 | 1.5760273
+repository_text_bytes | PASS | 3.667624 | None | 1.5949272 | 0.4618857 | 1.606423
+development_standards | PASS | 6.738204 | 8.634652 | 4.8013175 | 0.178328 | 1.7131409
+ruff_changed_python | PASS | 3.997456 | 5.829192 | 2.0082835 | 0.14086 | 1.8062334
+common_contracts | PASS | 1664.580591 | 1666.339774 | 1.9851681 | 1660.9123913 | 1.6373733
+simion_common | PASS | 138.496536 | 140.244204 | 1.9766814 | 134.72707 | 1.7439569
+
+Runner bodies (distinct from stage/process timing):
+common_contracts: Ran 864 tests in 1659.930s; OK (skipped=1)
+simion_common: Ran 356 tests in 133.956s; OK (skipped=6)
+
+At 2026-10-29T05:20:18.2385896Z: Get-Process -Id 3596 returned no process.
+Normal-user public Get-HostResourceStatus returned {"schema_version":1,"records":[]}.
+Each real GATE owner has STATUS=released in the root console replay; inherited hygiene nesting is not a second lease.
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=repository_hygiene STATUS=released
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=repository_text_bytes STATUS=released
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=gate_matplotlib_cache STATUS=released
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=development_standards STATUS=released
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=ruff_changed_python STATUS=released
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=common_contracts STATUS=released
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=simion_common STATUS=released
+GATE_DIAGNOSTICS=CLEANED PATH=C:\Users\Liao\AppData\Local\Temp\changed_gate_5ba1383dc4314ca08acce0754b95c49b
+
+Frozen source identities rechecked after terminal:
+common/contracts/test_run_artifact_workflow.py: bytes=38811, sha256=83a73c57f04d1fba2aa8fba42a2a172ea147da80a6925ae5d8c43cea70427e0c
+common/simion/test_managed_process_completion.py: bytes=18133, sha256=fc317362f3e6bf89d6b1a65117220d3064716802d0b2d418dd8ba747edb00acf
+
+Raw evidence:
+ci_pid_fix_l1_summary.json: bytes=33301, sha256=a947de19afd2d65c6dfdc4613bbba217346b0a02a3d0e115e2bf9a02e2905b67
+ci_pid_fix_l1_console.log: bytes=16090, sha256=3b01cffabd17121fbe159eb703bada0bf70a346c5ded8b9b4bd3d2b7f0fe06e4
+Full L2 r4 has not started; it requires root GO after commit/push/exact-SHA CLOC. No old TEMP access or pending_final_report changes.

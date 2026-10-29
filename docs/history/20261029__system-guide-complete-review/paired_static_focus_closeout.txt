@@ -1,0 +1,42 @@
+Paired static field focused closeout — 2026-10-29
+
+Scope and baseline
+Repository HEAD: 181e411950bb0f1da8c5528ecfeda95641932204.
+No repository, index, production input or source edits; git status --short empty before/after.
+No commercial solver, GUI, full module or L2 execution.
+Only original methods from integrations.tests.test_paired_accelerator_static_field_execute.PairedStaticExecutionTests:
+- test_native_model_facts_survive_removal_of_run_execution_junction
+- test_owner_retention_and_terminal_boundaries_close_success_and_failure
+
+Historical observation
+The interrupted L2 r4 child log repository_integration_gate_74bbec25b8574bbf8c7be54692dbaef7/24_instrument_assembly_integration.log reports FAIL for the junction method and the terminal method's outcome=failed subtest. The log stops before unittest's final failure detail section. No original assertion traceback was recorded there. These two historical FAIL observations remain valid. The enclosing L2 was externally interrupted by restart and is not a completed PASS or completed FAIL round.
+
+Current controlled repetitions
+Both runs used the original repository bytes, selected .venv Python 3.11, normal user context, public Invoke-ResourceBudgetedGateAction with stage instrument_assembly_integration, and explicit central state path C:/Users/Liao/mass_spectrometry/artifacts/common/host_resources.sqlite3.
+Command within GATE: .venv/Scripts/python.exe -B -m unittest -v <the two full method names above>.
+Run 1: 2 tests, 9.033 s, OK, no skips; exec session 27340 exit 0; GATE PID 10144, INHERITED=False, release STATUS=released.
+Run 2: 2 tests, 7.244 s, OK, no skips; exec session 15154 exit 0; GATE PID 8800, INHERITED=False, release STATUS=released.
+The terminal method executed both success and failed subtests in each run.
+After both runs, public Get-HostResourceStatus on the central SQLite returned schema_version=1, records=[]. Both exec sessions are closed. Test TemporaryDirectory fixtures completed their own cleanup; no task process or open log consumer remains.
+
+What the tests actually cover
+1. Test source lines 545–597: create a real Windows directory junction inside a unique temporary directory; materialize actual MATLAB/Lua task paths through it; remove only the verified junction; assert the generated plan/model paths name the enduring producer directory. Inert model bytes and public manifest records then exercise both prepared_saved and solved_saved COMSOL reuse identities. No MATLAB/COMSOL process or solved model is represented by this fixture.
+2. Test source lines 626–716: extract the actual PowerShell owner source-selection/renewal, terminal, catch and finally blocks. Each outcome has its own temporary artifact root and real public capacity ledger/lease. Startup admission and selected model lookup are inert seams. The test asserts that the actual original model path enters both the returned capacity session and the persisted public protection lease; executes public retention/terminal publication; verifies the requested manifest status, original injected scientific error preservation, complete retention receipt and final ledger object status=ready. The actual finalizer releases workflow capacity and seals via the public lifecycle. Native host lease and PA guard variables are null in this fixture: it does not prove solver execution or PA guard behavior.
+
+Bounded source review and conclusion
+The reviewed methods create distinct TemporaryDirectory roots; the PowerShell lifecycle fixture executes in a separate process, and its capacity ledger is local to that fixture. The module's helper prepared() writes under the supplied root. No persistent patch, environment mutation or fixed shared fixture pathname was identified in this module as a reproducible collision explaining the old failures. Production materialize_tasks resolves the junction to the enduring run at runtime.py:199 before writing tasks. This bounded review is not a proof that the entire prior multi-module process had no interaction.
+Both current same-source repetitions pass. The historical failure's assertion/trace cannot be recovered from the interrupted log, so its root cause remains unknown. Do not attribute it to reboot, host features, test order or production code without evidence; do not describe this as a defect fix. No code change is recommended from these observations. Stop focused execution here and retain historical FAIL plus both current PASS records with their separate scope.
+
+Source identity (unchanged)
+integrations/tests/test_paired_accelerator_static_field_execute.py
+SHA256 A1ECFDDBF7E81E750A5150745A51A8A46F2383E91D6FC87C48191ED30AF0EA28
+integrations/workflows/paired_accelerator_static_field/execute.ps1
+SHA256 366328EA75FB96BEBABCEC062293E83C57424F523050FB819D9D7778DE08B9BB
+integrations/workflows/paired_accelerator_static_field/runtime.py
+SHA256 C92756E552EF799A220D39018E9493B75F6412125C0C4606AF8CD39702735C99
+
+Raw local evidence (same directory as this note)
+paired_static_focus.log SHA256 83B2E945C21CD8FA9C5B523A9FFDD59C57771A238643A309A8C48DF397E2DE38
+paired_static_focus_repeat.log SHA256 609115A495C02D2A80C5505790E70CB10E4A9A3EABFB568CDCA766308300B773
+No one-time author was created. This note and the two raw logs remain for parent-agent archiving. pending_final_report is untouched.
+CLOC: N/A (read-only investigation; no source change).

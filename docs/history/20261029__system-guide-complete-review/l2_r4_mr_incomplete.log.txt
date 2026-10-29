@@ -1,0 +1,5 @@
+GATE_STAGE=RUN NAME=parallel_mirror_dual_stripe_mr_tof_static REASON=repository_integration
+HOST_RESOURCE=WAIT ROLE=GATE STAGE=parallel_mirror_dual_stripe_mr_tof_static REASON=cpu_headroom WAIT_SECONDS=0
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=parallel_mirror_dual_stripe_mr_tof_static PID=32520 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=32520 INHERITED=True
+PROJECT_REGISTRY=PASS PROJECTS=8 PATH=C:\Users\Liao\mass_spectrometry\simulation_repo\config\project_registry.json

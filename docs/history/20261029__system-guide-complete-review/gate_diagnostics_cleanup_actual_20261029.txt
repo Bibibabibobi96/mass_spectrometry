@@ -1,0 +1,17 @@
+Public gate diagnostic cleanup; source paths and failure/interruption excerpts preserved in the final report paired directory and staged Git raw object.
+Fresh normal-user CIM found no exact-path consumer; all 13 ordinary inventories matched preflight; no reparse. Original summary states and canonical runs/ledger untouched.
+REMOVED id=D01 files=22 bytes=204519 path=C:\Users\Liao\AppData\Local\Temp\changed_gate_0c31445c27ee4026a6fc476a8dd0c57a
+REMOVED id=D02 files=32 bytes=252855 path=C:\Users\Liao\AppData\Local\Temp\changed_gate_184d9e8f5b5c4017a0affc6dc081235f
+REMOVED id=D03 files=6 bytes=6542 path=C:\Users\Liao\AppData\Local\Temp\changed_gate_247629670c0d46d9874463103acdef93
+REMOVED id=D04 files=8 bytes=4158 path=C:\Users\Liao\AppData\Local\Temp\changed_gate_6d401edac7174aa6be9f41a80f91f444
+REMOVED id=D05 files=6 bytes=2367 path=C:\Users\Liao\AppData\Local\Temp\changed_gate_992072b3f7f7482da5082519754924d9
+REMOVED id=D06 files=42 bytes=257345 path=C:\Users\Liao\AppData\Local\Temp\changed_gate_a1225a2fbdb14467a8e7d639d33fe35e
+REMOVED id=D07 files=22 bytes=227969 path=C:\Users\Liao\AppData\Local\Temp\changed_gate_bc50fd184e8f402aa248110038c650d4
+REMOVED id=D08 files=28 bytes=696788 path=C:\Users\Liao\AppData\Local\Temp\changed_gate_d56f2aa7f5d54b63b32d78d5ec14c6b1
+REMOVED id=D09 files=2 bytes=377 path=C:\Users\Liao\AppData\Local\Temp\codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6\gate_completion_race_green_7\gate_race_9096686f43e646cc85d8de77d47e0471
+REMOVED id=D10 files=2 bytes=320 path=C:\Users\Liao\AppData\Local\Temp\codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6\gate_completion_race_red\gate_race_f8c9ede4d1d84638afad5bfa5fa5d789
+REMOVED id=D11 files=73 bytes=253232 path=C:\Users\Liao\AppData\Local\Temp\repository_integration_gate_3307b59b65844d3cb7f83ef23236d645
+REMOVED id=D12 files=49 bytes=236593 path=C:\Users\Liao\AppData\Local\Temp\repository_integration_gate_5fb0e6f2a4954a8f87544b28eed59199
+REMOVED id=D13 files=73 bytes=251487 path=C:\Users\Liao\AppData\Local\Temp\repository_integration_gate_d1ab553fbab64779a7199fa0f064d6bc
+TOTAL planned_dirs=13 files=365 logical_bytes=2394552 retained=0 elapsed_seconds=0.5825681
+D09+D10 were inside main task TEMP:4files/697B; recompute main TEMP after this removal, no double counting. No volume-free delta measured.

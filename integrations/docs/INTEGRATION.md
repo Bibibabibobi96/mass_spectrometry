@@ -149,7 +149,11 @@ COMSOL Freeze可保留停止后的状态，SIMION停止后不再输出后续观�
 沿公共发布入口转交实际目标guard，后续保护复用同一身份；已有产物和独立消费者仍按原边界完整验证。
 软件夹具中97 B及8 MiB以上文件的复制／发布／保护均由5次身份全读降为2次；五／六输入的三个工作点
 物化夹具分别由23／27次降为10／12次，另验证metadata选择不读PA而仍读取小收据。计数不含复制及原生
-composer读取，不代表物理磁盘流量或运行倍速；本次小型真实SIMION三工作点验收尚未执行，不改变科学资格。
+composer读取，不代表物理磁盘流量或运行倍速。
+[小型真实SIMION三工作点验收](../../../artifacts/projects/instrument_assembly/runs/20261029_062052__test__simion__h1-h2-three-workpoints/summary.json)
+已完成：19次CLI正常退出，三个工作点各343节点的potential／mask／grid及两采样点在冻结BASE／NEW间相等，
+60次保护探针拒绝写入，源即时和延迟身份不变。小PA日志有尺寸小于11的精度警告；此结果只证明传输／
+代数等价和保护，不证明场精度、大PA吞吐、Fly或GUI资格。完整测量边界见[指南验收记录](../../docs/history/20261029__system-guide-complete-review.md#实测收益与边界)。
 观察器明确报告直接原生根退出未知时保留该组临时输入，将精确目录附于原异常供owner处理；不执行
 输入清理，也不声称PowerShell退出后FileShare句柄仍然保持。
 

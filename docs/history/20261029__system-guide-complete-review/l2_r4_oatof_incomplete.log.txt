@@ -1,0 +1,61 @@
+GATE_STAGE=RUN NAME=single_reflection_oa_tof_mass_analyzer_static REASON=repository_integration
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=single_reflection_oa_tof_mass_analyzer_static PID=31692 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=prepare PID=31692 INHERITED=True
+RESOLVED_GEOMETRY=PASS
+GEOMETRY_TEXT_SYNC=PASS
+ACCELERATOR_TIME_FOCUS_SELF_TEST=PASS
+REFLECTRON_DUAL_STAGE_SELF_TEST=PASS
+OATOF_OAACCELERATOR_COUPLING_SELF_TEST=PASS
+GEOMETRY_CONTRACT_STATUS=PASS
+ACCELERATOR_AXIS_X_MM=-48.8
+DETECTOR_X_MM=48.8
+DETECTOR_RADIUS_MM=40
+GEOMETRY_DERIVATION_STATUS=PASS
+DERIVED_NOMINAL_D2_PENETRATION_MM=39.5536431798285
+DERIVED_D2_RAW_MM=96.1562733845782
+DERIVED_L_REFLECTRON_RAW_MM=216.156273384578
+DERIVED_V_MIRROR_RAW_V=2531.19993695355
+ENGINEERING_LENGTH_DECIMALS_MM=4
+ENGINEERING_L_REFLECTRON_MM=216.1563
+ENGINEERING_V_MIRROR_V=2531.1999
+............................................usage: run_candidate [-h] --request REQUEST --run-id RUN_ID
+                     --particle-source-seed PARTICLE_SOURCE_SEED
+                     [--simion-exe SIMION_EXE] [--reuse-parent REUSE_PARENT]
+                     [--reuse-through {comsol_candidate,simion_candidate,cad_candidate}]
+                     [--dry-run] [--pa-handoff-output PA_HANDOFF_OUTPUT]
+                     [--pa-producer-handoff TRANSACTION OWNER_RESULT]
+run_candidate: error: PA producer handoff requires execution; it cannot be combined with --dry-run
+OATOF_CANDIDATE=PASS RUN_ROOT=C:\Users\Liao\AppData\Local\Temp\tmpwv6cl3fi\run DECISION=candidate_rejected
+VECTOR_FIELD_COMPARISON_STATUS=COMPARISON_COMPLETE
+VECTOR_FIELD_COMPARISON_STATUS=PASS
+VECTOR_FIELD_COMPARISON_STATUS=COMPARISON_COMPLETE
+FORMAL_VALIDATION_STATUS=PASS
+FLIGHT=PASS CASE=one MODE=actual
+FLIGHT=PASS CASE=two MODE=actual
+PA_BUILD=PASS CASE=shield260
+PA_BUILD=PASS CASE=shield200
+FLIGHT=PASS CASE=shield260 MODE=actual
+FLIGHT=PASS CASE=shield200 MODE=actual
+RADIAL_COMPACTION=PASS ROOT=C:\Users\Liao\AppData\Local\Temp\tmp7q0f7fub\runs\20261028_120000__test__simion__radial-selected-contract
+..........................................................................................................................................................................................................................................................................................................................................................................................usage: run_campaign [-h] --run-id RUN_ID [--simion-exe SIMION_EXE] [--dry-run]
+                    [--resume-from RESUME_FROM] [--campaign CAMPAIGN]
+                    [--pa-handoff-output PA_HANDOFF_OUTPUT]
+                    [--pa-producer-handoff TRANSACTION OWNER_RESULT]
+run_campaign: error: --resume-from cannot be combined with an explicit --campaign
+PA_BUILD=PASS CASE=shield260
+PA_BUILD=PASS CASE=shield200
+FLIGHT=PASS CASE=shield200 MODE=actual
+FLIGHT=PASS CASE=shield260 MODE=actual
+RADIAL_COMPACTION=PASS ROOT=C:\Users\Liao\AppData\Local\Temp\tmpmuyzlnwo\runs\20261028_120000__test__simion__radial-retained-handoff
+RADIAL_COMPACTION=PASS ROOT=C:\Users\Liao\AppData\Local\Temp\tmpmuyzlnwo\runs\20261028_120000__test__simion__radial-handoff-reanalysis
+PA_BUILD=PASS CASE=shield260
+PA_BUILD=PASS CASE=shield200
+FLIGHT=PASS CASE=shield200 MODE=actual
+FLIGHT=PASS CASE=shield260 MODE=actual
+RADIAL_COMPACTION=PASS ROOT=C:\Users\Liao\AppData\Local\Temp\tmpks_rhoy8\runs\20261028_120000__test__simion__radial-intact
+RADIAL_COMPACTION=DRY_RUN CASES=2 ROOT=C:\Users\Liao\AppData\Local\Temp\tmp82wnsg0r\runs\20260914_160001__sim__simion__plan-fixture
+RADIAL_COMPACTION=DRY_RUN ROOT=C:\Users\Liao\AppData\Local\Temp\tmp82wnsg0r\runs\20260914_160001__sim__simion__plan-fixture
+PA_BUILD=PASS CASE=shield260
+PA_BUILD=PASS CASE=shield200
+FLIGHT=PASS CASE=shield260 MODE=actual
+FLIGHT=PASS CASE=shield200 MODE=actual

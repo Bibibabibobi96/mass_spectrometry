@@ -1,0 +1,6 @@
+R1 TEMP cleanup: measured raw/methods committed in 3e7b80da; current three source snapshots verified against exact 0f1df0f9 Git blobs. Mixed BASE preserved as original bytes.
+Fresh normal-user CIM no matching active consumer; exact inventories match; no reparse/nonregular entries.
+REMOVED files=12 bytes=123409 path=C:\Users\Liao\AppData\Local\Temp\codex_r1_process_snapshot_20261029
+REMOVED files=20 bytes=229761 path=C:\Users\Liao\AppData\Local\Temp\codex_r1_remeasurement_20261029_423d4c42
+TOTAL files=32 logical_removed_bytes=353170 elapsed_seconds=0.417452
+No volume-free delta claimed. Canonical runs and final Git source unchanged.

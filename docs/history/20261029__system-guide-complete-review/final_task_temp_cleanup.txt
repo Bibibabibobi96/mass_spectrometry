@@ -1,0 +1,15 @@
+TASK_TEMP_CLEANUP=PASS
+OBSERVED_UTC=
+2026-10-29T06:08:26.8541963Z
+TASK_ROOT=
+C:\Users\Liao\AppData\Local\Temp\codex_ci_pid_contract_20261029_a4c91e
+ FILES=32 BYTES=1154818 JSON=7
+DIAGNOSTIC_ROOT=
+C:\Users\Liao\AppData\Local\Temp\repository_integration_gate_74bbec25b8574bbf8c7be54692dbaef7
+ FILES=69 BYTES=308686 JSON=33
+TOTAL_FILES=101 TOTAL_LOGICAL_BYTES=1463504 TOTAL_JSON=40
+ELAPSED_SECONDS=
+0.0652126
+BEFORE=normal-user CIM no consumers; exact inventory; no reparse; 30 necessary raw files equal staged Git blobs
+AFTER=both exact roots absent; no artifact/run/cache/lease/ledger deletion
+VOLUME_FREE_DELTA=NOT_MEASURED; remaining source is fixed Git181e and retained immutable evidence

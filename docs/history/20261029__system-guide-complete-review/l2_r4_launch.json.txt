@@ -1,0 +1,8 @@
+{
+  "wrapper_pid": 28888,
+  "started_utc": "2026-10-29T05:23:25.3778106Z",
+  "head": "181e411950bb0f1da8c5528ecfeda95641932204",
+  "summary_path": "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_ci_pid_contract_20261029_a4c91e\\l2_r4_summary.json",
+  "console_path": "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_ci_pid_contract_20261029_a4c91e\\l2_r4_console.log",
+  "central_host_state": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\common\\host_resources.sqlite3"
+}

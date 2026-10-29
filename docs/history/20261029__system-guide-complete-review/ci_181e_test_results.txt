@@ -1,0 +1,58 @@
+changed_scope	Run changed-scope gate	2026-10-29T05:21:50.9809685Z ^[[36;1m  .\common\verify_changed.ps1 -PythonExe $python -FullScope -MaxConcurrency 2 -SummaryPath (Join-Path $env:RUNNER_TEMP 'changed_gate_summary.json')^[[0m
+changed_scope	Run changed-scope gate	2026-10-29T05:21:50.9812310Z ^[[36;1m  .\common\verify_changed.ps1 -PythonExe $python -ChangedPath @($scope.changed_paths) -MaxConcurrency 2 -SummaryPath (Join-Path $env:RUNNER_TEMP 'changed_gate_summary.json')^[[0m
+changed_scope	Run changed-scope gate	2026-10-29T05:21:52.2792666Z GATE_SUMMARY_PATH=D:\a\_temp\changed_gate_summary.json
+changed_scope	Run changed-scope gate	2026-10-29T05:21:52.3054311Z GATE_STAGE=RUN NAME=repository_hygiene REASON=always
+changed_scope	Run changed-scope gate	2026-10-29T05:22:01.7624812Z GATE_STAGE=PASS NAME=repository_hygiene ELAPSED_SECONDS=9.45847
+changed_scope	Run changed-scope gate	2026-10-29T05:22:01.7649643Z GATE_STAGE=RUN NAME=repository_text_bytes REASON=always
+changed_scope	Run changed-scope gate	2026-10-29T05:22:05.0743967Z GATE_STAGE=PASS NAME=repository_text_bytes ELAPSED_SECONDS=3.309096
+changed_scope	Run changed-scope gate	2026-10-29T05:22:05.0763803Z GATE_STAGE=RUN NAME=documentation REASON=documentation_or_project_docs_changed
+changed_scope	Run changed-scope gate	2026-10-29T05:22:18.6126047Z ^[[32;1mSTATUS               : ^[[0mPASS
+changed_scope	Run changed-scope gate	2026-10-29T05:22:20.1367277Z GATE_STAGE=PASS NAME=documentation ELAPSED_SECONDS=15.060109
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7182206Z GATE_STAGE=RUN NAME=development_standards REASON=source_code_changed
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7189074Z GATE_STAGE=PASS NAME=development_standards ELAPSED_SECONDS=18.938808
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7193088Z GATE_STAGE=RUN NAME=ruff_changed_python REASON=existing_python_source_changed
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7197723Z GATE_STAGE=PASS NAME=ruff_changed_python ELAPSED_SECONDS=3.492886
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7214634Z GATE_STAGE=SKIP NAME=project_registry REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7216411Z GATE_STAGE=SKIP NAME=rf_multipole_generated_publications REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7218278Z GATE_STAGE=SKIP NAME=host_resource_scheduler_tests REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7219173Z GATE_STAGE=SKIP NAME=host_resource_adapter_tests REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7221407Z GATE_STAGE=SKIP NAME=livelink_resource_stages_tests REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7222214Z GATE_STAGE=SKIP NAME=longitudinal_fit_tests REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7225384Z GATE_STAGE=SKIP NAME=peak_metrics_tests REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7226167Z GATE_STAGE=SKIP NAME=figure_export_tests REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7228236Z GATE_STAGE=SKIP NAME=beam_focus_diagnostics_tests REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7230037Z GATE_STAGE=SKIP NAME=particle_census_tests REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7231666Z GATE_STAGE=SKIP NAME=plane_crossings_tests REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7232916Z GATE_STAGE=SKIP NAME=population_moments_tests REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7234717Z GATE_STAGE=SKIP NAME=particle_events_tests REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7236246Z GATE_STAGE=SKIP NAME=tof_error_budget_tests REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7242128Z GATE_STAGE=SKIP NAME=documentation_link_tests REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7244589Z GATE_STAGE=SKIP NAME=livelink_failure_classification REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7245554Z GATE_STAGE=SKIP NAME=livelink_environment REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7250778Z GATE_STAGE=RUN NAME=common_contracts REASON=common_contracts_changed
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7348134Z Ran 864 tests in 1457.082s
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7348685Z OK (skipped=3)
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7353990Z GATE_STAGE=PASS NAME=common_contracts ELAPSED_SECONDS=1464.979144
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7355173Z GATE_STAGE=SKIP NAME=expected_values_tests REASON=covered_by_common_contracts
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7356141Z GATE_STAGE=SKIP NAME=gate_contract_tests REASON=covered_by_common_contracts
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7357041Z GATE_STAGE=SKIP NAME=cloc_contract_tests REASON=covered_by_common_contracts
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7357939Z GATE_STAGE=SKIP NAME=python_dependency_contract REASON=covered_by_common_contracts
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7358794Z GATE_STAGE=RUN NAME=simion_common REASON=common_simion_changed
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7367482Z Ran 356 tests in 89.121s
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7367901Z OK (skipped=24)
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7369438Z GATE_STAGE=PASS NAME=simion_common ELAPSED_SECONDS=95.892408
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7370162Z GATE_STAGE=SKIP NAME=rf_multipole_domain_tests REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7370937Z GATE_STAGE=SKIP NAME=integration_common REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7371850Z GATE_STAGE=SKIP NAME=instrument_assembly_integration REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7372656Z GATE_STAGE=SKIP NAME=solidworks_common REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7373415Z GATE_STAGE=SKIP NAME=orthogonal_accelerator_static REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7374261Z GATE_STAGE=SKIP NAME=parallel_mirror_dual_stripe_mr_tof_static REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7375306Z GATE_STAGE=SKIP NAME=single_reflection_oa_tof_mass_analyzer_static REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7376211Z GATE_STAGE=SKIP NAME=rf_multipole_quadrupole_static REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7377327Z GATE_STAGE=SKIP NAME=rf_multipole_hexapole_static REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7378166Z GATE_STAGE=SKIP NAME=rf_multipole_octupole_static REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7379111Z GATE_STAGE=SKIP NAME=dual_pressure_rectilinear_ion_processor_static REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7380086Z GATE_STAGE=SKIP NAME=dual_cone_tandem_quadrupole_ion_interface_static REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7381109Z GATE_STAGE=SKIP NAME=transverse_helical_filament_wehnelt_electron_gun_static REASON=no_route_match
+changed_scope	Run changed-scope gate	2026-10-29T05:46:58.7382473Z GATE_STAGE=SKIP NAME=apertured_tube_electron_impact_ion_source_static REASON=no_route_match
+changed_scope	Upload changed-scope gate evidence	2026-10-29T05:46:58.8373741Z   path: D:\a\_temp/changed_gate_summary.json

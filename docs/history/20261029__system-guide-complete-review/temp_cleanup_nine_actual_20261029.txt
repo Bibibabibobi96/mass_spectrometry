@@ -1,0 +1,13 @@
+Exact task TEMP cleanup after necessary evidence commit 3e7b80da; original policy refusals were not bypassed.
+Fresh normal-user CIM succeeded; no other process command line references the nine exact targets. No reparse entries. Source inventories exactly match the independently verified preflight.
+REMOVED files=1418 bytes=618333 path=C:\Users\Liao\AppData\Local\Temp\capacity-benchmark-845b54bcd8c945459710f76d3c271d96
+REMOVED files=4 bytes=51117 path=C:\Users\Liao\AppData\Local\Temp\codex_g2_pre_import_odsoiwu0
+REMOVED files=4 bytes=93622 path=C:\Users\Liao\AppData\Local\Temp\scheduler-multibirth-candidate-86012fa4455941449d665f2b7e9b4721
+REMOVED files=3 bytes=56166 path=C:\Users\Liao\AppData\Local\Temp\codex_rf_gate_contract_candidate_8iayfqoc
+REMOVED files=1459 bytes=22011642 path=C:\Users\Liao\AppData\Local\Temp\codex_g2_final_benchmark_20261028
+REMOVED files=2 bytes=8 path=C:\Users\Liao\AppData\Local\Temp\codex_campaign_binding_red_0fec42ede6f8427f82fc206475590b09
+REMOVED files=4 bytes=8532 path=C:\Users\Liao\AppData\Local\Temp\capacity-pressure-baseline-1f3bd056a8cb4d4c8561dd7610d477d5
+REMOVED files=5 bytes=22591 path=C:\Users\Liao\AppData\Local\Temp\codex_pa2d_toy_1c6e33c78bb64f3688ed5887428b38c0
+REMOVED files=1 bytes=2655 path=C:\Users\Liao\AppData\Local\Temp\codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6\capacity_host_release_probe.ps1
+TOTAL files=2900 logical_removed_bytes=22864666 elapsed_seconds=2.4718363
+Logical bytes only; no volume-free delta claimed. Original runs, published cache, source, central ledger and canonical evidence were untouched.

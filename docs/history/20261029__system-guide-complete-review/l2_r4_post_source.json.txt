@@ -1,0 +1,11 @@
+{
+  "observed_utc": "2026-10-29T05:59:57.970782+00:00",
+  "head": "181e411950bb0f1da8c5528ecfeda95641932204",
+  "git_status": "",
+  "files": 2358,
+  "bytes": 204035238,
+  "identity": "6c16e71145f4613af44aa0c883279a8672ab0ef8ba189c246532a5a3d54ce505",
+  "matches_preflight": true,
+  "record_reference": "l2_r4_preflight_source.json",
+  "comparison": "All 2358 path/bytes/SHA records compared equal before removing this duplicate list from the post record."
+}

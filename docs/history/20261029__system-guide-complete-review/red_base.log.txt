@@ -1,0 +1,48 @@
+PID_OBSERVATION={"kind": "workflow", "interpreter": "C:\\Users\\Liao\\AppData\\Local\\Programs\\Python\\Python311\\python.exe", "actual_worker_marker": null, "receipt": {"launcher_process_id": 10548, "worker_process_id": 10548, "worker_started_at_utc_ticks": 639288458832089130, "ownership_confirmed": true, "worker_exit_confirmed": true, "launcher_exit_confirmed": true, "stdout_drained": true, "stderr_drained": true, "ack_attempted": true, "exit_code": 0}}
+test_actual_worker_and_late_logs_close_before_terminal_hashes (common.contracts.test_run_artifact_workflow.RunArtifactWorkflowTests.test_actual_worker_and_late_logs_close_before_terminal_hashes) ... FAIL
+PID_OBSERVATION={"kind": "managed:('normal', 0)", "interpreter": "C:\\Users\\Liao\\AppData\\Local\\Programs\\Python\\Python311\\python.exe", "actual_worker_marker": null, "receipt": {"launcher_process_id": 22000, "worker_process_id": 22000, "worker_started_at_utc_ticks": 639288458866061989, "ownership_confirmed": true, "worker_exit_confirmed": true, "launcher_exit_confirmed": true, "stdout_drained": true, "stderr_drained": true, "ack_attempted": true, "exit_code": 0}}
+test_managed_stdio_waits_actual_worker_and_drains_output_after_completion (common.simion.test_managed_process_completion.ManagedProcessCompletionTests.test_managed_stdio_waits_actual_worker_and_drains_output_after_completion) ... 
+  test_managed_stdio_waits_actual_worker_and_drains_output_after_completion (common.simion.test_managed_process_completion.ManagedProcessCompletionTests.test_managed_stdio_waits_actual_worker_and_drains_output_after_completion) (scenario='normal', code=0) ... FAIL
+PID_OBSERVATION={"kind": "managed:('normal', 7)", "interpreter": "C:\\Users\\Liao\\AppData\\Local\\Programs\\Python\\Python311\\python.exe", "actual_worker_marker": null, "receipt": {"launcher_process_id": 23908, "worker_process_id": 23908, "worker_started_at_utc_ticks": 639288458887332573, "ownership_confirmed": true, "worker_exit_confirmed": true, "launcher_exit_confirmed": true, "stdout_drained": true, "stderr_drained": true, "ack_attempted": true, "exit_code": 7}}
+  test_managed_stdio_waits_actual_worker_and_drains_output_after_completion (common.simion.test_managed_process_completion.ManagedProcessCompletionTests.test_managed_stdio_waits_actual_worker_and_drains_output_after_completion) (scenario='normal', code=7) ... FAIL
+PID_OBSERVATION={"kind": "managed:('sample_error', 0)", "interpreter": "C:\\Users\\Liao\\AppData\\Local\\Programs\\Python\\Python311\\python.exe", "actual_worker_marker": null, "receipt": {"launcher_process_id": 29012, "worker_process_id": null, "worker_started_at_utc_ticks": null, "ownership_confirmed": false, "worker_exit_confirmed": false, "launcher_exit_confirmed": true, "stdout_drained": true, "stderr_drained": true, "ack_attempted": false, "exit_code": null}}
+PID_OBSERVATION={"kind": "managed:('ack_error', 0)", "interpreter": "C:\\Users\\Liao\\AppData\\Local\\Programs\\Python\\Python311\\python.exe", "actual_worker_marker": null, "receipt": {"launcher_process_id": 30236, "worker_process_id": 30236, "worker_started_at_utc_ticks": 639288458920466991, "ownership_confirmed": true, "worker_exit_confirmed": true, "launcher_exit_confirmed": true, "stdout_drained": true, "stderr_drained": true, "ack_attempted": true, "exit_code": 0}}
+  test_managed_stdio_waits_actual_worker_and_drains_output_after_completion (common.simion.test_managed_process_completion.ManagedProcessCompletionTests.test_managed_stdio_waits_actual_worker_and_drains_output_after_completion) (scenario='ack_error', code=0) ... FAIL
+
+======================================================================
+FAIL: test_actual_worker_and_late_logs_close_before_terminal_hashes (common.contracts.test_run_artifact_workflow.RunArtifactWorkflowTests.test_actual_worker_and_late_logs_close_before_terminal_hashes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\mass_spectrometry\simulation_repo\common\contracts\test_run_artifact_workflow.py", line 467, in test_actual_worker_and_late_logs_close_before_terminal_hashes
+    self.assertNotEqual(receipt["worker_process_id"], receipt["launcher_process_id"])
+AssertionError: 10548 == 10548
+
+======================================================================
+FAIL: test_managed_stdio_waits_actual_worker_and_drains_output_after_completion (common.simion.test_managed_process_completion.ManagedProcessCompletionTests.test_managed_stdio_waits_actual_worker_and_drains_output_after_completion) (scenario='normal', code=0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\mass_spectrometry\simulation_repo\common\simion\test_managed_process_completion.py", line 192, in test_managed_stdio_waits_actual_worker_and_drains_output_after_completion
+    self.assertNotEqual(receipt["launcher_process_id"], receipt["worker_process_id"])
+AssertionError: 22000 == 22000
+
+======================================================================
+FAIL: test_managed_stdio_waits_actual_worker_and_drains_output_after_completion (common.simion.test_managed_process_completion.ManagedProcessCompletionTests.test_managed_stdio_waits_actual_worker_and_drains_output_after_completion) (scenario='normal', code=7)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\mass_spectrometry\simulation_repo\common\simion\test_managed_process_completion.py", line 192, in test_managed_stdio_waits_actual_worker_and_drains_output_after_completion
+    self.assertNotEqual(receipt["launcher_process_id"], receipt["worker_process_id"])
+AssertionError: 23908 == 23908
+
+======================================================================
+FAIL: test_managed_stdio_waits_actual_worker_and_drains_output_after_completion (common.simion.test_managed_process_completion.ManagedProcessCompletionTests.test_managed_stdio_waits_actual_worker_and_drains_output_after_completion) (scenario='ack_error', code=0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\mass_spectrometry\simulation_repo\common\simion\test_managed_process_completion.py", line 192, in test_managed_stdio_waits_actual_worker_and_drains_output_after_completion
+    self.assertNotEqual(receipt["launcher_process_id"], receipt["worker_process_id"])
+AssertionError: 30236 == 30236
+
+----------------------------------------------------------------------
+Ran 2 tests in 12.513s
+
+FAILED (failures=4)
+SUITE_ELAPSED_SECONDS=12.522624

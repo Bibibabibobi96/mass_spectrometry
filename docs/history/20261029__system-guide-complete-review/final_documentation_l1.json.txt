@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "gate": "changed_scope",
+  "repository": "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo",
+  "python_exe": "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe",
+  "powershell_version": "7.6.9",
+  "started_at": "2026-10-29T06:09:33.4976169Z",
+  "finished_at": "2026-10-29T06:09:55.9472722Z",
+  "elapsed_seconds": 22.450428,
+  "status": "PASS",
+  "error": null,
+  "stages": [
+    {
+      "name": "repository_hygiene",
+      "selected": true,
+      "selection_reason": "always",
+      "dependency_profile": "stdlib",
+      "command": {
+        "runner": "powershell",
+        "script": "common/verify_repository_hygiene.ps1"
+      },
+      "requires_stages": [],
+      "status": "PASS",
+      "reason_code": "COMPLETED",
+      "started_at": "2026-10-29T06:09:33.5270668Z",
+      "finished_at": "2026-10-29T06:09:38.7486577Z",
+      "elapsed_seconds": 5.2216,
+      "queue_seconds": null,
+      "resource_wait_seconds": 1.9647376,
+      "execution_seconds": 1.6742447,
+      "cleanup_seconds": 1.5426777,
+      "launch_seconds": null,
+      "process_elapsed_seconds": null,
+      "exit_code": 0,
+      "child_exit_code": null,
+      "log_path": null,
+      "log_retained": false,
+      "error": null
+    },
+    {
+      "name": "repository_text_bytes",
+      "selected": true,
+      "selection_reason": "always",
+      "dependency_profile": "stdlib",
+      "command": {
+        "arguments": [
+          "common/verify_repository_text_bytes.py"
+        ],
+        "runner": "python"
+      },
+      "requires_stages": [],
+      "status": "PASS",
+      "reason_code": "COMPLETED",
+      "started_at": "2026-10-29T06:09:38.7607041Z",
+      "finished_at": "2026-10-29T06:09:42.1801567Z",
+      "elapsed_seconds": 3.419457,
+      "queue_seconds": null,
+      "resource_wait_seconds": 1.5099285,
+      "execution_seconds": 0.3718747,
+      "cleanup_seconds": 1.5330043,
+      "launch_seconds": null,
+      "process_elapsed_seconds": null,
+      "exit_code": 0,
+      "child_exit_code": null,
+      "log_path": null,
+      "log_retained": false,
+      "error": null
+    },
+    {
+      "name": "documentation",
+      "selected": true,
+      "selection_reason": "documentation_or_project_docs_changed",
+      "dependency_profile": "stdlib",
+      "command": {
+        "script": "common/verify_documentation.ps1",
+        "runner": "powershell",
+        "parameters": {
+          "StructureOnly": true,
+          "PythonExe": "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe"
+        }
+      },
+      "requires_stages": [],
+      "status": "PASS",
+      "reason_code": "COMPLETED",
+      "started_at": "2026-10-29T06:09:42.1835793Z",
+      "finished_at": "2026-10-29T06:09:55.9386437Z",
+      "elapsed_seconds": 13.755068,
+      "queue_seconds": null,
+      "resource_wait_seconds": 1.5116888,
+      "execution_seconds": 10.7065998,
+      "cleanup_seconds": 1.5325592,
+      "launch_seconds": null,
+      "process_elapsed_seconds": null,
+      "exit_code": 0,
+      "child_exit_code": null,
+      "log_path": null,
+      "log_retained": false,
+      "error": null
+    }
+  ]
+}

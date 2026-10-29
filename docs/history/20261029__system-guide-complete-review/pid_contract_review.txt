@@ -1,0 +1,49 @@
+CI direct/venv actual-worker PID contract regression
+CI reference: 40816151259
+Baseline HEAD: 3e7b80da67fd1ce4e55cf158aa67af21aea21327; result: WORKTREE (only two test files)
+Production READY/ACK and owned-handle wait/drain code unchanged. A direct interpreter may have equal launcher/worker PIDs; a venv shim may differ.
+Long-term assertions now compare receipt worker PID with an independent os.getpid() value emitted by the actual test callback/worker into its existing science.json/work_started output.
+All existing ACK/error, root exit, late stdout/stderr and sealed-log bytes/SHA assertions are retained. Launcher positive ID is checked; workflow launcher exit assertion is added.
+Public GATE common_contracts_tests admitted RED, focused GREEN and complete regression; each observed release STATUS=released.
+
+RESULTS
+RED direct Python3.11: 2 methods / 12.513s / 4 failures at the old inequality; this is expected negative evidence.
+GREEN direct Python3.11: 2 methods / 12.237s / OK.
+GREEN venv Python3.11: 2 methods / 12.784s / OK.
+COMPLETE venv modules: 22 methods / 202.860s / OK / no skips; exit 0.
+Ruff scoped: PASS. verify_development_standards two --path arguments: PASS errors=0 review_signals=0. git diff --check scoped: PASS.
+No L1/L2, vendor, GUI, production configuration or main-repository Git/index write performed by Agent4.
+
+COMMANDS
+Base interpreter: C:/Users/Liao/AppData/Local/Programs/Python/Python311/python.exe
+Venv interpreter: <repo>/.venv/Scripts/python.exe
+Focused unittest names:
+common.contracts.test_run_artifact_workflow.RunArtifactWorkflowTests.test_actual_worker_and_late_logs_close_before_terminal_hashes
+common.simion.test_managed_process_completion.ManagedProcessCompletionTests.test_managed_stdio_waits_actual_worker_and_drains_output_after_completion
+Complete command: <venv-python> -B -m unittest common.contracts.test_run_artifact_workflow common.simion.test_managed_process_completion
+Focused one-time runner loaded these exact methods without altering their assertions; wrappers only printed actual fixture return receipts and worker-owned PID markers before TemporaryDirectory cleanup.
+
+ACTUAL PID OBSERVATIONS: kind | launcher | receipt worker | independent marker | worker birth ticks | actual exit code
+green_base.log:workflow | 13760 | 13760 | 13760 | 639288459638993865 | 0
+green_base.log:managed:('normal', 0) | 25304 | 25304 | 25304 | 639288459671506762 | 0
+green_base.log:managed:('normal', 7) | 7816 | 7816 | 7816 | 639288459691832844 | 7
+green_base.log:managed:('sample_error', 0) | 19740 | None | None | None | None
+green_base.log:managed:('ack_error', 0) | 29244 | 29244 | 29244 | 639288459724808775 | 0
+green_venv.log:workflow | 19924 | 13444 | 13444 | 639288459764503671 | 0
+green_venv.log:managed:('normal', 0) | 21732 | 20496 | 20496 | 639288459799736611 | 0
+green_venv.log:managed:('normal', 7) | 27840 | 29392 | 29392 | 639288459822435847 | 7
+green_venv.log:managed:('sample_error', 0) | 29004 | None | None | None | None
+green_venv.log:managed:('ack_error', 0) | 22300 | 29328 | 29328 | 639288459855549786 | 0
+
+SOURCE BYTES / SHA256 (UTF-8 LF)
+common/contracts/test_run_artifact_workflow.py: 38563 / 2f8152ea611e494972f520c356d4fca2502e010ba84199e64595b77dc18a2f0f -> 38811 / 83a73c57f04d1fba2aa8fba42a2a172ea147da80a6925ae5d8c43cea70427e0c
+common/simion/test_managed_process_completion.py: 18042 / 3f27707c6b5d908c3533e11c393025db231297e16d6a1d50a97241cd3d6b59bf -> 18133 / fc317362f3e6bf89d6b1a65117220d3064716802d0b2d418dd8ba747edb00acf
+
+RAW LOG IDENTITIES
+red_base.log: bytes=6707 sha256=2f25fd04dc38e636aec6baf889716334aa65826419d8a193e421b82d2aa4e3af
+green_base.log: bytes=2932 sha256=f34dae427bfb0c3dd60a372b6559d71882657311dd0a166ae5c144872e495d40
+green_venv.log: bytes=2970 sha256=bdac6c80b35afac2fd195e39adfbcb098ed03b41cf4a7acdb1bd38d15128ded9
+full_venv.log: bytes=128 sha256=ff942056432e7448358630394d16f10fb29bc2047fc76210ccdeec21f06fac23
+
+CLEANUP: all test TemporaryDirectory fixtures completed cleanup; only our tmp_pid_contract_runner.py and empty fixtures directory were removed.
+pending_final_report and all root-owned files were not inspected, changed or deleted. Root owns final evidence archival and whole-task CLOC refresh.

@@ -1,0 +1,138 @@
+L2 r4 / CI exact-commit closeout — read-only evidence
+Final source: 181e411950bb0f1da8c5528ecfeda95641932204.
+
+L2 r4 did NOT reach terminal. Original summary remains RUNNING; 33 PASS / 4 RUNNING, 37 selected.
+Started=2026-10-29T05:23:26.5104099Z; finished_at=null; elapsed_seconds=null. No valid total runtime or exit code exists.
+Original exec session 42897 now returns Unknown process id. l2_r4_process_result.json does not exist.
+Windows boot timestamp observed 2026-10-29T13:37:01.5+08:00 (05:37:01.5Z), after this run started.
+At 05:57:43.5077509Z, wrapper 28888, parent 15292 and four unfinished stage PIDs 30832/10908/32520/31692 were absent.
+This establishes reboot interruption; it does not erase the two pre-reboot test FAIL labels described below.
+No rerun, process termination, repository edit, Git write, or diagnostic cleanup was performed.
+
+Completed top-level unittest evidence only: 24 runners, 1900 tests, 6 skipped, all completed runner verdicts OK.
+This is a partial completed-stage count, not the total attempted or final L2 test count; four suites lack terminal summaries.
+Two FAIL labels were observed in the unfinished integration suite; no final traceback was emitted before reboot.
+
+Stage | recorded status | stage elapsed_seconds | parent process_elapsed_seconds | original top-level unittest summary / verdict
+documentation | PASS | 18.571471 | None | N/A (no terminal unittest summary)
+repository_text_bytes | PASS | 4.896768 | 7.112128 | N/A (no terminal unittest summary)
+development_standards | PASS | 32.193935 | 34.276839 | N/A (no terminal unittest summary)
+ruff_all | PASS | 8.68748 | 10.753891 | N/A (no terminal unittest summary)
+host_resource_scheduler_tests | PASS | 124.909471 | 126.979587 | Ran 93 tests in 120.260s; OK
+host_resource_adapter_tests | PASS | 74.018812 | 76.003852 | N/A (no terminal unittest summary)
+livelink_resource_stages_tests | PASS | 292.164347 | 294.179239 | Ran 47 tests in 287.724s; OK
+longitudinal_fit_tests | PASS | 12.993563 | 14.796965 | Ran 3 tests in 1.359s; OK
+peak_metrics_tests | PASS | 14.833531 | 16.599455 | Ran 25 tests in 0.098s; OK
+figure_export_tests | PASS | 21.19266 | 22.934714 | Ran 5 tests in 0.266s; OK
+beam_focus_diagnostics_tests | PASS | 16.541532 | 20.28587 | Ran 20 tests in 4.022s; OK
+particle_census_tests | PASS | 7.723299 | 9.862146 | Ran 12 tests in 0.002s; OK
+plane_crossings_tests | PASS | 15.276147 | 17.201731 | Ran 23 tests in 0.028s; OK
+population_moments_tests | PASS | 14.262834 | 16.117978 | Ran 10 tests in 0.125s; OK
+particle_events_tests | PASS | 8.711926 | 10.421929 | Ran 6 tests in 0.001s; OK
+tof_error_budget_tests | PASS | 6.554089 | 8.691355 | Ran 16 tests in 1.917s; OK
+documentation_link_tests | PASS | 14.897311 | 16.965423 | Ran 24 tests in 10.646s; OK
+project_registry | PASS | 8.6567 | 10.945086 | N/A (no terminal unittest summary)
+livelink_failure_classification | PASS | 4.047027 | 6.116058 | N/A (no terminal unittest summary)
+livelink_environment | PASS | 4.13358 | 5.886433 | N/A (no terminal unittest summary)
+rf_multipole_generated_publications | PASS | 35.099304 | 36.812002 | N/A (no terminal unittest summary)
+common_contracts | RUNNING | None | None | N/A (no terminal unittest summary)
+simion_common | PASS | 175.705624 | 177.792911 | Ran 356 tests in 170.376s; OK (skipped=6)
+rf_multipole_domain_tests | PASS | 368.699592 | 370.637896 | Ran 398 tests in 361.183s; OK
+integration_common | PASS | 19.038492 | 20.74352 | Ran 55 tests in 11.386s; OK
+instrument_assembly_integration | RUNNING | None | None | N/A (no terminal unittest summary)
+solidworks_common | PASS | 7.466199 | 9.530692 | Ran 2 tests in 0.007s; OK
+orthogonal_accelerator_static | PASS | 16.332499 | 18.225441 | Ran 112 tests in 9.346s; OK
+parallel_mirror_dual_stripe_mr_tof_static | RUNNING | None | None | N/A (no terminal unittest summary)
+single_reflection_oa_tof_mass_analyzer_static | RUNNING | None | None | N/A (no terminal unittest summary)
+rf_multipole_quadrupole_static | PASS | 321.680403 | 323.948534 | Ran 226 tests in 308.711s; OK
+rf_multipole_hexapole_static | PASS | 38.614492 | 40.841138 | Ran 18 tests in 28.752s; OK
+rf_multipole_octupole_static | PASS | 35.337403 | 37.526541 | Ran 19 tests in 28.375s; OK
+dual_pressure_rectilinear_ion_processor_static | PASS | 166.180182 | 168.0766 | Ran 328 tests in 157.285s; OK
+dual_cone_tandem_quadrupole_ion_interface_static | PASS | 15.538778 | 17.83466 | Ran 30 tests in 7.677s; OK
+transverse_helical_filament_wehnelt_electron_gun_static | PASS | 38.802201 | 40.784013 | Ran 50 tests in 31.837s; OK
+apertured_tube_electron_impact_ion_source_static | PASS | 9.210626 | 11.287823 | Ran 22 tests in 2.554s; OK
+
+Observed integration failures (full original log retained byte-for-byte):
+C:\Users\Liao\AppData\Local\Temp\codex_ci_pid_contract_20261029_a4c91e\l2_r4_integration_incomplete.log
+bytes=80077; sha256=7235acc1a608605581caf997711af52b64c0f0331a0ccf356d8afdd19090595d
+384: test_native_authorization_rejected_before_run_or_vendor (integrations.tests.test_paired_accelerator_static_field_execute.PairedStaticExecutionTests.test_native_authorization_rejected_before_run_or_vendor) ... ok
+385: test_native_model_facts_survive_removal_of_run_execution_junction (integrations.tests.test_paired_accelerator_static_field_execute.PairedStaticExecutionTests.test_native_model_facts_survive_removal_of_run_execution_junction)
+386: Project actual task paths; inert native facts never assert a real solve. ... FAIL
+391: Run actual owner boundaries and public lifecycle; skip all vendor work. ...
+392:   test_owner_retention_and_terminal_boundaries_close_success_and_failure (integrations.tests.test_paired_accelerator_static_field_execute.PairedStaticExecutionTests.test_owner_retention_and_terminal_boundaries_close_success_and_failure) (outcome='failed')
+393: Run actual owner boundaries and public lifecycle; skip all vendor work. ... FAIL
+Unfinished log has no Traceback/AssertionError/final FAIL: block, so the exact failing assertion is not available.
+Owner lifecycle method source: integrations/tests/test_paired_accelerator_static_field_execute.py:626-704; outcome=failed.
+Possible final assertion sites are 698 (PowerShell exit), 699 (PASS marker), 701 (manifest status), 704 (ledger ready); do not select one without reproduction/trace.
+Root assigned bounded reproduction of the two existing methods to Agent 4; its later result is separate from this interrupted round.
+
+Resource and source boundaries:
+Public normal-user Get-HostResourceStatus after reboot returned {"schema_version":1,"records":[]}.
+No stale gate owners remain after the public status refresh; this is NOT proof that the four unfinished owners normally released.
+Central capacity lease entries: pre=90; post=90; identical under the same PowerShell JSON-read/serialization path; no added/deleted lease or changed protection/commitment.
+Pre/post source records identical=True; git status clean=True.
+Files=2358; bytes=204035238; pre identity=6c16e71145f4613af44aa0c883279a8672ab0ef8ba189c246532a5a3d54ce505; post identity=6c16e71145f4613af44aa0c883279a8672ab0ef8ba189c246532a5a3d54ce505.
+Identity algorithm: run git ls-files --cached --others --exclude-standard -z in the repository; decode UTF-8; remove empty paths and duplicates; Python sorted() case-sensitive relative-path order; retain existing files. For each file read original bytes and build {path,bytes,sha256} with SHA-256 of the original bytes. Hash UTF-8 bytes of json.dumps(records,sort_keys=True,separators=(',',':'),ensure_ascii=True). The full preflight 2358-record list is retained; post contains matching identity/counts and explicit reference after exact record equality was checked.
+
+GitHub CI (independently read via gh run view and job-specific raw logs):
+https://github.com/Bibibabibobi96/mass_spectrometry/actions/runs/40822854689
+Head=181e411950bb0f1da8c5528ecfeda95641932204; completed/success.
+changed_scope job123279039678: 05:20:50Z -> 05:47:04Z = 1574 seconds (job boundary).
+Run changed-scope gate step: 05:21:50Z -> 05:46:58Z = 1508 seconds (step boundary; not summary elapsed).
+7 GATE_STAGE=PASS entries; common_contracts Ran 864 tests in 1457.082s / OK (skipped=3).
+simion_common Ran 356 tests in 89.121s / OK (skipped=24). Total=1220 tests, 27 skipped, 0 failures/errors.
+CI stage elapsed common_contracts=1464.979144s; simion_common=95.892408s. Body/stage/job/step times are distinct.
+Raw CI job log reports STATUS=released for each real GATE owner and GATE_DIAGNOSTICS=CLEANED.
+repository_integration job123279041840 is skipped by push policy; CI success is not a fresh complete L2 pass.
+
+Diagnostic directory inventory (read-only, no cleanup):
+C:\Users\Liao\AppData\Local\Temp\repository_integration_gate_74bbec25b8574bbf8c7be54692dbaef7
+69 files / 308686 logical bytes; no reparse points. 36 .log files / 116049 bytes; 33 .json files / 192637 bytes.
+JSONs: 32 completed child result sidecars plus fontlist-v3.11.0.json. No final sidecar for any of the four interrupted stages.
+Full integration log + unchanged original summary cover both observed FAIL labels and their interrupted stage status.
+They do NOT contain the missing failure trace, final suite totals, or a normal gate terminal; no later artifact can reconstruct those missing observations.
+Completed stage logs uniquely contain original unittest summaries before parent replay; their compact verbatim Ran/OK lines are retained above.
+Other unfinished logs and post-host record retain last progress. Result sidecars carry stage timing already copied into the original summary; font cache is rebuildable.
+
+
+Capacity read-format reconciliation (not a lease mutation):
+The preflight host snapshot used PowerShell ConvertFrom-Json/ConvertTo-Json, which parsed ISO UTC timestamps and removed insignificant trailing fractional zeros. Python later read the raw JSON strings; that representation comparison alone returned False.
+Re-reading all 90 current leases with the same PowerShell pipeline gives zero differences from preflight. All 15 raw-string differences below represent exactly equal UTC timestamps; all other fields match. Latest lease file mtime is 2026-10-24T17:39:50.655959Z, before L2 r4. No r4 lease change is evidenced. Preflight did not record lease raw-byte hashes, so this is semantic/same-reader equality, not a raw-byte hash proof.
+All paths below are relative to C:/Users/Liao/mass_spectrometry/artifacts/common/capacity_protection_leases:
+mrtof-current-simion-comsol-capacity-20261008.json | owner=parallel_mirror_dual_stripe_mr_tof | closure_deadline_at_utc: snapshot 2026-11-07T05:34:17.45215Z / raw 2026-11-07T05:34:17.452150Z; created_at_utc: snapshot 2026-10-08T05:34:17.45215Z / raw 2026-10-08T05:34:17.452150Z; expires_at_utc: snapshot 2026-10-09T05:34:17.45215Z / raw 2026-10-09T05:34:17.452150Z
+mrtof-mainline-space-cleanup-20260916.json | owner=repo-space-cleanup-audit | created_at_utc: snapshot 2026-09-16T02:06:17.53215Z / raw 2026-09-16T02:06:17.532150Z; expires_at_utc: snapshot 2026-09-17T02:06:17.53215Z / raw 2026-09-17T02:06:17.532150Z
+mrtof-r13-fixed-cache-recovery-20260919.json | owner=MRTOF positive-mirror-only fixed PA recovery | created_at_utc: snapshot 2026-09-19T05:42:25.8631Z / raw 2026-09-19T05:42:25.863100Z; expires_at_utc: snapshot 2026-09-19T08:42:25.8631Z / raw 2026-09-19T08:42:25.863100Z
+oa-tof-300mm-aperture-campaign-20260911.json | owner=OA-TOF 300 mm aperture campaign | created_at_utc: snapshot 2026-09-11T03:39:02.95593Z / raw 2026-09-11T03:39:02.955930Z; expires_at_utc: snapshot 2026-09-18T03:39:02.95593Z / raw 2026-09-18T03:39:02.955930Z
+workflow-021576e1404645aa97a6bfeb2ac9411b.json | owner=mrtof-downstream-workpoint:20261013_124000__sim__simion__mrtof-k255-staged-workpoint__r09 | closure_deadline_at_utc: snapshot 2026-11-12T08:27:29.93581Z / raw 2026-11-12T08:27:29.935810Z; created_at_utc: snapshot 2026-10-13T08:27:29.93581Z / raw 2026-10-13T08:27:29.935810Z
+workflow-0c94080e3afd415580acd7ae71353354.json | owner=mrtof-downstream-workpoint:20260928_021000__sim__simion__mrtof-condition-n1-workpoint | expires_at_utc: snapshot 2026-09-27T23:24:53.90337Z / raw 2026-09-27T23:24:53.903370Z
+workflow-45fa075eb84b42dc9acf1aeacdcb33d0.json | owner=mrtof-native-corridor-bunch-screening:20260929_120104__sim__simion__mrtof-te1-reclosed-response-01-screen | closure_deadline_at_utc: snapshot 2026-10-29T05:31:25.17909Z / raw 2026-10-29T05:31:25.179090Z; created_at_utc: snapshot 2026-09-29T05:31:25.17909Z / raw 2026-09-29T05:31:25.179090Z
+workflow-5bc4f021419e4656a2cfaec37a790240.json | owner=mrtof-native-corridor-bunch-screening:20260924_002500__sim__simion__mrtof-yminus45-bunch-screening-r2 | expires_at_utc: snapshot 2026-09-23T11:45:12.8489Z / raw 2026-09-23T11:45:12.848900Z
+workflow-65c01b7c971a43ee997ada45ee4223bd.json | owner=mrtof-native-corridor-bunch-screening:20260925_023000__sim__simion__mrtof-yminus50-te1-baseline-n100-r2 | expires_at_utc: snapshot 2026-09-23T20:18:05.90339Z / raw 2026-09-23T20:18:05.903390Z
+workflow-7c37f6dca48b419c9390ada081611a3e.json | owner=mrtof-native-corridor-bunch-screening:20260924_224500__sim__simion__mrtof-baseline-screen | closure_deadline_at_utc: snapshot 2026-10-24T12:08:16.87682Z / raw 2026-10-24T12:08:16.876820Z; created_at_utc: snapshot 2026-09-24T12:08:16.87682Z / raw 2026-09-24T12:08:16.876820Z
+workflow-909451f5fb3a410388eed1b61ffeef9f.json | owner=mrtof-downstream-workpoint:20260921_160944__sim__simion__mrtof-downstream-auto-workpoint | expires_at_utc: snapshot 2026-09-21T12:20:59.36518Z / raw 2026-09-21T12:20:59.365180Z
+workflow-91214299ec7b44ffad01fdd4e18b2ab1.json | owner=mrtof-downstream-workpoint:20260924_123000__sim__simion__mrtof-downstream-auto-workpoint-yminus50-r26 | expires_at_utc: snapshot 2026-09-23T12:55:32.40815Z / raw 2026-09-23T12:55:32.408150Z
+workflow-c2522eb3ad5d490481728ff7a8b4db66.json | owner=mrtof-downstream-workpoint:20260921_162759__sim__simion__mrtof-downstream-auto-workpoint | created_at_utc: snapshot 2026-09-21T08:28:02.60943Z / raw 2026-09-21T08:28:02.609430Z; expires_at_utc: snapshot 2026-09-21T12:28:02.60943Z / raw 2026-09-21T12:28:02.609430Z
+workflow-c575ab9a68c3472faa7e54853f8fe333.json | owner=mrtof-native-corridor-bunch-screening:20260929_224600__sim__simion__mrtof-te1-final-screen | expires_at_utc: snapshot 2026-09-29T21:27:53.69997Z / raw 2026-09-29T21:27:53.699970Z
+workflow-c92261f89f6e446a92b99f944e5df48d.json | owner=mrtof-native-corridor-bunch-screening:20260929_213000__sim__simion__mrtof-te1-root2-reclosed-verify-screen-r02 | closure_deadline_at_utc: snapshot 2026-10-29T11:30:28.848Z / raw 2026-10-29T11:30:28.848000Z; created_at_utc: snapshot 2026-09-29T11:30:28.848Z / raw 2026-09-29T11:30:28.848000Z
+
+Raw evidence identities:
+l2_r4_summary.json: 41833 bytes, SHA256 1a3f1ba654573d3f058fd7f866896d184168f226369d06fec265e70aeb803d8b
+l2_r4_console.log: 32354 bytes, SHA256 caffb14c7efdbedf355f99fd3b4067d70f22581983501f3f47f04384fdbf73dd
+l2_r4_launch.json: 478 bytes, SHA256 1dd4ba48537d6b5d8c8d7f3a53a60b2d350b7325f3dda03840633418375aed97
+l2_r4_preflight_source.json: 517899 bytes, SHA256 e76c42d970fceac7d0aff6c0df0d31cc60a8635fa73a4bd6e2b80daa81978192
+l2_r4_post_source.json: 458 bytes, SHA256 4056094bae09d71bcf2f86380595912d01e2471c7fb53537994dd233ff05d070
+l2_r4_preflight_host.json: 320374 bytes, SHA256 2c096d7b7f9d9222d0966f3e8176352a33d4de7b741a6882f2586c1b198f777b
+l2_r4_post_host.json: 6712 bytes, SHA256 9e0170f8fe208efb7141936c42c698205bdf067e0f4b113e9153336302ce8388
+
+Preparatory note: L2 does not accept -PlanOnly; a parameter-binding rejection occurred before the single actual L2 launch, with no stage execution.
+No source/test/repository/held-report changes. No new L2. Agent 2 stops all consumers of N after this report; root owns any later archiving/cleanup.
+
+Archive candidates: closeout, original summary/console/launch, all four unfinished stage logs, full preflight source record list and concise post source identity. Host snapshots need not be archived once their relevant observations above are retained. Original diagnostic directory remains untouched; root owns any public cleanup.
+
+Final log scan and preserved interruption evidence:
+All 36 original stage .log files were scanned for actual uppercase FAIL/ERROR tokens and unittest compact E/F progression. Exactly two actual FAIL lines were found, both in 24_instrument_assembly_integration.log at lines 386 and 393. No other observed FAIL/ERROR or compact failed/error-test marker was present. This does not turn unfinished suites into PASS or infer their unprinted final errors. Test names containing lowercase failure/error and expected argparse diagnostics are not counted as failures.
+20_common_contracts.log -> l2_r4_common_contracts_incomplete.log: 4977 bytes, SHA256 ad24d0efbf8ebd407af44a61aadc72397ccbe51a3608c465f0a205006139472b
+24_instrument_assembly_integration.log -> l2_r4_integration_incomplete.log: 80077 bytes, SHA256 7235acc1a608605581caf997711af52b64c0f0331a0ccf356d8afdd19090595d
+27_parallel_mirror_dual_stripe_mr_tof_static.log -> l2_r4_mr_incomplete.log: 508 bytes, SHA256 81b8a8c417a0073ead94f3ded839fde2c78b25b0a55a24fad4c9dc235391546e
+28_single_reflection_oa_tof_mass_analyzer_static.log -> l2_r4_oatof_incomplete.log: 3892 bytes, SHA256 adb798db433c7611fff56d4553a1cdc1d9cb9cb7def387c1f786ffabd61cd95b
+Original diagnostic directory is untouched. These four byte-identical copies retain all unfinished-stage last progress; the original summary preserves their RUNNING states. Agent 2 now releases all N consumers and will not read or modify this report further without root authorization.

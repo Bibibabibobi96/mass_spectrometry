@@ -1,0 +1,11 @@
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=instrument_assembly_integration PID=10144 INHERITED=False
+test_native_model_facts_survive_removal_of_run_execution_junction (integrations.tests.test_paired_accelerator_static_field_execute.PairedStaticExecutionTests.test_native_model_facts_survive_removal_of_run_execution_junction)
+Project actual task paths; inert native facts never assert a real solve. ... ok
+test_owner_retention_and_terminal_boundaries_close_success_and_failure (integrations.tests.test_paired_accelerator_static_field_execute.PairedStaticExecutionTests.test_owner_retention_and_terminal_boundaries_close_success_and_failure)
+Run actual owner boundaries and public lifecycle; skip all vendor work. ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 9.033s
+
+OK
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=instrument_assembly_integration STATUS=released

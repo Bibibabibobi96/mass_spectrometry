@@ -1,0 +1,191 @@
+CHANGED_GATE_INPUT_SOURCE=GIT_DIFF_BASE=HEAD:3e7b80da67fd1ce4e55cf158aa67af21aea21327;UNTRACKED=git_ls_files
+CHANGED_GATE_INPUTS=COUNT=2 PATHS=common/contracts/test_run_artifact_workflow.py,common/simion/test_managed_process_completion.py
+GATE_CONCURRENCY=8 MODE=auto LOGICAL_PROCESSORS=16
+GATE_SUMMARY_PATH=C:\Users\Liao\AppData\Local\Temp\codex_ci_pid_contract_20261029_a4c91e\ci_pid_fix_l1_summary.json
+GATE_STAGE=RUN NAME=repository_hygiene REASON=always
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=repository_hygiene PID=3596 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=3596 INHERITED=True
+REPOSITORY_HYGIENE=PASS TRACKED_FILES=2358
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=repository_hygiene STATUS=released
+GATE_STAGE=PASS NAME=repository_hygiene ELAPSED_SECONDS=12.066245
+GATE_STAGE=RUN NAME=repository_text_bytes REASON=always
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=repository_text_bytes PID=3596 INHERITED=False
+REPOSITORY_TEXT_BYTES=PASS FILES=1638
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=repository_text_bytes STATUS=released
+GATE_STAGE=PASS NAME=repository_text_bytes ELAPSED_SECONDS=3.667624
+GATE_STAGE=SKIP NAME=documentation REASON=no_documentation_path_changed
+GATE_DIAGNOSTICS=TEMPORARY PATH=C:\Users\Liao\AppData\Local\Temp\changed_gate_5ba1383dc4314ca08acce0754b95c49b
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=gate_matplotlib_cache PID=3596 INHERITED=False
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=gate_matplotlib_cache STATUS=released
+GATE_MATPLOTLIB_CACHE=READY PATH=C:\Users\Liao\AppData\Local\Temp\changed_gate_5ba1383dc4314ca08acce0754b95c49b\matplotlib
+GATE_PROCESS=START NAME=development_standards PID=30392 LOG_PATH=C:\Users\Liao\AppData\Local\Temp\changed_gate_5ba1383dc4314ca08acce0754b95c49b\00_development_standards.log
+GATE_PROCESS=START NAME=ruff_changed_python PID=11256 LOG_PATH=C:\Users\Liao\AppData\Local\Temp\changed_gate_5ba1383dc4314ca08acce0754b95c49b\01_ruff_changed_python.log
+GATE_PROCESS=START NAME=common_contracts PID=12584 LOG_PATH=C:\Users\Liao\AppData\Local\Temp\changed_gate_5ba1383dc4314ca08acce0754b95c49b\19_common_contracts.log
+GATE_PROCESS=START NAME=simion_common PID=25056 LOG_PATH=C:\Users\Liao\AppData\Local\Temp\changed_gate_5ba1383dc4314ca08acce0754b95c49b\24_simion_common.log
+GATE_PROCESS=COMPLETE NAME=ruff_changed_python EXIT_CODE=0 ELAPSED_SECONDS=5.829 LOG_REPLAY=PENDING
+GATE_PROCESS=COMPLETE NAME=development_standards EXIT_CODE=0 ELAPSED_SECONDS=8.635 LOG_REPLAY=PENDING
+GATE_PROCESS=COMPLETE NAME=simion_common EXIT_CODE=0 ELAPSED_SECONDS=140.244 LOG_REPLAY=PENDING
+GATE_PROCESS=COMPLETE NAME=common_contracts EXIT_CODE=0 ELAPSED_SECONDS=1666.34 LOG_REPLAY=PENDING
+GATE_STAGE=RUN NAME=development_standards REASON=source_code_changed
+HOST_RESOURCE=WAIT REASON=snapshot_contention OPERATION=request WAIT_SECONDS=2
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=development_standards PID=30392 INHERITED=False
+DEVELOPMENT_SCOPE=CHANGED REASON=explicit_changed_paths SOURCE=WORKTREE
+CONSUMER_AUDIT=NOT_REQUESTED
+DEVELOPMENT_STANDARDS=PASS ERRORS=0 REVIEW_SIGNALS=0
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=development_standards STATUS=released
+GATE_STAGE=PASS NAME=development_standards ELAPSED_SECONDS=6.738204
+GATE_STAGE=RUN NAME=ruff_changed_python REASON=existing_python_source_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=ruff_changed_python PID=11256 INHERITED=False
+All checks passed!
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=ruff_changed_python STATUS=released
+GATE_STAGE=PASS NAME=ruff_changed_python ELAPSED_SECONDS=3.997456
+GATE_STAGE=SKIP NAME=project_registry REASON=no_route_match
+GATE_STAGE=SKIP NAME=rf_multipole_generated_publications REASON=no_route_match
+GATE_STAGE=SKIP NAME=host_resource_scheduler_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=host_resource_adapter_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=livelink_resource_stages_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=longitudinal_fit_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=peak_metrics_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=figure_export_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=beam_focus_diagnostics_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=particle_census_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=plane_crossings_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=population_moments_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=particle_events_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=tof_error_budget_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=documentation_link_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=livelink_failure_classification REASON=no_route_match
+GATE_STAGE=SKIP NAME=livelink_environment REASON=no_route_match
+GATE_STAGE=RUN NAME=common_contracts REASON=common_contracts_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=common_contracts PID=12584 INHERITED=False
+................................................................................................................usage: reconcile_artifact_capacity [-h] --artifact-root ARTIFACT_ROOT
+                                   [--restore-retired-disposition-receipt RESTORE_RETIRED_DISPOSITION_RECEIPT]
+                                   [--restore-ledger-object-key-receipt RESTORE_LEDGER_OBJECT_KEY_RECEIPT]
+                                   [--expected-ledger-sha256 EXPECTED_LEDGER_SHA256]
+                                   [--expected-receipt-sha256 EXPECTED_RECEIPT_SHA256]
+                                   [--create-protection-lease CREATE_PROTECTION_LEASE]
+                                   [--renew-protection-lease RENEW_PROTECTION_LEASE]
+                                   [--delete-protection-lease DELETE_PROTECTION_LEASE]
+                                   [--lease-owner LEASE_OWNER]
+                                   [--lease-ttl-seconds LEASE_TTL_SECONDS]
+                                   [--committed-new-bytes COMMITTED_NEW_BYTES]
+                                   [--protect-path PROTECT_PATH]
+                                   [--protect-cache-key PROTECT_CACHE_KEY]
+                                   [--execution-mode {startup,maintenance}]
+                                   [--maintenance-target-gib MAINTENANCE_TARGET_GIB]
+                                   [--capacity-ledger CAPACITY_LEDGER]
+                                   [--capacity-protection-lease-id CAPACITY_PROTECTION_LEASE_ID]
+                                   [--apply] [--detailed-output]
+reconcile_artifact_capacity: error: unrecognized arguments: --maximum-new-artifact-bytes 1
+usage: reconcile_artifact_capacity [-h] --artifact-root ARTIFACT_ROOT
+                                   [--restore-retired-disposition-receipt RESTORE_RETIRED_DISPOSITION_RECEIPT]
+                                   [--restore-ledger-object-key-receipt RESTORE_LEDGER_OBJECT_KEY_RECEIPT]
+                                   [--expected-ledger-sha256 EXPECTED_LEDGER_SHA256]
+                                   [--expected-receipt-sha256 EXPECTED_RECEIPT_SHA256]
+                                   [--create-protection-lease CREATE_PROTECTION_LEASE]
+                                   [--renew-protection-lease RENEW_PROTECTION_LEASE]
+                                   [--delete-protection-lease DELETE_PROTECTION_LEASE]
+                                   [--lease-owner LEASE_OWNER]
+                                   [--lease-ttl-seconds LEASE_TTL_SECONDS]
+                                   [--committed-new-bytes COMMITTED_NEW_BYTES]
+                                   [--protect-path PROTECT_PATH]
+                                   [--protect-cache-key PROTECT_CACHE_KEY]
+                                   [--execution-mode {startup,maintenance}]
+                                   [--maintenance-target-gib MAINTENANCE_TARGET_GIB]
+                                   [--capacity-ledger CAPACITY_LEDGER]
+                                   [--capacity-protection-lease-id CAPACITY_PROTECTION_LEASE_ID]
+                                   [--apply] [--detailed-output]
+reconcile_artifact_capacity: error: unrecognized arguments: --target-gib 1
+usage: reconcile_artifact_capacity [-h] --artifact-root ARTIFACT_ROOT
+                                   [--restore-retired-disposition-receipt RESTORE_RETIRED_DISPOSITION_RECEIPT]
+                                   [--restore-ledger-object-key-receipt RESTORE_LEDGER_OBJECT_KEY_RECEIPT]
+                                   [--expected-ledger-sha256 EXPECTED_LEDGER_SHA256]
+                                   [--expected-receipt-sha256 EXPECTED_RECEIPT_SHA256]
+                                   [--create-protection-lease CREATE_PROTECTION_LEASE]
+                                   [--renew-protection-lease RENEW_PROTECTION_LEASE]
+                                   [--delete-protection-lease DELETE_PROTECTION_LEASE]
+                                   [--lease-owner LEASE_OWNER]
+                                   [--lease-ttl-seconds LEASE_TTL_SECONDS]
+                                   [--committed-new-bytes COMMITTED_NEW_BYTES]
+                                   [--protect-path PROTECT_PATH]
+                                   [--protect-cache-key PROTECT_CACHE_KEY]
+                                   [--execution-mode {startup,maintenance}]
+                                   [--maintenance-target-gib MAINTENANCE_TARGET_GIB]
+                                   [--capacity-ledger CAPACITY_LEDGER]
+                                   [--capacity-protection-lease-id CAPACITY_PROTECTION_LEASE_ID]
+                                   [--apply] [--detailed-output]
+reconcile_artifact_capacity: error: unrecognized arguments: --minimum-free-gib 1
+.........................................................................................................................................................................................................................................................................................................usage: legacy_capacity_backfill [-h] --artifact-root ARTIFACT_ROOT
+                                [--snapshot-published-pa-cache-keys | --audit-checkpoint-terminalization | --resume-pending-disposals | --create-protection-lease CREATE_PROTECTION_LEASE | --renew-protection-lease RENEW_PROTECTION_LEASE | --delete-protection-lease DELETE_PROTECTION_LEASE]
+                                [--lease-owner LEASE_OWNER]
+                                [--lease-ttl-seconds LEASE_TTL_SECONDS]
+                                [--committed-new-bytes COMMITTED_NEW_BYTES]
+                                [--required-headroom-bytes REQUIRED_HEADROOM_BYTES]
+                                [--protect-path PROTECT_PATH]
+                                [--protect-cache-key PROTECT_CACHE_KEY]
+                                [--known-measured-bytes KNOWN_MEASURED_BYTES]
+                                [--maximum-new-artifact-bytes MAXIMUM_NEW_ARTIFACT_BYTES]
+                                [--capacity-baseline-receipt CAPACITY_BASELINE_RECEIPT]
+                                [--capacity-baseline-receipt-sha256 CAPACITY_BASELINE_RECEIPT_SHA256]
+                                [--execution-mode {legacy-backfill}] [--apply]
+legacy_capacity_backfill: error: --apply requires the shared HostExecutionLease; use Invoke-ArtifactCapacityGate from PowerShell 7
+........s............................................................................................usage: reconcile [-h] (--run-root RUN_ROOT | --run-dir RUN_DIR) [--apply]
+                 [--permit-manifest-drift] [--max-apply-runs MAX_APPLY_RUNS]
+                 [--summary-only]
+reconcile: error: --max-apply-runs requires --apply and a positive value
+........................warning: LF will be replaced by CRLF in .gitattributes.
+The file will have its original line endings in your working directory
+warning: CRLF will be replaced by LF in bad.json.
+The file will have its original line endings in your working directory
+..................................usage: lifecycle [-h] --action
+                 {register-writing-range,register-writing,assert-retention,finalize-ready,seal-checkpoint,seal-stopped-payload,reseal-retired-payload,retire-misplaced-light-run}
+                 --artifact-root ARTIFACT_ROOT [--run-config RUN_CONFIG]
+                 [--run-directory RUN_DIRECTORY] [--owner OWNER]
+                 [--confirm-writing-stopped]
+                 [--retention-reason RETENTION_REASON]
+                 [--backup-manifest BACKUP_MANIFEST] [--apply]
+lifecycle: error: --apply requires the shared HostExecutionLease
+........................................................................................................................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 864 tests in 1659.930s
+
+OK (skipped=1)
+{}
+RUN_MANIFEST=PASS PATH=C:\Users\Liao\AppData\Local\Temp\tmp8k85krww\run_manifest.json
+RUN_MANIFEST_VERIFY=PASS SCOPE=full PROJECT=fixture RUN_ID=20261017_120000__test__python__manifest-read-reuse OUTPUTS=2
+RUN_MANIFEST_VERIFY=PASS SCOPE=full PROJECT=fixture RUN_ID=20261017_120000__test__python__manifest-read-reuse OUTPUTS=2
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=common_contracts STATUS=released
+GATE_STAGE=PASS NAME=common_contracts ELAPSED_SECONDS=1664.580591
+GATE_STAGE=SKIP NAME=expected_values_tests REASON=covered_by_common_contracts
+GATE_STAGE=SKIP NAME=gate_contract_tests REASON=covered_by_common_contracts
+GATE_STAGE=SKIP NAME=cloc_contract_tests REASON=covered_by_common_contracts
+GATE_STAGE=SKIP NAME=python_dependency_contract REASON=covered_by_common_contracts
+GATE_STAGE=RUN NAME=simion_common REASON=common_simion_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=simion_common PID=25056 INHERITED=False
+.............................................s.sss.......................................................................................................................................................................................................................................................................................ss.........................
+----------------------------------------------------------------------
+Ran 356 tests in 133.956s
+
+OK (skipped=6)
+PA_PUBLICATION_READS size=97 reads=2 bytes=194 same_handle=True
+PA_PUBLICATION_READS size=8388645 reads=2 bytes=16777290 same_handle=True
+PA_SELECTOR_READS baseline=2 bytes=26
+PA_SELECTOR_READS metadata=0 receipt_reads=1
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=simion_common STATUS=released
+GATE_STAGE=PASS NAME=simion_common ELAPSED_SECONDS=138.496536
+GATE_STAGE=SKIP NAME=rf_multipole_domain_tests REASON=no_route_match
+GATE_STAGE=SKIP NAME=integration_common REASON=no_route_match
+GATE_STAGE=SKIP NAME=instrument_assembly_integration REASON=no_route_match
+GATE_STAGE=SKIP NAME=solidworks_common REASON=no_route_match
+GATE_STAGE=SKIP NAME=orthogonal_accelerator_static REASON=no_route_match
+GATE_STAGE=SKIP NAME=parallel_mirror_dual_stripe_mr_tof_static REASON=no_route_match
+GATE_STAGE=SKIP NAME=single_reflection_oa_tof_mass_analyzer_static REASON=no_route_match
+GATE_STAGE=SKIP NAME=rf_multipole_quadrupole_static REASON=no_route_match
+GATE_STAGE=SKIP NAME=rf_multipole_hexapole_static REASON=no_route_match
+GATE_STAGE=SKIP NAME=rf_multipole_octupole_static REASON=no_route_match
+GATE_STAGE=SKIP NAME=dual_pressure_rectilinear_ion_processor_static REASON=no_route_match
+GATE_STAGE=SKIP NAME=dual_cone_tandem_quadrupole_ion_interface_static REASON=no_route_match
+GATE_STAGE=SKIP NAME=transverse_helical_filament_wehnelt_electron_gun_static REASON=no_route_match
+GATE_STAGE=SKIP NAME=apertured_tube_electron_impact_ion_source_static REASON=no_route_match
+GATE_DIAGNOSTICS=CLEANED PATH=C:\Users\Liao\AppData\Local\Temp\changed_gate_5ba1383dc4314ca08acce0754b95c49b
+CHANGED_GATE=PASS PYTHON=3.11 CHANGED_PATHS=2 FULL_SCOPE=False

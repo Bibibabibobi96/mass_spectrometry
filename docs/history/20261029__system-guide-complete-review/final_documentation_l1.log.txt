@@ -1,0 +1,142 @@
+CHANGED_GATE_INPUT_SOURCE=EXPLICIT_CHANGED_PATH
+CHANGED_GATE_INPUTS=COUNT=4 PATHS=docs/AUDITS.md,docs/history/20261029__system-guide-complete-review.md,docs/history/20261029__system-guide-complete-review/final_task_temp_cleanup.txt,integrations/docs/INTEGRATION.md
+GATE_CONCURRENCY=8 MODE=auto LOGICAL_PROCESSORS=16
+GATE_SUMMARY_PATH=C:\Users\Liao\AppData\Local\Temp\codex_guide_final_docs_20261029_181e.json
+GATE_STAGE=RUN NAME=repository_hygiene REASON=always
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=repository_hygiene PID=10552 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=10552 INHERITED=True
+REPOSITORY_HYGIENE=PASS TRACKED_FILES=2389
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=repository_hygiene STATUS=released
+GATE_STAGE=PASS NAME=repository_hygiene ELAPSED_SECONDS=5.2216
+GATE_STAGE=RUN NAME=repository_text_bytes REASON=always
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=repository_text_bytes PID=10552 INHERITED=False
+REPOSITORY_TEXT_BYTES=PASS FILES=1639
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=repository_text_bytes STATUS=released
+GATE_STAGE=PASS NAME=repository_text_bytes ELAPSED_SECONDS=3.419457
+GATE_STAGE=RUN NAME=documentation REASON=documentation_or_project_docs_changed
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=documentation PID=10552 INHERITED=False
+REVIEW: docs/history/20260916__code-size-and-complexity-audit.md:70: broken relative link '../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/run_single_flight.ps1'
+REVIEW: docs/history/20260916__code-size-and-complexity-audit.md:74: broken relative link '../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/family_source_closure/prepare.py'
+REVIEW: docs/history/20260916__code-size-and-complexity-audit.md:105: broken relative link '../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/tests/test_family_source_closure_workflow.py'
+REVIEW: docs/history/20261021__comsol-mesh-and-particle-performance-research.md:13: broken relative link '../VALIDATION_METHODS.md'
+REVIEW: docs/history/20261021__comsol-mesh-and-particle-performance-research.md:14: broken relative link '../COMSOL_API.md'
+REVIEW: docs/history/20261021__comsol-mesh-and-particle-performance-research.md:14: broken relative link '../COMSOL_DEBUGGING.md'
+REVIEW: docs/history/20261021__comsol-mesh-and-particle-performance-research.md:89: broken relative link '../../projects/rf_quadrupole_ion_optics/docs/PROJECT.md'
+REVIEW: docs/history/20261021__comsol-mesh-and-particle-performance-research.md:90: broken relative link '../../projects/rf_hexapole_ion_optics/docs/PROJECT.md'
+REVIEW: docs/history/20261021__comsol-mesh-and-particle-performance-research.md:91: broken relative link '../../projects/rf_octupole_ion_optics/docs/PROJECT.md'
+REVIEW: docs/history/20261021__comsol-mesh-and-particle-performance-research.md:97: broken relative link '../../projects/rf_quadrupole_ion_optics/config/multipole_transport_comsol_solver_numerics.json'
+REVIEW: docs/history/20261021__comsol-mesh-and-particle-performance-research.md:99: broken relative link '../../projects/rf_quadrupole_ion_optics/config/comsol_solver_numerics.json'
+REVIEW: docs/history/20261021__comsol-mesh-and-particle-performance-research.md:123: broken relative link '../../projects/rf_quadrupole_ion_optics/docs/history/20260722_rf-mesh-strategy-screen.md'
+REVIEW: docs/history/20261021__comsol-mesh-and-particle-performance-research.md:124: broken relative link '../../projects/rf_hexapole_ion_optics/docs/history/20260729__closed-hybrid-mesh-campaigns.md'
+REVIEW: docs/history/20261021__comsol-mesh-and-particle-performance-research.md:125: broken relative link '../../projects/rf_hexapole_ion_optics/docs/history/20260802__retired-comsol-qualification-campaigns.md'
+REVIEW: docs/history/20261021__comsol-mesh-and-particle-performance-research.md:126: broken relative link '../../projects/rf_quadrupole_ion_optics/docs/history/20260911__solver-sensitivity-and-retired-interface.md'
+REVIEW: docs/history/20261021__comsol-mesh-and-particle-performance-research.md:165: broken relative link '../VALIDATION_METHODS.md#网格建设与计算量控制'
+REVIEW: docs/history/20261021__comsol-mesh-and-particle-performance-research.md:271: broken relative link '../VALIDATION_METHODS.md#分辨率与峰形'
+REVIEW: docs/history/20261021__comsol-mesh-and-particle-performance-research.md:374: broken relative link '../../common/multipole/solve_finite_3d_transport.m'
+REVIEW: docs/history/20261021__comsol-mesh-and-particle-performance-research.md:375: broken relative link '../COMSOL_API.md#studysolver与初值复用'
+REVIEW: docs/history/20261021__comsol-mesh-and-particle-performance-research.md:802: broken relative link '../../common/multipole/README.md'
+REVIEW: docs/history/20261021__project-timing-precision-budget-review.md:13: broken relative link '../../docs/VALIDATION_METHODS.md#从分辨率分配时间误差预算'
+REVIEW: docs/history/20261021__project-timing-precision-budget-review.md:96: broken relative link '../../projects/rf_quadrupole_ion_optics/config/requests/baseline.json'
+REVIEW: docs/history/20261021__project-timing-precision-budget-review.md:96: broken relative link '../../projects/rf_hexapole_ion_optics/config/requests/mechanical_base.json'
+REVIEW: docs/history/20261021__project-timing-precision-budget-review.md:96: broken relative link '../../projects/rf_octupole_ion_optics/config/requests/mechanical_base.json'
+REVIEW: docs/history/20261021__project-timing-precision-budget-review.md:98: broken relative link '../../common/multipole/functional_transport_acceptance.json'
+REVIEW: docs/history/20261021__project-timing-precision-budget-review.md:99: broken relative link '../../common/multipole/engineering_progression_acceptance.json'
+REVIEW: docs/history/20261021__project-timing-precision-budget-review.md:101: broken relative link '../../projects/rf_hexapole_ion_optics/config/qualification/n100_convergence_preregistration.json'
+REVIEW: docs/history/20261021__project-timing-precision-budget-review.md:103: broken relative link '../../projects/rf_quadrupole_ion_optics/config/same_solver_numerical_convergence.json'
+REVIEW: docs/history/20261021__project-timing-precision-budget-review.md:105: broken relative link '../../projects/rf_quadrupole_ion_optics/config/modes/mass_filter_reference.json'
+REVIEW: docs/history/20261021__project-timing-precision-budget-review.md:142: broken relative link '../../common/multipole/solve_finite_3d_transport.m'
+REVIEW: docs/history/20261021__project-timing-precision-budget-review.md:145: broken relative link '../../common/multipole/simion_rf_drive.lua'
+REVIEW: docs/history/20261021__project-timing-precision-budget-review.md:148: broken relative link '../../projects/dual_cone_tandem_quadrupole_ion_interface/workflows/gas_assisted_transport/run_gas_field_prototype.ps1'
+REVIEW: docs/history/20261021__project-timing-precision-budget-review.md:149: broken relative link '../../common/multipole/build_simion_runtime_iob.lua'
+REVIEW: docs/LIFECYCLE.md:373: scratch path in prose/code span; review evidence lifetime
+REVIEW: integrations/docs/history/20260816__oatof-2p2mm-high-order-third-order-theory-handoff.md:11: broken relative link '../../../../projects/single_reflection_oa_tof_mass_analyzer/docs/theory/README.md'
+REVIEW: integrations/docs/history/20260816__oatof-2p2mm-high-order-third-order-theory-handoff.md:254: broken relative link '../../../../projects/single_reflection_oa_tof_mass_analyzer/docs/theory/oatof_oaaccelerator_coupling.md'
+REVIEW: integrations/docs/history/20260816__oatof-2p2mm-high-order-third-order-theory-handoff.md:257: broken relative link '../../../../projects/single_reflection_oa_tof_mass_analyzer/docs/theory/z_vz_linear_phase_space_coupling.md'
+REVIEW: integrations/docs/history/20260816__oatof-2p2mm-high-order-third-order-theory-handoff.md:434: broken relative link '../../../../projects/single_reflection_oa_tof_mass_analyzer/docs/theory/z_vz_linear_phase_space_coupling.md'
+REVIEW: integrations/docs/history/20260816__oatof-2p2mm-high-order-third-order-theory-handoff.md:436: broken relative link '../../../../projects/single_reflection_oa_tof_mass_analyzer/docs/theory/oatof_oaaccelerator_coupling.md'
+REVIEW: integrations/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:14: broken relative link '../RUNNING.md'
+REVIEW: integrations/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:19: broken relative link '../HISTORY.md'
+REVIEW: integrations/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:20: broken relative link '../ARCHITECTURE.md'
+REVIEW: integrations/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:27: broken relative link '../../workflows/family_source_closure/prepare.py'
+REVIEW: integrations/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:28: broken relative link '../../workflows/family_source_closure/execute.ps1'
+REVIEW: integrations/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:30: broken relative link '../../runtime/run_single_flight.ps1'
+REVIEW: integrations/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:33: broken relative link '../../runtime/verify_single_flight_pa_cache_readiness.py'
+REVIEW: integrations/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:258: broken relative link '../../config/explorations/square_h100_handoff_continuous_control_n5000.json'
+REVIEW: integrations/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:357: broken relative link '../../analysis/compare_handoff_replay.py'
+REVIEW: integrations/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:510: broken relative link '../../../../common/simion/resource_scheduler.py'
+REVIEW: integrations/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:553: broken relative link '../../workflows/family_source_closure/recover_completed_pre_pulse_screening.py'
+REVIEW: integrations/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:563: broken relative link '../../../../common/simion/batch_continuation.py'
+REVIEW: integrations/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:564: broken relative link '../../runtime/pre_pulse_batch_continuation.py'
+REVIEW: integrations/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:573: broken relative link '../../runtime/full_flight_batch_continuation.py'
+REVIEW: integrations/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:636: broken relative link '../../../../common/contracts/README.md'
+REVIEW: integrations/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:640: broken relative link '../../config/schemas/rf_multipole_oatof_experiment_campaign.schema.json'
+REVIEW: integrations/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:642: broken relative link '../../config/schemas/rf_multipole_oatof_resolved_experiment_campaign.schema.json'
+REVIEW: integrations/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:658: broken relative link '../../analysis/publish_pre_pulse_aperture_comparison.py'
+REVIEW: integrations/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:682: broken relative link '../../analysis/publish_full_flight_aperture_comparison.py'
+REVIEW: integrations/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:687: broken relative link '../../workflows/family_source_closure/author_full_flight_campaign_from_pre_pulse.py'
+REVIEW: integrations/docs/history/20260911__single-flight-documentation-and-invalidated-comparisons.md:699: broken relative link '../../workflows/family_source_closure/author_continuous_functional_smoke_campaign.py'
+REVIEW: integrations/docs/history/20261021__same-source-local-multipole-oa-n100.md:6: broken relative link '../RUNNING.md'
+REVIEW: integrations/docs/history/20261021__same-source-local-multipole-oa-n100.md:24: broken relative link '../../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261021_165805__analysis__python__local-oa-design-comparison/results/scientific_report.md'
+REVIEW: integrations/docs/history/20261026__assembly-migration-execution-evidence.md:698: broken relative link '../../../docs/SIMION_REFERENCE.md#长pa输入路径'
+REVIEW: integrations/docs/history/20261026__assembly-migration-execution-evidence.md:1874: broken relative link '../../../docs/VALIDATION_METHODS.md#随机碰撞与重复运行'
+REVIEW: integrations/docs/history/20261026__assembly-migration-execution-evidence.md:1996: broken relative link '../../../projects/parallel_mirror_dual_stripe_mr_tof/simion/README.md#加速器选择与接口准备'
+REVIEW: integrations/docs/history/20261026__assembly-migration-execution-evidence.md:2296: broken relative link '../../config/experiments/multipole_ip_through_exit_n100.json'
+REVIEW: integrations/docs/history/20261026__assembly-migration-execution-evidence.md:2352: broken relative link '../../../projects/rf_octupole_ion_optics/docs/PROJECT.md#524da-多极杆ip共同工况'
+REVIEW: integrations/docs/history/20261026__assembly-migration-execution-evidence.md:2568: broken relative link '../../rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/20261024__legacy-family-retirement.md'
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/history/20260911__project-and-simion-status-freeze.md:7: broken relative link '../../simion/README.md'
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/history/20261017__ion-processor-handoff-and-interface-boundary.md:59: broken relative link '../../simion/README.md#加速器选择与接口准备'
+REVIEW: projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_hexapole_ion_optics/docs/history/20260723__pre-n100-multipole-functional-evidence.md:6: broken relative link '../PROJECT.md'
+REVIEW: projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_hexapole_ion_optics/docs/history/20260731__multipole-engineering-reanalysis-18-comparisons.md:20: broken relative link '../../../../common/multipole/engineering_progression_acceptance.json'
+REVIEW: projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_hexapole_ion_optics/docs/history/20260803__multipole-four-mode-source-energy-h15-n100.md:19: broken relative link '../../../../common/multipole/campaigns/20260803__multipole_noacc_5ev_h15_n100.json'
+REVIEW: projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_octupole_ion_optics/docs/history/20260723__pre-n100-multipole-functional-evidence.md:6: broken relative link '../PROJECT.md'
+REVIEW: projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_octupole_ion_optics/docs/history/20260911__source-model-comparison.md:5: broken relative link '../PROJECT.md'
+REVIEW: projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_quadrupole_ion_optics/docs/history/20260722__rf-oatof-s2-s3-functional-closure.md:6: broken relative link '../PROJECT.md'
+REVIEW: projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_quadrupole_ion_optics/docs/history/20260722_rf-mesh-strategy-screen.md:5: broken relative link '../PROJECT.md'
+REVIEW: projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_quadrupole_ion_optics/docs/history/20260722_rf-validation-and-s1-integration.md:7: broken relative link '../PROJECT.md'
+REVIEW: projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_quadrupole_ion_optics/docs/history/20260722_rf-validation-and-s1-integration.md:229: broken relative link '../../../../docs/ROADMAP.md'
+REVIEW: projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_quadrupole_ion_optics/docs/history/20260723__pre-n100-multipole-functional-evidence.md:6: broken relative link '../PROJECT.md'
+REVIEW: projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-comsol.md:6: broken relative link '../COMSOL.md'
+REVIEW: projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-project.md:6: broken relative link '../PROJECT.md'
+REVIEW: projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-readme.md:6: broken relative link '../../README.md'
+REVIEW: projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-simion.md:6: broken relative link '../SIMION.md'
+REVIEW: projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_quadrupole_ion_optics/docs/history/20260911__solver-sensitivity-and-retired-interface.md:5: broken relative link '../PROJECT.md'
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/history/20260911__publication-status-consolidation.md:74: broken relative link '../../../../common/multipole/campaigns/20260825__paper1_s2_segmented_standard_terminal_n100.json'
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/history/20260911__publication-status-consolidation.md:220: broken relative link '../../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/explorations/paper1_c3_j3_s1_fixed_pulse_derivative_n100.json'
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/history/20260911__publication-status-consolidation.md:237: broken relative link '../../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/explorations/paper1_s1_connector_gap0_fixed_pulse_n1000.json'
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/history/20260911__publication-status-consolidation.md:238: broken relative link '../../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/explorations/paper1_s1_connector_gap51p2_fixed_pulse_n1000.json'
+REVIEW: projects/transverse_helical_filament_wehnelt_electron_gun/docs/history/PROJECT_HISTORY.md:9: broken relative link '../../../../docs/COMSOL_API.md#磁场与线圈'
+REVIEW: projects/transverse_helical_filament_wehnelt_electron_gun/docs/history/PROJECT_HISTORY.md:10: broken relative link '../../../../docs/COMSOL_DEBUGGING.md#磁场线圈和磁力'
+REVIEW: .agents/skills/grill-me/SKILL.md: no incoming link from an active Markdown document (code consumers not assessed)
+REVIEW: common/contracts/README.md: over 400 lines; review navigation and responsibilities
+REVIEW: common/simion/README.md: over 400 lines; review navigation and responsibilities
+REVIEW: docs/DEVELOPMENT_STANDARDS.md: over 400 lines; review navigation and responsibilities
+REVIEW: docs/science/VALIDATION_METHODS.md: over 400 lines; review navigation and responsibilities
+REVIEW: docs/tools/COMSOL_API.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/SIMION.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/adiabatic_drift_and_original_ion_foil.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/dual_stripe_non_tilt_design.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/implementation_and_validation.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/injection_prism_source_and_calibration.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/isochronous_mirror_design.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/rf_multipole_ion_optics/docs/theory/quadrupole.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/PROJECT.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/publication/prior_art_equation_claim_chart_20260825.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/theory/conditional_phase_space_focusability.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/theory/dual_stage_reflectron.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/theory/oatof_oaaccelerator_coupling.md: over 400 lines; review navigation and responsibilities
+REVIEW: projects/single_reflection_oa_tof_mass_analyzer/docs/theory/source_to_detector_phase_space_framework.md: over 400 lines; review navigation and responsibilities
+REVIEW: repeated substantial paragraph: projects/rf_multipole_ion_optics/variants/hexapole/README.md, projects/rf_multipole_ion_optics/variants/octupole/README.md
+DOCUMENTATION_LINKS: files=308 errors=0 review=112
+
+MarkdownFiles        : 308
+HistoryArchives      : 166
+AuthorityEntries     : 9
+Mode                 : StructureOnly
+ComsolReferenceBytes : 23085
+STATUS               : PASS
+
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=documentation STATUS=released
+GATE_STAGE=PASS NAME=documentation ELAPSED_SECONDS=13.755068
+CHANGED_GATE_FAST_PATH=DOCUMENTATION_ONLY
+CHANGED_GATE=PASS PYTHON=3.11 CHANGED_PATHS=4
