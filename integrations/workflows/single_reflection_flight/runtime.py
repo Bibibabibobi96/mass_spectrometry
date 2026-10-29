@@ -12,12 +12,11 @@ import argparse
 import json
 import math
 from pathlib import Path
-import re
 import shutil
 import stat
-from typing import Any
+from typing import Any, Mapping
 
-from common.contracts.verify_run_manifest import record_path, verify_record
+from common.contracts.verify_run_manifest import record_path
 from common.contracts.write_run_manifest import file_record
 from common.simion.pa_family_cache import canonical_pa_family_cache_key, canonical_json_sha256
 from common.simion.particle_batching import batch_plan_from_dispatch
@@ -32,6 +31,11 @@ from integrations.workflows.single_reflection_flight.field_plan import (
     frontend_field_identity, validate_frozen_generation_metadata, working_point_member_id, _member_projection,
 )
 
+from integrations.workflows.single_reflection_flight.downstream_fields import (
+    _SLOTS, _pa_record, _small_record, load_downstream_fields,
+)
+from integrations.workflows.single_reflection_flight.pulse import resolve_phase_flight
+
 _SOURCES = {
     "analyzer_component_source": "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/candidates/oatof_analyzer_component.lua",
     "pulse_hook_source": "integrations/runtime/single_flight_pulse_hook.lua",
@@ -39,26 +43,11 @@ _SOURCES = {
     "rf_drive_kernel_source": "common/simion/rf_drive.lua",
     "voltage_waveforms_source": "common/simion/voltage_waveforms.lua",
 }
-_SLOTS = {"flight_tube": 1, "reflectron": 2, "accelerator": 3, "detector": 4}
 
 
 def _read(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
-
-def _small_record(record: dict, label: str) -> Path:
-    verify_record(label, record)
-    return record_path(record)
-
-
-def _pa_record(record: dict, base: Path, label: str) -> dict:
-    """Reuse the publisher identity; the caller holds the public PA guard."""
-    path = record_path(record)
-    if (not path.is_relative_to(base.resolve()) or not path.is_file()
-            or path.stat().st_size != record.get("bytes")
-            or not re.fullmatch(r"[A-Fa-f0-9]{64}", str(record.get("sha256", "")))):
-        raise ValueError(f"{label}: published PA path/size/identity differs: {path}")
-    return {**record, "path": str(path)}
 
 
 def _frontend_fields(receipt_path: Path, design: dict) -> tuple[dict, dict]:
@@ -142,78 +131,6 @@ def _frontend_fields(receipt_path: Path, design: dict) -> tuple[dict, dict]:
                    instance_index=3 if row["instance_index"] == 1 else 5)
     return fields, expected_bank
 
-
-def _downstream_fields(record: dict, oatof_record: dict, manifest_record: dict | None = None) -> tuple[dict, dict, list[dict]]:
-    receipt = _read(_small_record(record, "downstream field publication"))
-    if (receipt.get("schema_version") != 1
-            or receipt.get("role") != "single_reflection_downstream_field_preparation"
-            or receipt.get("status") != "success"
-            or receipt.get("native_family_origin") != "generated_in_producer_run"):
-        raise ValueError("a published downstream field preparation receipt is required")
-    provider = receipt["oatof_resolved_record"]
-    if any(str(provider[key]).upper() != str(oatof_record[key]).upper() for key in ("bytes", "sha256")):
-        raise ValueError("downstream fields differ from the frozen final oaTOF provider")
-    producer = Path(receipt["run_directory"]).absolute()
-    output_records: list[dict] = []
-    if manifest_record is None:
-        if not record_path(record).is_relative_to(producer.resolve()):
-            raise ValueError("downstream receipt is outside its producer run")
-    else:
-        manifest = _read(_small_record(manifest_record, "downstream source manifest"))
-        source_path = Path(manifest_record.get("source_path", "")).absolute()
-        canonical_producer = source_path.parent
-        transport_producer = producer
-        if manifest.get("role") != "simulation_run_manifest":
-            raise ValueError("downstream source manifest does not identify its producer")
-        producer = canonical_producer
-        output_records = list(manifest.get("outputs", []))
-
-    def published(record: dict, label: str) -> dict:
-        if manifest_record is None:
-            return _pa_record(record, producer, label)
-        # Old receipts may retain an execution-alias spelling.  Resolve only
-        # through the frozen terminal manifest, never by scanning a producer.
-        source_path = record_path(record)
-        if not source_path.is_relative_to(transport_producer.resolve()):
-            raise ValueError(f"{label}: published PA is outside the receipt transport root")
-        expected_path = producer / source_path.relative_to(transport_producer.resolve())
-        matches = [candidate for candidate in output_records
-                   if Path(candidate.get("path", "")).absolute() == expected_path.absolute()
-                   and all(candidate.get(key) == record.get(key) for key in ("bytes", "sha256"))]
-        if len(matches) != 1:
-            raise ValueError(f"{label}: source manifest does not uniquely publish this PA")
-        candidate = matches[0]
-        path = record_path(candidate)
-        return _pa_record({**record, "path": str(path)}, producer, label)
-    assets = receipt["assets"]
-    if len(assets) != 3 or {r["role"] for r in assets} != {"flight_tube", "reflectron", "detector"}:
-        raise ValueError("downstream publication must bind exactly three physical roles")
-    rows, carriers, guards = [], {}, []
-    for asset in assets:
-        role = asset["role"]
-        carrier = published(asset["carrier_record"], role)
-        carriers[role] = carrier
-        row = dict(role=role, instance_index=_SLOTS[role], representation=asset["representation"],
-                   carrier_pa_basename=Path(carrier["path"]).name)
-        if role in {"flight_tube", "detector"}:
-            family = [published(r, role) for r in asset["family_records"]]
-            matches = [r for r in family if r["path"] == carrier["path"]]
-            if (len({r["path"] for r in family}) != len(family) or len(matches) != 1
-                    or any(matches[0][key] != carrier[key] for key in ("bytes", "sha256"))):
-                raise ValueError(f"{role}: native family duplicates or omits its carrier")
-            if any(Path(r["path"]).parent != Path(carrier["path"]).parent for r in family):
-                raise ValueError(f"{role}: native family companions must share the carrier directory")
-            row["family_members"] = [Path(r["path"]).name for r in family]
-            guards.extend(family)
-        else:
-            if asset["family_records"]:
-                raise ValueError("reflectron runtime publication must contain only its voltageized standalone PA")
-            guards.append(carrier)
-        rows.append(row)
-    contract = dict(schema_version=1, role="single_reflection_downstream_static_assets",
-        runtime_representation="run_private_native_surface_and_standalone_static_v1",
-        receipt={key: record[key] for key in ("path", "bytes", "sha256")}, static_roles=rows)
-    return carriers, contract, guards
 
 
 def _instance_rows(geometry: dict, metadata: dict, carriers: dict) -> list[dict]:
@@ -343,39 +260,6 @@ def native_priority_occupancy_probes(geometry: dict, design: dict, *,
     return probes
 
 
-def resolve_phase_flight(author_flight: dict, *, phase: str, decision: dict | None = None,
-                         requires_rf: bool = True) -> dict[str, Any]:
-    """Derive the one actual native control from the frozen author's explicit plan."""
-    author = validate_native_flight(author_flight, requires_rf=requires_rf, allow_discovery=True)
-    if phase not in {"discovery", "full_instrument"}:
-        raise ValueError("native flight phase must be discovery or full_instrument")
-    if author["pulse"]["mode"] != "discover":
-        if phase != "full_instrument" or decision is not None:
-            raise ValueError("only an author discovery plan can derive flight phases or a decision")
-        return validate_native_flight(author, requires_rf=requires_rf)
-    actual = {key: value for key, value in author.items() if key != "pulse"}
-    if phase == "discovery":
-        if decision is not None:
-            raise ValueError("discovery cannot consume a pulse decision")
-        actual.update(pulse={"mode": "held_off"}, observation_times_us=list(author["pulse"]["candidate_times_us"]))
-    else:
-        if (not isinstance(decision, dict) or decision.get("schema_version") != 2
-                or decision.get("role") != "single_reflection_actual_occupancy_pulse_decision"
-                or decision.get("status") != "success"
-                or decision.get("selection_uses_future_terminal_outcome") is not False
-                or decision.get("candidate_times_us") != author["pulse"]["candidate_times_us"]
-                or decision.get("pulse_width_us") != author["pulse"]["width_us"]):
-            raise ValueError("timed discovery successor requires a successful matching actual-occupancy decision")
-        time = decision.get("actual_pulse_time_us")
-        selection = decision.get("selection", {})
-        if (isinstance(time, bool) or not isinstance(time, (int, float))
-                or time not in author["pulse"]["candidate_times_us"]
-                or selection.get("status") != "selected" or selection.get("selected_time_us") != time):
-            raise ValueError("pulse decision must select one declared actual candidate")
-        actual["pulse"] = {"mode": "timed", "time_us": time, "width_us": author["pulse"]["width_us"]}
-    return validate_native_flight(actual, requires_rf=requires_rf)
-
-
 def _prepare_context(preparation: dict, field_receipt_path: Path,
                           downstream_receipt_record: dict, run: Path, *,
                           snapshot_root: Path, flight: dict, phase: str = "full_instrument",
@@ -459,7 +343,7 @@ def _prepare_context(preparation: dict, field_receipt_path: Path,
     if any(not math.isfinite(float(value)) for row in source for value in row.values()):
         raise ValueError("projected source contains non-finite states")
     fields, dynamic = _frontend_fields(field_receipt_path, design)
-    carriers, static, guards = _downstream_fields(
+    carriers, static, guards = load_downstream_fields(
         downstream_receipt_record, instance_design_record(preparation, oatof_id),
         preparation["input_records"].get("downstream_fields_manifest"))
     carriers["accelerator"] = fields["parent"]["carrier_off"]
@@ -625,7 +509,6 @@ def materialize_workbench(preparation: dict, field_receipt_path: Path, downstrea
     return _materialize_case(context, context["source"], run/"simion"/phase)
 
 
-
 def prepare_dispatch(preparation: dict, field_receipt_path: Path, downstream_receipt_record: dict,
                      run: Path, *, snapshot_root: Path, flight: dict, phase: str,
                      pulse_decision_record: dict | None = None) -> dict:
@@ -709,6 +592,38 @@ def materialize_batches(run: Path, phase: str, plan: dict, *, context: dict,
         pa_guard_records=[*(r for domain in context["fields"].values() for r in domain.values()), *context["guards"]])
 
 
+def materialize_phase_continuation(preparation: Mapping[str, Any], preview_workbench: Mapping[str, Any],
+                                   context: dict, run: Path, phase: str) -> dict[str, Any] | None:
+    """Materialize only replay units, retaining parent cases as explicit read-only bindings."""
+    from integrations.workflows.single_reflection_flight.continuation import (
+        _read as read_continuation, _published_case, prepare_phase_continuation,
+    )
+    planned = prepare_phase_continuation(preparation, preview_workbench, run, phase)
+    if planned is None:
+        return None
+    frozen = planned["frozen_inputs"]
+    parent_workbench = read_continuation(record_path(frozen["workbench_record"]), "frozen workbench receipt")
+    dispatch = read_continuation(record_path(frozen["dispatch_record"]), "frozen final dispatch")
+    replay_keys = {unit["key"] for unit in planned["plan"]["units"] if unit["action"] == "replay"}
+    replay = materialize_batches(run, preview_workbench["phase"], dispatch, context=context,
+                                 materialize_case_ids=replay_keys)
+    parent_cases = {case["case_id"]: _published_case(case) for case in parent_workbench["batches"]}
+    replay_cases = {case["case_id"]: case for case in replay["batches"]}
+    cases = []
+    for unit in planned["plan"]["units"]:
+        key = unit["key"]
+        if unit["action"] == "replay":
+            cases.append(replay_cases[key])
+        else:
+            case = dict(parent_cases[key])
+            case["continuation_source"] = unit
+            case.setdefault("continuation_pa_guard_records", case.get("iob_pa_guard_records", parent_workbench["pa_guard_records"]))
+            case.setdefault("continuation_pa_guard_source_record", frozen["workbench_record"])
+            cases.append(case)
+    return {**replay, "batches": cases, "instance_roles": parent_workbench["instance_roles"], "continuation": planned,
+            "reused_batches": [case for case in cases if "continuation_source" in case]}
+
+
 def main() -> int:
     """Internal stage boundary for the single public PowerShell entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -757,7 +672,7 @@ def main() -> int:
         if args.continuation_phase is None:
             parser.error("materialize-continuation requires --continuation-phase")
         from integrations.workflows.single_reflection_flight.continuation import (
-            _parent, _phase_paths, freeze_phase_inputs, materialize_phase_continuation,
+            _parent, _phase_paths, freeze_phase_inputs,
             prepare_phase_continuation, _published_case,
         )
         context = _prepare_context(preparation, args.field_receipt, publication["receipt_record"], args.run,

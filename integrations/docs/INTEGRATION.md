@@ -65,6 +65,11 @@ RF相位和唯一仪器时钟；换范围不重新投影已记录状态或重新
 声明时保持原选择、顺序与绑定。完整批恢复显式绑定前驱manifest，不扫描最新run、不重飞已完成批或重复求场。
 held-OFF由原科学mode派生场依赖，仅省略恒0脉冲响应；完整carrier仍保留真实金属mask，timed／discover保持所需响应。
 
+工作流内部采用单向依赖：`census`读取原生日志证据，`pulse`派生阶段控制，`continuation`验证父记录并规划
+完整批复用，`runtime`物化所需批次；下游发布字段由`downstream_fields`统一验证。各调用保留原母群、
+源行顺序、时钟和错误判据；元数据准备不读取PA载荷。已有冻结清单覆盖这些模块，隔离快照可独立导入及执行，
+无需新增CLI或恢复状态；这项职责整理不改变科学计算，也不构成性能提升或原生验收声明。
+
 | 冻结运行 | 有效结果 | 不能据此声称 |
 |---|---|---|
 | [110745单实例](../../../artifacts/projects/instrument_assembly/runs/20261025_110745__sim__simion__single-reflection-flight/summary.json) | 六工作场、100终态、默认回放差异为空；0检测，终态均non_detector_splat_instance_5 | 实例编号不证明真实碰撞实体，未到反射器不代表整机物理性能通过 |

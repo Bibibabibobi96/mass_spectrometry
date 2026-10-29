@@ -17,7 +17,7 @@ from common.contracts.write_run_manifest import file_record
 from common.simion.batch_continuation import WholeUnitReplayUnit, build_whole_unit_replay_plan
 from common.simion.particle_batching import batch_plan_from_dispatch
 from integrations.runtime.single_flight_source import GLOBAL_COLUMNS
-from integrations.workflows.single_reflection_flight.collect import _native_evidence
+from integrations.workflows.single_reflection_flight.census import read_native_evidence
 
 
 def _read(path: Path, label: str) -> dict[str, Any]:
@@ -338,7 +338,7 @@ def prepare_phase_continuation(preparation: Mapping[str, Any], current_workbench
                                           "default_replay" / f"{parent_case.get('case_id', key)}.stdout.log"))
             if not stdout.is_file():
                 raise OSError("parent native stdout is absent")
-            _native_evidence(stdout, {pid: {"particle_id": pid} for pid in source_ids[low - 1:high]}, dict(current_workbench["flight"]))
+            read_native_evidence(stdout, {pid: {"particle_id": pid} for pid in source_ids[low - 1:high]}, dict(current_workbench["flight"]))
             if complete:
                 paths = [stdout, *(record_path(parent_outputs[name]) for name in ("program", "particles", "build_spec", "iob"))]
         except (KeyError, OSError, UnicodeError, ValueError):
@@ -351,35 +351,6 @@ def prepare_phase_continuation(preparation: Mapping[str, Any], current_workbench
     plan_path = run / "inputs" / "continuation" / phase / "simion_whole_unit_replay_plan.json"
     return {"phase": phase, "frozen_inputs": frozen, "source_record": source_record, "parent_source_record": parent_workbench["source_record"], "completion": completion, "reusable_parent_cases": reusable_cases, "plan": plan, "plan_record": file_record(plan_path)}
 
-
-def materialize_phase_continuation(preparation: Mapping[str, Any], preview_workbench: Mapping[str, Any],
-                                   context: dict, run: Path, phase: str) -> dict[str, Any] | None:
-    """Materialize only replay units, retaining parent cases as explicit read-only bindings."""
-    planned = prepare_phase_continuation(preparation, preview_workbench, run, phase)
-    if planned is None:
-        return None
-    from integrations.workflows.single_reflection_flight.runtime import materialize_batches
-    frozen = planned["frozen_inputs"]
-    parent_workbench = _read(record_path(frozen["workbench_record"]), "frozen workbench receipt")
-    dispatch = _read(record_path(frozen["dispatch_record"]), "frozen final dispatch")
-    replay_keys = {unit["key"] for unit in planned["plan"]["units"] if unit["action"] == "replay"}
-    replay = materialize_batches(run, preview_workbench["phase"], dispatch, context=context,
-                                 materialize_case_ids=replay_keys)
-    parent_cases = {case["case_id"]: _published_case(case) for case in parent_workbench["batches"]}
-    replay_cases = {case["case_id"]: case for case in replay["batches"]}
-    cases = []
-    for unit in planned["plan"]["units"]:
-        key = unit["key"]
-        if unit["action"] == "replay":
-            cases.append(replay_cases[key])
-        else:
-            case = dict(parent_cases[key])
-            case["continuation_source"] = unit
-            case.setdefault("continuation_pa_guard_records", case.get("iob_pa_guard_records", parent_workbench["pa_guard_records"]))
-            case.setdefault("continuation_pa_guard_source_record", frozen["workbench_record"])
-            cases.append(case)
-    return {**replay, "batches": cases, "instance_roles": parent_workbench["instance_roles"], "continuation": planned,
-            "reused_batches": [case for case in cases if "continuation_source" in case]}
 
 
 def parent_case_records(preparation: Mapping[str, Any], workbench: Mapping[str, Any],

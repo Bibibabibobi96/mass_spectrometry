@@ -18,7 +18,7 @@ from common.contracts.write_run_manifest import file_record
 from integrations.tests.test_single_reflection_preparation import fixture, write_json
 from integrations.workflows.single_reflection_flight.prepare import prepare
 from integrations.workflows.single_reflection_flight.collect import collect_log, compare_collections, select_pulse
-from integrations.workflows.single_reflection_flight.runtime import resolve_phase_flight
+from integrations.workflows.single_reflection_flight.pulse import resolve_phase_flight
 
 ROOT = Path(__file__).resolve().parents[2]
 

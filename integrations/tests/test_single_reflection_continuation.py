@@ -32,7 +32,7 @@ function New-ShortPaCopy {param($Source,$Destination,$ExpectedBytes,$ExpectedSha
  Copy-Item -LiteralPath $Source -Destination $Destination
  $script:copies++
 }
-function Publish-ShortPaCopyDestination {param($Path)}
+function Publish-ShortPaCopyDestination {param($Path,[switch]$KeepDestinationGuard)}
 function Protect-ImmutablePaSource {param($Source,$ExpectedBytes,$ExpectedSha256) $script:guardPaths+=@($Source)}
 function Complete-ResourceUsage {param($RunDir,$UsagePath)}
 function Write-InstrumentWallClockWarning {param($Limits,$Elapsed,$Stage)}

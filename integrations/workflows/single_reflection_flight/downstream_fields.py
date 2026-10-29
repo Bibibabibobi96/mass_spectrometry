@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 from pathlib import Path
 import stat
 
@@ -17,6 +18,8 @@ from integrations.runtime.single_flight_source import lua_value as _lua_value
 from integrations.runtime.single_flight_frontend import instance_design_record, native_frontend_instances
 from integrations.workflows.single_reflection_flight.field_plan import working_point_member_id
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import derive_simion_geometry, resolve_physical_geometry
+
+_SLOTS = {"flight_tube": 1, "reflectron": 2, "accelerator": 3, "detector": 4}
 
 _PROVIDER = "projects/single_reflection_oa_tof_mass_analyzer/simion"
 _RESOURCES = {
@@ -33,6 +36,95 @@ _RESOURCES = {
 
 def _read(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8-sig"))
+
+
+def _small_record(record: dict, label: str) -> Path:
+    verify_record(label, record)
+    return record_path(record)
+
+
+def _pa_record(record: dict, base: Path, label: str) -> dict:
+    """Reuse the publisher identity; the caller holds the public PA guard."""
+    path = record_path(record)
+    if (not path.is_relative_to(base.resolve()) or not path.is_file()
+            or path.stat().st_size != record.get("bytes")
+            or not re.fullmatch(r"[A-Fa-f0-9]{64}", str(record.get("sha256", "")))):
+        raise ValueError(f"{label}: published PA path/size/identity differs: {path}")
+    return {**record, "path": str(path)}
+
+
+def load_downstream_fields(record: dict, oatof_record: dict, manifest_record: dict | None = None) -> tuple[dict, dict, list[dict]]:
+    """Validate published metadata and return carriers/guards without reading PA bytes."""
+    receipt = _read(_small_record(record, "downstream field publication"))
+    if (receipt.get("schema_version") != 1
+            or receipt.get("role") != "single_reflection_downstream_field_preparation"
+            or receipt.get("status") != "success"
+            or receipt.get("native_family_origin") != "generated_in_producer_run"):
+        raise ValueError("a published downstream field preparation receipt is required")
+    provider = receipt["oatof_resolved_record"]
+    if any(str(provider[key]).upper() != str(oatof_record[key]).upper() for key in ("bytes", "sha256")):
+        raise ValueError("downstream fields differ from the frozen final oaTOF provider")
+    producer = Path(receipt["run_directory"]).absolute()
+    output_records: list[dict] = []
+    if manifest_record is None:
+        if not record_path(record).is_relative_to(producer.resolve()):
+            raise ValueError("downstream receipt is outside its producer run")
+    else:
+        manifest = _read(_small_record(manifest_record, "downstream source manifest"))
+        source_path = Path(manifest_record.get("source_path", "")).absolute()
+        canonical_producer = source_path.parent
+        transport_producer = producer
+        if manifest.get("role") != "simulation_run_manifest":
+            raise ValueError("downstream source manifest does not identify its producer")
+        producer = canonical_producer
+        output_records = list(manifest.get("outputs", []))
+
+    def published(record: dict, label: str) -> dict:
+        if manifest_record is None:
+            return _pa_record(record, producer, label)
+        # Old receipts may retain an execution-alias spelling.  Resolve only
+        # through the frozen terminal manifest, never by scanning a producer.
+        source_path = record_path(record)
+        if not source_path.is_relative_to(transport_producer.resolve()):
+            raise ValueError(f"{label}: published PA is outside the receipt transport root")
+        expected_path = producer / source_path.relative_to(transport_producer.resolve())
+        matches = [candidate for candidate in output_records
+                   if Path(candidate.get("path", "")).absolute() == expected_path.absolute()
+                   and all(candidate.get(key) == record.get(key) for key in ("bytes", "sha256"))]
+        if len(matches) != 1:
+            raise ValueError(f"{label}: source manifest does not uniquely publish this PA")
+        candidate = matches[0]
+        path = record_path(candidate)
+        return _pa_record({**record, "path": str(path)}, producer, label)
+    assets = receipt["assets"]
+    if len(assets) != 3 or {r["role"] for r in assets} != {"flight_tube", "reflectron", "detector"}:
+        raise ValueError("downstream publication must bind exactly three physical roles")
+    rows, carriers, guards = [], {}, []
+    for asset in assets:
+        role = asset["role"]
+        carrier = published(asset["carrier_record"], role)
+        carriers[role] = carrier
+        row = dict(role=role, instance_index=_SLOTS[role], representation=asset["representation"],
+                   carrier_pa_basename=Path(carrier["path"]).name)
+        if role in {"flight_tube", "detector"}:
+            family = [published(r, role) for r in asset["family_records"]]
+            matches = [r for r in family if r["path"] == carrier["path"]]
+            if (len({r["path"] for r in family}) != len(family) or len(matches) != 1
+                    or any(matches[0][key] != carrier[key] for key in ("bytes", "sha256"))):
+                raise ValueError(f"{role}: native family duplicates or omits its carrier")
+            if any(Path(r["path"]).parent != Path(carrier["path"]).parent for r in family):
+                raise ValueError(f"{role}: native family companions must share the carrier directory")
+            row["family_members"] = [Path(r["path"]).name for r in family]
+            guards.extend(family)
+        else:
+            if asset["family_records"]:
+                raise ValueError("reflectron runtime publication must contain only its voltageized standalone PA")
+            guards.append(carrier)
+        rows.append(row)
+    contract = dict(schema_version=1, role="single_reflection_downstream_static_assets",
+        runtime_representation="run_private_native_surface_and_standalone_static_v1",
+        receipt={key: record[key] for key in ("path", "bytes", "sha256")}, static_roles=rows)
+    return carriers, contract, guards
 
 
 def _write(path: Path, value: dict) -> None:
@@ -236,8 +328,7 @@ def plan_downstream_fields(preparation: dict, run: Path, *, snapshot_root: Path,
         # Reject unavailable source assets before any frontend construction.
         # Reuse the runtime's metadata projection; PA bytes are guarded only
         # when the workbench actually consumes them.
-        from integrations.workflows.single_reflection_flight.runtime import _downstream_fields
-        _downstream_fields(receipt_record, provider_record, manifest_record)
+        load_downstream_fields(receipt_record, provider_record, manifest_record)
         published_plan = receipt.get("command_plan_record", {})
         if any(str(published_plan.get(key, "")).upper() != str(command_record.get(key, "")).upper()
                for key in ("bytes", "sha256")):

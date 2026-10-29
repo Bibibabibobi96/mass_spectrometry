@@ -20,9 +20,10 @@ from integrations.runtime.single_flight_source import lua_value as _lua_value
 from integrations.tests.test_single_reflection_preparation import fixture, release_fixture, rename_author_instances
 from integrations.tests.test_single_reflection_geometry import reframe_parent
 from integrations.workflows.single_reflection_flight.prepare import prepare
-from integrations.workflows.single_reflection_flight import runtime
+from integrations.workflows.single_reflection_flight import downstream_fields, runtime
 from integrations.workflows.single_reflection_flight.field_plan import frontend_field_identity
-from integrations.workflows.single_reflection_flight.runtime import materialize_workbench, resolve_phase_flight, _SOURCES
+from integrations.workflows.single_reflection_flight.runtime import materialize_workbench, _SOURCES
+from integrations.workflows.single_reflection_flight.pulse import resolve_phase_flight
 from integrations.workflows.single_reflection_flight.runtime import _prepare_context, materialize_batches, prepare_dispatch
 from common.simion.particle_batching import plan_single_wave_batches
 from common.contracts.write_run_manifest import file_record
@@ -256,7 +257,7 @@ class WorkbenchMaterializationTests(unittest.TestCase):
             **file_record(terminal_manifest), "source_path": str(self.producer / "run_manifest.json")}
         with patch.object(runtime, "file_record", side_effect=AssertionError("PA source must not be rehashed")), \
                 patch.object(runtime.shutil, "copyfile", side_effect=AssertionError("PA source must not be copied")):
-            carriers, _, guards = runtime._downstream_fields(
+            carriers, _, guards = downstream_fields.load_downstream_fields(
                 self.preparation["input_records"]["downstream_fields"],
                 instance_design_record(self.preparation, native_frontend_instances(self.geometry['composition_plan'])[1]),
                 self.preparation["input_records"]["downstream_fields_manifest"])
@@ -281,7 +282,7 @@ class WorkbenchMaterializationTests(unittest.TestCase):
                 source = {**file_record(frozen_receipt), "source_path": str(alias / "field_receipt.json")}
                 manifest = {**file_record(terminal_manifest), "source_path": str(self.producer / "run_manifest.json")}
                 with self.assertRaises(ValueError):
-                    runtime._downstream_fields(source, instance_design_record(self.preparation, native_frontend_instances(self.geometry['composition_plan'])[1]), manifest)
+                    downstream_fields.load_downstream_fields(source, instance_design_record(self.preparation, native_frontend_instances(self.geometry['composition_plan'])[1]), manifest)
 
     @unittest.skipUnless(os.name == "nt", "Windows execution junction semantics")
     def test_workbench_uses_absolute_execution_paths_without_internal_junctions(self):
@@ -371,7 +372,7 @@ class WorkbenchMaterializationTests(unittest.TestCase):
             self.invoke_runtime("--field-receipt", self.field_receipt, "--downstream-publication", publication)
         self.assertFalse((self.run / "simion/full_instrument").exists())
         freeze_flight(self.flight)
-        with patch.object(runtime, "verify_record", wraps=runtime.verify_record) as verified:
+        with patch.object(downstream_fields, "verify_record", wraps=downstream_fields.verify_record) as verified:
             result = self.invoke_runtime("--field-receipt", self.field_receipt, "--downstream-publication", publication)
         design_path = self.preparation["outputs"]["frontend_field_design"]["path"]
         self.assertEqual(sum(call.args[1].get("path") == design_path for call in verified.call_args_list), 1)
@@ -390,7 +391,7 @@ class WorkbenchMaterializationTests(unittest.TestCase):
         workbench["outputs"]["iob"] = first["iob_record"]
         write_json(receipt_path, workbench)
         with patch.object(runtime, "file_record", side_effect=AssertionError("unnecessary second IOB hash")), \
-                patch.object(runtime, "verify_record", wraps=runtime.verify_record) as verified:
+                patch.object(downstream_fields, "verify_record", wraps=downstream_fields.verify_record) as verified:
             repeated = self.invoke_runtime("--verify-controls", receipt_path)
         self.assertEqual(repeated["iob_record"], first["iob_record"])
         self.assertEqual(sum(call.args[1].get("path") == str(iob) for call in verified.call_args_list), 1)

@@ -22,6 +22,27 @@ def load(path: Path) -> dict:
 
 
 class DependencyTests(unittest.TestCase):
+    def test_single_reflection_workflow_imports_form_a_dag(self) -> None:
+        """Include deferred imports; they must not hide a reverse ownership edge."""
+        prefix = "integrations.workflows.single_reflection_flight."
+        names = {"runtime", "continuation", "collect", "census", "pulse", "downstream_fields"}
+        graph = {}
+        for name in names:
+            source = INTEGRATION_ROOT / "workflows/single_reflection_flight" / f"{name}.py"
+            graph[name] = {
+                node.module.removeprefix(prefix) for node in ast.walk(ast.parse(source.read_text(encoding="utf-8")))
+                if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith(prefix)
+                and node.module.removeprefix(prefix) in names
+            }
+
+        def visit(name: str, chain: tuple[str, ...]) -> None:
+            self.assertNotIn(name, chain, " -> ".join((*chain, name)))
+            for dependency in graph[name]:
+                visit(dependency, (*chain, name))
+
+        for name in graph:
+            visit(name, ())
+
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
     def test_shared_capacity_contracts_import_from_actual_frozen_snapshot(self) -> None:
         """Import the real consumers with cwd and search path detached from live code."""
@@ -281,8 +302,17 @@ $null=Freeze-ConsumerDependencies -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENT
             statement = """
 import json,sys
 from pathlib import Path
-from integrations.workflows.single_reflection_flight import prepare,downstream_fields,runtime,collect,census
-assert all(Path(m.__file__).is_relative_to(Path.cwd()) for m in (prepare,downstream_fields,runtime,collect,census))
+class NoOrchestrationImport:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname in ('integrations.workflows.single_reflection_flight.runtime',
+                        'integrations.workflows.single_reflection_flight.collect'):
+            raise ImportError('pure evidence/continuation cannot import orchestration: '+fullname)
+guard=NoOrchestrationImport()
+sys.meta_path.insert(0,guard)
+from integrations.workflows.single_reflection_flight import continuation,pulse,census,downstream_fields
+sys.meta_path.remove(guard)
+from integrations.workflows.single_reflection_flight import prepare,runtime,collect
+assert all(Path(m.__file__).is_relative_to(Path.cwd()) for m in (prepare,downstream_fields,runtime,collect,census,continuation,pulse))
 assert not any('rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer' in name for name in sys.modules)
 assert not (Path.cwd()/'integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer').exists()
 request,run=map(Path,sys.argv[1:])

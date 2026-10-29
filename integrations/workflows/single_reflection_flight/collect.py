@@ -11,22 +11,17 @@ import csv
 import json
 import math
 from pathlib import Path
-import re
 
 from common.analysis.particle_events import group_particle_events
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record
-from common.simion.native_completion import parse_fly_completed_line
 from integrations.runtime.build_single_flight_program import validate_native_flight
-from integrations.workflows.single_reflection_flight.runtime import resolve_phase_flight
-from integrations.workflows.single_reflection_flight.pulse import select_discovery_pulse
+from integrations.workflows.single_reflection_flight.pulse import resolve_phase_flight, select_discovery_pulse
 from integrations.runtime.single_flight_source import GLOBAL_COLUMNS, binary64_serialization_close as _close
 from integrations.workflows.single_reflection_flight.census import (
-    STATE_PATTERN, PULSE_PATTERN, PULSE_STATE_PATTERN, canonical_census, read_native_events,
+    canonical_census, read_native_events, read_native_evidence,
 )
 
-_STATE = ('instrument_time_us', 'x_mm', 'y_mm', 'z_mm',
-          'vx_mm_per_us', 'vy_mm_per_us', 'vz_mm_per_us')
 _X_EVENTS = {'multipole_handoff', 'accelerator_sidewall_inner_forward', 'accelerator_axis_forward'}
 _BRACKET = ('step_start_instrument_time_us', 'step_end_instrument_time_us', 'step_start_x_mm', 'step_end_x_mm')
 
@@ -104,87 +99,6 @@ def _inputs(preparation: dict, workbench: dict, run: Path) -> tuple[dict, dict, 
     return dict(zip(ids, rows, strict=True)), flight, controls, provenance
 
 
-def _native_evidence(log: Path, source: dict, flight: dict) -> tuple[dict, dict, list[dict], list[dict]]:
-    """Require actual births and raw native stops, retaining original line locations."""
-    raw_terminals, locations = {}, {}
-    ordered_ids = list(source)
-    def global_id(native_ion: int) -> int:
-        if not 1 <= native_ion <= len(ordered_ids):
-            raise ValueError('native ion index is outside the frozen source cohort')
-        return ordered_ids[native_ion - 1]
-    completed = False
-    births = set()
-    pulse_states = {}
-    shared_states, seen_shared = [], set()
-    pulse = flight['pulse']
-    candidate_times = flight.get('observation_times_us', [])
-    with log.open(encoding='utf-8-sig') as stream:
-        for number, line in enumerate(stream, 1):
-            if 'TRACE: native_shared_time ' in line:
-                pairs = re.findall(r'(\w+)=([^\s]+)', line.split('TRACE: native_shared_time ', 1)[1])
-                fields = dict(pairs)
-                if (len(fields) != len(pairs) or set(fields) !=
-                        {'ion', 'particle_id', 'instance', *_STATE, 'candidate_time_us', 'kinetic_energy_eV'}):
-                    raise ValueError(f'{log}:{number}: malformed actual shared-time state')
-                pid = global_id(int(fields.pop('ion')))
-                if int(fields['particle_id']) != pid:
-                    raise ValueError(f'{log}:{number}: shared-time ID differs from frozen source')
-                row = {key: float(value) for key, value in fields.items()}
-                target = row['candidate_time_us']
-                if (not all(math.isfinite(value) for value in row.values()) or target not in candidate_times
-                        or not _close(row['instrument_time_us'], target) or (pid, target) in seen_shared):
-                    raise ValueError(f'{log}:{number}: invalid or duplicate actual shared-time observation')
-                row.update(particle_id=pid, instance=int(fields['instance']), event='native_shared_time', raw_line_number=number)
-                shared_states.append(row)
-                seen_shared.add((pid, target))
-            if parse_fly_completed_line(line) is not None:
-                completed = True
-            match = STATE_PATTERN.search(line)
-            if 'TRACE: source_release ' in line and match is None:
-                raise ValueError(f'{log}:{number}: malformed actual native birth')
-            if match:
-                pid, event = global_id(int(match['ion'])), match['event']
-                if match['particle_id'] is not None and int(match['particle_id']) != pid:
-                    raise ValueError(f'{log}:{number}: native ID differs from frozen source')
-                canonical = 'multipole_handoff' if event == 'single_flight_handoff' else event
-                locations[pid, canonical] = number
-                if event == 'source_release':
-                    if pid in births:
-                        raise ValueError(f'{log}:{number}: particle {pid} duplicate birth')
-                    births.add(pid)
-                if pulse['mode'] == 'held_off' and event == 'pre_pulse_state':
-                    raise ValueError('held-OFF log contains a fictitious pre-pulse observation')
-            if PULSE_PATTERN.search(line):
-                if pulse['mode'] == 'held_off':
-                    raise ValueError('held-OFF log contains a pulse event')
-                pulse_match = PULSE_STATE_PATTERN.search(line)
-                if pulse_match is None:
-                    raise ValueError(f'{log}:{number}: malformed native pulse state')
-                pid = global_id(int(pulse_match['ion']))
-                if pid in pulse_states:
-                    raise ValueError(f'{log}:{number}: duplicate or unknown native pulse particle')
-                pulse_states[pid] = dict(particle_id=pid, event='handoff_pulse_on',
-                    **{name: float(pulse_match[group]) for name, group in zip(_STATE, ('t', 'x', 'y', 'z', 'vx', 'vy', 'vz'), strict=True)})
-                locations[pid, 'handoff_pulse_on'] = number
-            if 'TRACE: handoff_terminal_raw ' not in line:
-                continue
-            pairs = re.findall(r'(\w+)=([^\s]+)', line.split('TRACE: handoff_terminal_raw ', 1)[1])
-            fields = dict(pairs)
-            if len(fields) != len(pairs) or set(fields) != {'ion', 'instance', *_STATE}:
-                raise ValueError(f'{log}:{number}: raw terminal fields differ')
-            pid = global_id(int(fields.pop('ion')))
-            if pid in raw_terminals:
-                raise ValueError(f'{log}:{number}: particle {pid} lacks a unique raw native terminal')
-            terminal = {key: float(value) for key, value in fields.items()}
-            if not all(math.isfinite(value) for value in terminal.values()):
-                raise ValueError(f'{log}:{number}: nonfinite native terminal')
-            raw_terminals[pid] = dict(particle_id=pid, **terminal, raw_line_number=number)
-    if not completed:
-        raise ValueError('native Fly completion sentinel is missing')
-    if births != set(source) or set(raw_terminals) != set(source):
-        raise ValueError('frozen source cohort requires one actual native birth and raw terminal for every ID')
-    return raw_terminals, locations, list(pulse_states.values()), shared_states
-
 
 def _validate_states(rows: list[dict], source: dict, terminals: dict, locations: dict, log: Path) -> None:
     for row in rows:
@@ -238,7 +152,7 @@ def collect_log(preparation: dict, workbench: dict, run: Path, log: Path | None 
         allowed = parent_case_records(preparation, workbench, case, replay=replay)
         if not path.is_relative_to(run) and path not in allowed:
             raise ValueError('native log must belong to this run')
-        part = _native_evidence(path, {pid:source[pid] for pid in ids}, flight)
+        part = read_native_evidence(path, {pid:source[pid] for pid in ids}, flight)
         terminals.update(part[0]); locations.update(part[1])
         pulse_states.extend(part[2]); shared_states.extend(part[3])
         logs.append(path); counts.append(len(ids))
