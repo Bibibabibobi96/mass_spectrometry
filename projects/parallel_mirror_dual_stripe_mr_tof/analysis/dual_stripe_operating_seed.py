@@ -17,7 +17,7 @@ import json
 import math
 import os
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
@@ -56,6 +56,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0
     time_platform_derivative_residuals,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_candidate_receipt import (
+    FixedHardwareMirrorPoint,
     ManagedMirrorCandidate,
     load_managed_mirror_candidate,
 )
@@ -85,17 +86,6 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff impo
 
 WidthFunction = Callable[[float], float]
 
-
-@dataclass(frozen=True)
-class FixedHardwareMirrorPoint:
-    """Minimum mirror interface needed by the fixed-Stripe consistency solve."""
-
-    design: Any
-    energy_points_v: tuple[float, float, float]
-    nominal_energy_per_charge_v: float
-    nominal_reduced_period_mm_per_sqrt_v: float
-    nominal_axial_width_w_mm: float
-    contract: dict[str, Any]
 
 _PUBLISHABLE_DETERMINATION_STATES = {"square_exact", "overdetermined_consistent"}
 _PROJECT_ID = "parallel_mirror_dual_stripe_mr_tof"
@@ -1969,7 +1959,10 @@ def build_operating_seed_report_from_fixed_grid(
     then still determined analytically by the spatial-return and turning-energy
     equations; Stripe never back-fits the independent mirror voltages.
     """
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_grid_mirror_stripe_handoff import load_fixed_grid_mirror_point
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_grid_mirror_stripe_handoff import (
+        load_fixed_grid_mirror_point,
+    )
+
     mirror = load_fixed_grid_mirror_point(fixed_grid_manifest, downstream_contract)
     contract = mirror.contract
     shape_selection = build_native_stripe_shape_selection(contract)

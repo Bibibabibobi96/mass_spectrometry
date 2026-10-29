@@ -8,6 +8,7 @@ import hashlib
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -1985,6 +1986,86 @@ print('GENERATED_SCALAR_TRANSPORT_FIXTURE_PASS')
 
 
 class VoltageResponseBindingTest(unittest.TestCase):
+    def test_native_and_scalar_metadata_validation_does_not_import_workpoint(self):
+        """Response consumers need sealed field metadata, not the workpoint controller."""
+        from common.contracts.write_run_manifest import file_record
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            values = [0.] * 20
+            authority = {"analyzer_electrode_voltages_v": values}
+            grid = {"origin_mm": [0, 0, 0], "pitch_mm": [1, 1, 1], "dimensions": [3, 3, 3]}
+            solver = {"active_mesh_tag": "mesh1", "study_stol": .001}
+            plan = {"candidate_authority": authority, "active_mesh_tag": "mesh1",
+                    "export_grid": grid, "source_mph_record": {"bytes": 12, "sha256": "mesh"},
+                    "source_dataset": "dset1"}
+            paths = [root / name for name in ("plan.json", "solver_before.json", "solver_after.json")]
+            for path, document in zip(paths, ({"role": "mrtof_same_mesh_field_provider_request"}, solver, solver), strict=True):
+                path.write_text(json.dumps(document), encoding="utf-8")
+            manifest = root / "run_manifest.json"
+            manifest.write_text(json.dumps({"status": "success", "inputs": {
+                path.stem: file_record(path) for path in paths}, "outputs": []}), encoding="utf-8")
+            source = {"authority": authority, "geometry": {"shape": "fixed"}, "grid": grid,
+                      "export_manifest": str(manifest), "assembly_manifest": "assembly", "collision_manifest": "collision",
+                      "records": {"geometry_authority": {"sha256": "geometry"}, "valid_pa": {"bytes": 10, "sha256": "mask"}}}
+            candidate = copy.deepcopy(source)
+            candidate.update(representation="exploratory_affine_ps_responses", response_family={
+                "mode": "comsol_static_scalar_v", "fixed_authority": {"analyzer_electrode_voltages_v": [
+                    None if i in (10, 11, 12, 13, 15, 16) else v for i, v in enumerate(values)]},
+                "geometry_sha256": "geometry", "source_mesh_record": plan["source_mph_record"],
+                "source_dataset": "dset1", "export_grid": grid, "solver_numerics": solver,
+                "assembly_manifest": "assembly", "collision_manifest": "collision"})
+            native = {"mode": "native_static_pa", "authority": authority, "geometry": source["geometry"],
+                      "grid": grid, "native_solver_numerics": solver, "instances": [], "refinement_windows": [],
+                      "manifest": str(manifest), "sources": {"scalar_pa": str(root / "retired.pa")},
+                      "numerical_plan_path": str(paths[0])}
+            fixture = root / "fixture.json"
+            fixture.write_text(json.dumps(dict(source=source, candidate=candidate, plan=plan, native=native)), encoding="utf-8")
+            code = r'''
+import copy, importlib.abc, json, sys
+from pathlib import Path
+from unittest.mock import patch
+sys.path.insert(0, sys.argv[1])
+class NoWorkpoint(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.endswith(".downstream_fixed_grid_workpoint"):
+            raise AssertionError("response metadata imported the workpoint controller")
+sys.meta_path.insert(0, NoWorkpoint())
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis import static_field_binding as binding
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis import corridor_field_provider as provider
+fixture = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+original_open = Path.open
+def metadata_only(path, *args, **kwargs):
+    if path.suffix == ".pa":
+        raise AssertionError("metadata validation read a PA payload")
+    return original_open(path, *args, **kwargs)
+with patch.object(Path, "open", metadata_only):
+    if sys.argv[3] == "native":
+        result = binding.native_response_operator(fixture["native"], fixture["source"]["authority"])
+        assert result["projection"]["grid"] == fixture["source"]["grid"]
+    else:
+        with patch.object(binding, "load_binding", return_value=fixture["source"]), \
+                patch.object(provider, "derive_candidate_authority", return_value=(fixture["source"]["authority"], None)), \
+                patch.object(provider, "compile_request", return_value=fixture["plan"]):
+            binding.validate_response_candidate(fixture["candidate"], {"source_binding_path": "source.json"})
+            bad = copy.deepcopy(fixture["candidate"])
+            bad["response_family"]["solver_numerics"]["active_mesh_tag"] = "changed_mesh"
+            try:
+                binding.validate_response_candidate(bad, {"source_binding_path": "source.json"})
+            except ValueError as error:
+                assert "scientific field family" in str(error)
+            else:
+                raise AssertionError("changed scalar numerics was accepted")
+assert not any(name.endswith(".downstream_fixed_grid_workpoint") for name in sys.modules)
+print("METADATA_WITHOUT_WORKPOINT_PASS")
+'''
+            for mode in ("native", "scalar"):
+                with self.subTest(mode=mode):
+                    completed = subprocess.run([sys.executable, "-I", "-B", "-c", code, str(REPO_ROOT), str(fixture), mode],
+                                               cwd=root, capture_output=True, text=True, timeout=30, check=False)
+                    self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+                    self.assertIn("METADATA_WITHOUT_WORKPOINT_PASS", completed.stdout)
+
     def fixture(self):
         values = [0.] * 20
         values[10:14] = [-27., -27., 54., 54.]
@@ -2009,7 +2090,7 @@ class VoltageResponseBindingTest(unittest.TestCase):
     def resolve(self, author, samples):
         module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis"
         with patch(module + ".static_field_binding.load_binding", side_effect=lambda path, **kw: copy.deepcopy(samples[str(path)])), \
-                patch(module + ".downstream_fixed_grid_workpoint._static_binding_problem",
+                patch(module + ".static_field_binding.scalar_binding_problem",
                       side_effect=lambda component, *args: component["fixture_family"]):
             return _resolve_voltage_responses(author, Path("combined.json"))
 
@@ -2251,7 +2332,7 @@ print('CROSS_ANCHOR_ZERO_SERIALIZER_PASS')
             with patch(module + ".corridor_field_provider.derive_candidate_authority", return_value=(
                     binding["authority"], {})), \
                     patch(module + ".static_field_binding.load_binding", return_value=provider_source), \
-                    patch(module + ".downstream_fixed_grid_workpoint._static_binding_problem",
+                    patch(module + ".static_field_binding.scalar_binding_problem",
                           side_effect=lambda component, *args: component["fixture_family"]):
                 validate_response_candidate(candidate, {"source_binding_path": "source.json"})
 
@@ -2299,7 +2380,7 @@ print('CROSS_ANCHOR_ZERO_SERIALIZER_PASS')
         with patch(module + ".static_field_binding.load_binding", return_value=source), \
                 patch(module + ".corridor_field_provider.compile_request",
                       side_effect=AssertionError("Must not prepare a new field solve")), \
-                patch(module + ".downstream_fixed_grid_workpoint._static_binding_problem",
+                patch(module + ".static_field_binding.scalar_binding_problem",
                       side_effect=lambda component, *args: component["fixture_family"]):
             validate_response_candidate(binding, request)
             for changes in (dict(role="wrong"), dict(schema_version=2),

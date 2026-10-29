@@ -405,18 +405,24 @@ function Invoke-WorkpointControllerRequest {
     [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot)
   Push-Location -LiteralPath $RepoRoot
   try{
-    $output=@($Request|ConvertTo-Json -Depth 100 -Compress|& $Python -X utf8 -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration --controller-request - --output -)
-    if($LASTEXITCODE-ne0){throw "Controller decision failed: $($Request.action)"}
+    $PSNativeCommandUseErrorActionPreference=$false
+    $captured=@($Request|ConvertTo-Json -Depth 100 -Compress|& $Python -X utf8 -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration --controller-request - --output - 2>&1)
+    $exitCode=$LASTEXITCODE
+    $output=@($captured|Where-Object{$_-isnot[Management.Automation.ErrorRecord]})
+    $stderr=@($captured|Where-Object{$_-is[Management.Automation.ErrorRecord]})
+    if($exitCode-ne0){
+      $stage='unspecified'
+      if($Request.Contains('state')-and$Request.state-is[System.Collections.IDictionary]-and$Request.state.Contains('stage')){$stage=[string]$Request.state.stage}
+      elseif($Request.Contains('phase')){$stage=[string]$Request.phase}
+      $details=@{stdout=($output-join"`n");stderr=($stderr-join"`n")}
+      foreach($stream in @('stdout','stderr')){
+        if($details[$stream].Length-gt4096){$details[$stream]='[truncated tail] '+$details[$stream].Substring($details[$stream].Length-4096)}
+      }
+      throw "Controller decision failed: action=$($Request.action) stage=$stage exit_code=$exitCode; stdout=$($details.stdout); stderr=$($details.stderr)"
+    }
+    foreach($errorLine in $stderr){Write-Error -Message ([string]$errorLine) -ErrorAction Continue}
     return ($output-join"`n")|ConvertFrom-Json -AsHashtable -Depth 100
   }finally{Pop-Location}
-}
-
-function Get-RelativeVoltageStencilSteps {
-  param([Parameter(Mandatory)][double[]]$Voltages,[Parameter(Mandatory)]$Profile,[Nullable[double]]$MaximumScaledResidual=$null,
-    [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot)
-  return Invoke-WorkpointControllerRequest -Python $Python -RepoRoot $RepoRoot -Request @{
-    action='voltage_stencil_steps';voltages_v=@($Voltages);profile=$Profile;maximum_scaled_residual=$MaximumScaledResidual
-  }
 }
 
 function New-CenterTrialArguments {
@@ -671,21 +677,9 @@ print(json.dumps(str(p)))
 
 function Find-ContinuationTransportSeed {
   param([Parameter(Mandatory)]$ContinuationSeed,[Parameter(Mandatory)]$Profile)
-  $tiers=$Profile.jacobian_relative_step_tiers
-  $relativeSteps=@(@($tiers.coarse,$tiers.medium,$tiers.fine)|ForEach-Object{[double]$_}|Select-Object -Unique)
-  if($relativeSteps.Count-ne3-or@($relativeSteps|Where-Object{-not[double]::IsFinite($_)-or$_-le0}).Count){
-    throw 'Continuation transport-seed search requires three positive contract relative tiers.'
-  }
-  $origin=[double[]]$ContinuationSeed.prism_voltages_v
-  $bounds=@($ContinuationSeed.prism_voltage_bounds_v)
-  $candidates=[Collections.Generic.List[double[]]]::new();$candidates.Add([double[]]$origin.Clone())
-  foreach($relative in $relativeSteps){
-    foreach($axis in 0,1){foreach($direction in 1,-1){
-      $candidate=[double[]]$origin.Clone()
-      $candidate[$axis]+=$direction*$relative*[math]::Max([math]::Abs($origin[$axis]),1.0)
-      if($bounds[$axis][0]-le$candidate[$axis]-and$candidate[$axis]-le$bounds[$axis][1]){$candidates.Add($candidate)}
-    }}
-  }
+  $candidates=@(Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{
+    action='continuation_transport_candidates';seed=$ContinuationSeed;profile=$Profile
+  })
   $attempts=@()
   for($index=0;$index-lt$candidates.Count;$index++){
     $prisms=$candidates[$index]
@@ -722,20 +716,17 @@ function Get-WorkpointBootstrapEvidence {
     if(-not[double]::IsFinite([double]$actual[$index])-or[double]$actual[$index]-ne$Voltages[$index]){throw 'Centre trial voltages differ.'}
   }
   if(($observation.prism_voltages_v-join',')-ne($receipt.prism_voltages_v-join',')){throw 'Centre trial observed prism voltages differ.'}
-  $reasons=@()
-  if($observation['status']-notin@('full_drift_observed','target_phase_observed','detected')){$reasons+='target_phase_status_invalid'}
-  $termination=$observation['termination_diagnostic']
-  if(-not($termination-is[Collections.IDictionary]-and$termination.Contains('physical_collision')-and
-    $termination.physical_collision-is[bool]-and$termination.physical_collision-eq$false)){$reasons+='collision_absence_not_proven'}
+  # Preserve the existing JSON-to-double conversion before the pure classifier.
   $residuals=$observation['residuals']
   $target='Stripe_target_phase_y_minus_origin_mm'
-  if(-not($residuals-is[Collections.IDictionary]-and$residuals.Contains($target)-and
-    $null-ne$residuals[$target]-and[double]::IsFinite([double]$residuals[$target]))){$reasons+='target_phase_residual_missing'}
-  $static=$observation['static_return_diagnostic']
-  if(-not($static-is[Collections.IDictionary]-and$static['status']-eq'detector_hit'-and
-    $static['event_contract_ok']-is[bool]-and$static['event_contract_ok']-eq$true)){$reasons+='static_detector_contract_failed'}
+  if($residuals-is[Collections.IDictionary]-and$residuals.Contains($target)-and$null-ne$residuals[$target]){
+    $residuals[$target]=[double]$residuals[$target]
+  }
+  $physical=Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{
+    action='center_trial_physical_gate';observation=$observation
+  }
   return [ordered]@{
-    passed=($reasons.Count-eq0);reasons=$reasons;actual_voltages_v=$actual
+    passed=$physical.passed;reasons=@($physical.reasons);actual_voltages_v=$actual
     child_manifest=$Manifest;child_manifest_sha256=(Get-FileHash -LiteralPath $Manifest -Algorithm SHA256).Hash
     observation_path=$observationPath;observation_sha256=(Get-FileHash -LiteralPath $observationPath -Algorithm SHA256).Hash
     materialization_path=$materialization;materialization_sha256=(Get-FileHash -LiteralPath $materialization -Algorithm SHA256).Hash
@@ -760,7 +751,9 @@ function Invoke-WorkpointStencil {
   $seedVoltages=[double[]]$Bootstrap.seed_voltages_v
   $steps=[double[]]$Bootstrap.forward_steps_v
   [double[]]$stepScales=if($Bootstrap.Contains('stencil_step_scales')){@($Bootstrap.stencil_step_scales|ForEach-Object{[double]$_})}else{@(1.0)}
-  if(-not$stepScales.Count-or@($stepScales|Where-Object{-not[double]::IsFinite($_)-or$_-le0-or$_-gt1}).Count){throw 'Bootstrap stencil step scales are invalid.'}
+  $stencilPlan=Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{
+    action='plan_bootstrap_stencil';voltages_v=@($seedVoltages);forward_steps_v=@($steps);step_scales=@($stepScales)
+  }
   if(-not$Bootstrap.Contains('attempts')){$Bootstrap['attempts']=@()}
   foreach($attempt in $Bootstrap.attempts){
     if(-not($attempt-is[Collections.IDictionary])-or
@@ -782,16 +775,13 @@ function Invoke-WorkpointStencil {
   if($priorChildren.Count-gt5){throw 'Bootstrap has more than five child slots.'}
   $Bootstrap.children=@()
   $Bootstrap['signed_steps_v']=@()
-  for($axis=-1;$axis-lt4;$axis++){
+  foreach($group in $stencilPlan.groups){
+    $axis=[int]$group.axis
     $script:failureStage='bootstrap_center_'+($axis+1)
     $accepted=$false
-    $axisScales=if($axis-lt0){@(1.0)}else{$stepScales}
-    foreach($stepScale in $axisScales){
-     $directions=if($axis-lt0){@(0)}else{@(1,-1)}
-     foreach($direction in $directions){
-      $signedStep=if($axis-lt0){0.0}else{$direction*$steps[$axis]*$stepScale}
-      $voltages=[double[]]$seedVoltages.Clone()
-      if($axis-ge0){$voltages[$axis]+=$signedStep}
+    foreach($trial in $group.trials){
+      $stepScale=[double]$trial.step_scale;$direction=[int]$trial.direction
+      $signedStep=[double]$trial.signed_step_v;$voltages=[double[]]$trial.voltages_v
       $recorded=@($Bootstrap.attempts|Where-Object{[int]$_.axis-eq$axis-and[int]$_.direction-eq$direction-and$(if($_.Contains('step_scale')){[double]$_.step_scale}else{1.0})-eq$stepScale})
       if($recorded.Count-gt1){throw 'Bootstrap has duplicate physical attempt identities.'}
       if($recorded.Count){
@@ -800,7 +790,7 @@ function Invoke-WorkpointStencil {
       }elseif($direction-ne-1-and$priorChildren.Count-gt($axis+1)){
         $manifest=[string]$priorChildren[$axis+1]
       }else{
-        $tierSuffix=if($stepScale-eq1.0){''}else{'-tier-'+([array]::IndexOf($stepScales,$stepScale)+1)}
+        $tierSuffix=if($trial.tier_index-eq0){''}else{'-tier-'+$trial.tier_index}
         $bootstrapId=$RunId+$(if($axis-lt0){'-baseline'}else{'-stencil-'+($axis+1)})+$tierSuffix+$(if($direction-eq-1){'-reverse'}else{''})
         $arguments=New-CenterTrialArguments -Voltages $voltages -ChildRunId $bootstrapId
         if($axis-lt0-and$RetainBaselineGuiWorkbench){$arguments.RetainGuiWorkbench=$true}
@@ -825,8 +815,6 @@ function Invoke-WorkpointStencil {
       Save-WorkpointBootstrap -Bootstrap $Bootstrap -BootstrapPath $BootstrapPath
       if($accepted){break}
       Write-Host "MRTOF_BOOTSTRAP_PHYSICAL_REJECT axis=$axis signed_step_v=$signedStep reasons=$($evidence.reasons-join',')"
-     }
-     if($accepted){break}
     }
     if(-not$accepted){throw "Bootstrap physical gate failed for axis $axis; no further stencil is permitted."}
   }
@@ -1184,16 +1172,6 @@ function Complete-StagedTrial {
   foreach($key in $completed.state.Keys){$State[$key]=$completed.state[$key]}
 }
 
-function Reset-StagedSLocalModel {
-  param($State,$History,$Tiers)
-  if($State.local_model_tier_index-ge($Tiers.Count-1)){return $false}
-  $History.decisions+=,[ordered]@{status='local_model_refresh';reason='consecutive_rejected_S_candidates';anchor_manifest=$State.anchor_manifest;previous_columns=$State.columns;previous_relative_tier=$Tiers[$State.local_model_tier_index];next_relative_tier=$Tiers[$State.local_model_tier_index+1];full_workpoint_qualified=$false}
-  $State.local_model_tier_index++;$State.consecutive_candidate_rejections=0
-  $State.columns=[ordered]@{};$State.attempts=@()
-  $State.step_factor=1.0
-  return $true
-}
-
 function Update-StagedAnchorFieldProtection {
   param($State)
   if(-not$staticFieldMode-or$staticBindingMode-ne'native_static_pa'){return}
@@ -1256,16 +1234,9 @@ function Assert-ActiveStripeVoltages {
 
 function Get-StagedColumnAxisIndices {
   param([string]$Stage,$Profile)
-  if($Stage-eq'prism_preclosure'){return @(2,3)}
-  $active=@(Get-ActiveStripeAxisIndices -Profile $Profile)
-  $hasMode=if($Profile-is[Collections.IDictionary]){$Profile.Contains('single_stripe_refinement_mode')}else{$null-ne$Profile.PSObject.Properties['single_stripe_refinement_mode']}
-  if($hasMode){
-    if($Profile.single_stripe_refinement_mode-ne'joint_ps_constrained'-or($active-join',')-ne'0'){
-      throw 'Joint P/S refinement requires the explicit single-S1 profile.'
-    }
-    return @(0,2,3)
+  return Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{
+    action='restored_stage_columns';stage=$Stage;profile=$Profile
   }
-  return $active
 }
 
 function Restore-StagedWorkpointChildren {
@@ -1320,9 +1291,11 @@ function Restore-StagedWorkpointChildren {
     $known[[string]$entry.child_manifest]=$entry;$runIds[[string]$entry.run_id]=$true
   }
   if(-not$known.Contains([string]$state.anchor_manifest)){throw 'Saved stage anchor is not in its lineage.'}
+  if($state.columns.Count){
+    $axes=@(Get-StagedColumnAxisIndices -Stage $state.stage -Profile $profile|ForEach-Object{[string]$_})
+  }
   foreach($axis in $state.columns.Keys){
     $column=[string]$state.columns[$axis]
-    $axes=@(Get-StagedColumnAxisIndices -Stage $state.stage -Profile $profile|ForEach-Object{[string]$_})
     if($axis-notin$axes-or-not$known.Contains($column)-or$null-eq$known[$column]-or$known[$column].parent_manifest-ne$state.anchor_manifest){throw 'Saved stage column differs from its anchor lineage.'}
   }
   if($state.Contains('prism_model_manifest')){
@@ -1380,13 +1353,11 @@ function Import-StagedStripeColumns {
     $anchor=[double[]]$empty.voltages_v
     $changed=@(0..3|Where-Object{$actual[$_]-ne$anchor[$_]})
     if($actual.Count-ne4-or$changed.Count-ne1-or$changed[0]-ne[int]$axis){throw 'Explicit Stripe child must change only its declared seed axis.'}
-    $measuredTiers=@(0..($Tiers.Count-1)|Where-Object{
-      $size=[double]$Tiers[$_]*[math]::Max([math]::Abs($anchor[[int]$axis]),1.0)
-      $actual[[int]$axis]-eq($anchor[[int]$axis]+$size)-or$actual[[int]$axis]-eq($anchor[[int]$axis]-$size)
-    })
-    if($measuredTiers.Count-eq1){$State.local_model_tier_index=[math]::Max([int]$State.local_model_tier_index,[int]$measuredTiers[0])}
-    $State.flight_count++
-    $pending=[ordered]@{child_manifest=$child;child_run_id=$document.run_id;anchor_manifest=$seedManifest;stage='stripe_preclosure';voltages_v=@($actual);decision=$empty;selected=[ordered]@{axis=[int]$axis;signed_step_v=($actual[[int]$axis]-$anchor[[int]$axis])};imported_stencil_axis=[int]$axis}
+    $prepared=Invoke-WorkpointControllerRequest -Python $controllerContext.python -RepoRoot $controllerContext.repo_root -Request @{
+      action='prepare_imported_stencil_column';state=$State;axis=[int]$axis;anchor_v=@($anchor);actual_v=@($actual);tiers=@($Tiers)
+    }
+    $State.Clear();foreach($key in $prepared.state.Keys){$State[$key]=$prepared.state[$key]}
+    $pending=[ordered]@{child_manifest=$child;child_run_id=$document.run_id;anchor_manifest=$seedManifest;stage='stripe_preclosure';voltages_v=@($actual);decision=$empty;selected=$prepared.selected;imported_stencil_axis=[int]$axis}
     Complete-StagedTrial -Context $controllerContext -State $State -History $History -Lineage $Lineage -Pending $pending -Loop $Loop -Tiers $Tiers
   }
 }
@@ -1460,9 +1431,13 @@ function Invoke-StagedWorkpointBootstrap {
       continue
     }
     if($state.stage-eq'stripe_preclosure'-and$state.consecutive_candidate_rejections-ge[int]$loop.maximum_consecutive_non_improving_iterations){
-      if(-not(Reset-StagedSLocalModel -State $state -History $history -Tiers $tiers)){
-        $terminal=[ordered]@{state='terminal';terminal_reason='model_recovery_exhausted';full_workpoint_qualified=$false;detail='All contract S local-model tiers rejected candidates.'};break
+      # Reset is saved before reading a new scientific decision, as on resume.
+      $prepared=Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{
+        action='plan_staged_trial';phase='prepare';state=$state;profile=$profile
       }
+      $state.Clear();foreach($key in $prepared.state.Keys){$state[$key]=$prepared.state[$key]}
+      if($prepared.terminal){$terminal=$prepared.terminal;break}
+      if($prepared.history_decision){$history.decisions+=,$prepared.history_decision}
       $Bootstrap['stage_state']=$state;$Bootstrap['stage_history']=$history;$Bootstrap['stage_lineage']=$lineage
       Save-WorkpointBootstrap -Bootstrap $Bootstrap -BootstrapPath $BootstrapPath
     }
@@ -1488,10 +1463,13 @@ function Invoke-StagedWorkpointBootstrap {
        ($state.stage-ne'prism_preclosure'-or$decision.next_action-ne'stripe_preclosure')){
       throw 'Explicit Stripe columns cannot be used before the seed P stage passes.'
     }
-    if($decision.next_action-in@('prism_preclosure','stripe_preclosure')){
-      $state.stage=$decision.next_action;$state.columns=[ordered]@{};$state.attempts=@();$state.step_factor=1.0
-      $state.Remove('prism_model_manifest')|Out-Null
-      $state.local_model_tier_index=0;$state.consecutive_candidate_rejections=0
+    # One whole-round request owns numerical planning and both trial debits.
+    $planned=Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{
+      action='plan_staged_trial';state=$state;decision=$decision;profile=$profile
+    }
+    $state.Clear();foreach($key in $planned.state.Keys){$state[$key]=$planned.state[$key]}
+    if($planned.terminal){$terminal=$planned.terminal;break}
+    if($planned.action-eq'stage_transition'){
       if($stripeSeedColumns.Count-and-not$Bootstrap.Contains('imported_stripe_columns')){
         Import-StagedStripeColumns -State $state -History $history -Lineage $lineage -Columns $stripeSeedColumns -Loop $loop -Tiers $tiers
         $Bootstrap['imported_stripe_columns']=$stripeSeedColumns
@@ -1499,57 +1477,10 @@ function Invoke-StagedWorkpointBootstrap {
       }
       continue
     }
-    $voltages=[double[]]$decision.next_voltages_v
-    if($decision.status-eq'needs_stencil'){
-      $script:failureStage='stage_'+$state.stage
-      $axis=[int]$decision.required_axes[0]
-      $stageAxes=@(Get-StagedColumnAxisIndices -Stage $state.stage -Profile $profile)
-      if($axis-notin$stageAxes){throw 'Controller requested an inactive stage stencil axis.'}
-      $anchorVoltages=[double[]]$decision.voltages_v
-      $selected=$null
-      if($state.stage-eq'stripe_preclosure'){
-        $steps=@(Get-RelativeVoltageStencilSteps -Python $python -RepoRoot $repoRoot -Voltages $anchorVoltages -Profile $profile -MaximumScaledResidual ([double]$decision.maximum_scaled_abs_residual))
-        $residualTier=@(0..($tiers.Count-1)|Where-Object{[double]$tiers[$_]*[math]::Max([math]::Abs($anchorVoltages[0]),1.0)-eq[double]$steps[0]})[0]
-        $state.local_model_tier_index=[math]::Max([int]$state.local_model_tier_index,[int]$residualTier)
-      }
-      $probeTiers=if($state.stage-eq'stripe_preclosure'){@($tiers[([int]$state.local_model_tier_index)..($tiers.Count-1)])}else{$tiers}
-      foreach($relative in $probeTiers){foreach($direction in 1,-1){
-        $step=$direction*[double]$relative*[math]::Max([math]::Abs($anchorVoltages[$axis]),1.0)
-        $used=@($state.attempts|Where-Object{[int]$_.axis-eq$axis-and[double]$_.signed_step_v-eq$step})
-        $target=$anchorVoltages[$axis]+$step
-        $inside=$target-ge[double]$decision.resolved_numerics.lower_bounds_v[$axis]-and$target-le[double]$decision.resolved_numerics.upper_bounds_v[$axis]
-        if(-not$used.Count-and$inside-and$null-eq$selected){
-          $selected=[ordered]@{axis=$axis;signed_step_v=$step}
-          if($state.stage-eq'stripe_preclosure'){$state.local_model_tier_index=[array]::IndexOf([double[]]$tiers,[double]$relative)}
-        }
-      }}
-      if($null-eq$selected){
-        $terminal=[ordered]@{state='terminal';terminal_reason='model_recovery_exhausted';full_workpoint_qualified=$false;detail='No measurable same-anchor stage column within contract tiers.'};break
-      }
-      $voltages=[double[]]$anchorVoltages.Clone();$voltages[$axis]+=$selected.signed_step_v
-    }elseif($decision.status-eq'proposed'){
-      if([int]$state.candidate_count-ge[int]$loop.maximum_iterations){
-        $terminal=[ordered]@{state='terminal';terminal_reason='maximum_iterations';full_workpoint_qualified=$false};break
-      }
-      $anchorVoltages=[double[]]$decision.voltages_v
-      for($i=0;$i-lt4;$i++){$voltages[$i]=$anchorVoltages[$i]+[double]$state.step_factor*($voltages[$i]-$anchorVoltages[$i])}
-      $delta=@(0..3|ForEach-Object{[math]::Abs($voltages[$_]-$anchorVoltages[$_])})
-      if(($delta|Measure-Object -Maximum).Maximum-lt[double]$loop.minimum_step_linf_v){
-        $terminal=[ordered]@{state='terminal';terminal_reason='step_too_small';full_workpoint_qualified=$false};break
-      }
-      $state.candidate_count=[int]$state.candidate_count+1
-    }elseif($decision.next_action-eq'complete_N1'){
-      if($state.completion_attempted){
-        $terminal=[ordered]@{state='terminal';terminal_reason='missing_target_phase';full_workpoint_qualified=$false;detail='The complete centre flight still lacks measurable stage events.'};break
-      }
-      $state.completion_attempted=$true
-    }else{
-      $terminal=[ordered]@{state='terminal';terminal_reason=$decision.status;full_workpoint_qualified=$false;detail=$decision.next_action};break
-    }
-    $state.flight_count=[int]$state.flight_count+1
+    $voltages=[double[]]$planned.voltages_v
     $childId=$RunId+('-stage-{0:D3}'-f$state.flight_count)
     $script:failureStage='stage_'+$state.stage
-    $selectedStep=if($decision.status-eq'needs_stencil'){$selected}else{$null}
+    $selectedStep=$planned.selected
     $state['pending_trial']=[ordered]@{child_run_id=$childId;child_manifest=(Join-Path $trialArtifactRoot "runs/$childId/run_manifest.json");voltages_v=@($voltages);anchor_manifest=$state.anchor_manifest;stage=$state.stage;decision=$decision;selected=$selectedStep}
     Save-WorkpointBootstrap -Bootstrap $Bootstrap -BootstrapPath $BootstrapPath
     $arguments=New-CenterTrialArguments -Voltages $voltages -ChildRunId $childId
@@ -1597,83 +1528,10 @@ function Save-IterationRecoveryState {
   }
 }
 
-function Get-RecoveryProbeDirections {
-  param([Parameter(Mandatory)]$History,[Parameter(Mandatory)]$Anchor)
-  # Select the nearest real S-only candidate on each axis.  The derivative
-  # probe must be on the same side of the accepted anchor: a positive finite
-  # difference is evidence for a positive correction only, never for a
-  # negative extrapolation.
-  $anchorV=@($Anchor.voltages_v|ForEach-Object{[double]$_})
-  $directions=@(1,1)
-  foreach($axis in @(0,1)){
-    $candidates=@()
-    foreach($item in @($History)){
-      if($item-isnot[Collections.IDictionary] -or -not $item.Contains('observation_record') -or
-         $item.observation_record-isnot[Collections.IDictionary]){continue}
-      $record=$item.observation_record
-      if(-not $record.Contains('voltages_v') -or $record.voltages_v-isnot[Collections.IEnumerable]){continue}
-      $voltage=@($record.voltages_v|ForEach-Object{[double]$_})
-      if($voltage.Count-ne4){continue}
-      if([math]::Abs($voltage[2]-$anchorV[2])-gt1e-10-or[math]::Abs($voltage[3]-$anchorV[3])-gt1e-10){continue}
-      $delta=$voltage[$axis]-$anchorV[$axis]
-      if([math]::Abs($delta)-le1e-12){continue}
-      $distance=[math]::Max([math]::Abs($voltage[0]-$anchorV[0]),[math]::Abs($voltage[1]-$anchorV[1]))
-      $candidates+=,[pscustomobject]@{delta=$delta;distance=$distance}
-    }
-    if($candidates.Count){
-      $nearest=@($candidates|Sort-Object distance|Select-Object -First 1)[0]
-      $directions[$axis]=if($nearest.delta-gt0){1}else{-1}
-    }
-  }
-  return $directions
-}
-
 function Get-InterruptedSOnlyTopologyRecoveryDecision {
   param([Parameter(Mandatory)]$History)
-  # A host interruption can occur after an older controller recorded one or
-  # more S-only topology backtracks, but before it reached the newer recovery
-  # transition.  Convert that unambiguous persisted evidence into the same
-  # solver-neutral recovery request used for a newly observed topology loss.
-  # This is deliberately narrow: it never reclassifies P motion, and it needs
-  # a fully recorded accepted S anchor plus a signed S-only rejected origin.
-  $decisions=@($History.decisions)
-  $anchorIndex=-1
-  for($index=$decisions.Count-1;$index-ge0;$index--){
-    $candidate=$decisions[$index]
-    if($candidate-is[Collections.IDictionary] -and $candidate.coordinate_group-eq'stripe_1_stripe_2' -and
-       $candidate.accepted_workpoint-is[Collections.IDictionary]){$anchorIndex=$index;break}
-  }
-  if($anchorIndex-lt0){return $null}
-  if($anchorIndex-ge($decisions.Count-1)){return $null}
-  $anchor=$decisions[$anchorIndex].accepted_workpoint
-  if($anchor.voltages_v-isnot[Collections.IEnumerable]){return $null}
-  $anchorV=@($anchor.voltages_v|ForEach-Object{[double]$_})
-  if($anchorV.Count-ne4){return $null}
-  $first=$null
-  foreach($candidate in @($decisions[($anchorIndex+1)..($decisions.Count-1)])){
-    if($candidate-is[Collections.IDictionary] -and $candidate.state-eq'recovery_required'){return $null}
-    if($candidate-is[Collections.IDictionary] -and $candidate.coordinate_group-eq'physical_topology_backtrack' -and
-       $candidate.invalid_trial_reason-eq'collision_or_invalid_topology' -and
-       $candidate.recovery_state-is[Collections.IDictionary] -and
-       $candidate.recovery_state.recovery_origin_voltages_v-is[Collections.IEnumerable]){$first=$candidate;break}
-  }
-  if($null-eq$first){return $null}
-  $origin=@($first.recovery_state.recovery_origin_voltages_v|ForEach-Object{[double]$_})
-  if($origin.Count-ne4){return $null}
-  if([math]::Abs($origin[2]-$anchorV[2])-gt1e-10-or[math]::Abs($origin[3]-$anchorV[3])-gt1e-10){return $null}
-  $directions=@(0,0)
-  foreach($axis in @(0,1)){
-    $delta=$origin[$axis]-$anchorV[$axis]
-    if([math]::Abs($delta)-le1e-12){return $null}
-    $directions[$axis]=if($delta-gt0){1}else{-1}
-  }
-  return [ordered]@{
-    schema_version=1;role='mrtof_downstream_workpoint_iteration_decision';state='recovery_required';terminal_reason=$null
-    iteration=$first.iteration;coordinate_group='stripe_1_stripe_2';observation_record=$anchor;accepted_workpoint=$anchor
-    candidate_accepted=$false;invalid_trial_reason='collision_or_invalid_topology';invalid_trial_detail='persisted S-only topology loss before automatic local-model recovery'
-    invalid_candidate_voltages_v=$origin;prediction_assessment=[ordered]@{accepted=$false;topology_valid=$false;model_invalid_reason='s_only_topology_loss';candidate_voltages_v=$origin}
-    recovery_state=[ordered]@{schema_version=1;accepted_anchor=$anchor;advance_multiplier=[double]$first.recovery_state.advance_multiplier;backtrack_multiplier=[double]$first.recovery_state.backtrack_multiplier;rejected_line_count=1;recovery_origin_voltages_v=$origin;model_invalid_reason='s_only_topology_loss';trusted_prediction_count=0;initial_probe_directions=$directions}
-    next_action='refresh_independent_s_columns_after_persisted_s_only_topology_loss'
+  Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{
+    action='interrupted_topology_recovery_decision';history=$History
   }
 }
 
@@ -1688,87 +1546,39 @@ function Invoke-SLocalModelRecovery {
   $anchorEvidence=Find-AcceptedRecoveryAnchorEvidence -History $History -Lineage $Lineage -Anchor $anchor
   $stored=$null
   if(Test-Path -LiteralPath $StatePath){$stored=Get-Content -LiteralPath $StatePath -Raw|ConvertFrom-Json -AsHashtable -Depth 100}
-  $state=Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{
+  $prepared=Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{
     action='prepare_recovery_state';decision=$Decision;evidence=$anchorEvidence;stored=$stored;history=$History
-    profile=$ContractDocument.downstream_fixed_grid_workpoint_profile;policy=$RecoveryPolicy
+    profile=$ContractDocument.downstream_fixed_grid_workpoint_profile;policy=$RecoveryPolicy;include_probe_directions=$true
   }
-  $requiredDirections=Get-RecoveryProbeDirections -History $History -Anchor $anchor
-  # The recovery trigger is the authoritative failed local candidate.  It is
-  # more specific than the broader history, which can include diagnostic or
-  # already superseded probe records.
-  if($state.trigger-is[Collections.IDictionary] -and $state.trigger.decision-is[Collections.IDictionary] -and
-     $state.trigger.decision.observation_record-is[Collections.IDictionary]){
-    $triggerV=@($state.trigger.decision.observation_record.voltages_v|ForEach-Object{[double]$_})
-    if($triggerV.Count-eq4){
-      foreach($axis in @(0,1)){
-        $delta=$triggerV[$axis]-[double]$anchor.voltages_v[$axis]
-        if([math]::Abs($delta)-gt1e-12){$requiredDirections[$axis]=if($delta-gt0){1}else{-1}}
-      }
-    }
-  }
-  # An S-only topology loss has no valid observation at the rejected voltage.
-  # Its signed displacement is nevertheless useful only to choose the first
-  # probe side; each axis still falls back to the opposite side automatically
-  # when the first physical probe is rejected.
-  # Direction hints exist only for a topology-loss trigger.  Prediction or
-  # residual-stagnation recovery has no such hint and must retain the
-  # independently inferred directions above.
-  $hint=$null
-  if($Decision.recovery_state-is[Collections.IDictionary]-and
-     $Decision.recovery_state.Contains('initial_probe_directions')){
-    $hint=$Decision.recovery_state.initial_probe_directions
-  }
-  if($hint-is[Collections.IEnumerable] -and @($hint).Count-eq2){
-    $hint=@($hint|ForEach-Object{[int]$_})
-    if($hint[0] -in @(-1,1) -and $hint[1] -in @(-1,1)){$requiredDirections=$hint}
-  }
+  $state=$prepared.state;$requiredDirections=@($prepared.required_directions)
   if($state.status-eq'validated'){return $state}
   if($state.status-eq'terminal'){return $state}
   Save-IterationRecoveryState -State $state -Path $StatePath
-  foreach($axis in @(0,1)){
-    $accepted=$false
-    $requiredDirection=[int]$requiredDirections[$axis]
-    $existing=@($state.probes|Where-Object{[int]$_.axis-eq$axis-and$_.status-eq'accepted_physical_probe'-and[int]$_.round-eq[int]$state.recovery_round})
-    if($existing.Count-eq1){$accepted=$true}
-    if($existing.Count-gt1){throw 'Recovery has more than one accepted physical probe for an axis and round.'}
-    foreach($direction in @($requiredDirection,-$requiredDirection)|Select-Object -Unique){
-      if($accepted){break}
-      if(@($state.probes|Where-Object{[int]$_.axis-eq$axis-and[int]$_.direction-eq$direction-and[int]$_.round-eq[int]$state.recovery_round}).Count){continue}
-      if($state.probe_budget_remaining-le0){break}
-      $trial=@($anchor.voltages_v|ForEach-Object{[double]$_});$trial[$axis]+=$direction*[double]$state.probe_steps_v[$axis]
-      $label=if($axis-eq0){'s1'}else{'s2'}
-      $directionLabel=if($direction-eq1){'p'}else{'n'}
-      $probeId='{0}-ri{1:D2}r{2}-{3}{4}' -f $RunId,[int]$state.trigger.iteration,[int]$state.recovery_round,$label,$directionLabel
-      $probe=[ordered]@{round=[int]$state.recovery_round;axis=$axis;direction=$direction;signed_step_v=($direction*[double]$state.probe_steps_v[$axis]);run_id=$probeId;status='started'}
-      $state.probes+=,$probe;$state.probe_budget_remaining--;Save-IterationRecoveryState -State $state -Path $StatePath
-      try{
-        $arguments=New-CenterTrialArguments -Voltages $trial -ChildRunId $probeId
-        Invoke-CenterTrial -Arguments $arguments | Out-Host
-        $manifest=Join-Path $trialArtifactRoot "runs\$probeId\run_manifest.json"
-        $evidence=Get-CenterTrialPhysicalEvidence -Manifest $manifest -Voltages $trial
-        foreach($key in $evidence.Keys){$probe[$key]=$evidence[$key]}
-        $probe.status=if($evidence.passed){'accepted_physical_probe'}else{'rejected_physical_probe'}
-      }catch{$probe.status='failed';$probe.failure_reason=$_.Exception.Message}
-      Save-IterationRecoveryState -State $state -Path $StatePath
-      if($probe.status-eq'accepted_physical_probe'){$accepted=$true;break}
+  while($true){
+    $planned=Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{
+      action='plan_recovery_probe';state=$state;directions=$requiredDirections;profile=$ContractDocument.downstream_fixed_grid_workpoint_profile
     }
-    if(-not$accepted){
-      if([int]$state.recovery_round-lt[int]$state.maximum_recovery_rounds){
-        $state=Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{action='advance_recovery_round';state=$state;profile=$ContractDocument.downstream_fixed_grid_workpoint_profile;replenish_columns=$false}
-        $state.status='retry';$state.model=$null
-        $state.next_action='refresh_independent_s_columns_at_next_relative_tier';Save-IterationRecoveryState -State $state -Path $StatePath;return $state
-      }
-      $state.status='terminal';$state.terminal_reason='model_recovery_exhausted';$state.next_action='stop_with_best_accepted_workpoint';Save-IterationRecoveryState -State $state -Path $StatePath;return $state
-    }
+    $state=$planned.state
+    if($planned.action-eq'return'){Save-IterationRecoveryState -State $state -Path $StatePath;return $state}
+    if($planned.action-eq'refresh'){break}
+    $probe=$state.probes[-1];$trial=@($planned.voltages_v)
+    $label=if($probe.axis-eq0){'s1'}else{'s2'}
+    $directionLabel=if($probe.direction-eq1){'p'}else{'n'}
+    $probeId='{0}-ri{1:D2}r{2}-{3}{4}' -f $RunId,[int]$state.trigger.iteration,[int]$state.recovery_round,$label,$directionLabel
+    $probe.run_id=$probeId
+    Save-IterationRecoveryState -State $state -Path $StatePath
+    try{
+      $arguments=New-CenterTrialArguments -Voltages $trial -ChildRunId $probeId
+      Invoke-CenterTrial -Arguments $arguments | Out-Host
+      $manifest=Join-Path $trialArtifactRoot "runs\$probeId\run_manifest.json"
+      $evidence=Get-CenterTrialPhysicalEvidence -Manifest $manifest -Voltages $trial
+      foreach($key in $evidence.Keys){$probe[$key]=$evidence[$key]}
+      $probe.status=if($evidence.passed){'accepted_physical_probe'}else{'rejected_physical_probe'}
+    }catch{$probe.status='failed';$probe.failure_reason=$_.Exception.Message}
+    Save-IterationRecoveryState -State $state -Path $StatePath
   }
-  # A rejected preferred side may have required the opposite physical probe.
-  # Build and validate the model from the actually accepted signed columns,
-  # never from the initial-direction request that caused the fallback.
-  $s1=@($state.probes|Where-Object{[int]$_.axis-eq0-and$_.status-eq'accepted_physical_probe'-and[int]$_.round-eq[int]$state.recovery_round}|Select-Object -First 1)
-  $s2=@($state.probes|Where-Object{[int]$_.axis-eq1-and$_.status-eq'accepted_physical_probe'-and[int]$_.round-eq[int]$state.recovery_round}|Select-Object -First 1)
-  if($s1.Count-ne1-or$s2.Count-ne1){throw 'Accepted local S probe columns are incomplete.'}
-  $s1=$s1[0];$s2=$s2[0]
-  $usedDirections=@([int]$s1.direction,[int]$s2.direction)
+  $s1=$planned.columns[0];$s2=$planned.columns[1]
+  $usedDirections=@($planned.supported_directions)
   $modelPath=Join-Path (Split-Path -Parent $StatePath) 'iteration_local_s_model.json'
   Push-Location -LiteralPath $repoRoot
   try{
@@ -1777,38 +1587,24 @@ function Invoke-SLocalModelRecovery {
       --refresh-anchor-materialization $anchorEvidence.materialization --refresh-s1-observation $s1.observation_path `
       --refresh-s1-materialization $s1.materialization_path --refresh-s2-observation $s2.observation_path `
       --refresh-s2-materialization $s2.materialization_path --refresh-history-window 2 `
-      --refresh-trusted-radius-linf-v ([math]::Max([double]$state.probe_steps_v[0],[double]$state.probe_steps_v[1])) `
+      --refresh-trusted-radius-linf-v $planned.trusted_radius_linf_v `
       --refresh-supported-directions $usedDirections[0] $usedDirections[1] `
       --refresh-position-tolerance-mm ([double]$ContractDocument.downstream_fixed_grid_workpoint_profile.automatic_iteration.acceptance_tolerances.Stripe_target_phase_y_minus_origin_mm) `
       --output $modelPath | Out-Host
     if($LASTEXITCODE-ne0){throw 'Local S Jacobian refresh failed.'}
   }finally{Pop-Location}
   $model=Get-Content -LiteralPath $modelPath -Raw|ConvertFrom-Json -AsHashtable
-  # With no accepted S-only history inside the final, reduced radius there is
-  # no contradictory observation to reject the directly measured columns.
-  # Keep the model provisional and its radius fixed at the last probe scale;
-  # the first bounded real flight is the required prediction test.  A prior
-  # round still contracts first, so this never turns missing evidence into a
-  # large-step permission.
-  $noNearbyHistory=($model.history_validation-is[Collections.IDictionary] -and
-    [int]$model.history_validation.eligible_observation_count-eq0)
-  if(-not$model.history_validation.passed -and $noNearbyHistory -and
-     [int]$state.recovery_round-ge[int]$state.maximum_recovery_rounds){
-    $model.history_validation.passed=$true
-    $model.history_validation.validation_status='provisional_no_nearby_history'
-    $model.history_validation.first_correction_requires_real_prediction_acceptance=$true
-    $model.history_validation.first_correction_max_linf_v=([math]::Max([double]$state.probe_steps_v[0],[double]$state.probe_steps_v[1]))
-    Write-RunJson -Path $modelPath -Depth 30 -Value $model
+  $completed=Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{
+    action='complete_recovery_model';state=$state;model=$model;profile=$ContractDocument.downstream_fixed_grid_workpoint_profile
   }
-  if(-not($model.history_validation-is[Collections.IDictionary]) -or $model.history_validation.passed-isnot[bool] -or -not$model.history_validation.passed){
-    if([int]$state.recovery_round-lt[int]$state.maximum_recovery_rounds){
-      $state=Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{action='advance_recovery_round';state=$state;profile=$ContractDocument.downstream_fixed_grid_workpoint_profile;replenish_columns=$true}
-      $state.status='retry';$state.history_validation=$model.history_validation;$state.model=$null
-      $state.next_action='refresh_independent_s_columns_at_smaller_local_scale';Save-IterationRecoveryState -State $state -Path $StatePath;return $state
-    }
-    $state.status='terminal';$state.terminal_reason='model_recovery_exhausted';$state.history_validation=$model.history_validation;$state.next_action='stop_with_best_accepted_workpoint';Save-IterationRecoveryState -State $state -Path $StatePath;return $state
+  if($completed.publish_model){Write-RunJson -Path $modelPath -Depth 30 -Value $completed.model}
+  $state=$completed.state
+  if($null-ne$completed.model_projection){
+    $state.model=$completed.model_projection
+    $state.model.path=$modelPath
+    $state.model.sha256=(Get-FileHash -LiteralPath $modelPath -Algorithm SHA256).Hash.ToLowerInvariant()
   }
-  $state.status='validated';$state.model_version=2;$state.history_validation=$model.history_validation;$state.model=[ordered]@{path=$modelPath;sha256=(Get-FileHash -LiteralPath $modelPath -Algorithm SHA256).Hash.ToLowerInvariant();local_s_physical_jacobian_columns=$model.local_s_physical_jacobian_columns;trusted_radius_linf_v=([math]::Max([double]$state.probe_steps_v[0],[double]$state.probe_steps_v[1]));supported_directions=$usedDirections};$state.next_action='resume_bounded_s_solve_from_accepted_anchor';Save-IterationRecoveryState -State $state -Path $StatePath
+  Save-IterationRecoveryState -State $state -Path $StatePath
   return $state
 }
 
@@ -2510,10 +2306,12 @@ try {
     $frozenSeedMaterialization=Copy-VerifiedRunInput -Source $seedMaterialization -Destination (Join-Path $package.input_dir 'voltage_seed_materialization.json')
     $profile=(Get-Content -LiteralPath $frozenContract -Raw|ConvertFrom-Json).downstream_fixed_grid_workpoint_profile
     Assert-ActiveStripeVoltages -Voltages $seedVoltages -ActiveAxes $activeAxes
-    $steps=@(Get-RelativeVoltageStencilSteps -Python $python -RepoRoot $repoRoot -Voltages $seedVoltages -Profile $profile)
+    $stencilConfiguration=Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{
+      action='bootstrap_stencil_configuration';voltages_v=@($seedVoltages);profile=$profile
+    }
+    $steps=@($stencilConfiguration.forward_steps_v)
     if($seedVoltages.Count-ne4-or@($seedVoltages|Where-Object{-not[double]::IsFinite([double]$_)}).Count-or$steps.Count-ne4-or@($steps|Where-Object{[double]$_-le0-or-not[double]::IsFinite([double]$_)}).Count){throw 'Bootstrap requires four finite seed voltages and four positive stencil steps.'}
-    $tiers=$profile.jacobian_relative_step_tiers
-    $stepScales=@(1.0,([double]$tiers.medium/[double]$tiers.coarse),([double]$tiers.fine/[double]$tiers.coarse))
+    $stepScales=@($stencilConfiguration.stencil_step_scales)
     $bootstrap=[ordered]@{schema_version=1;role='mrtof_native_workpoint_bootstrap';seed_manifest=$seedManifest;seed_voltages_v=$seedVoltages;forward_steps_v=$steps;stencil_step_scales=$stepScales;children=$initialChildren}
     if($ContinuationRunManifest){$bootstrap.transport_seed_attempts=$transportSeedAttempts}
     if($resumeBootstrapPath){
@@ -2829,17 +2627,12 @@ try {
     if($null-ne$pendingRecoveryDecision){Write-Host "MRTOF_WORKPOINT_RECOVERY status=reconstructed reason=s_only_topology_loss"}
   }
   $maximumIterations = [int]((Get-Content -LiteralPath $frozenContract -Raw | ConvertFrom-Json).downstream_fixed_grid_workpoint_profile.automatic_iteration.maximum_iterations)
-  # One contract value bounds the main iteration child flights.  The
-  # controller still decides which coordinate group owns each attempt, but a
-  # topology boundary cannot silently multiply this expensive-flight budget.
-  $maximumFlightAttempts = $maximumIterations
-  if ($null -eq $terminalDecision -and $startIteration -gt $maximumFlightAttempts) {
-    $terminalDecision = [ordered]@{
-      schema_version=1;role='mrtof_downstream_workpoint_iteration_decision'
-      state='terminal';terminal_reason='maximum_iterations';iteration=($startIteration - 1)
-      detail="maximum main real centre-flight count $maximumFlightAttempts reached"
-    }
+  $budget=Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{
+    action='main_iteration_budget';phase='start';maximum_iterations=$maximumIterations
+    next_iteration=$startIteration;terminal_decision=$terminalDecision
   }
+  $maximumFlightAttempts=$budget.maximum_flight_attempts
+  if($null-eq$terminalDecision){$terminalDecision=$budget.terminal_decision}
   if($null-eq$terminalDecision-and$null-ne$pendingRecoveryDecision){
     do{
       $recovery=Invoke-SLocalModelRecovery -Decision $pendingRecoveryDecision -History $history -Lineage $lineage `
@@ -3078,11 +2871,10 @@ try {
     $current = @($decision.proposed_voltages_v | ForEach-Object { [double]$_ })
   }
   if ($null -eq $terminalDecision) {
-    $terminalDecision = [ordered]@{
-      schema_version=1;role='mrtof_downstream_workpoint_iteration_decision'
-      state='terminal';terminal_reason='maximum_iterations';iteration=$maximumFlightAttempts
-      detail="maximum main real centre-flight count $maximumFlightAttempts reached"
+    $budget=Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{
+      action='main_iteration_budget';phase='exhausted';maximum_iterations=$maximumFlightAttempts;terminal_decision=$terminalDecision
     }
+    $terminalDecision=$budget.terminal_decision
   }
   } # Existing measured-Jacobian route remains for explicit initial workpoints.
   Write-RunJson -Path $lineagePath -Depth 100 -Value $lineage

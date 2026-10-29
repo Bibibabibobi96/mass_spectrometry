@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from functools import partial
 from pathlib import Path
 import shutil
 from typing import Any
@@ -12,7 +13,7 @@ from jsonschema import Draft202012Validator
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.frozen_inputs import freeze_file
-from common.contracts.verify_run_manifest import record_path, verify_record
+from common.contracts.verify_run_manifest import verify_record, verified_successful_run_reference
 from common.contracts.write_run_manifest import file_record
 from common.integration.resolve_assembly import derive_assembly_scope
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import (
@@ -32,21 +33,10 @@ def _write(path: Path, value: dict[str, Any]) -> None:
     path.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n", encoding="utf-8", newline="\n")
 
 
-def verified_preparation_reference(run: Path, relative: str, *, manifest: dict[str, Any] | None = None) -> Path:
-    """Consume the unique manifest record of a successful assembly preparation."""
-    if manifest is None:
-        manifest = _read(run / "run_manifest.json")
-    if (manifest.get("project") != "instrument_assembly"
-            or manifest.get("mode") != "accelerator_interface_preparation"
-            or manifest.get("status") != "success"):
-        raise ValueError("preparation must be a successful instrument_assembly accelerator_interface_preparation run")
-    desired = (run / relative).resolve()
-    matches = [record for record in [*manifest.get("inputs", {}).values(), *manifest.get("outputs", [])]
-               if record_path(record, base_dir=run) == desired]
-    if len(matches) != 1:
-        raise ValueError("preparation manifest must bind exactly one record for " + relative)
-    verify_record("consumed accelerator preparation", matches[0], base_dir=run)
-    return desired
+verified_preparation_reference = partial(
+    verified_successful_run_reference,
+    project="instrument_assembly", mode="accelerator_interface_preparation",
+)
 
 
 def load_selection(path: Path, provider: str | None) -> tuple[str, dict[str, Any]]:

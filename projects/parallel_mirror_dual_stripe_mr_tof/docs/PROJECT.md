@@ -26,11 +26,20 @@ MR拥有Prism、镜组、Stripe、检测、系统布局约束与匹配判据；�
 `_fixed_hardware_joint_trial`；其余转折位置推导与试验构造路径保持原实现，资格仍以上述证据为界。
 该清理通过语法、Ruff及82项既有求解器无关回归；没有新增原生求解或GUI／CAD资格。
 
+固定硬件镜点的六字段不可变值型`FixedHardwareMirrorPoint`由既有`mirror_candidate_receipt.py`拥有；
+固定网格handoff与Stripe seed共用它，handoff不再反向导入求解器。字段、构造顺序、数值和worker序列化保持，
+与携带资格证据的`ManagedMirrorCandidate`仍为不同类型；依赖调整不改变镜点校验或Stripe算法。
+
 ## 统一组装迁移任务
 
 OA／IP准备、普通OA→MR飞行及prepared-joint执行已切换到直属
 [集成状态](../../../integrations/docs/INTEGRATION.md#oaip接口准备与绑定)对应入口，旧公开准备／trial入口已删除。
 MR继续提供真实几何、场、匹配与执行科学合同，不保留第二套跨器件组装器。
+
+prepared-joint组件及工作点采集消费接口准备记录时，直接调用公共manifest的唯一记录校验，不再导入integration准备CLI。
+仍要求原instrument_assembly／accelerator_interface_preparation成功身份，以及实际消费路径的唯一记录、字节数和SHA；
+不把MR旧参考入口允许的interrupted状态或run-config内记录混入这一合同。
+新进程回归在禁止加载该integration CLI时实际导入组件并校验记录；此依赖调整不改变场、粒子或恢复判据。
 
 ### OA→MR 运行组装合同
 
@@ -226,11 +235,58 @@ z=0合同还须与本次detector一致；缺方法、旧／未知方法、不一
 z=0方法／设置／时钟拒绝及真实当前producer输出消费。仅证明分析合同与数值迁移，
 没有运行商业求解器、重写历史产物或新增Formal资格。
 
+## 工作点控制决策职责
+
+staged工作点的一整次trial规划由既有`workpoint_controller_state.py`纯决策实现，经
+`downstream_workpoint_iteration --controller-request - --output -`传输。层级与正反列次序、
+候选缩放、声明边界、L∞步长下限、候选／飞行预算和终态在同一请求返回；PowerShell继续
+核验冻结身份、写入pending checkpoint及调用实际飞行。普通回合只增加一次完整规划请求；
+仅累计拒绝触发局域模型重置时，先发prepare请求并保存，再读取新科学decision并规划trial，
+保持原先的恢复次序。完成trial的接受判定仍使用原有`complete_staged_trial`请求。
+transport seed 的整批有序候选、bootstrap 四步长与重试比例、已验证 centre observation
+的物理通过判定也由该纯决策模块提供；PowerShell 保留完整 manifest verifier、身份核验与
+逐次保存/执行次序。物理 gate 每份实际 observation 使用一次完整反馈请求，未将完整
+manifest 验证缩成 record 子集。其他 stencil/recovery 状态转移仍按原入口执行，尚未据此
+宣称全部 PowerShell 科学决策迁移完成。
+bootstrap stencil 每次调用另用一次完整计划返回五个轴组的有序候选；保留原
+`direction * forward_step * step_scale` 两次乘法。旧记录的重复身份、signed step及SHA
+仍在该候选实际被消费时核验，不因预先规划而提前拒绝未来候选或改变前序checkpoint。
+显式导入的 Stripe 列在原身份校验后，每列用一次完整请求计算 tier、signed step 与
+flight debit，随后原位调用完成逻辑；不预读后列，两项原始decision仍先加入history，
+正常checkpoint仍由整次导入完成后的外层保存。
+局域 S 恢复按每次实际 probe 的完整状态选择候选、扣费和回合结束动作；已有列不重飞，
+优先方向被拒后使用实际接受的反向列。模型完成后的缩步、预算补回、终态及最终半径的
+provisional 判定归同一纯决策模块，保持原政策；PowerShell 仍先保存准备状态，逐次保存
+started／实测结果，并在必要模型改写后才计算其实际 SHA。每次 probe 的计划和模型完成
+分别使用完整请求，不把有 I/O 依赖的反馈提前到前一保存点。
+已存列的 stage 资格在原 lineage／SHA 核验后按整组请求一次；主飞行次数预算在原
+循环前判定，只有实际循环耗尽时才追加结束判定，不预先发布未来终态。canonical 轴名与
+inactive S2 的冻结身份校验仍由 PowerShell 执行；这不更改历史恢复输入的表示规则。
+
+Candidate chain 的源直径焦点预算、受控对 fallback 配方、焦点收敛／严格最佳候选选择、
+z=0 诊断分类与最终资格优先级由现有 `source_z_energy_timing_diagnostic.py` 提供。
+centre 残差容差判定复用工作点控制模块，已发布 collection receipt 的接受判定归原束团 gate；
+PowerShell 继续核验实际身份并保留读取、执行和保存顺序，最佳候选携带其原场与工作点引用。
+反馈经现有分析入口按完整决策包传输，不建立常驻解释器或新的科学 mode；z=0 仍只作诊断。
+campaign 在原顺序读取各条件及诊断后，以一次请求投影完整比较并排名；旧方法不取得当前资格，
+原 compact JSON 合同表示的键顺序仍参与共同峰设置身份，空值及并列排序规则不变。
+迁移增加短 Python 反馈进程成本，职责统一不作为运行加速结论；验收限于求解器无关参考与真实入口夹具。
+
+恢复方向随原有`prepare_recovery_state`请求一并返回，持久拓扑损失也由同一Python决策模块
+投影。History传入整个字典时保持现有默认`[1,1]`，再由触发记录和有效显式提示依次覆盖；
+不会暗中改成遍历`history.decisions`。冻结策略、数值阈值、浮点运算次序和已有probe扣费／重试
+合同不变。迁移验收使用旧PowerShell实执行参考向量与真实runner软件夹具，不新增商业求解或
+物理资格，也不改写历史checkpoint。
+
 ## 活动原生场与消费合同
 
 跨项目飞行从[直属OA→MR入口](../../../integrations/workflows/oa_mr/execute.ps1)进入；
 MR专属staged工作点及候选控制仍从[操作说明](SIMION.md)选择。
 场由现有native static provider与`static_field_binding.py`提供，不能另建手工闭合器。
+`static_field_binding.py`是 native／scalar 固定 field-family metadata 投影的唯一 owner；
+`downstream_fixed_grid_workpoint.py`只叠加 canonical centre source 与完整布局的科学语义。
+响应 metadata 不再反向导入工作点模块，也不读取 PA 全文；此次调整不代表整个 provider
+依赖图已完成清理。
 运行必须冻结对应实际资产；源码接入和纯回归不授予新原生、GUI或Formal资格。
 
 | 场层 | 冻结布局 | 网格，mm |

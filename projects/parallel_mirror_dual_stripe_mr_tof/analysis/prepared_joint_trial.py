@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from decimal import Decimal
+from functools import partial
 import re
 from pathlib import Path
 import shutil
@@ -13,10 +14,9 @@ from typing import Any
 
 from common.contracts.frozen_inputs import freeze_file
 from common.contracts.component_particle_state import load_component_particle_state_csv
-from common.contracts.verify_run_manifest import record_path, verify_record
+from common.contracts.verify_run_manifest import record_path, verify_record, verified_successful_run_reference
 from common.contracts.write_run_manifest import file_record
 from common.integration.resolve_assembly import derive_assembly_scope
-from integrations.workflows.accelerator_interface.prepare import verified_preparation_reference
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import (
     RUNTIME_LUA, materialize_measured_source_slice, materialize_centroid_probe,
 )
@@ -28,6 +28,12 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import _lua, collision_workbench_layout, render_measured_operating_point
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import resolve_trajectory_recording
 from common.simion.native_completion import parse_fly_completed_line
+
+
+verified_preparation_reference = partial(
+    verified_successful_run_reference,
+    project="instrument_assembly", mode="accelerator_interface_preparation",
+)
 
 
 def _read(path: Path) -> dict[str, Any]:

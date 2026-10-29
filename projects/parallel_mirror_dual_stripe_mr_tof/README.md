@@ -15,6 +15,7 @@
 | 理解模型、符号、推导和验证范围 | [理论索引](docs/theory/index.md) |
 | 构建、检查或运行 SIMION | [SIMION 实施说明](docs/SIMION.md) |
 | 启动或恢复原生候选campaign | [显式装配输入与恢复身份](docs/PROJECT.md#oamr-运行组装合同) |
+| 维护staged工作点控制与恢复 | [控制决策职责](docs/PROJECT.md#工作点控制决策职责) |
 | 选择OA／IP并准备或执行跨器件链 | [统一集成入口](../../integrations/README.md)、[组装当前边界](docs/PROJECT.md#统一组装迁移任务) |
 | 处理原始装配、曲线或机械证据 | [CAD 实施说明](docs/CAD.md) |
 | 查项目身份、旧资产位置、Candidate 成熟度和机器登记的 baseline | [项目描述符](config/project.json) |

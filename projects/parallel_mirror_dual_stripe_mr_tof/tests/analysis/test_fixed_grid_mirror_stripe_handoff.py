@@ -2,15 +2,24 @@ from __future__ import annotations
 
 import hashlib
 import json
+import pickle
+import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from collections.abc import Callable
+from dataclasses import FrozenInstanceError, asdict, fields, replace
 from pathlib import Path
 from typing import Any
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_grid_mirror_stripe_handoff import (
     load_fixed_grid_mirror_point,
 )
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_candidate_receipt import (
+    FixedHardwareMirrorPoint,
+)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import MirrorL0Design
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
 )
@@ -41,6 +50,98 @@ DOWNSTREAM_CONTRACT = (
     / "simion_candidate_two_zone.json"
 )
 CURRENT_CONTRACT = PROJECT / "config" / "simion_candidate_two_zone.json"
+
+
+class FixedHardwareMirrorPointContractTests(unittest.TestCase):
+    def test_exact_k_and_seed_import_detached_without_fixed_grid_loader(self) -> None:
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import mirror_exact_k_operating_point
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import dual_stripe_operating_seed
+
+        self.assertTrue(mirror_exact_k_operating_point.__file__)
+        self.assertTrue(dual_stripe_operating_seed.__file__)
+        with tempfile.TemporaryDirectory() as directory:
+            detached = Path(directory)
+            # Copy the currently imported dependencies, excluding the optional
+            # fixed-grid reader. This tests import scope, not source-list completeness.
+            for module in tuple(sys.modules.values()):
+                path = getattr(module, "__file__", None)
+                if not path:
+                    continue
+                source = Path(path).resolve()
+                if source.suffix != ".py" or not source.is_relative_to(REPOSITORY):
+                    continue
+                if source.name == "fixed_grid_mirror_stripe_handoff.py":
+                    continue
+                target = detached / source.relative_to(REPOSITORY)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+            code = r"""
+import importlib
+from pathlib import Path
+import sys
+sys.path.insert(0, sys.argv[1])
+prefix = 'projects.parallel_mirror_dual_stripe_mr_tof.analysis.'
+for name in ('mirror_exact_k_operating_point', 'dual_stripe_operating_seed'):
+    module = importlib.import_module(prefix + name)
+    assert Path(module.__file__).is_relative_to(Path(sys.argv[1]))
+assert prefix + 'fixed_grid_mirror_stripe_handoff' not in sys.modules
+print('detached exact-K and seed import passed')
+"""
+            result = subprocess.run(
+                [sys.executable, "-I", "-B", "-c", code, str(detached)], cwd=detached,
+                capture_output=True, text=True, encoding="utf-8", check=False, timeout=60,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_mirror_point_preserves_constructor_values_and_worker_roundtrip(self) -> None:
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import dual_stripe_operating_seed as seed
+
+        design = MirrorL0Design(1.5, (0., 2., 4., 6., 8.), (0., -1., -2., 3., 7.), 9., 7.)
+        values = (design, (4.25, 5., 5.75), 5., 6.125, 13.696,
+                  {"mirror": {"identity": "fixture"}, "limits_v": [-2., 7.]})
+        point = FixedHardwareMirrorPoint(*values)
+        self.assertIs(seed.FixedHardwareMirrorPoint, FixedHardwareMirrorPoint)
+        self.assertEqual([field.name for field in fields(point)], [
+            "design", "energy_points_v", "nominal_energy_per_charge_v",
+            "nominal_reduced_period_mm_per_sqrt_v", "nominal_axial_width_w_mm", "contract",
+        ])
+        expected = dict(zip((field.name for field in fields(point)), values, strict=True))
+        expected["design"] = asdict(design)
+        self.assertEqual(asdict(point), expected)
+        self.assertEqual(pickle.loads(pickle.dumps(point)), point)
+        self.assertEqual(replace(point, nominal_energy_per_charge_v=5.25).nominal_energy_per_charge_v, 5.25)
+        with self.assertRaises(FrozenInstanceError):
+            point.nominal_energy_per_charge_v = 5.25
+
+    def test_handoff_and_point_load_in_new_process_without_seed(self) -> None:
+        code = r"""
+import importlib
+import importlib.abc
+import json
+import pickle
+import sys
+prefix = 'projects.parallel_mirror_dual_stripe_mr_tof.analysis.'
+class RejectSeed(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path, target=None):
+        if fullname == prefix + 'dual_stripe_operating_seed':
+            raise AssertionError('mirror input must not import the Stripe solver')
+sys.meta_path.insert(0, RejectSeed())
+owner = importlib.import_module(prefix + 'mirror_candidate_receipt')
+handoff = importlib.import_module(prefix + 'fixed_grid_mirror_stripe_handoff')
+point = owner.FixedHardwareMirrorPoint(None, (1., 2., 3.), 2., 4., 5., {})
+assert pickle.loads(pickle.dumps(point)) == point
+assert handoff.FixedHardwareMirrorPoint is owner.FixedHardwareMirrorPoint
+print(json.dumps({'owner': type(point).__module__, 'seed_loaded': prefix + 'dual_stripe_operating_seed' in sys.modules}))
+"""
+        result = subprocess.run(
+            [sys.executable, "-B", "-c", code], cwd=REPOSITORY,
+            capture_output=True, text=True, encoding="utf-8", check=False, timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout), {
+            "owner": "projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_candidate_receipt",
+            "seed_loaded": False,
+        })
 
 
 @unittest.skipUnless(

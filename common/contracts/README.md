@@ -132,6 +132,10 @@ retention receipt绑定这些小型恢复输入及原session快照：无receipt�
 
 ### 文件身份与读取
 
+`verify_run_manifest.verified_successful_run_reference`核对调用方声明的project／mode及成功状态，
+再从manifest的inputs／outputs选择唯一匹配路径并校验其原始字节；不读取其他载荷或把run config当第二记录权威。
+接口准备与MR组件直接使用这一校验，组件不再为了消费记录而导入integration命令入口。
+
 `strict_json.py`提供机器JSON的公共表示检查：`load_json_object`读取UTF-8（可带BOM）对象，
 拒绝任意层级的重复键、NaN／Infinity及浮点溢出；`require_number`拒绝bool、数值字符串和非有限值，
 超大整数的浮点转换失败也归为`StrictJsonError`。边界值只由调用方显式传入，不推断单位、物种或科学资格。

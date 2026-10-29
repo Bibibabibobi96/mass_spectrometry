@@ -138,13 +138,20 @@ function Get-ManifestOutputPath {
 }
 
 function Invoke-ProjectPython {
-  param([Parameter(Mandatory)][string[]]$Arguments)
+  param([Parameter(Mandatory)][string[]]$Arguments,[Collections.IDictionary]$Request)
   Push-Location -LiteralPath $repoRoot;$saved=$env:PYTHONPATH
   try{
     $env:PYTHONPATH=$repoRoot
-    & $python @Arguments
+    if($PSBoundParameters.ContainsKey('Request')){$Request|ConvertTo-Json -Depth 100 -Compress|& $python @Arguments}
+    else{& $python @Arguments}
     if($LASTEXITCODE-ne0){throw "Python stage failed: $($Arguments -join ' ')"}
   }finally{$env:PYTHONPATH=$saved;Pop-Location}
+}
+
+function Invoke-CandidatePolicyRequest {
+  param([Parameter(Mandatory)][Collections.IDictionary]$Request)
+  $output=@(Invoke-ProjectPython -Arguments @('-X','utf8','-m',$analysisModule,'--policy-request','-','--output','-') -Request $Request)
+  return ($output-join"`n")|ConvertFrom-Json -AsHashtable -Depth 100
 }
 
 function New-StageRunId {
@@ -508,15 +515,9 @@ function Read-CollectionGate {
   return $gate
 }
 
-function Test-CollectionAccepted {
-  param([Parameter(Mandatory)]$Gate)
-  return $Gate.status-eq'accepted'-and-not[bool]$Gate.warning-and
-    -not[bool]$Gate.hard_stop-and[bool]$Gate.continue_downstream-and
-    [double]$Gate.detection_rate-ge[double]$Gate.preferred_minimum
-}
-
 function Read-CenterWorkpointGate {
-  param([Parameter(Mandatory)]$ScreeningResult,[Parameter(Mandatory)]$ContractDocument)
+  param([Parameter(Mandatory)]$ScreeningResult,[Parameter(Mandatory)]$ContractDocument,
+    [Collections.IDictionary]$Focus)
   $cohortRun=Split-Path -Parent ([string]$ScreeningResult.cohort_run_manifest)
   $observationPath=Join-Path $cohortRun 'results\two_prism_trial_observation.json'
   if(-not(Test-Path -LiteralPath $observationPath -PathType Leaf)){
@@ -546,25 +547,21 @@ function Read-CenterWorkpointGate {
     $tolerances=@{}+$tolerances
     $tolerances[$names[1]]=$target.energy_tolerance_per_charge_v
   }
-  $failed=@()
-  if(-not($validation-is[Collections.IDictionary])-or$validation.status-ne'observed'){
-    $failed+='center_particle_workpoint_observation_incomplete'
-  }else{
+  $residualValues=@{};$toleranceValues=@{};$status=$null
+  if($validation-is[Collections.IDictionary]){$status=[string]$validation.status}
+  if($status-eq'observed'){
     foreach($name in $names){
-      if(-not$validation.physical_acceptance_residuals.Contains($name)-or-not$tolerances.Contains($name)){
-        $failed+=$name;continue
-      }
-      $value=[double]$validation.physical_acceptance_residuals[$name]
-      $limit=[double]$tolerances[$name]
-      if(-not[double]::IsFinite($value)-or-not[double]::IsFinite($limit)-or$limit-le0-or[math]::Abs($value)-gt$limit){
-        $failed+=$name
+      if($validation.physical_acceptance_residuals.Contains($name)-and$tolerances.Contains($name)){
+        $residualValues[$name]=[double]$validation.physical_acceptance_residuals[$name]
+        $toleranceValues[$name]=[double]$tolerances[$name]
       }
     }
   }
-  return [ordered]@{
-    passed=($failed.Count-eq0);failed=@($failed);validation=$validation
-    observation=$observationPath
+  $result=Invoke-CandidatePolicyRequest -Request @{
+    action='center_feedback';status=$status;names=$names;residuals=$residualValues;tolerances=$toleranceValues;focus=$Focus
   }
+  $result.validation=$validation;$result.observation=$observationPath
+  return $result
 }
 
 
@@ -678,15 +675,15 @@ function Invoke-Screening {
 
 function Get-FocusFallbackSourceReceipt {
   param(
-    [Parameter(Mandatory)][ValidateSet(10,5)][int]$HalfSpanPercent,
+    [Parameter(Mandatory)]$Pair,
     [Parameter(Mandatory)][string]$BaseDefinition,
     [Parameter(Mandatory)][string]$GeometryContract
   )
-  $key=[string]$HalfSpanPercent
+  $HalfSpanPercent=[int]$Pair.percent;$key=[string]$HalfSpanPercent
   if($focusFallbackSources.ContainsKey($key)){return [string]$focusFallbackSources[$key]}
   $definition=Get-Content -LiteralPath $BaseDefinition -Raw|ConvertFrom-Json -AsHashtable
   $null=$definition.Remove('controlled_focus_half_span_mm')
-  $definition.controlled_focus_half_span_fraction_of_radius=$HalfSpanPercent/100.0
+  $definition.controlled_focus_half_span_fraction_of_radius=$Pair.fraction
   $definitionPath=Join-Path $package.input_dir "focus_source_definition_p${HalfSpanPercent}.json"
   Write-RunJson -Path $definitionPath -Depth 30 -Value $definition
   $sourceId=New-StageRunId -Activity analysis -Scope python -Subject "mrtof-focus-source-p${HalfSpanPercent}"
@@ -712,15 +709,16 @@ function Resolve-DetectorFocusSample {
   if([bool]$FormalSample.available){
     return [pscustomobject]@{
       sample=$FormalSample;diagnostic=$FormalDiagnostic;formal_diagnostic=$FormalDiagnostic
-      half_span_percent=20;particle_count=[int]$FormalSample.particle_count;fallback_runs=@()
+      half_span_percent=$focusPolicy.formal_half_span_percent;particle_count=[int]$FormalSample.particle_count;fallback_runs=@()
     }
   }
   $fallbackRuns=@();$lastSample=$FormalSample;$lastDiagnostic=$FormalDiagnostic
-  foreach($percent in @(10,5)){
-    $receipt=Get-FocusFallbackSourceReceipt -HalfSpanPercent $percent `
+  foreach($pair in $focusPolicy.fallback_pairs){
+    $percent=[int]$pair.percent
+    $receipt=Get-FocusFallbackSourceReceipt -Pair $pair `
       -BaseDefinition $BaseDefinition -GeometryContract $GeometryContract
     $micro=Invoke-Screening -Stage "$Stage-focus-p${percent}" -WorkpointRun $WorkpointRun `
-      -SourceReceipt $receipt -Variation $Variation -ParticleCount 3 -FocusDiagnosticOnly
+      -SourceReceipt $receipt -Variation $Variation -ParticleCount $focusPolicy.fallback_particle_count -FocusDiagnosticOnly
     $microDiagnostic=Invoke-Diagnostic -Stage "$Stage-focus-p${percent}" `
       -FlightManifest ([string]$micro.result.cohort_run_manifest)
     $microSample=Read-DetectorFocusSample -Path $microDiagnostic
@@ -732,14 +730,14 @@ function Resolve-DetectorFocusSample {
     if([bool]$microSample.available){
       return [pscustomobject]@{
         sample=$microSample;diagnostic=$microDiagnostic;formal_diagnostic=$FormalDiagnostic
-        half_span_percent=$percent;particle_count=3;fallback_runs=@($fallbackRuns)
+        half_span_percent=$percent;particle_count=$focusPolicy.fallback_particle_count;fallback_runs=@($fallbackRuns)
       }
     }
   }
-  $lastSample.reason='minimum_5_percent_pair_did_not_both_reach_detector__condition_unsuitable_for_te1_focus'
+  $lastSample.reason=$focusPolicy.unavailable_reason
   return [pscustomobject]@{
     sample=$lastSample;diagnostic=$lastDiagnostic;formal_diagnostic=$FormalDiagnostic
-    half_span_percent=5;particle_count=3;fallback_runs=@($fallbackRuns)
+    half_span_percent=$percent;particle_count=$focusPolicy.fallback_particle_count;fallback_runs=@($fallbackRuns)
   }
 }
 
@@ -805,46 +803,23 @@ function Read-DetectorFocusSample {
   }
 }
 
-function Read-Z0FocusClassification {
-  param(
-    [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][double]$SlopeToleranceUsPerMm,
-    [Parameter(Mandatory)][double]$MinimumMassResolution
-  )
+function Read-FocusDiagnosticFeedback {
+  param([Parameter(Mandatory)][string]$Path,[Parameter(Mandatory)]$Sample,
+    [Collections.IDictionary]$Qualification)
   $value=Get-Content -LiteralPath $Path -Raw|ConvertFrom-Json -AsHashtable
   $z0=$value.central_plane_focus_history.target_return_crossing
-  if(-not($z0-is[Collections.IDictionary])-or$z0.status-ne'observed'){
-    return [ordered]@{
-      primary='topology_or_upstream_loss';labels=@('topology_or_upstream_loss')
-      status=$(if($z0-is[Collections.IDictionary]){[string]$z0.status}else{'missing'})
-      reason=$(if($z0-is[Collections.IDictionary]){[string]$z0.reason}else{'target_z0_diagnostic_missing'})
-    }
+  $detectorFwhm=$null
+  if($z0-is[Collections.IDictionary]-and$z0.status-eq'observed'){
+    $z0.focus_residual_us_per_mm=[double]$z0.focus_residual_us_per_mm
+    $z0.absolute_time.median=[double]$z0.absolute_time.median
+    if($null-ne$z0.absolute_time.fwhm){$z0.absolute_time.fwhm=[double]$z0.absolute_time.fwhm}
+    $z0.reached_particle_count=[int]$z0.reached_particle_count
+    $detectorFwhm=$value.terminal_plane_diagnostic.detector_plane.absolute_time.fwhm
+    if($null-ne$detectorFwhm){$detectorFwhm=[double]$detectorFwhm}
   }
-  $slope=[double]$z0.focus_residual_us_per_mm
-  $median=[double]$z0.absolute_time.median
-  $fwhm=if($null-eq$z0.absolute_time.fwhm){$null}else{[double]$z0.absolute_time.fwhm}
-  if(-not[double]::IsFinite($slope)-or-not[double]::IsFinite($median)-or$median-le0-or
-    ($null-ne$fwhm-and(-not[double]::IsFinite($fwhm)-or$fwhm-le0))){
-    throw 'Observed z=0 focus diagnostic is numerically invalid.'
-  }
-  $resolution=$z0.absolute_time.time_equivalent_resolution
-  $labels=[Collections.Generic.List[string]]::new()
-  if([math]::Abs($slope)-gt$SlopeToleranceUsPerMm){
-    $labels.Add('first_order_broadening_enter_te1')
-  }elseif($null-eq$resolution-or$resolution-lt$MinimumMassResolution){
-    $labels.Add('higher_order_or_phase_space_warning')
-  }else{
-    $labels.Add('z0_focus_response_within_current_diagnostic_budget')
-  }
-  $detectorFwhm=$value.terminal_plane_diagnostic.detector_plane.absolute_time.fwhm
-  if($null-ne$fwhm-and$null-ne$detectorFwhm-and[double]$detectorFwhm-gt$fwhm){
-    $labels.Add('downstream_detector_leg_contribution')
-  }
-  return [ordered]@{
-    primary=$labels[0];labels=@($labels);status='observed';reached_particle_count=[int]$z0.reached_particle_count
-    dt_d_initial_z_us_per_mm=$slope;slope_tolerance_us_per_mm=$SlopeToleranceUsPerMm
-    mass_resolution_t_over_2fwhm=$resolution
-    qualification='diagnostic_classification_only__not_a_te1_precondition'
+  return Invoke-CandidatePolicyRequest -Request @{
+    action='diagnostic_feedback';z0=$z0;detector_fwhm=$detectorFwhm;qualification=$Qualification
+    focus=@{sample=$Sample;minimum_resolution=$minimumMassResolution;source_span_mm=$sourceZSpanMm}
   }
 }
 
@@ -1317,7 +1292,7 @@ try{
   $source=$diagnosticSource
   $sourceReceipt=$diagnosticSourceReceipt
   $sourceDefinitionData=Get-Content -LiteralPath $diagnosticSourceDefinition -Raw|ConvertFrom-Json -AsHashtable
-  $sourceZSpanMm=2.0*[double]$sourceDefinitionData.position_radius_mm
+  $sourceRadiusMm=[double]$sourceDefinitionData.position_radius_mm
   $focusContractPath=Join-Path $workpointRun 'inputs\contract.json'
   $focusContract=Get-Content -LiteralPath $focusContractPath -Raw|ConvertFrom-Json -AsHashtable
   $workpointProfile=$focusContract.downstream_fixed_grid_workpoint_profile
@@ -1334,10 +1309,10 @@ try{
     Write-RunJson -Path $focusContractPath -Depth 100 -Value $focusContract
   }
   $minimumMassResolution=[double]$focusContract.mirror.theory_requirements.l0_acceptance_budget.minimum_mass_resolution
-  if(-not[double]::IsFinite($sourceZSpanMm)-or$sourceZSpanMm-le0-or
-    -not[double]::IsFinite($minimumMassResolution)-or$minimumMassResolution-le0){
-    throw 'Detector focus tolerance inputs are invalid.'
+  $focusPolicy=Invoke-CandidatePolicyRequest -Request @{
+    action='focus_configuration';radius_mm=$sourceRadiusMm;minimum_resolution=$minimumMassResolution
   }
+  $sourceZSpanMm=$focusPolicy.source_z_span_mm
   $mirrorAuthorityRun=(Resolve-Path -LiteralPath $MirrorRunPath).Path
   $mirrorPeriod=Join-Path $mirrorAuthorityRun 'results\mirror_real_field_period_comparison.json'
   $mirrorConfig=Get-Content -LiteralPath (Join-Path $mirrorAuthorityRun 'run_config.json') -Raw|ConvertFrom-Json -AsHashtable
@@ -1381,9 +1356,9 @@ try{
     -WorkpointRun $workpointRun -BaseDefinition $diagnosticSourceDefinition -GeometryContract $focusContractPath
   $baselineFocusSample=$baselineFocusResult.sample
   $baselineFocusDiagnostic=[string]$baselineFocusResult.diagnostic
-  $baselineFocusTolerance=$baselineFocusSample.median_tof_us/(2.0*$minimumMassResolution*$sourceZSpanMm)
-  $baselineZ0Classification=Read-Z0FocusClassification -Path $baselineDiagnostic `
-    -SlopeToleranceUsPerMm $baselineFocusTolerance -MinimumMassResolution $minimumMassResolution
+  $baselineFeedback=Read-FocusDiagnosticFeedback -Path $baselineDiagnostic -Sample $baselineFocusSample
+  $baselineFocusTolerance=$baselineFeedback.focus.tolerance_us_per_mm
+  $baselineZ0Classification=$baselineFeedback.z0
 
   $failureStage='baseline_n100_formal_volume'
   if($BaselineScreeningRunPath){
@@ -1508,11 +1483,15 @@ try{
       Complete-FocusResponseUnavailable -Stage root -Sample $sample -Baseline $baseline -Probe $probe -Root $focused
       return
     }
-    $focusTolerance=$sample.median_tof_us/(2.0*$minimumMassResolution*$sourceZSpanMm)
-    $responseConverged=[math]::Abs($sample.slope_us_per_mm)-le$focusTolerance
-    $candidateCenterGate=Read-CenterWorkpointGate -ScreeningResult $focused.result -ContractDocument $focusContract
     $candidateEnvelopeAvailable=[bool]$focused.envelope_available
-    $focusConverged=$responseConverged-and[bool]$candidateCenterGate.passed-and$candidateEnvelopeAvailable
+    $candidateCenterGate=Read-CenterWorkpointGate -ScreeningResult $focused.result -ContractDocument $focusContract -Focus @{
+      sample=$sample;minimum_resolution=$minimumMassResolution;source_span_mm=$sourceZSpanMm
+      envelope=$candidateEnvelopeAvailable;best=$(if([double]::IsPositiveInfinity($bestFocusMetric)){$null}else{$bestFocusMetric})
+    }
+    $candidateFeedback=$candidateCenterGate.focus;$null=$candidateCenterGate.Remove('focus')
+    $focusTolerance=$candidateFeedback.tolerance_us_per_mm
+    $responseConverged=$candidateFeedback.response_converged
+    $focusConverged=$candidateFeedback.converged
     $focusIterations+=,[ordered]@{
         attempt=$rootAttempt;te1_coordinate=$rootCoordinate;diagnostic=$rootFocusDiagnostic
         formal_diagnostic=$rootDiagnostic;focus_half_span_percent=$rootFocusResult.half_span_percent
@@ -1522,9 +1501,8 @@ try{
       screening_particle_count=[int]$focused.particle_count;evidence_scope=[string]$focused.evidence_scope
       envelope_available=$candidateEnvelopeAvailable
     }
-    if($candidateCenterGate.passed-and$candidateEnvelopeAvailable-and
-      [math]::Abs($sample.slope_us_per_mm)-lt$bestFocusMetric){
-      $bestFocusMetric=[math]::Abs($sample.slope_us_per_mm);$bestFocused=$focused
+    if($candidateFeedback.improves_best){
+      $bestFocusMetric=$candidateFeedback.absolute_slope;$bestFocused=$focused
       $bestRootDiagnostic=$rootDiagnostic;$bestRootFocusDiagnostic=$rootFocusDiagnostic;$bestRootCoordinate=$rootCoordinate
       $bestRootVariation=$rootVariation
       $bestWorkpointRun=$workpointRun;$bestWorkpointManifest=$workpointManifest;$bestHandoff=$handoff
@@ -1587,11 +1565,15 @@ try{
         Complete-FocusResponseUnavailable -Stage reclosed_root -Sample $sample -Baseline $baseline -Probe $probe -Root $focused
         return
       }
-      $focusTolerance=$sample.median_tof_us/(2.0*$minimumMassResolution*$sourceZSpanMm)
-      $responseConverged=[math]::Abs($sample.slope_us_per_mm)-le$focusTolerance
-      $candidateCenterGate=Read-CenterWorkpointGate -ScreeningResult $focused.result -ContractDocument $focusContract
       $candidateEnvelopeAvailable=[bool]$focused.envelope_available
-      $focusConverged=$responseConverged-and[bool]$candidateCenterGate.passed-and$candidateEnvelopeAvailable
+      $candidateCenterGate=Read-CenterWorkpointGate -ScreeningResult $focused.result -ContractDocument $focusContract -Focus @{
+        sample=$sample;minimum_resolution=$minimumMassResolution;source_span_mm=$sourceZSpanMm
+        envelope=$candidateEnvelopeAvailable;best=$(if([double]::IsPositiveInfinity($bestFocusMetric)){$null}else{$bestFocusMetric})
+      }
+      $candidateFeedback=$candidateCenterGate.focus;$null=$candidateCenterGate.Remove('focus')
+      $focusTolerance=$candidateFeedback.tolerance_us_per_mm
+      $responseConverged=$candidateFeedback.response_converged
+      $focusConverged=$candidateFeedback.converged
       $focusIterations+=,[ordered]@{
         attempt=$rootAttempt;reclosure=$reclosureCount;te1_coordinate=$rootCoordinate;diagnostic=$rootFocusDiagnostic
         formal_diagnostic=$rootDiagnostic;focus_half_span_percent=$rootFocusResult.half_span_percent
@@ -1602,8 +1584,8 @@ try{
         envelope_available=$candidateEnvelopeAvailable
       }
       if(-not$candidateCenterGate.passed){throw 'Reclosed TE1 centre failed its screening centre-particle verification.'}
-      if($candidateEnvelopeAvailable-and[math]::Abs($sample.slope_us_per_mm)-lt$bestFocusMetric){
-        $bestFocusMetric=[math]::Abs($sample.slope_us_per_mm);$bestFocused=$focused
+      if($candidateFeedback.improves_best){
+        $bestFocusMetric=$candidateFeedback.absolute_slope;$bestFocused=$focused
         $bestRootDiagnostic=$rootDiagnostic;$bestRootFocusDiagnostic=$rootFocusDiagnostic;$bestRootCoordinate=$rootCoordinate
         $bestRootVariation=$rootVariation
         $bestWorkpointRun=$workpointRun;$bestWorkpointManifest=$workpointManifest;$bestHandoff=$handoff
@@ -1678,8 +1660,11 @@ try{
           -Baseline $baseline -Probe $probe -Root $remeasured
         return
       }
-      $remeasureTolerance=$remeasureSample.median_tof_us/(2.0*$minimumMassResolution*$sourceZSpanMm)
-      $remeasureResponseConverged=[math]::Abs($remeasureSample.slope_us_per_mm)-le$remeasureTolerance
+      $remeasureFeedback=Invoke-CandidatePolicyRequest -Request @{
+        action='focus_feedback';focus=@{sample=$remeasureSample;minimum_resolution=$minimumMassResolution;source_span_mm=$sourceZSpanMm}
+      }
+      $remeasureTolerance=$remeasureFeedback.focus.tolerance_us_per_mm
+      $remeasureResponseConverged=$remeasureFeedback.focus.response_converged
       $focusCoordinates.Clear();$focusDiagnostics.Clear()
       $focusCoordinates.Add($rootCoordinate);$focusDiagnostics.Add($rootFocusDiagnostic)
       $focusCoordinates.Add($remeasureCoordinate);$focusDiagnostics.Add($remeasureFocusDiagnostic)
@@ -1737,10 +1722,13 @@ try{
     Complete-FocusResponseUnavailable -Stage final_n100 -Sample $sample -Baseline $baseline -Probe $probe -Root $selectedEnvelope
     return
   }
-  $focusTolerance=$sample.median_tof_us/(2.0*$minimumMassResolution*$sourceZSpanMm)
-  $responseConverged=[math]::Abs($sample.slope_us_per_mm)-le$focusTolerance
-  $candidateCenterGate=Read-CenterWorkpointGate -ScreeningResult $selectedEnvelope.result -ContractDocument $focusContract
-  $focusConverged=$responseConverged-and[bool]$candidateCenterGate.passed
+  $candidateCenterGate=Read-CenterWorkpointGate -ScreeningResult $selectedEnvelope.result -ContractDocument $focusContract -Focus @{
+    sample=$sample;minimum_resolution=$minimumMassResolution;source_span_mm=$sourceZSpanMm
+  }
+  $candidateFeedback=$candidateCenterGate.focus;$null=$candidateCenterGate.Remove('focus')
+  $focusTolerance=$candidateFeedback.tolerance_us_per_mm
+  $responseConverged=$candidateFeedback.response_converged
+  $focusConverged=$candidateFeedback.converged
 
   $failureStage='compare'
   $comparison=$null;$comparisonData=$null;$measuredResolution=$null;$rootCollectionGate=$null;$rootCenterGate=$null
@@ -1767,23 +1755,26 @@ try{
   $rootCollectionGate=Read-CollectionGate -ScreeningResult $focused.result
   $rootCenterGate=$candidateCenterGate
   $rootFocusSample=Read-DetectorFocusSample -Path $rootFocusDiagnostic
-  $rootZ0Classification=Read-Z0FocusClassification -Path $rootDiagnostic `
-    -SlopeToleranceUsPerMm ($rootFocusSample.median_tof_us/(2.0*$minimumMassResolution*$sourceZSpanMm)) `
-    -MinimumMassResolution $minimumMassResolution
-  $resolutionSatisfied=$null-ne$measuredResolution-and$measuredResolution-ge$minimumMassResolution
-  $collectionSatisfied=$null-ne$rootCollectionGate-and(Test-CollectionAccepted -Gate $rootCollectionGate)
-  $centerWorkpointSatisfied=$null-ne$rootCenterGate-and[bool]$rootCenterGate.passed
-  $workflowOutcome=if($reclosureExhausted){'warning_center_workpoint_reclosure_exhausted__continue_parameter_scan'}
-    elseif(-not$centerWorkpointSatisfied){'warning_center_workpoint_shifted__reclose_required'}
-    elseif(-not$collectionSatisfied){'warning_collection_below_preferred__continue_parameter_scan'}
-    elseif(-not$focusConverged){'warning_focus_not_converged__continue_parameter_scan'}
-    elseif(-not$resolutionSatisfied){'warning_resolution_below_target__continue_parameter_scan'}
-    else{'within_tolerance'}
+  $collectionProjection=if($null-eq$rootCollectionGate){$null}else{@{
+    status=[string]$rootCollectionGate.status;warning=[bool]$rootCollectionGate.warning
+    hard_stop=[bool]$rootCollectionGate.hard_stop;continue_downstream=[bool]$rootCollectionGate.continue_downstream
+    detection_rate=$rootCollectionGate.detection_rate;preferred_minimum=$rootCollectionGate.preferred_minimum
+  }}
+  $finalFeedback=Read-FocusDiagnosticFeedback -Path $rootDiagnostic -Sample $rootFocusSample -Qualification @{
+    measured_resolution=$measuredResolution;minimum_resolution=$minimumMassResolution;collection=$collectionProjection
+    center=($null-ne$rootCenterGate-and[bool]$rootCenterGate.passed)
+    focus_converged=$focusConverged;reclosure_exhausted=$reclosureExhausted
+  }
+  $rootZ0Classification=$finalFeedback.z0
+  $resolutionSatisfied=$finalFeedback.qualification.resolution_satisfied
+  $collectionSatisfied=$finalFeedback.qualification.collection_satisfied
+  $centerWorkpointSatisfied=$finalFeedback.qualification.center_workpoint_satisfied
+  $workflowOutcome=$finalFeedback.qualification.workflow_outcome
   if($workflowOutcome-ne'within_tolerance'){Write-Warning $workflowOutcome}
   Write-RunJson -Path $package.summary -Depth 30 -Value ([ordered]@{
     schema_version=1;role='mrtof_native_candidate_end_to_end_chain_summary';status='success'
     workflow_outcome=$workflowOutcome
-    qualification=$(if($workflowOutcome-eq'within_tolerance'){'paired_n100_candidate_within_tolerance'}else{'paired_n100_candidate_warning__continue_parameter_scan'})
+    qualification=$finalFeedback.qualification.qualification
     workpoint_run_manifest=$workpointManifest
     diagnostic_source_receipt=$diagnosticSourceReceipt;formal_volume_source_receipt=$formalSourceReceipt
     baseline_screening_run_manifest=(Join-Path $baseline.run 'run_manifest.json')

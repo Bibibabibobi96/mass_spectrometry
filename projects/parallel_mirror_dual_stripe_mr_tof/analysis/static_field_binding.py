@@ -6,12 +6,14 @@ import csv
 import copy
 import json
 import math
+import re
 from contextvars import ContextVar
 from functools import wraps
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from common.contracts.verify_run_manifest import verify_record
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import CandidateContractError
 
 
 _record_indexes: ContextVar[dict | None] = ContextVar("static_field_record_indexes", default=None)
@@ -1054,13 +1056,351 @@ def _validate_ip_replacement(binding: dict[str, Any], base: dict[str, Any],
         raise ValueError("IP collision occupancy or fine-field source identity/pose differs")
 
 
+def _static_solver_numerics(solver: Mapping[str, Any]) -> dict[str, Any]:
+    """Project sealed Study/solver trees onto the provider's named readback in volts."""
+    keys = (
+        "active_mesh_tag", "fc_solver", "fc_active", "iterative_active", "iterative_solver", "multigrid_active",
+        "mg_prefun", "mg_cycle", "mg_amgauto", "mg_loweramg", "mg_prefermatfree",
+        "stationary_control", "stationary_stol", "study_usestol", "study_stol",
+        "scale_method", "scale_v", "field_scale_method", "rhob", "errorchk", "prefuntype", "nlinnormuse",
+    )
+    if "solver" not in solver:
+        extra = ("fine_order", "fine_discretization", "manual_levels", "coarse_mesh", "coarse_discretization",
+                 "coarse_order", "mg_casegen", "mg_caseuse", "mg_caseassem", "mg_levels", "mg_assemble",
+                 "mg_keep", "matrix_format", "iterative_active_children", "pr", "po", "coarse_active_children", "coarse_solver")
+        return {key: solver[key] for key in (*keys, *extra) if key in solver}
+    nodes = {solver["study_step"]["path"]: solver["study_step"]}
+    pending = list(solver["solver"])
+    while pending:
+        node = pending.pop()
+        if node["path"] in nodes:
+            raise CandidateContractError("duplicate sealed solver node")
+        nodes[node["path"]] = node
+        pending.extend(node["children"])
+
+    def value(path: str, name: str) -> Any:
+        rows = [p for p in nodes[path]["properties"] if p["name"] == name]
+        if len(rows) != 1 or rows[0]["read_error"]:
+            raise CandidateContractError(f"sealed solver property unavailable: {path}/{name}")
+        return rows[0]["value"]
+
+    stat, fc, it, mg, var = "sol1/s1", "sol1/s1/fc1", "sol1/s1/i1", "sol1/s1/i1/mg1", "sol1/v1"
+    if value(it, "linsolver") != "cg":
+        raise CandidateContractError("ordinary scalar solver tree is not the reviewed CG/mg1 path")
+    mesh = value("std1/stat", "mesh")
+    if len(mesh) != 2 or mesh[0] != "geom1":
+        raise CandidateContractError("sealed Study does not bind one geom1 mesh")
+    properties = {
+        "fc_solver": (fc,"linsolver"), "iterative_solver": (it,"linsolver"),
+        "mg_prefun": (mg,"prefun"), "mg_cycle": (mg,"mgcycle"), "mg_amgauto": (mg,"amgauto"),
+        "mg_loweramg": (mg,"loweramg"), "mg_prefermatfree": (mg,"prefermatfree"),
+        "stationary_control": (stat,"control"), "stationary_stol": (stat,"stol"),
+        "study_stol": ("std1/stat","stol"), "scale_method": (var,"scalemethod"), "scale_v": (var,"scaleval"),
+        "field_scale_method": (var+"/comp1_V","scalemethod"), "rhob": (it,"rhob"),
+        "errorchk": (it,"errorchk"), "prefuntype": (it,"prefuntype"), "nlinnormuse": (it,"nlinnormuse"),
+    }
+    result = {key: value(*pair) for key, pair in properties.items()}
+    use_stol = value("std1/stat", "usestol")
+    if use_stol not in ("on", "off"):
+        raise CandidateContractError("sealed Study tolerance switch is invalid")
+    result.update(active_mesh_tag=mesh[1], fc_active=nodes[fc]["is_active"],
+                  iterative_active=nodes[it]["is_active"], multigrid_active=nodes[mg]["is_active"],
+                  study_usestol=use_stol == "on")
+    return result
+
+
+def native_binding_problem(binding: Mapping[str, Any], materialization: Mapping[str, Any], *,
+                           layout_resolver: Callable[[], list[Mapping[str, Any]]] | None = None) -> dict[str, Any]:
+    """Keep native discretization fixed while allowing the existing four P/S axes."""
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import PS_GROUPS
+
+    if binding.get("mode") != "native_static_pa":
+        raise CandidateContractError("native trial must consume its actual native static binding")
+    expected = binding["authority"]["analyzer_electrode_voltages_v"]
+    ps_ids = {electrode for ids in PS_GROUPS.values() for electrode in ids}
+    recorded = materialization["analyzer_electrode_voltages_v"]
+    # Same 1e-9 V compatibility as static_field_binding.validate_voltages,
+    # confined to the four adjustable P/S axes; other electrodes stay exact.
+    if len(recorded) != len(expected) or any(
+            (not math.isclose(float(a), float(b), rel_tol=0, abs_tol=1e-9)
+             if i in ps_ids else a != b)
+            for i, (a, b) in enumerate(zip(recorded, expected), 1)):
+        raise CandidateContractError("native static field full voltages differ from materialization")
+    requested = [*materialization["stripe_biases_v"], *materialization["prism_voltages_v"]]
+    for value, ids in zip(requested, PS_GROUPS.values(), strict=True):
+        if any(not math.isclose(float(expected[i - 1]), float(value), rel_tol=0, abs_tol=1e-9) for i in ids):
+            raise CandidateContractError("native static field P/S voltages differ from materialization")
+    authority = copy.deepcopy(binding["authority"])
+    for ids in PS_GROUPS.values():
+        for electrode in ids:
+            authority["analyzer_electrode_voltages_v"][electrode - 1] = None
+    # A changed-voltage parent PA has different bytes but the same collision
+    # geometry. Its grid/geometry are already bound above; the other independent
+    # collision instances must remain exactly the same sealed assets.
+    collisions = [dict(role=i["role"], origin_mm=i["origin_mm"],
+                       record={key: i["record"][key] for key in ("bytes", "sha256")} if n else None)
+                  for n, i in enumerate(binding["instances"])]
+    layout = [binding, *binding.get("refinement_windows", [])]
+    if layout_resolver is not None:
+        # Preserve the consumer source check before reading grid/numerics fields.
+        layout = layout_resolver()
+    return dict(mode="native_static_pa", fixed_authority=authority,
+                grid=layout[0]["grid"],
+                refinement_windows=[dict(name=original["name"], grid=original["grid"], active_box_mm=original["active_box_mm"],
+                                         solver_numerics=w["native_solver_numerics"])
+                                    for w, original in zip(binding.get("refinement_windows", []), layout[1:], strict=True)],
+                solver_numerics=binding["native_solver_numerics"], collision_instances=collisions)
+
+
+def _parameterized_static_plan(binding: Mapping[str, Any], manifest: Path,
+                               records: Mapping[str, Any], diagnostic: dict[str, Any] | None) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Separate the saved mesh origin from a real parameterized solve; no equivalence claim."""
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_operating_point import _load_object, _finite
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import PS_GROUPS, candidate_authority, compile_request
+    def read_sealed(owner: Path, path: Path) -> dict[str, Any]:
+        _record(owner, path)
+        return _load_object(path)
+
+    export_manifest = Path(records["source_export_manifest"]["path"])
+    source_manifest = Path(records["parameter_source_manifest"]["path"])
+    read_sealed(manifest, export_manifest)
+    read_sealed(manifest, source_manifest)
+    export = read_sealed(export_manifest, export_manifest.parent / "inputs" / "diagnostic_plan.json")
+    solve = read_sealed(source_manifest, source_manifest.parent / "inputs" / "diagnostic_plan.json")
+    result = read_sealed(source_manifest, source_manifest.parent / "results" / "result.json")
+    authority = read_sealed(source_manifest, source_manifest.parent / "inputs" / "frozen_input.json")
+    geometry = read_sealed(source_manifest, source_manifest.parent / "inputs" / "resolved_geometry.json")
+    parameter = read_sealed(source_manifest, source_manifest.parent / "results" / "parameter_readback.json")
+    solved = read_sealed(source_manifest, source_manifest.parent / "results" / "solved_parameter_readback.json")
+    changed_ids = solve["parameter"]["electrode_ids"]
+    if "qualification_candidate" in solve:
+        source = read_sealed(source_manifest, source_manifest.parent / "inputs" / "source_authority.json")
+        candidate = read_sealed(source_manifest, source_manifest.parent / "inputs" / "candidate_affine_binding.json")
+        try:
+            target = candidate_authority(source, candidate["target_ps_voltages_v"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise CandidateContractError("parameterized field lacks its declared PS target") from exc
+        changed_ids = [i for i, (old, new) in enumerate(zip(
+            source["analyzer_electrode_voltages_v"], target["analyzer_electrode_voltages_v"], strict=True), 1) if old != new]
+        if (target != authority or solve["parameter"]["electrode_ids"] not in [list(ids) for ids in PS_GROUPS.values()]
+                or not set(solve["parameter"]["electrode_ids"]) <= set(changed_ids)):
+            raise CandidateContractError("parameterized field differs from declared full PS authority")
+    if (Path(export["source_run"]).resolve() != source_manifest.parent.resolve()
+            or not result.get("field_solved") or result.get("status") != "success"
+            or authority != binding["authority"] or geometry != binding["geometry"]
+            or len(authority["analyzer_electrode_voltages_v"]) != 20
+            or parameter.get("actual_voltages_v") != authority["analyzer_electrode_voltages_v"]
+            or not parameter.get("parametric_active") or parameter.get("unit") != "V"
+            or parameter.get("name") != solve["parameter"]["name"]
+            or export.get("parameter_name") != parameter.get("name")
+            or export.get("parameter_voltage_v") != solved.get("values_v")
+            or parameter.get("changed_physical_ids") != changed_ids
+            or solved.get("names") != [parameter["name"]]
+            or solved.get("solnum") != export.get("solnum") or export.get("solnum") != 1
+            or solved.get("values_v") != authority["analyzer_electrode_voltages_v"][solve["parameter"]["electrode_ids"][0]-1]
+            or solve.get("potential_order") != "2"):
+        raise CandidateContractError("parameterized field actual source/geometry/voltages/solution differs")
+    for key in ("active_mesh_tag", "solution_tag", "dataset_tag"):
+        if export[key] != solve[key] or (key in binding["grid"] and export[key] != binding["grid"][key]):
+            raise CandidateContractError("parameterized field mesh/dataset differs from export")
+    before = read_sealed(source_manifest, source_manifest.parent / "results" / "solver_before.json")
+    after = read_sealed(source_manifest, source_manifest.parent / "results" / "solver_after.json")
+    before_solver = _static_solver_numerics(before)
+    solver = _static_solver_numerics(after)
+    expected_solver = dict(before_solver)
+    if "strict_stopping" in solve:
+        stopping = solve["strict_stopping"]
+        tolerance = _finite(stopping["study_stol"], "declared strict Study tolerance")
+        if (tolerance <= 0 or tolerance > _finite(before_solver["study_stol"], "source Study tolerance")
+                or tolerance > _finite(before_solver["stationary_stol"], "source Stationary tolerance")
+                or not before_solver["study_usestol"] or before_solver["stationary_control"] != "stat"
+                or stopping.get("study_usestol_unchanged") is not True
+                or stopping.get("stationary_control_unchanged") != "stat"
+                or stopping.get("stationary_stol_not_explicitly_set") is not True
+                or solver["stationary_stol"] not in (before_solver["stationary_stol"], tolerance)):
+            raise CandidateContractError("parameterized field changed undeclared stopping controls")
+        expected_solver.update(study_stol=tolerance, stationary_stol=solver["stationary_stol"])
+    if solver != expected_solver or solver["active_mesh_tag"] != result["active_mesh_tag"]:
+        raise CandidateContractError("parameterized field changed actual solver/mesh")
+    grid_request = read_sealed(export_manifest, export_manifest.parent / "inputs" / "grid_authority.json")
+    plan = compile_request(grid_request)
+    if (Path(solve["source_mph"]).resolve() != Path(plan["source_mph_record"]["path"]).resolve()
+            or int(result["tetrahedra"]) != plan["expected_tetrahedra"]):
+        raise CandidateContractError("parameterized field saved mesh origin differs")
+    # The grid request identifies the saved mesh, not this solve's voltage
+    # target. Use the actual full authority verified above for consumption.
+    plan = {**plan, "candidate_authority": copy.deepcopy(authority)}
+    model_record = _record(source_manifest, Path(export["source_mph"]))
+    if diagnostic is not None:
+        native_log = source_manifest.parent / "logs" / "native.log"
+        native_log_record = _record(source_manifest, native_log)
+        dof = re.findall(r"Number of degrees of freedom solved for:\s*(\d+)",
+                         native_log.read_text(encoding="utf-8-sig", errors="replace")) if native_log.is_file() else []
+        diagnostic.update(parameter_source_manifest=str(source_manifest), source_export_manifest=str(export_manifest),
+                          actual_model_record=model_record, parameter_readback=parameter, solved_parameter_readback=solved,
+                          actual_solver_numerics=solver,
+                          native_log_record=native_log_record, native_dof_counts=list(dict.fromkeys(map(int, dof))),
+                          qualification="engineering_exploration__parameterized_literal_operator_equivalence_not_established")
+    return plan, solver
+
+
+def _strict_saved_static_plan(binding: Mapping[str, Any], manifest: Path,
+                              records: Mapping[str, Any], diagnostic: dict[str, Any] | None) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Consume an honestly sealed saved-field rerun; stopping changes are not mesh origins."""
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_operating_point import _load_object, _finite
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import PS_GROUPS, compile_request
+    def read(owner: Path, path: Path) -> dict[str, Any]:
+        _record(owner, path)
+        return _load_object(path)
+
+    export_manifest = Path(records["source_export_manifest"]["path"])
+    source_manifest = Path(records["source_model_manifest"]["path"])
+    read(manifest, export_manifest)
+    read(manifest, source_manifest)
+    export = read(export_manifest, export_manifest.parent / "inputs" / "diagnostic_plan.json")
+    if export.get("role") != "once_only_read_only_strict_s2_scalar_export":
+        raise CandidateContractError("strict saved field export role differs")
+    source = source_manifest.parent
+    solve = read(source_manifest, source / "inputs" / "diagnostic_plan.json")
+    result = read(source_manifest, source / "results" / "result.json")
+    roles = [item for item in solve["source_runs"] if item["role"] == "s2"]
+    if len(roles) != 1:
+        raise CandidateContractError("strict saved field requires one original S2 source")
+    original = roles[0]
+    authority = read(source_manifest, Path(original["frozen_input"]))
+    geometry = read(source_manifest, Path(original["resolved_geometry"]))
+    solved = read(source_manifest, source / "results" / "authority_after.json")
+    before = _static_solver_numerics(read(source_manifest, source / "results" / "solver_before.json"))
+    solver = _static_solver_numerics(read(source_manifest, source / "results" / "solver_after.json"))
+    stopping = {"study_stol", "stationary_stol"}
+    tolerance = _finite(solve["strict_study_stol"], "strict Study tolerance")
+    if (tolerance <= 0 or any(solver.get(key) != tolerance for key in stopping)
+            or any(tolerance > _finite(before[key], key) for key in stopping)
+            or {k: v for k, v in before.items() if k not in stopping}
+            != {k: v for k, v in solver.items() if k not in stopping}):
+        raise CandidateContractError("strict saved field changed undeclared solver controls")
+    values = authority["analyzer_electrode_voltages_v"]
+    if (Path(export["source_run"]).resolve() != source.resolve()
+            or not result.get("field_solved") or result.get("status") != "success"
+            or authority != binding["authority"] or geometry != binding["geometry"]
+            or len(values) != 20 or solved.get("voltages_v") != values
+            or solved.get("parameter_names") != [export["parameter_name"]]
+            or solved.get("parameter_values_v") != export["parameter_voltage_v"]
+            or original["parameter_name"] != export["parameter_name"]
+            or original["parameter_value_v"] != export["parameter_voltage_v"]
+            or original["expected_voltages_v"] != values
+            or solved.get("solnum") != export["solnum"] or export["solnum"] != 1
+            or solve["solution_number"] != export["solnum"] or solve.get("potential_order") != "2"):
+        raise CandidateContractError("strict saved field source/voltages/solution differs")
+    for key, actual in (("active_mesh_tag", result["active_mesh_tag"]),
+                        ("solution_tag", solved["solution"]), ("dataset_tag", solved["dataset"])):
+        if (export[key] != actual or (key != "active_mesh_tag" and solve[key] != actual)
+                or (key in binding["grid"] and binding["grid"][key] != actual)):
+            raise CandidateContractError("strict saved field mesh/dataset differs")
+    old_manifest = Path(original["manifest"])
+    read(source_manifest, old_manifest)
+    original_run = Path(original["mph"]).parent.parent
+    origin = read(old_manifest, original_run / "inputs" / "diagnostic_plan.json")
+    plan = compile_request(read(export_manifest, export_manifest.parent / "inputs" / "grid_authority.json"))
+    if (Path(origin["source_mph"]).resolve() != Path(plan["source_mph_record"]["path"]).resolve()
+            or origin.get("potential_order") != "2"
+            or origin.get("parameter", {}).get("name") != original["parameter_name"]
+            or origin.get("parameter", {}).get("electrode_ids") != list(PS_GROUPS["s2"])
+            or int(result["tetrahedra"]) != plan["expected_tetrahedra"]
+            or solver["active_mesh_tag"] != result["active_mesh_tag"]):
+        raise CandidateContractError("strict saved field mesh origin differs")
+    expected_model = source / "comsol" / solve["strict_mph_name"]
+    if Path(export["source_mph"]).resolve() != expected_model.resolve():
+        raise CandidateContractError("strict saved field model differs from solved output")
+    model_record = _record(source_manifest, expected_model)
+    if diagnostic is not None:
+        diagnostic.update(source_model_manifest=str(source_manifest), source_export_manifest=str(export_manifest),
+                          actual_model_record=model_record, solved_voltage_readback=solved,
+                          actual_solver_numerics=solver, solver_before=before,
+                          qualification="engineering_exploration__strict_saved_rerun_not_full_field_qualification")
+    return plan, solver
+
+
+def scalar_binding_problem(binding: Mapping[str, Any], materialization: Mapping[str, Any],
+                            binding_path: str, source_diagnostic: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The existing resolved-binding family projection, shared by response validation."""
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_operating_point import _load_object
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_mirror_stripe_operating_point import _named_record
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import PS_GROUPS, compile_request
+    manifest = Path(binding["export_manifest"])
+    records = _load_object(manifest)["inputs"]
+    parameterized = {"source_export_manifest", "parameter_source_manifest"} <= set(records)
+    strict_saved = {"source_export_manifest", "source_model_manifest"} <= set(records)
+    plans = [r for r in records.values() if Path(r["path"]).name in ("plan.json", "diagnostic_plan.json")]
+    if not parameterized and not strict_saved and len(plans) != 1:
+        raise CandidateContractError("static field must bind exactly one sealed export plan")
+    if strict_saved:
+        plan, solver = _strict_saved_static_plan(binding, manifest, records, source_diagnostic)
+        export_plan = None
+    elif parameterized:
+        plan, solver = _parameterized_static_plan(binding, manifest, records, source_diagnostic)
+        export_plan = None
+    else:
+        plan_path = Path(_named_record(plans, Path(plans[0]["path"]).name, "scalar export plan")["path"])
+        _record(manifest, plan_path)
+        export_plan = _load_object(plan_path)
+    provider = export_plan is not None and export_plan.get("role") == "mrtof_same_mesh_field_provider_request"
+    if provider:
+        request = export_plan
+        solver_path = plan_path.with_name("solver_before.json")
+        after_path = plan_path.with_name("solver_after.json")
+        _record(manifest, solver_path)
+        _record(manifest, after_path)
+        solver = _static_solver_numerics(_load_object(solver_path))
+        if solver != _static_solver_numerics(_load_object(after_path)):
+            raise CandidateContractError("candidate solve changed sealed solver numerics")
+    elif not parameterized and not strict_saved:
+        # A read-only request to the existing compiler, not a provider run/identity.
+        request = {key: export_plan[key] for key in (
+            "artifact_retention", "resource_threshold_action", "solve_memory_bytes", "solve_seconds", "artifact_budget_bytes")}
+        request.update(schema_version=1, role="mrtof_same_mesh_field_provider_request",
+                       source_binding_path=binding_path,
+                       source_field_manifest=str(Path(export_plan["source_model_summary"]).with_name("run_manifest.json")),
+                       candidate_voltages_v=dict(zip(PS_GROUPS, [*materialization["stripe_biases_v"], *materialization["prism_voltages_v"]], strict=True)))
+        source_manifest = Path(request["source_field_manifest"])
+        source_records = _load_object(source_manifest)["outputs"]
+        solver_path = Path(_named_record(source_records, "solver_configured.json", "source solver readback")["path"])
+        _record(source_manifest, solver_path)
+        solver = _static_solver_numerics(_load_object(solver_path))
+    if not parameterized and not strict_saved:
+        plan = compile_request(request)
+    if plan["candidate_authority"] != binding["authority"]:
+        raise CandidateContractError("compiled field voltages differ from bound actual authority")
+    if solver["active_mesh_tag"] != plan["active_mesh_tag"]:
+        raise CandidateContractError("actual solver mesh differs from the sealed source mesh")
+    if any(binding["grid"][key] != plan["export_grid"][key] for key in ("origin_mm", "pitch_mm", "dimensions")):
+        raise CandidateContractError("candidate field grid differs from its source family")
+    expected = binding["authority"]["analyzer_electrode_voltages_v"]
+    requested = [*materialization["stripe_biases_v"], *materialization["prism_voltages_v"]]
+    for value, ids in zip(requested, PS_GROUPS.values()):
+        if any(not math.isclose(float(expected[i - 1]), float(value), rel_tol=0, abs_tol=1e-9) for i in ids):
+            raise CandidateContractError("static candidate field voltages differ from materialization")
+    if [float(v) for v in materialization["analyzer_electrode_voltages_v"]] != [float(v) for v in expected]:
+        raise CandidateContractError("static full field voltage authority differs from materialization")
+    authority = copy.deepcopy(binding["authority"])
+    for ids in PS_GROUPS.values():
+        for electrode in ids:
+            authority["analyzer_electrode_voltages_v"][electrode - 1] = None
+    return dict(mode="comsol_static_scalar_v", fixed_authority=authority,
+                geometry_sha256=binding["records"]["geometry_authority"]["sha256"],
+                source_mesh_record=plan["source_mph_record"], source_dataset=plan["source_dataset"],
+                export_grid={k: v for k, v in plan["export_grid"].items() if k != "block_points"},
+                solver_numerics=solver, assembly_manifest=binding["assembly_manifest"],
+                collision_manifest=binding["collision_manifest"])
+
+
+
 def native_response_operator(binding: dict[str, Any], authority: dict[str, Any]) -> dict[str, Any]:
     """Project a fixed native operator, independent of P/S bias and source locators."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint import _native_static_binding_problem
     normalized = copy.deepcopy(binding)
     normalized["authority"] = authority
     values = authority["analyzer_electrode_voltages_v"]
-    projection = _native_static_binding_problem(normalized, {
+    projection = native_binding_problem(normalized, {
         "analyzer_electrode_voltages_v": values, "stripe_biases_v": [values[10], values[12]],
         "prism_voltages_v": [values[15], values[16]]})
     levels = [binding, *binding["refinement_windows"]]
@@ -1477,9 +1817,6 @@ def _resolve_voltage_responses(binding: dict[str, Any], path: Path) -> dict[str,
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import (
         PS_GROUPS, candidate_authority,
     )
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint import (
-        _static_binding_problem,
-    )
     responses = binding["voltage_responses"]
     legacy = binding.get("schema_version", 1) == 1
     if legacy and (not isinstance(binding.get("target_stripe_voltages_v"), list)
@@ -1505,7 +1842,7 @@ def _resolve_voltage_responses(binding: dict[str, Any], path: Path) -> dict[str,
         raise ValueError("target changes a PS axis without a declared response")
     def family(component: dict[str, Any], source: str) -> dict[str, Any]:
         values = component["authority"]["analyzer_electrode_voltages_v"]
-        return _static_binding_problem(component, {
+        return scalar_binding_problem(component, {
             "stripe_biases_v": [values[10], values[12]],
             "prism_voltages_v": [values[15], values[16]],
             "analyzer_electrode_voltages_v": values,
@@ -1604,7 +1941,6 @@ def validate_response_candidate(binding: dict[str, Any], request: dict[str, Any]
     No PA payload is scanned or hashed. Raises ValueError for an incompatible basis.
     """
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import derive_candidate_authority
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint import _static_binding_problem
 
     source_path = request["source_binding_path"]
     source = load_binding(Path(source_path), _allow_responses=False)
@@ -1616,7 +1952,7 @@ def validate_response_candidate(binding: dict[str, Any], request: dict[str, Any]
     if binding["authority"] != authority:
         raise ValueError("response differs from complete candidate voltage/assembly authority")
     values = source["authority"]["analyzer_electrode_voltages_v"]
-    expected = _static_binding_problem(source, {
+    expected = scalar_binding_problem(source, {
         "stripe_biases_v": [values[10], values[12]],
         "prism_voltages_v": [values[15], values[16]],
         "analyzer_electrode_voltages_v": values,

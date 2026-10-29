@@ -3,7 +3,11 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import math
 from pathlib import Path
+import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -29,6 +33,13 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing
     analyze_source_z_energy_timing_events,
     build_te1_reference_from_mirror_jacobian,
     compare_te1_diagnostics,
+    candidate_policy,
+    candidate_focus_decision,
+    candidate_focus_configuration,
+    candidate_qualification,
+    classify_z0_focus,
+    campaign_detector_projection,
+    compare_candidate_campaign,
     materialize_scaled_te1_variation,
     materialize_te1_fine_probe,
     materialize_te1_variation_from_diagnostics,
@@ -1560,6 +1571,428 @@ class DiagnosticRunnerResourcePolicyTests(unittest.TestCase):
     def test_capacity_threshold_has_no_warning_override(self) -> None:
         runner = Path(__file__).resolve().parents[2] / "analysis/run_source_z_energy_timing_diagnostic.ps1"
         self.assertNotIn("CapacityThresholdAction", runner.read_text(encoding="utf-8-sig"))
+
+
+class CandidatePolicyReferenceTests(unittest.TestCase):
+    CAMPAIGN_REFERENCE = r"""
+function Read-CandidateDiagnostic {param($Sample,[switch]$Focus) if($Focus){return $Sample._focus_diagnostic}else{return $Sample._diagnostic}}
+function Get-OptionalDictionaryValue {
+  param($Dictionary,[Parameter(Mandatory)][string]$Name)
+  if($Dictionary-is[Collections.IDictionary]-and$Dictionary.Contains($Name)){return $Dictionary[$Name]}
+  return $null
+}
+
+function New-InitialZSlopeProjection {
+  param([Parameter(Mandatory)]$Sample)
+  $diagnostic=Read-CandidateDiagnostic -Sample $Sample -Focus
+  $controlled=if($null-ne$diagnostic-and$diagnostic.controlled_detector_focus-is[Collections.IDictionary]){
+    $diagnostic.controlled_detector_focus
+  }else{$null}
+  if($null-ne$controlled-and$controlled.status-eq'observed'){
+    return [ordered]@{
+      value_us_per_mm=$Sample.detector_dt_d_initial_z_us_per_mm
+      measurement_basis='controlled_symmetric_initial_z_pair'
+      sample_particle_count=$(Get-OptionalDictionaryValue -Dictionary $Sample -Name 'focus_particle_count')
+      scope=[string]$controlled.scope
+    }
+  }
+  return [ordered]@{
+    value_us_per_mm=$Sample.detector_dt_d_initial_z_us_per_mm
+    measurement_basis='descriptive_linear_regression_over_detector_hits'
+    sample_particle_count=$(Get-OptionalDictionaryValue -Dictionary $Sample -Name 'focus_particle_count')
+    scope='detector_hits_in_focus_diagnostic'
+  }
+}
+
+function New-Z0TargetReturnProjection {
+  param([Parameter(Mandatory)]$Sample)
+  $diagnostic=Read-CandidateDiagnostic -Sample $Sample
+  $history=if($null-ne$diagnostic-and$diagnostic.central_plane_focus_history-is[Collections.IDictionary]){
+    $diagnostic.central_plane_focus_history
+  }else{$null}
+  $target=if($null-ne$history-and$history.target_return_crossing-is[Collections.IDictionary]){
+    $history.target_return_crossing
+  }else{$null}
+  return [ordered]@{
+    status=$(if($null-ne$target){$target.status}else{$null})
+    plane_z_mm=$(if($null-ne$history-and$history.Contains('plane_z_mm')){$history.plane_z_mm}else{0.0})
+    crossing_index=$(if($null-ne$target-and$target.status-eq'observed'){$target.crossing_index}else{$null})
+    direction_z=$(if($null-ne$target-and$target.status-eq'observed'){$target.direction_z}else{$null})
+    source_particle_count=$Sample.particle_count
+    reached_particle_count=$(Get-OptionalDictionaryValue -Dictionary $Sample -Name 'z0_reached_particle_count')
+    reached_fraction=$(Get-OptionalDictionaryValue -Dictionary $Sample -Name 'z0_reached_fraction')
+    tof_median_us=$(Get-OptionalDictionaryValue -Dictionary $Sample -Name 'z0_tof_median_us')
+    tof_fwhm_us=$(Get-OptionalDictionaryValue -Dictionary $Sample -Name 'z0_tof_fwhm_us')
+    mass_resolution_t_over_2fwhm=$(Get-OptionalDictionaryValue -Dictionary $Sample -Name 'z0_mass_resolution_t_over_2fwhm')
+    initial_z_time_slope=[ordered]@{
+      value_us_per_mm=$(Get-OptionalDictionaryValue -Dictionary $Sample -Name 'z0_dt_d_initial_z_us_per_mm')
+      measurement_basis='descriptive_linear_regression_over_all_particles_reaching_target_return_z0'
+      sample_particle_count=$(Get-OptionalDictionaryValue -Dictionary $Sample -Name 'z0_reached_particle_count')
+      scope=$(if($null-ne$target-and$target.Contains('scope')){[string]$target.scope}else{'all_particles_reaching_target_return_z0__no_detector_hit_filter'})
+    }
+    controlled_z_only_focus=$(Get-OptionalDictionaryValue -Dictionary $target -Name 'controlled_z_only_focus')
+    qualification='diagnostic_only__not_a_z0_resolution_gate'
+  }
+}
+
+function New-DetectorSampleProjection {
+  param($Candidate,$Sample,[Parameter(Mandatory)][string]$Phase)
+  if($null-eq$Sample){
+    return [ordered]@{
+      source_particle_count=$null;detector_hit_count=$null;detection_rate=$null
+      tof_median_us=$null;tof_fwhm_us=$null;mass_resolution_t_over_2fwhm=$null
+      initial_z_time_slope=$null;z0_target_return=$null
+      peak_method_id=$null;peak_analysis_contract=$null
+    }
+  }
+  $collection=$Candidate.collection[$Phase]
+  return [ordered]@{
+    source_particle_count=$Sample.particle_count
+    detector_hit_count=$Sample.detector_hit_count
+    detection_rate=$(if($collection-is[Collections.IDictionary]){$collection.detection_rate}else{$null})
+    tof_median_us=$Sample.detector_tof_median_us
+    tof_mean_us=$(Get-OptionalDictionaryValue -Dictionary $Sample -Name 'detector_tof_mean_us')
+    peak_method_id=$(if($Sample.Contains('peak_method_id')){$Sample.peak_method_id}else{'legacy_histogram_unversioned'})
+    peak_analysis_contract=$(Get-OptionalDictionaryValue -Dictionary $Sample -Name 'peak_analysis_contract')
+    tof_fwhm_us=$Sample.detector_tof_fwhm_us
+    mass_resolution_t_over_2fwhm=$Sample.mass_resolution_t_over_2fwhm
+    initial_z_time_slope=$(New-InitialZSlopeProjection -Sample $Sample)
+    z0_target_return=$(New-Z0TargetReturnProjection -Sample $Sample)
+  }
+}
+
+function Compare-Fixture {param($rows)
+  $eligible=@($rows|Where-Object{
+    $_.workflow_outcome-eq'within_tolerance'-and
+    $_.focused.peak_method_id-ceq'common_gaussian_kde_time_v2'-and
+    $null-ne$_.focused.peak_analysis_contract-and
+    $_.focused.peak_analysis_contract.method_id-ceq'common_gaussian_kde_time_v2'
+  })
+  $peakContracts=@($eligible|ForEach-Object{
+    $_.focused.peak_analysis_contract|ConvertTo-Json -Depth 10 -Compress
+  }|Select-Object -Unique)
+  $rankingStatus=if($peakContracts.Count-gt1){'unavailable_mixed_peak_settings'}else{'same_frozen_peak_contract'}
+  if($peakContracts.Count-gt1){$eligible=@()}
+  $ranked=@($eligible|Sort-Object `
+    @{Expression={if($null-eq$_.focused.mass_resolution_t_over_2fwhm){[double]::NegativeInfinity}else{[double]$_.focused.mass_resolution_t_over_2fwhm}};Descending=$true}, `
+    @{Expression={if($null-eq$_.focused.detection_rate){[double]::NegativeInfinity}else{[double]$_.focused.detection_rate}};Descending=$true}, `
+    @{Expression={$_.ordinal};Descending=$false})
+  $best=if($ranked.Count){[ordered]@{
+    ordinal=[int]$ranked[0].ordinal;K=[double]$ranked[0].K
+    accelerator_y_mm=[double]$ranked[0].accelerator_y_mm
+  }}else{$null}
+  return [ordered]@{
+    schema_version=2;role='mrtof_native_candidate_campaign_comparison';status='complete'
+    metric_scope=[ordered]@{
+      detector_plane='FWHM and resolution use detector hits; the reported slope states whether it uses a controlled z pair or a descriptive regression.'
+      z0_target_return='FWHM, resolution, and descriptive slope use all source particles reaching the named z=0 crossing; no detector-hit filter is applied.'
+      cross_plane_comparison='The two planes may contain different particle sets. Their FWHM values are reported independently and do not by themselves attribute downstream causal broadening.'
+      z0_is_qualification_gate=$false
+    }
+    selection=[ordered]@{
+      eligibility='workflow_outcome == within_tolerance and current common KDE method with identical frozen contract'
+      status=$rankingStatus
+      ordering=@('focused mass_resolution_t_over_2fwhm descending','focused detection_rate descending','campaign ordinal ascending')
+      qualified_condition_count=$ranked.Count;best_qualified_condition=$best
+    }
+    conditions=$rows
+  }
+}
+"""
+
+    # Independent reference expressions from the pre-migration chain. These
+    # intentionally retain PowerShell comparison and multiplication order.
+    FOCUS_REFERENCE = r"""
+$ErrorActionPreference='Stop'
+$rows=([Console]::In.ReadToEnd()|ConvertFrom-Json -AsHashtable)
+$results=@(foreach($r in $rows){
+  $focusTolerance=$r.median/(2.0*$r.minimum_resolution*$r.source_span)
+  $responseConverged=[math]::Abs($r.slope)-le$focusTolerance
+  $focusConverged=$responseConverged-and[bool]$r.center-and[bool]$r.envelope
+  $best=if($null-eq$r.best){[double]::PositiveInfinity}else{[double]$r.best}
+  [ordered]@{tolerance_us_per_mm=$focusTolerance;response_converged=$responseConverged
+    converged=$focusConverged;absolute_slope=[math]::Abs($r.slope)
+    improves_best=([bool]$r.center-and[bool]$r.envelope-and[math]::Abs($r.slope)-lt$best)}
+})
+ConvertTo-Json -InputObject $results -Depth 20 -Compress
+"""
+
+    Z0_REFERENCE = r"""
+function Read-Z0FocusClassification {
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][double]$SlopeToleranceUsPerMm,
+    [Parameter(Mandatory)][double]$MinimumMassResolution
+  )
+  $value=$script:diagnostic
+  $z0=$value.central_plane_focus_history.target_return_crossing
+  if(-not($z0-is[Collections.IDictionary])-or$z0.status-ne'observed'){
+    return [ordered]@{
+      primary='topology_or_upstream_loss';labels=@('topology_or_upstream_loss')
+      status=$(if($z0-is[Collections.IDictionary]){[string]$z0.status}else{'missing'})
+      reason=$(if($z0-is[Collections.IDictionary]){[string]$z0.reason}else{'target_z0_diagnostic_missing'})
+    }
+  }
+  $slope=[double]$z0.focus_residual_us_per_mm
+  $median=[double]$z0.absolute_time.median
+  $fwhm=if($null-eq$z0.absolute_time.fwhm){$null}else{[double]$z0.absolute_time.fwhm}
+  if(-not[double]::IsFinite($slope)-or-not[double]::IsFinite($median)-or$median-le0-or
+    ($null-ne$fwhm-and(-not[double]::IsFinite($fwhm)-or$fwhm-le0))){
+    throw 'Observed z=0 focus diagnostic is numerically invalid.'
+  }
+  $resolution=$z0.absolute_time.time_equivalent_resolution
+  $labels=[Collections.Generic.List[string]]::new()
+  if([math]::Abs($slope)-gt$SlopeToleranceUsPerMm){
+    $labels.Add('first_order_broadening_enter_te1')
+  }elseif($null-eq$resolution-or$resolution-lt$MinimumMassResolution){
+    $labels.Add('higher_order_or_phase_space_warning')
+  }else{
+    $labels.Add('z0_focus_response_within_current_diagnostic_budget')
+  }
+  $detectorFwhm=$value.terminal_plane_diagnostic.detector_plane.absolute_time.fwhm
+  if($null-ne$fwhm-and$null-ne$detectorFwhm-and[double]$detectorFwhm-gt$fwhm){
+    $labels.Add('downstream_detector_leg_contribution')
+  }
+  return [ordered]@{
+    primary=$labels[0];labels=@($labels);status='observed';reached_particle_count=[int]$z0.reached_particle_count
+    dt_d_initial_z_us_per_mm=$slope;slope_tolerance_us_per_mm=$SlopeToleranceUsPerMm
+    mass_resolution_t_over_2fwhm=$resolution
+    qualification='diagnostic_classification_only__not_a_te1_precondition'
+  }
+}
+
+"""
+
+    @staticmethod
+    def focus_vectors():
+        base = dict(median=800., minimum_resolution=100000., source_span=1.,
+                    slope=.004, center=True, envelope=True, best=None)
+        return [base, *[{**base, **delta} for delta in (
+            {"slope": math.nextafter(.004, math.inf)}, {"slope": -.004},
+            {"slope": -0.0}, {"center": False}, {"envelope": False},
+            {"best": .004}, {"best": math.nextafter(.004, math.inf)},
+            {"median": 764.216316535, "minimum_resolution": 80928.736944,
+             "source_span": 1.4, "slope": -.006},
+        )]]
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_legacy_focus_reference_boundaries(self):
+        rows = self.focus_vectors()
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-Command", self.FOCUS_REFERENCE],
+            input=json.dumps(rows), cwd=Path(__file__).resolve().parents[4],
+            capture_output=True, text=True, encoding="utf-8", timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        values = json.loads(result.stdout)
+        for row, reference in zip(rows, values, strict=True):
+            actual = candidate_focus_decision(
+                {"median_tof_us": row["median"], "slope_us_per_mm": row["slope"]},
+                row["minimum_resolution"], row["source_span"],
+                center=row["center"], envelope=row["envelope"], best=row["best"])
+            self.assertEqual(actual, reference)
+            for key in ("tolerance_us_per_mm", "absolute_slope"):
+                self.assertEqual(float(actual[key]).hex(), float(reference[key]).hex())
+        self.assertEqual([r["converged"] for r in values[:8]],
+                         [True, False, True, True, False, False, True, True])
+        self.assertEqual([r["improves_best"] for r in values[:8]],
+                         [True, True, True, True, False, False, False, True])
+        self.assertEqual(values[0]["tolerance_us_per_mm"].hex(), (.004).hex())
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_z0_reference_labels_boundaries_and_invalid_values(self):
+        z0 = dict(status="observed", focus_residual_us_per_mm=.004,
+                  absolute_time=dict(median=800., fwhm=.004, time_equivalent_resolution=100000.),
+                  reached_particle_count=3)
+        rows = []
+        for slope, resolution, fwhm, detector in (
+            (.004, 100000., .004, .004), (-.004, None, .004, .006),
+            (.004000000000001, 100000., .004, .006),
+            (.003, 99999., None, .006), (.003, 100001., .004, None),
+            (.003, 100001., 0., .006),
+        ):
+            row = json.loads(json.dumps(z0))
+            row["focus_residual_us_per_mm"] = slope
+            row["absolute_time"].update(fwhm=fwhm, time_equivalent_resolution=resolution)
+            rows.append(dict(z0=row, detector=detector))
+        rows += [dict(z0=None, detector=None), dict(z0={"status": "unavailable", "reason": "loss"}, detector=None)]
+        script = self.Z0_REFERENCE + r"""
+$ErrorActionPreference='Stop'
+$rows=([Console]::In.ReadToEnd()|ConvertFrom-Json -AsHashtable)
+$results=@(foreach($r in $rows){
+ $script:diagnostic=@{central_plane_focus_history=@{target_return_crossing=$r.z0}
+  terminal_plane_diagnostic=@{detector_plane=@{absolute_time=@{fwhm=$r.detector}}}}
+ try {Read-Z0FocusClassification -Path unused -SlopeToleranceUsPerMm .004 -MinimumMassResolution 100000}
+ catch {@{error=$_.Exception.Message}}
+})
+ConvertTo-Json -InputObject $results -Depth 30 -Compress
+"""
+        result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], input=json.dumps(rows),
+            cwd=Path(__file__).resolve().parents[4], capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for row, reference in zip(rows, json.loads(result.stdout), strict=True):
+            with self.subTest(row=row):
+                if "error" in reference:
+                    with self.assertRaisesRegex(CandidateContractError, "numerically invalid"):
+                        classify_z0_focus(row["z0"], row["detector"], .004, 100000.)
+                else:
+                    self.assertEqual(classify_z0_focus(row["z0"], row["detector"], .004, 100000.), reference)
+
+    def test_configuration_and_qualification_priority(self):
+        policy = candidate_focus_configuration(.7, 100000.)
+        self.assertEqual(policy["source_z_span_mm"].hex(), (2.0 * .7).hex())
+        self.assertEqual(policy["fallback_pairs"], [{"percent": 10, "fraction": .1}, {"percent": 5, "fraction": .05}])
+        for radius, resolution in ((0, 100000), (-1, 1), (math.inf, 1), (.5, 0), (.5, math.nan)):
+            with self.subTest(radius=radius, resolution=resolution), self.assertRaises(CandidateContractError):
+                candidate_focus_configuration(radius, resolution)
+        gate = dict(status="ACCEPTED", warning=False, hard_stop=False, continue_downstream=True,
+                    detection_rate=.8, preferred_minimum=.8)
+        base = dict(collection=gate, measured_resolution=100000., minimum_resolution=100000.,
+                    center=True, focus_converged=True, reclosure_exhausted=False)
+        self.assertEqual(candidate_qualification(base)["workflow_outcome"], "within_tolerance")
+        cases = [({"measured_resolution": None}, "resolution_below_target"),
+                 ({"focus_converged": False, "measured_resolution": None}, "focus_not_converged"),
+                 ({"collection": {**gate, "warning": True}, "focus_converged": False}, "collection_below_preferred"),
+                 ({"center": False, "collection": None}, "center_workpoint_shifted"),
+                 ({"reclosure_exhausted": True, "center": False}, "center_workpoint_reclosure_exhausted")]
+        for delta, label in cases:
+            self.assertIn(label, candidate_qualification({**base, **delta})["workflow_outcome"])
+        for delta in ({"detection_rate": .799999999999}, {"hard_stop": True},
+                      {"continue_downstream": False}, {"status": "warning_below_preferred"}):
+            self.assertFalse(candidate_qualification({**base, "collection": {**gate, **delta}})["collection_satisfied"])
+
+    def test_policy_dispatch_and_center_residual_boundaries(self):
+        request = dict(action="center_feedback", status="OBSERVED", names=["p", "s"],
+                       residuals={"p": .1, "s": -.2}, tolerances={"p": .1, "s": .2},
+                       focus=dict(sample={"median_tof_us": 800., "slope_us_per_mm": .004},
+                                  minimum_resolution=100000., source_span_mm=1.))
+        result = candidate_policy(request)
+        self.assertTrue(result["passed"])
+        self.assertTrue(result["focus"]["converged"])
+        for residuals, tolerances, failed in (
+            ({"p": math.nextafter(.1, math.inf), "s": -.2}, request["tolerances"], ["p"]),
+            ({"p": 0., "s": math.nan}, {"p": 0., "s": .2}, ["p", "s"]),
+            ({}, {}, ["p", "s"]),
+        ):
+            changed = {**request, "residuals": residuals, "tolerances": tolerances}
+            result = candidate_policy(changed)
+            self.assertEqual(result["failed"], failed)
+            self.assertFalse(result["focus"]["converged"])
+        self.assertEqual(candidate_policy({**request, "status": None})["failed"],
+                         ["center_particle_workpoint_observation_incomplete"])
+        with self.assertRaisesRegex(CandidateContractError, "Unknown"):
+            candidate_policy({"action": "missing"})
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_campaign_reference_ranking_ties_nulls_case_and_contract_key_order(self):
+        contract = {"method_id": "common_gaussian_kde_time_v2", "bandwidth": 1.06}
+        rows = [dict(ordinal=n, K=24.5, accelerator_y_mm=-50., workflow_outcome="within_tolerance",
+                     focused=dict(peak_method_id="common_gaussian_kde_time_v2", peak_analysis_contract=contract,
+                                  mass_resolution_t_over_2fwhm=r, detection_rate=rate))
+                for n, r, rate in ((3, 120000., .84), (2, 120000., .84), (1, None, 1.))]
+        cases = [rows, [{**r, "focused": {**r["focused"], "mass_resolution_t_over_2fwhm": None}} for r in rows],
+                 [{**rows[0], "workflow_outcome": "WITHIN_TOLERANCE"}],
+                 [{**rows[0], "focused": {**rows[0]["focused"], "peak_method_id": "COMMON_GAUSSIAN_KDE_TIME_V2"}}],
+                 [rows[0], {**rows[1], "focused": {**rows[1]["focused"], "peak_analysis_contract": dict(reversed(list(contract.items())))}}], []]
+        script = self.CAMPAIGN_REFERENCE + r"""
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$cases=([Console]::In.ReadToEnd()|ConvertFrom-Json -AsHashtable)
+$results=@(foreach($rows in $cases){Compare-Fixture -rows @($rows)})
+ConvertTo-Json -InputObject $results -Depth 30 -Compress
+"""
+        result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], input=json.dumps(cases),
+            cwd=Path(__file__).resolve().parents[4], capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        reference = json.loads(result.stdout)
+        for rows, expected in zip(cases, reference, strict=True):
+            identities = [json.dumps(r["focused"]["peak_analysis_contract"], separators=(",", ":")) for r in rows]
+            self.assertEqual(compare_candidate_campaign(rows, identities), expected)
+        self.assertEqual([r["selection"]["best_qualified_condition"]["ordinal"] if r["selection"]["best_qualified_condition"] else None
+                          for r in reference], [2, 1, 3, None, None, None])
+        self.assertEqual(reference[4]["selection"]["status"], "unavailable_mixed_peak_settings")
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_campaign_full_projection_matches_original_powershell(self):
+        sample = dict(particle_count=100, detector_hit_count=84, detector_tof_median_us=800.,
+            detector_tof_mean_us=801., detector_tof_fwhm_us=.004, mass_resolution_t_over_2fwhm=100000.,
+            detector_dt_d_initial_z_us_per_mm=.003, focus_particle_count=3,
+            z0_reached_particle_count=98, z0_reached_fraction=.98, z0_tof_median_us=770.,
+            z0_tof_fwhm_us=.01, z0_mass_resolution_t_over_2fwhm=38500., z0_dt_d_initial_z_us_per_mm=.02,
+            peak_method_id="common_gaussian_kde_time_v2", peak_analysis_contract={"method_id": "common_gaussian_kde_time_v2"},
+            _focus_diagnostic={"controlled_detector_focus": {"status": "OBSERVED", "scope": "controlled"}},
+            _diagnostic={"central_plane_focus_history": {"plane_z_mm": 0., "target_return_crossing": {
+                "status": "observed", "crossing_index": 49, "direction_z": -1, "scope": "all_reached",
+                "controlled_z_only_focus": {"particle_ids": [2, 1, 3]}}}})
+        descriptive = {**sample, "_focus_diagnostic": None, "_diagnostic": None}
+        descriptive.pop("peak_method_id")
+        rows = [sample, descriptive, None]
+        script = self.CAMPAIGN_REFERENCE + r"""
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$rows=([Console]::In.ReadToEnd()|ConvertFrom-Json -AsHashtable)
+$candidate=@{collection=@{focused=@{detection_rate=.84}}}
+$results=@(foreach($sample in $rows){New-DetectorSampleProjection -Candidate $candidate -Sample $sample -Phase focused})
+ConvertTo-Json -InputObject $results -Depth 30 -Compress
+"""
+        result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], input=json.dumps(rows),
+            cwd=Path(__file__).resolve().parents[4], capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for sample, reference in zip(rows, json.loads(result.stdout), strict=True):
+            packet = dict(sample=sample, collection={"detection_rate": .84},
+                          focus_diagnostic=sample["_focus_diagnostic"], diagnostic=sample["_diagnostic"]) if sample else None
+            self.assertEqual(campaign_detector_projection(packet), reference)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_qualification_matches_original_powershell_priority(self):
+        gate = dict(status="accepted", warning=False, hard_stop=False, continue_downstream=True,
+                    detection_rate=.8, preferred_minimum=.8)
+        base = dict(collection=gate, measured_resolution=100000., minimum_resolution=100000.,
+                    center=True, focus_converged=True, reclosure_exhausted=False)
+        cases = [base] + [{**base, **delta} for delta in (
+            {"measured_resolution": None}, {"measured_resolution": 99999.999999},
+            {"focus_converged": False, "measured_resolution": None},
+            {"collection": {**gate, "detection_rate": .799999999}, "focus_converged": False},
+            {"center": False, "collection": None}, {"reclosure_exhausted": True, "center": False},
+        )]
+        script = r"""
+$ErrorActionPreference='Stop'
+$cases=([Console]::In.ReadToEnd()|ConvertFrom-Json -AsHashtable)
+$results=@(foreach($r in $cases){
+ $g=$r.collection
+ $resolutionSatisfied=$null-ne$r.measured_resolution-and$r.measured_resolution-ge$r.minimum_resolution
+ $collectionSatisfied=$null-ne$g-and($g.status-eq'accepted'-and-not[bool]$g.warning-and-not[bool]$g.hard_stop-and[bool]$g.continue_downstream-and[double]$g.detection_rate-ge[double]$g.preferred_minimum)
+ $centerWorkpointSatisfied=[bool]$r.center
+ $workflowOutcome=if($r.reclosure_exhausted){'warning_center_workpoint_reclosure_exhausted__continue_parameter_scan'}
+  elseif(-not$centerWorkpointSatisfied){'warning_center_workpoint_shifted__reclose_required'}
+  elseif(-not$collectionSatisfied){'warning_collection_below_preferred__continue_parameter_scan'}
+  elseif(-not$r.focus_converged){'warning_focus_not_converged__continue_parameter_scan'}
+  elseif(-not$resolutionSatisfied){'warning_resolution_below_target__continue_parameter_scan'}else{'within_tolerance'}
+ @{workflow_outcome=$workflowOutcome;resolution_satisfied=$resolutionSatisfied;collection_satisfied=$collectionSatisfied
+  center_workpoint_satisfied=$centerWorkpointSatisfied
+  qualification=$(if($workflowOutcome-eq'within_tolerance'){'paired_n100_candidate_within_tolerance'}else{'paired_n100_candidate_warning__continue_parameter_scan'})}
+})
+ConvertTo-Json -InputObject $results -Depth 20 -Compress
+"""
+        result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], input=json.dumps(cases),
+            cwd=Path(__file__).resolve().parents[4], capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([candidate_qualification(row) for row in cases], json.loads(result.stdout))
+
+    def test_policy_cli_transports_unicode_and_rejects_analysis_mix(self):
+        request = dict(action="diagnostic_feedback", z0={"status": "unavailable", "reason": "上游未到达"},
+                       detector_fwhm=None, focus=dict(sample={"median_tof_us": 800., "slope_us_per_mm": None},
+                       minimum_resolution=100000., source_span_mm=1.))
+        command = [sys.executable, "-B", "-X", "utf8", "-m",
+                   "projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic",
+                   "--policy-request", "-", "--output", "-"]
+        for extra in ([], ["--run-dir", "unused"]):
+            result = subprocess.run(command + extra, input=json.dumps(request, ensure_ascii=False),
+                cwd=Path(__file__).resolve().parents[4], capture_output=True, text=True, encoding="utf-8", timeout=30)
+            if extra:
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, "")
+            else:
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout), candidate_policy(request))
 
 
 if __name__ == "__main__":

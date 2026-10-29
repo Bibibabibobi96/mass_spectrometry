@@ -404,12 +404,6 @@ function Get-CandidateSample {
   return $matches[0]
 }
 
-function Get-OptionalDictionaryValue {
-  param($Dictionary,[Parameter(Mandatory)][string]$Name)
-  if($Dictionary-is[Collections.IDictionary]-and$Dictionary.Contains($Name)){return $Dictionary[$Name]}
-  return $null
-}
-
 function Read-CandidateDiagnostic {
   param([Parameter(Mandatory)]$Sample,[switch]$Focus)
   $field=if($Focus){'focus_diagnostic_path'}else{'diagnostic_path'}
@@ -419,82 +413,16 @@ function Read-CandidateDiagnostic {
   return Get-Content -LiteralPath $path -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
 }
 
-function New-InitialZSlopeProjection {
-  param([Parameter(Mandatory)]$Sample)
-  $diagnostic=Read-CandidateDiagnostic -Sample $Sample -Focus
-  $controlled=if($null-ne$diagnostic-and$diagnostic.controlled_detector_focus-is[Collections.IDictionary]){
-    $diagnostic.controlled_detector_focus
-  }else{$null}
-  if($null-ne$controlled-and$controlled.status-eq'observed'){
-    return [ordered]@{
-      value_us_per_mm=$Sample.detector_dt_d_initial_z_us_per_mm
-      measurement_basis='controlled_symmetric_initial_z_pair'
-      sample_particle_count=$(Get-OptionalDictionaryValue -Dictionary $Sample -Name 'focus_particle_count')
-      scope=[string]$controlled.scope
-    }
-  }
-  return [ordered]@{
-    value_us_per_mm=$Sample.detector_dt_d_initial_z_us_per_mm
-    measurement_basis='descriptive_linear_regression_over_detector_hits'
-    sample_particle_count=$(Get-OptionalDictionaryValue -Dictionary $Sample -Name 'focus_particle_count')
-    scope='detector_hits_in_focus_diagnostic'
-  }
-}
-
-function New-Z0TargetReturnProjection {
-  param([Parameter(Mandatory)]$Sample)
-  $diagnostic=Read-CandidateDiagnostic -Sample $Sample
-  $history=if($null-ne$diagnostic-and$diagnostic.central_plane_focus_history-is[Collections.IDictionary]){
-    $diagnostic.central_plane_focus_history
-  }else{$null}
-  $target=if($null-ne$history-and$history.target_return_crossing-is[Collections.IDictionary]){
-    $history.target_return_crossing
-  }else{$null}
-  return [ordered]@{
-    status=$(if($null-ne$target){$target.status}else{$null})
-    plane_z_mm=$(if($null-ne$history-and$history.Contains('plane_z_mm')){$history.plane_z_mm}else{0.0})
-    crossing_index=$(if($null-ne$target-and$target.status-eq'observed'){$target.crossing_index}else{$null})
-    direction_z=$(if($null-ne$target-and$target.status-eq'observed'){$target.direction_z}else{$null})
-    source_particle_count=$Sample.particle_count
-    reached_particle_count=$(Get-OptionalDictionaryValue -Dictionary $Sample -Name 'z0_reached_particle_count')
-    reached_fraction=$(Get-OptionalDictionaryValue -Dictionary $Sample -Name 'z0_reached_fraction')
-    tof_median_us=$(Get-OptionalDictionaryValue -Dictionary $Sample -Name 'z0_tof_median_us')
-    tof_fwhm_us=$(Get-OptionalDictionaryValue -Dictionary $Sample -Name 'z0_tof_fwhm_us')
-    mass_resolution_t_over_2fwhm=$(Get-OptionalDictionaryValue -Dictionary $Sample -Name 'z0_mass_resolution_t_over_2fwhm')
-    initial_z_time_slope=[ordered]@{
-      value_us_per_mm=$(Get-OptionalDictionaryValue -Dictionary $Sample -Name 'z0_dt_d_initial_z_us_per_mm')
-      measurement_basis='descriptive_linear_regression_over_all_particles_reaching_target_return_z0'
-      sample_particle_count=$(Get-OptionalDictionaryValue -Dictionary $Sample -Name 'z0_reached_particle_count')
-      scope=$(if($null-ne$target-and$target.Contains('scope')){[string]$target.scope}else{'all_particles_reaching_target_return_z0__no_detector_hit_filter'})
-    }
-    controlled_z_only_focus=$(Get-OptionalDictionaryValue -Dictionary $target -Name 'controlled_z_only_focus')
-    qualification='diagnostic_only__not_a_z0_resolution_gate'
-  }
-}
-
-function New-DetectorSampleProjection {
+function Read-CandidateComparisonInput {
   param($Candidate,$Sample,[Parameter(Mandatory)][string]$Phase)
-  if($null-eq$Sample){
-    return [ordered]@{
-      source_particle_count=$null;detector_hit_count=$null;detection_rate=$null
-      tof_median_us=$null;tof_fwhm_us=$null;mass_resolution_t_over_2fwhm=$null
-      initial_z_time_slope=$null;z0_target_return=$null
-      peak_method_id=$null;peak_analysis_contract=$null
-    }
-  }
-  $collection=$Candidate.collection[$Phase]
+  if($null-eq$Sample){return $null}
   return [ordered]@{
-    source_particle_count=$Sample.particle_count
-    detector_hit_count=$Sample.detector_hit_count
-    detection_rate=$(if($collection-is[Collections.IDictionary]){$collection.detection_rate}else{$null})
-    tof_median_us=$Sample.detector_tof_median_us
-    tof_mean_us=$(Get-OptionalDictionaryValue -Dictionary $Sample -Name 'detector_tof_mean_us')
-    peak_method_id=$(if($Sample.Contains('peak_method_id')){$Sample.peak_method_id}else{'legacy_histogram_unversioned'})
-    peak_analysis_contract=$(Get-OptionalDictionaryValue -Dictionary $Sample -Name 'peak_analysis_contract')
-    tof_fwhm_us=$Sample.detector_tof_fwhm_us
-    mass_resolution_t_over_2fwhm=$Sample.mass_resolution_t_over_2fwhm
-    initial_z_time_slope=$(New-InitialZSlopeProjection -Sample $Sample)
-    z0_target_return=$(New-Z0TargetReturnProjection -Sample $Sample)
+    sample=$Sample;collection=$Candidate.collection[$Phase]
+    focus_diagnostic=$(Read-CandidateDiagnostic -Sample $Sample -Focus)
+    diagnostic=$(Read-CandidateDiagnostic -Sample $Sample)
+    peak_contract_identity=$(if($Sample.Contains('peak_analysis_contract')){
+      $Sample.peak_analysis_contract|ConvertTo-Json -Depth 10 -Compress
+    }else{$null})
   }
 }
 
@@ -521,19 +449,20 @@ function New-CampaignComparison {
     $terminalStage=if($conditionSummary.Contains('physical_nonqualification')){
       [string]$conditionSummary.physical_nonqualification.stage
     }elseif($null-ne$candidate){'native_candidate'}else{'condition'}
-    $rows+=,[ordered]@{
+    $row=[ordered]@{
       ordinal=[int]$condition.ordinal;K=[double]$condition.K
       accelerator_y_mm=[double]$condition.accelerator_y
       workflow_outcome=[string]$condition.workflow_outcome;terminal_stage=$terminalStage
       condition_run_manifest=[string]$condition.run_manifest
       candidate_run_manifest=$candidateManifest
-      baseline=$(New-DetectorSampleProjection -Candidate $candidate -Sample $baselineSample -Phase 'baseline')
-      focused=$(New-DetectorSampleProjection -Candidate $candidate -Sample $focusedSample -Phase 'focused')
-      detector_plane_focus=[ordered]@{
+    }
+    $baselineInput=Read-CandidateComparisonInput -Candidate $candidate -Sample $baselineSample -Phase 'baseline'
+    $focusedInput=Read-CandidateComparisonInput -Candidate $candidate -Sample $focusedSample -Phase 'focused'
+    $row.detector_plane_focus=[ordered]@{
         convergence_status=$(if($null-ne$candidate){$candidate.detector_plane_focus.status}else{$null})
         te1_coordinate=$(if($null-ne$focusedSample){$focusedSample.te1_coordinate}else{$null})
       }
-      center_gate=[ordered]@{
+    $row.center_gate=[ordered]@{
         baseline_passed=$(if($null-ne$candidate-and$candidate.center_workpoint.baseline-is[Collections.IDictionary]){
           $candidate.center_workpoint.baseline.passed
         }else{$null})
@@ -542,43 +471,18 @@ function New-CampaignComparison {
         }else{$null})
         satisfied=$(if($null-ne$candidate){$candidate.center_workpoint.satisfied}else{$null})
       }
-    }
+    $rows+=,[ordered]@{baseline=$baselineInput;focused=$focusedInput;row=$row}
   }
-  $eligible=@($rows|Where-Object{
-    $_.workflow_outcome-eq'within_tolerance'-and
-    $_.focused.peak_method_id-ceq'common_gaussian_kde_time_v2'-and
-    $null-ne$_.focused.peak_analysis_contract-and
-    $_.focused.peak_analysis_contract.method_id-ceq'common_gaussian_kde_time_v2'
-  })
-  $peakContracts=@($eligible|ForEach-Object{
-    $_.focused.peak_analysis_contract|ConvertTo-Json -Depth 10 -Compress
-  }|Select-Object -Unique)
-  $rankingStatus=if($peakContracts.Count-gt1){'unavailable_mixed_peak_settings'}else{'same_frozen_peak_contract'}
-  if($peakContracts.Count-gt1){$eligible=@()}
-  $ranked=@($eligible|Sort-Object `
-    @{Expression={if($null-eq$_.focused.mass_resolution_t_over_2fwhm){[double]::NegativeInfinity}else{[double]$_.focused.mass_resolution_t_over_2fwhm}};Descending=$true}, `
-    @{Expression={if($null-eq$_.focused.detection_rate){[double]::NegativeInfinity}else{[double]$_.focused.detection_rate}};Descending=$true}, `
-    @{Expression={$_.ordinal};Descending=$false})
-  $best=if($ranked.Count){[ordered]@{
-    ordinal=[int]$ranked[0].ordinal;K=[double]$ranked[0].K
-    accelerator_y_mm=[double]$ranked[0].accelerator_y_mm
-  }}else{$null}
-  return [ordered]@{
-    schema_version=2;role='mrtof_native_candidate_campaign_comparison';status='complete'
-    metric_scope=[ordered]@{
-      detector_plane='FWHM and resolution use detector hits; the reported slope states whether it uses a controlled z pair or a descriptive regression.'
-      z0_target_return='FWHM, resolution, and descriptive slope use all source particles reaching the named z=0 crossing; no detector-hit filter is applied.'
-      cross_plane_comparison='The two planes may contain different particle sets. Their FWHM values are reported independently and do not by themselves attribute downstream causal broadening.'
-      z0_is_qualification_gate=$false
-    }
-    selection=[ordered]@{
-      eligibility='workflow_outcome == within_tolerance and current common KDE method with identical frozen contract'
-      status=$rankingStatus
-      ordering=@('focused mass_resolution_t_over_2fwhm descending','focused detection_rate descending','campaign ordinal ascending')
-      qualified_condition_count=$ranked.Count;best_qualified_condition=$best
-    }
-    conditions=$rows
-  }
+  $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv/Scripts/python.exe'}
+  Push-Location -LiteralPath $repoRoot;$saved=$env:PYTHONPATH
+  try{
+    $env:PYTHONPATH=$repoRoot
+    $output=@(@{action='campaign_comparison';conditions=@($rows)}|ConvertTo-Json -Depth 100 -Compress|
+      & $python -X utf8 -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic --policy-request - --output -)
+    if($LASTEXITCODE-ne0){throw 'Candidate campaign comparison failed.'}
+    return ($output-join"`n")|ConvertFrom-Json -AsHashtable -Depth 100
+  }finally{$env:PYTHONPATH=$saved;Pop-Location}
+
 }
 
 $requested=@(Read-ConditionList -Path $campaign)

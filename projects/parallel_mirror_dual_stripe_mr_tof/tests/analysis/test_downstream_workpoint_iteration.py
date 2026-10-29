@@ -58,9 +58,14 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
             values=[0]*20;values[10]=-27.0
             binding=dict(accelerator_provider="dual_pressure_rectilinear_ion_processor",manifest="source_manifest.json",
                          authority=dict(analyzer_electrode_voltages_v=values))
+            binding_path=root/"results/joint_workbench/static_field_binding.json"
+            binding_path.parent.mkdir(parents=True)
+            binding_path.write_text(json.dumps(binding))
+            (root/"run_manifest.json").write_text(json.dumps(dict(
+                project="instrument_assembly", mode="accelerator_interface_preparation", status="success",
+                inputs={"binding":file_record(binding_path)}, outputs=[])))
             source=evidence.read_bytes()
-            with patch("integrations.workflows.accelerator_interface.prepare.verified_preparation_reference",return_value=evidence),\
-                 patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_binding",return_value=binding),\
+            with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_binding",return_value=binding),\
                  patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_native_response_basis",side_effect=lambda p,b:dict(response_basis=dict(axis=json.loads(p.read_text())["axis"]))):
                 result=prepare_measured_centroid_acquisition(prepared_run=root,contract_path=evidence,proposal_path=path,
                     p1_response=p1,p2_response=p2,field_run_id="test-field",output_directory=root/"frozen")

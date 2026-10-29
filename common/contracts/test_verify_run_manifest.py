@@ -113,6 +113,32 @@ ConvertTo-Json -InputObject @($results) -Depth 8 -Compress
                             self.assertEqual(observed["verifier_calls"], 0, observed)
                             self.assertEqual(observed["accepted"], attempt["document"] == "none", observed)
 
+    def test_successful_reference_uses_one_exact_manifest_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "value.json"
+            path.write_text("{}", encoding="utf-8")
+            record = write_run_manifest.file_record(path)
+            manifest = dict(project="assembly", mode="prepare", status="success",
+                            inputs={"value": record}, outputs=[{"path": "unconsumed-missing.bin"}])
+            def invoke(value):
+                return verify_run_manifest.verified_successful_run_reference(
+                    root, path.name, project="assembly", mode="prepare", manifest=value)
+            self.assertEqual(invoke(manifest), path)
+            for field, value in (("project", "other"), ("mode", "other"), ("status", "interrupted")):
+                with self.subTest(field=field), self.assertRaises(ValueError):
+                    invoke(dict(manifest, **{field: value}))
+            with self.assertRaisesRegex(ValueError, "exactly one"):
+                invoke(dict(manifest, outputs=[record]))
+            with self.assertRaisesRegex(ValueError, "exactly one"):
+                invoke(dict(manifest, inputs={}))
+            (root / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            self.assertEqual(verify_run_manifest.verified_successful_run_reference(
+                root, path.name, project="assembly", mode="prepare"), path)
+            path.write_text("[]", encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "SHA-256"):
+                invoke(manifest)
+
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_public_json_writer_preserves_array_shape_for_all_cardinalities(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -16,6 +16,47 @@ RUNNER = Path(__file__).resolve().parents[2] / "analysis" / "run_native_candidat
 
 class NativeCandidateChainRunnerTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_actual_root_feedback_keeps_one_request_and_matching_best_identity(self):
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        helpers = ""
+        for name in ("Invoke-ProjectPython", "Invoke-CandidatePolicyRequest", "Read-CenterWorkpointGate"):
+            start = source.index("function " + name + " {")
+            helpers += source[start:source.index("\nfunction ", start+1)] + "\n"
+        helpers = helpers.replace("  $output=@(Invoke-ProjectPython", "  $script:calls++;$output=@(Invoke-ProjectPython")
+        start = source.index("    $candidateEnvelopeAvailable=[bool]$focused.envelope_available")
+        block = source[start:source.index("    if(-not$candidateCenterGate.passed)", start)]
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "results").mkdir()
+            names = ["P1_P2_positive_mirror_turn_y_mm", "P1_P2_P2_shield_low_field_angle_degrees",
+                     "Stripe_slow_turn_y_minus_L_mm", "Stripe_target_phase_y_minus_origin_mm"]
+            (root / "results/two_prism_trial_observation.json").write_text(json.dumps({
+                "center_particle_workpoint_validation": {"status": "observed",
+                    "physical_acceptance_residuals": dict.fromkeys(names, 0.)}}), encoding="utf-8")
+            contract = {"downstream_fixed_grid_workpoint_profile": {"automatic_iteration": {
+                "acceptance_tolerances": dict.fromkeys(names, .1)}}}
+            script = ("param($Root,$Repo,$Python)\n$ErrorActionPreference='Stop';Set-StrictMode -Version Latest\n"
+                      + "$repoRoot=$Repo;$python=$Python;$analysisModule='projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic'\n"
+                      + helpers + "$calls=0\n" + ("$focusContract='" + json.dumps(contract) + "'|ConvertFrom-Json -AsHashtable\n")
+                      + "$minimumMassResolution=100000.;$sourceZSpanMm=1.;$bestFocusMetric=[double]::PositiveInfinity;$focusIterations=@()\n"
+                      + "$rootFocusResult=@{half_span_percent=20};$rootAttempt=0\n"
+                      + "foreach($slope in @(.004,.004,.003)){\n$rootAttempt++\n"
+                      + "$sample=@{median_tof_us=800.;slope_us_per_mm=$slope;detector_hits=3}\n"
+                      + "$focused=@{result=@{cohort_run_manifest=(Join-Path $Root 'run_manifest.json')};envelope_available=$true;particle_count=13;evidence_scope='controlled';identity=$rootAttempt}\n"
+                      + "$rootCoordinate=$rootAttempt;$rootDiagnostic=\"diag-$rootAttempt\";$rootFocusDiagnostic=\"focus-$rootAttempt\";$rootVariation=\"variation-$rootAttempt\"\n"
+                      + "$workpointRun=\"work-$rootAttempt\";$workpointManifest=\"manifest-$rootAttempt\";$handoff=@{id=$rootAttempt}\n"
+                      + "$activeNativeRuntimeCheckpoint=\"checkpoint-$rootAttempt\";$focusContractPath=\"contract-$rootAttempt\";$qualifiedCenterSeedManifest=\"seed-$rootAttempt\"\n"
+                      + block + "if($candidateCenterGate.Contains('focus')){throw 'transport feedback leaked into scientific gate'}\n}\n"
+                      + "@{calls=$calls;iterations=$focusIterations.Count;best=$bestFocused.identity;variation=$bestRootVariation;work=$bestWorkpointRun;seed=$bestQualifiedCenterSeedManifest;metric=$bestFocusMetric}|ConvertTo-Json -Compress\n")
+            path = root / "runner.ps1"
+            path.write_text(script, encoding="utf-8", newline="\n")
+            result = subprocess.run(["pwsh", "-NoProfile", "-File", str(path), str(root), str(REPO_ROOT), sys.executable],
+                                    cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(json.loads(result.stdout), dict(calls=3, iterations=3, best=3,
+                variation="variation-3", work="work-3", seed="seed-3", metric=.003))
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_actual_resolution_guard_accepts_only_current_matching_method(self):
         source = RUNNER.read_text(encoding="utf-8-sig")
         start = source.index("  if($rootComparison.peak_method_id")
@@ -159,6 +200,11 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
         helper = source[source.index("function Read-CenterWorkpointGate {"):
                         source.index("function Get-QualifiedCenterSeedManifest {")]
         helper = helper[:helper.index("\nfunction ", 1)]
+        for name in ("Invoke-ProjectPython", "Invoke-CandidatePolicyRequest"):
+            start = source.index("function " + name + " {")
+            helper += source[start:source.index("\nfunction ", start+1)]+"\n"
+        helper = ("$repoRoot='" + str(REPO_ROOT).replace("'", "''") + "';$python='" + sys.executable.replace("'", "''")
+                  + "';$analysisModule='projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic'\n" + helper)
         names = ["P1_P2_positive_mirror_turn_y_mm", "P1_P2_P2_shield_low_field_angle_degrees",
                  "Stripe_slow_turn_y_minus_L_mm", "Stripe_target_phase_y_minus_origin_mm"]
         energy = "P1_P2_clean_phase_effective_slow_energy_error_per_charge_v"
@@ -320,13 +366,20 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
         source = RUNNER.read_text(encoding="utf-8-sig")
         start = source.index("$sourceDefinitionData=Get-Content -LiteralPath $diagnosticSourceDefinition")
         statements = source[start:source.index("$focusContractPath=", start)]
+        config = source[source.index("  $focusPolicy=Invoke-CandidatePolicyRequest"):source.index("  $mirrorAuthorityRun=")]
+        helpers = ""
+        for name in ("Invoke-ProjectPython", "Invoke-CandidatePolicyRequest"):
+            start = source.index("function " + name + " {")
+            helpers += source[start:source.index("\nfunction ", start+1)]+"\n"
+        helpers += ("$repoRoot='" + str(REPO_ROOT).replace("'", "''") + "';$python='" + sys.executable.replace("'", "''")
+                    + "';$analysisModule='projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic'\n")
         with TemporaryDirectory() as temporary:
             definition = Path(temporary) / "source.json"
             definition.write_text(json.dumps({"position_radius_mm": 0.375}), encoding="utf-8")
             script = (
                 "Set-StrictMode -Version Latest; $ErrorActionPreference='Stop'\n"
                 + "$diagnosticSourceDefinition='" + str(definition).replace("'", "''") + "'\n"
-                + statements
+                + helpers + statements + "$minimumMassResolution=100000.0\n" + config
                 + "@{radius=$sourceDefinitionData.position_radius_mm;span=$sourceZSpanMm}|ConvertTo-Json -Compress"
             )
             completed = subprocess.run(
@@ -703,28 +756,25 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
         source = RUNNER.read_text(encoding="utf-8-sig")
         self.assertIn("[ValidateRange(1,3)][int]$MaximumTe1RootFlights=3", source)
         self.assertIn("for($rootAttempt=1;$rootAttempt-le$MaximumTe1RootFlights;$rootAttempt++)", source)
-        self.assertIn("$focusTolerance=$sample.median_tof_us/(2.0*$minimumMassResolution*$sourceZSpanMm)", source)
+        self.assertIn("$focusTolerance=$candidateFeedback.tolerance_us_per_mm", source)
         self.assertIn("if($focusConverged){break}", source)
-        self.assertIn("warning_focus_not_converged__continue_parameter_scan", source)
-        self.assertIn("warning_resolution_below_target__continue_parameter_scan", source)
-        self.assertIn("warning_collection_below_preferred__continue_parameter_scan", source)
         self.assertIn("Read-CollectionGate -ScreeningResult $focused.result", source)
         self.assertEqual(
-            source.count("$focusConverged=$responseConverged-and[bool]$candidateCenterGate.passed-and$candidateEnvelopeAvailable"),
+            source.count("envelope=$candidateEnvelopeAvailable;best="),
             2,
         )
         self.assertEqual(
-            source.count("$focusConverged=$responseConverged-and[bool]$candidateCenterGate.passed"),
+            source.count("$focusConverged=$candidateFeedback.converged"),
             3,
         )
         self.assertNotIn(
             "$focusConverged=$responseConverged-and[bool]$candidateCenterGate.passed-and$candidateCollectionSatisfied",
             source,
         )
-        self.assertIn("if($candidateCenterGate.passed-and$candidateEnvelopeAvailable-and", source)
+        self.assertIn("if($candidateFeedback.improves_best)", source)
         self.assertNotIn("$remeasureCollectionGate=Read-CollectionGate", source)
         self.assertIn("Read-CenterWorkpointGate -ScreeningResult $focused.result", source)
-        self.assertIn("warning_center_workpoint_shifted__reclose_required", source)
+        self.assertIn("center=($null-ne$rootCenterGate-and[bool]$rootCenterGate.passed)", source)
         self.assertIn("TE1 detector-plane root variation is invalid", source)
         self.assertNotIn("warning_te1_root_outside_mirror_gate__continue_parameter_scan", source)
         self.assertIn("'--baseline-coordinate',[string]$baselineCoordinate", source)
@@ -741,21 +791,11 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
 
     def test_final_collection_acceptance_requires_the_accepted_gate_state(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
-        helper = source[
-            source.index("function Test-CollectionAccepted"):
-            source.index("function Read-CenterWorkpointGate")
-        ]
-        for token in (
-            "$Gate.status-eq'accepted'",
-            "-not[bool]$Gate.warning",
-            "[double]$Gate.detection_rate-ge[double]$Gate.preferred_minimum",
-        ):
-            self.assertIn(token, helper)
-        self.assertEqual(source.count("Test-CollectionAccepted -Gate"), 1)
-        self.assertIn(
-            "if([bool]$baselineCollectionGate.hard_stop-or-not[bool]$baselineCollectionGate.continue_downstream)",
-            source,
-        )
+        final = source[source.index("  $rootCollectionGate=Read-CollectionGate"):source.index("  Write-RunJson -Path $package.summary -Depth 30", source.index("  $rootCollectionGate=Read-CollectionGate"))]
+        self.assertLess(final.index("Read-CollectionGate"), final.index("Read-FocusDiagnosticFeedback"))
+        self.assertIn("$collectionSatisfied=$finalFeedback.qualification.collection_satisfied", final)
+        self.assertIn("if([bool]$baselineCollectionGate.hard_stop-or-not[bool]$baselineCollectionGate.continue_downstream)", source)
+
 
     def test_legacy_workpoint_contract_gets_only_the_current_step_tiers(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
@@ -781,7 +821,7 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
         self.assertIn("Get-QualifiedCenterSeedManifest -WorkpointRun $workpointRun", source)
         self.assertIn("$Handoff.selected_workpoint.voltages_v", source)
         self.assertIn("@($value.stripe_biases_v)+@($value.prism_voltages_v)", source)
-        self.assertIn("warning_center_workpoint_reclosure_exhausted__continue_parameter_scan", source)
+        self.assertIn("reclosure_exhausted=$reclosureExhausted", source)
 
     def test_te1_reclosure_inherits_the_sealed_seed_integration_profile(self) -> None:
         shell = shutil.which("pwsh")
@@ -959,10 +999,10 @@ $config|ConvertTo-Json -Compress
         helper = source[source.index("function Resolve-DetectorFocusSample"):
                         source.index("function Invoke-Diagnostic")]
         self.assertIn("if([bool]$FormalSample.available)", helper)
-        self.assertIn("half_span_percent=20;particle_count=[int]$FormalSample.particle_count", helper)
-        self.assertIn("foreach($percent in @(10,5))", helper)
-        self.assertIn("-ParticleCount 3 -FocusDiagnosticOnly", helper)
-        self.assertIn("minimum_5_percent_pair_did_not_both_reach_detector__condition_unsuitable_for_te1_focus", helper)
+        self.assertIn("half_span_percent=$focusPolicy.formal_half_span_percent;particle_count=[int]$FormalSample.particle_count", helper)
+        self.assertIn("foreach($pair in $focusPolicy.fallback_pairs)", helper)
+        self.assertIn("-ParticleCount $focusPolicy.fallback_particle_count -FocusDiagnosticOnly", helper)
+        self.assertIn("$lastSample.reason=$focusPolicy.unavailable_reason", helper)
         self.assertNotIn("foreach($percent in @(10,5,", helper)
         self.assertIn("--baseline-focus-diagnostic", source)
         self.assertIn("formal_diagnostic=$rootDiagnostic", source)
@@ -1004,12 +1044,9 @@ $config|ConvertTo-Json -Compress
 
     def test_z0_is_classified_without_becoming_a_resolution_precondition(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
-        self.assertIn("function Read-Z0FocusClassification", source)
-        self.assertIn("topology_or_upstream_loss", source)
-        self.assertIn("first_order_broadening_enter_te1", source)
-        self.assertIn("higher_order_or_phase_space_warning", source)
-        self.assertIn("downstream_detector_leg_contribution", source)
-        self.assertIn("diagnostic_classification_only__not_a_te1_precondition", source)
+        self.assertIn("function Read-FocusDiagnosticFeedback", source)
+        self.assertIn("$rootZ0Classification=$finalFeedback.z0", source)
+        self.assertIn("$workflowOutcome=$finalFeedback.qualification.workflow_outcome", source)
         self.assertNotIn("z0_mass_resolution_satisfied", source)
 
 

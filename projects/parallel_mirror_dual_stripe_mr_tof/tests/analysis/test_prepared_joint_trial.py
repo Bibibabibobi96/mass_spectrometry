@@ -18,6 +18,36 @@ from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis import test_meas
 
 
 class PreparedJointBatchTests(unittest.TestCase):
+    def test_prepared_component_import_and_reference_do_not_load_integration_cli(self):
+        command = r'''
+import importlib.abc, json, sys, tempfile
+from pathlib import Path
+class BlockIntegrationCli(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "integrations.workflows.accelerator_interface.prepare":
+            raise AssertionError("MR component imported integration CLI")
+sys.meta_path.insert(0, BlockIntegrationCli())
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial import verified_preparation_reference
+from common.contracts.write_run_manifest import file_record
+with tempfile.TemporaryDirectory() as directory:
+    root=Path(directory)
+    value=root/"input.json"
+    value.write_text("{}", encoding="utf-8")
+    manifest=dict(project="instrument_assembly",mode="accelerator_interface_preparation",
+                  status="success",inputs={"input":file_record(value)},outputs=[])
+    assert verified_preparation_reference(root,value.name,manifest=manifest)==value
+    assert "integrations.workflows.accelerator_interface.prepare" not in sys.modules
+from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_downstream_workpoint_iteration import DownstreamWorkpointIterationTests
+DownstreamWorkpointIterationTests("test_measured_acquisition_uses_public_request_and_never_changes_source_energy").test_measured_acquisition_uses_public_request_and_never_changes_source_energy()
+assert "integrations.workflows.accelerator_interface.prepare" not in sys.modules
+print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
+'''
+        result = subprocess.run([sys.executable, "-B", "-c", command],
+                                cwd=Path(__file__).resolve().parents[4], capture_output=True,
+                                text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS", result.stdout)
+
     def test_prepare_trial_allows_observation_budget_and_selected_step_without_changing_97_states(self):
         import copy
         from common.contracts.write_run_manifest import file_record

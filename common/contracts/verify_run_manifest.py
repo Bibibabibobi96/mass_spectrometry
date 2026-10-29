@@ -48,6 +48,25 @@ def require_equal(name: str, actual: Any, expected: str, *, sha256: bool = False
         raise AssertionError(f"{name} is {actual!r}, expected {expected!r}")
 
 
+def verified_successful_run_reference(
+    run: Path, relative: str, *, project: str, mode: str,
+    manifest: dict[str, Any] | None = None,
+) -> Path:
+    """Verify one consumed input/output record, without reading other payloads."""
+    if manifest is None:
+        manifest = json.loads((run / "run_manifest.json").read_text(encoding="utf-8-sig"))
+    if (manifest.get("project") != project or manifest.get("mode") != mode
+            or manifest.get("status") != "success"):
+        raise ValueError(f"reference must be a successful {project} {mode} run")
+    desired = (run / relative).resolve()
+    matches = [record for record in [*manifest.get("inputs", {}).values(), *manifest.get("outputs", [])]
+               if record_path(record, base_dir=run) == desired]
+    if len(matches) != 1:
+        raise ValueError("reference manifest must bind exactly one record for " + relative)
+    verify_record("consumed run reference", matches[0], base_dir=run)
+    return desired
+
+
 def _consumed_input(value: list[str]) -> tuple[str, Path]:
     name, path_text = value
     if not name or name.strip() != name:

@@ -149,8 +149,11 @@ class StaticFieldIdentityTest(unittest.TestCase):
             if path.name=="solver_configured.json":
                 return self.solver_tree(solver)
             return solver if path.name=="solver_before.json" or after is None else after
-        with patch(f"{MODULE}.load_binding", return_value=binding), patch(f"{MODULE}._record"), \
-             patch(f"{MODULE}.compile_request",return_value=compiled),patch(f"{MODULE}._load_object",side_effect=load):
+        analysis = MODULE.rsplit(".", 1)[0]
+        with patch(f"{MODULE}.load_binding", return_value=binding), \
+             patch(f"{analysis}.static_field_binding._record"), \
+             patch(f"{analysis}.corridor_field_provider.compile_request", return_value=compiled), \
+             patch(f"{analysis}.two_prism_operating_point._load_object", side_effect=load):
             return _static_field_problem(materialization)
 
     def test_ordinary_scalar_mesh2_and_provider_have_same_scientific_family(self):

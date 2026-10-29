@@ -16,6 +16,243 @@ PROJECT = Path(__file__).resolve().parents[2]
 
 
 class WorkpointBootstrapTests(unittest.TestCase):
+    def test_restored_stage_axes_keep_original_profile_and_stage_boundaries(self):
+        script = r'''
+param($Source,$Python,$RepoRoot)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
+foreach($name in @('Invoke-WorkpointControllerRequest','Get-ActiveStripeAxisIndices','Get-StagedColumnAxisIndices')){
+ $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true);Invoke-Expression $node.Extent.Text
+}
+$cases=[Console]::In.ReadToEnd()|ConvertFrom-Json -AsHashtable -Depth 100
+$results=@();foreach($case in $cases){try{$axes=@(Get-StagedColumnAxisIndices -Stage $case.stage -Profile $case.profile);$results+=,@{axes=$axes;failed=$false}}catch{$results+=,@{axes=$null;failed=$true}}}
+$results|ConvertTo-Json -Depth 10 -Compress
+'''
+        single = dict(active_stripe_axes=['stripe_1_voltage_v'])
+        dual = dict(active_stripe_axes=['stripe_1_voltage_v', 'stripe_2_voltage_v'])
+        cases = [('prism_preclosure', {}, [2, 3]), ('stripe_preclosure', single, [0]),
+                 ('stripe_preclosure', dual, [0, 1]),
+                 ('stripe_preclosure', dict(single, single_stripe_refinement_mode='joint_ps_constrained'), [0, 2, 3]),
+                 ('stripe_preclosure', dict(dual, single_stripe_refinement_mode='joint_ps_constrained'), None),
+                 ('stripe_preclosure', dict(single, single_stripe_refinement_mode='other'), None),
+                 ('PRISM_PRECLOSURE', {}, [2, 3]), ('saved_unknown_stage', single, [0]),
+                 ('stripe_preclosure', dict(active_stripe_axes=['STRIPE_1_VOLTAGE_V']), [-1])]
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / 'axes.ps1'; path.write_text(script, encoding='utf-8')
+            process = subprocess.run(['pwsh', '-NoProfile', '-File', str(path),
+                str(PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1'), sys.executable, str(PROJECT.parents[1])],
+                input=json.dumps([dict(stage=stage, profile=profile) for stage, profile, _ in cases]),
+                cwd=PROJECT.parents[1], capture_output=True, text=True, encoding='utf-8', timeout=30)
+            self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+            self.assertEqual(json.loads(process.stdout), [dict(axes=expected, failed=expected is None) for _, _, expected in cases])
+
+    def test_main_iteration_budget_keeps_actual_terminal_and_pending_recovery_boundaries(self):
+        script = r'''
+param($Source,$Root,$Python,$RepoRoot)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$sourceText=Get-Content -LiteralPath $Source -Raw
+$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
+$node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-WorkpointControllerRequest'},$true);Invoke-Expression $node.Extent.Text
+$start=$sourceText.IndexOf('  $maximumIterations =');$end=$sourceText.IndexOf('  if($null-eq$terminalDecision-and$null-ne$pendingRecoveryDecision)', $start)
+$initial=$sourceText.Substring($start,$end-$start)
+$post=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Extent.Text.StartsWith('if ($null -eq $terminalDecision)')-and($n.Extent.Text.Contains('iteration=$maximumFlightAttempts')-or$n.Extent.Text.Contains("phase='exhausted'"))},$true)
+$loop=$ast.Find({param($n)$n-is[Management.Automation.Language.ForStatementAst]-and$n.Extent.Text.StartsWith('for ($iteration = $startIteration;')},$true)
+$loopHeader=$loop.Extent.Text.Substring(0,$loop.Body.Extent.StartOffset-$loop.Extent.StartOffset)
+$frozenContract=Join-Path $Root 'contract.json'
+@{downstream_fixed_grid_workpoint_profile=@{automatic_iteration=@{maximum_iterations=8}}}|ConvertTo-Json -Depth 10|Set-Content $frozenContract
+$cases=[Console]::In.ReadToEnd()|ConvertFrom-Json -AsHashtable
+$results=@();foreach($case in $cases){
+ $terminalDecision=$case.terminal;$priorTerminal=$terminalDecision;$startIteration=$case.start;$pendingRecoveryDecision=@{identity='pending-recovery'}
+ Invoke-Expression $initial
+ $before=$terminalDecision
+ $flights=@();Invoke-Expression ($loopHeader+'{ $flights+=,$iteration }')
+ if($case.complete){Invoke-Expression $post.Extent.Text}
+ $sameIdentity=if($null-ne$priorTerminal){[object]::ReferenceEquals($priorTerminal,$terminalDecision)}else{$null}
+ $results+=,@{before=$before;after=$terminalDecision;maximum=$maximumFlightAttempts;flights=$flights;pending=$pendingRecoveryDecision;same_identity=$sameIdentity}
+}
+$results|ConvertTo-Json -Depth 20 -Compress
+'''
+        prior = dict(state='terminal', terminal_reason='existing_scientific_decision', iteration=2)
+        cases = [(1, None, False), (8, None, False), (9, None, False), (12, None, False),
+                 (12, prior, False), (1, None, True), (8, None, True), (9, None, True), (1, prior, True)]
+        def terminal(iteration):
+            return dict(schema_version=1, role='mrtof_downstream_workpoint_iteration_decision', state='terminal',
+                        terminal_reason='maximum_iterations', iteration=iteration,
+                        detail='maximum main real centre-flight count 8 reached')
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / 'budget.ps1'; path.write_text(script, encoding='utf-8')
+            process = subprocess.run(['pwsh', '-NoProfile', '-File', str(path),
+                str(PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1'), directory, sys.executable, str(PROJECT.parents[1])],
+                input=json.dumps([dict(start=start, terminal=value, complete=complete) for start, value, complete in cases]),
+                cwd=PROJECT.parents[1], capture_output=True, text=True, encoding='utf-8', timeout=30)
+            self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+            for result, (start, value, complete) in zip(json.loads(process.stdout), cases, strict=True):
+                before = value if value is not None else terminal(start - 1) if start > 8 else None
+                after = terminal(8) if complete and before is None else before
+                self.assertEqual(result, dict(before=before, after=after, maximum=8,
+                                             flights=list(range(start, 9)) if before is None else [],
+                                             pending=dict(identity='pending-recovery'), same_identity=True if value is not None else None))
+
+    def test_recovery_model_completion_preserves_provisional_policy_and_save_order(self):
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.workpoint_controller_state import (
+            prepare_recovery_state, advance_recovery_round,
+        )
+        script = r'''
+param($Source,$Root,$RealPython,$RealRepo)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
+$node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-SLocalModelRecovery'},$true);Invoke-Expression $node.Extent.Text
+$node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-WorkpointControllerRequest'},$true)
+Invoke-Expression ($node.Extent.Text.Replace('function Invoke-WorkpointControllerRequest','function Invoke-RealControllerRequest'))
+function Invoke-WorkpointControllerRequest {param($Request,$Python,$RepoRoot)Invoke-RealControllerRequest -Request $Request -Python $RealPython -RepoRoot $RealRepo}
+$fixture=[Console]::In.ReadToEnd()|ConvertFrom-Json -AsHashtable -Depth 100
+$script:flights=@();$script:saves=@();$script:refresh=$null
+function Find-AcceptedRecoveryAnchorEvidence {param($History,$Lineage,$Anchor)@{materialization='anchor.json';observation='observation.json'}}
+function Save-IterationRecoveryState {param($State,$Path)
+ $script:saves+=,($State|ConvertTo-Json -Depth 100|ConvertFrom-Json -AsHashtable)
+ $State|ConvertTo-Json -Depth 100|Set-Content -LiteralPath $Path
+}
+function New-CenterTrialArguments {param($Voltages,$ChildRunId)@{voltages=@($Voltages);run_id=$ChildRunId}}
+function Invoke-CenterTrial {param($Arguments)$script:flights+=,$Arguments}
+function Get-CenterTrialPhysicalEvidence {param($Manifest,$Voltages)@{passed=$true;observation_path='probe-observation.json';materialization_path='probe-materialization.json'}}
+function Write-RunJson {param($Path,$Depth,$Value)$Value|ConvertTo-Json -Depth $Depth|Set-Content -LiteralPath $Path}
+function Invoke-MockRefresh {
+ $output=[array]::IndexOf($args,'--output');$radius=[array]::IndexOf($args,'--refresh-trusted-radius-linf-v');$directions=[array]::IndexOf($args,'--refresh-supported-directions')
+ $script:refresh=@{radius=[double]$args[$radius+1];directions=@([int]$args[$directions+1],[int]$args[$directions+2])}
+ Write-RunJson -Path $args[$output+1] -Depth 30 -Value $fixture.model
+ $global:LASTEXITCODE=0
+}
+$python='Invoke-MockRefresh';$repoRoot=$RealRepo;$RunId='recovery';$trialArtifactRoot=$Root;$frozenProposal='proposal.json';$frozenContract='contract.json'
+$statePath=Join-Path $Root 'state.json';$historyPath=Join-Path $Root 'history.json'
+$fixture.stored|ConvertTo-Json -Depth 100|Set-Content -LiteralPath $statePath
+$failure=$null;$state=$null
+try{$state=Invoke-SLocalModelRecovery -Decision $fixture.decision -History $fixture.history -Lineage @{} -StatePath $statePath -HistoryPath $historyPath -ContractDocument $fixture.contract -RecoveryPolicy $fixture.policy}catch{$failure=$_.Exception.Message}
+$modelPath=Join-Path $Root 'iteration_local_s_model.json'
+@{state=$state;failure=$failure;flights=$script:flights;saves=$script:saves;refresh=$script:refresh;model=(Get-Content $modelPath -Raw|ConvertFrom-Json -AsHashtable);model_sha=(Get-FileHash $modelPath).Hash.ToLowerInvariant()}|ConvertTo-Json -Depth 100 -Compress
+'''
+        contract = json.loads((PROJECT / 'config/simion_candidate_two_zone.json').read_text())
+        policy = json.loads((PROJECT / 'config/local_model_recovery_policy.json').read_text())
+        anchor = dict(voltages_v=[-27., 54., 190., -190.], maximum_scaled_abs_residual=20.)
+        decision = dict(iteration=6, recovery_state=dict(accepted_anchor=anchor, model_invalid_reason='topology_loss'))
+        history = dict(decisions=[])
+        for passed, eligible, round_number, expected in ((True, 2, 1, 'validated'), (False, 2, 1, 'retry'),
+                (False, 0, 1, 'retry'), (False, 0, 3, 'provisional'), (False, 2, 3, 'terminal'),
+                ('false', 0, 3, 'terminal'), (None, 0, 3, 'provisional'), (None, None, 3, 'invalid')):
+            with self.subTest(passed=passed, eligible=eligible, round_number=round_number), TemporaryDirectory() as directory:
+                root = Path(directory)
+                stored = prepare_recovery_state(decision, dict(materialization='anchor.json', observation='observation.json'),
+                                                None, contract['downstream_fixed_grid_workpoint_profile'], policy, history)
+                for _ in range(1, round_number):
+                    stored = advance_recovery_round(stored, contract['downstream_fixed_grid_workpoint_profile'])
+                validation = dict(passed=passed, eligible_observation_count=eligible) if eligible is not None else None
+                model = dict(history_validation=validation, local_s_physical_jacobian_columns=[[1., 0.], [0., 1.], [1., 1.], [2., 2.]])
+                fixture = root / 'model.ps1'; fixture.write_text(script, encoding='utf-8')
+                result = subprocess.run(['pwsh', '-NoProfile', '-File', str(fixture),
+                    str(PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1'), str(root), sys.executable, str(PROJECT.parents[1])],
+                    input=json.dumps(dict(decision=decision, history=history, contract=contract, policy=policy, stored=stored, model=model)),
+                    cwd=PROJECT.parents[1], capture_output=True, text=True, encoding='utf-8', timeout=40)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                observed = json.loads(result.stdout)
+                self.assertEqual(len(observed['flights']), 2)
+                self.assertEqual([s['probe_budget_remaining'] for s in observed['saves'][:5]], [12, 11, 11, 10, 10])
+                self.assertEqual([s['probes'][-1]['status'] for s in observed['saves'][1:5]],
+                                 ['started', 'accepted_physical_probe', 'started', 'accepted_physical_probe'])
+                self.assertEqual(observed['refresh'], dict(radius=max(stored['probe_steps_v']), directions=[1, 1]))
+                if expected == 'invalid':
+                    self.assertTrue(observed['failure'])
+                    self.assertIsNone(observed['state'])
+                    self.assertEqual(len(observed['saves']), 5)
+                    continue
+                self.assertIsNone(observed['failure'])
+                state = observed['state']
+                self.assertEqual(state['status'], 'validated' if expected == 'provisional' else expected)
+                self.assertEqual(len(observed['saves']), 6)
+                self.assertEqual(state['probe_budget_remaining'], 12 if expected == 'retry' else 10)
+                if state['status'] == 'validated':
+                    self.assertEqual(state['model']['sha256'], observed['model_sha'])
+                    self.assertEqual(state['model']['supported_directions'], [1, 1])
+                    self.assertEqual(state['model']['trusted_radius_linf_v'], max(stored['probe_steps_v']))
+                if expected == 'provisional':
+                    actual = observed['model']['history_validation']
+                    self.assertIs(actual['passed'], True)
+                    self.assertEqual(actual['validation_status'], 'provisional_no_nearby_history')
+                    self.assertIs(actual['first_correction_requires_real_prediction_acceptance'], True)
+                    self.assertEqual(actual['first_correction_max_linf_v'], max(stored['probe_steps_v']))
+                else:
+                    self.assertEqual(observed['model'], model)
+
+    def test_recovery_round_json_transport_preserves_probe_order_debits_and_terminal_resume(self):
+        script = r'''
+param($Source,$Root,$RealPython,$RealRepo)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
+foreach($name in @('Invoke-SLocalModelRecovery','Get-InterruptedSOnlyTopologyRecoveryDecision')){
+ $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
+ Invoke-Expression $node.Extent.Text
+}
+$transport=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-WorkpointControllerRequest'},$true)
+Invoke-Expression ($transport.Extent.Text.Replace('function Invoke-WorkpointControllerRequest','function Invoke-RealControllerRequest'))
+$script:actions=@();$script:flights=@();$script:saves=@()
+function Invoke-WorkpointControllerRequest {param($Request,$Python,$RepoRoot)
+ $script:actions+=,$Request.action
+ Invoke-RealControllerRequest -Request $Request -Python $RealPython -RepoRoot $RealRepo
+}
+function Find-AcceptedRecoveryAnchorEvidence {param($History,$Lineage,$Anchor)@{materialization='anchor.json';observation='observation.json'}}
+function Save-IterationRecoveryState {param($State,$Path)
+ $script:saves+=,($State|ConvertTo-Json -Depth 100|ConvertFrom-Json -AsHashtable)
+ $State|ConvertTo-Json -Depth 100|Set-Content -LiteralPath $Path
+}
+function New-CenterTrialArguments {param($Voltages,$ChildRunId)@{voltages=$Voltages;run_id=$ChildRunId}}
+function Invoke-CenterTrial {param($Arguments)$script:flights+=,$Arguments}
+function Get-CenterTrialPhysicalEvidence {param($Manifest,$Voltages)@{passed=$false}}
+$fixture=[Console]::In.ReadToEnd()|ConvertFrom-Json -AsHashtable -Depth 100
+$python=$RealPython;$repoRoot=$RealRepo;$RunId='recovery';$trialArtifactRoot=$Root
+$statePath=Join-Path $Root 'state.json';$historyPath=Join-Path $Root 'history.json'
+$states=@()
+foreach($round in 1..4){
+ $state=Invoke-SLocalModelRecovery -Decision $fixture.decision -History $fixture.history -Lineage @{} -StatePath $statePath -HistoryPath $historyPath -ContractDocument $fixture.contract -RecoveryPolicy $fixture.policy
+ $states+=,$state
+}
+$topology=Get-InterruptedSOnlyTopologyRecoveryDecision -History @{decisions=@()}
+@{states=$states;actions=$script:actions;flights=$script:flights;saves=$script:saves;topology=$topology}|ConvertTo-Json -Depth 100 -Compress
+'''
+        profile = json.loads((PROJECT / 'config/simion_candidate_two_zone.json').read_text())
+        policy = json.loads((PROJECT / 'config/local_model_recovery_policy.json').read_text())
+        anchor = dict(voltages_v=[-27., 54., 190., -190.], maximum_scaled_abs_residual=20.)
+        for hint in (None, [-1, 1]):
+            with self.subTest(hint=hint), TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                decision = dict(iteration=6, recovery_state=dict(accepted_anchor=anchor, model_invalid_reason='topology_loss'))
+                if hint:
+                    decision['recovery_state']['initial_probe_directions'] = hint
+                # This document intentionally contains an opposite historical side;
+                # the current dictionary call keeps defaults rather than traversing it.
+                history = dict(decisions=[dict(observation_record=dict(voltages_v=[-28., 53., 190., -190.]))])
+                fixture = root / 'recovery.ps1'; fixture.write_text(script, encoding='utf-8')
+                process = subprocess.run(['pwsh', '-NoProfile', '-File', str(fixture),
+                    str(PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1'), str(root), sys.executable, str(PROJECT.parents[1])],
+                    input=json.dumps(dict(decision=decision, history=history, contract=profile, policy=policy)),
+                    cwd=PROJECT.parents[1], capture_output=True, text=True, encoding='utf-8', timeout=40)
+                self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+                observed = json.loads(process.stdout)
+                self.assertEqual([s['status'] for s in observed['states']], ['retry', 'retry', 'terminal', 'terminal'])
+                self.assertEqual([s['probe_budget_remaining'] for s in observed['states']], [10, 8, 6, 6])
+                self.assertEqual(observed['states'][2], observed['states'][3])
+                self.assertEqual(observed['actions'],
+                    (['prepare_recovery_state'] + ['plan_recovery_probe'] * 3) * 3
+                    + ['prepare_recovery_state', 'interrupted_topology_recovery_decision'])
+                direction = -1 if hint else 1
+                expected = [-27. + direction * step for step in (.27, -.27, .0675, -.0675, .0135, -.0135)]
+                self.assertEqual([f['voltages'][0] for f in observed['flights']], expected)
+                self.assertEqual(len(observed['flights']), 6)
+                labels = ('n', 'p') if hint else ('p', 'n')
+                self.assertEqual([f['run_id'] for f in observed['flights']],
+                                 [f'recovery-ri06r{round_number}-s1{label}'
+                                  for round_number in (1, 2, 3) for label in labels])
+                self.assertIsNone(observed['topology'])
+                started = [s for s in observed['saves'] if s['probes'] and s['probes'][-1]['status'] == 'started']
+                self.assertEqual([s['probe_budget_remaining'] for s in started], [11, 10, 9, 8, 7, 6])
+
     def test_prediction_decision_file_transport_handles_large_inputs_and_rejects_damage(self):
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_downstream_workpoint_iteration import DownstreamWorkpointIterationTests
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import _stripe_stage_record, assess_staged_prediction
@@ -772,10 +1009,10 @@ Complete-StagedTrial -Context $context -State $state -History $history -Lineage 
             contract = root / "new.json"
             contract.write_text(json.dumps(new))
             script = r'''
-param($Source,$Parent,$Contract)
+param($Source,$Parent,$Contract,$Python,$RepoRoot)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
-foreach($name in @('Get-ActiveStripeAxisIndices','Get-StagedColumnAxisIndices','Assert-ActiveStripeVoltages','Restore-StagedWorkpointChildren')){
+foreach($name in @('Invoke-WorkpointControllerRequest','Get-ActiveStripeAxisIndices','Get-StagedColumnAxisIndices','Assert-ActiveStripeVoltages','Restore-StagedWorkpointChildren')){
  $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true);Invoke-Expression $node.Extent.Text
 }
 function Save-WorkpointBootstrap {param($Bootstrap,$BootstrapPath)}
@@ -790,7 +1027,7 @@ if(($b|ConvertTo-Json -Depth 100 -Compress)-ne$before){throw 'Actual resume rewr
             path = root / "actual.ps1"
             path.write_text(script)
             result = subprocess.run(["pwsh", "-NoProfile", "-File", str(path),
-                str(PROJECT / "analysis/run_downstream_workpoint_iteration.ps1"), str(parent), str(contract)],
+                str(PROJECT / "analysis/run_downstream_workpoint_iteration.ps1"), str(parent), str(contract), sys.executable, str(PROJECT.parents[1])],
                 cwd=PROJECT.parents[1], capture_output=True, text=True, encoding="utf-8", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             value = json.loads(result.stdout)
@@ -870,7 +1107,11 @@ foreach($name in @('Get-ActiveStripeAxisIndices','Get-StagedColumnAxisIndices','
 }
 $transport=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-WorkpointControllerRequest'},$true)
 Invoke-Expression ($transport.Extent.Text.Replace('function Invoke-WorkpointControllerRequest','function Invoke-RealControllerRequest'))
-function Invoke-WorkpointControllerRequest {param($Request,$Python,$RepoRoot) Invoke-RealControllerRequest -Request $Request -Python $RealPython -RepoRoot $Repo}
+$script:restoreRequests=0
+function Invoke-WorkpointControllerRequest {param($Request,$Python,$RepoRoot)
+ if($Request.action-eq'restored_stage_columns'){$script:restoreRequests++}
+ Invoke-RealControllerRequest -Request $Request -Python $RealPython -RepoRoot $Repo
+}
 $seedManifest=Join-Path $Root 'seed.json';'{}'|Set-Content $seedManifest
 $policyPath=Join-Path $Root 'old-policy.json';'{"trusted_advance_multiplier":0.5}'|Set-Content $policyPath
 $futurePolicy=Join-Path $Root 'future-policy.json';'{"trusted_advance_multiplier":1.0}'|Set-Content $futurePolicy
@@ -1000,7 +1241,7 @@ try{
   $null=Invoke-StagedWorkpointBootstrap -Bootstrap $bootstrap -BootstrapPath unused -ControllerPolicyPath $futurePolicy
  }
 }catch{$errorText=$_.Exception.Message}
-@{failure=$errorText;restored=$restored;bootstrap=$bootstrap;saves=$script:saves;consumptions=$script:consumptions;flights=$script:flights;future_policies=$script:futurePolicies;old_pending=(Get-Content $pending -Raw -ErrorAction SilentlyContinue)}|ConvertTo-Json -Depth 100|Set-Content (Join-Path $Root 'output.json')
+@{failure=$errorText;restored=$restored;bootstrap=$bootstrap;restore_requests=$script:restoreRequests;saves=$script:saves;consumptions=$script:consumptions;flights=$script:flights;future_policies=$script:futurePolicies;old_pending=(Get-Content $pending -Raw -ErrorAction SilentlyContinue)}|ConvertTo-Json -Depth 100|Set-Content (Join-Path $Root 'output.json')
 '''
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -1068,6 +1309,7 @@ try{
         self.assertEqual(set(state["columns"]), {"0", "2", "3"})
         self.assertEqual((state["flight_count"], state["candidate_count"]), (4, 1))
         self.assertEqual(result["flights"], [])
+        self.assertEqual(result["restore_requests"], 1)
 
     def test_joint_candidate_outside_prism_window_is_rejected_not_promoted(self):
         result = self._restore_saved_checkpoint("joint_p_rejected")
@@ -1211,7 +1453,7 @@ if($PendingStatus-eq'success'){
                 if status == 'success':
                     self.assertIn('006-window2.pa-surf', report['paths'])
         source = (PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1').read_text(encoding='utf-8')
-        complete = source.split('function Complete-StagedTrial {', 1)[1].split('function Reset-StagedSLocalModel', 1)[0]
+        complete = source.split('function Complete-StagedTrial {', 1)[1].split('function Update-StagedAnchorFieldProtection', 1)[0]
         self.assertNotIn('Update-StagedAnchorFieldProtection', complete)
 
     def test_staged_compose_public_owner_sequence_and_completed_receipt_resume(self):
@@ -2186,7 +2428,7 @@ $dir=(Get-ChildItem -LiteralPath $Root -Directory|Select-Object -First 1).FullNa
 param($Source,$Root,$RealPython,$RealRepo)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
-foreach($name in @('Get-ActiveStripeAxisIndices','Get-StagedColumnAxisIndices','Assert-ActiveStripeVoltages','Get-RelativeVoltageStencilSteps','Invoke-PreclosureDecision','Invoke-StagedPreclosureDecision','Complete-StagedTrial','Reset-StagedSLocalModel','Restore-StagedWorkpointChildren','Import-StagedStripeColumns','Invoke-StagedWorkpointBootstrap')){
+foreach($name in @('Get-ActiveStripeAxisIndices','Get-StagedColumnAxisIndices','Assert-ActiveStripeVoltages','Invoke-PreclosureDecision','Invoke-StagedPreclosureDecision','Complete-StagedTrial','Restore-StagedWorkpointChildren','Import-StagedStripeColumns','Invoke-StagedWorkpointBootstrap')){
   $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
   Invoke-Expression $node.Extent.Text
 }
@@ -2196,7 +2438,7 @@ $script:PreparedFieldBuildMode=$fixture.prepared_build_mode
 $frozenPreparedTargetAuthorityPath='frozen-target';$frozenPreparedInitialProposalPath='frozen-proposal'
 $fieldProviderRequest=@{}
 if($fixture.prepared_build_mode-eq'composition'){$fieldProviderRequest['response_basis_paths']=@{p1='p1';p2='p2'}}
-$script:queue=@($fixture.decisions);$script:requests=@();$script:flights=@();$script:saves=@();$script:models=@()
+$script:queue=@($fixture.decisions);$script:requests=@();$script:flights=@();$script:saves=@();$script:models=@();$script:controllerActions=@()
 $repoRoot=$Root;$artifactRoot=$Root;$RunId='stage';$python='Invoke-MockController'
 $trialArtifactRoot=$artifactRoot
 $package=@{result_dir=$Root};$seedManifest=Join-Path $Root 'seed.json';'{}'|Set-Content $seedManifest
@@ -2221,7 +2463,7 @@ if($fixture.single_stripe_refinement_mode){
 }
 $transport=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-WorkpointControllerRequest'},$true)
 Invoke-Expression ($transport.Extent.Text.Replace('function Invoke-WorkpointControllerRequest','function Invoke-RealControllerRequest'))
-function Invoke-WorkpointControllerRequest {param($Request,$Python,$RepoRoot) Invoke-RealControllerRequest -Request $Request -Python $RealPython -RepoRoot $RealRepo}
+function Invoke-WorkpointControllerRequest {param($Request,$Python,$RepoRoot) $script:controllerActions+=,@{action=$Request.action;phase=$Request['phase']};Invoke-RealControllerRequest -Request $Request -Python $RealPython -RepoRoot $RealRepo}
 function Invoke-RunToolRootContext {param($RepoRoot,[scriptblock]$Operation)& $Operation}
 function Write-RunJson {param($Path,$Depth,$Value)$Value|ConvertTo-Json -Depth $Depth|Set-Content $Path}
 function Save-WorkpointBootstrap {
@@ -2308,7 +2550,7 @@ catch{
  }elseif($fixture.corrupt_voltage-or$fixture.imported_columns.Count-or$fixture.expected_failure){$failure=$_.Exception.Message}else{throw}
 }
 if(-not$failure-and$script:queue.Count-ne0){throw 'Unconsumed controller decisions'}
-@{result=$result;failure=$failure;bootstrap=$bootstrap;requests=$script:requests;flights=$script:flights;saves=$script:saves;models=$script:models}|ConvertTo-Json -Depth 100|Set-Content (Join-Path $Root 'output.json')
+@{result=$result;failure=$failure;bootstrap=$bootstrap;requests=$script:requests;flights=$script:flights;saves=$script:saves;models=$script:models;controller_actions=$script:controllerActions}|ConvertTo-Json -Depth 100|Set-Content (Join-Path $Root 'output.json')
 """
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -2507,6 +2749,10 @@ if(-not$failure-and$script:queue.Count-ne0){throw 'Unconsumed controller decisio
                     decision,
                 ], active_stripe_axes=["stripe_1_voltage_v"], expected_failure=True)
                 self.assertIn(message, result["failure"])
+                if message == "inactive stage stencil":
+                    for diagnostic in ("action=plan_staged_trial", "stage=stripe_preclosure", "exit_code=1",
+                                       "workpoint_controller_state.py", "CandidateContractError"):
+                        self.assertIn(diagnostic, result["failure"])
                 self.assertEqual(result["flights"], [])
 
     def test_stage_passed_prism_uses_same_anchor_stripe_columns_and_reverse(self):
@@ -2767,6 +3013,13 @@ foreach($stagedBootstrap in $false,$true){foreach($resumeStatus in 'checkpoint',
         refresh = result["bootstrap"]["stage_history"]["decisions"][0]
         self.assertEqual(refresh["status"], "local_model_refresh")
         self.assertEqual(len(refresh["previous_columns"]), 2)
+        self.assertEqual([a for a in result["controller_actions"] if a["action"] == "plan_staged_trial"],
+                         [dict(action="plan_staged_trial", phase="prepare")] +
+                         [dict(action="plan_staged_trial", phase=None)] * 3)
+        self.assertNotIn("voltage_stencil_steps", [a["action"] for a in result["controller_actions"]])
+        reset_checkpoint = result["saves"][0]["stage_state"]
+        self.assertEqual((reset_checkpoint["flight_count"], reset_checkpoint["candidate_count"]), (5, 3))
+        self.assertEqual(reset_checkpoint["columns"], {})
 
     def test_explicit_stripe_columns_rejoin_seed_without_column_flights(self):
         d = self._stage_decision
@@ -2784,6 +3037,7 @@ foreach($stagedBootstrap in $false,$true){foreach($resumeStatus in 'checkpoint',
         self.assertEqual(result["bootstrap"]["stage_state"]["candidate_count"], 1)
         self.assertTrue(result["requests"][3]["--s1-child-manifest"].endswith("run_manifest.json"))
         self.assertIn("--s2-child-manifest", result["requests"][3])
+        self.assertEqual(sum(a["action"] == "prepare_imported_stencil_column" for a in result["controller_actions"]), 2)
 
     def test_explicit_single_stripe_column_measures_only_missing_axis(self):
         d = self._stage_decision
@@ -2797,6 +3051,7 @@ foreach($stagedBootstrap in $false,$true){foreach($resumeStatus in 'checkpoint',
         self.assertIsNone(result["failure"])
         self.assertEqual(len(result["flights"]), 1)
         self.assertEqual(result["flights"][0]["Voltages"], [-27., 54.135, 189., -190.])
+        self.assertEqual(sum(a["action"] == "prepare_imported_stencil_column" for a in result["controller_actions"]), 1)
 
 
     def test_explicit_stripe_column_controller_rejections_prevent_any_flight(self):
@@ -2810,6 +3065,7 @@ foreach($stagedBootstrap in $false,$true){foreach($resumeStatus in 'checkpoint',
                 ], imported_columns={"0": [-26.9325, 54., 189., -190.]})
                 self.assertIn("was not accepted", result["failure"])
                 self.assertEqual(result["flights"], [])
+                self.assertFalse(any(a["action"] == "prepare_imported_stencil_column" for a in result["controller_actions"]))
 
     def test_explicit_stripe_wrong_axis_and_duplicate_point_prevent_any_flight(self):
         d = self._stage_decision
@@ -2823,6 +3079,10 @@ foreach($stagedBootstrap in $false,$true){foreach($resumeStatus in 'checkpoint',
                 ], imported_columns=columns)
                 self.assertIn("only its declared seed axis", result["failure"])
                 self.assertEqual(result["flights"], [])
+                imported = len(columns) - 1
+                self.assertEqual(result["bootstrap"]["stage_state"]["flight_count"], imported)
+                self.assertEqual(len(result["bootstrap"]["stage_lineage"]["children"]), imported)
+                self.assertEqual(sum(a["action"] == "prepare_imported_stencil_column" for a in result["controller_actions"]), imported)
 
     def test_staged_stencil_starts_at_contract_residual_tier(self):
         d = self._stage_decision
@@ -3076,10 +3336,12 @@ if(@((Get-Content $history -Raw|ConvertFrom-Json).decisions).Count-ne0){throw 'b
 param($Source,$Root)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
-foreach($name in @('Find-ContinuationTransportSeed','Invoke-CenterTrial')){
+foreach($name in @('Find-ContinuationTransportSeed','Invoke-CenterTrial','Invoke-WorkpointControllerRequest')){
   $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true);Invoke-Expression $node.Extent.Text
 }
 $staticFieldMode=$false;$stagedBootstrap=$false
+$repoRoot=(Get-Item $Source).Directory.Parent.Parent.Parent.FullName
+$python=Join-Path $repoRoot '.venv/Scripts/python.exe'
 $RunId='auto';$RetainBaselineGuiWorkbench=$false;$artifactRoot=$Root;$script:flights=@()
 $trialArtifactRoot=$artifactRoot
 function New-CenterTrialArguments {param($PrismVoltages,$ChildRunId)@{PrismVoltages=$PrismVoltages;ChildRunId=$ChildRunId}}
@@ -3090,6 +3352,13 @@ $trialRunner='Invoke-MockTrial';$seed=[pscustomobject]@{prism_voltages_v=@(219.0
 $result=Find-ContinuationTransportSeed $seed $profile
 if($script:flights.Count-ne2-or$result.attempts.Count-ne2-or[math]::Abs($script:flights[1][0]-221.253125)-gt1e-9){throw 'wrong bounded search'}
 if($result.voltages_v[0]-ne-25-or$result.voltages_v[1]-ne50){throw 'stripe authority lost'}
+function Get-WorkpointBootstrapEvidence {param($Manifest,$Voltages)@{passed=$false;reasons=@('reference')}}
+$script:flights=@();$stagedBootstrap=$true
+$result=Find-ContinuationTransportSeed $seed $profile
+if($script:flights.Count-ne1-or$result.attempts[0].passed){throw 'Staged bootstrap no longer returns its rejected baseline'}
+$script:flights=@();$stagedBootstrap=$false;$failure=$null
+try{$null=Find-ContinuationTransportSeed $seed $profile}catch{$failure=$_.Exception.Message}
+if($script:flights.Count-ne13-or$failure-notlike'No physical transport seed*'){throw 'Exhausted transport changed its dispatch trace'}
 'CONTINUATION_TRANSPORT_SEED=PASS'
 """
         with TemporaryDirectory() as temporary:
@@ -3231,13 +3500,6 @@ Write-Output 'RECOVERY_ANCHOR_BINDING=PASS'
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('RECOVERY_ANCHOR_BINDING=PASS', result.stdout)
 
-    def test_recovery_probe_run_id_includes_trigger_iteration(self):
-        source = (PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1').read_text(encoding='utf-8-sig')
-        self.assertIn("$probeId='{0}-ri{1:D2}r{2}-{3}{4}'", source)
-        self.assertIn("[int]$state.trigger.iteration", source)
-        self.assertIn("[int]$state.recovery_round", source)
-        self.assertIn("$directionLabel=if($direction-eq1){'p'}else{'n'}", source)
-
     def test_recovery_handoffs_renew_parent_capacity_session(self):
         source = (PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1').read_text(encoding='utf-8-sig')
         self.assertEqual(source.count('$recoveryCapacity=Update-ArtifactWorkflowCapacitySession'), 2)
@@ -3246,22 +3508,31 @@ Write-Output 'RECOVERY_ANCHOR_BINDING=PASS'
 
     def test_physical_gate_reverse_fallback_resume_and_voltage_binding(self):
         script = r"""
-param($Source,$Root)
+param($Source,$Root,$Scenario)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $ast=[System.Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
-foreach($name in @('Get-WorkpointBootstrapEvidence','Save-WorkpointBootstrap','Invoke-WorkpointStencil','Invoke-CenterTrial')){
+foreach($name in @('Get-WorkpointBootstrapEvidence','Save-WorkpointBootstrap','Invoke-WorkpointStencil','Invoke-CenterTrial','Invoke-WorkpointControllerRequest')){
   $node=$ast.Find({param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name-eq$name},$true)
   Invoke-Expression $node.Extent.Text
 }
-$repoRoot=$Root;$project='fixture';$python='Invoke-MockPython';$frozenContract='frozen'
+$repoRoot=(Get-Item $Source).Directory.Parent.Parent.Parent.FullName
+$project='fixture';$python='Invoke-MockPython';$frozenContract='frozen'
+$script:feedbackCalls=0;$script:verificationCalls=0;$script:stencilPlans=0
 $staticFieldMode=$false
 $capacitySession=@{lease_id='owner'};$nativeRuntimeSession=@{checkpoint_path=(Join-Path $Root 'family.json')}
 [IO.File]::WriteAllText($nativeRuntimeSession.checkpoint_path,'{}')
 function Invoke-MockPython {
+  if($args[0]-eq'-X'){
+    $payload=@($input)
+    if(($payload-join''|ConvertFrom-Json).action-eq'center_trial_physical_gate'){$script:feedbackCalls++}else{$script:stencilPlans++}
+    $payload | & (Join-Path $repoRoot '.venv/Scripts/python.exe') @args
+    return
+  }
   if($args[3]-ne'success'-or$args[4]-ne'--require-project'-or$args[5]-ne'instrument_assembly'-or
      $args[6]-ne'--require-mode'-or$args[7]-ne'oa_mr'){
     throw 'Ordinary MR bootstrap used a foreign run identity'
   }
+  $script:verificationCalls++
   $global:LASTEXITCODE=0
 }
 function Get-ManifestOutputPath {param($ManifestPath,$FileName) return (Join-Path (Split-Path $ManifestPath) $FileName)}
@@ -3292,7 +3563,7 @@ function Invoke-MockAudit {param($BaselineManifest,$Stripe1PerturbationManifest,
   $script:audits++
 }
 $trialRunner='Invoke-MockTrial';$auditRunner='Invoke-MockAudit'
-foreach($script:scenario in @('reverse_success','reverse_failure','resume','baseline_failure','wrong_voltage')){
+$script:scenario=$Scenario
   $artifactRoot=Join-Path $Root $script:scenario;New-Item -ItemType Directory -Path $artifactRoot|Out-Null
 $trialArtifactRoot=$artifactRoot
   $RunId='new-parent';$script:flights=@();$script:audits=0;$script:checkpoints=0
@@ -3318,19 +3589,75 @@ $trialArtifactRoot=$artifactRoot
     if(-not$failure-or$script:flights.Count-ne1-or$script:audits-ne0-or$bootstrap.children.Count-ne0){throw 'Invalid baseline allowed stencil'}
   }else{if($failure-notlike'*voltages differ*'-or$script:flights.Count-ne1-or$script:audits-ne0){throw 'Wrong materialized voltage was accepted'}}
   if($script:scenario-ne'wrong_voltage'-and($script:checkpoints-lt1-or-not(Test-Path $checkpoint))){throw 'Physical attempt was not checkpointed'}
-}
+@{feedback=$script:feedbackCalls;verifier=$script:verificationCalls;plans=$script:stencilPlans}|ConvertTo-Json -Compress
 'PHYSICAL_BOOTSTRAP=PASS'
 """
+        totals = dict(feedback=0, verifier=0, plans=0)
         with TemporaryDirectory() as temporary:
             fixture = Path(temporary) / 'physical.ps1'
-            fixture.write_text(script, encoding='utf-8')
+            fixture.write_text(script, encoding='utf-8', newline='\n')
+            for scenario in ('reverse_success', 'reverse_failure', 'resume',
+                             'baseline_failure', 'wrong_voltage'):
+                with self.subTest(scenario=scenario):
+                    result = subprocess.run(
+                        ['pwsh', '-NoProfile', '-File', str(fixture),
+                         str(PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1'),
+                         temporary, scenario],
+                        cwd=PROJECT, capture_output=True, text=True, encoding='utf-8', timeout=40,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn('PHYSICAL_BOOTSTRAP=PASS', result.stdout)
+                    counts = json.loads(result.stdout.splitlines()[-2])
+                    for key in totals:
+                        totals[key] += counts[key]
+        self.assertEqual(totals, dict(feedback=29, verifier=30, plans=7))
+
+    def test_stencil_plan_preserves_save_trace_and_late_identity_failure(self):
+        script = r"""
+param($Source,$Root)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
+foreach($name in @('Invoke-WorkpointStencil','Invoke-WorkpointControllerRequest')){
+  $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
+  Invoke-Expression $node.Extent.Text
+}
+$repoRoot=(Get-Item $Source).Directory.Parent.Parent.Parent.FullName
+$python=Join-Path $repoRoot '.venv/Scripts/python.exe'
+$RunId='reference';$artifactRoot=$Root;$trialArtifactRoot=$Root;$frozenContract='frozen';$capacitySession=@{}
+$script:flights=@();$script:saves=@();$script:lastTier=$true
+function New-CenterTrialArguments {param($Voltages,$ChildRunId)@{Voltages=$Voltages;ChildRunId=$ChildRunId}}
+function Invoke-CenterTrial {param($Arguments)$script:flights+=,@($Arguments.Voltages)}
+function Get-WorkpointBootstrapEvidence {param($Manifest,$Voltages)
+  @{passed=(-not$script:lastTier-or$Manifest-like'*-baseline*'-or$Manifest-like'*-tier-3-reverse*');reasons=@();child_manifest=$Manifest;child_manifest_sha256='M';materialization_sha256='A';observation_sha256='B'}
+}
+function Save-WorkpointBootstrap {param($Bootstrap,$BootstrapPath)$script:saves+=@{attempts=$Bootstrap.attempts.Count;children=$Bootstrap.children.Count;signed_steps=@($Bootstrap.signed_steps_v)}}
+function Invoke-ReferenceAudit {}
+$auditRunner='Invoke-ReferenceAudit'
+$bootstrap=[ordered]@{seed_voltages_v=@(-27.,54.,190.,-190.);forward_steps_v=@(.27,.54,1.9000000000000001,1.9000000000000001);stencil_step_scales=@(1.,.25,.05);children=@()}
+$null=Invoke-WorkpointStencil -Bootstrap $bootstrap -BootstrapPath 'unused'
+if($script:flights.Count-ne25-or$script:saves.Count-ne25){throw 'Changed full-tier dispatch/save count'}
+$expectedChildren=@(1,1,1,1,1,1,2,2,2,2,2,2,3,3,3,3,3,3,4,4,4,4,4,4,5)
+for($i=0;$i-lt25;$i++){
+  if($script:saves[$i].attempts-ne($i+1)-or$script:saves[$i].children-ne$expectedChildren[$i]){throw 'Save moved before/after its physical acceptance'}
+}
+$expected=@(-.013500000000000002,-.027000000000000003,-.09500000000000001,-.09500000000000001)
+for($i=0;$i-lt4;$i++){if([double]$bootstrap.signed_steps_v[$i]-ne$expected[$i]){throw 'Signed step multiplication order changed'}}
+$script:flights=@();$script:saves=@();$script:lastTier=$false
+$bootstrap=[ordered]@{seed_voltages_v=@(-27.,54.,190.,-190.);forward_steps_v=@(.27,.54,1.9000000000000001,1.9000000000000001);children=@();attempts=@(@{axis=3;direction=1;signed_step_v=99.;child_manifest='later';child_manifest_sha256='M';observation_sha256='B';materialization_sha256='A';passed=$true})}
+$failure=$null
+try{$null=Invoke-WorkpointStencil -Bootstrap $bootstrap -BootstrapPath 'unused'}catch{$failure=$_.Exception.Message}
+if($failure-notlike'*recorded signed step differs*'-or$script:flights.Count-ne4-or$script:saves.Count-ne4-or$bootstrap.children.Count-ne4){throw 'Future identity error moved before prior dispatch/checkpoints'}
+'STENCIL_SAVE_TRACE=PASS'
+"""
+        with TemporaryDirectory() as temporary:
+            fixture = Path(temporary) / "stencil-trace.ps1"
+            fixture.write_text(script, encoding="utf-8")
             result = subprocess.run(
-                ['pwsh', '-NoProfile', '-File', str(fixture),
-                 str(PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1'), temporary],
-                cwd=PROJECT, capture_output=True, text=True, encoding='utf-8', timeout=40,
+                ["pwsh", "-NoProfile", "-File", str(fixture), str(PROJECT / "analysis/run_downstream_workpoint_iteration.ps1"), temporary],
+                cwd=PROJECT, capture_output=True, text=True, encoding="utf-8", timeout=40,
             )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('PHYSICAL_BOOTSTRAP=PASS', result.stdout)
+        self.assertIn("STENCIL_SAVE_TRACE=PASS", result.stdout)
 
     def test_resume_skips_completed_stencil_and_checkpoint_preserves_owner(self):
         script = r"""
@@ -3338,16 +3665,19 @@ param($Source,$Root)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $ast=[System.Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
-foreach($name in @('Invoke-WorkpointStencil','Save-WorkpointBootstrap','Save-NativeWorkflowCheckpoint','Invoke-CenterTrial')){
+foreach($name in @('Invoke-WorkpointStencil','Save-WorkpointBootstrap','Save-NativeWorkflowCheckpoint','Invoke-CenterTrial','Invoke-WorkpointControllerRequest')){
   $node=$ast.Find({param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name-eq$name},$true)
   Invoke-Expression $node.Extent.Text
 }
 $staticFieldMode=$false
-$RunId='new-parent';$artifactRoot=$Root;$repoRoot=$Root;$project='fixture';$python='Invoke-MockPython'
+$RunId='new-parent';$artifactRoot=$Root;$repoRoot=(Get-Item $Source).Directory.Parent.Parent.Parent.FullName;$project='fixture';$python='Invoke-MockPython'
 $trialArtifactRoot=$artifactRoot
 $frozenContract='frozen';$capacitySession=[pscustomobject]@{lease_id='new-lease'}
 $script:flights=@();$script:audit=0;$script:checks=0;$script:events=@()
-function Invoke-MockPython {$script:checks++;$global:LASTEXITCODE=0}
+function Invoke-MockPython {
+  if($args[0]-eq'-X'){$input | & (Join-Path $repoRoot '.venv/Scripts/python.exe') @args;return}
+  $script:checks++;$global:LASTEXITCODE=0
+}
 function Get-WorkpointBootstrapEvidence {param($Manifest,$Voltages) $script:checks++;return @{passed=$true;reasons=@();observation_sha256='A';materialization_sha256='B';child_manifest_sha256='C';child_manifest=$Manifest}}
 function Get-ManifestOutputPath {param($ManifestPath,$FileName) return (Join-Path $Root 'materialization.json')}
 [IO.File]::WriteAllText((Join-Path $Root 'materialization.json'),' {"stripe_biases_v":[1,2],"prism_voltages_v":[3,4]} ')
@@ -3496,14 +3826,15 @@ param($Source,$Root)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $ast=[System.Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
-foreach($name in @('New-CenterTrialArguments','Invoke-WorkpointStencil','Save-WorkpointBootstrap','Invoke-CenterTrial')){
+foreach($name in @('New-CenterTrialArguments','Invoke-WorkpointStencil','Save-WorkpointBootstrap','Invoke-CenterTrial','Invoke-WorkpointControllerRequest')){
   $node=$ast.Find({param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name-eq$name},$true)
   Invoke-Expression $node.Extent.Text
 }
 $staticFieldMode=$false
 $GeometryReviewRunPath='geometry';$MirrorRunPath='mirror';$StripeRunPath='stripe';$AcceleratorProviderReceiptPath='provider-receipt'
 $NativeSystemRuntimeBundlePath='native-system-bundle.json';$TrajectoryStepScale=1.;$AcceleratorSourceYOffsetMm=-1.7
-$python='python';$capacitySession=[pscustomobject]@{lease_id='owner'}
+$repoRoot=(Get-Item $Source).Directory.Parent.Parent.Parent.FullName
+$python=Join-Path $repoRoot '.venv/Scripts/python.exe';$capacitySession=[pscustomobject]@{lease_id='owner'}
 $nativeRuntimeSession=[pscustomobject]@{lease_id='owner';directory=$null;runtime=$null;checkpoint_path=(Join-Path $Root 'not-yet-created.json')}
 $NativeCorridorBankRunPath='native-bank'
 $SimionExe='simion';$PulseAcceleratorUntilInitialExit=$true;$AcceleratorPulseSchedulePath=''
@@ -3611,23 +3942,6 @@ Write-Output 'BOOTSTRAP=PASS'
         self.assertIn("$capacitySession=$null", source)
         self.assertIn("BunchSourceReceiptPath=$BunchSourceReceiptPath", source)
         self.assertIn("& $bunchScreeningRunner @screeningArguments", source)
-
-    def test_one_contract_budget_bounds_all_real_center_flights(self):
-        source = (PROJECT / "analysis/run_downstream_workpoint_iteration.ps1").read_text(
-            encoding="utf-8-sig"
-        )
-        self.assertIn("$maximumFlightAttempts = $maximumIterations", source)
-        self.assertIn(
-            "if($null-eq$terminalDecision-and$null-eq$pendingRecoveryDecision){",
-            source,
-        )
-        self.assertIn("$terminalDecision=$checkpoint.terminal_decision", source)
-        self.assertNotIn("3 * $maximumIterations", source)
-        self.assertIn("maximum main real centre-flight count", source)
-        self.assertLess(
-            source.index("if ($null -eq $terminalDecision -and $startIteration -gt $maximumFlightAttempts)"),
-            source.index("Invoke-SLocalModelRecovery -Decision $pendingRecoveryDecision"),
-        )
 
 
 if __name__ == "__main__":

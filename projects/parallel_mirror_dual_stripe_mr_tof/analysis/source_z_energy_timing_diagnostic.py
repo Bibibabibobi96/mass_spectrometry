@@ -14,6 +14,7 @@ import csv
 import hashlib
 import json
 import math
+import sys
 from pathlib import Path
 import statistics
 from typing import Any, Iterable
@@ -2469,8 +2470,205 @@ def analyze_completed_source_z_energy_timing(
     )
 
 
+def candidate_focus_configuration(radius_mm: float, minimum_resolution: float) -> dict[str, Any]:
+    """Resolve the existing diameter budget and bounded controlled-pair recipe."""
+    span = 2.0 * float(radius_mm)
+    minimum = float(minimum_resolution)
+    if not math.isfinite(span) or span <= 0 or not math.isfinite(minimum) or minimum <= 0:
+        raise CandidateContractError("Detector focus tolerance inputs are invalid.")
+    return dict(source_z_span_mm=span, minimum_mass_resolution=minimum,
+                formal_half_span_percent=20, fallback_particle_count=3,
+                fallback_pairs=[dict(percent=n, fraction=n / 100.0) for n in (10, 5)],
+                unavailable_reason="minimum_5_percent_pair_did_not_both_reach_detector__condition_unsuitable_for_te1_focus")
+
+
+def candidate_focus_decision(sample: dict[str, Any], minimum_resolution: float, source_span_mm: float,
+                             *, center: bool = True, envelope: bool = True,
+                             best: float | None = None) -> dict[str, Any]:
+    """Return one detector response decision, preserving the original float order.
+
+    Tolerance is median TOF / (2 * required R * full source-z span). The optional
+    best metric selects only a strictly smaller absolute slope with valid centre
+    and envelope; the runner retains every field/reference belonging to it.
+    """
+    tolerance = float(sample["median_tof_us"]) / (2.0 * minimum_resolution * source_span_mm)
+    # An unavailable baseline pair is still classified before formal collection.
+    # Its null slope had the PowerShell numeric value zero; availability remains
+    # an independent runner gate, checked at the original later boundary.
+    slope = float(sample["slope_us_per_mm"] or 0.0)
+    absolute = abs(slope)
+    response = absolute <= tolerance
+    return dict(tolerance_us_per_mm=tolerance, response_converged=response,
+                converged=bool(response and center and envelope), absolute_slope=absolute,
+                improves_best=bool(center and envelope and absolute < (math.inf if best is None else best)))
+
+
+def classify_z0_focus(z0: dict[str, Any] | None, detector_fwhm: float | None,
+                      slope_tolerance: float, minimum_resolution: float) -> dict[str, Any]:
+    """Project diagnostic z=0 labels without making them a TE1 precondition."""
+    if not isinstance(z0, dict) or str(z0.get("status", "")).casefold() != "observed":
+        return dict(primary="topology_or_upstream_loss", labels=["topology_or_upstream_loss"],
+                    status=str(z0.get("status") or "") if isinstance(z0, dict) else "missing",
+                    reason=str(z0.get("reason") or "") if isinstance(z0, dict) else "target_z0_diagnostic_missing")
+    slope, median = float(z0["focus_residual_us_per_mm"]), float(z0["absolute_time"]["median"])
+    fwhm = z0["absolute_time"]["fwhm"]
+    if (not math.isfinite(slope) or not math.isfinite(median) or median <= 0
+            or (fwhm is not None and (not math.isfinite(float(fwhm)) or float(fwhm) <= 0))):
+        raise CandidateContractError("Observed z=0 focus diagnostic is numerically invalid.")
+    resolution = z0["absolute_time"]["time_equivalent_resolution"]
+    if abs(slope) > slope_tolerance:
+        label = "first_order_broadening_enter_te1"
+    elif resolution is None or resolution < minimum_resolution:
+        label = "higher_order_or_phase_space_warning"
+    else:
+        label = "z0_focus_response_within_current_diagnostic_budget"
+    labels = [label]
+    if fwhm is not None and detector_fwhm is not None and float(detector_fwhm) > float(fwhm):
+        labels.append("downstream_detector_leg_contribution")
+    return dict(primary=label, labels=labels, status="observed", reached_particle_count=z0["reached_particle_count"],
+                dt_d_initial_z_us_per_mm=slope, slope_tolerance_us_per_mm=slope_tolerance,
+                mass_resolution_t_over_2fwhm=resolution,
+                qualification="diagnostic_classification_only__not_a_te1_precondition")
+
+
+def candidate_qualification(request: dict[str, Any]) -> dict[str, Any]:
+    """Apply the existing Candidate outcome precedence to actual final receipts."""
+    from .bunch_collection_gate import accepted_receipt
+
+    resolution = request["measured_resolution"]
+    resolution_ok = resolution is not None and resolution >= request["minimum_resolution"]
+    collection_ok = request["collection"] is not None and accepted_receipt(request["collection"])
+    center_ok = bool(request["center"])
+    if request["reclosure_exhausted"]:
+        outcome = "warning_center_workpoint_reclosure_exhausted__continue_parameter_scan"
+    elif not center_ok:
+        outcome = "warning_center_workpoint_shifted__reclose_required"
+    elif not collection_ok:
+        outcome = "warning_collection_below_preferred__continue_parameter_scan"
+    elif not request["focus_converged"]:
+        outcome = "warning_focus_not_converged__continue_parameter_scan"
+    elif not resolution_ok:
+        outcome = "warning_resolution_below_target__continue_parameter_scan"
+    else:
+        outcome = "within_tolerance"
+    return dict(workflow_outcome=outcome, resolution_satisfied=resolution_ok,
+                collection_satisfied=collection_ok, center_workpoint_satisfied=center_ok,
+                qualification="paired_n100_candidate_within_tolerance" if outcome == "within_tolerance"
+                else "paired_n100_candidate_warning__continue_parameter_scan")
+
+
+def campaign_detector_projection(packet: dict[str, Any] | None) -> dict[str, Any]:
+    """Project one already read detector sample and its two diagnostic scopes."""
+    if packet is None:
+        return dict.fromkeys(("source_particle_count", "detector_hit_count", "detection_rate", "tof_median_us",
+            "tof_fwhm_us", "mass_resolution_t_over_2fwhm", "initial_z_time_slope", "z0_target_return",
+            "peak_method_id", "peak_analysis_contract"))
+    sample, collection = packet["sample"], packet["collection"]
+    focus = packet["focus_diagnostic"] or {}
+    controlled = focus.get("controlled_detector_focus")
+    is_controlled = isinstance(controlled, dict) and str(controlled.get("status", "")).casefold() == "observed"
+    diagnostic = packet["diagnostic"] or {}
+    history = diagnostic.get("central_plane_focus_history")
+    history = history if isinstance(history, dict) else {}
+    target = history.get("target_return_crossing")
+    target = target if isinstance(target, dict) else {}
+    target_observed = str(target.get("status", "")).casefold() == "observed"
+    return dict(
+        source_particle_count=sample["particle_count"], detector_hit_count=sample["detector_hit_count"],
+        detection_rate=collection.get("detection_rate") if isinstance(collection, dict) else None,
+        tof_median_us=sample["detector_tof_median_us"], tof_mean_us=sample.get("detector_tof_mean_us"),
+        peak_method_id=sample.get("peak_method_id", "legacy_histogram_unversioned"),
+        peak_analysis_contract=sample.get("peak_analysis_contract"), tof_fwhm_us=sample["detector_tof_fwhm_us"],
+        mass_resolution_t_over_2fwhm=sample["mass_resolution_t_over_2fwhm"],
+        initial_z_time_slope=dict(value_us_per_mm=sample["detector_dt_d_initial_z_us_per_mm"],
+            measurement_basis="controlled_symmetric_initial_z_pair" if is_controlled else "descriptive_linear_regression_over_detector_hits",
+            sample_particle_count=sample.get("focus_particle_count"),
+            scope=str(controlled.get("scope") or "") if is_controlled else "detector_hits_in_focus_diagnostic"),
+        z0_target_return=dict(status=target.get("status"), plane_z_mm=history.get("plane_z_mm", 0.0),
+            crossing_index=target.get("crossing_index") if target_observed else None,
+            direction_z=target.get("direction_z") if target_observed else None,
+            source_particle_count=sample["particle_count"], reached_particle_count=sample.get("z0_reached_particle_count"),
+            reached_fraction=sample.get("z0_reached_fraction"), tof_median_us=sample.get("z0_tof_median_us"),
+            tof_fwhm_us=sample.get("z0_tof_fwhm_us"), mass_resolution_t_over_2fwhm=sample.get("z0_mass_resolution_t_over_2fwhm"),
+            initial_z_time_slope=dict(value_us_per_mm=sample.get("z0_dt_d_initial_z_us_per_mm"),
+                measurement_basis="descriptive_linear_regression_over_all_particles_reaching_target_return_z0",
+                sample_particle_count=sample.get("z0_reached_particle_count"),
+                scope=str(target["scope"] or "") if "scope" in target else "all_particles_reaching_target_return_z0__no_detector_hit_filter"),
+            controlled_z_only_focus=target.get("controlled_z_only_focus"),
+            qualification="diagnostic_only__not_a_z0_resolution_gate"))
+
+
+def compare_candidate_campaign(rows: list[dict[str, Any]], contract_identities: list[str | None]) -> dict[str, Any]:
+    """Rank qualified current-method rows under the original compound identity.
+
+    Identity strings are the runner's original compact JSON representation, so
+    key order remains significant. No recomputation or canonicalization changes
+    the historical campaign comparison contract.
+    """
+    eligible = []
+    identities = set()
+    for row, identity in zip(rows, contract_identities, strict=True):
+        focused = row["focused"]
+        contract = focused["peak_analysis_contract"]
+        if (str(row["workflow_outcome"]).casefold() == "within_tolerance"
+                and focused["peak_method_id"] == "common_gaussian_kde_time_v2"
+                and contract is not None and contract["method_id"] == "common_gaussian_kde_time_v2"):
+            eligible.append(row)
+            identities.add(identity)
+    mixed = len(identities) > 1
+    if mixed:
+        eligible = []
+    def order(row: dict[str, Any]) -> tuple[float, float, int]:
+        focused = row["focused"]
+        resolution, rate = focused["mass_resolution_t_over_2fwhm"], focused["detection_rate"]
+        return (math.inf if resolution is None else -float(resolution),
+                math.inf if rate is None else -float(rate), row["ordinal"])
+    ranked = sorted(eligible, key=order)
+    best = {key: ranked[0][key] for key in ("ordinal", "K", "accelerator_y_mm")} if ranked else None
+    return dict(schema_version=2, role="mrtof_native_candidate_campaign_comparison", status="complete",
+        metric_scope=dict(
+            detector_plane="FWHM and resolution use detector hits; the reported slope states whether it uses a controlled z pair or a descriptive regression.",
+            z0_target_return="FWHM, resolution, and descriptive slope use all source particles reaching the named z=0 crossing; no detector-hit filter is applied.",
+            cross_plane_comparison="The two planes may contain different particle sets. Their FWHM values are reported independently and do not by themselves attribute downstream causal broadening.",
+            z0_is_qualification_gate=False),
+        selection=dict(eligibility="workflow_outcome == within_tolerance and current common KDE method with identical frozen contract",
+            status="unavailable_mixed_peak_settings" if mixed else "same_frozen_peak_contract",
+            ordering=["focused mass_resolution_t_over_2fwhm descending", "focused detection_rate descending", "campaign ordinal ascending"],
+            qualified_condition_count=len(ranked), best_qualified_condition=best), conditions=rows)
+
+
+def candidate_policy(request: dict[str, Any]) -> dict[str, Any]:
+    """Dispatch one complete in-memory Candidate feedback packet, without I/O."""
+    action = request["action"]
+    if action == "campaign_comparison":
+        rows, identities = [], []
+        for condition in request["conditions"]:
+            rows.append({**condition["row"], "baseline": campaign_detector_projection(condition["baseline"]),
+                         "focused": campaign_detector_projection(condition["focused"])})
+            identities.append(condition["focused"]["peak_contract_identity"] if condition["focused"] is not None else None)
+        return compare_candidate_campaign(rows, identities)
+    if action == "focus_configuration":
+        return candidate_focus_configuration(request["radius_mm"], request["minimum_resolution"])
+    if action == "center_feedback":
+        from .workpoint_controller_state import center_residual_gate
+        result = center_residual_gate(request["status"], request["names"], request["residuals"], request["tolerances"])
+        if request.get("focus") is not None:
+            result["focus"] = candidate_focus_decision(**request["focus"], center=result["passed"])
+        return result
+    if action in ("focus_feedback", "diagnostic_feedback"):
+        result = {"focus": candidate_focus_decision(**request["focus"])}
+        if action == "diagnostic_feedback":
+            result["z0"] = classify_z0_focus(request["z0"], request["detector_fwhm"],
+                result["focus"]["tolerance_us_per_mm"], request["focus"]["minimum_resolution"])
+            if request.get("qualification") is not None:
+                result["qualification"] = candidate_qualification(request["qualification"])
+        return result
+    raise CandidateContractError(f"Unknown Candidate policy action: {action}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--policy-request", choices=["-"])
     parser.add_argument("--run-dir", type=Path)
     parser.add_argument("--completed-run-config", type=Path)
     parser.add_argument("--observation", type=Path)
@@ -2499,6 +2697,12 @@ def main() -> int:
     parser.add_argument("--root-coordinate", type=float)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    if args.policy_request is not None:
+        if str(args.output) != "-" or any(value is not None and value is not False
+                for name, value in vars(args).items() if name not in {"policy_request", "output"}):
+            parser.error("Candidate policy request requires stdin/stdout and cannot be combined with analysis")
+        print(json.dumps(candidate_policy(json.load(sys.stdin)), ensure_ascii=False, allow_nan=False))
+        return 0
     completed = (args.completed_run_config, args.observation, args.batch_merge_receipt)
     if any(value is not None for value in completed):
         if not all(value is not None for value in completed) or any(

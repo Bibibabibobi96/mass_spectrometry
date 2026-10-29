@@ -65,6 +65,18 @@ def evaluate(cohort: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def accepted_receipt(gate: dict[str, Any]) -> bool:
+    """Apply the Candidate acceptance policy to an already produced gate.
+
+    The runner transports its original boolean/double conversions; this does
+    not recompute collection or introduce a second threshold authority.
+    """
+    return (str(gate.get("status", "")).casefold() == "accepted"
+            and not gate["warning"] and not gate["hard_stop"]
+            and bool(gate["continue_downstream"])
+            and float(gate["detection_rate"] or 0.0) >= float(gate["preferred_minimum"] or 0.0))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--observation", type=Path, required=True)

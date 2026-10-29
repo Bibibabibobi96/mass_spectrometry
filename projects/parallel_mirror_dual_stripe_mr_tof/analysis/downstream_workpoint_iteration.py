@@ -2573,10 +2573,12 @@ def prepare_measured_centroid_acquisition(*, prepared_run: Path, contract_path: 
     """Freeze the topology-only request for the existing public provider and runner."""
     from common.contracts.write_run_manifest import file_record
     from common.contracts.frozen_inputs import freeze_file
-    from integrations.workflows.accelerator_interface.prepare import verified_preparation_reference
+    from common.contracts.verify_run_manifest import verified_successful_run_reference
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding, load_native_response_basis
     proposal=load_measured_centroid_initial_proposal(proposal_path)
-    binding_path=verified_preparation_reference(prepared_run,"results/joint_workbench/static_field_binding.json")
+    binding_path=verified_successful_run_reference(
+        prepared_run, "results/joint_workbench/static_field_binding.json",
+        project="instrument_assembly", mode="accelerator_interface_preparation")
     binding=load_binding(binding_path)
     if binding.get("accelerator_provider") != "dual_pressure_rectilinear_ion_processor":
         raise CandidateContractError("Acquisition requires the measured IP replacement field")

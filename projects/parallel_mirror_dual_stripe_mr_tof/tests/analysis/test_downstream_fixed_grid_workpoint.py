@@ -14,7 +14,6 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_
     UNKNOWN_NAMES,
     _trial,
     _static_field_problem,
-    _static_binding_problem,
     _native_static_binding_problem,
     _sealed_native_trial_binding,
     _center_source_projection,
@@ -26,6 +25,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_
     solve_linearized_step,
 )
 from common.contracts.file_identity import file_sha256
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import scalar_binding_problem
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
 )
@@ -34,6 +34,43 @@ RUNNER = Path(__file__).resolve().parents[2] / "analysis" / "run_downstream_fixe
 
 
 class DownstreamFixedGridWorkpointTests(unittest.TestCase):
+    def test_native_source_validation_keeps_precedence_and_layout_read_order(self):
+        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint"
+        binding = dict(mode="native_static_pa", authority={"analyzer_electrode_voltages_v": [0.] * 20},
+                       instances=[], consumer_view={"kind": "x_symmetry_plane"})
+        materialization = dict(analyzer_electrode_voltages_v=[0.] * 20,
+                               stripe_biases_v=[0., 0.], prism_voltages_v=[0., 0.],
+                               source_position_project_mm=[0., 1., 0.], source_direction_project=[0., 1., 0.])
+        # Missing grid/numerics must not mask an earlier voltage, collision or
+        # source error. The layout reader runs only after those checks pass.
+        for defect, message, reads in (("voltage", "full voltages", []),
+                                       ("collision", "role", []),
+                                       ("source", "actual source", ["source"]),
+                                       ("layout", "layout read", ["source", "layout"])):
+            bad_binding, bad_materialization, trace = copy.deepcopy(binding), copy.deepcopy(materialization), []
+            if defect == "voltage":
+                bad_materialization["analyzer_electrode_voltages_v"][0] = 1.
+                bad_materialization["source_position_project_mm"][0] = 1.
+            elif defect == "collision":
+                bad_binding["instances"] = [{}]
+                bad_materialization["source_position_project_mm"][0] = 1.
+            elif defect == "source":
+                bad_materialization["source_position_project_mm"][0] = 1.
+
+            def source_state(value):
+                trace.append("source")
+                return None
+
+            def layout(value):
+                trace.append("layout")
+                raise ValueError("layout read failed")
+
+            with self.subTest(defect=defect), patch(module + "._bunch_center_source_state", side_effect=source_state), \
+                    patch(module + "._native_original_consumer_layout", side_effect=layout):
+                with self.assertRaisesRegex((ValueError, KeyError), message):
+                    _native_static_binding_problem(bad_binding, bad_materialization, canonical_consumer_layout=True)
+                self.assertEqual(trace, reads)
+
     def test_trajectory_anchor_numeric_representation_only_is_canonical(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "contract.json"
@@ -282,7 +319,7 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
             _native_static_binding_problem(binding, mat)
 
     def test_strict_saved_rerun_projects_actual_after_and_original_mesh(self):
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint"
+        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis"
         values = [0.] * 20
         values[10:14] = [-27., -27., 55., 55.]
         values[15:17] = [191., -190.]
@@ -326,11 +363,11 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
         plan = dict(candidate_authority=authority, active_mesh_tag="mesh6", export_grid=grid,
                     source_mph_record={"path": "mesh/original.mph"}, expected_tetrahedra=7,
                     source_dataset={"solution_tag": "sol1", "dataset_tag": "dset1"})
-        with patch(module + "._load_object", side_effect=lambda p: copy.deepcopy(data[p.as_posix()])), \
-             patch(module + "._record", side_effect=lambda owner, p: {"path": str(p), "bytes": 7}), \
-             patch(module + ".compile_request", return_value=plan):
+        with patch(module + ".two_prism_operating_point._load_object", side_effect=lambda p: copy.deepcopy(data[p.as_posix()])), \
+             patch(module + ".static_field_binding._record", side_effect=lambda owner, p: {"path": str(p), "bytes": 7}), \
+             patch(module + ".corridor_field_provider.compile_request", return_value=plan):
             diagnostic = {}
-            family = _static_binding_problem(binding, receipt, "binding.json", diagnostic)
+            family = scalar_binding_problem(binding, receipt, "binding.json", diagnostic)
             self.assertEqual(family["solver_numerics"], after)
             self.assertEqual(diagnostic["solver_before"], before)
             self.assertEqual(family["source_mesh_record"]["path"], "mesh/original.mph")
@@ -347,11 +384,11 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
                 previous = data[path][key]
                 data[path][key] = wrong
                 with self.subTest(path=path, key=key), self.assertRaises(CandidateContractError):
-                    _static_binding_problem(binding, receipt, "binding.json")
+                    scalar_binding_problem(binding, receipt, "binding.json")
                 data[path][key] = previous
 
     def test_parameterized_projection_uses_real_solve_without_claiming_operator_equivalence(self):
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint"
+        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis"
         values = [0.] * 20
         values[10:14] = [-26.79, -26.79, 54.61, 54.61]
         values[15:17] = [191., -190.]
@@ -388,11 +425,11 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
         plan = {"candidate_authority": authority, "active_mesh_tag": "mesh6", "export_grid": grid,
                 "source_mph_record": {"path": "mesh/original.mph"}, "expected_tetrahedra": 7,
                 "source_dataset": {"dataset_tag": "dset1", "solution_tag": "sol1"}}
-        with patch(module + "._load_object", side_effect=lambda p: copy.deepcopy(data[p.as_posix()])), \
-             patch(module + "._record", side_effect=lambda owner, p: {"path": str(p), "bytes": 7}), \
-             patch(module + ".compile_request", return_value=plan) as compile_plan:
+        with patch(module + ".two_prism_operating_point._load_object", side_effect=lambda p: copy.deepcopy(data[p.as_posix()])), \
+             patch(module + ".static_field_binding._record", side_effect=lambda owner, p: {"path": str(p), "bytes": 7}), \
+             patch(module + ".corridor_field_provider.compile_request", return_value=plan) as compile_plan:
             diagnostic = {}
-            family = _static_binding_problem(binding, receipt, "binding.json", diagnostic)
+            family = scalar_binding_problem(binding, receipt, "binding.json", diagnostic)
             self.assertEqual(family["source_mesh_record"]["path"], "mesh/original.mph")
             self.assertEqual(Path(diagnostic["actual_model_record"]["path"]), Path("actual/field.mph"))
             self.assertIn("not_established", diagnostic["qualification"])
@@ -410,12 +447,12 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
                 original = data[path][key]
                 data[path][key] = wrong
                 with self.subTest(path=path, key=key), self.assertRaises(CandidateContractError):
-                    _static_binding_problem(binding, receipt, "binding.json")
+                    scalar_binding_problem(binding, receipt, "binding.json")
                 data[path][key] = original
             changed_grid = copy.deepcopy(binding)
             changed_grid["grid"]["pitch_mm"] = [.5, .125, .25]
             with self.assertRaisesRegex(CandidateContractError, "grid differs"):
-                _static_binding_problem(changed_grid, receipt, "binding.json")
+                scalar_binding_problem(changed_grid, receipt, "binding.json")
 
             # Actual stage015 source shape: one parameter, a declared full PS
             # target, and Study-controlled stopping tightened after the solve.
@@ -437,14 +474,14 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
             after = {**solver, "study_stol": 1e-11, "stationary_stol": 1e-11}
             data["actual/results/solver_after.json"] = after
             diagnostic = {}
-            family = _static_binding_problem(binding, receipt, "binding.json", diagnostic)
+            family = scalar_binding_problem(binding, receipt, "binding.json", diagnostic)
             self.assertEqual(family["solver_numerics"], after)
             self.assertEqual(diagnostic["actual_solver_numerics"], after)
             self.assertEqual(family["source_mesh_record"], plan["source_mph_record"])
             self.assertEqual(plan["candidate_authority"], data["actual/inputs/source_authority.json"])
             self.assertEqual(data["actual/results/solver_before.json"]["study_stol"], 1e-9)
             after["stationary_stol"] = 1e-9
-            self.assertEqual(_static_binding_problem(binding, receipt, "binding.json")["solver_numerics"], after)
+            self.assertEqual(scalar_binding_problem(binding, receipt, "binding.json")["solver_numerics"], after)
             after["stationary_stol"] = 1e-11
             changes = [("actual/results/parameter_readback.json", "changed_physical_ids", [11, 12]),
                        ("actual/results/parameter_readback.json", "changed_physical_ids", [1, 11, 12, 13, 14, 16, 17]),
@@ -458,15 +495,15 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
                 previous = data[path][key]
                 data[path][key] = wrong
                 with self.subTest(path=path, key=key), self.assertRaises(CandidateContractError):
-                    _static_binding_problem(binding, receipt, "binding.json")
+                    scalar_binding_problem(binding, receipt, "binding.json")
                 data[path][key] = previous
             solve["strict_stopping"]["study_stol"] = 1e-8
             with self.assertRaisesRegex(CandidateContractError, "stopping"):
-                _static_binding_problem(binding, receipt, "binding.json")
+                scalar_binding_problem(binding, receipt, "binding.json")
             solve["strict_stopping"]["study_stol"] = 1e-11
             del solve["qualification_candidate"]
             with self.assertRaises(CandidateContractError):
-                _static_binding_problem(binding, receipt, "binding.json")
+                scalar_binding_problem(binding, receipt, "binding.json")
 
     @staticmethod
     def _declared_center():
@@ -588,7 +625,7 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
                    "analyzer_electrode_voltages_v": values.copy(), "stripe_biases_v": [-27., 54.],
                    "prism_voltages_v": [190., -190.]}
         module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint"
-        with patch(module + ".load_binding", return_value=binding), patch(module + "._static_binding_problem") as direct:
+        with patch(module + ".load_binding", return_value=binding), patch(module + ".scalar_binding_problem") as direct:
             problem = _static_field_problem(receipt)
             problem.pop("geometry_sha256")
             self.assertEqual(problem, binding["response_family"])
@@ -610,7 +647,7 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
         for index, resolved in enumerate(variants):
             family = {"geometry_sha256": f"sealed-bytes-{index}", "solver_numerics": {"mesh": "mesh6"}}
             with patch(module + ".load_binding", return_value={"geometry": resolved}), \
-                 patch(module + "._static_binding_problem", return_value=family):
+                 patch(module + ".scalar_binding_problem", return_value=family):
                 problems.append(_static_field_problem(receipt))
         self.assertEqual(problems[0], problems[1])
         self.assertEqual(problems[0], problems[2])
@@ -619,7 +656,7 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
             if changed == geometry:
                 family["solver_numerics"]["mesh"] = "mesh5"
             with patch(module + ".load_binding", return_value={"geometry": changed}), \
-                 patch(module + "._static_binding_problem", return_value=family):
+                 patch(module + ".scalar_binding_problem", return_value=family):
                 self.assertNotEqual(problems[0], _static_field_problem(receipt))
 
     def test_runner_uses_ledger_lifecycle_and_one_capacity_session(self) -> None:

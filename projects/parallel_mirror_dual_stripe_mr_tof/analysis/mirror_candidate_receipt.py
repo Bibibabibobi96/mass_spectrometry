@@ -33,6 +33,18 @@ MIRROR_QUALIFICATION = "analytic_2d_candidate__peak_field_and_3d_validation_pend
 
 
 @dataclass(frozen=True)
+class FixedHardwareMirrorPoint:
+    """Minimum mirror interface needed by the fixed-Stripe consistency solve."""
+
+    design: Any
+    energy_points_v: tuple[float, float, float]
+    nominal_energy_per_charge_v: float
+    nominal_reduced_period_mm_per_sqrt_v: float
+    nominal_axial_width_w_mm: float
+    contract: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class ManagedMirrorRoot:
     """One independently qualified gamma-target mirror root."""
 
