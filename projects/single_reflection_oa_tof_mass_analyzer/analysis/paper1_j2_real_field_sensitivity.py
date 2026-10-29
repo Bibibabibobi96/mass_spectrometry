@@ -9,12 +9,10 @@ locked outcomes.
 
 from __future__ import annotations
 
-import argparse
 from hashlib import sha256
 import json
 import math
-from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.paper1_j2_real_field_selection import STATE_NAMES
 
@@ -77,15 +75,3 @@ def build_j2_real_field_sensitivity_receipt(observations: Mapping[str, Any]) -> 
         "finite_difference_observations_sha256": observation_identity,
         "claim_limit": "Local real-field derivative receipt only; no source fit, candidate ranking, FWHM, transmission, or locked-test conclusion.",
     }
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--observations", required=True, type=Path)
-    parser.add_argument("--output", required=True, type=Path)
-    args = parser.parse_args(argv)
-    observations = json.loads(args.observations.read_text(encoding="utf-8-sig"))
-    result = build_j2_real_field_sensitivity_receipt(observations)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return 0

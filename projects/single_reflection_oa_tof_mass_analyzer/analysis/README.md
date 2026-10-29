@@ -102,6 +102,12 @@ shield边界和rebuild plan均由该函数一次性闭合。API严格拒绝profi
 <details>
 <summary>Paper 1 专用源模型、候选与阶段分析接口</summary>
 
+J2候选池与真实场灵敏度归本项目Paper 1分析边界，当前是有纯分析测试的研究准备API，尚无活动生产
+workflow调用；保留依据是[预注册pilot合同](../docs/publication/paper_1_jasms/j2_real_3d_pilot_contract.md)
+要求同池、六维配对导数及detector-blind选择。执行资格仍查[证据矩阵](../docs/publication/paper_1_jasms/evidence_matrix.md)，
+不能以这些API存在声称真实J2完成。后续获准workflow须显式消费并冻结这两个API；若pilot合同取消或
+替代，应连同专属测试退役。灵敏度模块只保留纯函数，不提供无消费者的文件读写CLI。
+
 - `paper1_focusability.py`：C1 detector-blind条件源模型以及C2局部受限白化投影；时序预脉冲记录必须显式选择一个锚点样本，且只允许作为状态输入，不可混入检测器结果。
 - `paper1_j2_real_field_selection.py`：J2真实场公平选择的纯分析入口。它只以冻结C1条件源协方差和具有内容哈希的真实场局部灵敏度收据，对同一候选池分别计算未加权与源白化分数；拒绝来源、状态尺度或候选池身份不一致，且绝不读取探测器、峰宽或传输结果。
 - `paper1_j2_candidate_pool.py`：J2真实场的公共候选池编译器。它在预注册边界内扰动三区grid2/末端几何、电极及反射器控制，并从每个候选的平面和电势重新导出区长、场强和焦点漂移；候选池本身不评分、不运行SIMION，也不接触检测器结果。

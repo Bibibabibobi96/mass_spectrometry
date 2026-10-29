@@ -2,6 +2,7 @@
 
 本文件维护项目当前事实、资格与开放任务。精确输入以[机器合同](../README.md#机器权威)为准，
 执行入口由[项目README](../README.md#活动入口)导航；跨项目整机状态只查[统一集成状态](../../../integrations/docs/INTEGRATION.md)。
+Paper 1 专用研究准备API的归属与退出条件见[分析说明](../analysis/README.md#核心分析)。
 已闭合的提供者迁移、回归及失败链冻结在[文档收口记录](history/20261026__assembly-documentation-consolidation.md)，
 不把实现迁移、局部验证或旧运行自动提升为新整机资格。
 

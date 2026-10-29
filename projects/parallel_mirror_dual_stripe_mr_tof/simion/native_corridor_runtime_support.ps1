@@ -119,22 +119,6 @@ function Get-NativeCorridorRuntimeFamily {
   return Get-ManagedNativeCorridorRuntimeFamily @PSBoundParameters
 }
 
-function Remove-NativeCorridorRuntimeSession {
-  [CmdletBinding()]
-  param([Parameter(Mandatory)]$Session)
-  if($null-eq$Session.directory){return}
-  $directory=Assert-NativeCorridorRuntimeSessionDirectory -Session $Session
-  if($null-ne$Session.PSObject.Properties['owner_run_directory']){
-    Suspend-NativeCorridorRuntimeSession -Session $Session
-  }
-  if($null-ne$Session.PSObject.Properties['guards']){
-    foreach($guard in $Session.guards){$guard.Dispose()}
-    $Session.guards=@()
-  }
-  if(Test-Path -LiteralPath $directory){Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction Stop}
-  $Session.directory=$null;$Session.runtime=$null
-}
-
 function Suspend-NativeCorridorRuntimeSession {
   param([Parameter(Mandatory)]$Session)
   if($null-ne$Session.PSObject.Properties['guards']){

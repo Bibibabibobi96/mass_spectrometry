@@ -345,15 +345,6 @@ record 摘要，但只打开调用方明确列出的文件并逐字节核验，�
 `refinable=false`。任何 `.pa-surf` 伴随文件、已有输出或覆盖输入都会在打开 family 前失败关闭。发布后的不可变
 cache family 及其副本不得作为该工具输入。
 
-[`native_fast_adjust_operating_pa_cache.py`](native_fast_adjust_operating_pa_cache.py)把这条一次性 staging 导出路径
-接入内容寻址缓存，但不执行求解器。身份绑定 source family role／cache key、controller basename、完整且有序的
-solution ID 集合、每个 standalone 输出对全部 ID 的有限电压表、上述 exporter 的 SHA-256 和 SIMION 2020 PA
-格式；缺一项即失败关闭。调用方在原生 family 唯一一次 Refine 后、删除 staging 前取得确定性导出计划并运行
-exporter，再只发布 direct `.pa` 输出。底层复用 `pa_family_cache.py` 的原子发布、只读 generation 与可写私有物化；
-原生 `.pa0`／`.paN` 永不进入 operating cache，也不因 operating cache 命中而被供应商进程重新打开。现有
-[`operating_pa_cache.py`](operating_pa_cache.py) schema v2 继续专用于 standalone 基准／响应线性合成，两种身份不兼容、
-不会互相命中。
-
 [`compose_standalone_pa.lua`](compose_standalone_pa.lua)实现
 `OUTPUT = BASE + sum(COEFFICIENT * RESPONSE)`。输入只接受 `surface=none` 的 standalone `.pa`；每项响应采用
 `PATH.pa,COEFFICIENT`，路径可含逗号，因为最后一个逗号才是分隔符。工具先用官方 `pa:copy` 复制 base，随后验证

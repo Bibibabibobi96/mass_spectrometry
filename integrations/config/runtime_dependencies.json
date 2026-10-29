@@ -2027,14 +2027,6 @@
           ]
         },
         {
-          "id": "oatof_finite_interval_design_compiler",
-          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/finite_interval_design_compiler.py",
-          "consumers": [
-            "local_frontend",
-            "cooled_frontend"
-          ]
-        },
-        {
           "id": "oatof_accelerator_geometry",
           "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/accelerator_geometry.py",
           "consumers": [

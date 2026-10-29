@@ -656,12 +656,7 @@ axial向量都显式标记种类，并在当前仅允许`det(R)=+1`的旋转下�
 当前变换、再执行参数变换；`relative_transform`只从两个指向同一参考frame的组件pose派生相对变换。
 两个完整pose相同时直接返回该局部frame的精确单位变换，不做矩阵往返，避免给原本已在目标frame的源引入舍入位移。
 
-`spatial_registration.py`把项目提供的版本化组件pose和定向面编译成唯一resolved发布，固定记录输入文件
-SHA-256、组件到仪器frame的pose、唯一source-to-target相对变换，以及每个面的声明frame和仪器frame
-表示；`write_or_check_release`以逐字节确定性序列化实现`--write`与stale失败。电压、频率等标量不参与
-坐标变换，但发布器可保留其值、单位、来源JSON pointer、来源文件身份和电极绑定，并明确禁止单位换算。
-
-项目继续负责具体pose输入、接口尺寸和验收阈值。项目解析器必须从当前resolved几何和电气合同生成上述
+项目继续负责具体pose输入、接口尺寸和验收阈值。项目解析器必须从当前resolved几何和电气合同生成空间注册
 发布；COMSOL、SIMION和CAD只能读取、序列化并校验它，不得再次推导坐标关系，也不得把IOB角点、
 Euler顺序或器件参数反写到公共刚体语义。供应商局部坐标映射可以留在薄适配器，但不能成为跨组件pose
 或粒子状态的第二权威。
