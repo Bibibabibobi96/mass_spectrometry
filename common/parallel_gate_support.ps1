@@ -43,6 +43,9 @@ function New-GateRunSummary {
             status = $(if ($item.Run) { 'PENDING' } else { 'NOT_APPLICABLE' })
             reason_code = $(if ($item.Run) { 'NOT_STARTED' } else { 'NOT_SELECTED' })
             started_at = $null; finished_at = $null; elapsed_seconds = $null
+            queue_seconds = $null; resource_wait_seconds = $null
+            execution_seconds = $null; cleanup_seconds = $null
+            launch_seconds = $null; process_elapsed_seconds = $null
             exit_code = $null; child_exit_code = $null; log_path = $null; log_retained = $false
             error = $null
         }
@@ -129,10 +132,11 @@ function Invoke-RecordedGateStage {
         elapsed_seconds = $null; exit_code = $null; error = $null
     }
     $stageFailure = $null
+    $timings = @{}
     Set-GateStageResult -Summary $Summary -Name $Name -Result $result
     Write-Output "GATE_STAGE=RUN NAME=$Name REASON=$Reason"
     try {
-        Invoke-ResourceBudgetedGateAction -Name $Name -Action $Operation
+        Invoke-ResourceBudgetedGateAction -Name $Name -Action $Operation -Timings $timings
         $result.status = 'PASS'; $result.reason_code = 'COMPLETED'; $result.exit_code = 0
     } catch {
         $stageFailure = $_
@@ -152,6 +156,7 @@ function Invoke-RecordedGateStage {
         $timer.Stop()
         $result.finished_at = [DateTime]::UtcNow.ToString('o')
         $result.elapsed_seconds = [Math]::Round($timer.Elapsed.TotalSeconds, 6)
+        foreach ($key in $timings.Keys) { $result[$key] = $timings[$key] }
         $recordingFailure = $null
         try { Set-GateStageResult -Summary $Summary -Name $Name -Result $result }
         catch { $recordingFailure = $_ }
@@ -177,27 +182,44 @@ function Invoke-RecordedGateStage {
 function Invoke-ResourceBudgetedGateAction {
     param(
         [Parameter(Mandatory)][string]$Name,
-        [Parameter(Mandatory)][Alias('Action')][scriptblock]$Operation
+        [Parameter(Mandatory)][Alias('Action')][scriptblock]$Operation,
+        [hashtable]$Timings
     )
     $budget = Get-HostResourceBudget -Stage $Name -Role GATE
-    $lease = Enter-HostResourceStage -Role GATE -Stage $Name -Budget $budget
+    $waitTimer = [Diagnostics.Stopwatch]::StartNew()
+    try { $lease = Enter-HostResourceStage -Role GATE -Stage $Name -Budget $budget }
+    finally {
+        if ($null -ne $Timings) { $Timings.resource_wait_seconds = $waitTimer.Elapsed.TotalSeconds }
+    }
     $limitRuffThreads = $Name -in @('ruff_all', 'ruff_changed_python')
     $originalRayonThreads = [Environment]::GetEnvironmentVariable('RAYON_NUM_THREADS', 'Process')
     $originalOutputEncoding = [Console]::OutputEncoding
+    $operationFailure = $null
     try {
         # Child PowerShell processes inherit this code page through Python.
         [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
         # Ruff's registered one-core budget must also bound its native workers.
         if ($limitRuffThreads) { $env:RAYON_NUM_THREADS = '1' }
-        & $Operation
+        $executionTimer = [Diagnostics.Stopwatch]::StartNew()
+        try { & $Operation } finally {
+            if ($null -ne $Timings) { $Timings.execution_seconds = $executionTimer.Elapsed.TotalSeconds }
+        }
+    } catch {
+        $operationFailure = $_
+        throw
     } finally {
+        $cleanupTimer = [Diagnostics.Stopwatch]::StartNew()
         try {
             Exit-HostResourceStage -Lease $lease
+        } catch {
+            if ($null -eq $operationFailure) { throw }
+            $operationFailure.Exception.Data['gate_release_error'] = $_.Exception.Message
         } finally {
             [Console]::OutputEncoding = $originalOutputEncoding
             if ($limitRuffThreads) {
                 [Environment]::SetEnvironmentVariable('RAYON_NUM_THREADS', $originalRayonThreads, 'Process')
             }
+            if ($null -ne $Timings) { $Timings.cleanup_seconds = $cleanupTimer.Elapsed.TotalSeconds }
         }
     }
 }
@@ -286,6 +308,7 @@ function Invoke-IndependentGateStageGroup {
         [Parameter(Mandatory)][scriptblock]$InvokeSkipStage,
         [hashtable]$RequestPayload,
         [string]$InternalRequestParameter = '',
+        [switch]$StopOnFailure,
         $Summary
     )
     # A nested gate consumes its caller's whole-stage reservation. It cannot
@@ -295,9 +318,46 @@ function Invoke-IndependentGateStageGroup {
         Write-Output 'GATE_CONCURRENCY=1 REASON=inherited_resource_reservation'
     }
     $selected = @($Items | Where-Object { $_.Run })
+    $queueTimer = [Diagnostics.Stopwatch]::StartNew()
+    $states = @{}
+    if ($null -ne $Summary) {
+        foreach ($stage in $Summary.Document.stages) { $states[$stage.name] = $stage.status }
+    }
+    foreach ($item in $Items) { $states[$item.Name] = if ($item.Run) { 'PENDING' } else { 'NOT_APPLICABLE' } }
+    $prerequisiteState = {
+        param($item)
+        $waiting = $false
+        $dependencies = if ($null -ne $item.PSObject.Properties['RequiresStages'] -or
+            ($item -is [Collections.IDictionary] -and $item.Contains('RequiresStages'))) { @($item.RequiresStages) } else { @() }
+        foreach ($name in $dependencies) {
+            if (-not $states.ContainsKey($name)) { return 'PREREQUISITE_MISSING' }
+            if ($states[$name] -eq 'NOT_APPLICABLE') { return 'PREREQUISITE_NOT_SELECTED' }
+            if ($states[$name] -in @('FAIL', 'INTERRUPTED', 'BLOCKED')) { return 'PREREQUISITE_NOT_PASSED' }
+            if ($states[$name] -ne 'PASS') { $waiting = $true }
+        }
+        if ($waiting) { return 'WAIT' }
+        return 'READY'
+    }
+    $blockStage = {
+        param($item, $reason)
+        $states[$item.Name] = 'BLOCKED'
+        Set-GateStageResult -Summary $Summary -Name $item.Name -Result @{
+            status = 'BLOCKED'; reason_code = $reason; finished_at = [DateTime]::UtcNow.ToString('o')
+        }
+        Write-Output "GATE_STAGE=BLOCKED NAME=$($item.Name) REASON=$reason"
+    }
     if ($selected.Count -le 1) {
         foreach ($item in $Items) {
-            if ($item.Run) { & $InvokeInlineStage $item }
+            if ($item.Run) {
+                $dependency = & $prerequisiteState $item
+                if ($dependency -ne 'READY') {
+                    if ($dependency -eq 'WAIT') { $dependency = 'UNRESOLVED_PREREQUISITE' }
+                    & $blockStage $item $dependency
+                    throw "$FailureMessage`: $($item.Name)=blocked"
+                }
+                Set-GateStageResult -Summary $Summary -Name $item.Name -Result @{queue_seconds=$queueTimer.Elapsed.TotalSeconds}
+                & $InvokeInlineStage $item
+            }
             else { & $InvokeSkipStage $item }
         }
         return
@@ -314,6 +374,14 @@ function Invoke-IndependentGateStageGroup {
             'MPLCONFIGDIR', 'Process'
         )
         $records = @{}
+        $pending = [Collections.Generic.List[object]]::new()
+        $itemsByName = @{}
+        foreach ($item in $Items) {
+            $itemsByName[$item.Name] = $item
+            if ($item.Run) { $pending.Add($item) }
+        }
+        $failed = [ordered]@{}
+        $stageErrors = [ordered]@{}
         $reportedCompletions = [Collections.Generic.HashSet[string]]::new(
             [StringComparer]::Ordinal
         )
@@ -332,6 +400,7 @@ function Invoke-IndependentGateStageGroup {
                         reason_code = $(if ($record.Process.ExitCode -eq 0) { 'COMPLETED' } else { 'CHILD_EXIT_NONZERO' })
                         finished_at = [DateTime]::UtcNow.ToString('o')
                         elapsed_seconds = [Math]::Round($elapsed.TotalSeconds, 6)
+                        process_elapsed_seconds = [Math]::Round($elapsed.TotalSeconds, 6)
                         exit_code = $record.Process.ExitCode
                         child_exit_code = $record.Process.ExitCode
                         log_path = $record.LogPath
@@ -341,13 +410,45 @@ function Invoke-IndependentGateStageGroup {
                     if (Test-Path -LiteralPath $resultPath -PathType Leaf) {
                         $record.HasResultReceipt = $true
                         $childResult = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json -AsHashtable
-                        foreach ($key in $childResult.Keys) { $result[$key] = $childResult[$key] }
+                        foreach ($key in $childResult.Keys) {
+                            if ($key -notin @('process_elapsed_seconds', 'launch_seconds', 'child_exit_code')) {
+                                $result[$key] = $childResult[$key]
+                            }
+                        }
                         if ($record.Process.ExitCode -ne 0 -and $result.status -eq 'PASS') {
                             $result.status = 'FAIL'; $result.reason_code = 'CHILD_EXIT_NONZERO'
                             $result.exit_code = $record.Process.ExitCode
                         }
                     }
+                    if (-not (Test-Path -LiteralPath $record.LogPath -PathType Leaf) -and
+                        -not $record.HasResultReceipt) {
+                        # Resolve the existing fallback before any dependent becomes ready.
+                        Write-Output "GATE_STAGE=FALLBACK NAME=$recordName REASON=missing_stage_log_serial_fallback"
+                        $fallbackItem = $itemsByName[$recordName]
+                        $inlineSucceeded = Invoke-LoggedGateStage -Name $recordName -LogPath $record.LogPath -Action {
+                            & $InvokeInlineStage $fallbackItem
+                        }
+                        $result.elapsed_seconds = $null
+                        if (Test-Path -LiteralPath $resultPath -PathType Leaf) {
+                            $fallbackResult = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json -AsHashtable
+                            foreach ($key in $fallbackResult.Keys) {
+                                if ($key -notin @('process_elapsed_seconds', 'launch_seconds', 'child_exit_code')) {
+                                    $result[$key] = $fallbackResult[$key]
+                                }
+                            }
+                        }
+                        $result.status = if ($inlineSucceeded) { 'PASS' } else { 'FAIL' }
+                        $result.reason_code = if ($inlineSucceeded) { 'SERIAL_FALLBACK_COMPLETED' } else { 'SERIAL_FALLBACK_FAILED' }
+                        $result.exit_code = if ($inlineSucceeded) { 0 } else { 1 }
+                        $result.log_retained = Test-Path -LiteralPath $record.LogPath
+                    }
                     $record.Result = $result
+                    $states[$recordName] = $result.status
+                    if ($result.status -ne 'PASS') {
+                        $failed[$recordName] = if ($result.reason_code -eq 'SERIAL_FALLBACK_FAILED') {
+                            "$recordName=serial_fallback_failed_after_$($record.Process.ExitCode)"
+                        } else { "$recordName=$($result.exit_code)" }
+                    }
                     Set-GateStageResult -Summary $Summary -Name $recordName -Result $result
                     Write-Output (
                         "GATE_PROCESS=COMPLETE NAME=$recordName " +
@@ -386,16 +487,41 @@ function Invoke-IndependentGateStageGroup {
             $childArguments.Add($requestPath)
         }
 
-        for ($index = 0; $index -lt $Items.Count; $index++) {
-            $item = $Items[$index]
-            if (-not $item.Run) { continue }
-            while (@($records.Values | Where-Object {
-                -not $_.Process.HasExited
-            }).Count -ge $MaxConcurrency) {
-                & $reportCompletions
-                Start-Sleep -Milliseconds 50
-            }
+        while ($pending.Count -gt 0 -or @($records.Values | Where-Object { -not $_.Process.HasExited }).Count -gt 0) {
             & $reportCompletions
+            foreach ($candidate in @($pending)) {
+                $dependency = & $prerequisiteState $candidate
+                if ($dependency -notin @('READY', 'WAIT')) {
+                    & $blockStage $candidate $dependency
+                    $failed[$candidate.Name] = "$($candidate.Name)=blocked"
+                    $null = $pending.Remove($candidate)
+                }
+            }
+            if ($StopOnFailure -and $failed.Count -gt 0) {
+                foreach ($candidate in @($pending)) {
+                    $dependency = & $prerequisiteState $candidate
+                    $reason = if ($dependency -in @('READY', 'WAIT')) { 'FAIL_FAST' } else { $dependency }
+                    & $blockStage $candidate $reason
+                    $null = $pending.Remove($candidate)
+                }
+            }
+            $running = @($records.Values | Where-Object { $null -eq $_.Result }).Count
+            $ready = @($pending | Where-Object { (& $prerequisiteState $_) -eq 'READY' })
+            if ($running -ge $MaxConcurrency -or ($ready.Count -eq 0 -and $running -gt 0)) {
+                Start-Sleep -Milliseconds 50
+                continue
+            }
+            if ($ready.Count -eq 0) {
+                foreach ($candidate in @($pending)) {
+                    & $blockStage $candidate 'UNRESOLVED_PREREQUISITE'
+                    $failed[$candidate.Name] = "$($candidate.Name)=blocked"
+                }
+                $pending.Clear()
+                break
+            }
+            $item = $ready[0]
+            $null = $pending.Remove($item)
+            $index = [array]::IndexOf($Items, $item)
             $logPath = Join-Path $groupRoot (
                 '{0:D2}_{1}.log' -f $index, $item.Name
             )
@@ -418,7 +544,9 @@ function Invoke-IndependentGateStageGroup {
             Set-GateStageResult -Summary $Summary -Name $item.Name -Result @{
                 status = 'RUNNING'; reason_code = 'CHILD_STARTING'
                 started_at = [DateTime]::UtcNow.ToString('o'); log_path = $logPath
+                queue_seconds = $queueTimer.Elapsed.TotalSeconds
             }
+            $states[$item.Name] = 'RUNNING'
             $launchTimer = [Diagnostics.Stopwatch]::StartNew()
             try {
                 $process = Start-Process -FilePath (Get-Command pwsh).Source `
@@ -426,17 +554,22 @@ function Invoke-IndependentGateStageGroup {
             } catch {
                 $launchFailure = $_
                 $launchTimer.Stop()
+                $states[$item.Name] = 'FAIL'
+                $failed[$item.Name] = "$($item.Name)=start_failed"
+                $stageErrors[$item.Name] = $launchFailure
                 try {
                     Set-GateStageResult -Summary $Summary -Name $item.Name -Result @{
                         status = 'FAIL'; reason_code = 'CHILD_START_FAILED'; error = $launchFailure.Exception.Message
                         finished_at = [DateTime]::UtcNow.ToString('o')
                         elapsed_seconds = $launchTimer.Elapsed.TotalSeconds
+                        launch_seconds = $launchTimer.Elapsed.TotalSeconds
                     }
                 } catch {
                     Write-Warning "Gate launch failure could not be recorded; original launch failure is retained: $_"
                 }
-                throw $launchFailure
+                continue
             }
+            $launchSeconds = $launchTimer.Elapsed.TotalSeconds
             $records[$item.Name] = [pscustomobject]@{
                 LogPath = $logPath
                 Process = $process
@@ -444,6 +577,7 @@ function Invoke-IndependentGateStageGroup {
                 Result = $null
                 HasResultReceipt = $false
             }
+            Set-GateStageResult -Summary $Summary -Name $item.Name -Result @{launch_seconds=$launchSeconds}
             Write-Output "GATE_PROCESS=START NAME=$($item.Name) PID=$($process.Id) LOG_PATH=$logPath"
         }
         while (@($records.Values | Where-Object {
@@ -454,19 +588,18 @@ function Invoke-IndependentGateStageGroup {
         }
         & $reportCompletions
 
-        $failed = [Collections.Generic.List[string]]::new()
         $failedRecords = [Collections.Generic.List[object]]::new()
         foreach ($item in $Items) {
             if (-not $item.Run) {
                 & $InvokeSkipStage $item
                 continue
             }
+            if (-not $records.ContainsKey($item.Name)) { continue }
             $record = $records[$item.Name]
             $hasLog = Test-Path -LiteralPath $record.LogPath -PathType Leaf
             if ($hasLog -or $record.HasResultReceipt) {
                 if ($hasLog) { Get-Content -LiteralPath $record.LogPath -Encoding UTF8 }
-                if ($record.Process.ExitCode -ne 0 -or $record.Result.status -ne 'PASS') {
-                    $failed.Add("$($item.Name)=$($record.Result.exit_code)")
+                if ($record.Result.status -ne 'PASS') {
                     if ($hasLog) {
                         $failedRecords.Add([pscustomobject]@{
                             Name = [string]$item.Name
@@ -474,28 +607,6 @@ function Invoke-IndependentGateStageGroup {
                             LogPath = $record.LogPath
                         })
                     }
-                }
-            } else {
-                Write-Output (
-                    "GATE_STAGE=FALLBACK NAME=$($item.Name) " +
-                    'REASON=missing_stage_log_serial_fallback'
-                )
-                $inlineSucceeded = Invoke-LoggedGateStage -Name $item.Name `
-                    -LogPath $record.LogPath -Action {
-                    & $InvokeInlineStage $item
-                }
-                Get-Content -LiteralPath $record.LogPath -Encoding UTF8
-                Set-GateStageResult -Summary $Summary -Name $item.Name -Result @{
-                    status = $(if ($inlineSucceeded) { 'PASS' } else { 'FAIL' })
-                    reason_code = $(if ($inlineSucceeded) { 'SERIAL_FALLBACK_COMPLETED' } else { 'SERIAL_FALLBACK_FAILED' })
-                    exit_code = $(if ($inlineSucceeded) { 0 } else { 1 })
-                    log_retained = $true
-                }
-                if (-not $inlineSucceeded) {
-                    $failed.Add(
-                        "$($item.Name)=serial_fallback_failed_after_" +
-                        $record.Process.ExitCode
-                    )
                 }
             }
         }
@@ -511,13 +622,15 @@ function Invoke-IndependentGateStageGroup {
                     'DIAGNOSTIC_TAIL_END'
                 )
             }
-            throw "$FailureMessage`: $($failed -join ', ')"
+            if ($stageErrors.Count -gt 0) { throw @($stageErrors.Values)[0] }
+            throw "$FailureMessage`: $($failed.Values -join ', ')"
         }
         $groupSucceeded = $true
     } catch {
         # Keep the original stage paths valid, including startup/fallback errors
         # that have no child log of their own.
-        $groupFailure = $_
+        $groupFailure = if ($stageErrors.Count -gt 0 -and
+            $_.Exception -isnot [Management.Automation.PipelineStoppedException]) { @($stageErrors.Values)[0] } else { $_ }
         try {
             [IO.File]::WriteAllText(
                 (Join-Path $groupRoot 'group_failure.log'),

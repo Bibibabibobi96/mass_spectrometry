@@ -78,11 +78,6 @@ function Get-ChangedRepositoryPaths {
     return @($tracked + $untracked | Where-Object { $_ } | ForEach-Object { $_.Replace('\', '/') } | Sort-Object -Unique)
 }
 
-function Test-PathPrefix {
-    param([Parameter(Mandatory)][string]$Prefix)
-    return @($script:changedPaths | Where-Object { $_.StartsWith($Prefix, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
-}
-
 function Test-AnyPath {
     param([Parameter(Mandatory)][scriptblock]$Predicate)
     return @($script:changedPaths | Where-Object $Predicate).Count -gt 0
@@ -157,8 +152,10 @@ $hasDocumentationChange = $FullScope -or (Test-AnyPath {
     Test-DocumentationPath $_
 })
 $isDocumentationOnly = -not $FullScope -and $changedPaths.Count -gt 0 -and -not (Test-AnyPath {
-    -not (Test-DocumentationPath $_)
+    # The standards' rule document is also a policy change, not the prose-only fast path.
+    -not (Test-DocumentationPath $_) -or $_ -eq 'docs/DEVELOPMENT_STANDARDS.md'
 })
+$hasStandardsChange = $FullScope -or ($changedPaths.Count -gt 0 -and -not $isDocumentationOnly)
 $knownTestRoots = @(
     $routes | Where-Object { $null -ne $_.PSObject.Properties['test_selection'] } |
         ForEach-Object { @($_.test_selection.roots) }
@@ -204,12 +201,28 @@ Add-ChangedStageItem 'documentation' $hasDocumentationChange `
 }
 $developmentReason = if ($hasCodeChange) {
     'source_code_changed'
+} elseif ($hasStandardsChange) {
+    'configuration_or_unknown_path_changed'
 } else {
     'no_source_code_path_changed'
 }
-Add-ChangedStageItem 'development_standards' $hasCodeChange `
+Add-ChangedStageItem 'development_standards' $hasStandardsChange `
     $developmentReason 'stdlib' {
-    & $PythonExe (Join-Path $PSScriptRoot 'verify_development_standards.py')
+    if ($FullScope) {
+        & $PythonExe (Join-Path $PSScriptRoot 'verify_development_standards.py')
+    } else {
+        # Keep arbitrary path counts out of CreateProcessW's command line. The
+        # persisted command below retains the actual paths for reproduction.
+        $standardsPathsFile = [IO.Path]::GetTempFileName()
+        try {
+            [IO.File]::WriteAllText($standardsPathsFile,
+                (ConvertTo-Json -InputObject @($changedPaths) -Compress), [Text.UTF8Encoding]::new($false))
+            & $PythonExe (Join-Path $PSScriptRoot 'verify_development_standards.py') `
+                --changed-paths-file $standardsPathsFile
+        } finally {
+            Remove-Item -LiteralPath $standardsPathsFile
+        }
+    }
 }
 if ($FullScope) {
     Add-ChangedStageItem 'ruff_changed_python' $true 'full_scope' 'locked' {
@@ -365,6 +378,7 @@ function Invoke-ChangedStageGroup {
         changed_paths = @($changedPaths)
     }
     Invoke-IndependentGateStageGroup -Items $items `
+        -StopOnFailure `
         -Summary $gateSummary `
         -MaxConcurrency $MaxConcurrency -GateScriptPath $PSCommandPath `
         -PythonExe $PythonExe `
@@ -400,7 +414,9 @@ $stageItems['documentation'].Command = @{
     parameters = @{ StructureOnly = $true; PythonExe = $PythonExe }
 }
 $stageItems['development_standards'].Command = @{
-    runner = 'python'; arguments = @('common/verify_development_standards.py')
+    runner = 'python'; arguments = @('common/verify_development_standards.py') + $(if (-not $FullScope) {
+        @($changedPaths | ForEach-Object { '--path'; $_ })
+    } else { @() })
 }
 $stageItems['ruff_changed_python'].Command = @{
     runner = 'python'
@@ -496,15 +512,13 @@ if ($isDocumentationOnly) {
     return
 }
 
-$preFreshnessBarrier = @(
+$priorityStages = @(
     'development_standards',
     'ruff_changed_python',
     'project_registry',
     'rf_multipole_generated_publications'
 )
-Invoke-ChangedStageGroup $preFreshnessBarrier
-
-$postFreshnessStages = @(
+$remainingStages = @(
     $routes |
         ForEach-Object { [string]$_.stage } |
         Where-Object {
@@ -514,9 +528,8 @@ $postFreshnessStages = @(
             )
         }
 )
-# Selected multipole variant gates run only after their shared Freshness stage
-# has completed; each variant keeps its own validation scope.
-Invoke-ChangedStageGroup $postFreshnessStages
+# Short checks are offered first; catalog prerequisites govern readiness.
+Invoke-ChangedStageGroup @($priorityStages + $remainingStages)
 
 Write-Output "CHANGED_GATE=PASS PYTHON=$pythonVersion CHANGED_PATHS=$($changedPaths.Count) FULL_SCOPE=$([bool]$FullScope)"
 } catch {

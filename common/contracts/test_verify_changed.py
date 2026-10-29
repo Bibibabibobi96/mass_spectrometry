@@ -664,6 +664,9 @@ Invoke-GateCatalogCommand -Command $stageCommands.documentation -RepoRoot __FIXT
         snapshot = project + "docs/history/20261015__cad-exchange/CAD.before.txt"
         cases = (
             (("common/contracts/README.md",), False, True),
+            (("docs/DEVELOPMENT_STANDARDS.md",), False, False),
+            (("common/contracts/artifact_capacity_policy.json",), False, False),
+            (("config/unknown_scope.json",), False, False),
             ((project + "docs/CAD.md", snapshot), False, True),
             ((snapshot,), False, True),
             (("docs/history/20261015__milestone/PROJECT.before.txt",), False, True),
@@ -695,6 +698,26 @@ Invoke-GateCatalogCommand -Command $stageCommands.documentation -RepoRoot __FIXT
                         completed.stdout,
                     )
                     self.assertRegex(completed.stdout, r"SELECTED_STAGES=[^\r\n]*\bdocumentation\b")
+                else:
+                    self.assertRegex(completed.stdout, r"EFFECTIVE_STAGES=[^\r\n]*\bdevelopment_standards\b")
+
+    def test_real_development_stage_uses_changed_paths_and_removes_transport_file(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="standards_changed_stage_") as directory:
+            root = Path(directory)
+            request, log = root / "request.json", root / "stage.log"
+            request.write_text(json.dumps({"python_exe": sys.executable,
+                "changed_paths": ["common/contracts/test_expected_values.py"], "full_scope": False}), encoding="utf-8")
+            result = subprocess.run([
+                shutil.which("pwsh"), "-NoProfile", "-File", str(CHANGED_GATE),
+                "-InternalStage", "development_standards", "-InternalRequestPath", str(request),
+                "-InternalLogPath", str(log),
+            ], cwd=REPO_ROOT, timeout=60, capture_output=True, text=True, encoding="utf-8",
+                env=dict(os.environ, TEMP=directory, TMP=directory, PYTHONDONTWRITEBYTECODE="1"))
+            output = result.stdout + result.stderr + (log.read_text(encoding="utf-8") if log.exists() else "")
+            self.assertEqual(result.returncode, 0, output)
+            self.assertIn("DEVELOPMENT_SCOPE=CHANGED REASON=explicit_changed_paths", output)
+            self.assertIn("GATE_STAGE=PASS NAME=development_standards", output)
+            self.assertEqual(list(root.glob("tmp*.tmp")), [])
 
     def test_ci_fallback_uses_full_scope_without_a_second_path_table(self) -> None:
         workflow = LIGHTWEIGHT_WORKFLOW.read_text(encoding="utf-8")
@@ -1026,7 +1049,7 @@ Invoke-GateCatalogCommand -Command $stageCommands.documentation -RepoRoot __FIXT
         ):
             self.assertIn("gate_contract_tests", self.routed_stages(path))
 
-    def test_generated_publications_fail_before_long_test_suites(self) -> None:
+    def test_generated_publications_have_priority_and_explicit_successors(self) -> None:
         stage_order = [route["stage"] for route in self.routes]
         freshness = stage_order.index("rf_multipole_generated_publications")
         common_contracts = stage_order.index("common_contracts")
@@ -1056,13 +1079,7 @@ Invoke-GateCatalogCommand -Command $stageCommands.documentation -RepoRoot __FIXT
         )
 
         integration_source = INTEGRATION_GATE.read_text(encoding="utf-8")
-        fast_barrier = integration_source.index(
-            "Invoke-ParallelIntegrationGroup $fastFailStages"
-        )
-        full_regression = integration_source.index(
-            "Invoke-ParallelIntegrationGroup $fullRegressionStages"
-        )
-        self.assertLess(fast_barrier, full_regression)
+        self.assertIn("Invoke-ParallelIntegrationGroup @($priorityStages + $fullRegressionStages)", integration_source)
 
         quadrupole_source = MULTIPOLE_GATE.read_text(encoding="utf-8")
         self.assertIn(
@@ -1148,7 +1165,6 @@ Invoke-GateCatalogCommand -Command $stageCommands.documentation -RepoRoot __FIXT
         self.assertIn("foreach ($item in $Items)", self.parallel_source)
         self.assertIn("missing_stage_log_serial_fallback", self.parallel_source)
         self.assertIn("& $InvokeInlineStage $item", self.parallel_source)
-        self.assertIn("$failed.Add", self.parallel_source)
         self.assertIn("DIAGNOSTIC_TAIL_BEGIN", self.parallel_source)
         self.assertIn("DIAGNOSTIC_TAIL_END", self.parallel_source)
         self.assertIn("-Tail 80", self.parallel_source)
@@ -1165,31 +1181,20 @@ Invoke-GateCatalogCommand -Command $stageCommands.documentation -RepoRoot __FIXT
             self.parallel_source,
         )
 
-    def test_documentation_is_exclusive_and_freshness_is_a_barrier(self) -> None:
+    def test_documentation_is_exclusive_before_dependency_dispatch(self) -> None:
         integration_source = INTEGRATION_GATE.read_text(encoding="utf-8")
         documentation = integration_source.index(
             "Invoke-IntegrationStage 'documentation'"
         )
-        fast_group = integration_source.index(
-            "Invoke-ParallelIntegrationGroup $fastFailStages"
-        )
-        full_group = integration_source.index(
-            "Invoke-ParallelIntegrationGroup $fullRegressionStages"
-        )
-        self.assertLess(documentation, fast_group)
-        self.assertLess(fast_group, full_group)
+        dispatch = integration_source.index("Invoke-ParallelIntegrationGroup @($priorityStages + $fullRegressionStages)")
+        self.assertLess(documentation, dispatch)
 
         changed_documentation = self.source.index(
             "Invoke-ChangedGateStage $documentation.Name"
         )
-        changed_pre_barrier = self.source.index(
-            "Invoke-ChangedStageGroup $preFreshnessBarrier"
-        )
-        changed_post_barrier = self.source.index(
-            "Invoke-ChangedStageGroup $postFreshnessStages"
-        )
-        self.assertLess(changed_documentation, changed_pre_barrier)
-        self.assertLess(changed_pre_barrier, changed_post_barrier)
+        changed_dispatch = self.source.index("Invoke-ChangedStageGroup @($priorityStages + $remainingStages)")
+        self.assertLess(changed_documentation, changed_dispatch)
+        self.assertIn('-StopOnFailure', self.source)
 
 if __name__ == "__main__":
     unittest.main()

@@ -28,6 +28,172 @@ def quote(value: str | Path) -> str:
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell Core is required")
 class ParallelGateSupportTests(unittest.TestCase):
+    def test_ready_dependencies_fail_fast_and_natural_completion(self) -> None:
+        for concurrency, stop, first in ((1, True, 'fail'), (2, True, 'fail'),
+                                         (1, False, 'fail'), (2, False, 'fail'),
+                                         (2, False, 'pass'), (2, False, 'fallback'),
+                                         (2, False, 'launchfail'), (2, False, 'fallback_fail')):
+            with self.subTest(concurrency=concurrency, stop=stop, first=first), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                child = root / 'child.ps1'
+                child.write_text(r'''
+param($Root,$First,$InternalStage,$InternalLogPath)
+if($InternalStage-eq'first'-and$First-like'fallback*'){exit 0}
+if($InternalStage-eq'first'){
+ Start-Sleep -Milliseconds 200
+ if($First-eq'pass'){Set-Content -LiteralPath (Join-Path $Root 'first_done') -Value done}
+}
+if($InternalStage-eq'slow'){Start-Sleep -Milliseconds 500;Set-Content -LiteralPath (Join-Path $Root 'slow_done') -Value done}
+Set-Content -LiteralPath $InternalLogPath -Value $InternalStage
+if($InternalStage-eq'dependent'-and-not(Test-Path (Join-Path $Root 'first_done'))){exit 9}
+if($InternalStage-eq'first'-and$First-eq'fail'){exit 7}
+''', encoding='utf-8')
+                summary = root / 'summary.json'
+                completed = self.run_script(self.prelude() + f'''
+$env:TEMP={quote(root)};$env:TMP={quote(root)}
+if({quote(first)}-eq'launchfail'){{
+ function Start-Process {{
+  param($FilePath,$ArgumentList,$WindowStyle,[switch]$PassThru)
+  if($ArgumentList-match '"-InternalStage" "first"'){{throw 'LAUNCH_FAILURE'}}
+  Microsoft.PowerShell.Management\Start-Process @PSBoundParameters
+ }}
+}}
+$items=@(
+ [pscustomobject]@{{Name='first';Run=$true;Reason='fixture';RequiresStages=@()}},
+ [pscustomobject]@{{Name='slow';Run=$true;Reason='fixture';RequiresStages=@()}},
+ [pscustomobject]@{{Name='dependent';Run=$true;Reason='fixture';RequiresStages=@('first')}},
+ [pscustomobject]@{{Name='late';Run=$true;Reason='fixture';RequiresStages=@()}}
+)
+$summary=New-GateRunSummary -Items $items -GateName fixture -PythonExe {quote(sys.executable)} -RepoRoot {quote(ROOT)} -SummaryPath {quote(summary)}
+$failure=$null
+try {{
+ Invoke-IndependentGateStageGroup -Items $items -MaxConcurrency {concurrency} -StopOnFailure:${str(stop).lower()} -Summary $summary `
+  -GateScriptPath {quote(child)} -PythonExe {quote(sys.executable)} -ChildBaseArguments @('-Root',{quote(root)},'-First',{quote(first)}) `
+  -TempNamePrefix gate_fixture_ -FailureMessage failed -InvokeSkipStage {{throw 'unexpected skip'}} -InvokeInlineStage {{
+   param($item)
+   if($item.Name-ne'first'){{throw 'unexpected fallback'}}
+   Invoke-RecordedGateStage -Name first -Reason fallback -Summary $summary -Action {{
+    if({quote(first)}-eq'fallback_fail'){{throw 'FALLBACK_FAILURE'}}
+    Set-Content -LiteralPath {quote(root / 'first_done')} -Value done
+   }}
+  }}
+}}catch{{$failure=$_}}finally{{Complete-GateRunSummary -Summary $summary -Failure $failure}}
+''')
+                records = {row['name']: row for row in json.loads(summary.read_text(encoding='utf-8'))['stages']}
+                if first in ('fail', 'launchfail', 'fallback_fail'):
+                    self.assertEqual(records['dependent']['reason_code'], 'PREREQUISITE_NOT_PASSED')
+                    self.assertNotIn('START NAME=dependent', completed.stdout)
+                    self.assertEqual(records['late']['status'], 'BLOCKED' if stop else 'PASS')
+                    if stop:
+                        self.assertEqual(records['late']['reason_code'], 'FAIL_FAST')
+                        self.assertNotIn('START NAME=late', completed.stdout)
+                    if concurrency == 2 or not stop:
+                        self.assertEqual(records['slow']['status'], 'PASS')
+                        self.assertTrue((root / 'slow_done').is_file(), 'started child must finish naturally')
+                else:
+                    self.assertTrue(all(row['status'] == 'PASS' for row in records.values()))
+                    if first == 'fallback':
+                        self.assertEqual(records['first']['reason_code'], 'SERIAL_FALLBACK_COMPLETED')
+                    self.assertLess(completed.stdout.index('COMPLETE NAME=first'),
+                                    completed.stdout.index('START NAME=dependent'))
+                for row in records.values():
+                    if row['status'] == 'PASS':
+                        self.assertGreaterEqual(row['queue_seconds'], 0)
+                        self.assertGreaterEqual(row['launch_seconds'], 0)
+                        self.assertGreaterEqual(row['process_elapsed_seconds'], row['launch_seconds'])
+
+    def test_exit_between_completion_sweep_and_slot_count_is_collected_before_dependency(self) -> None:
+        for exit_code in (0, 7):
+            with self.subTest(exit_code=exit_code), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                summary = root / 'summary.json'
+                completed = self.run_script(self.prelude() + f'''
+$env:TEMP={quote(root)};$env:TMP={quote(root)}
+function Start-Process {{
+ param($FilePath,$ArgumentList,$WindowStyle,[switch]$PassThru)
+ $null=$ArgumentList-match '"-InternalStage" "([^"]+)"';$stage=$Matches[1]
+ $null=$ArgumentList-match '"-InternalLogPath" "([^"]+)"';$log=$Matches[1]
+ Set-Content -LiteralPath $log -Value "INERT_CHILD=$stage"
+ $process=[pscustomobject]@{{Id=1;ExitCode=$(if($stage-eq'first'){{{exit_code}}}else{{0}});ExitReads=0;Stage=$stage}}
+ $process|Add-Member ScriptProperty HasExited {{
+  $this.ExitReads++
+  # First sweep sees running; the next OS-status read sees exited.
+  return $this.Stage-ne'first'-or$this.ExitReads-ge2
+ }}
+ $process|Add-Member ScriptMethod WaitForExit {{}}
+ $process|Add-Member ScriptMethod Dispose {{}}
+ return $process
+}}
+$items=@(
+ [pscustomobject]@{{Name='first';Run=$true;Reason='fixture';RequiresStages=@()}},
+ [pscustomobject]@{{Name='dependent';Run=$true;Reason='fixture';RequiresStages=@('first')}}
+)
+$summary=New-GateRunSummary -Items $items -GateName fixture -PythonExe {quote(sys.executable)} -RepoRoot {quote(ROOT)} -SummaryPath {quote(summary)}
+$failure=$null
+try {{
+ Invoke-IndependentGateStageGroup -Items $items -MaxConcurrency 1 -Summary $summary `
+ -GateScriptPath unused -PythonExe {quote(sys.executable)} -ChildBaseArguments @() -TempNamePrefix gate_fixture_ `
+ -FailureMessage failed -InvokeInlineStage {{throw 'unexpected fallback'}} -InvokeSkipStage {{throw 'unexpected skip'}}
+}}catch{{$failure=$_}}finally{{Complete-GateRunSummary -Summary $summary -Failure $failure}}
+''')
+                records = {row['name']: row for row in json.loads(summary.read_text(encoding='utf-8'))['stages']}
+                self.assertEqual(records['first']['status'], 'PASS' if exit_code == 0 else 'FAIL')
+                if exit_code == 0:
+                    self.assertEqual(records['dependent']['status'], 'PASS', completed.stdout)
+                    self.assertEqual(completed.stdout.count('GATE_PROCESS=START NAME=dependent '), 1)
+                    self.assertLess(completed.stdout.index('COMPLETE NAME=first'),
+                                    completed.stdout.index('START NAME=dependent'))
+                else:
+                    self.assertEqual(records['dependent']['status'], 'BLOCKED')
+                    self.assertEqual(records['dependent']['reason_code'], 'PREREQUISITE_NOT_PASSED')
+                    self.assertNotIn('START NAME=dependent', completed.stdout)
+
+    def test_missing_unselected_and_unresolved_prerequisites_never_run(self) -> None:
+        for count, prerequisite, reason in ((1, 'missing', 'PREREQUISITE_MISSING'),
+                                            (2, 'not_selected', 'PREREQUISITE_NOT_SELECTED'),
+                                            (2, 'cycle', 'UNRESOLVED_PREREQUISITE')):
+            with self.subTest(prerequisite=prerequisite), tempfile.TemporaryDirectory() as directory:
+                summary = Path(directory) / 'summary.json'
+                self.run_script(self.prelude() + f'''
+$env:TEMP={quote(directory)};$env:TMP={quote(directory)}
+$items=@([pscustomobject]@{{Name='first';Run=$true;Reason='fixture';RequiresStages=@('{prerequisite}')}})
+if({count}-gt1){{
+ $items+= [pscustomobject]@{{Name='{prerequisite}';Run=${str(prerequisite == 'cycle').lower()};Reason='fixture';RequiresStages=@('first')}}
+}}
+$summary=New-GateRunSummary -Items $items -GateName fixture -PythonExe {quote(sys.executable)} -RepoRoot {quote(ROOT)} -SummaryPath {quote(summary)}
+function Start-Process {{throw 'must not launch'}}
+$failure=$null
+try {{
+ Invoke-IndependentGateStageGroup -Items $items -Summary $summary -MaxConcurrency 2 -GateScriptPath unused `
+ -PythonExe {quote(sys.executable)} -ChildBaseArguments @() -TempNamePrefix gate_fixture_ -FailureMessage blocked `
+ -InvokeInlineStage {{throw 'must not run inline'}} -InvokeSkipStage {{}}
+}}catch{{$failure=$_}}finally{{Complete-GateRunSummary -Summary $summary -Failure $failure}}
+''')
+                record = json.loads(summary.read_text(encoding='utf-8'))['stages'][0]
+                self.assertEqual(record['status'], 'BLOCKED')
+                self.assertEqual(record['reason_code'], reason)
+                self.assertIsNone(record['execution_seconds'])
+
+    def test_stage_timing_uses_actual_admission_action_and_cleanup_boundaries(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            summary = Path(directory) / 'summary.json'
+            self.run_script(self.prelude() + f'''
+function Enter-HostResourceStage {{param($Stage,$Role,$Budget) Start-Sleep -Milliseconds 40;@{{token='fixture'}}}}
+function Exit-HostResourceStage {{param($Lease) Start-Sleep -Milliseconds 35;throw 'CLEANUP_SECONDARY'}}
+$items=@([pscustomobject]@{{Name='timed';Run=$true;Reason='fixture'}})
+$summary=New-GateRunSummary -Items $items -GateName fixture -PythonExe {quote(sys.executable)} -RepoRoot {quote(ROOT)} -SummaryPath {quote(summary)}
+$failure=$null
+try {{Invoke-RecordedGateStage -Name timed -Reason fixture -Summary $summary -Action {{Start-Sleep -Milliseconds 60;throw 'ACTION_PRIMARY'}}}}
+catch{{$failure=$_;if($_.Exception.Message-ne'ACTION_PRIMARY'){{throw}};if($_.Exception.Data['gate_release_error']-ne'CLEANUP_SECONDARY'){{throw 'secondary lost'}}}}
+finally{{Complete-GateRunSummary -Summary $summary -Failure $failure}}
+''')
+            row = json.loads(summary.read_text(encoding='utf-8'))['stages'][0]
+            for field, minimum in (('resource_wait_seconds', .03), ('execution_seconds', .05), ('cleanup_seconds', .025)):
+                self.assertGreaterEqual(row[field], minimum)
+            self.assertGreaterEqual(row['elapsed_seconds'], sum(row[field] for field in
+                                   ('resource_wait_seconds', 'execution_seconds', 'cleanup_seconds')))
+            self.assertIsNone(row['process_elapsed_seconds'], 'inline stage has no child process timer')
+
     def test_real_integration_file_entry_records_parallel_stages_in_script_scope(self) -> None:
         """Invoke the real root as a script, not as the global -Command prelude."""
         with tempfile.TemporaryDirectory(prefix="parallel_gate_root_") as directory:
@@ -73,13 +239,16 @@ exit $LASTEXITCODE
 """, encoding="utf-8", newline="\n")
             environment = dict(os.environ, TEMP=str(temporary), TMP=str(temporary))
             environment.pop("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN", None)
-            for exit_code in (0, 7):
-                with self.subTest(exit_code=exit_code):
+            for exit_code, documentation_fails in ((0, False), (7, False), (0, True)):
+                with self.subTest(exit_code=exit_code, documentation_fails=documentation_fails):
+                    (common / "verify_documentation.ps1").write_text(
+                        "param($PythonExe)\nWrite-Output 'ROOT_DOCUMENTATION_MARKER'\n" +
+                        ("throw 'DOCUMENTATION_FAILURE'\n" if documentation_fails else ""), encoding="utf-8")
                     (common / "verify_development_standards.py").write_text(
                         f"print('ROOT_DEVELOPMENT_MARKER')\nraise SystemExit({exit_code})\n",
                         encoding="utf-8", newline="\n",
                     )
-                    summary = root / f"summary_{exit_code}.json"
+                    summary = root / f"summary_{exit_code}_{documentation_fails}.json"
                     completed = subprocess.run(
                         [shutil.which("pwsh"), "-NoProfile", "-File",
                          str(driver), "-PythonExe", sys.executable,
@@ -87,22 +256,77 @@ exit $LASTEXITCODE
                         cwd=root, env=environment, capture_output=True, text=True,
                         encoding="utf-8", errors="replace", timeout=40, check=False,
                     )
-                    self.assertEqual(completed.returncode, int(bool(exit_code)),
+                    self.assertEqual(completed.returncode, int(bool(exit_code or documentation_fails)),
                                      completed.stdout + completed.stderr)
                     document = json.loads(summary.read_text(encoding="utf-8"))
                     records = {record["name"]: record for record in document["stages"]}
-                    self.assertEqual(document["status"], "FAIL" if exit_code else "PASS")
+                    self.assertEqual(document["status"], "FAIL" if exit_code or documentation_fails else "PASS")
+                    self.assertEqual(records['documentation']['status'], 'FAIL' if documentation_fails else 'PASS')
                     self.assertEqual(records["repository_text_bytes"]["status"], "PASS")
                     self.assertEqual(records["ruff_all"]["status"], "PASS")
                     self.assertEqual(records["development_standards"]["status"],
                                      "FAIL" if exit_code else "PASS")
-                    self.assertEqual(records["fixture_regression"]["status"],
-                                     "BLOCKED" if exit_code else "PASS")
+                    self.assertEqual(records["fixture_regression"]["status"], "PASS")
                     self.assertEqual(completed.stdout.count("ROOT_TEXT_MARKER"), 1)
                     self.assertEqual(completed.stdout.count("ROOT_DOCUMENTATION_MARKER"), 1)
-                    self.assertEqual(completed.stdout.count("GATE_PROCESS=COMPLETE NAME="), 3)
+                    self.assertEqual(completed.stdout.count("GATE_PROCESS=COMPLETE NAME="), 4)
                     for name in ("repository_text_bytes", "development_standards", "ruff_all"):
                         self.assertEqual(records[name]["log_retained"], bool(exit_code))
+
+    def test_real_changed_file_entry_stops_queued_stages_after_scoped_check_failure(self) -> None:
+        for concurrency in (1, 2):
+            with self.subTest(concurrency=concurrency), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                common = root / 'common'
+                for path in (common, root / 'temporary', root / 'projects', root / 'integrations'):
+                    path.mkdir()
+                for name in ('verify_changed.ps1', 'parallel_gate_support.ps1', 'require_powershell7.ps1'):
+                    shutil.copyfile(ROOT / 'common' / name, common / name)
+                (common / 'gate_catalog_support.ps1').write_text(
+                    (ROOT / 'common/gate_catalog_support.ps1').read_text(encoding='utf-8') + r'''
+function Read-GateCatalog {param($RepoRoot)
+ @(Get-Content -Raw (Join-Path $PSScriptRoot 'fixture_catalog.json')|ConvertFrom-Json)
+}
+''', encoding='utf-8')
+                (common / 'host_execution_lease.ps1').write_text('''
+function Get-HostResourceBudget {param($Stage,$Role) @{}}
+function Enter-HostResourceStage {param($Stage,$Role,$Budget) @{}}
+function Exit-HostResourceStage {param($Lease)}
+''', encoding='utf-8')
+                (common / 'verify_repository_hygiene.ps1').write_text("Write-Output 'HYGIENE_OK'\n", encoding='utf-8')
+                (common / 'verify_repository_text_bytes.py').write_text("print('BYTES_OK')\n", encoding='utf-8')
+                (common / 'changed.ps1').write_text('# fixture\n', encoding='utf-8')
+                (common / 'verify_development_standards.py').write_text(
+                    "import json, pathlib, sys, time\n"
+                    "assert sys.argv[1] == '--changed-paths-file'\n"
+                    "assert json.loads(pathlib.Path(sys.argv[2]).read_text()) == ['common/changed.ps1']\n"
+                    "print('SCOPED_STANDARD_PATHS_OK')\ntime.sleep(.2)\nraise SystemExit(7)\n", encoding='utf-8')
+                routes = []
+                for name in ('project_registry', 'rf_multipole_generated_publications', 'fixture_regression'):
+                    (common / (name + '.py')).write_text(
+                        "import time\ntime.sleep(1 if " + repr(name) + " == 'project_registry' else 0)\nprint('STAGE_DONE')\n",
+                        encoding='utf-8')
+                    routes.append(dict(stage=name, dependency_profile='stdlib', repository_integration_group='regression',
+                                       matches=[dict(prefix='common/', reason='fixture')],
+                                       command=dict(runner='python', arguments=['common/' + name + '.py'])))
+                (common / 'fixture_catalog.json').write_text(json.dumps(routes), encoding='utf-8')
+                summary = root / 'summary.json'
+                environment = dict(os.environ, TEMP=str(root / 'temporary'), TMP=str(root / 'temporary'))
+                environment.pop('MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN', None)
+                completed = subprocess.run(
+                    [shutil.which('pwsh'), '-NoProfile', '-File', str(common / 'verify_changed.ps1'),
+                     '-PythonExe', sys.executable, '-MaxConcurrency', str(concurrency),
+                     '-ChangedPath', 'common/changed.ps1', '-SummaryPath', str(summary)],
+                    cwd=root, env=environment, capture_output=True, text=True, encoding='utf-8', timeout=40, check=False)
+                self.assertEqual(completed.returncode, 1, completed.stdout + completed.stderr)
+                records = {row['name']: row for row in json.loads(summary.read_text(encoding='utf-8'))['stages']}
+                self.assertEqual(records['development_standards']['status'], 'FAIL')
+                self.assertIn('SCOPED_STANDARD_PATHS_OK', completed.stdout)
+                for name in ('rf_multipole_generated_publications', 'fixture_regression'):
+                    self.assertEqual(records[name]['reason_code'], 'FAIL_FAST')
+                    self.assertNotIn('START NAME=' + name, completed.stdout)
+                if concurrency == 2:
+                    self.assertEqual(records['project_registry']['status'], 'PASS')
 
     def test_failed_child_receipt_cannot_be_overridden_by_zero_process_exit(self) -> None:
         with tempfile.TemporaryDirectory(prefix="parallel_gate_receipt_") as directory:

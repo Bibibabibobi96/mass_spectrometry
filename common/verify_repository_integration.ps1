@@ -146,7 +146,7 @@ $catalogFastStages = @(
         $_.repository_integration_group -eq 'fast'
     } | ForEach-Object { [string]$_.stage }
 )
-$fastFailStages = @($globalFastStages + $catalogFastStages)
+$priorityStages = @($globalFastStages + $catalogFastStages)
 $fullRegressionStages = @(
     $routes | Where-Object {
         $_.repository_integration_group -eq 'regression'
@@ -156,11 +156,20 @@ $fullRegressionStages = @(
 $env:PYTHONDONTWRITEBYTECODE = '1'
 $env:RUFF_NO_CACHE = 'true'
 # Documentation recursively enumerates the repository, so keep it exclusive.
-Invoke-IntegrationStage 'documentation' $stageActions['documentation']
-Invoke-ParallelIntegrationGroup $fastFailStages
-# All multipole publication checks completed in the group above.
-# Variant Static gates reuse that Freshness barrier before regression starts.
-Invoke-ParallelIntegrationGroup $fullRegressionStages
+try { Invoke-IntegrationStage 'documentation' $stageActions['documentation'] }
+catch {
+    if ($_.Exception -is [Management.Automation.PipelineStoppedException]) { throw }
+    $gateFailure = $_
+}
+# The environment and catalog are valid here. A failed check does not suppress
+# independent diagnostics; only explicit prerequisites block their successors.
+try { Invoke-ParallelIntegrationGroup @($priorityStages + $fullRegressionStages) }
+catch {
+    if ($_.Exception -is [Management.Automation.PipelineStoppedException]) { throw }
+    if ($null -eq $gateFailure) { $gateFailure = $_ }
+    else { $gateFailure.Exception.Data['independent_stage_failure'] = $_.Exception.Message }
+}
+if ($null -ne $gateFailure) { throw $gateFailure }
 
 Write-Output "REPOSITORY_INTEGRATION_GATE=PASS PYTHON=$pythonVersion"
 } catch {

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import os
 import re
 import subprocess
 import sys
@@ -49,7 +50,7 @@ def location(path: Path, line: int) -> str:
     return f"{path.relative_to(REPO_ROOT).as_posix()}:{line}"
 
 
-def staged_sources(root: Path) -> dict[Path, str]:
+def staged_sources(root: Path, paths: set[Path] | None = None) -> dict[Path, str]:
     """Read managed source blobs from the index in one Git batch, never the worktree."""
     listing = subprocess.run(
         ["git", "ls-files", "--stage", "-z"], cwd=root, timeout=60,
@@ -67,6 +68,8 @@ def staged_sources(root: Path) -> dict[Path, str]:
         if (path.parts[0] not in {"common", "projects", "integrations"}
                 or EXCLUDED_PARTS.intersection(path.parts)
                 or path.suffix not in {".py", ".ps1", ".m"}):
+            continue
+        if paths is not None and root / path not in paths:
             continue
         if mode not in {b"100644", b"100755"}:
             raise ValueError(f"managed source is not a regular staged file: {path}")
@@ -90,6 +93,45 @@ def staged_sources(root: Path) -> dict[Path, str]:
     if offset != len(payload):
         raise ValueError("Git returned unexpected trailing source data")
     return sources
+
+
+def changed_source_scope(root: Path, changed: list[str]) -> tuple[set[Path] | None, str]:
+    """Select file-local hard checks; uncertain or rule changes retain a full scan.
+
+    This selection never grants consumer-audit coverage. Deletions and unknown
+    paths fall back to all surviving sources, including in the staged snapshot.
+    """
+    selected = set()
+    rules = {"common/verify_development_standards.py", ".githooks/pre-commit",
+             "docs/development_standards.md"}
+    for value in changed:
+        if not isinstance(value, str) or not value:
+            raise ValueError("changed paths must contain nonempty strings")
+        # Index selection is lexical: an unstaged symlink/replacement must not
+        # redirect the staged source selection into the worktree.
+        path = Path(os.path.abspath(root / value))
+        if not path.is_relative_to(root):
+            raise ValueError("development standards path escapes the repository")
+        relative = path.relative_to(root)
+        if relative.as_posix().casefold() in rules:
+            return None, "rules_changed"
+        if relative.suffix == ".md":
+            continue
+        if (not relative.parts or relative.parts[0] not in {"common", "projects", "integrations"}
+                or EXCLUDED_PARTS.intersection(relative.parts)
+                or relative.suffix not in {".py", ".ps1", ".m"}):
+            return None, "unknown_or_configuration_path"
+        selected.add(path)
+    return selected, "explicit_changed_paths"
+
+
+def staged_changed_paths(root: Path) -> list[str]:
+    """Use NUL-delimited index changes, including deleted paths, without shell quoting."""
+    output = subprocess.run(
+        ["git", "diff", "--cached", "--name-only", "--no-renames", "-z"], cwd=root, timeout=60,
+        check=True, capture_output=True,
+    ).stdout
+    return [name.decode("utf-8") for name in output.split(b"\0") if name]
 
 
 def source_items(
@@ -425,12 +467,39 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--show-review", action="store_true", help="list complexity review signals")
     parser.add_argument("--audit-consumers", action="store_true", help="explicitly audit static consumer references; combine with --show-review for records")
-    parser.add_argument("--staged", action="store_true", help="check all managed source bytes from the Git index")
+    parser.add_argument("--staged", action="store_true", help="check changed index sources; rules/configuration/unknown changes check the full index")
+    paths = parser.add_mutually_exclusive_group()
+    paths.add_argument("--path", action="append", help="changed repository path; repeat for each path")
+    paths.add_argument("--changed-paths-file", type=Path, help="UTF-8 JSON array of changed paths, for command-length-safe L1 transport")
     arguments = parser.parse_args(argv)
-    if arguments.staged and arguments.audit_consumers:
-        parser.error("--staged checks hard rules only; consumer audits use the worktree")
+    explicit = arguments.path is not None or arguments.changed_paths_file is not None
+    if arguments.staged and (arguments.audit_consumers or explicit):
+        parser.error("--staged selects actual index changes and cannot combine with audits or explicit paths")
+    if explicit and arguments.audit_consumers:
+        parser.error("consumer audits require the full worktree, without explicit paths")
     try:
-        sources = staged_sources(REPO_ROOT) if arguments.staged else None
+        changed = staged_changed_paths(REPO_ROOT) if arguments.staged else arguments.path
+        if arguments.changed_paths_file is not None:
+            changed = json.loads(arguments.changed_paths_file.read_text(encoding="utf-8-sig"))
+            if not isinstance(changed, list):
+                raise ValueError("changed paths file must contain a JSON array")
+        selected, scope_reason = (None, "full_worktree_default") if changed is None else changed_source_scope(REPO_ROOT, changed)
+        if arguments.staged:
+            sources = staged_sources(REPO_ROOT, selected)
+            # Resolve existence against the index, never an unstaged deletion or
+            # replacement. A staged deletion broadens the index scan.
+            if selected is not None and not selected <= sources.keys():
+                selected, scope_reason = None, "deleted_source_path"
+                sources = staged_sources(REPO_ROOT)
+        elif selected is not None:
+            if any(not path.is_file() for path in selected):
+                selected, scope_reason, sources = None, "deleted_source_path", None
+            else:
+                sources = {path: path.read_text(encoding="utf-8-sig") for path in sorted(selected)}
+        else:
+            sources = None
+        scope = "FULL" if selected is None else "CHANGED"
+        print(f"DEVELOPMENT_SCOPE={scope} REASON={scope_reason} SOURCE={'INDEX' if arguments.staged else 'WORKTREE'}")
         parsed = {} if arguments.audit_consumers else None
         python_errors, reviews = check_python(sources, parsed=parsed)
         errors = [*python_errors, *check_powershell(sources), *check_matlab(sources)]

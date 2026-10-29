@@ -1,12 +1,13 @@
 import ast
 import io
+import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -223,6 +224,56 @@ class LightweightGateIntegrationTests(unittest.TestCase):
             self.assertIn("tool artifact", rejected.stderr)
 
 
+class ChangedDevelopmentStandardsTests(unittest.TestCase):
+    def test_changed_source_and_documentation_skip_unrelated_rules_but_uncertainty_is_full(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            common = root / "common"
+            common.mkdir()
+            good = common / "good.py"
+            good.write_text("def sample(values=None):\n    return values\n", encoding="utf-8")
+            (common / "bad.py").write_text("def sample(values=[]):\n    return values\n", encoding="utf-8")
+            with patch.object(standards, "REPO_ROOT", root), patch.object(standards, "SOURCE_ROOTS", (common,)):
+                for paths, accepted, reason in ((None, False, "full_worktree_default"),
+                                                (["common/good.py"], True, "explicit_changed_paths"),
+                                                (["README.md"], True, "explicit_changed_paths"),
+                                                (["common/bad.py"], False, "explicit_changed_paths"),
+                                                (["common/deleted.py"], False, "deleted_source_path"),
+                                                (["config/unknown.json"], False, "unknown_or_configuration_path"),
+                                                (["docs/DEVELOPMENT_STANDARDS.md"], False, "rules_changed")):
+                    with self.subTest(paths=paths), redirect_stdout(io.StringIO()) as output:
+                        arguments = [] if paths is None else [item for path in paths for item in ("--path", path)]
+                        self.assertEqual(standards.main(arguments) == 0, accepted)
+                        self.assertIn("REASON=" + reason, output.getvalue())
+
+    def test_utf8_path_file_preserves_names_and_rejects_invalid_payloads(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            common = root / "common"
+            common.mkdir()
+            (common / "name with spaces.py").write_text("from math import *\n", encoding="utf-8")
+            path_file = root / "paths.json"
+            with patch.object(standards, "REPO_ROOT", root), patch.object(standards, "SOURCE_ROOTS", (common,)):
+                for value, message in ((["common/name with spaces.py"], "wildcard import"),
+                                       ({"paths": []}, "JSON array"), ([5], "nonempty strings"),
+                                       (["../outside.py"], "escapes the repository")):
+                    path_file.write_text(json.dumps(value), encoding="utf-8")
+                    with self.subTest(value=value), redirect_stdout(io.StringIO()) as output:
+                        self.assertEqual(standards.main(["--changed-paths-file", str(path_file)]), 1)
+                        self.assertIn(message, output.getvalue())
+                path_file.write_text("[]", encoding="utf-8")
+                with redirect_stdout(io.StringIO()) as output:
+                    self.assertEqual(standards.main(["--changed-paths-file", str(path_file)]), 0)
+                    self.assertIn("DEVELOPMENT_SCOPE=CHANGED", output.getvalue())
+
+    def test_audits_and_staged_selection_cannot_be_narrowed_by_explicit_paths(self):
+        for arguments in (("--audit-consumers", "--path", "common/example.py"),
+                          ("--staged", "--path", "common/example.py"), ("--staged", "--audit-consumers")):
+            with self.subTest(arguments=arguments), redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as caught:
+                standards.main(list(arguments))
+            self.assertEqual(caught.exception.code, 2)
+
+
 class StagedDevelopmentStandardsTests(unittest.TestCase):
     def git(self, root: Path, *arguments: str) -> subprocess.CompletedProcess:
         environment = dict(os.environ)
@@ -269,6 +320,69 @@ class StagedDevelopmentStandardsTests(unittest.TestCase):
                 self.assertEqual(completed.returncode == 0, accepted, output)
                 self.assertIn("CONSUMER_AUDIT=NOT_REQUESTED", output)
                 self.assertEqual("mutable default argument" in output, not accepted)
+
+    def test_actual_hook_scopes_later_source_and_documentation_commits_to_index(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.prepare(root)
+            subject = root / "common/subject with spaces.py"
+            subject.write_text("def sample(values=None):\n    return values\n", encoding="utf-8", newline="\n")
+            self.assertEqual(self.git(root, "add", "--", "common").returncode, 0)
+            first = self.run_hook(root)
+            self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+            self.assertIn("DEVELOPMENT_SCOPE=FULL REASON=rules_changed", first.stdout + first.stderr)
+            subject.write_text("def sample(values=[]):\n    return values\n", encoding="utf-8", newline="\n")
+            self.assertEqual(self.git(root, "add", "--", str(subject)).returncode, 0)
+            subject.write_text("# Unstaged repair\ndef sample(values=None):\n    return values\n", encoding="utf-8", newline="\n")
+            rejected = self.run_hook(root)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("DEVELOPMENT_SCOPE=CHANGED", rejected.stdout + rejected.stderr)
+            self.assertIn("mutable default argument", rejected.stdout + rejected.stderr)
+            self.assertEqual(self.git(root, "add", "--", str(subject)).returncode, 0)
+            subject.unlink()  # The staged source still exists and must be checked.
+            accepted = self.run_hook(root)
+            self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+            self.assertIn("SOURCE=INDEX", accepted.stdout + accepted.stderr)
+            (root / "README.md").write_text("documentation only\n", encoding="utf-8", newline="\n")
+            self.assertEqual(self.git(root, "add", "--", "README.md").returncode, 0)
+            documentation = self.run_hook(root)
+            self.assertEqual(documentation.returncode, 0, documentation.stdout + documentation.stderr)
+            self.assertIn("DEVELOPMENT_SCOPE=CHANGED", documentation.stdout + documentation.stderr)
+
+    def test_actual_hook_broadens_staged_source_rename_and_deletion(self):
+        for operation in ("rename", "delete"):
+            with self.subTest(operation=operation), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.prepare(root)
+                subject = root / "common/subject.py"
+                subject.write_text("def sample(values=None):\n    return values\n", encoding="utf-8", newline="\n")
+                self.assertEqual(self.git(root, "add", "--", "common").returncode, 0)
+                first = self.run_hook(root)
+                self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+                if operation == "rename":
+                    changed = self.git(root, "mv", "--", "common/subject.py", "common/subject.md")
+                else:
+                    changed = self.git(root, "rm", "--", "common/subject.py")
+                self.assertEqual(changed.returncode, 0, changed.stderr)
+                completed = self.run_hook(root)
+                self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+                self.assertIn("DEVELOPMENT_SCOPE=FULL REASON=deleted_source_path", completed.stdout + completed.stderr)
+
+    def test_explicit_index_snapshot_reads_only_selected_blobs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.prepare(root)
+            subject = root / "common/subject.py"
+            source = "def sample(values=None):\n    return values\n"
+            subject.write_text(source, encoding="utf-8", newline="\n")
+            self.assertEqual(self.git(root, "add", "--", str(subject)).returncode, 0)
+            subject.write_text("unstaged invalid source", encoding="utf-8")
+            with patch.object(standards.subprocess, "run", wraps=subprocess.run) as run:
+                sources = standards.staged_sources(root, {subject})
+            self.assertEqual(sources, {subject: source})
+            batches = [call for call in run.call_args_list if call.args[0][1:] == ["cat-file", "--batch"]]
+            self.assertEqual(len(batches), 1)
+            self.assertEqual(batches[0].kwargs["input"].count(b"\n"), 1)
 
     def test_hook_executes_staged_checker_when_worktree_checker_is_invalid(self):
         with tempfile.TemporaryDirectory() as directory:

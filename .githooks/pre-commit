@@ -36,8 +36,8 @@ if [ "$python_version" != "3.11" ]; then
   echo "Commit blocked: development standards require Python 3.11, found $python_version." >&2
   exit 1
 fi
-# Execute the staged checker against staged blobs, so an unstaged repair to
-# either the checker or a source file cannot validate different commit bytes.
+# Execute the staged checker against changed staged blobs; rule/configuration
+# changes retain a full index scan. Unstaged repairs cannot validate commit bytes.
 staged_checker=$(git show :common/verify_development_standards.py)
 cd "$repo_root"
 printf '%s\n' "$staged_checker" | "$python_exe" - --staged
