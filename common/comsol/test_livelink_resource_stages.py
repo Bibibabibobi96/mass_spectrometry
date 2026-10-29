@@ -173,8 +173,16 @@ if ($env:OBSERVATION_SCENARIO) {
     # TEST_ONLY native ancestry, never a commercial model or solver.
     $seconds=if($env:OBSERVATION_SCENARIO-eq'critical'){20}else{3}
     $worker=Start-Process -FilePath (Get-Process -Id $PID).Path -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile','-Command',"Start-Sleep -Seconds $seconds")
-    [IO.File]::WriteAllText((Join-Path (Get-Location).Path 'worker_pid.txt'),[string]$worker.Id)
-    Start-Sleep -Seconds $seconds
+    @{process_id=$worker.Id;started_at_utc_ticks=$worker.StartTime.ToUniversalTime().Ticks}|
+      ConvertTo-Json|Set-Content -LiteralPath (Join-Path (Get-Location).Path 'worker_identity.json')
+    if($env:OBSERVATION_SCENARIO-eq'critical'){
+        Start-Sleep -Seconds $seconds
+    }else{
+        # The worker starts its sleep after loading pwsh. Matching parent and
+        # worker sleeps do not establish completion, especially under a gate.
+        $worker.WaitForExit()
+        if($worker.ExitCode-ne0){throw 'TEST_ONLY owned worker failed'}
+    }
 }
 if ($env:CRASH_SCENARIO -ne 'no_report') {
     $status=if($env:CRASH_SCENARIO -eq 'success'){'PASS'}else{'FAIL'}
@@ -322,12 +330,17 @@ try { & $path @arguments } finally {
             if observation_scenario:
                 output += "\nOBSERVATION_EVENTS=" + repr(entries)
             if observation_scenario:
-                worker_pid = int((root / "worker_pid.txt").read_text())
                 # The owned worker must have finished or been stopped with its launcher.
+                # PID reuse is not evidence that the original worker is live.
                 probe = subprocess.run(["pwsh", "-NoProfile", "-Command",
-                    f"if(Get-Process -Id {worker_pid} -ErrorAction SilentlyContinue){{exit 1}}"],
+                    "$ErrorActionPreference='Stop';$identity=Get-Content ./worker_identity.json -Raw|ConvertFrom-Json;"
+                    "$worker=Get-Process -Id $identity.process_id -ErrorAction SilentlyContinue;"
+                    "if($null-ne$worker-and-not$worker.HasExited){"
+                    "try{$ticks=$worker.StartTime.ToUniversalTime().Ticks}catch{if($worker.HasExited){exit 0};throw};"
+                    "if($ticks-eq$identity.started_at_utc_ticks){"
+                    "Write-Output \"OWNED_WORKER_STILL_LIVE PID=$($worker.Id) START_TICKS=$ticks\";exit 1}};exit 0"],
                     cwd=root, capture_output=True, timeout=15, check=False)
-                self.assertEqual(probe.returncode, 0, output)
+                self.assertEqual(probe.returncode, 0, output + "\nWORKER_PROBE=" + repr(probe.stdout) + repr(probe.stderr))
                 self.assertEqual((root / "logs/usage.json").exists(), observation_scenario == "ordinary")
             if crash_scenario:
                 facts = json.loads((root / "child_facts.json").read_text(encoding="utf-8-sig"))

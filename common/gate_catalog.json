@@ -519,6 +519,10 @@
           "reason": "parallel_gate_support_changed"
         },
         {
+          "exact": "common/gate_unittest.py",
+          "reason": "gate_unittest_runner_changed"
+        },
+        {
           "exact": "common/gate_catalog.json",
           "reason": "gate_catalog_changed"
         },
@@ -554,6 +558,7 @@
           "unittest",
           "common.contracts.test_verify_changed",
           "common.contracts.test_parallel_gate_support",
+          "common.contracts.test_gate_unittest",
           "common.contracts.test_development_standards",
           "common.contracts.test_changed_test_selection"
         ]
@@ -629,6 +634,11 @@
           "common/simion",
           "-p",
           "test_*.py"
+        ]
+      },
+      "test_selection": {
+        "roots": [
+          "common/simion/"
         ]
       }
     },
@@ -809,10 +819,68 @@
         }
       },
       "runtime_dependencies_path": "integrations/config/runtime_dependencies.json",
+      "repository_integration_command": {
+        "runner": "powershell",
+        "script": "integrations/verify_integration.ps1",
+        "parameters": {
+          "PythonExe": "{python}",
+          "PreflightOnly": true
+        }
+      },
+      "repository_integration_partition": {
+        "count": 4,
+        "parameter": "SelectedTestModules",
+        "default_seconds": 5,
+        "measured_seconds": {
+          "test_single_reflection_execute": 688.073291,
+          "test_single_reflection_field_stage": 164.350013,
+          "test_dependencies": 148.247836,
+          "test_prepared_joint_execute": 87.571695,
+          "test_oa_mr_execute": 82.122805,
+          "test_cooled_frontend_analysis": 57.919076,
+          "test_paired_accelerator_static_field_execute": 53.228596,
+          "test_accelerator_interface": 51.247403,
+          "test_single_reflection_continuation": 51.031899,
+          "test_local_frontend_analysis": 39.540665,
+          "test_single_reflection_preparation": 38.597664,
+          "test_cooled_frontend_execute": 31.994628,
+          "test_paired_accelerator_pulse_execute": 28.405115,
+          "test_local_frontend_field_support": 22.900529,
+          "test_cooled_frontend": 20.784935,
+          "test_single_reflection_runtime": 19.129637,
+          "test_local_frontend_execute": 18.620625,
+          "test_cooled_frontend_reference": 13.859005,
+          "test_paired_accelerator_pulse_runtime": 13.81381,
+          "test_paired_accelerator_pulse_preparation": 13.662408,
+          "test_accelerator_interface_geometry": 11.994108,
+          "test_multipole_ip_prepare": 11.437526,
+          "test_local_frontend_workflow": 10.993588,
+          "test_local_frontend_focus": 9.047783,
+          "test_single_reflection_program": 8.690018,
+          "test_single_reflection_collection": 7.131374,
+          "test_local_frontend_runtime": 6.92903,
+          "test_single_reflection_downstream_fields": 6.43417,
+          "test_frontend_flight_continuation": 5.170256,
+          "test_single_reflection_runner": 4.700257,
+          "test_comsol_prepulse_replay": 4.108885,
+          "test_single_reflection_fields": 3.345962,
+          "test_engineering_budget": 1.894114,
+          "test_single_reflection_geometry": 1.740312,
+          "test_cooled_geometry_overlay": 1.39594,
+          "test_cooled_frontend_field_design": 0.609518,
+          "test_cooled_frontend_mesh_check": 0.435518,
+          "test_local_frontend_replay": 0.381535,
+          "test_single_reflection_pulse": 0.343607,
+          "test_paired_accelerator_pulse_comparison": 0.248382,
+          "test_repository_bindings": 0.028153,
+          "test_cooled_frontend_pulse": 0.000784
+        }
+      },
       "test_selection": {
         "roots": [
           "integrations/tests/"
         ],
+        "scope": "integrations/tests/",
         "module_parameter": "ChangedTestModules"
       }
     },
@@ -914,7 +982,30 @@
         "script": "projects/parallel_mirror_dual_stripe_mr_tof/verify_project.ps1",
         "parameters": {
           "Level": "Static",
-          "PythonExe": "{python}"
+          "PythonExe": "{python}",
+          "PreflightOnly": true
+        }
+      },
+      "repository_integration_partition": {
+        "count": 4,
+        "parameter": "SelectedTestModules",
+        "default_seconds": 5,
+        "measured_seconds": {
+          "test_downstream_workpoint_iteration_runner": 689.20,
+          "test_simion_candidate_reference": 180.95,
+          "test_dual_stripe_l0_math": 168.41,
+          "test_static_field_binding": 125.06,
+          "test_native_corridor_freeze": 107.56,
+          "test_native_candidate_campaign_runner": 82.90,
+          "test_native_static_field_provider": 75.97,
+          "test_prism_shield_exit_extension": 68.62,
+          "test_two_prism_segmented_transport": 64.65,
+          "test_prepared_joint_diagnostics": 59.09,
+          "test_native_candidate_chain_runner": 58.13,
+          "test_corridor_field_provider": 41.08,
+          "test_native_corridor_plan": 40.42,
+          "test_two_prism_simion_trial": 35.77,
+          "test_mirror_convergence_geometry": 27.90
         }
       },
       "test_selection": {

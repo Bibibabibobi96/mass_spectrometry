@@ -349,6 +349,7 @@ Invoke-GateCatalogCommand -Command $stageCommands.documentation -RepoRoot __FIXT
             completed.stdout,
         )
         self.assertNotIn("INTEGRATION_GATE=PASS", completed.stdout)
+        self.assertNotIn("instrument_assembly_integration__tests_", completed.stdout)
 
     def test_integration_source_routes_full_gate(self) -> None:
         pwsh = shutil.which("pwsh")
@@ -378,6 +379,8 @@ Invoke-GateCatalogCommand -Command $stageCommands.documentation -RepoRoot __FIXT
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("EXECUTION_MODE=FULL_CHANGED_SCOPE", completed.stdout)
         self.assertIn("instrument_assembly_integration", completed.stdout)
+        for index in range(1, 5):
+            self.assertIn(f"instrument_assembly_integration__tests_{index:02d}", completed.stdout)
 
     def test_routes_project_config_to_its_own_static_gate(self) -> None:
         project_gates = sorted(
@@ -604,9 +607,73 @@ Invoke-GateCatalogCommand -Command $stageCommands.documentation -RepoRoot __FIXT
         )
         self.assertEqual(
             route["repository_integration_command"]["parameters"],
-            {"Level": "Static", "PythonExe": "{python}"},
+            {"Level": "Static", "PythonExe": "{python}", "PreflightOnly": True},
         )
+        self.assertEqual(route["repository_integration_partition"]["parameter"], "SelectedTestModules")
         self.assertNotIn("SimionExe", json.dumps(route))
+
+    def test_l2_mr_partitions_cover_the_actual_owner_discovery_once(self) -> None:
+        script = (". ./common/gate_catalog_support.ps1; "
+                  "$route=@(Read-GateCatalog -RepoRoot $PWD.Path | Where-Object "
+                  "stage -eq 'parallel_mirror_dual_stripe_mr_tof_static')[0]; "
+                  "$groups=@(Get-GateRepositoryTestPartitions -Route $route -RepoRoot $PWD.Path); "
+                  "ConvertTo-Json -Compress -Depth 8 -InputObject @($groups | ForEach-Object { "
+                  "[pscustomobject]@{modules=@($_.modules);seconds=$_.seconds} })")
+        result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
+                                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        groups = json.loads(result.stdout)
+        names = [name for group in groups for name in group["modules"]]
+        test_root = REPO_ROOT / "projects/parallel_mirror_dual_stripe_mr_tof/tests"
+        expected = [".".join(path.relative_to(REPO_ROOT).with_suffix("").parts)
+                    for path in test_root.rglob("test_*.py")]
+        self.assertCountEqual(names, expected)
+        self.assertEqual(len(names), len(set(names)))
+        self.assertEqual(len(groups), 4)
+        self.assertTrue(all(group["seconds"] > 0 for group in groups))
+
+    def test_l1_partitions_only_semantically_complete_owner_commands(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell Core is unavailable")
+        script = r'''. ./common/gate_catalog_support.ps1
+$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD 'common/verify_changed.ps1'),[ref]$null,[ref]$errors)
+$node=$ast.Find({param($a)$a-is[Management.Automation.Language.FunctionDefinitionAst]-and$a.Name-eq'Test-CompletePartitionOwnerCommand'},$true)
+Invoke-Expression $node.Extent.Text
+$routes=@(Read-GateCatalog -RepoRoot $PWD.Path)
+$mr=$routes|Where-Object stage -eq 'parallel_mirror_dual_stripe_mr_tof_static'
+$integration=$routes|Where-Object stage -eq 'instrument_assembly_integration'
+$full=$mr.repository_integration_command|ConvertTo-Json -Depth 16|ConvertFrom-Json -Depth 16
+$full.parameters.PSObject.Properties.Remove('PreflightOnly')
+@{mr_core=(Test-CompletePartitionOwnerCommand $mr $mr.command);mr_full=(Test-CompletePartitionOwnerCommand $mr $full);integration_full=(Test-CompletePartitionOwnerCommand $integration $integration.command)}|ConvertTo-Json -Compress
+'''
+        result = subprocess.run([pwsh, "-NoProfile", "-Command", script], cwd=REPO_ROOT,
+                                capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout), dict(mr_core=False, mr_full=True, integration_full=True))
+        result = subprocess.run([pwsh, "-NoProfile", "-File", str(CHANGED_GATE), "-PythonExe", sys.executable,
+            "-PlanOnly", "-ChangedPath", "projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_corridor_plan.py"],
+            cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("parallel_mirror_dual_stripe_mr_tof_static", result.stdout)
+        self.assertNotIn("parallel_mirror_dual_stripe_mr_tof_static__tests_", result.stdout)
+
+    def test_mr_partition_preflight_cannot_claim_a_full_gate(self) -> None:
+        gate = REPO_ROOT / "projects/parallel_mirror_dual_stripe_mr_tof/verify_project.ps1"
+        module = "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_drift_phase_contract"
+        script = ("& '" + str(gate).replace("'", "''") + "' -Level Static -PythonExe '" +
+                  sys.executable.replace("'", "''") + "' -SelectedTestModules @('" + module +
+                  "') -PreflightValidated")
+        result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script], cwd=REPO_ROOT,
+                                capture_output=True, text=True, encoding="utf-8", timeout=45)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("MRTOF_TEST_PARTITION=PASS PREFLIGHT_PREVALIDATED=True FULL_PROJECT_GATE=False", result.stdout)
+        self.assertNotIn("PROJECT_REGISTRY=PASS", result.stdout)
+        self.assertNotIn("PROJECT_GATE=PASS", result.stdout)
+        invalid = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(gate),
+                                  "-Level", "Static", "-PreflightValidated"], cwd=REPO_ROOT,
+                                 capture_output=True, text=True, encoding="utf-8", timeout=45)
+        self.assertNotEqual(invalid.returncode, 0)
 
     def test_plan_mode_is_fail_closed_for_dependency_selection(self) -> None:
         pwsh = shutil.which("pwsh")
@@ -1016,6 +1083,21 @@ Invoke-GateCatalogCommand -Command $stageCommands.documentation -RepoRoot __FIXT
                 stages = selected.group(1).split(",")
                 self.assertEqual("common_contracts" in stages, covered)
                 self.assertEqual(subset in stages, not covered)
+
+    def test_partial_contract_coverage_keeps_uncovered_modules(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell Core is unavailable")
+        completed = subprocess.run(
+            [pwsh, "-NoProfile", "-File", str(CHANGED_GATE), "-PythonExe", sys.executable,
+             "-PlanOnly", "-ChangedPath", "common/contracts/test_changed_test_selection.py"],
+            cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        selected = re.search(r"SELECTED_STAGES=([^\s]+)", completed.stdout)
+        self.assertIsNotNone(selected, completed.stdout)
+        self.assertIn("common_contracts", selected.group(1).split(","))
+        self.assertIn("gate_contract_tests", selected.group(1).split(","))
 
     def test_integration_changes_route_only_to_connection_gates(self) -> None:
         routed = self.routed_stages("common/integration/connection_profiles.py")

@@ -8,6 +8,9 @@
 [单反射整机](docs/INTEGRATION.md#单反射整机)、[共同场／有限脉冲](docs/INTEGRATION.md#共同场与有限脉冲)、
 [门禁与剩余动作](docs/INTEGRATION.md#依赖冻结与门禁)。组件自身资格继续归各项目PROJECT。
 
+`verify_integration.ps1`默认执行完整Ruff与测试发现；L2沿公共catalog分为四组，先完成一次preflight，
+各组在独立GATE预算内执行明确模块并即时报告失败与耗时。分组PASS不单独代表完整集成门禁通过。
+
 ## 配方解析
 
 作者显式引用冻结完整父配方；默认执行其全部实例，局部范围必须从该父装配声明派生。

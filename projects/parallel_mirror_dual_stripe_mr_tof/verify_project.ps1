@@ -3,7 +3,10 @@ param(
   [ValidateSet('Core', 'Static')][string]$Level = 'Static',
   [string]$PythonExe = '',
   [string]$LuaExe = '',
-  [string[]]$ChangedTestModules = @()
+  [string[]]$ChangedTestModules = @(),
+  [string[]]$SelectedTestModules = @(),
+  [switch]$PreflightOnly,
+  [switch]$PreflightValidated
 )
 
 Set-StrictMode -Version Latest
@@ -17,6 +20,12 @@ $savedPythonPath = $env:PYTHONPATH
 $savedNoBytecode = $env:PYTHONDONTWRITEBYTECODE
 $savedSimionExe = $env:SIMION_EXE
 try {
+  if (($PreflightOnly -and $SelectedTestModules.Count) -or
+      (($PreflightOnly -or $SelectedTestModules.Count) -and $Level -ne 'Static') -or
+      (($PreflightOnly -or $SelectedTestModules.Count) -and $ChangedTestModules.Count) -or
+      ($PreflightValidated -and -not $SelectedTestModules.Count)) {
+    throw 'Static preflight and selected test modules are mutually exclusive with other modes.'
+  }
   $python = if ($PythonExe) {
     (Resolve-Path -LiteralPath $PythonExe -ErrorAction Stop).Path
   } else {
@@ -33,10 +42,23 @@ try {
   try {
     & $python -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 11) else 1)"
     if ($LASTEXITCODE -ne 0) { throw 'MR-TOF requires Python 3.11.' }
-    & $python common/contracts/build_project_registry.py --check
-    if ($LASTEXITCODE -ne 0) { throw 'MR-TOF project registration is stale or invalid.' }
+    if (-not $PreflightValidated) {
+      & $python common/contracts/build_project_registry.py --check
+      if ($LASTEXITCODE -ne 0) { throw 'MR-TOF project registration is stale or invalid.' }
+    }
 
-    if ($Level -eq 'Core') {
+    if ($PreflightOnly) {
+      Write-Output 'MRTOF_PYTHON_TESTS=DEFERRED REASON=repository_integration_partition'
+    } elseif ($SelectedTestModules.Count) {
+      $testModules = @($SelectedTestModules | Sort-Object -Unique)
+      if ($testModules.Count -ne $SelectedTestModules.Count -or @($testModules | Where-Object {
+        $_ -notmatch '^projects\.parallel_mirror_dual_stripe_mr_tof\.tests\.[A-Za-z0-9_.]+$'
+      }).Count) { throw 'MR-TOF test partition has duplicate or foreign modules.' }
+      & $python -m common.gate_unittest @testModules
+      if ($LASTEXITCODE -ne 0) { throw 'MR-TOF test partition failed.' }
+      Write-Output "MRTOF_TEST_PARTITION=PASS PREFLIGHT_PREVALIDATED=$([bool]$PreflightValidated) FULL_PROJECT_GATE=False"
+      return
+    } elseif ($Level -eq 'Core') {
       $coreTests = @(
         'projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_drift_phase_contract',
         'projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_prism_analytic',
@@ -45,7 +67,7 @@ try {
       )
       $coreTests = @($coreTests + $ChangedTestModules | Sort-Object -Unique)
       Write-Output "PROJECT_TEST_MODULES=$($coreTests -join ',')"
-      & $python -m unittest @coreTests
+      & $python -m common.gate_unittest @coreTests
       if ($LASTEXITCODE -ne 0) { throw 'MR-TOF core contract tests failed.' }
     } else {
       $testModules = @(@(
@@ -54,7 +76,7 @@ try {
             $_.FullName.Substring($repoRoot.Length + 1, $_.FullName.Length - $repoRoot.Length - 4).Replace('\', '.')
           }
       ) + $ChangedTestModules | Sort-Object -Unique)
-      & $python -m unittest @testModules
+      & $python -m common.gate_unittest @testModules
       if ($LASTEXITCODE -ne 0) { throw 'MR-TOF solver-free Python tests failed.' }
     }
   } finally {
@@ -99,7 +121,8 @@ try {
     Write-Output 'MRTOF_PLAIN_LUA=SKIP REASON=Lua_runtime_unavailable'
   }
 
-  "PROJECT_GATE=PASS PROJECT=parallel_mirror_dual_stripe_mr_tof LEVEL=$Level COMMERCIAL_SOLVER_EXECUTED=false"
+  if ($PreflightOnly) { 'MRTOF_STATIC_PREFLIGHT=PASS PYTHON_TESTS=DEFERRED' }
+  else { "PROJECT_GATE=PASS PROJECT=parallel_mirror_dual_stripe_mr_tof LEVEL=$Level COMMERCIAL_SOLVER_EXECUTED=false" }
 } finally {
   $env:PYTHONPATH = $savedPythonPath
   $env:PYTHONDONTWRITEBYTECODE = $savedNoBytecode

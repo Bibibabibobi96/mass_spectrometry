@@ -83,32 +83,6 @@ function Test-AnyPath {
     return @($script:changedPaths | Where-Object $Predicate).Count -gt 0
 }
 
-function Test-DocumentationPath {
-    param([Parameter(Mandatory)][string]$Path)
-    return [IO.Path]::GetExtension($Path).Equals('.md', [StringComparison]::OrdinalIgnoreCase) -or
-        $Path -match '^(?:(?:projects|integrations)/[^/]+/)?docs/history/[^/]+/[^/]+\.txt$'
-}
-
-function Get-ChangedRouteReason {
-    param([Parameter(Mandatory)]$Route)
-    foreach ($match in @($Route.matches)) {
-        foreach ($path in $script:changedPaths) {
-            if ($null -ne $match.PSObject.Properties['exact'] -and
-                $path.Equals([string]$match.exact, [StringComparison]::OrdinalIgnoreCase)) {
-                return [string]$match.reason
-            }
-            if ($null -ne $match.PSObject.Properties['prefix'] -and
-                $path.StartsWith([string]$match.prefix, [StringComparison]::OrdinalIgnoreCase)) {
-                return [string]$match.reason
-            }
-            if ($null -ne $match.PSObject.Properties['regex'] -and
-                [regex]::IsMatch($path, [string]$match.regex, [Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
-                return [string]$match.reason
-            }
-        }
-    }
-    return ''
-}
 
 function Invoke-ChangedGateStage {
     param(
@@ -259,6 +233,26 @@ $routeCommandInvoker = {
     & $catalogCommandInvoker -Command $Command -RepoRoot $repoRoot `
         -PythonExe $PythonExe
 }.GetNewClosure()
+$partitionParents = @{}
+function Test-CompletePartitionOwnerCommand {
+    param($Route, $Command)
+    if ($null -eq $Route.PSObject.Properties['repository_integration_partition'] -or
+        $null -eq $Route.PSObject.Properties['repository_integration_command'] -or
+        $Command.runner -ne 'powershell') { return $false }
+    $complete = $Route.repository_integration_command
+    if ($Command.runner -ne $complete.runner -or $Command.script -ne $complete.script) { return $false }
+    # ChangedTestModules augments the complete owner discovery. Other command
+    # differences matter: an L1 Core gate must not become an L2 Static gate.
+    $moduleParameter = [string]$Route.test_selection.module_parameter
+    $actualNames = @($Command.parameters.PSObject.Properties.Name | Where-Object { $_ -ne $moduleParameter } | Sort-Object)
+    $completeNames = @($complete.parameters.PSObject.Properties.Name | Where-Object { $_ -ne 'PreflightOnly' } | Sort-Object)
+    if (($actualNames -join '|') -cne ($completeNames -join '|')) { return $false }
+    foreach ($parameter in $completeNames) {
+        if ((ConvertTo-Json -InputObject $Command.parameters.$parameter -Depth 8 -Compress) -cne
+            (ConvertTo-Json -InputObject $complete.parameters.$parameter -Depth 8 -Compress)) { return $false }
+    }
+    return $true
+}
 foreach ($route in $routes) {
     $name = [string]$route.stage
     $coveredByFullScopeStage = $FullScope -and
@@ -273,7 +267,7 @@ foreach ($route in $routes) {
     $reason = if ($FullScope) {
         'full_scope'
     } else {
-        Get-ChangedRouteReason -Route $route
+        Get-ChangedRouteReason -Route $route -Paths $changedPaths
     }
     if ($reason) {
         $command = if ($FullScope -and
@@ -282,7 +276,14 @@ foreach ($route in $routes) {
             $null -ne $route.PSObject.Properties['repository_integration_command']) {
             $route.repository_integration_command
         } else { $route.command }
-        $testSelection = Get-GateChangedTests -Route $route -ChangedPaths $changedPaths `
+        # FullScope selects the complete owner contract. Its preflight is
+        # separated below only when the existing catalog partitions apply.
+        if ($FullScope -and $null -ne $route.PSObject.Properties['repository_integration_partition']) {
+            $command = $command | ConvertTo-Json -Depth 32 | ConvertFrom-Json -Depth 32
+            $command.parameters.PSObject.Properties.Remove('PreflightOnly')
+        }
+        $ownerChangedPaths = @(Get-GateOwnerChangedPaths -Route $route -ChangedPaths $changedPaths)
+        $testSelection = Get-GateChangedTests -Route $route -ChangedPaths $ownerChangedPaths `
             -KnownTestRoots $knownTestRoots -RepoRoot $repoRoot -FullScope:$FullScope
         $preserveCommand = $null -ne $route.PSObject.Properties['test_selection'] -and
             $null -ne $route.test_selection.PSObject.Properties['preserve_command'] -and
@@ -311,11 +312,32 @@ foreach ($route in $routes) {
         } elseif ($null -ne $testSelection -and $testSelection.Expanded) {
             $reason = $testSelection.Reason
         }
+        $partitions = @()
+        if (($null -eq $testSelection -or -not $testSelection.OnlyTestModules) -and
+            (Test-CompletePartitionOwnerCommand -Route $route -Command $command)) {
+            $partitions = @(Get-GateRepositoryTestPartitions -Route $route -RepoRoot $repoRoot)
+            $command = $route.repository_integration_command | ConvertTo-Json -Depth 32 | ConvertFrom-Json -Depth 32
+        }
+        $command = ConvertTo-GateExecutionCommand -Command $command
         Add-ChangedStageItem $name $true $reason `
             ([string]$route.dependency_profile) {
             & $routeCommandInvoker -Command $command
         }.GetNewClosure()
         $stageItems[$name].Command = $command
+        foreach ($partition in $partitions) {
+            $partName = '{0}__tests_{1:D2}' -f $name, ([int]$partition.index + 1)
+            $partCommand = $route.repository_integration_command | ConvertTo-Json -Depth 32 | ConvertFrom-Json -Depth 32
+            $partCommand.parameters.PSObject.Properties.Remove('PreflightOnly')
+            $partCommand.parameters | Add-Member -NotePropertyName 'PreflightValidated' -NotePropertyValue $true
+            $partCommand.parameters | Add-Member -NotePropertyName ([string]$route.repository_integration_partition.parameter) `
+                -NotePropertyValue @($partition.modules)
+            Add-ChangedStageItem $partName $true 'complete_owner_test_partition' `
+                ([string]$route.dependency_profile) {
+                & $routeCommandInvoker -Command $partCommand
+            }.GetNewClosure()
+            $stageItems[$partName].Command = $partCommand
+            $partitionParents[$partName] = $name
+        }
     } else {
         Add-ChangedStageItem $name $false 'no_route_match' `
             ([string]$route.dependency_profile)
@@ -327,8 +349,53 @@ foreach ($route in $routes) {
     $coverageStage = [string]$route.full_scope_coverage_stage
     if ($stageItems[$coverageStage].Run) {
         $item = $stageItems[[string]$route.stage]
-        $item.Run = $false
-        $item.Reason = "covered_by_$coverageStage"
+        if (-not $item.Run) { continue }
+        $coverCommand = $stageItems[$coverageStage].Command
+        $itemCommand = $item.Command
+        if ($null -eq $coverCommand -or $null -eq $itemCommand -or
+            $itemCommand.runner -ne 'python') { continue }
+        $itemArgs = @($itemCommand.arguments)
+        if ($itemArgs.Count -lt 3 -or $itemArgs[0] -ne '-m' -or $itemArgs[1] -notin @('unittest', 'common.gate_unittest')) { continue }
+        $coveredModules = @()
+        $coverParts = @($partitionParents.Keys | Where-Object { $partitionParents[$_] -eq $coverageStage -and $stageItems[$_].Run })
+        if ($coverParts.Count) {
+            $coverageRoute = $routes | Where-Object { $_.stage -eq $coverageStage } | Select-Object -First 1
+            $moduleParameter = [string]$coverageRoute.repository_integration_partition.parameter
+            $coveredModules = @($coverParts | ForEach-Object { @($stageItems[$_].Command.parameters.$moduleParameter) })
+        } elseif ($coverCommand.runner -eq 'python') {
+            $coverArgs = @($coverCommand.arguments)
+            if ($coverArgs.Count -lt 3 -or $coverArgs[0] -ne '-m' -or
+                $coverArgs[1] -notin @('unittest', 'common.gate_unittest')) { continue }
+            if ($coverArgs[2] -eq 'discover') {
+                # Only the declared complete common-contract discovery covers its sibling routes.
+                if (($coverArgs -join '|') -eq '-m|common.gate_unittest|discover|-s|common/contracts|-p|test_*.py') {
+                    $coveredModules = @($itemArgs | Select-Object -Skip 2 | ForEach-Object {
+                        ([string]$_).Replace('/', '.').Replace('\', '.') -replace '\.py$', ''
+                    } | Where-Object {
+                        $_ -match '^common\.contracts\.test_[^.]+$'
+                    })
+                }
+            } else {
+                $coveredModules = @($coverArgs | Select-Object -Skip 2 | ForEach-Object {
+                    ([string]$_).Replace('/', '.').Replace('\', '.') -replace '\.py$', ''
+                })
+            }
+        } else { continue }
+        $remaining = @($itemArgs | Select-Object -Skip 2 | Where-Object {
+            (([string]$_).Replace('/', '.').Replace('\', '.') -replace '\.py$', '') -notin $coveredModules
+        })
+        if ($remaining.Count -eq 0) {
+            $item.Run = $false
+            $item.Reason = "covered_by_$coverageStage"
+        } elseif ($remaining.Count -lt ($itemArgs.Count - 2)) {
+            $command = [pscustomobject]@{ runner = 'python'; arguments = @('-m', 'common.gate_unittest') + $remaining }
+            if ($null -ne $itemCommand.PSObject.Properties['python_path_roots']) {
+                $command | Add-Member -NotePropertyName 'python_path_roots' -NotePropertyValue @($itemCommand.python_path_roots)
+            }
+            $item.Command = $command
+            $item.Action = { & $routeCommandInvoker -Command $command }.GetNewClosure()
+            $item.Reason = "partially_covered_by_$coverageStage"
+        }
     }
 }
 
@@ -348,6 +415,9 @@ foreach ($route in $routes) {
             throw "Selected gate stage is missing prerequisite: $($route.stage) -> $requiredStage"
         }
     }
+}
+foreach ($partName in $partitionParents.Keys) {
+    $stageItems[$partName].RequiresStages = @($partitionParents[$partName])
 }
 
 function Invoke-InternalChangedStage {
@@ -518,14 +588,17 @@ $priorityStages = @(
     'project_registry',
     'rf_multipole_generated_publications'
 )
+$partitionPriority = @($routes | ForEach-Object {
+    $parent = [string]$_.stage
+    $children = @($partitionParents.Keys | Where-Object { $partitionParents[$_] -eq $parent } | Sort-Object)
+    if ($children.Count) { $parent; $children }
+})
+$priorityStages += $partitionPriority
 $remainingStages = @(
     $routes |
         ForEach-Object { [string]$_.stage } |
         Where-Object {
-            $_ -notin @(
-                'project_registry',
-                'rf_multipole_generated_publications'
-            )
+            $_ -notin $priorityStages
         }
 )
 # Short checks are offered first; catalog prerequisites govern readiness.

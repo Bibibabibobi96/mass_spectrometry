@@ -55,7 +55,7 @@ if ($projectContract.lifecycle_status -ne 'formal_revalidation_pending') {
   & (Join-Path $projectRoot 'workflows\formal_reference\verify_geometry_contract.ps1') -SkipRuntime -SimionExe $SimionExe -PythonExe $python
   if ($LASTEXITCODE -ne 0) { throw 'Static cross-solver geometry gate failed.' }
 }
-& $python -m unittest discover -s (Join-Path $projectRoot 'tests\analysis') -p 'test_*.py'
+& $python -m common.gate_unittest discover -s (Join-Path $projectRoot 'tests\analysis') -p 'test_*.py'
 if (-not $? -or $LASTEXITCODE -ne 0) { throw 'Python analysis tests failed.' }
 
 if ($Level -eq 'Candidate') {

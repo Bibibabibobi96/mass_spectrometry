@@ -80,7 +80,7 @@ if ($Level -eq 'Core') {
     $testModules = @($ChangedTestModules | Sort-Object -Unique)
     Write-Output "PROJECT_TEST_MODULES=$($testModules -join ',')"
     Push-Location $repoRoot
-    try { & $python -m unittest @testModules } finally { Pop-Location }
+    try { & $python -m common.gate_unittest @testModules } finally { Pop-Location }
     if ($LASTEXITCODE -ne 0) { throw 'Changed RF test modules failed.' }
   }
   "PROJECT_GATE=PASS PROJECT=rf_multipole_ion_optics LEVEL=$Level STRUCTURAL_VARIANT=$StructuralVariant"
@@ -98,7 +98,7 @@ try {
       })
   }
   $testModules = @($testModules | Sort-Object -Unique)
-  & $python -m unittest @testModules
+  & $python -m common.gate_unittest @testModules
   if ($LASTEXITCODE -ne 0) { throw "Python variant tests failed: $StructuralVariant" }
 } finally { Pop-Location }
 $parseErrors = @()

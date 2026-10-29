@@ -125,6 +125,24 @@ function Read-GateCatalog {
                 -Command $route.repository_integration_command `
                 -Stage $stage -RepoRoot $RepoRoot
         }
+        if ($null -ne $route.PSObject.Properties['repository_integration_partition']) {
+            $partition = $route.repository_integration_partition
+            if ($route.repository_integration_group -ne 'regression' -or
+                $null -eq $route.PSObject.Properties['repository_integration_command'] -or
+                $route.repository_integration_command.runner -ne 'powershell' -or
+                $null -eq $route.PSObject.Properties['test_selection'] -or
+                $null -eq $route.test_selection.PSObject.Properties['scope'] -or
+                [int]$partition.count -lt 2 -or [int]$partition.count -gt 8 -or
+                [string]$partition.parameter -notmatch '^[A-Za-z][A-Za-z0-9]*$' -or
+                [double]$partition.default_seconds -le 0) {
+                throw "Invalid repository integration test partition: $stage"
+            }
+            $scope = [string]$route.test_selection.scope
+            if ([IO.Path]::IsPathRooted($scope) -or $scope -match '(^|/)\.\.(/|$)' -or
+                -not $scope.EndsWith('/') -or -not (Test-Path -LiteralPath (Join-Path $RepoRoot $scope) -PathType Container)) {
+                throw "Invalid repository integration partition scope: $stage -> $scope"
+            }
+        }
         $requiredStages = if (
             $null -ne $route.PSObject.Properties['requires_stages']
         ) {
@@ -222,7 +240,12 @@ function Get-GateChangedTests {
         @($roots | Where-Object { $path.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0 -or
         ($null -ne $selection.PSObject.Properties['support_paths'] -and @(
             $selection.support_paths | Where-Object {
-                $path.StartsWith($_, [StringComparison]::OrdinalIgnoreCase)
+                $supportPath = [string]$_
+                if ($supportPath.EndsWith('/')) {
+                    $path.StartsWith($supportPath, [StringComparison]::OrdinalIgnoreCase)
+                } else {
+                    $path.Equals($supportPath, [StringComparison]::OrdinalIgnoreCase)
+                }
             }
         ).Count -gt 0) -or
         ($null -ne $selection.PSObject.Properties['scope'] -and
@@ -271,6 +294,35 @@ function Get-GateChangedTests {
             elseif ($expanded) { 'test_owner_discovery_for_deleted_support_or_unknown_path' }
             else { 'changed_test_modules' }
     }
+}
+
+function Get-GateRepositoryTestPartitions {
+    <# Enumerate the owner's complete test scope once; weights affect order only. #>
+    param([Parameter(Mandatory)]$Route, [Parameter(Mandatory)][string]$RepoRoot)
+    $config = $Route.repository_integration_partition
+    $root = Join-Path $RepoRoot ([string]$Route.test_selection.scope)
+    $weights = @{}
+    foreach ($property in $config.measured_seconds.PSObject.Properties) {
+        if ([double]$property.Value -le 0) { throw "Invalid measured test duration: $($property.Name)" }
+        $weights[$property.Name] = [double]$property.Value
+    }
+    $modules = @(Get-ChildItem -LiteralPath $root -Filter 'test_*.py' -File -Recurse | ForEach-Object {
+        $relative = $_.FullName.Substring($RepoRoot.Length + 1).Replace('\', '/')
+        [pscustomobject]@{
+            name = $relative.Substring(0, $relative.Length - 3).Replace('/', '.')
+            seconds = if ($weights.ContainsKey($_.BaseName)) { $weights[$_.BaseName] } else { [double]$config.default_seconds }
+        }
+    } | Sort-Object -Property @{Expression='seconds';Descending=$true}, @{Expression='name';Descending=$false})
+    if (-not $modules.Count) { throw "Repository integration test partition is empty: $($Route.stage)" }
+    $groups = @(@(for ($i = 0; $i -lt [int]$config.count; $i++) {
+        [pscustomobject]@{ index = $i; seconds = [double]0; modules = [Collections.Generic.List[string]]::new() }
+    }))
+    foreach ($module in $modules) {
+        $group = $groups | Sort-Object -Property seconds, index | Select-Object -First 1
+        $group.modules.Add($module.name)
+        $group.seconds += $module.seconds
+    }
+    return @($groups | Where-Object { $_.modules.Count -gt 0 })
 }
 
 function Invoke-GateCatalogCommand {
@@ -331,4 +383,50 @@ function Invoke-GateCatalogCommand {
     } finally {
         Pop-Location
     }
+}
+
+function Get-ChangedRouteReason {
+    param([Parameter(Mandatory)]$Route, [string[]]$Paths)
+    foreach ($match in @($Route.matches)) {
+        foreach ($path in $Paths) {
+            if ($null -ne $match.PSObject.Properties['exact'] -and
+                $path.Equals([string]$match.exact, [StringComparison]::OrdinalIgnoreCase)) {
+                return [string]$match.reason
+            }
+            if ($null -ne $match.PSObject.Properties['prefix'] -and
+                $path.StartsWith([string]$match.prefix, [StringComparison]::OrdinalIgnoreCase)) {
+                return [string]$match.reason
+            }
+            if ($null -ne $match.PSObject.Properties['regex'] -and
+                [regex]::IsMatch($path, [string]$match.regex, [Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+                return [string]$match.reason
+            }
+        }
+    }
+    return ''
+}
+
+function Test-DocumentationPath {
+    param([Parameter(Mandatory)][string]$Path)
+    return [IO.Path]::GetExtension($Path).Equals('.md', [StringComparison]::OrdinalIgnoreCase) -or
+        $Path -match '^(?:(?:projects|integrations)/[^/]+/)?docs/history/[^/]+/[^/]+\.txt$'
+}
+
+
+function Get-GateOwnerChangedPaths {
+    param([Parameter(Mandatory)]$Route, [AllowEmptyCollection()][string[]]$ChangedPaths)
+    return @($ChangedPaths | Where-Object {
+        -not (Test-DocumentationPath $_) -and (Get-ChangedRouteReason -Route $Route -Paths @($_))
+    })
+}
+
+function ConvertTo-GateExecutionCommand {
+    param([Parameter(Mandatory)]$Command)
+    if ($Command.runner -eq 'python' -and @($Command.arguments).Count -ge 2 -and
+        $Command.arguments[0] -eq '-m' -and $Command.arguments[1] -eq 'unittest') {
+        $copy = $Command | ConvertTo-Json -Depth 32 | ConvertFrom-Json -Depth 32
+        $copy.arguments[1] = 'common.gate_unittest'
+        return $copy
+    }
+    return $Command
 }

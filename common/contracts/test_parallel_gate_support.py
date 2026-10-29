@@ -44,7 +44,10 @@ if($InternalStage-eq'first'){
  if($First-eq'pass'){Set-Content -LiteralPath (Join-Path $Root 'first_done') -Value done}
 }
 if($InternalStage-eq'slow'){Start-Sleep -Milliseconds 500;Set-Content -LiteralPath (Join-Path $Root 'slow_done') -Value done}
-Set-Content -LiteralPath $InternalLogPath -Value $InternalStage
+if($InternalStage-eq'first'-and$First-eq'fail'){
+ Set-Content -LiteralPath $InternalLogPath -Value @('TEST_FAILURE_IMMEDIATE=probe','traceback detail','TEST_FAILURE_IMMEDIATE_END','TEST_DURATION_SECONDS=0.125000 TEST=probe')
+ Start-Sleep -Milliseconds 300
+}else{Set-Content -LiteralPath $InternalLogPath -Value $InternalStage}
 if($InternalStage-eq'dependent'-and-not(Test-Path (Join-Path $Root 'first_done'))){exit 9}
 if($InternalStage-eq'first'-and$First-eq'fail'){exit 7}
 ''', encoding='utf-8')
@@ -81,6 +84,13 @@ try {{
 ''')
                 records = {row['name']: row for row in json.loads(summary.read_text(encoding='utf-8'))['stages']}
                 if first in ('fail', 'launchfail', 'fallback_fail'):
+                    if first == 'fail':
+                        self.assertIn('GATE_LIVE_FAILURE NAME=first', completed.stdout)
+                        self.assertLess(completed.stdout.index('GATE_LIVE_FAILURE NAME=first'),
+                                        completed.stdout.index('COMPLETE NAME=first'))
+                        self.assertEqual(completed.stdout.count('traceback detail'), 1)
+                        self.assertEqual(records['first']['test_durations'],
+                                         [{'test': 'probe', 'elapsed_seconds': 0.125}])
                     self.assertEqual(records['dependent']['reason_code'], 'PREREQUISITE_NOT_PASSED')
                     self.assertNotIn('START NAME=dependent', completed.stdout)
                     self.assertEqual(records['late']['status'], 'BLOCKED' if stop else 'PASS')
@@ -994,6 +1004,73 @@ try {{
                 log = Path(log_path.strip())
                 self.assertEqual(log.parent.parent.resolve(), Path(directory).resolve())
                 self.assertIn("FALLBACK_ERROR", log.read_text(encoding="utf-8"))
+
+    def test_repository_partitions_preserve_all_modules_and_failure(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="parallel_gate_partition_") as directory:
+            root = Path(directory)
+            common = root / "common"
+            for path in (common, root / "temporary", root / "projects/fixture/tests", root / "integrations"):
+                path.mkdir(parents=True)
+            for name in ("verify_repository_integration.ps1", "parallel_gate_support.ps1",
+                         "require_powershell7.ps1"):
+                shutil.copyfile(ROOT / "common" / name, common / name)
+            (common / "gate_catalog_support.ps1").write_text(
+                (ROOT / "common/gate_catalog_support.ps1").read_text(encoding="utf-8") + r'''
+function Read-GateCatalog {param($RepoRoot)
+    @([pscustomobject]@{stage='fixture';dependency_profile='locked';repository_integration_group='regression';
+      command=[pscustomobject]@{runner='powershell';script='common/owner.ps1';parameters=[pscustomobject]@{PythonExe='{python}'}};
+      repository_integration_command=[pscustomobject]@{runner='powershell';script='common/owner.ps1';parameters=[pscustomobject]@{PythonExe='{python}';PreflightOnly=$true}};
+      test_selection=[pscustomobject]@{scope='projects/fixture/tests/'};
+      repository_integration_partition=[pscustomobject]@{count=3;parameter='SelectedTestModules';default_seconds=1;measured_seconds=[pscustomobject]@{test_a=10}}})
+}
+''', encoding="utf-8", newline="\n")
+            (common / "host_execution_lease.ps1").write_text(
+                "function Get-HostResourceBudget {param($Stage,$Role) @{}}\n"
+                "function Enter-HostResourceStage {param($Stage,$Role,$Budget) @{}}\n"
+                "function Exit-HostResourceStage {param($Lease)}\n", encoding="utf-8")
+            (common / "verify_documentation.ps1").write_text("param($PythonExe)\n", encoding="utf-8")
+            for name in ("verify_repository_text_bytes", "verify_development_standards"):
+                (common / f"{name}.py").write_text("pass\n", encoding="utf-8")
+            (common / "owner.ps1").write_text('''param($PythonExe,[switch]$PreflightOnly,[switch]$PreflightValidated,[string[]]$SelectedTestModules)
+if($PreflightOnly){if($env:FIXTURE_PREFLIGHT_FAIL){throw 'PREFLIGHT_FAILURE'};Write-Output 'OWNER_PREFLIGHT';return}
+if(-not$PreflightValidated){throw 'PARTITION_PREFLIGHT_NOT_BOUND'}
+foreach($module in $SelectedTestModules){Write-Output "MODULE=$module"}
+if($SelectedTestModules -contains 'projects.fixture.tests.test_b'){throw 'SHARD_FAILURE'}
+''', encoding="utf-8")
+            for name in ("a", "b", "c", "d"):
+                (root / f"projects/fixture/tests/test_{name}.py").write_text("", encoding="utf-8")
+            summary = root / "summary.json"
+            env = dict(os.environ, TEMP=str(root / "temporary"), TMP=str(root / "temporary"))
+            env.pop("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN", None)
+            result = subprocess.run(
+                [shutil.which("pwsh"), "-NoProfile", "-File", str(common / "verify_repository_integration.ps1"),
+                 "-PythonExe", sys.executable, "-MaxConcurrency", "3", "-SummaryPath", str(summary)],
+                cwd=root, env=env, capture_output=True, text=True, encoding="utf-8", timeout=60,
+            )
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertTrue(summary.exists(), result.stdout + result.stderr)
+            records = {row["name"]: row for row in json.loads(summary.read_text(encoding="utf-8"))["stages"]}
+            parts = [row for name, row in records.items() if name.startswith("fixture__tests_")]
+            self.assertEqual(len(parts), 3)
+            self.assertEqual(records["fixture"]["status"], "PASS")
+            self.assertEqual(sum(row["status"] == "FAIL" for row in parts), 1)
+            self.assertTrue(all(row["requires_stages"] == ["fixture"] for row in parts))
+            modules = [m for row in parts for m in row["command"]["parameters"]["SelectedTestModules"]]
+            self.assertCountEqual(modules, [f"projects.fixture.tests.test_{name}" for name in "abcd"])
+            self.assertEqual(len(modules), len(set(modules)))
+            self.assertIn("SHARD_FAILURE", result.stdout + result.stderr)
+            env["FIXTURE_PREFLIGHT_FAIL"] = "1"
+            failed_summary = root / "preflight_failure.json"
+            result = subprocess.run(
+                [shutil.which("pwsh"), "-NoProfile", "-File", str(common / "verify_repository_integration.ps1"),
+                 "-PythonExe", sys.executable, "-MaxConcurrency", "3", "-SummaryPath", str(failed_summary)],
+                cwd=root, env=env, capture_output=True, text=True, encoding="utf-8", timeout=60,
+            )
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            records = {row["name"]: row for row in json.loads(failed_summary.read_text(encoding="utf-8"))["stages"]}
+            self.assertEqual(records["fixture"]["status"], "FAIL")
+            self.assertTrue(all(row["status"] == "BLOCKED" for name, row in records.items()
+                                if name.startswith("fixture__tests_")))
 
     def test_nested_group_serializes_inherited_reservation(self) -> None:
         with tempfile.TemporaryDirectory(prefix="parallel_gate_fixture_") as directory:

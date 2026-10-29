@@ -47,7 +47,7 @@ function New-GateRunSummary {
             execution_seconds = $null; cleanup_seconds = $null
             launch_seconds = $null; process_elapsed_seconds = $null
             exit_code = $null; child_exit_code = $null; log_path = $null; log_retained = $false
-            error = $null
+            error = $null; test_durations = @()
         }
         foreach ($field in @('DependencyProfile', 'Command', 'RequiresStages')) {
             if ($null -ne $item.PSObject.Properties[$field] -or
@@ -385,11 +385,45 @@ function Invoke-IndependentGateStageGroup {
         $reportedCompletions = [Collections.Generic.HashSet[string]]::new(
             [StringComparer]::Ordinal
         )
+        $liveOutput = @{ FirstFailureReported = $false }
         # This reporter stays on this call's stack. A dynamic-module closure
         # would hide helpers dot-sourced in the calling gate's script scope.
         $reportCompletions = {
             foreach ($recordName in @($records.Keys)) {
                 $record = $records[$recordName]
+                $pollNow = [Environment]::TickCount64
+                if ($null -eq $record.Result -and
+                    ($record.Process.HasExited -or $pollNow - $record.LastLogPoll -ge 200) -and
+                    (Test-Path -LiteralPath $record.LogPath -PathType Leaf)) {
+                    $record.LastLogPoll = $pollNow
+                    $stream = [IO.File]::Open($record.LogPath, [IO.FileMode]::Open,
+                        [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+                    try {
+                        $null = $stream.Seek($record.LogOffset, [IO.SeekOrigin]::Begin)
+                        $bytes = [byte[]]::new([int]($stream.Length - $record.LogOffset))
+                        $count = $stream.Read($bytes, 0, $bytes.Length)
+                        $record.LogOffset += $count
+                        if ($count -gt 0) {
+                            $chars = [char[]]::new($count)
+                            $charCount = $record.LogDecoder.GetChars($bytes, 0, $count, $chars, 0, $false)
+                            $record.LogPending += [string]::new($chars, 0, $charCount)
+                            while (($lineEnd = $record.LogPending.IndexOf("`n")) -ge 0) {
+                                $line = $record.LogPending.Substring(0, $lineEnd).TrimEnd("`r")
+                                $record.LogPending = $record.LogPending.Substring($lineEnd + 1)
+                                if ($line.Contains('TEST_FAILURE_IMMEDIATE=') -and -not $liveOutput.FirstFailureReported) {
+                                    $liveOutput.FirstFailureReported = $true
+                                    $record.ShowingFailure = $true
+                                    $record.LiveFailureShown = $true
+                                    Write-Output "GATE_LIVE_FAILURE NAME=$recordName"
+                                }
+                                if ($record.ShowingFailure) {
+                                    Write-Output $line
+                                    if ($line.Contains('TEST_FAILURE_IMMEDIATE_END')) { $record.ShowingFailure = $false }
+                                } elseif ($line.Contains('TEST_DURATION_SECONDS=')) { Write-Output $line }
+                            }
+                        }
+                    } finally { $stream.Dispose() }
+                }
                 if ($record.Process.HasExited -and
                     $reportedCompletions.Add([string]$recordName)) {
                     $record.Process.WaitForExit()
@@ -442,6 +476,14 @@ function Invoke-IndependentGateStageGroup {
                         $result.exit_code = if ($inlineSucceeded) { 0 } else { 1 }
                         $result.log_retained = Test-Path -LiteralPath $record.LogPath
                     }
+                    if (Test-Path -LiteralPath $record.LogPath -PathType Leaf) {
+                        $testDurations = @(Get-Content -LiteralPath $record.LogPath -Encoding UTF8 | ForEach-Object {
+                            if ($_ -match 'TEST_DURATION_SECONDS=([0-9.]+) TEST=(\S+)') {
+                                @{ test = $Matches[2]; elapsed_seconds = [double]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture) }
+                            }
+                        })
+                        if ($testDurations.Count -gt 0) { $result.test_durations = $testDurations }
+                    }
                     $record.Result = $result
                     $states[$recordName] = $result.status
                     if ($result.status -ne 'PASS') {
@@ -450,6 +492,11 @@ function Invoke-IndependentGateStageGroup {
                         } else { "$recordName=$($result.exit_code)" }
                     }
                     Set-GateStageResult -Summary $Summary -Name $recordName -Result $result
+                    if ($result.status -ne 'PASS' -and $failed.Count -eq 1 -and -not $liveOutput.FirstFailureReported -and (Test-Path -LiteralPath $record.LogPath -PathType Leaf)) {
+                        Write-Output "GATE_FIRST_FAILURE NAME=$recordName DIAGNOSTIC_TAIL_BEGIN"
+                        Get-Content -LiteralPath $record.LogPath -Encoding UTF8 -Tail 80
+                        Write-Output "GATE_FIRST_FAILURE NAME=$recordName DIAGNOSTIC_TAIL_END"
+                    }
                     Write-Output (
                         "GATE_PROCESS=COMPLETE NAME=$recordName " +
                         "EXIT_CODE=$($record.Process.ExitCode) " +
@@ -576,6 +623,12 @@ function Invoke-IndependentGateStageGroup {
                 Timer = $launchTimer
                 Result = $null
                 HasResultReceipt = $false
+                LogOffset = [long]0
+                LastLogPoll = [long]0
+                LogPending = ''
+                LogDecoder = [Text.UTF8Encoding]::new($false).GetDecoder()
+                ShowingFailure = $false
+                LiveFailureShown = $false
             }
             Set-GateStageResult -Summary $Summary -Name $item.Name -Result @{launch_seconds=$launchSeconds}
             Write-Output "GATE_PROCESS=START NAME=$($item.Name) PID=$($process.Id) LOG_PATH=$logPath"
@@ -598,9 +651,20 @@ function Invoke-IndependentGateStageGroup {
             $record = $records[$item.Name]
             $hasLog = Test-Path -LiteralPath $record.LogPath -PathType Leaf
             if ($hasLog -or $record.HasResultReceipt) {
-                if ($hasLog) { Get-Content -LiteralPath $record.LogPath -Encoding UTF8 }
+                if ($hasLog) {
+                    $skipLiveTrace = $false
+                    Get-Content -LiteralPath $record.LogPath -Encoding UTF8 | ForEach-Object {
+                        if ($record.LiveFailureShown -and $_.Contains('TEST_FAILURE_IMMEDIATE=')) {
+                            $skipLiveTrace = $true
+                        }
+                        if (-not $skipLiveTrace -and -not $_.Contains('TEST_DURATION_SECONDS=')) { Write-Output $_ }
+                        if ($skipLiveTrace -and $_.Contains('TEST_FAILURE_IMMEDIATE_END')) {
+                            $skipLiveTrace = $false
+                        }
+                    }
+                }
                 if ($record.Result.status -ne 'PASS') {
-                    if ($hasLog) {
+                    if ($hasLog -and -not $record.LiveFailureShown) {
                         $failedRecords.Add([pscustomobject]@{
                             Name = [string]$item.Name
                             ExitCode = $record.Result.exit_code

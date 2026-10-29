@@ -48,6 +48,7 @@ $stageCommands = [ordered]@{
     ruff_all = [pscustomobject]@{ runner='python'; arguments=@('-m', 'ruff', 'check', 'common', 'projects', 'integrations') }
 }
 
+$partitionParents = @{}
 foreach ($route in $routes) {
     if ($route.repository_integration_group -eq 'covered') { continue }
     $stage = [string]$route.stage
@@ -62,7 +63,19 @@ foreach ($route in $routes) {
     } else {
         $route.command
     }
-    $stageCommands[$stage] = $command
+    $stageCommands[$stage] = ConvertTo-GateExecutionCommand -Command $command
+    if ($null -ne $route.PSObject.Properties['repository_integration_partition']) {
+        foreach ($group in @(Get-GateRepositoryTestPartitions -Route $route -RepoRoot $repoRoot)) {
+            $partName = '{0}__tests_{1:D2}' -f $stage, ([int]$group.index + 1)
+            $partCommand = $route.repository_integration_command | ConvertTo-Json -Depth 32 | ConvertFrom-Json -Depth 32
+            $partCommand.parameters.PSObject.Properties.Remove('PreflightOnly')
+            $partCommand.parameters | Add-Member -NotePropertyName 'PreflightValidated' -NotePropertyValue $true
+            $partCommand.parameters | Add-Member -NotePropertyName ([string]$route.repository_integration_partition.parameter) `
+                -NotePropertyValue @($group.modules)
+            $stageCommands[$partName] = $partCommand
+            $partitionParents[$partName] = $stage
+        }
+    }
 }
 $stageActions = [ordered]@{}
 foreach ($stage in $stageCommands.Keys) {
@@ -122,7 +135,8 @@ foreach ($name in $stageActions.Keys) {
         Name = $name; Run = $true; Reason = 'repository_integration'
         Action = $stageActions[$name]; Command = $stageCommands[$name]
         DependencyProfile = $(if ($route.Count -gt 0) { $route[0].dependency_profile } else { 'locked' })
-        RequiresStages = $(if ($route.Count -gt 0 -and $null -ne $route[0].PSObject.Properties['requires_stages']) {
+        RequiresStages = $(if ($partitionParents.ContainsKey($name)) { @($partitionParents[$name]) }
+        elseif ($route.Count -gt 0 -and $null -ne $route[0].PSObject.Properties['requires_stages']) {
             @($route[0].requires_stages)
         } else { @() })
     }
@@ -146,10 +160,24 @@ $catalogFastStages = @(
         $_.repository_integration_group -eq 'fast'
     } | ForEach-Object { [string]$_.stage }
 )
-$priorityStages = @($globalFastStages + $catalogFastStages)
+$partitionedRegressionStages = @(
+    $routes | Where-Object {
+        $_.repository_integration_group -eq 'regression' -and
+        $null -ne $_.PSObject.Properties['repository_integration_partition']
+    } | ForEach-Object {
+        $name = [string]$_.stage
+        $name
+        @($partitionParents.Keys | Where-Object { $partitionParents[$_] -eq $name } | Sort-Object)
+    }
+)
+# The partitioned owner was measured as the longest L2 stage. Start its
+# preflight early; each shard still waits on that preflight and acquires its
+# own normal host budget through the same group executor.
+$priorityStages = @($globalFastStages + $partitionedRegressionStages + $catalogFastStages)
 $fullRegressionStages = @(
     $routes | Where-Object {
-        $_.repository_integration_group -eq 'regression'
+        $_.repository_integration_group -eq 'regression' -and
+        $null -eq $_.PSObject.Properties['repository_integration_partition']
     } | ForEach-Object { [string]$_.stage }
 )
 
