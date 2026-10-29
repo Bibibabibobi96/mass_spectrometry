@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "role": "run_artifact_workflow_result",
+  "status": "success",
+  "stage": "complete",
+  "run_directory": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\instrument_assembly\\runs\\20261029_084153__analysis__python__final-guide-evidence",
+  "prepared_exit_code": 0,
+  "terminal_published": true,
+  "capacity_finalized": true,
+  "lease_released": true,
+  "exception": null,
+  "secondary_errors": [],
+  "elapsed_seconds": 15.0934998,
+  "timing": {
+    "validate": 0.0938493,
+    "admission": 6.5419473,
+    "initialize": 2.5054322000000004,
+    "prepared": 0.6586269999999992,
+    "completion": 2.119917900000001,
+    "retention": 0.18460209999999933,
+    "publication": 0.26941410000000054,
+    "capacity_finalization": 0.6647453999999993,
+    "release": 2.0527250000000006,
+    "complete": 0.00223949999999995
+  },
+  "last_completed_stage": "release",
+  "resume_action": null,
+  "execution_context": {
+    "host_resource_state_path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\common\\host_resources.sqlite3"
+  },
+  "lease_id": "workflow-3a908e4914df40e68918bcbb8248c2b9",
+  "writers_confirmed": true
+}

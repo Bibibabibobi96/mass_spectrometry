@@ -1,0 +1,62 @@
+from pathlib import Path
+import hashlib
+import json
+import subprocess
+
+repo=Path(r'C:\Users\Liao\mass_spectrometry\simulation_repo')
+tmp=Path(__file__).parent
+def git(*args, data=None):
+    return subprocess.run(['git','-C',str(repo),*args],input=data,capture_output=True,check=True).stdout
+head=git('rev-parse','HEAD').decode().strip()
+assert not git('status','--porcelain').strip()
+tree=[]
+for entry in git('ls-tree','-rz','--full-tree','HEAD').split(b'\0'):
+    if not entry: continue
+    meta,path=entry.split(b'\t',1)
+    mode,kind,oid=meta.split()
+    assert kind==b'blob' and mode in (b'100644',b'100755')
+    tree.append((path.decode(),oid.decode()))
+assert len(tree)==2288,len(tree)
+packed=git('cat-file','--batch',data=('\n'.join(oid for _,oid in tree)+'\n').encode())
+offset=0; contents={}; normalization=[]; records=[]; git_records=[]
+for path,oid in tree:
+    end=packed.index(b'\n',offset); header=packed[offset:end].split(); size=int(header[2]); offset=end+1
+    payload=packed[offset:offset+size]; offset+=size+1
+    assert header[:2]==[oid.encode(),b'blob']
+    raw=(repo/path).read_bytes()
+    if raw!=payload:
+        assert not (path.startswith('docs/history/') and path.endswith('.txt')),path
+        assert raw.replace(b'\r\n',b'\n')==payload,path
+        normalization.append((path,len(raw),len(payload),hashlib.sha256(raw).hexdigest(),hashlib.sha256(payload).hexdigest()))
+    contents[path]=payload
+    records.append(dict(path=path,bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest()))
+    git_records.append(dict(path=path,bytes=len(payload),sha256=hashlib.sha256(payload).hexdigest()))
+assert offset==len(packed)
+def identity(items):
+    return hashlib.sha256(json.dumps(sorted(items,key=lambda r:r['path']),sort_keys=True,separators=(',',':'),ensure_ascii=True).encode()).hexdigest()
+frozen=[]
+exceptions={}
+for row in records:
+    path=row['path']; raw=(repo/path).read_bytes(); old=raw
+    if path=='common/contracts/gui_source_protection.py': old=raw+b'\n\n'
+    if path=='docs/history/20261029__legacy-common-evidence-migration.md': old=raw+b'\n'
+    if path=='.gitattributes':
+        old=git('show','ef2a565b:.gitattributes').replace(b'\r\n',b'\n').replace(b'\n',b'\r\n')
+        assert len(old)==752 and hashlib.sha256(old).hexdigest()=='ecc1f5e978ab658fd96ebd90dbc9a094ab525fb6feac402a80d687622dc941f8'
+    if old!=raw:
+        exceptions[path]=(len(old),hashlib.sha256(old).hexdigest(),len(raw),hashlib.sha256(raw).hexdigest())
+    frozen.append(dict(path=path,bytes=len(old),sha256=hashlib.sha256(old).hexdigest()))
+assert len(exceptions)==3
+assert sum(r['bytes'] for r in frozen)==202011899
+assert identity(frozen)=='4ecae61483f1984b428299d1d791715fc351e2f5fe505f99c13bf90101eb64b1'
+lines=['FINAL GIT SOURCE BINDING',f'Commit={head}',f'Files={len(tree)}',f'Current WORKTREE bytes={sum(r["bytes"] for r in records)} identity={identity(records)}',f'Git raw bytes={sum(r["bytes"] for r in git_records)} identity={identity(git_records)}','Reconstructed full L2 input: 2288 files / 202011899 bytes / SHA256=4ecae61483f1984b428299d1d791715fc351e2f5fe505f99c13bf90101eb64b1 PASS','Algorithm: sorted case-sensitive paths; records {path,bytes,sha256}; json.dumps(sort_keys=True,separators=(comma,colon),ensure_ascii=True), UTF-8; SHA256.','Every Git blob equals WORKTREE bytes, except explicitly listed reversible CRLF-to-LF normalization. This is not a claim that all Git blobs have the L2 physical bytes.','Three post-gate changes (old bytes/SHA -> current WORKTREE bytes/SHA):']
+lines += [f'{path}: {value}' for path,value in sorted(exceptions.items())]
+lines += ['Reversible Git text normalization (path, WORKTREE bytes, Git bytes, WORKTREE SHA, Git SHA):']
+lines += [repr(row) for row in normalization]
+r1=Path(r'C:\Users\Liao\AppData\Local\Temp\codex_r1_remeasurement_20261029_423d4c42')
+lines += ['R1 snapshots bound to this exact commit Git blobs:']
+for source,target in [('resource_budget_support_current.ps1','common/resource_budget_support.ps1'),('shared_host_execution_lease.ps1.txt','common/host_execution_lease.ps1'),('shared_host_resource_policy.json.txt','common/host_resource_policy.json')]:
+    raw=(r1/source).read_bytes(); assert raw==contents[target]
+    lines.append(f'{source} -> {target}: bytes={len(raw)} SHA256={hashlib.sha256(raw).hexdigest()} PASS')
+(tmp/'final_git_source_identity.txt').write_text('\n'.join(lines)+'\n',encoding='utf-8',newline='\n')
+print('\n'.join(lines[:7])); print('normalization paths',len(normalization),'post-gate changes',len(exceptions),'R1 exact Git blobs 3/3 PASS')

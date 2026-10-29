@@ -1,0 +1,178 @@
+{
+  "recorded_at_utc": "2026-10-28T09:53:04.784673+00:00",
+  "command": [
+    "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe",
+    "C:\\Users\\Liao\\AppData\\Local\\Temp\\scheduler-multibirth-candidate-86012fa4455941449d665f2b7e9b4721\\validate_candidate.py",
+    "--source",
+    "baseline",
+    "--suite",
+    "regression"
+  ],
+  "environment": {
+    "PYTHONHASHSEED": "0",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "baseline_sha": "3005980a9a0d3a62a67f36dff389a3110868faa7",
+  "source": "baseline",
+  "suite": "regression",
+  "source_sha256": "ea6823f8ba251273ab7633ad7eaca708d04003892135d33973d99f98e2c48bc7",
+  "tests_sha256": "e015cbd8aad8d60a47e8106d88a82da66f7c076725d9e6e907cdca467bfbab03",
+  "boundary": "Synthetic temporary SQLite and in-memory snapshots only; not a production-ledger replay; no live Windows adapter smoke tests.",
+  "exit_code": 1
+}
+test_newly_observed_reused_parent_does_not_expand_registered_work (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_newly_observed_reused_parent_does_not_expand_registered_work) ... FAIL
+test_reused_descendant_pid_keeps_new_children_and_older_orphans (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_reused_descendant_pid_keeps_new_children_and_older_orphans) ... 
+  test_reused_descendant_pid_keeps_new_children_and_older_orphans (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_reused_descendant_pid_keeps_new_children_and_older_orphans) (parent_live=True, reverse_order=False) ... FAIL
+  test_reused_descendant_pid_keeps_new_children_and_older_orphans (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_reused_descendant_pid_keeps_new_children_and_older_orphans) (parent_live=True, reverse_order=True) ... FAIL
+  test_reused_descendant_pid_keeps_new_children_and_older_orphans (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_reused_descendant_pid_keeps_new_children_and_older_orphans) (parent_live=False, reverse_order=False) ... FAIL
+  test_reused_descendant_pid_keeps_new_children_and_older_orphans (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_reused_descendant_pid_keeps_new_children_and_older_orphans) (parent_live=False, reverse_order=True) ... FAIL
+test_unrelated_reused_parent_cannot_give_new_children_the_old_reservation (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_unrelated_reused_parent_cannot_give_new_children_the_old_reservation) ... ok
+
+======================================================================
+FAIL: test_newly_observed_reused_parent_does_not_expand_registered_work (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_newly_observed_reused_parent_does_not_expand_registered_work)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\AppData\Local\Temp\scheduler-multibirth-candidate-86012fa4455941449d665f2b7e9b4721\test_host_resource_scheduler.py", line 720, in test_newly_observed_reused_parent_does_not_expand_registered_work
+    self.assertEqual(result["live_process_ids"], [1, 2, 3, 4])
+AssertionError: Lists differ: [1, 2, 4] != [1, 2, 3, 4]
+
+First differing element 2:
+4
+3
+
+Second list contains 1 additional elements.
+First extra element 3:
+4
+
+- [1, 2, 4]
++ [1, 2, 3, 4]
+?        +++
+
+
+======================================================================
+FAIL: test_reused_descendant_pid_keeps_new_children_and_older_orphans (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_reused_descendant_pid_keeps_new_children_and_older_orphans) (parent_live=True, reverse_order=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\AppData\Local\Temp\scheduler-multibirth-candidate-86012fa4455941449d665f2b7e9b4721\test_host_resource_scheduler.py", line 677, in test_reused_descendant_pid_keeps_new_children_and_older_orphans
+    self.assertEqual(set(result["live_process_ids"]), expected)
+AssertionError: Items in the second set but not the first:
+3
+5
+
+======================================================================
+FAIL: test_reused_descendant_pid_keeps_new_children_and_older_orphans (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_reused_descendant_pid_keeps_new_children_and_older_orphans) (parent_live=True, reverse_order=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\AppData\Local\Temp\scheduler-multibirth-candidate-86012fa4455941449d665f2b7e9b4721\test_host_resource_scheduler.py", line 677, in test_reused_descendant_pid_keeps_new_children_and_older_orphans
+    self.assertEqual(set(result["live_process_ids"]), expected)
+AssertionError: Items in the second set but not the first:
+3
+5
+
+======================================================================
+FAIL: test_reused_descendant_pid_keeps_new_children_and_older_orphans (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_reused_descendant_pid_keeps_new_children_and_older_orphans) (parent_live=False, reverse_order=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\AppData\Local\Temp\scheduler-multibirth-candidate-86012fa4455941449d665f2b7e9b4721\test_host_resource_scheduler.py", line 677, in test_reused_descendant_pid_keeps_new_children_and_older_orphans
+    self.assertEqual(set(result["live_process_ids"]), expected)
+AssertionError: Items in the second set but not the first:
+3
+5
+
+======================================================================
+FAIL: test_reused_descendant_pid_keeps_new_children_and_older_orphans (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_reused_descendant_pid_keeps_new_children_and_older_orphans) (parent_live=False, reverse_order=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\AppData\Local\Temp\scheduler-multibirth-candidate-86012fa4455941449d665f2b7e9b4721\test_host_resource_scheduler.py", line 677, in test_reused_descendant_pid_keeps_new_children_and_older_orphans
+    self.assertEqual(set(result["live_process_ids"]), expected)
+AssertionError: Items in the second set but not the first:
+3
+5
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.226s
+
+FAILED (failures=5)
+
+{
+  "recorded_at_utc": "2026-10-28T09:53:20.842334+00:00",
+  "command": [
+    "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe",
+    "C:\\Users\\Liao\\AppData\\Local\\Temp\\scheduler-multibirth-candidate-86012fa4455941449d665f2b7e9b4721\\validate_candidate.py",
+    "--source",
+    "candidate",
+    "--suite",
+    "all"
+  ],
+  "environment": {
+    "PYTHONHASHSEED": "0",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "baseline_sha": "3005980a9a0d3a62a67f36dff389a3110868faa7",
+  "source": "candidate",
+  "suite": "all",
+  "source_sha256": "1d8771a10b40fce51bf5cbcd7feeb4b3e19e4a89fda4835590a74195440217a0",
+  "tests_sha256": "e015cbd8aad8d60a47e8106d88a82da66f7c076725d9e6e907cdca467bfbab03",
+  "boundary": "Synthetic temporary SQLite and in-memory snapshots only; not a production-ledger replay; no live Windows adapter smoke tests.",
+  "exit_code": 0
+}
+test_bounded_backfill_prevents_starvation (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_bounded_backfill_prevents_starvation) ... ok
+test_child_discovered_after_parent_exit_from_creation_order (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_child_discovered_after_parent_exit_from_creation_order) ... ok
+test_cim_native_precision_preserves_owner_registration_and_release (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_cim_native_precision_preserves_owner_registration_and_release) ... ok
+test_completion_evidence_rejects_descendant_and_unregistered_or_mismatched_identity (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_completion_evidence_rejects_descendant_and_unregistered_or_mismatched_identity) ... ok
+test_concurrent_requests_never_oversell_cpu (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_concurrent_requests_never_oversell_cpu) ... ok
+test_crashed_owner_with_live_child_keeps_reservation (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_crashed_owner_with_live_child_keeps_reservation) ... ok
+test_creation_precision_does_not_match_different_process_birth (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_creation_precision_does_not_match_different_process_birth) ... ok
+test_declared_retained_memory_is_not_lost_after_admission (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_declared_retained_memory_is_not_lost_after_admission) ... ok
+test_definitely_exited_identity_cannot_conflict_with_live_observation (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_definitely_exited_identity_cannot_conflict_with_live_observation) ... ok
+test_definitely_exited_identity_is_pruned_after_snapshot_race (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_definitely_exited_identity_is_pruned_after_snapshot_race) ... ok
+test_explicit_release_retains_active_descendant (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_explicit_release_retains_active_descendant) ... ok
+test_heavy_permission_rejects_light_waiting_and_unrelated_clients (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_heavy_permission_rejects_light_waiting_and_unrelated_clients) ... ok
+test_impossible_declared_retained_memory_rolls_back (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_impossible_declared_retained_memory_rolls_back) ... ok
+test_inheritance_does_not_allocate_again_and_rejects_unrelated (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_inheritance_does_not_allocate_again_and_rejects_unrelated) ... ok
+test_inheritance_error_identifies_exceeded_budget_without_mutating_parent (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_inheritance_error_identifies_exceeded_budget_without_mutating_parent) ... ok
+test_invalid_and_incomplete_telemetry_preserve_state (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_invalid_and_incomplete_telemetry_preserve_state) ... ok
+test_io_and_named_resource_are_global (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_io_and_named_resource_are_global) ... ok
+test_known_heavy_allows_light_but_excludes_another_heavy (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_known_heavy_allows_light_but_excludes_another_heavy) ... ok
+test_legacy_live_record_without_added_field_can_poll_and_release (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_legacy_live_record_without_added_field_can_poll_and_release) ... ok
+test_light_can_fill_heavy_headroom_but_cannot_exceed_live_pressure (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_light_can_fill_heavy_headroom_but_cannot_exceed_live_pressure) ... ok
+test_live_owner_can_release_exact_waited_child_despite_unreadable_recycled_pid (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_live_owner_can_release_exact_waited_child_despite_unreadable_recycled_pid) ... ok
+test_live_solver_prevents_phase_release_of_exclusive_resource (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_live_solver_prevents_phase_release_of_exclusive_resource) ... ok
+test_memory_promises_not_double_counted_or_oversold (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_memory_promises_not_double_counted_or_oversold) ... ok
+test_missing_creation_identity_is_not_process_death (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_missing_creation_identity_is_not_process_death) ... ok
+test_newly_observed_reused_parent_does_not_expand_registered_work (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_newly_observed_reused_parent_does_not_expand_registered_work) ... ok
+test_nonfinite_and_negative_telemetry_fails_closed (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_nonfinite_and_negative_telemetry_fails_closed) ... ok
+test_old_snapshot_cannot_erase_a_new_grant (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_old_snapshot_cannot_erase_a_new_grant) ... ok
+test_orphan_kept_when_parent_pid_already_reused (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_orphan_kept_when_parent_pid_already_reused) ... ok
+test_phase_cannot_exceed_host_capacity (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_phase_cannot_exceed_host_capacity) ... ok
+test_pressure_closes_admission_without_killing_or_releasing (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_pressure_closes_admission_without_killing_or_releasing) ... ok
+test_recycled_pid_does_not_keep_dead_owner (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_recycled_pid_does_not_keep_dead_owner) ... ok
+test_registered_child_cim_and_native_ticks_remain_one_identity (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_registered_child_cim_and_native_ticks_remain_one_identity) ... ok
+test_release_console_only_allows_another_owner_while_shell_lives (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_release_console_only_allows_another_owner_while_shell_lives) ... ok
+test_release_preserves_solver_under_a_system_console (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_release_preserves_solver_under_a_system_console) ... ok
+test_released_console_recovers_when_image_identity_becomes_available (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_released_console_recovers_when_image_identity_becomes_available) ... ok
+test_released_console_recovery_does_not_drop_a_live_solver (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_released_console_recovery_does_not_drop_a_live_solver) ... ok
+test_reopen_persistent_ledger_retains_live_reservations (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_reopen_persistent_ledger_retains_live_reservations) ... ok
+test_reused_descendant_pid_keeps_new_children_and_older_orphans (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_reused_descendant_pid_keeps_new_children_and_older_orphans) ... ok
+test_same_class_barrier_still_checks_and_allows_other_class (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_same_class_barrier_still_checks_and_allows_other_class) ... ok
+test_simion_flight_can_share_io_capacity_with_one_response_refine (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_simion_flight_can_share_io_capacity_with_one_response_refine) ... ok
+test_slow_child_free_release_survives_unrelated_newer_poll_without_admission (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_slow_child_free_release_survives_unrelated_newer_poll_without_admission) ... ok
+test_solver_cannot_inherit_missing_named_resource_or_larger_budget (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_solver_cannot_inherit_missing_named_resource_or_larger_budget) ... ok
+test_stage_growth_requeues_and_retains_memory (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_stage_growth_requeues_and_retains_memory) ... ok
+test_stale_nonrelease_operations_remain_closed (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_stale_nonrelease_operations_remain_closed) ... ok
+test_stale_release_keeps_child_seen_by_either_observation (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_stale_release_keeps_child_seen_by_either_observation) ... ok
+test_stale_release_preserves_owner_identity_unknown_process_and_console_rules (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_stale_release_preserves_owner_identity_unknown_process_and_console_rules) ... ok
+test_system_console_does_not_block_phase_but_stays_in_memory_accounting (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_system_console_does_not_block_phase_but_stays_in_memory_accounting) ... ok
+test_unknown_peak_does_not_classify_work_as_heavy (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_unknown_peak_does_not_classify_work_as_heavy) ... ok
+test_unknown_peak_still_checks_io_pressure_and_retained_promises (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_unknown_peak_still_checks_io_pressure_and_retained_promises) ... ok
+test_unknown_queue_does_not_deadlock_with_other_waiters (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_unknown_queue_does_not_deadlock_with_other_waiters) ... ok
+test_unregistered_control_descendant_does_not_hold_stage_boundary (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_unregistered_control_descendant_does_not_hold_stage_boundary) ... ok
+test_unrelated_reused_parent_cannot_give_new_children_the_old_reservation (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_unrelated_reused_parent_cannot_give_new_children_the_old_reservation) ... ok
+test_waiting_heavy_does_not_bar_twelve_ordinary_light_tasks (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_waiting_heavy_does_not_bar_twelve_ordinary_light_tasks) ... ok
+test_zero_host_io_capacity_uses_live_telemetry_without_static_limit (common.scheduler_candidate_tests.HostResourceSchedulerTests.test_zero_host_io_capacity_uses_live_telemetry_without_static_limit) ... ok
+
+----------------------------------------------------------------------
+Ran 54 tests in 2.569s
+
+OK
+

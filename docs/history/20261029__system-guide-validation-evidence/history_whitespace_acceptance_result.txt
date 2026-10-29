@@ -1,0 +1,81 @@
+HISTORY WHITESPACE ACCEPTANCE RESULT
+git version 2.33.1.windows.1
+elapsed_seconds=0.494807
+old_rule_raw_CRLF_and_trailing_bytes_rejected=PASS exit=2
+new_rule_same_raw_bytes_accepted=PASS exit=0
+active_source_trailing_whitespace_still_rejected=PASS exit=2
+only_exact_root_history_payload_scope_unset=PASS
+fixed_source_full_diff_check=PASS exit=0
+raw_bytes=48 raw_sha256=23F340400622FD51148EC3AB62DDDE47C7EDEAFD2AB51516C74A040C1CA51B2E
+raw_worktree_and_index_before_after_equal=PASS
+temporary_repository_removed=PASS
+attributes_before_bytes=752 sha256=ECC1F5E978AB658FD96EBD90DBC9A094AB525FB6FEAC402A80D687622DC941F8
+attributes_candidate_bytes=846 sha256=0C7A6CAB70E91E8C9FF0524D50864C045B7AB3B4AD82A28FE62FB0952DEEE602
+main_attributes_unchanged_during_fixture=PASS
+No production test, native tool, GUI, main-repository index operation or raw history edit was performed.
+
+COMMAND OUTPUTS (raw blob stdout omitted; identity recorded above)
+$ git init --quiet
+exit=0
+
+
+$ git add -- .gitattributes docs/history/20261029__fixture/original.txt active.py
+exit=0
+
+
+$ git show :docs/history/20261029__fixture/original.txt
+exit=0
+<raw bytes omitted>
+
+$ git diff --cached --check
+exit=2
+docs/history/20261029__fixture/original.txt:1: trailing whitespace.
++frozen CRLF record
+docs/history/20261029__fixture/original.txt:2: trailing whitespace.
++original trailing spaces
+
+$ git add -- .gitattributes
+exit=0
+
+
+$ git show :docs/history/20261029__fixture/original.txt
+exit=0
+<raw bytes omitted>
+
+$ git diff --cached --check
+exit=0
+
+
+$ git add -- active.py
+exit=0
+
+
+$ git diff --cached --check
+exit=2
+active.py:1: trailing whitespace.
++value = 1
+
+$ git check-attr whitespace -- docs/history/20261029__fixture/original.txt active.py README.md docs/history/note.txt projects/example/docs/history/original.txt
+exit=0
+docs/history/20261029__fixture/original.txt: whitespace: unset
+active.py: whitespace: unspecified
+README.md: whitespace: unspecified
+docs/history/note.txt: whitespace: unspecified
+projects/example/docs/history/original.txt: whitespace: unspecified
+
+$ git add -- active.py
+exit=0
+
+
+$ git diff --cached --check
+exit=0
+
+
+$ git show :docs/history/20261029__fixture/original.txt
+exit=0
+<raw bytes omitted>
+
+$ git --version
+exit=0
+git version 2.33.1.windows.1
+

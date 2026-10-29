@@ -1,0 +1,325 @@
+{
+  "metadata": {
+    "baseline_commit": "3005980a9a0d3a62a67f36dff389a3110868faa7",
+    "current_head": "3005980a9a0d3a62a67f36dff389a3110868faa7",
+    "python_executable": "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe",
+    "python_version": "3.11.0 (main, Oct 24 2022, 18:26:48) [MSC v.1933 64 bit (AMD64)]",
+    "logical_cpu_count": 16,
+    "corpus_files": 1446,
+    "corpus_bytes": 21916539,
+    "corpus_manifest_sha256": "268e4f1988adc732e90f9b36b4b0f46553993a753c723ff18bf2135346db79be",
+    "suffix_counts": {
+      ".json": 251,
+      ".lua": 93,
+      ".m": 125,
+      ".ps1": 142,
+      ".py": 835
+    },
+    "checker_sha256": {
+      "baseline": "e452fc581964ec87e4b0341a2c39150a6c2659a8381115f5516cd234260bd381",
+      "current": "65a3c64d6ecf375d23be6fbbdb6f40f9374dc2133725206081f7bafa9b67108b"
+    },
+    "snapshot_method": "Copied active .py/.ps1/.lua/.m/.json bytes under common/projects/integrations; omitted history, legacy, .venv, __pycache__ and other suffixes. Both implementations read this exact frozen current-source corpus. Module REPO_ROOT and SOURCE_ROOTS explicitly rebound; observed audit wrapper supplies the same corpus root to baseline default-argument audit and current explicit audit.",
+    "runner_source": "import argparse,collections,contextlib,hashlib,importlib.util,io,json,sys,time\nfrom pathlib import Path\np=argparse.ArgumentParser();p.add_argument('--checker',required=True);p.add_argument('--corpus',required=True);p.add_argument('--result',required=True);p.add_argument('cli',nargs=argparse.REMAINDER);a=p.parse_args()\nroot=Path(a.corpus).resolve();spec=importlib.util.spec_from_file_location('measured_checker',a.checker);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)\nmodule.REPO_ROOT=root;module.SOURCE_ROOTS=tuple(root/name for name in ('common','projects','integrations'))\noriginal=module.audit_consumers;calls=[]\ndef observed_audit(*args,**kwargs):\n    result=original(root,**kwargs);calls.append(result);return result\nmodule.audit_consumers=observed_audit\narguments=a.cli[1:] if a.cli[:1]==['--'] else a.cli\noutput=io.StringIO();started=time.perf_counter()\nwith contextlib.redirect_stdout(output): code=module.main(arguments)\nmain_seconds=time.perf_counter()-started\nrecords=calls[-1] if calls else None\nresult={'exit_code':code,'main_seconds':main_seconds,'audit_call_count':len(calls),'audit_executed':bool(calls),'audit_categories':dict(sorted(collections.Counter(x['category'] for x in records).items())) if records is not None else None,'audit_records_sha256':hashlib.sha256(json.dumps(records,sort_keys=True,separators=(',',':')).encode()).hexdigest() if records is not None else None,'audit_record_count':len(records) if records is not None else None,'stdout':output.getvalue()}\nPath(a.result).write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')\nprint(output.getvalue(),end='');sys.exit(code)\n",
+    "benchmark_directory": "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028"
+  },
+  "run_sequence": "B/C, C/B, B/C default then current --audit-consumers",
+  "runs": [
+    {
+      "exit_code": 0,
+      "main_seconds": 40.89455100000487,
+      "audit_call_count": 1,
+      "audit_executed": true,
+      "audit_categories": {
+        "formal_reachable": 675,
+        "test_only_reachable": 1,
+        "cli_callback_uncertain": 1512,
+        "private_no_calls": 0
+      },
+      "audit_records_sha256": "363a3dceedc9a4a2a1fe795e6f601d05ffc2e976568f2c65acd4fed4eb11b5aa",
+      "audit_record_count": 2188,
+      "stdout": "CONSUMER_AUDIT=STATIC_MODULE_REFERENCES AUTOMATIC_RETIREMENT=False FORMAL_REACHABLE=675 TEST_ONLY_REACHABLE=1 CLI_CALLBACK_UNCERTAIN=1512 PRIVATE_NO_CALLS=0\nDEVELOPMENT_STANDARDS=PASS ERRORS=0 REVIEW_SIGNALS=478\n",
+      "order": 1,
+      "pair": 1,
+      "version": "baseline",
+      "cli_args": [],
+      "started_utc": "2026-10-28T07:39:11.643595+00:00",
+      "process_wall_seconds": 41.07745550002437,
+      "process_exit_code": 0,
+      "stderr": "",
+      "command": [
+        "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\runner.py",
+        "--checker",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\versions\\baseline.py",
+        "--corpus",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\corpus",
+        "--result",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\run_1.json",
+        "--"
+      ],
+      "windows_command_line": "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\runner.py --checker C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\versions\\baseline.py --corpus C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\corpus --result C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\run_1.json --",
+      "hard_check_summary": "DEVELOPMENT_STANDARDS=PASS ERRORS=0 REVIEW_SIGNALS=478"
+    },
+    {
+      "exit_code": 0,
+      "main_seconds": 9.21950680000009,
+      "audit_call_count": 0,
+      "audit_executed": false,
+      "audit_categories": null,
+      "audit_records_sha256": null,
+      "audit_record_count": null,
+      "stdout": "CONSUMER_AUDIT=NOT_REQUESTED\nDEVELOPMENT_STANDARDS=PASS ERRORS=0 REVIEW_SIGNALS=478\n",
+      "order": 2,
+      "pair": 1,
+      "version": "current",
+      "cli_args": [],
+      "started_utc": "2026-10-28T07:39:52.728311+00:00",
+      "process_wall_seconds": 9.357198400015477,
+      "process_exit_code": 0,
+      "stderr": "",
+      "command": [
+        "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\runner.py",
+        "--checker",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\versions\\current.py",
+        "--corpus",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\corpus",
+        "--result",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\run_2.json",
+        "--"
+      ],
+      "windows_command_line": "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\runner.py --checker C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\versions\\current.py --corpus C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\corpus --result C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\run_2.json --",
+      "hard_check_summary": "DEVELOPMENT_STANDARDS=PASS ERRORS=0 REVIEW_SIGNALS=478"
+    },
+    {
+      "exit_code": 0,
+      "main_seconds": 9.369738800014602,
+      "audit_call_count": 0,
+      "audit_executed": false,
+      "audit_categories": null,
+      "audit_records_sha256": null,
+      "audit_record_count": null,
+      "stdout": "CONSUMER_AUDIT=NOT_REQUESTED\nDEVELOPMENT_STANDARDS=PASS ERRORS=0 REVIEW_SIGNALS=478\n",
+      "order": 3,
+      "pair": 2,
+      "version": "current",
+      "cli_args": [],
+      "started_utc": "2026-10-28T07:40:02.093286+00:00",
+      "process_wall_seconds": 9.498086900013732,
+      "process_exit_code": 0,
+      "stderr": "",
+      "command": [
+        "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\runner.py",
+        "--checker",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\versions\\current.py",
+        "--corpus",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\corpus",
+        "--result",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\run_3.json",
+        "--"
+      ],
+      "windows_command_line": "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\runner.py --checker C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\versions\\current.py --corpus C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\corpus --result C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\run_3.json --",
+      "hard_check_summary": "DEVELOPMENT_STANDARDS=PASS ERRORS=0 REVIEW_SIGNALS=478"
+    },
+    {
+      "exit_code": 0,
+      "main_seconds": 26.80077609998989,
+      "audit_call_count": 1,
+      "audit_executed": true,
+      "audit_categories": {
+        "formal_reachable": 675,
+        "test_only_reachable": 1,
+        "cli_callback_uncertain": 1512,
+        "private_no_calls": 0
+      },
+      "audit_records_sha256": "363a3dceedc9a4a2a1fe795e6f601d05ffc2e976568f2c65acd4fed4eb11b5aa",
+      "audit_record_count": 2188,
+      "stdout": "CONSUMER_AUDIT=STATIC_MODULE_REFERENCES AUTOMATIC_RETIREMENT=False FORMAL_REACHABLE=675 TEST_ONLY_REACHABLE=1 CLI_CALLBACK_UNCERTAIN=1512 PRIVATE_NO_CALLS=0\nDEVELOPMENT_STANDARDS=PASS ERRORS=0 REVIEW_SIGNALS=478\n",
+      "order": 4,
+      "pair": 2,
+      "version": "baseline",
+      "cli_args": [],
+      "started_utc": "2026-10-28T07:40:11.598146+00:00",
+      "process_wall_seconds": 26.96137840001029,
+      "process_exit_code": 0,
+      "stderr": "",
+      "command": [
+        "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\runner.py",
+        "--checker",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\versions\\baseline.py",
+        "--corpus",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\corpus",
+        "--result",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\run_4.json",
+        "--"
+      ],
+      "windows_command_line": "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\runner.py --checker C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\versions\\baseline.py --corpus C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\corpus --result C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\run_4.json --",
+      "hard_check_summary": "DEVELOPMENT_STANDARDS=PASS ERRORS=0 REVIEW_SIGNALS=478"
+    },
+    {
+      "exit_code": 0,
+      "main_seconds": 27.019579399988288,
+      "audit_call_count": 1,
+      "audit_executed": true,
+      "audit_categories": {
+        "formal_reachable": 675,
+        "test_only_reachable": 1,
+        "cli_callback_uncertain": 1512,
+        "private_no_calls": 0
+      },
+      "audit_records_sha256": "363a3dceedc9a4a2a1fe795e6f601d05ffc2e976568f2c65acd4fed4eb11b5aa",
+      "audit_record_count": 2188,
+      "stdout": "CONSUMER_AUDIT=STATIC_MODULE_REFERENCES AUTOMATIC_RETIREMENT=False FORMAL_REACHABLE=675 TEST_ONLY_REACHABLE=1 CLI_CALLBACK_UNCERTAIN=1512 PRIVATE_NO_CALLS=0\nDEVELOPMENT_STANDARDS=PASS ERRORS=0 REVIEW_SIGNALS=478\n",
+      "order": 5,
+      "pair": 3,
+      "version": "baseline",
+      "cli_args": [],
+      "started_utc": "2026-10-28T07:40:38.566617+00:00",
+      "process_wall_seconds": 27.19034069997724,
+      "process_exit_code": 0,
+      "stderr": "",
+      "command": [
+        "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\runner.py",
+        "--checker",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\versions\\baseline.py",
+        "--corpus",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\corpus",
+        "--result",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\run_5.json",
+        "--"
+      ],
+      "windows_command_line": "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\runner.py --checker C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\versions\\baseline.py --corpus C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\corpus --result C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\run_5.json --",
+      "hard_check_summary": "DEVELOPMENT_STANDARDS=PASS ERRORS=0 REVIEW_SIGNALS=478"
+    },
+    {
+      "exit_code": 0,
+      "main_seconds": 9.276895199989667,
+      "audit_call_count": 0,
+      "audit_executed": false,
+      "audit_categories": null,
+      "audit_records_sha256": null,
+      "audit_record_count": null,
+      "stdout": "CONSUMER_AUDIT=NOT_REQUESTED\nDEVELOPMENT_STANDARDS=PASS ERRORS=0 REVIEW_SIGNALS=478\n",
+      "order": 6,
+      "pair": 3,
+      "version": "current",
+      "cli_args": [],
+      "started_utc": "2026-10-28T07:41:05.767044+00:00",
+      "process_wall_seconds": 9.41947120000259,
+      "process_exit_code": 0,
+      "stderr": "",
+      "command": [
+        "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\runner.py",
+        "--checker",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\versions\\current.py",
+        "--corpus",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\corpus",
+        "--result",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\run_6.json",
+        "--"
+      ],
+      "windows_command_line": "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\runner.py --checker C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\versions\\current.py --corpus C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\corpus --result C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\run_6.json --",
+      "hard_check_summary": "DEVELOPMENT_STANDARDS=PASS ERRORS=0 REVIEW_SIGNALS=478"
+    },
+    {
+      "exit_code": 0,
+      "main_seconds": 19.426064900006168,
+      "audit_call_count": 1,
+      "audit_executed": true,
+      "audit_categories": {
+        "formal_reachable": 675,
+        "test_only_reachable": 1,
+        "cli_callback_uncertain": 1512,
+        "private_no_calls": 0
+      },
+      "audit_records_sha256": "363a3dceedc9a4a2a1fe795e6f601d05ffc2e976568f2c65acd4fed4eb11b5aa",
+      "audit_record_count": 2188,
+      "stdout": "CONSUMER_AUDIT=STATIC_MODULE_REFERENCES AUTOMATIC_RETIREMENT=False FORMAL_REACHABLE=675 TEST_ONLY_REACHABLE=1 CLI_CALLBACK_UNCERTAIN=1512 PRIVATE_NO_CALLS=0\nDEVELOPMENT_STANDARDS=PASS ERRORS=0 REVIEW_SIGNALS=478\n",
+      "order": 7,
+      "pair": null,
+      "version": "current",
+      "cli_args": [
+        "--audit-consumers"
+      ],
+      "started_utc": "2026-10-28T07:41:15.194565+00:00",
+      "process_wall_seconds": 19.61329320000368,
+      "process_exit_code": 0,
+      "stderr": "",
+      "command": [
+        "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\runner.py",
+        "--checker",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\versions\\current.py",
+        "--corpus",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\corpus",
+        "--result",
+        "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\run_7.json",
+        "--",
+        "--audit-consumers"
+      ],
+      "windows_command_line": "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\runner.py --checker C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\versions\\current.py --corpus C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\corpus --result C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_benchmark_20261028\\run_7.json -- --audit-consumers",
+      "hard_check_summary": "DEVELOPMENT_STANDARDS=PASS ERRORS=0 REVIEW_SIGNALS=478"
+    }
+  ],
+  "summary": {
+    "default_baseline_median_seconds": 27.19034069997724,
+    "default_current_median_seconds": 9.41947120000259,
+    "default_absolute_reduction_seconds": 17.77086949997465,
+    "default_relative_reduction_percent": 65.35728881098399,
+    "default_speedup_ratio": 2.886610099722983,
+    "all_exit_codes_zero": true,
+    "audit_records_all_equal": true,
+    "old_default_audit_calls": [
+      1,
+      1,
+      1
+    ],
+    "new_default_audit_calls": [
+      0,
+      0,
+      0
+    ],
+    "new_explicit_audit_categories": {
+      "formal_reachable": 675,
+      "test_only_reachable": 1,
+      "cli_callback_uncertain": 1512,
+      "private_no_calls": 0
+    },
+    "default_baseline_main_median_seconds": 27.019579399988288,
+    "default_current_main_median_seconds": 9.276895199989667,
+    "default_main_relative_reduction_percent": 65.66602661478258,
+    "default_main_speedup_ratio": 2.912567062309638,
+    "hard_check_summaries_equal": true,
+    "audit_full_record_sha256": "363a3dceedc9a4a2a1fe795e6f601d05ffc2e976568f2c65acd4fed4eb11b5aa",
+    "audit_full_record_count": 2188
+  },
+  "limitations": [
+    "Fresh interpreter per run, but filesystem caches were not flushed; fixed same-machine alternating order with only three pairs. No warm-up run.",
+    "Source corpus excludes non-consumed file types and historical/excluded directories; results characterize this frozen current-source input, not complete live-checkout filesystem traversal.",
+    "Process wall includes identical runner loading and audit observation/JSON instrumentation; main_seconds separately measures checker main call before record hashing/serialization.",
+    "Default speedup removes an optional report; it does not claim equal default features. Explicit new audit checked against baseline default full-record classification hash.",
+    "No simulation, PA, solver, full L1/L2, hook/staged timing, or cross-machine performance inference."
+  ],
+  "measurement_boundaries": {
+    "primary_comparable_checker_time": "main_seconds includes CLI argument parsing, all hard checks, optional audit computation and normal CLI output production; excludes module loading, post-main full-record hashing/comparison and measurement JSON serialization.",
+    "process_wall_seconds": "Parent perf_counter from independent process launch to termination; includes interpreter/module load and post-main observation serialization. Provided raw as requested; not used to conflate functional equality check with core-checker time."
+  },
+  "cleanup": {
+    "removed": [
+      "corpus/",
+      "versions/",
+      "runner.py",
+      "metadata.json",
+      "run_1.json..run_7.json"
+    ],
+    "retained": [
+      "measurement.json"
+    ],
+    "reproduction_note": "Each full Windows invocation and argv are in runs; runner source is in metadata.runner_source. Reconstruct a source corpus matching metadata.corpus_manifest_sha256 and checker bytes matching metadata.checker_sha256 before replay. Temporary corpus/checkers/scripts are intentionally removed after measurement."
+  }
+}

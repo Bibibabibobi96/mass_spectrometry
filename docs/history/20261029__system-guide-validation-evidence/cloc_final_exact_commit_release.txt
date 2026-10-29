@@ -1,0 +1,4 @@
+{
+  "status": "released",
+  "token": "acd2af126d894203b06888b85c999c43"
+}

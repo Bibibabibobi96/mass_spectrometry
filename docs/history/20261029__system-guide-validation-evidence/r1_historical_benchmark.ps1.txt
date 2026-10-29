@@ -1,0 +1,122 @@
+param([Parameter(Mandatory)][string]$RepositoryRoot)
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+$evidence=$PSScriptRoot
+$source=Join-Path $RepositoryRoot 'common/resource_budget_support.ps1'
+$baseline=Join-Path $evidence 'resource_budget_support_baseline.ps1'
+. $source
+$lease=Enter-HostResourceStage -Role GATE -Stage prepare -Budget (Get-HostResourceBudget -Role GATE -Stage prepare)
+$children=@()
+$loopStarted=$false
+$stopPath=Join-Path $evidence 'stop.txt'
+$started=[datetimeoffset]::UtcNow
+try {
+ $tokens=$null;$errors=$null
+ $baseAst=[Management.Automation.Language.Parser]::ParseFile($baseline,[ref]$tokens,[ref]$errors)
+ if($errors.Count){throw 'Baseline parse failed'}
+ $baseFunction=$baseAst.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Get-ManagedSolverProcessSample'},$true)
+ Set-Item Function:Get-BaselineManagedSolverProcessSample -Value $baseFunction.Body.GetScriptBlock()
+ $originalParents=${function:Get-HostResourceProcessParents}
+ function Get-Process {
+  [CmdletBinding()]param([int[]]$Id)
+  if($PSBoundParameters.ContainsKey('Id')){Microsoft.PowerShell.Management\Get-Process -Id $Id}
+  else{$script:processCalls++;Microsoft.PowerShell.Management\Get-Process}
+ }
+ function Get-CimInstance {
+  [CmdletBinding()]param([string]$ClassName)
+  if($ClassName-eq'Win32_Process'){$script:cimCalls++}
+  CimCmdlets\Get-CimInstance -ClassName $ClassName
+ }
+ function Get-HostResourceProcessParents {$script:parentCalls++;& $originalParents}
+ $script:processCalls=0;$script:cimCalls=0;$script:parentCalls=0
+ $exe=[Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+ foreach($index in 1..8){
+  $ready=Join-Path $evidence "ready$index.txt"
+  $worker="[IO.File]::WriteAllText('$ready','ready');`$deadline=[datetime]::UtcNow.AddMinutes(5);while(-not[IO.File]::Exists('$stopPath')-and[datetime]::UtcNow-lt`$deadline){[Threading.Thread]::Sleep(50)}"
+  $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($worker))
+  $children+=@(Start-Process -FilePath $exe -ArgumentList @('-NoProfile','-NonInteractive','-EncodedCommand',$encoded) -WindowStyle Hidden -PassThru)
+ }
+ $readyDeadline=[datetime]::UtcNow.AddSeconds(30)
+ while(@(Get-ChildItem -LiteralPath $evidence -Filter 'ready*.txt').Count-lt8){
+  if([datetime]::UtcNow-gt$readyDeadline){throw 'Inert workers did not become ready'}
+  Start-Sleep -Milliseconds 50
+ }
+ $roots=@($children|ForEach-Object {[pscustomobject]@{id=$_.Id;ticks=$_.StartTime.ToUniversalTime().Ticks}})
+ # Warm both paths once; omit these measurements from the recorded rounds.
+ $warm=Get-ManagedSolverProcessSample -RootProcessIds @($roots[0].id)
+ $warm=Get-BaselineManagedSolverProcessSample -RootProcessIds @($roots[0].id)
+ $measurements=@()
+ foreach($count in @(1,4,8)){
+  foreach($round in 1..3){
+   $order=if($round%2){@('BASE','NEW')}else{@('NEW','BASE')}
+   foreach($variant in $order){
+    $script:processCalls=0;$script:cimCalls=0;$script:parentCalls=0
+    $watch=[Diagnostics.Stopwatch]::StartNew()
+    $snapshot=$null
+    if($variant-eq'NEW'){$snapshot=Get-RepositoryProcessSnapshot}
+    foreach($root in @($roots|Select-Object -First $count)){
+     $arguments=@{RootProcessIds=@($root.id);RootProcessStartedAtUtcTicks=@{([string]$root.id)=$root.ticks}}
+     $sample=if($variant-eq'NEW'){Get-ManagedSolverProcessSample @arguments -ProcessSnapshot $snapshot}else{Get-BaselineManagedSolverProcessSample @arguments}
+     if($sample.active_process_ids-notcontains$root.id){throw 'Inert owner disappeared'}
+    }
+    $watch.Stop()
+    $measurements+=@{workers=$count;round=$round;variant=$variant;poll_elapsed_ms=$watch.Elapsed.TotalMilliseconds;
+      get_process_full=$script:processCalls;cim_process_full=$script:cimCalls;fallback_parent_snapshots=$script:parentCalls}
+   }
+  }
+ }
+ # Same live worker handles, now consume the actual dispatch loop until natural stop.
+ # The GATE lease owns this software fixture; no solver heavy grant is asserted.
+ function Assert-HostResourceHeavyStage {}
+ function Get-SystemCpuPercent {0.0}
+ function Get-RepositoryAvailableMemoryBytes {[int64](64GB)}
+ $originalSnapshot=${function:Get-RepositoryProcessSnapshot}
+ $script:pollStarts=[Collections.Generic.List[double]]::new()
+ $script:pollClock=[Diagnostics.Stopwatch]::StartNew()
+ function Get-RepositoryProcessSnapshot {
+  $script:pollStarts.Add($script:pollClock.Elapsed.TotalMilliseconds)
+  if($script:pollStarts.Count-eq3){[IO.File]::WriteAllText($stopPath,'stop')}
+  & $originalSnapshot
+ }
+ $records=@()
+ foreach($child in $children){
+  $records+=@([pscustomobject]@{name="inert$($child.Id)";process=$child;specification=[pscustomobject]@{file_path=$exe};
+   root_process_id=$child.Id;root_process_started_at_utc_ticks=$child.StartTime.ToUniversalTime().Ticks;
+   tracked_process_ids=@($child.Id);started_at=[datetimeoffset]::UtcNow;active=$true;completed=$false;exit_code=$null;
+   pressure_terminated=$false;peak_working_set_bytes=0;peak_managed_memory_bytes=0;
+   completed_during_observation=$false;observed_process_cpu_percent=0;observed_background_cpu_percent=0})
+ }
+ $dispatch=Join-Path $evidence 'dispatch.json'
+ @{role='simion_repository_dispatch_plan';estimation=@{kind='software_fixture'};
+  limits=@{maximum_concurrency=8;launch_stagger_seconds=5;memory_critical_seconds=15;
+   memory_recovery_stable_seconds=45;maximum_memory_recovery_attempts=2;maximum_memory_danger_termination_attempts=2;
+   memory_admission_reserve_bytes=1GB;memory_critical_reserve_bytes=512MB;cpu_admission_percent=95;minimum_process_cpu_percent=6.25}}
+ |ConvertTo-Json -Depth 8|Set-Content -LiteralPath $dispatch -Encoding utf8
+ $script:processCalls=0;$script:cimCalls=0;$script:parentCalls=0
+ $script:pollClock.Restart()
+ $loopStarted=$true
+ $wave=Invoke-ResourceBudgetedProcesses -DispatchPlanPath $dispatch -RunDir $evidence -UsagePath (Join-Path $evidence 'usage.json') -ProcessSpecifications @() -ExistingProcessRecords $records
+ $script:pollClock.Stop()
+ if($wave.processes.Count-ne8-or@($wave.processes|Where-Object exit_code -ne 0).Count){throw 'Natural inert completion failed'}
+ $intervals=@();for($index=1;$index-lt$script:pollStarts.Count;$index++){$intervals+=@($script:pollStarts[$index]-$script:pollStarts[$index-1])}
+ $report=[ordered]@{started_utc=$started.ToString('o');ended_utc=[datetimeoffset]::UtcNow.ToString('o');
+  baseline_sha256=(Get-FileHash -LiteralPath $baseline -Algorithm SHA256).Hash;
+  result_sha256=(Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash;
+  powershell_version=[string]$PSVersionTable.PSVersion;machine=$env:COMPUTERNAME;logical_processors=[Environment]::ProcessorCount;
+  cpu_name=@(CimCmdlets\Get-CimInstance -ClassName Win32_Processor|ForEach-Object Name);
+  measurement_scope='Collector (NEW only) plus identical family-sampling foreach; excludes sleeps, launch, admission and output writes';
+  counters_include_wrapper_dispatch=$true;warmup_pairs=1;rounds_per_worker_count=3;workers=$roots;
+  measurements=$measurements;actual_scheduler=@{workers=8;poll_count=$script:pollStarts.Count;
+   poll_start_intervals_ms=$intervals;whole_wave_elapsed_ms=$script:pollClock.Elapsed.TotalMilliseconds;
+   get_process_full=$script:processCalls;cim_process_full=$script:cimCalls;fallback_parent_snapshots=$script:parentCalls;
+   includes_sleep_ms_per_active_poll=500;all_workers_natural_exit_zero=$true;
+   fixture_seams=@('GATE-owned inert workers, no solver heavy grant','fixed safe memory/CPU to avoid admission variability')}}
+ $report|ConvertTo-Json -Depth 12|Set-Content -LiteralPath (Join-Path $evidence 'measurement.json') -Encoding utf8
+ Write-Output ('MEASUREMENT='+ (Join-Path $evidence 'measurement.json'))
+} finally {
+ [IO.File]::WriteAllText($stopPath,'stop')
+ if($loopStarted){
+  foreach($record in $records){if(-not$record.completed){$record.process.WaitForExit();$record.process.Dispose()}}
+ }else{foreach($child in $children){$child.WaitForExit();$child.Dispose()}}
+ Exit-HostResourceStage -Lease $lease
+}

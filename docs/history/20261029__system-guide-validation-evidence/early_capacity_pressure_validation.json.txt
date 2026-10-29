@@ -1,0 +1,54 @@
+{
+  "topic": "Protected maintenance followed by one fresh admission after workflow capacity pressure",
+  "source_baseline_commit": "4d8cbb21",
+  "source_result": "WORKTREE",
+  "scope": "Two production files and two existing Python test modules; no Git writes, production artifact maintenance/deletion, commercial tool, or full L1/L2 by Agent 3",
+  "frozen_files": [
+    {"path": "common/contracts/run_artifact_support.ps1", "bytes": 51108, "sha256": "45b71950332c04d0beb368e2041493f83a2c85ce849dd08e1f8d005a644c43e2"},
+    {"path": "common/contracts/reconcile_artifact_capacity.py", "bytes": 81448, "sha256": "3fc8cb2caed29a928e23aa0fc7598943b84e430358e35a211f79bc543f354315"},
+    {"path": "common/contracts/test_capacity_reconcile_runtime.py", "bytes": 46740, "sha256": "1281ecbed22855100caff63931b7669b3e28f9cc28973ee20dc1b3e6081781d1"},
+    {"path": "common/contracts/test_capacity_maintenance_orchestration.py", "bytes": 27261, "sha256": "8fe03b2cd41906f28c211c70b01d47780839cd524d754af9d932b4e3e31fb259"}
+  ],
+  "implementation": [
+    "Only a structured startup receipt with matching role, mode and lease ID and TARGET_CAPACITY_EXCEEDED or MINIMUM_FREE_CAPACITY_UNAVAILABLE allows one maintenance attempt.",
+    "Renew the existing lease before maintenance and before fresh startup; preserve owner, TTL, closure deadline, scope and commitment. No expired lease revival, retry loop, or policy-watermark override.",
+    "Protected maintenance runs normal startup preflight before any owner mutation and checks current active lease/scope before each owner and each planned deletion. All active commitments use the existing plan total once.",
+    "Native capacity errors retain exit code and bounded stdout/stderr. Initial reason, later error, stage, inner exception and capacity cleanup are traceable. Host release failure preserves the original error and terminates pressure recovery.",
+    "Direct Invoke-ArtifactCapacityGate remains a single decision. Enter and raised-commitment Update use the workflow owner recovery helper. Copy-VerifiedRunInput and other project APIs were not changed."
+  ],
+  "validation": [
+    {"name": "Pre-change real public Enter session", "result": "Expected TARGET_CAPACITY_EXCEEDED; provisional lease released and protected input retained", "seconds": 4.2162901, "timing_scope": "Whole rejected Enter plus cleanup, impossible commitment of policy target plus 1 GiB", "evidence": "capacity_pressure_baseline.json"},
+    {"name": "Initial new real pressure matrix", "result": "8 of 9 scenarios passed; renewal-failure diagnostics were lost", "seconds": 76.816, "use": "Diagnostic only; corrected native error propagation and then reran fixed-source verification"},
+    {"name": "Existing PowerShell run artifact support suite", "command": "pwsh -NoProfile -File common/contracts/test_run_artifact_support.ps1", "result": "exit 0, RUN_ARTIFACT_SUPPORT=PASS", "timing_scope": "Not instrumented; no duration claimed", "source_boundary": "After shared native-command helper, before final error-message and host-release-only changes"},
+    {"name": "Two complete targeted Python modules", "command": ".venv/Scripts/python.exe -m unittest common.contracts.test_capacity_reconcile_runtime common.contracts.test_capacity_maintenance_orchestration -v", "result": "35 tests PASS, no skips", "seconds": 98.172, "source_boundary": "Before final message and host-release-only changes", "evidence": "capacity_pressure_focused.txt"},
+    {"name": "Final real pressure matrix after message preservation", "command": ".venv/Scripts/python.exe -m unittest common.contracts.test_capacity_reconcile_runtime.DailyCapacityReconcileTest.test_workflow_pressure_relief_uses_one_protected_pass_and_fresh_admission -v", "result": "1 method / 11 subtest scenarios PASS, no skips", "seconds": 95.311, "source_boundary": "Before subsequent host-release-only change; unchanged real matrix was not redundantly rerun", "evidence": "capacity_pressure_final_matrix.txt"},
+    {"name": "Host-release regression before fix", "command": ".venv/Scripts/python.exe -m unittest common.contracts.test_capacity_reconcile_runtime.DailyCapacityReconcileTest.test_host_release_failure_preserves_original_error_and_stops_pressure_recovery -v", "result": "1 method / 5 scenarios; 4 fail, 1 passes", "seconds": 0.857, "ps_source_sha256": "d8028600b74b06c567b423081598061fb2cc124edf72d3b549aaad8f582ca3cf", "evidence": "capacity_host_release_red.txt"},
+    {"name": "Host-release regression after fix", "command": ".venv/Scripts/python.exe -m unittest common.contracts.test_capacity_reconcile_runtime.DailyCapacityReconcileTest.test_host_release_failure_preserves_original_error_and_stops_pressure_recovery -v", "result": "1 method / 5 scenarios PASS, no skips", "seconds": 0.746, "evidence": "capacity_host_release_green.txt"},
+    {"name": "Final static checks", "result": "Ruff on all three changed Python files, PowerShell parser, and git diff --check PASS"},
+    {"name": "Independent Agent 2 source review", "result": "Both production changes and final host-release increment reviewed read-only; no blocking issue; reviewer did not rerun tests"}
+  ],
+  "real_temp_matrix": {
+    "fixture": "Real PowerShell workflow API and Python public capacity CLI, v3 TEMP ledger, isolated host SQLite, 4-byte protected input, 8-byte disposable payload, 2-byte commitment; only fixture driver scales capacity policy",
+    "scenarios": ["accepted", "still_full", "minimum_free", "unrelated_owner_failure", "invalid_ledger", "invalid_lease", "missing_scope", "maintenance_failure", "renewal_failure", "expired_before_renewal", "cleanup_failure"],
+    "success_measurements": "Initial projected 14 bytes exceeds target 10; maintenance removes exactly 8 bytes; fresh projected 6 includes commitment 2 once. Target 5 remains blocked. Input preserved throughout.",
+    "counts": "One maintenance CLI and two startup CLIs when recovery reaches re-admission; invalid state and native/renewal faults stop earlier. Internal protected-maintenance preflight is an additional startup plan and is not hidden in these CLI counts.",
+    "protection": "Active lease and protected input checked at owner/target boundaries. Expired-before-renewal uses actual expired lease data and actual renewal rejection. Cleanup failure retains provisional lease and original error until fixture teardown.",
+    "recovery_boundaries": "The real matrix exercises Enter; raised-commitment Update shares the same recovery helper and existing PowerShell tests cover its conservative commitment behavior. No new real raised-commitment pressure matrix was run."
+  },
+  "timing_interpretation": "Baseline Enter failure and current full regression-method duration measure different workloads. They are not a before/after speed comparison; no speed ratio or per-admission latency is inferred. Improvement proved here is correct protected recovery and failure closure, not faster maintenance.",
+  "remaining_boundaries": [
+    "No heartbeat or owner-internal cancellation callback was introduced. Lease validity is enforced before each next action; this does not claim protection across an arbitrarily long single owner action after TTL expiry.",
+    "Sealed terminal subset reseal and per-object isolation within a historical owner remain next required full-goal themes, prepared in capacity_next_closeout_preparation.md.",
+    "Source assertions and stub host-release cases do not constitute production artifact maintenance or commercial-solver verification.",
+    "README integration and required repository CLOC report belong to Agent 0; no standalone replacement documentation or ad hoc line counter was created."
+  ],
+  "documentation_proposal": "capacity_pressure_readme_delta.md",
+  "cleanup": {
+    "test_fixture_roots": "TemporaryDirectory and PowerShell test finally cleanup completed for regression fixtures",
+    "refused_targets": [
+      {"path": "C:/Users/Liao/AppData/Local/Temp/capacity-pressure-baseline-1f3bd056a8cb4d4c8561dd7610d477d5", "files": 4, "logical_bytes": 8532, "action": "Verified exact task-owned TEMP root; native PowerShell recursive deletion rejected before execution", "reason": "blocked by policy"},
+      {"path": "C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6/capacity_host_release_probe.ps1", "files": 1, "logical_bytes": 2655, "sha256": "062569eb0cadb7e490f2068ec48e26b695f731533cbbe32cffa7607209cb482f", "action": "Native PowerShell nonrecursive exact-file deletion rejected before execution", "reason": "blocked by policy"}
+    ],
+    "response_to_refusal": "Retained and reported; no alternate tool, retry, or policy workaround. Earlier refused benchmark/scheduler targets were not touched."
+  }
+}

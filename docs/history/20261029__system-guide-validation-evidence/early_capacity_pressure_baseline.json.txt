@@ -1,0 +1,12 @@
+{
+  "case": "real public Enter session, startup pressure rejects, catch releases provisional lease",
+  "source": "pre-change current repository",
+  "fixture_root": "C:\\Users\\Liao\\AppData\\Local\\Temp\\capacity-pressure-baseline-1f3bd056a8cb4d4c8561dd7610d477d5",
+  "artifact_root": "C:\\Users\\Liao\\AppData\\Local\\Temp\\capacity-pressure-baseline-1f3bd056a8cb4d4c8561dd7610d477d5\\artifacts",
+  "committed_new_bytes": 752693018624,
+  "failure": "Artifact capacity gate blocked startup: TARGET_CAPACITY_EXCEEDED; resident_bytes=0; active_commitment_bytes=752693018624; projected_bytes=752693018624; target_bytes=751619276800",
+  "lease_json_count_after_failure": 0,
+  "input_preserved": true,
+  "elapsed_seconds": 4.2162901,
+  "real_artifact_maintenance": false
+}

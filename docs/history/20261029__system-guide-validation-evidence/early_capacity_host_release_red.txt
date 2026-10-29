@@ -1,0 +1,42 @@
+test_host_release_failure_preserves_original_error_and_stops_pressure_recovery (common.contracts.test_capacity_reconcile_runtime.DailyCapacityReconcileTest.test_host_release_failure_preserves_original_error_and_stops_pressure_recovery) ... 
+  test_host_release_failure_preserves_original_error_and_stops_pressure_recovery (common.contracts.test_capacity_reconcile_runtime.DailyCapacityReconcileTest.test_host_release_failure_preserves_original_error_and_stops_pressure_recovery) (scenario='receipt') ... FAIL
+  test_host_release_failure_preserves_original_error_and_stops_pressure_recovery (common.contracts.test_capacity_reconcile_runtime.DailyCapacityReconcileTest.test_host_release_failure_preserves_original_error_and_stops_pressure_recovery) (scenario='native') ... FAIL
+  test_host_release_failure_preserves_original_error_and_stops_pressure_recovery (common.contracts.test_capacity_reconcile_runtime.DailyCapacityReconcileTest.test_host_release_failure_preserves_original_error_and_stops_pressure_recovery) (scenario='workflow_initial') ... FAIL
+  test_host_release_failure_preserves_original_error_and_stops_pressure_recovery (common.contracts.test_capacity_reconcile_runtime.DailyCapacityReconcileTest.test_host_release_failure_preserves_original_error_and_stops_pressure_recovery) (scenario='workflow') ... FAIL
+
+======================================================================
+FAIL: test_host_release_failure_preserves_original_error_and_stops_pressure_recovery (common.contracts.test_capacity_reconcile_runtime.DailyCapacityReconcileTest.test_host_release_failure_preserves_original_error_and_stops_pressure_recovery) (scenario='receipt')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\mass_spectrometry\simulation_repo\common\contracts\test_capacity_reconcile_runtime.py", line 108, in test_host_release_failure_preserves_original_error_and_stops_pressure_recovery
+    self.assertEqual(result["cleanup"], {"status": "failed", "error": "fixture host release failure"})
+AssertionError: None != {'status': 'failed', 'error': 'fixture host release failure'}
+
+======================================================================
+FAIL: test_host_release_failure_preserves_original_error_and_stops_pressure_recovery (common.contracts.test_capacity_reconcile_runtime.DailyCapacityReconcileTest.test_host_release_failure_preserves_original_error_and_stops_pressure_recovery) (scenario='native')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\mass_spectrometry\simulation_repo\common\contracts\test_capacity_reconcile_runtime.py", line 108, in test_host_release_failure_preserves_original_error_and_stops_pressure_recovery
+    self.assertEqual(result["cleanup"], {"status": "failed", "error": "fixture host release failure"})
+AssertionError: None != {'status': 'failed', 'error': 'fixture host release failure'}
+
+======================================================================
+FAIL: test_host_release_failure_preserves_original_error_and_stops_pressure_recovery (common.contracts.test_capacity_reconcile_runtime.DailyCapacityReconcileTest.test_host_release_failure_preserves_original_error_and_stops_pressure_recovery) (scenario='workflow_initial')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\mass_spectrometry\simulation_repo\common\contracts\test_capacity_reconcile_runtime.py", line 108, in test_host_release_failure_preserves_original_error_and_stops_pressure_recovery
+    self.assertEqual(result["cleanup"], {"status": "failed", "error": "fixture host release failure"})
+AssertionError: None != {'status': 'failed', 'error': 'fixture host release failure'}
+
+======================================================================
+FAIL: test_host_release_failure_preserves_original_error_and_stops_pressure_recovery (common.contracts.test_capacity_reconcile_runtime.DailyCapacityReconcileTest.test_host_release_failure_preserves_original_error_and_stops_pressure_recovery) (scenario='workflow')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Liao\mass_spectrometry\simulation_repo\common\contracts\test_capacity_reconcile_runtime.py", line 108, in test_host_release_failure_preserves_original_error_and_stops_pressure_recovery
+    self.assertEqual(result["cleanup"], {"status": "failed", "error": "fixture host release failure"})
+AssertionError: None != {'status': 'failed', 'error': 'fixture host release failure'}
+
+----------------------------------------------------------------------
+Ran 1 test in 0.857s
+
+FAILED (failures=4)

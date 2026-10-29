@@ -1,0 +1,233 @@
+{
+  "started_utc": "2026-10-28T17:52:07.6887714+00:00",
+  "ended_utc": "2026-10-28T17:53:21.3415642+00:00",
+  "baseline_sha256": "2FC61478A2C4DB58A94C10DC711DBA14ED602F573C5C61D2A90A61E23C0F55BE",
+  "result_sha256": "ACF58615467C31FB571548362D68B63D23268A232BF6F9C16D771770D9D9E569",
+  "powershell_version": "7.6.9",
+  "machine": null,
+  "logical_processors": 16,
+  "cpu_name": [
+    "Intel(R) Core(TM) i9-9900K CPU @ 3.60GHz"
+  ],
+  "measurement_scope": "Collector (NEW only) plus identical family-sampling foreach; excludes sleeps, launch, admission and output writes",
+  "counters_include_wrapper_dispatch": true,
+  "warmup_pairs": 1,
+  "rounds_per_worker_count": 3,
+  "workers": [
+    {
+      "id": 19044,
+      "ticks": 639288067277690289
+    },
+    {
+      "id": 32632,
+      "ticks": 639288067277867135
+    },
+    {
+      "id": 24648,
+      "ticks": 639288067278068828
+    },
+    {
+      "id": 40008,
+      "ticks": 639288067278319213
+    },
+    {
+      "id": 28348,
+      "ticks": 639288067278574205
+    },
+    {
+      "id": 23464,
+      "ticks": 639288067278817920
+    },
+    {
+      "id": 28368,
+      "ticks": 639288067279101660
+    },
+    {
+      "id": 34576,
+      "ticks": 639288067279362066
+    }
+  ],
+  "measurements": [
+    {
+      "poll_elapsed_ms": 310.8723,
+      "workers": 1,
+      "fallback_parent_snapshots": 0,
+      "cim_process_full": 1,
+      "variant": "BASE",
+      "round": 1,
+      "get_process_full": 1
+    },
+    {
+      "poll_elapsed_ms": 281.479,
+      "workers": 1,
+      "fallback_parent_snapshots": 0,
+      "cim_process_full": 1,
+      "variant": "NEW",
+      "round": 1,
+      "get_process_full": 1
+    },
+    {
+      "poll_elapsed_ms": 267.4477,
+      "workers": 1,
+      "fallback_parent_snapshots": 0,
+      "cim_process_full": 1,
+      "variant": "NEW",
+      "round": 2,
+      "get_process_full": 1
+    },
+    {
+      "poll_elapsed_ms": 261.9704,
+      "workers": 1,
+      "fallback_parent_snapshots": 0,
+      "cim_process_full": 1,
+      "variant": "BASE",
+      "round": 2,
+      "get_process_full": 1
+    },
+    {
+      "poll_elapsed_ms": 259.7316,
+      "workers": 1,
+      "fallback_parent_snapshots": 0,
+      "cim_process_full": 1,
+      "variant": "BASE",
+      "round": 3,
+      "get_process_full": 1
+    },
+    {
+      "poll_elapsed_ms": 262.7736,
+      "workers": 1,
+      "fallback_parent_snapshots": 0,
+      "cim_process_full": 1,
+      "variant": "NEW",
+      "round": 3,
+      "get_process_full": 1
+    },
+    {
+      "poll_elapsed_ms": 1021.9595,
+      "workers": 4,
+      "fallback_parent_snapshots": 0,
+      "cim_process_full": 4,
+      "variant": "BASE",
+      "round": 1,
+      "get_process_full": 4
+    },
+    {
+      "poll_elapsed_ms": 720.9326,
+      "workers": 4,
+      "fallback_parent_snapshots": 0,
+      "cim_process_full": 1,
+      "variant": "NEW",
+      "round": 1,
+      "get_process_full": 1
+    },
+    {
+      "poll_elapsed_ms": 654.4318,
+      "workers": 4,
+      "fallback_parent_snapshots": 0,
+      "cim_process_full": 1,
+      "variant": "NEW",
+      "round": 2,
+      "get_process_full": 1
+    },
+    {
+      "poll_elapsed_ms": 905.9979,
+      "workers": 4,
+      "fallback_parent_snapshots": 0,
+      "cim_process_full": 4,
+      "variant": "BASE",
+      "round": 2,
+      "get_process_full": 4
+    },
+    {
+      "poll_elapsed_ms": 962.1824,
+      "workers": 4,
+      "fallback_parent_snapshots": 0,
+      "cim_process_full": 4,
+      "variant": "BASE",
+      "round": 3,
+      "get_process_full": 4
+    },
+    {
+      "poll_elapsed_ms": 658.2779,
+      "workers": 4,
+      "fallback_parent_snapshots": 0,
+      "cim_process_full": 1,
+      "variant": "NEW",
+      "round": 3,
+      "get_process_full": 1
+    },
+    {
+      "poll_elapsed_ms": 1716.0685,
+      "workers": 8,
+      "fallback_parent_snapshots": 0,
+      "cim_process_full": 8,
+      "variant": "BASE",
+      "round": 1,
+      "get_process_full": 8
+    },
+    {
+      "poll_elapsed_ms": 1128.9888,
+      "workers": 8,
+      "fallback_parent_snapshots": 0,
+      "cim_process_full": 1,
+      "variant": "NEW",
+      "round": 1,
+      "get_process_full": 1
+    },
+    {
+      "poll_elapsed_ms": 1118.5178,
+      "workers": 8,
+      "fallback_parent_snapshots": 0,
+      "cim_process_full": 1,
+      "variant": "NEW",
+      "round": 2,
+      "get_process_full": 1
+    },
+    {
+      "poll_elapsed_ms": 1730.3419,
+      "workers": 8,
+      "fallback_parent_snapshots": 0,
+      "cim_process_full": 8,
+      "variant": "BASE",
+      "round": 2,
+      "get_process_full": 8
+    },
+    {
+      "poll_elapsed_ms": 1769.3637,
+      "workers": 8,
+      "fallback_parent_snapshots": 0,
+      "cim_process_full": 8,
+      "variant": "BASE",
+      "round": 3,
+      "get_process_full": 8
+    },
+    {
+      "poll_elapsed_ms": 1122.3315,
+      "workers": 8,
+      "fallback_parent_snapshots": 0,
+      "cim_process_full": 1,
+      "variant": "NEW",
+      "round": 3,
+      "get_process_full": 1
+    }
+  ],
+  "actual_scheduler": {
+    "all_workers_natural_exit_zero": true,
+    "whole_wave_elapsed_ms": 57098.3365,
+    "includes_sleep_ms_per_active_poll": 500,
+    "workers": 8,
+    "poll_start_intervals_ms": [
+      1895.7086000000002,
+      1650.1308,
+      52342.611999999994
+    ],
+    "fixture_seams": [
+      "GATE-owned inert workers, no solver heavy grant",
+      "fixed safe memory/CPU to avoid admission variability"
+    ],
+    "poll_count": 4,
+    "fallback_parent_snapshots": 0,
+    "get_process_full": 4,
+    "cim_process_full": 4
+  }
+}

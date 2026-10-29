@@ -1,0 +1,271 @@
+{
+  "status": "complete",
+  "started_utc": "2026-10-29T00:16:52.6298282+00:00",
+  "ended_utc": "2026-10-29T00:18:59.9161773+00:00",
+  "baseline_sha256": "2FC61478A2C4DB58A94C10DC711DBA14ED602F573C5C61D2A90A61E23C0F55BE",
+  "result_sha256": "423D4C42FCAAEE51857D40BEA3550F0A3C02D87937C419594C52B8F2BEFA7473",
+  "baseline_origin": "Original 80292-byte mixed WORKTREE snapshot, not Git 3005980",
+  "source_files": [
+    "resource_budget_support_baseline.ps1",
+    "resource_budget_support_current.ps1"
+  ],
+  "shared_owner_sha256": "96D31EA2A7ABD551C8AC4C6B57A8E6FC94AF6F96A569568D392284FACCE4E75E",
+  "shared_policy_sha256": "8BCE1142A08D344B9A927234AB5BF5CD765A4CA9686E3DDE5B94AB1DD69BD86D",
+  "powershell_version": "7.6.9",
+  "machine": null,
+  "logical_processors": 16,
+  "cpu_name": [
+    "Intel(R) Core(TM) i9-9900K CPU @ 3.60GHz"
+  ],
+  "measurement_scope": "Collector (NEW only) plus identical family-sampling foreach; excludes sleeps, launch, admission, dictionary fixture and output writes",
+  "counters_include_wrapper_dispatch": true,
+  "warmup_pairs": 1,
+  "rounds_per_worker_count": 3,
+  "workers": [
+    {
+      "id": 40592,
+      "ticks": 639288298969556921
+    },
+    {
+      "id": 36800,
+      "ticks": 639288298969823798
+    },
+    {
+      "id": 1752,
+      "ticks": 639288298970110820
+    },
+    {
+      "id": 44840,
+      "ticks": 639288298970448813
+    },
+    {
+      "id": 40920,
+      "ticks": 639288298970739829
+    },
+    {
+      "id": 38244,
+      "ticks": 639288298971059002
+    },
+    {
+      "id": 476,
+      "ticks": 639288298971343472
+    },
+    {
+      "id": 42436,
+      "ticks": 639288298971860314
+    }
+  ],
+  "measurements": [
+    {
+      "cim_process_full": 1,
+      "round": 1,
+      "workers": 1,
+      "fallback_parent_snapshots": 0,
+      "get_process_full": 1,
+      "poll_elapsed_ms": 463.6457,
+      "variant": "BASE"
+    },
+    {
+      "cim_process_full": 1,
+      "round": 1,
+      "workers": 1,
+      "fallback_parent_snapshots": 0,
+      "get_process_full": 1,
+      "poll_elapsed_ms": 1460.3026,
+      "variant": "NEW"
+    },
+    {
+      "cim_process_full": 1,
+      "round": 2,
+      "workers": 1,
+      "fallback_parent_snapshots": 0,
+      "get_process_full": 1,
+      "poll_elapsed_ms": 456.7082,
+      "variant": "NEW"
+    },
+    {
+      "cim_process_full": 1,
+      "round": 2,
+      "workers": 1,
+      "fallback_parent_snapshots": 0,
+      "get_process_full": 1,
+      "poll_elapsed_ms": 386.2905,
+      "variant": "BASE"
+    },
+    {
+      "cim_process_full": 1,
+      "round": 3,
+      "workers": 1,
+      "fallback_parent_snapshots": 0,
+      "get_process_full": 1,
+      "poll_elapsed_ms": 397.6261,
+      "variant": "BASE"
+    },
+    {
+      "cim_process_full": 1,
+      "round": 3,
+      "workers": 1,
+      "fallback_parent_snapshots": 0,
+      "get_process_full": 1,
+      "poll_elapsed_ms": 404.489,
+      "variant": "NEW"
+    },
+    {
+      "cim_process_full": 4,
+      "round": 1,
+      "workers": 4,
+      "fallback_parent_snapshots": 0,
+      "get_process_full": 4,
+      "poll_elapsed_ms": 4035.6714,
+      "variant": "BASE"
+    },
+    {
+      "cim_process_full": 1,
+      "round": 1,
+      "workers": 4,
+      "fallback_parent_snapshots": 0,
+      "get_process_full": 1,
+      "poll_elapsed_ms": 1023.5216,
+      "variant": "NEW"
+    },
+    {
+      "cim_process_full": 1,
+      "round": 2,
+      "workers": 4,
+      "fallback_parent_snapshots": 0,
+      "get_process_full": 1,
+      "poll_elapsed_ms": 998.2443,
+      "variant": "NEW"
+    },
+    {
+      "cim_process_full": 4,
+      "round": 2,
+      "workers": 4,
+      "fallback_parent_snapshots": 0,
+      "get_process_full": 4,
+      "poll_elapsed_ms": 2519.0043,
+      "variant": "BASE"
+    },
+    {
+      "cim_process_full": 4,
+      "round": 3,
+      "workers": 4,
+      "fallback_parent_snapshots": 0,
+      "get_process_full": 4,
+      "poll_elapsed_ms": 2787.6528,
+      "variant": "BASE"
+    },
+    {
+      "cim_process_full": 1,
+      "round": 3,
+      "workers": 4,
+      "fallback_parent_snapshots": 0,
+      "get_process_full": 1,
+      "poll_elapsed_ms": 1192.7369,
+      "variant": "NEW"
+    },
+    {
+      "cim_process_full": 8,
+      "round": 1,
+      "workers": 8,
+      "fallback_parent_snapshots": 0,
+      "get_process_full": 8,
+      "poll_elapsed_ms": 4964.3207,
+      "variant": "BASE"
+    },
+    {
+      "cim_process_full": 1,
+      "round": 1,
+      "workers": 8,
+      "fallback_parent_snapshots": 0,
+      "get_process_full": 1,
+      "poll_elapsed_ms": 1916.7476,
+      "variant": "NEW"
+    },
+    {
+      "cim_process_full": 1,
+      "round": 2,
+      "workers": 8,
+      "fallback_parent_snapshots": 0,
+      "get_process_full": 1,
+      "poll_elapsed_ms": 2777.378,
+      "variant": "NEW"
+    },
+    {
+      "cim_process_full": 8,
+      "round": 2,
+      "workers": 8,
+      "fallback_parent_snapshots": 0,
+      "get_process_full": 8,
+      "poll_elapsed_ms": 4743.3234,
+      "variant": "BASE"
+    },
+    {
+      "cim_process_full": 8,
+      "round": 3,
+      "workers": 8,
+      "fallback_parent_snapshots": 0,
+      "get_process_full": 8,
+      "poll_elapsed_ms": 4766.7381,
+      "variant": "BASE"
+    },
+    {
+      "cim_process_full": 1,
+      "round": 3,
+      "workers": 8,
+      "fallback_parent_snapshots": 0,
+      "get_process_full": 1,
+      "poll_elapsed_ms": 2379.6709,
+      "variant": "NEW"
+    }
+  ],
+  "worker_completion": [
+    {
+      "exit_confirmed": true,
+      "pid": 40592,
+      "returncode": 0
+    },
+    {
+      "exit_confirmed": true,
+      "pid": 36800,
+      "returncode": 0
+    },
+    {
+      "exit_confirmed": true,
+      "pid": 1752,
+      "returncode": 0
+    },
+    {
+      "exit_confirmed": true,
+      "pid": 44840,
+      "returncode": 0
+    },
+    {
+      "exit_confirmed": true,
+      "pid": 40920,
+      "returncode": 0
+    },
+    {
+      "exit_confirmed": true,
+      "pid": 38244,
+      "returncode": 0
+    },
+    {
+      "exit_confirmed": true,
+      "pid": 476,
+      "returncode": 0
+    },
+    {
+      "exit_confirmed": true,
+      "pid": 42436,
+      "returncode": 0
+    }
+  ],
+  "gate_release": {
+    "status": "released",
+    "token": "3c507da5e0d149dbae438c9e97ce015c"
+  },
+  "all_workers_natural_exit_zero": true,
+  "whole_dispatch_executed": false,
+  "error": null
+}

@@ -1,0 +1,58 @@
+{
+  "role": "one_time_r1_frozen_sampling_remeasurement_preparation",
+  "prepared_at_utc": "2026-10-29T00:10:58.102693+00:00",
+  "execution_status": "NOT_RUN; root reviews before measuring",
+  "old_evidence_directory": "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_r1_process_snapshot_20261029",
+  "central_resource_state_path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\common\\host_resources.sqlite3",
+  "shared_owner_sha256": "96D31EA2A7ABD551C8AC4C6B57A8E6FC94AF6F96A569568D392284FACCE4E75E",
+  "shared_policy_sha256": "8BCE1142A08D344B9A927234AB5BF5CD765A4CA9686E3DDE5B94AB1DD69BD86D",
+  "frozen_files": [
+    {
+      "path": "benchmark.ps1",
+      "bytes": 8518,
+      "sha256": "FDA00BD9A230DDEABBBA6E572977FDBF35F7944B6DC6E9F15A3819274D72FF12"
+    },
+    {
+      "path": "resource_budget_support_baseline.ps1",
+      "bytes": 80292,
+      "sha256": "2FC61478A2C4DB58A94C10DC711DBA14ED602F573C5C61D2A90A61E23C0F55BE"
+    },
+    {
+      "path": "resource_budget_support_current.ps1",
+      "bytes": 82265,
+      "sha256": "423D4C42FCAAEE51857D40BEA3550F0A3C02D87937C419594C52B8F2BEFA7473"
+    },
+    {
+      "path": "shared_host_execution_lease.ps1.txt",
+      "bytes": 30664,
+      "sha256": "96D31EA2A7ABD551C8AC4C6B57A8E6FC94AF6F96A569568D392284FACCE4E75E"
+    },
+    {
+      "path": "shared_host_resource_policy.json.txt",
+      "bytes": 7014,
+      "sha256": "8BCE1142A08D344B9A927234AB5BF5CD765A4CA9686E3DDE5B94AB1DD69BD86D"
+    },
+    {
+      "path": "synthetic_equivalence.ps1",
+      "bytes": 3618,
+      "sha256": "6F8A2F69E9903D6F0169B77535A6A9CDA7B9CC03A93127B92B32D18B9B76E2DA"
+    }
+  ],
+  "changes_from_old": [
+    "NEW is exact full frozen source; BASE remains original mixed snapshot",
+    "same 1/4/8 worker counts, 3 alternating pairs, 1 warm-up pair",
+    "six complete dictionaries use same frozen arms before timing",
+    "remove whole-dispatch experiment and its safe-admission stubs",
+    "natural same-handle worker wait and actual public GATE release recorded outside stopwatch"
+  ],
+  "old_author": {
+    "path": "benchmark.ps1",
+    "bytes": 7984,
+    "sha256": "0FBEE3E871835F79C39094AEE4B14668B6FBD4D66BEFF19606760BF5FD7CE46A"
+  },
+  "normal_cim_probe": {
+    "status": "PASS",
+    "process_count": 368,
+    "scope": "read-only one Win32_Process query; not the benchmark or resource admission"
+  }
+}

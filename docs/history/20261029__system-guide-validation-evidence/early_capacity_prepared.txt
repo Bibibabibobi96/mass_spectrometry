@@ -1,0 +1,214 @@
+{
+  "baseline_sha": "3005980a9a0d3a62a67f36dff389a3110868faa7",
+  "current": "WORKTREE source snapshot",
+  "python": "3.11.0 (main, Oct 24 2022, 18:26:48) [MSC v.1933 64 bit (AMD64)]",
+  "platform": "Windows-10-10.0.19045-SP0",
+  "logical_cpu_count": 16,
+  "benchmark_directory": "C:\\Users\\Liao\\AppData\\Local\\Temp\\capacity-benchmark-845b54bcd8c945459710f76d3c271d96",
+  "script_sha256": "688750aae0736ed7641d68379a52082bf7ff63f95323cd4796d42e2be43560e5",
+  "source_sha256": {
+    "baseline_reconcile_artifact_capacity.py": "862ee0d93e7e3da8bd837d864c04b2b3a079f3468e763fbcfa5b34445fa05c31",
+    "baseline_run_capacity_lifecycle.py": "bc7f2e9911a69c27acc7d8c0826a1d52f91ddee347cb13bb7433ad16cd8e9cf2",
+    "current_reconcile_artifact_capacity.py": "c18bf75d01ebbd54e3b4eb4614384b4db37e189ae363f925917691fa0436f49a",
+    "current_run_capacity_lifecycle.py": "1cc0a2af0e110921033d7ecba792adaaced8d483c9c351c3064aed863c9c7e0b"
+  },
+  "method": {
+    "scope": "TEMP fixtures; same actual calibrated ledger and payload files for both versions; no real artifacts",
+    "C1": "real resume_partial_retirements, real ledger read/validation and uncontended filesystem decision lock; all objects ready, no eligible deletion",
+    "C1_lock": "perf_counter_ns immediately after real lock acquisition until just before real unlock; excludes acquire/release overhead",
+    "counts": "separate untimed runs; ledger iterator counting begins after real load validation, so counts only owner full-ledger traversal",
+    "C3": "actual CLI main in warm Python process including argument parsing and JSON output; real fixture ledger/lease reads; excludes interpreter/import startup",
+    "C3_correctness": "separate counted acceptance and rejection probes use fixed disk free values; timed runs use real disk_usage",
+    "ordering": "7 paired samples per scenario, alternating baseline/current order; one untimed warmup each; gc.collect before each sample",
+    "limitations": "synthetic ready-only maintenance fixture, not real ledger retirement, no payload deletion or solver work; paired warm-cache timing is not cold-process startup"
+  },
+  "ledger_sha256_before": {
+    "40": "785351bfc42fe512ee1f44801aa9a67da798bcbcc5a907fb5a819d16054dece4",
+    "80": "30653a7b98e71f20fd3f20a6644d3a043bab38df781455610fa0b29f014deb96",
+    "160": "1a51f43eb17c484412485e081f8c62602d7d58ee22354341f4213368745d69e4"
+  },
+  "C1_counts": {
+    "40": {
+      "baseline": {
+        "result": {
+          "completed_count": 0,
+          "removed_bytes": 0,
+          "blocked_count": 0
+        },
+        "ledger_entries_visited": 16200,
+        "run_classifications": 8200
+      },
+      "current": {
+        "result": {
+          "completed_count": 0,
+          "removed_bytes": 0,
+          "blocked_count": 0
+        },
+        "ledger_entries_visited": 200,
+        "run_classifications": 200
+      }
+    },
+    "80": {
+      "baseline": {
+        "result": {
+          "completed_count": 0,
+          "removed_bytes": 0,
+          "blocked_count": 0
+        },
+        "ledger_entries_visited": 64400,
+        "run_classifications": 32400
+      },
+      "current": {
+        "result": {
+          "completed_count": 0,
+          "removed_bytes": 0,
+          "blocked_count": 0
+        },
+        "ledger_entries_visited": 400,
+        "run_classifications": 400
+      }
+    },
+    "160": {
+      "baseline": {
+        "result": {
+          "completed_count": 0,
+          "removed_bytes": 0,
+          "blocked_count": 0
+        },
+        "ledger_entries_visited": 256800,
+        "run_classifications": 128800
+      },
+      "current": {
+        "result": {
+          "completed_count": 0,
+          "removed_bytes": 0,
+          "blocked_count": 0
+        },
+        "ledger_entries_visited": 800,
+        "run_classifications": 800
+      }
+    }
+  },
+  "protection_matrix": {
+    "baseline": {
+      "pin": true,
+      "active_lease": true,
+      "live_consumer": true,
+      "missing_consumer": true,
+      "retired_consumer": false,
+      "unreferenced": false
+    },
+    "current": {
+      "pin": true,
+      "active_lease": true,
+      "live_consumer": true,
+      "missing_consumer": true,
+      "retired_consumer": false,
+      "unreferenced": false
+    }
+  },
+  "C3_counts": {
+    "accept": {
+      "baseline": {
+        "decision": {
+          "execution_mode": "startup",
+          "resident_bytes": 800,
+          "projected_bytes": 801,
+          "required_free_bytes": 316753838081,
+          "target_bytes": 751619276800,
+          "minimum_free_bytes": 316753838080,
+          "satisfied": true,
+          "satisfied_after_apply": true,
+          "applied": true,
+          "blocking_reason": null,
+          "total_active_lease_committed_new_bytes": 1,
+          "current_lease_committed_new_bytes": 1,
+          "removed_bytes": 0,
+          "planned_count": 0,
+          "removed_count": 0
+        },
+        "admission_calls": 2,
+        "ledger_reads": 2,
+        "lease_reads": 2,
+        "disk_reads": 2
+      },
+      "current": {
+        "decision": {
+          "execution_mode": "startup",
+          "resident_bytes": 800,
+          "projected_bytes": 801,
+          "required_free_bytes": 316753838081,
+          "target_bytes": 751619276800,
+          "minimum_free_bytes": 316753838080,
+          "satisfied": true,
+          "satisfied_after_apply": true,
+          "applied": true,
+          "blocking_reason": null,
+          "total_active_lease_committed_new_bytes": 1,
+          "current_lease_committed_new_bytes": 1,
+          "removed_bytes": 0,
+          "planned_count": 0,
+          "removed_count": 0
+        },
+        "admission_calls": 1,
+        "ledger_reads": 1,
+        "lease_reads": 1,
+        "disk_reads": 1
+      }
+    },
+    "reject": {
+      "baseline": {
+        "decision": {
+          "execution_mode": "startup",
+          "resident_bytes": 800,
+          "projected_bytes": 801,
+          "required_free_bytes": 316753838081,
+          "target_bytes": 751619276800,
+          "minimum_free_bytes": 316753838080,
+          "satisfied": false,
+          "satisfied_after_apply": false,
+          "applied": false,
+          "blocking_reason": "MINIMUM_FREE_CAPACITY_UNAVAILABLE",
+          "total_active_lease_committed_new_bytes": 1,
+          "current_lease_committed_new_bytes": 1,
+          "removed_bytes": 0,
+          "planned_count": 0,
+          "removed_count": 0
+        },
+        "admission_calls": 2,
+        "ledger_reads": 2,
+        "lease_reads": 2,
+        "disk_reads": 2
+      },
+      "current": {
+        "decision": {
+          "execution_mode": "startup",
+          "resident_bytes": 800,
+          "projected_bytes": 801,
+          "required_free_bytes": 316753838081,
+          "target_bytes": 751619276800,
+          "minimum_free_bytes": 316753838080,
+          "satisfied": false,
+          "satisfied_after_apply": false,
+          "applied": false,
+          "blocking_reason": "MINIMUM_FREE_CAPACITY_UNAVAILABLE",
+          "total_active_lease_committed_new_bytes": 1,
+          "current_lease_committed_new_bytes": 1,
+          "removed_bytes": 0,
+          "planned_count": 0,
+          "removed_count": 0
+        },
+        "admission_calls": 1,
+        "ledger_reads": 1,
+        "lease_reads": 1,
+        "disk_reads": 1
+      }
+    }
+  },
+  "status": "READY; no wall-clock sampling performed",
+  "ledger_sha256_after": {
+    "40": "785351bfc42fe512ee1f44801aa9a67da798bcbcc5a907fb5a819d16054dece4",
+    "80": "30653a7b98e71f20fd3f20a6644d3a043bab38df781455610fa0b29f014deb96",
+    "160": "1a51f43eb17c484412485e081f8c62602d7d58ee22354341f4213368745d69e4"
+  }
+}

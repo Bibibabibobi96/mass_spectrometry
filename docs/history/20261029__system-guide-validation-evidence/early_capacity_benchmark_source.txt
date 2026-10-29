@@ -1,0 +1,274 @@
+"""Temporary bounded C1/C3 fixture benchmark; no real artifact roots."""
+from __future__ import annotations
+
+import argparse
+import gc
+import hashlib
+import io
+import json
+import os
+from pathlib import Path
+import platform
+import statistics
+import subprocess
+import sys
+import time
+import types
+from contextlib import contextmanager, redirect_stdout
+from datetime import datetime, timezone
+from unittest.mock import patch
+
+REPO = Path(r"C:\Users\Liao\mass_spectrometry\simulation_repo")
+BASE = Path(__file__).resolve().parent
+BASELINE = "3005980a9a0d3a62a67f36dff389a3110868faa7"
+sys.path.insert(0, str(REPO))
+from common.contracts import capacity_ledger, capacity_protection
+
+
+def digest(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def load_version(version, filename):
+    path = BASE / f"{version}_{filename}"
+    module = types.ModuleType(f"capacity_benchmark_{version}_{filename[:-3]}")
+    module.__file__ = str(REPO / "common/contracts" / filename)
+    sys.modules[module.__name__] = module
+    exec(compile(path.read_text(encoding="utf-8"), module.__file__, "exec"), module.__dict__)
+    return module
+
+
+def fixture(run_count):
+    root = BASE / f"fixtures/ready_{run_count}"
+    if root.exists():
+        return root
+    entries = []
+    for run in range(run_count):
+        directory = root / f"projects/benchmark/runs/run_{run:04d}"
+        directory.mkdir(parents=True)
+        for obj in range(5):
+            path = directory / f"light_{obj}.json"
+            path.write_bytes(b"{}")
+            entries.append(dict(path=path.relative_to(root).as_posix(),
+                                status="ready", pin=False, bytes=2,
+                                owner="benchmark", **{"class": "light_evidence"}))
+    capacity_ledger.initialize_capacity_ledger(root, objects=entries)
+    return root
+
+
+def c1(module, root, *, measured=False, counted=False):
+    stats = {"ledger_entries_visited": 0, "run_classifications": 0}
+    real_load = capacity_ledger.load_capacity_ledger
+    real_classify = module._partial_retirement_run
+    real_lock = capacity_protection.capacity_decision_lock
+    class CountedList(list):
+        def __iter__(self):
+            for entry in super().__iter__():
+                stats["ledger_entries_visited"] += 1
+                yield entry
+    def load(*args, **kwargs):
+        ledger = real_load(*args, **kwargs)
+        ledger["objects"] = CountedList(ledger["objects"])
+        return ledger
+    def classify(path):
+        stats["run_classifications"] += 1
+        return real_classify(path)
+    @contextmanager
+    def lock(*args, **kwargs):
+        with real_lock(*args, **kwargs):
+            started = time.perf_counter_ns() if measured else None
+            try:
+                yield
+            finally:
+                if measured:
+                    stats["decision_lock_held_ns"] = time.perf_counter_ns() - started
+    def no_write(*args, **kwargs):
+        raise AssertionError("Ready-only fixture must never publish a receipt/ledger")
+    with patch.object(capacity_protection, "capacity_decision_lock", lock), \
+         patch.object(module, "write_json_atomic", no_write):
+        if counted:
+            with patch.object(capacity_ledger, "load_capacity_ledger", load), \
+                 patch.object(module, "_partial_retirement_run", classify):
+                result = module.resume_partial_retirements(root)
+        else:
+            started = time.perf_counter_ns() if measured else None
+            result = module.resume_partial_retirements(root)
+            if measured:
+                stats["wall_ns"] = time.perf_counter_ns() - started
+    assert result == dict(completed_count=0, removed_bytes=0, blocked_count=0), result
+    return dict(result=result, **stats)
+
+
+def protection_matrix(module):
+    root = BASE / "fixtures/protection"
+    root.mkdir(parents=True, exist_ok=True)
+    lease_path = root / "leased.pa0"
+    if not (root / "created.txt").exists():
+        capacity_protection.create_capacity_protection_lease(
+            root, lease_id="protection-benchmark", owner="benchmark", ttl_seconds=3600,
+            protected_paths=[lease_path], committed_new_bytes=0)
+        (root / "created.txt").write_text("fixture", encoding="utf-8")
+    cases = {
+        "pin": ({"pin": True}, [], root / "pinned.pa0", True),
+        "active_lease": ({}, [], lease_path, True),
+        "live_consumer": ({"consumers": ["consumer"]}, [{"path": "consumer", "status": "ready"}], root / "live.pa0", True),
+        "missing_consumer": ({"consumers": ["missing"]}, [], root / "missing.pa0", True),
+        "retired_consumer": ({"consumers": ["consumer"]}, [{"path": "consumer", "status": "retired"}], root / "retired.pa0", False),
+        "unreferenced": ({}, [], root / "free.pa0", False),
+    }
+    result = {}
+    for name, (attributes, consumers, path, expected) in cases.items():
+        entry = dict(path=path.name, status="writing", pin=False) | attributes
+        ledger = {"objects": [entry, *consumers]}
+        kwargs = ({"by_path": {item["path"]: item for item in ledger["objects"]}}
+                  if "by_path" in module.partial_retirement_is_protected.__annotations__ else {})
+        observed = module.partial_retirement_is_protected(root, ledger, entry, path, **kwargs)
+        assert observed is expected, (name, observed, expected)
+        result[name] = observed
+    return result
+
+
+DECISION_KEYS = ("execution_mode", "resident_bytes", "projected_bytes", "required_free_bytes",
+                 "target_bytes", "minimum_free_bytes", "satisfied", "satisfied_after_apply",
+                 "applied", "blocking_reason", "total_active_lease_committed_new_bytes",
+                 "current_lease_committed_new_bytes", "removed_bytes", "planned_count", "removed_count")
+
+
+def c3(module, root, *, measured=False, counted=False, free_bytes=None):
+    stats = dict(admission_calls=0, ledger_reads=0, lease_reads=0, disk_reads=0)
+    real_gate = module._startup_capacity_gate
+    real_ledger = capacity_ledger.load_capacity_ledger
+    real_leases = capacity_protection.load_capacity_protection_leases
+    real_disk = module.shutil.disk_usage
+    def gate(*args, **kwargs):
+        stats["admission_calls"] += 1
+        return real_gate(*args, **kwargs)
+    def ledger(*args, **kwargs):
+        stats["ledger_reads"] += 1
+        return real_ledger(*args, **kwargs)
+    def leases(*args, **kwargs):
+        stats["lease_reads"] += 1
+        return real_leases(*args, **kwargs)
+    def disk(*args, **kwargs):
+        stats["disk_reads"] += 1
+        value = real_disk(*args, **kwargs)
+        return value if free_bytes is None else value._replace(free=free_bytes)
+    stream = io.StringIO()
+    with patch.object(sys, "argv", ["capacity", "--artifact-root", str(root),
+                      "--capacity-protection-lease-id", "startup-benchmark", "--apply"]), \
+         patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": str(os.getpid())}), \
+         redirect_stdout(stream):
+        if counted:
+            with patch.object(module, "_startup_capacity_gate", gate), \
+                 patch.object(capacity_ledger, "load_capacity_ledger", ledger), \
+                 patch.object(capacity_protection, "load_capacity_protection_leases", leases), \
+                 patch.object(module.shutil, "disk_usage", disk):
+                module.main()
+        else:
+            started = time.perf_counter_ns() if measured else None
+            module.main()
+            if measured:
+                stats["wall_ns"] = time.perf_counter_ns() - started
+    output = json.loads(stream.getvalue())
+    return dict(decision={key: output.get(key) for key in DECISION_KEYS}, **stats)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--prepare", action="store_true")
+    parser.add_argument("--run", action="store_true")
+    args = parser.parse_args()
+    assert args.prepare != args.run
+    started_utc = datetime.now(timezone.utc).isoformat()
+    if args.prepare:
+        for filename in ("run_capacity_lifecycle.py", "reconcile_artifact_capacity.py"):
+            baseline = subprocess.run(["git", "show", f"{BASELINE}:common/contracts/{filename}"],
+                                      cwd=REPO, check=True, capture_output=True).stdout
+            (BASE / f"baseline_{filename}").write_bytes(baseline)
+            (BASE / f"current_{filename}").write_bytes((REPO / "common/contracts" / filename).read_bytes())
+    else:
+        for filename in ("run_capacity_lifecycle.py", "reconcile_artifact_capacity.py"):
+            assert digest(BASE / f"current_{filename}") == digest(REPO / "common/contracts" / filename), "current source changed after preparation"
+    modules = {version: {"C1": load_version(version, "run_capacity_lifecycle.py"),
+                         "C3": load_version(version, "reconcile_artifact_capacity.py")}
+               for version in ("baseline", "current")}
+    roots = {n: fixture(n) for n in (40, 80, 160)}
+    startup = roots[80]
+    if not (BASE / "fixtures/startup_created.txt").exists():
+        capacity_protection.create_capacity_protection_lease(
+            startup, lease_id="startup-benchmark", owner="benchmark", ttl_seconds=3600,
+            protected_paths=[startup / "future"], committed_new_bytes=1)
+        (BASE / "fixtures/startup_created.txt").write_text("fixture", encoding="utf-8")
+    ledger_before = {str(n): digest(capacity_ledger.resolve_ledger_path(root)) for n, root in roots.items()}
+    report = {
+        "baseline_sha": BASELINE, "current": "WORKTREE source snapshot", "python": sys.version,
+        "platform": platform.platform(), "logical_cpu_count": os.cpu_count(), "benchmark_directory": str(BASE),
+        "started_at_utc": started_utc,
+        "clock": vars(time.get_clock_info("perf_counter")),
+        "script_sha256": digest(Path(__file__)),
+        "source_sha256": {path.name: digest(path) for path in BASE.glob("*_*.py")},
+        "method": {
+            "scope": "TEMP fixtures; same actual calibrated ledger and payload files for both versions; no real artifacts",
+            "C1": "real resume_partial_retirements, real ledger read/validation and uncontended filesystem decision lock; all objects ready, no eligible deletion",
+            "C1_lock": "perf_counter_ns immediately after real lock acquisition until just before real unlock; excludes acquire/release overhead",
+            "counts": "separate untimed runs; ledger iterator counting begins after real load validation, so counts only owner full-ledger traversal",
+            "C3": "actual CLI main in warm Python process including argument parsing and JSON output; real fixture ledger/lease reads; excludes interpreter/import startup",
+            "C3_correctness": "separate counted acceptance and rejection probes use fixed disk free values; timed runs use real disk_usage",
+            "ordering": "7 paired samples per scenario, alternating baseline/current order; one untimed warmup each; gc.collect before each sample",
+            "limitations": "synthetic ready-only maintenance fixture, not real ledger retirement, no payload deletion or solver work; paired warm-cache timing is not cold-process startup",
+        }, "ledger_sha256_before": ledger_before,
+    }
+    if args.prepare:
+        report["C1_counts"] = {
+            str(n): {version: c1(modules[version]["C1"], root, counted=True)
+                     for version in modules} for n, root in roots.items()}
+        report["protection_matrix"] = {version: protection_matrix(modules[version]["C1"])
+                                       for version in modules}
+        report["C3_counts"] = {
+            label: {version: c3(modules[version]["C3"], startup, counted=True, free_bytes=free)
+                    for version in modules} for label, free in (("accept", 10**15), ("reject", 0))}
+        for item in report["C3_counts"].values():
+            assert item["baseline"]["decision"] == item["current"]["decision"], item
+        report["status"] = "READY; no wall-clock sampling performed"
+        destination = BASE / "prepared.json"
+    else:
+        report["correctness"] = json.loads((BASE / "prepared.json").read_text(encoding="utf-8"))
+        samples = []
+        for kind, root, size in [("C1", root, n) for n, root in roots.items()] + [("C3", startup, 80)]:
+            action = c1 if kind == "C1" else c3
+            for version in modules:
+                action(modules[version][kind], root)
+            for pair in range(7):
+                order = ("baseline", "current") if pair % 2 == 0 else ("current", "baseline")
+                pair_results = {}
+                for version in order:
+                    gc.collect()
+                    result = action(modules[version][kind], root, measured=True)
+                    pair_results[version] = result
+                    samples.append(dict(kind=kind, runs=size, objects=size * 5, pair=pair, version=version, order=list(order), **result))
+                key = "result" if kind == "C1" else "decision"
+                assert pair_results["baseline"][key] == pair_results["current"][key], pair_results
+        report["samples"] = samples
+        summary = []
+        for kind, size in (("C1", 40), ("C1", 80), ("C1", 160), ("C3", 80)):
+            metrics = ("wall_ns", "decision_lock_held_ns") if kind == "C1" else ("wall_ns",)
+            for metric in metrics:
+                values = {version: [row[metric] / 1e6 for row in samples if row["kind"] == kind and row["runs"] == size and row["version"] == version] for version in modules}
+                medians = {version: statistics.median(times) for version, times in values.items()}
+                summary.append(dict(kind=kind, runs=size, objects=size * 5, metric=metric, unit="ms", samples=7,
+                                    median=medians, minimum={k: min(v) for k, v in values.items()},
+                                    maximum={k: max(v) for k, v in values.items()},
+                                    speedup=medians["baseline"] / medians["current"],
+                                    reduction_percent=100 * (1 - medians["current"] / medians["baseline"])))
+        report["summary"] = summary
+        report["status"] = "complete"
+        destination = BASE / "results.json"
+    report["ledger_sha256_after"] = {str(n): digest(capacity_ledger.resolve_ledger_path(root)) for n, root in roots.items()}
+    assert report["ledger_sha256_after"] == report["ledger_sha256_before"]
+    report["completed_at_utc"] = datetime.now(timezone.utc).isoformat()
+    destination.write_text(json.dumps(report, indent=2), encoding="utf-8", newline="\n")
+    print(json.dumps({"path": str(destination), "status": report["status"], "summary": report.get("summary")}, indent=2))
+
+
+if __name__ == "__main__":
+    main()

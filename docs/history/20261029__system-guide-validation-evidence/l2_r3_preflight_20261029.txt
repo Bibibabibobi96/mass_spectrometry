@@ -1,0 +1,16 @@
+captured_at=2026-10-29T11:11:24.929727+08:00
+source_identity_sha256=4ecae61483f1984b428299d1d791715fc351e2f5fe505f99c13bf90101eb64b1
+file_count=2288
+logical_bytes=202011899
+central_state_sequence=16684
+central_state_records=0
+host_env={}
+Identity algorithm identical to final_gates_restart_preflight_20261029.txt
+After L1 r8 root changed only common/README.md and oaTOF docs/PROJECT.md, then StructureOnly exit0; root declared code frozen unchanged. This preflight independently rechecks G3/layout/cache bytes below.
+L2 command=pwsh -NoProfile -File common/verify_repository_integration.ps1 -MaxConcurrency8 -SummaryPath <mainTEMP>/l2_final_candidate_20261029_r3.json; normal-user observation context, central scheduler, no outer hardtimeout
+L1 r8 summary elapsed2023.959472s; outer2026.1201845s;4261tests14skip;23PASS. L2 r2 historical summary2423.781944s/5675tests20skip1fail before G3/layout fixes, not current PASS.
+SOURCE common/parallel_gate_support.ps1 33234 7f7c4774d8d8f72f9b7842e4d269c737a897a2b1c26ebdc57645eaf43679a0cc
+SOURCE common/contracts/verify_artifact_layout.py 53250 4d7b0b95ad66712991a03effa63db8f585da1971e1364dcc11db78a0679f327f
+SOURCE common/simion/pa_family_cache.py 237904 7ddc459d729cfb3e8935327e86cfc6c56865fe2623e1aba51b85b9dbd45d407d
+SOURCE common/README.md 27027 172042d963f5a342af9a97e096b8af6e9c9d765e964fa0488786e5c316009f59
+SOURCE projects/single_reflection_oa_tof_mass_analyzer/docs/PROJECT.md 40733 6cca7be0be7c6d7ef51621dcd71070b768e78e16b7184e3eb8fcc1c8aff4368c

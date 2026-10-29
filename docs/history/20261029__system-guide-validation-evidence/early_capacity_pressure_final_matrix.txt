@@ -1,0 +1,7 @@
+test_workflow_pressure_relief_uses_one_protected_pass_and_fresh_admission (common.contracts.test_capacity_reconcile_runtime.DailyCapacityReconcileTest.test_workflow_pressure_relief_uses_one_protected_pass_and_fresh_admission)
+Run the real PS session/CLI/ledger against byte-sized TEMP objects. ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 95.311s
+
+OK

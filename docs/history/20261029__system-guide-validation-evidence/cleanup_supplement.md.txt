@@ -1,0 +1,154 @@
+# 最终 TEMP 清理补充核验（一次性，只读）
+
+日期：2026-10-29。Agent 3。本文件补充 final_temp_cleanup_preflight.md；没有覆盖此前已staging的原文。当前父任务确认L2r3已经37/37 PASS自然结束；本轮没有重跑门禁、商业软件、删除、apply或账本操作。只读普通小源码/JSON与指定run manifest，对实际原字节作核验；不读取或散列PA/MPH，不遍历reparse，不写Git。
+
+T = `C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6`
+A = `C:/Users/Liao/mass_spectrometry/artifacts/projects`
+E = `A/instrument_assembly/runs/20261029_084153__analysis__python__final-guide-evidence`
+
+## 结论和主T整体清理条件
+
+本轮指定的COMSOL/GUI三个bundle、早期radial r2/reanalysis/correction/closeout运输缺口已闭合。新增必须保全的小原件只有下表4份、合计 **5,098 B**；其余必要执行源码/科学小输入/request具有正式原字节副本，或有已逐字节证明的窄重建方法。唯一未执行的GUI r1 bootstrap作者虽不等于后续作者，但没有被prepared/native执行，不是必须永久保留的执行输入。
+
+在root将这4原件及已选raw正式归档、提交后的恢复身份写入最终报告，并结束front/appendix/主题提交规划/staging的实际消费者后，**截至本次与前一预检的限定范围，没有另发现需要新增归档的唯一科学数据或必要raw；主T内容层面的整体清理可以成立。** 这不是现在执行删除的授权。临时H存在不等于正式归档完成；正常审批、精确根路径、无reparse和活动进程/句柄复查仍由root在实际删除时执行。此前自动审批拒绝不能由本报告覆盖。
+
+未永久保留的routine stdout/stderr、重复计时运输或候选测试，并非全部可原样重建；其必要状态、原错误原因、修正范围和验收结果已有下述正式证据承接，当前最终front/appendix没有依赖这些非保留中间计时作收益声明。不能在未来将未保留的中间timing改称新的正式性能证据。
+
+## 新增最小原字节保全清单
+
+以下均是主T相对路径。既有E映射与这两个run manifest中没有同字节副本，不能将run内terminal事实冒充外部owner Result。
+
+|T相对路径|bytes|SHA256|必要性|
+|---|---:|---|---|
+|radial_r2_closeout.json|699|efdb6e4d8c05e976065a00a6250f58d9ae79ad8c4d88faad58c315a05dcaf454|原公共owner finalization-only success/complete、lease与writer事实运输|
+|radial_reanalysis_closeout.json|705|a192886f4ee0120e5a9ac137ad838a5d808f04130df9f8c3386acfddaf858ff0|同上，独立reanalysis run，不与r2混同|
+|radial_r2_closeout_verification.txt|2297|3a9f8f70b0e1eb10689d7431965ee4a0974a6aae246894e2f3f1492a194b8560|独立full-manifest、原失败/修正/仅收尾耗时、0新增native及原字节不漂移核验|
+|radial_reanalysis_closeout_verification.txt|1397|c7791b3dad585cf4e5d7a452d065df141c7dc3ca3437424c4c089451895ca4f5|独立重分析/0native/原parent与child SHA不漂移、5真实analysis bridge投影证据|
+
+两份closeout Result的run_directory分别为：
+- A/single_reflection_oa_tof_mass_analyzer/runs/20261029_001733__test__simion__radial-n100-first-r2
+- A/single_reflection_oa_tof_mass_analyzer/runs/20261029_010500__analysis__python__radial-n100-reanalysis
+
+root已另将两份早期GUI ownerResult、4份G2 overlay、early measurement及最终L2 raw加入staging；这些不是本次新增4份。此次不重复复制已保全E原件、不新建preservation run。
+
+## COMSOL：全部必要bundle和request已正式冻结
+
+对应run：
+`A/instrument_assembly/runs/20261029_075812__test__comsol__connection-lifecycle-smoke`
+
+本轮逐文件检查 `T/comsol_lifecycle_acceptance/bundle/**` 与 `execution_request.json`，共 **22文件 /295,179 B**：
+- bundle/<relative> → run/inputs/code/<relative>；
+- execution_request.json → run/inputs/execution_request.json；
+- 全部原bytes相等，并逐目标核正式run_manifest.json对应record的path/bytes/SHA，22/22通过，无未匹配项。
+- 顶层diagnostic_comsol_lifecycle.py另核等于run/inputs/code同名源：14,099 B，SHA a10aa9c030c48f6d4323e3c75e40a8291f47ba304dc80045baef173d5b5da77c。
+- owner_result.json已由E/inputs/comsol/owner_result.json保全。
+- test_preparation.py是本次准备脚本的临时纯测试，不是执行结果/冻结科学输入。无需复制重复bundle或该临时测试进history。
+
+因此本目录25文件/321,722 B的必要执行证据均有正式承接。
+
+## GUI三个bundle：逐路径/原字节及重建核对
+
+共同路径规则：
+- code/<relative> → 对应run/inputs/code/<relative>；
+- science/<relative> → run/inputs/acceptance/<relative>；
+- bootstrap/common/<relative>是同code/common的运输副本，映射到run/inputs/code/common/<relative>；
+- bootstrap/oatof_pa_gui_acceptance.py → run/inputs/acceptance/oatof_pa_gui_acceptance.py；
+- request.json → run/inputs/execution_request.json。
+
+每一匹配均读取原字节，并验证目标的正式manifest path/bytes/SHA；不是只按metadata相似判重，也没有把空文件SHA相同当独立证据等同。
+
+|T/pa_gui_acceptance下范围|原文件数/bytes|正式原字节匹配|其余|
+|---|---:|---:|---|
+|prepared_p3_bundle_r2|226 /4,089,916|225 /4,044,252 B，全部绑定r2 manifest|1份source_closure45664 B可原样重建|
+|prepared_p3_bundle_r3|226 /4,090,441|225 /4,044,777 B，全部绑定r3 manifest|1份source_closure45664 B可原样重建|
+|prepared_p3_bundle（r1）|226 /4,090,005|223 /3,990,261 B与r2正式输入完全相同|closure45661 B可重建；request20962 B可重建；33121 B bootstrap未执行|
+
+r2/r3对应run：
+- `A/single_reflection_oa_tof_mass_analyzer/runs/20261029_080100__test__simion__radial-p3-gui-r2`
+- `A/single_reflection_oa_tof_mass_analyzer/runs/20261029_083000__test__simion__radial-p3-gui-r3`
+
+r3原failed状态保持；此前用户取消后私有PA退休不改变小输入原字节，本轮不再检查/散列PA。
+
+### source_closure精确重建
+
+现临时作者execute_prepared_run只将source_closure的code_root改为run/inputs/code，其余字段/顺序不变，并按现write_json_atomic写UTF-8、indent=2、ensure_ascii=False、末尾LF。
+
+本轮实际从各run/inputs/source_closure.json解码，只把code_root恢复为原TEMP bundle/code路径，用上述序列化重建，3/3原字节匹配。r1可使用r2正式closure；两者除了code_root也没有别的字段差异。正式closure本身的manifest身份也核过。
+
+|原TEMP closure|bytes|原SHA256|
+|---|---:|---|
+|prepared_p3_bundle/source_closure.json|45661|0bbf46bed23cd7884ef9a492a5fac6f02b49d6a8814802d63aa9a8f71f8ea87e|
+|prepared_p3_bundle_r2/source_closure.json|45664|fce8bc546f73c37e4ef5e64135e14f33ea757e9108d4d7b2e2e2927a2a7ec118|
+|prepared_p3_bundle_r3/source_closure.json|45664|52a044c5bb0c60c966ca15666b83da0f2fe15d39dc8efeaaddd88c370d081df8|
+
+### r1准入失败与未执行源码
+
+实读r1原ownerResult：failed/admission；prepared_exit_code=null；terminal/capacity/writers均false；异常为protected path must remain below the artifact root；elapsed0.517102。其拟建run目录 `20261029_073100__test__simion__radial-p3-gui` 实际不存在。因此不能说r1 bundle由自身run冻结，亦不能说bootstrap已运行。
+
+r1有别于r2的bootstrap：
+- 33121 B，SHA b5b124ff6fc92cc23be4f9cf32bd52aca35a71c701aefff201a54a7d508c03ee。
+- 原Result已staging保留准入失败事实；该未执行的一次性作者可弃，不作为某次native执行源码引用。
+
+r1 request20962 B、SHA c78c487288aa7854afd7958f9f9ba13902889c095f3069a6dd48729c5f8bbccb，无必要重复归档20 KB：本轮从r2正式inputs/execution_request.json以下列确定投影重建，原bytes完全相等：
+1. 递归替换字符串中的完整TEMP `.../prepared_p3_bundle_r2` 前缀为 `.../prepared_p3_bundle`（实际Windows路径分隔符不归一化）。
+2. package.run_id恢复为20261029_073100__test__simion__radial-p3-gui。
+3. capacity.protected_paths保留原P3路径，追加完整旧TEMP prepared_p3_bundle路径。
+4. prepared.entrypoint.bytes=33121、sha256=上列B5B124...（原大写）。
+5. payload.source_closure.bytes=45661、sha256=上列0BBF46...（原大写）。
+6. 保持原字典顺序，UTF-8 json.dumps(indent=2, ensure_ascii=False)+末尾LF。
+这只是只读重建证明，不重写旧request、不执行任何owner。
+
+顶层当前oatof_pa_gui_acceptance.py33623 B已与r3正式inputs/acceptance同名文件原字节核等，SHA 2b2588f9b3d6c09336384939d0dd31f8aab3e8e9ebe0a85088d46ce4ba27ab4a。REVIEW.md/test_acceptance_preparation.py是一次性审阅与纯测试，资格/取消边界由最终报告承接。无须保存三套完整TEMP代码树。
+
+## 早期radial更正与收尾：正式原物保留，去除重复运输
+
+本轮核对两run的manifest身份：
+- r2 run_manifest SHA ebde9642f7161cad1d8617f3e89682d8f0fcb7387294af0c51993c452588ec10。
+- reanalysis run_manifest SHA 51e3d65fb1123f85e21a4ae61a1d189148fafcc7c61a691cd2db85d338b58788。
+
+下列4个正式结果文件都实读原bytes、SHA，并符合该manifest对应record；它们继续留在原run，不再放history副本：
+
+|run/results相对名|bytes|SHA256|
+|---|---:|---|
+|r2/execution_completion_before_preserve_fix.json|254329|2d21415f5062f38b0364430f8de0cba7676973082a8a10018f4a3ab97485a292|
+|r2/execution_completion_preserve_fix_audit.json|303594|4e8c2d1a64f115e1fc690b9247788c12b5c0bc6768f9f80ba696f0b37011ff7e|
+|reanalysis/execution_completion_before_bridge_projection.json|77098|f39f5584e7955976fb13fbba6bd4718f7418e83dafb03b14134895f998bc2495|
+|reanalysis/execution_completion_bridge_projection_audit.json|254647|d684a6d492e0bbf75636a2b022243b7bd832cd12b4f6399255546f91801f7c7f|
+
+两份TEMP metadata_correction.log的JSON field_diff、old_sha256、new_sha256，已与上述正式audit逐值核等。audit还保原失败原因、原entry wall、原before库存、实际worker/原生或analysis证明、授权/无native重跑边界。
+- r2只移除误声明的专用TRACE保留豁免，原科学summary/requiredoutputs不改；
+- reanalysis仅投影五个已有真实analysis PS bridge停止事实，未造native，原resources不改。
+因此不需要再复制2078/2250 B的重复correction输出，也不需要重复889668 B的backup/audit大库存。
+
+原四个39 B timing运输与新增两verification中的值一致：
+- r2 metadata correction3.1027847 s、仅收尾9.3945387 s；
+- reanalysis projection2.8519767 s、仅收尾7.2313948 s。
+两个初次entry timing420.236871 s /70.6737633 s也已经正式audit与verification保留。空stdout/stderr无内容不必另存；原stderr堆栈的不同源行号不是新的科学数据，原错误原因已由audit与保留verification承接，不宣称其整堆栈raw可重建。
+
+更早radial_n100_first_failed_evidence、warm_a/warm_b与dry-run的临时验证/命令输出，属同一任务执行过程的中间诊断；各原run及其科学输入、summary、logs与manifest不动。当前最终front/appendix未引用243.8419926/252.2313165或31.7642873文件时间间隔作为正式收益，所以不为这些未采用中间计时增加raw包；不能将31.7642873文件区间冒称process wall。原科学记录仍在canonical run，临时结论不形成第二权威。
+
+T/oatof_radial_shield260_n100_acceptance.json另核与r3/inputs/acceptance/campaign.json原bytes相同：3182 B，SHA2edef0620c42642615359050c6b568b7c580b4da8a4a17f15f9cfa0b4685da75，且该正式记录在已核163inputs中。radial_three_run_acceptance_plan.md明确是执行前计划、不得代替实际结果；必要合同已正式冻结，无需重复保存临时方案作为新权威。
+
+## R1三份源的固定Git条件现已满足
+
+前一预检尚待提交的119943 B，本轮在已完成8主题提交后补做只读验证。HEAD只读解析并固定为
+`0f1df0f9a02b05c09bc7999d50149012f1a4ad4f`；一次git ls-tree -rz -l该固定commit的3路径，比较TEMP raw bytes内存计算的Git blob SHA1与tree的path/bytes/OID。三项全等，无Git写：
+
+|正式path|bytes|blob OID|SHA256|
+|---|---:|---|---|
+|common/resource_budget_support.ps1|82265|76d5c757d43b232b6ccf01272fad7ac43973e80e|423d4c42fcaaee51857d40bea3550f0a3c02d87937c419594c52b8f2befa7473|
+|common/host_execution_lease.ps1|30664|14d5ed2e61ebcb3f89c696658118580b64ccab78|96d31ea2a7abd551c8ac4c6b57a8e6fc94af6f96a569568d392284facce4e75e|
+|common/host_resource_policy.json|7014|1cc54d85bfb81490d4a1e18cad340663191dc0b7|8bce1142a08d344b9a927234ab5bf5cd765a4ca9686e3dde5b94ab1dd69bd86d|
+
+恢复须用原blob，不能经checkout/归档转换后假定字节不变。mixed BASE80292 B不在这项省略中，继续按既有raw保留。
+
+## 主T分组最终判定边界
+
+范围只含前一预检已列主T及本补充的COMSOL/GUI/radial，不扩扫系统TEMP：
+- 必要raw：已选择的最终/关键失败门禁、CLOC、C1/C3/G2/R1受控测量、旧限制、GUI外运输及本次4原件；正式history与索引核对完成后才移除临时副本。
+- E/正式run/Git已承接：P1–P4、B85、COMSOL/GUI r3 ownerResult及作者/plans、bundle源、科学小合同；精确映射见原preflight和E evidence_mapping。没有必要再建一个保全run或重复代码树。
+- 可弃中间物：纯fixture、未采用候选、已落长期tests的探针、可原样重建运输、未执行的一次性bootstrap、审查矩阵生成器、routine全文logs；最终结论/资格说明由报告承接。
+- 仍有当前消费者：RESTART_HANDOFF、front/appendix、主题提交规划/候选、H与index、独审稿（含本文件）。须等最终报告和提交/归档完成；不能现在列为立即删除。
+- 本补充未执行进程查询或重新审核删除；前一普通CIM“拒绝访问”不能当零进程。L2终态由root确认，但清理时的活动性仍需正常权限下fresh核对。
+
+截至上述实际核验范围，除本次4文件5098 B和root已知的未正式发布staging外，无新发现需要永久保留的唯一数据。原失败/取消状态不改，所有canonical run和published cache保持原物。

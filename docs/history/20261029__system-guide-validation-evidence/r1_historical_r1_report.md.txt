@@ -1,0 +1,98 @@
+# R1 same-poll process enumeration
+
+Production change: one existing scheduler poll shares Get-Process/CIM enumeration;
+each family retains its original birth/ancestry/console/memory/CPU projection.
+No across-poll cache, new state layer, service, ledger or policy threshold.
+Standalone sampling retains Get-Process → birth checks → CIM/fallback order.
+
+Baseline resource_budget_support.ps1 SHA256:
+`2FC61478A2C4DB58A94C10DC711DBA14ED602F573C5C61D2A90A61E23C0F55BE`
+
+Result (WORKTREE) SHA256:
+`ACF58615467C31FB571548362D68B63D23268A232BF6F9C16D771770D9D9E569`
+
+The baseline already contains the separately owned managed-Python changes. R1
+adds the collector/optional argument/loop wiring only; it does not own those prior changes.
+Test file SHA256: `317BBCD3E5F5E1A2292DFC2CD16288CCE10621E986F0FCDF3A11B884AF952675`.
+
+## Behavior and validation
+
+- 18 final focused methods PASS / 53.280 s, exact names in `focused_tests.txt`,
+  raw unittest output in `focused.log`; GATE released.
+- Six synthetic complete sample dictionaries are exactly equal between the saved
+  BASE function and NEW shared sampling. Cases: CIM success, fallback, owned
+  unknown identity, incomplete parent observation, reused root PID, reused tracked
+  PID. Console IDs, working/private/max memory, CPU totals and per-PID identities
+  are retained. `sample_equivalence.json` contains both actual dictionaries.
+- The actual dispatch function with deterministic 1/4/8-worker, two-poll fixtures
+  performs 2*N full enumerations in BASE and 2 in NEW. Both CIM-success and forced
+  CIM-failure paths are covered; fallback parent snapshots likewise decrease from
+  2*N to 2. The second poll sees no live workers and completes every record.
+  BASE counts are in `baseline_loop_counts.json`; NEW is asserted by the permanent
+  `test_parallel_wave_enumerates_once_per_poll_and_refreshes` test.
+- Existing root/PID reuse, hidden console accounting, warning, healthy sibling,
+  sustained physical danger and short-lived-launcher regressions pass.
+- Development standards PASS, 0 errors / 495 review signals; Ruff and diff check PASS.
+- Agent 2 and Agent 3 independently read the production diff with no blockers.
+
+## Measured scope
+
+Intel i9-9900K / 16 logical processors; PowerShell 7.6.9. The same eight real inert
+PowerShell workers supply the 1/4/8-worker subsets. After one warm-up pair, three
+BASE/NEW pairs alternate order (BASE first, NEW first, BASE first). The primary
+stopwatch covers one collector for NEW plus the same per-family sample calls;
+it excludes launch, admission, output writes and scheduler sleeps. Both variants
+include lightweight counter wrapper dispatch. This is a same-host short benchmark,
+not a confidence interval, solver result or claim about arbitrary machines.
+
+| Workers | BASE median ms | NEW median ms | Change | Full Get-Process / CIM per poll |
+|---:|---:|---:|---:|---:|
+| 1 | 261.9704 | 267.4477 | +2.091% | 1 → 1 |
+| 4 | 962.1824 | 658.2779 | −31.585% | 4 → 1 |
+| 8 | 1730.3419 | 1122.3315 | −35.138% | 8 → 1 |
+
+No real CIM failure occurred during timing (fallback count zero). Fallback sharing
+is behavioral evidence from the deterministic fixtures, not a timed speedup claim.
+Historical 2/4/8-worker medians 0.5731061/1.0072593/1.8337387 s are not this baseline.
+
+Measurement start: 2026-10-28T17:52:07.6887714+00:00;
+end: 2026-10-28T17:53:21.3415642+00:00. Raw `measurement.json` SHA256:
+`0DFA59E42DC49C279DFDB1C0842221EFF400142F93531DF3E0D13022766E1112`.
+Exec session 73724 ended exit 0, shared GATE prepare owner PID 41140 released.
+
+## Whole dispatch reference and unresolved timing attribution
+
+After the paired samples, the actual NEW dispatch loop consumes the same eight
+live worker handles. This software fixture uses the shared GATE lease, stubs only
+the solver-heavy assertion and system CPU/available-memory admission values, and
+does not claim production admission/solver performance. Actual enumeration,
+sampling, activity classification, WaitForExit/Dispose and loop sleeps run normally.
+
+Four polls perform four Get-Process and four CIM enumerations. Whole wave:
+57,098.3365 ms. Consecutive poll-start intervals: 1,895.7086 / 1,650.1308 /
+52,342.6120 ms. Each active loop retains the original 500 ms sleep.
+
+The third collector entry writes the stop sentinel; the long third-to-fourth
+interval therefore includes that tiny write, actual enumeration, eight family
+samples/activity/accounting, loop bookkeeping and 500 ms sleep. All eight
+BATCH_COMPLETED console events occur in the final poll at ACTIVE=0 and about
+57 s, so the long prior interval contains no reported completed-record event.
+Ready waiting, GATE admission and the paired sample benchmark precede this loop.
+The five-minute worker safety deadline is not reached. No sub-timers distinguish
+CIM/property reads/other sampling statements, so the 52 s cannot be attributed
+more precisely or explained away as the 500 ms sleep. It remains a visible
+exit-transition cost in this fixture; this change claims no whole-scheduler gain.
+
+## Ownership and cleanup
+
+All eight inert workers exited naturally with code 0, without Kill/Stop-Process;
+a later exact PID+birth check found zero original live identities. Both test GATE
+leases also reported released. Ten exact ephemeral stop/ready/usage files were
+deleted (2,121 bytes). TemporaryDirectory test outputs self-cleaned.
+
+This task-local directory retains the baseline bytes, executed drivers, dispatch
+fixture, raw measurements/dictionaries/counts and focused log for root's final
+evidence archive. They are not repository sources. Root owns their final archival
+and subsequent cleanup, plus the required integrated CLOC report using the existing
+`common/report_cloc_delta.ps1` baseline→WORKTREE workflow; no separate line-count
+substitute is used here. No Git writes, full L1/L2 or commercial runs occurred.

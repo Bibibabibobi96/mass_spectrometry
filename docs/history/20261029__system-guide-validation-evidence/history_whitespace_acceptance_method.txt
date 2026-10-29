@@ -1,0 +1,16 @@
+HISTORY WHITESPACE ACCEPTANCE — one-time isolated Git repository
+Official source: https://git-scm.com/docs/gitattributes#_checking_whitespace_errors
+Read 2026-10-29: whitespace Unset disables whitespace errors for matching paths only.
+Repository rules copied from the complete current .gitattributes; candidate replaces only the existing root-history TXT line and adds one explanatory comment.
+All Git writes below used cwd=<new TemporaryDirectory below the task TEMP>; no main-repository Git/index writes.
+Command prefix: git -c core.autocrlf=true -c core.whitespace=blank-at-eol,blank-at-eof,space-before-tab
+This pins Git defaults for whitespace and Windows text checkout; explicit -text keeps the raw payload unconverted. No global configuration is changed.
+Raw path: docs/history/20261029__fixture/original.txt
+Raw Python bytes literal: b'frozen CRLF record\r\noriginal trailing spaces  \r\n'
+1. git init --quiet; write old attributes, raw payload and clean active.py; git add the three exact paths.
+2. git show :<raw_path> must equal original bytes; git diff --cached --check must exit 2 naming the raw file.
+3. Write candidate attributes; git add .gitattributes only; repeat raw index equality; full diff check must exit 0.
+4. Write active.py as b'value = 1  \n'; git add active.py; full diff check must exit 2 naming only active.py.
+5. git check-attr whitespace on root payload/source/MD/root nonpayload TXT/project history: only root payload is unset.
+6. Restore active.py to b'value = 1\n'; add it; full diff check must exit 0; final raw blob and worktree bytes must still equal original.
+7. TemporaryDirectory removes only its own newly created repository after observations; method/result TXT are retained for root's minimal archive and later cleanup.

@@ -1,0 +1,6 @@
+test_host_release_failure_preserves_original_error_and_stops_pressure_recovery (common.contracts.test_capacity_reconcile_runtime.DailyCapacityReconcileTest.test_host_release_failure_preserves_original_error_and_stops_pressure_recovery) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.746s
+
+OK

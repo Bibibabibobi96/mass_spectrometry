@@ -1,0 +1,16 @@
+Post-gate formatting-only correction
+Path=common/contracts/gui_source_protection.py
+Before bytes=2588 SHA256=c340ac763e943805f29b0bbe07633e1592da938fee98b9c2f59b8289c1b95527
+After bytes=2586 SHA256=fdaab129c69324fbd321f23fd3d591a9f0358484982dfff9272360084d628038
+Exact transform: remove two final LF bytes; final content retains one terminal LF.
+Python AST dumps excluding positions are exactly equal. No imports, function bodies, strings, comments or executable statements changed.
+Full L1/L2 used the before bytes. The after bytes require direct module regression, Ruff and index checks; no full rerun is claimed.
+
+Post-gate index check found two extra terminal LF bytes in the new gui_source_protection.py. Remove only these bytes; Python ASTs are equal, two shared-contract tests PASS (0.149s), Ruff PASS, cached diff check PASS. Full L1/L2 used the pre-format bytes; no full rerun is claimed for this whitespace-only correction.
+
+Unpublished history prose EOF formatting
+Path=docs/history/20261029__legacy-common-evidence-migration.md
+Before bytes=14819 SHA256=4d8da86f3a200af57303ff9000ebcda0de391a01b275575107a95348cad4f990
+After bytes=14818 SHA256=79d56fed04412361b77ebb4829a07729b7f4b18b5311aff10e2e4d5ecee5b1e9
+Only redundant terminal LF bytes removed; raw TXT payloads untouched.
+Raw history TXT contains immutable original CRLF/trailing bytes; full git diff --check reports those bytes. Active text check explicitly excludes only docs/history/*/*.txt, whose bytes/SHA are verified instead. No raw evidence normalization or blanket whitespace bypass.

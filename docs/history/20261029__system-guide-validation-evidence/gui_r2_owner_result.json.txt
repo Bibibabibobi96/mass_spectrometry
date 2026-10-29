@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "role": "run_artifact_workflow_result",
+  "status": "failed",
+  "stage": "complete",
+  "run_directory": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\single_reflection_oa_tof_mass_analyzer\\runs\\20261029_080100__test__simion__radial-p3-gui-r2",
+  "prepared_exit_code": 1,
+  "terminal_published": true,
+  "capacity_finalized": true,
+  "lease_released": true,
+  "exception": {
+    "type": "RuntimeError",
+    "message": "Acceptance stopped with exit 1; inspect acceptance.stderr.log"
+  },
+  "secondary_errors": [],
+  "elapsed_seconds": 36.3076727,
+  "timing": {
+    "validate": 0.11863,
+    "admission": 6.7728503,
+    "initialize": 2.6056443,
+    "prepared": 20.664565,
+    "completion": 2.254772599999999,
+    "retention": 0.2785119999999992,
+    "publication": 0.5349961000000008,
+    "release": 2.085568500000001,
+    "capacity_finalization": 0.9906695000000028,
+    "complete": 0.0014643999999961466
+  },
+  "last_completed_stage": "capacity_finalization",
+  "resume_action": null,
+  "execution_context": {
+    "host_resource_state_path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\common\\host_resources.sqlite3"
+  },
+  "stopped_payload_receipt": {
+    "schema_version": 1,
+    "role": "run_capacity_lifecycle_receipt",
+    "action": "seal_stopped_payload",
+    "status": "ready",
+    "run_status": "failed",
+    "run_directory": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\single_reflection_oa_tof_mass_analyzer\\runs\\20261029_080100__test__simion__radial-p3-gui-r2",
+    "bytes": 2986194,
+    "file_count": 182,
+    "continuation": "new_run_required",
+    "ledger_entry": {
+      "path": "projects/single_reflection_oa_tof_mass_analyzer/runs/20261029_080100__test__simion__radial-p3-gui-r2",
+      "class": "rebuildable_payload",
+      "bytes": 2986194,
+      "status": "ready",
+      "pin": true,
+      "owner": "single_reflection_oa_tof_mass_analyzer",
+      "review_deadline": "2026-11-27",
+      "retention_reason": "owner sealed stopped payload; Explicit P3 shield260 PA migration GUI acceptance: retain the private four-instance IOB, field families, N100 evidence and review records; no Formal promotion.",
+      "retirement_route": "owner_managed_disposition",
+      "pin_reason": "Explicit P3 shield260 PA migration GUI acceptance: retain the private four-instance IOB, field families, N100 evidence and review records; no Formal promotion."
+    },
+    "run_config": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\single_reflection_oa_tof_mass_analyzer\\runs\\20261029_080100__test__simion__radial-p3-gui-r2\\run_config.json",
+      "exists": true,
+      "bytes": 41946,
+      "sha256": "11B35C43B11FDDBC6846BA319FE12D75A43D6FCC78433D5E8D8002AED37342AA"
+    }
+  },
+  "lease_id": "workflow-caf2af1220f04a0a8a8a31bf3586cf3c",
+  "writers_confirmed": true
+}

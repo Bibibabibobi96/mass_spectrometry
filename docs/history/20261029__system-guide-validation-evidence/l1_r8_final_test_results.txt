@@ -1,0 +1,81 @@
+Captured 2026-10-29T11:08:42.244654+08:00
+Gate PASS; started 2026-10-29T02:33:36.6896393Z; finished 2026-10-29T03:07:20.6482207Z; summary_elapsed_seconds=2023.959472
+ROOT_PROCESS_EXIT=0 ROOT_PROCESS_ELAPSED_SECONDS=2026.1201845
+Stage counts {'PASS': 23, 'NOT_APPLICABLE': 19}
+Top-level unittest runners=16 tests=4261 skips=14 failures=0 errors=0
+Counts are top-level reported executions, not unique methods; no nested fixture gate counts. Stages without a unittest summary are N/A, not zero tests.
+Central SQLite read-only observation: sequence=16684; records=0
+Final source identity=8e9ab984198a6cee7f56e12f3c7896606d3f52cee9ae039018e2d530dfa7a05b; exactly equal to preflight; 2288 files/202011156 B; algorithm in final_gates_restart_preflight_20261029.txt
+Gate diagnostic directory automatically CLEANED by success entry; complete replay retained in root log. Agent did not delete evidence.
+Software-only regression. No vendor/GUI/Formal qualification.
+Timing: unittest seconds are runner body. Stage elapsed includes resource wait/execution/cleanup; process_elapsed is parent observed child process lifetime; queue is separate pending time. Root summary excludes outer host startup/exit; process wall is the outer recorded stopwatch. Concurrent stage times must not be summed into wall time.
+History: pre-fix L1r5 summary1928.100826s/4255tests14skip23PASS. r6/r7 interrupted by confirmed system reboot and not complete timing or FAIL. r8 is different code/layout snapshot and normal-user process-observation context, not controlled speed experiment.
+
+RUNNER | tests | skip | failures | errors | body_seconds | raw_root_log_line | raw_status
+host_resource_scheduler_tests | 93 | 0 | 0 | 0 | 103.328 | 218 | OK
+livelink_resource_stages_tests | 47 | 0 | 0 | 0 | 268.521 | 279 | OK
+common_contracts | 864 | 1 | 0 | 0 | 1987.496 | 387 | OK (skipped=1)
+simion_common | 356 | 6 | 0 | 0 | 176.051 | 408 | OK (skipped=6)
+rf_multipole_domain_tests | 398 | 0 | 0 | 0 | 333.847 | 425 | OK
+instrument_assembly_integration | 614 | 0 | 0 | 0 | 1880.577 | 1510 | OK
+orthogonal_accelerator_static | 112 | 0 | 0 | 0 | 8.273 | 1523 | OK
+parallel_mirror_dual_stripe_mr_tof_static | 726 | 6 | 0 | 0 | 1337.292 | 1562 | OK (skipped=6)
+single_reflection_oa_tof_mass_analyzer_static | 561 | 1 | 0 | 0 | 599.293 | 1704 | OK (skipped=1)
+rf_multipole_quadrupole_static | 23 | 0 | 0 | 0 | 37.906 | 1751 | OK
+rf_multipole_hexapole_static | 18 | 0 | 0 | 0 | 26.342 | 1763 | OK
+rf_multipole_octupole_static | 19 | 0 | 0 | 0 | 28.3 | 1776 | OK
+dual_pressure_rectilinear_ion_processor_static | 328 | 0 | 0 | 0 | 151.496 | 1791 | OK
+dual_cone_tandem_quadrupole_ion_interface_static | 30 | 0 | 0 | 0 | 6.936 | 1804 | OK
+transverse_helical_filament_wehnelt_electron_gun_static | 50 | 0 | 0 | 0 | 29.42 | 1818 | OK
+apertured_tube_electron_impact_ion_source_static | 22 | 0 | 0 | 0 | 2.246 | 1830 | OK
+
+ALL STAGES | selected | status | elapsed | resource_wait | execution | cleanup | process_elapsed | queue | launch | exit
+repository_hygiene | True | PASS | 5.075313 | 1.7773436 | 1.6884188 | 1.5633339 | None | None | None | 0
+repository_text_bytes | True | PASS | 3.476501 | 1.5460991 | 0.373264 | 1.5497543 | None | None | None | 0
+documentation | True | PASS | 12.160683 | 1.5623798 | 8.9671439 | 1.6264383 | None | None | None | 0
+development_standards | True | PASS | 21.364219 | 2.1846549 | 15.4229515 | 3.6714023 | 24.879014 | 6.334627 | 0.076211 | 0
+ruff_changed_python | True | PASS | 10.921876 | 8.3980685 | 0.7242876 | 1.7439882 | 14.344595 | 6.4304692 | 0.0216041 | 0
+host_resource_scheduler_tests | True | PASS | 108.042542 | 2.2267125 | 103.9875985 | 1.7596689 | 111.445744 | 6.4996138 | 0.02557 | 0
+host_resource_adapter_tests | True | PASS | 64.91836 | 8.4341501 | 54.6162706 | 1.8040881 | 68.328038 | 6.5358309 | 0.0208978 | 0
+livelink_resource_stages_tests | True | PASS | 272.82222 | 2.1832608 | 268.8163546 | 1.760499 | 276.250413 | 6.5706925 | 0.0181985 | 0
+longitudinal_fit_tests | False | NOT_APPLICABLE | None | None | None | None | None | None | None | None
+peak_metrics_tests | False | NOT_APPLICABLE | None | None | None | None | None | None | None | None
+figure_export_tests | False | NOT_APPLICABLE | None | None | None | None | None | None | None | None
+beam_focus_diagnostics_tests | False | NOT_APPLICABLE | None | None | None | None | None | None | None | None
+particle_census_tests | False | NOT_APPLICABLE | None | None | None | None | None | None | None | None
+plane_crossings_tests | False | NOT_APPLICABLE | None | None | None | None | None | None | None | None
+population_moments_tests | False | NOT_APPLICABLE | None | None | None | None | None | None | None | None
+particle_events_tests | False | NOT_APPLICABLE | None | None | None | None | None | None | None | None
+tof_error_budget_tests | False | NOT_APPLICABLE | None | None | None | None | None | None | None | None
+documentation_link_tests | False | NOT_APPLICABLE | None | None | None | None | None | None | None | None
+project_registry | False | NOT_APPLICABLE | None | None | None | None | None | None | None | None
+livelink_failure_classification | False | NOT_APPLICABLE | None | None | None | None | None | None | None | None
+livelink_environment | False | NOT_APPLICABLE | None | None | None | None | None | None | None | None
+rf_multipole_generated_publications | True | PASS | 20.247013 | 2.2307864 | 15.1749589 | 2.7258148 | 23.757197 | 6.4671027 | 0.0218575 | 0
+common_contracts | True | PASS | 1992.802637 | 2.1886608 | 1988.9516378 | 1.6031182 | 1996.201952 | 6.600229 | 0.0202076 | 0
+expected_values_tests | False | NOT_APPLICABLE | None | None | None | None | None | None | None | None
+gate_contract_tests | False | NOT_APPLICABLE | None | None | None | None | None | None | None | None
+cloc_contract_tests | False | NOT_APPLICABLE | None | None | None | None | None | None | None | None
+python_dependency_contract | False | NOT_APPLICABLE | None | None | None | None | None | None | None | None
+simion_common | True | PASS | 181.157602 | 2.1832325 | 177.1472711 | 1.7630202 | 184.500115 | 6.6319436 | 0.0277372 | 0
+rf_multipole_domain_tests | True | PASS | 359.174149 | 19.9859495 | 337.4443076 | 1.6723067 | 362.564766 | 20.8099468 | 0.021284 | 0
+integration_common | False | NOT_APPLICABLE | None | None | None | None | None | None | None | None
+instrument_assembly_integration | True | PASS | 1897.583112 | 5.9902435 | 1886.1122516 | 5.4022091 | 1905.377768 | 30.2580908 | 0.0814028 | 0
+solidworks_common | False | NOT_APPLICABLE | None | None | None | None | None | None | None | None
+orthogonal_accelerator_static | True | PASS | 18.666902 | 5.6827256 | 11.107248 | 1.7577521 | 26.977211 | 31.3631352 | 0.0279799 | 0
+parallel_mirror_dual_stripe_mr_tof_static | True | PASS | 1349.219297 | 2.2676932 | 1345.172829 | 1.6873491 | 1352.081511 | 58.3548827 | 0.0198757 | 0
+single_reflection_oa_tof_mass_analyzer_static | True | PASS | 612.44101 | 2.0531286 | 608.6571574 | 1.6690349 | 615.631711 | 74.8802424 | 0.0241701 | 0
+rf_multipole_quadrupole_static | True | PASS | 48.384875 | 2.1187176 | 44.4462034 | 1.7548638 | 51.763542 | 117.9582286 | 0.0210136 | 0
+rf_multipole_hexapole_static | True | PASS | 32.900067 | 2.078719 | 28.9966077 | 1.7488894 | 36.256755 | 169.7368126 | 0.0258441 | 0
+rf_multipole_octupole_static | True | PASS | 43.199568 | 10.5121626 | 30.8485669 | 1.7643301 | 46.308731 | 191.1441123 | 0.0199027 | 0
+dual_pressure_rectilinear_ion_processor_static | True | PASS | 160.318736 | 2.1673709 | 156.386947 | 1.6982671 | 163.775136 | 206.009743 | 0.0181298 | 0
+dual_cone_tandem_quadrupole_ion_interface_static | True | PASS | 17.118943 | 4.8797778 | 10.1487093 | 2.0238879 | 20.636604 | 237.4658811 | 0.0211283 | 0
+transverse_helical_filament_wehnelt_electron_gun_static | True | PASS | 38.666592 | 4.9505531 | 31.9369924 | 1.7115417 | 42.093813 | 258.1197702 | 0.0217229 | 0
+apertured_tube_electron_impact_ion_source_static | True | PASS | 8.686389 | 2.1051874 | 4.737249 | 1.7862173 | 11.764866 | 282.8336758 | 0.0187044 | 0
+
+RAW INPUT IDENTITIES
+l1_final_candidate_20261029_r8.json 81900 B SHA256 90ede33d184b665f22ee46717dfb6007c55aafc2b7d8e80241a18399c969adab
+l1_final_candidate_20261029_r8.log 265545 B SHA256 aeada96f4f04ed412992d0bde0c62f901b3bfffd3fc84f490db91a9467d2926c
+
+CENTRAL REMAINING RECORDS
+[]

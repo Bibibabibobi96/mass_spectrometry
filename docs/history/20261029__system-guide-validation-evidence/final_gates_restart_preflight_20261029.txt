@@ -1,0 +1,29 @@
+captured_at=2026-10-29T10:02:24.200181+08:00
+python=C:\Users\Liao\mass_spectrometry\simulation_repo\.venv\Scripts\python.exe
+python_version=3.11.0 (main, Oct 24 2022, 18:26:48) [MSC v.1933 64 bit (AMD64)]
+repository=C:\Users\Liao\mass_spectrometry\simulation_repo
+central_state=C:\Users\Liao\mass_spectrometry\artifacts\common\host_resources.sqlite3
+central_state_sequence=16618
+central_state_records=0
+HOST_RESOURCE_ENV={}
+file_count=2288
+logical_bytes=202011156
+source_identity_sha256=8e9ab984198a6cee7f56e12f3c7896606d3f52cee9ae039018e2d530dfa7a05b
+source_identity_algorithm=git ls-files -z --cached --others --exclude-standard; unique paths sorted case-sensitive; existing regular files only; records {path,bytes,sha256}; json.dumps(records,sort_keys=True,separators=(comma,colon),ensure_ascii=True).encode(utf-8); SHA256
+L1= pwsh -NoProfile -File common/verify_changed.ps1 -MaxConcurrency 8 -SummaryPath <mainTEMP>/l1_final_candidate_20261029_r6.json
+L2= pwsh -NoProfile -File common/verify_repository_integration.ps1 -MaxConcurrency 8 -SummaryPath <mainTEMP>/l2_final_candidate_20261029_r3.json
+Execution=L1 then L2, no external hard timeout; each public stage holds central GATE admission; 8 is dispatch ceiling, not granted CPU budget
+Default GATE budget=2 logical cores/2147483648 bytes; special measured-small-check=1 core/402653184 bytes; central reserve=1073741824 bytes, CPU ceiling=95 percent
+Historical L1 r5=1928.100826s; L2 r2=2423.781944s FAIL; both predate G3/layout narrow fixes; timing not a controlled performance comparison
+SOURCE common/parallel_gate_support.ps1 33234 7f7c4774d8d8f72f9b7842e4d269c737a897a2b1c26ebdc57645eaf43679a0cc
+SOURCE common/contracts/test_parallel_gate_support.py 59129 2a4fee880eac6a7a87ade525b9791e49b85433482922577eacde78d1e7ae804e
+SOURCE common/contracts/verify_artifact_layout.py 53250 4d7b0b95ad66712991a03effa63db8f585da1971e1364dcc11db78a0679f327f
+SOURCE common/contracts/test_verify_artifact_layout.py 67109 ea67d847cee05065375674c0e0f10a7eb4d9ed82f90b90869413bf6ea685f5fb
+SOURCE common/simion/pa_family_cache.py 237904 7ddc459d729cfb3e8935327e86cfc6c56865fe2623e1aba51b85b9dbd45d407d
+SOURCE common/verify_changed.ps1 21656 2c3756e2109273fc7a7e9f841337498659e4042cd0d27ff9e7c613f30fd21955
+SOURCE common/verify_repository_integration.ps1 7459 160e032f4263462c16de4dcf6307d943f92765fe0f736daef6a7d47704475857
+SOURCE common/host_resource_policy.json 7014 8bce1142a08d344b9a927234ab5bf5cd765a4ca9686e3dde5b94ab1dd69bd86d
+SOURCE README.md 4429 6aa1c4e651d28687f362efe889cae7f7fc95960c3cb86fa3e494a88eb21e8301
+SOURCE docs/VISION.md 5209 f5b331657151945c88aadf98dd33f2dcbae9f6ca43da9b0833852c66388200c4
+SOURCE docs/ROADMAP.md 20148 5c7935b741d9768589375465bb241f923d517e94c2c99d37a735f99cfdf995bb
+SOURCE docs/REPOSITORY_ARCHITECTURE.md 28547 9cdf6292eaf48dae009cb17ad3197d23246e453a6e18f43db7c6d68c8b4296ab

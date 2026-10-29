@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "role": "run_artifact_workflow_result",
+  "status": "failed",
+  "stage": "admission",
+  "run_directory": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\single_reflection_oa_tof_mass_analyzer\\runs\\20261029_073100__test__simion__radial-p3-gui",
+  "prepared_exit_code": null,
+  "terminal_published": false,
+  "capacity_finalized": false,
+  "lease_released": false,
+  "exception": {
+    "type": "System.InvalidOperationException",
+    "message": "Workflow capacity lease creation failed; exit_code=2; stdout=; stderr=usage: reconcile_artifact_capacity.py [-h] --artifact-root ARTIFACT_ROOT\n                                      [--restore-retired-disposition-receipt RESTORE_RETIRED_DISPOSITION_RECEIPT]\n                                      [--restore-ledger-object-key-receipt RESTORE_LEDGER_OBJECT_KEY_RECEIPT]\n                                      [--expected-ledger-sha256 EXPECTED_LEDGER_SHA256]\n                                      [--expected-receipt-sha256 EXPECTED_RECEIPT_SHA256]\n                                      [--create-protection-lease CREATE_PROTECTION_LEASE]\n                                      [--renew-protection-lease RENEW_PROTECTION_LEASE]\n                                      [--delete-protection-lease DELETE_PROTECTION_LEASE]\n                                      [--lease-owner LEASE_OWNER]\n                                      [--lease-ttl-seconds LEASE_TTL_SECONDS]\n                                      [--committed-new-bytes COMMITTED_NEW_BYTES]\n                                      [--protect-path PROTECT_PATH]\n                                      [--protect-cache-key PROTECT_CACHE_KEY]\n                                      [--execution-mode {startup,maintenance}]\n                                      [--maintenance-target-gib MAINTENANCE_TARGET_GIB]\n                                      [--capacity-ledger CAPACITY_LEDGER]\n                                      [--capacity-protection-lease-id CAPACITY_PROTECTION_LEASE_ID]\n                                      [--apply] [--detailed-output]\nreconcile_artifact_capacity.py: error: protected path must remain below the artifact root",
+    "notes": []
+  },
+  "secondary_errors": [],
+  "elapsed_seconds": 0.517102,
+  "timing": {
+    "validate": 0.1293732,
+    "admission": 0.3877288
+  },
+  "last_completed_stage": "validate",
+  "resume_action": "correct_request_and_use_new_run",
+  "execution_context": {
+    "host_resource_state_path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\common\\host_resources.sqlite3"
+  },
+  "writers_confirmed": false
+}

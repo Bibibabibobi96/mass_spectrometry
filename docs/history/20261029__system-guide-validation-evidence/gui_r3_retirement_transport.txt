@@ -1,0 +1,25 @@
+ROLE=necessary_transport_excerpt; lines below display normalized newlines, not the whole raw log
+SOURCE_LOG=C:\Users\Liao\AppData\Local\Temp\codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6\gui_r3_retirement_apply_20261029.log
+SOURCE_BYTES=486924
+SOURCE_SHA256=7E8AC3332EBA1CCDA1819540FCF6696D399B8AE917A6210A1A7BE428D54524B7
+AUTHORIZATION=First auto-review rejected all execution; user then explicitly approved exact38/1275410616B; same public wrapper succeeded
+ENTRYPOINT=common/contracts/invoke_solver_review_retirement.ps1; ordinary OwnerAbandonmentReason mode; -Apply
+OUTER_WALL_SECONDS=64.6642404 (observed root exec session14173 terminal output)
+EXIT_CODE=0
+REMOVED_FILES=38
+REMOVED_BYTES=1275410616
+PRESERVED_ORIGINAL_FILES=392
+PRESERVED_ORIGINAL_BYTES=3631618
+RECEIPT=C:\Users\Liao\mass_spectrometry\artifacts\projects\single_reflection_oa_tof_mass_analyzer\runs\20261029_083000__test__simion__radial-p3-gui-r3\solver_review_retirement_receipt.json
+RECEIPT_BYTES=476821
+RECEIPT_SHA256=12C67253C0C38C91B828C775C1B7F02453F0180D61BD1A4F2378BC95E9EF2CA3
+FINAL_FILES=393
+FINAL_BYTES=4108439
+FINAL_LEDGER=light_evidence/ready/pin=false; actual bytes exact; original owner
+NET_LOGICAL_REDUCTION_BYTES=1274933795
+PHYSICAL_FREE_DELTA=not measured
+GUI_STATUS=original failed; no GUI qualification
+
+ORIGINAL LOG LINE NUMBERS:
+1: HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=artifact_retirement PID=15096 INHERITED=False
+9944: HOST_RESOURCE=RELEASE ROLE=GATE STAGE=artifact_retirement STATUS=released

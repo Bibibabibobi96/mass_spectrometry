@@ -1,0 +1,8 @@
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=32928 INHERITED=False
+HOST_RESOURCE=RELEASE ROLE=GATE STAGE=unclassified STATUS=released
+HOST_RESOURCE=ACQUIRED ROLE=SIMION STAGE=pa_refine PID=32928 INHERITED=False
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=32928 INHERITED=True
+HOST_RESOURCE=ACQUIRED ROLE=GATE STAGE=unclassified PID=32928 INHERITED=True
+HOST_RESOURCE=RELEASE ROLE=SIMION STAGE=pa_refine STATUS=released
+RUN_MANIFEST=PASS PATH=C:\Users\Liao\mass_spectrometry\artifacts\projects\instrument_assembly\runs\20261029_062052__test__simion__h1-h2-three-workpoints\.run_manifest.f21015c93805434da6d0c5c8d9a310ff.candidate.json
+ACCEPTANCE=success RUN=C:\Users\Liao\mass_spectrometry\artifacts\projects\instrument_assembly\runs\20261029_062052__test__simion__h1-h2-three-workpoints COMMANDS=19

@@ -1,0 +1,23 @@
+[
+  {
+    "repository_path": "common/verify_changed.ps1",
+    "saved_path": "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_pre_import_odsoiwu0\\verify_changed.ps1.before-import-fix.txt",
+    "sha256": "b533d361f7b22217c587cab21fe6cdee72e5d41cc1263befc85e1802b26a053e",
+    "bytes": 21081,
+    "method": "inverse exact patch with forward roundtrip checked"
+  },
+  {
+    "repository_path": "common/gate_catalog_support.ps1",
+    "saved_path": "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_pre_import_odsoiwu0\\gate_catalog_support.ps1.before-import-fix.txt",
+    "sha256": "95b748d34ca1ff1a118233ecc84ef07dc622769eb008264e5471455b668c783e",
+    "bytes": 13576,
+    "method": "inverse exact patch with forward roundtrip checked"
+  },
+  {
+    "repository_path": "common/contracts/test_changed_test_selection.py",
+    "saved_path": "C:\\Users\\Liao\\AppData\\Local\\Temp\\codex_g2_pre_import_odsoiwu0\\test_changed_test_selection.py.before-import-fix.txt",
+    "sha256": "a6a5e859f7d02c04803ca6311bacf06a3cee56f84b56e1eaef5454f9db617736",
+    "bytes": 15331,
+    "method": "original bytes before edit"
+  }
+]

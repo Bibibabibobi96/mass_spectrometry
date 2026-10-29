@@ -1,0 +1,61 @@
+{
+  "run_id": "20261029_001733__test__simion__radial-n100-first-r2",
+  "full_manifest": "PASS 558 outputs",
+  "original_entry_exit_code": 1,
+  "original_entry_wall_seconds": 420.236871,
+  "metadata_correction_seconds": 3.1027847,
+  "finalization_only_exit_code": 0,
+  "finalization_only_wall_seconds": 9.3945387,
+  "native_calls_during_closeout": 0,
+  "scientific_summary_equal_except_owner_writers_stopped": true,
+  "best_accepted_case": null,
+  "old_to_new_completion_fields": [
+    "retention_preserve_paths",
+    "output_paths"
+  ],
+  "unchanged_retained_file_sha_count": 714,
+  "source_count": 143,
+  "context_sha256": "CA790C78D31E44731C89AB8179ABE4D59C042ADB9D34F2A11558F9B770F0B7EB",
+  "retention_removed_files": 38,
+  "retention_removed_bytes": 1275410616,
+  "native_units": [
+    {
+      "mode": "actual",
+      "splats": 100,
+      "native_returncode": 0,
+      "native_observer_seconds": 1.8186810000042897,
+      "stdout_sha256": "7CAF1DFCC0CA3A339C18DA678C6EB04446CAF64B565325E1E7E3E862987B8E9D"
+    },
+    {
+      "mode": "ideal_all",
+      "splats": 100,
+      "native_returncode": 0,
+      "native_observer_seconds": 3.429029699997045,
+      "stdout_sha256": "8424EB8B742D207C4AB3BB8826D2BCEF42D6271A87319DAF1773E2E974461589"
+    },
+    {
+      "mode": "ideal_reflectron",
+      "splats": 100,
+      "native_returncode": 0,
+      "native_observer_seconds": 3.027550999977393,
+      "stdout_sha256": "3EA4C1D1E023F6E43741120EDDE8180BB4F554863EC61FF588F095A3E5D6007F"
+    },
+    {
+      "mode": "ideal_stage1",
+      "splats": 100,
+      "native_returncode": 0,
+      "native_observer_seconds": 3.229530699987663,
+      "stdout_sha256": "19EF537B32CD7989F68FFA3011572883405C0FB31A0C09943922D799D94F70F3"
+    },
+    {
+      "mode": "ideal_stage2",
+      "splats": 100,
+      "native_returncode": 0,
+      "native_observer_seconds": 2.5270300000265706,
+      "stdout_sha256": "2DD79375C2D02072E805A482EA3C546FD2EBC5FB09A6FEDF34ECC2F3F73BE349"
+    }
+  ],
+  "manifest_sha256": "EBDE9642F7161CAD1D8617F3E89682D8F0FCB7387294AF0C51993C452588EC10",
+  "summary_sha256": "3E00BAD301FB379AFD9B7D7621C2D5D1525AC702916D8306A04DAD08CFC18978",
+  "completion_sha256": "921E79CF30637F323DEAB6D19B5BE63E04CE673CB1EF09E63535919D9CFEDC4F"
+}

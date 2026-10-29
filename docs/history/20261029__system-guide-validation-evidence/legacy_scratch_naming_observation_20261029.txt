@@ -1,0 +1,154 @@
+Read-only project scratch naming observation; no payload read, mutation, deletion, or ownership inference. Timestamps are observations, not deletion authorization.
+dual_cone_tandem_quadrupole_ion_interface/scratch/20260908_comsol_connection_smoke | 2026-09-20T19:28:48.791137+00:00 | 2026-09-08T08:55:59.491525+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+dual_cone_tandem_quadrupole_ion_interface/scratch/20260914_084035__dual-cone__gas-field | 2026-09-14T00:52:32.445203+00:00 | 2026-09-14T00:40:35.179265+00:00 | unsupported scope: dual-cone
+dual_cone_tandem_quadrupole_ion_interface/scratch/20260914_085227__dual-cone__rf570khz-300vpk-n100 | 2026-09-14T00:54:47.720227+00:00 | 2026-09-14T00:52:32.711373+00:00 | unsupported scope: dual-cone
+dual_cone_tandem_quadrupole_ion_interface/scratch/20260914_090309__dual-cone__source-r1p5-n100 | 2026-09-14T01:03:10.010796+00:00 | 2026-09-14T01:03:10.009805+00:00 | unsupported scope: dual-cone
+dual_cone_tandem_quadrupole_ion_interface/scratch/20260914_090546__dual-cone__source-r1p5-n100-r02 | 2026-09-14T01:05:46.879796+00:00 | 2026-09-14T01:05:46.878798+00:00 | unsupported scope: dual-cone
+dual_cone_tandem_quadrupole_ion_interface/scratch/20260914_090618__dual-cone__source-r1p5-n100-r03 | 2026-09-14T01:10:40.421833+00:00 | 2026-09-14T01:06:18.234761+00:00 | unsupported scope: dual-cone
+dual_cone_tandem_quadrupole_ion_interface/scratch/20260914_101500__diagnostic-preview | 2026-09-20T19:31:27.168965+00:00 | 2026-09-14T02:14:51.623704+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+dual_cone_tandem_quadrupole_ion_interface/scratch/solver_inspection | 2026-09-08T12:00:31.245131+00:00 | 2026-09-08T11:36:05.358758+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+dual_cone_tandem_quadrupole_ion_interface/scratch/solver_inspection2 | 2026-09-08T12:00:31.245131+00:00 | 2026-09-08T11:36:55.885730+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+dual_cone_tandem_quadrupole_ion_interface/scratch/solver_inspection3 | 2026-09-08T12:00:31.246128+00:00 | 2026-09-08T11:43:44.695052+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/20261023_222921__instrument-assembly-single-reflection | 2026-10-23T18:44:51.165928+00:00 | 2026-10-23T14:29:21.805027+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/artifacts | 2026-10-26T08:53:29.119194+00:00 | 2026-10-26T01:36:11.429684+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/commit_validation_20261026 | 2026-10-26T01:30:59.796613+00:00 | 2026-10-26T01:30:57.691799+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/cooled_field_cache_migration_20261024 | 2026-10-24T14:55:32.575497+00:00 | 2026-10-24T13:26:18.071355+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/diagnostic_cloc_quiet_guard_patch_20261026 | 2026-10-26T02:33:41.180719+00:00 | 2026-10-26T02:33:41.175719+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/direct_pa_iob_mechanism_20261025 | 2026-10-25T10:05:45.733355+00:00 | 2026-10-25T04:50:10.430380+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/field_recovery_20261025 | 2026-10-25T03:07:44.999579+00:00 | 2026-10-25T01:45:51.901705+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/fractional_standalone_capability_20261026 | 2026-10-26T05:21:44.189623+00:00 | 2026-10-26T05:21:44.153624+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/iob_path_probe_20261024 | 2026-10-26T00:15:32.585184+00:00 | 2026-10-24T01:17:47.857043+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/ip_mr_current_plan_preflight_20261025 | 2026-10-25T00:54:32.461045+00:00 | 2026-10-24T19:50:26.643958+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/ip_mr_shared_parent_20261025 | 2026-10-25T11:22:39.611573+00:00 | 2026-10-25T01:09:00.751028+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/mpl_multipole_common | 2026-10-26T11:39:31.408044+00:00 | 2026-10-26T11:39:27.218799+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/mpl_parallel_mirror_dual_stripe_mr_tof_static | 2026-10-26T11:46:02.775220+00:00 | 2026-10-26T11:46:02.775220+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/mpl_rf_hexapole_ion_optics_static | 2026-10-26T11:50:15.368921+00:00 | 2026-10-26T11:50:15.368921+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/mpl_rf_octupole_ion_optics_static | 2026-10-26T11:50:53.268718+00:00 | 2026-10-26T11:50:53.268718+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/mpl_rf_quadrupole_ion_optics_static | 2026-10-26T11:50:10.663899+00:00 | 2026-10-26T11:50:02.986269+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/multi_instance_author_20261025 | 2026-10-24T18:31:09.731815+00:00 | 2026-10-24T18:26:47.885939+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/multi_instance_phase_author_20261025 | 2026-10-25T15:36:17.563846+00:00 | 2026-10-25T03:04:15.244666+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/multi_instance_variant_author_20261025 | 2026-10-24T19:29:46.829956+00:00 | 2026-10-24T18:38:22.321885+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/n3_raw_anchor_diagnostic_20261026 | 2026-10-26T08:57:45.495491+00:00 | 2026-10-26T08:53:53.735420+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/oa_mr_current_interface_diagnostic_20261026 | 2026-10-26T09:46:17.989212+00:00 | 2026-10-26T09:34:22.219334+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/oa_mr_current_plan_author_20261025 | 2026-10-26T09:30:57.164394+00:00 | 2026-10-24T19:46:56.805953+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/oa_mr_recovery_preflight_20261026 | 2026-10-26T10:43:45.393797+00:00 | 2026-10-26T10:27:56.510387+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/paired_cpt_export_recovery_preparation_20261026 | 2026-10-26T11:26:48.178314+00:00 | 2026-10-26T07:46:45.120260+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/paired_finite_pulse_preparation_20261025 | 2026-10-25T23:51:24.468605+00:00 | 2026-10-25T13:42:10.338516+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/paired_sample_roundtrip_audit_20261025 | 2026-10-25T13:44:17.951664+00:00 | 2026-10-25T13:44:17.950649+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/paired_static_export_reuse_preflight_20261026 | 2026-10-26T10:23:14.977600+00:00 | 2026-10-26T10:08:18.474539+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/paired_strict_pulse_author_20261026 | 2026-10-26T10:44:44.424292+00:00 | 2026-10-26T10:35:36.826237+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+instrument_assembly/scratch/repeat_fly_preparation_20261025 | 2026-10-25T11:14:19.350431+00:00 | 2026-10-25T10:44:16.785708+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+orthogonal_accelerator/scratch/20261003_120002__migration__r14-pa-recovery | 2026-10-03T03:45:33.777822+00:00 | 2026-10-03T03:45:33.775831+00:00 | unsupported scope: migration
+parallel_mirror_dual_stripe_mr_tof/scratch/20260902__accelerator-stl-copy | 2026-09-02T05:20:42.819752+00:00 | 2026-09-02T05:20:42.818744+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260902__accelerator-stl-copy-retry | 2026-09-21T01:12:53.972614+00:00 | 2026-09-02T05:21:23.865418+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260902__cad-audit | 2026-09-21T01:14:39.062371+00:00 | 2026-09-02T02:44:13.073182+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260902__cad-resolved-gem | 2026-09-21T01:15:15.600695+00:00 | 2026-09-02T03:57:39.018342+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260902__full-candidate-coarse | 2026-09-21T01:16:05.894950+00:00 | 2026-09-02T03:10:49.647212+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260902__ground-aperture | 2026-09-21T01:16:56.516193+00:00 | 2026-09-02T04:25:54.799710+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260902__injection-corridor | 2026-09-21T01:17:48.482123+00:00 | 2026-09-02T04:03:36.105916+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260902__ion-foil-recovery | 2026-09-02T09:43:03.572925+00:00 | 2026-09-02T03:13:48.421496+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260902__mirror-cad-stl | 2026-09-21T01:17:53.893269+00:00 | 2026-09-02T06:44:19.967598+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260902__mirror-l0-h15-endplate-turning-gate | 2026-09-21T01:18:12.735646+00:00 | 2026-09-02T08:44:42.051509+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260902__mirror-l0-h15-outer-e-retention | 2026-09-21T01:18:13.784702+00:00 | 2026-09-02T08:51:42.509496+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260902__mirror-l0-h15-terminal-e-inner-plane | 2026-09-21T01:18:16.970914+00:00 | 2026-09-02T08:57:04.631958+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260902__mirror-l0-h15-terminal-e-plane | 2026-09-21T01:18:18.101045+00:00 | 2026-09-02T08:56:06.940101+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260902__mirror-slot | 2026-09-21T01:19:01.499601+00:00 | 2026-09-02T04:44:31.885650+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260902__mirror-slot-resolved | 2026-09-21T01:18:22.559313+00:00 | 2026-09-02T06:53:51.952668+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260902__repeller-plane | 2026-09-21T01:19:44.927006+00:00 | 2026-09-02T04:14:43.875536+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260902__stripe-channel | 2026-09-21T01:25:34.871639+00:00 | 2026-09-02T04:35:24.956834+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260902__theory-resolved-geometry | 2026-09-21T01:26:42.159679+00:00 | 2026-09-02T05:34:47.545135+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260902__two-mirror-pose-audit | 2026-09-21T01:27:10.734867+00:00 | 2026-09-02T07:36:17.275299+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260902__two-zone-theory-rebuild | 2026-09-21T01:27:14.864402+00:00 | 2026-09-02T06:33:32.823887+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260902__wide-mirror-slot | 2026-09-21T01:27:37.954853+00:00 | 2026-09-02T04:54:42.897873+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260903__grounded2-cross-slot-audit | 2026-09-21T01:27:39.966003+00:00 | 2026-09-03T02:56:05.447048+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260903__ion-foil-prism-solid-audit | 2026-09-03T01:15:10.557457+00:00 | 2026-09-03T01:15:10.556937+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260903__ion-foil-y-bridge-cad-audit | 2026-09-21T01:31:20.815685+00:00 | 2026-09-03T02:26:31.584448+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260903__prism-ground-solid-audit | 2026-09-03T01:18:56.446130+00:00 | 2026-09-03T01:18:56.446130+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260903__prism-id-probe | 2026-09-21T01:31:47.242792+00:00 | 2026-09-03T00:57:48.785951+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260907__analytic-mirror-l0l1-w | 2026-09-07T03:02:19.306652+00:00 | 2026-09-07T02:50:49.404710+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260921_080000__simion__r59_corrupt_pa_quarantine | 2026-09-21T01:31:48.275331+00:00 | 2026-09-10T08:03:48.801487+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20260930_root2_yz_grid_check | 2026-09-30T23:11:42.703171+00:00 | 2026-09-30T15:41:25.723308+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261001_k23p5_x0p125_local_x5 | 2026-10-08T05:49:26.873964+00:00 | 2026-10-01T14:26:40.671331+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261001_k23p5_x0p125_static | 2026-10-08T05:49:22.903400+00:00 | 2026-10-01T11:55:58.278929+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261002_054000__test__static-iob-recovery | 2026-10-01T21:37:35.084318+00:00 | 2026-10-01T21:27:45.619003+00:00 | unsupported scope: test
+parallel_mirror_dual_stripe_mr_tof/scratch/20261002_062000__test__static-coarse-control | 2026-10-08T05:49:25.271828+00:00 | 2026-10-01T21:38:45.370829+00:00 | unsupported scope: test
+parallel_mirror_dual_stripe_mr_tof/scratch/20261002_085500__test__surface-extension | 2026-10-02T00:53:42.767959+00:00 | 2026-10-02T00:52:34.333383+00:00 | unsupported scope: test
+parallel_mirror_dual_stripe_mr_tof/scratch/20261002_comsol_geometry_pilot_r01 | 2026-10-02T01:06:46.215239+00:00 | 2026-10-02T01:01:53.234388+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261002_comsol_geometry_pilot_r02 | 2026-10-08T05:49:37.180438+00:00 | 2026-10-02T01:08:09.596801+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261002_comsol_static_reference_h2p5_r01 | 2026-10-08T05:49:33.246991+00:00 | 2026-10-02T01:30:37.846809+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261002_comsol_static_reference_r01 | 2026-10-02T01:22:54.816747+00:00 | 2026-10-02T01:21:36.995135+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261002_comsol_static_reference_r02 | 2026-10-08T05:49:34.813003+00:00 | 2026-10-02T01:24:16.559278+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261002_comsol_static_reference_xface1p25_r01 | 2026-10-08T05:49:32.458951+00:00 | 2026-10-02T01:38:36.155017+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261003_120000__migration__fractional-handoff-probe | 2026-10-01T01:32:03.423945+00:00 | 2026-10-01T01:26:56.288496+00:00 | unsupported scope: migration
+parallel_mirror_dual_stripe_mr_tof/scratch/20261003_120001__migration__k23p5-root2-n3 | 2026-09-29T11:02:46.401152+00:00 | 2026-09-29T11:02:45.796549+00:00 | unsupported scope: migration
+parallel_mirror_dual_stripe_mr_tof/scratch/20261003_121237__test__comsol-pa-window-bridge | 2026-10-03T04:44:43.569909+00:00 | 2026-10-03T04:13:46.281100+00:00 | unsupported scope: test
+parallel_mirror_dual_stripe_mr_tof/scratch/20261003_123500__test__comsol-pa-window-quarter | 2026-10-03T04:44:43.570911+00:00 | 2026-10-03T04:33:19.602615+00:00 | unsupported scope: test
+parallel_mirror_dual_stripe_mr_tof/scratch/20261003_134500__build__six-gui-oa-rebind | 2026-10-03T05:45:45.776216+00:00 | 2026-10-03T05:32:57.626296+00:00 | unsupported scope: build
+parallel_mirror_dual_stripe_mr_tof/scratch/20261003_232000__source__gaussian-ey-inputs | 2026-10-03T15:19:42.275244+00:00 | 2026-10-03T15:16:58.671292+00:00 | unsupported scope: source
+parallel_mirror_dual_stripe_mr_tof/scratch/20261004_093500__analysis__python__mrtof-boundary-source-comparison | 2026-10-04T02:01:53.131918+00:00 | 2026-10-04T01:36:26.765754+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261004_203500__diagnostic__m100-scalar-phase-windows | 2026-10-04T13:08:14.825936+00:00 | 2026-10-04T12:32:52.798729+00:00 | unsupported scope: diagnostic
+parallel_mirror_dual_stripe_mr_tof/scratch/20261004_212500__diagnostic__simion-anisotropic-v-field-array | 2026-10-04T13:20:25.040773+00:00 | 2026-10-04T13:11:47.709319+00:00 | unsupported scope: diagnostic
+parallel_mirror_dual_stripe_mr_tof/scratch/20261004_231000__diagnostic__n5-sparse-path-adapter | 2026-10-04T15:11:41.461112+00:00 | 2026-10-04T15:05:23.588144+00:00 | unsupported scope: diagnostic
+parallel_mirror_dual_stripe_mr_tof/scratch/20261005_214943__p1-field-comparison | 2026-10-05T13:54:19.917188+00:00 | 2026-10-05T13:54:19.916161+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261006_115000__mrtof-static-failure-diagnostic | 2026-10-06T02:44:42.543905+00:00 | 2026-10-06T02:42:19.093108+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261006_124000__matlab__provider-manual-static | 2026-10-06T04:36:27.678046+00:00 | 2026-10-06T04:35:09.976475+00:00 | unsupported scope: matlab
+parallel_mirror_dual_stripe_mr_tof/scratch/20261006_181500__analysis__selective-n13-compare | 2026-10-06T10:31:26.671929+00:00 | 2026-10-06T10:17:36.155298+00:00 | unsupported scope: analysis
+parallel_mirror_dual_stripe_mr_tof/scratch/20261006_206000__simion__p1-same-entry-replay-prepare | 2026-10-06T12:18:42.808125+00:00 | 2026-10-06T11:46:21.972750+00:00 | unconverted data remains: 0
+parallel_mirror_dual_stripe_mr_tof/scratch/20261006_212500__analysis__central-n13-comparison-prepare | 2026-10-06T12:23:03.942033+00:00 | 2026-10-06T12:23:03.940025+00:00 | unsupported scope: analysis
+parallel_mirror_dual_stripe_mr_tof/scratch/20261006_231000__analysis__central-h075-n13-comparison-prepare | 2026-10-06T13:39:57.523775+00:00 | 2026-10-06T13:22:31.600648+00:00 | unsupported scope: analysis
+parallel_mirror_dual_stripe_mr_tof/scratch/20261007_013000__analysis__remaining-tube-h2-paired-prepare | 2026-10-06T15:12:18.915161+00:00 | 2026-10-06T15:12:18.914164+00:00 | unsupported scope: analysis
+parallel_mirror_dual_stripe_mr_tof/scratch/20261007_027000__simion__mirror-coverage-n13-prepare | 2026-10-06T17:04:35.949429+00:00 | 2026-10-06T17:04:04.746002+00:00 | unconverted data remains: 0
+parallel_mirror_dual_stripe_mr_tof/scratch/20261007_083000__matlab__provider-static-review | 2026-10-07T00:29:37.904383+00:00 | 2026-10-07T00:27:05.202428+00:00 | unsupported scope: matlab
+parallel_mirror_dual_stripe_mr_tof/scratch/20261010_093000__staged-s-reclosure-author | 2026-10-10T01:33:06.902891+00:00 | 2026-10-10T01:33:06.902891+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261010_native_static_production_handoff | 2026-10-10T11:52:26.611077+00:00 | 2026-10-10T11:24:17.099092+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261010_stage015_same_grid_consumer_compare_author | 2026-10-09T23:48:32.541549+00:00 | 2026-10-09T23:26:47.929890+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261012_230700__native-response-request | 2026-10-12T20:35:05.482681+00:00 | 2026-10-12T15:06:38.847109+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261013_071525__cloc-publication-fix | 2026-10-12T23:19:33.864321+00:00 | 2026-10-12T23:19:33.181672+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261013_084000__native-stripe-response-probe | 2026-10-13T00:41:02.452583+00:00 | 2026-10-13T00:41:01.722982+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261013_100000__native-te1-plan | 2026-10-13T01:12:04.470039+00:00 | 2026-10-13T01:11:29.431610+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261013_110000__native-te1-direction-plan | 2026-10-13T02:54:44.631798+00:00 | 2026-10-13T02:54:43.881426+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261013_121500__native-k255-warmstart | 2026-10-13T03:24:23.240347+00:00 | 2026-10-13T03:21:38.497338+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261013_160000__native-center-view-validation | 2026-10-13T07:44:55.256749+00:00 | 2026-10-13T07:25:27.547006+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261013_cad_step_topic_l1 | 2026-10-13T04:37:43.106380+00:00 | 2026-10-13T04:37:43.050229+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261013_prism_controller_policy | 2026-10-13T06:22:07.060210+00:00 | 2026-10-13T06:22:07.032282+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261020_d_actual_calibration | 2026-10-20T14:00:13.886734+00:00 | 2026-10-20T14:00:13.870778+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261020_d_calibration_ray_selection | 2026-10-20T13:47:44.495340+00:00 | 2026-10-20T13:47:44.476391+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261020_d_candidate_limits | 2026-10-20T14:07:13.384406+00:00 | 2026-10-20T14:07:13.359868+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261020_d_doublet_selection_report | 2026-10-20T13:17:16.049627+00:00 | 2026-10-20T13:17:16.009572+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261020_d_feedback_final | 2026-10-20T14:36:53.488984+00:00 | 2026-10-20T14:36:53.472029+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261020_d_feedback_native | 2026-10-20T14:33:16.841591+00:00 | 2026-10-20T14:33:16.830619+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261020_d_feedback_query_plan | 2026-10-20T14:22:18.127086+00:00 | 2026-10-20T14:22:18.106335+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261020_d_feedback_recorded | 2026-10-20T14:34:44.089886+00:00 | 2026-10-20T14:34:44.076412+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261020_d_finite_doublet | 2026-10-20T13:13:03.909336+00:00 | 2026-10-20T13:04:36.124140+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261020_d_lens_theory | 2026-10-20T12:58:32.347859+00:00 | 2026-10-20T12:58:32.339195+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261020_default_replay_plan | 2026-10-20T15:11:36.803849+00:00 | 2026-10-20T15:11:36.784756+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261020_fine_sampled_minima | 2026-10-20T10:49:10.199781+00:00 | 2026-10-20T10:49:10.188684+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261020_five_default_actual | 2026-10-20T15:38:53.699374+00:00 | 2026-10-20T15:38:53.691413+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261020_focus_spatial_regression | 2026-10-20T10:33:42.708530+00:00 | 2026-10-20T10:33:42.698653+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261020_goal7_synthesis | 2026-10-20T11:54:11.946213+00:00 | 2026-10-20T11:28:04.466228+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261020_lens_axis_regression | 2026-10-20T13:22:04.005434+00:00 | 2026-10-20T13:22:03.993465+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261020_local_l1_cloc | 2026-10-20T10:38:38.140332+00:00 | 2026-10-20T10:38:38.126643+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261020_replay_exact_status_plan | 2026-10-20T15:24:35.719231+00:00 | 2026-10-20T15:24:35.700282+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/20261020_replay_retired_native_plan | 2026-10-20T15:21:41.123526+00:00 | 2026-10-20T15:21:41.104576+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/first_prism_full_path_probe | 2026-09-21T01:32:14.230063+00:00 | 2026-09-07T01:34:15.880841+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/first_prism_full_path_probe_2 | 2026-09-21T01:32:30.791849+00:00 | 2026-09-07T01:34:58.737742+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+parallel_mirror_dual_stripe_mr_tof/scratch/y50_k25p5_restart | 2026-09-24T09:48:24.568961+00:00 | 2026-09-24T09:45:53.272861+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/scratch/20260901_pre_pulse_forward60_n1_review | 2026-09-22T13:24:39.432134+00:00 | 2026-09-01T11:44:54.553396+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/scratch/20260904__author-refresh-continuous-control | 2026-09-04T09:45:21.122278+00:00 | 2026-09-04T09:42:21.337549+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/scratch/20260907__root-tmp-migration | 2026-09-22T13:30:12.963822+00:00 | 2026-09-07T01:55:24.883028+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/scratch/20261021_agent3_field_probe | 2026-10-21T10:23:11.979291+00:00 | 2026-10-21T10:16:47.213835+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/scratch/20261021_oa-time-decomposition | 2026-10-21T12:33:39.554549+00:00 | 2026-10-21T12:32:44.955059+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/scratch/20261021_oa-time-focus | 2026-10-21T10:29:09.101017+00:00 | 2026-10-21T09:37:10.720893+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/scratch/axis_rerun2_20260902_114500 | 2026-09-22T13:30:21.659485+00:00 | 2026-09-02T03:43:18.149950+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/scratch/axis_rerun_20260902_114000 | 2026-09-22T13:29:59.660992+00:00 | 2026-09-02T03:40:05.715690+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/scratch/axis_run_20260902_112000 | 2026-09-22T13:25:26.773545+00:00 | 2026-09-02T03:22:41.621986+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/scratch/axis_validate_20260902_111400 | 2026-09-22T13:30:22.343210+00:00 | 2026-09-02T03:15:26.361624+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/scratch/background_launch_20260902_110000 | 2026-09-22T13:30:23.079965+00:00 | 2026-09-02T02:56:53.372994+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/scratch/continuous_full_flight_authoring | 2026-09-04T08:12:23.861681+00:00 | 2026-09-04T07:59:34.018377+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/scratch/corridor_axis_field_launch | 2026-09-22T13:29:58.302227+00:00 | 2026-08-30T17:21:56.947574+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/scratch/corridor_prepare_inspect | 2026-09-22T13:24:41.498253+00:00 | 2026-08-30T17:16:11.162828+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/scratch/post_pulse_prepare_20260901_0215 | 2026-09-22T13:28:15.152763+00:00 | 2026-08-31T18:17:35.152270+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/scratch/post_pulse_prepare_20260901_0217 | 2026-09-22T13:28:15.947866+00:00 | 2026-08-31T18:19:50.317688+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/scratch/pre_h100_20260902_115000 | 2026-09-22T13:29:58.999239+00:00 | 2026-09-02T03:46:37.980399+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+single_reflection_oa_tof_mass_analyzer/scratch/20261022_oa-convergence-isolation | 2026-10-22T05:49:28.973587+00:00 | 2026-10-22T02:52:20.106483+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT
+single_reflection_oa_tof_mass_analyzer/scratch/comsol_192618_local_preparation_20261024 | 2026-10-24T13:04:58.826462+00:00 | 2026-10-24T12:39:04.537970+00:00 | task_id must be TIMESTAMP__SCOPE__SUBJECT

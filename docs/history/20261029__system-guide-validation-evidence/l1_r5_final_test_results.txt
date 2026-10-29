@@ -1,0 +1,123 @@
+L1 r5 final test results -- read-only extraction
+
+Inputs (r5 only; no counts imported from earlier gates):
+C:\Users\Liao\AppData\Local\Temp\codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6\l1_final_candidate_20261029_r5.log
+  bytes=264757; SHA256=A2A978003ACEF7130A206075D7D5F9A4F42DA2C69A6688BE680067C44B26628A
+C:\Users\Liao\AppData\Local\Temp\codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6\l1_final_candidate_20261029_r5.json
+  bytes=81686; SHA256=955A7D8A1F7CA86991A329ABE5E79B4C92E04C0D1A4041B57AC0CA3DBEFE7F93
+
+Terminal result:
+  summary=PASS; 23/23 selected stages PASS/COMPLETED, all actual exit codes 0, no stage errors; 19 NOT_APPLICABLE/NOT_SELECTED.
+  started=2026-10-28T23:37:09.3710576Z; finished=2026-10-29T00:09:17.4710428Z; elapsed_seconds=1928.100826.
+  Log final CHANGED_GATE=PASS PYTHON=3.11 CHANGED_PATHS=194 FULL_SCOPE=False; root reported process exit 0.
+  This is changed-scope L1, not FullScope or L2, and not a commercial solver/GUI/Formal result.
+
+Unittest counting:
+  16 top-level runner summaries, 4255 reported test invocations INCLUDING 14 skipped; 4241 non-skipped. All 16 summaries OK; 0 failures/errors.
+  Counts are runner test invocations, not a claim of globally unique test definitions, subtests, subprocess probes, assertions, Lua or PS cases.
+  Each selected stage has exactly one RUN and one PASS marker; each unittest stage has exactly one Ran/OK pair. No runner summary was counted twice.
+  All 614 identifiable verbose test IDs in integration output are unique. Non-verbose runners do not expose per-test IDs.
+  common expected-values/gate/cloc/dependency subroutes were covered_by_common_contracts, not separately executed and not added again.
+  MR module selection and common explicit module lists are unique; integration merges discovery + changed modules via Sort-Object -Unique.
+
+Runner | tests | skipped | unittest body seconds | stage elapsed seconds | scope
+host_resource_scheduler_tests | 93 | 0 | 100.533 | 110.783160 | common.test_host_resource_scheduler + common.test_host_resource_python (2 explicit modules)
+livelink_resource_stages_tests | 47 | 0 | 260.964 | 264.977869 | common.comsol.test_livelink_resource_stages (inert resource/process fixtures; no vendor claim)
+common_contracts | 858 | 1 | 1890.238 | 1894.998639 | 49 explicit common/contracts test modules; expanded owner discovery, temporary PYTHONPATH discovery root retained
+simion_common | 356 | 6 | 157.103 | 161.804099 | unittest discover common/simion/test_*.py
+rf_multipole_domain_tests | 398 | 0 | 326.212 | 333.267444 | unittest discover projects/rf_multipole_ion_optics/tests/domain/test_*.py
+instrument_assembly_integration | 614 | 0 | 1789.818 | 1815.813299 | recursive integrations/tests discovery union 8 changed modules, Sort-Object -Unique; integration Ruff also ran
+orthogonal_accelerator_static | 112 | 0 | 10.929 | 23.247512 | orthogonal_accelerator verify_project default Static
+parallel_mirror_dual_stripe_mr_tof_static | 726 | 6 | 1250.981 | 1262.315486 | ACTUAL Level=Core: 4 fixed core modules + 17 changed modules = 21 unique modules; PS parse/Lua synthetic contracts also ran
+single_reflection_oa_tof_mass_analyzer_static | 561 | 1 | 573.884 | 585.691484 | OA verify_project default Static; analysis unittest discovery plus geometry/contract/Ruff checks
+rf_multipole_quadrupole_static | 23 | 0 | 35.178 | 44.646414 | ACTUAL Level=Core: physical contracts + one explicit test_comsol_workflow_architecture_contract module; not full RF analysis Static
+rf_multipole_hexapole_static | 18 | 0 | 25.742 | 32.247972 | Level=Static, hexapole test root; generated freshness prevalidated
+rf_multipole_octupole_static | 19 | 0 | 25.901 | 32.704231 | Level=Static, octupole test root; generated freshness prevalidated
+dual_pressure_rectilinear_ion_processor_static | 328 | 0 | 135.310 | 144.173981 | Ion Processor verify_project default Static
+dual_cone_tandem_quadrupole_ion_interface_static | 30 | 0 | 6.421 | 13.769035 | dual-cone verify_project default Static
+transverse_helical_filament_wehnelt_electron_gun_static | 50 | 0 | 26.794 | 33.211705 | electron-gun verify_project default Static
+apertured_tube_electron_impact_ion_source_static | 22 | 0 | 2.001 | 8.433534 | EI source verify_project default Static
+
+Timing interpretation:
+  unittest body is the printed unittest timer. execution_seconds is the entire stage action body (includes its pre/post checks).
+  stage elapsed includes resource admission + stage action + cleanup. queue_seconds is parallel queue delay; process_elapsed_seconds is the child wall observation.
+  Parallel stage durations overlap. Do not add their wall times or unittest body sums and present the sum as end-to-end runtime.
+
+Key runner | unittest | action execution | resource wait | cleanup | stage elapsed | queue | child process wall (seconds)
+common_contracts | 1890.238000 | 1891.302833 | 1.979418 | 1.664547 | 1894.998639 | 4.369420 | 1897.812303
+instrument_assembly_integration | 1789.818000 | 1795.102949 | 19.003375 | 1.659662 | 1815.813299 | 24.652998 | 1818.594743
+parallel_mirror_dual_stripe_mr_tof_static | 1250.981000 | 1258.348992 | 2.134739 | 1.763217 | 1262.315486 | 50.715039 | 1265.394007
+single_reflection_oa_tof_mass_analyzer_static | 573.884000 | 581.829638 | 2.080190 | 1.714356 | 585.691484 | 74.565259 | 588.585984
+
+Selected non-unittest stages (excluded from 4,255):
+  repository_hygiene: PASS, elapsed=11.673659s; command={"runner": "powershell", "script": "common/verify_repository_hygiene.ps1"}
+  repository_text_bytes: PASS, elapsed=3.504420s; command={"runner": "python", "arguments": ["common/verify_repository_text_bytes.py"]}
+  documentation: PASS, elapsed=10.349450s; command={"runner": "powershell", "parameters": {"PythonExe": "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe", "StructureOnly": true}, "script": "common/verify_documentation.ps1"}
+  development_standards: PASS, elapsed=17.625055s; common/verify_development_standards.py with explicit changed source list (full command retained in source summary).
+  ruff_changed_python: PASS, elapsed=4.455626s; command=Ruff for selected changed Python files (exact list in summary)
+  host_resource_adapter_tests: PASS, elapsed=67.477021s; command={"runner": "powershell", "script": "common/test_host_execution_lease.ps1", "parameters": {"PythonExe": "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe"}}
+  rf_multipole_generated_publications: PASS, elapsed=17.658544s; command={"runner": "powershell", "script": "projects/rf_multipole_ion_optics/verify_project.ps1", "parameters": {"Level": "Freshness", "PythonExe": "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo\\.venv\\Scripts\\python.exe", "StructuralVariant": "All"}}
+
+Expected failure text is not a gate failure:
+  Log line 903 engineering_budget.ps1 missing instrument_pulse_discovery budget belongs to test_discovery_budget_is_required_before_any_native_boundary, which ends ok.
+  Log line 1123 no supported pulse candidate belongs to test_discovery_missing_candidates_retains_negative_without_timed_successor, which ends ok.
+  MR diagnostic argparse error is an intentional invalid-mode rejection within the passing runner. No top-level FAILED / FAIL: / ERROR: / Traceback / GATE_STAGE=FAIL appears.
+
+Source / MR 37-fixture scope:
+  Frozen source label from root: cache-owner 7DD. Current read-only file SHA verifies common/simion/pa_family_cache.py=7DDC459D729CFB3E8935327E86CFC6C56865FE2623E1ABA51B85B9DBD45D407D.
+  Gate summary records command/module scope, not a whole-source digest; source freeze provenance is the root-controlled run window.
+  MR37 means the previously repaired test_static_workpoint_iteration.py (29 methods) plus test_trajectory_recording.py (8 methods). Both appear in this r5 21-module execution list.
+  Those 37 are included in the r5 MR 726 count, never an additional 37. Historical focused red/green or r4 counts are not used in r5 totals.
+  projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_static_workpoint_iteration.py: static test-method count=29; bytes=36622; SHA256=6F5109B6FDFC7D4F95EB35A3877E589C63482F946AB7F7448E4C19D6D5205575
+  projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_trajectory_recording.py: static test-method count=8; bytes=14571; SHA256=70223EB7590C4CC3741C68B8CD3E7B213A6C633C2B5515FDF28633EB4678A49E
+
+All selected stage terminal/timing rows:
+stage | status | exit / child exit | elapsed | action body | resource wait | cleanup | queue
+repository_hygiene | PASS | 0 / None | 11.673659 | 1.6517724 | 8.3787853 | 1.6058099 | None
+repository_text_bytes | PASS | 0 / None | 3.50442 | 0.3816875 | 1.5635066 | 1.5551757 | None
+documentation | PASS | 0 / None | 10.34945 | 7.1760883 | 1.5922182 | 1.575903 | None
+development_standards | PASS | 0 / 0 | 17.625055 | 13.8499863 | 1.9865756 | 1.7405015 | 4.1303328
+ruff_changed_python | PASS | 0 / 0 | 4.455626 | 0.4465088 | 2.0078299 | 1.9552787 | 4.1964548
+host_resource_scheduler_tests | PASS | 0 / 0 | 110.78316 | 101.0376246 | 7.9138621 | 1.7794293 | 4.2585614
+host_resource_adapter_tests | PASS | 0 / 0 | 67.477021 | 57.7189481 | 7.9607139 | 1.7451371 | 4.2941121
+livelink_resource_stages_tests | PASS | 0 / 0 | 264.977869 | 261.1982727 | 1.9862589 | 1.7335511 | 4.3367251
+rf_multipole_generated_publications | PASS | 0 / 0 | 17.658544 | 13.8433557 | 2.0262382 | 1.7332773 | 4.2311216
+common_contracts | PASS | 0 / 0 | 1894.998639 | 1891.3028325 | 1.9794179 | 1.6645467 | 4.3694198
+simion_common | PASS | 0 / 0 | 161.804099 | 157.9698377 | 1.9662133 | 1.8101662 | 4.3998694
+rf_multipole_domain_tests | PASS | 0 / 0 | 333.267444 | 329.2350085 | 2.1312906 | 1.8403476 | 11.7317298
+instrument_assembly_integration | PASS | 0 / 0 | 1815.813299 | 1795.1029486 | 19.0033749 | 1.6596624 | 24.6529976
+orthogonal_accelerator_static | PASS | 0 / 0 | 23.247512 | 19.2911968 | 2.024056 | 1.8789722 | 24.7671163
+parallel_mirror_dual_stripe_mr_tof_static | PASS | 0 / 0 | 1262.315486 | 1258.3489924 | 2.1347386 | 1.763217 | 50.7150393
+single_reflection_oa_tof_mass_analyzer_static | PASS | 0 / 0 | 585.691484 | 581.8296376 | 2.0801901 | 1.7143563 | 74.565259
+rf_multipole_quadrupole_static | PASS | 0 / 0 | 44.646414 | 40.7613949 | 2.0535243 | 1.777778 | 117.9018423
+rf_multipole_hexapole_static | PASS | 0 / 0 | 32.247972 | 28.2684268 | 2.105381 | 1.8079844 | 165.5759599
+rf_multipole_octupole_static | PASS | 0 / 0 | 32.704231 | 28.6267187 | 2.2058484 | 1.8058974 | 169.0614159
+dual_pressure_rectilinear_ion_processor_static | PASS | 0 / 0 | 144.173981 | 139.8716371 | 2.1607795 | 2.0714404 | 200.510506
+dual_cone_tandem_quadrupole_ion_interface_static | PASS | 0 / 0 | 13.769035 | 9.6843195 | 2.1902663 | 1.8204459 | 204.7108908
+transverse_helical_filament_wehnelt_electron_gun_static | PASS | 0 / 0 | 33.211705 | 29.2688508 | 2.1297122 | 1.7625385 | 221.3842986
+apertured_tube_electron_impact_ion_source_static | PASS | 0 / 0 | 8.433534 | 4.4565212 | 2.1194219 | 1.7907619 | 257.2373219
+
+Unselected catalog routes (NOT_APPLICABLE, not unittest skip cases):
+  longitudinal_fit_tests; no_route_match
+  peak_metrics_tests; no_route_match
+  figure_export_tests; no_route_match
+  beam_focus_diagnostics_tests; no_route_match
+  particle_census_tests; no_route_match
+  plane_crossings_tests; no_route_match
+  population_moments_tests; no_route_match
+  particle_events_tests; no_route_match
+  tof_error_budget_tests; no_route_match
+  documentation_link_tests; no_route_match
+  project_registry; no_route_match
+  livelink_failure_classification; no_route_match
+  livelink_environment; no_route_match
+  expected_values_tests; covered_by_common_contracts
+  gate_contract_tests; covered_by_common_contracts
+  cloc_contract_tests; covered_by_common_contracts
+  python_dependency_contract; covered_by_common_contracts
+  integration_common; no_route_match
+  solidworks_common; no_route_match
+
+No gate, tests, native tool, source mutation, ledger operation or cleanup was performed for this extraction.
+The original gate already reported its diagnostic directory CLEANED; this extraction did not delete anything.
+CLOC_DELTA=N/A (TEMP result extraction only; no repository code/document changes).

@@ -1,0 +1,67 @@
+# L2 r2 common_contracts failure: prerequisite completion race
+
+## Observed failure
+
+`test_changed_test_selection.ChangedTestSelectionTests.test_real_l1_rejects_existing_and_new_mr_rf_tests`, subtest `projects/rf_multipole_ion_optics/tests/analysis/test_changed_gate_probe.py`, `fails=True`.
+The intended injected test failure was never run: summary status was BLOCKED instead of FAIL. Parent common runner: 858 tests, 1 failure, 1 skip, 2030.464 s body; stage 2036.149963 s, exit 1.
+
+Retained original log:
+C:\Users\Liao\AppData\Local\Temp\repository_integration_gate_d1ab553fbab64779a7199fa0f064d6bc\20_common_contracts.log: 16888 B; SHA256 696B515E76D712E018935F8F91A0683CD09750E261FF2313189EC2C5ECE40BDC
+The adjacent `.result.json` still exists. The original nested paths `changed_test_checkout_yfg7qb47/checkout` and `changed_test_logs_rpuo9a4m` no longer exist. This is the test's own `finally` cleanup through `Remove-GateTemporaryDirectory` and enclosing TemporaryDirectory contexts (test_changed_test_selection.py:256-257, 307-318), not an action by this investigation. Do not claim their child summary/log files remain recoverable. Full captured nested gate stdout is preserved in the original L2 log above.
+
+Original nested sequence (log lines 122-140):
+1. Start `rf_multipole_generated_publications`, PID 12944.
+2. Mark `rf_multipole_quadrupole_static` BLOCKED / UNRESOLVED_PREREQUISITE.
+3. Then collect Freshness child exit 0, replay all variant publication PASS and `PROJECT_GATE=PASS LEVEL=Freshness`.
+4. Actual Freshness stage body elapsed 13.710223 s; child observation 15.248 s.
+
+No Freshness input, syntax, generated-publication or assertion failure explains the block. This is a production G3 scheduling race, not an invalid injected test expectation or a timeout.
+
+## Cause and smallest change
+
+Current source identity:
+C:\Users\Liao\mass_spectrometry\simulation_repo\common\parallel_gate_support.ps1: 33240 B; SHA256 BAC3CD73746AE0DA91F9A39C29BC42BA2956786895864EF13029AECEDBE945CE
+
+`Invoke-IndependentGateStageGroup`, common/parallel_gate_support.ps1:490-520:
+- Line 491 collects available child completions and updates existing Result/states.
+- Line 508 independently re-reads live `Process.HasExited` to count running children.
+- Line 509 derives readiness from states, which only the earlier completion sweep updates.
+- If a prerequisite exits after the sweep but before line 508, running becomes 0 while its state remains RUNNING. All dependent candidates remain WAIT; line 514 therefore incorrectly declares an unresolved dependency.
+- A later final sweep records the prerequisite PASS, too late to undo BLOCKED.
+
+Proposed one-line scheduling fix: count records whose existing `Result` is still null as outstanding slots. Result is populated only after the child's actual exit/sidecar/fallback result has been consumed. This keeps capacity and dependency decisions on the same completion view. The existing next loop sweep naturally consumes the new exit; no retry policy, new state, extra service, timeout adjustment, or test-expectation relaxation is needed. Genuine cycles have no outstanding Result and remain blocked.
+
+Sole production/test scope after root write-go: `common/parallel_gate_support.ps1`, `common/contracts/test_parallel_gate_support.py`. No change to test_changed_test_selection.py is required for correctness. Its cleanup policy is why the original nested data are gone; preserving all eight-arm fixtures would be a separate lifecycle choice, not a prerequisite for this fix.
+
+## Deterministic RED
+
+C:\Users\Liao\AppData\Local\Temp\codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6\gate_completion_race_red.ps1: 2431 B; SHA256 59D4B5299111B64F30D103FD4B59E43B52FDF4A4A8133CB6DEDE5C62E9EB5B67
+C:\Users\Liao\AppData\Local\Temp\codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6\gate_completion_race_red\driver.log: 1932 B; SHA256 63B8712212545DD7BD5349AF0B045E8ED2F98A8802FC0D1893EB745BEEA878F0
+C:\Users\Liao\AppData\Local\Temp\codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6\gate_completion_race_red\summary.json: 2150 B; SHA256 B3D20C55BFD96F615489DEF8542140E981AD88BE315E648C762A715DADF56FE5
+
+Executed once against the unchanged real support file; outer shell elapsed 2.540 s, exit 1. The fixture mocks resource transactions and Start-Process (no real solver/native child, no host ledger). Its inert Process exposes HasExited=False to the completion sweep, then True to the next query, reproducing an allowed actual process transition without timing sleeps or probabilistic load.
+
+Result: first=PASS/COMPLETED; dependent=BLOCKED/UNRESOLVED_PREREQUISITE; only first was launched. Expected PASS assertion failed. The real group emitted BLOCKED before COMPLETE exactly as in L2. New fixture evidence remains in its own mainTEMP directory; original diagnostics were not deleted.
+
+Minimum permanent regression: use this existing mock seam for prerequisite exit 0 and nonzero 7 (optionally concurrency 1 and 2); ensure zero launches dependent only after actual completion is consumed, and nonzero blocks with PREREQUISITE_NOT_PASSED. Retain existing missing/unselected/cycle, fail-fast, sidecar and natural-completion checks. A focused boundary test is sufficient before the root's next consolidated L1/L2; do not rerun 858 tests to diagnose this race.
+
+## Status
+
+Formal source/tests/docs remain unchanged. No vendor, full gate, ledger mutation, Git write or original cleanup was performed. Root has preauthorized the two-file patch but holds write-go until the remaining L2/MR stage is terminal.
+
+## After L2 terminal / authorized write-go
+
+Root confirmed L2 r2 terminal (36 PASS / common_contracts FAIL) and granted the exact two-file write. The TEMP one-line candidate first passed both deterministic arms (0 => dependent PASS after COMPLETE; 7 => dependent BLOCKED/PREREQUISITE_NOT_PASSED), aggregate shell 4.502 s. Candidate native/process/resource objects are inert test doubles; no vendor or real ledger was used.
+
+The identical one-line production candidate is now applied, with one permanent two-arm test added. No changed-test probe expectation, timeout, retry or sleep was changed.
+
+Formal focused verification:
+- New deterministic race test (2 arms) + existing missing/unselected/cycle test (3 arms): 2 methods PASS, 6.840 s.
+- Existing ready-dependencies / fail-fast / natural-completion test (8 arms): 1 method PASS, 28.052 s.
+- Total 3 unique methods / 13 scenarios; 34.892 s reported unittest body across the two invocations. Ruff, PowerShell ParseFile, scoped git diff --check PASS.
+- `common/parallel_gate_support.ps1`: 33,234 B; SHA256 7F7C4774D8D8F72F9B7842E4D269C737A897A2B1C26EBDC57645EAF43679A0CC (byte-identical to green TEMP candidate).
+- `common/contracts/test_parallel_gate_support.py`: 59,129 B; SHA256 2A4FEE880EAC6A7A87ADE525B9791E49B85433482922577EACDE78D1E7AE804E.
+
+Full 858-test common runner, eight-arm real L1 probe, and full L1/L2 were not repeated. The original real-L1 probe takes roughly tens of minutes as part of common; root will include it once in the consolidated gates after restart. CLOC is to be included by root's required whole-change accounting, not replaced by manual line counts.
+
+Production and tests frozen at the above identities. No Git write, vendor, ledger write, original-diagnostic deletion, or unrelated source change occurred. TEMP RED/GREEN author and evidence retained for root's on-disk handoff.

@@ -1,0 +1,36 @@
+{
+  "run_id": "20261029_010500__analysis__python__radial-n100-reanalysis",
+  "status": "success",
+  "full_manifest_outputs": 33,
+  "original_entry_exit_code": 1,
+  "original_entry_wall_seconds": 70.6737633,
+  "metadata_projection_seconds": 2.8519767,
+  "finalization_only_exit_code": 0,
+  "finalization_only_wall_seconds": 7.2313948,
+  "native_build_fly_refine_counts": [
+    0,
+    0,
+    0
+  ],
+  "recorded_analysis_ps_bridges": 5,
+  "parent_files_sha_unchanged": 442,
+  "child_original_files_sha_unchanged": 190,
+  "csv_and_metrics_equal_for_modes": 5,
+  "parent_native_receipts_explicitly_bound": 5,
+  "best_accepted_case": null,
+  "context_sha256": "E8286ABE1929776C01F1219996FAC19BAAE70210D686694660E9B2A00F4F4AAE",
+  "removed_count": 0,
+  "removed_bytes": 0,
+  "ledger": {
+    "path": "projects/single_reflection_oa_tof_mass_analyzer/runs/20261029_010500__analysis__python__radial-n100-reanalysis",
+    "class": "light_evidence",
+    "bytes": 3560082,
+    "status": "ready",
+    "pin": false,
+    "owner": "single_reflection_oa_tof_mass_analyzer"
+  },
+  "original_lease_absent": true,
+  "manifest_sha256": "51E3D65FB1123F85E21A4AE61A1D189148FAFCC7C61A691CD2DB85D338B58788",
+  "summary_sha256": "EE79A2346147E725BD23C5EB62C4EC98DD2E1033D9719A9330CB79142AA56211",
+  "completion_sha256": "04B695D4936C27BEF2C322F42B0C48DDB02DC2C7D80BCE8A5A55EBF0AFE8D0C3"
+}

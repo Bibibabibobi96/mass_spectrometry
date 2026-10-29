@@ -1,0 +1,66 @@
+param([Parameter(Mandatory)][string]$RepositoryRoot)
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. (Join-Path $RepositoryRoot 'common/host_execution_lease.ps1')
+. (Join-Path $PSScriptRoot 'resource_budget_support_current.ps1')
+$tokens=$null;$errors=$null
+$baseAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'resource_budget_support_baseline.ps1'),[ref]$tokens,[ref]$errors)
+if($errors.Count){throw 'Baseline syntax error'}
+
+$fn=$baseAst.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Get-ManagedSolverProcessSample'},$true)
+Set-Item Function:Get-BaselineManagedSolverProcessSample -Value $fn.Body.GetScriptBlock()
+
+$birth=[datetime]::new(2026,10,28,0,0,0,[DateTimeKind]::Utc)
+$script:events=[Collections.Generic.List[string]]::new()
+function New-TestProcess($Id,$Working,$Private,$Cpu,$Path) {
+ $p=[pscustomobject]@{Id=$Id;WorkingSet64=$Working;PrivateMemorySize64=$Private;
+   TotalProcessorTime=[timespan]::FromTicks($Cpu);Path=$Path}
+ $p|Add-Member ScriptProperty StartTime {$script:events.Add('birth');$birth}
+ $p
+}
+$root=New-TestProcess 101 10 30 7 ''
+$child=New-TestProcess 102 40 20 11 ''
+$console=New-TestProcess 103 5 8 3 (Join-Path $env:SystemRoot 'System32/conhost.exe')
+$unknown=[pscustomobject]@{Id=104;Path=''}
+$unknown|Add-Member ScriptProperty StartTime {throw 'TEST_ONLY inaccessible birth'}
+$script:processes=@($root,$child,$console,$unknown)
+function Get-Process {$script:events.Add('process');$script:processes}
+function Get-HostResourceNativeProcessCreationTicks {param($ProcessId);$null}
+function Get-CimInstance {
+ $script:events.Add('cim')
+ if($script:scenario-ne'cim'){throw 'TEST_ONLY CIM unavailable'}
+ foreach($entry in @(@(101,0),@(102,101),@(103,101),@(104,0))){
+  [pscustomobject]@{ProcessId=$entry[0];ParentProcessId=$entry[1]}
+ }
+}
+function Get-HostResourceProcessParents {
+ $script:events.Add('fallback')
+ $parents=[Collections.Generic.Dictionary[int,int]]::new()
+ $parents[101]=0;$parents[102]=$(if($script:scenario-eq'reused_tracked'){0}else{101});$parents[103]=101
+ $parents[104]=$(if($script:scenario-eq'owned_unknown'){101}else{0})
+ [pscustomobject]@{parents=$parents;complete=($script:scenario-ne'incomplete');
+   started_at_utc_ticks=$birth.AddSeconds(1).Ticks}
+}
+$results=@()
+foreach($script:scenario in @('cim','fallback','owned_unknown','incomplete','reused_root','reused_tracked')){
+ $script:events.Clear()
+ $args=@{RootProcessIds=@(101);RootProcessStartedAtUtcTicks=@{'101'=$birth.Ticks}}
+ if($script:scenario-eq'reused_root'){$args.RootProcessStartedAtUtcTicks['101']=$birth.Ticks-1}
+ if($script:scenario-eq'reused_tracked'){
+  $args.TrackedProcessIds=@(102);$args.TrackedProcessStartedAtUtcTicks=@{'102'=($birth.Ticks-1)}
+  # A reused PID no longer belongs to the old parent; neither parent table reconnects it.
+ }
+ $independent=Get-BaselineManagedSolverProcessSample @args
+ $cimIndex=$script:events.IndexOf('cim')
+ if($script:events[0]-ne'process'-or$cimIndex-lt2-or
+   @($script:events.GetRange(1,$cimIndex-1)|Where-Object {$_-ne'birth'}).Count){
+  throw ('Standalone enumeration order changed: '+($script:events-join','))
+ }
+ $snapshot=Get-RepositoryProcessSnapshot
+ $before=$script:events.Count
+ $shared=Get-ManagedSolverProcessSample @args -ProcessSnapshot $snapshot
+ $newEvents=@($script:events|Select-Object -Skip $before)
+ if(@($newEvents|Where-Object {$_-in@('process','cim','fallback')}).Count){throw 'Shared sample re-enumerated'}
+ $results+=@{scenario=$script:scenario;independent=$independent;shared=$shared}
+}
+$results|ConvertTo-Json -Depth 12 -Compress

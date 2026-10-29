@@ -1,0 +1,1434 @@
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+
+if (-not (Get-Command Assert-HostResourceHeavyStage -ErrorAction SilentlyContinue) -or
+    -not (Get-Command Test-HostResourceConsoleProcess -ErrorAction SilentlyContinue)) {
+  . (Join-Path $PSScriptRoot 'host_execution_lease.ps1')
+}
+
+if(-not('MultipoleMemoryStatus' -as[type])){
+  Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class MultipoleMemoryStatus {
+  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Auto)]
+  public class Status {
+    public uint length=(uint)Marshal.SizeOf(typeof(Status));
+    public uint load; public ulong totalPhysical; public ulong availablePhysical;
+    public ulong totalPage; public ulong availablePage; public ulong totalVirtual;
+    public ulong availableVirtual; public ulong availableExtended;
+  }
+  [DllImport("kernel32.dll", CharSet=CharSet.Auto, SetLastError=true)]
+  static extern bool GlobalMemoryStatusEx([In,Out] Status status);
+  public static ulong AvailableBytes() {
+    var status=new Status();
+    if(!GlobalMemoryStatusEx(status)) throw new InvalidOperationException("GlobalMemoryStatusEx failed.");
+    return status.availablePhysical;
+  }
+  public static ulong TotalBytes() {
+    var status=new Status();
+    if(!GlobalMemoryStatusEx(status)) throw new InvalidOperationException("GlobalMemoryStatusEx failed.");
+    return status.totalPhysical;
+  }
+}
+'@
+}
+
+function Get-RunDirectoryBytes {
+  param([Parameter(Mandatory)][string]$RunDir)
+  if(-not(Test-Path -LiteralPath $RunDir -PathType Container)){return [int64]0}
+  $sum=(Get-ChildItem -LiteralPath $RunDir -Recurse -File -ErrorAction SilentlyContinue|
+    Measure-Object -Property Length -Sum).Sum
+  return $(if($null-eq$sum){[int64]0}else{[int64]$sum})
+}
+
+function Get-RepositoryUtcNow {
+  <# Small seam for deterministic scheduler tests; production always uses UTC. #>
+  return [datetimeoffset]::UtcNow
+}
+
+function Get-RepositoryAvailableMemoryBytes {
+  <# Return immediately reusable physical RAM, not a process working-set proxy. #>
+  return [int64][MultipoleMemoryStatus]::AvailableBytes()
+}
+
+function Test-RepositoryDiskCapacity {
+  <#
+    Fail closed before a transient solver run can exhaust its target volume.
+    Callers supply a post-launch free-space floor together with the frozen
+    run-directory budget.  The required free space is their sum, so a solver
+    cannot start at the floor and then consume its way below it.
+  #>
+  [OutputType([pscustomobject])]
+  param(
+    [Parameter(Mandatory)][string]$TargetPath,
+    [Parameter(Mandatory)][int64]$TransientRunDirectoryBytes,
+    [int64]$MinimumFreeBytes = [int64](10GB)
+  )
+  if($TransientRunDirectoryBytes -lt 0){
+    throw 'Transient run-directory bytes must be non-negative.'
+  }
+  if($MinimumFreeBytes -lt 0){
+    throw 'Minimum free bytes must be non-negative.'
+  }
+  if($TransientRunDirectoryBytes -gt ([int64]::MaxValue-$MinimumFreeBytes)){
+    throw 'Transient run-directory bytes exceed the representable disk-capacity limit.'
+  }
+  $resolvedTargetPath=[IO.Path]::GetFullPath($TargetPath)
+  $drive=@(Get-PSDrive -PSProvider FileSystem|Where-Object{
+    $resolvedTargetPath.StartsWith([string]$_.Root,[StringComparison]::OrdinalIgnoreCase)
+  }|Sort-Object {$_.Root.Length} -Descending|Select-Object -First 1)
+  if($drive.Count-ne1){
+    throw "Target path is not on a mounted FileSystem volume: $resolvedTargetPath"
+  }
+  $requiredAvailableBytes=[int64]($TransientRunDirectoryBytes+$MinimumFreeBytes)
+  $freeBytes=[int64]$drive[0].Free
+  $check=[pscustomobject][ordered]@{
+    role='repository_disk_capacity_check'
+    target_path=$resolvedTargetPath
+    volume_root=[string]$drive[0].Root
+    transient_run_directory_bytes=$TransientRunDirectoryBytes
+    system_disk_reserve_bytes=$MinimumFreeBytes
+    minimum_free_bytes=$MinimumFreeBytes
+    required_available_bytes=$requiredAvailableBytes
+    free_bytes=$freeBytes
+    passed=($freeBytes-ge$requiredAvailableBytes)
+  }
+  if(-not $check.passed){throw $check}
+  return $check
+}
+
+function Get-ManagedSolverProcessSample {
+  <#
+    Return the unique live process family belonging to one scheduler launch.
+
+    SIMION may use a short-lived launcher which starts another process and then
+    exits. Keep the launched root and every descendant by Windows parent ID;
+    executable-name discovery would mix concurrent runs of the same solver.
+  #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][int[]]$RootProcessIds,
+    [int[]]$TrackedProcessIds=@(),
+    [hashtable]$RootProcessStartedAtUtcTicks=@{},
+    [hashtable]$TrackedProcessStartedAtUtcTicks=@{}
+  )
+  $processes=@(Get-Process -ErrorAction SilentlyContinue)
+  $byId=@{}
+  foreach($process in $processes){$byId[[int]$process.Id]=$process}
+  $expectedStartTicks=@{}
+  foreach($rootProcessId in $RootProcessIds){
+    $key=[string]$rootProcessId
+    if($RootProcessStartedAtUtcTicks.ContainsKey($key)){
+      $expectedStartTicks[$key]=[int64]$RootProcessStartedAtUtcTicks[$key]
+    }
+  }
+  foreach($trackedProcessId in $TrackedProcessIds){
+    $key=[string]$trackedProcessId
+    if($TrackedProcessStartedAtUtcTicks.ContainsKey($key)){
+      $expectedStartTicks[$key]=[int64]$TrackedProcessStartedAtUtcTicks[$key]
+    }
+  }
+  $staleProcessIds=[Collections.Generic.HashSet[int]]::new()
+  $unknownAncestryProcessIds=[Collections.Generic.HashSet[int]]::new()
+  foreach($key in $expectedStartTicks.Keys){
+    $processId=[int]$key
+    if($byId.ContainsKey($processId)){
+      $actualStarted=$null
+      try{$actualStarted=$byId[$processId].StartTime.ToUniversalTime().Ticks}catch{
+        $actualStarted=Get-HostResourceNativeProcessCreationTicks -ProcessId $processId
+      }
+      if($null-eq$actualStarted){$null=$unknownAncestryProcessIds.Add($processId)}
+      if($null-eq$actualStarted-or[int64]$actualStarted-ne[int64]$expectedStartTicks[$key]){
+        $null=$staleProcessIds.Add($processId)
+      }
+    }
+  }
+  $known=[Collections.Generic.HashSet[int]]::new()
+  foreach($processId in @($RootProcessIds)+@($TrackedProcessIds)){
+    if($processId -gt 0 -and -not $staleProcessIds.Contains([int]$processId)){
+      $null=$known.Add([int]$processId)
+    }
+  }
+  $parentByChild=@{}
+  $ancestryComplete=$true
+  $systemConsoleHostProcessIds=[Collections.Generic.HashSet[int]]::new()
+  # Get-Process.Parent fails once a short-lived launcher has exited, even
+  # while its solver child is still active.  Win32_Process retains the child
+  # record's ParentProcessId, so use it first to keep that child in this
+  # launch family rather than prematurely declaring the formal batch done.
+  try{
+    foreach($process in @(Get-CimInstance Win32_Process -ErrorAction Stop)){
+      $parentByChild[[int]$process.ProcessId]=[int]$process.ParentProcessId
+      if($process.PSObject.Properties.Name -contains 'ExecutablePath' -and
+          (Test-HostResourceConsoleProcess -ImagePath ([string]$process.ExecutablePath))){
+        $null=$systemConsoleHostProcessIds.Add([int]$process.ProcessId)
+      }
+    }
+  }catch{
+    $parentByChild=@{}
+    $parentSnapshot=Get-HostResourceProcessParents
+    $ancestryComplete=[bool]$parentSnapshot.complete
+    # Unknown identity matters only along a possible owned ancestry chain.
+    # Keep descendants behind an unresolved intermediate node as candidates;
+    # unrelated protected Windows processes do not describe this solver tree.
+    $candidates=[Collections.Generic.HashSet[int]]::new()
+    foreach($processId in @($known)+@($unknownAncestryProcessIds)){$null=$candidates.Add($processId)}
+    $changed=$true
+    while($changed){
+      $changed=$false
+      foreach($childId in $parentSnapshot.parents.Keys){
+        if($candidates.Contains($parentSnapshot.parents[$childId])-and$candidates.Add($childId)){$changed=$true}
+      }
+    }
+    foreach($process in $processes){
+      if(-not$candidates.Contains([int]$process.Id)){continue}
+      $started=$null
+      try{$started=$process.StartTime.ToUniversalTime().Ticks.ToString('D19')}catch{
+        $started=Get-HostResourceNativeProcessCreationTicks -ProcessId ([int]$process.Id)
+      }
+      if($null-eq$started){$null=$unknownAncestryProcessIds.Add([int]$process.Id);continue}
+      $parent=Get-HostResourceSnapshotParent -Parents $parentSnapshot.parents `
+        -ProcessId ([int]$process.Id) -Started $started `
+        -SnapshotStartedUtcTicks $parentSnapshot.started_at_utc_ticks
+      if($null-ne$parent){$parentByChild[[int]$process.Id]=[int]$parent}
+      else{$null=$unknownAncestryProcessIds.Add([int]$process.Id)}
+    }
+  }
+  # Some Win32_Process rows may omit ExecutablePath even though Get-Process can
+  # resolve it for this user.  The shared classifier still requires an exact
+  # Windows system-image path; a same-name executable never receives the
+  # lifecycle exception.
+  foreach($process in $processes){
+    try{
+      if(Test-HostResourceConsoleProcess -ImagePath ([string]$process.Path)){
+        $null=$systemConsoleHostProcessIds.Add([int]$process.Id)
+      }
+    }catch{}
+  }
+  $changed=$true
+  while($changed){
+    $changed=$false
+    foreach($childId in @($parentByChild.Keys)){
+      if($known.Contains([int]$parentByChild[$childId]) -and $known.Add([int]$childId)){$changed=$true}
+    }
+  }
+  $active=@()
+  $bytes=[int64]0
+  $privateBytes=[int64]0
+  $managedBytes=[int64]0
+  $cpuTicks=[int64]0
+  $cpuTicksByProcessId=@{}
+  $trackedStartTicks=@{}
+  $activeSystemConsoleHostProcessIds=@()
+  foreach($processId in $known){
+    if($byId.ContainsKey([int]$processId)){
+      $process=$byId[[int]$processId]
+      $active+=[int]$processId
+      if($systemConsoleHostProcessIds.Contains([int]$processId)){
+        $activeSystemConsoleHostProcessIds+=[int]$processId
+      }
+      try{$trackedStartTicks[[string]$processId]=[int64]$process.StartTime.ToUniversalTime().Ticks}catch{}
+      $workingSet=[int64]$process.WorkingSet64
+      # Windows may trim a SIMION process's resident working set while its
+      # private committed allocation remains large.  For admission, taking the
+      # larger value avoids treating a temporarily paged-out 10 GiB solver as a
+      # 500 MiB solver and launching an unsafe additional worker.
+      $private=[int64]$process.PrivateMemorySize64
+      $bytes+=$workingSet
+      $privateBytes+=$private
+      $managedBytes+=[math]::Max($workingSet,$private)
+      try{
+        $processCpuTicks=[int64]$process.TotalProcessorTime.Ticks
+        $cpuTicks+=$processCpuTicks
+        $cpuTicksByProcessId[[string]$processId]=$processCpuTicks
+      }catch{}
+    }
+  }
+  return [pscustomobject]@{
+    ancestry_complete=($ancestryComplete-and$unknownAncestryProcessIds.Count-eq0)
+    unknown_ancestry_process_ids=@($unknownAncestryProcessIds|Sort-Object)
+    tracked_process_ids=@($known|Sort-Object)
+    tracked_process_started_at_utc_ticks=$trackedStartTicks
+    active_process_ids=@($active|Sort-Object)
+    system_console_host_process_ids=@($activeSystemConsoleHostProcessIds|Sort-Object)
+    working_set_bytes=$bytes
+    private_bytes=$privateBytes
+    managed_memory_bytes=$managedBytes
+    total_processor_time_ticks=$cpuTicks
+    processor_time_ticks_by_process_id=$cpuTicksByProcessId
+  }
+}
+
+function Invoke-RepositoryManagedPythonProcess {
+  <# Controlled Python workers identify their actual process before any work.
+     Waiting that handle and draining both pipes also covers output written
+     after a completion file. No grant, deadline, kill or tree-wide claim. #>
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string[]]$ArgumentList,
+    [Parameter(Mandatory)][string]$WorkingDirectory,[Parameter(Mandatory)][string]$StandardOutputPath,
+    [Parameter(Mandatory)][string]$StandardErrorPath,[hashtable]$Environment=@{})
+  $nonce=[guid]::NewGuid().ToString('N')
+  $start=[Diagnostics.ProcessStartInfo]::new()
+  $start.FileName=$Python;$start.WorkingDirectory=$WorkingDirectory;$start.UseShellExecute=$false;$start.CreateNoWindow=$true
+  $start.RedirectStandardInput=$true;$start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true
+  $start.StandardInputEncoding=[Text.UTF8Encoding]::new($false);$start.StandardOutputEncoding=[Text.UTF8Encoding]::new($false)
+  foreach($argument in $ArgumentList){$start.ArgumentList.Add($argument)}
+  foreach($key in $Environment.Keys){$start.Environment[$key]=[string]$Environment[$key]}
+  $start.Environment['MASS_SPECTROMETRY_MANAGED_PROCESS_NONCE']=$nonce
+  $start.Environment['PYTHONIOENCODING']='utf-8'
+  $launcher=$null;$worker=$null;$outStream=$null;$errStream=$null;$outTask=$null;$errTask=$null;$failure=$null
+  $readyBuffer=[IO.MemoryStream]::new();$readyAccepted=$false
+  $receipt=[ordered]@{schema_version=1;role='repository_managed_python_completion';nonce=$nonce;
+    launcher_process_id=$null;worker_process_id=$null;worker_started_at_utc_ticks=$null;
+    ownership_confirmed=$false;worker_exit_confirmed=$false;launcher_exit_confirmed=$false;
+    exit_code=$null;stdout_drained=$false;stderr_drained=$false;ack_attempted=$false}
+  try{
+    $outStream=[IO.File]::Open($StandardOutputPath,[IO.FileMode]::Create,[IO.FileAccess]::Write,[IO.FileShare]::Read)
+    $errStream=[IO.File]::Open($StandardErrorPath,[IO.FileMode]::Create,[IO.FileAccess]::Write,[IO.FileShare]::Read)
+    $launcher=[Diagnostics.Process]::Start($start);$receipt.launcher_process_id=[int]$launcher.Id
+    $launcherBirth=[int64]$launcher.StartTime.ToUniversalTime().Ticks
+    $errTask=$launcher.StandardError.BaseStream.CopyToAsync($errStream)
+    # Read only the bounded ASCII JSON frame, then stream raw remaining bytes
+    # directly to disk. StreamReader read-ahead would hide buffered log bytes.
+    while($true){
+      $next=$launcher.StandardOutput.BaseStream.ReadByte()
+      if($next-lt0){throw 'Managed worker exited before READY.'}
+      $readyBuffer.WriteByte([byte]$next)
+      if($readyBuffer.Length-gt1024){throw 'Managed READY frame exceeds its bounded identity format.'}
+      if($next-eq10){break}
+    }
+    $line=[Text.Encoding]::UTF8.GetString($readyBuffer.ToArray())
+    $ready=$line|ConvertFrom-Json -AsHashtable
+    if($ready-isnot[Collections.IDictionary]){throw 'Managed READY must be an object.'}
+    $readyFields=($ready.Keys|Sort-Object)-join','
+    if($readyFields-cne'nonce,pid,role,schema_version,started'-or
+       $ready.schema_version-ne1-or$ready.role-cne'repository_managed_process_ready'-or$ready.nonce-cne$nonce-or
+       ($ready.schema_version-isnot[long]-and$ready.schema_version-isnot[int])-or
+       ($ready.pid-isnot[long]-and$ready.pid-isnot[int])-or[int]$ready.pid-le0-or
+       $ready.started-isnot[string]-or$ready.started-notmatch'^[0-9]{19}$'){
+      throw 'Managed worker did not provide this launch identity as its first output.'
+    }
+    $readyAccepted=$true;$outTask=$launcher.StandardOutput.BaseStream.CopyToAsync($outStream)
+    $sample=Get-ManagedSolverProcessSample -RootProcessIds @([int]$launcher.Id) `
+      -RootProcessStartedAtUtcTicks @{([string]$launcher.Id)=$launcherBirth}
+    $workerId=[int]$ready.pid;$workerBirth=[int64]$ready.started
+    if(-not$sample.ancestry_complete-or$sample.active_process_ids-notcontains$workerId-or
+       -not$sample.tracked_process_started_at_utc_ticks.ContainsKey([string]$workerId)-or
+       [int64]$sample.tracked_process_started_at_utc_ticks[[string]$workerId]-ne$workerBirth){
+      throw 'Managed worker ancestry or creation identity is unconfirmed; work was not acknowledged.'
+    }
+    $candidate=[Diagnostics.Process]::GetProcessById($workerId)
+    try{
+      $null=$candidate.Handle
+      if([int64]$candidate.StartTime.ToUniversalTime().Ticks-ne$workerBirth){throw 'Managed worker changed before ACK.'}
+      $worker=$candidate
+    }finally{if($null-eq$worker){$candidate.Dispose()}}
+    $receipt.worker_process_id=$workerId;$receipt.worker_started_at_utc_ticks=$workerBirth;$receipt.ownership_confirmed=$true
+    $ready.role='repository_managed_process_ack'
+    # A write error may occur after the worker received ACK; do not report it
+    # as an unattempted start. The same owned handles are settled in finally.
+    $receipt.ack_attempted=$true
+    $launcher.StandardInput.WriteLine(($ready|ConvertTo-Json -Compress));$launcher.StandardInput.Close()
+  }catch{
+    $failure=$_
+  }finally{
+    # EOF also cancels an unacknowledged worker without starting its work.
+    if($null-ne$launcher){try{$launcher.StandardInput.Close()}catch{
+      if($null-eq$failure){$failure=$_}else{$failure.Exception.Data['managed_stdin_close_error']=$_.Exception.Message}
+    }}
+    if($null-ne$launcher-and$null-eq$outTask){try{
+      if(-not$readyAccepted){$prefix=$readyBuffer.ToArray();$outStream.Write($prefix,0,$prefix.Length)}
+      $outTask=$launcher.StandardOutput.BaseStream.CopyToAsync($outStream)
+    }catch{if($null-eq$failure){$failure=$_}else{$failure.Exception.Data['managed_stdout_start_error']=$_.Exception.Message}}}
+    foreach($entry in @(@{process=$worker;field='worker_exit_confirmed'},@{process=$launcher;field='launcher_exit_confirmed'})){
+      if($null-eq$entry.process){continue}
+      try{
+        $entry.process.WaitForExit();$receipt[$entry.field]=$entry.process.HasExited
+        if($entry.field-eq'worker_exit_confirmed'){$receipt.exit_code=[int]$entry.process.ExitCode}
+      }catch{if($null-eq$failure){$failure=$_}else{$failure.Exception.Data['managed_root_wait_error']=$_.Exception.Message}}
+    }
+    try{
+      if($null-ne$outTask){
+        $null=$outTask.GetAwaiter().GetResult();$outStream.Flush();$receipt.stdout_drained=$true
+      }
+    }catch{if($null-eq$failure){$failure=$_}else{$failure.Exception.Data['managed_stdout_drain_error']=$_.Exception.Message}}
+    try{if($null-ne$errTask){$null=$errTask.GetAwaiter().GetResult();$errStream.Flush();$receipt.stderr_drained=$true}}
+    catch{if($null-eq$failure){$failure=$_}else{$failure.Exception.Data['managed_stderr_drain_error']=$_.Exception.Message}}
+    foreach($resource in @($worker,$launcher,$outStream,$errStream,$readyBuffer)){
+      if($null-ne$resource){try{$resource.Dispose()}catch{
+        if($null-eq$failure){$failure=$_}else{$failure.Exception.Data['managed_close_error']=$_.Exception.Message}
+      }}
+    }
+  }
+  if($null-ne$failure){$failure.Exception.Data['managed_python_completion']=[pscustomobject]$receipt;throw $failure}
+  return [pscustomobject]$receipt
+}
+
+function Test-ManagedRootProcessIsLive {
+  <#
+    A process-tree sample is observational: a transient failure to enumerate
+    the root must not authorize its caller to treat a still-running solver as
+    complete.  Only the originally launched PID with its recorded start
+    identity can keep the single-process watchdog alive; a reused PID cannot.
+  #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][int]$ProcessId,
+    [Parameter(Mandatory)][int64]$ExpectedStartedAtUtcTicks
+  )
+  try {
+    $process = Get-Process -Id $ProcessId -ErrorAction Stop
+    return [int64]$process.StartTime.ToUniversalTime().Ticks -eq $ExpectedStartedAtUtcTicks
+  } catch {
+    return $false
+  }
+}
+
+function Test-RepositorySimionProcessSpecification {
+  <# A scheduled SIMION executable is the solver itself, not a launcher.
+     Once that exact root process has exited, a lingering console/helper is
+     not permitted to keep the batch alive.  Other executable types retain
+     descendant tracking for short-lived launcher workflows. #>
+  [CmdletBinding()]
+  param([Parameter(Mandatory)]$Specification)
+  if (-not ($Specification.PSObject.Properties.Name -contains 'file_path')) {
+    return $false
+  }
+  return [IO.Path]::GetFileName([string]$Specification.file_path).Equals(
+    'simion.exe', [StringComparison]::OrdinalIgnoreCase
+  )
+}
+
+function Test-RepositoryManagedProcessIsActive {
+  <# Direct SIMION launches end with the exact root process identity.  Other
+     executables may be launchers, so their non-console process-tree sample
+     remains the completion authority.  A verified Windows system conhost is
+     retained in process and memory accounting but cannot keep completed work
+     alive by itself. #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$Specification,
+    [Parameter(Mandatory)][int]$RootProcessId,
+    [Parameter(Mandatory)][int64]$RootProcessStartedAtUtcTicks,
+    [Parameter(Mandatory)]$Sample
+  )
+  if (Test-RepositorySimionProcessSpecification -Specification $Specification) {
+    return Test-ManagedRootProcessIsLive -ProcessId $RootProcessId `
+      -ExpectedStartedAtUtcTicks $RootProcessStartedAtUtcTicks
+  }
+  $activeProcessIds=@($Sample.active_process_ids)
+  if(-not($Sample.PSObject.Properties.Name -contains 'system_console_host_process_ids')){
+    # Preserve the older sample contract for live upgrades and test seams.
+    return $activeProcessIds.Count -gt 0
+  }
+  $systemConsoleHostProcessIds=[Collections.Generic.HashSet[int]]::new()
+  foreach($processId in @($Sample.system_console_host_process_ids)){
+    $null=$systemConsoleHostProcessIds.Add([int]$processId)
+  }
+  return @($activeProcessIds|Where-Object{
+    -not $systemConsoleHostProcessIds.Contains([int]$_)
+  }).Count -gt 0
+}
+
+function Stop-ManagedSolverProcesses {
+  param([Parameter(Mandatory)][int[]]$ProcessIds,[hashtable]$ExpectedStartedAtUtcTicks=@{})
+  foreach($processId in $ProcessIds){
+    if($ExpectedStartedAtUtcTicks.Count-gt0){
+      $key=[string]$processId
+      if(-not$ExpectedStartedAtUtcTicks.ContainsKey($key)-or
+         -not(Test-ManagedRootProcessIsLive -ProcessId $processId -ExpectedStartedAtUtcTicks ([int64]$ExpectedStartedAtUtcTicks[$key]))){continue}
+    }
+    $process=Get-Process -Id $processId -ErrorAction SilentlyContinue
+    if($null-eq$process){continue}
+    try{
+      & taskkill.exe /PID $processId /T /F | Out-Null
+      $terminationExitCode=$LASTEXITCODE
+      $process.Refresh()
+      if($terminationExitCode-ne0-and-not$process.HasExited){
+        throw "MANAGED_PROCESS_TERMINATION_FAILED PID=$processId EXIT_CODE=$terminationExitCode"
+      }
+    }finally{$process.Dispose()}
+  }
+}
+
+function Write-ResourceUsage {
+  param([Parameter(Mandatory)][hashtable]$Usage,[Parameter(Mandatory)][string]$Path)
+  $temporary="$Path.tmp"
+  $Usage|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $temporary -Encoding UTF8
+  # Antivirus/indexing and a concurrent read may briefly hold the previous
+  # receipt open on Windows.  A metering publication failure must not abandon
+  # a still-running solver and leave its PA staging directory orphaned.
+  $lastMoveError=$null
+  foreach($attempt in 1..20){
+    try {
+      Move-Item -LiteralPath $temporary -Destination $Path -Force -ErrorAction Stop
+      return
+    } catch {
+      $lastMoveError=$_.Exception
+      Start-Sleep -Milliseconds 250
+    }
+  }
+  throw "Could not publish resource usage after 20 attempts: $($lastMoveError.Message)"
+}
+
+function New-RepositoryProcessObservation {
+  param([pscustomobject]$Limits=$null,[string]$RunDir='',[string]$UsagePath='')
+  $policy=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'host_resource_policy.json') -Raw|ConvertFrom-Json
+  $observation=@{
+    usage=$null;started=(Get-RepositoryUtcNow);run_dir=$RunDir;usage_path=$UsagePath
+    directory_interval_seconds=30;last_directory_sample_at=$null
+    critical_since=$null;critical_bytes=[int64]$policy.memory_critical_reserve_bytes
+    critical_seconds=[int]$policy.memory_critical_seconds;observation_warning_sent=$false
+    metrics_warning_sent=$false;physical_danger=$false
+  }
+  if($null-eq$Limits){return $observation}
+  if($null-ne$Limits-and(-not$RunDir-or-not$UsagePath)){throw 'Budget observation requires RunDir and UsagePath.'}
+  if($Limits -is [Collections.IDictionary]){$Limits=[pscustomobject]$Limits}
+  $directorySampleProperty=$limits.PSObject.Properties[
+    'transient_run_directory_sample_interval_seconds'
+  ]
+  # Capacity accounting is not a safety signal.  Keep its full recursive scan
+  # off the 500 ms process/memory safety loop; a missing legacy field inherits
+  # the repository-wide 30 s cadence.
+  $directorySampleIntervalSeconds=[double]30
+  if($null-ne$directorySampleProperty){
+    try{$directorySampleIntervalSeconds=[convert]::ToDouble(
+      $directorySampleProperty.Value,[Globalization.CultureInfo]::InvariantCulture)}catch{
+      throw 'Transient run-directory sample interval must be one positive integer.'
+    }
+    if($directorySampleProperty.Value-is[bool]-or
+        $directorySampleIntervalSeconds-lt 1-or
+        $directorySampleIntervalSeconds-ne[math]::Floor($directorySampleIntervalSeconds)){
+      throw 'Transient run-directory sample interval must be one positive integer.'
+    }
+  }
+  if($UsagePath-and(Test-Path -LiteralPath $UsagePath -PathType Leaf)){
+    $usage=Get-Content -LiteralPath $UsagePath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+    $started=[datetimeoffset]::Parse([string]$usage.started_at_utc)
+  }else{
+    $started=(Get-RepositoryUtcNow)
+    $usage=[ordered]@{
+      schema_version=1;role='multipole_resource_usage';status='running'
+      failure_class=$null;limit_name=$null;started_at_utc=$started.ToString('o')
+      wall_clock_seconds=0.0;peak_process_tree_working_set_bytes=[int64]0
+      minimum_system_available_memory_bytes=$null;warning_names=@();peak_run_directory_bytes=[int64]0
+      final_retained_bytes=$null;limits=$limits
+      final_retained_measurement_scope='run_directory_before_terminal_manifest'
+    }
+  }
+  $observation.usage=$usage;$observation.started=$started
+  $observation.directory_interval_seconds=$directorySampleIntervalSeconds
+  return $observation
+}
+
+function Update-RepositoryProcessObservation {
+  param([Parameter(Mandatory)][hashtable]$Observation,[Parameter(Mandatory)]$Sample,[switch]$Final)
+  $now=Get-RepositoryUtcNow
+  $scopeKnown=-not($Sample.PSObject.Properties.Name-contains'ancestry_complete')-or[bool]$Sample.ancestry_complete
+  $availableBytes=$null
+  try{$availableBytes=Get-RepositoryAvailableMemoryBytes}catch{$scopeKnown=$false}
+  if(-not$scopeKnown-and-not$Observation.observation_warning_sent){
+    Write-Warning 'RESOURCE_OBSERVATION_WARNING=owned_scope_unknown' -WarningAction Continue
+    $Observation.observation_warning_sent=$true
+  }
+  if($scopeKnown-and$null-ne$availableBytes-and$availableBytes-lt$Observation.critical_bytes){
+    if($null-eq$Observation.critical_since){$Observation.critical_since=$now}
+  }else{$Observation.critical_since=$null}
+  $danger=$null-ne$Observation.critical_since-and($now-$Observation.critical_since).TotalSeconds-ge$Observation.critical_seconds
+  $Observation.physical_danger=$danger
+  $usage=$Observation.usage
+  if($null-ne$usage){
+    if($danger){$usage.status='physical_danger';$usage.failure_class='sustained_physical_memory_danger';$usage.limit_name='system_available_memory'}
+    try{
+    $limits=$usage.limits
+    $usage.wall_clock_seconds=[math]::Round(($now-$Observation.started).TotalSeconds,3)
+    $usage.observation_status=$(if($scopeKnown){'known'}else{'unknown'})
+    $treeBytes=[int64]$Sample.working_set_bytes
+    $usage.peak_process_tree_working_set_bytes=[math]::Max([int64]$usage.peak_process_tree_working_set_bytes,$treeBytes)
+    $measurements=[ordered]@{wall_clock_seconds=$usage.wall_clock_seconds;process_tree_working_set_bytes=$treeBytes}
+    if($null-ne$availableBytes){
+      $usage.minimum_system_available_memory_bytes=$(if($null-eq$usage.minimum_system_available_memory_bytes){$availableBytes}else{[math]::Min([int64]$usage.minimum_system_available_memory_bytes,$availableBytes)})
+      $measurements.minimum_system_available_memory_bytes=$availableBytes
+    }
+    if($Final-or$null-eq$Observation.last_directory_sample_at-or($now-$Observation.last_directory_sample_at).TotalSeconds-ge$Observation.directory_interval_seconds){
+      $directoryBytes=Get-RunDirectoryBytes -RunDir $Observation.run_dir
+      $Observation.last_directory_sample_at=$now
+      $usage.peak_run_directory_bytes=[math]::Max([int64]$usage.peak_run_directory_bytes,$directoryBytes)
+      $measurements.transient_run_directory_bytes=$directoryBytes
+    }
+    foreach($name in $measurements.Keys){
+      $exceeded=$(if($name-eq'minimum_system_available_memory_bytes'){$measurements[$name]-lt$limits.$name}else{$measurements[$name]-gt$limits.$name})
+      if($exceeded-and@($usage.warning_names)-notcontains$name){
+        $usage.warning_names=@($usage.warning_names)+$name
+        Write-Warning "RESOURCE_BUDGET_WARNING=$name MEASURED=$($measurements[$name]) LIMIT=$($limits.$name)" -WarningAction Continue
+      }
+    }
+    Write-ResourceUsage -Usage $usage -Path $Observation.usage_path
+    }catch{
+      if(-not$Observation.metrics_warning_sent){
+        Write-Warning "RESOURCE_OBSERVATION_WARNING=metrics_failed ERROR=$($_.Exception.Message)" -WarningAction Continue
+        $Observation.metrics_warning_sent=$true
+      }
+    }
+  }
+  return [pscustomobject]@{physical_danger=$danger;observation_known=$scopeKnown}
+}
+
+function Invoke-ResourceBudgetedProcess {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][pscustomobject]$Limits,[Parameter(Mandatory)][string]$RunDir,
+    [Parameter(Mandatory)][string]$UsagePath,[Parameter(Mandatory)][string]$FilePath,
+    [Parameter(Mandatory)][string[]]$ArgumentList,[string]$WorkingDirectory='',
+    [string]$RedirectStandardOutput='',[string]$RedirectStandardError='',[hashtable]$Environment=@{}
+  )
+  $observation=New-RepositoryProcessObservation -Limits $Limits -RunDir $RunDir -UsagePath $UsagePath
+  $startArguments=@{FilePath=$FilePath;ArgumentList=$ArgumentList;PassThru=$true;WindowStyle='Hidden'}
+  if(-not[string]::IsNullOrWhiteSpace($WorkingDirectory)){$startArguments.WorkingDirectory=$WorkingDirectory}
+  if(-not[string]::IsNullOrWhiteSpace($RedirectStandardOutput)){
+    $startArguments.RedirectStandardOutput=$RedirectStandardOutput
+  }
+  if(-not[string]::IsNullOrWhiteSpace($RedirectStandardError)){
+    $startArguments.RedirectStandardError=$RedirectStandardError
+  }
+  if($Environment.Count-gt 0){$startArguments.Environment=$Environment}
+  # Callers supply the native argument array: only explicit refine/fly verbs
+  # require heavy permission. GEM conversion and construction-only Lua do not.
+  $requiresHeavySimionCommand=@($ArgumentList|Where-Object{$_ -in @('refine','fly')}).Count-gt 0
+  if ($requiresHeavySimionCommand -and
+      (Test-RepositorySimionProcessSpecification -Specification ([pscustomobject]@{file_path=$FilePath}))) {
+    Assert-HostResourceHeavyStage
+  }
+  $process=Start-Process @startArguments
+  $rootProcessStartedAtUtcTicks=[int64]$process.StartTime.ToUniversalTime().Ticks
+  $trackedProcessIds=@([int]$process.Id)
+  $trackedProcessStartedAtUtcTicks=@{([string]$process.Id)=$rootProcessStartedAtUtcTicks}
+  $processSpecification=[pscustomobject]@{file_path=$FilePath}
+  $danger=$false;$managedActive=$true
+  while($managedActive){
+    $sample=Get-ManagedSolverProcessSample -RootProcessIds @([int]$process.Id) `
+      -TrackedProcessIds $trackedProcessIds -RootProcessStartedAtUtcTicks @{
+        ([string]$process.Id)=$rootProcessStartedAtUtcTicks
+      } -TrackedProcessStartedAtUtcTicks $trackedProcessStartedAtUtcTicks
+    $trackedProcessIds=@($sample.tracked_process_ids)
+    if($sample.PSObject.Properties.Name-contains'tracked_process_started_at_utc_ticks'){$trackedProcessStartedAtUtcTicks=$sample.tracked_process_started_at_utc_ticks}
+    $managedActive=Test-RepositoryManagedProcessIsActive -Specification $processSpecification `
+      -RootProcessId ([int]$process.Id) -RootProcessStartedAtUtcTicks $rootProcessStartedAtUtcTicks -Sample $sample
+    if(-not$managedActive-and-not(Test-RepositorySimionProcessSpecification -Specification $processSpecification)){
+      $managedActive=Test-ManagedRootProcessIsLive -ProcessId ([int]$process.Id) -ExpectedStartedAtUtcTicks $rootProcessStartedAtUtcTicks
+    }
+    $observed=Update-RepositoryProcessObservation -Observation $observation -Sample $sample
+    if($observed.physical_danger-and$managedActive){
+      $danger=$true
+      Stop-ManagedSolverProcesses -ProcessIds $trackedProcessIds -ExpectedStartedAtUtcTicks $trackedProcessStartedAtUtcTicks
+      break
+    }
+    if($managedActive){Start-Sleep -Milliseconds 500}
+  }
+  if(-not$process.HasExited){$process.WaitForExit()}
+  $null=Update-RepositoryProcessObservation -Observation $observation -Sample $sample -Final
+  $usage=$observation.usage
+  if(-not$danger){$usage.status=$(if($process.ExitCode-eq0){'running'}else{'process_failed'})}
+  try{Write-ResourceUsage -Usage $usage -Path $UsagePath}catch{
+    Write-Warning "RESOURCE_OBSERVATION_WARNING=finalization_failed ERROR=$($_.Exception.Message)" -WarningAction Continue
+  }
+  return [pscustomobject]@{exit_code=$process.ExitCode;resource_budget_exceeded=$danger;limit_name=$usage.limit_name;usage_path=$UsagePath}
+}
+
+function Assert-RepositoryProcessSpecification {
+  param([Parameter(Mandatory)]$Specification)
+  foreach($required in @('name','file_path','argument_list','stdout','stderr','environment')){
+    if(-not($Specification.PSObject.Properties.Name-contains$required)){
+      throw "Scheduled process specification is missing $required."
+    }
+  }
+  if($Specification.PSObject.Properties.Name-contains'exclusive_resource_key'){
+    $key=$Specification.exclusive_resource_key
+    if($null-ne$key-and(-not($key -is [string])-or[string]::IsNullOrWhiteSpace([string]$key))){
+      throw 'Scheduled process exclusive_resource_key must be a non-empty string when supplied.'
+    }
+  }
+  if($Specification.PSObject.Properties.Name-contains'prepare' -and
+      $null-ne$Specification.prepare -and -not ($Specification.prepare -is [scriptblock])){
+    throw 'Scheduled process prepare must be a script block when supplied.'
+  }
+}
+
+function Start-RepositoryScheduledProcess {
+  param([Parameter(Mandatory)]$Specification)
+  Assert-RepositoryProcessSpecification -Specification $Specification
+  # A prepared batch may need small Workbench-local assets immediately before
+  # launch.  Do not materialize those while an earlier SIMION process still
+  # scans the same runtime directory after its frozen observation window.
+  if($Specification.PSObject.Properties.Name-contains'prepare'-and
+      $null-ne$Specification.prepare){
+    $null=& $Specification.prepare $Specification
+  }
+  $arguments=@{
+    FilePath=[string]$Specification.file_path;ArgumentList=@($Specification.argument_list)
+    PassThru=$true;WindowStyle='Hidden';RedirectStandardOutput=[string]$Specification.stdout
+    RedirectStandardError=[string]$Specification.stderr;Environment=[hashtable]$Specification.environment
+  }
+  if($Specification.PSObject.Properties.Name-contains'working_directory'){
+    $arguments.WorkingDirectory=[string]$Specification.working_directory
+  }
+  $started=Get-RepositoryUtcNow;$process=Start-Process @arguments
+  return [pscustomobject]@{
+    name=[string]$Specification.name;specification=$Specification;process=$process
+    root_process_id=[int]$process.Id;root_process_started_at_utc_ticks=[int64]$process.StartTime.ToUniversalTime().Ticks;started_at=$started
+    tracked_process_ids=@([int]$process.Id)
+    tracked_process_started_at_utc_ticks=@{([string]$process.Id)=[int64]$process.StartTime.ToUniversalTime().Ticks}
+    active=$true;completed=$false
+    exit_code=$null;peak_working_set_bytes=[int64]0;peak_managed_memory_bytes=[int64]0;pressure_terminated=$false
+  }
+}
+
+function Write-RepositorySchedulerEvent {
+  <# Emit one concise, factual lifecycle event from the public executor. #>
+  param(
+    [Parameter(Mandatory)][string]$Event,
+    $Record=$null,
+    [int]$ActiveCount=-1,
+    [int]$PendingCount=-1,
+    [hashtable]$Details=@{}
+  )
+  $fields=[Collections.Generic.List[string]]::new()
+  $fields.Add("SIMION_RESOURCE_EVENT=$Event")
+  if($null-ne$Record){
+    $fields.Add("PROCESS=$([string]$Record.name)")
+    $batch=$null
+    if($Record.PSObject.Properties.Name-contains'specification'-and
+       $Record.specification.PSObject.Properties.Name-contains'scheduler_batch'){
+      $batch=$Record.specification.scheduler_batch
+    }
+    if($null-ne$batch){
+      $workItem=$batch.PSObject.Properties.Name-contains'execution_unit'-and
+        [string]$batch.execution_unit-eq'independent_work_items'
+      $properties=$(if($workItem){@('index','total_batches','work_item_id_min','work_item_id_max','count')}else{@('index','total_batches','particle_id_min','particle_id_max','count')})
+      foreach($property in $properties){
+        if($batch.PSObject.Properties.Name-contains$property){
+          $name=@{index='BATCH';total_batches='TOTAL_BATCHES';particle_id_min='PARTICLE_ID_MIN';particle_id_max='PARTICLE_ID_MAX';work_item_id_min='WORK_ITEM_ID_MIN';work_item_id_max='WORK_ITEM_ID_MAX';count=$(if($workItem){'WORK_ITEM_COUNT'}else{'PARTICLE_COUNT'})}[$property]
+          $fields.Add("$name=$([string]$batch.$property)")
+        }
+      }
+    }
+  }
+  if($ActiveCount-ge0){$fields.Add("ACTIVE=$ActiveCount")}
+  if($PendingCount-ge0){$fields.Add("PENDING=$PendingCount")}
+  foreach($key in @($Details.Keys|Sort-Object)){$fields.Add("$key=$([string]$Details[$key])")}
+  # Lifecycle events are diagnostic output, not the function's returned
+  # process record.  Write-Output would be captured into callers such as
+  # `$wave = Invoke-ResourceBudgetedProcesses`, hiding the event from the
+  # terminal and corrupting the typed return collection.  Write-Host keeps
+  # the event visible while leaving the success stream exclusively for data.
+  Write-Host ($fields-join' ')
+}
+
+function Get-SystemCpuPercent {
+  try{
+    $average=(Get-CimInstance Win32_Processor -ErrorAction Stop|
+      Measure-Object -Property LoadPercentage -Average).Average
+    $value=[double]$average
+    # Win32_Processor.LoadPercentage is a whole-system 0--100 value.  A
+    # transient WMI value outside that range is not safe evidence of pressure:
+    # discard it and retain the last valid sample instead of turning a
+    # one-core-scale artifact into a permanent single-worker decision.
+    if([double]::IsNaN($value)-or[double]::IsInfinity($value)-or$value-lt0-or$value-gt100){
+      return $null
+    }
+    return $value
+  }catch{return $null}
+}
+
+function Assert-RepositoryDispatchLimits {
+  param([Parameter(Mandatory)]$Limits, [Parameter(Mandatory)][string[]]$PositiveIntegers)
+  foreach($name in $PositiveIntegers){
+    $value=$Limits.$name
+    if($value-is[bool]-or$value-is[string]-or$null-eq$value-or
+       [double]::IsNaN([double]$value)-or[double]::IsInfinity([double]$value)-or
+       [double]$value-lt 1-or[math]::Truncate([double]$value)-ne[double]$value){
+      throw "Repository dispatch limit $name must be a positive integer."
+    }
+  }
+}
+
+function Start-ObservedFormalProcess {
+  <# Start the first formal batch, retain it, and observe the fixed first window. #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$DispatchPlanPath,
+    [Parameter(Mandatory)]$ProcessSpecification,
+    [switch]$WaitForNaturalCompletionAfterObservation
+  )
+  Assert-HostResourceHeavyStage
+  $plan=Get-Content -LiteralPath $DispatchPlanPath -Raw -Encoding UTF8|ConvertFrom-Json
+  if([string]$plan.estimation.kind-ne'formal_first_batch_observation'){
+    throw 'Formal observation requires an unknown-identity repository plan.'
+  }
+  $seconds=[int]$plan.limits.formal_observation_seconds
+  Assert-RepositoryDispatchLimits -Limits $plan.limits -PositiveIntegers @(
+    'formal_observation_seconds','memory_critical_reserve_bytes','memory_critical_seconds')
+  $memoryWarningOnly=($plan.limits.PSObject.Properties.Name-contains'memory_policy'-and
+    [string]$plan.limits.memory_policy-eq'warn_single_worker')
+  $criticalBytes=[int64]$plan.limits.memory_critical_reserve_bytes
+  $criticalSeconds=[int]$plan.limits.memory_critical_seconds
+  $logicalProcessors=[int][Environment]::ProcessorCount
+  if($plan.PSObject.Properties.Name-contains'host'-and
+      $plan.host.PSObject.Properties.Name-contains'logical_processors'-and
+      [int]$plan.host.logical_processors-gt0){
+    $logicalProcessors=[int]$plan.host.logical_processors
+  }
+  $record=Start-RepositoryScheduledProcess -Specification $ProcessSpecification
+  Write-RepositorySchedulerEvent -Event 'BATCH_STARTED' -Record $record -ActiveCount 1 `
+    -Details @{OBSERVATION_SECONDS=$seconds;MEASUREMENT='FIRST_FORMAL_BATCH'}
+  $previousTicks=[int64]0;$previousTicksByProcessId=@{};$previousAt=$record.started_at
+  $peakCpu=[double]0;$peakBackground=[double]0;$systemCpu=[double]0;$lastSystemAt=$null
+  $cpuSamples=[Collections.Generic.List[object]]::new()
+  $criticalSince=$null;$resourceBudgetExceeded=$false
+  $observationMemoryWarnings=[Collections.ArrayList]::new()
+  $observationComplete=$false;$completedDuringObservation=$false
+  # The formal first batch remains alive after the frozen observation window.  Its
+  # measured peak determines the initial lane count; subsequent live admission
+  # and the existing memory-danger state machine protect against later growth.
+  # Waiting for natural completion here would serialize every otherwise
+  # parallel run and would make the observation window meaningless.
+  while($record.active){
+    $now=Get-RepositoryUtcNow
+    $sampleArgs=@{RootProcessIds=@($record.root_process_id);TrackedProcessIds=$record.tracked_process_ids}
+    $recordRootStartedAtUtcTicks=[int64]0
+    if($record.PSObject.Properties.Name -contains 'root_process_started_at_utc_ticks'){
+      $recordRootStartedAtUtcTicks=[int64]$record.root_process_started_at_utc_ticks
+      $sampleArgs.RootProcessStartedAtUtcTicks=@{([string]$record.root_process_id)=$recordRootStartedAtUtcTicks}
+    }
+    if($record.PSObject.Properties.Name -contains 'tracked_process_started_at_utc_ticks'){
+      $sampleArgs.TrackedProcessStartedAtUtcTicks=$record.tracked_process_started_at_utc_ticks
+    }
+    $sample=Get-ManagedSolverProcessSample @sampleArgs
+    $record.tracked_process_ids=@($sample.tracked_process_ids)
+    if(-not ($record.PSObject.Properties.Name -contains 'tracked_process_started_at_utc_ticks')){
+      $record|Add-Member -NotePropertyName tracked_process_started_at_utc_ticks -NotePropertyValue @{} -Force
+    }
+    # Older test seams and in-memory records return the original sample shape.
+    # Preserve compatibility while production samples retain start identities.
+    if($sample.PSObject.Properties.Name -contains 'tracked_process_started_at_utc_ticks'){
+      $record.tracked_process_started_at_utc_ticks=$sample.tracked_process_started_at_utc_ticks
+    }
+    $record.active=Test-RepositoryManagedProcessIsActive `
+      -Specification $record.specification -RootProcessId ([int]$record.root_process_id) `
+      -RootProcessStartedAtUtcTicks $recordRootStartedAtUtcTicks `
+      -Sample $sample
+    $record.peak_working_set_bytes=[math]::Max(
+      [int64]$record.peak_working_set_bytes,[int64]$sample.working_set_bytes)
+    $record.peak_managed_memory_bytes=[math]::Max(
+      [int64]$record.peak_managed_memory_bytes,[int64]$sample.managed_memory_bytes)
+    $available=Get-RepositoryAvailableMemoryBytes
+    # Ordinary admission pressure only warns. Sustained measured host danger
+    # uses the same frozen critical threshold under either admission policy.
+    if($available-lt$criticalBytes){
+      if($null-eq$criticalSince){
+        $criticalSince=$now
+        if($memoryWarningOnly){
+          $null=$observationMemoryWarnings.Add([ordered]@{
+            at_utc=$now.ToString('o');available_memory_bytes=$available
+            action='warn_continue_observation';memory_policy='warn_single_worker'
+          })
+          Write-RepositorySchedulerEvent -Event 'MEMORY_PRESSURE_WARNING' -Record $record `
+            -ActiveCount 1 -Details @{AVAILABLE_MEMORY_BYTES=$available;MEMORY_POLICY='warn_single_worker';ACTION='CONTINUE'}
+        }
+      }elseif($record.active-and($now-$criticalSince).TotalSeconds-ge$criticalSeconds){
+        Stop-ManagedSolverProcesses -ProcessIds @($record.tracked_process_ids)
+        $record.pressure_terminated=$true;$resourceBudgetExceeded=$true
+        Write-RepositorySchedulerEvent -Event 'MEMORY_DANGER_TERMINATION' -Record $record `
+          -ActiveCount 1 -Details @{AVAILABLE_MEMORY_BYTES=$available;CRITICAL_SECONDS=$criticalSeconds;CRITICAL_THRESHOLD_BYTES=$criticalBytes;ACTION='STOP_ONLY_FORMAL_BATCH'}
+      }
+    }else{$criticalSince=$null}
+    $elapsed=($now-$previousAt).TotalSeconds
+    if($elapsed-gt 0){
+      $cpuDeltaTicks=[int64]0
+      if($sample.PSObject.Properties.Name-contains'processor_time_ticks_by_process_id'){
+        foreach($entry in $sample.processor_time_ticks_by_process_id.GetEnumerator()){
+          $key=[string]$entry.Key
+          if($previousTicksByProcessId.ContainsKey($key)){
+            $cpuDeltaTicks+=[math]::Max([int64]0,[int64]$entry.Value-[int64]$previousTicksByProcessId[$key])
+          }
+        }
+      }elseif($previousTicks-gt 0){
+        # Compatibility seam for older tests and an in-memory caller loaded
+        # before per-process CPU accounting was added.
+        $cpuDeltaTicks=[math]::Max([int64]0,[int64]$sample.total_processor_time_ticks-$previousTicks)
+      }
+      $cpu=100.0*($cpuDeltaTicks/1.0e7)/($elapsed*$logicalProcessors)
+      $peakCpu=[math]::Max($peakCpu,[math]::Max(0.0,$cpu))
+      if($null-eq$lastSystemAt-or($now-$lastSystemAt).TotalSeconds-ge 2){
+        $observedSystemCpu=Get-SystemCpuPercent
+        if($null-ne$observedSystemCpu){$systemCpu=[double]$observedSystemCpu}
+        $lastSystemAt=$now
+      }
+      $peakBackground=[math]::Max($peakBackground,[math]::Max(0.0,$systemCpu-$cpu))
+      $cpuSamples.Add([pscustomobject]@{at=$now;percent=[math]::Max(0.0,$cpu)})
+    }
+    $previousTicks=[int64]$sample.total_processor_time_ticks
+    if($sample.PSObject.Properties.Name-contains'processor_time_ticks_by_process_id'){
+      $previousTicksByProcessId=@{}
+      foreach($entry in $sample.processor_time_ticks_by_process_id.GetEnumerator()){
+        $previousTicksByProcessId[[string]$entry.Key]=[int64]$entry.Value
+      }
+    }
+    $previousAt=$now
+    if($record.pressure_terminated){
+      $record.process.WaitForExit();$record.active=$false;break
+    }
+    if(-not$record.active){
+      $completedDuringObservation=-not$observationComplete
+      break
+    }
+    if(($now-$record.started_at).TotalSeconds-ge$seconds){
+      if(-not$observationComplete){
+        Write-RepositorySchedulerEvent -Event 'FORMAL_OBSERVATION_COMPLETE' -Record $record -ActiveCount 1 `
+          -Details @{OBSERVATION_SECONDS=$seconds;MEASUREMENT='FIRST_FORMAL_BATCH';PROCESS_CONTINUES='true'}
+        $observationComplete=$true
+      }
+      if(-not$WaitForNaturalCompletionAfterObservation){break}
+    }
+    Start-Sleep -Milliseconds 500
+  }
+  if(-not$record.active){
+    $record.process.WaitForExit()
+    try{
+      $record.process.Refresh()
+      $record.peak_working_set_bytes=[math]::Max(
+        [int64]$record.peak_working_set_bytes,[int64]$record.process.PeakWorkingSet64)
+      $record.peak_managed_memory_bytes=[math]::Max(
+        [int64]$record.peak_managed_memory_bytes,[int64]$record.process.PeakWorkingSet64)
+    }catch{}
+    $record.completed=$true
+    $record.exit_code=$(if($record.pressure_terminated){$null}else{[int]$record.process.ExitCode})
+    Write-RepositorySchedulerEvent -Event 'BATCH_COMPLETED' -Record $record -ActiveCount 0 `
+      -Details @{EXIT_CODE=$record.exit_code;NATURAL=$(if($record.pressure_terminated){'false'}else{'true'});MEASUREMENT='FIRST_FORMAL_BATCH';WALL_CLOCK_SECONDS=([math]::Round(((Get-RepositoryUtcNow)-$record.started_at).TotalSeconds,3));MORE_PENDING='UNKNOWN'}
+    $record.process.Dispose()
+  }
+  # Fast Adjust and PA loading can briefly use many cores even though the
+  # independent-particle flight that follows is single-core.  Memory remains
+  # peak-based, but lane planning uses the median of the final observation
+  # window so a short startup burst cannot serialize a long formal cohort.
+  # A batch that finishes inside the observation window has no established
+  # steady phase, so it conservatively keeps the observed peak.
+  $sustainedCpu=$peakCpu
+  $cpuMeasurement='peak_completed_inside_observation'
+  if($observationComplete-and-not$completedDuringObservation){
+    $tailSeconds=[math]::Min(10.0,[math]::Max(3.0,[math]::Floor($seconds/4.0)))
+    $tailStart=$record.started_at.AddSeconds([math]::Max(0.0,$seconds-$tailSeconds))
+    [double[]]$tailCpu=@($cpuSamples|Where-Object{$_.at-ge$tailStart}|ForEach-Object{[double]$_.percent}|Sort-Object)
+    if($tailCpu.Count-gt0){
+      $middle=[int][math]::Floor($tailCpu.Count/2)
+      $sustainedCpu=if(($tailCpu.Count%2)-eq1){$tailCpu[$middle]}else{($tailCpu[$middle-1]+$tailCpu[$middle])/2.0}
+      $cpuMeasurement='median_final_observation_window'
+    }
+  }
+  $record|Add-Member -NotePropertyName completed_during_observation `
+    -NotePropertyValue ([bool]$completedDuringObservation) -Force
+  $record|Add-Member -NotePropertyName memory_warning_events `
+    -NotePropertyValue @($observationMemoryWarnings) -Force
+  $record|Add-Member -NotePropertyName observed_process_cpu_percent `
+    -NotePropertyValue ([math]::Round($sustainedCpu,3)) -Force
+  $record|Add-Member -NotePropertyName observed_process_cpu_peak_percent `
+    -NotePropertyValue ([math]::Round($peakCpu,3)) -Force
+  $record|Add-Member -NotePropertyName observed_process_cpu_measurement `
+    -NotePropertyValue $cpuMeasurement -Force
+  $record|Add-Member -NotePropertyName observed_background_cpu_percent `
+    -NotePropertyValue ([math]::Round($peakBackground,3)) -Force
+  return [pscustomobject]@{
+    process_record=$record;completed_naturally=([bool]$record.completed -and -not [bool]$record.pressure_terminated);exit_code=$record.exit_code
+    resource_budget_exceeded=[bool]$resourceBudgetExceeded
+    # The legacy working-set key remains the active runner input.  Its value is
+    # deliberately upgraded to the conservative managed peak so existing
+    # callers immediately use max(working set, private bytes) for admission.
+    observed_peak_process_tree_working_set_bytes=[int64]$record.peak_managed_memory_bytes
+    observed_peak_process_tree_managed_memory_bytes=[int64]$record.peak_managed_memory_bytes
+    observed_peak_process_tree_resident_working_set_bytes=[int64]$record.peak_working_set_bytes
+    observed_process_cpu_percent=[math]::Round($sustainedCpu,3)
+    observed_process_cpu_peak_percent=[math]::Round($peakCpu,3)
+    observed_process_cpu_measurement=$cpuMeasurement
+    observed_background_cpu_percent=[math]::Round($peakBackground,3)
+    available_memory_bytes=Get-RepositoryAvailableMemoryBytes
+    total_physical_memory_bytes=[int64][MultipoleMemoryStatus]::TotalBytes()
+  }
+}
+
+function Invoke-ResourceBudgetedProcesses {
+  <# Execute independent formal batches under the repository dispatch policy. #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$DispatchPlanPath,
+    [Parameter(Mandatory)][string]$RunDir,
+    [Parameter(Mandatory)][string]$UsagePath,
+    [object[]]$ProcessSpecifications=@(),
+    [object[]]$ExistingProcessRecords=@(),
+    # Optional caller-owned durable checkpoint publication.  It is invoked
+    # only after a worker has exited naturally with a record available; the
+    # callback must fail closed if its immutable receipt cannot be published.
+    [scriptblock]$OnProcessCompleted=$null
+  )
+  # A completed first batch needs only receipt publication; pending or live
+  # workers still require the original heavy permission before dispatch.
+  if($ProcessSpecifications.Count-gt0-or@($ExistingProcessRecords|Where-Object{-not$_.completed}).Count-gt0){
+    Assert-HostResourceHeavyStage
+  }
+  $plan=Get-Content -LiteralPath $DispatchPlanPath -Raw -Encoding UTF8|ConvertFrom-Json
+  if([string]$plan.role-ne'simion_repository_dispatch_plan'){
+    throw 'Parallel execution requires a repository SIMION dispatch plan.'
+  }
+  $limits=$plan.limits;$maximumConcurrency=[int]$limits.maximum_concurrency
+  $memoryWarningOnly=($limits.PSObject.Properties.Name-contains'memory_policy'-and
+    [string]$limits.memory_policy-eq'warn_single_worker')
+  if($maximumConcurrency-lt 1){throw 'Repository maximum concurrency must be positive.'}
+  Assert-RepositoryDispatchLimits -Limits $limits -PositiveIntegers @(
+    'maximum_concurrency','launch_stagger_seconds','memory_critical_seconds',
+    'memory_recovery_stable_seconds','maximum_memory_recovery_attempts',
+    'maximum_memory_danger_termination_attempts',
+    'memory_critical_reserve_bytes')
+  if([int]$limits.maximum_memory_recovery_attempts-lt[int]$limits.maximum_memory_danger_termination_attempts){
+    throw 'Every permitted memory-danger interruption requires a recovery attempt.'
+  }
+  $pending=[Collections.ArrayList]::new()
+  foreach($spec in $ProcessSpecifications){Assert-RepositoryProcessSpecification $spec;$null=$pending.Add($spec)}
+  $running=[Collections.ArrayList]::new();$completed=[Collections.ArrayList]::new()
+  foreach($record in $ExistingProcessRecords){
+    if(-not($record.PSObject.Properties.Name-contains'peak_managed_memory_bytes')){
+      # A first formal worker can be handed from an older in-memory runner
+      # during a repository upgrade.  Preserve safe admission rather than
+      # failing on the absent additive receipt field.
+      $record|Add-Member -NotePropertyName peak_managed_memory_bytes `
+        -NotePropertyValue ([int64]$record.peak_working_set_bytes) -Force
+    }
+    if($record.completed){$null=$completed.Add($record)}else{$null=$running.Add($record)}
+  }
+  if($null-ne$OnProcessCompleted){
+    foreach($record in @($completed)){
+      # Checkpoint callbacks may publish a manifest, whose helper deliberately
+      # writes a receipt object to the pipeline.  The scheduler's contract is
+      # a single result object, so callback output must not leak into callers
+      # such as $waveResult (where it would turn the result into an array).
+      $null = & $OnProcessCompleted $record
+    }
+  }
+  if($pending.Count+$running.Count+$completed.Count-lt 1){throw 'No formal process was supplied.'}
+  $started=Get-RepositoryUtcNow;$nextLaunch=$started
+  $warningBytes=[int64]$limits.memory_admission_reserve_bytes
+  $criticalBytes=[int64]$limits.memory_critical_reserve_bytes
+  $recoveryStableSeconds=[int]$limits.memory_recovery_stable_seconds
+  $maximumRecoveryAttempts=[int]$limits.maximum_memory_recovery_attempts
+  $maximumDangerTerminations=[int]$limits.maximum_memory_danger_termination_attempts
+  if($memoryWarningOnly){
+    if($warningBytes-ne0){throw 'SIMION warning memory policy requires zero admission reserve.'}
+  }else{
+    Assert-RepositoryDispatchLimits -Limits $limits -PositiveIntegers memory_admission_reserve_bytes
+  }
+  if(-not$memoryWarningOnly-and$warningBytes-le$criticalBytes){
+    throw 'Repository admission memory reserve must exceed the critical reserve.'
+  }
+  $estimation=$plan.estimation
+  $plannedMemoryBudget=[int64]0
+  $memorySafetyFactor=[double]1.0
+  if($null-ne$estimation){
+    if($estimation.PSObject.Properties.Name-contains'per_process_memory_budget_bytes'){
+      $plannedMemoryBudget=[int64]$estimation.per_process_memory_budget_bytes
+    }
+    if($estimation.PSObject.Properties.Name-contains'memory_safety_factor'){
+      $memorySafetyFactor=[double]$estimation.memory_safety_factor
+    }
+  }
+  # A first formal observation can complete before dispatch begins.  In that
+  # valid one-batch path the scheduler loop is skipped, but the final receipt
+  # still records the admission basis.
+  $dynamicAdmissionBytes=[int64]$plannedMemoryBudget
+  $launchAdmissionBytes=$dynamicAdmissionBytes
+  $criticalSince=$null;$recoverySafeSince=$null;$dangerRecoveryPending=$false
+  $lastCpuAt=$null;$systemCpu=[double]0
+  $peakWorkingSetAggregate=[int64]0;$peakManagedMemoryAggregate=[int64]0
+  # Retain the largest per-process footprint observed for the whole wave.
+  # When all live workers finish after a pressure intervention, recomputing
+  # admission from the now-empty live set would otherwise fall back to a
+  # stale profile and immediately over-admit the requeued work.
+  $observedPerProcessManagedPeak=[int64]0
+  $minimumAvailable=$null;$peakConcurrency=$running.Count
+  $memoryWarningEvents=[Collections.ArrayList]::new();$memoryWarningActive=$false
+  foreach($record in $ExistingProcessRecords){
+    if($record.PSObject.Properties.Name-contains'memory_warning_events'){
+      foreach($warningEvent in $record.memory_warning_events){$null=$memoryWarningEvents.Add($warningEvent)}
+    }
+  }
+  $pauseEvents=[Collections.ArrayList]::new();$terminationEvents=[Collections.ArrayList]::new()
+  $recoveryEvents=[Collections.ArrayList]::new();$requeueCounts=@{};$recoveryAttempts=0
+  $batchFailureEvents=[Collections.ArrayList]::new();$batchFailureDetected=$false
+  $dangerTerminationAttempts=0;$unschedulable=$false
+  $resourcePauseActive=$false;$resourcePauseReason=$null
+  if(-not($limits.PSObject.Properties.Name-contains'minimum_process_cpu_percent')){
+    throw 'Repository dispatch limits require minimum_process_cpu_percent.'
+  }
+  $estimatedProcessCpu=[double]$limits.minimum_process_cpu_percent
+  if([double]::IsNaN($estimatedProcessCpu)-or[double]::IsInfinity($estimatedProcessCpu)-or
+     $estimatedProcessCpu-le0-or$estimatedProcessCpu-gt100){
+    throw 'Repository minimum process CPU percent must be finite and in (0,100].'
+  }
+  if($null-ne$estimation-and$estimation.PSObject.Properties.Name-contains'per_process_cpu_percent'){
+    $estimatedProcessCpu=[math]::Max($estimatedProcessCpu,[double]$estimation.per_process_cpu_percent)
+  }
+  # New plans carry the centrally compiled effective demand. Never multiply a
+  # raw observation here: this preserves old frozen plans and prevents applying
+  # the margin again during live admission, recovery or resource publication.
+  if($limits.PSObject.Properties.Name-contains'minimum_process_cpu_budget_percent'){
+    $minimumCpuBudget=[double]$limits.minimum_process_cpu_budget_percent
+    if([double]::IsNaN($minimumCpuBudget)-or[double]::IsInfinity($minimumCpuBudget)-or$minimumCpuBudget-le0){
+      throw 'Repository minimum CPU demand budget must be finite and positive.'
+    }
+    $estimatedProcessCpu=[math]::Max($estimatedProcessCpu,$minimumCpuBudget)
+  }
+  if($null-ne$estimation-and$estimation.PSObject.Properties.Name-contains'per_process_cpu_budget_percent'){
+    $cpuBudget=[double]$estimation.per_process_cpu_budget_percent
+    if([double]::IsNaN($cpuBudget)-or[double]::IsInfinity($cpuBudget)-or$cpuBudget-le0){
+      throw 'Repository effective CPU demand must be finite and positive.'
+    }
+    $estimatedProcessCpu=[math]::Max($estimatedProcessCpu,$cpuBudget)
+  }
+  while($pending.Count-gt 0-or$running.Count-gt 0){
+    $now=Get-RepositoryUtcNow;$nextRunning=[Collections.ArrayList]::new()
+    $completedThisCycle=[Collections.ArrayList]::new()
+    $aggregateWorkingSet=[int64]0;$aggregateManagedMemory=[int64]0
+    foreach($record in @($running)){
+      $sampleArgs=@{RootProcessIds=@($record.root_process_id);TrackedProcessIds=$record.tracked_process_ids}
+      $recordRootStartedAtUtcTicks=[int64]0
+      if($record.PSObject.Properties.Name -contains 'root_process_started_at_utc_ticks'){
+        $recordRootStartedAtUtcTicks=[int64]$record.root_process_started_at_utc_ticks
+        $sampleArgs.RootProcessStartedAtUtcTicks=@{([string]$record.root_process_id)=$recordRootStartedAtUtcTicks}
+      }
+      if($record.PSObject.Properties.Name -contains 'tracked_process_started_at_utc_ticks'){
+        $sampleArgs.TrackedProcessStartedAtUtcTicks=$record.tracked_process_started_at_utc_ticks
+      }
+      $sample=Get-ManagedSolverProcessSample @sampleArgs
+      $record.tracked_process_ids=@($sample.tracked_process_ids)
+      if(-not ($record.PSObject.Properties.Name -contains 'tracked_process_started_at_utc_ticks')){
+        $record|Add-Member -NotePropertyName tracked_process_started_at_utc_ticks -NotePropertyValue @{} -Force
+      }
+      # The scheduler accepts an older sample shape during a live upgrade;
+      # start-time identity is additive, not a requirement for that seam.
+      if($sample.PSObject.Properties.Name -contains 'tracked_process_started_at_utc_ticks'){
+        $record.tracked_process_started_at_utc_ticks=$sample.tracked_process_started_at_utc_ticks
+      }
+      $record.active=Test-RepositoryManagedProcessIsActive `
+        -Specification $record.specification -RootProcessId ([int]$record.root_process_id) `
+        -RootProcessStartedAtUtcTicks $recordRootStartedAtUtcTicks `
+        -Sample $sample
+      # Direct SIMION uses its exact root identity.  Launchers retain ordinary
+      # descendants as completion authorities, while a verified Windows
+      # system conhost remains accounted but cannot strand a completed batch.
+      $record.peak_working_set_bytes=[math]::Max(
+        [int64]$record.peak_working_set_bytes,[int64]$sample.working_set_bytes)
+      $record.peak_managed_memory_bytes=[math]::Max(
+        [int64]$record.peak_managed_memory_bytes,[int64]$sample.managed_memory_bytes)
+      $observedPerProcessManagedPeak=[math]::Max(
+        $observedPerProcessManagedPeak,[int64]$record.peak_managed_memory_bytes)
+      $aggregateWorkingSet+=[int64]$sample.working_set_bytes
+      $aggregateManagedMemory+=[int64]$sample.managed_memory_bytes
+      if($record.active){$null=$nextRunning.Add($record);continue}
+      $record.process.WaitForExit()
+      $record.completed=$true
+      $record.exit_code=$(if($record.pressure_terminated){$null}else{[int]$record.process.ExitCode})
+      $record.process.Dispose()
+      if(-not$record.pressure_terminated){
+        $null=$completed.Add($record)
+        $null=$completedThisCycle.Add($record)
+        if($null-ne$OnProcessCompleted){
+          $null = & $OnProcessCompleted $record
+        }
+      }
+    }
+    $running=$nextRunning
+    # Report after the whole running set has been sampled.  Reporting inside
+    # the loop would make simultaneous completions look as though no sibling
+    # workers remained, because later live records had not yet been counted.
+    foreach($record in @($completedThisCycle)){
+      Write-RepositorySchedulerEvent -Event 'BATCH_COMPLETED' -Record $record `
+        -ActiveCount $running.Count -PendingCount $pending.Count `
+        -Details @{EXIT_CODE=$record.exit_code;NATURAL='true';WALL_CLOCK_SECONDS=([math]::Round(((Get-RepositoryUtcNow)-$record.started_at).TotalSeconds,3));MORE_PENDING=($(if($pending.Count-gt0){'true'}else{'false'}))}
+    }
+    $failedThisCycle=@($completedThisCycle|Where-Object{
+      $null-ne$_.exit_code-and[int]$_.exit_code-ne0
+    })
+    if($failedThisCycle.Count -gt 0 -and -not $batchFailureDetected){
+      # A non-zero exit invalidates the complete cohort, so do not launch new
+      # work. Already-running siblings retain their natural evidence instead
+      # of being force-stopped because a peer failed.
+      $cancelledPending=$pending.Count
+      $pending.Clear()
+      $null=$batchFailureEvents.Add([ordered]@{
+        at_utc=$now.ToString('o');failed_batch_count=$failedThisCycle.Count
+        cancelled_pending_batch_count=$cancelledPending;stopped_active_batch_count=0
+      })
+      $batchFailureDetected=$true
+      Write-RepositorySchedulerEvent -Event 'BATCH_FAILURE_HALT_NEW_LAUNCHES' `
+        -ActiveCount $running.Count -PendingCount $cancelledPending `
+        -Details @{FAILED_BATCH_COUNT=$failedThisCycle.Count;ACTION='WAIT_FOR_HEALTHY_ACTIVE_BATCHES'}
+    }
+    $peakWorkingSetAggregate=[math]::Max($peakWorkingSetAggregate,$aggregateWorkingSet)
+    $peakManagedMemoryAggregate=[math]::Max($peakManagedMemoryAggregate,$aggregateManagedMemory)
+    $available=Get-RepositoryAvailableMemoryBytes
+    $minimumAvailable=$(if($null-eq$minimumAvailable){$available}else{[math]::Min([int64]$minimumAvailable,$available)})
+    if($null-eq$lastCpuAt-or($now-$lastCpuAt).TotalSeconds-ge 2){
+      $observedSystemCpu=Get-SystemCpuPercent
+      if($null-ne$observedSystemCpu){$systemCpu=[double]$observedSystemCpu}
+      $lastCpuAt=$now
+    }
+    # A dispatch plan limits lanes from the first formal peak.  Before every
+    # later launch, also reserve one expected process footprint based on the
+    # highest live peak seen so far.  This tightens admission immediately if
+    # SIMION grows after the frozen observation window, without a project-local
+    # RAM setting or an unnecessary calibration run.
+    $livePeak=[int64]0
+    foreach($record in @($running)){
+      $livePeak=[math]::Max($livePeak,[int64]$record.peak_managed_memory_bytes)
+    }
+    $dynamicAdmissionBytes=[int64][math]::Max(
+      $plannedMemoryBudget,[math]::Ceiling(
+        [math]::Max($livePeak,$observedPerProcessManagedPeak)*$memorySafetyFactor))
+    # Predicted memory shortage warns at zero active workers; sibling starts
+    # still require their measured footprint to avoid oversubscribing RAM.
+    $launchAdmissionBytes=$dynamicAdmissionBytes
+    $memoryShortage=$available-lt$dynamicAdmissionBytes-or$available-lt$criticalBytes
+    if($memoryWarningOnly-and$memoryShortage-and-not$memoryWarningActive){
+      $null=$memoryWarningEvents.Add([ordered]@{
+        at_utc=$now.ToString('o');available_memory_bytes=$available
+        expected_process_memory_bytes=$dynamicAdmissionBytes;active_count=$running.Count
+        action='warn_continue_single_worker';memory_policy='warn_single_worker'
+      })
+      Write-RepositorySchedulerEvent -Event 'MEMORY_PRESSURE_WARNING' `
+        -ActiveCount $running.Count -PendingCount $pending.Count `
+        -Details @{AVAILABLE_MEMORY_BYTES=$available;EXPECTED_PROCESS_MEMORY_BYTES=$dynamicAdmissionBytes;MEMORY_POLICY='warn_single_worker';ACTION='CONTINUE_SINGLE_WORKER'}
+      $memoryWarningActive=$true
+    }elseif(-not$memoryShortage){$memoryWarningActive=$false}
+    if($available-lt$criticalBytes){if($null-eq$criticalSince){$criticalSince=$now}}else{$criticalSince=$null}
+    if($null-ne$criticalSince-and($now-$criticalSince).TotalSeconds-ge[int]$limits.memory_critical_seconds-and$running.Count-gt 0){
+      if($dangerTerminationAttempts-ge$maximumDangerTerminations){
+        # The permitted newest-worker interventions are exhausted.
+        # Another critical window means the run cannot be made safe
+        # by another incremental reduction: terminate its remaining managed
+        # workers and preserve a failed receipt rather than letting Windows
+        # thrash indefinitely.
+        foreach($record in @($running)){
+          Stop-ManagedSolverProcesses -ProcessIds @($record.tracked_process_ids)
+        }
+        $unschedulable=$true
+        Write-RepositorySchedulerEvent -Event 'MEMORY_DANGER_UNRECOVERABLE' `
+          -ActiveCount $running.Count -PendingCount $pending.Count `
+          -Details @{AVAILABLE_MEMORY_BYTES=$available;CRITICAL_SECONDS=$limits.memory_critical_seconds;CRITICAL_THRESHOLD_BYTES=$criticalBytes;TERMINATION_ATTEMPTS=$dangerTerminationAttempts}
+        break
+      }
+      $victim=@($running|Sort-Object started_at -Descending)[0];$name=[string]$victim.name
+      $count=$(if($requeueCounts.ContainsKey($name)){[int]$requeueCounts[$name]}else{0})
+      Stop-ManagedSolverProcesses -ProcessIds @($victim.tracked_process_ids)
+      $victim.pressure_terminated=$true;$requeueCounts[$name]=$count+1
+      # Preserve balanced lane completion.  A pressure-interrupted worker has
+      # already consumed part of its lane's wall time; placing it behind an
+      # optional balancing remainder would leave one lane idle at the end of
+      # the wave.  It must be the next eligible launch after the required
+      # recovery observation.
+      $pending.Insert(0,$victim.specification)
+      $maximumConcurrency=[math]::Max(1,$maximumConcurrency-1)
+      $dangerTerminationAttempts+=1
+      Write-RepositorySchedulerEvent -Event 'MEMORY_DANGER_TERMINATION' -Record $victim `
+        -ActiveCount $running.Count -PendingCount $pending.Count `
+        -Details @{AVAILABLE_MEMORY_BYTES=$available;CRITICAL_SECONDS=$limits.memory_critical_seconds;CRITICAL_THRESHOLD_BYTES=$criticalBytes;REMAINING_TERMINATION_ATTEMPTS=($maximumDangerTerminations-$dangerTerminationAttempts)}
+      $null=$terminationEvents.Add([ordered]@{
+        process=$name;at_utc=$now.ToString('o')
+        reason='available_memory_below_critical_reserve'
+        critical_reserve_bytes=$criticalBytes; critical_seconds=[int]$limits.memory_critical_seconds
+        requeued=$true;requeue_priority='front';new_maximum_concurrency=$maximumConcurrency
+      })
+      # A requeued worker must not immediately restart after a danger kill,
+      # including at one lane where reducing maximumConcurrency has no effect.
+      # It receives the same policy-defined stable-admission observation as a
+      # restored multi-lane worker.
+      $criticalSince=$null;$recoverySafeSince=$null;$dangerRecoveryPending=$true
+      $nextLaunch=$now.AddSeconds([int]$limits.launch_stagger_seconds);Start-Sleep -Milliseconds 500;continue
+    }
+    $recoveryAdmissionSafe=$available-ge($warningBytes+$dynamicAdmissionBytes)-and
+      ($systemCpu+$estimatedProcessCpu-lt[double]$limits.cpu_admission_percent)
+    $recoveryEligible=$dangerRecoveryPending-and$pending.Count-gt 0-and
+      $recoveryAttempts-lt$maximumRecoveryAttempts
+    if($recoveryEligible){
+      if($recoveryAdmissionSafe){
+        if($null-eq$recoverySafeSince){$recoverySafeSince=$now}
+        elseif(($now-$recoverySafeSince).TotalSeconds-ge$recoveryStableSeconds){
+          $recoveryAttempts+=1
+          $null=$recoveryEvents.Add([ordered]@{
+            at_utc=$now.ToString('o');attempt=$recoveryAttempts
+            effective_maximum_concurrency=$maximumConcurrency
+            available_memory_bytes=$available;dynamic_admission_bytes=$dynamicAdmissionBytes
+            system_cpu_percent=$systemCpu
+          })
+          $recoverySafeSince=$null;$dangerRecoveryPending=$false;$nextLaunch=$now
+          Write-RepositorySchedulerEvent -Event 'MEMORY_RECOVERY_RELAUNCH_ALLOWED' `
+            -ActiveCount $running.Count -PendingCount $pending.Count `
+            -Details @{ATTEMPT=$recoveryAttempts;AVAILABLE_MEMORY_BYTES=$available;DYNAMIC_ADMISSION_BYTES=$dynamicAdmissionBytes;MAXIMUM_CONCURRENCY=$maximumConcurrency}
+        }
+      }else{$recoverySafeSince=$null}
+    }else{$recoverySafeSince=$null}
+    $memoryLaunchAllowed=$available-ge($warningBytes+$launchAdmissionBytes)-or
+      ($memoryWarningOnly-and$running.Count-eq0)
+    $canLaunch=$pending.Count-gt 0-and$running.Count-lt$maximumConcurrency-and
+      -not$dangerRecoveryPending-and$now-ge$nextLaunch-and$memoryLaunchAllowed-and
+      ($systemCpu+$estimatedProcessCpu-lt[double]$limits.cpu_admission_percent)
+    $exclusiveResourceBlocked=$false;$nextSpecification=$null
+    if($canLaunch){
+      $activeExclusiveResourceKeys=@{}
+      foreach($activeRecord in @($running)){
+        $activeSpecification=$activeRecord.specification
+        if($activeSpecification.PSObject.Properties.Name-contains'exclusive_resource_key'-and
+            -not[string]::IsNullOrWhiteSpace([string]$activeSpecification.exclusive_resource_key)){
+          $activeExclusiveResourceKeys[[string]$activeSpecification.exclusive_resource_key]=$true
+        }
+      }
+      foreach($candidate in @($pending)){
+        $candidateKey=$(if($candidate.PSObject.Properties.Name-contains'exclusive_resource_key'){
+          [string]$candidate.exclusive_resource_key
+        }else{''})
+        if([string]::IsNullOrWhiteSpace($candidateKey) -or -not $activeExclusiveResourceKeys.ContainsKey($candidateKey)){
+          $nextSpecification=$candidate;break
+        }
+      }
+      if($null-eq$nextSpecification){$canLaunch=$false;$exclusiveResourceBlocked=$true}
+    }
+    if($canLaunch){
+      if($resourcePauseActive){
+        Write-RepositorySchedulerEvent -Event 'RESOURCE_ADMISSION_RESUMED' `
+          -ActiveCount $running.Count -PendingCount $pending.Count `
+          -Details @{AVAILABLE_MEMORY_BYTES=$available;PREVIOUS_REASON=$resourcePauseReason;REQUIRED_AVAILABLE_MEMORY_BYTES=($warningBytes+$dynamicAdmissionBytes)}
+        $resourcePauseActive=$false;$resourcePauseReason=$null
+      }
+      $spec=$nextSpecification;$null=$pending.Remove($spec)
+      $launched=Start-RepositoryScheduledProcess -Specification $spec
+      $null=$running.Add($launched)
+      $peakConcurrency=[math]::Max($peakConcurrency,$running.Count)
+      Write-RepositorySchedulerEvent -Event 'BATCH_STARTED' -Record $launched `
+        -ActiveCount $running.Count -PendingCount $pending.Count `
+        -Details @{MAXIMUM_CONCURRENCY=$maximumConcurrency}
+      $nextLaunch=(Get-RepositoryUtcNow).AddSeconds([int]$limits.launch_stagger_seconds)
+    }elseif($pending.Count-gt 0-and$running.Count-lt$maximumConcurrency){
+      if($pauseEvents.Count-eq 0-or($now-[datetimeoffset]$pauseEvents[$pauseEvents.Count-1].at_utc).TotalSeconds-ge 5){
+        $reason=$(if($exclusiveResourceBlocked){'exclusive_resource_in_use'}elseif($dangerRecoveryPending){'post_danger_recovery_observation'}elseif(
+          -not$memoryLaunchAllowed){'available_memory_below_dynamic_admission'}elseif(
+          ($systemCpu+$estimatedProcessCpu)-ge[double]$limits.cpu_admission_percent){'cpu_admission_exceeded'}else{'launch_stagger_pending'})
+        $null=$pauseEvents.Add([ordered]@{
+          at_utc=$now.ToString('o');reason=$reason;available_memory_bytes=$available
+          required_available_memory_bytes=($warningBytes+$launchAdmissionBytes)
+          dynamic_admission_bytes=$dynamicAdmissionBytes;launch_admission_bytes=$launchAdmissionBytes;system_cpu_percent=$systemCpu
+        })
+        if($reason-ne'launch_stagger_pending'){
+          Write-RepositorySchedulerEvent -Event 'RESOURCE_ADMISSION_PAUSED' `
+            -ActiveCount $running.Count -PendingCount $pending.Count `
+          -Details @{AVAILABLE_MEMORY_BYTES=$available;DYNAMIC_ADMISSION_BYTES=$dynamicAdmissionBytes;LAUNCH_ADMISSION_BYTES=$launchAdmissionBytes;REASON=$reason;REQUIRED_AVAILABLE_MEMORY_BYTES=($warningBytes+$launchAdmissionBytes);SYSTEM_CPU_PERCENT=$systemCpu}
+          $resourcePauseActive=$true;$resourcePauseReason=$reason
+        }
+      }
+    }
+    if($pending.Count-gt 0-or$running.Count-gt 0){Start-Sleep -Milliseconds 500}
+  }
+  if($unschedulable){foreach($record in @($running)){Stop-ManagedSolverProcesses -ProcessIds @($record.tracked_process_ids)}}
+  $failed=@($completed|Where-Object{$null-ne$_.exit_code-and[int]$_.exit_code-ne 0})
+  $completedWorkUnits=[int64]0
+  foreach($record in @($completed)){
+    if($record.PSObject.Properties.Name-contains'specification'-and
+       $record.specification.PSObject.Properties.Name-contains'scheduler_batch'-and
+       $record.specification.scheduler_batch.PSObject.Properties.Name-contains'count'){
+      $completedWorkUnits+=[int64]$record.specification.scheduler_batch.count
+    }
+  }
+  $isWorkItemDispatch=$plan.PSObject.Properties.Name-contains'dispatch_unit'-and
+    [string]$plan.dispatch_unit-eq'independent_work_items'
+  $expectedWorkUnits=$(if($isWorkItemDispatch){[string]$plan.work_item_count}elseif(
+    $plan.PSObject.Properties.Name-contains'particle_count'){[string]$plan.particle_count}else{'UNKNOWN'})
+  $completedLabel=$(if($isWorkItemDispatch){'COMPLETED_WORK_ITEMS'}else{'COMPLETED_PARTICLES'})
+  $expectedLabel=$(if($isWorkItemDispatch){'EXPECTED_WORK_ITEMS'}else{'EXPECTED_PARTICLES'})
+  Write-RepositorySchedulerEvent -Event $(if($unschedulable){'BATCH_WAVE_TERMINATED'}else{'BATCH_WAVE_COMPLETED'}) `
+    -ActiveCount $running.Count -PendingCount $pending.Count `
+    -Details @{COMPLETED_BATCHES=$completed.Count;$completedLabel=$completedWorkUnits;$expectedLabel=$expectedWorkUnits;FAILED_BATCHES=$failed.Count;STATUS=$(if($unschedulable){'RESOURCE_PRESSURE_FAILED'}elseif($failed.Count-gt0){'PROCESS_FAILED'}else{'COMPLETED'});TOTAL_WALL_CLOCK_SECONDS=([math]::Round(((Get-RepositoryUtcNow)-$started).TotalSeconds,3))}
+  $usage=[ordered]@{
+    schema_version=2;role='multipole_resource_usage'
+    status=$(if($unschedulable){'resource_pressure_failed'}elseif($failed.Count-gt 0){'process_failed'}else{'running'})
+    failure_class=$(if($unschedulable){'memory_danger_recovery_attempts_exhausted'}else{$null})
+    limit_name=$(if($unschedulable){'system_available_memory'}else{$null})
+    started_at_utc=$started.ToString('o');wall_clock_seconds=[math]::Round(((Get-RepositoryUtcNow)-$started).TotalSeconds,3)
+    peak_process_tree_working_set_bytes=$peakWorkingSetAggregate
+    peak_process_tree_managed_memory_bytes=$peakManagedMemoryAggregate
+    minimum_system_available_memory_bytes=$minimumAvailable
+    peak_run_directory_bytes=(Get-RunDirectoryBytes -RunDir $RunDir);final_retained_bytes=$null;limits=$plan.limits
+    final_retained_measurement_scope='run_directory_before_terminal_manifest'
+    execution_wave=[ordered]@{dispatch='repository_adaptive_staggered';process_count=$completed.Count;peak_concurrency=$peakConcurrency}
+    scheduler_receipt=[ordered]@{
+      resource_identity_source=[string]$plan.estimation.kind
+      memory_policy=$(if($memoryWarningOnly){'warn_single_worker'}else{'reserve_and_terminate'})
+      memory_warning_events=@($memoryWarningEvents)
+      planned_maximum_concurrency=[int]$plan.limits.maximum_concurrency
+      final_maximum_concurrency=$maximumConcurrency;peak_concurrency=$peakConcurrency
+      minimum_available_memory_bytes=$minimumAvailable
+      dynamic_admission_bytes_at_finish=$dynamicAdmissionBytes
+      per_process_cpu_budget_percent=$estimatedProcessCpu
+      launch_pause_events=@($pauseEvents);termination_requeue_events=@($terminationEvents)
+      recovery_relaunch_events=@($recoveryEvents);recovery_attempt_count=$recoveryAttempts
+      danger_termination_attempt_count=$dangerTerminationAttempts
+      batch_failure_cancellation_events=@($batchFailureEvents)
+    }
+  }
+  # Keep the measured worker identity and its own work count together. Wave
+  # aggregate memory is not a per-worker observation when workers overlap.
+  $memoryObservation=$null
+  foreach($record in @($completed)){
+    if(-not($record.specification.PSObject.Properties.Name-contains'scheduler_batch')-or
+       -not($record.PSObject.Properties.Name-contains'root_process_id')-or
+       -not($record.PSObject.Properties.Name-contains'root_process_started_at_utc_ticks')){continue}
+    $count=[int]$record.specification.scheduler_batch.count
+    $peak=[int64]$record.peak_managed_memory_bytes
+    if($count-lt1-or$peak-lt1){continue}
+    if($null-eq$memoryObservation-or$peak-gt$memoryObservation.peak_managed_memory_bytes){
+      $memoryObservation=[ordered]@{
+        process=[string]$record.name;work_units=$count;peak_managed_memory_bytes=$peak
+        root_process_id=[int]$record.root_process_id
+        root_process_started_at_utc_ticks=[int64]$record.root_process_started_at_utc_ticks
+      }
+    }
+  }
+  if($null-ne$memoryObservation){$usage.per_process_memory_observation=$memoryObservation}
+  if($ExistingProcessRecords.Count-gt 0){
+    $first=$ExistingProcessRecords[0]
+    $usage.first_formal_observation=[ordered]@{
+      process=[string]$first.name;peak_working_set_bytes=[int64]$first.peak_working_set_bytes
+      peak_managed_memory_bytes=[int64]$first.peak_managed_memory_bytes
+      completed_naturally=[bool]$first.completed_during_observation
+      process_cpu_percent=[double]$first.observed_process_cpu_percent
+      process_cpu_peak_percent=$(if($first.PSObject.Properties.Name-contains'observed_process_cpu_peak_percent'){[double]$first.observed_process_cpu_peak_percent}else{[double]$first.observed_process_cpu_percent})
+      process_cpu_measurement=$(if($first.PSObject.Properties.Name-contains'observed_process_cpu_measurement'){[string]$first.observed_process_cpu_measurement}else{'legacy_peak'})
+      background_cpu_percent=[double]$first.observed_background_cpu_percent
+    }
+  }
+  Write-ResourceUsage -Usage $usage -Path $UsagePath
+  return [pscustomobject]@{
+    resource_budget_exceeded=$unschedulable;limit_name=$usage.limit_name
+    processes=@($completed|ForEach-Object{[pscustomobject]@{name=$_.name;exit_code=$_.exit_code}})
+  }
+}
+
+function Complete-ResourceUsage {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RunDir,
+    [Parameter(Mandatory)][string]$UsagePath
+  )
+  $usage=Get-Content -LiteralPath $UsagePath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+  $finalBytes=Get-RunDirectoryBytes -RunDir $RunDir
+  $usage.final_retained_bytes=$finalBytes
+  $usage.peak_run_directory_bytes=[math]::Max([int64]$usage.peak_run_directory_bytes,$finalBytes)
+  if($usage.status-eq'running'){$usage.status='completed'}
+  Write-ResourceUsage -Usage $usage -Path $UsagePath
+  return $true
+}

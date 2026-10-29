@@ -1,0 +1,176 @@
+# 最终任务 TEMP 清理预检（一次性；仅核对，不执行）
+
+核对日期：2026-10-29。本文件由 Agent 3 生成，最终事实并入正式报告后由 root 清理。
+
+## 范围与审批边界
+
+已读 RESTART_HANDOFF 和 final_evidence_archive_plan；本轮只读取以下九个精确旧范围，后按 root 新指令追加主 T 与两个已知 R1 目录的分组。没有修改正式源、旧 run、账本或 Git，没有 apply、删除、商业运行或测试。Git 仅按 root 追加授权读取四个固定 ref 的 tree 元数据并计算普通源码的内存 raw blob 身份。没有遍历 junction/reparse，也没有读取/散列 PA/MPH。
+
+这九个范围均曾被自动审批拒绝清理；本文件不覆盖原拒绝、不授权换工具/改变隔离来重试。原拒绝细则未在本轮复现；此前只记录“blocked by policy”的项不能补造原因。后续必须由 root 在必要 raw 正式归档、固定 Git 恢复映射确认、实际活动状态复核后，沿正常审批执行精确清理。这里所有“可清理”均带这些前提，**当前没有任何删除动作**。
+
+- B = `C:/Users/Liao/AppData/Local/Temp`
+- T = `C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6`
+- S = `C:/Users/Liao/mass_spectrometry/simulation_repo`
+- H = T/final_history_payload_candidate；是临时 staging，尚不是正式归档。
+- E = `C:/Users/Liao/mass_spectrometry/artifacts/projects/instrument_assembly/runs/20261029_084153__analysis__python__final-guide-evidence`；是已正式保全的小证据 run。
+
+## 九个精确范围现状
+
+所有路径存在且解析为自身；8 个普通目录和1个普通文件，无缺项、无相似名代选。内部逐项 lstat 不跟随链接：普通文件合计 **2,900 / 22,864,666 B**，内部目录478个（不含8个根目录），reparse/nonregular=0。逻辑 bytes 不是卷空闲变化。没有按文件年龄作结论。
+
+|编号|精确绝对路径|类型|文件数|逻辑 bytes|内部目录|
+|---|---|---|---:|---:|---:|
+|1|`C:/Users/Liao/AppData/Local/Temp/capacity-benchmark-845b54bcd8c945459710f76d3c271d96`|directory|1418|618333|302|
+|2|`C:/Users/Liao/AppData/Local/Temp/codex_g2_pre_import_odsoiwu0`|directory|4|51117|0|
+|3|`C:/Users/Liao/AppData/Local/Temp/scheduler-multibirth-candidate-86012fa4455941449d665f2b7e9b4721`|directory|4|93622|0|
+|4|`C:/Users/Liao/AppData/Local/Temp/codex_rf_gate_contract_candidate_8iayfqoc`|directory|3|56166|0|
+|5|`C:/Users/Liao/AppData/Local/Temp/codex_g2_final_benchmark_20261028`|directory|1459|22011642|173|
+|6|`C:/Users/Liao/AppData/Local/Temp/codex_campaign_binding_red_0fec42ede6f8427f82fc206475590b09`|directory|2|8|0|
+|7|`C:/Users/Liao/AppData/Local/Temp/capacity-pressure-baseline-1f3bd056a8cb4d4c8561dd7610d477d5`|directory|4|8532|3|
+|8|`C:/Users/Liao/AppData/Local/Temp/codex_pa2d_toy_1c6e33c78bb64f3688ed5887428b38c0`|directory|5|22591|0|
+|9|`C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6/capacity_host_release_probe.ps1`|file|1|2655|0|
+
+正常权限 Get-CimInstance Win32_Process 返回“拒绝访问”，所以本轮活动进程状态是 **UNKNOWN**，不是零进程。没有升级/替换工具绕过。正式 common/projects/integrations/docs/config/.github（排 history/generated/legacy/__pycache__）对这九个精确 basename 的 rg 搜索没有活动源码引用；这仅是静态引用证据，不能代替删除前有权限的进程/句柄复查。L2r3 的运行目录、活 summary/log 未执行或改动。
+
+## 逐范围归属、消费者与可恢复依据
+
+1. **capacity-benchmark**：本任务 C1/C3 软件对照作者。benchmark.py:41 的 fixture 仅在其 own TEMP fixtures 下生成40/80/160 run、每 run 5个2 B空 JSON及隔离账本；timed 方法调用真实公共读取/决策锁，但 ready-only、没有可删对象。四个源快照均可按下表固定 Git blob 恢复；1411个 fixture 文件/283151 B 是作者可重新生成的输入，无科学结果权威。独特 measured raw prepared.json/results.json 与作者共67088 B已逐字节到 H/early_capacity_*，必须等正式归档后才清。prepared 与 timed author SHA不同的历史事实仍保在 raw，不能把其状态改写。
+
+2. **g2_pre_import**：第一波 G2 早期语料的3份 before-import overlay 与 manifest；不是最终 c946 语料，不能笼统称为 Git blob。manifest明确前两份是 inverse exact patch + forward roundtrip，测试源是编辑前原字节。四原件/51117 B已逐字节到 T/g2_*，root 又加到 H/g2_early_*，本轮再核等。它们仍支撑早期 raw，归档后原目录才可清；不额外保存第二份同义原件。详见 overlay 表。
+
+3. **scheduler-multibirth-candidate**：本任务 PID多birth修复的临时候选/纯fixture验证。validate_candidate.py明确 synthetic/in-memory/隔离SQLite，不是生产账本重放。生产与测试两快照逐字节等于 c946 对应文件；validation.txt17626 B等于 H/early_scheduler_pid_reuse_validation.txt。一次性3084 B runner只装载上述源并选长期3个回归，无尚未执行的业务消费者。保留 validation raw后无需长期保候选目录。
+
+4. **rf_gate_contract_candidate**：G1/G4两个旧 discover源码断言→真实 Core/Static验证的临时测试候选。candidate.py30656 B等于 c946正式测试；source_before.txt24706 B等于3005980该路径。run_candidate.py804 B只加载候选并跑两个命名方法，现正式测试仍有 test_project_gate_core_keeps_physical_contracts_but_not_full_regressions（615）和 test_project_gate_static_retains_full_analysis_and_powershell_regressions（639）。Agent1确认无待执行消费者；无需归档这个重复测试运输器。
+
+5. **g2_final_benchmark**：最终受控 G2测量：corpus1446文件21934108 B全部可从固定 c946恢复，两个 checker共40492 B也有固定 blob；详见下一节。7个 run_N.json的8个结果字段已全部进入 measurement.runs，本轮按原键序、json.dumps(ensure_ascii=False, indent=2)、CRLF、无末尾换行逐个重建，7/7原 bytes匹配。runner.py1662 B逐字节等于 measurement.metadata.runner_source.encode(UTF-8)。measurement21666 B与 benchmark9055 B已逐字节到 H；preparation1334 B是准备中间投影，其核心身份/方法在终态 measurement。旧拒绝范围1456文件21979259 B曾排除3 raw32383 B；本次列的是整个目录1459文件22011642 B。整目录只能在 raw正式归档后清，不能因 corpus可恢复先误清唯一测量。
+
+6. **campaign_binding_red**：实际两文件 condition.json/context.json各4 B，原字节均为空对象加CRLF，SHA均 e3566b3a06430868d71e9287dfd6c6c520a3da027aabea01951d407ee131dc2f。Agent1确认只为越过存在性检查复现缺 CompositionPlanPath接口；不是科学输入/结果，后续正式行为回归已承接。没有待执行依赖，是可弃fixture。
+
+7. **capacity-pressure-baseline**：公共 Enter session在容量不足时拒绝并释放 provisional lease的隔离fixture。已实读小账本：schema3、artifact_root=本TEMP/artifacts、resident0、objects=[]、external_scopes=[]；唯一输入文本32 B“unique temporary protected input”，另有8192 B隔离SQLite与1 B锁文件。T/capacity_pressure_baseline.json明确绑定本路径、real_artifact_maintenance=false、lease_json_count_after_failure=0、input_preserved=true、4.2162901 s。其 raw及后续green已到H。锁文件存在不代表锁当前被持有或空闲；进程状态仍须 root复查。无真实产物载荷/唯一数据。
+
+8. **pa2d_toy**：5份作者小代码22591 B，明确7×7×1两电极assembler-only，不是N100/正式资格。已逐份核与下述 canonical run inputs原 bytes相等且 run_manifest.json输入record的path/bytes/SHA一致；正式原状态是failed，不能提升为成功。由此可清TEMP副本，无需把五份源再存history；不会动其run/PA。
+
+9. **capacity_host_release_probe.ps1**：2655 B一次性五臂故障探针。实读仅 stub Enter/ExitHostLease、InvokeRunCapacityCommand、UpdateSession，覆盖receipt/native/success/workflow_initial/workflow，输出错误保留结构，无真实host/ledger动作。正式 common/contracts/test_capacity_reconcile_runtime.py:38 的 test_host_release_failure_preserves_original_error_and_stops_pressure_recovery已内嵌同五臂；red/green原stdout已在H。作者可弃，不再执行。
+
+## 固定 Git 恢复证明（原字节；不经过 checkout 换行转换）
+
+ref已只读解析为：
+- BASE: 3005980a9a0d3a62a67f36dff389a3110868faa7
+- b0d306082825ece118855b9059a6171011154b14
+- RESULT: c9467c44f632fa60e943cc80bb4b6e2a0d9246b0
+- ad6d7577bf3cce6f218fb6a96f2e65869358ba2d
+
+算法：每个候选ref一次批量 git ls-tree -rz -l 获取 mode/type/OID/size/path；对现成普通源码 raw bytes计算
+`sha1(b"blob " + str(len(raw)).encode("ascii") + bytes([0]) + raw)`，逐path同时比较bytes/OID/type。
+未调用 hash-object -w、写index或改工作树。随后对选定c946树补一次filter集合校验，确认不只是语料子集。
+
+corpus/<relative_path>直接对应S/<relative_path>。恢复集合是 common/projects/integrations 下后缀 .py/.ps1/.lua/.m/.json，目录名 history、legacy、.venv、__pycache__精确排除；c946过滤集合与corpus **双向完全相等**，都是1446文件/21934108 B，无漏/多路径。每项bytes/raw blob全匹配。原manifest算法为按相对POSIX路径排序的 (path,len,sha256(raw)) 元组，json.dumps(separators=(',',':'))默认ensure_ascii=True、UTF-8无BOM/换行，再SHA256：
+**660689fcb27ef802357e635af40f5191f1c6cd36c78224908e86fab58fb35fb6**，与measurement一致。
+b0只匹配1427项、ad6匹配1439项，因此不能用它们泛指该冻结corpus。精确恢复应取c946原blob（例如git cat-file），不是git archive/checkout后假定字节等同。
+
+|范围/原文件|固定提交中的path|bytes|Git blob OID|SHA256|
+|---|---|---:|---|---|
+|G2 BASE checker|3005980 / common/verify_development_standards.py|18326|23d5c1626dcffa9f3d7c619c93335507dbb03772|e452fc581964ec87e4b0341a2c39150a6c2659a8381115f5516cd234260bd381|
+|G2 CURRENT checker|c9467c44 / common/verify_development_standards.py|22166|9872086692a0983e053ed60f4b93186eaa8b11ec|65a3c64d6ecf375d23be6fbbdb6f40f9374dc2133725206081f7bafa9b67108b|
+|baseline_reconcile_artifact_capacity.py|3005980 / common/contracts/reconcile_artifact_capacity.py|79113|c85dd9eccbb448eafd260bf837324966031f59ff|862ee0d93e7e3da8bd837d864c04b2b3a079f3468e763fbcfa5b34445fa05c31|
+|baseline_run_capacity_lifecycle.py|3005980 / common/contracts/run_capacity_lifecycle.py|55174|afd84812feb2d0cdbfc7f495a6180ef450ad13b1|bc7f2e9911a69c27acc7d8c0826a1d52f91ddee347cb13bb7433ad16cd8e9cf2|
+|source_before.txt|3005980 / projects/rf_multipole_ion_optics/tests/analysis/test_cross_solver_gate_contract.py|24706|43c695baa49d7939e6b1c6d91fa5ec7e5cb0717a|8379a1d475248041c7d3c79eedb31c2a93eb4af63c6968aada76b93578a78446|
+|current_reconcile_artifact_capacity.py|c9467c44 / common/contracts/reconcile_artifact_capacity.py|78242|8d8440a696c9300cd147912990b92942d86bc4f0|c18bf75d01ebbd54e3b4eb4614384b4db37e189ae363f925917691fa0436f49a|
+|current_run_capacity_lifecycle.py|c9467c44 / common/contracts/run_capacity_lifecycle.py|55565|74d59e978cc821b04c2f5cb270b8a97672b628a0|1cc0a2af0e110921033d7ecba792adaaced8d483c9c351c3064aed863c9c7e0b|
+|host_resource_scheduler.py|c9467c44 / common/host_resource_scheduler.py|26017|5b60596b9e866f74f8aae0c1643b8cf0a2673e77|1d8771a10b40fce51bf5cbcd7feeb4b3e19e4a89fda4835590a74195440217a0|
+|test_host_resource_scheduler.py|c9467c44 / common/test_host_resource_scheduler.py|46895|6ab31bb1ae8288b0d6ba1bac22dc86d8e37cce40|e015cbd8aad8d60a47e8106d88a82da66f7c076725d9e6e907cdca467bfbab03|
+|candidate.py|c9467c44 / projects/rf_multipole_ion_optics/tests/analysis/test_cross_solver_gate_contract.py|30656|e5751af14ed38ef873a61ac3eede7dab39a0b75b|461f1fa53285ce8dd3ab8cf9c015fba1101fe6112e527240c8ff2b159cc69d21|
+
+## 必要 raw 的现存同字节副本
+
+下表只证明临时H已复制，不声称已正式归档。root完成正式history与输入身份说明之后，可清原TEMP副本。
+
+|原来源|H内目标|bytes|SHA256|
+|---|---|---:|---|
+|`C:/Users/Liao/AppData/Local/Temp/capacity-benchmark-845b54bcd8c945459710f76d3c271d96/prepared.json`|`C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6/final_history_payload_candidate/early_capacity_prepared.txt`|7633|6ce02b5f1a496ba952ce24e8b7f34a83a7349c420646ce185cd70512092453a4|
+|`C:/Users/Liao/AppData/Local/Temp/capacity-benchmark-845b54bcd8c945459710f76d3c271d96/results.json`|`C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6/final_history_payload_candidate/early_capacity_results.txt`|44667|1aff422e28a21068c67cc24f31095f9c08428689ac1fcee9d074c17b17d57c6f|
+|`C:/Users/Liao/AppData/Local/Temp/capacity-benchmark-845b54bcd8c945459710f76d3c271d96/benchmark.py`|`C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6/final_history_payload_candidate/early_capacity_benchmark_source.txt`|14788|7b9a71ffd1523c45d1b7d2273c194b7a141415daee1b35e557bc1d0fd1b2f01f|
+|`C:/Users/Liao/AppData/Local/Temp/scheduler-multibirth-candidate-86012fa4455941449d665f2b7e9b4721/validation.txt`|`C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6/final_history_payload_candidate/early_scheduler_pid_reuse_validation.txt`|17626|5e7254d95c6c9fdd7d29d44015d1f160f4f42b302b563b552c6a6dd274eecf40|
+|`C:/Users/Liao/AppData/Local/Temp/codex_g2_final_benchmark_20261028/measurement.json`|`C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6/final_history_payload_candidate/g2_final_measurement.json.txt`|21666|cf9df4535544716a8b962d9f0fd5fc11502d562f4613d81eb46b39a8a33b5fd7|
+|`C:/Users/Liao/AppData/Local/Temp/codex_g2_final_benchmark_20261028/benchmark.py`|`C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6/final_history_payload_candidate/g2_final_benchmark.py.txt`|9055|7ab6cef55020e9ca97481b96b412783221288a8f8e8222fd72299563eea5a5d2|
+
+早期 overlay四项（原目录到T、T到H均原字节相等）：
+
+|T副本|bytes|SHA256|H名称|
+|---|---:|---|---|
+|`C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6/g2_verify_changed_before_import.txt`|21081|b533d361f7b22217c587cab21fe6cdee72e5d41cc1263befc85e1802b26a053e|g2_early_verify_changed_before_import.txt|
+|`C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6/g2_catalog_support_before_import.txt`|13576|95b748d34ca1ff1a118233ecc84ef07dc622769eb008264e5471455b668c783e|g2_early_catalog_support_before_import.txt|
+|`C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6/g2_test_selection_before_import.txt`|15331|a6a5e859f7d02c04803ca6311bacf06a3cee56f84b56e1eaef5454f9db617736|g2_early_test_selection_before_import.txt|
+|`C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6/g2_corpus_overlay_manifest.txt`|1129|fdc9c9c95244dabbc76bc230ddc7d87c2dffc0901315850a837431ed4b4aec6e|g2_early_corpus_overlay_manifest.txt|
+
+另有早期测量原始结果T/g2_measurement.txt，19796 B，SHA c3c989ae41a2a70875a71188cc30db1a958be7d11aa98ca3c2f8db3b2ea52a5b；实读其1446文件/21916539 B/digest268e4f1988adc732e90f9b36b4b0f46553993a753c723ff18bf2135346db79be，须与四overlay成组保留。它不同于最终c946测量；已向root指出增补，不以final raw替代。历史overlay语料恢复仍应按原manifest逐路径覆盖，不能修改其历史身份。
+
+PA toy正式副本根：
+`C:/Users/Liao/mass_spectrometry/artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261028_210520__test__simion__standalone-2d-cylinder__toy/inputs`
+原run_manifest.json20202 B，SHA 5dbe6fd8167fdcb5750f6783662606250eedeb5535f6dcf18ed6fa758a146bbb，status=failed。下列5项本轮 raw bytes / manifest record全部匹配：
+
+|inputs相对名|bytes|SHA256|
+|---|---:|---|
+|baseline.lua|4059|473f3a96efe3b53dc3285aa3dd12bb11149121c168544a6f135b2de57341b026|
+|build.lua|841|e9e20bc968c6d250e073b3d9f9321c0f008ea793f7b2adf31f0e0da48a1f93bc|
+|candidate.lua|4147|73b45fb5bb1cf97e669b797c3d4800c812c6a16f95a0e754eb6661479c8d0cf2|
+|driver.ps1|12303|ecf0541d5a8aa38148a9bd45a180b7a4d54cb364cc8c18669336e137fbcac0e5|
+|inspect.lua|1241|a7bab3de96177549ed0d8cf71f00fa580a86da5f439f7472a82d47c7bcc6c0f1|
+
+## 追加：主T清理分组（只读分类，未整目录判定可删）
+
+本节按root新增范围列分组；没有扫描整个OS TEMP。仅列当前已见对象；所有L2r3仍活的 l2_final_candidate_20261029_r3.json/.log，以及尚待Agent2生成的 l2_r3_*post/test_results，必须等待真正终态，不读其内容/不删除。主T不能现在整体清空。
+
+|分组|现存范围/举例|清理前承接与状态|
+|---|---|---|
+|仍在使用的交接/报告/提交规划|RESTART_HANDOFF.md；final_guide_review_front_draft.md；final_guide_review_appendices_draft.md；final_must_implementation_crosscheck.md；final_report_accuracy_review.md；theme_commit_boundaries_draft.md；theme_commit_candidates/（40文件1771470 B）；final_history_payload_index_draft.md|保留至最终报告/主题提交/正式归档完成；不可列为“立即可删”。不能用临时规划代替已提交正文。|
+|待正式归档raw|final_history_payload_candidate/当时49文件1323825 B；对应capacity/G2/R1/gates/CLOC/GUI transport源；另刚指出early g2_measurement.txt与两GUI历史ownerResult|H仍TEMP。必须原字节正式落盘、索引核SHA后才清来源和H。最终L2r3/最后CLOC若后续产生，root另按真实终态补，不假定已齐。|
+|证据保全消费链|real_handoff_acceptance/33文件239098 B；B85作者/request/log；comsol_lifecycle_acceptance/owner_result.json；pa_gui_acceptance/gui_p3_r3_owner_result.json|E/results/evidence_mapping.json列26 copied +5 canonical references +3可重建tiny transport。本轮26原件与frozen input、5原件与canonical再次逐字节相等。P1/P2原failed状态与后续P3/P4不混；不再复制到history。三tiny原样重建依据保在mapping；只有明确映射的条目可据此移除。|
+|保全作者本身|final_evidence_preservation/11文件113838 B|code/与request由E inputs正式绑定；owner_result1177 B是run外运输，已在H/preservation_owner_result.json.txt，等正式history。prepare/test/REVIEW属于一次性作者/纯测试/审阅稿，事实并入最终报告后可弃；不新增第二preservation run。|
+|COMSOL临时bundle|comsol_lifecycle_acceptance/25文件321722 B|request.package绑定instrument_assembly/20261029_075812__test__comsol__connection-lifecycle-smoke；manifest inputs22项含execution_request与inputs/code。ownerResult已E保全。大bundle清理前以其manifest精确映射核对应普通代码副本，不能将本次只读metadata枚举当全25项raw再验。测试/准备作者可在正式原源确认后弃。|
+|已取消GUI临时准备|pa_gui_acceptance/684文件12361931 B，prepared_p3_bundle、prepared_p3_bundle_r2、prepared_p3_bundle_r3与作者/tests/REVIEW|用户取消截图依赖验收，不再执行。r3 ownerResult已E保全，r2/r3 run各manifest163 inputs含冻结code/request。r1 ownerResult是failed/admission，其unused bundle不能宣称已执行。r2/r3大bundle需按其既有manifest确认重复源，不可按年龄删。另两份唯一外运输见下，先最小保全后清；不动canonical run。|
+|中间审查矩阵/报告作者|full_guide_agent*.json、full_review_agent*.json/md、full_agent2_symbols.json、build_agent2_review.py、audit/phase drafts、run_artifact_workflow_protocol.md、capacity_next_closeout_preparation.md、cloc_r6_replacement_agent3.md、各independent_review.md|是任务中间资料；须先由已复核153文件/37routes最终正文/附录承接必要结论及证据链接，再清。不以文件名判断结论已全部承接；root最终正文审校仍是实际消费者。full_guide_source.md原指南已H原字节，保全后不另留重复副本。|
+|软件故障临时probe/candidate|gate_completion_race_red/、green_0/、green_7/（10文件12629 B）、gate_completion_race_*.ps1、parallel_gate_support_candidate.ps1、layout_recovery_red.py、capacity_host_release_probe.ps1|纯软件夹具/候选；失败/修复事实与正式长期回归、H/l2_r2_gate_completion_race_diagnosis.md.txt及真实完整L1/L2摘要承接后可弃。不把临时green替代最终门禁。|
+|routine gates/logs、CLOC中间轮、命令body/文档检查|ci_fixture_*、l1/l2历史全文log、cloc中间轮、commit_*.txt、phase_docs*、documentation_before_l2_r3_*、owner_simplification_regression.log|逐轮关键失败/最终摘要及必要分类原始输出已按archive plan选入H；中间重复全文、可从提交恢复的commit message、测试stdout不必全复制history。必须保留原RUNNING/null重启中断身份，不能为清理伪补PASS；活r3例外继续hold。|
+|radial早期closeout及历史transport|radial_r2_closeout*、radial_reanalysis_closeout*、metadata_correction*、radial_n100_*与acceptance plans|本次仅metadata列表，不能据名称声称全部canonical重复。此前archive plan/各canonical receipt为核对入口；root须在最终报告确认必要原异常、correction审计与仅closeout事实已保留后清。小ownerResult未证明同字节的项保留到此核对，不扩大到PA/原run。|
+
+主T额外具名小唯一运输：
+- pa_gui_acceptance/gui_p3_owner_result.json：2631 B，SHA 0c5a95c38dd7089a8f619629af454314e1d437106a5b8a74ae79f0b01e6a90e3；原failed/admission。
+- pa_gui_acceptance/gui_p3_r2_owner_result.json：2919 B，SHA 45861ca02004d7d92ec5370de5bd7142a05354285fbc74875ec00740fc6ca267；原failed/complete。
+本轮未找到它们的正式原字节副本，已报root；若最终报告保留这两次失败事实，最小归档这5550 B外运输，而不是复制12 MB bundle。r3正式保全不能替代r1/r2原Result。
+
+E映射当前SHA：960aba33e866263f2cc349aad2264105bd0c952cfd55f0d5294075aab8e67c7b（27314 B）。它保留source→frozen path/bytes/SHA、资格说明和原失败；不是删除授权或科学晋升。
+
+## 两个已知R1 TEMP目录
+
+- OLD：`C:/Users/Liao/AppData/Local/Temp/codex_r1_process_snapshot_20261029`，12文件123409 B。
+- NEW：`C:/Users/Liao/AppData/Local/Temp/codex_r1_remeasurement_20261029_423d4c42`，20文件229761 B。
+- 均直接普通文件、无reparse。BASE80292 B两目录逐字节相同；这是混合WORKTREE基线，不是Git3005980。
+- OLD原3份measurement/benchmark/report与NEW7份方法、双臂基线、preparation、18 raw、6dictionary、run.log全部与H对应副本逐字节相等（下表）。其余OLD baseline_loop_counts/dispatch/verify_baseline/focused/synthetic中间验证不承载新的最终计时依据；正式report保留旧测量result整源缺失限制，不能假装重建旧结果源。OLD baseline的唯一内容已在NEW/H保留。
+- NEW ready1..8共40 B与stop4 B是已完成八worker的同步marker，不是原始科学结果；运行raw已记录8自然exit0/同tokenrelease。README是一次性执行说明，可由已归档benchmark/preparation和最终review承接。
+- NEW其余3份source/helper合计119943 B，当前与正式源逐字节相同；**必须等待最终具体Git commit/blob证明**才能省去重复归档。本次不以当前工作树相等冒称已在Git。root已认可这个条件；不得提前清掉唯一恢复副本。
+
+|来源|H内目标|bytes|SHA256|
+|---|---|---:|---|
+|`C:/Users/Liao/AppData/Local/Temp/codex_r1_remeasurement_20261029_423d4c42/resource_budget_support_baseline.ps1`|`C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6/final_history_payload_candidate/r1_final_resource_budget_support_baseline.ps1.txt`|80292|2fc61478a2c4db58a94c10dc711dba14ed602f573c5c61d2a90a61e23c0f55be|
+|`C:/Users/Liao/AppData/Local/Temp/codex_r1_remeasurement_20261029_423d4c42/benchmark.ps1`|`C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6/final_history_payload_candidate/r1_final_benchmark.ps1.txt`|8518|fda00bd9a230ddeabbba6e572977fdbf35f7944b6dc6e9f15a3819274d72ff12|
+|`C:/Users/Liao/AppData/Local/Temp/codex_r1_remeasurement_20261029_423d4c42/synthetic_equivalence.ps1`|`C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6/final_history_payload_candidate/r1_final_synthetic_equivalence.ps1.txt`|3618|6f8a2f69e9903d6f0169b77535a6a9cda7b9cc03a93127b92b32d18b9b76e2da|
+|`C:/Users/Liao/AppData/Local/Temp/codex_r1_remeasurement_20261029_423d4c42/preparation.json`|`C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6/final_history_payload_candidate/r1_final_preparation.json.txt`|2341|1de705606c0124b9e6c30cf4d48d8fe9f052a2dd358fb4faf0f38c931118eb26|
+|`C:/Users/Liao/AppData/Local/Temp/codex_r1_remeasurement_20261029_423d4c42/measurement.json`|`C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6/final_history_payload_candidate/r1_final_measurement.json.txt`|6545|b720eaa14ebe30311a79f525e2ce955c9a197000e377a49c0acaea96082e103d|
+|`C:/Users/Liao/AppData/Local/Temp/codex_r1_remeasurement_20261029_423d4c42/sample_equivalence.json`|`C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6/final_history_payload_candidate/r1_final_sample_equivalence.json.txt`|5392|fca5f819cc14e613783cea0407aed06e5d7cf56a948661ad260d3748101f495d|
+|`C:/Users/Liao/AppData/Local/Temp/codex_r1_remeasurement_20261029_423d4c42/run.log`|`C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6/final_history_payload_candidate/r1_final_run.log.txt`|629|63466db7ae59c0806851258cea99b0cd3980726088b0173dd654d397a4603eee|
+|`C:/Users/Liao/AppData/Local/Temp/codex_r1_process_snapshot_20261029/measurement.json`|`C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6/final_history_payload_candidate/r1_historical_measurement.json.txt`|5723|0dfa59e42dc49c279dfdb1c0842221eff400142f93531df3e0d13022766e1112|
+|`C:/Users/Liao/AppData/Local/Temp/codex_r1_process_snapshot_20261029/benchmark.ps1`|`C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6/final_history_payload_candidate/r1_historical_benchmark.ps1.txt`|7984|0fbee3e871835f79c39094aee4b14668b6fbd4d66beff19606760bf5fd7ce46a|
+|`C:/Users/Liao/AppData/Local/Temp/codex_r1_process_snapshot_20261029/r1_report.md`|`C:/Users/Liao/AppData/Local/Temp/codex_guide_wave1_20261028_f773196bc812465eb95e29625b8210a6/final_history_payload_candidate/r1_historical_r1_report.md.txt`|5853|3142497420734ac8a6f4a5288cada2ee52841ba7fd60dbef5d5cb2c23eeced9d|
+
+|待固定Git确认的NEW源|正式路径|bytes|SHA256|
+|---|---|---:|---|
+|`C:/Users/Liao/AppData/Local/Temp/codex_r1_remeasurement_20261029_423d4c42/resource_budget_support_current.ps1`|`C:/Users/Liao/mass_spectrometry/simulation_repo/common/resource_budget_support.ps1`|82265|423d4c42fcaaee51857d40bea3550f0a3c02d87937c419594c52b8f2befa7473|
+|`C:/Users/Liao/AppData/Local/Temp/codex_r1_remeasurement_20261029_423d4c42/shared_host_execution_lease.ps1.txt`|`C:/Users/Liao/mass_spectrometry/simulation_repo/common/host_execution_lease.ps1`|30664|96d31ea2a7abd551c8ac4c6b57a8e6fc94af6f96a569568d392284facce4e75e|
+|`C:/Users/Liao/AppData/Local/Temp/codex_r1_remeasurement_20261029_423d4c42/shared_host_resource_policy.json.txt`|`C:/Users/Liao/mass_spectrometry/simulation_repo/common/host_resource_policy.json`|7014|8bce1142a08d344b9a927234ab5bf5cd765a4ca9686e3dde5b94ab1dd69bd86d|
+
+## 交付结论与剩余清理门槛
+
+九个旧精确范围的用途、数量、普通文件边界和必要数据恢复路线已确认；G2最终完整corpus恢复缺口现已用c946固定blob和双向过滤集合证明闭合。只有必要raw尚未正式归档、正常权限活动进程未知这两类实际清理前置条件仍待root完成，不能解释为可立即删除。
+
+追加的主T是分组预检，不是整目录一键删除批准：交接/报告/主题提交资料仍有实际消费者；L2r3仍在运行；明确未证明副本的小transport和大bundle已具名。root应先正式归档、最终正文/提交承接、证明固定Git源，再沿正常审批精确清理。没有删改任何目标、未重试此前被拒的操作、未新建持久JSON清单或清理平台。

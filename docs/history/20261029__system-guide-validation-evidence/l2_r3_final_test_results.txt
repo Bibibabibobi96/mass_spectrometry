@@ -1,0 +1,89 @@
+Captured 2026-10-29T11:51:49.977130+08:00
+Gate PASS; started 2026-10-29T03:11:41.9180079Z; finished 2026-10-29T03:50:31.8240548Z; summary_elapsed_seconds=2329.90734
+ROOT_PROCESS_EXIT=0 ROOT_PROCESS_ELAPSED_SECONDS=2331.0514201
+Stage counts {'PASS': 37}
+Top-level unittest runners=28 tests=5681 skips=20 failures=0 errors=0
+Counts are top-level reported executions, not unique methods; no nested fixture gate counts. Stages without a unittest summary are N/A, not zero tests.
+Central SQLite read-only observation: sequence=16722; records=0
+Final source identity=4ecae61483f1984b428299d1d791715fc351e2f5fe505f99c13bf90101eb64b1; exactly equal to L2 preflight; 2288 files/202011899 B; algorithm in final_gates_restart_preflight_20261029.txt
+Capacity active lease IDs=['mrtof-two-reference-detector-20261014-233947']; committed_new_bytes=0; these are pre-existing user MR source protection, no gate capacity reservation remains.
+Gate diagnostic directory automatically CLEANED by success entry; complete replay retained in root log. Agent did not delete evidence.
+Software-only regression. No vendor/GUI/Formal qualification.
+Timing: unittest seconds are runner body. Stage elapsed includes resource wait/execution/cleanup; process_elapsed is parent observed child process lifetime; queue is separate pending time. Root summary excludes outer host startup/exit; process wall is the outer recorded stopwatch. Concurrent stage times must not be summed into wall time.
+History: L2r2 summary2423.781944s/5675tests20skip1failure/36PASS1FAIL before G3 race and layout fixes. Current full scope includes additional layout regressions, different source and post-reboot normal-user context; not a controlled speed experiment. L1r8 summary2023.959472s/4261tests14skip23PASS is narrower changed scope and is not directly comparable to full L2.
+
+RUNNER | tests | skip | failures | errors | body_seconds | raw_root_log_line | raw_status
+host_resource_scheduler_tests | 93 | 0 | 0 | 0 | 104.097 | 230 | OK
+livelink_resource_stages_tests | 47 | 0 | 0 | 0 | 267.682 | 289 | OK
+tof_error_budget_tests | 16 | 0 | 0 | 0 | 2.048 | 298 | OK
+documentation_link_tests | 24 | 0 | 0 | 0 | 9.998 | 307 | OK
+longitudinal_fit_tests | 3 | 0 | 0 | 0 | 0.101 | 345 | OK
+peak_metrics_tests | 25 | 0 | 0 | 0 | 0.053 | 354 | OK
+figure_export_tests | 5 | 0 | 0 | 0 | 0.237 | 363 | OK
+beam_focus_diagnostics_tests | 20 | 0 | 0 | 0 | 5.051 | 372 | OK
+particle_census_tests | 12 | 0 | 0 | 0 | 0.002 | 381 | OK
+plane_crossings_tests | 23 | 0 | 0 | 0 | 0.051 | 390 | OK
+population_moments_tests | 10 | 0 | 0 | 0 | 0.232 | 401 | OK
+particle_events_tests | 6 | 0 | 0 | 0 | 0.0 | 411 | OK
+common_contracts | 864 | 1 | 0 | 0 | 1973.075 | 507 | OK (skipped=1)
+simion_common | 356 | 6 | 0 | 0 | 163.496 | 522 | OK (skipped=6)
+rf_multipole_domain_tests | 398 | 0 | 0 | 0 | 338.456 | 542 | OK
+integration_common | 55 | 0 | 0 | 0 | 11.205 | 551 | OK
+instrument_assembly_integration | 614 | 0 | 0 | 0 | 1911.296 | 1634 | OK
+solidworks_common | 2 | 0 | 0 | 0 | 0.007 | 1644 | OK
+orthogonal_accelerator_static | 112 | 0 | 0 | 0 | 8.315 | 1655 | OK
+parallel_mirror_dual_stripe_mr_tof_static | 1742 | 12 | 0 | 0 | 2220.443 | 1702 | OK (skipped=12)
+single_reflection_oa_tof_mass_analyzer_static | 561 | 1 | 0 | 0 | 628.078 | 1841 | OK (skipped=1)
+rf_multipole_quadrupole_static | 226 | 0 | 0 | 0 | 292.375 | 1887 | OK
+rf_multipole_hexapole_static | 18 | 0 | 0 | 0 | 27.84 | 1899 | OK
+rf_multipole_octupole_static | 19 | 0 | 0 | 0 | 26.215 | 1911 | OK
+dual_pressure_rectilinear_ion_processor_static | 328 | 0 | 0 | 0 | 150.996 | 1926 | OK
+dual_cone_tandem_quadrupole_ion_interface_static | 30 | 0 | 0 | 0 | 7.517 | 1939 | OK
+transverse_helical_filament_wehnelt_electron_gun_static | 50 | 0 | 0 | 0 | 29.714 | 1953 | OK
+apertured_tube_electron_impact_ion_source_static | 22 | 0 | 0 | 0 | 2.502 | 1965 | OK
+
+ALL STAGES | selected | status | elapsed | resource_wait | execution | cleanup | process_elapsed | queue | launch | exit
+documentation | True | PASS | 15.914985 | 2.0295526 | 12.1907923 | 1.6428827 | None | None | None | 0
+repository_text_bytes | True | PASS | 4.893878 | 2.1095183 | 0.7876791 | 1.9276112 | 7.187763 | 4.5564768 | 0.0584325 | 0
+development_standards | True | PASS | 19.043991 | 2.1073227 | 15.124634 | 1.7486741 | 21.252473 | 4.6387885 | 0.0198034 | 0
+ruff_all | True | PASS | 5.662227 | 2.1072359 | 1.528513 | 1.9677532 | 7.93813 | 4.6711075 | 0.0183759 | 0
+host_resource_scheduler_tests | True | PASS | 114.436633 | 7.8681221 | 104.6668146 | 1.839808 | 116.596517 | 4.7053979 | 0.0194079 | 0
+host_resource_adapter_tests | True | PASS | 63.135096 | 2.0743509 | 59.213491 | 1.7850643 | 65.368007 | 4.7385836 | 0.0181491 | 0
+livelink_resource_stages_tests | True | PASS | 271.957964 | 2.0819313 | 268.0003981 | 1.8128041 | 274.127019 | 4.7695478 | 0.0298698 | 0
+longitudinal_fit_tests | True | PASS | 4.421241 | 2.0279586 | 0.508328 | 1.8153294 | 6.287149 | 19.257022 | 0.0197046 | 0
+peak_metrics_tests | True | PASS | 5.555677 | 2.0059351 | 1.6913692 | 1.8063725 | 7.244032 | 19.8049709 | 0.0202401 | 0
+figure_export_tests | True | PASS | 5.400906 | 2.1389132 | 1.4415496 | 1.765647 | 7.077695 | 21.3684778 | 0.0180399 | 0
+beam_focus_diagnostics_tests | True | PASS | 12.261639 | 1.9844904 | 5.8287538 | 4.3848437 | 14.103883 | 25.5573776 | 0.0185444 | 0
+particle_census_tests | True | PASS | 5.926441 | 2.0016826 | 0.2720978 | 3.5958103 | 7.815411 | 25.9026925 | 0.0201006 | 0
+plane_crossings_tests | True | PASS | 9.96509 | 3.4899173 | 2.1186823 | 4.1904195 | 11.700867 | 27.0602725 | 0.0197121 | 0
+population_moments_tests | True | PASS | 19.23314 | 16.1988934 | 1.0182004 | 1.9546623 | 20.869549 | 28.4557809 | 0.0159254 | 0
+particle_events_tests | True | PASS | 8.921074 | 6.3046566 | 0.5207008 | 2.0067397 | 15.678402 | 33.7542892 | 0.038777 | 0
+tof_error_budget_tests | True | PASS | 6.35489 | 2.0552581 | 2.3768062 | 1.8541995 | 8.610679 | 4.8117376 | 0.0220258 | 0
+documentation_link_tests | True | PASS | 14.330284 | 2.0467128 | 10.4243879 | 1.7915946 | 16.509702 | 4.8454372 | 0.0221166 | 0
+project_registry | True | PASS | 6.006242 | 2.0994082 | 2.0033102 | 1.840606 | 7.998047 | 11.7919707 | 0.0245532 | 0
+livelink_failure_classification | True | PASS | 4.095182 | 2.1522197 | 0.0309432 | 1.849101 | 6.016328 | 12.6233232 | 0.0218852 | 0
+livelink_environment | True | PASS | 4.081048 | 2.1768641 | 0.0555827 | 1.7907353 | 5.804106 | 13.4373265 | 0.019781 | 0
+rf_multipole_generated_publications | True | PASS | 25.489696 | 2.0267263 | 21.4818892 | 1.9252993 | 27.294224 | 18.6521485 | 0.0152035 | 0
+common_contracts | True | PASS | 1978.48729 | 2.1356486 | 1974.5579615 | 1.7095054 | 1982.960838 | 38.7847076 | 0.0487763 | 0
+simion_common | True | PASS | 168.677108 | 2.2422959 | 164.5069692 | 1.839001 | 172.01348 | 39.6823925 | 0.0392068 | 0
+rf_multipole_domain_tests | True | PASS | 348.74644 | 5.3102944 | 341.6427712 | 1.7116588 | 351.33533 | 45.9575559 | 0.0228293 | 0
+integration_common | True | PASS | 15.758197 | 2.1509421 | 11.6824338 | 1.8559359 | 17.754366 | 49.3418859 | 0.0208334 | 0
+instrument_assembly_integration | True | PASS | 1920.569746 | 2.1174296 | 1916.7156005 | 1.6757428 | 1922.506281 | 49.447286 | 0.021499 | 0
+solidworks_common | True | PASS | 4.614771 | 2.1787582 | 0.4312628 | 1.9449338 | 6.421876 | 67.1096676 | 0.0163686 | 0
+orthogonal_accelerator_static | True | PASS | 18.103957 | 5.1129515 | 11.2179774 | 1.7035473 | 20.101577 | 70.1230725 | 0.0229337 | 0
+parallel_mirror_dual_stripe_mr_tof_static | True | PASS | 2237.981247 | 7.7837465 | 2228.3182893 | 1.8330476 | 2239.783216 | 73.5441275 | 0.0208359 | 0
+single_reflection_oa_tof_mass_analyzer_static | True | PASS | 642.63324 | 4.9278152 | 635.9806996 | 1.6723372 | 644.52235 | 90.2389512 | 0.0231832 | 0
+rf_multipole_quadrupole_static | True | PASS | 305.2433 | 2.0388437 | 301.3095691 | 1.8337084 | 307.274283 | 121.3180828 | 0.0226706 | 0
+rf_multipole_hexapole_static | True | PASS | 34.540126 | 2.1695367 | 30.5150107 | 1.7958649 | 36.589288 | 211.7102773 | 0.0200889 | 0
+rf_multipole_octupole_static | True | PASS | 32.895064 | 2.2500588 | 28.824318 | 1.7542374 | 34.799167 | 248.3173201 | 0.0279747 | 0
+dual_pressure_rectilinear_ion_processor_static | True | PASS | 159.874994 | 2.1297297 | 155.976241 | 1.7045087 | 161.719762 | 278.9089533 | 0.0181685 | 0
+dual_cone_tandem_quadrupole_ion_interface_static | True | PASS | 17.643448 | 5.0632507 | 10.7582289 | 1.7549164 | 19.634632 | 283.1291439 | 0.0198341 | 0
+transverse_helical_filament_wehnelt_electron_gun_static | True | PASS | 39.220258 | 5.0597933 | 32.3637143 | 1.7291306 | 41.173121 | 302.7754325 | 0.0217186 | 0
+apertured_tube_electron_impact_ion_source_static | True | PASS | 8.952971 | 2.1258378 | 4.9763092 | 1.7815941 | 10.803014 | 343.9616247 | 0.0198323 | 0
+
+RAW INPUT IDENTITIES
+l2_final_candidate_20261029_r3.json 42063 B SHA256 556ae0364dd4baab14815683fb7d6340925b8782c5d78ddfdb525e60ddd0b825
+l2_final_candidate_20261029_r3.log 261629 B SHA256 b9a26c2e6f23d3b28d8894ac2cdbb7b4061d7fef1c3e0366ca3d437964f43669
+
+CENTRAL REMAINING RECORDS
+[]

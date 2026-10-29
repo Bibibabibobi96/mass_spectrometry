@@ -1,0 +1,696 @@
+# 审查结论与范围
+
+**建议保留现有公共机制和项目所有权，下一轮集中解决覆盖保证、重复工作、职责倒置和恢复闭环。** 统一门禁目录、公共缓存与发布、容量台账、资源调度已经成形；当前不适合再建一个包办所有事情的框架。最有价值的简化，是让同一事实只由一个负责方证明一次，让同一阶段只由一个负责方调度和收尾，让 Agent 从结构化结果直接知道成功与否、原因和恢复点。
+
+本审查按你的最新要求判断收益：脚本长度、脚本数、代码量只是定位信号。可以接受文件数增加，只要职责更清楚、重复判断更少、测试选择更准确、失败更容易定位、实际墙钟时间更短。也可以保留长模块，只要其职责内聚、有明确入口、能够独立验证。
+
+审查对象为 [mass_spectrometry](https://github.com/Bibibabibobi96/mass_spectrometry)，固定提交 **3005980a9a0d3a62a67f36dff389a3110868faa7**。本次重新获取的远端 HEAD 仍为此提交。审查未修改、提交或推送仓库。
+
+证据分为三类：源码与机器目录事实；本次 Linux/Python 3.11.17、PowerShell 7.6.9 下的小规模定向测量；仓库历史记录中的 Windows 门禁结果。它们在下文分别标明。没有读取私人 PA/MPH 或真实容量台账，没有运行商业求解器、GUI/CAD 或完整 L1/L2；因此不会把小文件探针外推为真实大文件加速倍数，也不宣称当前提交已有一次完整 L2 PASS。
+
+全量结构盘点覆盖活动源码，排除 artifacts、generated、vendor/third-party、run/runs、docs/history 和根 scratch。测试与生产分类沿用仓库 CLOC 分类规则：被 execution profile 引用的入口及 run/verify PowerShell 仍属生产。**这里统计的是物理文本行，不是 CLOC code 行；本次无代码变更，CLOC delta 不适用。** 所有 Python 文件均完成 AST 解析；长脚本清单全部做职责、定义结构和调用关系初筛，热点另作逐段复核。它不是对全部 1,206 份脚本的逐语句形式化正确性证明。
+
+| 语言/格式 | 生产脚本 | 测试脚本 | 合计 |
+|---|---:|---:|---:|
+| Python | 419 | 415 | 834 |
+| PowerShell | 134 | 8 | 142 |
+| MATLAB | 77 | 48 | 125 |
+| Lua | 75 | 18 | 93 |
+| GEM | 10 | 0 | 10 |
+| Fly2 | 2 | 0 | 2 |
+| 合计 | **717** | **489** | **1,206** |
+
+其中至少 600 物理行的文件 153 份：生产 93、测试 60；至少 1,000 行的文件 70 份：生产 40、测试 30。Python 函数/方法 11,212 个，其中文本跨度超过 100 行的 344 个。附录给出全部长文件及建议，不把这些计数当作裁撤配额。
+
+下文缩写：MR=`projects/parallel_mirror_dual_stripe_mr_tof/`；RF=`projects/rf_multipole_ion_optics/`；oaTOF=`projects/single_reflection_oa_tof_mass_analyzer/`；IP=`projects/dual_pressure_rectilinear_ion_processor/`；OA=`projects/orthogonal_accelerator/`；EG=`projects/transverse_helical_filament_wehnelt_electron_gun/`。所有源码链接均锁定上述提交，标注行号是定位起点。
+
+# 修改优先级
+
+P1 表示下一轮应优先修复的工程缺口，不等同于已经造成物理错误；P2 表示有明确收益、适合在对应边界迁移时实施；P3 是可顺带完成的小清理。以下顺序优先考虑正确覆盖、Agent 可诊断性和端到端成本。
+
+| 编号 | 优先级 | 已发现的问题 | 首要修改位置 | 推荐出口 |
+|---|---|---|---|---|
+| G1 | P1 | L1 选择项目 Core，却可能不运行新增/修改的测试自身 | [common/verify_changed.ps1:95](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/verify_changed.ps1#L95)；[common/gate_catalog.json:849](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/gate_catalog.json#L849) | 测试模块必跑；未知/fixture 变化有显式扩大范围理由 |
+| G2 | P1 | 不影响 PASS/FAIL 的消费者审计每次仍全库执行 | [common/verify_development_standards.py:359](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/verify_development_standards.py#L359)；[.githooks/pre-commit:25](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/.githooks/pre-commit#L25) | 默认只执行硬检查；消费者审计显式运行 |
+| G3 | P1 | 阶段日志与耗时已有，但缺一份完整持久的终态摘要 | [common/parallel_gate_support.ps1:118](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/parallel_gate_support.ps1#L118) | 每个已选阶段有终态、原因、耗时、复现命令 |
+| H1 | P1 | 同一次 IOB 私有副本创建源 2 次、目标 3 次完整 SHA | [common/simion/short_pa_path_support.ps1:297](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/simion/short_pa_path_support.ps1#L297)；[integrations/workflows/single_reflection_flight/execute.ps1:190](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/workflows/single_reflection_flight/execute.ps1#L190) | 一个 owner 管理复制、首次校验、guard 转交 |
+| H2 | P1 | 响应选择、物化、每个工作点结束均重复整读 PA | [integrations/runtime/local_frontend_field_support.ps1:4](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/runtime/local_frontend_field_support.ps1#L4) | 选择只绑定；真正消费边界完成一次载荷证明 |
+| H3 | P1 | 完整公共发布后又全文 verifier；另有私有不完整 publisher | [common/contracts/write_run_manifest.py:296](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/write_run_manifest.py#L296)；[MR/simion/run_native_static_field_provider.ps1:264](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/simion/run_native_static_field_provider.ps1#L264) | 同一完整 Python 发布 API；CLI 与项目共用 |
+| C1 | P1 | partial-retirement 在全局锁内按 run 反复扫描全账本 | [common/contracts/run_capacity_lifecycle.py:762](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/run_capacity_lifecycle.py#L762) | 一次建 by_run/by_path 索引，保留事务与保护 |
+| C2 | P1 | 容量维护总时间漏八类 owner action，且漏 partial 输出 | [common/contracts/reconcile_artifact_capacity.py:1565](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/reconcile_artifact_capacity.py#L1565) | 入口总计时；owner 结果统一序列化 |
+| R1 | P1/P2 | 每个运行 worker、每轮各枚举全机进程 | [common/resource_budget_support.ps1:990](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/resource_budget_support.ps1#L990) | 一轮一份快照，投影各 worker 所属进程树 |
+| G4 | P2 | test-only 路由过宽；纯文档 effective 集与依赖规划不一致 | [common/verify_changed.ps1:298](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/verify_changed.ps1#L298)；[common/verify_changed.ps1:383](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/verify_changed.ps1#L383) | 先确定实际执行集合，再计算覆盖与依赖 |
+| H4 | P2 | artifact layout 默认也可深读全部 common PA | [common/contracts/verify_artifact_layout.py:880](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/verify_artifact_layout.py#L880) | 默认元数据；显式 verify-hashes 才深读 |
+| C3 | P2 | startup 同 CLI 重复 plan；子集退役收尾仍要人工继续 | [common/contracts/reconcile_artifact_capacity.py:1274](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/reconcile_artifact_capacity.py#L1274)；[common/contracts/invoke_solver_review_retirement.ps1:100](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/invoke_solver_review_retirement.ps1#L100) | 单次最终准入；已确定的 reseal 自动接上 |
+| A1 | P2 | MR PowerShell 与 Python 分担同一科学决策链 | [MR/analysis/run_downstream_workpoint_iteration.ps1:1512](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_downstream_workpoint_iteration.ps1#L1512) | 科学决策归现有 Python controller；PS 执行动作 |
+| A2 | P2 | 项目反向导入 integration，容量底层反向依赖 CLI owner | [MR/analysis/prepared_joint_trial.py:19](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/prepared_joint_trial.py#L19)；[common/contracts/capacity_ledger.py:1085](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/capacity_ledger.py#L1085) | 从实际反向边切断，保留单一事实所有者 |
+| D1 | P2/P3 | 四个 PS 函数无仓内引用；部分公共模块仅测试/文档支撑 | 见“死代码与重复实现” | 核对支持边界后退役，或明确实验用途与退出条件 |
+
+没有证据支持“把所有哈希取消”“把所有长脚本拆短”“把所有重任务并行”“减少门禁数量就能提速”。这些做法均不作为本指南目标。
+
+# 门禁：数量不是核心问题，覆盖和执行集合才是
+
+## 当前结构
+
+[统一 catalog](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/gate_catalog.json) 已统一路径匹配、命令、环境等级、前置与 L2 归属；公共执行器已有阶段日志、受控并发、RF Freshness 同轮复用和失败证据保留。这些设计应保留。
+
+| 入口 | 当前构成 | 判断 |
+|---|---|---|
+| Catalog | 37 routes：9 fast、24 regression、4 covered；27 locked、10 stdlib | covered 项由完整 contracts 覆盖，不是四个额外 L2 进程 |
+| L2 | 1 文档 + 3 全局 fast + 9 catalog fast + 24 regression = 37 stages | 与 catalog 的 37 是不同构成；不按数字本身裁撤 |
+| L1 FullScope | 38 selected stages | 正式 PlanOnly 已实测；不是每次 L1 固定运行 38 项 |
+| L1 普通变化 | hygiene/text bytes，加条件全局项和 catalog 路由 | 需要补精确 test-only 和 changed-test 保证 |
+| L1 纯文档变化（DOCUMENTATION_ONLY） | 实际仅 hygiene/text bytes/documentation | 依赖 profile 应从这个 effective 集计算；混合源码变化不走此分支 |
+| CI push | Windows、Python 3.11、L1、并发上限 2、60 分钟 job timeout | 当前并不自动跑全 L2 |
+| CI 手动 workflow_dispatch | 同环境 L2 | 不必改成每次 push 全仓回归来修补 L1 缺口 |
+
+执行结构见 [common/verify_repository_integration.ps1:129](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/verify_repository_integration.ps1#L129)、[common/verify_changed.ps1:383](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/verify_changed.ps1#L383)、[.github/workflows/lightweight-gate.yml:51](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/.github/workflows/lightweight-gate.yml#L51)。完整 37-route 清单在附录。
+
+## G1：新增和修改的测试自身必须运行
+
+生产匹配函数与真实 catalog 的探测确认：
+
+| 唯一改动路径 | 当前选择 | 实际缺口 |
+|---|---|---|
+| MR `tests/analysis/test_simion_event_analysis.py` | MR Core | [Core 只运行四个固定模块](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/verify_project.ps1#L38)，不含被改模块 |
+| RF `tests/analysis/test_mass_filter_l1.py` | RF Freshness + quadrupole Core | [Core 在测试发现前返回](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/verify_project.ps1#L74)，不运行该模块 |
+| `common/contracts/test_expected_values.py` | common_contracts，精确 route 被覆盖 | 自身 4 tests 却触发完整 contracts 集合 |
+
+这是**覆盖保证缺口**。Core/Static 分工是当前测试明确固化的设计，并非语法错误。也不能据此断言所有生产变更均未被任何 integration 测试覆盖。
+
+最佳实现是在现有 catalog 给测试 owner 登记少量 `test_roots` 或等价元数据，把新增/修改测试的明确模块并入必跑集合，再与 Core 和必要合同测试合并去重。沿用 [现有 integration test-only 选择机制](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/verify_changed.ps1#L162)，避免每项目再写一个硬编码分支。
+
+测试删除、重命名、共享 fixture、包初始化或无法映射的新目录，应扩大到适用 owner 的完整发现并报告原因。生产代码变化的反向依赖覆盖是另一件事：优先利用已有 runtime dependency inventory 与 owner 声明；无法证明安全缩小时保留 owner 回归。不能把“只跑同名 test”当依赖闭包，也无需一律把 L1 改为 Static。
+
+验收必须使用真实入口：在临时工作树给 MR/RF 非 Core 模块加入确定失败的测试，L1 应返回非零并指出该模块；新增测试同样成立。修复测试后应通过。只检验 PlanOnly 的 stage 名称不足以证明实际测试已运行。
+
+## G2/G4：先去掉无效工作，再减少必要检查的范围
+
+[main 无条件 audit_consumers](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/verify_development_standards.py#L370)，即使未传 `--show-review` 仍执行；消费者分类不进入 hard errors，不改变退出码。它会在硬检查已解析全部 Python 后再次解析、反复遍历 AST。[pre-commit](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/.githooks/pre-commit#L25) 每次提交又运行完整标准，即使只修改文档。
+
+第一步：把消费者审计放到显式 `--audit-consumers`、明确的 review 命令或 L2；默认保留真正决定 PASS/FAIL 的硬检查。输出 `NOT_REQUESTED`，不能把未扫描写成零候选。显式审计共享一次 AST/visitor 索引，无需增加逐文件 SHA 缓存。
+
+第二步：L1/pre-commit 的硬检查支持明确路径；规则自身、配置、unknown 和 FullScope 变化仍全量，L2 保留全量。pre-commit 应检查实际暂存版本，不能用工作树中未暂存的修复证明索引内容正确。
+
+第三步：修正 test-only 路由。`test_expected_values.py` 的精确选择不应先被 broad contracts route 吞掉。其本次单模块 0.095 秒、历史整组 293.799 秒是不同环境的证据，不能据此宣传倍速；但选择粒度明显不合理。缩小 unittest 集后仍可能因 `ruff_changed_python` 需要 locked 环境，不能承诺自动跳过依赖安装。
+
+第四步：[PlanOnly 先按 selected 求环境等级](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/verify_changed.ps1#L388)，随后才缩小 DOCUMENTATION_ONLY 的 effective stages。项目 README 命中 locked route 时可能白装科学依赖。应先得出实际执行集，再求 dependency profile；验收覆盖根 README、项目 README、common/contracts README。此项尚未测 Windows CI 安装时间。
+
+## G3：保留小摘要，明确每种终态
+
+当前已经输出 RUN/PASS/ELAPSED_SECONDS、子进程完成信息和日志位置，失败组保留日志；不能说“完全没有计时”。问题在 [inline 与 child 分支](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/parallel_gate_support.ps1#L118)、异常收尾和 [成功日志清理](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/parallel_gate_support.ps1#L314) 之间缺统一的小结果对象，CI 也未统一 always 上传。
+
+在既有 stage wrapper 的 finally 中生成结果，父进程写一份小 JSON，字段建议：阶段 ID、选择原因、命令参数、环境、开始/结束、排队/启动/执行/清理耗时、exit code、status、reason code、日志路径、测试数量与 skips（可获取时）。每个已选阶段都应出现；依赖失败为 BLOCKED，不适用为 NOT_APPLICABLE，不能与 unittest skip 混为一谈。成功长期保留小摘要，失败保留详细日志。摘要只是观测证据，不是跨改动跳过检查的资格令牌，因此不用给全库另算一遍 SHA。
+
+最新历史写的是 37 阶段分别有通过证据，但完整命令 exit 1 保留；后续定向成功不能覆盖原命令失败。最终需要证明全轮成功时，在固定提交的独立 checkout 运行一次适用完整门禁，避免执行中编辑源码/文档。见 [本版验收记录](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/docs/history/20261028__unified-diagnostics-review-acceptance.md#L95)。
+
+## 调度改法与小清理
+
+L2 当前是文档 → 12 fast 全部完成 → 24 regression 的固定屏障；仅三个 RF stage 有显式前置。[队列按目录顺序启动](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/parallel_gate_support.ps1#L184)，组内发现非零后仍启动剩余任务，组末才统一失败。改用已有 catalog.requires_stages 形成 ready 集；必要短检查先跑，同优先级 ready 任务按可信历史中位耗时从长到短排，缺历史则回退确定性顺序。资源仍由现有 host scheduler 决定。
+
+L1 默认在阻断失败后停止无独立诊断价值的待启动任务；L2 继续独立阶段以一次收集问题；依赖失败的后继立即 BLOCKED。已启动且健康的任务自然收尾，不为 fail-fast 误杀求解器。先对 MR/assembly 按测试模块计时，再按既有模块边界分片；不把所有套件强塞同一解释器，也不让子层绕过父预算再开池。
+
+小清理包括 MR [对只有 Lua 文件的目录执行空 Python discover](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/verify_project.ps1#L50)、同轮重复 Ruff/registry、重复 RF PowerShell 树解析、每组重新预热 Matplotlib。Ruff 本次全库仅约 0.11 秒，这些应排在真正热点之后，不值得另建复杂 pass-token 系统。三个纯 Lua 回归及其 fixture 消费者继续保留。
+
+# 哈希与私有物化：让验证只发生在真实边界
+
+## 现状与原则
+
+接受“原则上不用哈希，必要例外说明理由”。它适用于状态判断、容量统计、路径选择、普通配置路由与同一保护期内重复读取。对于冻结科学输入、完整母 cohort、正式资产、跨 run 内容绑定与 cache generation，仍需明确内容身份，理由是防止错场、错源、错版本或复制不一致进入可复现实验。哈希只能证明字节指纹是否一致；没有签名与可信签名者时不能证明来源真实性，更不能代替物理检查、写隔离、权限或 owner/lease。
+
+已有快路径应保留：[普通 cache materialization](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/simion/pa_family_cache.py#L4128) 已先 metadata；[snapshot_immutable_file](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/simion/cache_generation.py#L413) 复制一次、只核对目标完整摘要；[公共 writer CLI](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/write_run_manifest.py#L296) 已原子发布后只回读小 manifest；[consumer projection](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/verify_run_manifest.py#L87) 可只复核实际消费的记录。cooled frontend、single-reflection field plan、MR native freeze 已明确 metadata-only。不能再把这些已修正路径列为待取消整 PA 哈希的缺口。
+
+| 边界 | 默认实现 | 例外与理由 |
+|---|---|---|
+| 内存参数、状态机、路径和角色合法性 | 类型、范围、Schema、显式条件，不用 SHA | 哈希无法证明物理或状态合法 |
+| 日常容量、LRU、lease、布局 | 台账与必要元数据，不读 payload | 容量不是内容完整性证明 |
+| 已封存 generation 的 probe/plan/selection | 小 manifest/receipt、名称/大小/对应关系 | 实际消费 owner 负责所消费字节 |
+| 同进程、持续禁止写入/删除的 guard 内 | 复用已验证身份，不重复整读 | guard 释放、可写阶段、替换或异常后重新验证受影响部分 |
+| 有 expected record 的私有复制 | 一次复制，目标完整核对，返回已验证 record | 源只作为复制输入时通常无需另整读源 SHA |
+| 独立直接消费 immutable standalone | 首次核对所消费内容并持续 guard | 防止同名/同大小错误文件进入物理运行 |
+| 新产物发布 | writer 建立一次完整记录、原子发布、小文档回读 | 真实跨发布边界，不能只凭存在或 mtime |
+| 下游只消费某些历史结果 | 使用现有具名 consumer projection | 不扫未消费 PA/MPH，也不声称整个 run 完整 |
+| 同次完整公共发布后 | 只检查小 manifest 的 status/project/mode | 删除重复全文 verifier |
+| vendor 写入、保存、Fast Adjust | 明确私有工作区及结束后的必要验证 | 哈希无法阻止共享输入被写坏；不可用 hardlink 代替隔离 |
+| 异常、修复、迁移、独立交付或显式深审 | 有范围、有原因、有计时的深检 | 必要全量验证保留，不能扩散到每个正常步骤 |
+
+不用更弱摘要或 size/mtime 代替真正需要的内容身份。优先减少遍数、缩小消费范围、复用受保护的证明；不新增跨 run 的时间戳摘要缓存。
+
+## H1：五次 SHA 的真实重复链
+
+[Initialize-InstrumentIobPaCopies](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/workflows/single_reflection_flight/execute.ps1#L190) 依次 New-ShortPaCopy → Publish-ShortPaCopyDestination → Protect-ImmutablePaSource。公共实现正常无 mismatch 时，源完整 SHA 2 次、目标 3 次，另有 1 次复制；最终 run manifest 的绑定不在这五次内。
+
+4 MiB 合成文件、真实 helper、三轮计数全部得到 source/destination/destination/source/destination：20 MiB 哈希读取加一次 4 MiB 复制；三个阶段合计 156.358、23.338、24.006 ms。首轮含 JIT，后两轮温缓存；有探针开销，使用 Linux 小文件分支。这证明重复遍历，不证明 Windows 大 PA 的实际加速倍数。
+
+推荐把复制、首次校验、持久只读发布和后续读取保护交给同一 owner，由 publish 转交已持有的目标 guard 和身份，不释放后再开一个 registry 重新证明。当前 New 的目标验证用 buffered Get-FileHash，Publish 的大文件分支使用无缓冲读取；**必须先统一第一次权威目标校验的正确读取方式，再删除后续重复**。不能只删几行后验而退回已知不充分的读取策略。已有 expected manifest 时可进一步采用公共 snapshot 模式：目标一遍完整验证足以证明交付副本，源句柄负责防并发写入。
+
+保留必要的独立字节副本、IOB 长期依赖和 Windows 写隔离。长 PA 公共入口已有真实历史验证，不能当成待重新研发的能力。published `.paN` 仍禁止供应商重开；需要的 standalone 从原构建期的新 PA 对象导出。权威说明见 [SIMION 长 PA 输入边界](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/docs/tools/SIMION_REFERENCE.md#L74)。
+
+## H2：选择器和三工作点叠加读取
+
+[响应选择](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/runtime/local_frontend_field_support.ps1#L194) 经 standalone_pa_family → [默认全 payload 校验](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/simion/standalone_pa_response_set.py#L407)；随后 New-Short 每个源/目标各 SHA，[每个 composition 后](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/runtime/local_frontend_field_support.ps1#L28) 又验证实际使用输入，末尾另一 registry 再验证原源。
+
+设选中 N 个响应、三个工作点各使用集合 U_j，典型冷路径 SHA 次数为 `4*N + sum(len(U_j))`，不含小 JSON 与新输出。各工作点使用项不同，不能粗略写固定 7N。
+
+选择器只验证已封存记录及响应/网格/名称绑定；载荷证明归实际消费 owner。[composer](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/simion/compose_standalone_pa.lua#L75) 创建新输出、只读源，可优先评估通过既有 Protect-ImmutablePaSource 直接受护读取 standalone。若具体消费者仍需短副本，就让目标在全部 jobs 内保持 readonly guard，每个 job 后只查状态/句柄，不再整读。不能用 `verified=true` 布尔值跨进程冒充证明，也不能跳过小 receipt 身份检查。
+
+这个改动需要一次最小真实 Windows/SIMION composer 回归：长路径、持续只读 guard、三个工作点、新输出、源不变、物理结果一致。它是已有直接读取能力在此消费者上的验证，不是重开长路径研发项目。
+
+## H3：统一完整发布 API，清掉 producer 自己的第二轮 verifier
+
+以下公共完整 writer 后立即 full verifier，可保留小 manifest 状态/身份断言并去掉重复 payload 读：
+
+- [MR/simion/run_native_static_field_provider.ps1:264](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/simion/run_native_static_field_provider.ps1#L264)。
+
+- [IP/simion/prepare_gui_replay.ps1:95](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/dual_pressure_rectilinear_ion_processor/simion/prepare_gui_replay.ps1#L95)。
+
+- [oaTOF/workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1:309](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1#L309)。
+
+但 [IP–prism publisher](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/ip_prism_distance_study.py#L987) 和 [IP batching publisher](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/dual_pressure_rectilinear_ion_processor/analysis/batching.py#L60) 只是 build_run_manifest + write_json_atomic。纯 build 不等价于完整 CLI；不能直接删其下游 verifier。
+
+最佳实现是在既有 write_run_manifest.py 提炼 `publish_run_manifest(...)` 完整 Python API，CLI 也调用它，再迁移私有 publisher。它负责输入输出存在性、terminal journal、retention、一次身份记录、原子发布、小 manifest 回读。独立下游验证继续保留。验收按每个唯一 payload 的读取次数检查正常发布，同时覆盖缺输出、未闭合 journal、retention 不符和独立消费时字节损坏。
+
+## H4/H5：布局深审与小输入冻结
+
+[verify_common_pa_family_cache](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/verify_artifact_layout.py#L880) 无条件调用默认 full-payload 验证；[main](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/verify_artifact_layout.py#L1025) 在 project/formal-only 选择前先查整个 artifacts root。因此即使不带 verify-hashes，仍可能全读 common PA current generations。OPERATIONS 已声明这个例外；它不是默认 GitHub CI 的慢项。
+
+建议默认 layout 只查布局、owner、pointer、manifest 关系、大小、只读及 lease 等必要元数据，把 verify-hashes 传给 cache 校验，显式深审才读全部字节。project/formal-only 不应隐式深审无关 global payload。输出验证 scope、文件数、hashed_bytes、elapsed；深审入口仍保留。
+
+[Copy-VerifiedRunInput](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/run_artifact_support.ps1#L729) 正常路径 source-before/source-after/destination 三 SHA；[portable closure](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/runtime/analysis_run_lifecycle.ps1#L4) 先验证源，再调用它，随后 [验证新 closure](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/workflows/same_solver_convergence/run_comparison.ps1#L175)，典型独立记录达到源 3 次、目标 2 次。多数是 JSON、源码、粒子 CSV 与库存，并非重复整份 MPH/PA。共用 record-bound copy：已有期望记录，复制一次、目标验证一次、返回身份；路径改写与角色选择留给原 workflow。先量化 CSV 规模再决定优先级。
+
+不默认改成 Python 流式边复制边 SHA。Python 3.11 官方 [shutil 文档](https://docs.python.org/3.11/library/shutil.html)说明平台可能使用高效复制路径；合并循环减少遍数，也可能放弃平台优化。Windows 大文件应在相同输入与 I/O 条件下比较，继续复用现有无缓冲实现。
+
+# 容量控制：日常准入合理，维护和自动收尾需要补齐
+
+## 已有自动化值得保留
+
+[公共 run 创建](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/run_artifact_support.ps1#L608) 已自动登记 writing range；[容量 session](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/run_artifact_support.ps1#L154) 创建 lease、保护输入、检查剩余新增承诺；预算增长会重新准入；[终态 manifest](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/run_artifact_support.ps1#L312) 按条件自动 finalize-ready；PA owner 在发布、复用、回滚时更新台账；项目已有 GUI/重载荷 seal；finally 释放 lease。进入 maintenance 后已自动串联八类 owner continuation，并隔离单 owner/对象失败。
+
+正常 startup 已是 ledger-only，不遍历所有 artifact，不读取 PA payload。账本范围验证也已用路径前缀集合，不再是旧版两两范围比较。当前策略集中在 [容量 policy](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/artifact_capacity_policy.json)：受管目标 700 GiB、物理空闲底线 295 GiB，是当前工作站政策；没有实际磁盘与峰值数据，不能凭代码审查调整这些数值。性能目标/告警不应变成新的安全失败条件。
+
+## C1：维护中的 O(R×N) 空转
+
+[resume_partial_retirements](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/run_capacity_lifecycle.py#L762) 先收集所有 run，对每 run 调 [_eligible_partial_entries](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/run_capacity_lifecycle.py#L707) 再扫整个 ledger；无匹配时又扫一轮。全过程持有容量决策锁。旧式逐文件 ledger 的合成 no-op 实测：100/300/600 条、各属不同 run、全部 ready/light、无载荷且无可删对象，分别 0.060/0.524/2.107 秒，删除均为 0。
+
+这是此 owner 在特定账本形态的二次成本，不代表正常新 run 的 startup 都有同样问题。修改为一次构造 by_run/by_path，并预筛可进入本 owner 的状态；每 run 只看所属记录。先消除重复扫描，再根据实测决定锁能否缩到单 run 事务。固定 pending receipt、删除前身份、lease 和下游消费者检查继续保留。
+
+验收重点是访问次数随 N+R 近线性、无可操作对象不做 payload I/O、pending 重放不重复记账/删除、保护登记不会被无效历史扫描长期阻塞。不要为这条问题迁移整个账本数据库。
+
+## C2：总时间漏掉 owner 维护阶段，结果也漏一类
+
+[main](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/reconcile_artifact_capacity.py#L1565) 先执行八类 owner action，再创建 plan/apply 计时。注入 owner 延迟 0.25 秒后，实际 wall 0.251812 秒，receipt `timing.total_seconds` 仅 0.000616 秒。[结果拼装](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/reconcile_artifact_capacity.py#L1610) 还遗漏 partial_run_retirement；注入 completed=3、removed_bytes=123456、blocked=2，最终 JSON 没有这些值。
+
+在 CLI 入口建立唯一总计时，每个现有 owner 返回 status、elapsed、计数、error code 和 receipt 路径，统一序列化 owner_actions，停止用逐项 if 手写拼装。保留紧凑默认输出，详细逐对象证据留在既有收据。分别报告 `capacity_satisfied` 与 `closure_complete`：空间足够不等于所有生命周期问题都解决。
+
+## C3：正常准入很快，但同 CLI 可以少算一遍
+
+直接 Python API、Linux 温缓存、合法合成元数据，100/1,000/10,000 条 ledger 三次中位分别 0.001273/0.008583/0.086903 秒。它不含 PowerShell、Python 新进程、Windows 主机观测和排队，不能宣称真实端到端启动小于 0.1 秒。
+
+标准 wrapper 总传 startup --apply；[apply](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/reconcile_artifact_capacity.py#L1274) 又重新执行 startup gate，实计 ledger/lease 均加载 2 次。同 CLI 可直接执行一次最终准入；独立 plan、过一段时间再 apply 的重检保留，避免期间新增承诺被忽略。前者是可省的重复，后者是实际并发边界。
+
+## 自动闭环的最佳边界
+
+源码未找到统一周期维护调度配置；这不证明真实工作站没有仓库外计划任务。优先改为容量压力触发：仅当明确空间缺口时，公共入口在当前有效输入保护 lease 保持/续期的前提下，尝试一次既有授权范围内的 maintenance，然后重新准入；不能先走失败 catch 释放当前输入保护，再执行清理。账本损坏或当前请求的输入身份冲突直接报告具体错误，不盲目重试。没有 owner/manager/处置证据的历史对象保留并报告原因，继续处理独立的已授权对象；历史待决项本身不能自动升级为当前启动阻断。不要让每次新 run 都重维护，也不需要先建常驻服务。
+
+[SelectedHeavyPaths 子集退役](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/invoke_solver_review_retirement.ps1#L100) 目前提示 Agent 手工 reseal。原 owner、保留理由、pin 已明确时应自动接上；seal 失败只恢复 seal，不重复删除或求解。新流程从创建、运行、保留、manifest、ledger seal 到 release 由现有 owner 连成一次调用；跨 run 恢复仍创建新 run 身份，不能改写历史终态。
+
+历史 checkpoint、未知用途、唯一证据或尚在使用的 GUI 文件不能靠通用层猜测科学状态。自动化应减少手动搬运事实，不能消除必要的 owner 决定。TTL 过期、failed/interrupted、低 CPU、文件年龄均不能单独成为删除授权。容量 lease 与主机资源 lease 保护不同约束，仍应分开。
+
+# 并行与耗时：在现有资源预算内按工作量调度
+
+## R1：每轮采一次系统快照
+
+[worker 循环](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/resource_budget_support.ps1#L990) 对每个 running worker 调 Get-ManagedSolverProcessSample；该函数分别 [Get-Process](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/resource_budget_support.ps1#L116) 与 [Win32_Process CIM](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/resource_budget_support.ps1#L161) 全机枚举，每轮末休眠 500 ms，实际周期还包含采样与调度开销。W 个 worker 每轮约 W 组系统快照，是明确的调用倍增；本审查未测 Windows CIM 毫秒数，不能承诺 W 倍提速。
+
+每轮建立一份父子图、PID 创建身份、CPU/内存快照，再对各 launch 投影 owned process tree。保留 PID 复用、launcher 已退出但后代仍存活、conhost 与不可读身份规则，不跨轮沿用旧快照判断进程安全。验收 1/4/8 workers 时每轮全机枚举均为一组，并测 poll_elapsed_ms。目录不能再把旧版“每 500 ms 扫目录”列为现状。容量递归采样当前已移到约 30 秒，
+
+## heavy 互斥应有条件放宽
+
+[准入策略](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/host_resource_scheduler.py#L226) 在 CPU/内存判定前阻止第二个 heavy；[heavy-compute/simion-flight](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/host_resource_policy.json#L38) 的 CPU 和 memory 预算为 0，代表交给内部调度，不是零成本。直接删互斥会让多个内部 planner 各自按整机余量扩张。
+
+应保留尚未受中央正预算约束、内部可自适应扩张的重任务独占；未知峰值本身不应升级成 heavy。对已测量的独立 case 先声明并实际约束正 CPU/内存预算，再交同一中央调度。已有 simion-dirichlet-response 的 2 核、6 GiB、非 heavy 模式是可沿用路径。GUI、许可证或共享模型仅在真实冲突时保留 exclusive_resources。不给每项目新增调度器。
+
+## 按时间均衡，而不只是按粒子数
+
+现有 [case planner](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/simion/resource_scheduler.py#L647) 已考虑资源，独立粒子也已有分批与完整合并。下一步先记录 queue、prepare、PA load、compute、postprocess 的实际时间，按可信历史估算长任务优先并保留 aging；缺历史时用现有确定性顺序。粒子拆得越碎，PA 加载与进程启动可能越多，不能只追求均匀 N。
+
+可并行的候选包括独立测试模块、独立场响应、不同候选 case、给定外场下独立粒子批次、互不依赖的后处理。空间电荷、离子间相互作用或共同场反馈不能把粒子独立拆批；这不限制求解器自身支持的并行。单盘大文件哈希/复制也不按 CPU 核数盲开 workers，应先消除重复读，再按 I/O、内存、工作量设有界并行。
+
+并行不改变母 cohort、原粒子 ID、输入、种子策略、clock、网格、时间步、精度与终止条件。合并必须恰好覆盖声明粒子并保留上游损失。科学失败不自动重试；健康已运行任务不因另一个失败被强杀。
+
+不建议现在引入常驻 daemon、复杂性能预测服务或第二套任务数据库。[主机 transaction](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/host_execution_lease.ps1#L301) 的进程枚举、Python 启动、SQLite 锁等应先分项测量；只有实测证实后，才考虑在原 controller 内批量查询。Python CPU 计算若最终确需进程池，可参考 Python 3.11 官方 [concurrent.futures](https://docs.python.org/3.11/library/concurrent.futures.html)，但不得与现有 host/solver 内层并行重复承诺资源。
+
+# 架构与语言职责
+
+## 目标依赖关系
+
+沿用仓库既有项目中心组织：common 拥有中性机制和求解器无关的公共诊断；项目拥有器件物理、阈值、科学决策和资格；integrations 拥有组件装配与整链编排。跨项目部件 API 复用本身合理，不因出现多处引用就把器件模型搬进 common。规则依据 [语言职责](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/docs/REPOSITORY_ARCHITECTURE.md#L196) 与 [共享依赖方向](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/docs/DEVELOPMENT_STANDARDS.md#L111)。
+
+```mermaid
+flowchart TD
+  W["现有 workflow 入口"] --> I["integrations 装配与编排"]
+  W --> P["项目物理与科学决策"]
+  I --> P
+  I --> C["common 合同与生命周期"]
+  P --> D["common 纯诊断与数值原语"]
+  P --> C
+  I --> V["供应商适配与进程入口"]
+  V --> C
+```
+
+| 语言 | 最合适的职责 | 本次建议 |
+|---|---|---|
+| Python | 合同编译、纯物理/数值决策、canonical 状态/峰形诊断、统计、计划与结果聚合 | 保持科学权威；项目阈值不移公共层 |
+| PowerShell | Windows/进程/许可证与环境接入、公共资源与容量会话、路径和门禁编排 | 执行计划与转交结果，不平行维护科学分支 |
+| MATLAB/COMSOL | 供应商模型树、网格/Study/Solver、LiveLink 生命周期、原始输出转换 | 不为统一语言搬到 Python；提取清楚的供应商阶段 |
+| Lua/GEM/Fly2 | SIMION 几何/回调/粒子运行、实际事件记录与必要字段转换 | 不承担第二份通用 FWHM、分辨率和资格解释 |
+| JSON/Schema | 唯一科学/数值/运行权威及显式派生关系 | 不把日志、回执和显示名变成第二份参数权威 |
+
+## A1：MR 控制器仍横跨 PowerShell 与 Python
+
+[3,205 行 runner](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_downstream_workpoint_iteration.ps1) 与 [2,911 行 controller](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/downstream_workpoint_iteration.py) 并存本身不是问题；问题是同一科学决策仍分散。
+
+已有 Invoke-WorkpointControllerRequest、Get-RelativeVoltageStencilSteps 和 New-RecoveredSFirstCandidate 已委托 Python，应保留这些迁移成果。剩余 PS [步长与候选缩放](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_downstream_workpoint_iteration.ps1#L1512) 仍做相对电压尺度、bounds、step factor、L∞ 最小步长停止；[Get-RecoveryProbeDirections](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_downstream_workpoint_iteration.ps1#L1600) 选择最近 S-only 候选与导数符号；[拓扑恢复决定](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_downstream_workpoint_iteration.ps1#L1631) 解释历史与回退分支。
+
+最佳实现是继续使用现有 `--controller-request` JSON 协议，把这些纯决策迁入项目 Python controller。Python 输出具名 action/proposal、所需冻结输入、终止原因；PS 只执行 acquire/materialize/fly/collect/publish 和资源生命周期。不要新建第二个控制 CLI，也不要把 MR 科学恢复规则移到 common。
+
+先用小 fixture 锁住旧输入→决策序列，逐支迁移并删除原 PS 公式；同时测一次请求的跨进程成本，批量计划一轮动作，不为每个标量开一个 Python。相称验收是决定、动作顺序、失败恢复与物理配置一致，不是文件刚好小于某个行数。
+
+## A2：从少量反向依赖切开，不重画全仓目录
+
+AST 图包含函数内 lazy imports，找到八个生产模块强连通组、两条项目→integration 反向边；它们是结构耦合信号，不代表已经发生 import-time 崩溃。
+
+| 具体反向边 | 问题 | 最窄修改 |
+|---|---|---|
+| [MR/analysis/prepared_joint_trial.py:19](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/prepared_joint_trial.py#L19)、[MR/analysis/downstream_workpoint_iteration.py:2576](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/downstream_workpoint_iteration.py#L2576) → integrations accelerator_interface.prepare.verified_preparation_reference | 项目物理代码需要导入组装 orchestration 模块，后者又调用项目 | integration 先验证装配 manifest 并传入显式 prepared input/records；common 只提供中性的消费记录验证，不能硬编码此 workflow 的 project/mode |
+| [common/contracts/capacity_ledger.py:1085](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/capacity_ledger.py#L1085) → verify_artifact_layout.INTEGRATION_CACHE_ROLES | 低层台账为常量依赖高层 verifier；verifier 又依赖 PA/cache/ledger | 常量回到现有纯命名/布局合同，如 artifact_naming 的 cache namespace 区；ledger、verifier、校准共用，不另造验证服务 |
+| [common/contracts/solver_review_retirement.py:637](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/solver_review_retirement.py#L637) → reconcile_artifact_capacity 的 GUI source helpers | retirement owner 反向调用维护总入口，维护又调用 run lifecycle/retirement | GUI source 查询归现有 retirement owner 的公开只读 API；reconcile 调 owner，计划内共享一次快照，删除前再核查 |
+| [MR/analysis/fixed_grid_mirror_stripe_handoff.py:12](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/fixed_grid_mirror_stripe_handoff.py#L12) ↔ dual_stripe_operating_seed 的 FixedHardwareMirrorPoint/load | 纯数据类型与加载/算法互相牵连 | 触及该边界时让类型归项目窄合同，加载器与求解器各自调用；不为两文件循环创建通用框架 |
+| integrations single_reflection 的 runtime/continuation/collect 互相导入 | 完成证据与续算选择的责任相互缠绕 | 公共证据解析与纯 case 选择归该 workflow 内一个低层边界；runtime 负责物化，collect 负责聚合，continuation 组合调用 |
+
+容量循环多为 lazy imports，不能据此说正常 startup 已变慢。保留锁内的 owner/generation/lease/consumer 条件，不把整个退休事务拆散。逐个去掉确有收益的反向边即可。
+
+## 长脚本优先处理的职责
+
+| 文件 | 具体审查信号 | 建议 |
+|---|---|---|
+| [pa_family_cache.py，4,491 行](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/simion/pa_family_cache.py) | advance_pa_family_cache_transaction 跨约 415 行；身份、事务、修复、容量交织 | 外部 API 保持单一；优先将纯 identity/inventory、事务推进、repair/migration 分界，复用既有 cache_generation；事务状态机只保留一个 owner |
+| [two_prism_simion_trial.py，3,097 行](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/two_prism_simion_trial.py#L1813) | materialize_trial 约 657 行、analyze_trial 约 480 行 | 分开“纯试验计划/输入物化/原始结果分析”；原入口委托，不新增平行入口 |
+| [native_static_field_provider.py，2,022 行](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_static_field_provider.py#L958) | compile_request 约 509 行，同时组织多层场与依赖 | 项目拥有场单元/数值输入；公共 owner 拥有事务与复用；按独立单元编译，不复制缓存协议 |
+| [mirror_fixed_grid_voltage_correction.py，1,632 行](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/mirror_fixed_grid_voltage_correction.py#L535) | 两个 proposal 函数约 579/444 行 | 提取共同的输入解释、数值求解原语、proposal 组装；保持两种科学算法差异明确 |
+| [simion_event_analysis.py，1,811 行](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/simion_event_analysis.py#L424) | prism 诊断约 498 行，summarize 约 361 行 | 供应商事件正规化、公共统计、MR 物理解释分开；避免再次自写通用粒子/峰宽逻辑 |
+| [source_z_energy_timing_diagnostic.py，2,658 行](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/source_z_energy_timing_diagnostic.py) | 单 run、多 run 对照、拟合与图形多职责 | 共用正规化数据视图，比较和绘图独立；项目时序解释留本项目 |
+| [six-panel，1,775 行](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/analysis/plot_single_flight_spatial_six_panel.py) | 证据读取、空间投影、多个图构建混合 | 先构造一次经过验证的展示数据，再交绘图函数；不要每张图重新读/验相同输入 |
+| [reference_analysis_core.py，1,440 行](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/analysis/reference_analysis_core.py#L981) | analyze_comparison 约 341 行 | 导入正规化、比较编排与图输出可分；通用数值仍委托 common.peak_metrics |
+
+相反，[804 行 peak_metrics](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/analysis/peak_metrics.py) 是同一统计语义族，不因长度先拆；[2,036 行 builder](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/runtime/build_single_flight_program.py) 含约 923 行多行字符串，不能当成 2,036 行算法；[1,323 行 generated contract](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/formal/oatof_resolved.lua) 应由生成器维护，不手动拆。MATLAB 大模型树应按几何/物理/Study/导出阶段组织函数，但保持供应商模型所有权，不为少一门语言重写。
+
+# 死代码、无消费者与重复实现
+
+## 先区分真正无引用、公开能力未接入、动态消费者
+
+静态图与全活动源码标识符扫描不能证明所有动态行为；本次又检查了 PowerShell 内嵌 Python、动态 import、JSON 依赖与当前文档。共找到四个 PowerShell 函数在活动仓库仅有定义命中，适合作为高置信仓内无消费者候选：
+
+| 函数 | 定位 | 处置建议 |
+|---|---|---|
+| Confirm-OpenPaStreamSha256 | [common/simion/short_pa_path_support.ps1:88](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/simion/short_pa_path_support.ps1#L88) | 无调用、无测试/文档使用；核对支持的仓外 API 后删除，不保留无效 hash retry 接口 |
+| Remove-PrivatePaFamilyDirectory | [common/simion/short_pa_path_support.ps1:718](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/simion/short_pa_path_support.ps1#L718) | 无仓内消费者；清理职责已由公共受管机制承担，优先退役 |
+| Test-PathPrefix | [common/verify_changed.ps1:78](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/verify_changed.ps1#L78) | 无仓内消费者的小私有 helper，可在门禁修复中一并删除 |
+| Remove-NativeCorridorRuntimeSession | [MR/simion/native_corridor_runtime_support.ps1:122](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/simion/native_corridor_runtime_support.ps1#L122) | 无仓内消费者；核对当前 Suspend/owner 收尾后退役，不删有效生命周期路径 |
+
+这些结论没有外推为“绝对不存在任何仓外手工调用”。它们不是先加 deprecated 再永久保留的理由；确认受支持边界后在同一变更清除函数、注册与失效文档。
+
+[native_fast_adjust_operating_pa_cache.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/simion/native_fast_adjust_operating_pa_cache.py) 无 CLI/main，模块名及全部公开函数检索只发现自身、测试、README，未发现生产或声明依赖消费者。它与真实使用的 native_fast_adjust_runtime_support.ps1、OA component_focus_pa_cache.py 是不同机制。若没有当前 adopter，优先退役；若已有具体任务承诺，则明确实验状态、负责方和退出条件，不继续作为已接入的公共生产能力宣传。测试证明行为，不证明仍有需求。
+
+另外四个候选经独立复核必须分别处置，不能合称死代码：
+
+| 模块 | 当前事实 | 最佳处置 |
+|---|---|---|
+| [spatial_registration.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/spatial_registration.py) | 公共 README 仍声明发布 API，但活动生产未接入；现有 resolve_connection 使用另一种连接合同 | 没有明确 adopter 时退役未接入的发布包装层，修正文档；保留被真实使用的 rigid_transform，不强行合并不同合同 |
+| [finite_interval_design_compiler.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/analysis/finite_interval_design_compiler.py) | 当前 README 明确其公共物理权威，[runtime dependency](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/config/runtime_dependencies.json#L2003) 也向 local/cooled_frontend 声明，但直接调用只见单测和 frontend_fixtures | 保留数学权威；去掉没有实际消费的冻结依赖，或将确需该模式的既有 prepare 接到此 API；不搬公式到 tests |
+| [paper1_j2_candidate_pool.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/analysis/paper1_j2_candidate_pool.py) | 有 J2 pilot 合同和当前研究矩阵中的预定用途，尚无执行消费者 | 明确研究预备状态、任务 owner 和使用/退出条件；不为制造消费者另造 CLI |
+| [paper1_j2_real_field_sensitivity.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/analysis/paper1_j2_real_field_sensitivity.py#L82) | 有 main(argv)，但没有 __main__ guard 或已发现 console/profile/wrapper 接线；普通 python -m 不会执行 main | 纯函数按 J2 研究用途保留；若不需要独立 CLI，删孤立 main 包装；确需独立入口再补真实接线与行为验证 |
+
+当前 J2 仍是 INCONCLUSIVE_REVISE 的独立研究问题，J3 不替代它，见 [当前研究证据矩阵](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/docs/publication/paper_1_jasms/evidence_matrix.md#L18) 与 [J2 pilot 合同](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/docs/publication/paper_1_jasms/j2_real_3d_pilot_contract.md#L74)；不能把这两模块误判为被 J3 废弃。这里应区分“有生产消费者、声明公共但未接入、研究预备、可退役候选”，并修正多余依赖造成的冻结与门禁扇出。不能仅因为只找到 tests/fixture 就删掉仍被明确维护的理论 API，也不能用“将来可能用”无限期保留。
+
+以下反例明确有动态消费者，**不应删除**：standalone_field_bank 由 local_frontend_field_support 的内嵌 Python 调用；cooled_frontend.analyze 由 execute 动态 import；local_frontend.replay 由 frontend_flight_support 内嵌 Python 调用；paired_accelerator_pulse.prepare/runtime 与静态场 runtime 也由 PowerShell 字符串导入。这正是不能只凭 Python import 图做自动清理的原因。
+
+消费者审计现有 summary 为 674 formal_reachable、1 test_only、1,512 uncertain、0 private_no_calls，属于模块引用候选分类；formal_reachable 不代表 Formal 物理资格，0 private_no_calls 也不证明没有死代码。将这种保守分析移出热门禁，同时从已有 execution_profiles、gate catalog、runtime_dependencies 获取明确 roots，不再建一份同义 capability 大清单。
+
+## 重复实现：只合并语义相同的部分
+
+AST 精确候选扫描在“至少 10 物理行、至少 5 AST 语句、只忽略函数名与 docstring”条件下找到三组；这不是全仓语义重复总量。
+
+| 重复/近重复 | 具体位置 | 最佳处理 |
+|---|---|---|
+| _PhaseTimings.finish | [common/contracts/legacy_capacity_backfill.py:67](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/legacy_capacity_backfill.py#L67) 与 [common/contracts/reconcile_artifact_capacity.py:56](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/reconcile_artifact_capacity.py#L56) | 随 C2 统一操作/阶段计时，不单独造另一层遥测框架 |
+| 三个有限数值转换函数 | [MR/analysis/two_prism_segmented_coverage.py:65](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/two_prism_segmented_coverage.py#L65)、[MR/analysis/two_prism_segmented_transport.py:404](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/two_prism_segmented_transport.py#L404)、[MR/analysis/two_prism_segmented_voltage_seed.py:92](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/two_prism_segmented_voltage_seed.py#L92) | 本项目窄 helper 或输入边界只做一次；现有 strict_json finite_real 不接受同样的字符串转换，不能机械替换改变合同 |
+| EI/EG 的 build_parser 片段 | 两个 resolve_contract.py 的短 CLI 参数结构 | 重复很小且各有物理 owner，不值得为了约 15 行增加抽象层 |
+| 出图保存薄封装 | [MR/analysis/prepared_joint_diagnostics.py:350](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/prepared_joint_diagnostics.py#L350)、[MR/analysis/ip_prism_local_diagnostics.py:333](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/ip_prism_local_diagnostics.py#L333)、[oaTOF/analysis/ideal_source_comparison_plot.py:147](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/analysis/ideal_source_comparison_plot.py#L147) | 迁移到现有 [export_figures](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/analysis/figure_export.py) 的排他创建/回滚机制；DPI、样式、科学元数据、图对象寿命仍由调用者决定 |
+| 记录验证、复制、发布、异常收尾 | H1/H3/H5 的调用链 | 价值高于合并零散几行 JSON 读写；同一边界只有一个完整 API |
+
+不建议批量将所有 `_finite`、`_load_json` 或 `savefig` 包成 utils.py；同名不代表同一类型、错误语义、单位、空值与可覆盖政策。先统一真正相同的边界语义，才迁移调用者。
+
+长测试同样按行为与隔离性判断。可以按 controller 决策、runner 生命周期、cache 事务、恢复、输出合同拆分模块，以便精确路由和按耗时分片；fixture 共用在 tests/test_support 内，不能由生产反向引用。保留能复现非法状态的测试，不为缩短门禁删掉失败证据或负用例。源文本断言只保留实际需要静态禁止的事实；行为能由输入输出和副作用验证时，避免绑定无关代码排列。
+
+# 面向 Agent 的最小执行合同
+
+推荐在现有入口、run summary 和 stage receipt 上统一少量字段，不新增第二套工作流平台。一次正式请求应完成可以确定的“轻量解析/计划 → admission → materialize/prepare → execute → collect → analyze → retain → manifest → capacity-seal → release”。大 PA 物化、复制和其他重写入必须在容量/资源准入之后；前置解析只生成必要的轻量计划。运行中的正常进度可输出事件；最终一定有明确终态。GUI 或科学决策确需用户/owner 输入时，停在具名边界并给出已完成结果与精确缺项。
+
+```json
+{
+  "status": "failed",
+  "stage": "capacity_seal",
+  "error_code": "OWNER_CLOSEOUT_INCOMPLETE",
+  "reason": "已发布计算结果，保留载荷的 owner 收尾未完成",
+  "last_completed_stage": "manifest_publish",
+  "resume_action": "继续原 owner 的容量 seal；复用已发布计算结果",
+  "elapsed_seconds": 12.3,
+  "timing": {"queue": 0.8, "prepare": 1.1, "compute": 8.0, "publish": 2.4},
+  "evidence": {"manifest": "run_manifest.json", "log": "logs/stage.log"}
+}
+```
+
+上例是建议形状，数字为示例，不是本次运行结果。实际字段应沿用已有名称，避免同义字段。运行状态、科学判定、容量收尾分别表达：进程执行成功不等于物理假设成立；科学负结果不能被清理器改成成功；已发布科学终态不能因后续容量失败被覆写。
+
+计时至少分 wall/queue/prepare/compute/postprocess/publish/cleanup；涉及大文件时增加 bytes_read、bytes_copied、bytes_hashed、hash_passes。用单调时钟计算耗时，UTC 时间戳用于定位。所有失败也写耗时与 failed stage。只在负责该边界的位置增加信息，不为每个小 helper 建状态机。
+
+恢复应自动识别完成单元并显示理由。已有完整原始结果就只重跑后处理/发布，已成功场单元不因飞行失败重新 Refine；完整批次复用，未完成批次整体重跑。跨 run 恢复建立新 run_id、明确绑定父证据，不重新搜索 latest、不改旧终态、不隐式换输入。调度 hint 和耗时记录不进入科学内容身份。
+
+**最关键的 Agent 收益指标**：一次请求需要人工续步次数、失败后需要读取的文件数、恢复时重复计算/复制字节、同一事实重复验证次数、阶段选择可解释性、失败到可复现命令的距离。代码行数与脚本数作为变更报告附带统计，不能替代这些指标。
+
+# 测量、验证与解释边界
+
+## 本次实际测量
+
+共享 Linux 环境，Python 3.11.17、PowerShell 7.6.9、仓库锁定依赖。普通门禁小测为单次基线；容量 API 为三次中位数；PA helper 为三轮计数。没有在这些小测中运行商业物理过程。
+
+| 项目 | 本次结果 | 解释 |
+|---|---:|---|
+| 开发标准完整 CLI | 22.724 s | 0 hard errors，477 review signals；含 advisory consumer audit |
+| 直接调用现有三个硬检查函数 | 5.570 s | Python 5.529、PS 0.009、MATLAB 0.032；不是已实施补丁后的 CLI |
+| 文本字节检查 | 0.117 s / 1,624 files | 通过，成本很低 |
+| 全库 Ruff，无缓存 | 0.113 s | 通过，不是主要热点 |
+| 正式 FullScope PlanOnly | 0.644 s / 38 stages | 通过，只证明计划生成 |
+| expected_values 单测试模块 | 0.095 s / 4 tests | 通过，含 Python 启动 |
+| startup API，100/1,000/10,000 条记录 | 0.001273 / 0.008583 / 0.086903 s | 不含 PS/Python 新进程和 Windows 观测 |
+| partial-retirement no-op，100/300/600 run 记录 | 0.060146 / 0.523652 / 2.107124 s | 合成旧式逐文件账本；0 删除，揭示 O(R×N) |
+| owner 人工延迟 0.25 s 的计时验证 | wall 0.251812 s；receipt 0.000616 s | 证明当前 total 漏 owner 阶段 |
+| 4 MiB PA helper 三轮 | 156.358 / 23.338 / 24.006 ms | 每轮 5 SHA、20 MiB hash 读取，首轮含 JIT |
+
+定位用的一次 cProfile 另有仪器化开销：总 55.539 s，consumer audit 累计 37.717 s，约 68%；834 Python 文件共 1,668 次解析，cProfile 记录 ast.walk 的生成器调用/迭代约 1,301 万次（不是整棵 AST 完整重走 1,301 万遍）。read_text 累计仅约 0.132 s。这支持优化重复 AST 分析，不能用该 55.539 s 作为正常 CLI 基线。
+
+121 项容量与调度现有定向测试全部通过：capacity_reconcile_runtime 17、maintenance_orchestration 12、纯 Python HostResourceSchedulerTests 51、SIMION resource_scheduler 34、particle_batching 7，总 unittest 报告约 1.134 s。另 expected_values 4 项通过，故本次这些明确运行的测试共 125 项；它们通过不代表覆盖新发现的计时和路由缺口。未运行 Windows CIM 测试、完整 L1/L2 或商业求解器。
+
+## 仓库历史耗时，未在本次重跑
+
+[2026-10-28 验收记录](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/docs/history/20261028__unified-diagnostics-review-acceptance.md#L95)：
+
+| 阶段 | 历史测试数/结果 | 历史秒数 |
+|---|---|---:|
+| MR analysis | 1,693：1,681 pass / 12 skip | 1,818.682 |
+| assembly | 605 pass | 1,737.629 |
+| common contracts | 778：777 pass / 1 skip | 293.799 |
+| RF quadrupole Static | 224 pass | 231.109 |
+
+这些是具体历史阶段的耗时，不是本次 Linux 数据；并行阶段不能相加当整轮墙钟。最新记录仍保留完整命令 exit 1，没有伪装成单轮 PASS。CI timeout 60 分钟也不是实际平均运行时。
+
+真正上线验收要在目标 Windows 主机、固定提交、同一输入/样本/精度、明确冷暖缓存条件下比较。先记录各阶段中位/p95、hash bytes 与进程扫描次数，再设置合理软预算；不要以未校准的秒数硬阈值阻止合法物理运行。
+
+# 推荐实施顺序与完成判据
+
+## 第一批：正确覆盖、完整观测、无需改变物理行为的省事修改
+
+G1 changed-test 必跑与 G4 test-only/effective 计划一并修；G2 把 advisory 从热路径移出；G3 统一阶段摘要；C2 补 owner 总计时和 partial 输出；C1 建一次索引；C3 消除同 CLI 重复 startup。顺带删除已确认无消费者的 Test-PathPrefix 和空 Python discover。工作边界都在现有 gate/capacity 实现，不增加新控制平台。
+
+完成判据：确定失败的改动测试必能使正式 L1 失败；文档计划的 dependency profile 与 actual effective 集一致；成功/失败/启动失败/中断均有阶段结果；owner 注入时间计入 total；partial 结果完整；no-op 遍历近线性；现有保护与 pending 重放回归保持。性能比较报告测试范围，不能用少跑必需测试制造更快。
+
+## 第二批：统一发布与验证 owner，减少真实大 I/O
+
+先完成 H3 的完整 Python publisher 与私有发布迁移；然后 H1/H2 的 guard 连续转交、一次权威校验；再 H4 的显式深审和 H5 record-bound copy。不要同时改物理参数、缓存科学 key 或供应商输入表示。已有 cache_generation、file_identity、short_pa_path_support 是唯一实现归属。
+
+完成判据：缺失输出、错误期望 SHA、同长度错误目标、guard 失效、异常 cleanup 都有最小行为测试；同一受保护链不再重复整读同一 payload；源和私有目标不共用可写文件对象；输出 hash/copy bytes 与次数可审计。影响 Windows 大文件读法或 SIMION composer 接入时，再执行相称真实最小回归；不要求不相关模型重跑。
+
+## 第三批：少手工续步、预算内并行
+
+自动接上已确定 owner 的 retire→reseal、容量压力 maintenance→再准入；R1 单轮共享快照；gate ready 队列和时间排序；对已测量独立 case 声明正预算后扩大并发。先测模块长尾再拆门禁阶段，保留独立诊断与进程隔离。
+
+完成判据：每个断点可仅恢复未完成部分，不重算已有结果、不重复删除、不改旧科学终态；依赖失败不启动后继；L2 继续独立阶段；并发承诺不超 CPU/内存/I/O/许可证；PID 与后代安全回归保持。真实同 workload 墙钟改善才可声称提速。
+
+## 第四批：逐个职责边界重构与退役
+
+优先 A1 的 Python 科学决策归一，A2 的实际反向依赖，以及 long-file 附录中的热点。每次只切一个可验证职责，原入口保持唯一，替换完成即删除旧分支与失效参数。保留稳定的理论模块、生成合同和有价值的失败测试。不以“每文件少于 600 行”或“减少某个百分比代码量”作为完成标准。
+
+不要为了本审查先建全仓新类型层、替换测试框架、引入守护服务、增加更多 SHA 或全仓 formatter。这些没有当前证据支持。最好的下一轮成果应当是：必需验证更可靠、普通流程更快、一次运行给出完整答案，Agent 不再依靠阅读多份日志和手动续命令才能判断系统状态。
+
+# 附录 A：全部 93 份长生产脚本的结构审查结论
+
+阈值为至少 600 物理文本行，用于完整盘点，不是门禁失败标准。“优先”对应正文已定位问题；“治理”表示下次触及该职责时有明确分界收益；“保留”表示没有证据支持仅凭长度重构；“收敛”表示历史迁移能力需要明确生命周期。该表是全量结构审查和实施建议，不把未测量文件写成已确认性能瓶颈。
+
+## 公共层
+
+| 文件 | 物理行 | 结论 | 建议 |
+|---|---:|---|---|
+| [common/analysis/peak_metrics.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/analysis/peak_metrics.py) | 804 | 保留 | 统一峰形/宽度/配对/bootstrap语义族；不为804行拆散数值权威。 |
+| [common/contracts/capacity_ledger.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/capacity_ledger.py) | 1,578 | 治理 | 保留单一账本事务；移走对高层verifier常量的依赖，纯校验与提交边界清楚。 |
+| [common/contracts/capacity_protection.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/capacity_protection.py) | 898 | 保留 | TTL/路径/租约保护属同一职责；保留锁内检查，不与主机资源许可混合。 |
+| [common/contracts/legacy_capacity_backfill.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/legacy_capacity_backfill.py) | 1,708 | 收敛 | 显式历史发现/恢复入口，退出日常准入；共享计时，登记迁移结束条件。 |
+| [common/contracts/legacy_capacity_calibration.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/legacy_capacity_calibration.py) | 1,937 | 收敛 | 历史校准、库存发现与报告可按阶段组织；保留显式调用，不每次启动全扫描。 |
+| [common/contracts/legacy_owner_disposition.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/legacy_owner_disposition.py) | 609 | 保留 | owner批准与激活职责清楚；复用既有收据，不加第二套删除判断。 |
+| [common/contracts/reconcile_artifact_capacity.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/reconcile_artifact_capacity.py) | 1,632 | 优先 | 补总计时/owner结果，省同CLI双plan；主入口组织已存在owner动作。 |
+| [common/contracts/run_artifact_support.ps1](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/run_artifact_support.ps1) | 957 | 优先 | 保留PS公共适配；统一完整publisher和record-bound copy，补自动reseal闭环。 |
+| [common/contracts/run_capacity_lifecycle.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/run_capacity_lifecycle.py) | 1,064 | 优先 | partial owner一次按run索引；生命周期事务仍由同一owner提交。 |
+| [common/contracts/solver_review_retirement.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/solver_review_retirement.py) | 1,872 | 治理 | GUI来源查询归本owner；计划/执行/repair可分内部职责，不拆散事务。 |
+| [common/contracts/verify_artifact_layout.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/verify_artifact_layout.py) | 1,043 | 优先 | 默认结构验证与显式深hash分开；命名常量移回纯合同层。 |
+| [common/integration/resolve_connection.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/integration/resolve_connection.py) | 736 | 保留 | 连接姿态、表面、约束编译属同一合同；长_resolve_profile可按验证阶段提函数。 |
+| [common/ion_release/cylinder.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/ion_release/cylinder.py) | 726 | 保留 | 确定性全体积源与身份一体；采样纯函数可独立测试，不机械拆CLI。 |
+| [common/report_cloc_delta.ps1](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/report_cloc_delta.ps1) | 722 | 保留 | CLOC过滤、分类、对比、格式是一条工具流水线；不以自身行数替代准确分类。 |
+| [common/resource_budget_support.ps1](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/resource_budget_support.ps1) | 1,329 | 优先 | 每轮一份进程快照；纯采样投影与worker编排分清，统一实际耗时。 |
+| [common/simion/cache_generation.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/simion/cache_generation.py) | 600 | 保留 | 中性immutable generation原语；正常copy+目标校验已合理，勿再建复制层。 |
+| [common/simion/pa_family_cache.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/simion/pa_family_cache.py) | 4,491 | 优先 | 纯identity/inventory、唯一transaction、repair/migration分界；复用现有cache_generation。 |
+| [common/simion/resource_scheduler.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/simion/resource_scheduler.py) | 791 | 治理 | 现有case/batch资源计划保留；引入实测耗时hint，保持预算与完整粒子覆盖。 |
+| [common/simion/short_pa_path_support.ps1](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/simion/short_pa_path_support.ps1) | 773 | 优先 | 同owner的guard转交与一次权威验证；退役无调用函数，保留Windows必要读策略。 |
+
+## 整机组装
+
+| 文件 | 物理行 | 结论 | 建议 |
+|---|---:|---|---|
+| [integrations/analysis/plot_single_flight_spatial_six_panel.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/analysis/plot_single_flight_spatial_six_panel.py) | 1,775 | 治理 | 一次加载/正规化展示数据，多图消费；科学投影与图形排版分开。 |
+| [integrations/runtime/build_single_flight_program.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/runtime/build_single_flight_program.py) | 2,036 | 有条件 | 923行多行字符串；模板与组装逻辑可分离，但冻结依赖/运行时版本必须随迁移保持。 |
+| [integrations/runtime/single_flight_electrode_contract.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/runtime/single_flight_electrode_contract.py) | 635 | 保留 | 电极拓扑与投影登记的单一权威；避免每workflow再复制角色映射。 |
+| [integrations/workflows/oa_mr/execute.ps1](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/workflows/oa_mr/execute.ps1) | 1,362 | 治理 | 组装/进程/GUI依赖与证据发布分阶段；复用common生命周期，不另建模式框架。 |
+| [integrations/workflows/paired_accelerator_pulse/runtime.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/workflows/paired_accelerator_pulse/runtime.py) | 756 | 治理 | 已完成批次选择、物化、收集分清；恢复保留同脉冲与母cohort身份。 |
+| [integrations/workflows/single_reflection_flight/execute.ps1](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/workflows/single_reflection_flight/execute.ps1) | 758 | 优先 | 应用H1的IOB副本guard转交；现有入口保持唯一并统一阶段结果。 |
+| [integrations/workflows/single_reflection_flight/prepare.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/workflows/single_reflection_flight/prepare.py) | 635 | 治理 | prepare约410行；冻结输入、纯计划、布局/源派生分别为具名步骤。 |
+| [integrations/workflows/single_reflection_flight/runtime.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/workflows/single_reflection_flight/runtime.py) | 806 | 治理 | 切runtime/continuation/collect循环中的共享证据解析，runtime只物化。 |
+
+## 部件项目与 MR
+
+| 文件 | 物理行 | 结论 | 建议 |
+|---|---:|---|---|
+| [IP/analysis/diagnostics.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/dual_pressure_rectilinear_ion_processor/analysis/diagnostics.py) | 638 | 保留 | 全母群诊断与图形可分函数；共用公共统计，不把项目物理解释上移。 |
+| [IP/analysis/functional.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/dual_pressure_rectilinear_ion_processor/analysis/functional.py) | 652 | 治理 | prepare/analyze生命周期与纯功能分析分清；publisher迁入完整common API。 |
+| [OA/analysis/accelerator_time_focus.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/orthogonal_accelerator/analysis/accelerator_time_focus.py) | 1,323 | 保留 | 器件理论模型由OA拥有；超过千行不是迁往common或拆公式的理由。 |
+| [MR/analysis/bunch_source_and_schedule.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/bunch_source_and_schedule.py) | 1,635 | 治理 | 母源生成、脉冲时序推导、冻结载入验证分界；保持同一源/clock权威。 |
+| [MR/analysis/downstream_fixed_grid_workpoint.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/downstream_fixed_grid_workpoint.py) | 1,342 | 治理 | 工作点物理审计保持项目内；数据载入、单trial评价、汇总分开。 |
+| [MR/analysis/downstream_workpoint_iteration.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/downstream_workpoint_iteration.py) | 2,911 | 优先 | 纯controller计划/转移/proposal分清，接收PS迁入的科学决定；不增加第二CLI。 |
+| [MR/analysis/dual_stripe_l0.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/dual_stripe_l0.py) | 1,520 | 保留 | L0理论族内聚；搜索/约束纯函数可独立，保留统一数值定义。 |
+| [MR/analysis/dual_stripe_operating_seed.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/dual_stripe_operating_seed.py) | 2,203 | 治理 | 分固定硬件求解、分支搜索、报告；类型与handoff加载解耦，仍归MR。 |
+| [MR/analysis/export_resolved_cad.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/export_resolved_cad.py) | 1,811 | 治理 | 分零件计划、SolidWorks适配、装配/导出复验；复用现有CAD公共桥。 |
+| [MR/analysis/ip_prism_distance_study.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/ip_prism_distance_study.py) | 1,202 | 优先 | 纯build发布器迁到完整API；研究计划、物化与收据报告分清。 |
+| [MR/analysis/ip_prism_focus_diagnostics.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/ip_prism_focus_diagnostics.py) | 701 | 保留 | 局部真实场交点与虚拟孔径判据明确；绘图与数据视图可分别测试。 |
+| [MR/analysis/ip_prism_local_diagnostics.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/ip_prism_local_diagnostics.py) | 618 | 治理 | 保存图片委托公共export；局部chirp/能量解释仍归MR。 |
+| [MR/analysis/joint_flight_preparation.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/joint_flight_preparation.py) | 632 | 治理 | 准备与field/event审计为明确步骤；拆装配反向依赖，不把MR阈值放common。 |
+| [MR/analysis/joint_mirror_stripe_l0.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/joint_mirror_stripe_l0.py) | 1,075 | 保留 | 耦合硬边界理论族；保留完整物理上下文，按计算可测性提纯函数。 |
+| [MR/analysis/mirror_exact_k_operating_point.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/mirror_exact_k_operating_point.py) | 1,138 | 保留 | exact-K求解单一物理问题；输入/数值迭代/输出可清晰分段，不需公共框架。 |
+| [MR/analysis/mirror_fixed_grid_voltage_correction.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/mirror_fixed_grid_voltage_correction.py) | 1,632 | 优先 | 两段579/444行proposal，合并相同输入解释与组装，保留两种算法差异。 |
+| [MR/analysis/native_static_field_provider.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_static_field_provider.py) | 2,022 | 优先 | 509行compile_request分场单元/网格/依赖计划；事务/容量使用公共owner。 |
+| [MR/analysis/prepared_joint_diagnostics.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/prepared_joint_diagnostics.py) | 675 | 治理 | 一次正规化状态与clock视图，图保存走公共export，物理解释留项目。 |
+| [MR/analysis/prepared_joint_trial.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/prepared_joint_trial.py) | 633 | 优先 | 不从integration.prepare反向取验证器；接收已验证prepared输入。 |
+| [MR/analysis/resolved_geometry.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/resolved_geometry.py) | 1,487 | 治理 | 538行resolve按组件/几何阶段提具名函数；不复制resolved权威。 |
+| [MR/analysis/run_downstream_workpoint_iteration.ps1](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_downstream_workpoint_iteration.ps1) | 3,205 | 优先 | 科学步长/候选/恢复决定迁到现有Python controller，PS保留Windows编排。 |
+| [MR/analysis/run_native_candidate_campaign.ps1](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_native_candidate_campaign.ps1) | 797 | 治理 | campaign只展开/调度已有单工况入口；统一checkpoint结果，按有界预算并行。 |
+| [MR/analysis/run_native_candidate_chain.ps1](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_native_candidate_chain.ps1) | 1,847 | 治理 | 长链按完成阶段复用/失败恢复组织；不把每个断点变新脚本。 |
+| [MR/analysis/run_native_candidate_condition.ps1](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_native_candidate_condition.ps1) | 607 | 保留 | 单condition薄适配；减少与campaign/chain重复参数搬运和发布。 |
+| [MR/analysis/simion_candidate_reference.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/simion_candidate_reference.py) | 704 | 保留 | 纯参考与GEM生成边界明确；有多消费者的OA理论继续调用其owner。 |
+| [MR/analysis/simion_event_analysis.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/simion_event_analysis.py) | 1,811 | 优先 | 事件正规化、公共统计、MR判据三层分清，拆498行诊断块。 |
+| [MR/analysis/source_z_energy_timing_diagnostic.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/source_z_energy_timing_diagnostic.py) | 2,658 | 治理 | 单run时序分析、跨run比较、拟合、图形分界；共用数据视图。 |
+| [MR/analysis/static_field_binding.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/static_field_binding.py) | 1,884 | 治理 | 绑定解析/物理一致性/response选择分界；metadata路径保留，消除反向导入。 |
+| [MR/analysis/two_prism_segmented_coverage.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/two_prism_segmented_coverage.py) | 757 | 治理 | 输入源绑定与覆盖报告分清，复用MR同语义有限数值转换。 |
+| [MR/analysis/two_prism_segmented_transport.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/two_prism_segmented_transport.py) | 1,235 | 保留 | 分段传输模型保留项目内；与coverage/seed共享同语义输入验证。 |
+| [MR/analysis/two_prism_segmented_voltage_continuation.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/two_prism_segmented_voltage_continuation.py) | 1,323 | 治理 | main约276行；恢复计划、数值推进和发布分界，不复制另一状态机。 |
+| [MR/analysis/two_prism_segmented_voltage_seed.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/two_prism_segmented_voltage_seed.py) | 625 | 治理 | 412行seed搜索提可测试纯策略；不改变搜索界限与分支身份。 |
+| [MR/analysis/two_prism_simion_trial.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/analysis/two_prism_simion_trial.py) | 3,097 | 优先 | materialize/analyze大函数分纯计划、I/O物化、科学分析；保持原唯一入口。 |
+| [MR/simion/mrtof_candidate.lua](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/simion/mrtof_candidate.lua) | 901 | 保留 | SIMION运行回调/事件记录属供应商边界；通用统计放Python，不按901行拆回调协议。 |
+
+## RF
+
+| 文件 | 物理行 | 结论 | 建议 |
+|---|---:|---|---|
+| [RF/analysis/campaign_analysis.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/analysis/campaign_analysis.py) | 939 | 治理 | campaign preflight与run汇总分明；公共统计复用，阶段资格仍RF owner。 |
+| [RF/analysis/exit_state_plot.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/analysis/exit_state_plot.py) | 718 | 保留 | 绘图数据/样式属于RF；文件发布机制可用common，不能强统一所有图。 |
+| [RF/analysis/followup_analysis.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/analysis/followup_analysis.py) | 632 | 保留 | 明确followup证据范围；工程批次解释不回流普通物理默认值。 |
+| [RF/analysis/numerical_qualification.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/analysis/numerical_qualification.py) | 787 | 保留 | 数值资格由项目控制；输入正规化与判据可独测，不降低收敛门槛。 |
+| [RF/analysis/stationary_field_sampling.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/analysis/stationary_field_sampling.py) | 779 | 保留 | 采样计划与跨求解器比较单一问题；已有公共配对机制继续使用。 |
+| [RF/comsol/solve_deterministic_rf_quadrupole_particles.m](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/comsol/solve_deterministic_rf_quadrupole_particles.m) | 739 | 保留 | COMSOL粒子求解/原始面插值保留MATLAB；按供应商阶段提函数而非跨语言重写。 |
+| [RF/comsol/solve_finite_3d_transport.m](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m) | 1,378 | 治理 | 几何/场/Study/粒子/导出与失败收尾分界；继续公共LiveLink与资源入口。 |
+| [RF/core/compile_design_request.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/core/compile_design_request.py) | 992 | 保留 | RF设计编译的单一权威；解析、派生、资格解释分清且不复制默认值。 |
+| [RF/runtime/run_finite_3d_transport.ps1](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1) | 656 | 治理 | PS只编排COMSOL与生命周期；统一阶段计时、失败回执和恢复边界。 |
+| [RF/runtime/run_simion_finite_3d_transport.ps1](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1) | 1,413 | 治理 | PA准备、调度、批次收集、发布分界；用已有公共cache/资源owner。 |
+| [RF/runtime/runtime_profile.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/runtime/runtime_profile.py) | 952 | 治理 | profile解析与campaign候选编译职责显式；普通作者配置不做无关hash阻断。 |
+| [RF/simion/simion_geometry.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/simion/simion_geometry.py) | 785 | 保留 | 唯一RF几何到GEM转换边界；原语按真实跨项目语义复用。 |
+| [RF/workflows/interface_readiness/run_comsol.ps1](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/workflows/interface_readiness/run_comsol.ps1) | 610 | 保留 | 单workflow COMSOL入口；复用公共阶段结果，避免新增另一个通用runner。 |
+| [RF/workflows/same_solver_convergence/evaluate.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/workflows/same_solver_convergence/evaluate.py) | 884 | 治理 | main约326行，冻结closure验证与数值比较分清；H5减少重复文件读取。 |
+
+## oaTOF 与电子枪
+
+| 文件 | 物理行 | 结论 | 建议 |
+|---|---:|---|---|
+| [oaTOF/analysis/analyze_paper1_connector_gap_residual.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/analysis/analyze_paper1_connector_gap_residual.py) | 716 | 保留 | 有界三臂/单臂残差分析；clock与母cohort检查必要，不用小代码量替代正确性。 |
+| [oaTOF/analysis/experiment_campaign.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/analysis/experiment_campaign.py) | 744 | 治理 | 只用已有single-case执行器；串行policy有预算依据后再逐case放开。 |
+| [oaTOF/analysis/ideal_acceptance_300mm_simion_candidate.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/analysis/ideal_acceptance_300mm_simion_candidate.py) | 660 | 保留 | 冻结300mm研究结果的专门编译有明示声明边界；公共发布机制统一。 |
+| [oaTOF/analysis/oatof_oaaccelerator_coupling.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/analysis/oatof_oaaccelerator_coupling.py) | 884 | 保留 | OA加速器—反射器耦合归分析器，不因多个消费者搬common。 |
+| [oaTOF/analysis/paper1_focusability.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/analysis/paper1_focusability.py) | 604 | 保留 | detector-blind源模型和局部focusability明确研究边界；保留信息隔离。 |
+| [oaTOF/analysis/publish_formal_release.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/analysis/publish_formal_release.py) | 724 | 保留 | Formal晋升事务不能并入普通成功发布；仅复用原子I/O与通用验证。 |
+| [oaTOF/analysis/reference_analysis_core.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/analysis/reference_analysis_core.py) | 1,440 | 治理 | 导入正规化、比较编排、图/metadata分界；峰形数值唯一委托common。 |
+| [oaTOF/analysis/reflectron_dual_stage_solver.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/analysis/reflectron_dual_stage_solver.py) | 707 | 保留 | 反射器理论求解单一领域；保持独立参考向量和已声明适用域。 |
+| [oaTOF/analysis/three_zone_ideal_root_solver.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_ideal_root_solver.py) | 897 | 保留 | 根收集/缩放Newton为一个数值算法族；不为897行拆散迭代状态。 |
+| [oaTOF/analysis/three_zone_ideal_theory.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_ideal_theory.py) | 651 | 保留 | 整机理想理论与OA局部理论已有明确owner；沿现有API复用。 |
+| [oaTOF/analysis/three_zone_t5_simion_candidate.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_t5_simion_candidate.py) | 645 | 治理 | Candidate编译与发布分清；发布迁向完整公共API时保留qualification边界。 |
+| [oaTOF/analysis/three_zone_theory_experiment.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_theory_experiment.py) | 798 | 保留 | 科学阶段漏斗明确；执行与计划可各自测试，不混用阶段证据。 |
+| [oaTOF/analysis/three_zone_theory_numeric_execution.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_theory_numeric_execution.py) | 1,134 | 保留 | 理论数值执行函数已较有界；按真实热点决定批量/并行，不按1134行拆。 |
+| [oaTOF/comsol/oatof_build_model_core.m](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_model_core.m) | 1,278 | 治理 | COMSOL模型树按geometry/material/physics/study/export阶段提函数；保持单模型owner。 |
+| [oaTOF/simion/workbench/formal/oatof_resolved.lua](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/formal/oatof_resolved.lua) | 1,323 | 保留 | 自动生成resolved数据，不手拆、不手改；修改生成器与冻结依赖。 |
+| [oaTOF/workflows/design_candidate/run_candidate_workflow.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_workflow.py) | 1,051 | 治理 | execute_stage/run_workflow较长；复用已有生命周期和阶段恢复，避免多入口。 |
+| [oaTOF/workflows/radial_compaction/run_campaign.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/run_campaign.py) | 679 | 治理 | campaign计划/单case/fly/汇总分清；正预算下才并行独立case。 |
+| [EG/analysis/resolve_contract.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/transverse_helical_filament_wehnelt_electron_gun/analysis/resolve_contract.py) | 653 | 保留 | baseline/mode合同验证可按字段族提函数；电子枪物理仍项目拥有，不为653行移common。 |
+
+# 附录 B：全部 60 份长测试脚本
+
+测试长度不等于低质量。此处列出全量结构初筛与分组方向，不声称已逐条删去重复测试。优先通过每模块实际耗时、fixture启动成本、独立进程需求来判断分片；完整状态边界与已复现缺陷必须保留。任何拆分同步更新统一门禁目录，避免出现新测试未被发现。
+
+## 公共层与 integrations
+
+| 文件 | 物理行 | 建议 |
+|---|---:|---|
+| [common/contracts/test_legacy_capacity_calibration.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/test_legacy_capacity_calibration.py) | 1,287 | 按准入/保护/发布/退役/重放行为分组；共用测试fixture，保留负结果与精确删除边界。 |
+| [common/contracts/test_reconcile_artifact_capacity.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/test_reconcile_artifact_capacity.py) | 2,920 | 按准入/保护/发布/退役/重放行为分组；共用测试fixture，保留负结果与精确删除边界。 |
+| [common/contracts/test_run_artifact_support.ps1](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/test_run_artifact_support.ps1) | 799 | 按准入/保护/发布/退役/重放行为分组；共用测试fixture，保留负结果与精确删除边界。 |
+| [common/contracts/test_run_capacity_lifecycle.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/test_run_capacity_lifecycle.py) | 1,220 | 按准入/保护/发布/退役/重放行为分组；共用测试fixture，保留负结果与精确删除边界。 |
+| [common/contracts/test_solver_review_retirement.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/test_solver_review_retirement.py) | 2,422 | 按准入/保护/发布/退役/重放行为分组；共用测试fixture，保留负结果与精确删除边界。 |
+| [common/contracts/test_verify_artifact_layout.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/test_verify_artifact_layout.py) | 1,159 | 按准入/保护/发布/退役/重放行为分组；共用测试fixture，保留负结果与精确删除边界。 |
+| [common/contracts/test_verify_changed.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/contracts/test_verify_changed.py) | 1,187 | 按路由/精确测试/前置/环境/结果拆行为组，增加真实失败测试必跑保证。 |
+| [common/integration/test_resolve_connection.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/integration/test_resolve_connection.py) | 766 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [common/simion/test_pa_family_cache.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/simion/test_pa_family_cache.py) | 3,451 | 按身份/发布/事务/恢复/物化分片；保留故障注入，先测耗时再并行。 |
+| [common/simion/test_short_pa_path_support.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/simion/test_short_pa_path_support.py) | 1,207 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [common/test_host_resource_scheduler.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/common/test_host_resource_scheduler.py) | 747 | 区分纯预算、Windows观测、进程树和并发行为；可纯运行与真实平台回归分开。 |
+| [integrations/tests/frontend_fixtures.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/tests/frontend_fixtures.py) | 670 | 仅测试fixture；按场/源/装配工厂组织，真实理论仍调用生产API，不复制数学公式。 |
+| [integrations/tests/test_accelerator_interface.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/tests/test_accelerator_interface.py) | 694 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [integrations/tests/test_cooled_frontend.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/tests/test_cooled_frontend.py) | 868 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [integrations/tests/test_dependencies.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/tests/test_dependencies.py) | 703 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [integrations/tests/test_local_frontend_workflow.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/tests/test_local_frontend_workflow.py) | 807 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [integrations/tests/test_oa_mr_execute.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/tests/test_oa_mr_execute.py) | 1,405 | 按入口行为/生命周期/失败恢复分组；减少只锁代码排列的断言，保留必要静态禁止规则。 |
+| [integrations/tests/test_paired_accelerator_static_field_execute.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/tests/test_paired_accelerator_static_field_execute.py) | 977 | 按入口行为/生命周期/失败恢复分组；减少只锁代码排列的断言，保留必要静态禁止规则。 |
+| [integrations/tests/test_single_reflection_execute.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/tests/test_single_reflection_execute.py) | 990 | 按入口行为/生命周期/失败恢复分组；减少只锁代码排列的断言，保留必要静态禁止规则。 |
+| [integrations/tests/test_single_reflection_field_stage.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/tests/test_single_reflection_field_stage.py) | 1,113 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [integrations/tests/test_single_reflection_preparation.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/tests/test_single_reflection_preparation.py) | 1,549 | 按输入绑定/计划/物化/恢复分片，共用冻结小fixture；不要删除身份与跨边界负用例。 |
+| [integrations/tests/test_single_reflection_program.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/tests/test_single_reflection_program.py) | 1,323 | 区分模板合同、实际接线和供应商无关行为；字符串fixture不等于算法复杂度。 |
+| [integrations/tests/test_single_reflection_runtime.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/integrations/tests/test_single_reflection_runtime.py) | 1,218 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+
+## 部件项目
+
+| 文件 | 物理行 | 建议 |
+|---|---:|---|
+| [IP/tests/test_functional.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/dual_pressure_rectilinear_ion_processor/tests/test_functional.py) | 792 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [IP/tests/test_gui_replay_plan.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/dual_pressure_rectilinear_ion_processor/tests/test_gui_replay_plan.py) | 626 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [MR/tests/analysis/test_bunch_source_and_schedule.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_bunch_source_and_schedule.py) | 932 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [MR/tests/analysis/test_corridor_field_provider.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_corridor_field_provider.py) | 773 | 按输入绑定/计划/物化/恢复分片，共用冻结小fixture；不要删除身份与跨边界负用例。 |
+| [MR/tests/analysis/test_downstream_fixed_grid_workpoint.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_downstream_fixed_grid_workpoint.py) | 1,257 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [MR/tests/analysis/test_downstream_workpoint_iteration.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_downstream_workpoint_iteration.py) | 2,127 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [MR/tests/analysis/test_downstream_workpoint_iteration_runner.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_downstream_workpoint_iteration_runner.py) | 3,634 | 按入口行为/生命周期/失败恢复分组；减少只锁代码排列的断言，保留必要静态禁止规则。 |
+| [MR/tests/analysis/test_dual_stripe_l0_math.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_dual_stripe_l0_math.py) | 1,029 | 按数学定义与物理边界组织；保留独立参考向量，数据驱动重复样例而非删覆盖。 |
+| [MR/tests/analysis/test_ip_prism_distance_study.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_ip_prism_distance_study.py) | 902 | 按数学定义与物理边界组织；保留独立参考向量，数据驱动重复样例而非删覆盖。 |
+| [MR/tests/analysis/test_joint_flight_preparation.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_joint_flight_preparation.py) | 704 | 按输入绑定/计划/物化/恢复分片，共用冻结小fixture；不要删除身份与跨边界负用例。 |
+| [MR/tests/analysis/test_joint_mirror_stripe_l0.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_joint_mirror_stripe_l0.py) | 649 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [MR/tests/analysis/test_mrtof_batch_continuation.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_mrtof_batch_continuation.py) | 625 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [MR/tests/analysis/test_native_candidate_campaign_runner.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_candidate_campaign_runner.py) | 799 | 按入口行为/生命周期/失败恢复分组；减少只锁代码排列的断言，保留必要静态禁止规则。 |
+| [MR/tests/analysis/test_native_candidate_chain_runner.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_candidate_chain_runner.py) | 1,703 | 按入口行为/生命周期/失败恢复分组；减少只锁代码排列的断言，保留必要静态禁止规则。 |
+| [MR/tests/analysis/test_native_corridor_bunch_screening_runner.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_corridor_bunch_screening_runner.py) | 619 | 按入口行为/生命周期/失败恢复分组；减少只锁代码排列的断言，保留必要静态禁止规则。 |
+| [MR/tests/analysis/test_native_static_field_provider.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_static_field_provider.py) | 1,641 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [MR/tests/analysis/test_prepared_joint_trial.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_prepared_joint_trial.py) | 1,004 | 按输入绑定/计划/物化/恢复分片，共用冻结小fixture；不要删除身份与跨边界负用例。 |
+| [MR/tests/analysis/test_resolved_cad_export.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_resolved_cad_export.py) | 832 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [MR/tests/analysis/test_simion_candidate_reference.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_simion_candidate_reference.py) | 1,067 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [MR/tests/analysis/test_simion_event_analysis.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_simion_event_analysis.py) | 1,177 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [MR/tests/analysis/test_source_z_energy_timing_diagnostic.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_source_z_energy_timing_diagnostic.py) | 1,566 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [MR/tests/analysis/test_static_field_binding.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_static_field_binding.py) | 3,404 | 按输入绑定/计划/物化/恢复分片，共用冻结小fixture；不要删除身份与跨边界负用例。 |
+| [MR/tests/analysis/test_two_prism_segmented_transport.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_two_prism_segmented_transport.py) | 700 | 按数学定义与物理边界组织；保留独立参考向量，数据驱动重复样例而非删覆盖。 |
+| [MR/tests/analysis/test_two_prism_simion_trial.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_two_prism_simion_trial.py) | 2,566 | 按数学定义与物理边界组织；保留独立参考向量，数据驱动重复样例而非删覆盖。 |
+| [RF/tests/analysis/test_comsol_workflow_architecture_contract.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/tests/analysis/test_comsol_workflow_architecture_contract.py) | 1,030 | 按入口行为/生命周期/失败恢复分组；减少只锁代码排列的断言，保留必要静态禁止规则。 |
+| [RF/tests/analysis/test_frozen_particle_policy_package.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/tests/analysis/test_frozen_particle_policy_package.py) | 620 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [RF/tests/analysis/test_same_solver_numerical_convergence.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/tests/analysis/test_same_solver_numerical_convergence.py) | 1,442 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [RF/tests/analysis/test_simion_transport_runner_source.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/tests/analysis/test_simion_transport_runner_source.py) | 984 | 按入口行为/生命周期/失败恢复分组；减少只锁代码排列的断言，保留必要静态禁止规则。 |
+| [RF/tests/analysis/test_workflow_architecture_contract.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/tests/analysis/test_workflow_architecture_contract.py) | 716 | 按入口行为/生命周期/失败恢复分组；减少只锁代码排列的断言，保留必要静态禁止规则。 |
+| [RF/tests/domain/test_numerical_qualification.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/tests/domain/test_numerical_qualification.py) | 920 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [RF/tests/domain/test_particle_source_preflight.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/tests/domain/test_particle_source_preflight.py) | 640 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [RF/tests/domain/test_resource_budget.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/tests/domain/test_resource_budget.py) | 2,836 | 区分纯预算、Windows观测、进程树和并发行为；可纯运行与真实平台回归分开。 |
+| [RF/tests/domain/test_simion_runner_contract.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/tests/domain/test_simion_runner_contract.py) | 1,195 | 按入口行为/生命周期/失败恢复分组；减少只锁代码排列的断言，保留必要静态禁止规则。 |
+| [RF/tests/domain/test_transport_campaign.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/rf_multipole_ion_optics/tests/domain/test_transport_campaign.py) | 714 | 按可独立执行的行为/合同模块组织，复用测试数据工厂；只有实际路由或运行收益才拆文件。 |
+| [oaTOF/tests/analysis/test_candidate_design.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_design.py) | 2,114 | 按数学定义与物理边界组织；保留独立参考向量，数据驱动重复样例而非删覆盖。 |
+| [oaTOF/tests/analysis/test_peak_metrics.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_peak_metrics.py) | 857 | 按数学定义与物理边界组织；保留独立参考向量，数据驱动重复样例而非删覆盖。 |
+| [EG/tests/analysis/test_matlab_contract_binding.py](https://github.com/Bibibabibobi96/mass_spectrometry/blob/3005980a9a0d3a62a67f36dff389a3110868faa7/projects/transverse_helical_filament_wehnelt_electron_gun/tests/analysis/test_matlab_contract_binding.py) | 863 | 区分模板合同、实际接线和供应商无关行为；字符串fixture不等于算法复杂度。 |
+
+# 附录 C：完整统一门禁目录
+
+这里列 catalog 的 37 routes；全局 hygiene、text bytes、development standards、Ruff、documentation 按入口另外安排。covered 项在 L2 由完整 common_contracts 覆盖，不是新增阶段。下表未填耗时的 route 没有本次可比测量，不用推测补数字；前文给出已经取得的测量与历史证据。命令与路径以固定提交的 gate_catalog 为准。
+
+## fast
+
+| Route | 环境 | 主命令/参数 | 差异与前置 |
+|---|---|---|---|
+| `host_resource_scheduler_tests` | locked | `-m unittest common.test_host_resource_scheduler common.test_host_resource_python` | 无额外显式前置 |
+| `host_resource_adapter_tests` | stdlib | `common/test_host_execution_lease.ps1 PythonExe={python}` | 无额外显式前置 |
+| `livelink_resource_stages_tests` | stdlib | `-m unittest common.comsol.test_livelink_resource_stages` | 无额外显式前置 |
+| `tof_error_budget_tests` | stdlib | `-m unittest common.analysis.test_tof_error_budget` | 无额外显式前置 |
+| `documentation_link_tests` | stdlib | `-m unittest common.test_documentation_links` | 无额外显式前置 |
+| `project_registry` | locked | `common/contracts/build_project_registry.py --check` | 无额外显式前置 |
+| `livelink_failure_classification` | stdlib | `common/comsol/test_livelink_failure_classification.ps1` | 无额外显式前置 |
+| `livelink_environment` | stdlib | `common/comsol/test_livelink_environment.ps1` | 无额外显式前置 |
+| `rf_multipole_generated_publications` | locked | `RF/verify_project.ps1 Level=Freshness PythonExe={python} StructuralVariant=All` | 无额外显式前置 |
+
+## regression
+
+| Route | 环境 | 主命令/参数 | 差异与前置 |
+|---|---|---|---|
+| `longitudinal_fit_tests` | locked | `-m unittest common.analysis.test_longitudinal_fit` | 无额外显式前置 |
+| `peak_metrics_tests` | locked | `-m unittest common.analysis.test_peak_metrics` | 无额外显式前置 |
+| `figure_export_tests` | locked | `-m unittest common.analysis.test_figure_export` | 无额外显式前置 |
+| `beam_focus_diagnostics_tests` | locked | `-m unittest common.analysis.test_beam_focus_diagnostics` | 无额外显式前置 |
+| `particle_census_tests` | stdlib | `-m unittest common.analysis.test_particle_census` | 无额外显式前置 |
+| `plane_crossings_tests` | stdlib | `-m unittest common.analysis.test_plane_crossings` | 无额外显式前置 |
+| `population_moments_tests` | locked | `-m unittest common.analysis.test_population_moments` | 无额外显式前置 |
+| `particle_events_tests` | stdlib | `-m unittest common.analysis.test_particle_events` | 无额外显式前置 |
+| `common_contracts` | locked | `-m unittest discover -s common/contracts -p test_*.py` | 无额外显式前置 |
+| `simion_common` | locked | `-m unittest discover -s common/simion -p test_*.py` | 无额外显式前置 |
+| `rf_multipole_domain_tests` | locked | `-m unittest discover -s projects/rf_multipole_ion_optics/tests/domain -p test_*.py` | 无额外显式前置 |
+| `integration_common` | locked | `-m unittest discover -s common/integration -p test_*.py` | 无额外显式前置 |
+| `instrument_assembly_integration` | locked | `integrations/verify_integration.ps1 PythonExe={python}` | 无额外显式前置 |
+| `solidworks_common` | locked | `-m unittest discover -s common/solidworks -p test_*.py` | 无额外显式前置 |
+| `orthogonal_accelerator_static` | locked | `OA/verify_project.ps1 PythonExe={python}` | 无额外显式前置 |
+| `parallel_mirror_dual_stripe_mr_tof_static` | locked | `MR/verify_project.ps1 Level=Core PythonExe={python}` | repository_integration_command MR/verify_project.ps1 Level=Static PythonExe={python} |
+| `single_reflection_oa_tof_mass_analyzer_static` | locked | `oaTOF/verify_project.ps1 PythonExe={python}` | 无额外显式前置 |
+| `rf_multipole_quadrupole_static` | locked | `RF/verify_project.ps1 Level=Core StructuralVariant=quadrupole FreshnessPrevalidated=True PythonExe={python}` | repository_integration_command RF/verify_project.ps1 Level=Static StructuralVariant=quadrupole FreshnessPrevalidated=True PythonExe={python}；前置 rf_multipole_generated_publications |
+| `rf_multipole_hexapole_static` | locked | `RF/verify_project.ps1 Level=Static StructuralVariant=hexapole FreshnessPrevalidated=True PythonExe={python}` | 前置 rf_multipole_generated_publications |
+| `rf_multipole_octupole_static` | locked | `RF/verify_project.ps1 Level=Static StructuralVariant=octupole FreshnessPrevalidated=True PythonExe={python}` | 前置 rf_multipole_generated_publications |
+| `dual_pressure_rectilinear_ion_processor_static` | locked | `IP/verify_project.ps1 PythonExe={python}` | 无额外显式前置 |
+| `dual_cone_tandem_quadrupole_ion_interface_static` | locked | `projects/dual_cone_tandem_quadrupole_ion_interface/verify_project.ps1 PythonExe={python}` | 无额外显式前置 |
+| `transverse_helical_filament_wehnelt_electron_gun_static` | locked | `EG/verify_project.ps1 PythonExe={python}` | 无额外显式前置 |
+| `apertured_tube_electron_impact_ion_source_static` | locked | `projects/apertured_tube_electron_impact_ion_source/verify_project.ps1 PythonExe={python}` | 无额外显式前置 |
+
+## covered
+
+| Route | 环境 | 主命令/参数 | 差异与前置 |
+|---|---|---|---|
+| `expected_values_tests` | stdlib | `-m unittest common.contracts.test_expected_values` | 由 common_contracts 完整集合覆盖 |
+| `gate_contract_tests` | locked | `-m unittest common.contracts.test_verify_changed common.contracts.test_parallel_gate_support common.contracts.test_development_standards` | 由 common_contracts 完整集合覆盖 |
+| `cloc_contract_tests` | locked | `-m unittest common.contracts.test_report_cloc_delta` | 由 common_contracts 完整集合覆盖 |
+| `python_dependency_contract` | locked | `-m unittest common.contracts.test_python_dependency_contract` | 由 common_contracts 完整集合覆盖 |

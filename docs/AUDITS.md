@@ -4,6 +4,8 @@
 
 ## 公共机制与执行资源
 
+- [2026-10-29 系统指南全量软件验收与测量原始证据](history/20261029__system-guide-validation-evidence.md)
+
 - [2026-10-29 旧 common 小证据归档与精确处置](history/20261029__legacy-common-evidence-migration.md)
 
 - [2026-10-28 独立系统指南第一波阶段验收（全指南任务尚未完成）](history/20261028__system-guide-first-wave.md)
