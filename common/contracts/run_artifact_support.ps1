@@ -39,14 +39,20 @@ function Invoke-RunToolRootContext {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$RepoRoot,
-    [Parameter(Mandatory)][scriptblock]$Operation
+    [Parameter(Mandatory)][scriptblock]$Operation,
+    [Collections.IDictionary]$Environment=@{}
   )
   $root=(Resolve-Path -LiteralPath $RepoRoot).Path
-  $names=@('PYTHONPATH','PYTHONNOUSERSITE')
+  $names=@(@('PYTHONPATH','PYTHONNOUSERSITE','PYTHONDONTWRITEBYTECODE')+@($Environment.Keys)|Sort-Object -Unique)
   $saved=Save-RunEnvironment -Names $names
   try{
     $env:PYTHONPATH=$root
     $env:PYTHONNOUSERSITE='1'
+    $env:PYTHONDONTWRITEBYTECODE='1'
+    foreach($name in $Environment.Keys){
+      if($null-eq$Environment[$name]){Remove-Item -LiteralPath ('Env:\'+$name) -ErrorAction SilentlyContinue}
+      else{[Environment]::SetEnvironmentVariable([string]$name,[string]$Environment[$name],'Process')}
+    }
     Push-Location -LiteralPath $root
     try{& $Operation}finally{Pop-Location}
   }finally{
@@ -290,6 +296,10 @@ function Enter-ArtifactWorkflowCapacitySession {
     [string[]]$ProtectedCacheKeys=@()
   )
   if($CommittedNewBytes-lt0-or$LeaseTtlSeconds-le0){throw 'Workflow capacity session requires nonnegative bytes and a positive TTL.'}
+  if(-not(Get-Command Resolve-WorkspacePaths -ErrorAction SilentlyContinue)){
+    . (Join-Path $PSScriptRoot '../paths/workspace_paths.ps1')
+  }
+  $ArtifactRoot=(Resolve-WorkspacePaths -SourceRoot $RepoRoot -ArtifactRoot $ArtifactRoot -Python $Python).artifact_root
   $leaseId='workflow-'+[guid]::NewGuid().ToString('N')
   if([string]::IsNullOrWhiteSpace($Owner)){$Owner="run-artifact-support:$([IO.Path]::GetFileName($RunDirectory))"}
   $paths=@([IO.Path]::GetFullPath($RunDirectory))+$ProtectedPaths|Select-Object -Unique
@@ -581,9 +591,10 @@ function Assert-RunPackagePathCapacity {
   param([Parameter(Mandatory)][pscustomobject]$Report)
   if($Report.legacy_windows_compatible){return $Report}
   $overLimit=@($Report.entries|Where-Object{-not$_.legacy_windows_compatible}|Select-Object -First 1)[0]
-  throw ('EXECUTION_PATH_CAPACITY=FAIL PATH={0} LENGTH={1} LEGACY_WINDOWS_LIMIT={2} '+
-    'REMEDIATION=choose a shorter MASS_SPECTROMETRY_EXECUTION_ROOT or shorten the declared relative path.' -f
-    $overLimit.path,$overLimit.length,$overLimit.legacy_windows_path_limit)
+  $message=('EXECUTION_PATH_CAPACITY=FAIL PATH={0} LENGTH={1} LEGACY_WINDOWS_LIMIT={2} '+
+    'REMEDIATION=choose a shorter MASS_SPECTROMETRY_EXECUTION_ROOT or shorten the declared relative path.') -f
+    $overLimit.path,$overLimit.length,$overLimit.legacy_windows_path_limit
+  throw $message
 }
 
 function New-RunExecutionAlias {
@@ -645,6 +656,67 @@ function Remove-RunExecutionAlias {
   [IO.Directory]::Delete($alias)
 }
 
+function Get-RunNativeExecutionContext {
+  <# Inspect only the actual native plan; keep persistent identity canonical. #>
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][pscustomobject]$Package,
+    [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Paths,
+    [string]$ExecutionRoot='',[string]$Tool='native tool')
+  $watch=[Diagnostics.Stopwatch]::StartNew()
+  . (Join-Path (Split-Path -Parent $PSScriptRoot) 'paths/workspace_paths.ps1')
+  $persistent=[IO.Path]::GetFullPath([string]$Package.artifact_run_dir).TrimEnd('\','/')
+  if($null-ne$Package.execution_alias-and-not(Test-Path -LiteralPath ([string]$Package.execution_alias) -PathType Container)){
+    # A persisted package may outlive its disposable execution representation.
+    # Re-evaluate this native plan from its unchanged persistent identity.
+    $Package.run_dir=$persistent;$Package.execution_alias=$null;$Package.execution_path_capacity=$null
+  }
+  $execution=[string]$Package.run_dir
+  $relativePaths=@();$external=@()
+  foreach($path in $Paths){
+    if(-not[IO.Path]::IsPathFullyQualified($path)){throw "Native plan path must be absolute: $path"}
+    $full=[IO.Path]::GetFullPath($path)
+    if($full.Equals($persistent,[StringComparison]::OrdinalIgnoreCase)){$relativePaths+='.'}
+    elseif($full.StartsWith($persistent+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){
+      $relativePaths+=[IO.Path]::GetRelativePath($persistent,$full)
+    }elseif($full.StartsWith($execution.TrimEnd('\','/')+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){
+      $relativePaths+=[IO.Path]::GetRelativePath($execution,$full)
+    }else{
+      $external+=$full
+    }
+  }
+  $capacity=Get-RunPackagePathCapacity -RunDirectory $execution -ExpectedExecutionRelativePaths $relativePaths
+  foreach($path in $external){
+    if($path.Length-gt$capacity.legacy_windows_path_limit){
+      throw ("NATIVE_PATH_PREPARATION=FAIL TOOL={0} PATH={1} LENGTH={2} REASON=external_input_requires_its_existing_owner_transport REMEDIATION=prepare_the_explicit_input_with_its_supported_private_copy_or_companion_boundary ELAPSED_SECONDS={3}" -f $Tool,$path,$path.Length,$watch.Elapsed.TotalSeconds)
+    }
+  }
+  if($Paths.Count-and-not$capacity.legacy_windows_compatible){
+    if($null-ne$Package.execution_alias){$null=Assert-RunPackagePathCapacity -Report $capacity}
+    if(-not$ExecutionRoot-and$null-ne$Package.PSObject.Properties['path_context']){$ExecutionRoot=[string]$Package.path_context.execution_root}
+    $alias=New-RunExecutionAlias -TargetDirectory $persistent -ExecutionRoot $ExecutionRoot -ExpectedExecutionRelativePaths $relativePaths
+    $execution=[string]$alias.execution_alias
+    $Package.run_dir=$execution;$Package.execution_alias=$execution
+    $capacity=$alias.execution_path_capacity
+  }
+  $Package.execution_path_capacity=$capacity
+  $projected=if($Paths.Count){Project-RunPath -Paths $Paths -ArtifactRunDir $persistent -RunDir $execution -Python $Package.python}else{@()}
+  $environment=@{MASS_SPECTROMETRY_RUN_DIRECTORY=$persistent;MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=$execution}
+  if($null-ne$Package.PSObject.Properties['path_context']){
+    $environment.MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=[string]$Package.path_context.host_resource_state_path
+    $environment.MASS_SPECTROMETRY_ARTIFACT_ROOT=[string]$Package.path_context.artifact_root
+    $environment.MASS_SPECTROMETRY_EXECUTION_ROOT=[string]$Package.path_context.execution_root
+  }
+  $elapsed=$watch.Elapsed.TotalSeconds
+  if($null-eq$Package.PSObject.Properties['native_path_preparation']){
+    $Package|Add-Member -NotePropertyName native_path_preparation -NotePropertyValue @{calls=0;elapsed_seconds=0.0;transport_bytes=0L}
+  }
+  $Package.native_path_preparation.calls++
+  $Package.native_path_preparation.elapsed_seconds+=$elapsed
+  return [pscustomobject]@{artifact_run_dir=$persistent;run_dir=$execution;execution_alias=$Package.execution_alias;
+    projected_paths=@($projected);environment=$environment;execution_path_capacity=$capacity;
+    preparation_elapsed_seconds=$elapsed;transport_bytes=0;tool=$Tool}
+}
+
 function New-RunPackage {
   [CmdletBinding()]
   param(
@@ -663,7 +735,8 @@ function New-RunPackage {
     [string]$CapacityLedgerArtifactRoot='',
     [switch]$UseShortExecutionPath,
     [string]$ExecutionRoot='',
-    [string[]]$ExpectedExecutionRelativePaths=@()
+    [string[]]$ExpectedExecutionRelativePaths=@(),
+    $PathContext=$null
   )
   if($RetentionContractEnabled-and$RetentionClass-ne'compact'-and[string]::IsNullOrWhiteSpace($RetentionReason)){
     throw "RetentionReason is required for artifact retention class $RetentionClass."
@@ -681,23 +754,48 @@ function New-RunPackage {
   if(-not$CapacityLedgerLifecycleEnabled-and-not[string]::IsNullOrWhiteSpace($CapacityLedgerArtifactRoot)){
     throw 'CapacityLedgerArtifactRoot requires CapacityLedgerLifecycleEnabled.'
   }
-  # Shared artifacts are governed ranges.  Reject an incomplete lifecycle
-  # declaration before this helper creates the run directory or checkpoint.
-  $artifactParent=[IO.DirectoryInfo][IO.Path]::GetFullPath($ArtifactRoot)
+  . (Join-Path (Split-Path -Parent $PSScriptRoot) 'paths/workspace_paths.ps1')
+  $projectDirectory=[IO.DirectoryInfo][IO.Path]::GetFullPath($ArtifactRoot)
+  $structuredProject=$null-ne$projectDirectory.Parent-and$projectDirectory.Parent.Name-eq'projects'
+  if($CapacityLedgerLifecycleEnabled-and-not$structuredProject){
+    throw 'ArtifactRoot must be the canonical artifacts/projects/<Project> directory, not its runs directory.'
+  }
+  $rootArguments=@{SourceRoot=$RepoRoot;Python=$Python}
+  if($null-ne$PathContext){$rootArguments.FrozenContext=$PathContext}
+  else{
+    if($CapacityLedgerArtifactRoot){$rootArguments.ArtifactRoot=$CapacityLedgerArtifactRoot}
+    elseif($structuredProject){$rootArguments.ArtifactRoot=$projectDirectory.Parent.Parent.FullName}
+    if($ExecutionRoot){$rootArguments.ExecutionRoot=$ExecutionRoot}
+  }
+  $resolvedPaths=Resolve-WorkspacePaths @rootArguments
+  $hostEnvironment=Save-RunEnvironment -Names @('MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH')
+  try{
+  $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=[string]$resolvedPaths.host_resource_state_path
+  if($ExecutionRoot-and$null-ne$PathContext-and$ExecutionRoot-cne$resolvedPaths.execution_root){throw 'ExecutionRoot differs from the frozen path context.'}
+  $ExecutionRoot=[string]$resolvedPaths.execution_root
+  # A configured root is governed regardless of its directory name. Also
+  # recognize the existing projects/<owner> shape before creating any files.
   $governedArtifactsRoot=$null
-  while($null-ne$artifactParent){
-    if($artifactParent.Name-eq'artifacts'){$governedArtifactsRoot=$artifactParent;break}
-    $artifactParent=$artifactParent.Parent
+  $configuredRoot=[IO.Path]::GetFullPath([string]$resolvedPaths.artifact_root).TrimEnd('\','/')
+  if($structuredProject-or$projectDirectory.FullName.StartsWith($configuredRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){
+    $governedArtifactsRoot=[IO.DirectoryInfo]$configuredRoot
   }
   if($null-ne$governedArtifactsRoot-and(-not$RetentionContractEnabled-or-not$CapacityLedgerLifecycleEnabled)){
     throw 'Runs beneath artifacts require retention and capacity-ledger lifecycle before package creation.'
   }
   if($null-ne$governedArtifactsRoot){
     $expectedProjectRoot=Join-Path $governedArtifactsRoot.FullName ('projects/'+$Project)
-    if(-not([IO.Path]::GetFullPath($ArtifactRoot).TrimEnd('\','/').Equals(
+    $actualProjectRoot=[IO.Path]::GetFullPath($ArtifactRoot)
+    if($structuredProject){
+      $actualRoots=Resolve-WorkspacePaths -SourceRoot $RepoRoot -ArtifactRoot $projectDirectory.Parent.Parent.FullName `
+        -ExecutionRoot $resolvedPaths.execution_root -HostResourceStatePath $resolvedPaths.host_resource_state_path -Python $Python
+      $actualProjectRoot=Join-Path $actualRoots.artifact_root ('projects/'+$projectDirectory.Name)
+    }
+    if(-not($actualProjectRoot.TrimEnd('\','/').Equals(
         [IO.Path]::GetFullPath($expectedProjectRoot).TrimEnd('\','/'),[StringComparison]::OrdinalIgnoreCase))){
       throw 'ArtifactRoot must be the canonical artifacts/projects/<Project> directory, not its runs directory.'
     }
+    $ArtifactRoot=$expectedProjectRoot
   }
   if($CapacityLedgerLifecycleEnabled){
     if([string]::IsNullOrWhiteSpace($CapacityLedgerArtifactRoot)){
@@ -735,7 +833,9 @@ function New-RunPackage {
   }
   $runDir=$artifactRunDir
   $executionAlias=$null
-  if($UseShortExecutionPath){
+  $pathCapacity=Get-RunPackagePathCapacity -RunDirectory $runDir -AdditionalDirectories $AdditionalDirectories `
+    -ExpectedExecutionRelativePaths $ExpectedExecutionRelativePaths
+  if($UseShortExecutionPath-or($ExpectedExecutionRelativePaths.Count-and-not$pathCapacity.legacy_windows_compatible)){
     if(-not$CapacityLedgerLifecycleEnabled){New-Item -ItemType Directory -Force -Path $artifactRunDir|Out-Null}
     try{
       $aliasRecord=New-RunExecutionAlias -TargetDirectory $artifactRunDir `
@@ -756,7 +856,8 @@ function New-RunPackage {
   $package=[ordered]@{
     python=$python;run_dir=$runDir;input_dir=(Join-Path $runDir 'inputs');result_dir=(Join-Path $runDir 'results');
     log_dir=(Join-Path $runDir 'logs');run_config=(Join-Path $runDir 'run_config.json');summary=(Join-Path $runDir 'summary.json');
-    artifact_run_dir=$artifactRunDir;execution_alias=$executionAlias;execution_path_capacity=$pathCapacity
+    artifact_run_dir=$artifactRunDir;execution_alias=$executionAlias;execution_path_capacity=$pathCapacity;path_context=$resolvedPaths
+    native_path_preparation=@{calls=0;elapsed_seconds=0.0;transport_bytes=0L}
   }
   $directories=@($package.input_dir,$package.result_dir,$package.log_dir)
   foreach($relative in $AdditionalDirectories){$directories+=Join-Path $runDir $relative}
@@ -765,6 +866,7 @@ function New-RunPackage {
     schema_version=$(if($RetentionContractEnabled){2}else{1});
     run_id=$RunId;project=$Project;mode=$Mode;project_root=$RepoRoot;inputs=[ordered]@{};
     parameters=[ordered]@{lifecycle_stage='run_package_initialized'};formal_gate_passed=$false
+    paths=$resolvedPaths
   }
   if($RetentionContractEnabled){
     $initialConfig.artifact_retention=[ordered]@{policy_version=1;class=$RetentionClass;
@@ -792,6 +894,7 @@ function New-RunPackage {
       -Action register-writing -ArtifactRoot $CapacityLedgerArtifactRoot -RunConfig $package.run_config
   }
   return [pscustomobject]$package
+  }finally{Restore-RunEnvironment -Names @('MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH') -Snapshot $hostEnvironment}
 }
 
 function Remove-RunPackageExecutionAlias {
@@ -800,6 +903,9 @@ function Remove-RunPackageExecutionAlias {
   if($null-eq$Package.execution_alias){return}
   Remove-RunExecutionAlias -ExecutionAlias ([string]$Package.execution_alias) `
     -TargetDirectory ([string]$Package.artifact_run_dir)
+  $Package.run_dir=[string]$Package.artifact_run_dir
+  $Package.execution_alias=$null
+  $Package.execution_path_capacity=$null
 }
 
 function Apply-RunArtifactRetention {
@@ -847,7 +953,10 @@ function Save-RunEnvironment {
 function Restore-RunEnvironment {
   [CmdletBinding()]
   param([Parameter(Mandatory)][string[]]$Names,[Parameter(Mandatory)][hashtable]$Snapshot)
-  foreach($name in $Names){[Environment]::SetEnvironmentVariable($name,$Snapshot[$name])}
+  foreach($name in $Names){
+    if($null-eq$Snapshot[$name]){Remove-Item -LiteralPath ('Env:\'+$name) -ErrorAction SilentlyContinue}
+    else{[Environment]::SetEnvironmentVariable($name,$Snapshot[$name])}
+  }
 }
 
 function Copy-VerifiedRunInput {

@@ -38,6 +38,55 @@ class CooledFrontendExecuteTests(unittest.TestCase):
                 cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=60,
             )
 
+    def test_native_helper_uses_public_execution_context_and_canonical_diagnostics(self):
+        code = r"""param($ExecutePath,$Repo,$Python,$Root)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'common/paths/workspace_paths.ps1')
+$ast=[Management.Automation.Language.Parser]::ParseFile($ExecutePath,[ref]$null,[ref]$null)
+$node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-CooledNative'},$true)
+Invoke-Expression $node.Extent.Text
+$run=Join-Path $Root ('deep-'+('x'*190))
+New-Item -ItemType Directory -Path $run -Force|Out-Null
+$package=[pscustomobject]@{python=$Python;artifact_run_dir=$run;run_dir=$run;execution_alias=$null;execution_path_capacity=$null;
+ native_path_preparation=@{calls=0;elapsed_seconds=0.;transport_bytes=0L};
+ path_context=@{artifact_root=$Root;execution_root=(Join-Path $Root 'exec');host_resource_state_path=(Join-Path $Root 'host.sqlite3')}}
+$cwd=Join-Path $run 'simion/build';$input=Join-Path $run 'inputs/native_builder.lua';$external=Join-Path $Root 'external.pa'
+$script:calls=[Collections.Generic.List[object]]::new()
+function Invoke-ResourceBudgetedProcess {
+ param($Limits,$RunDir,$FilePath,$ArgumentList,$WorkingDirectory,$Environment,$UsagePath,$RedirectStandardOutput,$RedirectStandardError)
+ $script:calls.Add(@{argv=@($ArgumentList);cwd=$WorkingDirectory;env=$Environment;run=$RunDir;usage=$UsagePath})
+ if($mode-eq'unknown'){try{throw 'ORIGINAL_OBSERVATION_UNKNOWN'}catch{
+  $_.Exception.Data['observed_process_exit_confirmed']=$false;throw}}
+ return @{exit_code=0;resource_budget_exceeded=$false}
+}
+try{
+ foreach($mode in @('success','unknown')){
+  $before=$calls.Count;$caught=$null
+  try{Invoke-CooledNative -Package $package -Arguments @('--nogui','lua',$input,$external,'relative.pa') -Name $mode `
+   -RunDirectory $run -SimionExe 'INERT_NOT_STARTED' -Limits @{} -WorkingDirectory $cwd}catch{$caught=$_}
+  if($calls.Count-ne($before+1)){throw 'Native call duplicated or skipped'}
+  $captured=$calls[-1];$alias=[string]$package.run_dir
+  if($alias-eq$run-or-not(Test-Path -LiteralPath $alias)){throw 'Public context did not select needed alias'}
+  if($captured.cwd-ne(Join-Path $alias 'simion/build')-or$captured.argv[2]-ne(Join-Path $alias 'inputs/native_builder.lua')){throw 'Cwd or argv did not project'}
+  if($captured.argv[3]-ne$external-or$captured.argv[4]-ne'relative.pa'){throw 'External or relative path changed'}
+  if($captured.env.MASS_SPECTROMETRY_RUN_DIRECTORY-ne$run-or$captured.env.MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY-ne$alias){throw 'Native canonical/execution environment pair changed'}
+  if($captured.run-ne$run-or$captured.usage-ne(Join-Path $run "logs/$mode.resource_usage.json")){throw 'Identity or diagnostics became transient'}
+  if($mode-eq'unknown'){
+   if($null-eq$caught-or$caught.Exception.Message-ne'ORIGINAL_OBSERVATION_UNKNOWN'-or$caught.Exception.Data['observed_process_exit_confirmed']-ne$false){throw 'Original unknown observation changed'}
+  }elseif($caught){throw $caught}
+ }
+ $before=$calls.Count;$caught=$null
+ try{Invoke-CooledNative -Package $package -Arguments @('--nogui') -Name bad -RunDirectory $run -SimionExe 'INERT_NOT_STARTED' -Limits @{} -WorkingDirectory 'relative'}catch{$caught=$_}
+ if($null-eq$caught-or$calls.Count-ne$before){throw 'Prelaunch path failure started native work'}
+ 'COOLED_PUBLIC_NATIVE_CONTEXT=PASS NATIVE_PROCESSES=0'
+}finally{Remove-RunPackageExecutionAlias -Package $package}
+"""
+        with tempfile.TemporaryDirectory() as temporary:
+            result = self.ps(code, EXECUTE, REPO, sys.executable, temporary)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("COOLED_PUBLIC_NATIVE_CONTEXT=PASS NATIVE_PROCESSES=0", result.stdout)
+
     def test_snapshot_clock_uses_common_decision_and_all_original_births(self):
         text = EXECUTE.read_text(encoding="utf-8")
         function = text.split("function Invoke-CooledPopulationClock {", 1)[1].split(

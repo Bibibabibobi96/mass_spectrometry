@@ -19,6 +19,7 @@ if(-not$Python){$Python=Join-Path $RepoRoot '.venv/Scripts/python.exe'}
 $Python=(Resolve-Path -LiteralPath $Python).Path
 $Request=(Resolve-Path -LiteralPath $Request).Path
 . (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $RepoRoot 'common/paths/workspace_paths.ps1')
 . (Join-Path $RepoRoot 'integrations/runtime/engineering_budget.ps1')
 . (Join-Path $RepoRoot 'common/resource_budget_support.ps1')
 . (Join-Path $RepoRoot 'common/simion/short_pa_path_support.ps1')
@@ -37,12 +38,17 @@ function Freeze-CooledRuntime {
 function Invoke-CooledNative {
  [CmdletBinding()]
  param(
+  [Parameter(Mandatory)][pscustomobject]$Package,
   [Parameter(Mandatory)][string[]]$Arguments,[Parameter(Mandatory)][string]$Name,
   [Parameter(Mandatory)][string]$RunDirectory,[Parameter(Mandatory)][string]$SimionExe,
   [Parameter(Mandatory)]$Limits,[Parameter(Mandatory)][string]$WorkingDirectory
  )
+ $RunDirectory=[string]$Package.artifact_run_dir
+ $nativePaths=@($WorkingDirectory)+@($Arguments|Where-Object{[IO.Path]::IsPathFullyQualified([string]$_)})
+ $execution=Get-RunNativeExecutionContext -Package $Package -Paths $nativePaths -Tool SIMION
+ $projected=Project-RunPath -Paths (@($WorkingDirectory)+$Arguments) -ArtifactRunDir $Package.artifact_run_dir -RunDir $execution.run_dir -Python $Package.python
  $result=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $RunDirectory -FilePath $SimionExe `
-  -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory `
+  -ArgumentList @($projected|Select-Object -Skip 1) -WorkingDirectory $projected[0] -Environment $execution.environment `
   -UsagePath (Join-Path $RunDirectory "logs/$Name.resource_usage.json") `
   -RedirectStandardOutput (Join-Path $RunDirectory "logs/$Name.stdout.log") `
   -RedirectStandardError (Join-Path $RunDirectory "logs/$Name.stderr.log")
@@ -72,7 +78,7 @@ print(json.dumps(dict(plan=plan,progress=advance_field_cache(run,plan,output))))
  while($bundle.progress.action_required-ne'complete'){
   $progress=$bundle.progress
   $build=[string]$progress.scratch_directory
-  $native=@{RunDirectory=$run;SimionExe=$SimionExe;Limits=$Limits;WorkingDirectory=$build}
+  $native=@{Package=$Package;RunDirectory=$run;SimionExe=$SimionExe;Limits=$Limits;WorkingDirectory=$build}
   if($progress.action_required-eq'build'){
    $raw=Join-Path $build 'frontend.pa#';$working=Join-Path $build 'working.pa0'
    foreach($temporary in @($raw,$working,(Join-Path $build 'pending.pa'))){
@@ -142,7 +148,7 @@ function Invoke-CooledFieldDesign {
  New-Item -ItemType Directory -Path $directory,$build -Force|Out-Null
  $raw=Join-Path $build 'frontend.pa#'
  $working=Join-Path $build 'working.pa0'
- $native=@{RunDirectory=$run;SimionExe=$SimionExe;Limits=$Limits;WorkingDirectory=$build}
+ $native=@{Package=$Package;RunDirectory=$run;SimionExe=$SimionExe;Limits=$Limits;WorkingDirectory=$build}
  $context=@{RunDirectory=$run;RepoRoot=$FrozenRepoRoot;Python=$Python}
  $meshCheck=$fieldPlan.role-eq'cooled_frontend_local_dirichlet_mesh_check_plan'
  $origin=(@('x','y','z')|ForEach-Object{([double]$front.instance_origin_mm.$_).ToString('G17',[Globalization.CultureInfo]::InvariantCulture)})-join','

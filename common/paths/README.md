@@ -8,6 +8,27 @@
 源码路径仍从实际函数位置解析。调用者从受管run配置传递该上下文，不从模型输出路径反推许可根；
 提供者入口仍负责run／scratch边界及Formal写保护。
 
+
+## 公共运行根与原生执行表示
+
+Python `resolve_workspace_paths`与PowerShell `Resolve-WorkspacePaths`解析源码根、可写产物根、
+执行根和主机调度器路径；显式参数优先于环境，四字段上下文冻结在新run配置`paths`中。
+`MASS_SPECTROMETRY_ARTIFACT_ROOT`可配置产物根，执行根默认跟随其`common/execution_aliases`；
+`MASS_SPECTROMETRY_EXECUTION_ROOT`可显式选择执行根。主机库继续沿已有
+`MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH`保持身份，不因产物移动另建调度器。
+公共生命周期owner将本次冻结根传给prepared子进程；恢复消费原配置，环境变化不重新选根。
+
+`Get-RunNativeExecutionContext -Package ... -Paths ...`按本次明确原生路径自动准备必要的既有短junction，
+返回cwd/参数投影和成对进程环境；`Project-RunPath`只投影本run路径，不resolve执行junction，外部输入原样保留。
+真实现有cooled原生helper已消费该公共入口；其原场构建和停止边界保持不变。
+身份、容量和长期引用仍用`artifact_run_dir`。`Remove-RunPackageExecutionAlias`清理后重置Package执行表示；
+已记录但不存在的alias也可由公共上下文按本次计划重建。公共PowerShell owner持久记录必要alias清理事实，
+确认writer结束后收尾，原CLI收尾恢复不重启计算。
+这不提供外部不可变PA隔离、任意旧模型重开或所有消费者迁移；外部PA沿原公共防写／普通副本入口处理。
+
+MATLAB路径函数接受同一显式ArtifactRoot，未指定时消费`MASS_SPECTROMETRY_ARTIFACT_ROOT`，最后才用默认同级根。
+工程/科学输入身份不使用运输路径。本主题软件回归不能冒充求场、Fly或科学资格。
+
 轻量静态回归：从仓库根运行
 `python -m unittest common.paths.test_common_artifact_paths_contract`，检查组件调用没有省略上下文；
 不限制消费者数量、参数变量名或路径实现的源码写法。

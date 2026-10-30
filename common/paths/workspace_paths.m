@@ -16,8 +16,12 @@ function paths = workspace_paths(projectName,options)
     paths.workspaceRoot = workspaceRoot;
     paths.repoRoot = repoRoot;
     paths.artifactRoot = fullfile(workspaceRoot, 'artifacts');
-    if strlength(options.ArtifactRoot)>0
-        root=java.io.File(char(options.ArtifactRoot));
+    artifactRoot = options.ArtifactRoot;
+    if strlength(artifactRoot)==0
+        artifactRoot = string(getenv('MASS_SPECTROMETRY_ARTIFACT_ROOT'));
+    end
+    if strlength(artifactRoot)>0
+        root=java.io.File(char(artifactRoot));
         assert(root.isAbsolute(),'workspace:ArtifactRoot', ...
             'ArtifactRoot must be an explicit absolute artifacts root.');
         paths.artifactRoot=char(root.getCanonicalPath());

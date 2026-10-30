@@ -37,12 +37,14 @@
 抖动，不会把持续变化的源或坏副本降级为成功。
 复制身份校验失败的异常`Data`保留`source_path`、`destination_path`、`source_sha256`和`frozen_sha256`，
 适配器可复用这些实测身份生成诊断，无需额外哈希。
-需要规避 Windows 路径深度的外部运行器可在`New-RunPackage`显式选择`-UseShortExecutionPath`。公共层会从
-`MASS_SPECTROMETRY_EXECUTION_ROOT`（未设置时使用工作区的`artifacts/common/execution_aliases/`）创建一次性短 junction 指向最终
-`artifacts/.../runs/<run_id>`；运行器把短路径仅作为进程工作路径，并在终态后调用
-`Remove-RunPackageExecutionAlias`清理它。实际文件从未搬离最终run，Python manifest解析 junction 后记录真实
-artifact路径，因此run ID、输入/输出身份、SHA和历史引用不变。不能以复制后回迁或只缩短某个求解器子目录
-替代该合同。该 junction 仅指向本次可写 run；SIMION 外部只读 PA 输入另用[已验证普通副本机制](../../docs/tools/SIMION_REFERENCE.md#长pa输入路径)，不得用此别名暴露不可变 PA 源。
+新run由公共`common/paths`解析并冻结源码、产物、执行根和主机库，说明见
+[运行根与执行表示](../paths/README.md#公共运行根与原生执行表示)。现有`New-RunPackage`
+在声明路径需要时自动创建既有短junction；`-UseShortExecutionPath`仍供已有显式调用兼容。
+原生消费者用`Get-RunNativeExecutionContext`声明实际cwd、输入/输出及必要companions，
+按返回执行表示投影参数并传递环境。持久身份、锁、容量及manifest仍绑定真实`artifact_run_dir`。
+公共PowerShell owner在完成记录保存alias清理事实，writer确认结束后执行清理，失败可从原Result恢复。
+此junction只指向本次可写run；外部只读PA仍沿[既有隔离入口](../../docs/tools/SIMION_REFERENCE.md#长pa输入路径)，
+不能用alias代替不可变源的独立普通副本或防写保护。
 `Write-RunManifest`通过UTF-8标准输入向`write_run_manifest.py --output-list-json -`传递输出路径，
 避免大量文件路径超过Windows进程命令行长度；列表严格为字符串数组，不再落盘临时运输文件。
 原Python入口的重复`--output`仍可使用，两种输入共同进入同一manifest校验和身份计算。

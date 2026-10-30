@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param()
+param([string]$PythonExe='')
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -42,7 +42,7 @@ function Test-RunJsonAtomic {
 }
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+$python = if($PythonExe){$PythonExe}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
 $projectRoot = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer'
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ("run_artifact_support_" + [guid]::NewGuid().ToString('N'))
 $executionRoot = Join-Path $testRoot 'execution_aliases'
@@ -73,6 +73,10 @@ try {
   & {
     # Exercise native Python streams/exit status, with capacity mutation stubbed.
     function Invoke-RunToolRootContext { param($RepoRoot,$Operation) & $Operation }
+    function Resolve-WorkspacePaths {
+      param($SourceRoot,$ArtifactRoot,$Python)
+      return [pscustomobject]@{artifact_root=[IO.Path]::GetFullPath($ArtifactRoot)}
+    }
     function Invoke-ArtifactCapacityGate { return [pscustomobject]@{satisfied_after_apply=$true} }
     $leaseFixturePythonExe=$python
     $script:leaseFixtureCode='import json;print(json.dumps({"lease_id":"fixture"}))'
@@ -735,17 +739,22 @@ try {
   Assert-Equal ([IO.Path]::GetFullPath([string]$shortManifestDocument.inputs.short_execution_probe.path)) `
     ([IO.Path]::GetFullPath((Join-Path $shortPackage.artifact_run_dir 'inputs\short_execution_input.json'))) `
     'Manifest must resolve short execution input paths to the artifact run.'
+  Assert-Equal $shortPackage.execution_path_capacity.role 'run_package_execution_path_capacity' `
+    'Short package path capacity role changed.'
+  if (-not $shortPackage.execution_path_capacity.legacy_windows_compatible) {
+    throw 'Short execution alias did not satisfy legacy Windows path capacity.'
+  }
+  $shortAliasPath=$shortPackage.execution_alias
   Remove-RunPackageExecutionAlias -Package $shortPackage
-  if (Test-Path -LiteralPath $shortPackage.execution_alias) {
+  if (Test-Path -LiteralPath $shortAliasPath) {
     throw 'Short execution alias remained after cleanup.'
   }
   if (-not (Test-Path -LiteralPath $shortPackage.artifact_run_dir -PathType Container)) {
     throw 'Short execution alias cleanup removed the artifact run.'
   }
-  Assert-Equal $shortPackage.execution_path_capacity.role 'run_package_execution_path_capacity' `
-    'Short package path capacity role changed.'
-  if (-not $shortPackage.execution_path_capacity.legacy_windows_compatible) {
-    throw 'Short execution alias did not satisfy legacy Windows path capacity.'
+  Assert-Equal $shortPackage.run_dir $shortPackage.artifact_run_dir 'Cleanup must return the package to its durable location.'
+  if($null-ne$shortPackage.execution_alias-or$null-ne$shortPackage.execution_path_capacity){
+    throw 'Cleanup retained a deleted execution representation.'
   }
 
   $directTarget=Join-Path $testRoot 'direct_execution_target'

@@ -52,7 +52,7 @@ function Test-HostResourceConsoleProcess {
 }
 
 function Get-HostResourceIoPressure {
-  <# Scope physical-disk telemetry to the volume that contains this repository.
+  <# Scope physical-disk telemetry to the volume that contains the payload.
 
      A queue on an unrelated, unmounted, or secondary disk must not serialize
      solver work whose inputs and outputs are on another volume.  Missing or
@@ -172,6 +172,13 @@ namespace MassSpectrometry {
 
 function Get-HostResourceSnapshot {
   <# Fresh OS observations; a missing snapshot blocks admission, never releases leases. #>
+  param([string]$TargetPath = '')
+  if(-not$TargetPath){
+    $TargetPath=if($env:MASS_SPECTROMETRY_RUN_DIRECTORY){$env:MASS_SPECTROMETRY_RUN_DIRECTORY}
+      elseif($env:MASS_SPECTROMETRY_ARTIFACT_ROOT){$env:MASS_SPECTROMETRY_ARTIFACT_ROOT}
+      else{Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'artifacts'}
+  }
+  if(-not[IO.Path]::IsPathFullyQualified($TargetPath)){throw 'Host I/O observation target must be absolute.'}
   try {
     $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
     $cpu = @(Get-CimInstance Win32_Processor -ErrorAction Stop)
@@ -271,7 +278,7 @@ function Get-HostResourceSnapshot {
   try {
     $disks = @(Get-CimInstance Win32_PerfFormattedData_PerfDisk_PhysicalDisk -ErrorAction Stop |
       Where-Object Name -ne '_Total')
-    $ioPressure = Get-HostResourceIoPressure -Disks $disks -TargetPath $PSScriptRoot
+    $ioPressure = Get-HostResourceIoPressure -Disks $disks -TargetPath $TargetPath
   } catch {
     # WMI disk telemetry may be denied to a desktop child even though the
     # standard Windows performance counter remains available.  Use the total
@@ -532,7 +539,9 @@ function Exit-HostResourceStage {
   } finally {
     if ($Lease.environment_set) {
       foreach ($name in $Lease.previous_environment.Keys) {
-        [Environment]::SetEnvironmentVariable($name, $Lease.previous_environment[$name], 'Process')
+        if($null-eq$Lease.previous_environment[$name]){
+          Remove-Item -LiteralPath ('Env:\'+$name) -ErrorAction SilentlyContinue
+        }else{[Environment]::SetEnvironmentVariable($name, $Lease.previous_environment[$name], 'Process')}
       }
     }
   }
@@ -548,8 +557,8 @@ function Enter-HostExecutionLease {
   <# Only centrally listed stages request heavy permission; unlisted work is light. #>
   [CmdletBinding()]
   param([Parameter(Mandatory)][ValidateSet('SIMION','COMSOL','GATE')][string]$Role,
-    [string]$RunId = '', [string]$Stage = 'unclassified')
-  return Enter-HostResourceStage -Role $Role -RunId $RunId -Stage $Stage -Budget (Get-HostResourceBudget -Role $Role -Stage $Stage)
+    [string]$RunId = '', [string]$Stage = 'unclassified', [string]$StatePath = '')
+  return Enter-HostResourceStage -Role $Role -RunId $RunId -Stage $Stage -StatePath $StatePath -Budget (Get-HostResourceBudget -Role $Role -Stage $Stage)
 }
 
 function Exit-HostExecutionLease {

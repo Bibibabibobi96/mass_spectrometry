@@ -117,7 +117,8 @@ function Initialize-RunArtifactPowerShellOwner {
   Write-RunJson -Atomic -Path $ResultPath -Value @{schema_version=1;role='run_artifact_workflow_result';status='pending';
     stage='prepared';run_directory=$runRoot;execution_request=$requestPath;resume_action='inspect_writer_completion'} -Depth 64
   return @{python=$Python;repo_root=$RepoRoot;request_path=$requestPath;result_path=$ResultPath;
-    run_directory=$runRoot;execution_run_directory=$paths.execution_run_directory;session=$CapacitySession;
+    run_directory=$runRoot;execution_run_directory=$paths.execution_run_directory;session=$CapacitySession;package=$Package;
+    native_path_preparation=$Package.native_path_preparation;
     own_capacity_session=$OwnCapacitySession;completion_written=$false;finalized=$false;finalization_started=$false}
 }
 
@@ -132,6 +133,9 @@ function Complete-RunArtifactPowerShellOwner {
     [Parameter(Mandatory)][bool]$WritersStopped,$OriginalFailure=$null,
     [object[]]$ResourceUsagePaths=@(),$ResourceProfile=$null)
   $root=[string]$Context.run_directory
+  # Native preparation may create or replace an execution alias after Initialize.
+  if($Context.Contains('package')){$Context.execution_run_directory=[string]$Context.package.run_dir}
+  $Summary.native_path_preparation=$Context.native_path_preparation
   if($Context.completion_written){throw 'PowerShell owner completion is already persisted; resume its original Result.'}
   $exception=if($null-ne$OriginalFailure){@{type=$OriginalFailure.Exception.GetType().FullName;message=$OriginalFailure.Exception.Message;notes=@()}}else{$null}
   Write-RunJson -Atomic -Path (Join-Path $root 'logs/capacity_session.json') -Value $Context.session -Depth 64
@@ -180,6 +184,17 @@ function Complete-RunArtifactPowerShellOwner {
     resource_usage_paths=@($ResourceUsagePaths|ForEach-Object{@{path=(Convert-WorkflowOwnerPath $Context $_.path);case_name=$_.case_name}});
     resource_profile=$(if($null-ne$ResourceProfile){@{dispatch_plan=(Convert-WorkflowOwnerPath $Context $ResourceProfile.dispatch_plan);
       output=(Convert-WorkflowOwnerPath $Context $ResourceProfile.output);usage_path=(Convert-WorkflowOwnerPath $Context $ResourceProfile.usage_path)}}else{$null})}
+  $executionAlias=$null
+  if($Context.Contains('package')){
+    $ownerPackage=$Context.package
+    if(($ownerPackage-is[Collections.IDictionary]-and$ownerPackage.Contains('execution_alias'))-or
+       ($ownerPackage-isnot[Collections.IDictionary]-and$null-ne$ownerPackage.PSObject.Properties['execution_alias'])){
+      $executionAlias=$ownerPackage.execution_alias
+    }
+  }
+  if($null-ne$executionAlias){
+    $completion.execution_alias=@{path=[string]$executionAlias;target_directory=$root}
+  }
   Write-RunJson -Atomic -Path $completionPath -Value $completion -Depth 64
   $Context.completion_written=$true
   Write-RunJson -Atomic -Path $Context.result_path -Value @{schema_version=1;role='run_artifact_workflow_result';status='pending';
@@ -286,14 +301,22 @@ except BaseException as error:
     raise
 '@
   $request=Get-Content -LiteralPath $ExecutionRequest -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+  $config=Get-Content -LiteralPath $RunConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+  $environment=@{PYTHONPATH=$request.prepared.import_root;PYTHONNOUSERSITE='1';PYTHONDONTWRITEBYTECODE='1';
+    MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=$HostStatePath}
+  if($config.Contains('paths')){
+    $environment.MASS_SPECTROMETRY_ARTIFACT_ROOT=[string]$config.paths.artifact_root
+    $environment.MASS_SPECTROMETRY_EXECUTION_ROOT=[string]$config.paths.execution_root
+    $environment.MASS_SPECTROMETRY_RUN_DIRECTORY=[string](Split-Path -Parent $RunConfig)
+    $environment.MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=$environment.MASS_SPECTROMETRY_RUN_DIRECTORY
+  }
   $receipt=$null;$failure=$null;$childFailure=$null
   try{
     $receipt=Invoke-RepositoryManagedPythonProcess -Python $Python `
       -ArgumentList @('-B','-c',$runner,$ExecutionRequest,$RunConfig,$SessionPath,$CompletionPath,$WaitPath) `
       -WorkingDirectory $request.prepared.import_root `
       -StandardOutputPath (Join-Path $LogRoot 'prepared_stdout.log') -StandardErrorPath (Join-Path $LogRoot 'prepared_stderr.log') `
-      -Environment @{PYTHONPATH=$request.prepared.import_root;PYTHONNOUSERSITE='1';PYTHONDONTWRITEBYTECODE='1';
-        MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=$HostStatePath}
+      -Environment $environment
   }catch{
     $failure=$_
     if($_.Exception.Data.Contains('managed_python_completion')){$receipt=$_.Exception.Data['managed_python_completion']}
@@ -413,6 +436,9 @@ print(json.dumps({"entry": entries[0], "lease_status": audit["status"] if audit 
 function Invoke-RunArtifactWorkflow {
   [CmdletBinding()]
   param([Parameter(Mandatory)][string]$RequestPath,[Parameter(Mandatory)][string]$ResultPath,[switch]$ResumeFinalization)
+  $contextEnvironmentNames=@('MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH','MASS_SPECTROMETRY_ARTIFACT_ROOT',
+    'MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_RUN_DIRECTORY','MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY')
+  $callerEnvironment=Save-RunEnvironment -Names $contextEnvironmentNames
   $result=[ordered]@{schema_version=1;role='run_artifact_workflow_result';status='failed';stage='validate';
     run_directory=$null;prepared_exit_code=$null;terminal_published=$false;capacity_finalized=$false;
     lease_released=$false;exception=$null;secondary_errors=@();elapsed_seconds=0.0;
@@ -470,11 +496,27 @@ function Invoke-RunArtifactWorkflow {
     $python=(Resolve-Path -LiteralPath $request.python_executable).Path
     # Resolve from the live public owner before any frozen source is imported.
     # This is control-plane context, not a scientific input or a new reservation.
-    $hostStatePath=Resolve-HostResourceStatePath
-    $result.execution_context=@{host_resource_state_path=$hostStatePath}
     $projectRoot=[IO.Path]::GetFullPath($request.package.artifact_project_root)
     $artifactRoot=Split-Path -Parent (Split-Path -Parent $projectRoot)
+    . (Join-Path $PSScriptRoot '../paths/workspace_paths.ps1')
     $runRoot=Join-Path (Join-Path $projectRoot 'runs') $request.package.run_id
+    $recoveryConfig=$null
+    if($ResumeFinalization-and(Test-Path -LiteralPath (Join-Path $runRoot 'run_config.json') -PathType Leaf)){
+      $recoveryConfig=Get-Content -LiteralPath (Join-Path $runRoot 'run_config.json') -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+    }
+    if($null-ne$recoveryConfig-and$recoveryConfig.Contains('paths')){
+      $pathContext=Resolve-WorkspacePaths -SourceRoot $repo -FrozenContext $recoveryConfig.paths -Python $python
+    }else{
+      $hostStatePath=Resolve-HostResourceStatePath
+      $pathContext=Resolve-WorkspacePaths -SourceRoot $repo -ArtifactRoot $artifactRoot -HostResourceStatePath $hostStatePath -Python $python
+    }
+    $hostStatePath=[string]$pathContext.host_resource_state_path
+    $result.execution_context=$pathContext
+    $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=[string]$pathContext.host_resource_state_path
+    $env:MASS_SPECTROMETRY_ARTIFACT_ROOT=[string]$pathContext.artifact_root
+    $env:MASS_SPECTROMETRY_EXECUTION_ROOT=[string]$pathContext.execution_root
+    $env:MASS_SPECTROMETRY_RUN_DIRECTORY=$runRoot
+    $env:MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=$runRoot
     if(-not([IO.Path]::GetFullPath((Split-Path -Parent $runRoot))).Equals(
         (Join-Path $projectRoot 'runs'),[StringComparison]::OrdinalIgnoreCase)){
       throw 'Workflow run must be a direct child of its runs directory.'
@@ -487,7 +529,7 @@ function Invoke-RunArtifactWorkflow {
       $package=@{run_config=(Join-Path $runRoot 'run_config.json');input_dir=(Join-Path $runRoot 'inputs')}
       $frozenRequest=Join-Path $package.input_dir 'execution_request.json'
       if((Get-FileHash -LiteralPath $frozenRequest -Algorithm SHA256).Hash-ine$requestHash){throw 'Workflow recovery request differs from its frozen request.'}
-      $initial=Get-Content -LiteralPath $package.run_config -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+      $initial=$recoveryConfig
       $sessionPath=Join-Path $runRoot 'logs/capacity_session.json'
       $session=Get-Content -LiteralPath $sessionPath -Raw -Encoding UTF8|ConvertFrom-Json
       $expectedOwner=if($request.capacity.Contains('session_owner')){[string]$request.capacity.session_owner}else{"run-artifact-workflow:{0}:{1}"-f$request.package.project,$request.package.run_id}
@@ -520,7 +562,8 @@ function Invoke-RunArtifactWorkflow {
     $package=New-RunPackage -Python $python -RepoRoot $repo -ArtifactRoot $projectRoot `
       -RunId $request.package.run_id -Project $request.package.project -Mode $request.package.mode `
       -Software $request.package.software -RetentionContractEnabled -RetentionClass $request.package.retention_class `
-      -RetentionReason $request.package.retention_reason -CapacityLedgerLifecycleEnabled -CapacityLedgerArtifactRoot $artifactRoot
+      -RetentionReason $request.package.retention_reason -CapacityLedgerLifecycleEnabled -CapacityLedgerArtifactRoot $artifactRoot -PathContext $pathContext
+    $result.execution_context=$pathContext
     $frozenRequest=Join-Path $package.input_dir 'execution_request.json'
     $copyIdentity=$null
     $null=Copy-VerifiedRunInput -Source $requestFile -Destination $frozenRequest -VerifiedIdentity ([ref]$copyIdentity)
@@ -572,7 +615,10 @@ function Invoke-RunArtifactWorkflow {
     $completionFields=@('schema_version','role','run_id','project','execution_request','run_config',
       'status','summary','output_paths','required_output_paths','retention_preserve_paths',
       'manifest_extra_fields','writer_completion','exception')
-    if($powershellOwner){$completionFields+=@('resource_usage_paths','resource_profile')}
+    if($powershellOwner){
+      $completionFields+=@('resource_usage_paths','resource_profile')
+      if($completion.Contains('execution_alias')){$completionFields+='execution_alias'}
+    }
     Assert-WorkflowFields $completion $completionFields 'Workflow completion'
     if($null-ne$completion.exception){$result.exception=$completion.exception}
     if($completion.schema_version-ne1-or$completion.role-cne'run_artifact_workflow_completion'-or
@@ -669,6 +715,19 @@ function Invoke-RunArtifactWorkflow {
     $expectedReason=if($request.package.retention_class-eq'compact'){$null}else{$request.package.retention_reason}
     if($finalConfig.artifact_retention.reason-cne$expectedReason){throw 'Workflow frozen retention reason differs.'}
     $writersConfirmed=$true
+    if($powershellOwner-and$completion.Contains('execution_alias')){
+      $alias=$completion.execution_alias
+      Assert-WorkflowFields $alias @('path','target_directory') 'Execution alias cleanup'
+      if($alias.path-isnot[string]-or$alias.target_directory-isnot[string]-or
+         -not[IO.Path]::IsPathFullyQualified($alias.path)-or
+         [IO.Path]::GetFullPath($alias.target_directory)-ine[IO.Path]::GetFullPath($runRoot)-or
+         [IO.Path]::GetFullPath((Split-Path -Parent $alias.path))-ine[IO.Path]::GetFullPath([string]$pathContext.execution_root)){
+        throw 'Execution alias cleanup owner or frozen root differs.'
+      }
+      Set-WorkflowStage execution_alias_cleanup
+      Remove-RunExecutionAlias -ExecutionAlias $alias.path -TargetDirectory $runRoot
+      $result.execution_alias_removed=$true
+    }
     $recoveryInputs=@($frozenRequest,$completionPath,$waitPath,$sessionPath)
     $terminalWithoutJournal=$false
     if($ResumeFinalization){
@@ -810,6 +869,7 @@ function Invoke-RunArtifactWorkflow {
       catch{$result.secondary_errors+=@("Capacity lease cleanup failed: $($_.Exception.Message)")}
     }
   }
+  finally{Restore-RunEnvironment -Names $contextEnvironmentNames -Snapshot $callerEnvironment}
   if($null-ne$session){$result.lease_id=$session.lease_id}
   $result.writers_confirmed=$writersConfirmed
   Set-WorkflowStage

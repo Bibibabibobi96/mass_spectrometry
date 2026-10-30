@@ -13,6 +13,8 @@ classdef commonArtifactPathsTest < matlab.unittest.TestCase
 
     methods (TestMethodSetup)
         function isolatedWorkspace(testCase)
+            testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture( ...
+                'MASS_SPECTROMETRY_ARTIFACT_ROOT', ''));
             temporary = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
             testCase.Workspace = char(java.io.File(temporary.Folder).getCanonicalPath());
             source = fileparts(fileparts(mfilename('fullpath')));
@@ -27,6 +29,28 @@ classdef commonArtifactPathsTest < matlab.unittest.TestCase
     end
 
     methods (Test)
+        function explicitRootOverridesDeploymentEnvironment(testCase)
+            root = fullfile(testCase.Workspace, 'short-payload');
+            context = fullfile(root, 'projects', 'example', 'runs', 'explicit');
+            mkdir(context);
+            setenv('MASS_SPECTROMETRY_ARTIFACT_ROOT', fullfile(testCase.Workspace, 'other'));
+            result = common_artifact_paths(context, ArtifactRoot=root);
+            testCase.verifyEqual(result.artifactRoot, context);
+            testCase.verifyTrue(isfolder(result.modelsDir));
+            testCase.verifyFalse(isfolder(fullfile(testCase.Workspace, 'other')));
+        end
+
+        function deploymentRootReachesExistingConsumers(testCase)
+            root = fullfile(testCase.Workspace, 'payload');
+            context = fullfile(root, 'projects', 'example', 'scratch', 'configured');
+            mkdir(context);
+            setenv('MASS_SPECTROMETRY_ARTIFACT_ROOT', root);
+            result = common_artifact_paths(context);
+            testCase.verifyEqual(result.artifactRoot, context);
+            testCase.verifyTrue(isfolder(result.resultsDir));
+            testCase.verifyFalse(isfolder(fullfile(testCase.ProjectRoot, 'scratch')));
+        end
+
         function createsOnlyRunLocalOutputs(testCase, lifecycle)
             context = fullfile(testCase.ProjectRoot, lifecycle, 'example');
             mkdir(context);

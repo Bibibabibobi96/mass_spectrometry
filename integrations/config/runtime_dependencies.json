@@ -315,6 +315,36 @@
           ]
         },
         {
+          "id": "common_paths_workspace_paths_py",
+          "source_repo_path": "common/paths/workspace_paths.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "multipole_ip",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_paths_workspace_paths_ps1",
+          "source_repo_path": "common/paths/workspace_paths.ps1",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "multipole_ip",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
           "id": "common_run_artifact_support",
           "source_repo_path": "common/contracts/run_artifact_support.ps1",
           "consumers": [

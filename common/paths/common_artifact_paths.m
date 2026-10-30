@@ -1,13 +1,14 @@
-function paths = common_artifact_paths(runDir)
+function paths = common_artifact_paths(runDir, options)
 %COMMON_ARTIFACT_PATHS Resolve COMSOL outputs in an existing project context.
 % Pass the same runs/<run_id> or scratch/<task_id> directory to dependent
 % component-test stages. This helper never chooses or creates a run identity.
 
     arguments
         runDir {mustBeTextScalar, mustBeNonempty}
+        options.ArtifactRoot (1,1) string = ""
     end
 
-    workspace = workspace_paths();
+    workspace = workspace_paths(ArtifactRoot=options.ArtifactRoot);
     projectsRoot = char(java.io.File(fullfile(workspace.artifactRoot, 'projects')).getCanonicalPath());
     runDir = char(java.io.File(char(runDir)).getCanonicalPath());
     prefix = [projectsRoot filesep];

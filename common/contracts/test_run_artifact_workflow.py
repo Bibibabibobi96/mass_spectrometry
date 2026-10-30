@@ -272,6 +272,11 @@ catch{{Write-Output $_.Exception.Message;exit 7}}
             (root / "result.json").unlink()
             initial = self.run_ps(root, f""". '{OWNER}'
 function Invoke-ArtifactCapacityGate {{ return @{{satisfied=$true;fixture_admission=$true}} }}
+$config=Get-Content '{run / 'run_config.json'}' -Raw|ConvertFrom-Json
+$alias=New-RunExecutionAlias -TargetDirectory '{run}' -ExecutionRoot $config.paths.execution_root
+$completion=Get-Content '{completion_path}' -Raw|ConvertFrom-Json -AsHashtable
+$completion.execution_alias=@{{path=$alias.execution_alias;target_directory='{run}'}}
+Write-RunJson -Atomic -Path '{completion_path}' -Value $completion
 $wait=@{{schema_version=1;role='run_artifact_powershell_owner_wait';owner_pid=$PID;
   owner_start_utc_ticks=(Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks;
   native_writers_confirmed=$true;exception=$null;observation_error=$null}}
@@ -281,10 +286,14 @@ try{{$null=Invoke-RunArtifactWorkflow -RequestPath '{request_path}' -ResultPath 
 """)
             self.assertEqual(initial.returncode, 7, initial.stdout + initial.stderr)
             self.assertTrue((root / "result.json").exists(), initial.stdout + initial.stderr)
+            saved = json.loads(completion_path.read_text(encoding="utf-8-sig"))
+            self.assertFalse(Path(saved["execution_alias"]["path"]).exists())
             self.assertFalse((run / "run_manifest.json").read_text(encoding="utf-8-sig").find('"status": "success"') >= 0)
             result, resumed = self.resume_fixture(root, run)
             self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
             self.assertEqual(result["status"], "success")
+            self.assertTrue(result["execution_alias_removed"])
+
 
     def test_ip_original_cli_replays_public_owner_after_publication_or_seal_failure(self) -> None:
         project = "dual_pressure_rectilinear_ion_processor"
@@ -320,7 +329,7 @@ function Invoke-RunCapacityCommand {
 function Invoke-ArtifactCapacityGate {{ return @{{satisfied=$true;fixture_admission=$true}} }}
 function Invoke-ResourceBudgetedProcess {{throw 'NATIVE_MUST_NOT_START'}}
 $session=Get-Content '{run / 'logs/capacity_session.json'}' -Raw|ConvertFrom-Json
-$package=@{{run_config='{config_path}';run_dir='{run}';artifact_run_dir='{run}'}}
+$package=@{{native_path_preparation=@{{calls=0;elapsed_seconds=0.0;transport_bytes=0L}};run_config='{config_path}';run_dir='{run}';artifact_run_dir='{run}'}}
 $context=Initialize-RunArtifactPowerShellOwner -Python '{sys.executable}' -RepoRoot '{REPO}' -Package $package -CapacitySession $session -EntrypointPath '{entry}' -CommitmentInputPaths @('{budget}') -Software @('Python')
 {hook}
 try {{
@@ -382,7 +391,7 @@ try {{
             outcome = self.run_ps(root, f""". '{OWNER}'
 $session=Get-Content '{run / 'logs/capacity_session.json'}' -Raw|ConvertFrom-Json
 $leasePath=[string]$session.lease.path;$leaseBefore=[Convert]::ToBase64String([IO.File]::ReadAllBytes($leasePath))
-$package=@{{run_config='{run / 'run_config.json'}';run_dir='{run}';artifact_run_dir='{run}'}}
+$package=@{{native_path_preparation=@{{calls=0;elapsed_seconds=0.0;transport_bytes=0L}};run_config='{run / 'run_config.json'}';run_dir='{run}';artifact_run_dir='{run}'}}
 $context=Initialize-RunArtifactPowerShellOwner -Python '{sys.executable}' -RepoRoot '{REPO}' -Package $package -CapacitySession $session -ResultPath '{result_path}' -EntrypointPath '{entry}' -CommitmentInputPaths @('{budget}') -Software @('Python')
 function Apply-RunArtifactRetention {{throw 'RETENTION_MUST_NOT_RUN'}}
 function Publish-WorkflowTerminal {{throw 'TERMINAL_MUST_NOT_RUN'}}
@@ -421,7 +430,7 @@ if([Convert]::ToBase64String([IO.File]::ReadAllBytes($leasePath))-cne$leaseBefor
     def test_powershell_inherited_grant_is_rechecked_across_processes(self) -> None:
         with tempfile.TemporaryDirectory(prefix="workflow-ps-inherited-") as directory:
             root = Path(directory)
-            _, run, _, _ = self.invoke_fixture(root, {}, failure_stage="retention_before")
+            _, run, _, _ = self.invoke_fixture(root, {}, host_state=str(root / "host.json"), failure_stage="retention_before")
             request_path = run / "inputs/execution_request.json"
             request = json.loads(request_path.read_text(encoding="utf-8-sig"))
             entry = run / "inputs/owner.ps1"
@@ -490,7 +499,7 @@ $old=Get-Content '{run / 'logs/capacity_session.json'}' -Raw|ConvertFrom-Json
 Exit-ArtifactWorkflowCapacitySession -Python '{sys.executable}' -RepoRoot '{REPO}' -Session $old|Out-Null
 $session=Enter-ArtifactWorkflowCapacitySession -Python '{sys.executable}' -RepoRoot '{REPO}' -ArtifactRoot '{root / 'artifacts'}' -RunDirectory '{run}' -CommittedNewBytes 1048576 -ProtectedPaths @('{run}') -Owner 'fixture-existing-parent-owner'
 $leasePath=[string]$session.lease.path;$leaseBytes=[IO.File]::ReadAllBytes($leasePath);$parentBytes=[IO.File]::ReadAllBytes('{parent}')
-$package=@{{run_config='{run / 'run_config.json'}';run_dir='{run}';artifact_run_dir='{run}'}}
+$package=@{{native_path_preparation=@{{calls=0;elapsed_seconds=0.0;transport_bytes=0L}};run_config='{run / 'run_config.json'}';run_dir='{run}';artifact_run_dir='{run}'}}
 $context=Initialize-RunArtifactPowerShellOwner -Python '{sys.executable}' -RepoRoot '{REPO}' -Package $package -CapacitySession $session -EntrypointPath '{entry}' -CommitmentInputPaths @('{budget}') -Software @('Python') -OwnCapacitySession $false
 $actualPublisher=${{function:Publish-WorkflowTerminal}}
 function Publish-WorkflowTerminal {{throw 'INHERITED_PUBLICATION_SENTINEL'}}
@@ -536,7 +545,7 @@ foreach($pair in @(@('{run / 'run_manifest.json'}',$manifestBytes),@('{run / 'su
             outcome = self.run_ps(root, f""". '{OWNER}'
 function Invoke-ArtifactCapacityGate {{ return @{{satisfied=$true;fixture_admission=$true}} }}
 $session=Get-Content '{run / 'logs/capacity_session.json'}' -Raw|ConvertFrom-Json
-$package=@{{run_config='{run / 'run_config.json'}';run_dir='{run}';artifact_run_dir='{run}'}}
+$package=@{{native_path_preparation=@{{calls=0;elapsed_seconds=0.0;transport_bytes=0L}};run_config='{run / 'run_config.json'}';run_dir='{run}';artifact_run_dir='{run}'}}
 $context=Initialize-RunArtifactPowerShellOwner -Python '{sys.executable}' -RepoRoot '{REPO}' -Package $package -CapacitySession $session -EntrypointPath '{entry}' -CommitmentInputPaths @('{budget}') -Software @('Python')
 $context.session=(Update-ArtifactWorkflowCapacitySession -Python '{sys.executable}' -RepoRoot '{REPO}' -Session $context.session -ProtectedPaths @('{external}')).session
 $request=Get-Content $context.request_path -Raw|ConvertFrom-Json -AsHashtable

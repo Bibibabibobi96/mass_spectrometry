@@ -20,6 +20,8 @@ RELATIVE_PATHS = (
     "common/host_resource_python.py",
     "common/host_resource_python.ps1",
     "common/contracts/run_artifact_support.ps1",
+    "common/paths/workspace_paths.py",
+    "common/paths/workspace_paths.ps1",
     "common/contracts/artifact_identity_archive.py",
     "common/contracts/artifact_cache_contract.py",
     "common/contracts/gui_source_protection.py",
