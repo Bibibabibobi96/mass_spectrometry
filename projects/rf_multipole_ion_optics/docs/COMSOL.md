@@ -26,6 +26,11 @@ integration入口内部顺序调用COMSOL/SIMION stage；内部stage不是可独
 
 ## 模型与合同
 
+有限三维 COMSOL 的实际 source preflight 显式选择 `--solver comsol`，按 resolved 的 numerical_domain
+检查原始源位置；圆柱使用实际半径与轴向范围，旧矩形参考使用实际 box 半宽，不用 working region 代替物理域界。
+越界在商业启动前报粒子 ID、位置与边界，不平移或删除粒子。体积 receipt 合法不等于源位于求解域内。
+该检查不代替电极占据、接收面或科学接受判据；未选择 COMSOL 的原源校验语义保持。
+
 接口就绪、质量过滤和旧同求解器比较只消费具名profile冻结的resolved、科学mode、粒子bundle和
 `../variants/quadrupole/config/comsol_solver_numerics.json`。普通接口profile固定使用`baseline`数值身份；
 `time_refined_160`只允许预注册的same-solver实验。MATLAB不选择profile，也不从环境或源码回退

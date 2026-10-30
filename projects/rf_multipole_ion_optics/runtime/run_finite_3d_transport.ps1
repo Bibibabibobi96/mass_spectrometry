@@ -280,7 +280,7 @@ try{
   try{
     $env:PYTHONPATH=$codeRoot
     $preflightArguments=@('-m','projects.rf_multipole_ion_optics.runtime.particle_source_preflight',
-      '--source',$particleSource,'--resolved-design',$resolved,'--output',$sourceMetadata)
+      '--source',$particleSource,'--resolved-design',$resolved,'--output',$sourceMetadata,'--solver','comsol')
     if($sourceFamily){
       $preflightArguments+=@('--source-family',$sourceFamily,
         '--operating-point',$OperatingPointId,

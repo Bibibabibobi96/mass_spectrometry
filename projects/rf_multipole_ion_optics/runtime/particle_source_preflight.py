@@ -13,7 +13,7 @@ from typing import Any
 
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.particle_count_policy import validate_positive_particle_count
-from projects.rf_multipole_ion_optics.core.interface_geometry import transport_observations
+from projects.rf_multipole_ion_optics.core.interface_geometry import transport_observations, transport_numerical_domain
 
 COLUMNS = [
     "particle_id",
@@ -181,6 +181,19 @@ def _load_volume_snapshot_receipt(path: Path | None, source_sha256: str) -> dict
     return receipt
 
 
+def _comsol_source_domain(resolved: dict[str, Any]) -> dict[str, Any]:
+    """Read the actual solver outer volume, not the mesh working region."""
+    domain = transport_numerical_domain(resolved)
+    radius, low, high = (float(domain[name]) for name in ("radius_mm", "z_min_mm", "z_max_mm"))
+    if not all(math.isfinite(value) for value in (radius, low, high)) or radius <= 0 or low >= high:
+        raise ValueError("COMSOL numerical_domain bounds are invalid")
+    enclosure = resolved["geometry_mm"]["enclosure"]["model"]
+    if enclosure not in ("bare", "cylindrical_grounded_shell", "rectangular_reference_enclosure_v1"):
+        raise ValueError("COMSOL source domain enclosure is unsupported")
+    return dict(shape="box" if enclosure == "rectangular_reference_enclosure_v1" else "cylinder",
+                radius_mm=radius, z_min_mm=low, z_max_mm=high)
+
+
 def load_validated_source(
     path: Path,
     resolved: dict[str, Any],
@@ -192,10 +205,14 @@ def load_validated_source(
     volume_snapshot_receipt_path: Path | None = None,
     release_spec_path: Path | None = None,
     release_receipt_path: Path | None = None,
+    solver: str | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     """Read one canonical source and return its validated metadata and CSV rows."""
+    if solver not in (None, "comsol", "simion"):
+        raise ValueError("particle-source solver is unsupported")
     if resolved.get("role") != "multipole_resolved_design_do_not_edit":
         raise ValueError("particle source requires a multipole resolved design")
+    comsol_domain = _comsol_source_domain(resolved) if solver == "comsol" else None
     if (release_spec_path is None) != (release_receipt_path is None):
         raise ValueError("release source requires both frozen spec and receipt")
     release = None
@@ -287,6 +304,15 @@ def load_validated_source(
         values = [float(row[name]) for name in COLUMNS[1:-1]]
         if not all(math.isfinite(value) for value in values):
             raise ValueError(f"particle {particle_id} contains a non-finite value")
+        if comsol_domain is not None:
+            x, y, z = (float(row[name]) for name in ("x_mm", "y_mm", "z_mm"))
+            low, high, radius = (comsol_domain[name] for name in ("z_min_mm", "z_max_mm", "radius_mm"))
+            if not low <= z <= high:
+                raise ValueError(f"COMSOL source particle {particle_id} outside numerical_domain: z_mm={z!r} not in [{low!r}, {high!r}]")
+            radial_inside = (abs(x) <= radius and abs(y) <= radius if comsol_domain["shape"] == "box"
+                             else x*x + y*y <= radius*radius)
+            if not radial_inside:
+                raise ValueError(f"COMSOL source particle {particle_id} outside numerical_domain: x_mm={x!r}, y_mm={y!r}, {comsol_domain['shape']} radius/half_width_mm={radius!r}")
         mass = float(row["mass_amu"])
         charge = int(row["charge_state"])
         if mass <= 0 or charge == 0:
@@ -339,7 +365,7 @@ def load_validated_source(
         raise ValueError("canonical particle source contains multiple masses")
     if particle_ids != set(range(1, len(rows) + 1)):
         raise ValueError("canonical particle IDs must be contiguous from 1 through N")
-    return {
+    metadata = {
         "schema_version": 1,
         "role": "multipole_canonical_particle_source_metadata",
         "source_sha256": source_sha256,
@@ -371,7 +397,10 @@ def load_validated_source(
             "mean": sum(energies) / len(energies),
         },
         "energy_validation_tolerance_eV": ENERGY_BOUND_TOLERANCE_EV,
-    }, rows
+    }
+    if comsol_domain is not None:
+        metadata["comsol_domain_validation"] = dict(status="inside_declared_numerical_domain", particle_count=len(rows), **comsol_domain)
+    return metadata, rows
 
 
 def validate_source(
@@ -386,6 +415,7 @@ def validate_source(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", required=True, type=Path)
+    parser.add_argument("--solver", choices=("comsol", "simion"))
     parser.add_argument("--resolved-design", required=True, type=Path)
     parser.add_argument("--source-family", type=Path)
     parser.add_argument("--operating-point")
@@ -416,6 +446,7 @@ def main() -> int:
     metadata = validate_source(
         args.source,
         resolved,
+        solver=args.solver,
         source_family_path=args.source_family,
         operating_point_id=args.operating_point,
         expected_source_family_sha256=args.expected_source_family_sha256,
