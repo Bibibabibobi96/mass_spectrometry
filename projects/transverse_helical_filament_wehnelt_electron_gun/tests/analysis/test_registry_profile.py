@@ -64,10 +64,10 @@ class RegistryProfileTests(unittest.TestCase):
         self.assertEqual(profile["evidence_levels"], ["plan"])
         self.assertEqual(
             [step["step_id"] for step in profile["steps"]],
-            ["static_gate", "commercial_build_only"],
+            ["commercial_build_only"],
         )
         self.assertEqual(
-            profile["steps"][1]["entrypoint"],
+            profile["steps"][0]["entrypoint"],
             "run_build_only_smoke.ps1",
         )
         self.assertEqual(

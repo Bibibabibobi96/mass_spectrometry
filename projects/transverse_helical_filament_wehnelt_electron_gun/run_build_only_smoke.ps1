@@ -159,7 +159,7 @@ function New-BuildSummary {
     [bool]$CommercialWrapperCompleted = $false,
     [System.Collections.IDictionary]$ReportValues = $null
   )
-  $staticGatePassed = @(
+  $inputFreshnessPassed = @(
     'frozen_input_validation','commercial_wrapper_pending','commercial_wrapper',
     'precommercial_input_validation','report_validation','input_set_validation',
     'manifest_finalization','none'
@@ -174,7 +174,7 @@ function New-BuildSummary {
     candidate_evidence_allowed = $false
     formal_asset_modified = $false
     formal_gate_passed = $false
-    static_gate_passed = $staticGatePassed
+    input_freshness_passed = $inputFreshnessPassed
     commercial_wrapper_invocation_attempted = $CommercialWrapperInvocationAttempted
     commercial_wrapper_completed = $CommercialWrapperCompleted
     geometry_built = $null -ne $ReportValues -and $ReportValues.GEOMETRY_BUILT -ceq 'true'
@@ -241,7 +241,7 @@ try {
       lifecycle_stage = $failureStage
       bootstrap_boundary = [ordered]@{
         role = 'live_repository_initialization_only'
-        frozen_replacement_required_before_static_gate = $true
+        frozen_replacement_required_before_input_freshness = $true
         files = $bootstrapIdentity
       }
     }
@@ -282,7 +282,6 @@ try {
     project_descriptor = 'config\project.json'
     analysis_package = 'analysis\__init__.py'
     resolver = 'analysis\resolve_contract.py'
-    static_gate = 'verify_project.ps1'
   }
   foreach ($entry in $projectFrozenFiles.GetEnumerator()) {
     $frozenInputs[$entry.Key] = Copy-VerifiedRunInput `
@@ -299,7 +298,7 @@ try {
   $commonFrozenFiles = [ordered]@{
     python_project_config = 'pyproject.toml'
     powershell_runtime_gate = 'common\require_powershell7.ps1'
-    changed_scope_gate = 'common\verify_changed.ps1'
+    changed_scope_gate = 'common\verify.ps1'
     gate_catalog = 'common\gate_catalog.json'
     host_resource_adapter = 'common\host_execution_lease.ps1'
     host_resource_scheduler = 'common\host_resource_scheduler.py'
@@ -350,8 +349,8 @@ foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
     Write-RunJson -Value $runConfig -Path $package.run_config
     Write-RunJson -Path $package.summary -Value (
       New-BuildSummary -Status interrupted `
-        -Reason 'Inputs are frozen; the Static gate has not completed.' `
-        -FailureStage 'static_gate_pending'
+        -Reason 'Inputs are frozen; input freshness has not been checked.' `
+        -FailureStage 'input_freshness_pending'
     )
     Write-RunManifest -Python $package.python -RepoRoot $manifestRepoRoot `
       -RunConfig $package.run_config -Manifest $manifestPath -Status interrupted `
@@ -359,7 +358,7 @@ foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
         -RunDirectory $package.run_dir -InputDirectory $package.input_dir)
   }
 
-  $failureStage = 'static_gate'
+  $failureStage = 'input_freshness'
   Push-Location $snapshotRoot
   try {
     & $package.python -m projects.transverse_helical_filament_wehnelt_electron_gun.analysis.resolve_contract `
@@ -375,10 +374,6 @@ foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
   if ($resolverExitCode -ne 0) {
     throw 'Frozen Wehnelt baseline, numerical mode, and resolved contract differ.'
   }
-  & $frozenInputs.static_gate -PythonExe $package.python
-  if ($LASTEXITCODE -ne 0) {
-    throw 'Frozen Wehnelt Static gate failed before the commercial build.'
-  }
   $failureStage = 'frozen_input_validation'
   Assert-FrozenInputSet -InputDirectory $package.input_dir -Inputs $frozenInputs
 
@@ -388,7 +383,7 @@ foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
     Write-RunJson -Value $runConfig -Path $package.run_config
     Write-RunJson -Path $package.summary -Value (
       New-BuildSummary -Status interrupted `
-        -Reason 'Static gate passed; the commercial wrapper has not reached a terminal state.' `
+        -Reason 'Frozen input freshness passed; the commercial wrapper has not reached a terminal state.' `
         -FailureStage $failureStage
     )
     Write-RunManifest -Python $package.python -RepoRoot $manifestRepoRoot `

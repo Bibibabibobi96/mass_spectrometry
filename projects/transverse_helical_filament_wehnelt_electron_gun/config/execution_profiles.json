@@ -28,17 +28,6 @@
       "required_bindings": [],
       "steps": [
         {
-          "step_id": "static_gate",
-          "kind": "gate",
-          "shell": "powershell",
-          "entrypoint": "verify_project.ps1",
-          "run_id_template": null,
-          "arguments": [
-            "-PythonExe",
-            "{python_exe}"
-          ]
-        },
-        {
           "step_id": "commercial_build_only",
           "kind": "run",
           "shell": "powershell",

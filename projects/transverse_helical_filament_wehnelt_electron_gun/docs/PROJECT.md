@@ -57,3 +57,7 @@ build-only入口冻结实际MATLAB、解析器与公共运行依赖；源码闭�
 该根的`archive/20260801_130004__migration-snapshot__repo__wehnelt-electron-gun/legacy-project-root/`，
 不改写、不追加新run，也不改变原资格和声明边界；
 新运行只进入活动根的`runs/<run_id>/`，三件套与 manifest 遵循[生命周期](../../../docs/LIFECYCLE.md)。
+
+## 构建准入与软件验证
+
+普通build-only profile及真实runner移除重复整套Static回归。run-local冻结baseline／numerical modes／resolved仍由原resolver核对，summary报告`input_freshness_passed`；输入集合防写、商业构建及证据不合格边界保持。`verify_project.ps1`继续独立验证软件；构建成功不代表求解或Candidate／Formal资格。

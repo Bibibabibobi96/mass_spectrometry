@@ -246,11 +246,10 @@ class MatlabContractBindingTests(unittest.TestCase):
         self.assertNotIn("function Get-FileSha256", self.build_runner)
         self.assertNotIn("Get-FileHash", self.build_runner)
 
-    def test_runner_executes_frozen_gate_and_checks_frozen_contract_triplet(
+    def test_runner_checks_frozen_contract_triplet_without_full_software_gate(
         self,
     ) -> None:
         required = (
-            "& $frozenInputs.static_gate -PythonExe $package.python",
             "Push-Location $snapshotRoot",
             "-m projects.transverse_helical_filament_wehnelt_electron_gun.analysis.resolve_contract",
             "--baseline $frozenInputs.baseline",
@@ -491,7 +490,7 @@ class MatlabContractBindingTests(unittest.TestCase):
             "candidate_evidence_allowed = $false",
             "formal_asset_modified = $false",
             "formal_gate_passed = $false",
-            "static_gate_passed = $staticGatePassed",
+            "input_freshness_passed = $inputFreshnessPassed",
             "commercial_wrapper_invocation_attempted = $CommercialWrapperInvocationAttempted",
             "commercial_wrapper_completed = $CommercialWrapperCompleted",
             "failure_stage = $FailureStage",
@@ -546,7 +545,6 @@ class MatlabContractBindingTests(unittest.TestCase):
             "config\\execution_profiles.json",
             "config\\project.json",
             "analysis\\resolve_contract.py",
-            "verify_project.ps1",
             "common\\contracts\\run_artifact_support.ps1",
             "common\\contracts\\write_run_manifest.py",
             "common\\contracts\\capacity_protection.py",
@@ -601,9 +599,7 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn('FROZEN_BUDGET_OBSERVATION=PASS', result.stdout)
 
-    def test_frozen_gate_does_not_mutate_its_declared_input_set(self) -> None:
-        if os.environ.get("WEHNELT_NESTED_FROZEN_GATE") == "1":
-            return
+    def test_frozen_input_freshness_does_not_mutate_its_declared_input_set(self) -> None:
         project_relatives = (
             "run_build_only_smoke.ps1",
             "comsol/build_only_smoke.m",
@@ -621,14 +617,12 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
             "config/project.json",
             "analysis/__init__.py",
             "analysis/resolve_contract.py",
-            "verify_project.ps1",
         )
         common_relatives = (
             "pyproject.toml",
             "common/require_powershell7.ps1",
-            "common/verify_changed.ps1",
+            "common/verify.ps1",
             "common/gate_catalog.json",
-            "common/verify_repository_integration.ps1",
             "common/host_execution_lease.ps1",
             "common/host_resource_scheduler.py",
             "common/host_resource_policy.json",
@@ -694,7 +688,6 @@ function Get-HostResourceSnapshot {
                 {
                     "PYTHONDONTWRITEBYTECODE": "1",
                     "RUFF_NO_CACHE": "true",
-                    "WEHNELT_NESTED_FROZEN_GATE": "1",
                     "SIMULATION_PYTHON_EXE": sys.executable,
                     "MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH": str(Path(directory) / "scheduler.sqlite3"),
                 }
@@ -763,22 +756,25 @@ function Get-HostResourceSnapshot {
             self.assertEqual(after_manifest, declared)
             self.assertFalse(any(path.suffix == ".pyc" for path in after_manifest))
 
+            start = self.build_runner.index("  $failureStage = 'input_freshness'")
+            end = self.build_runner.index("  $failureStage = 'frozen_input_validation'", start)
+            admission = (
+                "$ErrorActionPreference='Stop';Set-StrictMode -Version Latest;"
+                f"$snapshotRoot='{snapshot}';$package=@{{python='{sys.executable}'}};"
+                f"$frozenInputs=@{{baseline='{frozen_project / 'config/baseline.json'}';"
+                f"numerical_modes='{frozen_project / 'config/numerical_modes.json'}';"
+                f"resolved_contract='{frozen_project / 'config/resolved_model.json'}'}};"
+                + self.build_runner[start:end]
+            )
             completed = subprocess.run(
-                [
-                    "pwsh",
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-File",
-                    str(frozen_project / "verify_project.ps1"),
-                    "-PythonExe",
-                    sys.executable,
-                ],
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", admission],
                 cwd=snapshot,
                 env=environment,
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=180,
+                encoding="utf-8",
+                timeout=30,
             )
             self.assertEqual(
                 completed.returncode,
