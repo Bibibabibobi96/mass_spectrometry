@@ -132,9 +132,21 @@ try {
     $frozenPythonSupport = Copy-VerifiedRunInput `
         -Source (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') `
         -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
+    $frozenMatlabRelativePaths=@(
+        'common/comsol/create_multipole_round_rods.m',
+        'common/comsol/configure_comsol_mesh.m',
+        'common/comsol/add_comsol_size_feature.m',
+        'projects/rf_multipole_ion_optics/load_rf_quadrupole_contract.m',
+        'projects/rf_multipole_ion_optics/comsol/solve_deterministic_rf_quadrupole_particles.m',
+        'projects/rf_multipole_ion_optics/comsol/visit_rf_particle_windows.m',
+        'projects/rf_multipole_ion_optics/comsol/extract_rf_particle_records.m',
+        'projects/rf_multipole_ion_optics/comsol/prepare_interface_readiness_run.m',
+        'projects/rf_multipole_ion_optics/workflows/interface_readiness/comsol/run_nocollision_candidate.m',
+        'projects/rf_multipole_ion_optics/comsol/interface_readiness/run_release_construction_gate.m'
+    )
     $frozenCodeRoot = Join-Path $inputDir 'code'
     $frozenPythonPackage = New-FrozenPythonPackage `
-        -SourceRoot $repoRoot -CodeRoot $frozenCodeRoot -RelativePaths $frozenPythonRelativePaths
+        -SourceRoot $repoRoot -CodeRoot $frozenCodeRoot -RelativePaths @($frozenPythonRelativePaths+$frozenMatlabRelativePaths)
     $frozenParticlePolicy = Get-FrozenPythonPackageFile `
         -Package $frozenPythonPackage -RelativePath `
         'projects/rf_multipole_ion_optics/workflows/interface_readiness/particle_source_policy.py'
@@ -378,10 +390,10 @@ try {
     }
     $env:RFQUAD_RUN_CONFIG = $package.run_config
     $taskScript = if($ReleaseConstructionGate){
-        Join-Path $projectRoot `
-            'comsol\interface_readiness\run_release_construction_gate.m'
+        Join-Path $frozenCodeRoot `
+            'projects/rf_multipole_ion_optics/comsol/interface_readiness/run_release_construction_gate.m'
     }else{
-        Join-Path $projectRoot 'workflows\interface_readiness\comsol\run_nocollision_candidate.m'
+        Join-Path $frozenCodeRoot 'projects/rf_multipole_ion_optics/workflows/interface_readiness/comsol/run_nocollision_candidate.m'
     }
     $startupAttempts = if($ReleaseConstructionGate){2}else{1}
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `

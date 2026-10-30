@@ -392,6 +392,14 @@ pd = mphparticle(model, 'dataset', 'pdset1');
   保留返回字段、维度和粒子身份，不把包装器访问缺失 `t` 的异常记成求解失败。
 - `mphparticle(...,'expr',cell)` 与原生数值节点不是相同的参数合同：本机
   `model.result.numerical.create(tag,'Particle')` 的 `expr` 只接受单字符串，多表达式须逐条读取并核对身份。
+- 多个粒子physics的tag、变量identifier、particle geometry与位置DOF不一定同名。本机6.4保存／冷重开探针中，
+  physics `cpt/cpt1/cpt2`对应identifier `cpt/cpt2/cpt3`，应绑定实际solution、`pgeom`、`posdof`，不按tag猜变量。
+  使用官方`mphparticle(...,'velocities','on')`的`pd.v`，按实际维度解释，并以实际identifier的速度表达式交叉检查；
+  `comp1.vx/v2x/v3x`等猜测在该探针全NaN，不能由`omitnan`聚合成零误差。逐ID检查活动掩码、至少一个有效状态、
+  活动位置对应的完整有限速度，再计算误差。未出生／已终止状态的NaN保留其生命周期含义。
+  官方[Particle Dataset](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_results.52.118.html)
+  没有`veldof`属性，不新增猜测设置；本机help `Multiphysics/mli/mphparticle.m`列出`pd.v`与velocities选项。
+  2026-10-30的N=3零求解冷读证据及限制见[RF项目状态](../../projects/rf_multipole_ion_optics/docs/PROJECT.md#当前结论)。
 - 不猜`cpt.Ep`、`cpt.KE`等变量；先查变量表。末态动能可由质量和速度计算并与能量守恒交叉
   检查。
 

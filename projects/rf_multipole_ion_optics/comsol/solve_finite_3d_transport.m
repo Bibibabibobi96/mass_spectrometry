@@ -703,6 +703,19 @@ try
         [pdZero, solutionZero] = solve_particle_case(model, cpt, 'zero', 0, 1, dt, timeMaximum,stationarySolutionTag);
         fprintf(fid,'CHECKPOINT=CONTROL_PARTICLE_CASE_COMPLETE\n');
     end
+    % Persist the existing unique MPH after both physical cases, before extraction.
+    modelDirectory=fileparts(modelPath);if ~isfolder(modelDirectory),mkdir(modelDirectory);end
+    persistTimer=tic;model.save(modelPath);
+    fprintf(fid,'TIMING_PERSIST_SECONDS=%.9g RAW_SOLUTION_PERSISTED=true\n',toc(persistTimer));
+    planes=[d.census_plane_z d.rod_z_max d.handoff_plane_z d.entrance_port_plane_z d.exit_port_plane_z];
+    regions=zeros(2,2,height(source));
+    for particle=1:height(source)
+      regions(:,:,particle)=[d.rod_z_min d.rod_z_max;min(source.z_mm(particle),d.rod_z_max) d.rod_z_max];
+    end
+    [pdOn,onExtraction]=extract_rf_particle_records(model,solutionOn,pdOn,'cpt',source.particle_id',planes,regions,20,256);
+    [pdZero,zeroExtraction]=extract_rf_particle_records(model,solutionZero,pdZero,'cpt',source.particle_id',planes,regions,20,256);
+    fprintf(fid,'TIMING_EXTRACT_SECONDS=%.9g RETAINED_SAMPLES=%d\n', ...
+      onExtraction.extract_seconds+zeroExtraction.extract_seconds,onExtraction.retained_samples+zeroExtraction.retained_samples);
     massKg=sourceMetadata.mass_amu*1.66053906660e-27;
     [onEvents, onTrajectories] = analyze_particle_case( ...
         pdOn, source, primaryCaseId, d.census_plane_z, g.working_region_radius, censusRadius, ...
@@ -1165,23 +1178,13 @@ solution.runAll;
 datasetTag = ['pd_' label '_temp'];
 dataset = model.result.dataset.create(datasetTag, 'Particle');
 dataset.set('solution', solutionTag);
-pd = mphparticle(model, 'dataset', datasetTag);
-model.result.dataset.remove(datasetTag);
+pd = datasetTag; % Retain the dataset in the persisted raw model for cold reopening.
 end
 
 function [events, trajectories] = analyze_particle_case(pd, source, caseId, ...
     censusPlaneZ, usableRadius, censusRadius, rodZMin, rodZMax, entranceCrossingZ, exitCrossingZ, ...
     entrancePortRadius, exitPortRadius,massKg)
-if ismatrix(pd.p) && size(pd.p,2)==3
-    x=pd.p(:,1); y=pd.p(:,2); z=pd.p(:,3);
-    vx=pd.v(:,1); vy=pd.v(:,2); vz=pd.v(:,3);
-else
-    x=squeeze(pd.p(:,:,1)); y=squeeze(pd.p(:,:,2)); z=squeeze(pd.p(:,:,3));
-    vx=squeeze(pd.v(:,:,1)); vy=squeeze(pd.v(:,:,2)); vz=squeeze(pd.v(:,:,3));
-end
-if isvector(x), x = x(:); y = y(:); z = z(:); end
-radius = sqrt(x.^2+y.^2);
-particleCount = size(z,2);
+particleCount=numel(pd);
 eventRows = cell(particleCount, 13);
 trajectoryRows = cell(0, 7);
 transmitted = false(1, particleCount);
@@ -1189,21 +1192,23 @@ maximumRodRadius = nan(1, particleCount);
 entranceRadii = nan(1, particleCount);
 exitPortRadii = nan(1, particleCount);
 for particle = 1:particleCount
-    valid = find(isfinite(x(:,particle)) & isfinite(y(:,particle)) & isfinite(z(:,particle)));
+    record=pd{particle};t=record.time_s;x=record.position_mm(:,1);y=record.position_mm(:,2);z=record.position_mm(:,3);
+    radius=sqrt(x.^2+y.^2);
+    valid = find(isfinite(x) & isfinite(y) & isfinite(z));
     assert(~isempty(valid), 'A finite 3D particle has no trajectory samples.');
-    rodSamples = valid(z(valid,particle) >= rodZMin & z(valid,particle) <= rodZMax);
+    rodSamples = valid(z(valid) >= rodZMin & z(valid) <= rodZMax);
     if isempty(rodSamples)
-        maximumRodRadius(particle) = radius(valid(1),particle);
+        maximumRodRadius(particle) = radius(valid(1));
     else
-        maximumRodRadius(particle) = max(radius(rodSamples,particle));
+        maximumRodRadius(particle) = max(radius(rodSamples));
     end
-    crossing = valid(find(z(valid,particle) >= censusPlaneZ, 1, 'first'));
-    entranceCrossing = valid(find(z(valid,particle) >= entranceCrossingZ, 1, 'first'));
-    exitCrossing = valid(find(z(valid,particle) >= exitCrossingZ, 1, 'first'));
-    if ~isempty(entranceCrossing), entranceRadii(particle) = radius(entranceCrossing,particle); end
-    if ~isempty(exitCrossing), exitPortRadii(particle) = radius(exitCrossing,particle); end
+    crossing = valid(find(z(valid) >= censusPlaneZ, 1, 'first'));
+    entranceCrossing = valid(find(z(valid) >= entranceCrossingZ, 1, 'first'));
+    exitCrossing = valid(find(z(valid) >= exitCrossingZ, 1, 'first'));
+    if ~isempty(entranceCrossing), entranceRadii(particle) = radius(entranceCrossing); end
+    if ~isempty(exitCrossing), exitPortRadii(particle) = radius(exitCrossing); end
     if ~isempty(crossing) && maximumRodRadius(particle) < usableRadius && ...
-            radius(crossing,particle) <= censusRadius
+            radius(crossing) <= censusRadius
         transmitted(particle) = true;
         reason = 'near_interface_census_plane';
         terminal = crossing;
@@ -1221,13 +1226,13 @@ for particle = 1:particleCount
     end
     status = 'lost'; if transmitted(particle), status = 'transmitted'; end
     eventRows(particle,:) = {caseId, source.particle_id(particle), status, reason, ...
-        source.birth_time_s(particle), pd.t(terminal), x(terminal,particle), ...
-        y(terminal,particle), z(terminal,particle), radius(terminal,particle), ...
+        source.birth_time_s(particle), t(terminal), x(terminal), ...
+        y(terminal), z(terminal), radius(terminal), ...
         maximumRodRadius(particle), entranceRadii(particle), exitPortRadii(particle)};
-    sampled = unique([valid(1:20:end); valid(end)]);
+    sampled=find(ismember(record.solution_index,record.trajectory_solution_index));
     for sample = sampled'
-        trajectoryRows(end+1,:) = {caseId, source.particle_id(particle), pd.t(sample), ...
-            x(sample,particle), y(sample,particle), z(sample,particle), radius(sample,particle)}; %#ok<AGROW>
+        trajectoryRows(end+1,:) = {caseId, source.particle_id(particle), t(sample), ...
+            x(sample), y(sample), z(sample), radius(sample)}; %#ok<AGROW>
     end
 end
 
@@ -1263,38 +1268,39 @@ end
 
 function write_canonical_particle_state(pd,source,path,rodExitZ,handoffZ,censusPlaneZ, ...
     usableRadius,censusRadius,massKg,frequencyHz,phaseRad)
-[x,y,z,vx,vy,vz]=particle_arrays(pd);
-radius=sqrt(x.^2+y.^2); rows=cell(0,17);
-for particle=1:size(z,2)
-    valid=find(isfinite(x(:,particle))&isfinite(y(:,particle))&isfinite(z(:,particle)));
-    rodSamples=valid(z(valid,particle)>=min(source.z_mm(particle),rodExitZ)&z(valid,particle)<=rodExitZ);
-    if isempty(rodSamples), maxRodRadius=radius(valid(1),particle); else, maxRodRadius=max(radius(rodSamples,particle)); end
+rows=cell(0,17);
+for particle=1:numel(pd)
+    record=pd{particle};t=record.time_s;x=record.position_mm(:,1);y=record.position_mm(:,2);z=record.position_mm(:,3);
+    vx=record.velocity_m_s(:,1);vy=record.velocity_m_s(:,2);vz=record.velocity_m_s(:,3);radius=sqrt(x.^2+y.^2);
+    valid=find(isfinite(x(:))&isfinite(y(:))&isfinite(z(:)));
+    rodSamples=valid(z(valid)>=min(source.z_mm(particle),rodExitZ)&z(valid)<=rodExitZ);
+    if isempty(rodSamples), maxRodRadius=radius(valid(1)); else, maxRodRadius=max(radius(rodSamples)); end
     sourceState=struct('t_s',source.birth_time_s(particle),'x_mm',source.x_mm(particle), ...
         'y_mm',source.y_mm(particle),'z_mm',source.z_mm(particle),'vx_m_s',source.vx_m_s(particle), ...
         'vy_m_s',source.vy_m_s(particle),'vz_m_s',source.vz_m_s(particle));
     rows(end+1,:)=canonical_state_row(source.particle_id(particle),'source','alive','none', ...
         sourceState,source.birth_time_s(particle),frequencyHz,phaseRad,massKg,maxRodRadius); %#ok<AGROW>
-    [rodState,rodFound]=interpolate_particle_plane(pd.t,x(:,particle),y(:,particle),z(:,particle), ...
-        vx(:,particle),vy(:,particle),vz(:,particle),rodExitZ);
+    [rodState,rodFound]=interpolate_particle_plane(t,x(:),y(:),z(:), ...
+        vx(:),vy(:),vz(:),rodExitZ);
     if rodFound
         rows(end+1,:)=canonical_state_row(source.particle_id(particle),'rod_exit','alive','none', ...
             rodState,source.birth_time_s(particle),frequencyHz,phaseRad,massKg,maxRodRadius); %#ok<AGROW>
     end
-    [handoffState,handoffFound]=interpolate_particle_plane(pd.t,x(:,particle),y(:,particle),z(:,particle), ...
-        vx(:,particle),vy(:,particle),vz(:,particle),handoffZ);
+    [handoffState,handoffFound]=interpolate_particle_plane(t,x(:),y(:),z(:), ...
+        vx(:),vy(:),vz(:),handoffZ);
     if handoffFound
         rows(end+1,:)=canonical_state_row(source.particle_id(particle),'handoff','transmitted','none', ...
             handoffState,source.birth_time_s(particle),frequencyHz,phaseRad,massKg,maxRodRadius); %#ok<AGROW>
     end
-    crossing=valid(find(z(valid,particle)>=censusPlaneZ,1,'first')); terminal=valid(end);
+    crossing=valid(find(z(valid)>=censusPlaneZ,1,'first')); terminal=valid(end);
     status='lost'; reason='electrode';
-    if ~isempty(crossing)&&radius(crossing,particle)<=censusRadius&&maxRodRadius<usableRadius
+    if ~isempty(crossing)&&radius(crossing)<=censusRadius&&maxRodRadius<usableRadius
         terminal=crossing;status='transmitted';reason='acceptance_surface';
-    elseif z(terminal,particle)<source.z_mm(particle),reason='backward_escape';
+    elseif z(terminal)<source.z_mm(particle),reason='backward_escape';
     end
-    terminalState=struct('t_s',pd.t(terminal),'x_mm',x(terminal,particle),'y_mm',y(terminal,particle), ...
-        'z_mm',z(terminal,particle),'vx_m_s',vx(terminal,particle),'vy_m_s',vy(terminal,particle), ...
-        'vz_m_s',vz(terminal,particle));
+    terminalState=struct('t_s',t(terminal),'x_mm',x(terminal),'y_mm',y(terminal), ...
+        'z_mm',z(terminal),'vx_m_s',vx(terminal),'vy_m_s',vy(terminal), ...
+        'vz_m_s',vz(terminal));
     rows(end+1,:)=canonical_state_row(source.particle_id(particle),'terminal',status,reason, ...
         terminalState,source.birth_time_s(particle),frequencyHz,phaseRad,massKg,maxRodRadius); %#ok<AGROW>
 end
@@ -1325,16 +1331,6 @@ for index=2:numel(valid)
         found=true;return
     end
 end
-end
-
-function [x,y,z,vx,vy,vz]=particle_arrays(pd)
-if ismatrix(pd.p)&&size(pd.p,2)==3
-    x=pd.p(:,1);y=pd.p(:,2);z=pd.p(:,3);vx=pd.v(:,1);vy=pd.v(:,2);vz=pd.v(:,3);
-else
-    x=squeeze(pd.p(:,:,1));y=squeeze(pd.p(:,:,2));z=squeeze(pd.p(:,:,3));
-    vx=squeeze(pd.v(:,:,1));vy=squeeze(pd.v(:,:,2));vz=squeeze(pd.v(:,:,3));
-end
-if isvector(x),x=x(:);y=y(:);z=z(:);vx=vx(:);vy=vy(:);vz=vz(:);end
 end
 
 function create_native_plot(model, solutionTag, datasetTag, plotTag, label)

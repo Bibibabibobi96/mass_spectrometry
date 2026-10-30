@@ -78,9 +78,19 @@ try {
       'common\contracts\file_identity.py',
       'common\analysis\peak_metrics.py'
   )
+  $frozenMatlabRelativePaths=@(
+      'common/comsol/create_multipole_round_rods.m',
+      'common/comsol/configure_comsol_mesh.m',
+      'common/comsol/add_comsol_size_feature.m',
+      'projects/rf_multipole_ion_optics/load_rf_quadrupole_contract.m',
+      'projects/rf_multipole_ion_optics/comsol/solve_deterministic_rf_quadrupole_particles.m',
+      'projects/rf_multipole_ion_optics/comsol/visit_rf_particle_windows.m',
+      'projects/rf_multipole_ion_optics/comsol/extract_rf_particle_records.m',
+      'projects/rf_multipole_ion_optics/comsol/mass_filter_reference/run_scan.m'
+  )
   $frozenAnalysisPackage = New-FrozenPythonPackage `
       -SourceRoot $repoRoot -CodeRoot (Join-Path $inputDir 'analysis_runtime') `
-      -RelativePaths $analysisFiles
+      -RelativePaths @($analysisFiles+$frozenMatlabRelativePaths)
   $analysisRequiredModules = @($analysisFiles | Where-Object { $_.EndsWith('.py') } |
       ForEach-Object { $_ -replace '[/\\]__init__\.py$', '' -replace '\.py$', '' -replace '[/\\]', '.' })
   $analysisDistributions = @('matplotlib','numpy','scipy')
@@ -197,6 +207,7 @@ try {
   $environment=Save-RunEnvironment -Names @('RFQUAD_SCAN_CONFIG','COMSOL_BOOTSTRAP_REPORT')
   try {
     $env:RFQUAD_SCAN_CONFIG=$scanConfig;$env:COMSOL_BOOTSTRAP_REPORT=$report
+    $massScanTask=Join-Path $frozenAnalysisPackage.code_root 'projects/rf_multipole_ion_optics/comsol/mass_filter_reference/run_scan.m'
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
       -TaskScript $massScanTask -ReportPath $report `
       -StartupAttempts 1 -StartupReportTimeoutSeconds 1200

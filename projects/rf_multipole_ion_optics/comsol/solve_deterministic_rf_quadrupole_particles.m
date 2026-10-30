@@ -379,44 +379,8 @@ pg=model.result.create('pg_traj','PlotGroup3D'); pg.set('data','pdset1'); pg.set
 pg.label('Compiled no-collision trajectories');
 pg.set('title',sprintf('Reference quadrupole: no-collision transport at %.12g Th (N=%d)',source.mass_amu,source.particles));
 pg.create('traj1','ParticleTrajectories');
-pd=mphparticle(model,'dataset','pdset1'); x=squeeze(pd.p(:,:,1)); y=squeeze(pd.p(:,:,2)); z=squeeze(pd.p(:,:,3));
-vx=squeeze(pd.v(:,:,1)); vy=squeeze(pd.v(:,:,2)); vz=squeeze(pd.v(:,:,3)); radial=sqrt(x.^2+y.^2);
-nP=size(z,2); assert(nP==size(ions,1),'Solved particle count mismatch.');
-hit=false(1,nP); threshold=censusPlaneZ-1e-6;
-rodRadial=radial; rodRadial(z<g.rod_z_min | z>g.rod_z_max)=NaN;
-maxRodRadius=max(rodRadial,[],1,'omitnan');
-terminalX=nan(1,nP); terminalY=nan(1,nP); terminalZ=nan(1,nP);
-terminalIndex=nan(1,nP);
-for i=1:nP
-    finalSample=find(isfinite(x(:,i)) & isfinite(y(:,i)) & isfinite(z(:,i)),1,'last');
-    assert(~isempty(finalSample),'Particle %d has no finite terminal coordinate.',i);
-    terminalX(i)=x(finalSample,i); terminalY(i)=y(finalSample,i); terminalZ(i)=z(finalSample,i);
-    terminalIndex(i)=finalSample;
-    k=find(z(:,i)>=threshold,1,'first');
-    if ~isempty(k)
-        if radial(k,i)<=enclosure.physical_detector_radius_mm
-            hit(i)=true;
-        end
-    end
-end
-featureTags=cell(cpt.feature.tags()); collisionPresent=any(contains(lower(string(featureTags)),'coll'));
-result=struct('role','rf_quadrupole_comsol_raw_solver_metadata', ...
-    'solver','COMSOL','mode',workflowId,'workflow_id',workflowId, ...
-    'operating_point',operatingPoint,'collision_feature_present',collisionPresent, ...
-    'q_mathieu',mphglobal(model,'q_mathieu','dataset','dset1'), ...
-    'a_mathieu',mphglobal(model,'a_mathieu','dataset','dset1'), ...
-    'rf_steps_per_period',rfStepsPerPeriod,'mesh_auto_level',meshAuto, ...
-    'mesh_hmax_mm',meshHmaxMm,'mesh_elements_total',sum(mi.numelem), ...
-    'source_axial_offset_mm',sourceAxialOffsetMm,'mass_Th',source.mass_amu,'rf_peak_V',rfPeakV,'dc_per_group_V',dcV, ...
-    'axis_common_mode_V',axisV,'static_entrance_V',staticEntranceV,'static_exit_V',staticExitV,'static_physical_detector_V',physicalDetectorV, ...
-    'run_label',runLabel);
-if collisionPresent
-    error('COMSOL no-collision case contains a collision feature.');
-end
-
 if ~exist(comsolOutputDir,'dir'),mkdir(comsolOutputDir);end
 if ~exist(resultsOutputDir,'dir'),mkdir(resultsOutputDir);end
-modelName='rf_multipole_ion_optics__model.mph';
 particleStatePath=fullfile(resultsOutputDir,'particle_state.csv');
 rawPhaseSpacePath=fullfile(resultsOutputDir,'particle_raw.csv');
 
@@ -429,29 +393,66 @@ if writeDetailedOutputs
     rawExport.set('data','pdset1');
     rawExport.set('expr',{'x','y','z','cpt.vx','cpt.vy','cpt.vz'});
     rawExport.set('filename',rawPhaseSpacePath);
-    rawExport.run;
 end
+
+% Preserve the existing unique raw model before extraction/plot/export can fail.
+modelPath=fullfile(comsolOutputDir,'rf_multipole_ion_optics__model.mph');
+persistTimer=tic;if saveModel,model.save(modelPath);end
+fprintf('TIMING_PERSIST_SECONDS=%.9g RAW_SOLUTION_PERSISTED=%d\n',toc(persistTimer),saveModel);
+stride=5;if ~writeDetailedOutputs,stride=2147483647;end
+[particleRecords,extraction]=extract_rf_particle_records(model,'sol2','pdset1','cpt',1:size(ions,1), ...
+ [interface.planes.rod_exit.z_mm interface.planes.handoff.z_mm censusPlaneZ censusPlaneZ-1e-6], ...
+ [g.rod_z_min g.rod_z_max],stride,256);
+nP=numel(particleRecords);hit=false(1,nP);threshold=censusPlaneZ-1e-6;
+maxRodRadius=nan(1,nP);terminalX=nan(1,nP);terminalY=nan(1,nP);terminalZ=nan(1,nP);
+terminalIndex=nan(1,nP);
+for i=1:nP
+ record=particleRecords{i};x=record.position_mm(:,1);y=record.position_mm(:,2);z=record.position_mm(:,3);
+ radial=sqrt(x.^2+y.^2);rodRadial=radial;rodRadial(z<g.rod_z_min|z>g.rod_z_max)=NaN;
+ maxRodRadius(i)=max(rodRadial,[],'omitnan');finalSample=numel(record.time_s);
+ terminalX(i)=x(finalSample);terminalY(i)=y(finalSample);terminalZ(i)=z(finalSample);terminalIndex(i)=finalSample;
+ k=find(z>=threshold,1,'first');if ~isempty(k)&&radial(k)<=enclosure.physical_detector_radius_mm,hit(i)=true;end
+end
+featureTags=cell(cpt.feature.tags()); collisionPresent=any(contains(lower(string(featureTags)),'coll'));
+result=struct('role','rf_quadrupole_comsol_raw_solver_metadata', ...
+    'solver','COMSOL','mode',workflowId,'workflow_id',workflowId, ...
+    'operating_point',operatingPoint,'collision_feature_present',collisionPresent, ...
+    'q_mathieu',mphglobal(model,'q_mathieu','dataset','dset1'), ...
+    'a_mathieu',mphglobal(model,'a_mathieu','dataset','dset1'), ...
+    'rf_steps_per_period',rfStepsPerPeriod,'mesh_auto_level',meshAuto, ...
+    'mesh_hmax_mm',meshHmaxMm,'mesh_elements_total',sum(mi.numelem), ...
+    'source_axial_offset_mm',sourceAxialOffsetMm,'mass_Th',source.mass_amu,'rf_peak_V',rfPeakV,'dc_per_group_V',dcV, ...
+    'axis_common_mode_V',axisV,'static_entrance_V',staticEntranceV,'static_exit_V',staticExitV,'static_physical_detector_V',physicalDetectorV, ...
+    'run_label',runLabel,'particle_extraction',extraction, ...
+    'raw_solution_persisted',saveModel,'postprocess_recovery_supported',false);
+if collisionPresent
+    error('COMSOL no-collision case contains a collision feature.');
+end
+
+if writeDetailedOutputs,rawExport.run;end
 
 stateRows=cell(0,17);
 for i=1:nP
+    record=particleRecords{i};t=record.time_s;x=record.position_mm(:,1);y=record.position_mm(:,2);z=record.position_mm(:,3);
+    vx=record.velocity_m_s(:,1);vy=record.velocity_m_s(:,2);vz=record.velocity_m_s(:,3);
     sourceState=struct('t_s',ions(i,1)*1e-6,'x_mm',initialPositionMm(i,1),'y_mm',initialPositionMm(i,2), ...
         'z_mm',initialPositionMm(i,3),'vx_m_s',initialVelocityMS(i,1),'vy_m_s',initialVelocityMS(i,2),'vz_m_s',initialVelocityMS(i,3));
     stateRows(end+1,:)=particleStateRow(i,'source','alive','none',sourceState,ions(i,1)*1e-6,rfFrequencyHz,rfPhaseRad, ...
         source.mass_amu,hypot(sourceState.x_mm,sourceState.y_mm),hypot(sourceState.x_mm,sourceState.y_mm)); %#ok<AGROW>
 
-    [rodState,rodFound]=interpolateParticlePlane(pd.t,x(:,i),y(:,i),z(:,i),vx(:,i),vy(:,i),vz(:,i),interface.planes.rod_exit.z_mm);
+    [rodState,rodFound]=interpolateParticlePlane(t,x,y,z,vx,vy,vz,interface.planes.rod_exit.z_mm);
     if rodFound
         stateRows(end+1,:)=particleStateRow(i,'rod_exit','alive','none',rodState,ions(i,1)*1e-6,rfFrequencyHz,rfPhaseRad, ...
             source.mass_amu,hypot(rodState.x_mm,rodState.y_mm),maxRodRadius(i)); %#ok<AGROW>
     end
-    [handoffState,handoffFound]=interpolateParticlePlane(pd.t,x(:,i),y(:,i),z(:,i),vx(:,i),vy(:,i),vz(:,i),interface.planes.handoff.z_mm);
+    [handoffState,handoffFound]=interpolateParticlePlane(t,x,y,z,vx,vy,vz,interface.planes.handoff.z_mm);
     if handoffFound
         stateRows(end+1,:)=particleStateRow(i,'handoff','transmitted','none',handoffState,ions(i,1)*1e-6,rfFrequencyHz,rfPhaseRad, ...
             source.mass_amu,hypot(handoffState.x_mm,handoffState.y_mm),maxRodRadius(i)); %#ok<AGROW>
     end
 
-    finalSample=terminalIndex(i); terminalState=struct('t_s',pd.t(finalSample),'x_mm',terminalX(i),'y_mm',terminalY(i), ...
-        'z_mm',terminalZ(i),'vx_m_s',vx(finalSample,i),'vy_m_s',vy(finalSample,i),'vz_m_s',vz(finalSample,i));
+    finalSample=terminalIndex(i); terminalState=struct('t_s',t(finalSample),'x_mm',terminalX(i),'y_mm',terminalY(i), ...
+        'z_mm',terminalZ(i),'vx_m_s',vx(finalSample),'vy_m_s',vy(finalSample),'vz_m_s',vz(finalSample));
     terminalRadius=hypot(terminalX(i),terminalY(i)); terminalStatus='lost'; terminalReason='electrode';
     if hit(i), terminalStatus='transmitted'; terminalReason='acceptance_surface';
     elseif terminalState.t_s-ions(i,1)*1e-6 >= maximumTimeUs*1e-6-1e-12
@@ -468,17 +469,17 @@ stateNames={'particle_id','event','status','terminal_reason','time_us','elapsed_
 assert(isequal(stateNames(:),cellstr(string(interface.particle_state_columns(:)))),'Interface column contract mismatch.');
 writetable(cell2table(stateRows,'VariableNames',stateNames),particleStatePath);
 
-modelPath=fullfile(comsolOutputDir,modelName); if saveModel, model.save(modelPath); end
+% The solved model was already persisted before extraction; no second save is needed.
 rawMetadataPath=fullfile(resultsOutputDir,'solver_raw_metadata.json'); fid=fopen(rawMetadataPath,'w'); fprintf(fid,'%s',jsonencode(result,'PrettyPrint',true)); fclose(fid);
 if writeDetailedOutputs
     trajectoryPath=fullfile(resultsOutputDir,'trajectory_samples.csv');
     trajectoryFile=fopen(trajectoryPath,'w'); assert(trajectoryFile>=0,'Could not open trajectory CSV.');
     fprintf(trajectoryFile,'particle_id,time_us,axial_z_mm,transverse_x_mm,transverse_y_mm,r_mm\n');
     for i=1:nP
-        valid=find(isfinite(x(:,i)) & isfinite(y(:,i)) & isfinite(z(:,i)));
-        sampled=unique([valid(1:5:end); valid(end)]);
+        record=particleRecords{i};sampled=find(ismember(record.solution_index,record.trajectory_solution_index));
         for sample=sampled'
-            fprintf(trajectoryFile,'%d,%.12g,%.12g,%.12g,%.12g,%.12g\n',i,pd.t(sample)*1e6,z(sample,i),x(sample,i),y(sample,i),radial(sample,i));
+            point=record.position_mm(sample,:);
+            fprintf(trajectoryFile,'%d,%.12g,%.12g,%.12g,%.12g,%.12g\n',i,record.time_s(sample)*1e6,point(3),point(1),point(2),sqrt(point(1)^2+point(2)^2));
         end
     end
     fclose(trajectoryFile);

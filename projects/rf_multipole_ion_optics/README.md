@@ -7,8 +7,10 @@
 项目门禁的unittest执行通过公共计时runner记录逐测试耗时并即时输出失败详情；测试范围仍由门禁目录选择。
 SIMION 正常入口以 `-NativeFieldRunPath` 显式复用原 producer 的 fractional 场，
 场、Fly 与分析依赖分别判断；公共检查点 API 及保留条件见[项目状态](docs/PROJECT.md#当前结论)。
-finite、interface_readiness 与 mass_filter_reference 的 request／completion 和收尾恢复默认接入公共 PowerShell owner API，
-项目只提供真实退出和 host release 事实；三条原 CLI 均可用 `-ResumeFinalization -RunId` 恢复收尾。
+finite、interface_readiness 与 mass_filter_reference 的三条 SIMION CLI，request／completion 和收尾恢复默认接入公共 PowerShell owner API，
+项目只提供真实退出和 host release 事实；这三条 SIMION CLI 均可用 `-ResumeFinalization -RunId` 恢复收尾。
+COMSOL 已保存解不等于原 CLI 支持后处理恢复；其当前恢复边界见[项目状态](docs/PROJECT.md#当前结论)。
+两个 COMSOL solver 通过项目共用分窗 API 提取原解；保存、实际原生读取证据和范围见[项目状态](docs/PROJECT.md#当前结论)。
 
 ## 固定阅读顺序
 

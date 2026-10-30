@@ -103,7 +103,7 @@ class FrozenParticlePolicyPackageTests(unittest.TestCase):
         start = source.index("  foreach($case in $cases){", source.index("Restore-RunEnvironment"))
         analysis = source[start:source.index("  $metricDocument=", start)]
         setup = _mass_analysis_setup(runner)
-        files = re.findall(r"^\s*'((?:projects|common)\\[^']+)'[,]?$", setup, re.MULTILINE)
+        files = re.findall(r"^\s*'((?:projects|common)[/\\][^']+)'[,]?$", setup, re.MULTILINE)
         state_relative = "projects/rf_multipole_ion_optics/analysis/analyze_comsol_particle_state_metrics.py"
         helper_relative = "projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1"
         mode_path = PROJECT_ROOT / "config/modes/quadrupole_mass_filter_reference.json"
