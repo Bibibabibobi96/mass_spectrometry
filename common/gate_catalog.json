@@ -1104,7 +1104,7 @@
         "parameter": "SelectedTestModules",
         "default_seconds": 5,
         "measured_seconds": {
-          "test_single_reflection_execute": 688.073291,
+          "test_single_reflection_execute": 167.381881,
           "test_single_reflection_field_stage": 164.350013,
           "test_dependencies": 148.247836,
           "test_prepared_joint_execute": 87.571695,
@@ -1145,7 +1145,11 @@
           "test_single_reflection_pulse": 0.343607,
           "test_paired_accelerator_pulse_comparison": 0.248382,
           "test_repository_bindings": 0.028153,
-          "test_cooled_frontend_pulse": 0.000784
+          "test_cooled_frontend_pulse": 0.000784,
+          "test_single_reflection_execute_flight": 168.930973,
+          "test_single_reflection_execute_capacity": 139.596648,
+          "test_single_reflection_execute_discovery": 135.595777,
+          "test_single_reflection_execute_preparation": 84.440552
         }
       },
       "test_selection": {
