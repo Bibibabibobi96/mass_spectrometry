@@ -183,9 +183,11 @@ try {
         $attemptObservation = New-RepositoryProcessObservation -Limits $Limits -RunDir $RunDir -UsagePath $UsagePath
         $launcherProcess = Start-ComsolLauncherProcess -FilePath $launcher `
             -Arguments $launcherArguments
-        $launcherCompletion = @{operation_id="launcher-attempt-$attempt";observation=@{exit_confirmed=$false;returncode=$null}}
+        $launcherCompletion = @{operation_id="launcher-attempt-$attempt";observation=@{exit_confirmed=$false;returncode=$null;
+            process_id=[int]$launcherProcess.Id;process_started_at_utc_ticks=$null}}
         $launcherCompletions.Add($launcherCompletion)
         $launcherStartedUtc = $launcherProcess.StartTime.ToUniversalTime()
+        $launcherCompletion.observation.process_started_at_utc_ticks = $launcherStartedUtc.Ticks
         $attemptObservation.tracked_ids = @([int]$launcherProcess.Id)
         $attemptObservation.tracked_ticks = @{([string]$launcherProcess.Id)=$launcherStartedUtc.Ticks}
         $attemptObservation.last_sample = $null

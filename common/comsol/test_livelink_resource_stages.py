@@ -215,6 +215,7 @@ function Start-ComsolLauncherProcess {
     Write-Event 'launch'
     $global:FakeServerLive=$true
     $global:FakeLauncherProcess=Start-ControlledChildProcess -FilePath $FilePath -Arguments @('-NoProfile','-File',(Join-Path $repoRoot 'controlled_child.ps1'))
+    Write-Event ("launcher_identity:{0}:{1}" -f $global:FakeLauncherProcess.Id,$global:FakeLauncherProcess.StartTime.ToUniversalTime().Ticks)
     return $global:FakeLauncherProcess
 }
 function Stop-ComsolAttemptServers {
@@ -318,6 +319,11 @@ try { & $path @arguments } finally {
                 for operation in receipt['operations']:
                     self.assertTrue(operation['observation']['exit_confirmed'])
                     self.assertIsInstance(operation['observation']['returncode'], int)
+                    self.assertGreater(operation['observation']['process_id'], 0)
+                    self.assertGreater(operation['observation']['process_started_at_utc_ticks'], 0)
+                    if crash_scenario:
+                        identities = [entry.split(':')[1:] for entry in entries if entry.startswith('launcher_identity:')]
+                        self.assertEqual(identities, [[str(operation['observation']['process_id']), str(operation['observation']['process_started_at_utc_ticks'])]])
                 self.assertEqual(receipt['host_release']['token'], 'isolated-test')
                 self.assertEqual(receipt['host_release']['inherited'], release == 'inherited')
                 if release == 'error':
@@ -374,6 +380,8 @@ try { & $path @arguments } finally {
     def test_completion_receipt_records_real_child_exit_and_no_fictitious_launch(self) -> None:
         code, _, output = self.run_scenario('success', crash_scenario='success', completion=True)
         self.assertEqual(code, 0, output)
+        code, _, output = self.run_scenario('task_failure', crash_scenario='failure', completion=True)
+        self.assertNotEqual(code, 0, output)
         code, _, output = self.run_scenario('prelaunch_failure', completion=True)
         self.assertNotEqual(code, 0, output)
         self.assertIn('COMSOL MATLAB launcher not found', output)

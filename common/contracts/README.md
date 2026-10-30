@@ -119,6 +119,12 @@ PowerShell request的capacity可显式携带`ownership`（owned/inherited）和�
 父保护已失效而尚无ready封存事实时返回原父owner处理，不猜测新授权。父owner已沿原机制封存为ready后，
 重复恢复只核对既有终态和账本；父session及父终态不被child改写。
 
+直接PowerShell资源释放用`Add-RunArtifactResourceRelease`运输实际收据；直接
+`Exit-HostResourceStage -PassThru`返回的`PSCustomObject`按全部属性转换为字典，不丢弃未知字段来制造通过。
+同一继承父grant的实际释放返回`null`，保留该值；公共收尾在原主机库再次核对父grant，child不释放父token。
+同父token的多个阶段可复用同一份真实null收据；重复owned收据、冲突token、额外字段或未确认释放仍拒绝。
+COMSOL公共launcher操作附实际PID及创建ticks，writer终态与资源释放各自核验，不能用pool释放替代本地进程退出。
+
 owner只创建一个容量session，冻结请求为`inputs/execution_request.json`并绑定初始checkpoint输入，
 将session运输快照写入`logs/capacity_session.json`。项目prepared固定接收四个路径：
 `run_config_path, capacity_session_path, execution_request_path, completion_path`；后者固定为

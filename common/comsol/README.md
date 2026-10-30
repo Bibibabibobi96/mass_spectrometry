@@ -37,6 +37,8 @@
 入口通过公共父子进程观测记录本次launcher及后代的PID和创建身份；成功、失败或未创建报告的清理只消费
 这些已证明的身份。`comsolmphserver`名称只筛选服务器角色，不以全机新增PID差集证明所有权。
 launcher退出后仍保留已见身份以收尾其服务器，创建身份不符或归属未知的进程不被当作本次所有。
+公共completion的每次实际launcher observation同时保留该wrapper进程的PID与创建ticks；
+创建时间尚未取得或writer退出未知时保持未确认，启动前失败不补造launcher操作。资源释放收据与该事实独立报告。
 `-StartupReportTimeoutSeconds`默认120秒，只限制MATLAB/LiveLink创建首份任务报告的启动阶段；报告
 创建后不限制Study Compute的正常长运行。`-StartupReportTimeoutAction` 默认 `warn`：超阈只提醒一次，
 继续等待同一进程的报告及真实退出，不因超时杀进程或重启；

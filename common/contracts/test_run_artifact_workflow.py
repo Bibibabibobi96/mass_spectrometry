@@ -104,6 +104,42 @@ def released_writer() -> dict:
 
 @unittest.skipUnless(PWSH and os.name == "nt", "Windows PowerShell workflow boundary")
 class RunArtifactWorkflowTests(unittest.TestCase):
+    def test_direct_powershell_release_keeps_actual_transaction_fields(self):
+        script=r'''param($Repo)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. (Join-Path $Repo 'common/contracts/run_artifact_workflow.ps1')
+# Use the real Exit adapter with an isolated transaction boundary. No native
+# process is represented by the inert grammar-only operation below.
+function Invoke-HostResourceTransaction {param($StatePath,$Request) return [pscustomobject]@{status='released';token=$Request.token}}
+$lease=@{inherited=$false;token='INERT_CONTRACT_TOKEN';completed_work_processes=@();state_path='unused';role='SIMION';stage='prepare';environment_set=$false}
+$actual=Exit-HostResourceStage -Lease $lease -PassThru
+if($actual-isnot[pscustomobject]){throw 'Fixture must exercise the actual direct adapter representation'}
+$releases=[Collections.Generic.List[object]]::new()
+Add-RunArtifactResourceRelease -ResourceReleases $releases -ReleaseId $lease.token -Receipt @{host_release=@{inherited=$false;token=$lease.token;result=$actual;error=$null}}
+$completion=@{operations=@(@{operation_id='inert_contract_shape';resource_release_id=$lease.token;observation=@{exit_confirmed=$true;returncode=0;process_id=1;process_started_at_utc_ticks=1L}});resource_releases=@($releases.ToArray())}
+Assert-WorkflowWriterCompletion $completion -PowerShellOwner
+if($releases[0].completion_receipt.host_release.result-isnot[Collections.IDictionary]-or$actual.PSObject.Properties.Name.Count-ne2){throw 'Transaction adaptation changed the source'}
+$inheritedActual=Exit-HostResourceStage -Lease @{inherited=$true;environment_set=$false} -PassThru
+if($null-ne$inheritedActual){throw 'Actual inherited exit must not fabricate a transaction'}
+$inherited=[Collections.Generic.List[object]]::new()
+foreach($stage in 1..2){Add-RunArtifactResourceRelease -ResourceReleases $inherited -ReleaseId 'INERT_PARENT_TOKEN' -Receipt @{host_release=@{inherited=$true;token='INERT_PARENT_TOKEN';result=$inheritedActual;error=$null}}}
+if($inherited.Count-ne1-or$null-ne$inherited[0].completion_receipt.host_release.result){throw 'Inherited stages did not share their actual null receipt'}
+$conflict=$false
+try{Add-RunArtifactResourceRelease -ResourceReleases $inherited -ReleaseId 'INERT_PARENT_TOKEN' -Receipt @{host_release=@{inherited=$true;token='INERT_PARENT_TOKEN';result=@{status='acquired';token='INERT_PARENT_TOKEN'};error=$null}}}catch{$conflict=$true}
+if(-not$conflict){throw 'Fabricated inherited transaction was accepted as a duplicate'}
+foreach($invalid in @([pscustomobject]@{status='released';token=$lease.token;extra='must_not_be_removed'},[pscustomobject]@{status='released';token='OTHER'})){
+ $bad=[Collections.Generic.List[object]]::new()
+ Add-RunArtifactResourceRelease -ResourceReleases $bad -ReleaseId $lease.token -Receipt @{host_release=@{inherited=$false;token=$lease.token;result=$invalid;error=$null}}
+ $completion.resource_releases=@($bad.ToArray());$rejected=$false
+ try{Assert-WorkflowWriterCompletion $completion -PowerShellOwner}catch{$rejected=$true}
+ if(-not$rejected){throw 'Representation conversion relaxed the release contract'}
+}
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'direct_release.ps1';path.write_text(script,encoding='utf-8',newline='\n')
+            result=subprocess.run([PWSH,'-NoProfile','-File',str(path),str(REPO)],cwd=REPO,capture_output=True,text=True,encoding='utf-8',timeout=30)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
     def run_ps(self, root: Path, script: str) -> subprocess.CompletedProcess[str]:
         path = root / "invoke.ps1"
         path.write_text(script, encoding="utf-8")
@@ -452,9 +488,12 @@ if($args[0]-eq'first'){{
   $proc=Start-Process -FilePath '{sys.executable}' -ArgumentList @('-c','pass') -PassThru
   $ticks=$proc.StartTime.ToUniversalTime().Ticks;$proc.WaitForExit()
   $grant=Invoke-HostResourceTransaction -Request @{{operation='inherit';token=$env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN}} -StatePath $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH
+  $childLease=Enter-HostResourceStage -Role SIMION -Stage flight -Budget (Get-HostResourceBudget -Role SIMION -Stage flight)
+  $actualExit=Exit-HostResourceStage -Lease $childLease -PassThru
+  if($null-ne$actualExit){{throw 'Inherited Exit unexpectedly returned a transaction'}}
   $completion=Get-Content -Raw '{completion_path}'|ConvertFrom-Json -AsHashtable
   $completion.writer_completion=@{{operations=@(@{{operation_id='native';observation=@{{exit_confirmed=$true;returncode=$proc.ExitCode;process_id=$proc.Id;process_started_at_utc_ticks=$ticks}};resource_release_id='simion'}});
-    resource_releases=@(@{{release_id='simion';completion_receipt=@{{host_release=@{{inherited=$true;token=$grant.token;result=@{{status=$grant.status;token=$grant.token}};error=$null}}}}}})}}
+    resource_releases=@(@{{release_id='simion';completion_receipt=@{{host_release=@{{inherited=$true;token=$grant.token;result=$actualExit;error=$null}}}}}})}}
   Write-RunJson -Atomic -Path '{completion_path}' -Value $completion -Depth 64
   Write-RunJson -Atomic -Path '{run / 'logs/prepared_wait.json'}' -Value @{{schema_version=1;role='run_artifact_powershell_owner_wait';owner_pid=$PID;owner_start_utc_ticks=(Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks;native_writers_confirmed=$true;exception=$null;observation_error=$null}}
   function Publish-WorkflowTerminal {{ throw 'fixture publication failure' }}

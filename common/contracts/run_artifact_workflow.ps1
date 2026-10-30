@@ -206,6 +206,32 @@ function Complete-RunArtifactPowerShellOwner {
   return $outcome
 }
 
+function Add-RunArtifactResourceRelease {
+  param([Parameter(Mandatory)][AllowEmptyCollection()][Collections.Generic.List[object]]$ResourceReleases,
+    [Parameter(Mandatory)][string]$ReleaseId,[Parameter(Mandatory)]$Receipt)
+  # Direct Exit-HostResourceStage returns a PSCustomObject; JSON bridges return
+  # a dictionary. Preserve every actual field while adapting that representation.
+  if($Receipt-is[Collections.IDictionary]-and$Receipt.Contains('host_release')-and
+     $Receipt.host_release-is[Collections.IDictionary]-and$Receipt.host_release.Contains('result')-and
+     $null-ne$Receipt.host_release.result-and$Receipt.host_release.result-is[pscustomobject]){
+    $transaction=@{}
+    foreach($property in $Receipt.host_release.result.PSObject.Properties){$transaction[$property.Name]=$property.Value}
+    $Receipt.host_release.result=$transaction
+  }
+  $existing=@($ResourceReleases|Where-Object release_id -eq $ReleaseId)
+  if($existing.Count){
+    $prior=$existing[0].completion_receipt.host_release
+    $current=$Receipt.host_release
+    if($existing.Count-ne1-or-not$prior.inherited-or-not$current.inherited-or
+       $prior.token-cne$current.token-or$current.token-cne$ReleaseId-or
+       $null-ne$prior.result-or$null-ne$current.result-or$null-ne$prior.error-or$null-ne$current.error){
+      throw 'Resource completion conflicts with an existing release receipt.'
+    }
+    return
+  }
+  $ResourceReleases.Add(@{release_id=$ReleaseId;completion_receipt=$Receipt})
+}
+
 function Assert-WorkflowWriterCompletion {
   param($Completion,[switch]$PowerShellOwner)
   Assert-WorkflowFields $Completion @('operations','resource_releases') 'Writer completion'
@@ -240,10 +266,15 @@ function Assert-WorkflowWriterCompletion {
     if($hostRelease.inherited-isnot[bool]-or($hostRelease.inherited-and-not$PowerShellOwner)-or
        $hostRelease.token-isnot[string]-or[string]::IsNullOrWhiteSpace($hostRelease.token)-or
        $null-ne$hostRelease.error){throw 'Resource owner release is unconfirmed or inherited.'}
-    Assert-WorkflowFields $hostRelease.result @('status','token') 'Released transaction'
-    $expectedStatus=if($hostRelease.inherited){'acquired'}else{'released'}
-    if($hostRelease.result.status-cne$expectedStatus-or$hostRelease.result.token-cne$hostRelease.token){
-      throw 'Resource owner release identity or terminal state differs.'
+    if($hostRelease.inherited){
+      # Exit-HostResourceStage makes no transaction for an inherited grant.
+      # The actual parent grant is rechecked before terminal publication below.
+      if($null-ne$hostRelease.result){throw 'Inherited stage must preserve its actual null release result.'}
+    }else{
+      Assert-WorkflowFields $hostRelease.result @('status','token') 'Released transaction'
+      if($hostRelease.result.status-cne'released'-or$hostRelease.result.token-cne$hostRelease.token){
+        throw 'Resource owner release identity or terminal state differs.'
+      }
     }
     if($tokens.ContainsKey($hostRelease.token)){throw 'Resource release token is duplicated.'}
     $tokens[$hostRelease.token]=$true
