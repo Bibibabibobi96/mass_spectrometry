@@ -316,3 +316,7 @@ Python向PowerShell传递派生预算可使用任务临时JSON，解析后由调
 `New-RepositoryProcessObservation`和`Update-RepositoryProcessObservation`供包装器和COMSOL入口复用观测；
 它们不启动进程、调度、重试或发布科学终态。物理危险阈值只来自[主机策略](host_resource_policy.json)，
 无Limits时不写usage；目录或usage写入失败只告警，不能遮蔽已经确认的物理危险。
+
+RF 资源预算的两个调度用例改由真实 admission-pause 事件释放短测试 worker，纯报告矩阵合批执行。
+同范围三项实测39.189→15.879秒、父PowerShell启动9→3；后者使用隔离的已提交生产源码并保留worker退出检查。
+其他失败、未知writer与自然排空测试保留；这不是完整模块、Owner或Repository耗时。缺失释放信号、错误接受全部报告、外层非零及坏JSON的变异检查均能使测试失败。

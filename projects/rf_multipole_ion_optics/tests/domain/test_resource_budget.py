@@ -37,6 +37,35 @@ def dispatch_limits(**overrides: int | float) -> dict[str, int | float]:
     }
 
 
+def _admission_pause_barrier(root: Path, reason: str, *, memory_pressure: bool = False) -> str:
+    """Release real fixture children after the scheduler observes the tested pause."""
+    worker = root / "barrier_worker.ps1"
+    worker.write_text(r"""param([string]$ReleasePath)
+$ErrorActionPreference='Stop'
+Write-Output "BARRIER_CHILD_PID=$PID"
+$deadline=[DateTime]::UtcNow.AddSeconds(15)
+while(-not(Test-Path -LiteralPath $ReleasePath)-and[DateTime]::UtcNow-lt$deadline){
+ Start-Sleep -Milliseconds 20
+}
+if(-not(Test-Path -LiteralPath $ReleasePath)){exit 9}
+Write-Output 'BARRIER_RELEASED_NATURALLY'
+exit 0
+""", encoding="utf-8")
+    release = str(root / "admission_observed.txt").replace("'", "''")
+    pressure = "$script:memoryPhase='waiting';" if memory_pressure else ""
+    after_start = "if($Event-eq'BATCH_STARTED'){$script:memoryPhase='pressured'};" if memory_pressure else ""
+    after_pause = "$script:memoryPhase='released';" if memory_pressure else ""
+    return (pressure +
+            "$script:originalSchedulerEvent=${function:Write-RepositorySchedulerEvent};"
+            "function Write-RepositorySchedulerEvent {"
+            "[CmdletBinding()]param([Parameter(Mandatory)][string]$Event,$Record=$null,"
+            "[int]$ActiveCount=-1,[int]$PendingCount=-1,[hashtable]$Details=@{});"
+            "& $script:originalSchedulerEvent @PSBoundParameters;" + after_start +
+            f"if($Event-eq'RESOURCE_ADMISSION_PAUSED'-and$Details.REASON-eq'{reason}'){{" + after_pause +
+            f"Set-Content -LiteralPath '{release}' -Value 'observed'}}}};")
+
+
+
 class ResourceBudgetTests(unittest.TestCase):
     def test_release_budget_uses_authorized_declaration_without_sampling(self) -> None:
         runtime = resolve_runtime_profile(REPO_ROOT, PROJECT_ID, "octupole_no_acceleration_full_length")
@@ -1683,11 +1712,12 @@ Write-Output 'TERMINATION_FAILURE=PASS'
             support = REPO_ROOT / "common/resource_budget_support.ps1"
             command = (
                 f". '{support}';{HOST_PERMIT_FIXTURE}"
+                + _admission_pause_barrier(root, "exclusive_resource_in_use") +
                 "function Get-SystemCpuPercent {[double]0};"
                 "function Get-RepositoryAvailableMemoryBytes {[int64](32GB)};"
                 "$exe=(Get-Process -Id $PID).Path;"
                 "$specs=@('first','second'|ForEach-Object {[pscustomobject]@{name=$_;file_path=$exe;"
-                "argument_list=@('-NoProfile','-Command','Start-Sleep -Seconds 7');"
+                f"argument_list=@('-NoProfile','-File','{root / 'barrier_worker.ps1'}','-ReleasePath','{root / 'admission_observed.txt'}');"
                 f"stdout='{root}\\$_.out';stderr='{root}\\$_.err';environment=@{{}};working_directory='{root}';"
                 "exclusive_resource_key='shared-pa-family'}});"
                 f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' -RunDir '{root}' "
@@ -1725,32 +1755,33 @@ Write-Output 'TERMINATION_FAILURE=PASS'
                             "per_process_memory_budget_bytes": 5 * 1024**3,
                             "memory_safety_factor": 1.10,
                         },
-                        "limits": dispatch_limits(),
+                        "limits": dispatch_limits(launch_stagger_seconds=1),
                     }
                 ),
                 encoding="utf-8",
             )
             support = REPO_ROOT / "common/resource_budget_support.ps1"
             command = (
-                f". '{support}';{HOST_PERMIT_FIXTURE}$script:memorySamples=0;"
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
+                + _admission_pause_barrier(root, "available_memory_below_dynamic_admission", memory_pressure=True) +
                 "function Get-SystemCpuPercent {[double]0};"
-                "function Get-RepositoryAvailableMemoryBytes {$script:memorySamples+=1;"
-                "if($script:memorySamples-eq1-or$script:memorySamples-gt11){return [int64](10GB)};"
-                "return [int64](5GB)};"
+                "function Get-RepositoryAvailableMemoryBytes {"
+                "if($script:memoryPhase-eq'pressured'){return [int64](5GB)};return [int64](10GB)};"
                 "$exe=(Get-Process -Id $PID).Path;"
                 "$specs=@('a','b'|ForEach-Object {[pscustomobject]@{name=$_;file_path=$exe;"
-                "argument_list=@('-NoProfile','-Command','Start-Sleep -Seconds 7');"
+                f"argument_list=@('-NoProfile','-File','{root / 'barrier_worker.ps1'}','-ReleasePath','{root / 'admission_observed.txt'}');"
                 f"stdout='{root}\\$_.out';stderr='{root}\\$_.err';environment=@{{}};working_directory='{root}'}}}});"
                 f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' -RunDir '{root}' "
                 f"-UsagePath '{usage}' -ProcessSpecifications $specs;"
-                "if($r.resource_budget_exceeded){exit 3};"
+                "if($r.resource_budget_exceeded-or$r.processes.Count-ne2-or"
+                "@($r.processes|Where-Object {$_.exit_code-ne0}).Count-ne0){exit 3};"
                 f"$receipt=Get-Content -Raw '{usage}'|ConvertFrom-Json;"
                 "$pauses=@($receipt.scheduler_receipt.launch_pause_events|Where-Object {$_.reason-eq'available_memory_below_dynamic_admission'});"
                 "if($pauses.Count-lt1-or$pauses[0].available_memory_bytes-ne(5GB)-or"
                 "$pauses[0].required_available_memory_bytes-le(5GB)){exit 4}"
             )
-            # Two 7 s children plus Win32 observation measured 20.625 s alone.
-            # Allow 30 s per stage under concurrent gates; scientific limits stay unchanged.
+            # Real children finish only after the actual low-memory pause is observed.
+            # The fixture deadline fails naturally if admission evidence never arrives.
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
                 cwd=REPO_ROOT,
@@ -2313,31 +2344,7 @@ foreach($fail in @($false,$true)){
             "STATUS=PASS",
         ]
         with tempfile.TemporaryDirectory() as directory:
-            report = Path(directory) / "field_report.txt"
 
-            def run_assertion(lines: list[str]) -> subprocess.CompletedProcess[str]:
-                report.write_text("\n".join(lines) + "\n", encoding="utf-8")
-                escaped_path = str(report).replace("'", "''")
-                command = (
-                    f"{assertion_function}\n"
-                    f"$result=Assert-MultipoleFieldSolveReport -Path '{escaped_path}';"
-                    'Write-Output "BACKEND=$($result.stationary_linear_solver_backend) '
-                    'CONTROL=$($result.stationary_solver_configuration.control)"'
-                )
-                return subprocess.run(
-                    ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-                    cwd=REPO_ROOT,
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=20,
-                )
-
-            accepted = run_assertion(required_lines)
-            self.assertEqual(accepted.returncode, 0, accepted.stderr)
-            self.assertIn("BACKEND=pardiso CONTROL=not_applicable", accepted.stdout)
             cg_lines = [
                 (
                     "STATIONARY_LINEAR_SOLVER_BACKEND=CG_AMG"
@@ -2370,9 +2377,6 @@ foreach($fail in @($false,$true)){
                 )
                 for line in required_lines
             ]
-            accepted_cg = run_assertion(cg_lines)
-            self.assertEqual(accepted_cg.returncode, 0, accepted_cg.stderr)
-            self.assertIn("BACKEND=cg_amg CONTROL=user", accepted_cg.stdout)
             invalid_cases = (
                 (
                     [line for line in required_lines if line != "PARTICLE_PHYSICS_CREATED=0"]
@@ -2404,11 +2408,43 @@ foreach($fail in @($false,$true)){
                     "lacks positive DIFFERENTIAL_FIELD LinIt/LinRes evidence",
                 ),
             )
-            for lines, expected in invalid_cases:
+            # These are independent text-parser cases, not process/owner cases.
+            # Load the actual assertion once; keep each report and error distinct.
+            reports = [required_lines, cg_lines] + [lines for lines, _ in invalid_cases]
+            paths = []
+            for index, lines in enumerate(reports):
+                path = Path(directory) / f"field_report_{index}.txt"
+                path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                paths.append(str(path))
+            cases = Path(directory) / "cases.json"
+            cases.write_text(json.dumps(paths), encoding="utf-8")
+            escaped_cases = str(cases).replace("'", "''")
+            command = (
+                "$ErrorActionPreference='Stop';" + assertion_function +
+                f"\n$paths=Get-Content -LiteralPath '{escaped_cases}' -Raw|ConvertFrom-Json;" +
+                "$results=@(foreach($path in $paths){try{"
+                "$result=Assert-MultipoleFieldSolveReport -Path $path;"
+                "@{exit_code=0;backend=$result.stationary_linear_solver_backend;"
+                "control=$result.stationary_solver_configuration.control}"
+                "}catch{@{exit_code=1;error=$_.Exception.Message}}});"
+                "ConvertTo-Json -InputObject $results -Depth 5 -Compress"
+            )
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT, check=False, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=20,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            results = json.loads(completed.stdout)
+            self.assertEqual(len(results), len(reports))
+            for result, backend, control in zip(results[:2], ("pardiso", "cg_amg"), ("not_applicable", "user")):
+                self.assertEqual(result["exit_code"], 0, result)
+                self.assertEqual(result["backend"], backend)
+                self.assertEqual(result["control"], control)
+            for result, (_, expected) in zip(results[2:], invalid_cases):
                 with self.subTest(expected=expected):
-                    rejected = run_assertion(lines)
-                    self.assertNotEqual(rejected.returncode, 0)
-                    self.assertIn(expected, rejected.stdout + rejected.stderr)
+                    self.assertNotEqual(result["exit_code"], 0)
+                    self.assertIn(expected, result["error"])
 
     def test_observer_warns_without_interrupting_a_healthy_child_on_wall_clock_limit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
