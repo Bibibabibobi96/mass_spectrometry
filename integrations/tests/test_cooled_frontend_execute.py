@@ -46,7 +46,8 @@ $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $ast=[Management.Automation.Language.Parser]::ParseFile($ExecutePath,[ref]$null,[ref]$null)
 $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-CooledNative'},$true)
 Invoke-Expression $node.Extent.Text
-$run=Join-Path $Root ('deep-'+('x'*190))
+# Deliberately exceed native path limits even under short CI temporary roots.
+$run=Join-Path $Root ('deep-'+('x'*230))
 New-Item -ItemType Directory -Path $run -Force|Out-Null
 $package=[pscustomobject]@{python=$Python;artifact_run_dir=$run;run_dir=$run;execution_alias=$null;execution_path_capacity=$null;
  native_path_preparation=@{calls=0;elapsed_seconds=0.;transport_bytes=0L};

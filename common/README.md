@@ -111,6 +111,11 @@ L1/L2共用命令调用器直接绑定函数脚本块；仅冻结每项路由参
 这样避免大量绝对路径超过[Windows CreateProcessW的32,767字符上限](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw)，
 不另建分批启动器，也不以缩短路径或修改UTF-8日志语义规避进程限制。
 
+最新路径主题 `1eb7fedd` 的 [CI](https://github.com/Bibibabibobi96/mass_spectrometry/actions/runs/41066360221) 保留为 FAIL：
+cooled 路径夹具在较短 CI TEMP 下未达到原生长度边界，却要求 alias；六个恢复负例在目标故障前触发生产磁盘余量。
+修正仅加深测试路径，并让恢复夹具实际消费自己的 64 MiB／零 minimum-free 策略及代码副本；生产策略不变。
+相对该提交的隔离副本中，两测试方法（含原六个恢复场景）通过，测试区间 79.280 秒；这不是整轮 CI 通过。
+
 ## 主机资源实现
 
 粒子拆批与默认并发遵循[开发标准](../docs/DEVELOPMENT_STANDARDS.md#独立粒子与耦合求解的调度)，

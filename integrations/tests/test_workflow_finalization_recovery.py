@@ -27,10 +27,18 @@ class AssemblyFinalizationRecoveryTests(unittest.TestCase):
                     initialize_capacity_ledger(artifacts, objects=[])
                     facade = workspace / "repo"
                     for source in (REPO / "common").rglob("*"):
-                        if source.is_file() and source.suffix in {".ps1", ".json"} and "assets" not in source.parts:
+                        if source.is_file() and source.suffix in {".py", ".ps1", ".json"} and "assets" not in source.parts:
                             target = facade / source.relative_to(REPO)
                             target.parent.mkdir(parents=True, exist_ok=True)
                             shutil.copyfile(source, target)
+                    # Admit the inert MiB fixture without weakening production policy.
+                    policy_path = facade / "common/contracts/artifact_capacity_policy.json"
+                    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+                    policy.update(target_gib=64 / 1024, minimum_free_gib=0)
+                    policy_path.write_text(json.dumps(policy), encoding="utf-8")
+                    config = facade / "config"
+                    config.mkdir()
+                    shutil.copyfile(REPO / "config/project_registry.json", config / "project_registry.json")
                     cli = facade / f"integrations/workflows/{workflow}/execute.ps1"
                     cli.parent.mkdir(parents=True)
                     shutil.copyfile(REPO / cli.relative_to(facade), cli)
@@ -56,7 +64,8 @@ catch{
 if($env:WF_UNKNOWN-ne'1'-and$outcome.exception.message-cne('injected-'+$env:WF_FAILURE+'-failure')){throw 'actual retention failure did not propagate'}
 exit 0
 '''
-                    env = {**os.environ, "WF_REPO": str(REPO), "WF_PYTHON": sys.executable,
+                    env = {**os.environ, "SIMULATION_PYTHON_EXE": sys.executable,
+                           "WF_REPO": str(facade), "WF_PYTHON": sys.executable,
                            "WF_ARTIFACTS": str(artifacts), "WF_PROJECT": str(project),
                            "WF_RUN_ID": run_id, "WF_MODE": mode, "WF_UNKNOWN": str(int(unknown)), "WF_FAILURE": failure}
                     prepared = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", prepare],
