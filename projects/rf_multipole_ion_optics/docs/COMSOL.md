@@ -84,3 +84,13 @@ release构造Gate只验证完整N=100输入下100个GUI可见`ReleaseFromDataFil
 
 连续量接受尺度、资源受限的加速模式以及机械交付仍有限制，具体状态与关闭条件统一见
 [PROJECT](PROJECT.md#资格边界)。软件入口可执行不等于 Candidate 或 Formal 验收通过。
+
+### 显式粗网格开发档
+
+接口就绪现有 COMSOL 入口可显式选择 `-SolverNumericsProfileId core_flow_development_coarse`，
+并使用 `-NumericalExperimentId core_flow_development` 和官方 quadrupole 数值合同。
+该档只把 global auto level 从 1 改为 9，不开启 hmax override；RF 每周期 80 步、80 µs 时窗、
+源、几何与接受条件保持。默认 `baseline` 不变；缺授权或非官方合同仍拒绝。
+这是流程与源构造开发档，不授予场精度、传输或科学资格；实际网格仍须通过原门禁。
+现有 `-ReleaseConstructionGate` 包括几何、网格和真实 stationary 求解，随后仅验证源构造，
+不能称为零求解或完整飞行／GUI验收；原生成本与预算须由本次显式运行另行记录。

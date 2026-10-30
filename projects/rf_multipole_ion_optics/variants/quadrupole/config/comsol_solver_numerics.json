@@ -4,7 +4,7 @@
   "contract_id": "rf_quadrupole.comsol_solver_numerics.v1",
   "status": "current_candidate_solver_numerics",
   "current": true,
-  "logical_sha256": "49DB3951BCFD42FAE6C78917D86ABC218AC5F4C1543D74FC1A4B0AC564EBBA2D",
+  "logical_sha256": "1151054D00B9657D54BB6E2D9E03269B61AAD6F36CA83447ADCF1E93FB9202E5",
   "profiles": [
     {
       "profile_id": "baseline",
@@ -28,6 +28,20 @@
       },
       "trajectory": {
         "rf_steps_per_period": 160,
+        "maximum_time_us": 80.0
+      }
+    },
+    {
+      "profile_id": "core_flow_development_coarse",
+      "usage": "registered_experiment",
+      "authorization_id": "core_flow_development",
+      "claim_limit": "Workflow/source-construction development only; no scientific or precision qualification.",
+      "mesh": {
+        "global_auto_level": 9,
+        "working_region_hmax_override_enabled": false
+      },
+      "trajectory": {
+        "rf_steps_per_period": 80,
         "maximum_time_us": 80.0
       }
     }

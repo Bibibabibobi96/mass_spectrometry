@@ -5,7 +5,7 @@ $script:RfComsolNumericsIdentity = [ordered]@{
     schema_version=1;role='rf_quadrupole_comsol_solver_numerics'
     contract_id='rf_quadrupole.comsol_solver_numerics.v1'
     status='current_candidate_solver_numerics';current=$true
-    logical_sha256='49DB3951BCFD42FAE6C78917D86ABC218AC5F4C1543D74FC1A4B0AC564EBBA2D'
+    logical_sha256='1151054D00B9657D54BB6E2D9E03269B61AAD6F36CA83447ADCF1E93FB9202E5'
 }
 
 function Get-RfComsolRequiredProperty {
@@ -163,6 +163,7 @@ function Compile-RfComsolSolverNumerics {
     $contract = $official.document
     $selectionRules = @{
         baseline = @('production','')
+        core_flow_development_coarse = @('registered_experiment','core_flow_development')
         time_refined_160 = @(
             'registered_experiment','same_solver_numerical_convergence'
         )

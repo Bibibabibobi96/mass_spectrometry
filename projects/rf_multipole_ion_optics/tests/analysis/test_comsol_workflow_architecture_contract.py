@@ -105,7 +105,7 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
         self.assertEqual(contract["logical_sha256"], _logical_sha256(contract))
         self.assertIn(contract["logical_sha256"], _read(NUMERICS_SUPPORT))
         profiles = {item["profile_id"]: item for item in contract["profiles"]}
-        self.assertEqual(set(profiles), {"baseline", "time_refined_160"})
+        self.assertEqual(set(profiles), {"baseline", "time_refined_160", "core_flow_development_coarse"})
         self.assertEqual(profiles["baseline"]["usage"], "production")
         self.assertEqual(profiles["baseline"]["mesh"]["global_auto_level"], 1)
         self.assertEqual(
@@ -1054,6 +1054,57 @@ ConvertTo-Json -InputObject $results -Compress
             authorization="same_solver_numerical_convergence",
         )
         self.assertEqual(refined.returncode, 0, refined.stderr)
+
+    def test_development_coarse_compiles_and_authorization_is_not_a_bypass(self) -> None:
+        environment = os.environ.copy()
+        environment.update({"RF_COMSOL_NUMERICS_SUPPORT": str(NUMERICS_SUPPORT),
+                            "RF_COMSOL_OFFICIAL_NUMERICS": str(NUMERICS)})
+        command = r"""
+. $env:RF_COMSOL_NUMERICS_SUPPORT
+$ErrorActionPreference='Stop'
+$contract=$env:RF_COMSOL_OFFICIAL_NUMERICS
+$cases=@(
+ @{id='baseline';profile='baseline';auth=''},
+ @{id='coarse';profile='core_flow_development_coarse';auth='core_flow_development'},
+ @{id='missing';profile='core_flow_development_coarse';auth=''},
+ @{id='wrong';profile='core_flow_development_coarse';auth='same_solver_numerical_convergence'},
+ @{id='unregistered';profile='coarse_inline';auth='core_flow_development'}
+)
+$results=@(foreach($case in $cases){
+ try {
+  $compiled=(Compile-RfComsolSolverNumerics -OfficialContractPath $contract `
+    -RequestedContractPath $contract -ProfileId $case.profile -ExperimentAuthorizationId $case.auth).compiled
+  @{id=$case.id;ok=$true;compiled=$compiled}
+ } catch { @{id=$case.id;ok=$false;error=$_.Exception.Message} }
+})
+$results | ConvertTo-Json -Depth 32 -Compress
+"""
+        result = _run_pwsh(command, environment)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        cases = {case["id"]: case for case in json.loads(result.stdout)}
+        self.assertTrue(cases["baseline"]["ok"])
+        self.assertTrue(cases["coarse"]["ok"])
+        baseline = cases["baseline"]["compiled"]
+        coarse = cases["coarse"]["compiled"]
+        self.assertEqual(coarse["role"], "rf_quadrupole_compiled_comsol_solver_numerics")
+        self.assertEqual(coarse["mesh"], {"global_auto_level": 9,
+                                         "working_region_hmax_override_enabled": False})
+        self.assertEqual(baseline["mesh"]["global_auto_level"], 1)
+        self.assertEqual(coarse["trajectory"], baseline["trajectory"])
+        self.assertEqual(coarse["trajectory"], {"rf_steps_per_period": 80, "maximum_time_us": 80.0})
+        self.assertEqual(coarse["authority"], baseline["authority"])
+        self.assertFalse(cases["missing"]["ok"])
+        self.assertIn("requires authorization", cases["missing"]["error"])
+        self.assertFalse(cases["wrong"]["ok"])
+        self.assertIn("requires authorization", cases["wrong"]["error"])
+        self.assertFalse(cases["unregistered"]["ok"])
+        self.assertIn("not registered", cases["unregistered"]["error"])
+        altered = self.baseline()
+        altered["profiles"][-1]["mesh"]["global_auto_level"] = 8
+        altered["logical_sha256"] = _logical_sha256(altered)
+        forged = self.invoke_contract(altered, "core_flow_development_coarse", "core_flow_development")
+        self.assertNotEqual(forged.returncode, 0)
+        self.assertIn("logical_sha256 is invalid", forged.stderr)
 
     def test_missing_null_nonfinite_and_illegal_ranges_fail_closed(self) -> None:
         mutations: list[dict[str, object]] = []
