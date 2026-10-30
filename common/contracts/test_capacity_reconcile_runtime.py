@@ -213,25 +213,47 @@ $ErrorActionPreference='Stop'
 . {quote(repo / 'common/contracts/run_artifact_support.ps1')}
 $fixturePython={quote(sys.executable)}
 $fixtureDriver={quote(driver)}
+$fixtureHostState={quote(root / 'host.sqlite3')}
+function Get-HostResourceSnapshot {{
+  # This capacity-owner matrix needs scheduler admission, not another full
+  # live-CIM fault matrix. Keep real current-owner identity and real SQLite
+  # transactions while bounding host pressure in this isolated ledger only.
+  if((Resolve-HostResourceStatePath)-cne$fixtureHostState){{throw 'capacity fixture host ledger escaped isolation'}}
+  $owner=Get-Process -Id $PID
+  return @{{complete=$true;logical_processors=4;cpu_percent=0;total_memory_bytes=32GB;
+    available_memory_bytes=24GB;io_pressure=$false;
+    processes=@(@{{pid=$PID;parent_pid=0;started=$owner.StartTime.ToUniversalTime().Ticks.ToString('D19');
+      memory_bytes=[long]$owner.WorkingSet64}});unknown_process_ids=@();definitely_exited_process_ids=@()}}
+}}
 function Invoke-PressureFixturePython {{
   param([Parameter(ValueFromRemainingArguments)]$NativeArguments)
   & $fixturePython $fixtureDriver @($NativeArguments | Select-Object -Skip 2)
   $global:LASTEXITCODE=$LASTEXITCODE
 }}
+# Keep the production Python/path contract real. Only this fixture's capacity
+# subprocess is redirected through its controlled fault-injection driver.
+$fixtureCapacityCommand=${{function:Invoke-RunCapacityCommand}}
+function Invoke-RunCapacityCommand {{
+  param($Python,$RepoRoot,$Arguments,$FailureLabel)
+  if($Python-cne$fixturePython){{throw 'Capacity fixture changed its actual interpreter'}}
+  & $fixtureCapacityCommand -Python Invoke-PressureFixturePython -RepoRoot $RepoRoot -Arguments $Arguments -FailureLabel $FailureLabel
+}}
 $result=@{{accepted=$false;initial_reason=$null;failure=$null;pressure_stage=$null;cleanup=$null}}
 try {{
-  $session=Enter-ArtifactWorkflowCapacitySession -Python Invoke-PressureFixturePython -RepoRoot {quote(repo)} `
+  $session=Enter-ArtifactWorkflowCapacitySession -Python $fixturePython -RepoRoot {quote(repo)} `
     -ArtifactRoot {quote(root)} -RunDirectory {quote(root / 'future_run')} `
     -CommittedNewBytes 2 -Owner fixture -LeaseTtlSeconds 120 -ProtectedPaths @({quote(root / 'input')})
   $result.accepted=$true
   $result.admission=$session.startup_gate
-  Exit-ArtifactWorkflowCapacitySession -Python Invoke-PressureFixturePython -RepoRoot {quote(repo)} -Session $session|Out-Null
+  Exit-ArtifactWorkflowCapacitySession -Python $fixturePython -RepoRoot {quote(repo)} -Session $session|Out-Null
 }} catch {{
   $result.failure=$_.Exception.Message
   $attempt=$_.Exception.Data['pressure_maintenance']
   if($null-ne$attempt){{$result.initial_reason=$attempt.trigger_reason;$result.pressure_stage=$attempt.stage}}
   $result.cleanup=$_.Exception.Data['capacity_lease_cleanup']
 }}
+$hostState=Get-HostResourceStatus -StatePath $fixtureHostState
+if(@($hostState.records).Count-ne0){{throw 'capacity fixture leaked a real host grant'}}
 Write-Output ('PRESSURE_RESULT='+($result|ConvertTo-Json -Depth 30 -Compress))
 '''
                     environment = dict(os.environ, PYTHONDONTWRITEBYTECODE="1",
@@ -245,6 +267,8 @@ Write-Output ('PRESSURE_RESULT='+($result|ConvertTo-Json -Depth 30 -Compress))
                     line = next(line for line in completed.stdout.splitlines() if line.startswith("PRESSURE_RESULT="))
                     result = json.loads(line.split("=", 1)[1])
                     self.assertEqual(result["accepted"], accepted, result)
+                    self.assertEqual(completed.stdout.count("HOST_RESOURCE=ACQUIRED ROLE=GATE"),
+                                     maintenance_count + startup_count, completed.stdout + completed.stderr)
                     events = [json.loads(line) for line in (root / "events.jsonl").read_text(encoding="utf-8").splitlines()]
                     self.assertEqual(sum(row.get("mode") == "maintenance" for row in events), maintenance_count, result)
                     self.assertEqual(sum(row.get("mode") == "startup" for row in events), startup_count, result)

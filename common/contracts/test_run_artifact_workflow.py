@@ -278,7 +278,11 @@ catch{{Write-Output $_.Exception.Message;exit 7}}
     def resume_fixture(self, root: Path, run: Path, *, fail_publication: bool = False) -> tuple[dict, subprocess.CompletedProcess[str]]:
         hook = "function Publish-WorkflowTerminal { throw 'fixture recovery publication failure' }" if fail_publication else ""
         outcome = self.run_ps(root, f""". '{OWNER}'
-function Invoke-ArtifactCapacityGate {{ return @{{satisfied=$true;fixture_admission=$true}} }}
+function Invoke-ArtifactCapacityGate {{
+ param($ArtifactRoot,$CapacityProtectionLeaseId)
+ $lease=Get-Content -LiteralPath (Join-Path $ArtifactRoot ('common/capacity_protection_leases/'+$CapacityProtectionLeaseId+'.json')) -Raw|ConvertFrom-Json
+ return @{{satisfied=$true;fixture_admission=$true;admitted_lease_committed_new_bytes=$lease.committed_new_bytes}}
+}}
 {hook}
 try{{$null=Invoke-RunArtifactWorkflow -RequestPath '{run / 'inputs/execution_request.json'}' -ResultPath '{root / 'result.json'}' -ResumeFinalization}}
 catch{{Write-Output $_.Exception.Message;exit 7}}
@@ -667,7 +671,13 @@ Write-RunJson -Atomic -Path '{run / 'logs/prepared_wait.json'}' -Value @{{schema
                     self.assertNotEqual(result["lease_id"], old_id)
                     self.assertEqual(result["recovery_session"]["committed_new_bytes"], 0)
                     budget = json.loads((REPO / "common/contracts/artifact_capacity_policy.json").read_text())["light_evidence_budget_bytes"]
-                    self.assertEqual(result["recovery_session"]["lease"]["committed_new_bytes"], budget)
+                    # Admission is an immutable historical receipt; session.lease
+                    # follows the actual renewal through zero and release.
+                    session = result["recovery_session"]
+                    self.assertEqual(session["startup_gate"]["admitted_lease_committed_new_bytes"], budget)
+                    self.assertEqual(session["lease"]["committed_new_bytes"], 0)
+                    self.assertEqual(session["status"], "released")
+                    self.assertFalse((lease.parent / f"{session['lease_id']}.json").exists())
                     self.assertEqual(result["recovery_maximum_run_bytes"], baseline + budget)
                     if lease_state == "expired":
                         self.assertEqual(json.loads(lease.read_text())["expires_at_utc"], "2001-01-01T00:00:00Z")
