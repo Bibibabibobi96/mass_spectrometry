@@ -4,6 +4,70 @@ import unittest
 
 
 class ObservedPreparationDrainTest(unittest.TestCase):
+    def test_post_drain_native_verifier_unknown_blocks_all_closeout_paths(self):
+        support = Path(__file__).with_name("resource_budget_support.ps1")
+        script = r"""
+. $args[0]
+foreach($scenario in @('success','nonzero','wave_failure','prepare_failure')){
+ function Start-ObservedFormalProcess {param($DispatchPlanPath,$ProcessSpecification)
+  return @{resource_budget_exceeded=$false;completed_naturally=$false;exit_code=0;process_record=@{completed=$false;id=42}}
+ }
+ function Invoke-ResourceBudgetedProcesses {param($DispatchPlanPath,$RunDir,$UsagePath,$ProcessSpecifications,$ExistingProcessRecords,$OnProcessCompleted)
+  if($scenario-eq'wave_failure'){try{throw 'wave primary'}catch{$_.Exception.Data['simion_wave_writer_completion_confirmed']=$true;throw}}
+  $code=if($scenario-eq'nonzero'){1}else{0}
+  return @{resource_budget_exceeded=$false;processes=@(@{exit_code=$code})}
+ }
+ $arguments=@{DispatchPlanPath='p';RunDir='r';UsagePath='u';
+  AfterDrain={try{throw 'native verifier unknown'}catch{$_.Exception.Data['observed_process_exit_confirmed']=$false;throw}};
+  PrepareRemaining={if($scenario-eq'prepare_failure'){throw 'prepare primary'};return [pscustomobject]@{pending=@(@{name='one'})}}}
+ if($scenario-eq'prepare_failure'){$arguments.FirstSpecification=@{name='first'};$arguments.Replan={}}
+ try{Invoke-SimionBatchPhase @arguments;throw 'missing failure'}catch{
+  if(-not$_.Exception.Data.Contains('simion_wave_writer_completion_confirmed')-or$_.Exception.Data['simion_wave_writer_completion_confirmed']){throw "native verifier falsely completed: $scenario / $($_.Exception.Message)"}
+  if($scenario-eq'prepare_failure'-and($_.Exception.Message-ne'prepare primary'-or$_.Exception.Data['simion_first_batch_verification_error']-ne'native verifier unknown')){throw 'prepare or verifier error lost'}
+  if($scenario-eq'wave_failure'-and($_.Exception.Message-ne'wave primary'-or$_.Exception.Data['simion_wave_verification_error']-ne'native verifier unknown')){throw 'wave or verifier error lost'}
+ }
+}
+exit 0
+"""
+        script = script.replace(". $args[0]", ". '" + str(support).replace("'", "''") + "'")
+        result = subprocess.run(["pwsh", "-NoProfile", "-Command", script],
+            cwd=Path(__file__).resolve().parents[1], timeout=30, capture_output=True,
+            text=True, encoding="utf-8", errors="replace")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_independent_preparation_writer_stays_unknown_with_or_without_drain(self):
+        support = Path(__file__).with_name("resource_budget_support.ps1")
+        script = r"""
+. $args[0]
+foreach($withFirst in @($false,$true)){
+ foreach($drainFails in @($false,$true)){
+  $script:verified=0;$script:drains=0;$script:closed=0
+  function Start-ObservedFormalProcess {param($DispatchPlanPath,$ProcessSpecification)
+   return @{resource_budget_exceeded=$false;completed_naturally=$false;exit_code=0;process_record=@{completed=$false;id=42}}
+  }
+  function Invoke-ResourceBudgetedProcesses {param($DispatchPlanPath,$RunDir,$UsagePath,$ProcessSpecifications,$ExistingProcessRecords,$OnProcessCompleted)
+   $script:drains++
+   if($drainFails){throw 'drain secondary'}
+   return @{resource_budget_exceeded=$false;processes=@(@{id=42;exit_code=0})}
+  }
+  $arguments=@{DispatchPlanPath='p';RunDir='r';UsagePath='u';AfterDrain={$script:verified++};OnDrained={$script:closed++};
+   PrepareRemaining={try{throw 'prepare primary'}catch{$_.Exception.Data['observed_process_exit_confirmed']=$false;throw}}}
+  if($withFirst){$arguments.FirstSpecification=@{name='first'};$arguments.Replan={}}
+  try{Invoke-SimionBatchPhase @arguments;throw 'missing primary'}catch{
+   if($_.Exception.Message-ne'prepare primary'-or$_.Exception.Data['simion_wave_writer_completion_confirmed']){throw}
+   if($withFirst-and$drainFails-and$_.Exception.Data['simion_first_batch_drain_error']-ne'drain secondary'){throw 'secondary lost'}
+  }
+  if($script:verified-ne0-or$script:closed-ne0-or$script:drains-ne[int]$withFirst){throw 'unsafe preparation closeout'}
+ }
+}
+exit 0
+"""
+        script = script.replace(". $args[0]", ". '" + str(support).replace("'", "''") + "'")
+        result = subprocess.run(["pwsh", "-NoProfile", "-Command", script],
+            cwd=Path(__file__).resolve().parents[1], timeout=30, capture_output=True,
+            text=True, encoding="utf-8", errors="replace")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_batch_phase_preserves_wave_failure_and_runs_verification_only_when_stopped(self):
         support = Path(__file__).with_name("resource_budget_support.ps1")
         script = r"""

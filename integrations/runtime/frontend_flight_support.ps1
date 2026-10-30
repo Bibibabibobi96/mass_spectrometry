@@ -93,6 +93,7 @@ function Invoke-FrontendIobBuild {
     [string]$Python='', [string]$RepoRoot='', [scriptblock]$IobVerification=$null
   )
   $name=[string]$Case.case_id
+  try {
   $result=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $RunDirectory -FilePath $SimionExe `
     -ArgumentList ([string[]]$Case.iob_builder_arguments) -WorkingDirectory ([string]$Case.working_directory) `
     -UsagePath (Join-Path $RunDirectory "logs/$Phase.$name.assembly.resource_usage.json") `
@@ -104,6 +105,15 @@ function Invoke-FrontendIobBuild {
   if($IobVerification){
     & $IobVerification -Operation after_build -Case $Case -BuildResult $result -Phase $Phase -RunDirectory $RunDirectory `
       -SimionExe $SimionExe -Limits $Limits -Python $Python -RepoRoot $RepoRoot
+  }
+  } catch {
+    # This helper also builds the first IOB before a batch wave exists. Carry
+    # an unknown native builder/inspector to the same owner release boundary.
+    if($_.Exception.Data.Contains('observed_process_exit_confirmed')-and
+       -not[bool]$_.Exception.Data['observed_process_exit_confirmed']){
+      $_.Exception.Data['simion_wave_writer_completion_confirmed']=$false
+    }
+    throw
   }
 }
 

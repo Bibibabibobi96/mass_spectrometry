@@ -1072,6 +1072,12 @@ function Invoke-ObservedPreparationFailureDrain {
     [scriptblock]$OnDrained=$null,
     [scriptblock]$OnProcessCompleted=$null
   )
+  # Draining these records proves only their writers stopped. A preparation
+  # callback may have launched a different IOB writer whose observer failed.
+  $preparationWriterUnknown=(($Failure.Exception.Data.Contains('observed_process_exit_confirmed')-and
+    -not[bool]$Failure.Exception.Data['observed_process_exit_confirmed'])-or
+    ($Failure.Exception.Data.Contains('simion_wave_writer_completion_confirmed')-and
+    -not[bool]$Failure.Exception.Data['simion_wave_writer_completion_confirmed']))
   $stopped=$false
   try {
     $drainArgs=@{DispatchPlanPath=$DispatchPlanPath;RunDir=$RunDir;UsagePath=$UsagePath;
@@ -1080,14 +1086,19 @@ function Invoke-ObservedPreparationFailureDrain {
     $drainResult=Invoke-ResourceBudgetedProcesses @drainArgs
     if($drainResult.resource_budget_exceeded){throw 'First-batch drain did not confirm writer completion.'}
     $Failure.Exception.Data['simion_first_batch_writer_unknown']=$false
-    $Failure.Exception.Data['simion_wave_writer_completion_confirmed']=$true
+    $Failure.Exception.Data['simion_wave_writer_completion_confirmed']=-not$preparationWriterUnknown
     $stopped=$true
-    if($OnDrained){ $null=& $OnDrained $drainResult }
+    if($OnDrained-and-not$preparationWriterUnknown){ $null=& $OnDrained $drainResult }
   } catch {
     $Failure.Exception.Data['simion_first_batch_drain_error']=[string]$_
+    $Failure.Exception.Data['simion_wave_writer_completion_confirmed']=$false
     Write-Warning "First-batch drain failed: $_"
   }
-  if($AfterDrain-and$stopped){try { $null=& $AfterDrain } catch {
+  if($AfterDrain-and$stopped-and-not$preparationWriterUnknown){try { $null=& $AfterDrain } catch {
+    if(($_.Exception.Data.Contains('observed_process_exit_confirmed')-and-not[bool]$_.Exception.Data['observed_process_exit_confirmed'])-or
+       ($_.Exception.Data.Contains('simion_wave_writer_completion_confirmed')-and-not[bool]$_.Exception.Data['simion_wave_writer_completion_confirmed'])){
+      $Failure.Exception.Data['simion_wave_writer_completion_confirmed']=$false
+    }
     $Failure.Exception.Data['simion_first_batch_verification_error']=[string]$_
     Write-Warning "First-batch verification failed: $_"
   }}
@@ -1129,7 +1140,9 @@ function Invoke-SimionBatchPhase {
         -UsagePath $UsagePath -ProcessRecords $existing -OnDrained $OnDrained -AfterDrain $AfterDrain `
         -OnProcessCompleted $OnProcessCompleted
     }
-    $_.Exception.Data['simion_wave_writer_completion_confirmed']=$true
+    $_.Exception.Data['simion_wave_writer_completion_confirmed']=-not(
+      ($_.Exception.Data.Contains('observed_process_exit_confirmed')-and-not[bool]$_.Exception.Data['observed_process_exit_confirmed'])-or
+      ($_.Exception.Data.Contains('simion_wave_writer_completion_confirmed')-and-not[bool]$_.Exception.Data['simion_wave_writer_completion_confirmed']))
     throw
   }
   if($pending.Count-eq0-and$existing.Count-eq0){
@@ -1142,6 +1155,10 @@ function Invoke-SimionBatchPhase {
     $failure=$_
     if($AfterDrain-and$failure.Exception.Data['simion_wave_writer_completion_confirmed']){
       try{$null=& $AfterDrain}catch{
+        if(($_.Exception.Data.Contains('observed_process_exit_confirmed')-and-not[bool]$_.Exception.Data['observed_process_exit_confirmed'])-or
+           ($_.Exception.Data.Contains('simion_wave_writer_completion_confirmed')-and-not[bool]$_.Exception.Data['simion_wave_writer_completion_confirmed'])){
+          $failure.Exception.Data['simion_wave_writer_completion_confirmed']=$false
+        }
         $failure.Exception.Data['simion_wave_verification_error']=[string]$_
         Write-Warning "Batch verification failed: $_"
       }
@@ -1150,15 +1167,17 @@ function Invoke-SimionBatchPhase {
   }
   if($AfterDrain-and-not$wave.resource_budget_exceeded){
     try{$null=& $AfterDrain}catch{
+      $verificationWriterUnknown=(($_.Exception.Data.Contains('observed_process_exit_confirmed')-and-not[bool]$_.Exception.Data['observed_process_exit_confirmed'])-or
+        ($_.Exception.Data.Contains('simion_wave_writer_completion_confirmed')-and-not[bool]$_.Exception.Data['simion_wave_writer_completion_confirmed']))
       if(@($wave.processes|Where-Object{$null-ne$_.exit_code-and[int]$_.exit_code-ne0}).Count){
         $verificationFailure=$_
         try{throw 'Native batch wave failed.'}catch{
           $_.Exception.Data['simion_wave_verification_error']=[string]$verificationFailure
-          $_.Exception.Data['simion_wave_writer_completion_confirmed']=$true
+          $_.Exception.Data['simion_wave_writer_completion_confirmed']=-not$verificationWriterUnknown
           throw
         }
       }
-      $_.Exception.Data['simion_wave_writer_completion_confirmed']=$true
+      $_.Exception.Data['simion_wave_writer_completion_confirmed']=-not$verificationWriterUnknown
       throw
     }
   }

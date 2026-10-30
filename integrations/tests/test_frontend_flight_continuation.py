@@ -15,6 +15,60 @@ SUPPORT = REPO / "integrations/runtime/frontend_flight_support.ps1"
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 unavailable")
 class FrontendFlightContinuationTests(unittest.TestCase):
+    def test_unknown_iob_writer_survives_successful_first_fly_drain(self) -> None:
+        """Run the real preparation callback and public drain, not a wave stub."""
+        script = r'''param($Support,$Root)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. $Support
+. (Join-Path (Get-Location) 'common/resource_budget_support.ps1')
+New-Item -ItemType Directory (Join-Path $Root results),(Join-Path $Root logs) -Force|Out-Null
+function New-Case($index){[pscustomobject]@{index=$index;case_id="batch_$index";count=1;expected_particle_ids=@($index);source_row_range=@($index,$index);simion_particle_id_offset=0;merge_offset=0;working_directory=$Root;environment=@{};stdout=(Join-Path $Root "$index.log");stderr=(Join-Path $Root "$index.err");fly_arguments=@('fly');iob_builder_arguments=@('build',[string]$index);iob_path=(Join-Path $Root "$index.iob")}}
+$script:builds=0;$script:drains=0;$script:verified=0
+function Invoke-FrontendRuntimePython {param($Python,$RepoRoot,$RunDirectory,$Name,$Arguments,[switch]$Json)
+ if($Name-like '*.dispatch-plan'){@{estimation=@{kind='formal_first_batch_observation'}}|ConvertTo-Json|Set-Content (Join-Path $Root 'results/extraction.dispatch_plan.json')}
+ if($Name-like '*.materialize-initial'){return [pscustomobject]@{batches=@((New-Case 1))}}
+ if($Name-like '*.materialize-complete'){return [pscustomobject]@{coverage='complete_population';pending_particle_ids=@();batches=@((New-Case 1),(New-Case 2));gui_case=$null}}
+}
+function Invoke-ResourceBudgetedProcess {param($Limits,$RunDir,$FilePath,$ArgumentList,$WorkingDirectory,$UsagePath,$RedirectStandardOutput,$RedirectStandardError)
+ $script:builds++
+ if($ArgumentList[1]-eq'2'){try{throw 'IOB builder completion unknown'}catch{
+  $_.Exception.Data['observed_process_exit_confirmed']=$false
+  $_.Exception.Data['observed_process_id']=900
+  throw
+ }}
+ Set-Content (Join-Path $Root '1.iob') 'inert native output'
+ return @{resource_budget_exceeded=$false;exit_code=0}
+}
+function Start-ObservedFormalProcess {param($DispatchPlanPath,$ProcessSpecification)
+ return [pscustomobject]@{resource_budget_exceeded=$false;completed_naturally=$false;exit_code=0;process_record=[pscustomobject]@{completed=$false;id=42};observed_peak_process_tree_working_set_bytes=10;observed_process_cpu_percent=1;observed_background_cpu_percent=0;available_memory_bytes=100;total_physical_memory_bytes=200}
+}
+function Invoke-ResourceBudgetedProcesses {param($DispatchPlanPath,$RunDir,$UsagePath,$ProcessSpecifications,$ExistingProcessRecords,$OnProcessCompleted)
+ if(@($ProcessSpecifications).Count-ne0-or@($ExistingProcessRecords).Count-ne1-or$ExistingProcessRecords[0].id-ne42){throw 'drain took ownership of another writer'}
+ $script:drains++
+ return @{resource_budget_exceeded=$false;processes=@(@{id=42;exit_code=0})}
+}
+try{
+ Invoke-FrontendFlightPhase -RunDirectory $Root -ProjectRunsRoot $Root -RepoRoot $Root -Python unused -RuntimeModule fixture -SimionExe unused -Limits @{} -Phase extraction -Prepared @{dispatch_request_path='unused'} -IobVerification {param($Operation) if($Operation-eq'after_first_fly'){$script:verified++}}
+ throw 'preparation failure suppressed'
+}catch{
+ if($_.Exception.Message-ne'IOB builder completion unknown'){throw}
+ if($_.Exception.Data['simion_wave_writer_completion_confirmed']-or$_.Exception.Data['observed_process_exit_confirmed']-or$_.Exception.Data['observed_process_id']-ne900){throw 'first Fly drain falsely completed the independent IOB writer'}
+ if($_.Exception.Data['simion_first_batch_writer_unknown']){throw 'drained Fly still unknown'}
+}
+if($script:builds-ne2-or$script:drains-ne1-or$script:verified-ne0){throw 'unsafe verification or missing healthy drain'}
+exit 0
+'''
+        for unknown_index in (1, 2):
+            with self.subTest(unknown_iob_index=unknown_index), tempfile.TemporaryDirectory() as directory:
+                scenario = script.replace("$ArgumentList[1]-eq'2'", f"$ArgumentList[1]-eq'{unknown_index}'")
+                scenario = scenario.replace('$script:builds-ne2-or$script:drains-ne1',
+                    f'$script:builds-ne{unknown_index}-or$script:drains-ne{unknown_index-1}')
+                path = Path(directory) / 'unknown_writer.ps1'
+                path.write_text(scenario, encoding='utf-8')
+                result = subprocess.run(['pwsh', '-NoProfile', '-File', str(path), str(SUPPORT), directory],
+                    cwd=REPO, capture_output=True, text=True, encoding='utf-8', timeout=30)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_unobserved_recovery_observes_only_missing_unit(self) -> None:
         script=r'''param($Support,$Root)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
