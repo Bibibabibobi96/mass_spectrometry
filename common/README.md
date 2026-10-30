@@ -99,6 +99,9 @@ unittest 测试完成时报告耗时，首个异常发生时增量回显 traceba
 改动选择器回归中的八个mini场景在同一PowerShell host内调用真实PlanOnly与InternalStage委托，
 逐例检查RED/GREEN；MR和RF两个真实owner仍各自通过独立CLI核对非零退出传播。
 相同十场景的PowerShell启动数由20降至5，不减少selector或测试执行，不新增生产缓存。
+集成收尾接线的原六场景仅合并fixture准备host，十次原CLI恢复／幂等重入保持独立；
+同机同2CPU/2GiB预算单次外层73.323→62.274秒，PowerShell进程16→11，原断言均通过。
+该次baseline末项准备有额外波动，不能把全部差值归因于启动减少或推算CI提速；不代表宽范围预算已达标。
 唯一入口输出`GATE_SUMMARY_PATH`：默认是系统临时目录中的独立小JSON，可用`-SummaryPath`指定
 不存在的目标文件。摘要保留选中原因、实际命令、依赖、环境、阶段状态、耗时、退出码和日志保留情况，
 成功清理详细日志后仍保留摘要。计划先落盘，阶段完成即更新；可捕获的失败或中断按实际状态收尾，
