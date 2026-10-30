@@ -1,9 +1,76 @@
 from pathlib import Path
 import subprocess
+import tempfile
 import unittest
 
 
 class ObservedPreparationDrainTest(unittest.TestCase):
+    def test_completed_first_failure_preserves_native_and_checkpoint_facts(self):
+        support = Path(__file__).with_name("resource_budget_support.ps1")
+        script = r"""
+. $args[0]
+$workspace=$args[1]
+function Write-RepositorySchedulerEvent {}
+function Get-RunDirectoryBytes {return 0}
+function Write-ResourceUsage {}
+function Start-ObservedFormalProcess {param($DispatchPlanPath,$ProcessSpecification)
+ $script:observations++
+ return [pscustomobject]@{resource_budget_exceeded=$false;completed_naturally=$true;exit_code=1;process_record=$script:records[0]}
+}
+$plan=Join-Path $workspace 'plan.json'
+@{role='simion_repository_dispatch_plan';particle_count=1;estimation=@{kind='fixture'};limits=@{
+ maximum_concurrency=1;launch_stagger_seconds=1;memory_critical_seconds=1;
+ memory_recovery_stable_seconds=1;maximum_memory_recovery_attempts=1;
+ maximum_memory_danger_termination_attempts=1;memory_critical_reserve_bytes=1;
+ memory_admission_reserve_bytes=2;minimum_process_cpu_percent=1
+}}|ConvertTo-Json -Depth 10|Set-Content -LiteralPath $plan
+foreach($scenario in @('ordinary','observed_unknown','wave_unknown','later_unknown','prepare_unknown')){
+ $script:observations=0;$script:callbacks=0;$script:verified=0
+ $script:records=@([pscustomobject]@{name='first';completed=$true;exit_code=1;
+  peak_working_set_bytes=1;peak_managed_memory_bytes=1;specification=[pscustomobject]@{}})
+ if($scenario-eq'later_unknown'){$script:records+= [pscustomobject]@{name='second';completed=$true;exit_code=0;
+  peak_working_set_bytes=1;peak_managed_memory_bytes=1;specification=[pscustomobject]@{}}}
+ $callback={param($record)
+  $script:callbacks++
+  try{throw "checkpoint rejected $($record.name)"}catch{
+   if($scenario-eq'observed_unknown'-or($scenario-eq'later_unknown'-and$record.name-eq'second')){$_.Exception.Data['observed_process_exit_confirmed']=$false}
+   if($scenario-eq'wave_unknown'){$_.Exception.Data['simion_wave_writer_completion_confirmed']=$false}
+   throw
+  }
+ }
+ try{
+  if($scenario-eq'later_unknown'){
+   Invoke-ResourceBudgetedProcesses -DispatchPlanPath $plan -RunDir $workspace -UsagePath unused -ExistingProcessRecords $script:records -OnProcessCompleted $callback
+  }elseif($scenario-eq'prepare_unknown'){
+   try{throw 'prepare original'}catch{
+    $_.Exception.Data['observed_process_exit_confirmed']=$false
+    Invoke-ObservedPreparationFailureDrain -Failure $_ -DispatchPlanPath $plan -RunDir $workspace -UsagePath unused -ProcessRecords $script:records -OnProcessCompleted $callback -AfterDrain {$script:verified++}
+   }
+  }else{
+   Invoke-SimionBatchPhase -DispatchPlanPath $plan -RunDir $workspace -UsagePath unused -FirstSpecification @{name='first'} -Replan {throw 'must not replan failed native'} -PrepareRemaining {throw 'must not prepare siblings'} -OnProcessCompleted $callback -AfterDrain {$script:verified++}
+  }
+  throw 'missing failure'
+ }catch{
+  $known=$scenario-eq'ordinary'
+  if([bool]$_.Exception.Data['simion_wave_writer_completion_confirmed']-ne$known){throw "wrong writer proof for $scenario : $_"}
+  if($known-and($_.Exception.Message-ne'Formal first batch did not continue or complete safely.'-or$_.Exception.Data['simion_first_batch_drain_error']-ne'checkpoint rejected first')){throw 'native primary or checkpoint secondary lost'}
+  if($scenario-eq'prepare_unknown'-and$_.Exception.Message-ne'prepare original'){throw 'preparation primary lost'}
+ }
+ if($script:callbacks-ne$script:records.Count-or$script:verified-ne[int]($scenario-eq'ordinary')){throw "callback count/verification differs: $scenario"}
+ if($script:observations-ne[int]($scenario-in@('ordinary','observed_unknown','wave_unknown'))){throw 'observation repeated'}
+}
+exit 0
+"""
+        with tempfile.TemporaryDirectory() as temporary:
+            runner = Path(temporary) / "fixture.ps1"
+            runner.write_text(script, encoding="utf-8", newline="\n")
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-File", str(runner), str(support), temporary],
+                cwd=Path(__file__).resolve().parents[1], timeout=30,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+            )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_post_drain_native_verifier_unknown_blocks_all_closeout_paths(self):
         support = Path(__file__).with_name("resource_budget_support.ps1")
         script = r"""

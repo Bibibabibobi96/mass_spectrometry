@@ -1091,7 +1091,15 @@ function Invoke-ObservedPreparationFailureDrain {
     if($OnDrained-and-not$preparationWriterUnknown){ $null=& $OnDrained $drainResult }
   } catch {
     $Failure.Exception.Data['simion_first_batch_drain_error']=[string]$_
-    $Failure.Exception.Data['simion_wave_writer_completion_confirmed']=$false
+    # A checkpoint can reject scientific completion after the native writer
+    # has already stopped. Preserve that proof, but never another writer's unknown.
+    $stopped=(-not$preparationWriterUnknown-and
+      $_.Exception.Data.Contains('simion_wave_writer_completion_confirmed')-and
+      [bool]$_.Exception.Data['simion_wave_writer_completion_confirmed']-and
+      -not($_.Exception.Data.Contains('observed_process_exit_confirmed')-and
+        -not[bool]$_.Exception.Data['observed_process_exit_confirmed']))
+    $Failure.Exception.Data['simion_wave_writer_completion_confirmed']=$stopped
+    if($stopped){$Failure.Exception.Data['simion_first_batch_writer_unknown']=$false}
     Write-Warning "First-batch drain failed: $_"
   }
   if($AfterDrain-and$stopped-and-not$preparationWriterUnknown){try { $null=& $AfterDrain } catch {
@@ -1204,7 +1212,7 @@ function Invoke-ResourceBudgetedProcesses {
   # a later batch's preparation fails after the formal worker has started.
   $running=[Collections.ArrayList]::new()
   foreach($record in $ExistingProcessRecords){if(-not$record.completed){$null=$running.Add($record)}}
-  $launchInProgress=$false;$checkpointFailure=$null
+  $launchInProgress=$false;$checkpointFailure=$null;$checkpointWriterUnknown=$false
   try {
   # A completed first batch needs only receipt publication; pending or live
   # workers still require the original heavy permission before dispatch.
@@ -1248,6 +1256,8 @@ function Invoke-ResourceBudgetedProcesses {
       # such as $waveResult (where it would turn the result into an array).
       try{$null = & $OnProcessCompleted $record}
       catch{
+        if(($_.Exception.Data.Contains('observed_process_exit_confirmed')-and-not[bool]$_.Exception.Data['observed_process_exit_confirmed'])-or
+           ($_.Exception.Data.Contains('simion_wave_writer_completion_confirmed')-and-not[bool]$_.Exception.Data['simion_wave_writer_completion_confirmed'])){$checkpointWriterUnknown=$true}
         if($null-eq$checkpointFailure){$checkpointFailure=$_}
         else{$checkpointFailure.Exception.Data['simion_additional_checkpoint_error']=[string]$_}
         $pending.Clear()
@@ -1386,6 +1396,8 @@ function Invoke-ResourceBudgetedProcesses {
         if($null-ne$OnProcessCompleted){
           try{$null = & $OnProcessCompleted $record}
           catch{
+            if(($_.Exception.Data.Contains('observed_process_exit_confirmed')-and-not[bool]$_.Exception.Data['observed_process_exit_confirmed'])-or
+               ($_.Exception.Data.Contains('simion_wave_writer_completion_confirmed')-and-not[bool]$_.Exception.Data['simion_wave_writer_completion_confirmed'])){$checkpointWriterUnknown=$true}
             if($null-eq$checkpointFailure){$checkpointFailure=$_}
             else{$checkpointFailure.Exception.Data['simion_additional_checkpoint_error']=[string]$_}
             $pending.Clear()
@@ -1665,7 +1677,7 @@ function Invoke-ResourceBudgetedProcesses {
   }
   Write-ResourceUsage -Usage $usage -Path $UsagePath
   if($null-ne$checkpointFailure){
-    $checkpointFailure.Exception.Data['simion_wave_writer_completion_confirmed']=(-not$unschedulable)
+    $checkpointFailure.Exception.Data['simion_wave_writer_completion_confirmed']=(-not$unschedulable-and-not$checkpointWriterUnknown)
     throw $checkpointFailure
   }
   return [pscustomobject]@{
@@ -1674,6 +1686,8 @@ function Invoke-ResourceBudgetedProcesses {
   }
   } catch {
     $failure=$_
+    $failureWriterUnknown=(($_.Exception.Data.Contains('observed_process_exit_confirmed')-and-not[bool]$_.Exception.Data['observed_process_exit_confirmed'])-or
+      ($_.Exception.Data.Contains('simion_wave_writer_completion_confirmed')-and-not[bool]$_.Exception.Data['simion_wave_writer_completion_confirmed']))
     if($null-ne$checkpointFailure-and-not[object]::ReferenceEquals($failure.Exception,$checkpointFailure.Exception)){
       $checkpointFailure.Exception.Data['simion_wave_followup_error']=[string]$failure
       $failure=$checkpointFailure
@@ -1689,19 +1703,20 @@ function Invoke-ResourceBudgetedProcesses {
         if($null-ne$OnProcessCompleted){$drainArgs.OnProcessCompleted=$OnProcessCompleted}
         $drained=Invoke-ResourceBudgetedProcesses @drainArgs
         if(-not$drained.resource_budget_exceeded-and-not$launchInProgress){
-          $failure.Exception.Data['simion_wave_writer_completion_confirmed']=$true
+          $failure.Exception.Data['simion_wave_writer_completion_confirmed']=-not($failureWriterUnknown-or$checkpointWriterUnknown)
         }
       } catch {
         $failure.Exception.Data['simion_wave_drain_error']=[string]$_
         if($_.Exception.Data['simion_wave_writer_completion_confirmed']-and-not$launchInProgress){
-          $failure.Exception.Data['simion_wave_writer_completion_confirmed']=$true
+          $failure.Exception.Data['simion_wave_writer_completion_confirmed']=-not($failureWriterUnknown-or$checkpointWriterUnknown)
         }
         Write-Warning "SIMION batch drain failed: $_"
       }
     } elseif(-not$launchInProgress-and$active.Count-eq0-and
         -not$failure.Exception.Data.Contains('simion_wave_writer_completion_confirmed')) {
-      $failure.Exception.Data['simion_wave_writer_completion_confirmed']=$true
+      $failure.Exception.Data['simion_wave_writer_completion_confirmed']=-not($failureWriterUnknown-or$checkpointWriterUnknown)
     }
+    if($failureWriterUnknown-or$checkpointWriterUnknown){$failure.Exception.Data['simion_wave_writer_completion_confirmed']=$false}
     if(-not$failure.Exception.Data.Contains('simion_wave_writer_completion_confirmed')){
       $failure.Exception.Data['simion_wave_writer_completion_confirmed']=$false
     }
