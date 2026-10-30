@@ -906,7 +906,7 @@
       "repository_integration_group": "regression",
       "matches": [
         {
-          "regex": "^projects/rf_multipole_ion_optics/(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)(?:core/|runtime/|analysis/|comsol/|simion/|config/(?:contracts|campaigns|sources)/|config/simion_layout_template\\.json$|tests/domain/)",
+          "regex": "^projects/rf_multipole_ion_optics/(?!runtime/comsol_solver_numerics\\.ps1$)(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)(?:core/|runtime/|analysis/|comsol/|simion/|config/(?:contracts|campaigns|sources)/|config/simion_layout_template\\.json$|tests/domain/)",
           "reason": "rf_multipole_domain_changed"
         },
         {
@@ -1075,7 +1075,7 @@
           "reason": "common_simion_direct_dependency_changed"
         },
         {
-          "regex": "^projects/rf_multipole_ion_optics/(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)(?:core/|runtime/|analysis/|comsol/|simion/|config/(?:contracts|campaigns|sources)/|config/simion_layout_template\\.json$|tests/domain/)",
+          "regex": "^projects/rf_multipole_ion_optics/(?!runtime/comsol_solver_numerics\\.ps1$)(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)(?:core/|runtime/|analysis/|comsol/|simion/|config/(?:contracts|campaigns|sources)/|config/simion_layout_template\\.json$|tests/domain/)",
           "reason": "rf_multipole_domain_dependency_changed"
         },
         {
@@ -1479,7 +1479,26 @@
         ],
         "module_parameter": "ChangedTestModules",
         "scope": "projects/rf_multipole_ion_optics/tests/",
-        "preserve_command": true
+        "preserve_command": true,
+        "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "projects/rf_multipole_ion_optics/runtime/comsol_solver_numerics.ps1",
+                "reason": "quadrupole_comsol_numerics_changed"
+              },
+              {
+                "exact": "projects/rf_multipole_ion_optics/variants/quadrupole/config/comsol_solver_numerics.json",
+                "reason": "quadrupole_comsol_numerics_changed"
+              }
+            ],
+            "modules": [
+              "projects/rf_multipole_ion_optics/tests/analysis/test_comsol_workflow_architecture_contract.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_comsol_mass_filter_contract.py"
+            ],
+            "dependency_profile": "locked"
+          }
+        ]
       },
       "owner": "rf_multipole_ion_optics"
     },
@@ -1497,7 +1516,7 @@
           "reason": "hexapole_tests_changed"
         },
         {
-          "regex": "^projects/rf_multipole_ion_optics/(?!variants/|tests/(?:analysis|hexapole|octupole)/|tests/domain/(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
+          "regex": "^projects/rf_multipole_ion_optics/(?!runtime/comsol_solver_numerics\\.ps1$)(?!variants/|tests/(?:analysis|hexapole|octupole)/|tests/domain/(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
           "reason": "rf_multipole_shared_project_changed"
         },
         {
@@ -1590,7 +1609,7 @@
           "reason": "octupole_tests_changed"
         },
         {
-          "regex": "^projects/rf_multipole_ion_optics/(?!variants/|tests/(?:analysis|hexapole|octupole)/|tests/domain/(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
+          "regex": "^projects/rf_multipole_ion_optics/(?!runtime/comsol_solver_numerics\\.ps1$)(?!variants/|tests/(?:analysis|hexapole|octupole)/|tests/domain/(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
           "reason": "rf_multipole_shared_project_changed"
         },
         {

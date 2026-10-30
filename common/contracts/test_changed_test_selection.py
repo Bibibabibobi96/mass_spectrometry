@@ -311,6 +311,97 @@ class ChangedTestSelectionTests(unittest.TestCase):
                     self.assertIn("UNKNOWN_OWNER_TEST_EXECUTED", executed.stderr)
                     self.assertIn("Ran 2 tests", executed.stderr)
 
+    def test_quadrupole_numerics_dependency_is_precise_and_unknown_runtime_stays_conservative(self) -> None:
+        script = r"""
+. __SUPPORT__
+$routes=(Get-Content -LiteralPath __CATALOG__ -Raw|ConvertFrom-Json).routes
+$roots=@($routes|Where-Object{$null-ne$_.PSObject.Properties['test_selection']}|ForEach-Object{@($_.test_selection.roots)})
+$compiler='projects/rf_multipole_ion_optics/runtime/comsol_solver_numerics.ps1'
+$four=@('projects/rf_multipole_ion_optics/docs/COMSOL.md',$compiler,
+ 'projects/rf_multipole_ion_optics/tests/analysis/test_comsol_workflow_architecture_contract.py',
+ 'projects/rf_multipole_ion_optics/variants/quadrupole/config/comsol_solver_numerics.json')
+$cases=@(@{name='four';paths=$four},@{name='deleted';paths=@($compiler)},
+ @{name='renamed';paths=@($compiler,'projects/rf_multipole_ion_optics/runtime/unknown_new_name.ps1')},
+ @{name='other';paths=@('projects/rf_multipole_ion_optics/runtime/runtime_profile.py')},
+ @{name='docs';paths=@('projects/rf_multipole_ion_optics/docs/COMSOL.md')})
+$result=@(foreach($case in $cases){
+ $selected=@{};foreach($stage in @('rf_multipole_domain_tests','instrument_assembly_integration',
+  'rf_multipole_quadrupole_static','rf_multipole_hexapole_static','rf_multipole_octupole_static')){
+  $route=$routes|Where-Object stage -eq $stage
+  $selected[$stage]=[bool](Get-ChangedRouteReason -Route $route -Paths $case.paths)
+ }
+ $quad=$routes|Where-Object stage -eq 'rf_multipole_quadrupole_static'
+ $paths=@(Get-GateOwnerChangedPaths -Route $quad -ChangedPaths $case.paths)
+ $selection=Get-GateChangedTests -Route $quad -ChangedPaths $paths -KnownTestRoots $roots -RepoRoot $PWD.Path
+ @{name=$case.name;selected=$selected;modules=if($null-ne$selection){@($selection.Modules)}else{@()}}
+})
+ConvertTo-Json -InputObject $result -Depth 12 -Compress
+"""
+        script = script.replace("__SUPPORT__", powershell_literal(REPO_ROOT / "common/gate_catalog_support.ps1"))
+        script = script.replace("__CATALOG__", powershell_literal(REPO_ROOT / "common/gate_catalog.json"))
+        outcome = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,
+                                 capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)
+        cases = {case["name"]: case for case in json.loads(outcome.stdout)}
+        expected = sorted([f"{RF}/tests/analysis/test_comsol_workflow_architecture_contract.py",
+                           f"{RF}/tests/analysis/test_comsol_mass_filter_contract.py"])
+        for name in ("four", "deleted"):
+            with self.subTest(case=name):
+                selected = cases[name]["selected"]
+                self.assertTrue(selected["rf_multipole_quadrupole_static"])
+                self.assertFalse(selected["rf_multipole_domain_tests"])
+                self.assertFalse(selected["instrument_assembly_integration"])
+                self.assertFalse(selected["rf_multipole_hexapole_static"])
+                self.assertFalse(selected["rf_multipole_octupole_static"])
+                self.assertEqual(sorted(cases[name]["modules"]), expected)
+        for name in ("renamed", "other"):
+            with self.subTest(case=name):
+                self.assertTrue(all(cases[name]["selected"].values()))
+        self.assertFalse(any(cases["docs"]["selected"].values()))
+
+    def test_mapped_numerics_modules_keep_real_dispatch_failure_propagation(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="numerics_route_dispatch_") as directory:
+            root = Path(directory)
+            common = root / "common"
+            common.mkdir()
+            shutil.copyfile(REPO_ROOT / "common/gate_unittest.py", common / "gate_unittest.py")
+            names = ["test_comsol_workflow_architecture_contract", "test_comsol_mass_filter_contract"]
+            tests = root / RF / "tests/analysis"
+            tests.mkdir(parents=True)
+            for name in names:
+                (tests / (name + ".py")).write_text(
+                    "import os,unittest\nclass Probe(unittest.TestCase):\n"
+                    " def test_boundary(self): self.assertFalse(os.environ.get('NUMERICS_ROUTE_RED'), 'NUMERICS_ROUTE_RED')\n",
+                    encoding="utf-8", newline="\n")
+            script = r"""
+. __SUPPORT__
+$route=((Get-Content __CATALOG__ -Raw|ConvertFrom-Json).routes|Where-Object stage -eq 'rf_multipole_quadrupole_static')
+$selection=Get-GateChangedTests -Route $route -RepoRoot $PWD.Path -KnownTestRoots @($route.test_selection.roots) `
+ -ChangedPaths @('projects/rf_multipole_ion_optics/runtime/comsol_solver_numerics.ps1')
+$modules=@($selection.Modules|ForEach-Object{$_.Substring(0,$_.Length-3).Replace('/','.')})
+$command=ConvertTo-GateExecutionCommand -Command ([pscustomobject]@{runner='python';arguments=@('-m','unittest')+$modules})
+Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYTHON__
+"""
+            script = script.replace("__SUPPORT__", powershell_literal(REPO_ROOT / "common/gate_catalog_support.ps1"))
+            script = script.replace("__CATALOG__", powershell_literal(REPO_ROOT / "common/gate_catalog.json"))
+            script = script.replace("__PYTHON__", powershell_literal(sys.executable))
+            for red in (False, True):
+                environment = os.environ.copy()
+                environment.pop("PYTHONPATH", None)
+                environment.pop("NUMERICS_ROUTE_RED", None)
+                if red:
+                    environment["NUMERICS_ROUTE_RED"] = "1"
+                outcome = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=root, env=environment,
+                                         capture_output=True, text=True, encoding="utf-8", timeout=30)
+                with self.subTest(red=red):
+                    output = outcome.stdout + outcome.stderr
+                    self.assertEqual(outcome.returncode != 0, red, output)
+                    self.assertIn("Ran 2 tests", output)
+                    self.assertIn("TEST_DURATION_SECONDS=", output)
+                    if red:
+                        self.assertIn("TEST_FAILURE_IMMEDIATE=", output)
+                        self.assertIn("NUMERICS_ROUTE_RED", output)
+
     def test_shared_rf_support_keeps_owner_module_sets_disjoint(self) -> None:
         owners = (("quadrupole_static", "analysis"), ("hexapole_static", "hexapole"),
                   ("octupole_static", "octupole"), ("domain_tests", "domain"))

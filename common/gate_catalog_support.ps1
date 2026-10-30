@@ -592,6 +592,11 @@ function Get-ChangedRouteReason {
     param([Parameter(Mandatory)]$Route, [string[]]$Paths)
     foreach ($match in @($Route.matches)) {
         foreach ($path in $Paths) {
+            # Match Changed test owners with the same documentation boundary
+            # already used by Get-GateOwnerChangedPaths. Explicit full/owner
+            # plans do not call this Changed-path match to select their scope.
+            if ($null -ne $Route.PSObject.Properties['test_selection'] -and
+                (Test-DocumentationPath $path)) { continue }
             if ($null -ne $match.PSObject.Properties['exact'] -and
                 $path.Equals([string]$match.exact, [StringComparison]::OrdinalIgnoreCase)) {
                 return [string]$match.reason

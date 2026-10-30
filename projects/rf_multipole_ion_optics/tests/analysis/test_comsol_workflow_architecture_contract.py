@@ -317,7 +317,7 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
         self.assertIn("execution_stage='release_construction_gate'", runner)
         self.assertIn("run_release_construction_gate.m", runner)
         self.assertIn(
-            "comsol\\interface_readiness\\run_release_construction_gate.m", runner
+            "comsol/interface_readiness/run_release_construction_gate.m", runner.replace("\\", "/")
         )
         self.assertNotIn(
             "tests\\comsol\\run_release_construction_gate.m", runner
@@ -722,7 +722,7 @@ $manifestBefore=[IO.File]::ReadAllText($manifestPath)
 '{}'|Set-Content $workflowRequestPath
 @{inputs=@{execution_request=$workflowRequestPath}}|ConvertTo-Json|Set-Content $runConfig
 $ResultPath=Join-Path $root 'result.json';$summary=Join-Path $root 'summary.json'
-$ownerContext=@{run_directory=$root;result_path=$ResultPath;request_path=$workflowRequestPath;completion_written=$false;session=@{status='active'}}
+$ownerContext=@{run_directory=$root;result_path=$ResultPath;request_path=$workflowRequestPath;completion_written=$false;native_path_preparation=@{};session=@{status='active'}}
 $hostExecutionLease=@{inherited=$false;token='owned-token'};$hostReleaseState=@{released=$false;completion=$null;unknown=$false}
 $nativeOperations=@(@{operation_id='fly';resource_release_id='simion';observation=@{exit_confirmed=$true;returncode=0;process_id=71;process_started_at_utc_ticks=[long]12345}})
 $script:releases=0;$script:cleanups=0

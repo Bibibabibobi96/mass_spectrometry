@@ -41,6 +41,8 @@ Lua／MATLAB／PowerShell的引用亦不会被当作无用；未解析的嵌套�
 
 ## 门禁编排
 
+四极 COMSOL 数值编译器的 Changed 依赖按实际消费者选择 interface 与 mass-filter 合同测试；其他 runtime 和未知重命名仍保守扩大。普通文档不单独触发声明了测试选择的 owner。2026-10-31 对应提交修复前 CI 实际运行 1109 项、公开门禁墙钟 803.073 秒并失败；精确四路径规划收窄为两个消费者模块，尚不代表新 CI 已通过或性能预算已达标。
+
 `common/gate_catalog.json`是改动路径路由、依赖等级、阶段前置关系和Repository成员身份的唯一机器目录；项目或
 integration新增公开门禁时必须注册，目录与文件系统不一致即失败。集成route通过
 `runtime_dependencies_path`引用已有运行依赖库存；公共catalog读取器将其`source_repo_path`展开为精确匹配，
