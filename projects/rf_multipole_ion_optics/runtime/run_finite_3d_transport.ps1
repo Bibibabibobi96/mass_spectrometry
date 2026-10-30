@@ -10,6 +10,7 @@ param(
   [string]$PythonExe='',
   [ValidateRange(1,9)][int]$MeshAutoLevel=6,
   [double]$WorkingRegionMaximumElementSizeMm=[double]::NaN,
+  [double]$MinimumElementSizeMm=[double]::NaN,
   [ValidateRange(4,10000)][int]$RfStepsPerPeriod=80,
   [ValidateRange(0.001,1000000)][double]$MaximumTimeUs=80.0,
   [ValidateSet('compact','qualification','solver_review')][string]$RetentionClass='compact',
@@ -127,7 +128,16 @@ try{
       (Join-Path $repoRoot ([string]$fieldPreregistration.field_sampling.plan_path))
     )
   }
+  $authorizedHmin=if($authorizedNumerics.mesh.PSObject.Properties.Name -contains 'minimum_element_size_mm'){$authorizedNumerics.mesh.minimum_element_size_mm}else{$null}
+  if($null-ne$authorizedHmin-and([double]::IsNaN([double]$authorizedHmin)-or[double]::IsInfinity([double]$authorizedHmin)-or[double]$authorizedHmin-le0)){
+    throw 'COMSOL authorized minimum element size must be positive finite.'
+  }
   $authorizedHmax=$authorizedNumerics.mesh.working_region_maximum_element_size_mm
+  if(($null-eq$authorizedHmin)-ne[double]::IsNaN($MinimumElementSizeMm)-or
+    ($null-ne$authorizedHmin-and[double]$authorizedHmin-ne$MinimumElementSizeMm)-or
+    ($null-ne$authorizedHmin-and$null-ne$authorizedHmax-and[double]$authorizedHmin-gt[double]$authorizedHmax)){
+    throw 'COMSOL minimum element size differs from the authorized runtime profile.'
+  }
   if([int]$authorizedNumerics.mesh.global_auto_level-ne$MeshAutoLevel-or
     [int]$authorizedNumerics.trajectory.rf_steps_per_period-ne$RfStepsPerPeriod-or
     [double]$authorizedNumerics.trajectory.maximum_global_time_us-ne$MaximumTimeUs-or
@@ -433,7 +443,11 @@ try{
   }finally{Restore-RunEnvironment -Names $environmentNames -Snapshot $oldEnvironment}
   if($StopStage-eq'mesh_build'){
     try{
-      $meshCells=Assert-MultipoleMeshBuildReport -Path $report
+      $expectedMeshStrategy='selected_region_free_tetrahedral'
+      if($solverNumericsDocument.mesh.PSObject.Properties.Name-contains'strategy'){
+        $expectedMeshStrategy=[string]$solverNumericsDocument.mesh.strategy
+      }
+      $meshCells=Assert-MultipoleMeshBuildReport -Path $report -ExpectedMeshStrategy $expectedMeshStrategy
     }catch{
       if([string]$_.Exception.Data['limit_name']-eq'maximum_mesh_cells'){
         $resourceBudgetExceeded=$true
@@ -572,9 +586,18 @@ try{
       --output $exitStatePlot --manifest $exitStatePlotManifest `
       --title "$exitStatePlotLabel exit-state diagnostic" `
       --purpose 'Regular single-run multipole exit-state diagnostic' `
-      --repo-root $repoRoot
+      --allow-no-exit --repo-root $repoRoot
     if($LASTEXITCODE-ne 0){throw 'COMSOL exit-state diagnostic plot failed.'}
   }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+  $exitStatePlotDocument=Get-Content -LiteralPath $exitStatePlotManifest -Raw -Encoding UTF8|ConvertFrom-Json
+  $exitStatePlotStatus=[string]$exitStatePlotDocument.status
+  $exitStatePlotReason=$exitStatePlotDocument.reason
+  if($exitStatePlotStatus-eq'created'){
+    if(-not(Test-Path -LiteralPath $exitStatePlot -PathType Leaf)){throw 'Created exit-state diagnostic PNG is missing.'}
+  }elseif($exitStatePlotStatus-eq'not_applicable'){
+    if([string]::IsNullOrWhiteSpace([string]$exitStatePlotReason)-or$null-ne$exitStatePlotDocument.figure-or
+      (Test-Path -LiteralPath $exitStatePlot -PathType Leaf)){throw 'Invalid not-applicable exit-state diagnostic.'}
+  }else{throw 'Exit-state diagnostic manifest has an unsupported status.'}
   if($axialTopology-ne'none'){
   Push-Location $codeRoot
     try{
@@ -608,7 +631,8 @@ try{
   [ordered]@{schema_version=1;role='multipole_finite_3d_transport_summary';status='success';
     qualification_status=$qualification;project_id=$ProjectId;design_profile_id=$DesignProfileId;
     parent_resolved_design_sha256=$resolvedHash;primary_transmission=$primary.transmission_fraction;
-    control_transmission=$control.transmission_fraction;model_level='L3';formal_gate_passed=$false}|
+    control_transmission=$control.transmission_fraction;model_level='L3';formal_gate_passed=$false;
+    exit_state_plot_status=$exitStatePlotStatus;exit_state_plot_reason=$exitStatePlotReason}|
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $summary -Encoding UTF8
   $retentionActions=Apply-RunArtifactRetention -Python $python -RepoRoot $manifestRepoRoot `
     -RunConfig $runConfig

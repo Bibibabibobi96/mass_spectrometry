@@ -206,3 +206,6 @@ Einzel 和 LIT 的构建、CPT阶段同样共享上下文，以读取该次生�
 [生命周期](../../docs/LIFECYCLE.md)冻结输入、summary与manifest；临时测试在scratch执行后按该规则清理。
 [路径回归说明](../paths/README.md)提供组件显式上下文的静态检查和独立 MATLAB 路径行为测试；
 两者均不代表真实 COMSOL 求解已经验收。
+
+
+显式选区网格最小尺寸：`configure_comsol_mesh(..., minimumElementSizeMm)` 与 `add_comsol_size_feature(..., hmin)` 的末尾参数可省略，缺省不改变原控制。显式值必须为正有限数且不大于已给定的数值 hmax；同一值作用于 default 与工作区 Size。`read_comsol_mesh_size_controls` 按官方 `getValueType` 读取 typed raw 的 hauto/custom/hmin/hmax/hcurve/hgrad/hnarrow，不推测数值单位；设置 hmin 前后如其他控制改变则拒绝。真实消费者为 RF finite；OA 既有省略参数调用保持原行为。

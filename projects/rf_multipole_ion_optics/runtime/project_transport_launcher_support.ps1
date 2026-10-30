@@ -110,6 +110,9 @@ function Invoke-MultipoleProjectFinite3dTransport {
     if ($Solver -eq 'comsol') {
       $arguments.StopStage = $stopStage
       $arguments.MeshAutoLevel = [int]$numerics.mesh.global_auto_level
+      if($numerics.mesh.PSObject.Properties.Name -contains 'minimum_element_size_mm'){
+        $arguments.MinimumElementSizeMm=[double]$numerics.mesh.minimum_element_size_mm
+      }
       if ($null -ne $numerics.mesh.working_region_maximum_element_size_mm) {
         $arguments.WorkingRegionMaximumElementSizeMm = [double](
           $numerics.mesh.working_region_maximum_element_size_mm

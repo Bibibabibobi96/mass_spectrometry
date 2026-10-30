@@ -151,8 +151,7 @@ try
             'exit_port_plane_z',ports.mechanical_exit.center_mm(3));
         censusRadius = observations.acceptance_radius_mm;
     end
-    assert(all(abs(source.z_mm-d.release_plane_z) < 1e-12), ...
-        'Particle source differs from the canonical release plane.');
+    validate_finite_source_start(source,sourceMetadata,d.release_plane_z);
     rf = design.drive;
     staticElectrodes = design.static_electrodes_V;
     import com.comsol.model.*
@@ -366,14 +365,22 @@ try
             rodBoundarySelectionTags, sweepRodBoundarySelectionTags, ...
             interfaceBoundarySelectionTags);
     else
+        minimumElementSizeMm = [];
+        if isfield(numerics.mesh, 'minimum_element_size_mm')
+            minimumElementSizeMm = numerics.mesh.minimum_element_size_mm;
+        end
         workingHmax=numerics.mesh.working_region_maximum_element_size_mm;
         if isempty(workingHmax), workingHmax=NaN; end
         if isfinite(workingHmax) && workingHmax>0
-            configure_comsol_mesh(mesh,'geom1',numerics.mesh.global_auto_level,'geom1_workvol_dom',workingHmax);
+            meshSizeReadbacks=configure_comsol_mesh(mesh,'geom1',numerics.mesh.global_auto_level,'geom1_workvol_dom',workingHmax,minimumElementSizeMm);
         else
-            configure_comsol_mesh(mesh,'geom1',numerics.mesh.global_auto_level,'',workingHmax);
+            meshSizeReadbacks=configure_comsol_mesh(mesh,'geom1',numerics.mesh.global_auto_level,'',workingHmax,minimumElementSizeMm);
+        end
+        if ~isempty(fieldnames(meshSizeReadbacks))
+            fprintf(fid, 'MESH_EXPLICIT_MINIMUM_READBACKS=%s\n', jsonencode(meshSizeReadbacks));
         end
     end
+    emit_mesh_size_diagnostics(fid, mesh);
     meshPrebuildDiagnostics = emit_mesh_prebuild_diagnostics(fid, model, comp, mesh, ...
         segmentHybridMesh, hybridSelections);
     assert(meshPrebuildDiagnostics.vacuum.entity_count > 0 && ...
@@ -411,7 +418,13 @@ try
     emit_mesh_problem_diagnostics(fid, mesh);
     assert(~meshInfo.isempty && ~meshInfo.hasproblems && ...
         ~vacuumMeshInfo.isempty && ~vacuumMeshInfo.hasproblems && ...
-        sum(vacuumMeshInfo.numelem) > 0, 'Finite 3D vacuum mesh failed.');
+        sum(vacuumMeshInfo.numelem) > 0, ...
+        ['Finite 3D vacuum mesh failed: global_empty=%d, global_has_problems=%d, ' ...
+        'global_complete=%d, vacuum_empty=%d, vacuum_has_problems=%d, ' ...
+        'vacuum_complete=%d, vacuum_elements=%.17g.'], ...
+        meshInfo.isempty, meshInfo.hasproblems, meshInfo.iscomplete, ...
+        vacuumMeshInfo.isempty, vacuumMeshInfo.hasproblems, ...
+        vacuumMeshInfo.iscomplete, sum(vacuumMeshInfo.numelem));
     if ~segmentHybridMesh
         assert(meshInfo.iscomplete, 'Finite 3D free-tetrahedral mesh is incomplete.');
     end
@@ -657,19 +670,19 @@ try
     cpt.selection.named('sel_vac');
     cpt.feature('pp1').set('mp', 'm_ion');
     cpt.feature('pp1').set('Z', sprintf('%d', design.particle_source.charge_state));
-    for index = 1:height(source)
-        releaseData = [source.x_mm(index), source.y_mm(index), source.z_mm(index), ...
-            source.vx_m_s(index), source.vy_m_s(index), source.vz_m_s(index)];
-        releasePath = fullfile(runtimeDir, sprintf('particle_%03d.txt', source.particle_id(index)));
-        writematrix(releaseData, releasePath, 'Delimiter', 'tab');
-        release = cpt.create(sprintf('rel%03d', index), 'ReleaseFromDataFile', -1);
-        release.set('Filename', releasePath);
-        release.set('icolp', '0');
-        release.set('VelocitySpecification', 'SpecifyVelocity');
-        release.set('InitialVelocity', 'FromFile');
-        release.set('icolv', '3');
-        release.set('rt', sprintf('%.17g[s]', source.birth_time_s(index)));
-        release.importData();
+    sourceWeights=nan(height(source),1);
+    if ismember('weight',source.Properties.VariableNames),sourceWeights=source.weight;end
+    [releaseGroups,nativeOrder]=plan_rf_exact_birth_releases(source.birth_time_s, ...
+        [source.x_mm source.y_mm source.z_mm source.vx_m_s source.vy_m_s source.vz_m_s], ...
+        source.particle_id,source.mass_amu,source.charge_state,sourceWeights);
+    for index=1:numel(releaseGroups)
+        releasePath=fullfile(runtimeDir,sprintf('particle_%03d.txt',index));
+        releaseFile=fopen(releasePath,'w');assert(releaseFile>=0,'Cannot create grouped release.');
+        fprintf(releaseFile,'%s',releaseGroups(index).release_text);fclose(releaseFile);
+        release=cpt.create(sprintf('rel%03d',index),'ReleaseFromDataFile',-1);
+        release.set('Filename',releasePath);release.set('icolp','0');
+        release.set('VelocitySpecification','SpecifyVelocity');release.set('InitialVelocity','FromFile');release.set('icolv','3');
+        release.set('rt',releaseGroups(index).release_time_expression);release.importData();
     end
     force = cpt.create('ef1', 'ElectricForce', 3);
     force.selection.named('sel_vac');
@@ -705,6 +718,11 @@ try
     end
     % Persist the existing unique MPH after both physical cases, before extraction.
     modelDirectory=fileparts(modelPath);if ~isfolder(modelDirectory),mkdir(modelDirectory);end
+    releaseMapping=struct('native_order',nativeOrder,'source_ids',source.particle_id,'release_group_count',numel(releaseGroups), ...
+      'source_birth_s',source.birth_time_s,'source_weight',sourceWeights,'native_scope','complete_cohort');
+    outputDir=fileparts(eventsPath);if ~isfolder(outputDir),mkdir(outputDir);end
+    mappingFile=fopen(fullfile(outputDir,'release_source_mapping.json'),'w');assert(mappingFile>=0,'Cannot persist source mapping.');
+    fprintf(mappingFile,'%s',jsonencode(releaseMapping));fclose(mappingFile);
     persistTimer=tic;model.save(modelPath);
     fprintf(fid,'TIMING_PERSIST_SECONDS=%.9g RAW_SOLUTION_PERSISTED=true\n',toc(persistTimer));
     planes=[d.census_plane_z d.rod_z_max d.handoff_plane_z d.entrance_port_plane_z d.exit_port_plane_z];
@@ -712,8 +730,10 @@ try
     for particle=1:height(source)
       regions(:,:,particle)=[d.rod_z_min d.rod_z_max;min(source.z_mm(particle),d.rod_z_max) d.rod_z_max];
     end
-    [pdOn,onExtraction]=extract_rf_particle_records(model,solutionOn,pdOn,'cpt',source.particle_id',planes,regions,20,256);
-    [pdZero,zeroExtraction]=extract_rf_particle_records(model,solutionZero,pdZero,'cpt',source.particle_id',planes,regions,20,256);
+    [nativeOn,onExtraction]=extract_rf_particle_records(model,solutionOn,pdOn,'cpt',source.particle_id(nativeOrder)',planes,regions(:,:,nativeOrder),20,256);
+    pdOn=cell(size(nativeOn));pdOn(nativeOrder)=nativeOn;
+    [nativeZero,zeroExtraction]=extract_rf_particle_records(model,solutionZero,pdZero,'cpt',source.particle_id(nativeOrder)',planes,regions(:,:,nativeOrder),20,256);
+    pdZero=cell(size(nativeZero));pdZero(nativeOrder)=nativeZero;
     fprintf(fid,'TIMING_EXTRACT_SECONDS=%.9g RETAINED_SAMPLES=%d\n', ...
       onExtraction.extract_seconds+zeroExtraction.extract_seconds,onExtraction.retained_samples+zeroExtraction.retained_samples);
     massKg=sourceMetadata.mass_amu*1.66053906660e-27;
@@ -727,8 +747,6 @@ try
         g.entrance_interface.aperture_radius_mm, g.exit_interface.aperture_radius_mm,massKg);
     events = [onEvents; zeroEvents];
     trajectories = [onTrajectories; zeroTrajectories];
-    outputDir = fileparts(eventsPath);
-    if ~isfolder(outputDir), mkdir(outputDir); end
     writetable(events, eventsPath);
     writetable(trajectories, trajectoryPath);
     pairedTrajectories = ~isempty(primaryTrajectoryPath) || ~isempty(controlTrajectoryPath);
@@ -1020,6 +1038,24 @@ fprintf(fid, 'MESH_NONVACUUM_PARTITION_DOMAIN_COUNT=%d\n', diagnostics.tetrahedr
 emit_selection_region(fid, 'MESH_TETRAHEDRAL', diagnostics.tetrahedral);
 end
 
+function emit_mesh_size_diagnostics(fid, mesh)
+featureTags = cell(mesh.feature.tags());
+for featureIndex = 1:numel(featureTags)
+    feature = mesh.feature(featureTags{featureIndex});
+    if ~strcmp(char(feature.getType()), 'Size'), continue; end
+    prefix = ['MESH_SIZE_' upper(featureTags{featureIndex})];
+    try
+        controls = read_comsol_mesh_size_controls(feature);
+        fprintf(fid, '%s_CONTROLS_TYPED_RAW=%s\n', prefix, jsonencode(controls));
+        fprintf(fid, '%s_READBACK_STATUS=AVAILABLE\n', prefix);
+    catch exception
+        fprintf(fid, '%s_READBACK_STATUS=UNAVAILABLE\n', prefix);
+        fprintf(fid, '%s_READBACK_ERROR=%s\n', prefix, ...
+            regexprep(exception.message, '[\r\n]+', ' '));
+    end
+end
+end
+
 function emit_mesh_problem_diagnostics(fid, mesh)
 try
     featureTags = cell(mesh.feature.tags());
@@ -1034,6 +1070,22 @@ try
             fprintf(fid, 'MESH_PROBLEM_%d_FEATURE=%s\n', problemCount, ...
                 upper(featureTags{featureIndex}));
             fprintf(fid, 'MESH_PROBLEM_%d_MESSAGE=%s\n', problemCount, message);
+            try
+                selection = feature.problem(problemTags{problemIndex}).selection();
+                dimensions = double(selection.dimension());
+                fprintf(fid, 'MESH_PROBLEM_%d_SELECTION_DIMENSIONS=%s\n', ...
+                    problemCount, mat2str(dimensions));
+                for dimensionIndex = 1:numel(dimensions)
+                    dimension = dimensions(dimensionIndex);
+                    fprintf(fid, 'MESH_PROBLEM_%d_ENTITIES_DIM_%d=%s\n', ...
+                        problemCount, dimension, mat2str(double(selection.entities(dimension))));
+                end
+                fprintf(fid, 'MESH_PROBLEM_%d_SELECTION_STATUS=AVAILABLE\n', problemCount);
+            catch selectionException
+                fprintf(fid, 'MESH_PROBLEM_%d_SELECTION_STATUS=UNAVAILABLE\n', problemCount);
+                fprintf(fid, 'MESH_PROBLEM_%d_SELECTION_ERROR=%s\n', problemCount, ...
+                    regexprep(selectionException.message, '[\r\n]+', ' '));
+            end
         end
     end
     fprintf(fid, 'MESH_PROBLEM_DIAGNOSTIC_STATUS=AVAILABLE\n');
@@ -1185,7 +1237,7 @@ function [events, trajectories] = analyze_particle_case(pd, source, caseId, ...
     censusPlaneZ, usableRadius, censusRadius, rodZMin, rodZMax, entranceCrossingZ, exitCrossingZ, ...
     entrancePortRadius, exitPortRadius,massKg)
 particleCount=numel(pd);
-eventRows = cell(particleCount, 13);
+eventRows = cell(particleCount, 15);
 trajectoryRows = cell(0, 7);
 transmitted = false(1, particleCount);
 maximumRodRadius = nan(1, particleCount);
@@ -1207,28 +1259,31 @@ for particle = 1:particleCount
     exitCrossing = valid(find(z(valid) >= exitCrossingZ, 1, 'first'));
     if ~isempty(entranceCrossing), entranceRadii(particle) = radius(entranceCrossing); end
     if ~isempty(exitCrossing), exitPortRadii(particle) = radius(exitCrossing); end
+    rejectionReason='';
     if ~isempty(crossing) && maximumRodRadius(particle) < usableRadius && ...
             radius(crossing) <= censusRadius
         transmitted(particle) = true;
-        reason = 'near_interface_census_plane';
         terminal = crossing;
     else
         terminal = valid(end);
-        if isempty(entranceCrossing) || entranceRadii(particle) > entrancePortRadius
-            reason = 'entrance_port_envelope_loss';
+        if ~isempty(entranceCrossing) && entranceRadii(particle) > entrancePortRadius
+            rejectionReason = 'entrance_port_envelope_loss';
         elseif maximumRodRadius(particle) >= usableRadius
-            reason = 'usable_radius_exceeded';
-        elseif isempty(exitCrossing) || exitPortRadii(particle) > exitPortRadius
-            reason = 'exit_port_envelope_loss';
-        else
-            reason = 'external_region_or_timeout';
+            rejectionReason = 'usable_radius_exceeded';
+        elseif ~isempty(exitCrossing) && exitPortRadii(particle) > exitPortRadius
+            rejectionReason = 'exit_port_envelope_loss';
+        elseif ~isempty(crossing) && radius(crossing) > censusRadius
+            rejectionReason = 'census_acceptance_radius_exceeded';
         end
     end
-    status = 'lost'; if transmitted(particle), status = 'transmitted'; end
+    outcome=classify_finite_particle_terminal(record,transmitted(particle),rejectionReason);
+    status=outcome.status;reason=outcome.reason;
+    if transmitted(particle),reason='near_interface_census_plane';end
     eventRows(particle,:) = {caseId, source.particle_id(particle), status, reason, ...
         source.birth_time_s(particle), t(terminal), x(terminal), ...
         y(terminal), z(terminal), radius(terminal), ...
-        maximumRodRadius(particle), entranceRadii(particle), exitPortRadii(particle)};
+        maximumRodRadius(particle), entranceRadii(particle), exitPortRadii(particle), ...
+        outcome.acceptance_status,outcome.acceptance_reason};
     sampled=find(ismember(record.solution_index,record.trajectory_solution_index));
     for sample = sampled'
         trajectoryRows(end+1,:) = {caseId, source.particle_id(particle), t(sample), ...
@@ -1239,7 +1294,7 @@ end
 events = cell2table(eventRows, 'VariableNames', {'case_id','particle_id','status','terminal_reason', ...
     'birth_time_s','terminal_time_s','terminal_x_mm','terminal_y_mm','terminal_z_mm', ...
     'terminal_radius_mm','maximum_rod_radius_mm','entrance_port_radius_mm', ...
-    'exit_port_radius_mm'});
+    'exit_port_radius_mm','acceptance_status','acceptance_reason'});
 trajectories = cell2table(trajectoryRows, 'VariableNames', {'case_id','particle_id', ...
     'time_s','x_mm','y_mm','z_mm','radius_mm'});
 end
@@ -1268,7 +1323,7 @@ end
 
 function write_canonical_particle_state(pd,source,path,rodExitZ,handoffZ,censusPlaneZ, ...
     usableRadius,censusRadius,massKg,frequencyHz,phaseRad)
-rows=cell(0,17);
+rows=cell(0,19);
 for particle=1:numel(pd)
     record=pd{particle};t=record.time_s;x=record.position_mm(:,1);y=record.position_mm(:,2);z=record.position_mm(:,3);
     vx=record.velocity_m_s(:,1);vy=record.velocity_m_s(:,2);vz=record.velocity_m_s(:,3);radius=sqrt(x.^2+y.^2);
@@ -1293,30 +1348,39 @@ for particle=1:numel(pd)
             handoffState,source.birth_time_s(particle),frequencyHz,phaseRad,massKg,maxRodRadius); %#ok<AGROW>
     end
     crossing=valid(find(z(valid)>=censusPlaneZ,1,'first')); terminal=valid(end);
-    status='lost'; reason='electrode';
-    if ~isempty(crossing)&&radius(crossing)<=censusRadius&&maxRodRadius<usableRadius
-        terminal=crossing;status='transmitted';reason='acceptance_surface';
-    elseif z(terminal)<source.z_mm(particle),reason='backward_escape';
+    accepted=~isempty(crossing)&&radius(crossing)<=censusRadius&&maxRodRadius<usableRadius;
+    rejectionReason='';
+    if accepted
+        terminal=crossing;
+    elseif maxRodRadius>=usableRadius
+        rejectionReason='usable_radius_exceeded';
+    elseif ~isempty(crossing)&&radius(crossing)>censusRadius
+        rejectionReason='census_acceptance_radius_exceeded';
     end
+    outcome=classify_finite_particle_terminal(record,accepted,rejectionReason);
+    status=outcome.status;reason=outcome.reason;
     terminalState=struct('t_s',t(terminal),'x_mm',x(terminal),'y_mm',y(terminal), ...
         'z_mm',z(terminal),'vx_m_s',vx(terminal),'vy_m_s',vy(terminal), ...
         'vz_m_s',vz(terminal));
     rows(end+1,:)=canonical_state_row(source.particle_id(particle),'terminal',status,reason, ...
-        terminalState,source.birth_time_s(particle),frequencyHz,phaseRad,massKg,maxRodRadius); %#ok<AGROW>
+        terminalState,source.birth_time_s(particle),frequencyHz,phaseRad,massKg,maxRodRadius, ...
+        outcome.acceptance_status,outcome.acceptance_reason); %#ok<AGROW>
 end
 names={'particle_id','event','status','terminal_reason','time_us','elapsed_time_us','rf_phase_rad', ...
     'axial_z_mm','transverse_x_mm','transverse_y_mm','velocity_axial_m_s','velocity_x_m_s', ...
-    'velocity_y_m_s','kinetic_energy_eV','radial_position_mm','divergence_angle_deg','max_rod_radius_mm'};
+    'velocity_y_m_s','kinetic_energy_eV','radial_position_mm','divergence_angle_deg','max_rod_radius_mm', ...
+    'acceptance_status','acceptance_reason'};
 writetable(cell2table(rows,'VariableNames',names),path);
 end
 
-function row=canonical_state_row(particleId,event,status,reason,state,birthTime,frequencyHz,phaseRad,massKg,maxRodRadius)
+function row=canonical_state_row(particleId,event,status,reason,state,birthTime,frequencyHz,phaseRad,massKg,maxRodRadius,acceptanceStatus,acceptanceReason)
+if nargin<11,acceptanceStatus='not_evaluated';acceptanceReason='none';end
 speedSquared=state.vx_m_s^2+state.vy_m_s^2+state.vz_m_s^2;
 energyEv=0.5*massKg*speedSquared/1.602176634e-19;
 row={particleId,event,status,reason,state.t_s*1e6,(state.t_s-birthTime)*1e6, ...
     mod(2*pi*frequencyHz*state.t_s+phaseRad,2*pi),state.z_mm,state.x_mm,state.y_mm, ...
     state.vz_m_s,state.vx_m_s,state.vy_m_s,energyEv,hypot(state.x_mm,state.y_mm), ...
-    atan2d(hypot(state.vx_m_s,state.vy_m_s),state.vz_m_s),maxRodRadius};
+    atan2d(hypot(state.vx_m_s,state.vy_m_s),state.vz_m_s),maxRodRadius,acceptanceStatus,acceptanceReason};
 end
 
 function [state,found]=interpolate_particle_plane(time,x,y,z,vx,vy,vz,planeZ)

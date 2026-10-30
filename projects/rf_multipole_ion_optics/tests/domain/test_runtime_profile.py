@@ -22,6 +22,26 @@ VARIANTS = ("quadrupole", "hexapole", "octupole")
 
 
 class RuntimeProfileTests(unittest.TestCase):
+    def test_comsol_minimum_size_is_authorized_numeric_and_selected_region_only(self):
+        from projects.rf_multipole_ion_optics.runtime.runtime_profile import _resolve_solver_profile
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/"numerics.json"
+            registry = dict(schema_version=1, role="multipole_comsol_solver_numerics_profiles", project_id="fixture",
+                            profiles=dict(inert=dict(mesh=dict(global_auto_level=9, working_region_maximum_element_size_mm=2,
+                                                              minimum_element_size_mm=.2))))
+            path.write_text(json.dumps(registry), encoding="utf-8")
+            self.assertEqual(_resolve_solver_profile(path, "fixture", "comsol", "inert")["values"], registry["profiles"]["inert"])
+            for value in (True, 0, -1, 3, float("inf"), float("nan"), ".2"):
+                with self.subTest(minimum=value):
+                    registry["profiles"]["inert"]["mesh"]["minimum_element_size_mm"] = value
+                    path.write_text(json.dumps(registry), encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, "minimum_element_size_mm"):
+                        _resolve_solver_profile(path, "fixture", "comsol", "inert")
+            registry["profiles"]["inert"]["mesh"].update(minimum_element_size_mm=.2, strategy="physical_segment_hybrid_swept_tetra_v1")
+            path.write_text(json.dumps(registry), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "minimum_element_size_mm"):
+                _resolve_solver_profile(path, "fixture", "comsol", "inert")
+
     def test_execution_binding_projects_each_actual_structure_without_run_authorization(self) -> None:
         for variant in VARIANTS:
             with self.subTest(variant=variant):

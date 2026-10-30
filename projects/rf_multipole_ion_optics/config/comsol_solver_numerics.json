@@ -414,6 +414,19 @@
         "rf_steps_per_period": 320,
         "maximum_global_time_us": 80.0
       }
+    },
+    "core_flow_development_coarse_8us": {
+      "stationary_linear_solver_backend": "mumps",
+      "electric_potential_element_order": "quadratic",
+      "mesh": {
+        "global_auto_level": 9,
+        "working_region_maximum_element_size_mm": 2.0,
+        "minimum_element_size_mm": 0.2
+      },
+      "trajectory": {
+        "rf_steps_per_period": 80,
+        "maximum_global_time_us": 8.0
+      }
     }
   }
 }

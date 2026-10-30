@@ -19,6 +19,7 @@ assert(particleCount>0&&all(isfinite(particleIds))&&numel(unique(particleIds))==
  'rf:ParticleIds','Frozen source IDs must be nonempty and unique.');
 lastWindow=cell(1,particleCount);
 seenActive=false(1,particleCount);ended=false(1,particleCount);
+finalInventoryIndex=0;finalInventoryTime=NaN;
 assert(size(rodBoundsMm,2)==2&&(size(rodBoundsMm,3)==1||size(rodBoundsMm,3)==particleCount), ...
  'rf:ParticleRegions','Rod regions must have two bounds and either shared or per-particle pages.');
 particles=cell(1,particleCount);seenValid=zeros(1,particleCount);
@@ -27,16 +28,25 @@ for index=1:particleCount
   'position_mm',zeros(0,3),'velocity_m_s',zeros(0,3),'trajectory_solution_index',zeros(0,1));
 end
 receipt=visit_rf_particle_windows(model,solutionTag,datasetTag,physicsIdentifier,windowSamples,@consume);
+assert(finalInventoryIndex==receipt.original_time_rows&&isfinite(finalInventoryTime), ...
+ 'rf:ParticleInventory','Final original solution inventory was not observed.');
+receipt.solution_end_time_s=finalInventoryTime;
 for index=1:particleCount
  record=particles{index};assert(~isempty(record.solution_index),'rf:ParticleActiveState','Particle has no finite trajectory samples.');
  [record.solution_index,keep]=unique(record.solution_index,'sorted');
  record.time_s=record.time_s(keep);record.position_mm=record.position_mm(keep,:);record.velocity_m_s=record.velocity_m_s(keep,:);
  record.trajectory_solution_index=unique([record.trajectory_solution_index;record.solution_index(end)]);
+ record.terminal_observation=struct('solution_end_index',receipt.original_time_rows, ...
+  'solution_end_time_s',finalInventoryTime,'last_finite_solution_index',record.solution_index(end), ...
+  'last_finite_time_s',record.time_s(end), ...
+  'finite_at_solution_end',logical(record.solution_index(end)==receipt.original_time_rows), ...
+  'finite_track_ended',logical(ended(index)),'native_termination_cause','not_observed');
  particles{index}=record;
 end
 receipt.retained_samples=sum(cellfun(@(p)numel(p.time_s),particles));
 receipt.retained_particle_count=particleCount;
  function consume(window)
+  finalInventoryIndex=window.last_solution_index;finalInventoryTime=window.time_s(end);
   assert(size(window.x_mm,2)==particleCount,'Solved mother particle count differs from frozen source.');
   globalIndices=(window.first_solution_index:window.last_solution_index)';
   assigned=false(1,particleCount);

@@ -1,5 +1,9 @@
 import csv
 import json
+import os
+import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from dataclasses import replace
@@ -10,6 +14,8 @@ import numpy as np
 
 from projects.rf_multipole_ion_optics.analysis.exit_state_plot import (
     HISTOGRAMS,
+    NoExitState,
+    main,
     export_four_domain_figure,
     load_exit_state,
     export_figure,
@@ -105,6 +111,134 @@ def write_fixture(
 
 
 class ExitStatePlotTests(unittest.TestCase):
+    def test_no_exit_is_opt_in_and_records_no_image_or_new_payload_hash(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source, output, manifest = root / "state.csv", root / "plot.png", root / "plot.json"
+            write_fixture(source, selected_count=0)
+            with self.assertRaisesRegex(ValueError, "No supported"):
+                load_exit_state(source, "strict")
+            state = load_exit_state(source, "single", allow_no_exit=True)
+            self.assertIsInstance(state, NoExitState)
+            self.assertEqual(state.source_particle_count, 3)
+            argv = ["exit_state_plot", "--series", f"single={source}", "--output", str(output),
+                    "--manifest", str(manifest), "--title", "fixture", "--purpose", "test", "--allow-no-exit"]
+            with patch("sys.argv", argv), patch(
+                    "projects.rf_multipole_ion_optics.analysis.exit_state_plot.file_sha256",
+                    side_effect=AssertionError("No-exit metadata does not need a new payload hash")):
+                self.assertEqual(main(), 0)
+            document = json.loads(manifest.read_text(encoding="utf-8"))
+            self.assertEqual(document["status"], "not_applicable")
+            self.assertEqual(document["reason"], "no_supported_exit_state_rows")
+            self.assertIsNone(document["figure"])
+            self.assertEqual(document["scientific_status"], "not_evaluated")
+            self.assertFalse(output.exists())
+
+    def test_time_truncated_no_exit_does_not_infer_loss(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "state.csv"
+            write_fixture(path, selected_count=0)
+            with path.open(encoding="utf-8", newline="") as stream:
+                rows = list(csv.DictReader(stream))
+            terminals = [dict(row, event="terminal", status="unknown", terminal_reason="time_limit",
+                              time_us="8", elapsed_time_us="8") for row in rows]
+            with path.open("w", encoding="utf-8", newline="") as stream:
+                writer = csv.DictWriter(stream, fieldnames=COLUMNS)
+                writer.writeheader()
+                writer.writerows(rows + terminals)
+            state = load_exit_state(path, "time-limit", allow_no_exit=True)
+            self.assertEqual(state.status, "not_applicable")
+            self.assertEqual(state.reason, "no_supported_exit_state_rows")
+            self.assertEqual(state.source_particle_ids, ("1", "2", "3"))
+
+    def test_optional_no_exit_still_rejects_bad_source_fields_and_ids(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "state.csv"
+            for fault, expected in (("missing", "missing columns"), ("nan", "NaN/Inf"),
+                                    ("duplicate_id", "IDs are invalid"), ("zero_id", "IDs are invalid"),
+                                    ("text_id", "IDs are invalid"), ("unknown_id", "do not belong")):
+                with self.subTest(fault=fault):
+                    write_fixture(path, selected_count=0)
+                    with path.open(encoding="utf-8", newline="") as stream:
+                        rows = list(csv.DictReader(stream))
+                    columns = list(COLUMNS)
+                    if fault == "missing":
+                        columns.remove("velocity_x_m_s")
+                        for row in rows:
+                            del row["velocity_x_m_s"]
+                    elif fault == "nan":
+                        rows[0]["time_us"] = "NaN"
+                    elif fault == "duplicate_id":
+                        rows[1]["particle_id"] = rows[0]["particle_id"]
+                    elif fault in ("zero_id", "text_id"):
+                        rows[0]["particle_id"] = "0" if fault == "zero_id" else "bad"
+                    else:
+                        rows.append(dict(rows[0], particle_id="999", event="terminal", status="unknown"))
+                    with path.open("w", encoding="utf-8", newline="") as stream:
+                        writer = csv.DictWriter(stream, fieldnames=columns)
+                        writer.writeheader()
+                        writer.writerows(rows)
+                    with self.assertRaisesRegex(ValueError, expected):
+                        load_exit_state(path, "bad", allow_no_exit=True)
+
+    def test_optional_no_exit_is_single_series_only_and_keeps_valid_plotting(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source, output, manifest = root / "state.csv", root / "plot.png", root / "plot.json"
+            write_fixture(source)
+            argv = ["plot", "--series", f"single={source}", "--output", str(output),
+                    "--manifest", str(manifest), "--title", "fixture", "--purpose", "test", "--allow-no-exit"]
+            with patch("sys.argv", argv):
+                self.assertEqual(main(), 0)
+            self.assertTrue(output.is_file())
+            self.assertEqual(json.loads(manifest.read_text(encoding="utf-8"))["status"], "created")
+            with patch("sys.argv", argv + ["--series", f"other={source}"]):
+                with self.assertRaises(SystemExit):
+                    main()
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell7 required")
+    def test_finite_plot_fragment_skips_zero_exit_and_propagates_bad_source(self):
+        repo = Path(__file__).resolve().parents[4]
+        runner = (repo / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
+        start = runner.rfind("  Push-Location $codeRoot", 0, runner.index("    $exitStatePlotLabel="))
+        end = runner.index("  if($axialTopology-ne'none'){", start)
+        fragment = runner[start:end]
+        summary_start = runner.index("  [ordered]@{schema_version=1;role='multipole_finite_3d_transport_summary';status='success';")
+        summary_end = runner.index("\n", runner.index("Set-Content -LiteralPath $summary -Encoding UTF8", summary_start))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixtures = []
+            for name in ("zero", "bad"):
+                folder = root / name
+                folder.mkdir()
+                source = folder / "state.csv"
+                write_fixture(source, selected_count=0)
+                if name == "bad":
+                    source.write_text("particle_id,event,status\n1,source,alive\n", encoding="utf-8")
+                fixtures.append(dict(name=name, folder=str(folder), source=str(source)))
+            def quote(value):
+                return "'" + str(value).replace("'", "''") + "'"
+            script = "$ErrorActionPreference='Stop'\n$codeRoot=" + quote(repo) + ";$repoRoot=$codeRoot;$python=" + quote(sys.executable) + "\n"
+            script += "$fixtures=ConvertFrom-Json " + quote(json.dumps(fixtures)) + "\n$records=[Collections.Generic.List[object]]::new()\n"
+            script += "foreach($fixture in $fixtures){$primaryState=$fixture.source;$RunId='fixture';$ProjectId='rf_multipole_ion_optics';$exitStatePlot=Join-Path $fixture.folder 'plot.png';$exitStatePlotManifest=Join-Path $fixture.folder 'plot.json';$summary=Join-Path $fixture.folder 'summary.json'\ntry{\n"
+            script += fragment + "\n$qualification='UNQUALIFIED';$DesignProfileId='fixture';$resolvedHash='fixture';$primary=[pscustomobject]@{transmission_fraction=0};$control=$primary\n" + runner[summary_start:summary_end]
+            script += "\n$records.Add(@{name=$fixture.name;ok=$true;document=(Get-Content -LiteralPath $summary -Raw|ConvertFrom-Json);png=(Test-Path -LiteralPath $exitStatePlot)})}catch{$records.Add(@{name=$fixture.name;ok=$false;error=$_.Exception.Message;summary_exists=(Test-Path -LiteralPath $summary)})}}\nConvertTo-Json -InputObject ($records.ToArray()) -Depth 10"
+            env = os.environ.copy()
+            env["PYTHONDONTWRITEBYTECODE"] = "1"
+            env["MPLCONFIGDIR"] = str(root / "mpl")
+            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script], cwd=repo,
+                                    env=env, capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            rows = json.loads(result.stdout)
+            self.assertTrue(rows[0]["ok"], rows[0])
+            self.assertFalse(rows[0]["png"])
+            self.assertEqual(rows[0]["document"]["exit_state_plot_status"], "not_applicable")
+            self.assertEqual(rows[0]["document"]["exit_state_plot_reason"], "no_supported_exit_state_rows")
+            self.assertFalse(rows[1]["ok"])
+            self.assertIn("exit-state diagnostic plot failed", rows[1]["error"])
+            self.assertFalse(rows[1]["summary_exists"])
+            self.assertIn("missing columns", result.stderr)
+
     def test_shared_scales_and_fixed_bins_cover_both_series(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -86,6 +86,7 @@ try {
       'projects/rf_multipole_ion_optics/comsol/solve_deterministic_rf_quadrupole_particles.m',
       'projects/rf_multipole_ion_optics/comsol/visit_rf_particle_windows.m',
       'projects/rf_multipole_ion_optics/comsol/extract_rf_particle_records.m',
+        'projects/rf_multipole_ion_optics/comsol/plan_rf_exact_birth_releases.m',
       'projects/rf_multipole_ion_optics/comsol/mass_filter_reference/run_scan.m'
   )
   $frozenAnalysisPackage = New-FrozenPythonPackage `

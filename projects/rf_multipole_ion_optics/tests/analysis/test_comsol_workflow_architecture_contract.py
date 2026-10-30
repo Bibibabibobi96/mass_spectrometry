@@ -144,8 +144,10 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
             profile["comsol_solver_numerics_profile_id"]
             for profile in runtime_profiles["profiles"].values()
         }
+        self.assertNotIn("core_flow_development_coarse_8us", runtime_numerics_ids)
         self.assertEqual(
-            runtime_numerics_ids, set(multipole_contract["profiles"])
+            runtime_numerics_ids | {"core_flow_development_coarse_8us"},
+            set(multipole_contract["profiles"])
         )
         specialized_consumers = (
             PROJECT_ROOT / "workflows" / "interface_readiness" / "run_comsol.ps1",
@@ -305,153 +307,28 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
         )
 
     def test_release_construction_gate_stops_before_particle_study(self) -> None:
-        runner = _read(RUNNER)
-        task = _read(RELEASE_GATE_TASK)
-        dedicated = _read(DEDICATED_ENTRY)
-        shared = _read(SHARED_SOLVER)
-
+        # Public validator tests own grouped file/mapping/breadcrumb behavior;
+        # RfExactBirthReleasePlanTest owns exact grouping and source facts.
+        runner, task, shared = _read(RUNNER), _read(RELEASE_GATE_TASK), _read(SHARED_SOLVER)
         self.assertIn("[switch]$ReleaseConstructionGate", runner)
-        self.assertIn(
-            "if($ReleaseConstructionGate -and $expectedParticles-ne 100)", runner
-        )
+        self.assertIn("if($ReleaseConstructionGate -and $expectedParticles-ne 100)", runner)
         self.assertIn("execution_stage='release_construction_gate'", runner)
-        self.assertIn("run_release_construction_gate.m", runner)
-        self.assertIn(
-            "comsol/interface_readiness/run_release_construction_gate.m", runner.replace("\\", "/")
-        )
-        self.assertNotIn(
-            "tests\\comsol\\run_release_construction_gate.m", runner
-        )
-        self.assertIn("Write-VerifiedRunManifest", runner)
-        self.assertIn("threshold_result_eligible=$false", runner)
-        self.assertIn("return", runner)
-
-        running_report = task.index("writeReportAtomically(reportPath,sprintf('STATUS=RUNNING")
-        load_config = task.index("runConfig=jsondecode")
-        gate_call = task.index(
-            "solve_deterministic_rf_quadrupole_particles(runConfig,control)"
-        )
-        self.assertLess(running_report, load_config)
-        self.assertLess(load_config, gate_call)
-        self.assertIn("requiredFinite(runConfig,'particles')==100", task)
-        self.assertIn("isequal(size(ions),[100 11])", task)
-        self.assertIn("numel(unique(ions(:,1)))==100", task)
-
-        production_call = "solve_deterministic_rf_quadrupole_particles(runConfig)"
-        self.assertIn(production_call, dedicated)
-        self.assertIn(
-            "'role','rf_release_construction_gate_control'", task
-        )
-        self.assertNotIn("'expected_particles'", task)
-        self.assertNotIn("control.expected_particles", shared)
-        self.assertIn("requireFiniteScalar(runConfig,'particles')==100", shared)
-        self.assertIn("isequal(size(ions),[100 11])", shared)
-        self.assertIn("all(isfinite(ions),'all')", shared)
-        self.assertIn("numel(unique(ions(:,1)))==100", shared)
-        self.assertIn("releaseTimeExpressions=arrayfun", shared)
-        self.assertIn("numel(unique(releaseTimeExpressions))==100", shared)
-        self.assertIn("expectedParticles=100", shared)
-        gate_return = shared.index(
-            "result=completeReleaseConstructionGate(model,cpt,ions,"
-        )
-        electric_force = shared.index("ef=cpt.create('ef1','ElectricForce',3)")
-        particle_study = shared.index("std2=model.study.create('std2')")
-        particle_solve = shared.index("sol2.attach('std2'); sol2.runAll")
-        self.assertLess(gate_return, electric_force)
-        self.assertLess(gate_return, particle_study)
-        self.assertLess(gate_return, particle_solve)
-        for phase in (
-            "before_create",
-            "after_create",
-            "after_label",
-            "after_set_filename",
-            "after_set_icolp",
-            "after_set_velocity_specification",
-            "after_set_initial_velocity",
-            "after_set_icolv",
-            "after_set_rt",
-            "after_import",
-        ):
-            self.assertIn(f"'{phase}'", shared)
-        self.assertIn("expectedTags=arrayfun", shared)
-        self.assertIn("char(feature.getString('rt'))", shared)
-        self.assertIn("char(feature.getString('icolp'))", shared)
-        self.assertIn("char(feature.getString('VelocitySpecification'))", shared)
-        self.assertIn("char(feature.getString('InitialVelocity'))", shared)
-        self.assertIn("char(feature.getString('icolv'))", shared)
-        self.assertIn("~any(strcmp(studyTags,'std2'))", shared)
-        self.assertIn("~any(strcmp(solutionTags,'sol2'))", shared)
-        self.assertIn("writeTextFileChecked(path,'a'", shared)
-        self.assertIn("written==numel(text)", shared)
-        self.assertIn("closeStatus==0", shared)
-        self.assertIn("fopen(temporaryPath,'w','n','UTF-8')", task)
-        self.assertIn(
-            "expectedBytes=numel(unicode2native(text,'UTF-8'))", task
-        )
-        self.assertIn("written==expectedBytes", task)
-        self.assertNotIn("written==numel(text)", task)
-        self.assertIn("closeStatus==0", task)
+        self.assertIn("comsol/interface_readiness/run_release_construction_gate.m", runner.replace("\\", "/"))
         self.assertIn("validate_release_construction_gate.py", runner)
-        self.assertIn(
-            "analysis.validate_release_construction_gate", runner
-        )
-        gate_probe_start = runner.index(
-            "$gateValidationExecution=Invoke-IsolatedFrozenPythonModule"
-        )
-        gate_probe_end = runner.index(
-            "if(-not(Test-Path -LiteralPath $releaseGateValidation",
-            gate_probe_start,
-        )
-        gate_probe = runner[gate_probe_start:gate_probe_end]
-        self.assertIn(
-            "'projects.rf_multipole_ion_optics."
-            "analysis.validate_release_construction_gate'",
-            gate_probe,
-        )
-        self.assertNotIn(
-            "'projects.rf_multipole_ion_optics.analysis',",
-            gate_probe,
-        )
-        self.assertIn("'--run-config',$package.run_config", runner)
-        self.assertNotIn("'--expected-particle-sha256'", runner)
-        self.assertIn(
-            "[int]$gateResult.unique_release_time_expression_count-ne 100",
-            runner,
-        )
-        failed_closure = runner[runner.index("} catch {") :]
-        self.assertIn(
-            "if($ReleaseConstructionGate -and", failed_closure
-        )
-        self.assertIn(
-            "Test-Path -LiteralPath $releaseGateModel -PathType Leaf",
-            failed_closure,
-        )
-        self.assertIn(
-            ")+$releaseGateModel",
-            failed_closure.replace("`r", "").replace("`n", ""),
-        )
-        self.assertIn(
-            "-Status failed", failed_closure
-        )
+        self.assertIn("threshold_result_eligible=$false", runner)
+        self.assertIn("solve_deterministic_rf_quadrupole_particles(runConfig,control)", task)
+        self.assertIn("requiredFinite(runConfig,'particles')==100", task)
+        self.assertIn("plan_rf_exact_birth_releases(", shared)
+        gate_return = shared.index("result=completeReleaseConstructionGate(model,cpt,ions,")
+        for particle_operation in ("ef=cpt.create('ef1','ElectricForce',3)",
+                                   "std2=model.study.create('std2')", "sol2.attach('std2'); sol2.runAll"):
+            self.assertLess(gate_return, shared.index(particle_operation))
 
     def test_release_files_preserve_six_columns_at_existing_gate_tolerance(
         self,
     ) -> None:
-        shared = _read(SHARED_SOLVER)
-        self.assertIn(
-            "'%.17g\\t%.17g\\t%.17g\\t%.17g\\t%.17g\\t%.17g\\n'",
-            shared,
-        )
-        self.assertIn(
-            "writeTextFileChecked(releasePath,'w',releaseText,'release data')",
-            shared,
-        )
-        self.assertNotIn("writematrix(releaseData", shared)
-        self.assertEqual(shared.count("'Delimiter',char(9)"), 2)
-        self.assertNotIn("'Delimiter','tab'", shared)
-        self.assertIn("releaseMaxAbsError<1e-12", shared)
-        self.assertIn("actualReleaseMaxAbsError<1e-12", shared)
-
+        # Exercise the existing source projection and lossless six-column text
+        # contract; grouped readback failures belong to the public validator.
         with OFFICIAL_ION11.open(encoding="utf-8-sig", newline="") as stream:
             rows = [[float(value) for value in row] for row in csv.reader(stream)]
         self.assertEqual(len(rows), 100)

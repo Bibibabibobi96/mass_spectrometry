@@ -76,7 +76,18 @@ class ExitState:
         return len(self.values["transverse_x_mm"])
 
 
-def load_exit_state(path: Path, label: str) -> ExitState:
+@dataclass(frozen=True)
+class NoExitState:
+    """Validated source/cohort with no supported exit rows; never a plotted state."""
+    label: str
+    source_path: Path
+    source_particle_count: int
+    source_particle_ids: tuple[str, ...]
+    status: str = "not_applicable"
+    reason: str = "no_supported_exit_state_rows"
+
+
+def load_exit_state(path: Path, label: str, *, allow_no_exit: bool = False) -> ExitState | NoExitState:
     path = path.resolve()
     with path.open("r", encoding="utf-8-sig", newline="") as stream:
         rows = list(csv.DictReader(stream))
@@ -106,6 +117,33 @@ def load_exit_state(path: Path, label: str) -> ExitState:
             selected_statuses = tuple(sorted({row["status"] for row in selected}))
             break
     if not selected:
+        if allow_no_exit:
+            # Only this explicit single-run diagnostic can skip. Bad source data
+            # or IDs must not be disguised as an absent scientific exit cohort.
+            if any(not isinstance(value, str) or not value.strip() or value != value.strip()
+                   for value in source_ids):
+                raise ValueError("Canonical particle-state source particle IDs are invalid.")
+            try:
+                numeric_source_ids = [int(value) for value in source_particle_ids]
+            except ValueError as error:
+                raise ValueError("Canonical particle-state source particle IDs are invalid.") from error
+            if min(numeric_source_ids) <= 0 or len(set(numeric_source_ids)) != len(numeric_source_ids):
+                raise ValueError("Canonical particle-state source particle IDs are invalid.")
+            source_rows = [row for row in rows if row["event"] == "source"]
+            source_columns = (*NUMERIC_COLUMNS, "velocity_axial_m_s",
+                              "velocity_x_m_s", "velocity_y_m_s", "time_us")
+            missing_source = sorted(set(source_columns).difference(rows[0]))
+            if missing_source:
+                raise ValueError(f"Canonical source is missing columns: {missing_source}")
+            for column in source_columns:
+                source_values = np.asarray([float(row[column]) for row in source_rows], dtype=float)
+                if not np.isfinite(source_values).all():
+                    raise ValueError(f"Canonical source column contains NaN/Inf: {column}")
+            unknown_ids = sorted({row["particle_id"] for row in rows} - source_ids)
+            if unknown_ids:
+                raise ValueError("Canonical particle-state IDs do not belong to the source: "
+                                 + ", ".join(unknown_ids[:5]))
+            return NoExitState(label, path, len(source_ids), tuple(sorted(source_ids)))
         raise ValueError("No supported transmitted exit-state rows were found.")
     selected_particle_ids = [row["particle_id"] for row in selected]
     if (
@@ -625,6 +663,8 @@ def export_figure(
     document = {
         "schema_version": 1,
         "role": "multipole_exit_state_figure_manifest",
+        "status": "created",
+        "reason": None,
         "purpose": purpose,
         "figure": {
             "path": str(output),
@@ -681,6 +721,31 @@ def export_four_domain_figure(
     )
 
 
+def _publish_no_exit_manifest(state: NoExitState, output: Path, manifest: Path,
+                              purpose: str, run_id: str | None) -> None:
+    output, manifest = output.resolve(), manifest.resolve()
+    if output == manifest:
+        raise ValueError("Figure output and manifest paths must differ.")
+    if output.exists():
+        raise ValueError("A not-applicable exit diagnostic cannot retain an existing figure output.")
+    document = dict(schema_version=1, role="multipole_exit_state_figure_manifest",
+                    status=state.status, reason=state.reason, purpose=purpose, figure=None,
+                    scientific_status="not_evaluated", series=[dict(label=state.label,
+                    run_id=run_id, canonical_state=dict(path=str(state.source_path)),
+                    source_particle_count=state.source_particle_count,
+                    source_particle_ids=list(state.source_particle_ids))],
+                    claim_limit="No supported exit cohort for this single-run diagnostic; "
+                                "no figure created and no physical-loss or transmission conclusion.")
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    temporary = manifest.with_name(f".{manifest.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temporary.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n",
+                             encoding="utf-8", newline="\n")
+        _replace_path(temporary, manifest)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def _series_argument(value: str) -> tuple[str, Path, str | None]:
     parts = value.split("=", 2)
     if len(parts) < 2 or not parts[0] or not parts[1]:
@@ -698,8 +763,21 @@ def main() -> int:
     parser.add_argument("--bin-count", type=int, default=24)
     parser.add_argument("--dpi", type=int, default=200)
     parser.add_argument("--repo-root", type=Path)
+    parser.add_argument("--allow-no-exit", action="store_true",
+                        help="Single-run diagnostic only: record not_applicable for valid source data with no supported exit.")
     arguments = parser.parse_args()
-    states = [load_exit_state(path, label) for label, path, _ in arguments.series]
+    if arguments.allow_no_exit and arguments.dpi < 180:
+        raise ValueError("Diagnostic PNG DPI must be at least 180.")
+    if arguments.allow_no_exit and arguments.bin_count < 2:
+        raise ValueError("bin_count must be at least 2.")
+    if arguments.allow_no_exit and len(arguments.series) != 1:
+        parser.error("--allow-no-exit requires exactly one series; comparisons remain strict")
+    states = [load_exit_state(path, label, allow_no_exit=arguments.allow_no_exit)
+              for label, path, _ in arguments.series]
+    if isinstance(states[0], NoExitState):
+        _publish_no_exit_manifest(states[0], arguments.output, arguments.manifest,
+                                  arguments.purpose, arguments.series[0][2])
+        return 0
     export_figure(
         states,
         arguments.output,

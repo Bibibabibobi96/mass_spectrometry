@@ -274,6 +274,16 @@ def _resolve_solver_profile(path: Path, project_id: str, solver: str, profile_id
         raise ValueError(f"unknown {solver} solver-numerics profile: {profile_id}")
     if solver == "simion":
         selected = normalize_simion_solver_numerics(selected)
+    elif "minimum_element_size_mm" in selected.get("mesh", {}):
+        mesh = selected["mesh"]
+        minimum = mesh["minimum_element_size_mm"]
+        maximum = mesh.get("working_region_maximum_element_size_mm")
+        if (isinstance(minimum, bool) or not isinstance(minimum, (int, float))
+                or not math.isfinite(minimum) or minimum <= 0
+                or (maximum is not None and minimum > maximum)
+                or mesh.get("strategy", "selected_region_free_tetrahedral")
+                   != "selected_region_free_tetrahedral"):
+            raise ValueError("COMSOL minimum_element_size_mm must be positive finite, no greater than hmax, and selected-region only")
     return {
         "profile_id": profile_id,
         "values": selected,

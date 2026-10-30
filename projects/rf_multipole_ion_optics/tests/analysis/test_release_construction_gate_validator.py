@@ -1,266 +1,273 @@
-from __future__ import annotations
+"""Grouped release v2 public-validator behavior, isolated tiny files, no vendor."""
 
+from pathlib import Path
 import csv
 import hashlib
 import json
+import os
+import sys
+import subprocess
 import tempfile
 import unittest
-from pathlib import Path
 
-from projects.rf_multipole_ion_optics.analysis.validate_release_construction_gate import (
-    PHASES,
-    _expected_release_state,
-    validate_release_construction_gate,
-)
+from projects.rf_multipole_ion_optics.analysis import validate_release_construction_gate as V
+
+REPO = Path(__file__).resolve().parents[4]
 
 
-def _sha256(path: Path) -> str:
+def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-class ReleaseConstructionGateValidatorTests(unittest.TestCase):
-    def build_fixture(self, root: Path) -> dict[str, Path | str]:
-        particle_table = root / "source.ion"
-        rows = [
-            [0.001 * index, 100.0, 1.0, *[float(index + column) for column in range(8)]]
-            for index in range(1, 101)
+def fixture(root, unique=False, all_same=False):
+    table = root / "ions.csv"
+    rows = [
+        [
+            0.0 if all_same else (i * 0.01 if unique else float(i % 2)),
+            100,
+            1,
+            i,
+            2,
+            3,
+            0,
+            0,
+            0,
+            1,
+            1,
         ]
-        with particle_table.open("w", encoding="utf-8", newline="") as stream:
-            csv.writer(stream, lineterminator="\n").writerows(rows)
-        particle_sha256 = _sha256(particle_table)
-        run_config_path = root / "run_config.json"
-        run_config_path.write_text(
-            json.dumps(
-                {
-                    "role": "rf_quadrupole_comsol_run_config",
-                    "particles": 100,
-                    "inputs": {"particle_table": str(particle_table)},
-                    "provenance": {"particle_source_sha256": particle_sha256},
-                    "compiled_scientific_spec": {
-                        "role": "rf_quadrupole_comsol_interface_scientific_spec",
-                        "source_axial_offset_mm": 0.25,
-                    },
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        runtime_dir = root / "runtime"
-        runtime_dir.mkdir()
-        release_files: list[Path] = []
-        release_hashes: list[str] = []
-        for index in range(1, 101):
-            path = runtime_dir / f"particle_{index:03d}.txt"
-            release_state = _expected_release_state(rows[index - 1], 0.25)
-            path.write_text(
-                "\t".join(f"{value:.17g}" for value in release_state) + "\n",
-                encoding="utf-8",
+        for i in range(100)
+    ]
+    with table.open("w", newline="") as f:
+        csv.writer(f).writerows(rows)
+    source_hash = digest(table)
+    config = root / "run_config.json"
+    config.write_text(
+        json.dumps(
+            dict(
+                role="rf_quadrupole_comsol_run_config",
+                particles=100,
+                inputs=dict(particle_table=str(table)),
+                provenance=dict(particle_source_sha256=source_hash),
+                compiled_scientific_spec=dict(
+                    role="rf_quadrupole_comsol_interface_scientific_spec",
+                    source_axial_offset_mm=0.25,
+                ),
             )
-            release_files.append(path)
-            release_hashes.append(_sha256(path))
-
-        result_path = root / "result.json"
-        result = {
-            "schema_version": 1,
-            "role": "rf_release_construction_gate_result",
-            "status": "success",
-            "particles": 100,
-            "release_tag_count": 100,
-            "release_file_count": 100,
-            "release_files": [
-                {
-                    "particle_index": index,
-                    "relative_path": f"runtime/particle_{index:03d}.txt",
-                    "sha256": release_hashes[index - 1],
-                    "row_count": 1,
-                    "column_count": 6,
-                }
-                for index in range(1, 101)
-            ],
-            "birth_time_count": 100,
-            "unique_birth_time_count": 100,
-            "unique_release_time_expression_count": 100,
-            "first_release_tag": "rel001",
-            "last_release_tag": "rel100",
-            "breadcrumb_count": 1000,
-            "stationary_study_present": True,
-            "stationary_solver_present": True,
-            "electric_force_present": False,
-            "particle_study_present": False,
-            "particle_solver_present": False,
-            "particle_table_sha256": particle_sha256,
-        }
-        result_path.write_text(json.dumps(result), encoding="utf-8")
-
-        breadcrumbs = root / "breadcrumbs.jsonl"
-        records: list[dict[str, object]] = []
-        sequence = 0
-        for particle_index in range(1, 101):
-            expression = f"{rows[particle_index - 1][0]:.12g}[us]"
-            for phase_index, phase in enumerate(PHASES):
-                sequence += 1
-                records.append(
-                    {
-                        "schema_version": 1,
-                        "role": "rf_release_construction_breadcrumb",
-                        "run_id": "test-run",
-                        "sequence": sequence,
-                        "particle_index": particle_index,
-                        "release_tag": f"rel{particle_index:03d}",
-                        "phase": phase,
-                        "release_tag_count": (
-                            particle_index - 1
-                            if phase == "before_create"
-                            else particle_index
-                        ),
-                        "release_time_us": rows[particle_index - 1][0],
-                        "release_time_expression": expression,
-                        "file_relative_path": (
-                            f"runtime/particle_{particle_index:03d}.txt"
-                        ),
-                        "file_sha256": release_hashes[particle_index - 1],
-                        "row_count": 1,
-                        "column_count": 6,
-                        "actual_filename": (
-                            ""
-                            if phase_index < PHASES.index("after_set_filename")
-                            else str(release_files[particle_index - 1])
-                        ),
-                        "actual_release_time_expression": (
-                            expression
-                            if phase_index >= PHASES.index("after_set_rt")
-                            else ""
-                        ),
-                    }
-                )
-        breadcrumbs.write_text(
-            "".join(json.dumps(record) + "\n" for record in records),
-            encoding="utf-8",
         )
-        return {
-            "run_config_path": run_config_path,
-            "particle_table": particle_table,
-            "breadcrumbs": breadcrumbs,
-            "result_path": result_path,
-            "runtime_dir": runtime_dir,
-        }
-
-    def validate(self, fixture: dict[str, Path | str]) -> dict[str, object]:
-        return validate_release_construction_gate(
-            run_config_path=fixture["run_config_path"],  # type: ignore[arg-type]
-            particle_table=fixture["particle_table"],  # type: ignore[arg-type]
-            breadcrumbs=fixture["breadcrumbs"],  # type: ignore[arg-type]
-            result_path=fixture["result_path"],  # type: ignore[arg-type]
-            runtime_dir=fixture["runtime_dir"],  # type: ignore[arg-type]
+    )
+    groups = {}
+    for i, row in enumerate(rows, 1):
+        groups.setdefault(row[0] * 1e-6, []).append(i)
+    runtime = root / "runtime"
+    runtime.mkdir()
+    entries = []
+    records = []
+    for group_index, (birth, indices) in enumerate(groups.items(), 1):
+        path = runtime / f"particle_{group_index:03d}.txt"
+        path.write_text(
+            "".join(f"3\t-2\t{row - 1 + 0.25:.17g}\t0\t0\t0\n" for row in indices)
         )
-
-    def test_valid_fixed_n100_artifacts_pass(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            validation = self.validate(self.build_fixture(Path(directory)))
-        self.assertEqual(validation["status"], "success")
-        self.assertEqual(validation["breadcrumbs"], 1000)
-
-    def test_invalid_source_contracts_fail_closed(self) -> None:
-        mutations = ("count", "shape", "nonfinite", "duplicate", "formatted_duplicate")
-        for mutation in mutations:
-            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
-                fixture = self.build_fixture(Path(directory))
-                particle_table = fixture["particle_table"]
-                assert isinstance(particle_table, Path)
-                with particle_table.open(encoding="utf-8") as stream:
-                    rows = list(csv.reader(stream))
-                if mutation == "count":
-                    rows.pop()
-                elif mutation == "shape":
-                    rows[0].pop()
-                elif mutation == "nonfinite":
-                    rows[0][0] = "nan"
-                elif mutation == "duplicate":
-                    rows[1][0] = rows[0][0]
-                else:
-                    rows[0][0] = "1"
-                    rows[1][0] = "1.0000000000001"
-                with particle_table.open("w", encoding="utf-8", newline="") as stream:
-                    csv.writer(stream, lineterminator="\n").writerows(rows)
-                run_config_path = fixture["run_config_path"]
-                assert isinstance(run_config_path, Path)
-                run_config = json.loads(run_config_path.read_text())
-                run_config["provenance"]["particle_source_sha256"] = _sha256(
-                    particle_table
+        h = digest(path)
+        expr = f"{birth:.17g}[s]"
+        entries.append(
+            dict(
+                group_index=group_index,
+                source_rows=indices,
+                particle_ids=indices,
+                birth_s=birth,
+                relative_path=f"runtime/{path.name}",
+                sha256=h,
+                row_count=len(indices),
+                column_count=6,
+            )
+        )
+        for phase_index, phase in enumerate(V.PHASES):
+            records.append(
+                dict(
+                    schema_version=2,
+                    role="rf_release_construction_breadcrumb",
+                    sequence=len(records) + 1,
+                    group_index=group_index,
+                    source_rows=indices,
+                    release_tag=f"rel{group_index:03d}",
+                    phase=phase,
+                    release_tag_count=group_index - 1
+                    if phase == "before_create"
+                    else group_index,
+                    file_relative_path=f"runtime/{path.name}",
+                    file_sha256=h,
+                    row_count=len(indices),
+                    column_count=6,
+                    birth_s=birth,
+                    release_time_expression=expr,
+                    actual_filename=str(path) if phase_index >= 3 else "",
+                    actual_release_time_expression=expr if phase_index >= 8 else "",
                 )
-                run_config_path.write_text(json.dumps(run_config), encoding="utf-8")
+            )
+    count = len(groups)
+    result = dict(
+        schema_version=2,
+        role="rf_release_construction_gate_result",
+        status="success",
+        particle_table_sha256=source_hash,
+        particles=100,
+        release_tag_count=count,
+        release_file_count=count,
+        release_files=entries,
+        native_order=[i for group in groups.values() for i in group],
+        birth_time_count=100,
+        unique_birth_time_count=count,
+        unique_release_time_expression_count=count,
+        first_release_tag="rel001",
+        last_release_tag=f"rel{count:03d}",
+        breadcrumb_count=len(records),
+        stationary_study_present=True,
+        stationary_solver_present=True,
+        electric_force_present=False,
+        particle_study_present=False,
+        particle_solver_present=False,
+    )
+    result_path = root / "result.json"
+    result_path.write_text(json.dumps(result))
+    breadcrumbs = root / "breadcrumbs.jsonl"
+    breadcrumbs.write_text("\n".join(json.dumps(r) for r in records))
+    return dict(
+        run_config_path=config,
+        particle_table=table,
+        breadcrumbs=breadcrumbs,
+        result_path=result_path,
+        runtime_dir=runtime,
+    )
+
+
+class GroupedReleaseValidatorTest(unittest.TestCase):
+    def test_repeated_and_unique_birth_close_same_mother(self):
+        for unique, expected in [(False, 2), (True, 100)]:
+            with self.subTest(unique=unique), tempfile.TemporaryDirectory() as td:
+                result = V.validate_release_construction_gate(
+                    **fixture(Path(td), unique)
+                )
+                self.assertEqual(result["release_tags"], expected)
+                self.assertEqual(sorted(result["native_order"]), list(range(1, 101)))
+
+    def test_bad_mapping_clock_shape_schema_and_failure_propagate(self):
+        for fault in (
+            "mapping",
+            "clock",
+            "shape",
+            "schema",
+            "breadcrumb",
+            "source_state",
+        ):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as td:
+                args = fixture(Path(td))
+                path = args["result_path"]
+                result = json.loads(path.read_text())
+                if fault == "mapping":
+                    result["native_order"][0] = 2
+                if fault == "clock":
+                    result["release_files"][0]["birth_s"] = 0.001
+                if fault == "shape":
+                    result["release_files"][0]["row_count"] = 1
+                if fault == "schema":
+                    result["schema_version"] = 1
+                if fault == "breadcrumb":
+                    args["breadcrumbs"].write_text("")
+                if fault == "source_state":
+                    next(args["runtime_dir"].glob("*.txt")).write_text(
+                        "NaN\t0\t0\t0\t0\t0\n"
+                    )
+                path.write_text(json.dumps(result))
                 with self.assertRaises(ValueError):
-                    self.validate(fixture)
+                    V.validate_release_construction_gate(**args)
 
-    def test_tampered_release_file_fails_closed(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            fixture = self.build_fixture(Path(directory))
-            runtime_dir = fixture["runtime_dir"]
-            assert isinstance(runtime_dir, Path)
-            (runtime_dir / "particle_065.txt").write_text(
-                "1\t2\t3\t4\t5\t999\n", encoding="utf-8"
-            )
-            with self.assertRaises(ValueError):
-                self.validate(fixture)
+    def test_cli_reports_actual_group_and_breadcrumb_counts(self):
+        for all_same, count in ((True, 1), (False, 2)):
+            with self.subTest(groups=count), tempfile.TemporaryDirectory() as td:
+                args = fixture(Path(td), all_same=all_same)
+                output = Path(td) / "validation.json"
+                command = [sys.executable, "-m", V.__name__]
+                for key, value in args.items():
+                    command.extend(
+                        ["--" + key.replace("_", "-").replace("-path", ""), str(value)]
+                    )
+                command.extend(["--output", str(output)])
+                environment = dict(os.environ)
+                environment.pop("PYTHONPATH", None)
+                execution = subprocess.run(
+                    command, cwd=REPO, env=environment, capture_output=True,
+                    text=True, encoding="utf-8", timeout=30
+                )
+                self.assertEqual(
+                    execution.returncode, 0, execution.stdout + execution.stderr
+                )
+                self.assertIn(
+                    f"GROUPS={count} BREADCRUMBS={count * 10}", execution.stdout
+                )
+                validation = json.loads(output.read_text())
+                self.assertEqual(validation["release_files"], count)
+                self.assertEqual(validation["breadcrumbs"], count * 10)
+                inventory = json.loads(args["result_path"].read_text())["release_files"]
+                self.assertIsInstance(inventory, list)
+                self.assertEqual(len(inventory), count)
 
-    def test_synchronized_release_hash_tampering_still_fails_physical_state(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            fixture = self.build_fixture(Path(directory))
-            runtime_dir = fixture["runtime_dir"]
-            result_path = fixture["result_path"]
-            breadcrumbs = fixture["breadcrumbs"]
-            assert isinstance(runtime_dir, Path)
-            assert isinstance(result_path, Path)
-            assert isinstance(breadcrumbs, Path)
-            release_path = runtime_dir / "particle_065.txt"
-            values = [float(value) for value in release_path.read_text().split()]
-            values[0] += 0.5
-            release_path.write_text(
-                "\t".join(f"{value:.17g}" for value in values) + "\n",
-                encoding="utf-8",
-            )
-            forged_hash = _sha256(release_path)
-            result = json.loads(result_path.read_text())
-            result["release_files"][64]["sha256"] = forged_hash
-            result_path.write_text(json.dumps(result), encoding="utf-8")
+    def test_synchronized_hash_tamper_still_rejects_physical_state(self):
+        with tempfile.TemporaryDirectory() as td:
+            args = fixture(Path(td))
+            path = args["runtime_dir"] / "particle_001.txt"
+            path.write_text(path.read_text().replace("3\t-2", "4\t-2", 1))
+            forged = digest(path)
+            result = json.loads(args["result_path"].read_text())
+            result["release_files"][0]["sha256"] = forged
+            args["result_path"].write_text(json.dumps(result))
             records = [
-                json.loads(line) for line in breadcrumbs.read_text().splitlines()
+                json.loads(line)
+                for line in args["breadcrumbs"].read_text().splitlines()
             ]
-            for record in records[640:650]:
-                record["file_sha256"] = forged_hash
-            breadcrumbs.write_text(
-                "".join(json.dumps(record) + "\n" for record in records),
-                encoding="utf-8",
-            )
-            with self.assertRaisesRegex(ValueError, "frozen ION11/scientific-spec"):
-                self.validate(fixture)
+            for record in records[:10]:
+                record["file_sha256"] = forged
+            args["breadcrumbs"].write_text("\n".join(json.dumps(r) for r in records))
+            with self.assertRaisesRegex(ValueError, "6D differs"):
+                V.validate_release_construction_gate(**args)
 
-    def test_tampered_breadcrumb_contracts_fail_closed(self) -> None:
-        mutations = ("hash", "phase", "sequence", "rt")
-        for mutation in mutations:
-            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
-                fixture = self.build_fixture(Path(directory))
-                breadcrumbs = fixture["breadcrumbs"]
-                assert isinstance(breadcrumbs, Path)
+    def test_breadcrumb_and_frozen_source_fail_closed(self):
+        for fault in (
+            "hash",
+            "phase",
+            "sequence",
+            "rt",
+            "negative_birth",
+            "mixed_species",
+        ):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as td:
+                args = fixture(Path(td))
                 records = [
-                    json.loads(line) for line in breadcrumbs.read_text().splitlines()
+                    json.loads(line)
+                    for line in args["breadcrumbs"].read_text().splitlines()
                 ]
-                target = records[644]
-                if mutation == "hash":
-                    target["file_sha256"] = "0" * 64
-                elif mutation == "phase":
-                    target["phase"] = "after_import"
-                elif mutation == "sequence":
-                    target["sequence"] = 9999
-                else:
-                    records[648]["actual_release_time_expression"] = "0[us]"
-                breadcrumbs.write_text(
-                    "".join(json.dumps(record) + "\n" for record in records),
-                    encoding="utf-8",
+                if fault == "hash":
+                    records[4]["file_sha256"] = "0" * 64
+                if fault == "phase":
+                    records[4]["phase"] = "after_import"
+                if fault == "sequence":
+                    records[4]["sequence"] = 999
+                if fault == "rt":
+                    records[8]["actual_release_time_expression"] = "0[us]"
+                if fault in ("negative_birth", "mixed_species"):
+                    rows = list(
+                        csv.reader(args["particle_table"].read_text().splitlines())
+                    )
+                    rows[0][0 if fault == "negative_birth" else 1] = (
+                        "-1" if fault == "negative_birth" else "101"
+                    )
+                    with args["particle_table"].open("w", newline="") as f:
+                        csv.writer(f).writerows(rows)
+                args["breadcrumbs"].write_text(
+                    "\n".join(json.dumps(r) for r in records)
                 )
                 with self.assertRaises(ValueError):
-                    self.validate(fixture)
+                    V.validate_release_construction_gate(**args)
 
 
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main(verbosity=2)

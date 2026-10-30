@@ -51,6 +51,7 @@ $command=@($ast.FindAll({param($node) $node-is[System.Management.Automation.Lang
 try{$package=& ([scriptblock]::Create($command[0].Extent.Text))}catch{if(MISSING){exit 0};throw}
 if(MISSING){throw 'missing MATLAB dependency was accepted'}
 Assert-FrozenPythonPackage -Package $package
+if(-not(Test-Path -LiteralPath (Join-Path $package.code_root 'projects/rf_multipole_ion_optics/comsol/plan_rf_exact_birth_releases.m'))){throw 'group helper absent from real frozen closure'}
 [IO.Directory]::Move($repoRoot,$repoRoot+'.disabled')
 $frozenAnalysisPackage=$package;$ReleaseConstructionGate=RELEASE_GATE
 $name=if(WORKFLOW-eq'interface_readiness'){'taskScript'}else{'massScanTask'}

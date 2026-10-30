@@ -4,29 +4,58 @@ Set-StrictMode -Version Latest
 function Assert-MultipoleMeshBuildReport {
   param(
     [Parameter(Mandatory=$true)][string]$Path,
+    [Parameter(Mandatory=$true)][ValidateSet('selected_region_free_tetrahedral','physical_segment_hybrid_swept_tetra_v1')][string]$ExpectedMeshStrategy,
     [object]$MaximumMeshCells=$null
   )
   if(-not(Test-Path -LiteralPath $Path -PathType Leaf)){
     throw 'COMSOL mesh-build report is missing.'
   }
   $content=Get-Content -LiteralPath $Path -Raw -Encoding UTF8
-  foreach($token in @(
+  $strategyMatches=[regex]::Matches($content,'(?m)^MESH_STRATEGY=(?<value>[^\r\n]+)\r?$')
+  if($strategyMatches.Count-ne 1-or$strategyMatches[0].Groups['value'].Value-ne$ExpectedMeshStrategy){
+    throw 'COMSOL mesh-build report strategy is missing, duplicated, unknown or differs from frozen numerics.'
+  }
+  $requiredTokens=@(
     'STOP_STAGE=mesh_build',
     'FIELD_PHYSICS_CREATED=0',
     'FIELD_STUDIES_CREATED=0',
     'FIELD_SOLUTIONS_CREATED=0',
     'PARTICLE_PHYSICS_CREATED=0',
     'PARTICLE_STUDIES_CREATED=0',
-    'MESH_FEATURE_ROD_BOUNDARY_SIZE_PRESENT=1',
-    'MESH_SWEPT_TETRAHEDRAL_OVERLAP_DOMAIN_COUNT=0',
-    'MESH_VACUUM_UNCOVERED_DOMAIN_COUNT=0',
-    'MESH_NONVACUUM_PARTITION_DOMAIN_COUNT=0',
     'MESH_VACUUM_VOLUME_STATUS=MEASURED',
     'MESH_BUILD_DIAGNOSTIC=PASS',
-    'STATUS=PASS'
-  )){
-    if($content-notmatch("(?m)^$([regex]::Escape($token))\r?$")){
-      throw "COMSOL mesh-build report is missing required terminal token: $token"
+    'MESH_GLOBAL_EMPTY=0',
+    'MESH_GLOBAL_HAS_PROBLEMS=0',
+    'MESH_VACUUM_EMPTY=0',
+    'MESH_VACUUM_HAS_PROBLEMS=0'
+  )
+  if($ExpectedMeshStrategy-eq'selected_region_free_tetrahedral'){$requiredTokens+='MESH_GLOBAL_COMPLETE=1'}
+  if($ExpectedMeshStrategy-eq'physical_segment_hybrid_swept_tetra_v1'){
+    $requiredTokens+=@(
+      'MESH_FEATURE_ROD_BOUNDARY_SIZE_PRESENT=1',
+      'MESH_SWEPT_TETRAHEDRAL_OVERLAP_DOMAIN_COUNT=0',
+      'MESH_VACUUM_UNCOVERED_DOMAIN_COUNT=0',
+      'MESH_NONVACUUM_PARTITION_DOMAIN_COUNT=0'
+    )
+  }
+  foreach($token in $requiredTokens){
+    $name,$expectedValue=$token.Split('=',2)
+    $facts=[regex]::Matches($content,"(?m)^$([regex]::Escape($name))=(?<value>[^\r\n]+)\r?$")
+    if($facts.Count-ne 1-or$facts[0].Groups['value'].Value-ne$expectedValue){
+      throw "COMSOL mesh-build report is missing or has conflicting required terminal token: $token"
+    }
+  }
+  $statuses=[regex]::Matches($content,'(?m)^STATUS=(?<value>[^\r\n]+)\r?$')
+  if($statuses.Count-eq 0-or@($statuses|Where-Object{$_.Groups['value'].Value-ne'PASS'}).Count-ne0){
+    throw 'COMSOL mesh-build report has missing or non-PASS status.'
+  }
+  foreach($name in @('MESH_GLOBAL_ELEMENTS','MESH_VACUUM_ELEMENTS')){
+    $counts=[regex]::Matches($content,"(?m)^$([regex]::Escape($name))=(?<value>[^\r\n]+)\r?$")
+    if($counts.Count-ne 1){throw "COMSOL mesh-build report must contain exactly one $name token."}
+    $count=[int64]0
+    if(-not[int64]::TryParse($counts[0].Groups['value'].Value,[Globalization.NumberStyles]::None,
+      [Globalization.CultureInfo]::InvariantCulture,[ref]$count)-or$count-le0){
+      throw "COMSOL mesh-build report has an invalid positive-integer $name value."
     }
   }
   foreach($name in @(

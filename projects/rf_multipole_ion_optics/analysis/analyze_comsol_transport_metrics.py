@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from common.analysis.particle_census import partition_cohort
 from projects.rf_multipole_ion_optics.core.interface_geometry import transport_observations
 
 import argparse
@@ -36,6 +37,57 @@ def _case_metrics(
     terminal = [row for row in state_rows if row["event"] == "terminal"]
     if not source or {row["particle_id"] for row in terminal} != source:
         raise ValueError(f"terminal state does not close source cohort for {case_id}")
+    mother = [int(row["particle_id"]) for row in state_rows if row["event"] == "source"]
+    categories = []
+    for row in terminal:
+        status = row["status"]
+        if status not in {"transmitted", "lost", "unknown", "timeout", "alive"}:
+            raise ValueError(f"unsupported terminal status for {case_id}: {status}")
+        # This RF producer historically defaulted absence to lost/electrode.
+        # A legacy literal is not verified physical loss evidence.
+        categories.append((int(row["particle_id"]), "transmitted" if status == "transmitted" else "unknown"))
+    # Unit-ID projection is used only for counts. Canonical source weights are
+    # absent; do not expose its unit-weight sums as physical particle weights.
+    partition = partition_cohort(mother, categories, categories=("transmitted", "lost", "unknown"),
+                                 relative_weights=None)
+    count_census = {key: partition[key] for key in (
+        "schema_version", "mother_particle_ids", "mother_count", "particle_ids_by_category", "counts")}
+    unknown_reasons: dict[str, list[int]] = {}
+    unrecorded_reason_ids = []
+    unknown_ids = set(count_census["particle_ids_by_category"]["unknown"])
+    for row in terminal:
+        pid = int(row["particle_id"])
+        if pid in unknown_ids:
+            reason = ("loss_evidence_unavailable" if row["status"] == "lost"
+                      else row.get("terminal_reason"))
+            if reason:
+                unknown_reasons.setdefault(reason, []).append(pid)
+            else:
+                unrecorded_reason_ids.append(pid)
+    acceptance_columns = [set(row) & {"acceptance_status", "acceptance_reason"} for row in terminal]
+    if any(acceptance_columns) and not all(fields == {"acceptance_status", "acceptance_reason"}
+                                           for fields in acceptance_columns):
+        raise ValueError(f"partial acceptance facts for {case_id}")
+    if not any(acceptance_columns):
+        acceptance = dict(recorded=False, reason="not_recorded_by_input_format",
+                          rejected_particle_ids=None, rejection_reasons=None)
+    else:
+        acceptance_ids = {name: [] for name in ("accepted", "rejected", "unresolved")}
+        rejection_reasons: dict[str, list[int]] = {}
+        for row in terminal:
+            status, reason = row["acceptance_status"], row["acceptance_reason"]
+            if status not in acceptance_ids or (status == "rejected" and (not reason or reason == "none")):
+                raise ValueError(f"invalid acceptance facts for {case_id}")
+            if (status == "accepted") != (row["status"] == "transmitted"):
+                raise ValueError(f"acceptance and transmitted facts contradict for {case_id}")
+            pid = int(row["particle_id"])
+            acceptance_ids[status].append(pid)
+            if status == "rejected":
+                rejection_reasons.setdefault(reason, []).append(pid)
+        acceptance = dict(recorded=True, mother_count=len(mother),
+                          counts={name: len(ids) for name, ids in acceptance_ids.items()},
+                          particle_ids=acceptance_ids, rejected_particle_ids=acceptance_ids["rejected"],
+                          rejection_reasons=rejection_reasons)
     transmitted = [row for row in terminal if row["status"] == "transmitted"]
     radii = [_finite(row, "radial_position_mm") for row in transmitted]
     energies = [_finite(row, "kinetic_energy_eV") for row in transmitted]
@@ -49,6 +101,17 @@ def _case_metrics(
         "particles": len(source),
         "transmitted": len(transmitted),
         "transmission_fraction": len(transmitted) / len(source),
+        "transmission_fraction_basis": "observed_acceptance_by_end_of_recorded_solution",
+        "cohort_census": count_census,
+        "reported_terminal_facts": {row["particle_id"]: dict(status=row["status"],
+                                     terminal_reason=row.get("terminal_reason")) for row in terminal},
+        "loss_evidence": dict(status="unavailable", reason="finite_rf_exports_do_not_record_verified_native_loss_cause",
+                              reported_lost_particle_ids=[int(row["particle_id"]) for row in terminal if row["status"] == "lost"]),
+        "unknown_terminal_reason_ids": unknown_reasons,
+        "unknown_terminal_reason_unrecorded_ids": unrecorded_reason_ids,
+        "terminal_fates_resolved": not unknown_ids,
+        "acceptance": acceptance,
+        "weight_metrics": dict(status="not_computable", reason="complete_source_weights_not_recorded"),
         "entrance_passed": sum(entrance_port_radius_mm is None or value <= entrance_port_radius_mm for value in entrance if math.isfinite(value)),
         "exit_passed": sum(exit_port_radius_mm is None or value <= exit_port_radius_mm for value in exit_values if math.isfinite(value)),
         "exit_rms_radius_mm": math.sqrt(sum(value * value for value in radii) / len(radii)) if radii else None,

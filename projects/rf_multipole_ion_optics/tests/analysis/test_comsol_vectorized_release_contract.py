@@ -57,22 +57,18 @@ class ComsolVectorizedReleaseContractTests(unittest.TestCase):
             [3, 23, 38, 55, 64, 68, 75, 100],
         )
 
-    def test_active_solver_retains_only_individual_release_semantics(self) -> None:
-        matlab_source = MATLAB_CORE.read_text(encoding="utf-8-sig")
-        runner_source = RUNNER.read_text(encoding="utf-8-sig")
-        self.assertIn("ReleaseFromDataFile", matlab_source)
-        self.assertIn(
-            "release.set('rt', sprintf('%.17g[s]', source.birth_time_s(index)))",
-            matlab_source,
-        )
-        for token in (
-            "AuxiliaryField",
-            "DistributionFunction_auxphase",
-            "particle_phase_offset",
-            "cpt.create('force1','Force',3)",
-        ):
-            self.assertNotIn(token, matlab_source)
-        self.assertNotIn("MULTIPOLE_L3_PARTICLE_RELEASE_STRATEGY", runner_source)
+    def test_active_solvers_share_exact_birth_planner_without_phase_workarounds(self) -> None:
+        # Exact grouping, row mapping, species and weights are exercised by
+        # RfExactBirthReleasePlanTest; keep only the two production adapter seams.
+        for path in (MATLAB_CORE, PROJECT_ROOT / "comsol/solve_deterministic_rf_quadrupole_particles.m"):
+            with self.subTest(consumer=path.name):
+                source = path.read_text(encoding="utf-8-sig")
+                self.assertIn("plan_rf_exact_birth_releases(", source)
+                self.assertIn("ReleaseFromDataFile", source)
+                for forbidden in ("AuxiliaryField", "DistributionFunction_auxphase",
+                                  "particle_phase_offset", "cpt.create('force1','Force',3)"):
+                    self.assertNotIn(forbidden, source)
+        self.assertNotIn("MULTIPOLE_L3_PARTICLE_RELEASE_STRATEGY", RUNNER.read_text(encoding="utf-8-sig"))
 
     def test_historical_authority_hashes_remain_frozen_evidence(self) -> None:
         preregistration = json.loads(PREREGISTRATION.read_text(encoding="utf-8"))

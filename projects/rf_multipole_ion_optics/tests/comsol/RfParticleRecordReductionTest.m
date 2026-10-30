@@ -53,6 +53,27 @@ classdef RfParticleRecordReductionTest < matlab.unittest.TestCase
    expr=getappdata(0,'rf_reducer_unit_expr');
    testCase.verifyEqual(expr{1},'cpt2.pidx');testCase.verifyEqual(expr{5},'cpt2.vx/1[m/s]');
   end
+  function finalInventoryFactsAreRetainedWithoutInventingNativeCause(testCase)
+   setData(makeData((1:6)',(0:5)',ones(6,1)));
+   [records,receipt]=extract_rf_particle_records([], 'sol','part','cpt',[17 91],2.5,[0 10],100,3);
+   observation=records{1}.terminal_observation;
+   testCase.verifyTrue(observation.finite_at_solution_end);
+   testCase.verifyFalse(observation.finite_track_ended);
+   testCase.verifyEqual(observation.solution_end_index,6);
+   testCase.verifyEqual(observation.solution_end_time_s,6,'AbsTol',0);
+   testCase.verifyEqual(receipt.solution_end_time_s,6,'AbsTol',0);
+   testCase.verifyEqual(observation.native_termination_cause,'not_observed');
+  end
+  function terminalNanRetainsEndedObservationAndFinalClock(testCase)
+   setData(makeData((1:6)',[0;1;2;3;NaN;NaN],ones(6,1)));
+   records=extract_rf_particle_records([], 'sol','part','cpt',[17 91],2.5,[0 10],100,3);
+   observation=records{1}.terminal_observation;
+   testCase.verifyFalse(observation.finite_at_solution_end);
+   testCase.verifyTrue(observation.finite_track_ended);
+   testCase.verifyEqual(observation.last_finite_solution_index,4);
+   testCase.verifyEqual(observation.last_finite_time_s,4,'AbsTol',0);
+   testCase.verifyEqual(observation.solution_end_time_s,6,'AbsTol',0);
+  end
   function unorderedNativeColumnsPreserveSparseSourceIdsAndCrossWindowBracket(testCase)
    data=makeData((1:5)',(0:4)',ones(5,1));
    data=reorderColumns(data,[2 1]);

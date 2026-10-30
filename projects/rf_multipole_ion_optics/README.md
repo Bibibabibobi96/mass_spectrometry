@@ -12,6 +12,8 @@ finite、interface_readiness 与 mass_filter_reference 的三条 SIMION CLI，re
 COMSOL 已保存解不等于原 CLI 支持后处理恢复；其当前恢复边界见[项目状态](docs/PROJECT.md#当前结论)。
 两个 COMSOL solver 通过项目共用分窗 API 提取原解；保存、实际原生读取证据和范围见[项目状态](docs/PROJECT.md#当前结论)。
 
+有限三维 COMSOL 的显式网格最小尺寸、完整源的精确出生分组及未知末态语义见[项目状态](docs/PROJECT.md#当前结论)。两正式原生消费者共享同一项目分组器，不做相位近似。
+
 ## 固定阅读顺序
 
 1. 仓库根[README](../../README.md)与[执行规则](../../AGENTS.md)。
