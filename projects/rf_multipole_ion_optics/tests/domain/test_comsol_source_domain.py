@@ -19,6 +19,7 @@ from projects.rf_multipole_ion_optics.runtime import (
 from projects.rf_multipole_ion_optics.runtime.runtime_profile import (
     resolve_runtime_profile,
 )
+from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
 from projects.rf_multipole_ion_optics.core.compile_design_request import (
     compile_design_request,
     apply_typed_operating_mode,
@@ -102,13 +103,13 @@ ConvertTo-Json -InputObject @($preflightArguments) -Compress
                 self.assertNotIn("comsol_domain_validation", metadata)
 
     def test_provider_accepts_bounded_upstream_extension_without_source_change(self):
-        definition = self.runtime["design_profile_resolution"]["input_definitions"]
-        request = copy.deepcopy(definition["design_request"])
+        design = resolve_design_profile(REPO, "rf_multipole_ion_optics", self.runtime["design_profile_id"])
+        request = json.loads(Path(design["paths"]["design_request"]).read_text(encoding="utf-8"))
         request["geometry_mm"]["numerical_domain"]["z_min_mm"] = -3.0
         request = apply_typed_operating_mode(
             request,
-            definition["operating_mode_registry"],
-            "no_acceleration_full_length",
+            json.loads(Path(design["paths"]["operating_mode_registry"]).read_text(encoding="utf-8")),
+            design["profile"]["mode_id"],
         )
         resolved = compile_design_request(
             request, expected_identity=self.resolved["identity"]
