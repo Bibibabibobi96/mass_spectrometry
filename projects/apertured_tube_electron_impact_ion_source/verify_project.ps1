@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$PythonExe = '')
+param([string]$PythonExe = '', [switch]$RuffHandledByParent)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -29,17 +29,21 @@ try {
     throw 'EI-source resolved contract is invalid or stale.'
   }
 
-  & $PythonExe -m unittest discover `
+  & $PythonExe -m common.gate_unittest discover `
     -s projects/apertured_tube_electron_impact_ion_source/tests/analysis -p 'test_*.py'
   if ($LASTEXITCODE -ne 0) {
     throw 'EI-source static tests failed.'
   }
 
-  & $PythonExe -m ruff check `
-    projects/apertured_tube_electron_impact_ion_source/analysis `
-    projects/apertured_tube_electron_impact_ion_source/tests/analysis
-  if ($LASTEXITCODE -ne 0) {
-    throw 'EI-source Ruff checks failed.'
+  if ($RuffHandledByParent) {
+    'RUFF=HANDLED_BY_PARENT PROJECT=apertured_tube_electron_impact_ion_source'
+  } else {
+    & $PythonExe -m ruff check `
+      projects/apertured_tube_electron_impact_ion_source/analysis `
+      projects/apertured_tube_electron_impact_ion_source/tests/analysis
+    if ($LASTEXITCODE -ne 0) {
+      throw 'EI-source Ruff checks failed.'
+    }
   }
 } finally {
   Pop-Location

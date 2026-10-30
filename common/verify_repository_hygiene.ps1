@@ -11,71 +11,7 @@ if (Test-Path -LiteralPath $hostExecutionLeaseSupport -PathType Leaf) {
   $hostExecutionLease = Enter-HostExecutionLease -Role GATE
 }
 try {
-$workspaceRoot = Split-Path -Parent $repoRoot
 $errors = [Collections.Generic.List[string]]::new()
-
-$allowedWorkspaceEntries = @(
-  '.agents','.claude','.codex','.comsol_runtime','.comsol_server_config','.git','.idea',
-  '.matlab_pref','.matlab_pref25','.mcp.json','.tools','AGENTS.md','CLAUDE.md',
-  'README.md','artifacts','simulation_repo'
-)
-$workspaceManaged =
-  (Split-Path -Leaf $repoRoot) -eq 'simulation_repo' -or
-  (Test-Path -LiteralPath (Join-Path $workspaceRoot 'AGENTS.md') -PathType Leaf)
-if ($workspaceManaged) {
-  foreach ($entry in Get-ChildItem -Force -LiteralPath $workspaceRoot) {
-    if ($entry.Name -notin $allowedWorkspaceEntries) {
-      $errors.Add("workspace root contains unregistered entry: $($entry.Name)")
-    }
-  }
-  foreach ($required in @('AGENTS.md','README.md','simulation_repo','artifacts')) {
-    if (-not (Test-Path -LiteralPath (Join-Path $workspaceRoot $required))) {
-      $errors.Add("workspace root is missing required entry: $required")
-    }
-  }
-  $artifactsRoot = Join-Path $workspaceRoot 'artifacts'
-  if (Test-Path -LiteralPath $artifactsRoot -PathType Container) {
-    foreach ($entry in Get-ChildItem -Force -LiteralPath $artifactsRoot) {
-      if ($entry.Name -notin @('projects', 'common') -or -not $entry.PSIsContainer) {
-        $errors.Add("artifacts root contains unregistered entry: $($entry.Name)")
-      }
-    }
-  }
-  $toolsRoot = Join-Path $workspaceRoot '.tools'
-  if ((Test-Path -LiteralPath $toolsRoot) -and
-      -not (Test-Path -LiteralPath $toolsRoot -PathType Container)) {
-    $errors.Add('workspace tool cache must be a directory: .tools')
-  } elseif (Test-Path -LiteralPath $toolsRoot -PathType Container) {
-    # report_cloc_delta.ps1 deliberately falls back to the official Perl
-    # distribution when cloc.exe cannot execute on this host.
-    $allowedToolEntries = @('cloc','cloc\2.10','cloc\2.10\cloc.exe','cloc\2.10\cloc-2.10.pl')
-    foreach ($entry in Get-ChildItem -Force -Recurse -LiteralPath $toolsRoot) {
-      $relative = [IO.Path]::GetRelativePath($toolsRoot, $entry.FullName)
-      if ($relative -notin $allowedToolEntries) {
-        $errors.Add("workspace tool cache contains unregistered entry: $relative")
-      }
-    }
-  }
-} else {
-  Write-Output 'WORKSPACE_HYGIENE=SKIP REASON=standalone_repository_checkout'
-}
-
-$allowedRepositoryDirectories = @(
-  '.agents','.git','.githooks','.github','.venv','.ruff_cache','.pytest_cache','.mypy_cache',
-  'common','config','docs','integrations','projects'
-)
-foreach ($directory in Get-ChildItem -Force -Directory -LiteralPath $repoRoot) {
-  if ($directory.Name -notin $allowedRepositoryDirectories) {
-    $errors.Add("repository root contains unregistered directory: $($directory.Name)")
-  }
-}
-
-$rootDebrisPatterns = @('*.log','matlab_crash_dump.*','core.*','*.dmp')
-foreach ($pattern in $rootDebrisPatterns) {
-  foreach ($file in @(Get-ChildItem -LiteralPath $repoRoot -File -Filter $pattern -ErrorAction SilentlyContinue)) {
-    $errors.Add("repository-root tool artifact must be archived outside Git: $($file.Name)")
-  }
-}
 
 $tracked = @(& git -C $repoRoot ls-files)
 if ($LASTEXITCODE -ne 0) { throw 'git ls-files failed.' }

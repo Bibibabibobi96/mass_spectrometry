@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$PythonExe = '')
+param([string]$PythonExe = '', [switch]$RuffHandledByParent)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -37,16 +37,20 @@ try {
     throw 'Wehnelt resolved contract is invalid or stale.'
   }
 
-  & $PythonExe -m unittest discover `
+  & $PythonExe -m common.gate_unittest discover `
     -s projects/transverse_helical_filament_wehnelt_electron_gun/tests/analysis -p 'test_*.py'
   if ($LASTEXITCODE -ne 0) {
     throw 'Wehnelt static tests failed.'
   }
 
-  & $PythonExe -m ruff check projects/transverse_helical_filament_wehnelt_electron_gun/analysis `
-    projects/transverse_helical_filament_wehnelt_electron_gun/tests/analysis
-  if ($LASTEXITCODE -ne 0) {
-    throw 'Wehnelt Ruff checks failed.'
+  if ($RuffHandledByParent) {
+    'RUFF=HANDLED_BY_PARENT PROJECT=transverse_helical_filament_wehnelt_electron_gun'
+  } else {
+    & $PythonExe -m ruff check projects/transverse_helical_filament_wehnelt_electron_gun/analysis `
+      projects/transverse_helical_filament_wehnelt_electron_gun/tests/analysis
+    if ($LASTEXITCODE -ne 0) {
+      throw 'Wehnelt Ruff checks failed.'
+    }
   }
 } finally {
   Pop-Location

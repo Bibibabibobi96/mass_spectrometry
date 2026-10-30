@@ -7,10 +7,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.machine_contracts import ContractError, validate_schema
+from common.contracts.machine_contracts import ContractError, schema_registry, validate_schema
 
 
 class MachineContractPathTests(unittest.TestCase):
+    def test_shared_schema_metadata_is_valid(self) -> None:
+        # The production loader checks every schema before registering it.
+        # Dedicated schema changes need this metacheck and their consumers,
+        # rather than the unrelated lifecycle/process fault matrix.
+        self.assertIsNotNone(schema_registry())
+
     def test_validates_explicit_schema_path_with_shared_references(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "owned.schema.json"

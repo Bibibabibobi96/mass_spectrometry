@@ -10,7 +10,7 @@
 | 项目、变体、实例和组装怎样划分，文件放哪里 | [仓库架构与知识权威](REPOSITORY_ARCHITECTURE.md) |
 | 端口、位姿、组件接口、源、时钟、驱动与组装语义 | [连接与组装架构](COMPONENT_CONNECTION_ARCHITECTURE.md) |
 | 运行、缓存、产物保留、历史与资料归档 | [生命周期](LIFECYCLE.md) |
-| 环境、启动、分层门禁、Git与完成标准 | [操作指南](OPERATIONS.md) |
+| 环境、启动、软件验证与科学证据、Git及完成标准 | [操作指南](OPERATIONS.md) |
 | 编码、合同、配置分层、进程、性能与测试 | [开发标准阅读导航](DEVELOPMENT_STANDARDS.md#阅读导航) |
 | 科学图形的追溯、标注与展示 | [绘图标准](PLOTTING_STANDARDS.md) |
 | 平台使命和跨项目建设顺序 | [愿景](VISION.md)、[路线图](ROADMAP.md) |

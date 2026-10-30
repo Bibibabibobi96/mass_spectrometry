@@ -528,7 +528,7 @@ function Invoke-IndependentGateStageGroup {
                 throw 'InternalRequestParameter is required with RequestPayload.'
             }
             $requestPath = Join-Path $groupRoot 'request.json'
-            $RequestPayload | ConvertTo-Json -Depth 8 |
+            $RequestPayload | ConvertTo-Json -Depth 32 |
                 Set-Content -LiteralPath $requestPath -Encoding UTF8
             $childArguments.Add($InternalRequestParameter)
             $childArguments.Add($requestPath)

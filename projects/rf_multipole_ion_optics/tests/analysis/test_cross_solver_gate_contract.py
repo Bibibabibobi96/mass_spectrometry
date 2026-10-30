@@ -644,8 +644,10 @@ class CandidateGateParameterContractTests(unittest.TestCase):
                 result = observed["result"]
                 expected = sorted(observed["modules"].values())
                 calls = [command for command in observed["commands"] if command[:2] == ["-m", "common.gate_unittest"]]
-                self.assertEqual(calls, [["-m", "common.gate_unittest", *expected]])
-                self.assertEqual(sorted(observed["executed"]), expected)
+                # Freshness now owns the tree parse before dispatch. A syntax
+                # failure must prevent any regression test from starting.
+                self.assertEqual(calls, [] if failure == "syntax" else [["-m", "common.gate_unittest", *expected]])
+                self.assertEqual(sorted(observed["executed"]), [] if failure == "syntax" else expected)
                 if not failure:
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     self.assertIn("PROJECT_GATE=PASS", result.stdout)

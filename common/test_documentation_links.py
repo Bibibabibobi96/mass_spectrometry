@@ -1,6 +1,7 @@
 """Focused regressions for documentation navigation and frozen history boundaries."""
 
 from pathlib import Path
+from unittest.mock import patch
 import hashlib
 import json
 import os
@@ -24,6 +25,7 @@ class PowerShellHistoryScopeTests(unittest.TestCase):
             "$repoRoot=$env:DOC_HISTORY_TEST_ROOT\n"
             "$utf8=[Text.UTF8Encoding]::new($false,$true)\n"
             "$errors=[Collections.Generic.List[string]]::new()\n"
+            "$AuditHistory=$true;$ChangedPath=@()\n"
             "function Add-DocError { param([string]$Message) $errors.Add($Message) }\n"
             + source[start:end]
             + "\nConvertTo-Json -InputObject @($errors) -Compress\n"
@@ -37,6 +39,20 @@ class PowerShellHistoryScopeTests(unittest.TestCase):
             check=True, capture_output=True, text=True, encoding='utf-8', timeout=30,
         )
         return json.loads(result.stdout)
+
+    def test_changed_history_does_not_audit_unrelated_archive(self):
+        with tempfile.TemporaryDirectory(prefix='documentation_history_test_') as directory:
+            root = self.prepare_root(directory)
+            history = root / 'docs/history'
+            (history / 'selected.md').write_text('DOC_STATUS: ARCHIVED_READ_ONLY\n', encoding='utf-8')
+            (history / 'unrelated.md').write_text('not a frozen banner\n', encoding='utf-8')
+            (root / 'docs/AUDITS.md').write_text('history/selected.md\n', encoding='utf-8')
+            script = self.script.replace('$AuditHistory=$true;$ChangedPath=@()',
+                                        "$AuditHistory=$false;$ChangedPath=@('docs/history/selected.md')")
+            result = subprocess.run(['pwsh','-NoProfile','-Command',script], cwd=root,
+                env={**os.environ,'DOC_HISTORY_TEST_ROOT':str(root)}, capture_output=True,
+                text=True, check=True, timeout=30)
+            self.assertEqual(json.loads(result.stdout), [])
 
     def test_markdown_discovery_inside_artifacts_checkout(self):
         source = Path(__file__).with_name('verify_documentation.ps1').read_text(encoding='utf-8')
@@ -125,12 +141,12 @@ class MarkdownNavigationTests(unittest.TestCase):
             original.rename(moved)
             subprocess.run(['git', '-C', str(root), 'add', '-A'], check=True, cwd=root, timeout=30)
             self.assertEqual(migrated_history(root), ({moved.relative_to(root).as_posix()}, []))
-            self.assertFalse(inspect_repository(root)['errors'])
+            self.assertFalse(inspect_repository(root, audit_history=True, show_review=True)['errors'])
             moved.write_bytes(content + b'changed\n')
             verified, errors = migrated_history(root)
             self.assertFalse(verified)
             self.assertIn('differs from its HEAD source bytes', errors[0])
-            self.assertTrue(inspect_repository(root)['errors'])
+            self.assertTrue(inspect_repository(root, audit_history=True, show_review=True)['errors'])
 
     def test_staged_active_document_move_does_not_gain_history_exemption(self):
         with tempfile.TemporaryDirectory(prefix='documentation_gate_test_') as directory:
@@ -147,7 +163,7 @@ class MarkdownNavigationTests(unittest.TestCase):
             original.rename(moved)
             subprocess.run(['git', '-C', str(root), 'add', '-A'], check=True, cwd=root, timeout=30)
             self.assertEqual(migrated_history(root), (set(), []))
-            self.assertTrue(inspect_repository(root)['errors'])
+            self.assertTrue(inspect_repository(root, audit_history=True, show_review=True)['errors'])
 
     def test_retired_project_move_requires_exact_git_bytes_and_complete_inventory(self):
         with tempfile.TemporaryDirectory(prefix='documentation_gate_test_') as directory:
@@ -174,7 +190,7 @@ class MarkdownNavigationTests(unittest.TestCase):
             verified, errors = migrated_history(root)
             self.assertFalse(errors)
             self.assertEqual(verified, {moved.relative_to(root).as_posix()})
-            self.assertFalse(inspect_repository(root)['errors'])
+            self.assertFalse(inspect_repository(root, audit_history=True, show_review=True)['errors'])
             moved.write_bytes(content + b'changed')
             self.assertIn('frozen bytes/source mismatch', migrated_history(root)[1][0])
             moved.write_bytes(content)
@@ -226,7 +242,7 @@ class MarkdownNavigationTests(unittest.TestCase):
             history = root / 'docs/history'
             history.mkdir(parents=True)
             (history / 'frozen.md').write_text(text, encoding='utf-8')
-            result = inspect_repository(root)
+            result = inspect_repository(root, audit_history=True, show_review=True)
             self.assertFalse(result['errors'])
             self.assertEqual(len(result['diagnostics']), 1)
             self.assertIn('README.md:4: table has empty cells', result['diagnostics'][0])
@@ -269,7 +285,7 @@ class MarkdownNavigationTests(unittest.TestCase):
             (history / 'README.md').write_text('# Index\n[bad](missing.md)\n', encoding='utf-8')
             subprocess.run(['git', '-C', str(root), 'add', '.'], check=True, cwd=root, timeout=30)
             subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--quiet', '-m', 'Add index'], check=True, cwd=root, timeout=30)
-            result = inspect_repository(root)
+            result = inspect_repository(root, audit_history=True, show_review=True)
             self.assertEqual(len(result['errors']), 1)
             self.assertEqual(result['inventory'][0]['kind'], 'entry')
 
@@ -284,7 +300,7 @@ class MarkdownNavigationTests(unittest.TestCase):
             (history / 'INDEX.md').write_text('# Frozen\n[old](gone.md)\n', encoding='utf-8')
             subprocess.run(['git', '-C', str(root), 'add', 'docs/history'], check=True, cwd=root, timeout=30)
             subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--quiet', '-m', 'Freeze test fixture'], check=True, cwd=root, timeout=30)
-            result = inspect_repository(root)
+            result = inspect_repository(root, audit_history=True, show_review=True)
             self.assertEqual(len(result['errors']), 2)
             self.assertTrue(any('gone.md' in message for message in result['diagnostics']))
             self.assertEqual(len(result['inventory']), 3)
@@ -297,7 +313,7 @@ class MarkdownNavigationTests(unittest.TestCase):
             history = root / 'docs/history'
             history.mkdir(parents=True)
             (history / 'new.md').write_text('# New archive\n[bad](missing.json)', encoding='utf-8')
-            result = inspect_repository(root)
+            result = inspect_repository(root, audit_history=True, show_review=True)
             self.assertEqual(len(result['errors']), 1)
 
     def test_external_artifacts_are_optional_and_scratch_is_reported(self):
@@ -306,7 +322,7 @@ class MarkdownNavigationTests(unittest.TestCase):
             root.mkdir()
             subprocess.run(['git', 'init', '--quiet', str(root)], check=True, cwd=root, timeout=30)
             (root / 'README.md').write_text('# Entry\n[evidence](../artifacts/projects/p/scratch/x/report.json)', encoding='utf-8')
-            result = inspect_repository(root)
+            result = inspect_repository(root, audit_history=True, show_review=True)
             self.assertFalse(result['errors'])
             self.assertTrue(any('scratch evidence' in message for message in result['diagnostics']))
 
@@ -317,7 +333,7 @@ class MarkdownNavigationTests(unittest.TestCase):
             subprocess.run(['git', 'init', '--quiet', str(root)], check=True, cwd=root, timeout=30)
             (root / 'README.md').write_text('# Entry\n[guide](guide.md)\n', encoding='utf-8')
             (root / 'guide.md').write_text('# Guide\n', encoding='utf-8')
-            result = inspect_repository(root)
+            result = inspect_repository(root, audit_history=True, show_review=True)
             self.assertFalse(result['errors'])
             self.assertFalse(any('scratch evidence' in message for message in result['diagnostics']))
 
@@ -326,7 +342,22 @@ class MarkdownNavigationTests(unittest.TestCase):
             root = Path(directory)
             subprocess.run(['git', 'init', '--quiet', str(root)], check=True, cwd=root, timeout=30)
             (root / 'README.md').write_text('# Entry\n<a id="固定入口"></a>\n[here](#固定入口)\n[local](C:\\Users\\example\\file.md)\n`C:\\Users\\example`\n````md\n[missing](absent.md)\n```\n````', encoding='utf-8')
-            self.assertFalse(inspect_repository(root)['errors'])
+            self.assertFalse(inspect_repository(root, audit_history=True, show_review=True)['errors'])
+
+
+
+
+class DocumentationRoutineCostTests(unittest.TestCase):
+    def test_routine_links_do_not_authenticate_frozen_migrations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(['git','init','--quiet',str(root)], cwd=root, check=True,
+                           capture_output=True, timeout=30)
+            (root/'README.md').write_text('# Active\n', encoding='utf-8')
+            with patch('common.documentation_links.migrated_history', side_effect=AssertionError('unexpected provenance audit')):
+                report = inspect_repository(root)
+            self.assertEqual(report['errors'], [])
+            self.assertEqual(report['diagnostics'], [])
 
 
 if __name__ == '__main__':

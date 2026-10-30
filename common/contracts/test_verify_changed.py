@@ -8,20 +8,18 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import threading
+import time
 import unittest
+from queue import Empty, Queue
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CHANGED_GATE = REPO_ROOT / "common" / "verify_changed.ps1"
+CHANGED_GATE = REPO_ROOT / "common" / "verify.ps1"
 ROUTE_TABLE = REPO_ROOT / "common" / "gate_catalog.json"
-INTEGRATION_GATE = REPO_ROOT / "common" / "verify_repository_integration.ps1"
 PARALLEL_GATE_SUPPORT = REPO_ROOT / "common" / "parallel_gate_support.ps1"
 LIGHTWEIGHT_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "lightweight-gate.yml"
-DOCUMENTATION_GATE = REPO_ROOT / "common" / "verify_documentation.ps1"
-MULTIPOLE_GATE = (
-    REPO_ROOT / "projects" / "rf_multipole_ion_optics" / "verify_project.ps1"
-)
 
 
 class ChangedGateContractTests(unittest.TestCase):
@@ -49,6 +47,122 @@ class ChangedGateContractTests(unittest.TestCase):
             raise AssertionError(result.stdout + result.stderr)
         cls.routes = json.loads(result.stdout)
 
+    def plan(self, *arguments):
+        cache = getattr(type(self), "_plans", {})
+        if arguments not in cache:
+            with tempfile.TemporaryDirectory(prefix="software_gate_plan_") as directory:
+                request = Path(directory) / "request.json"
+                result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(CHANGED_GATE),
+                    "-PythonExe", sys.executable, "-PlanOnly", "-InternalRequestPath", str(request), *arguments],
+                    cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=40)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                cache[arguments] = (json.loads(request.read_text(encoding="utf-8-sig")), result.stdout)
+            type(self)._plans = cache
+        return cache[arguments]
+
+    def batch_plan_outputs(self, cases):
+        # Exercise every real planner case; share only the PowerShell host.
+        payload = json.dumps([{"paths":list(paths),"full":full} for paths,full in cases])
+        quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+        script = f"""
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$cases={quote(payload)}|ConvertFrom-Json
+$index=0
+foreach($case in $cases){{
+ $parameters=@{{PythonExe={quote(sys.executable)};PlanOnly=$true}}
+ if($case.full){{$parameters.FullScope=$true}}else{{$parameters.ChangedPath=@($case.paths)}}
+ $output=@(& {quote(CHANGED_GATE)} @parameters)
+ if($LASTEXITCODE-ne0){{throw "Planner case $index failed"}}
+ Write-Output ('PLAN_CASE_JSON='+(@{{index=$index;output=($output-join"`n")}}|ConvertTo-Json -Compress))
+ $index++
+}}
+"""
+        result = subprocess.run([shutil.which("pwsh"),"-NoProfile","-Command",script],cwd=REPO_ROOT,
+            capture_output=True,text=True,encoding="utf-8",timeout=90)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        records=[json.loads(line.removeprefix("PLAN_CASE_JSON=")) for line in result.stdout.splitlines() if line.startswith("PLAN_CASE_JSON=")]
+        self.assertEqual([record["index"] for record in records],list(range(len(cases))))
+        return [record["output"] for record in records]
+
+    def test_repository_and_full_changed_preserve_core_static_distinction(self):
+        changed, _ = self.plan("-FullScope")
+        repository, output = self.plan("-Scope", "Repository")
+        self.assertIn("EXECUTION_MODE=REPOSITORY", output)
+        for stage in ("rf_multipole_quadrupole_static",):
+            core = next(row for row in changed["stages"] if row["name"] == stage)
+            full = next(row for row in repository["stages"] if row["name"] == stage)
+            self.assertEqual(core["command"]["parameters"]["Level"], "Core")
+            self.assertEqual(full["command"]["parameters"]["Level"], "Static")
+        self.assertEqual(len({row["name"] for row in repository["stages"]}), len(repository["stages"]))
+
+    def test_owner_scope_selects_complete_owner_checks_without_unrelated_project_scan(self):
+        request, _ = self.plan("-Scope", "Owner", "-Owner", "orthogonal_accelerator")
+        stages = {row["name"]:row for row in request["stages"]}
+        owner_route = next(route for route in self.routes if route.get("project_id")=="orthogonal_accelerator")
+        self.assertIn(owner_route["stage"], stages)
+        expected = owner_route.get("repository_integration_command", owner_route["command"])
+        actual = stages[owner_route["stage"]]["command"]
+        self.assertEqual(actual["script"], expected["script"])
+        for key, value in expected.get("parameters", {}).items():
+            if key != "PythonExe":
+                self.assertEqual(actual["parameters"][key], value)
+        unrelated = {route["stage"] for route in self.routes if route.get("project_id") not in (None,"orthogonal_accelerator")}
+        self.assertFalse(unrelated.intersection(stages), unrelated.intersection(stages))
+        lint = stages["ruff_changed_python"]["command"]["arguments"][3:]
+        self.assertTrue(lint)
+        self.assertTrue(all("orthogonal_accelerator" in value for value in lint),lint)
+        standards = stages["development_standards"]["command"]["arguments"]
+        self.assertIn("--path", standards)
+        selected = [standards[index+1] for index,value in enumerate(standards) if value=="--path"]
+        self.assertTrue(selected)
+        self.assertTrue(all(value.startswith("projects/orthogonal_accelerator/") for value in selected),selected)
+
+    def test_owner_group_and_stage_alias_bind_the_actual_source_owner(self):
+        contracts,_=self.plan("-Scope","Owner","-Owner","common/contracts")
+        self.assertTrue({"common_contracts","project_registry"}<={row["name"] for row in contracts["stages"]})
+        project,_=self.plan("-Scope","Owner","-Owner","rf_multipole_ion_optics")
+        self.assertIn("rf_multipole_domain_tests",{row["name"] for row in project["stages"]})
+        alias,_=self.plan("-Scope","Owner","-Owner","rf_multipole_domain_tests")
+        standards=next(row for row in alias["stages"] if row["name"]=="development_standards")
+        arguments=standards["command"]["arguments"]
+        selected=[arguments[index+1] for index,value in enumerate(arguments) if value=="--path"]
+        self.assertIn("projects/rf_multipole_ion_optics/core/ideal_transport.py",selected)
+        self.assertTrue(all(path.startswith("projects/rf_multipole_ion_optics/") for path in selected),selected)
+
+    def test_unknown_owner_is_rejected_during_selection_before_resource_admission(self):
+        with tempfile.TemporaryDirectory(prefix="unknown_owner_plan_") as directory:
+            ledger = Path(directory)/"ledger.sqlite3"
+            result = subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(CHANGED_GATE),
+                "-PythonExe",sys.executable,"-Scope","Owner","-Owner","no_such_owner","-PlanOnly"],
+                cwd=REPO_ROOT,capture_output=True,text=True,encoding="utf-8",timeout=30,
+                env={**os.environ,"MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH":str(ledger)})
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn("owner",result.stderr.lower())
+            self.assertFalse(ledger.exists())
+
+    def test_short_analysis_batches_preserve_each_declared_module_once(self):
+        request, _ = self.plan("-Scope", "Repository")
+        expected = [module for route in self.routes if route.get("execution_batch") == "analysis"
+                    for module in route["command"]["arguments"][2:]]
+        actual = [module for row in request["stages"] if row["name"].startswith("analysis_")
+                  for module in row["command"]["arguments"][2:]]
+        self.assertCountEqual(actual, expected)
+        self.assertEqual(len(actual), len(set(actual)))
+
+    def test_common_contract_dependencies_select_modules_without_retired_routes(self):
+        cases = (("common/contracts/expected_values.py", "common.contracts.test_expected_values"),
+                 ("common/report_cloc_delta.ps1", "common.contracts.test_report_cloc_delta"),
+                 ("common/verify.ps1", "common.contracts.test_verify_changed"),
+                 ("pyproject.toml", "common.contracts.test_python_dependency_contract"),
+                 ("common/contracts/schemas/oatof_three_zone_stage_report.schema.json", "common.contracts.test_machine_contracts_paths"))
+        for path, module in cases:
+            with self.subTest(path=path):
+                request, _ = self.plan("-ChangedPath", path)
+                owner = next(row for row in request["stages"] if row["name"] == "common_contracts")
+                modules = [value.removesuffix(".py").replace("/", ".") for value in owner["command"]["arguments"]]
+                self.assertIn(module, modules)
+                self.assertEqual(len(owner["command"]["arguments"]), len(set(owner["command"]["arguments"])))
+
     def routed_stages(self, path: str) -> dict[str, str]:
         selected: dict[str, str] = {}
         for route in self.routes:
@@ -69,43 +183,8 @@ class ChangedGateContractTests(unittest.TestCase):
                     break
         return selected
 
-    def test_catalog_invoker_reads_current_native_exit_code(self) -> None:
-        pwsh = shutil.which("pwsh")
-        if pwsh is None:
-            self.skipTest("PowerShell Core is unavailable")
-        for gate in (CHANGED_GATE, INTEGRATION_GATE):
-            assignment = next(
-                line for line in gate.read_text(encoding="utf-8").splitlines()
-                if line.startswith("$catalogCommandInvoker = ")
-            )
-            with self.subTest(gate=gate.name):
-                script = r"""
-$ErrorActionPreference='Stop'
-. ./common/gate_catalog_support.ps1
-$pythonProbe='__PYTHON__'
-& $pythonProbe -c 'pass'
-__ASSIGNMENT__
-$invoke={
-  param($Command)
-  & $catalogCommandInvoker -Command $Command -RepoRoot $PWD.Path -PythonExe $pythonProbe
-}.GetNewClosure()
-& $invoke -Command ([pscustomobject]@{runner='python';arguments=@('-c','pass')})
-$rejected=$false
-try {
-  & $invoke -Command ([pscustomobject]@{runner='python';arguments=@('-c','raise SystemExit(7)')})
-} catch { $rejected=$_.Exception.Message -like '*exit code 7*' }
-if(-not $rejected){throw 'Catalog accepted a failed native command'}
-Write-Output 'CATALOG_FAILURE_PROPAGATION=PASS'
-""".replace("__PYTHON__", sys.executable.replace("'", "''")).replace(
-                    "__ASSIGNMENT__", assignment
-                )
-                result = subprocess.run(
-                    [pwsh, "-NoProfile", "-NonInteractive", "-Command", script],
-                    cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8",
-                    timeout=30, check=False,
-                )
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertIn("CATALOG_FAILURE_PROPAGATION=PASS", result.stdout)
+
+
 
     def test_changed_ruff_argfile_handles_long_paths_and_cleans_after_failure(self) -> None:
         """Run the actual changed-file action with native Ruff, including F821."""
@@ -136,18 +215,10 @@ $env:RUFF_NO_CACHE='true';$env:RAYON_NUM_THREADS='1'
 $env:TMP={quote(temporary_files)};$env:TEMP={quote(temporary_files)}
 $PythonExe={quote(sys.executable)}
 $existingPythonFiles=@(Get-Content -Raw -LiteralPath {quote(path_list)}|ConvertFrom-Json)
-$tokens=$null;$errors=$null
-$ast=[Management.Automation.Language.Parser]::ParseFile({quote(CHANGED_GATE)},[ref]$tokens,[ref]$errors)
-if($errors.Count){{throw 'Changed gate failed PowerShell parsing'}}
-$commands=@($ast.FindAll({{
- param($node)
- $node-is[Management.Automation.Language.CommandAst]-and
- $node.GetCommandName()-eq'Add-ChangedStageItem'-and
- $node.Extent.Text.Contains("'existing_python_source_changed'")
-}},$true))
-if($commands.Count-ne1){{throw 'Expected exactly one changed Ruff action'}}
-$action=$commands[0].CommandElements[-1].ScriptBlock.GetScriptBlock()
-& $action
+. {quote(REPO_ROOT / 'common/gate_catalog_support.ps1')}
+$command=[pscustomobject]@{{runner='python';arguments=@('-m','ruff','check')+$existingPythonFiles}}
+try{{Invoke-GateCatalogCommand -Command $command -RepoRoot {quote(REPO_ROOT)} -PythonExe $PythonExe}}
+catch{{if($LASTEXITCODE-ne{int(failed)}){{throw}}}}
 $nativeExitCode=$LASTEXITCODE
 if($nativeExitCode-ne{int(failed)}){{throw "Unexpected native Ruff exit $nativeExitCode"}}
 if(@(Get-ChildItem -LiteralPath {quote(temporary_files)} -Force).Count){{throw 'Ruff argument file leaked'}}
@@ -166,61 +237,41 @@ exit 0
                     self.assertEqual(list(temporary_files.iterdir()), [])
 
     def test_integration_documentation_action_forwards_selected_python(self) -> None:
-        """The real stage action must not fall back to checkout/PATH discovery."""
-        pwsh = shutil.which("pwsh")
-        with tempfile.TemporaryDirectory(prefix="documentation_python_") as directory:
-            root = Path(directory)
-            (root / "common").mkdir()
-            (root / "common/verify_documentation.ps1").write_text(
-                "param([Parameter(Mandatory=$true)][string]$PythonExe)\n"
-                "& $PythonExe -c 'import sys; print(\"DOCUMENTATION_PYTHON_VERSION=\" "
-                "+ str(sys.version_info.major) + \".\" + str(sys.version_info.minor))'\n"
-                "if($LASTEXITCODE-ne0){throw 'Selected Python failed'}\n",
-                encoding="utf-8",
-            )
-            quote = lambda value: "'" + str(value).replace("'", "''") + "'"
-            command = r"""
-$ErrorActionPreference='Stop'
-$tokens=$null;$errors=$null
-$ast=[Management.Automation.Language.Parser]::ParseFile(__GATE__,[ref]$tokens,[ref]$errors)
-if($errors.Count){throw 'Integration gate failed PowerShell parsing'}
-$assignment=$ast.Find({param($node)
-  $node-is[Management.Automation.Language.AssignmentStatementAst]-and
-  $node.Left.Extent.Text-eq'$stageCommands'
-},$true)
-$PythonExe=__PYTHON__
-. ([scriptblock]::Create($assignment.Extent.Text))
-. __SUPPORT__
-Invoke-GateCatalogCommand -Command $stageCommands.documentation -RepoRoot __FIXTURE__ -PythonExe $PythonExe
-""".replace("__GATE__", quote(INTEGRATION_GATE)).replace(
-                "__FIXTURE__", quote(root)
-            ).replace("__PYTHON__", quote(sys.executable)).replace(
-                "__SUPPORT__", quote(REPO_ROOT / "common/gate_catalog_support.ps1"))
-            completed = subprocess.run(
-                [pwsh, "-NoProfile", "-NonInteractive", "-Command", command],
-                cwd=REPO_ROOT, capture_output=True, text=True,
-                encoding="utf-8", timeout=30, check=False,
-            )
-            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-            self.assertIn("DOCUMENTATION_PYTHON_VERSION=3.11", completed.stdout)
+        request, _ = self.plan("-Scope", "Repository")
+        documentation = next(stage for stage in request["stages"] if stage["name"] == "documentation")
+        self.assertEqual(documentation["command"]["parameters"]["PythonExe"], sys.executable)
 
     def test_documentation_only_fast_path_runs_without_project_gates(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             self.skipTest("PowerShell Core is unavailable")
+        fixture_directory = tempfile.TemporaryDirectory(prefix="documentation_changed_gate_")
+        self.addCleanup(fixture_directory.cleanup)
+        fixture_root = Path(fixture_directory.name)
+        common = fixture_root / "common"
+        common.mkdir()
+        (fixture_root / "projects").mkdir()
+        (fixture_root / "integrations").mkdir()
+        for name in ("verify.ps1", "parallel_gate_support.ps1", "gate_catalog_support.ps1", "require_powershell7.ps1"):
+            shutil.copyfile(REPO_ROOT / "common" / name, common / name)
+        (common / "host_execution_lease.ps1").write_text("function Get-HostResourceBudget {param($Role,$Stage) @{}}\nfunction Enter-HostResourceStage {param($Role,$Stage,$Budget) @{}}\nfunction Exit-HostResourceStage {param($Lease)}\n",encoding="utf-8")
+        (common / "gate_catalog.json").write_text('{"schema_version":2,"role":"repository_gate_catalog","routes":[{"stage":"unrelated_project","dependency_profile":"locked","repository_integration_group":"regression","matches":[{"exact":"projects/unrelated/source.py","reason":"unrelated"}],"command":{"runner":"python","arguments":["-c","print(42)"]}}]}',encoding="utf-8")
+        (common / "verify_repository_hygiene.ps1").write_text("Write-Output 'REPOSITORY_HYGIENE=PASS'\n",encoding="utf-8")
+        (common / "verify_repository_text_bytes.py").write_text("print('TEXT_BYTES_FIXTURE=PASS')\n",encoding="utf-8")
+        (common / "verify_documentation.ps1").write_text("param($PythonExe,[switch]$StructureOnly,[string[]]$ChangedPath)\nWrite-Output 'DOCUMENTATION_FIXTURE=PASS'\n",encoding="utf-8")
         completed = subprocess.run(
             [
                 pwsh,
                 "-NoProfile",
                 "-File",
-                str(CHANGED_GATE),
+                str(common / "verify.ps1"),
                 "-PythonExe",
                 sys.executable,
                 "-ChangedPath",
                 "CHANGELOG.md",
                 "-SummaryPath", self.summary_path,
             ],
-            cwd=REPO_ROOT,
+            cwd=fixture_root,
             capture_output=True,
             text=True, encoding="utf-8",
             # This executes all three real documentation gates under host
@@ -253,9 +304,32 @@ Invoke-GateCatalogCommand -Command $stageCommands.documentation -RepoRoot __FIXT
             "simion_common", "orthogonal_accelerator_static",
                     } <= primitives.keys())
 
+    def test_accelerator_test_only_routes_preserve_actual_shared_fixture_consumers(self) -> None:
+        downstream = {"instrument_assembly_integration", "parallel_mirror_dual_stripe_mr_tof_static",
+                      "single_reflection_oa_tof_mass_analyzer_static"}
+        prefix = "projects/orthogonal_accelerator/"
+        for relative in ("tests/analysis/test_component_focus_analysis.py",
+                         "tests/analysis/test_two_zone_geometry.py"):
+            with self.subTest(relative=relative):
+                stages = self.routed_stages(prefix + relative)
+                self.assertIn("orthogonal_accelerator_static", stages)
+                self.assertFalse(downstream & stages.keys())
+        # The integration fixture imports this actual provider test module;
+        # package initialization also affects that import boundary.
+        for relative in ("tests/analysis/test_bare_three_zone_component.py",
+                         "tests/__init__.py", "tests/analysis/__init__.py"):
+            with self.subTest(relative=relative):
+                stages = self.routed_stages(prefix + relative)
+                self.assertTrue(any(name == "instrument_assembly_integration" or name.startswith("instrument_assembly_integration__tests_") for name in stages), stages)
+                self.assertIn("orthogonal_accelerator_static", stages)
+                self.assertNotIn("parallel_mirror_dual_stripe_mr_tof_static", stages)
+                self.assertNotIn("single_reflection_oa_tof_mass_analyzer_static", stages)
+        self.assertTrue(downstream <= self.routed_stages(
+            prefix + "analysis/component_focus_analysis.py").keys())
+
     def test_extracted_mechanisms_keep_automatic_regression_routes(self) -> None:
         for implementation, stage, module in (
-            ("common/contracts/expected_values.py", "expected_values_tests",
+            ("common/contracts/expected_values.py", "common_contracts",
              "common.contracts.test_expected_values"),
             ("common/analysis/longitudinal_fit.py", "longitudinal_fit_tests",
              "common.analysis.test_longitudinal_fit"),
@@ -264,7 +338,12 @@ Invoke-GateCatalogCommand -Command $stageCommands.documentation -RepoRoot __FIXT
                 self.assertIn(stage, self.routed_stages(implementation))
                 route = next(row for row in self.routes if row["stage"] == stage)
                 self.assertIn(route["repository_integration_group"], {"fast", "regression", "covered"})
-                self.assertIn(module, route["command"]["arguments"])
+                if stage == "common_contracts":
+                    request, _ = self.plan("-ChangedPath", implementation)
+                    command = next(row["command"] for row in request["stages"] if row["name"] == stage)
+                    self.assertIn(module, [arg.removesuffix(".py").replace("/", ".") for arg in command["arguments"]])
+                else:
+                    self.assertIn(module, route["command"]["arguments"])
         self.assertTrue({
             "single_reflection_oa_tof_mass_analyzer_static",
                     } <= self.routed_stages("common/analysis/longitudinal_fit.py").keys())
@@ -281,8 +360,8 @@ Invoke-GateCatalogCommand -Command $stageCommands.documentation -RepoRoot __FIXT
         ):
             with self.subTest(path=path):
                 self.assertTrue(expected <= self.routed_stages(path).keys())
-        gate_route = next(row for row in self.routes if row["stage"] == "gate_contract_tests")
-        self.assertIn("common.contracts.test_parallel_gate_support", gate_route["command"]["arguments"])
+        gate_route = next(row for row in self.routes if row["stage"] == "common_contracts")
+        self.assertEqual(gate_route["command"]["runner"], "python")
 
     def test_python_host_bridge_uses_one_shared_scheduler_stage_in_l1_and_l2(self) -> None:
         stage = "host_resource_scheduler_tests"
@@ -319,37 +398,15 @@ Invoke-GateCatalogCommand -Command $stageCommands.documentation -RepoRoot __FIXT
         self.assertEqual(json.loads(result.stdout).count(stage), 1)
 
     def test_integration_test_module_change_runs_only_that_module(self) -> None:
-        pwsh = shutil.which("pwsh")
-        if pwsh is None:
-            self.skipTest("PowerShell Core is unavailable")
-        changed_module = (
-            "integrations/tests/test_repository_bindings.py"
-        )
-        completed = subprocess.run(
-            [
-                pwsh,
-                "-NoProfile",
-                "-File",
-                str(CHANGED_GATE),
-                "-PythonExe",
-                sys.executable,
-                "-ChangedPath",
-                changed_module,
-                "-SummaryPath", self.summary_path,
-            ],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True, encoding="utf-8",
-            timeout=90,
-            check=False,
-        )
-        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-        self.assertIn(
-            "GATE_STAGE=RUN NAME=instrument_assembly_integration REASON=changed_test_modules",
-            completed.stdout,
-        )
-        self.assertNotIn("INTEGRATION_GATE=PASS", completed.stdout)
-        self.assertNotIn("instrument_assembly_integration__tests_", completed.stdout)
+        request, _ = self.plan("-ChangedPath", "integrations/tests/test_repository_bindings.py")
+        integration = [row for row in request["stages"] if row["name"].startswith("instrument_assembly_integration")]
+        self.assertEqual(len(integration), 1)
+        command = integration[0]["command"]
+        modules = command.get("parameters", {}).get("ChangedTestModules", command.get("arguments", [])[2:])
+        modules = [value.removesuffix(".py").replace("/", ".") for value in modules]
+        self.assertEqual(modules, ["integrations.tests.test_repository_bindings"])
+        self.assertFalse(command.get("parameters", {}).get("PreflightOnly", False))
+
 
     def test_integration_source_routes_full_gate(self) -> None:
         pwsh = shutil.which("pwsh")
@@ -513,12 +570,12 @@ Invoke-GateCatalogCommand -Command $stageCommands.documentation -RepoRoot __FIXT
                 self.assertIn("instrument_assembly_integration", result.stdout)
                 selected = re.search(r"SELECTED_STAGES=([^\s]+)", result.stdout)
                 self.assertIsNotNone(selected, result.stdout)
-                self.assertIn("instrument_assembly_integration", selected[1].split(","))
+                self.assertTrue(any(name == "instrument_assembly_integration" or name.startswith("instrument_assembly_integration__tests_") for name in selected[1].split(",")), selected[1])
 
     @staticmethod
     def _runtime_dependency_plan(repo: Path, changed_path: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [shutil.which("pwsh"), "-NoProfile", "-File", str(repo / "common/verify_changed.ps1"),
+            [shutil.which("pwsh"), "-NoProfile", "-File", str(repo / "common/verify.ps1"),
              "-PythonExe", sys.executable, "-PlanOnly", "-ChangedPath", changed_path],
             cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=30,
         )
@@ -530,7 +587,7 @@ Invoke-GateCatalogCommand -Command $stageCommands.documentation -RepoRoot __FIXT
             (repo / "common").mkdir()
             (repo / "projects").mkdir()
             (repo / "integrations/config").mkdir(parents=True)
-            for name in ("verify_changed.ps1", "gate_catalog_support.ps1", "parallel_gate_support.ps1",
+            for name in ("verify.ps1", "gate_catalog_support.ps1", "parallel_gate_support.ps1",
                          "host_execution_lease.ps1", "require_powershell7.ps1"):
                 shutil.copyfile(REPO_ROOT / "common" / name, repo / "common" / name)
             gate = repo / "integrations/verify_integration.ps1"
@@ -593,7 +650,7 @@ Invoke-GateCatalogCommand -Command $stageCommands.documentation -RepoRoot __FIXT
         selected = re.search(r"SELECTED_STAGES=([^\s]+)", completed.stdout)
         self.assertIsNotNone(selected, completed.stdout)
         stages = selected.group(1).split(",")
-        self.assertIn("instrument_assembly_integration", stages)
+        self.assertTrue(any(name == "instrument_assembly_integration" or name.startswith("instrument_assembly_integration__tests_") for name in stages), stages)
         self.assertNotIn("rf_multipole_to_single_reflection_oatof_integration", stages)
 
     def test_mrtof_uses_fast_changed_gate_and_complete_solver_free_l2_gate(self) -> None:
@@ -637,7 +694,7 @@ Invoke-GateCatalogCommand -Command $stageCommands.documentation -RepoRoot __FIXT
         if pwsh is None:
             self.skipTest("PowerShell Core is unavailable")
         script = r'''. ./common/gate_catalog_support.ps1
-$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD 'common/verify_changed.ps1'),[ref]$null,[ref]$errors)
+$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD 'common/verify.ps1'),[ref]$null,[ref]$errors)
 $node=$ast.Find({param($a)$a-is[Management.Automation.Language.FunctionDefinitionAst]-and$a.Name-eq'Test-CompletePartitionOwnerCommand'},$true)
 Invoke-Expression $node.Extent.Text
 $routes=@(Read-GateCatalog -RepoRoot $PWD.Path)
@@ -676,52 +733,18 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
         self.assertNotEqual(invalid.returncode, 0)
 
     def test_plan_mode_is_fail_closed_for_dependency_selection(self) -> None:
-        pwsh = shutil.which("pwsh")
-        if pwsh is None:
-            self.skipTest("PowerShell Core is unavailable")
+        cases=[("CHANGELOG.md","stdlib"),("README.md","stdlib"),
+               ("projects/rf_multipole_ion_optics/README.md","stdlib"),("common/contracts/README.md","stdlib")]
+        cases += [(path,"locked") for path in ("common/gate_catalog_support.ps1","common/verify.ps1",
+                  "common/contracts/test_verify_changed.py",".github/workflows/lightweight-gate.yml",
+                  "pyproject.toml","config/project_registry.json","projects/rf_multipole_ion_optics/config/project.json")]
+        outputs=self.batch_plan_outputs([((path,),False) for path,_ in cases])
+        for (path,expected),output in zip(cases,outputs):
+            with self.subTest(path=path):
+                match=re.search(r"DEPENDENCY_PROFILE=(stdlib|locked)",output)
+                self.assertIsNotNone(match,output)
+                self.assertEqual(match.group(1),expected)
 
-        def profile_for(path: str) -> str:
-            completed = subprocess.run(
-                [
-                    pwsh,
-                    "-NoProfile",
-                    "-File",
-                    str(CHANGED_GATE),
-                    "-PythonExe",
-                    sys.executable,
-                    "-ChangedPath",
-                    path,
-                    "-PlanOnly",
-                ],
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True, encoding="utf-8",
-                timeout=30,
-                check=False,
-            )
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            match = re.search(r"DEPENDENCY_PROFILE=(stdlib|locked)", completed.stdout)
-            self.assertIsNotNone(match, completed.stdout)
-            return match.group(1)
-
-        self.assertEqual(profile_for("CHANGELOG.md"), "stdlib")
-        for path in ("README.md", "projects/rf_multipole_ion_optics/README.md",
-                     "common/contracts/README.md"):
-            with self.subTest(documentation=path):
-                self.assertEqual(profile_for(path), "stdlib")
-        # These routes run real Ruff and nested changed-Python gates, even if
-        # the author's own change is only PowerShell or workflow YAML.
-        for path in ("common/gate_catalog_support.ps1", "common/verify_changed.ps1",
-                     "common/contracts/test_verify_changed.py", ".github/workflows/lightweight-gate.yml"):
-            with self.subTest(gate_contract_path=path):
-                self.assertIn("gate_contract_tests", self.routed_stages(path))
-                self.assertEqual(profile_for(path), "locked")
-        self.assertEqual(profile_for("pyproject.toml"), "locked")
-        self.assertEqual(profile_for("config/project_registry.json"), "locked")
-        self.assertEqual(
-            profile_for("projects/rf_multipole_ion_optics/config/project.json"),
-            "locked",
-        )
 
     def test_history_text_snapshots_use_only_the_documentation_fast_path(self) -> None:
         pwsh = shutil.which("pwsh")
@@ -747,33 +770,26 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
             ((snapshot, project + "analysis/simion_event_analysis.py"), False, False),
             ((), True, False),
         )
-        for paths, full_scope, documentation_only in cases:
-            with self.subTest(paths=paths, full_scope=full_scope):
-                quote = lambda value: "'" + value.replace("'", "''") + "'"
-                command = f"& {quote(str(CHANGED_GATE))} -PythonExe {quote(sys.executable)} -PlanOnly"
-                command += " -FullScope" if full_scope else " -ChangedPath @(" + ",".join(map(quote, paths)) + ")"
-                completed = subprocess.run(
-                    [pwsh, "-NoProfile", "-Command", command], cwd=REPO_ROOT,
-                    capture_output=True, text=True, encoding="utf-8", timeout=30, check=False,
-                )
-                self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        outputs=self.batch_plan_outputs([(paths,full) for paths,full,_ in cases])
+        for (paths,full_scope,documentation_only),output in zip(cases,outputs):
+            with self.subTest(paths=paths,full_scope=full_scope):
                 mode = "DOCUMENTATION_ONLY" if documentation_only else "FULL_CHANGED_SCOPE"
-                self.assertIn(f"EXECUTION_MODE={mode}", completed.stdout)
+                self.assertIn(f"EXECUTION_MODE={mode}", output)
                 if documentation_only:
                     self.assertIn(
                         "EFFECTIVE_STAGES=repository_hygiene,repository_text_bytes,documentation",
-                        completed.stdout,
+                        output,
                     )
-                    self.assertRegex(completed.stdout, r"SELECTED_STAGES=[^\r\n]*\bdocumentation\b")
+                    self.assertRegex(output, r"SELECTED_STAGES=[^\r\n]*\bdocumentation\b")
                 else:
-                    self.assertRegex(completed.stdout, r"EFFECTIVE_STAGES=[^\r\n]*\bdevelopment_standards\b")
+                    self.assertRegex(output, r"EFFECTIVE_STAGES=[^\r\n]*\bdevelopment_standards\b")
 
     def test_real_development_stage_uses_changed_paths_and_removes_transport_file(self) -> None:
         with tempfile.TemporaryDirectory(prefix="standards_changed_stage_") as directory:
             root = Path(directory)
             request, log = root / "request.json", root / "stage.log"
-            request.write_text(json.dumps({"python_exe": sys.executable,
-                "changed_paths": ["common/contracts/test_expected_values.py"], "full_scope": False}), encoding="utf-8")
+            from common.contracts.test_changed_test_selection import write_planned_request
+            write_planned_request(REPO_ROOT, request, ["common/contracts/test_expected_values.py"])
             result = subprocess.run([
                 shutil.which("pwsh"), "-NoProfile", "-File", str(CHANGED_GATE),
                 "-InternalStage", "development_standards", "-InternalRequestPath", str(request),
@@ -786,17 +802,133 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
             self.assertIn("GATE_STAGE=PASS NAME=development_standards", output)
             self.assertEqual(list(root.glob("tmp*.tmp")), [])
 
-    def test_ci_fallback_uses_full_scope_without_a_second_path_table(self) -> None:
+    def test_internal_stage_executes_resolved_command_without_replanning(self) -> None:
+        from common.contracts.test_changed_test_selection import write_planned_request
+        with tempfile.TemporaryDirectory(prefix="resolved_gate_stage_") as directory:
+            root = Path(directory)
+            common = root / "common"
+            common.mkdir()
+            (root / "projects").mkdir()
+            (root / "integrations").mkdir()
+            for name in ("verify.ps1", "parallel_gate_support.ps1", "gate_catalog_support.ps1",
+                         "require_powershell7.ps1"):
+                shutil.copyfile(REPO_ROOT / "common" / name, common / name)
+            (common / "host_execution_lease.ps1").write_text(
+                "function Get-HostResourceBudget { param($Stage,$Role) return @{} }\n"
+                "function Enter-HostResourceStage { param($Role,$Stage,$Budget) return @{} }\n"
+                "function Exit-HostResourceStage { param($Lease) }\n", encoding="utf-8")
+            catalog = {"schema_version": 2, "role": "repository_gate_catalog", "routes": [{
+                "stage": "probe", "dependency_profile": "stdlib", "repository_integration_group": "fast",
+                "matches": [{"exact": "probe.py", "reason": "probe_changed"}],
+                "command": {"runner": "python", "arguments": ["-c", "print('RESOLVED_STAGE_RAN')"]},
+            }]}
+            catalog_path = common / "gate_catalog.json"
+            catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+            request = root / "request.json"
+            write_planned_request(root, request, ["probe.py"])
+            # The already planned child must not rediscover catalog/routes or
+            # enumerate unrelated test modules after the parent planned them.
+            catalog_path.unlink()
+            for failed in (False, True):
+                planned = json.loads(request.read_text(encoding="utf-8-sig"))
+                probe = next(stage for stage in planned["stages"] if stage["name"] == "probe")
+                probe["command"]["arguments"][-1] = "print('RESOLVED_STAGE_RAN'); raise SystemExit(" + str(7 if failed else 0) + ")"
+                request.write_text(json.dumps(planned), encoding="utf-8")
+                for gate in ("verify.ps1",):
+                    log = root / "stage.log"
+                    result = subprocess.run(["pwsh", "-NoProfile", "-File", str(common / gate),
+                        "-InternalStage", "probe", "-InternalRequestPath", str(request), "-InternalLogPath", str(log)],
+                        cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                    self.assertEqual(result.returncode != 0, failed, result.stdout + result.stderr)
+                    self.assertIn("RESOLVED_STAGE_RAN", log.read_text(encoding="utf-8"))
+                    sidecar = json.loads(log.with_name("stage.log.result.json").read_text(encoding="utf-8"))
+                    self.assertEqual(sidecar["status"], "FAIL" if failed else "PASS")
+
+    def test_specialized_schemas_use_owner_and_metadata_without_directory_fanout(self) -> None:
+        stages = self.routed_stages("common/contracts/schemas/oatof_three_zone_stage_report.schema.json")
+        self.assertEqual(set(stages), {"common_contracts", "single_reflection_oa_tof_mass_analyzer_static"})
+        for path in ("common/contracts/schemas/future_unknown.schema.json",
+                     "common/contracts/machine_contracts.py", "common/contracts/run_artifact_support.ps1"):
+            with self.subTest(path=path):
+                self.assertIn("common_contracts", self.routed_stages(path))
+                self.assertIn("rf_multipole_quadrupole_static", self.routed_stages(path))
+        actual_consumer = self.routed_stages("common/contracts/schemas/multipole_resolved_design.schema.json")
+        self.assertIn("instrument_assembly_integration", actual_consumer)
+
+
+
+    def test_ci_command_wall_clock_preserves_live_output_exit_and_summary(self) -> None:
         workflow = LIGHTWEIGHT_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("verify_changed.ps1", workflow)
-        for option in ("-FullScope -PlanOnly -MaxConcurrency 2", "-ChangedPath $scope.changed_paths -PlanOnly -MaxConcurrency 2"):
-            self.assertIn(option, workflow)
-        for option in ("-FullScope -MaxConcurrency 2", "-ChangedPath @($scope.changed_paths) -MaxConcurrency 2"):
-            self.assertIn(option, workflow)
-        self.assertIn("dependency_profile == 'locked'", workflow)
-        self.assertIn("changed_scope.json", workflow)
-        self.assertNotIn("$fallbackChangedPaths", workflow)
-        self.assertNotIn("projects/rf_quadrupole_ion_optics/README.md", workflow)
+        programs = re.findall(r"(?ms)^          @'\n(.*?)^          '@ \| & \$python -$", workflow)
+        self.assertEqual(len(programs), 2)
+        fixture = r'''param($PlanPath,$MaxConcurrency,$SummaryPath)
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+@{role='ci_gate_fixture';elapsed_seconds=0.005}|ConvertTo-Json|Set-Content -LiteralPath $SummaryPath -Encoding utf8
+Write-Output ('CI_FIXTURE_ARGUMENTS='+(@{plan_path=$PlanPath}|ConvertTo-Json -Compress))
+Write-Output 'CI_FIRST_OUTPUT_BEFORE_EXIT'
+while(-not(Test-Path -LiteralPath $env:CI_FIXTURE_RELEASE)){Start-Sleep -Milliseconds 10}
+if($env:CI_FIXTURE_EXIT-ne'0'){[Console]::Error.WriteLine('CI_NATIVE_FAILURE')}
+exit ([int]$env:CI_FIXTURE_EXIT)
+'''
+        with tempfile.TemporaryDirectory(prefix="ci_command_clock_") as directory:
+            root = Path(directory).resolve()
+            common = root / "common"
+            common.mkdir()
+            for name in ("verify.ps1",):
+                (common / name).write_text(fixture, encoding="utf-8")
+            for job, full_scope, code in ((0, False, 0), (0, False, 7), (0, True, 0), (1, False, 0), (1, False, 7)):
+                with self.subTest(job=job, full_scope=full_scope, code=code):
+                    scope = {"full_scope": full_scope, "changed_paths": ["owner/含空格 file.py", "docs/README.md"]}
+                    (root / "changed_scope.json").write_text(json.dumps(scope), encoding="utf-8")
+                    release = root / f"release_{job}_{full_scope}_{code}"
+                    environment = dict(os.environ, RUNNER_TEMP=str(root), PUBLIC_GATE_POWERSHELL=shutil.which("pwsh"),
+                        PUBLIC_GATE_PYTHON=sys.executable, CI_FIXTURE_RELEASE=str(release), CI_FIXTURE_EXIT=str(code))
+                    process = subprocess.Popen([sys.executable, "-c", textwrap.dedent(programs[job])], cwd=root,
+                        env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8")
+                    lines: list[str] = []
+                    observed: Queue[str] = Queue()
+
+                    def read_output() -> None:
+                        for line in process.stdout:
+                            lines.append(line)
+                            observed.put(line)
+
+                    reader = threading.Thread(target=read_output, daemon=True)
+                    reader.start()
+                    try:
+                        deadline = time.monotonic() + 30
+                        found = False
+                        while time.monotonic() < deadline and not found:
+                            try:
+                                found = "CI_FIRST_OUTPUT_BEFORE_EXIT" in observed.get(timeout=0.1)
+                            except Empty:
+                                if process.poll() is not None:
+                                    break
+                        self.assertTrue(found, "CI wrapper buffered or lost the running gate's output")
+                        self.assertIsNone(process.poll(), "root exited before the live-output observation")
+                    finally:
+                        release.touch()
+                        process.wait(timeout=30)
+                        reader.join(timeout=5)
+                    stderr = process.stderr.read()
+                    process.stdout.close()
+                    process.stderr.close()
+                    self.assertEqual(process.returncode, code, "".join(lines) + stderr)
+                    prefix = "changed" if job == 0 else "integration"
+                    timing = json.loads((root / f"{prefix}_gate_command_timing.json").read_text())
+                    self.assertEqual(timing["exit_code"], code)
+                    self.assertGreater(timing["elapsed_wall_seconds"], 0.005)
+                    self.assertEqual(timing["environment"]["python_executable"], sys.executable)
+                    summary = json.loads(Path(timing["summary_path"]).read_text(encoding="utf-8-sig"))
+                    self.assertEqual(summary, {"role": "ci_gate_fixture", "elapsed_seconds": 0.005})
+                    arguments = json.loads(next(line.split("=", 1)[1] for line in lines if line.startswith("CI_FIXTURE_ARGUMENTS=")))
+                    if job == 0:
+                        self.assertEqual(timing["scope"], scope)
+                    self.assertEqual(Path(arguments["plan_path"]), root / "software_gate_plan.json")
+                    if code:
+                        self.assertIn("CI_NATIVE_FAILURE", stderr)
+        self.assertIn("${{ runner.temp }}/changed_gate_command_timing.json", workflow)
+        self.assertIn("${{ runner.temp }}/integration_gate_command_timing.json", workflow)
 
     def test_ci_temp_setup_gives_python_canonical_fixture_paths(self) -> None:
         workflow = LIGHTWEIGHT_WORKFLOW.read_text(encoding="utf-8")
@@ -914,7 +1046,7 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
         routed = self.routed_stages("common/contracts/test_verify_changed.py")
         self.assertEqual(
             routed,
-            {"gate_contract_tests": "changed_scope_contract_tests_changed"},
+            {"common_contracts": routed["common_contracts"]},
         )
 
     def test_multipole_tests_do_not_route_to_runtime_consumers(self) -> None:
@@ -1013,7 +1145,7 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
 
     def test_cloc_entrypoint_routes_to_its_focused_contract_tests(self) -> None:
         routed = self.routed_stages("common/report_cloc_delta.ps1")
-        self.assertEqual(routed, {"cloc_contract_tests": "cloc_entrypoint_changed"})
+        self.assertEqual(set(routed), {"common_contracts"})
 
     def test_comsol_readme_does_not_expand_mixed_changed_scope(self) -> None:
         self.assertEqual(self.routed_stages("common/comsol/README.md"), {})
@@ -1040,49 +1172,12 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
         self.assertIsNotNone(selected, result.stdout)
         self.assertEqual(set(selected[1].split(",")), {
             "repository_hygiene", "repository_text_bytes", "documentation",
-            "development_standards", "ruff_changed_python", "gate_contract_tests",
+            "development_standards", "ruff_changed_python", "common_contracts",
         })
 
-    def test_full_scope_does_not_repeat_contract_tests(self) -> None:
-        routes_by_stage = {route["stage"]: route for route in self.routes}
-        for stage in ("gate_contract_tests", "cloc_contract_tests", "expected_values_tests"):
-            route = routes_by_stage[stage]
-            self.assertEqual(route["repository_integration_group"], "covered")
-            self.assertFalse(route["run_on_full_scope"])
-            self.assertEqual(route["full_scope_coverage_stage"], "common_contracts")
-        self.assertIn("covered_by_", self.source)
 
-    def test_changed_scope_reuses_selected_contract_coverage(self) -> None:
-        pwsh = shutil.which("pwsh")
-        if pwsh is None:
-            self.skipTest("PowerShell Core is unavailable")
-        cases = (
-            (["common/contracts/expected_values.py"], "expected_values_tests", True),
-            (["common/contracts/test_expected_values.py"], "expected_values_tests", False),
-            (["common/contracts/test_verify_changed.py"], "gate_contract_tests", False),
-            (["common/contracts/test_report_cloc_delta.py"], "cloc_contract_tests", True),
-            (["common/contracts/file_identity.py", "pyproject.toml"], "python_dependency_contract", True),
-            (["common/verify_changed.ps1"], "gate_contract_tests", False),
-            (["common/report_cloc_delta.ps1"], "cloc_contract_tests", False),
-            (["pyproject.toml"], "python_dependency_contract", False),
-        )
-        for paths, subset, covered in cases:
-            with self.subTest(paths=paths):
-                quote = lambda value: "'" + str(value).replace("'", "''") + "'"
-                command = (
-                    f"& {quote(CHANGED_GATE)} -PythonExe {quote(sys.executable)} "
-                    "-PlanOnly -ChangedPath @(" + ",".join(map(quote, paths)) + ")"
-                )
-                completed = subprocess.run(
-                    [pwsh, "-NoProfile", "-Command", command], cwd=REPO_ROOT,
-                    capture_output=True, text=True, encoding="utf-8", timeout=30, check=False,
-                )
-                self.assertEqual(completed.returncode, 0, completed.stderr)
-                selected = re.search(r"SELECTED_STAGES=([^\s]+)", completed.stdout)
-                self.assertIsNotNone(selected, completed.stdout)
-                stages = selected.group(1).split(",")
-                self.assertEqual("common_contracts" in stages, covered)
-                self.assertEqual(subset in stages, not covered)
+
+
 
     def test_partial_contract_coverage_keeps_uncovered_modules(self) -> None:
         pwsh = shutil.which("pwsh")
@@ -1097,7 +1192,6 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
         selected = re.search(r"SELECTED_STAGES=([^\s]+)", completed.stdout)
         self.assertIsNotNone(selected, completed.stdout)
         self.assertIn("common_contracts", selected.group(1).split(","))
-        self.assertIn("gate_contract_tests", selected.group(1).split(","))
 
     def test_integration_changes_route_only_to_connection_gates(self) -> None:
         routed = self.routed_stages("common/integration/connection_profiles.py")
@@ -1113,23 +1207,21 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
         )
         self.assertNotIn("rf_multipole_to_single_reflection_oatof_integration", interface_route)
 
-        integration_source = INTEGRATION_GATE.read_text(encoding="utf-8")
-        self.assertIn("Read-GateCatalog", integration_source)
-        self.assertIn("repository_integration_group -eq 'regression'", integration_source)
+        self.assertIn("common_contracts", {route["stage"] for route in self.routes})
 
 
     def test_gate_entrypoints_run_their_contract_tests(self) -> None:
         for path in (
-            "common/verify_changed.ps1",
+            "common/verify.ps1",
             "common/parallel_gate_support.ps1",
             "common/gate_catalog.json",
             "common/gate_catalog_support.ps1",
             "common/contracts/test_verify_changed.py",
-            "common/verify_repository_integration.ps1",
+            "common/verify.ps1",
             "common/require_powershell7.ps1",
             ".github/workflows/lightweight-gate.yml",
         ):
-            self.assertIn("gate_contract_tests", self.routed_stages(path))
+            self.assertIn("common_contracts", self.routed_stages(path))
 
     def test_generated_publications_have_priority_and_explicit_successors(self) -> None:
         stage_order = [route["stage"] for route in self.routes]
@@ -1160,49 +1252,7 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
             ["rf_multipole_generated_publications"],
         )
 
-        integration_source = INTEGRATION_GATE.read_text(encoding="utf-8")
-        self.assertIn("Invoke-ParallelIntegrationGroup @($priorityStages + $fullRegressionStages)", integration_source)
 
-        quadrupole_source = MULTIPOLE_GATE.read_text(encoding="utf-8")
-        self.assertIn(
-            "[ValidateSet('Freshness','Core','Static','Formal')]",
-            quadrupole_source,
-        )
-        self.assertIn("[switch]$FreshnessPrevalidated", quadrupole_source)
-        self.assertIn("MULTIPOLE_FRESHNESS=PREVALIDATED", quadrupole_source)
-        self.assertIn("[ValidateSet('All','quadrupole','hexapole','octupole')]", quadrupole_source)
-        freshness_return = quadrupole_source.index(
-            "if ($Level -eq 'Freshness')"
-        )
-        analysis_suite = quadrupole_source.index(
-            "if ($Level -eq 'Core')"
-        )
-        self.assertLess(freshness_return, analysis_suite)
-
-    def test_rf_quadrupole_uses_core_in_l1_and_static_in_l2(self) -> None:
-        quadrupole_route = next(
-            route
-            for route in self.routes
-            if route["stage"] == "rf_multipole_quadrupole_static"
-        )
-        self.assertEqual(
-            quadrupole_route["command"]["parameters"],
-            {
-                "Level": "Core",
-                "StructuralVariant": "quadrupole",
-                "FreshnessPrevalidated": True,
-                "PythonExe": "{python}",
-            },
-        )
-        self.assertEqual(
-            quadrupole_route["repository_integration_command"]["parameters"],
-            {
-                "Level": "Static",
-                "StructuralVariant": "quadrupole",
-                "FreshnessPrevalidated": True,
-                "PythonExe": "{python}",
-            },
-        )
 
     def test_excludes_commercial_and_formal_gate_levels(self) -> None:
         # Watching a launcher source path must select its mock regression, not
@@ -1218,65 +1268,38 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
             "run_comsol_r2025b",
             "simion.exe",
         ):
-            self.assertNotIn(forbidden, self.source)
             self.assertNotIn(forbidden, serialized_commands)
         for command in commands:
             level = str(command.get("parameters", {}).get("Level", "")).casefold()
             self.assertNotIn(level, {"candidate", "formal"})
 
-    def test_parallel_scheduler_is_bounded_isolated_and_deterministic(self) -> None:
-        integration_source = INTEGRATION_GATE.read_text(encoding="utf-8")
-        for source in (self.source, integration_source):
-            self.assertIn(
-                "[ValidateRange(0, 32)][int]$MaxConcurrency = 0",
-                source,
-            )
-            self.assertIn("parallel_gate_support.ps1", source)
-            self.assertIn("Resolve-GateConcurrency", source)
-        self.assertIn("PYTHONDONTWRITEBYTECODE", self.parallel_source)
-        self.assertIn("RUFF_NO_CACHE", self.parallel_source)
-        self.assertIn("MPLCONFIGDIR", self.parallel_source)
-        self.assertIn("GATE_MATPLOTLIB_CACHE=READY", self.parallel_source)
-        self.assertIn("__import__('matplotlib.font_manager')", self.parallel_source)
-        self.assertIn("Start-Process", self.parallel_source)
-        self.assertIn("(Get-Command pwsh).Source", self.parallel_source)
-        self.assertIn("$record.Process.WaitForExit()", self.parallel_source)
-        self.assertIn("GATE_PROCESS=START", self.parallel_source)
-        self.assertIn("GATE_PROCESS=COMPLETE", self.parallel_source)
-        self.assertIn("LOG_REPLAY=PENDING", self.parallel_source)
-        self.assertIn("foreach ($item in $Items)", self.parallel_source)
-        self.assertIn("missing_stage_log_serial_fallback", self.parallel_source)
-        self.assertIn("& $InvokeInlineStage $item", self.parallel_source)
-        self.assertIn("DIAGNOSTIC_TAIL_BEGIN", self.parallel_source)
-        self.assertIn("DIAGNOSTIC_TAIL_END", self.parallel_source)
-        self.assertIn("-Tail 80", self.parallel_source)
+
 
     def test_parallel_scheduler_validates_temporary_cleanup_target(self) -> None:
-        self.assertIn("GetFullPath([IO.Path]::GetTempPath())", self.parallel_source)
-        self.assertIn("ExpectedNamePrefix", self.parallel_source)
-        self.assertIn(
-            "Refusing to remove unverified gate temporary directory",
-            self.parallel_source,
-        )
-        self.assertIn(
-            "Remove-GateTemporaryDirectory -Path $groupRoot",
-            self.parallel_source,
-        )
+        with tempfile.TemporaryDirectory(prefix="cleanup_contract_") as directory:
+            root = Path(directory)
+            safe = root / "gate_fixture_safe"
+            unrelated = root / "unrelated"
+            safe.mkdir(); unrelated.mkdir()
+            quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+            script = f"""
+$ErrorActionPreference='Stop'
+. {quote(PARALLEL_GATE_SUPPORT)}
+foreach($target in @({quote(unrelated)},{quote(REPO_ROOT)})){{
+ $blocked=$false
+ try{{Remove-GateTemporaryDirectory -Path $target -ExpectedNamePrefix 'gate_fixture_'}}catch{{$blocked=$true}}
+ if(-not$blocked){{throw 'Unowned cleanup target accepted'}}
+}}
+Remove-GateTemporaryDirectory -Path {quote(safe)} -ExpectedNamePrefix 'gate_fixture_'
+if(Test-Path -LiteralPath {quote(safe)}){{throw 'Owned cleanup failed'}}
+if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder deleted'}}
+"""
+            result = subprocess.run([shutil.which("pwsh"),"-NoProfile","-Command",script],
+                cwd=REPO_ROOT,capture_output=True,text=True,encoding="utf-8",timeout=30)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
-    def test_documentation_is_exclusive_before_dependency_dispatch(self) -> None:
-        integration_source = INTEGRATION_GATE.read_text(encoding="utf-8")
-        documentation = integration_source.index(
-            "Invoke-IntegrationStage 'documentation'"
-        )
-        dispatch = integration_source.index("Invoke-ParallelIntegrationGroup @($priorityStages + $fullRegressionStages)")
-        self.assertLess(documentation, dispatch)
 
-        changed_documentation = self.source.index(
-            "Invoke-ChangedGateStage $documentation.Name"
-        )
-        changed_dispatch = self.source.index("Invoke-ChangedStageGroup @($priorityStages + $remainingStages)")
-        self.assertLess(changed_documentation, changed_dispatch)
-        self.assertIn('-StopOnFailure', self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -96,11 +96,7 @@ def staged_sources(root: Path, paths: set[Path] | None = None) -> dict[Path, str
 
 
 def changed_source_scope(root: Path, changed: list[str]) -> tuple[set[Path] | None, str]:
-    """Select file-local hard checks; uncertain or rule changes retain a full scan.
-
-    This selection never grants consumer-audit coverage. Deletions and unknown
-    paths fall back to all surviving sources, including in the staged snapshot.
-    """
+    """Select managed changed sources; only checker/rule changes expand local checks."""
     selected = set()
     rules = {"common/verify_development_standards.py", ".githooks/pre-commit",
              "docs/development_standards.md"}
@@ -120,7 +116,7 @@ def changed_source_scope(root: Path, changed: list[str]) -> tuple[set[Path] | No
         if (not relative.parts or relative.parts[0] not in {"common", "projects", "integrations"}
                 or EXCLUDED_PARTS.intersection(relative.parts)
                 or relative.suffix not in {".py", ".ps1", ".m"}):
-            return None, "unknown_or_configuration_path"
+            continue
         selected.add(path)
     return selected, "explicit_changed_paths"
 
@@ -467,7 +463,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--show-review", action="store_true", help="list complexity review signals")
     parser.add_argument("--audit-consumers", action="store_true", help="explicitly audit static consumer references; combine with --show-review for records")
-    parser.add_argument("--staged", action="store_true", help="check changed index sources; rules/configuration/unknown changes check the full index")
+    parser.add_argument("--staged", action="store_true", help="check changed index sources; checker/rule changes check the full index")
     paths = parser.add_mutually_exclusive_group()
     paths.add_argument("--path", action="append", help="changed repository path; repeat for each path")
     paths.add_argument("--changed-paths-file", type=Path, help="UTF-8 JSON array of changed paths, for command-length-safe L1 transport")
@@ -486,18 +482,10 @@ def main(argv: list[str] | None = None) -> int:
         selected, scope_reason = (None, "full_worktree_default") if changed is None else changed_source_scope(REPO_ROOT, changed)
         if arguments.staged:
             sources = staged_sources(REPO_ROOT, selected)
-            # Resolve existence against the index, never an unstaged deletion or
-            # replacement. A staged deletion broadens the index scan.
-            if selected is not None and not selected <= sources.keys():
-                selected, scope_reason = None, "deleted_source_path"
-                sources = staged_sources(REPO_ROOT)
-        elif selected is not None:
-            if any(not path.is_file() for path in selected):
-                selected, scope_reason, sources = None, "deleted_source_path", None
-            else:
-                sources = {path: path.read_text(encoding="utf-8-sig") for path in sorted(selected)}
         else:
-            sources = None
+            sources = None if selected is None else {
+                path: path.read_text(encoding="utf-8-sig") for path in selected if path.is_file()
+            }
         scope = "FULL" if selected is None else "CHANGED"
         print(f"DEVELOPMENT_SCOPE={scope} REASON={scope_reason} SOURCE={'INDEX' if arguments.staged else 'WORKTREE'}")
         parsed = {} if arguments.audit_consumers else None

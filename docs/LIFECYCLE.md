@@ -6,25 +6,18 @@
 
 ### 工作区顶层卫生
 
-仓库的管理边界包含其父工作区`mass_spectrometry/`，不只包含Git源码树。工作区顶层只允许：
-发现入口`AGENTS.md`、`README.md`、`CLAUDE.md`，源码根`simulation_repo/`，产物根`artifacts/`，以及
-固定工具缓存`.tools/`和明确列入`common/verify_repository_hygiene.ps1`的本机Agent、IDE、COMSOL和
-MATLAB状态。`.tools/`当前只允许`cloc/2.10/cloc.exe`及其官方回退脚本`cloc/2.10/cloc-2.10.pl`；缓存、安装器、
-一次性审计、会话交接、探针输出和任意临时目录不得直接留在工作区顶层。`artifacts/`顶层允许
-`projects/`及下表明确注册的`common/`职责；项目run、scratch、cache、archive和formal仍按下节的唯一结构管理。新增顶层职责必须先
-修改本节和现有卫生门禁，不能通过临时命名或扩大通配符绕过。
-
-工作区外层不得保存第二份`integrations/`源码或`scratch/`；已有副本应核对与规范位置的内容和引用后
-清理或迁入所属项目。源码根目录只接受卫生门禁登记的职责目录和开发环境缓存，包含空目录在内的
-`tmp/`、`new/`、`artifacts/`及任意未登记输出目录均须处理；普通测试日志也不能因被Git忽略而留在源码根。
+源码默认位于`simulation_repo/`，生成产物按所属owner放入相邻`artifacts/projects/`或`artifacts/common/`。
+工具缓存与本机软件、Agent或IDE状态可留在工作区；兄弟目录、根目录和`.tools`的名称不作固定白名单。
+额外本地目录和根日志本身不阻断研发，也不因此自动成为可消费、可删除或可信资产。整理重复副本时仍须
+确认归属与实际引用，遵循既有删除授权与生命周期；运行与产物入口继续执行其实际路径、容量和输入保护。
 
 ### Git / artifacts 边界
 
 Git 只管理可复现、可审阅的轻量源码与文档。MPH、PA/PA#、IOB、SolidWorks 文件、运行日志、
 粒子表和运行结果图放在仓库同级 `artifacts/projects/<project>/`，不进入 Git。用于解释正文的示意图与
 轻量再生成脚本可放在所属文档的`figures/`并进入Git，标明假设、来源和复现方法；不能把运行结果
-改名为示意图以绕过产物合同。仓库根目录和源码树不得
-充当scratch；`common/verify_repository_hygiene.ps1`负责检查根目录工具残留和误入Git的产物。
+改名为示意图以绕过产物合同。正式运行使用所属owner的scratch；`common/verify_repository_hygiene.ps1`只负责生成大资产误入Git的边界，
+不检查未消费的本地目录与日志。
 
 ### 外部参考资料
 
@@ -273,6 +266,11 @@ run ID、不同入口重复同一状态正文，或日期化审计只剩追溯�
 SHA-256。可由Git固定提交完整恢复的普通文本不再额外复制全本。冻结包不包含`__pycache__`、`.pyc`或运行缓存；
 科学输出按既有artifact保留合同管理，不能用文档包扩大重型载荷保留范围。
 
+Git内冻结历史不在普通软件提交或完整软件回归中逐文件重查属性、载荷哈希和迁移来源。初次迁移、实际
+历史修改按受影响记录或证据包核对；全档案认证通过显式`verify_documentation.ps1 -AuditHistory`请求。
+`-ChangedPath`只核本次相关历史，活动导航、链接和锚点继续日常检查。工作区兄弟、根与`.tools`中的
+未消费目录和本地日志不是生命周期拒绝条件；生成大资产误入Git、消费或删除范围、容量、writer与输入保护保持。
+
 ### 退役所有者与历史迁移
 
 活动项目整合后，原项目身份仍是原run和科学记录的身份，不能回写成新项目或新变体。
@@ -323,7 +321,7 @@ run生成阶段的自动保留行为只按上文预注册的run产物保留合�
 
 容量台账只区分：必要轻量证据`light_evidence`、公共可复用重型资产`published_cache`、可重建载荷
 `rebuildable_payload`。Formal、唯一来源和其他必须保留的对象以具名pin表达；正在使用或已经安排消费者的对象
-以公共TTL租约保护。run状态、科学资格和容量类别分别记录，不用`compact/solver_review/L1-L3`组合标签决定删除。
+以公共TTL租约保护。run状态、科学资格和容量类别分别记录，不用保留类别与软件验证范围的组合标签决定删除。
 
 删除资格必须同时满足：对象明确可重建、写入已结束、无活动或待交接消费者、未pin、身份和处置范围明确。
 维护直接处理使用结束的`rebuildable_payload`；对`published_cache`只能向台账登记的固定owner manager请求退休，

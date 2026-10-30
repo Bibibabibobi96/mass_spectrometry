@@ -8,7 +8,7 @@
 
 | 要做的事 | 实现与说明 |
 |---|---|
-| 排查L1/L2选了哪些阶段、失败退出或日志 | [门禁编排](#门禁编排)、[唯一目录](gate_catalog.json)、[并行调用器](parallel_gate_support.ps1) |
+| 排查软件验证选了哪些阶段、失败退出或日志 | [门禁编排](#门禁编排)、[唯一目录](gate_catalog.json)、[并行调用器](parallel_gate_support.ps1) |
 | 排查资源等待、进程归属、阶段切换和释放 | [主机资源实现](#主机资源实现)、[PowerShell入口](host_execution_lease.ps1)、[调度器](host_resource_scheduler.py) |
 | 创建run、冻结输入、发布manifest或维护容量 | [机器合同与生命周期API](contracts/README.md) |
 | 发现项目、校验设计请求与预览执行计划 | [项目发现与规划](contracts/README.md#项目发现) |
@@ -29,9 +29,10 @@
 CLI／回调用途待核实、无静态引用候选；同时传`--show-review`时列出位置、符号及已知消费者模块。
 单独`--show-review`只列复杂度提示，不启动消费者审计。
 显式审计复用同次硬检查解析的AST，不保存跨运行身份缓存。提交钩子从Git索引读取检查器及受管源码，
-检查实际暂存内容；工作树中的未暂存修改不能掩盖暂存版本的错误。L1和提交钩子的文件内硬规则只检查明确改动的受管源码；
-规则自身、配置、未知路径或源码删除扩大到完整集合，FullScope／L2及直接无参数调用仍全量检查。
-`--path <path>`可重复指定；L1用任务内临时路径清单传输，摘要保留实际路径，检查结束即清理该清单。
+检查实际暂存内容；工作树中的未暂存修改不能掩盖暂存版本的错误。Changed范围和提交钩子的文件内硬规则只检查明确改动的受管源码；
+只有检查器或规则本身变化才扩大文件局部硬规则扫描；配置、未知路径及源码删除不自动扫描全库。
+Repository、Changed FullScope及显式无参数检查仍执行其声明的完整软件范围。
+`--path <path>`可重复指定；Changed范围用任务内临时路径清单传输，摘要保留实际路径，检查结束即清理该清单。
 显式消费者审计始终全量，不能与局部路径或暂存检查混用。
 审计使用execution profiles与门禁目录中的显式入口、字面`-m`命令及Python导入／符号引用；
 它是包含未执行分支的模块级静态证据，不证明函数实际执行。字符串、装饰器和动态调用保留不确定性，
@@ -40,27 +41,51 @@ Lua／MATLAB／PowerShell的引用亦不会被当作无用；未解析的嵌套�
 
 ## 门禁编排
 
-`common/gate_catalog.json`是L1路径路由、依赖等级、阶段前置关系和L2成员身份的唯一机器目录；项目或
+`common/gate_catalog.json`是改动路径路由、依赖等级、阶段前置关系和Repository成员身份的唯一机器目录；项目或
 integration新增公开门禁时必须注册，目录与文件系统不一致即失败。集成route通过
 `runtime_dependencies_path`引用已有运行依赖库存；公共catalog读取器将其`source_repo_path`展开为精确匹配，
 新增依赖不再手抄第二份路由表。缺失库存、未知版本／身份或缺失来源文件在规划时失败。
+专用`oatof_*`和`multipole_*` schema由catalog中的精确owner匹配声明；读取器据此从公共合同目录的
+保守fallback中排除这些已知文件，保留实际runtime消费者与统一schema元校验。
+例如`oatof_three_zone_stage_report`的真实owner是单反射项目；它的改动不再触发无关RF、电子枪或EI门禁。
+未登记的新schema、公共validator、生命周期和注册语义仍沿保守路由扩大，不按文件名前缀猜测新归属。
+OA提供者的普通tests变更留在OA owner；跨项目生产目录依赖不包含该测试子树。
+集成夹具实际导入的`test_bare_three_zone_component.py`及其测试包初始化仍精确触发集成回归；
+OA生产代码与runtime库存声明的真实消费者依赖保持原路由。
 需要补充或精确选择测试的owner在同一目录声明`test_selection`。明确的新增／修改测试模块进入实际
 执行集合；生产与测试混合改动保留原owner门禁。删除、重命名旧路径、共享fixture、包初始化及未知
 测试目录变化扩大到所属owner发现，并报告选择原因。是否仅为测试变更按该owner实际路由影响计算；
 其他owner测试和文档不迫使全量发现，SIMION公共测试也使用同一选择机制。
 Git差异保留重命名两端，不能只看到新路径。
-模块集合由项目入口合并去重；跨阶段去重比较实际命令覆盖，部分覆盖时仍执行未覆盖模块。Core的成功不能替代未运行测试的证据。
+模块集合由实际owner选择；原expected-values、gate、CLOC、dependency及schema元校验触发关系
+归入公共合同owner的`test_selection.dependencies`，不再维护covered专属路由和去重分支。
+短分析模块逻辑上独立选择，按stdlib／locked分别合为unittest执行批次，逐测试计时及失败保持。
+Core的成功不能替代未运行测试的证据。
+当前Repository实际规划39阶段：4个全局职责、33条逻辑route去掉9条分析独立进程、1个
+integration纯Ruff preflight和1个公共合同父进程，再加2个分析批次、8个MR／integration测试分片
+及3个公共合同分片。相比4058基线45阶段减少6；逻辑route由37减为33是四条covered归回公共合同选择，不能再算一次任务减少。
+九个短分析模块按依赖分为stdlib四模块、locked五模块，保留标准库范围无需安装科学环境的能力，
+因此是九进程收敛为二，而非混装成一个。该数量是当前选择结果，不是未来配额或实际native进程计数。
+
+公共合同沿现有分片机制按模块分为三组，覆盖集合保持完整且各模块恰执行一次。
+权重来自2026-10-30完整运行的52模块、899测试逐项计时（合计855.085秒），只用于排队；
+三组各约285秒是权重估算，不能作为实测提速。父级已完整选择的模块直接传给分片，
+子进程消费已编译请求；仅改指定测试时不展开完整owner。部分root的扩展不冒充完整scope。
+
 显式Python测试命令保留目录声明的发现根作为临时导入路径，并在返回时恢复调用者环境，
 使既有目录级导入与未知子目录的模块枚举同时成立。
-仓库只保留
-`common/verify_changed.ps1`这一个L1入口，不提供旧名称兼容脚本。`.github/workflows/lightweight-gate.yml`
-在push只运行L1；L2仅可由`workflow_dispatch`人工启动，不对pull request自动运行全仓回归。
-L1可能包含完整integration回归，CI预算须覆盖环境安装和整轮门禁，不能只按单个Core检查的耗时估计；
-当前执行预算读取[GitHub工作流](../.github/workflows/lightweight-gate.yml)。门禁超时不等同于科学求解失败。
+软件验证父入口只解析一次catalog、实际模块与分片；子阶段通过同轮`InternalRequestPath`消费已解析命令，
+不重新规划所有route或枚举全部测试。前置仍由父级依赖准入保护，子阶段仍调用原计时、GATE资源和失败传播入口。
+该请求只运输执行计划，不保存PASS，也不提供跨提交缓存；Ruff和改动范围标准检查的长参数列表由同一调用器临时文件传递并清理。
+`common/verify.ps1 -Scope Changed|Owner|Repository`是唯一软件验证入口；Owner范围必须提供`-Owner`。
+普通命令自动规划、执行并汇总，`-PlanOnly`用于可选预览。Changed的`-FullScope`保留原Core／Static
+选择，不等于Repository。原两个驱动已移除，活动消费者统一使用此入口。
+`.github/workflows/lightweight-gate.yml`在push运行Changed，Repository由`workflow_dispatch`启动。
+Changed可能包含完整integration行为回归；CI预算包括环境安装与整轮验证，不能按单个Core检查估算。
 两个CI job在门禁前将后续步骤的`TEMP/TMP`设为[官方`RUNNER_TEMP`](https://docs.github.com/en/actions/reference/workflows-and-actions/variables)的规范绝对路径，
 通过[`GITHUB_ENV`](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#setting-an-environment-variable)传递，避免Windows用户目录短别名与长路径在测试夹具中混用。
 
-L1的`-PlanOnly`使用同一目录先给出`stdlib`或`locked`依赖等级；GitHub对只需标准库的文档和门禁
+`-PlanOnly`使用同一目录先给出`stdlib`或`locked`依赖等级；GitHub对只需标准库的文档和门禁
 合同范围跳过完整科学Python环境安装，任何未明确分类、项目注册表、Python lint、项目/集成、依赖声明或
 FullScope均失败关闭为`locked`。本地并发默认为`min(8, logical_processors)`，可用
 `-MaxConcurrency 1..32`显式覆盖；GitHub托管runner固定为2。这是门禁组内的并发上限，实际阶段还须通过
@@ -68,17 +93,23 @@ FullScope均失败关闭为`locked`。本地并发默认为`min(8, logical_proce
 指向执行中逐行刷新、可直接读取的阶段日志；完成后仍按稳定顺序回放完整日志，不在内存缓存整个阶段。
 unittest 测试完成时报告耗时，首个异常发生时增量回显 traceback；其他已启动阶段自然收尾。摘要在阶段完成时保存已观测的逐测试耗时，非 unittest 阶段没有该数据。成功组清理临时目录；失败组保留阶段日志、请求JSON和`group_failure.log`，输出
 `GATE_DIAGNOSTICS=RETAINED`及精确清理命令。串行fallback也写入同一阶段日志，不能只有控制台错误。
-复核完成后沿[操作指南](../docs/OPERATIONS.md#分层门禁)清理，不按年龄自动删除失败证据。
-两个根入口均输出`GATE_SUMMARY_PATH`：默认是系统临时目录中的独立小JSON，可用`-SummaryPath`指定
+复核完成后沿[操作指南](../docs/OPERATIONS.md#软件验证与科学证据)清理，不按年龄自动删除失败证据。
+改动选择器回归中的八个mini场景在同一PowerShell host内调用真实PlanOnly与InternalStage委托，
+逐例检查RED/GREEN；MR和RF两个真实owner仍各自通过独立CLI核对非零退出传播。
+相同十场景的PowerShell启动数由20降至5，不减少selector或测试执行，不新增生产缓存。
+唯一入口输出`GATE_SUMMARY_PATH`：默认是系统临时目录中的独立小JSON，可用`-SummaryPath`指定
 不存在的目标文件。摘要保留选中原因、实际命令、依赖、环境、阶段状态、耗时、退出码和日志保留情况，
 成功清理详细日志后仍保留摘要。计划先落盘，阶段完成即更新；可捕获的失败或中断按实际状态收尾，
 硬杀或断电后的`PENDING/RUNNING`只表示未完成，不能解释为通过。日志路径标为未保留时不可用。
 CI使用[官方artifact action](https://github.com/actions/upload-artifact)在`always()`步骤上传摘要和本次保留的门禁诊断。
+两个CI公开调用步骤用现有Python环境的单调时钟包围实际`pwsh`根命令，继承stdout／stderr以保持首错即时可见；
+另上传`*_gate_command_timing.json`记录命令、环境、退出码、scope和完整命令墙钟，保留原summary文件及其计时口径。
+安装、队列及此前独立scope规划不计入该公开命令墙钟。
 摘要是观测记录，不是跳过后续验证或跨改动复用PASS的凭证。
 文档检查保持独占；随后短检查先进入同一执行器，其余阶段按catalog顺序稳定排队。
 只有`requires_stages`全部PASS的阶段才可启动，失败前置的后继即时标为`BLOCKED`；
 前置缺失、未选择或无法取得ready阶段也明确阻塞，不挂起等待不存在的工作。
-L1首个失败后停止派发待队阶段，已启动阶段自然收尾；L2在环境及目录初始化成功后继续独立检查，
+Changed／Owner首个失败后停止派发待队阶段，已启动阶段自然收尾；Repository在环境及目录初始化成功后继续独立检查，
 包括文档检查失败之后的独立诊断，最后汇总失败。无日志与sidecar的既有串行fallback先取得实际结果，
 才允许依赖它的阶段启动。资源许可、嵌套预算与进程数上限保持原公共入口。
 `queue_seconds`从本执行组开始到派发，含组预热、依赖及并发槽等待；`resource_wait_seconds`单独测量
@@ -86,22 +117,27 @@ host许可等待，`execution_seconds`只测Action，`cleanup_seconds`测许可�
 `launch_seconds`只测`Start-Process`调用，不能解释为全部子PowerShell初始化；`process_elapsed_seconds`
 从该调用开始到父进程确认退出，包含轮询观察延迟。原`elapsed_seconds`仍是stage wrapper总计时，
 整轮摘要从建立摘要到收尾计时，均不是整个根PowerShell进程墙钟；这些范围不能相加推算另一范围。
+公开命令的端到端墙钟由调用者使用单调时钟，从启动公开命令前测至根进程实际退出，并另记命令、退出码、
+环境和实际范围；例如现有Python调用环境的`time.perf_counter()`包围`subprocess.run(...)`。
+原summary／stage计时保持原义，用于区分规划、准入、测试和收尾，不改名为端到端时间。
 未实际观测的阶段字段为null，测试数量与skip不从退出码猜测。
-L2的MR静态测试与instrument assembly集成测试分别按原owner递归发现的完整模块集合分为四组，先各运行一次preflight，随后每组独立申请
-既有GATE资源预算；任一组失败仍使L2失败。目录中的权重取自2026-10-29同机L2逐测试耗时，
-未测模块使用保守调度估计，权重仅决定分组次序，不决定覆盖或通过。`PreflightValidated`仅供公共门禁的分片
-在已成功的preflight之后消除重复注册或Ruff检查；分片结果明确不等于完整owner门禁。直接运行项目Static或集成入口仍执行完整集合。
+Repository的MR静态测试与instrument assembly集成测试分别按原owner完整模块集合分为四组，随后每组独立申请
+既有GATE资源预算；任一组失败仍使Repository失败。目录中的权重取自2026-10-29同机L2逐测试耗时，
+未测模块使用保守调度估计，权重仅决定分组次序，不决定覆盖或通过。MR保留一次PS／Lua前置，
+纯Ruff的integration前置任务已撤销；中央唯一Ruff承担实际选中范围，项目委派仅表示父级汇总职责，
+不冒充项目lint已PASS。中央注册表PASS供MR前置复用，RF Freshness承担一次整树PS解析，变体各验科学合同。
+分片结果不等于完整owner门禁；项目直接入口默认完成其全部必要检查。
 集成分片权重来自同机完整L2 r3逐测试耗时按模块聚合；所有已发现模块恰好执行一次，权重仅用于调度。
-L1选择的命令与同一catalog中的完整owner测试命令语义相同时，复用上述分片和一次preflight；
+Changed选择的命令与同一catalog中的完整owner命令语义相同时，复用上述分片及实际必要前置；
 只改测试模块仍只运行所需模块，普通MR `Core`不会扩大为`Static`。覆盖去重按实际选中分片的模块并集判定，
-任一preflight或分片失败仍使L1失败。权重样本中的单反射执行模块约688秒，不据分片接线推称L1已达目标。
-2026-10-30同机最终宽L1为24/24阶段通过、1337.500秒；热点为common contracts 1301.851秒及集成分片01 1113.187秒。
-完整软件L2主体1578.351秒，44/45阶段通过；唯一RF阶段修正后以正式quadrupole Static完整复验298.011秒通过，
+任一必要preflight或分片失败仍使所选范围失败。权重样本中的单反射执行模块约688秒，不据分片接线推称L1已达目标。
+2026-10-30同机宽L1为24/24阶段通过、摘要区间1337.500秒；热点为common contracts 1301.851秒及集成分片01 1113.187秒。
+完整软件L2主体摘要区间1578.351秒，44/45阶段通过；唯一RF阶段修正后以正式quadrupole Static完整复验298.011秒通过，
 原失败整轮摘要仍为FAIL。此前同机完整L2 r3为2064.248秒；本轮增加恢复用例，不能当作同冻结工作量的加速倍数。
 宽L1的10分钟、软件L2首轮15分钟目标均未达到；普通单owner L1未独立计时，不宣称已达1–3分钟。
 历史耗时测量见[门禁审计](../docs/history/20260802__gate-system-audit.md)；
-L2用于显式全仓审计，纯文档提交不默认运行L2。
-L1/L2共用命令调用器直接绑定函数脚本块；仅冻结每项路由参数，不对调用器本身建立动态闭包，
+Repository用于显式全仓软件验证，纯文档提交不默认运行Repository。
+三个scope共用命令调用器直接绑定函数脚本块；仅冻结每项路由参数，不对调用器本身建立动态闭包，
 避免其捕获旧的`LASTEXITCODE`而把失败报告为成功。公共回归实际执行成功及非零退出探针。
 公共预算阶段执行期间将控制台输出编码设为UTF-8，退出时恢复原编码，嵌套阶段同样遵守；
 避免隐藏Windows宿主的CP936经Python传给子PowerShell，导致中文错误日志解码失败并掩盖原始错误。
@@ -156,7 +192,7 @@ telemetry-only，不执行静态槽位求和，也不会因猜测的槽数误报
 观测解释为资源空闲。实际反复表现为高负载的普通任务应在中央策略标为重任务，不在项目复制分类规则。
 排队公平性按重、轻同类约束；等待重任务不会仅因轻任务多次通过而阻挡后续轻任务，资源不足仍需等待。
 
-L1/L2按实际阶段申请预算，已持有父token的嵌套组在父预算内串行，不能重复申请或增加嵌套并发。
+软件验证按实际阶段申请预算，已持有父token的嵌套组在父预算内串行，不能重复申请或增加嵌套并发。
 COMSOL公共入口已支持准备、求解和后处理边界，具体调用见
 [COMSOL主机资源阶段](comsol/README.md#主机资源阶段)。本次服务器完全退出后的`COMSOL/postprocess`
 显式使用普通轻任务策略；`COMSOL/solver`列为重任务，准备和未分类阶段默认轻任务。入口调用
@@ -233,9 +269,8 @@ PID与创建时间继续识别后代，确认相关进程退出才回收。状�
 输入、run identity 或证据，声卡不可用不能改变终态；设置进程环境变量 `SIMULATION_COMPLETION_SOUND=off`
 可静默。阶段切换、批次、45 秒资源观测、重试、门禁和继承租约不得单独提示。
 
-数值探索参数可在活动项目的声明范围内自由修改：L1只校验该项目的参数schema、单位/范围、resolved合同和
-必要输入生成，不自动启动商业求解器，也不检查无关项目。若改变几何、电压、粒子源、网格、RF相位或跨项目
-接口，旧Candidate/Formal证据不再适用；只有在要声明新结果时才运行该项目相应的L3物理链。
+合法运行参数探索与源码／合同语义改动的验证边界见[操作指南](../docs/OPERATIONS.md#软件验证与科学证据)：
+同一实现内的合法参数探索不默认执行软件测试；项目入口继续承担必要输入、支持域、资源与输出检查。
 
 ### 进程观测与预算
 

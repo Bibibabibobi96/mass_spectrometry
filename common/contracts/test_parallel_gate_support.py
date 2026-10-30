@@ -28,6 +28,108 @@ def quote(value: str | Path) -> str:
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell Core is required")
 class ParallelGateSupportTests(unittest.TestCase):
+    def plan_transport_fixture(self, *, git=False):
+        temporary=tempfile.TemporaryDirectory(prefix="resolved_software_plan_")
+        self.addCleanup(temporary.cleanup)
+        base=Path(temporary.name);root=base/"checkout";common=root/"common"
+        for path in (common,root/"projects",root/"integrations"):
+            path.mkdir(parents=True)
+        for name in ("verify.ps1","gate_catalog_support.ps1","parallel_gate_support.ps1","require_powershell7.ps1"):
+            shutil.copyfile(ROOT/"common"/name,common/name)
+        with (common/"gate_catalog_support.ps1").open("a",encoding="utf-8",newline="\n") as stream:
+            stream.write("\n$script:originalCatalogReader=${function:Read-GateCatalog}\nfunction Read-GateCatalog {param($RepoRoot);Add-Content -LiteralPath $env:PLAN_READ_COUNT -Value 'read';& $script:originalCatalogReader -RepoRoot $RepoRoot}\n")
+        (common/"host_execution_lease.ps1").write_text("function Get-HostResourceBudget {param($Role,$Stage) @{}}\nfunction Enter-HostResourceStage {param($Role,$Stage,$Budget);Add-Content -LiteralPath $env:PLAN_ADMISSION_COUNT -Value 'enter';@{}}\nfunction Exit-HostResourceStage {param($Lease)}\n",encoding="utf-8",newline="\n")
+        (common/"verify_repository_hygiene.ps1").write_text("Write-Output 'HYGIENE_ONCE'\n",encoding="utf-8")
+        (common/"verify_documentation.ps1").write_text("param($PythonExe,[switch]$StructureOnly,[string[]]$ChangedPath)\nWrite-Output 'DOCUMENTATION_ONCE'\n",encoding="utf-8")
+        for name in ("verify_repository_text_bytes","verify_development_standards"):
+            (common/(name+".py")).write_text("print('GLOBAL_CHECK')\n",encoding="utf-8")
+        for name in ("a","b"):
+            (common/("fixture_"+name+".py")).write_text(
+                "import os\nfrom pathlib import Path\np=Path(os.environ['PLAN_EVENTS'])\n"
+                f"with p.open('a',encoding='utf-8') as stream: stream.write('{name}\\n')\n"
+                f"print('EXECUTED_{name}')\n"+("raise SystemExit(int(os.environ.get('PLAN_FAIL','0')))\n" if name=="a" else ""),
+                encoding="utf-8",newline="\n")
+        routes=[{"stage":"fixture_"+name,"owner":"fixture_group","dependency_profile":"stdlib",
+            "repository_integration_group":"regression","matches":[{"exact":"fixture.policy","reason":"fixture"}],
+            "command":{"runner":"python","arguments":["common/fixture_"+name+".py"]}} for name in ("a","b")]
+        (common/"gate_catalog.json").write_text(json.dumps({"schema_version":2,"role":"repository_gate_catalog","routes":routes}),encoding="utf-8",newline="\n")
+        (root/"fixture.policy").write_text("selected input\n",encoding="utf-8",newline="\n")
+        (root/".gitignore").write_text(".venv/\n__pycache__/\n.ruff_cache/\n",encoding="utf-8",newline="\n")
+        if git:
+            for command in (["git","init","--quiet"],["git","add","."],
+                ["git","-c","user.name=Test","-c","user.email=test@example.invalid","commit","--quiet","-m","Fixture"]):
+                subprocess.run(command,cwd=root,capture_output=True,check=True,timeout=30)
+        environment={**os.environ,"PLAN_READ_COUNT":str(base/"catalog_reads"),"PLAN_ADMISSION_COUNT":str(base/"admissions"),"PLAN_EVENTS":str(base/"events")}
+        environment.pop("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN",None)
+        return base,root,environment
+
+    def invoke_plan_fixture(self, root, environment, *arguments):
+        return subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(root/"common/verify.ps1"),
+            "-MaxConcurrency","1",*map(str,arguments)],cwd=root,env=environment,capture_output=True,text=True,encoding="utf-8",timeout=60)
+
+    def test_root_consumes_one_plan_with_scope_failure_policy_and_explicit_summary(self):
+        for scope in ("Changed","Owner","Repository"):
+            with self.subTest(scope=scope):
+                base,root,environment=self.plan_transport_fixture()
+                environment["PLAN_FAIL"]="7"
+                plan=base/"plan.json";summary=base/"summary.json"
+                selection=["-Scope",scope]+(["-ChangedPath","fixture.policy"] if scope=="Changed" else ["-Owner","fixture_group"] if scope=="Owner" else [])
+                prepared=self.invoke_plan_fixture(root,environment,"-PythonExe",sys.executable,"-PlanOnly","-PlanPath",plan,*selection)
+                self.assertEqual(prepared.returncode,0,prepared.stdout+prepared.stderr)
+                request=json.loads(plan.read_text(encoding="utf-8-sig"))
+                self.assertEqual(request["selection"]["scope"],scope)
+                self.assertTrue(all({"dependency_profile","requires_stages","selected"}<=row.keys() for row in request["stages"]))
+                (root/".venv").mkdir();(root/".venv/installed.py").write_text("# ignored dependency installation\n",encoding="utf-8")
+                result=self.invoke_plan_fixture(root,environment,"-PlanPath",plan,"-SummaryPath",summary)
+                self.assertNotEqual(result.returncode,0,result.stdout+result.stderr)
+                document=json.loads(summary.read_text(encoding="utf-8-sig"))
+                self.assertEqual((document["gate"],document["scope"],document["status"]),("software_verification",scope,"FAIL"))
+                self.assertEqual(document["owner"],["fixture_group"] if scope=="Owner" else [])
+                self.assertEqual((base/"catalog_reads").read_text().splitlines(),["read"])
+                self.assertEqual((base/"events").read_text().splitlines(),["a","b"] if scope=="Repository" else ["a"])
+                self.assertIn("GATE_FIRST_FAILURE",result.stdout+result.stderr)
+
+    def test_plan_checkout_facts_ignore_installation_but_reject_changed_inputs_and_head(self):
+        base,root,environment=self.plan_transport_fixture(git=True)
+        plan=base/"plan.json"
+        prepared=self.invoke_plan_fixture(root,environment,"-PythonExe",sys.executable,"-PlanOnly","-PlanPath",plan,"-ChangedPath","fixture.policy")
+        self.assertEqual(prepared.returncode,0,prepared.stdout+prepared.stderr)
+        (root/".venv").mkdir();(root/".venv/installed.py").write_text("# ignored installation\n",encoding="utf-8")
+        result=self.invoke_plan_fixture(root,environment,"-PlanPath",plan,"-SummaryPath",base/"valid.json")
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        before=(base/"admissions").read_bytes()
+        for relative in ("common/fixture_a.py","common/gate_catalog.json","fixture.policy"):
+            path=root/relative;original=path.read_bytes();path.write_bytes(original+b"\n")
+            rejected=self.invoke_plan_fixture(root,environment,"-PlanPath",plan,"-SummaryPath",base/(path.name+".json"))
+            self.assertNotEqual(rejected.returncode,0)
+            self.assertIn("create a new plan",rejected.stdout+rejected.stderr)
+            self.assertEqual((base/"admissions").read_bytes(),before)
+            path.write_bytes(original)
+        (root/"later.txt").write_text("new revision\n",encoding="utf-8")
+        subprocess.run(["git","add","later.txt"],cwd=root,check=True,capture_output=True,timeout=30)
+        subprocess.run(["git","-c","user.name=Test","-c","user.email=test@example.invalid","commit","--quiet","-m","Later"],cwd=root,check=True,capture_output=True,timeout=30)
+        rejected=self.invoke_plan_fixture(root,environment,"-PlanPath",plan,"-SummaryPath",base/"later_summary.json")
+        self.assertNotEqual(rejected.returncode,0)
+        self.assertEqual((base/"admissions").read_bytes(),before)
+        self.assertEqual((base/"catalog_reads").read_text().splitlines(),["read"])
+
+    def test_no_git_plan_rejects_changed_source_and_another_checkout(self):
+        base,root,environment=self.plan_transport_fixture()
+        plan=base/"plan.json"
+        prepared=self.invoke_plan_fixture(root,environment,"-PythonExe",sys.executable,"-PlanOnly","-PlanPath",plan,"-ChangedPath","fixture.policy")
+        self.assertEqual(prepared.returncode,0,prepared.stdout+prepared.stderr)
+        with (root/"common/fixture_a.py").open("a",encoding="utf-8") as stream:
+            stream.write("# changed after planning\n")
+        rejected=self.invoke_plan_fixture(root,environment,"-PlanPath",plan,"-SummaryPath",base/"stale.json")
+        self.assertNotEqual(rejected.returncode,0)
+        self.assertIn("create a new plan",rejected.stdout+rejected.stderr)
+        self.assertFalse((base/"admissions").exists())
+        other,checkout,other_environment=self.plan_transport_fixture()
+        rejected=self.invoke_plan_fixture(checkout,other_environment,"-PlanPath",plan,"-SummaryPath",other/"other.json")
+        self.assertNotEqual(rejected.returncode,0)
+        self.assertIn("another checkout",rejected.stdout+rejected.stderr)
+        self.assertFalse((other/"admissions").exists())
+
     def test_ready_dependencies_fail_fast_and_natural_completion(self) -> None:
         for concurrency, stop, first in ((1, True, 'fail'), (2, True, 'fail'),
                                          (1, False, 'fail'), (2, False, 'fail'),
@@ -212,7 +314,7 @@ finally{{Complete-GateRunSummary -Summary $summary -Failure $failure}}
             temporary = root / "temporary"
             for path in (common, temporary, root / "projects", root / "integrations"):
                 path.mkdir()
-            for name in ("verify_repository_integration.ps1", "parallel_gate_support.ps1",
+            for name in ("verify.ps1", "parallel_gate_support.ps1",
                          "require_powershell7.ps1"):
                 shutil.copyfile(ROOT / "common" / name, common / name)
             (common / "gate_catalog_support.ps1").write_text(
@@ -232,7 +334,7 @@ function Enter-HostResourceStage { param($Stage, $Role, $Budget) return @{} }
 function Exit-HostResourceStage { param($Lease) }
 """, encoding="utf-8", newline="\n")
             (common / "verify_documentation.ps1").write_text(
-                "param($PythonExe)\nWrite-Output 'ROOT_DOCUMENTATION_MARKER'\n",
+                "param($PythonExe,[switch]$StructureOnly,[string[]]$ChangedPath=@())\nWrite-Output 'ROOT_DOCUMENTATION_MARKER'\n",
                 encoding="utf-8", newline="\n",
             )
             (common / "verify_repository_text_bytes.py").write_text(
@@ -243,7 +345,7 @@ function Exit-HostResourceStage { param($Lease) }
             driver.write_text(f"""
 param($PythonExe, $SummaryPath)
 $ErrorActionPreference = 'Stop'
-& {quote(common / 'verify_repository_integration.ps1')} -PythonExe $PythonExe `
+& {quote(common / 'verify.ps1')} -Scope Repository -PythonExe $PythonExe `
     -MaxConcurrency 2 -SummaryPath $SummaryPath
 exit $LASTEXITCODE
 """, encoding="utf-8", newline="\n")
@@ -252,7 +354,7 @@ exit $LASTEXITCODE
             for exit_code, documentation_fails in ((0, False), (7, False), (0, True)):
                 with self.subTest(exit_code=exit_code, documentation_fails=documentation_fails):
                     (common / "verify_documentation.ps1").write_text(
-                        "param($PythonExe)\nWrite-Output 'ROOT_DOCUMENTATION_MARKER'\n" +
+                        "param($PythonExe,[switch]$StructureOnly,[string[]]$ChangedPath=@())\nWrite-Output 'ROOT_DOCUMENTATION_MARKER'\n" +
                         ("throw 'DOCUMENTATION_FAILURE'\n" if documentation_fails else ""), encoding="utf-8")
                     (common / "verify_development_standards.py").write_text(
                         f"print('ROOT_DEVELOPMENT_MARKER')\nraise SystemExit({exit_code})\n",
@@ -273,15 +375,15 @@ exit $LASTEXITCODE
                     self.assertEqual(document["status"], "FAIL" if exit_code or documentation_fails else "PASS")
                     self.assertEqual(records['documentation']['status'], 'FAIL' if documentation_fails else 'PASS')
                     self.assertEqual(records["repository_text_bytes"]["status"], "PASS")
-                    self.assertEqual(records["ruff_all"]["status"], "PASS")
+                    self.assertEqual(records["ruff_changed_python"]["status"], "PASS")
                     self.assertEqual(records["development_standards"]["status"],
                                      "FAIL" if exit_code else "PASS")
                     self.assertEqual(records["fixture_regression"]["status"], "PASS")
                     self.assertEqual(completed.stdout.count("ROOT_TEXT_MARKER"), 1)
                     self.assertEqual(completed.stdout.count("ROOT_DOCUMENTATION_MARKER"), 1)
-                    self.assertEqual(completed.stdout.count("GATE_PROCESS=COMPLETE NAME="), 4)
-                    for name in ("repository_text_bytes", "development_standards", "ruff_all"):
-                        self.assertEqual(records[name]["log_retained"], bool(exit_code))
+                    for name in ("repository_text_bytes", "development_standards", "ruff_changed_python"):
+                        if records[name]["log_path"]:
+                            self.assertEqual(records[name]["log_retained"], bool(exit_code))
 
     def test_real_changed_file_entry_stops_queued_stages_after_scoped_check_failure(self) -> None:
         for concurrency in (1, 2):
@@ -290,7 +392,7 @@ exit $LASTEXITCODE
                 common = root / 'common'
                 for path in (common, root / 'temporary', root / 'projects', root / 'integrations'):
                     path.mkdir()
-                for name in ('verify_changed.ps1', 'parallel_gate_support.ps1', 'require_powershell7.ps1'):
+                for name in ('verify.ps1', 'parallel_gate_support.ps1', 'require_powershell7.ps1'):
                     shutil.copyfile(ROOT / 'common' / name, common / name)
                 (common / 'gate_catalog_support.ps1').write_text(
                     (ROOT / 'common/gate_catalog_support.ps1').read_text(encoding='utf-8') + r'''
@@ -324,7 +426,7 @@ function Exit-HostResourceStage {param($Lease)}
                 environment = dict(os.environ, TEMP=str(root / 'temporary'), TMP=str(root / 'temporary'))
                 environment.pop('MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN', None)
                 completed = subprocess.run(
-                    [shutil.which('pwsh'), '-NoProfile', '-File', str(common / 'verify_changed.ps1'),
+                    [shutil.which('pwsh'), '-NoProfile', '-File', str(common / 'verify.ps1'),
                      '-PythonExe', sys.executable, '-MaxConcurrency', str(concurrency),
                      '-ChangedPath', 'common/changed.ps1', '-SummaryPath', str(summary)],
                     cwd=root, env=environment, capture_output=True, text=True, encoding='utf-8', timeout=40, check=False)
@@ -441,7 +543,7 @@ Write-Output 'ORIGINAL_LAUNCH_FAILURE_PRESERVED'
             root = Path(directory)
             common = root / "common"
             common.mkdir()
-            for name in ("verify_repository_integration.ps1", "parallel_gate_support.ps1",
+            for name in ("verify.ps1", "parallel_gate_support.ps1",
                          "require_powershell7.ps1"):
                 shutil.copyfile(ROOT / "common" / name, common / name)
             (common / "gate_catalog_support.ps1").write_text(
@@ -468,10 +570,14 @@ function Enter-HostResourceStage {{ param($Stage, $Role, $Budget) return @{{}} }
 function Exit-HostResourceStage {{ param($Lease) $script:failRecording = ${str(fail_recording).lower()} }}
 """, encoding="utf-8", newline="\n")
                     log = root / f"stage_{exit_code}_{fail_recording}.log"
+                    request = root / "resolved_request.json"
+                    request.write_text(json.dumps({"python_exe":sys.executable,"stages":[{
+                        "name":"repository_text_bytes","reason":"fixture",
+                        "command":{"runner":"python","arguments":["common/verify_repository_text_bytes.py"]}}]}),encoding="utf-8")
                     script = f"""
 $env:SIMULATION_PYTHON_EXE = 'previous-runtime'
-& {quote(common / 'verify_repository_integration.ps1')} -PythonExe {quote(sys.executable)} `
-    -InternalStage repository_text_bytes -InternalLogPath {quote(log)}
+& {quote(common / 'verify.ps1')} -Scope Repository -PythonExe {quote(sys.executable)} `
+    -InternalStage repository_text_bytes -InternalRequestPath {quote(request)} -InternalLogPath {quote(log)}
 $code = $LASTEXITCODE
 if ($env:SIMULATION_PYTHON_EXE -ne 'previous-runtime') {{ throw 'runtime environment leaked' }}
 Write-Output 'RUNTIME_RESTORED'
@@ -622,13 +728,40 @@ if ($script:performed -ne 1) {{ throw 'nested action did not execute once' }}
             self.assertIn("INHERITED=True", completed.stdout)
             self.assertTrue(ledger.exists())
 
+    def test_stdlib_analysis_batch_does_not_upgrade_to_unrelated_locked_work(self):
+        with tempfile.TemporaryDirectory(prefix="stdlib_analysis_plan_") as directory:
+            root = Path(directory)
+            common = root / "common"
+            common.mkdir()
+            (root / "projects").mkdir()
+            (root / "integrations").mkdir()
+            for name in ("verify.ps1", "parallel_gate_support.ps1", "gate_catalog_support.ps1", "require_powershell7.ps1"):
+                shutil.copyfile(ROOT / "common" / name, common / name)
+            (common / "host_execution_lease.ps1").write_text("# no resource admission in PlanOnly\n", encoding="utf-8")
+            routes = []
+            for name, profile in (("alpha", "stdlib"), ("beta", "stdlib"), ("unrelated", "locked")):
+                routes.append({"stage":name,"dependency_profile":profile,"repository_integration_group":"fast",
+                    "execution_batch":"analysis","matches":[{"exact":"fixture.policy" if profile=="stdlib" else "other.policy","reason":"fixture"}],
+                    "command":{"runner":"python","arguments":["-m","unittest","common.analysis.test_"+name]}})
+            (common / "gate_catalog.json").write_text(json.dumps({"schema_version":2,"role":"repository_gate_catalog","routes":routes}),encoding="utf-8")
+            request = root / "request.json"
+            result = subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(common/"verify.ps1"),
+                "-PythonExe",sys.executable,"-ChangedPath","fixture.policy","-PlanOnly","-InternalRequestPath",str(request)],
+                cwd=root,capture_output=True,text=True,encoding="utf-8",timeout=30)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertIn("DEPENDENCY_PROFILE=stdlib",result.stdout)
+            stages=json.loads(request.read_text(encoding="utf-8-sig"))["stages"]
+            modules=[module for row in stages if row["name"]=="analysis_stdlib_tests" for module in row["command"]["arguments"][2:]]
+            self.assertCountEqual(modules,["common.analysis.test_alpha","common.analysis.test_beta"])
+            self.assertNotIn("unrelated",{row["name"] for row in stages})
+
     def test_plan_only_does_not_create_resource_ledger(self) -> None:
         with tempfile.TemporaryDirectory(prefix="parallel_gate_plan_") as directory:
             ledger = Path(directory) / "isolated.sqlite3"
             completed = self.run_script(f"""
 $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = {quote(ledger)}
 $env:SIMULATION_PYTHON_EXE = 'prior-runtime'
-& {quote(ROOT / 'common/verify_changed.ps1')} -PythonExe {quote(sys._base_executable)} `
+& {quote(ROOT / 'common/verify.ps1')} -PythonExe {quote(sys._base_executable)} `
     -ChangedPath README.md -PlanOnly
 if ($LASTEXITCODE -ne 0) {{ throw 'plan failed' }}
 if ($env:SIMULATION_PYTHON_EXE -ne 'prior-runtime') {{ throw 'runtime environment leaked' }}
@@ -636,39 +769,27 @@ if ($env:SIMULATION_PYTHON_EXE -ne 'prior-runtime') {{ throw 'runtime environmen
             self.assertIn("CHANGED_GATE_PLAN=PASS", completed.stdout)
             self.assertFalse(ledger.exists(), "read-only planning acquired resources")
 
-    def test_gate_runtime_transport_and_restore_on_failure(self) -> None:
+    def test_unplanned_internal_stage_is_rejected_before_resource_admission(self) -> None:
         with tempfile.TemporaryDirectory(prefix="parallel_gate_runtime_") as directory:
             ledger = Path(directory) / "isolated.sqlite3"
             request = Path(directory) / "request.json"
             request.write_text(json.dumps({
                 "python_exe": sys._base_executable,
-                "changed_paths": ["README.md"], "full_scope": False,
+                "stages": [],
             }), encoding="utf-8")
             for name, extra, expected in (
-                ("verify_changed.ps1", f"-InternalRequestPath {quote(request)}",
-                 "Unknown changed-gate stage: fixture_missing"),
-                ("verify_repository_integration.ps1", "",
-                 "Unknown repository integration stage: fixture_missing"),
+                ("verify.ps1", f"-InternalRequestPath {quote(request)}",
+                 "Internal request must contain exactly one matching planned stage and a log path."),
             ):
                 with self.subTest(gate=name):
                     self.run_script(f"""
 $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = {quote(ledger)}
 $env:SIMULATION_PYTHON_EXE = 'prior-runtime'
-$global:observedRuntime = $null
-# Observe the actual entry script after runtime validation, before any admission.
-$breakpoint = Set-PSBreakpoint -Command Resolve-GateConcurrency -Action {{
-    $global:observedRuntime = $env:SIMULATION_PYTHON_EXE
-}}
 try {{
-    try {{
-        & {quote(ROOT / 'common' / name)} -PythonExe {quote(sys._base_executable)} `
-            -InternalStage fixture_missing {extra}
-        throw 'missing stage error'
-    }} catch {{ if ($_.Exception.Message -ne {quote(expected)}) {{ throw }} }}
-}} finally {{ Remove-PSBreakpoint -Breakpoint $breakpoint }}
-if ($global:observedRuntime -ne {quote(sys._base_executable)}) {{
-    throw 'custom runtime was not transported before admission'
-}}
+    & {quote(ROOT / 'common' / name)} -PythonExe {quote(sys._base_executable)} `
+        -InternalStage fixture_missing {extra}
+    throw 'missing stage error'
+}} catch {{ if ($_.Exception.Message -ne {quote(expected)}) {{ throw }} }}
 if ($env:SIMULATION_PYTHON_EXE -ne 'prior-runtime') {{ throw 'runtime environment leaked' }}
 """)
             self.assertFalse(ledger.exists(), "invalid stages acquired resources")
@@ -1005,22 +1126,172 @@ try {{
                 self.assertEqual(log.parent.parent.resolve(), Path(directory).resolve())
                 self.assertIn("FALLBACK_ERROR", log.read_text(encoding="utf-8"))
 
+    def test_python_partition_catalog_rejects_wrong_discovery_scope_and_parent_preflight(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="python_partition_contract_") as directory:
+            root=Path(directory); common=root/"common"; (common/"contracts").mkdir(parents=True)
+            (root/"projects").mkdir(); (root/"integrations").mkdir()
+            shutil.copyfile(ROOT/"common/gate_catalog_support.ps1",common/"gate_catalog_support.ps1")
+            route=dict(stage="fixture",owner="fixture",dependency_profile="locked",repository_integration_group="regression",
+                matches=[dict(prefix="common/contracts/",reason="fixture")],
+                command=dict(runner="python",arguments=["-m","unittest","discover","-s","common/contracts","-p","test_*.py"]),
+                test_selection=dict(scope="common/contracts/",roots=["common/contracts/"]),partition_preflight=False,
+                repository_integration_partition=dict(count=3,default_seconds=1,measured_seconds={}))
+            (common/"gate_catalog.json").write_text(json.dumps(dict(schema_version=2,role="repository_gate_catalog",routes=[route])),encoding="utf-8")
+            result=self.run_script(f"""
+. {quote(common/'gate_catalog_support.ps1')}
+$path={quote(common/'gate_catalog.json')};$root={quote(root)}
+$null=Read-GateCatalog -RepoRoot $root
+$original=Get-Content $path -Raw
+foreach($case in @('scope','runner','parent')){{
+ $document=$original|ConvertFrom-Json -Depth 32
+ if($case-eq'scope'){{$document.routes[0].command.arguments[4]='projects/other/tests'}}
+ if($case-eq'runner'){{$document.routes[0].command.arguments=@('common/arbitrary.py')}}
+ if($case-eq'parent'){{$document.routes[0].partition_preflight=$true}}
+ $document|ConvertTo-Json -Depth 32|Set-Content $path
+ $rejected=$false
+ try{{$null=Read-GateCatalog -RepoRoot $root}}catch{{$rejected=$_.Exception.Message-match'Invalid repository integration test partition'}}
+ if(-not$rejected){{throw "Invalid Python partition accepted: $case"}}
+}}
+'PYTHON_PARTITION_CONTRACT=PASS'
+""")
+            self.assertIn("PYTHON_PARTITION_CONTRACT=PASS",result.stdout)
+
+    def test_expanded_subroots_do_not_claim_complete_owner_scope(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="partial_owner_roots_") as directory:
+            root=Path(directory)
+            for relative in ("projects/fixture/tests/selected/test_a.py","projects/fixture/tests/other/test_b.py"):
+                path=root/relative
+                path.parent.mkdir(parents=True,exist_ok=True)
+                path.write_text("",encoding="utf-8")
+            result=self.run_script(f"""
+. {quote(ROOT/'common/gate_catalog_support.ps1')}
+$route=[pscustomobject]@{{dependency_profile='locked';test_selection=[pscustomobject]@{{
+ roots=@('projects/fixture/tests/selected/');scope='projects/fixture/tests/'}}}}
+$selection=Get-GateChangedTests -Route $route -ChangedPaths @('projects/fixture/tests/selected/__init__.py') `
+ -KnownTestRoots @('projects/fixture/tests/selected/','projects/fixture/tests/other/') -RepoRoot {quote(root)}
+if(-not$selection.Expanded-or$selection.CompleteOwner){{throw 'Expanded subroot was mistaken for a complete scope'}}
+if(($selection.Modules-join',')-ne'projects/fixture/tests/selected/test_a.py'){{throw 'fixture did not exercise a real partial discovery'}}
+$selection|ConvertTo-Json -Depth 16 -Compress
+""")
+            self.assertFalse(json.loads(result.stdout.strip().splitlines()[-1])["CompleteOwner"])
+
+    def test_python_owner_partitions_reuse_selected_modules_without_rediscovery(self) -> None:
+        paths = sorted((ROOT/"common/contracts").glob("test_*.py"))
+        selected = [path.relative_to(ROOT).as_posix() for path in paths]
+        expected = {name.removesuffix(".py").replace("/", ".") for name in selected}
+        result = self.run_script(self.prelude()+f"""
+. {quote(ROOT/'common/gate_catalog_support.ps1')}
+$route=(Get-Content {quote(ROOT/'common/gate_catalog.json')} -Raw|ConvertFrom-Json -Depth 32).routes|Where-Object stage -eq 'common_contracts'
+$selected=@({','.join(quote(name) for name in selected)})
+function Get-ChildItem {{throw 'already-selected owner modules were rediscovered'}}
+$parts=@(Get-GateRepositoryTestPartitions -Route $route -RepoRoot {quote(ROOT)} -Modules $selected)
+$parts|ConvertTo-Json -Depth 32 -Compress
+""")
+        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+        parts = json.loads(result.stdout.strip().splitlines()[-1])
+        modules = [name for part in parts for name in part["modules"]]
+        self.assertEqual(set(modules), expected)
+        self.assertEqual(len(modules), len(expected))
+        self.assertEqual(len(parts), 3)
+        self.assertLess(max(part["seconds"] for part in parts), sum(part["seconds"] for part in parts)/2)
+
+    def test_python_owner_compiled_partitions_keep_import_roots_and_exit_seven(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="python_gate_partition_") as directory:
+            root=Path(directory); common=root/"common"; modules_root=common/"contracts"
+            modules_root.mkdir(parents=True)
+            (root/"temporary").mkdir(); (root/"projects").mkdir(); (root/"integrations").mkdir()
+            for name in ("verify.ps1","parallel_gate_support.ps1","require_powershell7.ps1","gate_unittest.py"):
+                shutil.copyfile(ROOT/"common"/name,common/name)
+            (common/"gate_catalog_support.ps1").write_text(
+                (ROOT/"common/gate_catalog_support.ps1").read_text(encoding="utf-8")+r"""
+$script:originalPartitioner=${function:Get-GateRepositoryTestPartitions}
+function Get-GateRepositoryTestPartitions {param($Route,$RepoRoot,$Modules)
+ Add-Content -LiteralPath $env:PARTITION_COUNT -Value 'partition'
+ & $script:originalPartitioner @PSBoundParameters
+}
+function Read-GateCatalog {param($RepoRoot)
+ Add-Content -LiteralPath $env:CATALOG_COUNT -Value 'catalog'
+ @([pscustomobject]@{stage='common_contracts';owner='common_contracts';dependency_profile='locked';repository_integration_group='regression';
+ matches=@([pscustomobject]@{prefix='common/contracts/';reason='fixture'});
+ command=[pscustomobject]@{runner='python';arguments=@('-m','unittest','discover','-s','common/contracts','-p','test_*.py')};
+ test_selection=[pscustomobject]@{scope='common/contracts/';roots=@('common/contracts/')};partition_preflight=$false;
+ repository_integration_partition=[pscustomobject]@{count=3;default_seconds=1;measured_seconds=[pscustomobject]@{test_a=3;test_b=2;test_c=1}}})
+}
+""",encoding="utf-8",newline="\n")
+            (common/"host_execution_lease.ps1").write_text(
+                "function Get-HostResourceBudget {param($Stage,$Role) @{}}\n"
+                "function Enter-HostResourceStage {param($Stage,$Role,$Budget) @{}}\n"
+                "function Exit-HostResourceStage {param($Lease)}\n",encoding="utf-8")
+            (common/"verify_documentation.ps1").write_text("param($PythonExe)\n",encoding="utf-8")
+            for name in ("verify_repository_text_bytes","verify_development_standards"):
+                (common/(name+".py")).write_text("pass\n",encoding="utf-8")
+            (modules_root/"fixture_helper.py").write_text("VALUE=7\n",encoding="utf-8")
+            for name in "abc":
+                (modules_root/("test_"+name+".py")).write_text(
+                    "import os\nimport unittest\nfrom pathlib import Path\nfrom fixture_helper import VALUE\n"
+                    f"with Path(os.environ['MODULE_EVENTS']).open('a') as stream:\n    stream.write('{name}\\n')\n"
+                    +( "if os.environ.get('TOY_FAIL'):\n    raise SystemExit(7)\n" if name=="b" else "")+
+                    "class Probe(unittest.TestCase):\n    def test_value(self):\n        self.assertEqual(VALUE,7)\n",encoding="utf-8")
+            env=dict(os.environ,TEMP=str(root/"temporary"),TMP=str(root/"temporary"),PYTHONDONTWRITEBYTECODE="1",
+                     PARTITION_COUNT=str(root/"partition.txt"),CATALOG_COUNT=str(root/"catalog.txt"),MODULE_EVENTS=str(root/"events.txt"))
+            env.pop("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN",None)
+            plan=root/"plan.json"
+            prepared=subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(common/"verify.ps1"),
+                "-Scope","Repository","-PlanOnly","-PlanPath",str(plan),"-PythonExe",sys.executable],
+                cwd=root,env=env,capture_output=True,text=True,encoding="utf-8",timeout=30)
+            self.assertEqual(prepared.returncode,0,prepared.stdout+prepared.stderr)
+            document=json.loads(plan.read_text(encoding="utf-8"))
+            children=[row for row in document["stages"] if row["name"].startswith("common_contracts__tests_")]
+            selected=[name for row in children for name in row["command"]["arguments"][2:]]
+            self.assertCountEqual(selected,["common.contracts.test_"+name for name in "abc"])
+            self.assertEqual(len(selected),len(set(selected)))
+            self.assertFalse(any(row["name"]=="common_contracts" for row in document["stages"]))
+            self.assertTrue(all(row["command"]["python_path_roots"]==["common/contracts/"] for row in children))
+            for failed in (False,True):
+                with self.subTest(failed=failed):
+                    (root/"events.txt").unlink(missing_ok=True)
+                    summary=root/("failed.json" if failed else "passed.json")
+                    child_env={**env,**({"TOY_FAIL":"1"} if failed else {})}
+                    result=subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(common/"verify.ps1"),
+                        "-PlanPath",str(plan),"-MaxConcurrency","3","-SummaryPath",str(summary)],
+                        cwd=root,env=child_env,capture_output=True,text=True,encoding="utf-8",timeout=60)
+                    records=json.loads(summary.read_text(encoding="utf-8"))
+                    parts=[row for row in records["stages"] if row["name"].startswith("common_contracts__tests_")]
+                    self.assertEqual(result.returncode==0,not failed,result.stdout+result.stderr)
+                    self.assertEqual(sum(row["status"]=="FAIL" for row in parts),int(failed))
+                    if failed:self.assertIn("Gate catalog command failed with exit code 7",result.stdout+result.stderr)
+                    self.assertCountEqual((root/"events.txt").read_text().splitlines(),list("abc"))
+            self.assertEqual((root/"partition.txt").read_text().splitlines(),["partition"])
+            self.assertEqual((root/"catalog.txt").read_text().splitlines(),["catalog"])
+            narrow=root/"narrow.json"
+            planned=subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(common/"verify.ps1"),
+                "-ChangedPath","common/contracts/test_a.py","-PlanOnly","-PlanPath",str(narrow),"-PythonExe",sys.executable],
+                cwd=root,env=env,capture_output=True,text=True,encoding="utf-8",timeout=30)
+            self.assertEqual(planned.returncode,0,planned.stdout+planned.stderr)
+            stages=json.loads(narrow.read_text(encoding="utf-8"))["stages"]
+            self.assertFalse(any(row["name"].startswith("common_contracts__tests_") for row in stages))
+            owner=next(row for row in stages if row["name"]=="common_contracts")
+            self.assertEqual(owner["command"]["arguments"][2:],["common/contracts/test_a.py"])
+            self.assertEqual((root/"partition.txt").read_text().splitlines(),["partition"])
+
     def test_repository_partitions_preserve_all_modules_and_failure(self) -> None:
         with tempfile.TemporaryDirectory(prefix="parallel_gate_partition_") as directory:
             root = Path(directory)
             common = root / "common"
             for path in (common, root / "temporary", root / "projects/fixture/tests", root / "integrations"):
                 path.mkdir(parents=True)
-            for name in ("verify_repository_integration.ps1", "parallel_gate_support.ps1",
+            for name in ("verify.ps1", "parallel_gate_support.ps1",
                          "require_powershell7.ps1"):
                 shutil.copyfile(ROOT / "common" / name, common / name)
             (common / "gate_catalog_support.ps1").write_text(
                 (ROOT / "common/gate_catalog_support.ps1").read_text(encoding="utf-8") + r'''
+$script:originalPartitioner=${function:Get-GateRepositoryTestPartitions}
+function Get-GateRepositoryTestPartitions {param($Route,$RepoRoot,$Modules);Add-Content -LiteralPath $env:PARTITION_COUNT -Value 'partition';& $script:originalPartitioner @PSBoundParameters}
 function Read-GateCatalog {param($RepoRoot)
     @([pscustomobject]@{stage='fixture';dependency_profile='locked';repository_integration_group='regression';
       command=[pscustomobject]@{runner='powershell';script='common/owner.ps1';parameters=[pscustomobject]@{PythonExe='{python}'}};
       repository_integration_command=[pscustomobject]@{runner='powershell';script='common/owner.ps1';parameters=[pscustomobject]@{PythonExe='{python}';PreflightOnly=$true}};
-      test_selection=[pscustomobject]@{scope='projects/fixture/tests/'};
+      test_selection=[pscustomobject]@{scope='projects/fixture/tests/';roots=@('projects/fixture/tests/');module_parameter='ChangedTestModules'};
       repository_integration_partition=[pscustomobject]@{count=3;parameter='SelectedTestModules';default_seconds=1;measured_seconds=[pscustomobject]@{test_a=10}}})
 }
 ''', encoding="utf-8", newline="\n")
@@ -1042,8 +1313,14 @@ if($SelectedTestModules -contains 'projects.fixture.tests.test_b'){throw 'SHARD_
             summary = root / "summary.json"
             env = dict(os.environ, TEMP=str(root / "temporary"), TMP=str(root / "temporary"))
             env.pop("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN", None)
+            env["PARTITION_COUNT"]=str(root/"partition_count.txt")
+            plan=root/"executable_plan.json"
+            prepared=subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(common/"verify.ps1"),
+                "-Scope","Repository","-PlanOnly","-PlanPath",str(plan),"-PythonExe",sys.executable],
+                cwd=root,env=env,capture_output=True,text=True,encoding="utf-8",timeout=30)
+            self.assertEqual(prepared.returncode,0,prepared.stdout+prepared.stderr)
             result = subprocess.run(
-                [shutil.which("pwsh"), "-NoProfile", "-File", str(common / "verify_repository_integration.ps1"),
+                [shutil.which("pwsh"), "-NoProfile", "-File", str(common / "verify.ps1"), "-PlanPath", str(plan),
                  "-PythonExe", sys.executable, "-MaxConcurrency", "3", "-SummaryPath", str(summary)],
                 cwd=root, env=env, capture_output=True, text=True, encoding="utf-8", timeout=60,
             )
@@ -1062,7 +1339,7 @@ if($SelectedTestModules -contains 'projects.fixture.tests.test_b'){throw 'SHARD_
             env["FIXTURE_PREFLIGHT_FAIL"] = "1"
             failed_summary = root / "preflight_failure.json"
             result = subprocess.run(
-                [shutil.which("pwsh"), "-NoProfile", "-File", str(common / "verify_repository_integration.ps1"),
+                [shutil.which("pwsh"), "-NoProfile", "-File", str(common / "verify.ps1"), "-PlanPath", str(plan),
                  "-PythonExe", sys.executable, "-MaxConcurrency", "3", "-SummaryPath", str(failed_summary)],
                 cwd=root, env=env, capture_output=True, text=True, encoding="utf-8", timeout=60,
             )
@@ -1071,6 +1348,8 @@ if($SelectedTestModules -contains 'projects.fixture.tests.test_b'){throw 'SHARD_
             self.assertEqual(records["fixture"]["status"], "FAIL")
             self.assertTrue(all(row["status"] == "BLOCKED" for name, row in records.items()
                                 if name.startswith("fixture__tests_")))
+
+            self.assertEqual((root/"partition_count.txt").read_text().splitlines(),["partition"])
 
     def test_nested_group_serializes_inherited_reservation(self) -> None:
         with tempfile.TemporaryDirectory(prefix="parallel_gate_fixture_") as directory:

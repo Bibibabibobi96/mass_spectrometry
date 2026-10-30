@@ -13,7 +13,7 @@ try {
     $env:PYTHONPATH = $repoRoot
     & $PythonExe -c "import sys; assert sys.version_info[:2] == (3, 11), 'Python 3.11 required'"
     if ($LASTEXITCODE -ne 0) { throw 'Unsupported Python runtime.' }
-    & $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'tests\analysis') -p 'test_*.py'
+    & $PythonExe -m common.gate_unittest discover -s (Join-Path $PSScriptRoot 'tests\analysis') -p 'test_*.py'
     if ($LASTEXITCODE -ne 0) { throw 'Orthogonal accelerator static tests failed.' }
     if ($LuaExe -and -not (Test-Path -LiteralPath $LuaExe -PathType Leaf)) {
         throw "Explicit Lua executable is missing: $LuaExe"

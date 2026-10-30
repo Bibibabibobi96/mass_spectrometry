@@ -1,4 +1,4 @@
-name: Verification gates
+name: Software verification
 
 on:
   push:
@@ -15,13 +15,13 @@ jobs:
   changed_scope:
     if: github.event_name == 'push'
     runs-on: windows-latest
-    # L1 can include the full integration suite (~26 min locally), plus setup.
+    # The selected software scope may contain integration behavior suites.
     timeout-minutes: 60
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          fetch-depth: 2
       - name: Normalize LF-governed checkout
         shell: pwsh
         run: |
@@ -59,6 +59,14 @@ jobs:
             & git cat-file -e "$before^{commit}" 2>$null
             $baseAvailable = $LASTEXITCODE -eq 0
           }
+          if (-not $baseAvailable -and $before -match '^[0-9a-f]{40}$' -and $before -notmatch '^[0]+$') {
+            # Fetch only the comparison base, not the repository's full history.
+            & git fetch --no-tags --depth=1 origin $before 2>$null
+            if ($LASTEXITCODE -eq 0) {
+              & git cat-file -e "$before^{commit}" 2>$null
+              $baseAvailable = $LASTEXITCODE -eq 0
+            }
+          }
           $scope = [ordered]@{ full_scope = $true; changed_paths = @() }
           if ($baseAvailable) {
             $changedPaths = @(& git diff --name-only --no-renames --diff-filter=ACMRD "$before..$after")
@@ -75,10 +83,11 @@ jobs:
           $scopePath = Join-Path $env:RUNNER_TEMP 'changed_scope.json'
           $scope | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $scopePath -Encoding UTF8
           $python = (Get-Command python).Source
+          $planPath = Join-Path $env:RUNNER_TEMP 'software_gate_plan.json'
           $plan = if ($scope.full_scope) {
-            @(.\common\verify_changed.ps1 -PythonExe $python -FullScope -PlanOnly -MaxConcurrency 2)
+            @(.\common\verify.ps1 -PythonExe $python -FullScope -PlanOnly -PlanPath $planPath -MaxConcurrency 2)
           } else {
-            @(.\common\verify_changed.ps1 -PythonExe $python -ChangedPath $scope.changed_paths -PlanOnly -MaxConcurrency 2)
+            @(.\common\verify.ps1 -PythonExe $python -ChangedPath $scope.changed_paths -PlanOnly -PlanPath $planPath -MaxConcurrency 2)
           }
           $plan | Write-Output
           $planLine = @($plan | Where-Object { $_ -like 'CHANGED_GATE_PLAN=PASS*' })
@@ -93,22 +102,50 @@ jobs:
       - name: Run changed-scope gate
         shell: pwsh
         run: |
-          $scopePath = Join-Path $env:RUNNER_TEMP 'changed_scope.json'
-          $scope = Get-Content -Raw -LiteralPath $scopePath | ConvertFrom-Json -Depth 4
           $python = (Get-Command python).Source
-          if ($scope.full_scope) {
-            .\common\verify_changed.ps1 -PythonExe $python -FullScope -MaxConcurrency 2 -SummaryPath (Join-Path $env:RUNNER_TEMP 'changed_gate_summary.json')
-          } else {
-            Write-Output "CHANGED_SCOPE_CI_PATHS=$(@($scope.changed_paths).Count)"
-            .\common\verify_changed.ps1 -PythonExe $python -ChangedPath @($scope.changed_paths) -MaxConcurrency 2 -SummaryPath (Join-Path $env:RUNNER_TEMP 'changed_gate_summary.json')
-          }
+          $env:PUBLIC_GATE_POWERSHELL = (Get-Process -Id $PID).Path
+          $env:PUBLIC_GATE_PYTHON = $python
+          @'
+          import json, os, platform, subprocess, sys, time
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          scope = json.loads((root / "changed_scope.json").read_text(encoding="utf-8-sig"))
+          gate_script = r"""$ErrorActionPreference = 'Stop'
+          .\common\verify.ps1 -PlanPath (Join-Path $env:RUNNER_TEMP 'software_gate_plan.json') -MaxConcurrency 2 -SummaryPath (Join-Path $env:RUNNER_TEMP 'changed_gate_summary.json')
+          exit $LASTEXITCODE
+          """
+          command = [os.environ["PUBLIC_GATE_POWERSHELL"], "-NoProfile", "-Command", gate_script]
+          record = {"schema_version": 1, "role": "public_gate_command_timing", "command": command,
+                    "scope": scope, "source_sha": os.environ.get("GITHUB_SHA"),
+                    "environment": {"python_executable": sys.executable, "python_version": sys.version,
+                                    "platform": platform.platform()},
+                    "summary_path": str(root / "changed_gate_summary.json"), "exit_code": None}
+          started = time.perf_counter()
+          try:
+              # Inherit stdout/stderr: immediate gate failures must remain live.
+              result = subprocess.run(command, check=False)
+              record["exit_code"] = result.returncode
+          except BaseException as error:
+              record["error"] = {"type": type(error).__name__, "message": str(error)}
+              raise
+          finally:
+              record["elapsed_wall_seconds"] = time.perf_counter() - started
+              timing_path = root / "changed_gate_command_timing.json"
+              timing_path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+              print(f"PUBLIC_GATE_COMMAND EXIT_CODE={record['exit_code']} ELAPSED_WALL_SECONDS={record['elapsed_wall_seconds']:.6f} TIMING_PATH={timing_path}", flush=True)
+          sys.exit(result.returncode)
+
+          '@ | & $python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload changed-scope gate evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: changed-scope-gate-evidence
           path: |
+            ${{ runner.temp }}/software_gate_plan.json
             ${{ runner.temp }}/changed_gate_summary.json
+            ${{ runner.temp }}/changed_gate_command_timing.json
             ${{ runner.temp }}/changed_gate_*/**
           if-no-files-found: warn
   repository_integration:
@@ -119,8 +156,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
         with:
-          # Frozen migration records are verified against their original Git blobs.
-          fetch-depth: 0
+          fetch-depth: 2
       - name: Set up Python 3.11
         uses: actions/setup-python@v6
         with:
@@ -141,18 +177,57 @@ jobs:
         run: |
           Write-Output "POWERSHELL_EDITION=$($PSVersionTable.PSEdition) POWERSHELL_VERSION=$($PSVersionTable.PSVersion)"
           . .\common\require_powershell7.ps1
+      - name: Resolve repository software scope
+        shell: pwsh
+        run: |
+          $python = (Get-Command python).Source
+          .\common\verify.ps1 -Scope Repository -PythonExe $python -PlanOnly -PlanPath (Join-Path $env:RUNNER_TEMP 'software_gate_plan.json') -MaxConcurrency 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Install locked Python dependencies
         shell: pwsh
         run: python -m pip install --disable-pip-version-check -r requirements-lock.txt
-      - name: Run repository integration gate
+      - name: Verify repository software scope
         shell: pwsh
-        run: .\common\verify_repository_integration.ps1 -PythonExe (Get-Command python).Source -MaxConcurrency 2 -SummaryPath (Join-Path $env:RUNNER_TEMP 'integration_gate_summary.json')
+        run: |
+          $python = (Get-Command python).Source
+          $env:PUBLIC_GATE_POWERSHELL = (Get-Process -Id $PID).Path
+          $env:PUBLIC_GATE_PYTHON = $python
+          @'
+          import json, os, platform, subprocess, sys, time
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          scope = {"scope": "Repository"}
+          command = [os.environ["PUBLIC_GATE_POWERSHELL"], "-NoProfile", "-File", "common/verify.ps1", "-PlanPath", str(root / "software_gate_plan.json"), "-MaxConcurrency", "2", "-SummaryPath", str(root / "integration_gate_summary.json")]
+          record = {"schema_version": 1, "role": "public_gate_command_timing", "command": command,
+                    "scope": scope, "source_sha": os.environ.get("GITHUB_SHA"),
+                    "environment": {"python_executable": sys.executable, "python_version": sys.version,
+                                    "platform": platform.platform()},
+                    "summary_path": str(root / "integration_gate_summary.json"), "exit_code": None}
+          started = time.perf_counter()
+          try:
+              # Inherit stdout/stderr: immediate gate failures must remain live.
+              result = subprocess.run(command, check=False)
+              record["exit_code"] = result.returncode
+          except BaseException as error:
+              record["error"] = {"type": type(error).__name__, "message": str(error)}
+              raise
+          finally:
+              record["elapsed_wall_seconds"] = time.perf_counter() - started
+              timing_path = root / "integration_gate_command_timing.json"
+              timing_path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+              print(f"PUBLIC_GATE_COMMAND EXIT_CODE={record['exit_code']} ELAPSED_WALL_SECONDS={record['elapsed_wall_seconds']:.6f} TIMING_PATH={timing_path}", flush=True)
+          sys.exit(result.returncode)
+
+          '@ | & $python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload repository gate evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: repository-integration-gate-evidence
           path: |
+            ${{ runner.temp }}/software_gate_plan.json
             ${{ runner.temp }}/integration_gate_summary.json
+            ${{ runner.temp }}/integration_gate_command_timing.json
             ${{ runner.temp }}/repository_integration_gate_*/**
           if-no-files-found: warn

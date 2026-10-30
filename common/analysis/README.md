@@ -91,4 +91,4 @@ geometry与local-focus测试继续验证完整输出及原粒子证据，functio
 手算半高宽、主峰选择、截断方向和显式ID配对。KDE、质量／时间域及场比较的消费者行为回归继续由项目维护：
 [oa-TOF峰形测试](../../projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_peak_metrics.py)、
 [场比较测试](../../projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_field_comparison_contracts.py)；
-MR及integration另测其输入接线和科学合同。修改公共函数后用[L1](../../docs/OPERATIONS.md#分层门禁)查看受影响消费者。
+MR及integration另测其输入接线和科学合同。修改公共函数后用[Changed软件验证](../../docs/OPERATIONS.md#软件验证与科学证据)查看受影响消费者。

@@ -319,7 +319,7 @@ MR的`load-workbench`与batch Fly共用碰撞PA预载并保持不可Refine状态
 架构迁移的既有验收见[架构迁移审计](../../docs/history/20261027__repository-architecture-migration.md)；
 后续文档与运行边界修复、失败及复验见[系统审查](../../docs/history/20261027__system-maintainability-review.md)。
 先前权限、宿主、夹具和发布失败仍按固定源码及原日志解释，focused通过不拼成失败整轮通过。
-后续改动按[操作指南](../../docs/OPERATIONS.md#分层门禁)运行适用门禁；软件检查不授予新原生、数值或Formal资格。
+后续改动按[操作指南](../../docs/OPERATIONS.md#软件验证与科学证据)运行适用门禁；软件检查不授予新原生、数值或Formal资格。
 本轮最终L1为24/24阶段通过、1337.500秒。完整L2主体44/45阶段通过、1578.351秒，RF失败责任阶段
 修正后以正式quadrupole Static完整复验通过（298.011秒）；原失败整轮不改写为PASS。
 正常FullJoint的原CLI重复收尾4.401秒通过，子summary／manifest及父manifest字节均未改；不重飞、不求场。

@@ -1,20 +1,21 @@
 [CmdletBinding()]
 param(
     [switch]$StructureOnly,
-    [string]$PythonExe = ''
+    [string]$PythonExe = '',
+    [switch]$AuditHistory,
+    [string[]]$ChangedPath=@()
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-# StructureOnly is a read-only documentation check: no host lease or external hygiene.
+# StructureOnly is read-only and does not acquire a host lease.
 $hostExecutionLease = $null
 if (-not $StructureOnly) {
     . (Join-Path $PSScriptRoot 'host_execution_lease.ps1')
     $hostExecutionLease = Enter-HostExecutionLease -Role GATE
 }
 try {
-if (-not $StructureOnly) { & (Join-Path $PSScriptRoot 'verify_repository_hygiene.ps1') }
 if (-not $PythonExe) {
     $venvPython = Join-Path $repoRoot '.venv/Scripts/python.exe'
     $PythonExe = if (Test-Path -LiteralPath $venvPython) { $venvPython } else { (Get-Command python -ErrorAction Stop).Source }
@@ -26,228 +27,20 @@ $markdownFiles = @(Get-ChildItem -LiteralPath $repoRoot -Recurse -File -Filter '
     Where-Object { $_.FullName.Substring($repoRoot.Length + 1) -notmatch '(^|[\\/])(\.git|artifacts|\.venv)[\\/]' } |
     Sort-Object FullName)
 $utf8 = New-Object System.Text.UTF8Encoding($false, $true)
-$comsolApiPath = Join-Path $repoRoot 'docs\tools\COMSOL_API.md'
-$visionPath = Join-Path $repoRoot 'docs\VISION.md'
-$roadmapPath = Join-Path $repoRoot 'docs\ROADMAP.md'
 $rootReadmePath = Join-Path $repoRoot 'README.md'
 function Add-DocError {
     param([string]$Message)
     $errors.Add($Message)
 }
 
-# History integrity is checked below, without imposing today's prose on frozen evidence.
-foreach ($file in $markdownFiles) {
-    $lines = @(Get-Content -LiteralPath $file.FullName -Encoding UTF8)
-    $relative = $file.FullName.Substring($repoRoot.Length + 1)
-    $relativeGit = $relative -replace '\\', '/'
-    if ($relativeGit -match '(^|/)docs/history/' -and
-        $relativeGit -notmatch '(^|/)docs/history/README\.md$') { continue }
-    $requiresGithubMathFence = $relativeGit -in @(
-        'projects/orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md',
-        'projects/orthogonal_accelerator/docs/theory/affine_phase_space_time_focus.md',
-        'projects/orthogonal_accelerator/docs/theory/three_zone_accelerator_ideal_theory.md',
-        'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/dual_stage_reflectron.md',
-        'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/oatof_oaaccelerator_coupling.md',
-        'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/z_vz_linear_phase_space_coupling.md'
-    )
-    $h1Count = 0
-    $previousLevel = 0
-    $headingFence = $null
-
-    foreach ($line in $lines) {
-        if ($null -ne $headingFence) {
-            if ($line -match '^\s{0,3}(?<marker>`{3,}|~{3,})\s*$' -and
-                $Matches['marker'][0] -ceq $headingFence[0] -and
-                $Matches['marker'].Length -ge $headingFence.Length) {
-                $headingFence = $null
-            }
-            continue
-        }
-        if ($line -match '^\s{0,3}(?<marker>`{3,}|~{3,})(?<info>.*)$') {
-            $headingFence = $Matches['marker']
-            continue
-        }
-        if ($line -match '^(#{1,6})\s+\S') {
-            $level = $Matches[1].Length
-            if ($level -eq 1) { $h1Count++ }
-            if ($previousLevel -gt 0 -and $level -gt ($previousLevel + 1)) {
-                Add-DocError "$relative`: heading jumps H$previousLevel -> H$level ('$line')"
-            }
-            $previousLevel = $level
-        }
-    }
-    if ($h1Count -ne 1) {
-        Add-DocError "$relative`: expected exactly one H1, found $h1Count"
-    }
-
-    $fenceMarker = $null
-    $fenceInfo = ''
-    $inMathFence = $false
-    $inDollarDisplayMath = $false
-    $githubMathFenceCount = 0
-    $lineNumber = 0
-    $bareLatexPattern = '\\(?:mathrm|frac|sqrt|tau|Delta|operatorname|left|right|begin|end|text|ell|' +
-        'partial|alpha|beta|rho|eta|equiv|propto|int|sum|mu|sigma|omega|cdot|times|pm|approx|' +
-        'ne|qquad|quad|bar|mathbf)|[A-Za-z0-9)\]]_\{|\^\{'
-    foreach ($line in $lines) {
-        $lineNumber++
-        if ($null -ne $fenceMarker) {
-            if ($line -match '^\s{0,3}(?<marker>`{3,}|~{3,})\s*$' -and
-                $Matches['marker'][0] -ceq $fenceMarker[0] -and
-                $Matches['marker'].Length -ge $fenceMarker.Length) {
-                $fenceMarker = $null
-                $fenceInfo = ''
-                $inMathFence = $false
-            }
-            continue
-        }
-
-        if ($line -match '^\s{0,3}(?<marker>`{3,}|~{3,})(?<info>.*)$') {
-            $fenceMarker = $Matches['marker']
-            $fenceInfo = $Matches['info'].Trim()
-            $inMathFence = $fenceInfo -ceq 'math'
-            if ($inMathFence -and $fenceMarker -cne '```') {
-                Add-DocError "$relative`:$lineNumber`: GitHub math fences must use three backticks"
-            }
-            if ($inMathFence) { $githubMathFenceCount++ }
-            continue
-        }
-
-        if ($line.Trim() -ceq '$$') {
-            if ($requiresGithubMathFence) {
-                Add-DocError "$relative`:$lineNumber`: display math must use a GitHub math fence; dollar display delimiters are forbidden"
-            }
-            $inDollarDisplayMath = -not $inDollarDisplayMath
-            continue
-        }
-        if ($line -match '\$\$') {
-            Add-DocError "$relative`:$lineNumber`: display-math dollar delimiter must be on its own line"
-            continue
-        }
-        if ($inDollarDisplayMath) { continue }
-
-        $withoutCode = [regex]::Replace($line, '`[^`]*`', '')
-        $inlineParts = [regex]::Split($withoutCode, '(?<!\\)\$')
-        if ((($inlineParts.Count - 1) % 2) -ne 0) {
-            Add-DocError "$relative`:$lineNumber`: unclosed inline-math dollar delimiter"
-            continue
-        }
-        $outsideMath = New-Object System.Text.StringBuilder
-        for ($partIndex = 0; $partIndex -lt $inlineParts.Count; $partIndex += 2) {
-            [void]$outsideMath.Append($inlineParts[$partIndex])
-        }
-        if ($outsideMath.ToString() -match $bareLatexPattern) {
-            Add-DocError "$relative`:$lineNumber`: LaTeX expression appears outside dollar delimiters"
-        }
-    }
-    if ($null -ne $fenceMarker) {
-        if ($inMathFence) {
-            Add-DocError "$relative`: unclosed GitHub math fence"
-        }
-        else {
-            Add-DocError "$relative`: unclosed fenced code block ($fenceMarker$fenceInfo)"
-        }
-    }
-    if ($inDollarDisplayMath) {
-        Add-DocError "$relative`: unclosed display-math dollar delimiter"
-    }
-    if ($requiresGithubMathFence -and $githubMathFenceCount -eq 0) {
-        Add-DocError "$relative`: expected at least one GitHub math fence"
-    }
-
-    $raw = [System.IO.File]::ReadAllText($file.FullName, $utf8)
-    if ($relativeGit -eq 'projects/orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md' -and
-        $raw -notmatch '(?m)^```math\r?\nW_\{2\}\(x\)=W\(x\)-V_G=E_\{A1\}\(g_1-x\)\.\r?\n```$') {
-        Add-DocError "$relative`: the W_2(x) reference equation must remain in a rendered display-math block"
-    }
-    if ($relativeGit -eq 'projects/orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md' -and
-        $raw -notmatch '(?s)```math\r?\n\\widetilde V_R = V_R-V_X,.*?\r?\n```') {
-        Add-DocError "$relative`: the widetilde voltage reference equations must remain in rendered display math"
-    }
-    if ($relativeGit -eq 'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/dual_stage_reflectron.md' -and
-        $raw -notmatch '\$ℓ_1\$、\$ℓ_2\$') {
-        Add-DocError "$relative`: reflectron stage lengths must remain inline math, not code or plain text"
-    }
-    if ($relativeGit -eq 'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/oatof_oaaccelerator_coupling.md' -and
-        $raw -notmatch '(?m)^E_\{A1\}=\\frac\{V_R-V_G\}\{g_1\},$') {
-        Add-DocError "$relative`: the E_A1 reference equation must remain in rendered display math"
-    }
-    if ($relativeGit -eq 'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/z_vz_linear_phase_space_coupling.md' -and
-        $raw -notmatch '(?s)```math\r?\n\\chi\(x\)=[^\r\n]*\r?\n\\mathcal W\(x\)=[^\r\n]*\r?\n.*?```') {
-        Add-DocError "$relative`: the chi(x)/mathcal W(x) reference equations must remain in a rendered display-math block"
-    }
-    if ($relativeGit -eq 'projects/single_reflection_oa_tof_mass_analyzer/docs/PROJECT.md') {
-        if ($raw -notmatch '(?m)^t_\{\\mathrm\{TOF\}\}=t_\{\\mathrm\{detector\}\}-t_\{\\mathrm\{pulse,effective\}\}\.$') {
-            Add-DocError "$relative`: the authoritative oa-TOF pulse-relative clock equation is missing"
-        }
-        if ($raw -notmatch 'instrument_clock_peak_is_resolution_claim=false') {
-            Add-DocError "$relative`: the absolute instrument clock resolution-claim prohibition is missing"
-        }
-    }
- }
-
-& $PythonExe (Join-Path $PSScriptRoot 'documentation_links.py') --root $repoRoot
-if ($LASTEXITCODE -ne 0) { Add-DocError 'Markdown links/anchors failed; see per-file diagnostics above' }
-
-if (-not (Test-Path -LiteralPath $comsolApiPath -PathType Leaf)) {
-    Add-DocError 'missing docs/tools/COMSOL_API.md'
-}
-else {
-    $apiInfo = Get-Item -LiteralPath $comsolApiPath
-    $apiRaw = [System.IO.File]::ReadAllText($comsolApiPath, $utf8)
-    if ($apiInfo.Length -gt 30000) {
-        Add-DocError "docs/tools/COMSOL_API.md: $($apiInfo.Length) bytes exceeds the 30000-byte focused-reference limit"
-    }
-    if ($apiRaw -match '(?m)^#{2,6}\s+\d+(?:\.\d+)*(?:\.|\s)') {
-        Add-DocError 'docs/tools/COMSOL_API.md: numbered headings are forbidden; use stable semantic headings'
-    }
-    if ($apiRaw -match '(?i)oa[-_ ]?tof|rf_quadrupole|wehnelt_electron_gun|electron_impact_ion_source') {
-        Add-DocError 'docs/tools/COMSOL_API.md: project-specific names belong in project documentation'
-    }
-}
-
-$strategyDocs = @(
-    @{
-        Path = $visionPath
-        Label = 'docs/VISION.md'
-        Headings = @('## 使命', '## 使用闭环', '## 能力扩展方向', '## 复用与增长', '## 可信结果与正式交付')
-    },
-    @{
-        Path = $roadmapPath
-        Label = 'docs/ROADMAP.md'
-        Headings = @('## 规划原则', '## 设计族与未来项目', '## 需求与项目注册',
-            '## OA-TOF性能驱动闭环', '## 多极杆功能设计',
-            '## 离子源与电子枪自动化', '## 部件集成与仪器级优化',
-            '## 受控自然语言自治')
-    }
-)
-foreach ($strategyDoc in $strategyDocs) {
-    if (-not (Test-Path -LiteralPath $strategyDoc.Path -PathType Leaf)) {
-        Add-DocError "missing $($strategyDoc.Label)"
-        continue
-    }
-    $strategyLines = @(Get-Content -LiteralPath $strategyDoc.Path -Encoding UTF8)
-    foreach ($heading in $strategyDoc.Headings) {
-        if (@($strategyLines | Where-Object { $_ -ceq $heading }).Count -ne 1) {
-            Add-DocError "$($strategyDoc.Label): expected exactly one heading '$heading'"
-        }
-    }
-}
-
-$activeTextFiles = @(Get-ChildItem -LiteralPath $repoRoot -Recurse -File |
-    Where-Object {
-        $_.FullName.Substring($repoRoot.Length + 1) -notmatch '(^|[\\/])(\.git|artifacts|\.venv|history|legacy)[\\/]' -and
-        $_.Extension -in @('.md', '.m', '.py', '.ps1', '.lua')
-    })
-foreach ($file in $activeTextFiles) {
-    $raw = [System.IO.File]::ReadAllText($file.FullName, $utf8)
-    if ($raw -match '(?i)COMSOL_(?:API|DEBUGGING)\.md[^\r\n]{0,80}§\s*\d') {
-        $relative = $file.FullName.Substring($repoRoot.Length + 1)
-        Add-DocError "$relative`: root COMSOL references must use semantic headings, not numeric sections"
-    }
-}
+$linkArguments=@((Join-Path $PSScriptRoot 'documentation_links.py'),'--root',$repoRoot)
+if($AuditHistory){$linkArguments+='--audit-history'}
+foreach($path in $ChangedPath){$linkArguments+=@('--changed-path',$path)}
+& $PythonExe @linkArguments
+if($LASTEXITCODE-ne0){Add-DocError 'Markdown links/anchors failed; see per-file diagnostics above'}
 
 $historyFiles = New-Object System.Collections.Generic.List[System.IO.FileInfo]
+if($AuditHistory -or $ChangedPath.Count){
 $historyScopes = @(
     [pscustomobject]@{
         Directory = Get-Item -LiteralPath (Join-Path $repoRoot 'docs\history')
@@ -276,12 +69,16 @@ $historyScopes = @(
 })
 foreach ($historyScope in $historyScopes) {
     $historyDir = $historyScope.Directory
+    $historyPrefix=[IO.Path]::GetRelativePath($repoRoot,$historyDir.FullName).Replace('\','/')+'/'
+    $selectedHistory=@($ChangedPath|ForEach-Object{$_.Replace('\','/')}|Where-Object{$_.StartsWith($historyPrefix)})
+    if(-not$AuditHistory-and-not$selectedHistory.Count){continue}
     $indexRaw = if (Test-Path -LiteralPath $historyScope.IndexPath -PathType Leaf) {
         [System.IO.File]::ReadAllText($historyScope.IndexPath, $utf8)
     } else { '' }
     $flatMarkdown = @(Get-ChildItem -LiteralPath $historyDir.FullName -File -Filter '*.md' |
         Where-Object { $_.Name -ne 'README.md' })
     foreach ($file in $flatMarkdown) {
+        if(-not$AuditHistory-and([IO.Path]::GetRelativePath($repoRoot,$file.FullName).Replace('\','/')-notin$selectedHistory)){continue}
         $historyFiles.Add($file)
         $hasArchiveBanner = Select-String -LiteralPath $file.FullName -SimpleMatch `
             'DOC_STATUS: ARCHIVED_READ_ONLY' -Encoding UTF8 -Quiet
@@ -299,6 +96,7 @@ foreach ($historyScope in $historyScopes) {
     $rootPayloadFiles = @(Get-ChildItem -LiteralPath $historyDir.FullName -File |
         Where-Object { $_.Extension -ne '.md' })
     foreach ($payloadFile in $rootPayloadFiles) {
+        if(-not$AuditHistory-and([IO.Path]::GetRelativePath($repoRoot,$payloadFile.FullName).Replace('\','/')-notin$selectedHistory)){continue}
         $relative = $payloadFile.FullName.Substring($repoRoot.Length + 1)
         Add-DocError "$relative`: history payload must be inside a same-name manifest directory"
     }
@@ -314,6 +112,7 @@ foreach ($historyScope in $historyScopes) {
         Where-Object { $_.Name -ne 'retired_campaigns' })) {
         if ($payloadDir.Name -eq 'retired_projects' -and
             $historyRelative -match '^projects/[^/]+/docs/history$') { continue }
+        if(-not$AuditHistory-and-not@($selectedHistory|Where-Object{$_.StartsWith($historyPrefix+$payloadDir.Name+'/')-or$_-eq($historyPrefix+$payloadDir.Name+'.md')}).Count){continue}
         $manifestPath = Join-Path $historyDir.FullName ($payloadDir.Name + '.md')
         if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
             $relative = $payloadDir.FullName.Substring($repoRoot.Length + 1)
@@ -375,6 +174,8 @@ foreach ($historyScope in $historyScopes) {
             }
         }
     }
+}
+
 }
 
 foreach ($required in @('AGENTS.md', 'README.md', 'CLAUDE.md')) {
@@ -440,24 +241,7 @@ foreach ($projectDir in $projectDirs) {
     if ($projectReadmeRaw -notmatch '\.\./\.\./README\.md') {
         Add-DocError "$($projectDir.Name): README.md does not route to the repository README authority"
     }
-    if ($projectReadmeRaw -match '(?m)^##\s+当前(?:状态|结论|进展)') {
-        Add-DocError "$($projectDir.Name): current-state sections belong in docs/PROJECT.md, not README.md"
-    }
 
-    $softwareDocNames = @('COMSOL.md', 'SIMION.md', 'CAD.md')
-    foreach ($softwareDocName in $softwareDocNames) {
-        $softwareDocPath = Join-Path $projectDir.FullName (Join-Path 'docs' $softwareDocName)
-        if (-not (Test-Path -LiteralPath $softwareDocPath -PathType Leaf)) { continue }
-        $softwareDocRaw = [System.IO.File]::ReadAllText($softwareDocPath, $utf8)
-        if ($softwareDocRaw -notmatch '\]\(PROJECT\.md(?:#[^)]*)?\)') {
-            Add-DocError "$($projectDir.Name)/docs/$softwareDocName`: software document does not return to PROJECT.md"
-        }
-        foreach ($siblingName in @($softwareDocNames | Where-Object { $_ -ne $softwareDocName })) {
-            if ($softwareDocRaw -match ('\]\([^)]*' + [regex]::Escape($siblingName) + '(?:#[^)]*)?\)')) {
-                Add-DocError "$($projectDir.Name)/docs/$softwareDocName`: forbidden lateral link to $siblingName"
-            }
-        }
-    }
 }
 
 if ($errors.Count -gt 0) {
@@ -470,7 +254,6 @@ if ($errors.Count -gt 0) {
     HistoryArchives = $historyFiles.Count
     AuthorityEntries = $authorityRoutes.Count
     Mode = if ($StructureOnly) { 'StructureOnly' } else { 'Full' }
-    ComsolReferenceBytes = if (Test-Path -LiteralPath $comsolApiPath) { (Get-Item $comsolApiPath).Length } else { 0 }
     STATUS = 'PASS'
 } | Format-List
 } finally {

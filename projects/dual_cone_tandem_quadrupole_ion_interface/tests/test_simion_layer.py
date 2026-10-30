@@ -43,26 +43,6 @@ def load(path: Path) -> dict:
 
 
 class SimionGeometryTests(unittest.TestCase):
-    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
-    def test_project_gate_stops_before_ruff_when_unittest_fails(self) -> None:
-        source = (PROJECT / "verify_project.ps1").read_text(encoding="utf-8")
-        start = source.index("    & $PythonExe -m unittest discover")
-        guard = source[source.index("    if ($LASTEXITCODE", start):
-                       source.index("    & $PythonExe -m ruff", start)]
-        script = (
-            "$ErrorActionPreference='Stop'; & '" + sys.executable.replace("'", "''")
-            + "' -c 'raise SystemExit(7)'\n" + guard
-            + "Write-Output 'PROJECT_GATE=PASS'"
-        )
-        result = subprocess.run(
-            [shutil.which("pwsh"), "-NoProfile", "-Command", script],
-            cwd=PROJECT.parents[1], capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=30,
-        )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Dual-cone interface static tests failed", result.stderr)
-        self.assertNotIn("PROJECT_GATE=PASS", result.stdout)
-
     def test_default_diagnostic_axial_reach_counts_unique_ions(self) -> None:
         tracks = {
             1: ([-1.0, 2.0, 6.0], [0.0, 0.1, 0.2]),

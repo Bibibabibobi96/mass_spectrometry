@@ -144,88 +144,34 @@ class DevelopmentStandardsCoverageTests(unittest.TestCase):
 class LightweightGateIntegrationTests(unittest.TestCase):
     repo_root = standards.REPO_ROOT
 
-    def test_local_hook_and_ci_share_the_development_standards_gate(self):
-        hook = (self.repo_root / ".githooks" / "pre-commit").read_text(encoding="utf-8")
-        workflow = (
-            self.repo_root / ".github" / "workflows" / "lightweight-gate.yml"
-        ).read_text(encoding="utf-8")
-        self.assertIn("common/verify_development_standards.py", hook)
-        self.assertIn('"3.11"', hook)
-        normalized_workflow = workflow.replace("\\", "/")
-        self.assertIn("common/verify_changed.ps1", normalized_workflow)
-        self.assertIn("common/verify_repository_integration.ps1", normalized_workflow)
-        self.assertNotIn("pull_request:", workflow)
-        self.assertIn("fetch-depth: 0", workflow)
-
-    def test_hygiene_allows_only_canonical_shared_iob_seed_binaries(self):
-        hygiene = (
-            self.repo_root / "common" / "verify_repository_hygiene.ps1"
-        ).read_text(encoding="utf-8")
-        self.assertIn("$sharedIobSeedPrefix", hygiene)
-        self.assertIn("iob_seed_placeholder_01.pa0", hygiene)
-        self.assertIn("10_instance_seed.iob", hygiene)
-        self.assertIn("-not $isSharedIobSeed", hygiene)
-
-    def test_hygiene_allows_only_registered_artifact_root_directories(self):
-        hygiene = (
-            self.repo_root / "common" / "verify_repository_hygiene.ps1"
-        ).read_text(encoding="utf-8")
-        self.assertIn("@('projects', 'common')", hygiene)
-        self.assertIn("artifacts root contains unregistered entry", hygiene)
-        self.assertNotIn("verify_artifact_layout $artifactProjectsRoot", hygiene)
-        self.assertNotIn("verify_artifact_layout.py $artifactProjectsRoot", hygiene)
-
-    def test_hygiene_accepts_a_standalone_ci_checkout(self):
+    def test_hygiene_ignores_local_layout_but_rejects_tracked_solver_payload(self):
         with tempfile.TemporaryDirectory() as temporary:
             checkout = Path(temporary) / "checkout"
             common = checkout / "common"
             common.mkdir(parents=True)
             script = common / "verify_repository_hygiene.ps1"
-            shutil.copy2(
-                self.repo_root / "common" / "verify_repository_hygiene.ps1",
-                script,
-            )
-            subprocess.run(
-                ["git", "init", "--quiet", str(checkout)],
-                cwd=checkout,
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            completed = subprocess.run(
-                ["pwsh", "-NoProfile", "-File", str(script)],
-                cwd=checkout,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            self.assertIn("standalone_repository_checkout", completed.stdout)
-            self.assertIn("REPOSITORY_HYGIENE=PASS", completed.stdout)
-            for name in ("tmp", "new", "artifacts", "scratch", "unregistered-output"):
-                with self.subTest(directory=name):
-                    debris = checkout / name
-                    debris.mkdir()
-                    rejected = subprocess.run(
-                        ["pwsh", "-NoProfile", "-File", str(script)],
-                        cwd=checkout, capture_output=True, text=True, timeout=30,
-                    )
-                    self.assertNotEqual(rejected.returncode, 0)
-                    self.assertIn("unregistered directory", rejected.stderr)
-                    debris.rmdir()
-            (checkout / "debug.log").write_text("failed test output", encoding="utf-8")
-            rejected = subprocess.run(
-                ["pwsh", "-NoProfile", "-File", str(script)],
-                cwd=checkout, capture_output=True, text=True, timeout=30,
-            )
+            shutil.copy2(self.repo_root / "common/verify_repository_hygiene.ps1", script)
+            subprocess.run(["git", "init", "--quiet", str(checkout)], cwd=checkout,
+                           check=True, capture_output=True, timeout=10)
+            for name in ("scratch", "unregistered-output", ".tools"):
+                (checkout / name).mkdir()
+            (checkout / "debug.log").write_text("local debugging", encoding="utf-8")
+            def verify():
+                return subprocess.run(["pwsh", "-NoProfile", "-File", str(script)], cwd=checkout,
+                                      capture_output=True, text=True, timeout=30)
+            accepted = verify()
+            self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+            payload = checkout / "field.pa0"
+            payload.write_bytes(b"small generated fixture")
+            subprocess.run(["git", "add", "field.pa0"], cwd=checkout, check=True,
+                           capture_output=True, timeout=10)
+            rejected = verify()
             self.assertNotEqual(rejected.returncode, 0)
-            self.assertIn("tool artifact", rejected.stderr)
+            self.assertIn("generated/binary artifact", rejected.stderr)
 
 
 class ChangedDevelopmentStandardsTests(unittest.TestCase):
-    def test_changed_source_and_documentation_skip_unrelated_rules_but_uncertainty_is_full(self):
+    def test_file_local_checks_only_expand_when_rules_change(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             common = root / "common"
@@ -238,8 +184,8 @@ class ChangedDevelopmentStandardsTests(unittest.TestCase):
                                                 (["common/good.py"], True, "explicit_changed_paths"),
                                                 (["README.md"], True, "explicit_changed_paths"),
                                                 (["common/bad.py"], False, "explicit_changed_paths"),
-                                                (["common/deleted.py"], False, "deleted_source_path"),
-                                                (["config/unknown.json"], False, "unknown_or_configuration_path"),
+                                                (["common/deleted.py"], True, "explicit_changed_paths"),
+                                                (["config/unknown.json"], True, "explicit_changed_paths"),
                                                 (["docs/DEVELOPMENT_STANDARDS.md"], False, "rules_changed")):
                     with self.subTest(paths=paths), redirect_stdout(io.StringIO()) as output:
                         arguments = [] if paths is None else [item for path in paths for item in ("--path", path)]
@@ -349,7 +295,7 @@ class StagedDevelopmentStandardsTests(unittest.TestCase):
             self.assertEqual(documentation.returncode, 0, documentation.stdout + documentation.stderr)
             self.assertIn("DEVELOPMENT_SCOPE=CHANGED", documentation.stdout + documentation.stderr)
 
-    def test_actual_hook_broadens_staged_source_rename_and_deletion(self):
+    def test_actual_hook_does_not_broaden_staged_source_rename_and_deletion(self):
         for operation in ("rename", "delete"):
             with self.subTest(operation=operation), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
@@ -366,7 +312,7 @@ class StagedDevelopmentStandardsTests(unittest.TestCase):
                 self.assertEqual(changed.returncode, 0, changed.stderr)
                 completed = self.run_hook(root)
                 self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-                self.assertIn("DEVELOPMENT_SCOPE=FULL REASON=deleted_source_path", completed.stdout + completed.stderr)
+                self.assertIn("DEVELOPMENT_SCOPE=CHANGED REASON=explicit_changed_paths", completed.stdout + completed.stderr)
 
     def test_explicit_index_snapshot_reads_only_selected_blobs(self):
         with tempfile.TemporaryDirectory() as directory:

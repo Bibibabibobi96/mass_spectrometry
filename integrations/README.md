@@ -55,7 +55,7 @@
 入口递归枚举`integrations/tests`中的测试模块；L1按统一目录传入`ChangedTestModules`时合并去重，
 保持该入口的Ruff检查。测试使用公共计时runner，即时报出失败详情并逐测试计时；明确的纯测试模块变更
 可由L1精确运行，fixture、删除或未知目录变化扩大到owner。
-L1／L2、冻结依赖与最终验收见[状态页](docs/INTEGRATION.md#依赖冻结与门禁)及[操作指南](../docs/OPERATIONS.md#分层门禁)。
+L1／L2、冻结依赖与最终验收见[状态页](docs/INTEGRATION.md#依赖冻结与门禁)及[操作指南](../docs/OPERATIONS.md#软件验证与科学证据)。
 不使用已退役的旧family或arm CLI执行新实验；历史运行保持原身份。
 
 ## 当前文本绑定编译

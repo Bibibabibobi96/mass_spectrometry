@@ -2,7 +2,8 @@
 param(
   [ValidateSet('Static', 'Candidate', 'Formal')]
   [string]$Level = 'Static',
-  [string]$PythonExe = ''
+  [string]$PythonExe = '',
+  [switch]$RuffHandledByParent
 )
 
 Set-StrictMode -Version Latest
@@ -70,17 +71,21 @@ try {
       }
     }
 
-    & $PythonExe -m unittest discover `
+    & $PythonExe -m common.gate_unittest discover `
       -s projects/dual_cone_tandem_quadrupole_ion_interface/tests -p 'test_*.py'
     if ($LASTEXITCODE -ne 0) {
       throw 'Dual-cone interface static tests failed.'
     }
 
-    & $PythonExe -m ruff check `
-      projects/dual_cone_tandem_quadrupole_ion_interface/analysis `
-      projects/dual_cone_tandem_quadrupole_ion_interface/tests
-    if ($LASTEXITCODE -ne 0) {
-      throw 'Dual-cone interface Ruff checks failed.'
+    if ($RuffHandledByParent) {
+      'RUFF=HANDLED_BY_PARENT PROJECT=dual_cone_tandem_quadrupole_ion_interface'
+    } else {
+      & $PythonExe -m ruff check `
+        projects/dual_cone_tandem_quadrupole_ion_interface/analysis `
+        projects/dual_cone_tandem_quadrupole_ion_interface/tests
+      if ($LASTEXITCODE -ne 0) {
+        throw 'Dual-cone interface Ruff checks failed.'
+      }
     }
 
     if ($Level -ne 'Static') {

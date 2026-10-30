@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -20,6 +21,18 @@ RF = "projects/rf_multipole_ion_optics"
 def powershell_literal(value: str | Path) -> str:
     """Quote a literal PowerShell argument without interpolation."""
     return "'" + str(value).replace("'", "''") + "'"
+
+
+def write_planned_request(root: Path, request: Path, paths: list[str] | None) -> None:
+    """Use the parent's real selector once, then exercise only resolved dispatch."""
+    command = ("& " + powershell_literal(root / "common/verify.ps1") +
+               " -PythonExe " + powershell_literal(sys.executable) +
+               " -PlanOnly -InternalRequestPath " + powershell_literal(request))
+    command += " -FullScope" if paths is None else " -ChangedPath @(" + ",".join(map(powershell_literal, paths)) + ")"
+    result = subprocess.run(["pwsh", "-NoProfile", "-Command", command], cwd=root,
+                            capture_output=True, text=True, encoding="utf-8", timeout=60)
+    if result.returncode:
+        raise AssertionError(result.stdout + result.stderr)
 
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell Core is required")
@@ -109,7 +122,7 @@ class ChangedTestSelectionTests(unittest.TestCase):
             tests = root / "integrations/tests"
             for path in (common, tests, root / "temporary", root / "ruff", root / "projects"):
                 path.mkdir(parents=True)
-            for name in ("verify_repository_integration.ps1", "verify_changed.ps1", "parallel_gate_support.ps1",
+            for name in ("verify.ps1", "parallel_gate_support.ps1",
                          "gate_catalog_support.ps1", "require_powershell7.ps1", "gate_unittest.py"):
                 shutil.copyfile(REPO_ROOT / "common" / name, common / name)
             shutil.copyfile(REPO_ROOT / "integrations/verify_integration.ps1",
@@ -120,17 +133,6 @@ class ChangedTestSelectionTests(unittest.TestCase):
             # the real catalog's partition and the real owner's execution.
             route.pop("runtime_dependencies_path")
             catalog["routes"] = [route]
-            if gate_name == "l1":
-                for stage in ("project_registry", "rf_multipole_generated_publications"):
-                    catalog["routes"].append(dict(stage=stage, dependency_profile="stdlib",
-                        repository_integration_group="fast", matches=[dict(exact="unused-fixture", reason="unused")],
-                        command=dict(runner="python", arguments=["-c", "pass"])))
-                catalog["routes"].append(dict(stage="fixture_covered_modules", dependency_profile="stdlib",
-                    repository_integration_group="covered", run_on_full_scope=False,
-                    full_scope_coverage_stage="instrument_assembly_integration",
-                    matches=[dict(exact="integrations/runtime/fixture.py", reason="fixture_source")],
-                    command=dict(runner="python", arguments=["-m", "unittest", "integrations/tests/test_a.py", "fixture_extra"],
-                                 python_path_roots=["integrations/tests/"])))
             (common / "gate_catalog.json").write_text(json.dumps(catalog), encoding="utf-8")
             (common / "host_execution_lease.ps1").write_text(
                 "function Get-HostResourceBudget {param($Stage,$Role) @{}}\n"
@@ -138,7 +140,7 @@ class ChangedTestSelectionTests(unittest.TestCase):
                 "function Exit-HostResourceStage {param($Lease)}\n"
                 "function Enter-HostExecutionLease {param($Role) Set-Content (Join-Path $env:FIXTURE_OWNER_EVENTS ($PID.ToString()+'.enter')) $Role; @{}}\n"
                 "function Exit-HostExecutionLease {param($Lease) Set-Content (Join-Path $env:FIXTURE_OWNER_EVENTS ($PID.ToString()+'.exit')) 'released'}\n", encoding="utf-8")
-            (common / "verify_documentation.ps1").write_text("param($PythonExe)\n", encoding="utf-8")
+            (common / "verify_documentation.ps1").write_text("param($PythonExe,$StructureOnly,[string[]]$ChangedPath)\n", encoding="utf-8")
             (common / "verify_repository_hygiene.ps1").write_text("# inert hygiene fixture\n", encoding="utf-8")
             (root / "integrations/runtime").mkdir()
             (root / "integrations/runtime/fixture.py").write_text("pass\n", encoding="utf-8")
@@ -153,7 +155,7 @@ class ChangedTestSelectionTests(unittest.TestCase):
                 "owner = 'integrations/runtime' in sys.argv\n"
                 "if owner: (Path(os.environ['FIXTURE_OWNER_EVENTS'])/(str(os.getpid())+'.ruff')).write_text('owner')\n"
                 "print('RUFF_OWNER_CHECK' if owner else 'RUFF_GLOBAL_CHECK')\n"
-                "raise SystemExit(1 if owner and os.environ.get('FIXTURE_PREFLIGHT_FAIL') else 0)\n",
+                "raise SystemExit(1 if os.environ.get('FIXTURE_RUFF_FAIL') else 0)\n",
                 encoding="utf-8")
             for name in "abcdef":
                 (tests / f"test_{name}.py").write_text(
@@ -163,20 +165,19 @@ class ChangedTestSelectionTests(unittest.TestCase):
                     encoding="utf-8")
             environment = dict(os.environ, TEMP=str(root / "temporary"), TMP=str(root / "temporary"))
             environment.pop("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN", None)
-            for failure in (("", "shard", "preflight", "thin") if gate_name == "l1" else ("", "shard", "preflight")):
+            for failure in (("", "shard", "ruff", "thin") if gate_name == "Changed" else ("", "shard", "ruff")):
                 with self.subTest(failure=failure):
                     events = root / ((failure or "success") + "_events")
                     events.mkdir()
                     environment["FIXTURE_OWNER_EVENTS"] = str(events)
-                    environment.pop("FIXTURE_PREFLIGHT_FAIL", None)
+                    environment.pop("FIXTURE_RUFF_FAIL", None)
                     environment.pop("FIXTURE_SHARD_FAIL", None)
-                    if failure in {"shard", "preflight"}:
+                    if failure in {"shard", "ruff"}:
                         environment["FIXTURE_" + failure.upper() + "_FAIL"] = "1"
                     summary = root / ((failure or "success") + ".json")
-                    gate = "verify_changed.ps1" if gate_name == "l1" else "verify_repository_integration.ps1"
-                    arguments = ["pwsh", "-NoProfile", "-File", str(common / gate),
+                    arguments = ["pwsh", "-NoProfile", "-File", str(common / "verify.ps1"), "-Scope", gate_name,
                                  "-PythonExe", sys.executable, "-MaxConcurrency", "4", "-SummaryPath", str(summary)]
-                    if gate_name == "l1":
+                    if gate_name == "Changed":
                         arguments.extend(["-ChangedPath", "integrations/tests/test_a.py" if failure == "thin"
                                           else "integrations/runtime/fixture.py"])
                     result = subprocess.run(
@@ -184,7 +185,7 @@ class ChangedTestSelectionTests(unittest.TestCase):
                         cwd=root, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=90,
                     )
                     output = result.stdout + result.stderr
-                    self.assertEqual(result.returncode != 0, failure in {"shard", "preflight"}, output)
+                    self.assertEqual(result.returncode != 0, failure in {"shard", "ruff"}, output)
                     report = json.loads(summary.read_text(encoding="utf-8"))
                     stages = {stage["name"]: stage for stage in report["stages"]}
                     parts = [stage for name, stage in stages.items()
@@ -197,76 +198,82 @@ class ChangedTestSelectionTests(unittest.TestCase):
                         self.assertEqual(len(selected["test_durations"]), 1, output)
                         self.assertFalse(list(events.glob("*.ruff")), output)
                         continue
-                    if gate_name == "l1":
-                        covered = stages["fixture_covered_modules"]
-                        self.assertEqual(covered["command"]["arguments"], ["-m", "common.gate_unittest", "fixture_extra"])
-                        self.assertEqual(covered["command"]["python_path_roots"], ["integrations/tests/"])
-                        self.assertEqual(covered["selection_reason"], "partially_covered_by_instrument_assembly_integration")
-                        if not failure:
-                            self.assertEqual(len(covered["test_durations"]), 1, output)
                     self.assertEqual(len(parts), 4)
                     self.assertCountEqual(modules, [f"integrations.tests.test_{name}" for name in "abcdef"])
                     self.assertEqual(len(modules), len(set(modules)))
-                    self.assertEqual(len(list(events.glob("*.ruff"))), 1, output)
+                    self.assertFalse(list(events.glob("*.ruff")), output)
                     entered = {path.stem for path in events.glob("*.enter")}
                     exited = {path.stem for path in events.glob("*.exit")}
-                    if gate_name == "l1" and failure == "shard":
-                        self.assertGreaterEqual(len(entered), 2, output)
-                        self.assertLessEqual(len(entered), 5, output)
+                    if gate_name == "Changed" and failure:
+                        self.assertLessEqual(len(entered), 4, output)
                     else:
-                        self.assertEqual(len(entered), 1 if failure == "preflight" else 5, output)
+                        self.assertEqual(len(entered), 4, output)
                     self.assertEqual(exited, entered, output)
                     self.assertTrue(all(path.read_text(encoding="utf-8-sig").strip() == "GATE"
                                         for path in events.glob("*.enter")), output)
-                    if failure == "preflight":
-                        self.assertTrue(all(part["status"] == "BLOCKED" for part in parts), output)
-                    else:
-                        self.assertEqual(stages["instrument_assembly_integration"]["status"], "PASS", output)
+                    self.assertEqual(stages["instrument_assembly_integration"]["status"], "NOT_APPLICABLE", output)
+                    if not (gate_name == "Changed" and failure == "ruff"):
                         self.assertEqual(sum(part["status"] == "FAIL" for part in parts), int(failure == "shard"), output)
-                        if not (gate_name == "l1" and failure == "shard"):
-                            self.assertEqual(sum(len(part["test_durations"]) for part in parts), 6, output)
-                        if failure:
-                            self.assertIn("TEST_FAILURE_IMMEDIATE=", output)
-                            self.assertIn("INTEGRATION_SHARD_FAILURE", output)
+                    if not (gate_name == "Changed" and failure):
+                        self.assertEqual(sum(len(part["test_durations"]) for part in parts), 6, output)
+                    if failure == "shard":
+                        self.assertIn("TEST_FAILURE_IMMEDIATE=", output)
+                        self.assertIn("INTEGRATION_SHARD_FAILURE", output)
 
-    def test_integration_l2_partitions_run_each_module_once_after_one_preflight(self) -> None:
-        self.check_integration_partitions("l2")
+    def test_repository_partitions_run_each_module_once_without_ruff_preflight(self) -> None:
+        self.check_integration_partitions("Repository")
 
-    def test_integration_l1_reuses_full_partitions_and_preserves_thin_selection(self) -> None:
-        self.check_integration_partitions("l1")
+    def test_changed_scope_partitions_preserve_thin_selection_and_failure_policy(self) -> None:
+        self.check_integration_partitions("Changed")
 
-    def selection(self, root: Path, stage: str, paths: list[str]) -> dict:
-        script = (
-            ". ./common/gate_catalog_support.ps1; "
-            "$routes=@(Read-GateCatalog -RepoRoot $PWD.Path); "
-            "$roots=@($routes | Where-Object { $null -ne $_.PSObject.Properties['test_selection'] } "
-            "| ForEach-Object { @($_.test_selection.roots) }); "
-            "$route=$routes | Where-Object { $_.stage -eq " + powershell_literal(stage) + " }; "
-            "Get-GateChangedTests -Route $route -RepoRoot $PWD.Path -KnownTestRoots $roots "
-            "-ChangedPaths @(" + ",".join(map(powershell_literal, paths)) + ") | ConvertTo-Json -Depth 8"
-        )
-        result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=root,
-                                capture_output=True, text=True, encoding="utf-8", timeout=60)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        return json.loads(result.stdout)
+    def selections(self, root: Path, cases: list[dict], *, owner_filter: bool = False) -> list[dict]:
+        """Evaluate read-only cases in one host; cross-process tests remain separate."""
+        with tempfile.TemporaryDirectory(prefix="selection_cases_") as directory:
+            request = Path(directory) / "cases.json"
+            request.write_text(json.dumps(cases), encoding="utf-8")
+            script = (
+                ". " + powershell_literal(REPO_ROOT / "common/gate_catalog_support.ps1") + "; "
+                "$routes=@(Read-GateCatalog -RepoRoot $PWD.Path); "
+                "$roots=@($routes | Where-Object { $null -ne $_.PSObject.Properties['test_selection'] } "
+                "| ForEach-Object { @($_.test_selection.roots) }); "
+                "$cases=Get-Content -Raw -LiteralPath " + powershell_literal(request) + "|ConvertFrom-Json; "
+                "$results=@(foreach($case in $cases){ "
+                "$route=@($routes | Where-Object { $_.stage -eq $case.stage }); "
+                "if($route.Count-ne1){throw 'selection case must have one real catalog owner'}; "
+                "$paths=@($case.paths); " +
+                ("$paths=@(Get-GateOwnerChangedPaths -Route $route[0] -ChangedPaths $paths); " if owner_filter else "") +
+                "Get-GateChangedTests -Route $route[0] -RepoRoot $PWD.Path -KnownTestRoots $roots -ChangedPaths $paths "
+                "}); ConvertTo-Json -InputObject $results -Depth 8"
+            )
+            result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=root,
+                                    capture_output=True, text=True, encoding="utf-8", timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            selected = json.loads(result.stdout)
+            self.assertEqual(len(selected), len(cases))
+            return selected
 
     def test_existing_modules_and_support_have_explicit_selection(self) -> None:
+        cases = []
         for prefix, stage, filename in (
             (MR, "parallel_mirror_dual_stripe_mr_tof_static", "test_simion_event_analysis.py"),
             (RF, "rf_multipole_quadrupole_static", "test_mass_filter_l1.py"),
         ):
             changed = f"{prefix}/tests/analysis/{filename}"
-            selected = self.selection(REPO_ROOT, stage, [changed])
-            self.assertEqual(selected["Modules"], [changed])
-            self.assertFalse(selected["Expanded"])
-            mixed = self.selection(REPO_ROOT, stage, [changed, f"{prefix}/analysis/source.py"])
-            self.assertFalse(mixed["OnlyTestModules"])
-            for path in (f"{prefix}/tests/analysis/test_deleted.py",
-                         f"{prefix}/tests/analysis/__init__.py",
-                         f"{prefix}/tests/test_support/fixture.py"):
-                selected = self.selection(REPO_ROOT, stage, [path])
-                self.assertTrue(selected["Expanded"], path)
-                self.assertIn(changed, selected["Modules"], path)
+            cases.extend(dict(stage=stage, paths=paths) for paths in (
+                [changed], [changed, f"{prefix}/analysis/source.py"],
+                [f"{prefix}/tests/analysis/test_deleted.py"],
+                [f"{prefix}/tests/analysis/__init__.py"], [f"{prefix}/tests/test_support/fixture.py"],
+            ))
+        results = self.selections(REPO_ROOT, cases)
+        for offset in (0, 5):
+            changed = cases[offset]["paths"][0]
+            self.assertEqual(results[offset]["Modules"], [changed])
+            self.assertFalse(results[offset]["Expanded"])
+            self.assertFalse(results[offset + 1]["OnlyTestModules"])
+            for index in range(offset + 2, offset + 5):
+                with self.subTest(paths=cases[index]["paths"]):
+                    self.assertTrue(results[index]["Expanded"])
+                    self.assertIn(changed, results[index]["Modules"])
 
     def test_unknown_fixture_and_deleted_test_execute_the_remaining_owner_tests(self) -> None:
         with tempfile.TemporaryDirectory(prefix="changed_owner_discovery_") as directory:
@@ -284,7 +291,7 @@ class ChangedTestSelectionTests(unittest.TestCase):
                 with self.subTest(changed=changed):
                     script = (
                         ". " + powershell_literal(REPO_ROOT / "common/gate_catalog_support.ps1") + "; "
-                        "$route=[pscustomobject]@{test_selection=[pscustomobject]@{"
+                        "$route=[pscustomobject]@{dependency_profile='stdlib';test_selection=[pscustomobject]@{"
                         "roots=@('owner/tests/analysis/');scope='owner/tests/'}}; "
                         "$selection=Get-GateChangedTests -Route $route -RepoRoot $PWD.Path "
                         "-KnownTestRoots @('owner/tests/analysis/') -ChangedPaths @(" +
@@ -305,12 +312,16 @@ class ChangedTestSelectionTests(unittest.TestCase):
                     self.assertIn("Ran 2 tests", executed.stderr)
 
     def test_shared_rf_support_keeps_owner_module_sets_disjoint(self) -> None:
-        for changed in (f"{RF}/tests/test_support/fixture.py", f"{RF}/tests/__init__.py"):
+        owners = (("quadrupole_static", "analysis"), ("hexapole_static", "hexapole"),
+                  ("octupole_static", "octupole"), ("domain_tests", "domain"))
+        cases = [dict(stage="rf_multipole_" + owner, paths=[changed])
+                 for changed in (f"{RF}/tests/test_support/fixture.py", f"{RF}/tests/__init__.py")
+                 for owner, _ in owners]
+        selected = self.selections(REPO_ROOT, cases)
+        for offset in (0, 4):
             all_modules: set[str] = set()
-            for owner, directory in (("quadrupole_static", "analysis"), ("hexapole_static", "hexapole"),
-                                     ("octupole_static", "octupole"), ("domain_tests", "domain")):
-                selected = self.selection(REPO_ROOT, "rf_multipole_" + owner, [changed])
-                modules = set(selected["Modules"])
+            for index, (_, directory) in enumerate(owners):
+                modules = set(selected[offset + index]["Modules"])
                 self.assertTrue(modules)
                 self.assertTrue(all(path.startswith(f"{RF}/tests/{directory}/") for path in modules))
                 self.assertFalse(all_modules.intersection(modules))
@@ -326,23 +337,10 @@ class ChangedTestSelectionTests(unittest.TestCase):
             ([test, "common/simion/test_removed.py"], False, True),
             ([test, "common/simion/unknown/new.py"], False, True),
         )
-        for paths, only, expanded in cases:
+        selected = self.selections(REPO_ROOT, [dict(stage="simion_common", paths=paths)
+                                             for paths, _, _ in cases], owner_filter=True)
+        for (paths, only, expanded), selection in zip(cases, selected, strict=True):
             with self.subTest(paths=paths):
-                script = (
-                    ". ./common/gate_catalog_support.ps1; "
-                    "$routes=@(Read-GateCatalog -RepoRoot $PWD.Path); "
-                    "$roots=@($routes | Where-Object { $null -ne $_.PSObject.Properties['test_selection'] } "
-                    "| ForEach-Object { @($_.test_selection.roots) }); "
-                    "$route=$routes | Where-Object { $_.stage -eq 'simion_common' }; "
-                    "$paths=@(" + ",".join(map(powershell_literal, paths)) + "); "
-                    "$owner=@(Get-GateOwnerChangedPaths -Route $route -ChangedPaths $paths); "
-                    "Get-GateChangedTests -Route $route -RepoRoot $PWD.Path -KnownTestRoots $roots "
-                    "-ChangedPaths $owner | ConvertTo-Json -Depth 8"
-                )
-                result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,
-                                        capture_output=True, text=True, encoding="utf-8", timeout=30)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                selection = json.loads(result.stdout)
                 self.assertEqual(selection["OnlyTestModules"], only)
                 self.assertEqual(selection["Expanded"], expanded)
                 self.assertIn(test, selection["Modules"])
@@ -420,9 +418,7 @@ class ChangedTestSelectionTests(unittest.TestCase):
             modules = ["test_artifact_naming.py", "test_artifact_project.py",
                        "test_particle_state.py", "test_project_registry.py"]
             request = root / "request.json"
-            request.write_text(json.dumps({"python_exe": sys.executable,
-                                           "changed_paths": ["common/contracts/" + name for name in modules],
-                                           "full_scope": False}), encoding="utf-8")
+            write_planned_request(REPO_ROOT, request, ["common/contracts/" + name for name in modules])
             log = root / "stage.log"
             environment = dict(os.environ, TEMP=directory, TMP=directory, PYTHONDONTWRITEBYTECODE="1")
             environment.pop("PYTHONPATH", None)
@@ -431,13 +427,19 @@ class ChangedTestSelectionTests(unittest.TestCase):
                 str(REPO_ROOT.parent / "artifacts/common/host_resources.sqlite3"),
             )
             result = subprocess.run([
-                "pwsh", "-NoProfile", "-File", str(REPO_ROOT / "common/verify_changed.ps1"),
+                "pwsh", "-NoProfile", "-File", str(REPO_ROOT / "common/verify.ps1"),
                 "-InternalStage", "common_contracts", "-InternalRequestPath", str(request),
                 "-InternalLogPath", str(log),
             ], cwd=REPO_ROOT, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=180)
             output = result.stdout + result.stderr + log.read_text(encoding="utf-8")
             self.assertEqual(result.returncode, 0, output)
-            self.assertIn("Ran 33 tests", output)
+            executed_modules = {
+                test_id.rsplit(".", 2)[0]
+                for test_id in re.findall(r"TEST_DURATION_SECONDS=\S+ TEST=(\S+)", output)
+            }
+            self.assertEqual(executed_modules, {
+                "common.contracts." + Path(name).stem for name in modules
+            })
             self.assertIn("GATE_STAGE=PASS NAME=common_contracts", output)
 
     def copy_checkout(self, root: Path) -> None:
@@ -482,6 +484,8 @@ class ChangedTestSelectionTests(unittest.TestCase):
             catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
             owner = next(row for row in catalog["routes"] if row["stage"] == "common_contracts")
             owner["test_selection"] = {"roots": [fixture_root]}
+            # This tiny fixture dispatches one owner stage, not repository shards.
+            owner.pop("repository_integration_partition", None)
             catalog_path.write_text(json.dumps(catalog), encoding="utf-8", newline="\n")
             environment = dict(os.environ, TEMP=logs, TMP=logs, PYTHONDONTWRITEBYTECODE="1")
             environment["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"] = os.environ.get(
@@ -492,12 +496,10 @@ class ChangedTestSelectionTests(unittest.TestCase):
                                              fixture_root + "new_area/test_deleted.py", None)):
                 with self.subTest(changed=changed):
                     request = Path(logs) / f"request_{index}.json"
-                    request.write_text(json.dumps({"python_exe": sys.executable,
-                                                   "changed_paths": [changed] if changed else [],
-                                                   "full_scope": changed is None}), encoding="utf-8")
+                    write_planned_request(root, request, [changed] if changed else None)
                     log = Path(logs) / f"stage_{index}.log"
                     result = subprocess.run([
-                        "pwsh", "-NoProfile", "-File", str(root / "common/verify_changed.ps1"),
+                        "pwsh", "-NoProfile", "-File", str(root / "common/verify.ps1"),
                         "-InternalStage", "common_contracts", "-InternalRequestPath", str(request),
                         "-InternalLogPath", str(log),
                     ], cwd=root, env=environment, capture_output=True, text=True,
@@ -526,34 +528,58 @@ class ChangedTestSelectionTests(unittest.TestCase):
             )
             for prefix in (MR, RF):
                 (root / prefix / "verify_project.ps1").write_text(
-                    "param($Level,$PythonExe,$StructuralVariant,$FreshnessPrevalidated,"
+                    "param($Level,$PythonExe,$StructuralVariant,$FreshnessPrevalidated,$PowerShellSyntaxPrevalidated,$RegistryPrevalidated,"
                     "[string[]]$ChangedTestModules)\n"
                     "& $PythonExe -m unittest @ChangedTestModules\n"
                     "if ($LASTEXITCODE -ne 0) { throw 'OWNER_TEST_FAILURE' }\n",
                     encoding="utf-8")
+            # Batch the tiny cases in one PowerShell host. Keep the actual
+            # selector and the InternalStage delegate; real CLI exit propagation
+            # is still checked independently for both production owners below.
+            probes = []
             for index, (prefix, filename, stage) in enumerate(cases):
                 relative = f"{prefix}/tests/analysis/{filename}"
-                path = root / relative
                 for fails in (True, False):
-                    with self.subTest(path=relative, fails=fails):
-                        path.write_text(
-                            "import unittest\nclass ChangedGateFailureProbe(unittest.TestCase):\n"
-                            f"    def test_probe(self): self.assertFalse({fails!r}, 'CHANGED_TEST_EXECUTED')\n",
-                            encoding="utf-8")
-                        request = Path(logs) / f"request_{index}_{fails}.json"
-                        request.write_text(json.dumps({"python_exe": sys.executable,
-                                                       "changed_paths": [relative],
-                                                       "full_scope": False}), encoding="utf-8")
-                        log = Path(logs) / f"stage_{index}_{fails}.log"
-                        result = subprocess.run([
-                            "pwsh", "-NoProfile", "-File", str(root / "common/verify_changed.ps1"),
-                            "-InternalStage", stage, "-InternalRequestPath", str(request),
-                            "-InternalLogPath", str(log),
-                        ], cwd=root, env=environment, capture_output=True, text=True,
-                            encoding="utf-8", timeout=180)
-                        output = result.stdout + result.stderr + log.read_text(encoding="utf-8")
-                        self.assertEqual(result.returncode != 0, fails, output)
-                        self.assertIn("CHANGED_TEST_EXECUTED" if fails else "Ran 1 test", output)
+                    probes.append(dict(relative=relative, stage=stage, fails=fails,
+                        request=str(Path(logs) / f"request_{index}_{fails}.json"),
+                        log=str(Path(logs) / f"stage_{index}_{fails}.log")))
+            probe_path = Path(logs) / "mini_probes.json"
+            report_path = Path(logs) / "mini_results.json"
+            probe_path.write_text(json.dumps(probes), encoding="utf-8")
+            driver = Path(logs) / "mini_dispatch.ps1"
+            driver.write_text(r'''param($Repo,$Python,$Probes,$Report)
+$ErrorActionPreference='Stop'
+. (Join-Path $Repo 'common/parallel_gate_support.ps1')
+. (Join-Path $Repo 'common/gate_catalog_support.ps1')
+. (Join-Path $Repo 'common/host_execution_lease.ps1')
+$results=@()
+foreach($probe in (Get-Content -LiteralPath $Probes -Raw|ConvertFrom-Json)){
+ $literal=if($probe.fails){'True'}else{'False'}
+ $source="import unittest`nclass ChangedGateFailureProbe(unittest.TestCase):`n    def test_probe(self): self.assertFalse($literal, 'CHANGED_TEST_EXECUTED')`n"
+ [IO.File]::WriteAllText((Join-Path $Repo $probe.relative),$source,[Text.UTF8Encoding]::new($false))
+ & (Join-Path $Repo 'common/verify.ps1') -PythonExe $Python -PlanOnly -InternalRequestPath $probe.request -ChangedPath @($probe.relative)|Out-Null
+ $passed=Invoke-ResolvedGateStage -RepoRoot $Repo -Stage $probe.stage -RequestPath $probe.request -LogPath $probe.log
+ $expectedPassed=-not [bool]$probe.fails
+ if([bool]$passed -ne $expectedPassed){
+  $originalLog=Get-Content -LiteralPath $probe.log -Raw
+  throw "MINI_GATE_UNEXPECTED_STATE case=$($probe.relative) fails=$($probe.fails) expected_passed=$expectedPassed actual_passed=$passed`n$originalLog"
+ }
+ $results+=@{relative=$probe.relative;fails=[bool]$probe.fails;exit_code=$(if($passed){0}else{1})}
+}
+ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Report -Encoding utf8
+''', encoding="utf-8", newline="\n")
+            dispatched = subprocess.run(["pwsh", "-NoProfile", "-File", str(driver), str(root),
+                sys.executable, str(probe_path), str(report_path)], cwd=root, env=environment,
+                capture_output=True, text=True, encoding="utf-8", timeout=180)
+            self.assertEqual(dispatched.returncode, 0, dispatched.stdout + dispatched.stderr)
+            results = json.loads(report_path.read_text(encoding="utf-8-sig"))
+            self.assertEqual(len(results), len(probes))
+            for probe, result in zip(probes, results, strict=True):
+                with self.subTest(path=probe["relative"], fails=probe["fails"]):
+                    self.assertEqual((result["relative"], result["fails"]), (probe["relative"], probe["fails"]))
+                    output = Path(probe["log"]).read_text(encoding="utf-8")
+                    self.assertEqual(result["exit_code"] != 0, probe["fails"], output)
+                    self.assertIn("CHANGED_TEST_EXECUTED" if probe["fails"] else "Ran 1 test", output)
             # Keep the shared runner paired with the actual project gates copied below.
             shutil.copyfile(REPO_ROOT / "common/gate_unittest.py", root / "common/gate_unittest.py")
             # Check both actual project gates still consume and propagate a new test.
@@ -577,12 +603,10 @@ class ChangedTestSelectionTests(unittest.TestCase):
                     "import unittest\nclass Probe(unittest.TestCase):\n"
                     "    def test_failure(self): self.fail('REAL_OWNER_PROBE')\n", encoding="utf-8")
                 request = Path(logs) / f"real_{index}.json"
-                request.write_text(json.dumps({"python_exe": sys.executable,
-                                               "changed_paths": [relative],
-                                               "full_scope": False}), encoding="utf-8")
+                write_planned_request(root, request, [relative])
                 log = Path(logs) / f"real_{index}.log"
                 result = subprocess.run([
-                    "pwsh", "-NoProfile", "-File", str(root / "common/verify_changed.ps1"),
+                    "pwsh", "-NoProfile", "-File", str(root / "common/verify.ps1"),
                     "-InternalStage", stage, "-InternalRequestPath", str(request),
                     "-InternalLogPath", str(log),
                 ], cwd=root, env=environment, capture_output=True, text=True,

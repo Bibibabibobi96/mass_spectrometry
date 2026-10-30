@@ -3,6 +3,7 @@ param(
   [ValidateSet('All','quadrupole','hexapole','octupole')][string]$StructuralVariant = 'All',
   [string]$PythonExe = '',
   [switch]$FreshnessPrevalidated,
+  [switch]$PowerShellSyntaxPrevalidated,
   [string[]]$ChangedTestModules = @()
 )
 
@@ -11,6 +12,10 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $selectedVariants = if ($StructuralVariant -eq 'All') { @('quadrupole','hexapole','octupole') } else { @($StructuralVariant) }
+if ($Level -eq 'Formal') {
+  throw "FORMAL_UNQUALIFIED STRUCTURAL_VARIANT=$($selectedVariants -join ','): current-owner qualification and applicable GUI/CAD closure are required separately for each selected structure; frozen historical qualifications retain their recorded identity."
+}
+
 $hostExecutionLease = $null
 $hostExecutionLeaseSupport = Join-Path $repoRoot 'common\host_execution_lease.ps1'
 if (Test-Path -LiteralPath $hostExecutionLeaseSupport -PathType Leaf) {
@@ -22,6 +27,9 @@ $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SI
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 runtime missing: $python" }
 if ($FreshnessPrevalidated -and $Level -eq 'Freshness') {
   throw 'FreshnessPrevalidated cannot be combined with Level=Freshness.'
+}
+if ($PowerShellSyntaxPrevalidated -and -not $FreshnessPrevalidated) {
+  throw 'PowerShellSyntaxPrevalidated requires FreshnessPrevalidated from the same completed prerequisite.'
 }
 
 if (-not $FreshnessPrevalidated) {
@@ -49,6 +57,23 @@ if (-not $FreshnessPrevalidated) {
   } finally { Pop-Location }
 } else {
   "MULTIPOLE_FRESHNESS=PREVALIDATED STRUCTURAL_VARIANT=$StructuralVariant"
+}
+if ($Level -ne 'Core') {
+  if ($PowerShellSyntaxPrevalidated) {
+    'MULTIPOLE_POWERSHELL_SYNTAX=PREVALIDATED'
+  } else {
+    $parseErrors = @()
+    $powerShellFiles = @(Get-ChildItem -LiteralPath $projectRoot -Recurse -Filter '*.ps1' -File)
+    $powerShellFiles | ForEach-Object {
+      $tokens = $null
+      $fileErrors = $null
+      [System.Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tokens,[ref]$fileErrors) | Out-Null
+      if ($fileErrors) { $parseErrors += $fileErrors }
+    }
+    if ($parseErrors.Count -gt 0) { throw "PowerShell syntax gate failed: $($parseErrors -join '; ')" }
+
+    "MULTIPOLE_POWERSHELL_SYNTAX=PASS FILES=$($powerShellFiles.Count)"
+  }
 }
 if ($Level -eq 'Freshness') {
   "PROJECT_GATE=PASS PROJECT=rf_multipole_ion_optics LEVEL=$Level STRUCTURAL_VARIANT=$StructuralVariant"
@@ -101,18 +126,7 @@ try {
   & $python -m common.gate_unittest @testModules
   if ($LASTEXITCODE -ne 0) { throw "Python variant tests failed: $StructuralVariant" }
 } finally { Pop-Location }
-$parseErrors = @()
-Get-ChildItem -LiteralPath $projectRoot -Recurse -Filter '*.ps1' | ForEach-Object {
-  $tokens = $null
-  $fileErrors = $null
-  [System.Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tokens,[ref]$fileErrors) | Out-Null
-  if ($fileErrors) { $parseErrors += $fileErrors }
-}
-if ($parseErrors.Count -gt 0) { throw "PowerShell syntax gate failed: $($parseErrors -join '; ')" }
 
-if ($Level -eq 'Formal') {
-  throw "FORMAL_UNQUALIFIED STRUCTURAL_VARIANT=$($selectedVariants -join ','): current-owner qualification and applicable GUI/CAD closure are required separately for each selected structure; frozen historical qualifications retain their recorded identity."
-}
 
 "PROJECT_GATE=PASS PROJECT=rf_multipole_ion_optics LEVEL=$Level STRUCTURAL_VARIANT=$StructuralVariant"
 } finally {

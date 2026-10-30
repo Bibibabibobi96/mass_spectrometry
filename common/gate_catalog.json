@@ -44,7 +44,8 @@
           "common.test_host_resource_scheduler",
           "common.test_host_resource_python"
         ]
-      }
+      },
+      "owner": "host_resource_scheduler_tests"
     },
     {
       "stage": "host_resource_adapter_tests",
@@ -74,7 +75,8 @@
         "parameters": {
           "PythonExe": "{python}"
         }
-      }
+      },
+      "owner": "host_resource_adapter_tests"
     },
     {
       "stage": "livelink_resource_stages_tests",
@@ -105,7 +107,8 @@
           "unittest",
           "common.comsol.test_livelink_resource_stages"
         ]
-      }
+      },
+      "owner": "livelink_resource_stages_tests"
     },
     {
       "stage": "longitudinal_fit_tests",
@@ -128,7 +131,9 @@
           "unittest",
           "common.analysis.test_longitudinal_fit"
         ]
-      }
+      },
+      "execution_batch": "analysis",
+      "owner": "common/analysis"
     },
     {
       "stage": "peak_metrics_tests",
@@ -151,7 +156,9 @@
           "unittest",
           "common.analysis.test_peak_metrics"
         ]
-      }
+      },
+      "execution_batch": "analysis",
+      "owner": "common/analysis"
     },
     {
       "stage": "figure_export_tests",
@@ -174,7 +181,9 @@
           "unittest",
           "common.analysis.test_figure_export"
         ]
-      }
+      },
+      "execution_batch": "analysis",
+      "owner": "common/analysis"
     },
     {
       "stage": "beam_focus_diagnostics_tests",
@@ -197,7 +206,9 @@
           "unittest",
           "common.analysis.test_beam_focus_diagnostics"
         ]
-      }
+      },
+      "execution_batch": "analysis",
+      "owner": "common/analysis"
     },
     {
       "stage": "particle_census_tests",
@@ -220,7 +231,9 @@
           "unittest",
           "common.analysis.test_particle_census"
         ]
-      }
+      },
+      "execution_batch": "analysis",
+      "owner": "common/analysis"
     },
     {
       "stage": "plane_crossings_tests",
@@ -243,7 +256,9 @@
           "unittest",
           "common.analysis.test_plane_crossings"
         ]
-      }
+      },
+      "execution_batch": "analysis",
+      "owner": "common/analysis"
     },
     {
       "stage": "population_moments_tests",
@@ -266,7 +281,9 @@
           "unittest",
           "common.analysis.test_population_moments"
         ]
-      }
+      },
+      "execution_batch": "analysis",
+      "owner": "common/analysis"
     },
     {
       "stage": "particle_events_tests",
@@ -289,7 +306,9 @@
           "unittest",
           "common.analysis.test_particle_events"
         ]
-      }
+      },
+      "execution_batch": "analysis",
+      "owner": "common/analysis"
     },
     {
       "stage": "tof_error_budget_tests",
@@ -312,7 +331,9 @@
           "unittest",
           "common.analysis.test_tof_error_budget"
         ]
-      }
+      },
+      "execution_batch": "analysis",
+      "owner": "common/analysis"
     },
     {
       "stage": "documentation_link_tests",
@@ -339,7 +360,8 @@
           "unittest",
           "common.test_documentation_links"
         ]
-      }
+      },
+      "owner": "common/documentation"
     },
     {
       "stage": "project_registry",
@@ -365,7 +387,8 @@
           "common/contracts/build_project_registry.py",
           "--check"
         ]
-      }
+      },
+      "owner": "common/contracts"
     },
     {
       "stage": "livelink_failure_classification",
@@ -384,7 +407,8 @@
       "command": {
         "runner": "powershell",
         "script": "common/comsol/test_livelink_failure_classification.ps1"
-      }
+      },
+      "owner": "livelink_failure_classification"
     },
     {
       "stage": "livelink_environment",
@@ -403,7 +427,8 @@
       "command": {
         "runner": "powershell",
         "script": "common/comsol/test_livelink_environment.ps1"
-      }
+      },
+      "owner": "livelink_environment"
     },
     {
       "stage": "rf_multipole_generated_publications",
@@ -429,6 +454,34 @@
         {
           "exact": "common/resource_budget_support.ps1",
           "reason": "shared_resource_budget_dependency_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_design_request.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_evidence_contract.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_evidence_evaluation.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_operating_modes.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_paired_metrics.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_resolved_design.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_transport_experiment_campaign.schema.json",
+          "reason": "owned_domain_schema_changed"
         }
       ],
       "command": {
@@ -440,7 +493,8 @@
           "StructuralVariant": "All"
         }
       },
-      "project_id": "rf_multipole_ion_optics"
+      "project_id": "rf_multipole_ion_optics",
+      "owner": "rf_multipole_ion_optics"
     },
     {
       "stage": "common_contracts",
@@ -448,35 +502,61 @@
       "repository_integration_group": "regression",
       "matches": [
         {
-          "regex": "^common/contracts/(?!test_verify_changed\\.py$|test_expected_values\\.py$)",
+          "prefix": "common/contracts/",
           "reason": "common_contracts_changed"
-        }
-      ],
-      "command": {
-        "runner": "python",
-        "arguments": [
-          "-m",
-          "unittest",
-          "discover",
-          "-s",
-          "common/contracts",
-          "-p",
-          "test_*.py"
-        ]
-      },
-      "test_selection": {
-        "roots": [
-          "common/contracts/"
-        ]
-      }
-    },
-    {
-      "stage": "expected_values_tests",
-      "dependency_profile": "stdlib",
-      "repository_integration_group": "covered",
-      "run_on_full_scope": false,
-      "full_scope_coverage_stage": "common_contracts",
-      "matches": [
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_design_request.schema.json",
+          "reason": "specialized_schema_metadata_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_evidence_contract.schema.json",
+          "reason": "specialized_schema_metadata_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_evidence_evaluation.schema.json",
+          "reason": "specialized_schema_metadata_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_operating_modes.schema.json",
+          "reason": "specialized_schema_metadata_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_paired_metrics.schema.json",
+          "reason": "specialized_schema_metadata_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_resolved_design.schema.json",
+          "reason": "specialized_schema_metadata_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_transport_experiment_campaign.schema.json",
+          "reason": "specialized_schema_metadata_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/oatof_experiment_campaign.schema.json",
+          "reason": "specialized_schema_metadata_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/oatof_three_zone_resolved_plan.schema.json",
+          "reason": "specialized_schema_metadata_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/oatof_three_zone_simion_candidate_resolved.schema.json",
+          "reason": "specialized_schema_metadata_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/oatof_three_zone_solver_free_funnel.schema.json",
+          "reason": "specialized_schema_metadata_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/oatof_three_zone_stage_receipt.schema.json",
+          "reason": "specialized_schema_metadata_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/oatof_three_zone_stage_report.schema.json",
+          "reason": "specialized_schema_metadata_changed"
+        },
         {
           "exact": "common/contracts/expected_values.py",
           "reason": "expected_values_changed"
@@ -484,26 +564,9 @@
         {
           "exact": "common/contracts/test_expected_values.py",
           "reason": "expected_values_tests_changed"
-        }
-      ],
-      "command": {
-        "runner": "python",
-        "arguments": [
-          "-m",
-          "unittest",
-          "common.contracts.test_expected_values"
-        ]
-      }
-    },
-    {
-      "stage": "gate_contract_tests",
-      "dependency_profile": "locked",
-      "repository_integration_group": "covered",
-      "run_on_full_scope": false,
-      "full_scope_coverage_stage": "common_contracts",
-      "matches": [
+        },
         {
-          "exact": "common/verify_changed.ps1",
+          "exact": "common/verify.ps1",
           "reason": "changed_scope_entrypoint_changed"
         },
         {
@@ -535,10 +598,6 @@
           "reason": "changed_scope_contract_tests_changed"
         },
         {
-          "exact": "common/verify_repository_integration.ps1",
-          "reason": "repository_integration_entrypoint_changed"
-        },
-        {
           "exact": "common/require_powershell7.ps1",
           "reason": "powershell_host_contract_changed"
         },
@@ -549,28 +608,7 @@
         {
           "exact": "common/contracts/test_changed_test_selection.py",
           "reason": "changed_test_selection_tests_changed"
-        }
-      ],
-      "command": {
-        "runner": "python",
-        "arguments": [
-          "-m",
-          "unittest",
-          "common.contracts.test_verify_changed",
-          "common.contracts.test_parallel_gate_support",
-          "common.contracts.test_gate_unittest",
-          "common.contracts.test_development_standards",
-          "common.contracts.test_changed_test_selection"
-        ]
-      }
-    },
-    {
-      "stage": "cloc_contract_tests",
-      "dependency_profile": "locked",
-      "repository_integration_group": "covered",
-      "run_on_full_scope": false,
-      "full_scope_coverage_stage": "common_contracts",
-      "matches": [
+        },
         {
           "exact": "common/report_cloc_delta.ps1",
           "reason": "cloc_entrypoint_changed"
@@ -578,24 +616,7 @@
         {
           "exact": "common/contracts/test_report_cloc_delta.py",
           "reason": "cloc_contract_tests_changed"
-        }
-      ],
-      "command": {
-        "runner": "python",
-        "arguments": [
-          "-m",
-          "unittest",
-          "common.contracts.test_report_cloc_delta"
-        ]
-      }
-    },
-    {
-      "stage": "python_dependency_contract",
-      "dependency_profile": "locked",
-      "repository_integration_group": "covered",
-      "run_on_full_scope": false,
-      "full_scope_coverage_stage": "common_contracts",
-      "matches": [
+        },
         {
           "exact": "pyproject.toml",
           "reason": "python_dependency_declaration_changed"
@@ -610,8 +631,244 @@
         "arguments": [
           "-m",
           "unittest",
-          "common.contracts.test_python_dependency_contract"
+          "discover",
+          "-s",
+          "common/contracts",
+          "-p",
+          "test_*.py"
         ]
+      },
+      "test_selection": {
+        "roots": [
+          "common/contracts/"
+        ],
+        "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "common/contracts/schemas/multipole_design_request.schema.json",
+                "reason": "specialized_schema_metadata_changed"
+              },
+              {
+                "exact": "common/contracts/schemas/multipole_evidence_contract.schema.json",
+                "reason": "specialized_schema_metadata_changed"
+              },
+              {
+                "exact": "common/contracts/schemas/multipole_evidence_evaluation.schema.json",
+                "reason": "specialized_schema_metadata_changed"
+              },
+              {
+                "exact": "common/contracts/schemas/multipole_operating_modes.schema.json",
+                "reason": "specialized_schema_metadata_changed"
+              },
+              {
+                "exact": "common/contracts/schemas/multipole_paired_metrics.schema.json",
+                "reason": "specialized_schema_metadata_changed"
+              },
+              {
+                "exact": "common/contracts/schemas/multipole_resolved_design.schema.json",
+                "reason": "specialized_schema_metadata_changed"
+              },
+              {
+                "exact": "common/contracts/schemas/multipole_transport_experiment_campaign.schema.json",
+                "reason": "specialized_schema_metadata_changed"
+              },
+              {
+                "exact": "common/contracts/schemas/oatof_experiment_campaign.schema.json",
+                "reason": "specialized_schema_metadata_changed"
+              },
+              {
+                "exact": "common/contracts/schemas/oatof_three_zone_resolved_plan.schema.json",
+                "reason": "specialized_schema_metadata_changed"
+              },
+              {
+                "exact": "common/contracts/schemas/oatof_three_zone_simion_candidate_resolved.schema.json",
+                "reason": "specialized_schema_metadata_changed"
+              },
+              {
+                "exact": "common/contracts/schemas/oatof_three_zone_solver_free_funnel.schema.json",
+                "reason": "specialized_schema_metadata_changed"
+              },
+              {
+                "exact": "common/contracts/schemas/oatof_three_zone_stage_receipt.schema.json",
+                "reason": "specialized_schema_metadata_changed"
+              },
+              {
+                "exact": "common/contracts/schemas/oatof_three_zone_stage_report.schema.json",
+                "reason": "specialized_schema_metadata_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_machine_contracts_paths.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "common/contracts/expected_values.py",
+                "reason": "expected_values_changed"
+              },
+              {
+                "exact": "common/contracts/test_expected_values.py",
+                "reason": "expected_values_tests_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_expected_values.py"
+            ],
+            "dependency_profile": "stdlib"
+          },
+          {
+            "matches": [
+              {
+                "exact": "common/verify.ps1",
+                "reason": "changed_scope_entrypoint_changed"
+              },
+              {
+                "exact": "common/host_execution_lease.ps1",
+                "reason": "host_execution_lease_changed"
+              },
+              {
+                "exact": "common/test_host_execution_lease.ps1",
+                "reason": "host_execution_lease_test_changed"
+              },
+              {
+                "exact": "common/parallel_gate_support.ps1",
+                "reason": "parallel_gate_support_changed"
+              },
+              {
+                "exact": "common/gate_unittest.py",
+                "reason": "gate_unittest_runner_changed"
+              },
+              {
+                "exact": "common/gate_catalog.json",
+                "reason": "gate_catalog_changed"
+              },
+              {
+                "exact": "common/gate_catalog_support.ps1",
+                "reason": "gate_catalog_support_changed"
+              },
+              {
+                "exact": "common/contracts/test_verify_changed.py",
+                "reason": "changed_scope_contract_tests_changed"
+              },
+              {
+                "exact": "common/require_powershell7.ps1",
+                "reason": "powershell_host_contract_changed"
+              },
+              {
+                "exact": ".github/workflows/lightweight-gate.yml",
+                "reason": "verification_workflow_changed"
+              },
+              {
+                "exact": "common/contracts/test_changed_test_selection.py",
+                "reason": "changed_test_selection_tests_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_verify_changed.py",
+              "common/contracts/test_parallel_gate_support.py",
+              "common/contracts/test_gate_unittest.py",
+              "common/contracts/test_development_standards.py",
+              "common/contracts/test_changed_test_selection.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "common/report_cloc_delta.ps1",
+                "reason": "cloc_entrypoint_changed"
+              },
+              {
+                "exact": "common/contracts/test_report_cloc_delta.py",
+                "reason": "cloc_contract_tests_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_report_cloc_delta.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "pyproject.toml",
+                "reason": "python_dependency_declaration_changed"
+              },
+              {
+                "exact": "requirements-lock.txt",
+                "reason": "python_dependency_lock_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_python_dependency_contract.py"
+            ],
+            "dependency_profile": "locked"
+          }
+        ],
+        "scope": "common/contracts/"
+      },
+      "owner": "common/contracts",
+      "partition_preflight": false,
+      "repository_integration_partition": {
+        "count": 3,
+        "default_seconds": 1,
+        "measured_seconds": {
+          "test_artifact_identity_archive": 1.962573,
+          "test_artifact_naming": 0.001214,
+          "test_artifact_project": 0.020277,
+          "test_artifact_retention": 4.00854,
+          "test_artifact_retention_safety": 0.131924,
+          "test_canonical_clock_authority": 0.026847,
+          "test_capacity_ledger_handoff": 0.280074,
+          "test_capacity_ledger_v3": 4.685501,
+          "test_capacity_maintenance_orchestration": 2.506232,
+          "test_capacity_reconcile_runtime": 39.742943,
+          "test_changed_test_selection": 162.005448,
+          "test_component_particle_state": 0.975736,
+          "test_design_planner": 0.902713,
+          "test_design_request": 0.042251,
+          "test_development_standards": 11.04541,
+          "test_execution_compiler": 16.113554,
+          "test_expected_values": 0.000577,
+          "test_file_identity": 0.66,
+          "test_formal_asset_manifest": 0.057975,
+          "test_frozen_inputs": 0.034178,
+          "test_gate_unittest": 0.330146,
+          "test_historical_source_scratch_retirement": 0.531417,
+          "test_legacy_capacity_calibration": 2.242148,
+          "test_legacy_owner_disposition": 0.444909,
+          "test_machine_contracts_paths": 0.013427,
+          "test_multipole_project_variants": 5.531772,
+          "test_parallel_gate_support": 147.464765,
+          "test_particle_count_policy": 0.10153,
+          "test_particle_physics": 0.000287,
+          "test_particle_state": 0.021615,
+          "test_project_gate_prevalidation": 12.193041,
+          "test_project_registry": 1.247719,
+          "test_python_dependency_contract": 0.0028,
+          "test_reconcile_artifact_capacity": 4.596928,
+          "test_reconcile_interrupted_compact_runs": 1.207141,
+          "test_recorded_file_removal": 0.065799,
+          "test_report_cloc_delta": 11.91139,
+          "test_repository_text_bytes": 0.276725,
+          "test_rigid_transform": 0.002542,
+          "test_run_artifact_workflow": 230.209365,
+          "test_run_capacity_lifecycle": 17.294455,
+          "test_run_terminal_publication": 0.111353,
+          "test_shared_artifact_contracts": 0.211835,
+          "test_simion_refine_policy": 0.48763,
+          "test_solver_review_retirement": 30.470709,
+          "test_stage_reuse": 1.177197,
+          "test_strict_json": 0.103597,
+          "test_terminal_publication_lock": 3.413858,
+          "test_verify_artifact_layout": 12.367457,
+          "test_verify_changed": 110.495208,
+          "test_verify_run_manifest": 15.331219,
+          "test_write_formal_asset_manifest": 0.021363
+        }
       }
     },
     {
@@ -640,7 +897,8 @@
         "roots": [
           "common/simion/"
         ]
-      }
+      },
+      "owner": "common/simion"
     },
     {
       "stage": "rf_multipole_domain_tests",
@@ -700,7 +958,8 @@
           "projects/rf_multipole_ion_optics/tests/test_support/",
           "projects/rf_multipole_ion_optics/tests/__init__.py"
         ]
-      }
+      },
+      "owner": "rf_multipole_ion_optics"
     },
     {
       "stage": "integration_common",
@@ -759,7 +1018,8 @@
           "-p",
           "test_*.py"
         ]
-      }
+      },
+      "owner": "common/integration"
     },
     {
       "stage": "instrument_assembly_integration",
@@ -783,8 +1043,20 @@
           "reason": "instrument_assembly_changed"
         },
         {
-          "prefix": "projects/orthogonal_accelerator/",
+          "regex": "^projects/orthogonal_accelerator/(?!tests/)",
           "reason": "accelerator_provider_changed"
+        },
+        {
+          "exact": "projects/orthogonal_accelerator/tests/analysis/test_bare_three_zone_component.py",
+          "reason": "accelerator_shared_test_fixture_changed"
+        },
+        {
+          "exact": "projects/orthogonal_accelerator/tests/__init__.py",
+          "reason": "accelerator_shared_test_fixture_changed"
+        },
+        {
+          "exact": "projects/orthogonal_accelerator/tests/analysis/__init__.py",
+          "reason": "accelerator_shared_test_fixture_changed"
         },
         {
           "prefix": "projects/dual_pressure_rectilinear_ion_processor/",
@@ -882,7 +1154,9 @@
         ],
         "scope": "integrations/tests/",
         "module_parameter": "ChangedTestModules"
-      }
+      },
+      "partition_preflight": false,
+      "owner": "instrument_assembly"
     },
     {
       "stage": "solidworks_common",
@@ -905,7 +1179,8 @@
           "-p",
           "test_*.py"
         ]
-      }
+      },
+      "owner": "common/solidworks"
     },
     {
       "stage": "orthogonal_accelerator_static",
@@ -940,7 +1215,8 @@
         "parameters": {
           "PythonExe": "{python}"
         }
-      }
+      },
+      "owner": "orthogonal_accelerator"
     },
     {
       "stage": "parallel_mirror_dual_stripe_mr_tof_static",
@@ -957,7 +1233,7 @@
           "reason": "shared_peak_metrics_changed"
         },
         {
-          "prefix": "projects/orthogonal_accelerator/",
+          "regex": "^projects/orthogonal_accelerator/(?!tests/)",
           "reason": "orthogonal_accelerator_dependency_changed"
         },
         {
@@ -991,12 +1267,12 @@
         "parameter": "SelectedTestModules",
         "default_seconds": 5,
         "measured_seconds": {
-          "test_downstream_workpoint_iteration_runner": 689.20,
+          "test_downstream_workpoint_iteration_runner": 689.2,
           "test_simion_candidate_reference": 180.95,
           "test_dual_stripe_l0_math": 168.41,
           "test_static_field_binding": 125.06,
           "test_native_corridor_freeze": 107.56,
-          "test_native_candidate_campaign_runner": 82.90,
+          "test_native_candidate_campaign_runner": 82.9,
           "test_native_static_field_provider": 75.97,
           "test_prism_shield_exit_extension": 68.62,
           "test_two_prism_segmented_transport": 64.65,
@@ -1005,7 +1281,7 @@
           "test_corridor_field_provider": 41.08,
           "test_native_corridor_plan": 40.42,
           "test_two_prism_simion_trial": 35.77,
-          "test_mirror_convergence_geometry": 27.90
+          "test_mirror_convergence_geometry": 27.9
         }
       },
       "test_selection": {
@@ -1019,7 +1295,9 @@
         ],
         "module_parameter": "ChangedTestModules",
         "preserve_command": true
-      }
+      },
+      "uses_project_registry": true,
+      "owner": "parallel_mirror_dual_stripe_mr_tof"
     },
     {
       "stage": "single_reflection_oa_tof_mass_analyzer_static",
@@ -1044,7 +1322,7 @@
           "reason": "single_reflection_oa_tof_mass_analyzer_path_changed"
         },
         {
-          "prefix": "projects/orthogonal_accelerator/",
+          "regex": "^projects/orthogonal_accelerator/(?!tests/)",
           "reason": "orthogonal_accelerator_direct_dependency_changed"
         },
         {
@@ -1058,6 +1336,30 @@
         {
           "exact": "common/resource_budget_support.ps1",
           "reason": "shared_resource_budget_dependency_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/oatof_experiment_campaign.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/oatof_three_zone_resolved_plan.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/oatof_three_zone_simion_candidate_resolved.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/oatof_three_zone_solver_free_funnel.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/oatof_three_zone_stage_receipt.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/oatof_three_zone_stage_report.schema.json",
+          "reason": "owned_domain_schema_changed"
         }
       ],
       "command": {
@@ -1066,7 +1368,8 @@
         "parameters": {
           "PythonExe": "{python}"
         }
-      }
+      },
+      "owner": "single_reflection_oa_tof_mass_analyzer"
     },
     {
       "stage": "rf_multipole_quadrupole_static",
@@ -1111,6 +1414,34 @@
         {
           "exact": "common/analysis/peak_metrics.py",
           "reason": "shared_response_peak_metrics_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_design_request.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_evidence_contract.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_evidence_evaluation.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_operating_modes.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_paired_metrics.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_resolved_design.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_transport_experiment_campaign.schema.json",
+          "reason": "owned_domain_schema_changed"
         }
       ],
       "command": {
@@ -1130,7 +1461,8 @@
           "Level": "Static",
           "StructuralVariant": "quadrupole",
           "FreshnessPrevalidated": true,
-          "PythonExe": "{python}"
+          "PythonExe": "{python}",
+          "PowerShellSyntaxPrevalidated": true
         }
       },
       "test_selection": {
@@ -1144,7 +1476,8 @@
         "module_parameter": "ChangedTestModules",
         "scope": "projects/rf_multipole_ion_optics/tests/",
         "preserve_command": true
-      }
+      },
+      "owner": "rf_multipole_ion_optics"
     },
     {
       "stage": "rf_multipole_hexapole_static",
@@ -1182,6 +1515,34 @@
         {
           "exact": "common/analysis/particle_census.py",
           "reason": "shared_particle_census_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_design_request.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_evidence_contract.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_evidence_evaluation.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_operating_modes.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_paired_metrics.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_resolved_design.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_transport_experiment_campaign.schema.json",
+          "reason": "owned_domain_schema_changed"
         }
       ],
       "command": {
@@ -1191,7 +1552,8 @@
           "Level": "Static",
           "StructuralVariant": "hexapole",
           "FreshnessPrevalidated": true,
-          "PythonExe": "{python}"
+          "PythonExe": "{python}",
+          "PowerShellSyntaxPrevalidated": true
         }
       },
       "requires_stages": [
@@ -1207,7 +1569,8 @@
         ],
         "module_parameter": "ChangedTestModules",
         "preserve_command": true
-      }
+      },
+      "owner": "rf_multipole_ion_optics"
     },
     {
       "stage": "rf_multipole_octupole_static",
@@ -1245,6 +1608,34 @@
         {
           "exact": "common/analysis/particle_census.py",
           "reason": "shared_particle_census_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_design_request.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_evidence_contract.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_evidence_evaluation.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_operating_modes.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_paired_metrics.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_resolved_design.schema.json",
+          "reason": "owned_domain_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/multipole_transport_experiment_campaign.schema.json",
+          "reason": "owned_domain_schema_changed"
         }
       ],
       "command": {
@@ -1254,7 +1645,8 @@
           "Level": "Static",
           "StructuralVariant": "octupole",
           "FreshnessPrevalidated": true,
-          "PythonExe": "{python}"
+          "PythonExe": "{python}",
+          "PowerShellSyntaxPrevalidated": true
         }
       },
       "requires_stages": [
@@ -1270,7 +1662,8 @@
         ],
         "module_parameter": "ChangedTestModules",
         "preserve_command": true
-      }
+      },
+      "owner": "rf_multipole_ion_optics"
     },
     {
       "stage": "dual_pressure_rectilinear_ion_processor_static",
@@ -1329,7 +1722,8 @@
         "parameters": {
           "PythonExe": "{python}"
         }
-      }
+      },
+      "owner": "dual_pressure_rectilinear_ion_processor"
     },
     {
       "stage": "dual_cone_tandem_quadrupole_ion_interface_static",
@@ -1382,9 +1776,15 @@
         "runner": "powershell",
         "script": "projects/dual_cone_tandem_quadrupole_ion_interface/verify_project.ps1",
         "parameters": {
-          "PythonExe": "{python}"
+          "PythonExe": "{python}",
+          "RuffHandledByParent": true
         }
-      }
+      },
+      "parent_ruff_paths": [
+        "projects/dual_cone_tandem_quadrupole_ion_interface/analysis",
+        "projects/dual_cone_tandem_quadrupole_ion_interface/tests"
+      ],
+      "owner": "dual_cone_tandem_quadrupole_ion_interface"
     },
     {
       "stage": "transverse_helical_filament_wehnelt_electron_gun_static",
@@ -1413,9 +1813,15 @@
         "runner": "powershell",
         "script": "projects/transverse_helical_filament_wehnelt_electron_gun/verify_project.ps1",
         "parameters": {
-          "PythonExe": "{python}"
+          "PythonExe": "{python}",
+          "RuffHandledByParent": true
         }
-      }
+      },
+      "parent_ruff_paths": [
+        "projects/transverse_helical_filament_wehnelt_electron_gun/analysis",
+        "projects/transverse_helical_filament_wehnelt_electron_gun/tests/analysis"
+      ],
+      "owner": "transverse_helical_filament_wehnelt_electron_gun"
     },
     {
       "stage": "apertured_tube_electron_impact_ion_source_static",
@@ -1436,9 +1842,15 @@
         "runner": "powershell",
         "script": "projects/apertured_tube_electron_impact_ion_source/verify_project.ps1",
         "parameters": {
-          "PythonExe": "{python}"
+          "PythonExe": "{python}",
+          "RuffHandledByParent": true
         }
-      }
+      },
+      "parent_ruff_paths": [
+        "projects/apertured_tube_electron_impact_ion_source/analysis",
+        "projects/apertured_tube_electron_impact_ion_source/tests/analysis"
+      ],
+      "owner": "apertured_tube_electron_impact_ion_source"
     }
   ]
 }

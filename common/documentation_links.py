@@ -1,7 +1,7 @@
 """Read-only Markdown link checks and editorial inventory for the documentation gate.
 
 Uses repository Markdown conventions, without rendering HTML or accessing the network.
-Frozen history is diagnostic-only; its integrity remains owned by the PowerShell gate.
+Frozen history provenance is checked only for explicit audits or affected changes.
 """
 
 from __future__ import annotations
@@ -77,7 +77,7 @@ def _staged_history_moves(root: Path) -> tuple[set[str], list[str]]:
     return verified, errors
 
 
-def migrated_history(root: Path) -> tuple[set[str], list[str]]:
+def migrated_history(root: Path, changed_paths: set[str] | None = None) -> tuple[set[str], list[str]]:
     """Verify staged history moves and retired project archives against Git bytes.
 
     A move does not make old relative links current guidance. The maintained
@@ -88,6 +88,9 @@ def migrated_history(root: Path) -> tuple[set[str], list[str]]:
     for directory in root.glob("projects/*/docs/history/retired_projects"):
         manifest_path = directory / "migration_manifest.json"
         label = manifest_path.relative_to(root).as_posix()
+        prefix = directory.relative_to(root).as_posix() + "/"
+        if changed_paths is not None and not any(path.startswith(prefix) for path in changed_paths):
+            continue
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             commit = manifest["source_commit"]
@@ -120,6 +123,8 @@ def migrated_history(root: Path) -> tuple[set[str], list[str]]:
                 if path in expected:
                     raise ValueError(f"duplicate archive record: {archive}")
                 expected.add(path)
+                if changed_paths is not None and label not in changed_paths and path.relative_to(root).as_posix() not in changed_paths:
+                    continue
                 content = path.read_bytes()
                 digest = hashlib.sha256(content).hexdigest()
                 blob = hashlib.sha1(b"blob " + str(len(content)).encode("ascii") + b"\0" + content).hexdigest()
@@ -259,7 +264,7 @@ def table_diagnostics(text: str) -> list[tuple[int, str]]:
     return result
 
 
-def inspect_repository(root: Path) -> dict:
+def inspect_repository(root: Path, *, audit_history: bool = False, changed_paths: set[str] | None = None, show_review: bool = False) -> dict:
     """Return errors, nonblocking diagnostics and a per-document inventory."""
     root = root.resolve()
     listing = subprocess.run(["git", "-C", str(root), "ls-files", "--cached", "--others", "--exclude-standard", "-z"], check=True, capture_output=True, cwd=root, timeout=30).stdout
@@ -269,7 +274,8 @@ def inspect_repository(root: Path) -> dict:
         raise RuntimeError("Cannot read committed history boundary")
     committed = {p.decode("utf-8") for p in baseline.stdout.split(b"\0") if p}
     texts = {p: p.read_text(encoding="utf-8-sig") for p in paths if p.is_file()}
-    moved_history, errors = migrated_history(root)
+    historical_changes = {path.replace("\\", "/") for path in (changed_paths or set()) if is_history(Path(path))}
+    moved_history, errors = migrated_history(root, None if audit_history else historical_changes) if audit_history or historical_changes else (set(), [])
     diagnostics, inventory = [], []
     incoming = set()
     paragraphs = defaultdict(set)
@@ -305,7 +311,7 @@ def inspect_repository(root: Path) -> dict:
                 message = f"{relative.as_posix()}:{number}: scratch evidence reference '{target}'"
                 diagnostics.append(message)
                 row["diagnostics"].append(message)
-        if frozen:
+        if frozen or not show_review:
             continue
         for number, detail in table_diagnostics(text):
             message = f"{relative.as_posix()}:{number}: {detail}"
@@ -320,7 +326,7 @@ def inspect_repository(root: Path) -> dict:
             normalized = " ".join(paragraph.split())
             if len(normalized) >= 200:
                 paragraphs[normalized].add(relative.as_posix())
-    for row in inventory:
+    for row in inventory if show_review else []:
         if row["kind"] == "history":
             continue
         if root / row["path"] not in incoming and row["path"] not in {"README.md", "AGENTS.md", "CLAUDE.md"}:
@@ -347,16 +353,20 @@ def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument("--audit-history", action="store_true", help="explicit frozen archive/source audit")
+    parser.add_argument("--changed-path", action="append", default=[], help="audit affected historical input; repeat as needed")
+    parser.add_argument("--show-review", action="store_true", help="explicit editorial maintenance inventory")
     parser.add_argument("--inventory-json", action="store_true", help="Emit the full inventory to stdout")
     args = parser.parse_args()
-    report = inspect_repository(args.root)
+    report = inspect_repository(args.root, audit_history=args.audit_history, changed_paths=set(args.changed_path), show_review=args.show_review or args.inventory_json)
     if args.inventory_json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
         for message in report["errors"]:
             print("ERROR: " + message)
-        for message in report["diagnostics"]:
-            print("REVIEW: " + message)
+        if args.show_review:
+            for message in report["diagnostics"]:
+                print("REVIEW: " + message)
         print(f"DOCUMENTATION_LINKS: files={len(report['inventory'])} errors={len(report['errors'])} review={len(report['diagnostics'])}")
     return int(bool(report["errors"]))
 

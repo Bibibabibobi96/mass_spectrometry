@@ -38,7 +38,7 @@
 - 修改项目脚本时同步更新最近的项目文档；新增跨项目 COMSOL API 经验更新`docs/tools/COMSOL_API.md`，知识归属和提升条件按[仓库架构](docs/REPOSITORY_ARCHITECTURE.md#跨项目知识提升条件)执行。
 - 新增或修改规范前，先按[架构权威表](docs/REPOSITORY_ARCHITECTURE.md#文档权威和冲突优先级)确定唯一写入位置，并用全文搜索检查是否已有同义规则；
   非权威入口只链接或简述适用范围，不复制规范正文。
-- 不建立 COMSOL、SIMION、CAD 文档之间的横向网状引用；项目 README 负责导航，统一结论写入 `docs/PROJECT.md`。
+- 项目README负责导航，统一结论写入`docs/PROJECT.md`；按实际阅读需要链接工具资料，不以横向链接习惯阻断提交。
 - MATLAB、COMSOL、Python、SolidWorks与PowerShell的版本、启动方式和连接生命周期只以
   [操作指南](docs/OPERATIONS.md#工具链与执行入口)为准；不得维护第二套版本合同或把临时检查工具当正式入口。
 - MATLAB/COMSOL和SolidWorks会写用户配置、许可证、日志及临时目录；Agent调用这些商业工具时必须从

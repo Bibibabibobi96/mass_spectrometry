@@ -6,7 +6,8 @@ param(
   [string[]]$ChangedTestModules = @(),
   [string[]]$SelectedTestModules = @(),
   [switch]$PreflightOnly,
-  [switch]$PreflightValidated
+  [switch]$PreflightValidated,
+  [switch]$RegistryPrevalidated
 )
 
 Set-StrictMode -Version Latest
@@ -42,9 +43,11 @@ try {
   try {
     & $python -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 11) else 1)"
     if ($LASTEXITCODE -ne 0) { throw 'MR-TOF requires Python 3.11.' }
-    if (-not $PreflightValidated) {
+    if (-not ($PreflightValidated -or $RegistryPrevalidated)) {
       & $python common/contracts/build_project_registry.py --check
       if ($LASTEXITCODE -ne 0) { throw 'MR-TOF project registration is stale or invalid.' }
+    } elseif ($RegistryPrevalidated) {
+      'PROJECT_REGISTRY=PREVALIDATED'
     }
 
     if ($PreflightOnly) {

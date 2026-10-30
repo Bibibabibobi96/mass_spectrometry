@@ -7,7 +7,7 @@
 | 当前任务或症状 | 入口与下一步 |
 |---|---|
 | 确认宿主、解释器与商业工具版本 | [工具链与执行入口](#工具链与执行入口)、[正式工具链基线](#正式工具链基线) |
-| 查看要跑的检查或执行L1/L2 | [分层门禁](#分层门禁)，先用`-PlanOnly`检查路由 |
+| 软件验证范围和科学证据 | [职责与入口](#软件验证与科学证据)，PlanOnly可选 |
 | 门禁或求解器等待资源 | [主机资源调度](#主机资源调度)，核对owner、阶段与日志 |
 | 文档链接、锚点、索引或历史检查失败 | [文档结构检查](#文档结构检查) |
 | 容量、产物目录或保留合同失败 | [artifact结构门禁](#artifact结构门禁)，按报告中的准确对象排查 |
@@ -36,66 +36,49 @@ PowerShell Core 7（`pwsh`）是仓库唯一受支持的PowerShell运行时。�
 失败关闭地验证当前宿主为Core 7，禁止回退到Windows PowerShell 5.1。Python等非PowerShell边界启动
 PowerShell时必须使用`pwsh`；PowerShell脚本内部继承当前宿主，不得另行选择或启动第二套PowerShell。
 
-### 分层门禁
+### 软件验证与科学证据
 
-所有门禁使用Python 3.11；本机默认使用`.venv`，GitHub Workflow注入干净运行器的Python路径。门禁不执行
-商业求解器、CAD或正式资产门禁。项目发现、设计请求校验和求解器中立规划入口见
-[`common/contracts/README.md`](../common/contracts/README.md)。
+软件验证统一使用`common/verify.ps1`、Python 3.11、现有catalog和公共资源调度。
+一次命令自动选择、执行并汇总；`-PlanOnly`是可选预览，不是正常运行的手工前置。
 
-| 层级 | 入口 | 使用条件 |
+| 范围或任务 | 正常入口 | 实际含义 |
 |---|---|---|
-| L1 改动范围 | `common/verify_changed.ps1` | 每次提交、push及日常参数探索 |
-| L2 仓库集成 | `common/verify_repository_integration.ps1` | 门禁、注册表、机器语义、共享运行或跨项目接口改变 |
-| L3 项目证据 | 项目 `verify_project.ps1` 的 Candidate/Formal 级别 | 资格、promotion或真实物理资产变化 |
+| 改动软件 | `common/verify.ps1 -Scope Changed` | 从Git差异或显式ChangedPath选择真实owner及消费者 |
+| 指定软件owner | `common/verify.ps1 -Scope Owner -Owner <owner>` | 该owner的完整适用软件职责 |
+| 完整软件 | `common/verify.ps1 -Scope Repository` | 全部适用软件职责和项目回归 |
+| 科学运行 | 项目或integration公开workflow | 本次输入、工具、资源和资产准入，执行声明动作 |
+| 科学验证或发布 | 模型、问题和资产的具名入口 | 相应原生、数值、GUI/CAD及资格证据 |
 
-L1 始终先查仓库卫生与受管文本字节。纯 Markdown 及根、项目或integration的
-`docs/history/<同名载荷目录>/*.txt`单层只读快照改动，运行文档检查后走`DOCUMENTATION_ONLY`快速路径；
-快照清单、字节和SHA检查仍执行。活动配置、源码及其他文本不获该豁免；其余只运行活动项目、直接公共依赖和必要静态合同，报告 RUN/SKIP 原因。
-触发多极杆发布或变体门禁时，先由统一项目入口执行`Freshness -StructuralVariant All`，检查三种结构的
-设计发布及四极专属派生物。L1按改动范围选择四极`Core`、六极／八极`Static`，三者均复用该发布前置结果。
-统一`verify_project.ps1`的`Core`停在所选结构的无求解器设计合同；`Static`再运行所选变体的Python回归并
-解析全项目PowerShell。共享领域测试由目录中的独立阶段执行，不由变体`Core`或`Static`替代。
-L1还按统一目录的测试owner声明把新增／修改测试加入实际执行集合，项目Core与这些模块合并去重；
-删除、fixture、包初始化或未知测试目录变化扩大到owner发现，并输出原因。纯文档计划先确定实际
-执行的三个阶段再计算依赖等级，因此项目README也使用`stdlib`；混合源码变化仍保留相应回归。
+范围、测试性质、模型、工具成本和科学资格分别记录。内部Core／Static保留其实际集合，
+不表示物理精度；Candidate／Formal只保留项目内真实的资格或发布用途。
+Changed的FullScope保留原Core／Static选择，不等于Repository。不支持的owner或能力在选择阶段明确拒绝。
 
-L2在长测试前完成全多极杆`Freshness`，之后覆盖全部活动项目、integration和公共静态回归；四／六／八极
-均执行`Static`并复用该前置结果。纯文档和规则文字调整不触发L2，GitHub仅手动触发。
-L3才核验商业求解、GUI/CAD、冻结输入、manifest和物理证据链。
+普通参数探索不自动执行软件回归或整套跨求解器资格。源码、合同及公共默认行为改变才选择相称软件范围，
+相关物理输入和结论变化才触发科学验收。
 
-历史迁位清单会核对固定源提交中的Git blob，因此克隆必须能读取这些源提交；L1/L2的CI checkout均保留完整
-历史。浅克隆缺少源对象时须先补取历史，再进行身份校验，不能跳过原始字节验证。
+父进程规划一次，子任务直接消费同轮解析请求。公共合同按实际owner选择，短分析模块分stdlib／locked合批。
+中央Ruff、注册表及RF公共PS解析各承担唯一职责；MR保留必要PS／Lua前置，纯Ruff集成前置已撤销。
+独立项目入口默认完成必要检查。Changed／Owner首错停新派发，Repository继续独立诊断；
+真实前置失败仍阻断消费者，健康任务自然收尾。
 
-
-阶段目录、路径路由与前置关系统一由[`common/gate_catalog.json`](../common/gate_catalog.json)定义。
-先查看本次计划，再按需执行：
+参考环境预算：owner/窄范围1–3分钟，较复杂≤5分钟，宽改动≤10分钟，完整软件范围争取15分钟。
+超预算须定位主要重复与必要成本，不靠漏测、改名或隐藏开销达标；它不是原生求解的强杀超时。
 
 ```powershell
-.\common\verify_changed.ps1 -PlanOnly
-.\common\verify_changed.ps1
-# 共享机制、注册表或跨项目合同变化完成后：
-.\common\verify_repository_integration.ps1
+.\common\verify.ps1
+.\common\verify.ps1 -Scope Owner -Owner orthogonal_accelerator
+.\common\verify.ps1 -Scope Repository
+# 可选预览
+.\common\verify.ps1 -ChangedPath projects/orthogonal_accelerator/analysis/component_focus_analysis.py -PlanOnly
 ```
 
-计划报告`stdlib`或`locked`依赖等级；未知或涉及项目实现的范围使用完整锁定环境。门禁输出逐阶段
-RUN／SKIP原因、启动与完成状态；`LOG_PATH`定位执行中的完整日志，结束时按稳定顺序回放输出。
-本地并发默认保守自动选择，可用`-MaxConcurrency`显式降低；资源调度器仍决定实际准入。
-GitHub的push执行L1，L2通过`workflow_dispatch`显式启动。只有所有适用阶段成功才表示该层门禁通过；
-超时、环境失败与科学求解失败分别处理。
+职责与依赖只在[`common/gate_catalog.json`](../common/gate_catalog.json)维护。普通验证不认证全部Git历史，
+实际历史改动定向检查，整档核验仅显式AuditHistory；只获取实际base/head或档案审计需要的源提交。
 
-L1／L2接受`-SummaryPath <不存在的JSON路径>`；省略时在系统临时目录生成小摘要并输出
-`GATE_SUMMARY_PATH`。摘要先记录计划，再逐阶段记录终态、理由、实际命令及耗时，成功后也保留。
-整体`PASS`要求所有已选阶段通过；未执行、前置阻断和中断不等于测试skip。主进程硬杀后可能留下
-`PENDING/RUNNING`，它只证明记录未完成。CI始终上传可用摘要及保留的失败诊断。
-
-结束后检查`GATE_DIAGNOSTICS`：`CLEANED`表示临时日志已清理，`RETAINED`表示日志目录仍在。
-失败时先读取原`LOG_PATH`和`group_failure.log`，原请求JSON保留用于核对阶段参数。
-复核完成后dot-source `. .\common\parallel_gate_support.ps1`，执行该次输出的
-`GATE_DIAGNOSTICS_CLEANUP`命令；它包含精确目录和期望前缀，不能换成广泛删除TEMP。
-失败证据不按年龄自动清理；成功组若清理不全，也会报告`RETAINED`。
-
-新增阶段、修改路由或排查调用器时，再读[门禁编排维护说明](../common/README.md#门禁编排)；
-日常执行无需通读其进程、编码和CI内部实现。
+SummaryPath保存范围、命令、环境、状态、原因、日志和慢测试计时。完整公开命令墙钟由外层单调时钟
+在启动前到实际退出测量，另列summary／stage区间。软件通过不代表科学PASS，未执行和阻断分别报告。
+失败诊断保留请求及group_failure.log；复核后使用该次输出的精确GATE_DIAGNOSTICS_CLEANUP，
+不广泛删除TEMP、不按年龄删失败证据。编排细节按需查[公共实现](../common/README.md#门禁编排)。
 
 ### 主机资源调度
 
@@ -123,18 +106,20 @@ Get-HostResourceStatus
 
 ### 文档结构检查
 
-仅审查文档结构时运行 `common/verify_documentation.ps1 -StructureOnly`：检查活动本地链接、中文与页内锚点、格式和历史归档完整性，不取得主机执行租约、不运行外部工作区卫生。默认模式与 L1 仍执行完整卫生检查并遵守租约。
+仅检查活动入口、本地链接和页内锚点时运行`common/verify_documentation.ps1 -StructureOnly`。
+文案、标题语言、排版、篇幅和本地额外目录不作为提交硬门；文档检查不重复调用工作区卫生。
+普通软件验证不重新认证全部Git历史；实际历史改动用`-ChangedPath`定向核验，明确档案审计用`-AuditHistory`。
 
 `.\.venv\Scripts\python.exe -m common.documentation_links --inventory-json`输出逐文件行数、字符数与诊断。
 字符数基于UTF-8解码、换行规范化后的文本，不是token数。既有只读历史的失效链接只诊断，新历史断链仍阻断。
-长文、重复段落、无入链、表格列数不齐和空单元格是人工审查提示；合法空值不能仅凭检查器判断为遗漏。
+长文、重复段落、无入链及排版审查仅在显式维护任务中输出，不阻断普通提交。
 相对artifact路径允许外部载荷不在当前机器上，远程文献和科学结论需另行核验。
 结构PASS不证明新旧指令一致或阅读范围完整；文档升级还按[任务检索验收](REPOSITORY_ARCHITECTURE.md#按任务读取与局部检索)
 核对当前答案、必需约束和失效路径。
 
 ### artifact结构门禁
 
-清理时先运行卫生门禁检查源码与工作区顶层，再按[生命周期](LIFECYCLE.md#保留与清理策略)盘点产物、
+清理时核对生成资产未误入Git，再按[生命周期](LIFECYCLE.md#保留与清理策略)盘点产物、
 活动引用和相关系统临时目录。`reconcile_artifact_capacity.py --artifact-root ..\artifacts`只执行
 ledger-only日常startup/maintenance。首次校准或台账失准时，必须显式调用
 `legacy_capacity_calibration.py --workspace-root <simulation_repo>`；它一次性统计artifact根、
@@ -217,7 +202,7 @@ Python 3.9至3.12；本机默认Python 3.14和旧Python 3.8均不得作为本仓
 git status --short --branch
 git diff --check
 git diff --stat
-.\common\verify_changed.ps1
+.\common\verify.ps1
 ```
 
 独立工作树复用其他checkout的Python 3.11时，提交前将该解释器目录置于当前进程PATH首位；
@@ -238,5 +223,4 @@ git diff --stat
 足以还原目标、输入、唯一变量、结果、判据和产物，但不保存无关常规日志；正式几何还必须满足
 COMSOL [GUI和SolidWorks同步门禁](REPOSITORY_ARCHITECTURE.md#gui-与-cad-门禁)。Agent面向用户的报告顺序与篇幅只由[`AGENTS.md`](../AGENTS.md)定义。
 
-文档变更还应运行`common/verify_documentation.ps1`，检查唯一H1、标题层级、相对链接、历史归档
-标记和项目入口完整性。自动门禁只验证可机器判断的结构；技术结论是否放在正确权威层仍需审阅。
+文档变更按实际范围检查活动入口、本地链接和锚点；历史来源仅在实际改动或显式档案审计时核验。自动门禁只验证可机器判断的结构；技术结论是否放在正确权威层仍需审阅。
