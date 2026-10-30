@@ -105,7 +105,10 @@ $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitio
 $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-WorkpointControllerRequest'},$true)
 Invoke-Expression ($node.Extent.Text.Replace('function Invoke-WorkpointControllerRequest','function Invoke-RealControllerRequest'))
 function Invoke-WorkpointControllerRequest {param($Request,$Python,$RepoRoot)Invoke-RealControllerRequest -Request $Request -Python $RealPython -RepoRoot $RealRepo}
-$fixture=[Console]::In.ReadToEnd()|ConvertFrom-Json -AsHashtable -Depth 100
+$cases=[Console]::In.ReadToEnd()|ConvertFrom-Json -AsHashtable -Depth 100
+foreach($case in $cases){
+ $caseTimer=[Diagnostics.Stopwatch]::StartNew()
+ $value=& {param($fixture,$Root)
 $script:flights=@();$script:saves=@();$script:refresh=$null
 function Find-AcceptedRecoveryAnchorEvidence {param($History,$Lineage,$Anchor)@{materialization='anchor.json';observation='observation.json'}}
 function Save-IterationRecoveryState {param($State,$Path)
@@ -128,58 +131,100 @@ $fixture.stored|ConvertTo-Json -Depth 100|Set-Content -LiteralPath $statePath
 $failure=$null;$state=$null
 try{$state=Invoke-SLocalModelRecovery -Decision $fixture.decision -History $fixture.history -Lineage @{} -StatePath $statePath -HistoryPath $historyPath -ContractDocument $fixture.contract -RecoveryPolicy $fixture.policy}catch{$failure=$_.Exception.Message}
 $modelPath=Join-Path $Root 'iteration_local_s_model.json'
-@{state=$state;failure=$failure;flights=$script:flights;saves=$script:saves;refresh=$script:refresh;model=(Get-Content $modelPath -Raw|ConvertFrom-Json -AsHashtable);model_sha=(Get-FileHash $modelPath).Hash.ToLowerInvariant()}|ConvertTo-Json -Depth 100 -Compress
+@{state=$state;failure=$failure;flights=$script:flights;saves=$script:saves;refresh=$script:refresh;model=(Get-Content $modelPath -Raw|ConvertFrom-Json -AsHashtable);model_sha=(Get-FileHash $modelPath).Hash.ToLowerInvariant()}
+ } $case.fixture $case.root
+ $line=@{name=$case.name;case_seconds=$caseTimer.Elapsed.TotalSeconds;observation=$value}|ConvertTo-Json -Depth 100 -Compress
+ [Console]::Out.WriteLine($line)
+ [Console]::Out.Flush()
+}
 '''
         contract = json.loads((PROJECT / 'config/simion_candidate_two_zone.json').read_text())
         policy = json.loads((PROJECT / 'config/local_model_recovery_policy.json').read_text())
         anchor = dict(voltages_v=[-27., 54., 190., -190.], maximum_scaled_abs_residual=20.)
         decision = dict(iteration=6, recovery_state=dict(accepted_anchor=anchor, model_invalid_reason='topology_loss'))
         history = dict(decisions=[])
-        for passed, eligible, round_number, expected in ((True, 2, 1, 'validated'), (False, 2, 1, 'retry'),
-                (False, 0, 1, 'retry'), (False, 0, 3, 'provisional'), (False, 2, 3, 'terminal'),
-                ('false', 0, 3, 'terminal'), (None, 0, 3, 'provisional'), (None, None, 3, 'invalid')):
-            with self.subTest(passed=passed, eligible=eligible, round_number=round_number), TemporaryDirectory() as directory:
-                root = Path(directory)
+        cases = (
+            ('validated_history', True, 2, 1, 'validated'),
+            ('retry_failed_history', False, 2, 1, 'retry'),
+            ('retry_no_history', False, 0, 1, 'retry'),
+            ('provisional_no_history', False, 0, 3, 'provisional'),
+            ('terminal_failed_history', False, 2, 3, 'terminal'),
+            ('terminal_string_false', 'false', 0, 3, 'terminal'),
+            ('provisional_missing_validation', None, 0, 3, 'provisional'),
+            ('invalid_missing_validation', None, None, 3, 'invalid'),
+        )
+        with TemporaryDirectory() as directory:
+            batch_root = Path(directory)
+            probes, expected_cases = [], []
+            for name, passed, eligible, round_number, expected in cases:
+                root = batch_root / name
+                root.mkdir()
                 stored = prepare_recovery_state(decision, dict(materialization='anchor.json', observation='observation.json'),
                                                 None, contract['downstream_fixed_grid_workpoint_profile'], policy, history)
                 for _ in range(1, round_number):
                     stored = advance_recovery_round(stored, contract['downstream_fixed_grid_workpoint_profile'])
                 validation = dict(passed=passed, eligible_observation_count=eligible) if eligible is not None else None
                 model = dict(history_validation=validation, local_s_physical_jacobian_columns=[[1., 0.], [0., 1.], [1., 1.], [2., 2.]])
-                fixture = root / 'model.ps1'; fixture.write_text(script, encoding='utf-8')
-                result = subprocess.run(['pwsh', '-NoProfile', '-File', str(fixture),
-                    str(PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1'), str(root), sys.executable, str(PROJECT.parents[1])],
-                    input=json.dumps(dict(decision=decision, history=history, contract=contract, policy=policy, stored=stored, model=model)),
-                    cwd=PROJECT.parents[1], capture_output=True, text=True, encoding='utf-8', timeout=40)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                observed = json.loads(result.stdout)
-                self.assertEqual(len(observed['flights']), 2)
-                self.assertEqual([s['probe_budget_remaining'] for s in observed['saves'][:5]], [12, 11, 11, 10, 10])
-                self.assertEqual([s['probes'][-1]['status'] for s in observed['saves'][1:5]],
-                                 ['started', 'accepted_physical_probe', 'started', 'accepted_physical_probe'])
-                self.assertEqual(observed['refresh'], dict(radius=max(stored['probe_steps_v']), directions=[1, 1]))
-                if expected == 'invalid':
-                    self.assertTrue(observed['failure'])
-                    self.assertIsNone(observed['state'])
-                    self.assertEqual(len(observed['saves']), 5)
-                    continue
-                self.assertIsNone(observed['failure'])
-                state = observed['state']
-                self.assertEqual(state['status'], 'validated' if expected == 'provisional' else expected)
-                self.assertEqual(len(observed['saves']), 6)
-                self.assertEqual(state['probe_budget_remaining'], 12 if expected == 'retry' else 10)
-                if state['status'] == 'validated':
-                    self.assertEqual(state['model']['sha256'], observed['model_sha'])
-                    self.assertEqual(state['model']['supported_directions'], [1, 1])
-                    self.assertEqual(state['model']['trusted_radius_linf_v'], max(stored['probe_steps_v']))
-                if expected == 'provisional':
-                    actual = observed['model']['history_validation']
-                    self.assertIs(actual['passed'], True)
-                    self.assertEqual(actual['validation_status'], 'provisional_no_nearby_history')
-                    self.assertIs(actual['first_correction_requires_real_prediction_acceptance'], True)
-                    self.assertEqual(actual['first_correction_max_linf_v'], max(stored['probe_steps_v']))
-                else:
-                    self.assertEqual(observed['model'], model)
+                probes.append(dict(name=name, root=str(root), fixture=dict(decision=decision,
+                    history=history, contract=contract, policy=policy, stored=stored, model=model)))
+                expected_cases.append((name, passed, eligible, round_number, expected, stored, model))
+            fixture = batch_root / 'model.ps1'
+            fixture.write_text(script, encoding='utf-8')
+            stderr_path = batch_root / 'model.stderr.log'
+            received = []
+            with stderr_path.open('w', encoding='utf-8') as stderr:
+                process = subprocess.Popen(['pwsh', '-NoProfile', '-File', str(fixture),
+                    str(PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1'), str(batch_root),
+                    sys.executable, str(PROJECT.parents[1])], cwd=PROJECT.parents[1],
+                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr,
+                    text=True, encoding='utf-8', bufsize=1)
+                try:
+                    json.dump(probes, process.stdin)
+                    process.stdin.close()
+                    process.stdin = None
+                    for line in process.stdout:
+                        self.assertLess(len(received), len(expected_cases), 'Unexpected duplicate/extra case row.')
+                        row = json.loads(line)
+                        name, passed, eligible, round_number, expected, stored, model = expected_cases[len(received)]
+                        self.assertEqual(row['name'], name, 'Duplicate or out-of-order case row.')
+                        received.append(name)
+                        with self.subTest(case=name, passed=passed, eligible=eligible, round_number=round_number):
+                            print(f"RECOVERY_CASE_SECONDS={row['case_seconds']:.6f} CASE={name}", flush=True)
+                            observed = row['observation']
+                            self.assertEqual(len(observed['flights']), 2)
+                            self.assertEqual([s['probe_budget_remaining'] for s in observed['saves'][:5]], [12, 11, 11, 10, 10])
+                            self.assertEqual([s['probes'][-1]['status'] for s in observed['saves'][1:5]],
+                                             ['started', 'accepted_physical_probe', 'started', 'accepted_physical_probe'])
+                            self.assertEqual(observed['refresh'], dict(radius=max(stored['probe_steps_v']), directions=[1, 1]))
+                            if expected == 'invalid':
+                                self.assertTrue(observed['failure'])
+                                self.assertIsNone(observed['state'])
+                                self.assertEqual(len(observed['saves']), 5)
+                                continue
+                            self.assertIsNone(observed['failure'])
+                            state = observed['state']
+                            self.assertEqual(state['status'], 'validated' if expected == 'provisional' else expected)
+                            self.assertEqual(len(observed['saves']), 6)
+                            self.assertEqual(state['probe_budget_remaining'], 12 if expected == 'retry' else 10)
+                            if state['status'] == 'validated':
+                                self.assertEqual(state['model']['sha256'], observed['model_sha'])
+                                self.assertEqual(state['model']['supported_directions'], [1, 1])
+                                self.assertEqual(state['model']['trusted_radius_linf_v'], max(stored['probe_steps_v']))
+                            if expected == 'provisional':
+                                actual = observed['model']['history_validation']
+                                self.assertIs(actual['passed'], True)
+                                self.assertEqual(actual['validation_status'], 'provisional_no_nearby_history')
+                                self.assertIs(actual['first_correction_requires_real_prediction_acceptance'], True)
+                                self.assertEqual(actual['first_correction_max_linf_v'], max(stored['probe_steps_v']))
+                            else:
+                                self.assertEqual(observed['model'], model)
+
+                finally:
+                    # Drain stdout and wait even if parsing/assertions fail. stderr
+                    # has its own file, so a healthy child cannot block on a pipe.
+                    process.communicate()
+            self.assertEqual(process.returncode, 0, stderr_path.read_text(encoding='utf-8'))
+            self.assertEqual(received, [case[0] for case in expected_cases], 'Missing case rows.')
 
     def test_recovery_round_json_transport_preserves_probe_order_debits_and_terminal_resume(self):
         script = r'''
