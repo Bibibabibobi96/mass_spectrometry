@@ -60,6 +60,9 @@ Changed的FullScope保留原Core／Static选择，不等于Repository。不支�
 中央Ruff、注册表及RF公共PS解析各承担唯一职责；MR保留必要PS／Lua前置，纯Ruff集成前置已撤销。
 独立项目入口默认完成必要检查。Changed／Owner首错停新派发，Repository继续独立诊断；
 真实前置失败仍阻断消费者，健康任务自然收尾。
+CI 同分支运行沿现有 concurrency group 串行，新推送不取消已启动的验证；尚未启动的待运行请求仍可由更新请求替代。
+该行为采用 [GitHub concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)；
+取消或未完成的旧轮不计为通过，最终源码仍须取得相应范围的完整结果。
 
 参考环境预算：owner/窄范围1–3分钟，较复杂≤5分钟，宽改动≤10分钟，完整软件范围争取15分钟。
 超预算须定位主要重复与必要成本，不靠漏测、改名或隐藏开销达标；它不是原生求解的强杀超时。
