@@ -138,8 +138,8 @@ $modelPath=Join-Path $Root 'iteration_local_s_model.json'
  [Console]::Out.Flush()
 }
 '''
-        contract = json.loads((PROJECT / 'config/simion_candidate_two_zone.json').read_text())
-        policy = json.loads((PROJECT / 'config/local_model_recovery_policy.json').read_text())
+        contract = json.loads((PROJECT / 'config/simion_candidate_two_zone.json').read_text(encoding='utf-8'))
+        policy = json.loads((PROJECT / 'config/local_model_recovery_policy.json').read_text(encoding='utf-8'))
         anchor = dict(voltages_v=[-27., 54., 190., -190.], maximum_scaled_abs_residual=20.)
         decision = dict(iteration=6, recovery_state=dict(accepted_anchor=anchor, model_invalid_reason='topology_loss'))
         history = dict(decisions=[])
@@ -261,8 +261,8 @@ foreach($round in 1..4){
 $topology=Get-InterruptedSOnlyTopologyRecoveryDecision -History @{decisions=@()}
 @{states=$states;actions=$script:actions;flights=$script:flights;saves=$script:saves;topology=$topology}|ConvertTo-Json -Depth 100 -Compress
 '''
-        profile = json.loads((PROJECT / 'config/simion_candidate_two_zone.json').read_text())
-        policy = json.loads((PROJECT / 'config/local_model_recovery_policy.json').read_text())
+        profile = json.loads((PROJECT / 'config/simion_candidate_two_zone.json').read_text(encoding='utf-8'))
+        policy = json.loads((PROJECT / 'config/local_model_recovery_policy.json').read_text(encoding='utf-8'))
         anchor = dict(voltages_v=[-27., 54., 190., -190.], maximum_scaled_abs_residual=20.)
         for hint in (None, [-1, 1]):
             with self.subTest(hint=hint), TemporaryDirectory() as temporary:
@@ -1792,7 +1792,7 @@ try{
         result = self._run_compose_reclamation_fixture(imported=True, accepted=True)
         self.assertIsNone(result['error'])
         self.assertTrue(any(p.endswith('old_parent-stage-006-field') for p in result['retired']))
-        source = (PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1').read_text()
+        source = (PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1').read_text(encoding='utf-8')
         bootstrap = source[source.index('function Invoke-StagedWorkpointBootstrap'):]
         self.assertLess(bootstrap.index("Reclaim-StagedComposeProviders -State $state -Lineage $lineage"),
                         bootstrap.index('while($null-eq$terminal)'))
@@ -3378,7 +3378,7 @@ if(@((Get-Content $history -Raw|ConvertFrom-Json).decisions).Count-ne0){throw 'b
 
     def test_continuation_transport_seed_uses_contract_neighborhood(self):
         script = r"""
-param($Source,$Root)
+param($Source,$Root,$FixturePython)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
 foreach($name in @('Find-ContinuationTransportSeed','Invoke-CenterTrial','Invoke-WorkpointControllerRequest')){
@@ -3386,7 +3386,7 @@ foreach($name in @('Find-ContinuationTransportSeed','Invoke-CenterTrial','Invoke
 }
 $staticFieldMode=$false;$stagedBootstrap=$false
 $repoRoot=(Get-Item $Source).Directory.Parent.Parent.Parent.FullName
-$python=Join-Path $repoRoot '.venv/Scripts/python.exe'
+$python=$FixturePython
 $RunId='auto';$RetainBaselineGuiWorkbench=$false;$artifactRoot=$Root;$script:flights=@()
 $trialArtifactRoot=$artifactRoot
 function New-CenterTrialArguments {param($PrismVoltages,$ChildRunId)@{PrismVoltages=$PrismVoltages;ChildRunId=$ChildRunId}}
@@ -3409,7 +3409,7 @@ if($script:flights.Count-ne13-or$failure-notlike'No physical transport seed*'){t
         with TemporaryDirectory() as temporary:
             fixture = Path(temporary) / "continuation-seed.ps1"
             fixture.write_text(script, encoding="utf-8")
-            result = subprocess.run(["pwsh", "-NoProfile", "-File", str(fixture), str(PROJECT / "analysis/run_downstream_workpoint_iteration.ps1"), temporary], cwd=PROJECT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=40)
+            result = subprocess.run(["pwsh", "-NoProfile", "-File", str(fixture), str(PROJECT / "analysis/run_downstream_workpoint_iteration.ps1"), temporary, sys.executable], cwd=PROJECT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=40)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("CONTINUATION_TRANSPORT_SEED=PASS", result.stdout)
 
@@ -3553,7 +3553,7 @@ Write-Output 'RECOVERY_ANCHOR_BINDING=PASS'
 
     def test_physical_gate_reverse_fallback_resume_and_voltage_binding(self):
         script = r"""
-param($Source,$Root,$Scenario)
+param($Source,$Root,$Scenario,$FixturePython)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $ast=[System.Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
 foreach($name in @('Get-WorkpointBootstrapEvidence','Save-WorkpointBootstrap','Invoke-WorkpointStencil','Invoke-CenterTrial','Invoke-WorkpointControllerRequest')){
@@ -3570,7 +3570,7 @@ function Invoke-MockPython {
   if($args[0]-eq'-X'){
     $payload=@($input)
     if(($payload-join''|ConvertFrom-Json).action-eq'center_trial_physical_gate'){$script:feedbackCalls++}else{$script:stencilPlans++}
-    $payload | & (Join-Path $repoRoot '.venv/Scripts/python.exe') @args
+    $payload | & $FixturePython @args
     return
   }
   if($args[3]-ne'success'-or$args[4]-ne'--require-project'-or$args[5]-ne'instrument_assembly'-or
@@ -3647,7 +3647,7 @@ $trialArtifactRoot=$artifactRoot
                     result = subprocess.run(
                         ['pwsh', '-NoProfile', '-File', str(fixture),
                          str(PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1'),
-                         temporary, scenario],
+                         temporary, scenario, sys.executable],
                         cwd=PROJECT, capture_output=True, text=True, encoding='utf-8', timeout=40,
                     )
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -3659,7 +3659,7 @@ $trialArtifactRoot=$artifactRoot
 
     def test_stencil_plan_preserves_save_trace_and_late_identity_failure(self):
         script = r"""
-param($Source,$Root)
+param($Source,$Root,$FixturePython)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
 foreach($name in @('Invoke-WorkpointStencil','Invoke-WorkpointControllerRequest')){
@@ -3667,7 +3667,7 @@ foreach($name in @('Invoke-WorkpointStencil','Invoke-WorkpointControllerRequest'
   Invoke-Expression $node.Extent.Text
 }
 $repoRoot=(Get-Item $Source).Directory.Parent.Parent.Parent.FullName
-$python=Join-Path $repoRoot '.venv/Scripts/python.exe'
+$python=$FixturePython
 $RunId='reference';$artifactRoot=$Root;$trialArtifactRoot=$Root;$frozenContract='frozen';$capacitySession=@{}
 $script:flights=@();$script:saves=@();$script:lastTier=$true
 function New-CenterTrialArguments {param($Voltages,$ChildRunId)@{Voltages=$Voltages;ChildRunId=$ChildRunId}}
@@ -3698,7 +3698,7 @@ if($failure-notlike'*recorded signed step differs*'-or$script:flights.Count-ne4-
             fixture = Path(temporary) / "stencil-trace.ps1"
             fixture.write_text(script, encoding="utf-8")
             result = subprocess.run(
-                ["pwsh", "-NoProfile", "-File", str(fixture), str(PROJECT / "analysis/run_downstream_workpoint_iteration.ps1"), temporary],
+                ["pwsh", "-NoProfile", "-File", str(fixture), str(PROJECT / "analysis/run_downstream_workpoint_iteration.ps1"), temporary, sys.executable],
                 cwd=PROJECT, capture_output=True, text=True, encoding="utf-8", timeout=40,
             )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -3706,7 +3706,7 @@ if($failure-notlike'*recorded signed step differs*'-or$script:flights.Count-ne4-
 
     def test_resume_skips_completed_stencil_and_checkpoint_preserves_owner(self):
         script = r"""
-param($Source,$Root)
+param($Source,$Root,$FixturePython)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $ast=[System.Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
@@ -3720,7 +3720,7 @@ $trialArtifactRoot=$artifactRoot
 $frozenContract='frozen';$capacitySession=[pscustomobject]@{lease_id='new-lease'}
 $script:flights=@();$script:audit=0;$script:checks=0;$script:events=@()
 function Invoke-MockPython {
-  if($args[0]-eq'-X'){$input | & (Join-Path $repoRoot '.venv/Scripts/python.exe') @args;return}
+  if($args[0]-eq'-X'){$input | & $FixturePython @args;return}
   $script:checks++;$global:LASTEXITCODE=0
 }
 function Get-WorkpointBootstrapEvidence {param($Manifest,$Voltages) $script:checks++;return @{passed=$true;reasons=@();observation_sha256='A';materialization_sha256='B';child_manifest_sha256='C';child_manifest=$Manifest}}
@@ -3773,7 +3773,7 @@ Write-Output 'RESUME_CHECKPOINT=PASS'
             fixture.write_text(script, encoding='utf-8')
             result = subprocess.run(
                 ['pwsh', '-NoProfile', '-File', str(fixture),
-                 str(PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1'), temporary],
+                 str(PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1'), temporary, sys.executable],
                 cwd=PROJECT, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=40,
             )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -3829,7 +3829,7 @@ Write-Output 'SEED_PROJECTION=PASS'
             good = subprocess.run(command, cwd=PROJECT, capture_output=True, text=True, encoding="utf-8", check=False, timeout=40)
             self.assertEqual(good.returncode, 0, good.stdout + good.stderr)
             self.assertIn("SEED_PROJECTION=PASS", good.stdout)
-            document = json.loads(manifest.read_text())
+            document = json.loads(manifest.read_text(encoding='utf-8'))
             old_owner, old_mode = document["project"], document["mode"]
             for owner, mode, accepted in (
                 ("instrument_assembly", "oa_mr", True),
@@ -3861,13 +3861,13 @@ Write-Output 'SEED_PROJECTION=PASS'
             )
             self.assertNotEqual(bad.returncode, 0)
             self.assertIn("Manifest output hash differs", bad.stdout)
-        source = (PROJECT / "analysis/run_downstream_workpoint_iteration.ps1").read_text()
+        source = (PROJECT / "analysis/run_downstream_workpoint_iteration.ps1").read_text(encoding='utf-8')
         self.assertIn("$configuration.parameters.voltage_seed_consumer_projection=$seedProjection", source)
         self.assertIn("$configuration.inputs.voltage_seed_materialization=$frozenSeedMaterialization", source)
 
     def test_native_stencil_dispatch_and_failure_stop(self):
         script = r"""
-param($Source,$Root)
+param($Source,$Root,$FixturePython)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $ast=[System.Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
@@ -3879,7 +3879,7 @@ $staticFieldMode=$false
 $GeometryReviewRunPath='geometry';$MirrorRunPath='mirror';$StripeRunPath='stripe';$AcceleratorProviderReceiptPath='provider-receipt'
 $NativeSystemRuntimeBundlePath='native-system-bundle.json';$TrajectoryStepScale=1.;$AcceleratorSourceYOffsetMm=-1.7
 $repoRoot=(Get-Item $Source).Directory.Parent.Parent.Parent.FullName
-$python=Join-Path $repoRoot '.venv/Scripts/python.exe';$capacitySession=[pscustomobject]@{lease_id='owner'}
+$python=$FixturePython;$capacitySession=[pscustomobject]@{lease_id='owner'}
 $nativeRuntimeSession=[pscustomobject]@{lease_id='owner';directory=$null;runtime=$null;checkpoint_path=(Join-Path $Root 'not-yet-created.json')}
 $NativeCorridorBankRunPath='native-bank'
 $SimionExe='simion';$PulseAcceleratorUntilInitialExit=$true;$AcceleratorPulseSchedulePath=''
@@ -3921,7 +3921,7 @@ Write-Output 'BOOTSTRAP=PASS'
             path.write_text(script, encoding="utf-8")
             result = subprocess.run(
                 ["C:/Program Files/PowerShell/7/pwsh.exe", "-NoProfile", "-File", str(path),
-                 str(PROJECT / "analysis/run_downstream_workpoint_iteration.ps1"), temporary],
+                 str(PROJECT / "analysis/run_downstream_workpoint_iteration.ps1"), temporary, sys.executable],
                 cwd=PROJECT, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False, timeout=40,
             )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
