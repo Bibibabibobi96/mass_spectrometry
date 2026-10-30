@@ -26,13 +26,18 @@ run(taskPath);
 end
 
 function writeBootstrapReport(path, status, errorText)
-fid = fopen(path, 'w', 'n', 'UTF-8');
+% RUNNING starts a new launcher attempt; terminal status retains task diagnostics.
+mode = 'a';
+if string(status) == "RUNNING"
+    mode = 'w';
+end
+fid = fopen(path, mode, 'n', 'UTF-8');
 if fid < 0
     error('COMSOL:BootstrapReportWrite', ...
         'Cannot write COMSOL bootstrap report: %s', path);
 end
 cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
-fprintf(fid, 'STATUS=%s\n', status);
+fprintf(fid, '\nSTATUS=%s\n', status);
 if strlength(string(errorText)) > 0
     fprintf(fid, 'ERROR=%s\n', errorText);
 end

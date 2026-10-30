@@ -42,8 +42,9 @@ launcher退出后仍保留已见身份以收尾其服务器，创建身份不符
 继续等待同一进程的报告及真实退出，不因超时杀进程或重启；
 真实退出后缺报告仍失败且不重试，最终退出码和报告判据不变。调用方须冻结这一运行策略。
 只有调用者显式声明`stop`，该启动等待才成为硬超时并终止本次受管进程树；它不能由默认值、低CPU或暂无新报告隐式触发。
-`comsolstartup.m`在进入项目任务前把独立bootstrap报告写为`STATUS=RUNNING`，项目任务返回后才覆盖为
-`STATUS=PASS`；异常则覆盖为`STATUS=FAIL`。launcher看到`RUNNING`只表示LiveLink已进入任务，不表示
+`comsolstartup.m`在进入项目任务前将本次bootstrap报告重置为`STATUS=RUNNING`，项目任务返回后追加
+`STATUS=PASS`；异常则追加`STATUS=FAIL`，保留任务已经写出的阶段诊断。纯MATLAB回归见
+`tests/comsolstartupReportTest.m`，不启动COMSOL。launcher看到`RUNNING`只表示LiveLink已进入任务，不表示
 科学计算成功，它会继续等待进程终态，并且只接受退出码0与最终`PASS`同时成立。进程退出后若报告仍为
 `RUNNING`、缺失或互相矛盾，必须失败关闭。
 只有未创建任务报告时，入口才保存`.launcher.attemptN.stdout/stderr.log`供启动诊断；正常任务不生成
