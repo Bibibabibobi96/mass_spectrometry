@@ -55,6 +55,28 @@
 `Complete-FailedRun`在修改配置、摘要或保留文件前读取同run的manifest身份与状态；已有终态时告警并保留，
 不把这次小文件检查称为重新核验全部产物。未发布或checkpoint仍沿原失败收尾；调用者继续报告原始异常。
 
+`Enter-RunTerminalConsumptionGuard`在原终态锁协议中取得共享读保护，多个run可同时消费同一父结果；
+终态发布仍独占同一字节，任何读者尚未释放时不得创建发布journal。读者全部释放后writer才继续，
+不靠延长超时或取消journal解决并发。该锁只保护终态发布边界，PA载荷仍使用既有防写保护。
+
+跨产物根消费沿现`Enter/Update-ArtifactWorkflowCapacitySession -SourceReferences`传递显式来源：
+每项为`@{manifest_record=<已有小fileRecord>;protected_paths=@(...);protected_cache_keys=@(...)}`。
+公共层在共享终态锁内核对小manifest和其绑定配置，依据冻结的容量owner归组；同根并入原租约，
+外根使用该根已有零新增承诺租约，不在目标根登记来源对象，也不对来源重复做新载荷准入或读取大场。
+临时来源租约描述符保留在原session的`source_protection_leases`，获取失败回滚已获租约；
+描述符采用实际租约的规范scope，普通`Update`也续所有仍活动的来源保护，不依赖再次传入来源列表。
+同根来源的共享guard保持到主租约创建／扩展真正完成，跨根保持到来源租约取得。
+只读来源可为`superseded`，不改变通用终态枚举。`checkpoint`来源还必须显式提供
+`stopped_receipt_record`，匹配既有`seal_stopped_payload`收据及原owner实际ready／pinned台账项；
+不能凭文件存在或checkpoint状态消费未完成载荷。来源解析只核对绑定的小元数据，不扫描载荷。
+已确认writer停止后的`Exit`可幂等恢复独立释放失败。writer未知时调用方仍保留整个session及原读／PA保护。
+来源缺少充分冻结owner证据时早拒，不按目录猜测、不用当前环境补造；这些消费保护不等于资产迁移或永久保留。
+同一已知根内的合法旧run仍可凭绑定的manifest/config和精确项目run位置受原租约保护，
+不要求为它补写历史容量配置；该兼容边界不能用于推断另一产物根。
+Windows实现采用官方[LockFileEx](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-lockfileex)
+的共享字节锁，与Python现有独占锁互操作；允许锁EOF之外，空文件的初始化仅在writer取得独占后执行。
+2026-10-30已在Windows 10.0.19045核对两独立读者与Python发布者，包含空lock文件首次创建。
+
 运行初始化统一使用`New-RunPackage`；原仅由测试调用的初始化包装和无调用的依赖复制包装已移除。
 writer与verifier共用保留策略入口，独立消费时仍重新验证完整内容，不维护两份同义导入逻辑。
 冻结执行快照中的公共IOB占位模板属于必需输入，所有已引用槽位均须保留；该分类不适用于运行目录中

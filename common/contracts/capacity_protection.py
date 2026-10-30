@@ -56,9 +56,6 @@ def process_file_lock(path: Path, *, timeout_seconds: float = 30.0):
         if os.name == "nt":
             import msvcrt
 
-            if path.stat().st_size == 0:
-                stream.write(b"\0")
-                stream.flush()
             while True:
                 try:
                     stream.seek(0)
@@ -69,6 +66,12 @@ def process_file_lock(path: Path, *, timeout_seconds: float = 30.0):
                         raise TimeoutError(f"process lock is held: {path}")
                     time.sleep(0.05)
             try:
+                # Windows byte-range locks may extend beyond EOF. Initialize
+                # only after exclusive acquisition: a shared terminal reader
+                # can legitimately hold the first byte of an empty lock file.
+                if path.stat().st_size == 0:
+                    stream.write(b"\0")
+                    stream.flush()
                 yield
             finally:
                 stream.seek(0)

@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -115,6 +116,72 @@ Write-VerifiedRunManifest -Python $Python -RepoRoot $Repo -RunConfig $Config -St
             manifest = json.loads((root / "run_manifest.json").read_text(encoding="utf-8"))
             self.assertIn(manifest["status"], {"success", "failed"})
             self.assertFalse((root / ".run_terminal_publication.json").exists())
+
+    @unittest.skipUnless(sys.platform == "win32" and shutil.which("pwsh"), "Windows shared reader required")
+    def test_two_independent_readers_block_publication_until_both_release_empty_lock(self):
+        repo = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, summary, manifest = self._fixture(root)
+            before = (root / "run_manifest.json").read_bytes()
+            reader = root / "reader.ps1"
+            reader.write_text("""param($Repo,$Run,$Ready,$Release)
+$ErrorActionPreference='Stop'
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+$guard=Enter-RunTerminalConsumptionGuard -RunDirectory $Run
+try {
+ [IO.File]::WriteAllText($Ready,'shared reader acquired')
+ $deadline=[datetime]::UtcNow.AddSeconds(30)
+ while(-not(Test-Path -LiteralPath $Release)) {
+  if([datetime]::UtcNow-ge$deadline){throw 'Reader fixture release barrier timed out'}
+  Start-Sleep -Milliseconds 20
+ }
+} finally {$guard.Dispose()}
+""", encoding="utf-8")
+            releases = [root / f"release-{index}" for index in range(2)]
+            ready = [root / f"ready-{index}" for index in range(2)]
+            processes = []
+            try:
+                for index in range(2):
+                    processes.append(subprocess.Popen(
+                        [shutil.which("pwsh"), "-NoProfile", "-NonInteractive", "-File", str(reader),
+                         str(repo), str(root), str(ready[index]), str(releases[index])],
+                        cwd=repo, stdout=subprocess.PIPE, stderr=subprocess.PIPE))
+                deadline = time.monotonic() + 20
+                while not all(path.exists() for path in ready):
+                    self.assertTrue(all(process.poll() is None for process in processes), "Reader exited before acquisition")
+                    self.assertLess(time.monotonic(), deadline, "Second reader could not acquire shared lock")
+                    time.sleep(.02)
+                lock = root / TERMINAL_LOCK_NAME
+                self.assertEqual(lock.stat().st_size, 0)
+                # Shorten only the real lock's fixture wait, not its behavior.
+                with patch.object(write_run_manifest, "process_file_lock",
+                                  side_effect=lambda path: process_file_lock(path, timeout_seconds=.2)):
+                    with self.assertRaises(TimeoutError):
+                        publish_terminal_state(root, summary, manifest)
+                    self.assertFalse((root / TERMINAL_JOURNAL_NAME).exists())
+                    self.assertEqual((root / "run_manifest.json").read_bytes(), before)
+                    self.assertEqual(lock.stat().st_size, 0)
+                    releases[0].write_text("release first", encoding="utf-8")
+                    first = processes[0].communicate(timeout=30)
+                    self.assertEqual(processes[0].returncode, 0, first)
+                    with self.assertRaises(TimeoutError):
+                        publish_terminal_state(root, summary, manifest)
+                    self.assertFalse((root / TERMINAL_JOURNAL_NAME).exists())
+                    self.assertEqual(lock.stat().st_size, 0)
+                releases[1].write_text("release second", encoding="utf-8")
+                second = processes[1].communicate(timeout=30)
+                self.assertEqual(processes[1].returncode, 0, second)
+                publish_terminal_state(root, summary, manifest)
+                self.assertEqual(json.loads((root / "run_manifest.json").read_text(encoding="utf-8"))["status"], "failed")
+                self.assertFalse((root / TERMINAL_JOURNAL_NAME).exists())
+                self.assertEqual(lock.stat().st_size, 1)
+            finally:
+                # Release only these fixture barriers; healthy children finish.
+                for path in releases:
+                    path.write_text("fixture teardown", encoding="utf-8")
+                for process in processes:
+                    process.communicate(timeout=30)
 
     def test_stale_journal_cannot_replace_a_different_terminal(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -89,6 +89,86 @@ def _run_context(artifact_root: Path, run_config: Path) -> tuple[Path, dict[str,
     return run_dir, config, budget
 
 
+def resolve_consumed_run_capacity_owner(manifest_record: dict[str, Any], *,
+                                       consumer_artifact_root: Path | None = None,
+                                       stopped_receipt_record: dict[str, Any] | None = None) -> dict[str, str]:
+    """Resolve an explicitly bound source owner without inspecting its payload.
+
+    The caller holds the existing shared terminal-consumption guard until its
+    source protection lease has been acquired. Scientific applicability and PA
+    byte protection remain the consuming project's responsibility.
+    """
+    from common.contracts.verify_run_manifest import record_path
+    from common.contracts.write_run_manifest import require_completed_terminal_publication
+
+    manifest_path = record_path(manifest_record)
+    if manifest_path.name != "run_manifest.json":
+        raise ValueError("source protection requires an explicit run manifest record")
+    require_completed_terminal_publication(manifest_path)
+    verify_record("source protection manifest", manifest_record)
+    manifest = _load_json(manifest_path, "source manifest")
+    if (manifest.get("schema_version") not in (1, 2) or manifest.get("role") != "simulation_run_manifest"
+            or manifest.get("status") not in TERMINAL_STATUSES | {"superseded", "checkpoint"}
+            or manifest.get("lifecycle_state") == "provisional"):
+        raise ValueError("source protection requires a completed terminal run")
+    stopped = None
+    config_record = manifest.get("run_config")
+    if manifest["status"] == "checkpoint":
+        if stopped_receipt_record is None:
+            raise ValueError("checkpoint source requires its explicit stopped payload receipt")
+        verify_record("source stopped payload receipt", stopped_receipt_record)
+        stopped = _load_json(record_path(stopped_receipt_record), "source stopped payload receipt")
+        if (stopped.get("schema_version") != 1 or stopped.get("role") != "run_capacity_lifecycle_receipt"
+                or stopped.get("action") != "seal_stopped_payload" or stopped.get("status") != "ready"
+                or stopped.get("run_status") != "checkpoint"
+                or Path(stopped.get("run_directory", "")).resolve() != manifest_path.parent
+                or stopped.get("continuation") != "new_run_required"):
+            raise ValueError("checkpoint source stopped payload receipt differs")
+        config_record = stopped.get("run_config")
+    if not isinstance(config_record, dict):
+        raise ValueError("source manifest must bind its run config")
+    config_path = record_path(config_record, base_dir=manifest_path.parent)
+    if config_path != manifest_path.parent / "run_config.json":
+        raise ValueError("source manifest run config is outside its owning run")
+    verify_record("source protection run config", config_record, base_dir=manifest_path.parent)
+    config = _load_json(config_path, "source run config")
+    lifecycle = config.get("capacity_ledger_lifecycle")
+    if isinstance(lifecycle, dict) and lifecycle.get("artifact_root"):
+        run_dir, config, _ = _run_context(Path(lifecycle["artifact_root"]), config_path)
+        root = Path(lifecycle["artifact_root"]).resolve(strict=True)
+    else:
+        # Legacy consumption within the one already-known root does not need
+        # a fabricated historical owner. Never infer a different source root.
+        if consumer_artifact_root is None:
+            raise ValueError("source has no frozen capacity owner; provide sufficient source evidence")
+        root = consumer_artifact_root.resolve(strict=True)
+        run_dir = config_path.parent
+        expected = root / "projects" / str(config.get("project", "")) / "runs" / str(config.get("run_id", ""))
+        if run_dir != expected.resolve() or run_dir.parent.name != "runs":
+            raise ValueError("cross-root source has no frozen capacity owner; provide sufficient source evidence")
+        capacity_ledger.capacity_object_path(root, run_dir)
+    for name in ("run_id", "project", "mode"):
+        if not isinstance(config.get(name), str) or manifest.get(name) != config[name]:
+            raise ValueError(f"source manifest and run config {name} differ")
+    if config["run_id"] != run_dir.name:
+        raise ValueError("source run identity differs from its owning directory")
+    if "paths" in config and Path(config["paths"]["artifact_root"]).resolve(strict=True) != root:
+        raise ValueError("source frozen path context and capacity owner differ")
+    if stopped is not None:
+        # This source-only check consumes the existing owner's stopped receipt;
+        # it neither seals a checkpoint nor re-inventories its native payload.
+        ledger = capacity_ledger.load_capacity_ledger(root)
+        relative = run_dir.relative_to(root).as_posix()
+        entries = [] if ledger is None else [item for item in ledger["objects"] if item.get("path") == relative]
+        if (len(entries) != 1 or entries[0] != stopped.get("ledger_entry")
+                or entries[0].get("status") != "ready" or entries[0].get("class") != "rebuildable_payload"
+                or entries[0].get("pin") is not True
+                or not str(entries[0].get("retention_reason", "")).startswith(SEALED_PAYLOAD_REASON_PREFIX)):
+            raise ValueError("checkpoint source lacks its actual ready pinned owner range")
+    return {"artifact_root": str(root), "run_directory": str(run_dir)}
+
+
+
 def _inventory(run_dir: Path) -> tuple[int, list[dict[str, Any]]]:
     records: list[dict[str, Any]] = []
     for path in run_dir.rglob("*"):
