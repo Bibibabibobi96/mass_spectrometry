@@ -269,6 +269,7 @@ function Get-ManagedSolverProcessSample {
   }
   return [pscustomobject]@{
     ancestry_complete=($ancestryComplete-and$unknownAncestryProcessIds.Count-eq0)
+    process_parent_ids=$parentByChild
     unknown_ancestry_process_ids=@($unknownAncestryProcessIds|Sort-Object)
     tracked_process_ids=@($known|Sort-Object)
     tracked_process_started_at_utc_ticks=$trackedStartTicks
@@ -279,6 +280,29 @@ function Get-ManagedSolverProcessSample {
     managed_memory_bytes=$managedBytes
     total_processor_time_ticks=$cpuTicks
     processor_time_ticks_by_process_id=$cpuTicksByProcessId
+  }
+}
+
+function Test-ManagedProcessLaunchAncestry {
+  <# Prove only the selected READY worker's chain; unrelated unknown branches
+     remain unknown in the full family observation used by other consumers. #>
+  param([Parameter(Mandatory)]$Sample,[Parameter(Mandatory)][int]$RootProcessId,
+    [Parameter(Mandatory)][long]$RootStartedAtUtcTicks,[Parameter(Mandatory)][int]$ProcessId,
+    [Parameter(Mandatory)][long]$StartedAtUtcTicks)
+  $births=$Sample.tracked_process_started_at_utc_ticks
+  if($Sample.active_process_ids-notcontains$ProcessId-or-not$births.ContainsKey([string]$ProcessId)-or
+     [long]$births[[string]$ProcessId]-ne$StartedAtUtcTicks){return $false}
+  if($null-eq$Sample.PSObject.Properties['process_parent_ids']){return $false}
+  $visited=[Collections.Generic.HashSet[int]]::new()
+  $current=$ProcessId
+  while($true){
+    if(-not$visited.Add($current)-or-not$births.ContainsKey([string]$current)){return $false}
+    if($current-eq$RootProcessId){return [long]$births[[string]$current]-eq$RootStartedAtUtcTicks}
+    if(-not$Sample.process_parent_ids.ContainsKey($current)){return $false}
+    $parent=[int]$Sample.process_parent_ids[$current]
+    if(-not$births.ContainsKey([string]$parent)-or
+       [long]$births[[string]$parent]-gt[long]$births[[string]$current]){return $false}
+    $current=$parent
   }
 }
 
@@ -335,9 +359,8 @@ function Invoke-RepositoryManagedPythonProcess {
     $sample=Get-ManagedSolverProcessSample -RootProcessIds @([int]$launcher.Id) `
       -RootProcessStartedAtUtcTicks @{([string]$launcher.Id)=$launcherBirth}
     $workerId=[int]$ready.pid;$workerBirth=[int64]$ready.started
-    if(-not$sample.ancestry_complete-or$sample.active_process_ids-notcontains$workerId-or
-       -not$sample.tracked_process_started_at_utc_ticks.ContainsKey([string]$workerId)-or
-       [int64]$sample.tracked_process_started_at_utc_ticks[[string]$workerId]-ne$workerBirth){
+    if(-not(Test-ManagedProcessLaunchAncestry -Sample $sample -RootProcessId ([int]$launcher.Id) `
+        -RootStartedAtUtcTicks $launcherBirth -ProcessId $workerId -StartedAtUtcTicks $workerBirth)){
       throw 'Managed worker ancestry or creation identity is unconfirmed; work was not acknowledged.'
     }
     $candidate=[Diagnostics.Process]::GetProcessById($workerId)

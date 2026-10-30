@@ -18,6 +18,34 @@ SUPPORT = Path(__file__).resolve().parents[1] / "resource_budget_support.ps1"
 
 @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows process identities required")
 class ManagedProcessCompletionTests(unittest.TestCase):
+    def test_ready_worker_requires_its_own_complete_birth_ordered_ancestry(self):
+        source = r'''
+param($Support)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. $Support
+$sample=[pscustomobject]@{ancestry_complete=$false;unknown_ancestry_process_ids=@(960,1320);
+ active_process_ids=@(11,22,33);tracked_process_started_at_utc_ticks=@{'11'=100L;'22'=200L;'33'=300L};
+ process_parent_ids=@{22=11;33=22;960=22;1320=22}}
+function Owned {Test-ManagedProcessLaunchAncestry -Sample $sample -RootProcessId 11 -RootStartedAtUtcTicks 100 -ProcessId 33 -StartedAtUtcTicks 300}
+if(-not(Owned)){throw 'An unrelated unknown branch rejected the proven READY worker'}
+if($sample.ancestry_complete-or$sample.unknown_ancestry_process_ids.Count-ne2){throw 'Full-family unknown facts were overwritten'}
+$sample.tracked_process_started_at_utc_ticks['33']=301L
+if(Owned){throw 'Changed worker creation identity was acknowledged'}
+$sample.tracked_process_started_at_utc_ticks['33']=300L
+$sample.tracked_process_started_at_utc_ticks['22']=400L
+if(Owned){throw 'Reused parent PID newer than its alleged child was accepted'}
+$sample.tracked_process_started_at_utc_ticks['22']=200L
+$sample.process_parent_ids.Remove(22)
+if(Owned){throw 'Unknown worker ancestor was accepted'}
+$sample.process_parent_ids[22]=33
+if(Owned){throw 'A cyclic ancestry chain was accepted'}
+$sample.process_parent_ids[22]=11
+$sample.tracked_process_started_at_utc_ticks['11']=99L
+if(Owned){throw 'Changed launcher identity was accepted'}
+Write-Output 'COMPLETION={"passed":true}'
+'''
+        self.assertTrue(self.run_script(source)["passed"])
+
     def run_script(self, source, *arguments):
         with tempfile.TemporaryDirectory() as directory:
             script = Path(directory) / "fixture.ps1"
