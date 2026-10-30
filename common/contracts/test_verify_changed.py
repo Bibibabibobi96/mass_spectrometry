@@ -119,7 +119,15 @@ foreach($case in $cases){{
 
     def test_owner_group_and_stage_alias_bind_the_actual_source_owner(self):
         contracts,_=self.plan("-Scope","Owner","-Owner","common/contracts")
-        self.assertTrue({"common_contracts","project_registry"}<={row["name"] for row in contracts["stages"]})
+        self.assertIn("project_registry", {row["name"] for row in contracts["stages"]})
+        actual = [module for row in contracts["stages"]
+                  for module in row["command"].get("arguments", [])[2:]
+                  if module.startswith("common.contracts.")]
+        route = next(row for row in self.routes if row["stage"] == "common_contracts")
+        expected = [".".join(path.relative_to(REPO_ROOT).with_suffix("").parts)
+                    for root in route["test_selection"]["roots"]
+                    for path in (REPO_ROOT / root).rglob("test_*.py")]
+        self.assertCountEqual(actual, expected)
         project,_=self.plan("-Scope","Owner","-Owner","rf_multipole_ion_optics")
         self.assertIn("rf_multipole_domain_tests",{row["name"] for row in project["stages"]})
         alias,_=self.plan("-Scope","Owner","-Owner","rf_multipole_domain_tests")
