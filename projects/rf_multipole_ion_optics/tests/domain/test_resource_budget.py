@@ -782,6 +782,19 @@ function Get-HostResourceProcessParents {
  [pscustomobject]@{parents=$parents;complete=($script:scenario-ne'incomplete');
    started_at_utc_ticks=$birth.AddSeconds(1).Ticks}
 }
+function Convert-TestPublicProcessSample {
+ param($Sample)
+ # JSON object keys are strings; preserve every public sample field and value.
+ $parents=[ordered]@{}
+ foreach($id in $Sample.process_parent_ids.Keys){$parents[[string]$id]=$Sample.process_parent_ids[$id]}
+ [ordered]@{ancestry_complete=$Sample.ancestry_complete;process_parent_ids=$parents;
+  unknown_ancestry_process_ids=$Sample.unknown_ancestry_process_ids;
+  tracked_process_ids=$Sample.tracked_process_ids;tracked_process_started_at_utc_ticks=$Sample.tracked_process_started_at_utc_ticks;
+  active_process_ids=$Sample.active_process_ids;system_console_host_process_ids=$Sample.system_console_host_process_ids;
+  working_set_bytes=$Sample.working_set_bytes;private_bytes=$Sample.private_bytes;
+  managed_memory_bytes=$Sample.managed_memory_bytes;total_processor_time_ticks=$Sample.total_processor_time_ticks;
+  processor_time_ticks_by_process_id=$Sample.processor_time_ticks_by_process_id}
+}
 $results=@()
 foreach($script:scenario in @('cim','fallback','owned_unknown','incomplete','reused_root','reused_tracked')){
  $script:events.Clear()
@@ -802,7 +815,7 @@ foreach($script:scenario in @('cim','fallback','owned_unknown','incomplete','reu
  $shared=Get-ManagedSolverProcessSample @args -ProcessSnapshot $snapshot
  $newEvents=@($script:events|Select-Object -Skip $before)
  if(@($newEvents|Where-Object {$_-in@('process','cim','fallback')}).Count){throw 'Shared sample re-enumerated'}
- $results+=@{scenario=$script:scenario;independent=$independent;shared=$shared}
+ $results+=@{scenario=$script:scenario;expected_birth_ticks=$birth.Ticks;independent=(Convert-TestPublicProcessSample $independent);shared=(Convert-TestPublicProcessSample $shared)}
 }
 $results|ConvertTo-Json -Depth 12 -Compress
 """
@@ -822,6 +835,15 @@ $results|ConvertTo-Json -Depth 12 -Compress
                 expected_ids = [101, 103] if case["scenario"] == "reused_tracked" else [101, 102, 103]
                 self.assertEqual(sample["active_process_ids"], expected_ids)
                 self.assertEqual(sample["system_console_host_process_ids"], [103])
+                for pid in expected_ids:
+                    self.assertIn(pid, sample["tracked_process_ids"])
+                    self.assertEqual(sample["tracked_process_started_at_utc_ticks"][str(pid)], case["expected_birth_ticks"])
+                    self.assertEqual(sample["processor_time_ticks_by_process_id"][str(pid)], {101: 7, 102: 11, 103: 3}[pid])
+                self.assertEqual(sample["process_parent_ids"]["103"], 101)
+                if case["scenario"] == "reused_tracked":
+                    self.assertNotIn("102", sample["process_parent_ids"])
+                else:
+                    self.assertEqual(sample["process_parent_ids"]["102"], 101)
                 self.assertEqual(sample["managed_memory_bytes"], 38 if len(expected_ids) == 2 else 78)
                 self.assertEqual(sample["working_set_bytes"], 15 if len(expected_ids) == 2 else 55)
                 self.assertEqual(sample["private_bytes"], 38 if len(expected_ids) == 2 else 58)

@@ -82,7 +82,8 @@ $owner=@($ast.EndBlock.Statements|Where-Object{$_-is[Management.Automation.Langu
 $tail=$owner.CatchClauses[0].Extent.Text+'finally'+$owner.Finally.Extent.Text
 $repoRoot=$PWD;$python=$env:RF_TEST_PYTHON;$runConfigPath=Join-Path $env:RF_TEST_PARENT 'run_config.json';$artifactRoot=$env:RF_TEST_PROJECT_ROOT
 $runSummary=Join-Path $env:RF_TEST_PARENT 'summary.json';$RunId=Split-Path -Leaf $env:RF_TEST_PARENT
-$package=@{artifact_run_dir=$env:RF_TEST_PARENT;run_dir=$env:RF_TEST_PARENT;run_config=$runConfigPath}
+$package=@{artifact_run_dir=$env:RF_TEST_PARENT;run_dir=$env:RF_TEST_PARENT;run_config=$runConfigPath;
+ native_path_preparation=@{calls=0;elapsed_seconds=0.0;transport_bytes=0L}}
 $continuation=$null;$fieldContext=$null;$hostExecutionLease=$null;$hostExecutionOutcome='failed';$writerCompletionUnknown=$false
 $hostReleaseState=@{released=$false;completion=$null};$nativePreparation=[Collections.Generic.List[object]]::new();$deferFinalization=$false
 $resultDir=Join-Path $env:RF_TEST_PARENT 'results';$logDir=Join-Path $env:RF_TEST_PARENT 'logs';$candidateDir=Join-Path $env:RF_TEST_PARENT 'simion'

@@ -91,18 +91,18 @@ if(-not$caught-or$script:calls-ne2){throw 'Recovery accepted a new solver option
         fixture._write_json("summary.json", fixture.summary)
         fixture._seal()
         script = fixture.root / "ip_status.ps1"
-        script.write_text(r'''param($Entry,$Repo,$Run)
+        script.write_text(r'''param($Entry,$Repo,$Run,$Python)
 $ErrorActionPreference='Stop'
 $ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
 $definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Assert-CompletedIpScientificFailure'},$true)
 Invoke-Expression $definition.Extent.Text
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation) & $Operation}
-$repoRoot=$Repo;$python=Join-Path $Repo '.venv/Scripts/python.exe'
+$repoRoot=$Repo;$python=$Python
 $summary=Assert-CompletedIpScientificFailure -Run $Run
 if($summary.analysis_exit_code-ne2){throw 'wrong status'}
 ''', encoding="utf-8")
         command = [powershell, "-NoProfile", "-File", str(script),
-                   str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(REPO), str(fixture.run)]
+                   str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(REPO), str(fixture.run), sys.executable]
         okay = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
         self.assertEqual(okay.returncode, 0, okay.stdout + okay.stderr)
         fixture.summary["diagnostics_complete"] = False
@@ -213,18 +213,18 @@ Write-Output 'MP_IP_JOINT=PASS'
             status="success", inputs={}, outputs=[file_record(result / "preparation_receipt.json"),
                                                    file_record(result / "ip_injected_source.json")]))
         script = fixture.root / "validate.ps1"
-        script.write_text(r'''param($Entry,$Repo,$Run,$Config)
+        script.write_text(r'''param($Entry,$Repo,$Run,$Config,$Python)
 $ErrorActionPreference='Stop'
 $ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
 $definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Get-MultipoleIpPreparation'},$true)
 Invoke-Expression $definition.Extent.Text
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation) & $Operation}
-$repoRoot=$Repo;$python=Join-Path $Repo '.venv/Scripts/python.exe'
+$repoRoot=$Repo;$python=$Python
 $receipt=Get-MultipoleIpPreparation -Run $Run -ConfigurationDirectory $Config
 if($receipt.exit_count-ne1){throw 'wrong receipt'}
 ''', encoding="utf-8")
         command = [powershell, "-NoProfile", "-File", str(script),
-                   str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(REPO), str(root), str(configuration)]
+                   str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(REPO), str(root), str(configuration), sys.executable]
         result_ok = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
         self.assertEqual(result_ok.returncode, 0, result_ok.stdout + result_ok.stderr)
         model["baseline"]["native_geometry"]["domain_start_x_mm"] += 1
@@ -276,7 +276,7 @@ if($receipt.exit_count-ne1){throw 'wrong receipt'}
                                          active_box_mm=[[-3.5, 3.5], [-226.5, -32], [-0.25, 13.75]]),
             surface_allowance_bytes_per_level=1024)), encoding="utf-8")
         script = root / "real_field.ps1"
-        script.write_text(r'''param($Entry,$Repo,$Root,$Template)
+        script.write_text(r'''param($Entry,$Repo,$Root,$Template,$Python)
 $ErrorActionPreference='Stop'
 $ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
 foreach($name in @('Invoke-FullJoint','Write-FullJointFlightResult','Write-FullJointFailure','Get-JointSourceStart','Assert-JointFieldRunId')){
@@ -292,7 +292,8 @@ function Invoke-JointOwnerStage {
   param($Script,$Arguments)
   $script:ownerCalls++
   if($Arguments.ContainsKey('RequestPath')){
-    $output=@(& $Script -RequestPath $Arguments.RequestPath -RunDirectory $Arguments.RunDirectory)
+    if($Arguments.PythonExe-cne$Python){throw 'Provider interpreter differs from caller runtime'}
+    $output=@(& $Script -RequestPath $Arguments.RequestPath -RunDirectory $Arguments.RunDirectory -PythonExe $Arguments.PythonExe)
     $plan=($output-join"`n")|ConvertFrom-Json
     if($plan.project-ne'parallel_mirror_dual_stripe_mr_tof'-or$plan.run_id-ne'20261029_120000__sim__simion__field-fixture'-or$plan.fly_authorized-ne$false){throw 'provider plan mismatch'}
     New-Item -ItemType Directory -Force $Arguments.RunDirectory|Out-Null
@@ -303,7 +304,7 @@ function Invoke-JointOwnerStage {
     $p=Join-Path $workspaceRoot ('artifacts/projects/instrument_assembly/runs/'+$Arguments.RunId);New-Item -ItemType Directory -Force $p|Out-Null;Set-Content (Join-Path $p 'summary.json') '{"status":"success","diagnostics":"fixture","actual_native_batch_count":0,"reused_batch_count":1}'
   }
 }
-$repoRoot=$Repo;$workspaceRoot=$Root;$PreparedInterfaceRunPath=$Root;$JointFieldRunPath='';$python=Join-Path $Repo '.venv/Scripts/python.exe'
+$repoRoot=$Repo;$workspaceRoot=$Root;$PreparedInterfaceRunPath=$Root;$JointFieldRunPath='';$python=$Python
 $AcceleratorProvider='dual_pressure_rectilinear_ion_processor';$IonProcessorRunPath='source';$ReferenceMrRunPath='reference'
 $MatchingRequestPath='';$FieldRequestPath=$Template;$ContractPath='observation';$RunId='';$LuaExe='';$PythonExe='';$SimionExe=''
 $PreparedJointWorkbenchRunPath='';$ContinuationPredecessorManifestPath='';$FinalizeJointWorkbench=$false
@@ -316,7 +317,7 @@ if(-not$rejected-or$script:ownerCalls-ne$before){throw 'invalid field run_id was
 Write-Output 'REAL_FIELD_PROVIDER=PASS'
 ''', encoding="utf-8")
         result = subprocess.run([powershell, "-NoProfile", "-File", str(script),
-            str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(REPO), str(root), str(template)],
+            str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(REPO), str(root), str(template), sys.executable],
             cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=60)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("REAL_FIELD_PROVIDER=PASS", result.stdout)

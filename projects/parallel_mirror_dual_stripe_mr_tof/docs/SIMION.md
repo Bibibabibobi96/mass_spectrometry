@@ -249,6 +249,9 @@ IP完整五层普通场、已物化场及纯响应的历史证明可以递归经
 
 以下是MR原生场提供者的请求合同，入口为
 [run_native_static_field_provider.ps1](../simion/run_native_static_field_provider.ps1)；
+该入口可用`-PythonExe <Python 3.11路径>`显式消费调用者解释器；省略时保留仓库`.venv`默认，
+正式Approved运行仍由原New-RunPackage执行Python 3.11准入。accelerator_interface联合构场传递本次已解析解释器；
+这不表示所有CLI均已支持无虚拟环境运行，也不改变字段、商业授权或原生验收条件。
 跨项目Finalize和飞行仍由[接口准备与绑定](../../../integrations/docs/INTEGRATION.md#oaip接口准备与绑定)负责。
 原生场进程的墙钟观测阈值从冻结的`wall_clock_seconds_by_solver.simion`投影给公共观测器；
 该阈值只产生告警，不改变Refine停止条件或中断健康进程。

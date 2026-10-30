@@ -4,7 +4,8 @@
 param(
     [Parameter(Mandatory)][string]$RequestPath,
     [Parameter(Mandatory)][string]$RunDirectory,
-    [switch]$Approved
+    [switch]$Approved,
+    [string]$PythonExe=''
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
@@ -13,7 +14,7 @@ $repo=Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
 . (Join-Path $repo 'common/contracts/run_artifact_support.ps1')
 . (Join-Path $repo 'common/host_execution_lease.ps1')
 . (Join-Path $repo 'common/resource_budget_support.ps1')
-$python=Join-Path $repo '.venv/Scripts/python.exe'
+$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repo '.venv/Scripts/python.exe'}
 $module='projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_static_field_provider'
 function Exit-NativeProviderHostStage {
     param([Parameter(Mandatory)]$Lease)

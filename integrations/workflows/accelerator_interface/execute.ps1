@@ -280,7 +280,7 @@ function Invoke-FullJoint {
       $fieldRequest.replacement_assembly_manifest=$manifest
       $temporary=Join-Path ([IO.Path]::GetTempPath()) ('ip-mr-field-'+[guid]::NewGuid().ToString('N')+'.json')
       $fieldRequest|ConvertTo-Json -Depth 100|Set-Content -LiteralPath $temporary -Encoding utf8
-      Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'projects/parallel_mirror_dual_stripe_mr_tof/simion/run_native_static_field_provider.ps1') -Arguments @{RequestPath=$temporary;RunDirectory=$fieldRun;Approved=$true}
+      Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'projects/parallel_mirror_dual_stripe_mr_tof/simion/run_native_static_field_provider.ps1') -Arguments @{RequestPath=$temporary;RunDirectory=$fieldRun;Approved=$true;PythonExe=$python}
     }
     if(-not(Test-Path -LiteralPath (Join-Path $fieldRun 'run_manifest.json') -PathType Leaf)){throw 'Field owner did not publish its manifest.'}
     $stage='binding'
