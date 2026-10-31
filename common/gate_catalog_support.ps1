@@ -444,9 +444,20 @@ function Get-GateChangedTests {
                 $path.StartsWith($_, [StringComparison]::OrdinalIgnoreCase)
             }).Count -eq 0)
     })
-    if (-not $FullScope -and @($ChangedPaths | Where-Object {
+    $unmappedProduction = @($ChangedPaths | Where-Object {
         $_ -notin $mappedPaths -and $_ -notin $related -and -not (Test-DocumentationPath $_)
-    }).Count -gt 0) { return $null }
+    })
+    # An augmentation is added to the original owner command. Unknown source
+    # must not discard its explicit changed tests, or turn it into a subset.
+    $preservesOwner = $null -ne $selection.PSObject.Properties['preserve_command'] -and
+        [bool]$selection.preserve_command -and
+        $null -ne $selection.PSObject.Properties['module_parameter'] -and
+        [string]$selection.module_parameter -ceq 'ChangedTestModules'
+    if ($preservesOwner -and $null -ne $Route.PSObject.Properties['repository_integration_partition']) {
+        $partition = $Route.repository_integration_partition
+        $preservesOwner = [string]$selection.module_parameter -cne [string]$partition.parameter
+    }
+    if (-not $FullScope -and $unmappedProduction.Count -gt 0 -and -not $preservesOwner) { return $null }
     if ($FullScope) { $related = @($roots | ForEach-Object { $_ + '__init__.py' }) }
     if ($related.Count -eq 0 -and $mappedModules.Count -eq 0) { return $null }
     $modules = @($related | Where-Object {
@@ -491,6 +502,7 @@ function Get-GateChangedTests {
         DependencyProfile = if ($related.Count -eq 0 -and $mappedProfiles.Count -gt 0 -and
             'locked' -notin $mappedProfiles) { 'stdlib' } else { [string]$Route.dependency_profile }
         Reason = if ($FullScope) { 'full_scope_test_owner_discovery' }
+            elseif ($unmappedProduction.Count -gt 0) { 'changed_tests_augment_original_owner_for_unmapped_source' }
             elseif ($mappedModules.Count -gt 0 -and $related.Count -eq 0) { 'declared_owner_module_dependencies' }
             elseif ($expanded) { 'test_owner_discovery_for_deleted_support_or_unknown_path' }
             else { 'changed_test_modules' }

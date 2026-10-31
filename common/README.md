@@ -136,6 +136,9 @@ unittest 测试完成时报告耗时，首个异常发生时增量回显 traceba
 复核完成后沿[操作指南](../docs/OPERATIONS.md#软件验证与科学证据)清理，不按年龄自动删除失败证据。
 改动选择器回归中的八个mini场景在同一PowerShell host内调用真实PlanOnly与InternalStage委托，
 逐例检查RED/GREEN；MR和RF两个真实owner仍各自通过独立CLI核对非零退出传播。
+保留原Core的owner遇到源码与测试混合改动时，仍合并明确修改的测试模块并去重；
+实际源码依赖沿catalog既有映射补入，不让未映射源码消去明确测试。
+此规则仅适用于原命令的模块追加参数，不将替换式`SelectedTestModules`的未知范围缩成子集。
 相同十场景的PowerShell启动数由20降至5，不减少selector或测试执行，不新增生产缓存。
 收尾完整故障矩阵由公共owner覆盖；集成保留prepared retention／unknown、OA publication及
 paired static retention／pulse publication五个原CLI代表场景，核对真实Result参数、不重算、未知拒绝与幂等终态。

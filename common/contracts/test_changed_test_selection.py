@@ -635,13 +635,84 @@ foreach($scope in @('Owner','Repository')){
             changed = cases[offset]["paths"][0]
             self.assertEqual(results[offset]["Modules"], [changed])
             self.assertFalse(results[offset]["Expanded"])
-            # An unmapped production source keeps the real caller's complete
-            # owner command; it must not borrow a thin test-only selection.
-            self.assertIsNone(results[offset + 1])
+            # Augmentation keeps the original owner command and must still
+            # include explicitly changed tests in mixed production changes.
+            if offset < 10:
+                self.assertEqual(results[offset + 1]["Modules"], [changed])
+                self.assertFalse(results[offset + 1]["OnlyTestModules"])
+                self.assertFalse(results[offset + 1]["CompleteOwner"])
+            else:
+                # Replacement subsets cannot narrow unknown production scope.
+                self.assertIsNone(results[offset + 1])
             for index in range(offset + 2, offset + 5):
                 with self.subTest(paths=cases[index]["paths"]):
                     self.assertTrue(results[index]["Expanded"])
                     self.assertIn(changed, results[index]["Modules"])
+
+    def test_augmentation_does_not_override_a_replacement_partition_parameter(self) -> None:
+        changed = f"{MR}/tests/analysis/test_workpoint_controller_state.py"
+        script = r"""
+. __SUPPORT__
+$route=(Read-GateCatalog -RepoRoot $PWD.Path)|Where-Object stage -eq 'parallel_mirror_dual_stripe_mr_tof_static'
+$route.repository_integration_partition.parameter='ChangedTestModules'
+$selected=Get-GateChangedTests -Route $route -RepoRoot $PWD.Path -KnownTestRoots @($route.test_selection.roots) `
+ -ChangedPaths @(__TEST__, 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/unknown_source.py')
+@{selection=$selected}|ConvertTo-Json -Depth 8 -Compress
+""".replace("__SUPPORT__", powershell_literal(REPO_ROOT / "common/gate_catalog_support.ps1"))
+        script = script.replace("__TEST__", powershell_literal(changed))
+        result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,
+                                capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIsNone(json.loads(result.stdout)["selection"])
+
+    def test_mr_workpoint_sources_augment_core_with_actual_consumers(self) -> None:
+        stage = "parallel_mirror_dual_stripe_mr_tof_static"
+        dependencies = (
+            ("workpoint_controller_state.py", ("test_workpoint_controller_state", "test_downstream_workpoint_iteration_runner")),
+            ("downstream_workpoint_iteration.py", ("test_downstream_workpoint_iteration",
+             "test_downstream_workpoint_checkpoint", "test_downstream_workpoint_iteration_runner")),
+            ("run_downstream_workpoint_iteration.ps1", ("test_downstream_workpoint_iteration_runner",
+             "test_static_workpoint_iteration", "test_prism_runner_contract_matrix")),
+        )
+        with tempfile.TemporaryDirectory(prefix="mr_source_augmentation_") as directory:
+            root = Path(directory)
+            cases = [dict(name=str(index), paths=[f"{MR}/analysis/{source}"],
+                          modules=sorted(f"{MR}/tests/analysis/{name}.py" for name in modules))
+                     for index, (source, modules) in enumerate(dependencies)]
+            cases.append(dict(name="union", paths=[path for case in cases for path in case["paths"]],
+                              modules=sorted({module for case in cases for module in case["modules"]})))
+            cases.append(dict(name="unknown", paths=[f"{MR}/analysis/unmapped_source.py"], modules=[]))
+            request = root / "cases.json"
+            request.write_text(json.dumps(cases), encoding="utf-8")
+            script = r"""
+$ErrorActionPreference='Stop'
+$results=@(foreach($case in (Get-Content -LiteralPath __CASES__ -Raw|ConvertFrom-Json)){
+ $plan=Join-Path __OUT__ ($case.name+'.json')
+ & __VERIFY__ -PythonExe __PYTHON__ -ChangedPath @($case.paths) -PlanOnly -PlanPath $plan|Out-Null
+ $item=(Get-Content -LiteralPath $plan -Raw|ConvertFrom-Json).stages|Where-Object name -eq __STAGE__
+ @{name=$case.name;run=$item.selected;command=$item.command;reason=$item.reason}
+})
+ConvertTo-Json -InputObject $results -Depth 16 -Compress
+"""
+            for token, value in (("__CASES__", request), ("__OUT__", root),
+                                 ("__VERIFY__", REPO_ROOT / "common/verify.ps1"),
+                                 ("__PYTHON__", sys.executable), ("__STAGE__", stage)):
+                script = script.replace(token, powershell_literal(value))
+            result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,
+                                    capture_output=True, text=True, encoding="utf-8", timeout=120)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            results = json.loads(result.stdout)
+            self.assertEqual(len(results), len(cases))
+            for case, item in zip(cases, results, strict=True):
+                with self.subTest(source=case["name"]):
+                    self.assertTrue(item["run"])
+                    command = item["command"]
+                    self.assertEqual(command["runner"], "powershell")
+                    self.assertEqual(command["parameters"]["Level"], "Core")
+                    self.assertNotIn("SelectedTestModules", command["parameters"])
+                    selected = command["parameters"].get("ChangedTestModules", [])
+                    self.assertCountEqual(selected, [module[:-3].replace("/", ".") for module in case["modules"]])
+                    self.assertEqual(len(selected), len(set(selected)))
 
     def test_sfi_weighted_partitions_cover_actual_scope_without_duplicates(self) -> None:
         script = r"""
@@ -1226,6 +1297,8 @@ $reports|ConvertTo-Json -Depth 100|Set-Content -LiteralPath (Join-Path $Root 'pl
             root = Path(workspace) / "checkout"
             self.copy_checkout(root)
             environment = dict(os.environ, TEMP=logs, TMP=logs, PYTHONDONTWRITEBYTECODE="1")
+            # This fixture exercises Python module transport through the real
+            # owner. Plain-Lua physics callbacks have their own project tests.
             environment["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"] = os.environ.get(
                 "MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH",
                 str(REPO_ROOT.parent / "artifacts/common/host_resources.sqlite3"),
@@ -1312,24 +1385,52 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
                 (root / relative).write_text(
                     "import unittest\nclass Probe(unittest.TestCase):\n"
                     "    def test_failure(self): self.fail('REAL_OWNER_PROBE')\n", encoding="utf-8")
-                request = Path(logs) / f"real_{index}.json"
-                write_planned_request(root, request, [relative])
-                log = Path(logs) / f"real_{index}.log"
-                result = subprocess.run([
-                    "pwsh", "-NoProfile", "-File", str(root / "common/verify.ps1"),
-                    "-InternalStage", stage, "-InternalRequestPath", str(request),
-                    "-InternalLogPath", str(log),
-                ], cwd=root, env=environment, capture_output=True, text=True,
-                    encoding="utf-8", timeout=300)
-                output = result.stdout + result.stderr + log.read_text(encoding="utf-8")
-                self.assertNotEqual(result.returncode, 0, output)
-                self.assertIn("REAL_OWNER_PROBE", output)
+                changed_paths = [relative]
                 if prefix == MR:
-                    module_line = next(line for line in output.splitlines() if "PROJECT_TEST_MODULES=" in line)
-                    self.assertEqual(module_line.count("test_changed_gate_probe"), 1)
-                    for core in ("test_drift_phase_contract", "test_prism_analytic",
-                                 "test_native_corridor_plan", "test_native_corridor_freeze"):
-                        self.assertIn(core, module_line)
+                    second = f"{prefix}/tests/analysis/test_mixed_gate_second.py"
+                    (root / second).write_text(
+                        "import unittest\nclass SecondProbe(unittest.TestCase):\n"
+                        "    def test_second(self): self.assertTrue(True)\n", encoding="utf-8")
+                    unknown_source = f"{prefix}/analysis/unknown_gate_fixture.py"
+                    (root / unknown_source).write_text("# Unmapped production authority.\n", encoding="utf-8")
+                    # An explicitly changed Core module must still run once.
+                    changed_paths += [second, f"{prefix}/tests/analysis/test_prism_analytic.py",
+                                      unknown_source, f"{prefix}/docs/PROJECT.md"]
+                for fails in ((True, False) if prefix == MR else (True,)):
+                    with self.subTest(actual_owner=prefix, mixed=prefix == MR, fails=fails):
+                        (root / relative).write_text(
+                            "import unittest\nclass Probe(unittest.TestCase):\n"
+                            f"    def test_failure(self): self.assertFalse({fails!r}, 'REAL_OWNER_PROBE')\n",
+                            encoding="utf-8")
+                        request = Path(logs) / f"real_{index}_{fails}.json"
+                        write_planned_request(root, request, changed_paths)
+                        log = Path(logs) / f"real_{index}_{fails}.log"
+                        # pwsh initializes ProgramFiles at startup; isolate the
+                        # optional installed-Lua discovery inside that process.
+                        command = ("$env:ProgramFiles=" + powershell_literal(Path(logs) / "no_installed_lua") +
+                                   "; & " + powershell_literal(root / "common/verify.ps1") +
+                                   " -InternalStage " + powershell_literal(stage) +
+                                   " -InternalRequestPath " + powershell_literal(request) +
+                                   " -InternalLogPath " + powershell_literal(log))
+                        result = subprocess.run([
+                            "pwsh", "-NoProfile", "-Command", command,
+                        ], cwd=root, env=environment, capture_output=True, text=True,
+                            encoding="utf-8", timeout=300)
+                        output = result.stdout + result.stderr + log.read_text(encoding="utf-8")
+                        self.assertEqual(result.returncode != 0, fails, output)
+                        if fails:
+                            self.assertIn("REAL_OWNER_PROBE", output)
+                        if prefix == MR:
+                            module_line = next(line for line in output.splitlines() if "PROJECT_TEST_MODULES=" in line)
+                            modules = module_line.split("PROJECT_TEST_MODULES=", 1)[1].strip().split(",")
+                            self.assertEqual(len(modules), 6, module_line)
+                            self.assertEqual(len(modules), len(set(modules)), module_line)
+                            for name in ("test_changed_gate_probe", "test_mixed_gate_second",
+                                         "test_drift_phase_contract", "test_prism_analytic",
+                                         "test_native_corridor_plan", "test_native_corridor_freeze"):
+                                self.assertEqual(sum(module.endswith("." + name) for module in modules), 1, module_line)
+                            self.assertIn("Ran 6 tests", output)
+
 
 
 if __name__ == "__main__":

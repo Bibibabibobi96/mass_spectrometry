@@ -1385,7 +1385,50 @@
           "projects/parallel_mirror_dual_stripe_mr_tof/tests/test_support/"
         ],
         "module_parameter": "ChangedTestModules",
-        "preserve_command": true
+        "preserve_command": true,
+        "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/workpoint_controller_state.py",
+                "reason": "mr_workpoint_actual_consumers"
+              }
+            ],
+            "modules": [
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_workpoint_controller_state.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_downstream_workpoint_iteration_runner.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/downstream_workpoint_iteration.py",
+                "reason": "mr_workpoint_actual_consumers"
+              }
+            ],
+            "modules": [
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_downstream_workpoint_iteration.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_downstream_workpoint_checkpoint.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_downstream_workpoint_iteration_runner.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_downstream_workpoint_iteration.ps1",
+                "reason": "mr_workpoint_actual_consumers"
+              }
+            ],
+            "modules": [
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_downstream_workpoint_iteration_runner.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_static_workpoint_iteration.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_prism_runner_contract_matrix.py"
+            ],
+            "dependency_profile": "locked"
+          }
+        ]
       },
       "uses_project_registry": true,
       "owner": "parallel_mirror_dual_stripe_mr_tof"
