@@ -2079,6 +2079,12 @@
           "id": "orthogonal_accelerator_sectioned_geometry",
           "source_repo_path": "projects/orthogonal_accelerator/analysis/sectioned_geometry.py",
           "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight",
             "paired_accelerator_static_field"
           ]
         }

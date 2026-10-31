@@ -307,6 +307,8 @@ MR的`load-workbench`与batch Fly共用碰撞PA预载并保持不可Refine状态
 ## 依赖冻结与门禁
 
 [运行依赖清单](../config/runtime_dependencies.json)与[冻结器](../runtime/dependencies.ps1)按明确owner／consumer复制实际来源。
+OA的`sectioned_geometry`是assembly interface、bare-three-zone adapter和single-flight frontend共同使用的纯几何依赖；
+清单按这三个现有提供者的实际consumer并集冻结，OA→MR和单反射快照均可脱离活动仓库准备。
 清单仅冻结实际消费源码；finite-interval独立设计编译器仍归OA理论API，local／cooled未调用，不再重复携带。
 普通小输入的复制与身份校验统一调用`Copy-VerifiedRunInput`，直接使用其已核验SHA生成来源收据；
 集成适配器继续验证提供者边界、显式清单与目标不存在，公共复制失败的实测摘要保留在依赖错误中。
