@@ -622,3 +622,19 @@ Candidate 编译器可显式接收 solver_numerics_contract（编译 CLI 为 --s
 差异报告的 provenance.formal_solver_numerics 是原 Formal 数值比较基准，provenance.solver_numerics 才是本次选入的实际数值源；执行仍绑定冻结副本。zero_change_reference_reproduction 仅在物理设计未变且实际冻结数值身份也等于该比较基准时为 true，显式粗网格不能误标为原数值复现。
 
 Root 验证显式数值编译主题：正式 common/verify.ps1 对完整 test_candidate_design 模块及必要前置 PASS，25 项测试 4.269 秒；冻结外部字节、默认物理不变、真实编译 CLI、非法版本和网格／采样值拒绝均覆盖。该范围不代表完整 Owner／Repository 或原生求解验收；最新 1a428 CI 的五项 Candidate 失败仍独立处理。
+
+### Candidate 显式数值输入与运行根
+
+正常结构 Candidate 入口可用 `--solver-numerics-contract <只读JSON>` 显式选择既有数值合同；不提供时保持原默认。实际选择一次冻结为 `candidate_solver_numerics.json`，由同一个 resolved 编译器和后续 COMSOL 真实消费。它不是新的 profile，也不扩大现有 ValidatedStructural 的 midgrid-only 物理支持域；仅改变数值输入不授予 Formal 或精度资格。差异报告绑定实际数值来源，显式非基准数值不能称零变化 Formal reference reproduction。
+
+从仓库根可先执行正常入口纯准备（请求仍须满足原批准和相邻 `candidate_proposal.json` 绑定，所选运行根须具有现已登记的非Formal模板）：
+
+```powershell
+.\.venv\Scripts\python.exe -m projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate `
+  --request '<approved-request.json>' --run-id '<new-valid-run-id>' --particle-source-seed 20260720 `
+  --solver-numerics-contract '<explicit-numerics.json>' --dry-run
+```
+
+执行时去掉 `--dry-run` 并按原入口提供 `--simion-exe`。CLI、runtime 模板检查和纯 prepare 默认运行根统一消费 `common.paths.resolve_workspace_paths`，包括既有 `MASS_SPECTROMETRY_ARTIFACT_ROOT`；显式传入的项目根优先，已冻结 run/Resume 不按今日默认值改根。源码快照位置不再反向决定新输出根；缺登记模板仍明确拒绝，不跨根搜索同名资产。`--postprocess-from` 和 `--resume-finalization` 拒绝新的数值或执行选择，不默默忽略它们。
+
+独立冻结软件回归经公共 GATE 2 CPU／2 GiB：正常 CLI 真实编译、非默认产物根、显式数值字节与 authority 对齐，以及两种分析／收尾选择冲突拒绝，共2项通过2.779秒；补实际 reproduction=false／来源绑定断言后仅受影响正常入口方法复验2.603秒。均未启动商业程序、求场、Fly 或发布正式资产，dry-run成功仅表示该准备范围完成。

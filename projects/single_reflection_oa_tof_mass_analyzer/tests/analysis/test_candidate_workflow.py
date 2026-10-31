@@ -59,6 +59,60 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
                     candidate_workflow.resume_candidate_finalization(run)
 
 
+    def test_normal_cli_consumes_explicit_numerics_and_public_artifact_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            self.candidate_run_inputs(source)
+            artifact = root / "explicit-storage"
+            project = artifact / "projects" / PROJECT_ROOT.name
+            registration = self.registered_template_run(project)
+            runtime = root / "runtime.json"
+            runtime.write_text(json.dumps({"role": "oa_tof_candidate_runtime",
+                "simion_template_run_id": registration.name}), encoding="utf-8")
+            numerics = root / "numerics.json"
+            values = load_json(PROJECT_ROOT / "config/formal_solver_numerics.json")
+            values["comsol"].update(routine_reflectron_hmax_mm=30.0,
+                fine_output_step_ns=0.4, field_free_output_step_ns=100.0)
+            numerics.write_text(json.dumps(values), encoding="utf-8")
+            original = numerics.read_bytes()
+            argv = ["run_candidate", "--request", str(source / "design_request.json"),
+                "--run-id", "20261031_101001__test__cross__explicit-numerics-root",
+                "--particle-source-seed", "20260720", "--solver-numerics-contract", str(numerics), "--dry-run"]
+            with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_ARTIFACT_ROOT": str(artifact)}), \
+                    mock.patch.object(candidate_entry, "RUNTIME_CONFIG", runtime), \
+                    mock.patch.object(sys, "argv", argv), \
+                    mock.patch.object(candidate_entry, "run_candidate_workflow") as native:
+                candidate_entry.main()
+                native.assert_not_called()
+            plans = list((project / "scratch").rglob("candidate_workflow_plan.json"))
+            self.assertEqual(len(plans), 1)
+            plan = load_json(plans[0])
+            self.assertEqual(Path(plan["run_root"]).parent, project / "runs")
+            frozen = Path(plan["candidate_inputs"]["candidate_solver_numerics.json"]["path"])
+            self.assertEqual(frozen.read_bytes(), original)
+            resolved = load_json(Path(plan["candidate_inputs"]["candidate_resolved_geometry.json"]["path"]))
+            self.assertEqual(resolved["comsol_runtime"]["routine_reflectron_hmax_mm"], 30.0)
+            self.assertEqual(resolved["comsol_runtime"]["fine_output_step_ns"], 0.4)
+            diff = load_json(Path(plan["candidate_inputs"]["candidate_diff.json"]["path"]))
+            self.assertFalse(diff["zero_change_reference_reproduction"])
+            self.assertEqual(diff["provenance"]["solver_numerics"]["sha256"],
+                             plan["candidate_inputs"]["candidate_solver_numerics.json"]["sha256"])
+            self.assertEqual(Path(diff["provenance"]["solver_numerics"]["path"]), numerics.resolve())
+            self.assertEqual(numerics.read_bytes(), original)
+
+    def test_analysis_and_finalization_reject_new_solver_numerics_before_preparation(self):
+        for arguments in (["--postprocess-from", "missing-parent", "--run-id", "unused"],
+                          ["--resume-finalization", "missing-run"]):
+            with self.subTest(arguments=arguments), mock.patch.object(sys, "argv",
+                    ["run_candidate", *arguments, "--solver-numerics-contract", "missing-numerics.json"]), \
+                    mock.patch.object(candidate_entry, "prepare_execution") as prepare:
+                with self.assertRaises(SystemExit) as error:
+                    candidate_entry.main()
+                self.assertEqual(error.exception.code, 2)
+                prepare.assert_not_called()
+
     def test_candidate_entry_forwards_explicit_pa_handoff_and_rejects_dry_run(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

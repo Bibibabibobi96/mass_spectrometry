@@ -11,9 +11,9 @@ from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
-WORKSPACE_ROOT = REPO_ROOT.parent
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.machine_contracts import load_json, sha256
+from common.paths.workspace_paths import resolve_workspace_paths
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import write_candidate
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import prepare_candidate_run
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow import (
@@ -35,7 +35,7 @@ def validate_candidate_runtime(
     """Validate the registered SIMION template binding."""
     artifact_root = (
         artifact_project_root
-        or WORKSPACE_ROOT / "artifacts" / "projects" / "single_reflection_oa_tof_mass_analyzer"
+        or Path(resolve_workspace_paths(REPO_ROOT)["artifact_root"]) / "projects" / PROJECT_ROOT.name
     ).resolve()
     runtime = load_json(RUNTIME_CONFIG)
     if runtime.get("role") != "oa_tof_candidate_runtime":
@@ -110,13 +110,14 @@ def prepare_execution(
     artifact_project_root: Path | None = None,
     campaign_table: Path | None = None,
     campaign_selection: Path | None = None,
+    solver_numerics_contract: Path | None = None,
 ) -> Path:
     if not isinstance(particle_source_seed, int):
         raise ValueError("candidate entry requires an explicit integer particle source seed")
     identity = validate_run_id(run_id)
     artifact_root = (
         artifact_project_root
-        or WORKSPACE_ROOT / "artifacts" / "projects" / "single_reflection_oa_tof_mass_analyzer"
+        or Path(resolve_workspace_paths(REPO_ROOT)["artifact_root"]) / "projects" / PROJECT_ROOT.name
     ).resolve()
     request = request_path.resolve(strict=True)
     proposal = _proposal_for_request(request)
@@ -126,7 +127,9 @@ def prepare_execution(
         / f"{identity['stamp']}__cross__candidate-entry-{sha256(request)[:8].lower()}"
     )
     contracts = preparation / "candidate_contracts"
-    baseline, resolved, diff = write_candidate(proposal, contracts)
+    numeric_arguments = ({"solver_numerics_contract": solver_numerics_contract}
+                         if solver_numerics_contract is not None else {})
+    baseline, resolved, diff = write_candidate(proposal, contracts, **numeric_arguments)
     _runtime_coverage(request, diff)
     runtime_preflight = validate_candidate_runtime(artifact_root)
     template = runtime_preflight["template"]
@@ -176,6 +179,7 @@ def execute_request(
     campaign_selection: Path | None = None,
     pa_handoff_output: Path | None = None,
     pa_producer_handoffs: list[tuple[Path, Path]] | None = None,
+    solver_numerics_contract: Path | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     executable = simion_executable.resolve(strict=True)
     plan = prepare_execution(
@@ -185,6 +189,7 @@ def execute_request(
         artifact_project_root=artifact_project_root,
         campaign_table=campaign_table,
         campaign_selection=campaign_selection,
+        solver_numerics_contract=solver_numerics_contract,
     )
     kwargs: dict[str, Any] = {
         "reuse_parent": reuse_parent,
@@ -208,6 +213,8 @@ def main() -> None:
     parser.add_argument("--postprocess-from", type=Path, metavar="PARENT_RUN",
                         help="New read-only-parent COMSOL postprocessing child; no physical solve")
     parser.add_argument("--particle-source-seed", type=int)
+    parser.add_argument("--solver-numerics-contract", type=Path,
+                        help="Explicit supported solver numerics data; default unchanged, no Formal qualification")
     parser.add_argument("--resume-finalization", type=Path, metavar="RUN_DIR",
                         help="Resume publication from an existing run's frozen request")
     parser.add_argument("--owner-result", type=Path,
@@ -225,7 +232,8 @@ def main() -> None:
     if args.postprocess_from is not None:
         if args.run_id is None or any((args.request, args.particle_source_seed is not None, args.resume_finalization,
                 args.owner_result, args.simion_exe, args.reuse_parent, args.reuse_through, args.dry_run,
-                args.pa_handoff_output, args.pa_producer_handoff, args.campaign_table, args.campaign_selection)):
+                args.pa_handoff_output, args.pa_producer_handoff, args.campaign_table, args.campaign_selection,
+                args.solver_numerics_contract)):
             parser.error("--postprocess-from requires new --run-id and rejects new execution/reuse/finalization options")
         from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow import run_candidate_postprocess
         try:
@@ -235,6 +243,11 @@ def main() -> None:
         print(f"OATOF_CANDIDATE=POSTPROCESSED RUN_ROOT={root} SCOPE={summary['scope']}")
         return
     if args.resume_finalization is not None:
+        if any((args.request, args.run_id is not None, args.particle_source_seed is not None, args.simion_exe,
+                args.reuse_parent, args.reuse_through, args.dry_run, args.pa_handoff_output,
+                args.pa_producer_handoff, args.campaign_table, args.campaign_selection,
+                args.solver_numerics_contract)):
+            parser.error("--resume-finalization rejects new scientific/execution inputs")
         from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow import (
             resume_candidate_finalization,
         )
@@ -259,6 +272,7 @@ def main() -> None:
             particle_source_seed=args.particle_source_seed,
             campaign_table=args.campaign_table,
             campaign_selection=args.campaign_selection,
+            solver_numerics_contract=args.solver_numerics_contract,
         )
         if args.dry_run:
             print(f"OATOF_CANDIDATE=EXECUTION_READY PLAN={plan}")

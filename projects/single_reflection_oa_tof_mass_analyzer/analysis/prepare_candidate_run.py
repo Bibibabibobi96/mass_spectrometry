@@ -11,7 +11,6 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PROJECT_ROOT.parents[1]
-WORKSPACE_ROOT = REPO_ROOT.parent
 from common.contracts.artifact_naming import validate_run_id, validate_task_id
 from common.contracts.machine_contracts import load_json, sha256, validate_schema
 from common.simion.process_observation import run_observed_process
@@ -476,7 +475,8 @@ def prepare_candidate_run(
     run_identity = validate_run_id(run_id)
     workflow = load_json(WORKFLOW_PATH)
     validate_workflow(workflow)
-    artifact_project_root = (artifact_project_root or WORKSPACE_ROOT / "artifacts" / "projects" / "single_reflection_oa_tof_mass_analyzer").resolve()
+    from common.paths.workspace_paths import resolve_workspace_paths
+    artifact_project_root = (artifact_project_root or Path(resolve_workspace_paths(REPO_ROOT)["artifact_root"]) / "projects" / PROJECT_ROOT.name).resolve()
     formal_root = artifact_project_root / "formal"
     run_root = artifact_project_root / "runs" / run_id
     task_id = f"{run_identity['stamp']}__cross__candidate-plan-{sha256(candidate_resolved.resolve())[:8].lower()}"
