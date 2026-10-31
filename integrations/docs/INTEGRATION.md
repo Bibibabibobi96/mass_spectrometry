@@ -504,3 +504,10 @@ PA 在 builder 前取得持续防写 guard；保护前可写、保护中拒写�
 normal 入口另验证省略回放及其预算；不重复执行相同参数的完整正例。此为测试夹具去重，不改变科学入口或验收条件。
 
 accelerator_interface 与 multipole_ip 的公开入口启动时解析一次公共工作区上下文；新设计、源、IP、场、绑定及飞行 run 均使用本次产物根，子 owner 临时继承同一产物／执行／主机调度根，调用后恢复环境。run package 冻结该上下文；显式父 run 不搬到新根，沿原 manifest 的 SourceReferences 保护其真实 owner。MP composition plan 仍是冻结输入，不伪装成 run authority。此项部署路径接线由无原生薄回归验证，不代表新的求解或科学资格。
+
+
+### 2026-10-31 优先级与容量夹具去重
+
+优先级marker保留一次真实完整准备，重复／截断／计数等非法marker改由实际Get-InstrumentNativePriorityOccupancyEvidence直接验证（2有效、6无效）；borrowed容量保留成功和native失败，standalone成功／native／planning仍由原field阶段矩阵覆盖。planning拒绝发生在owner分叉之前，不重复其borrowed组合。仅移除退休的三种marker生成分支，不删除其他字段／Fly风险覆盖。
+
+同production、公共GATE2CPU／2GiB隔离闭包串行对照：原2方法122.910秒→3方法33.112秒，实际完整准备11→3，减少8次；公开墙钟134.409→37.047秒，租约释放差异不归因于夹具。全部对照通过、健康任务自然完成；无商业调用，不宣称完整Owner／Repository预算已经达成。

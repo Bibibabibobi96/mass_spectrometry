@@ -215,9 +215,6 @@ function Invoke-ResourceBudgetedProcess {
      $counts=(Get-Content $casePath -Raw|ConvertFrom-Json -Depth 100).native_priority_occupancy_expected_counts
      $pointMarker="SINGLE_REFLECTION_NATIVE_PRIORITY_OCCUPANCY=PASS CHECKED=$($counts.checked_points) OBSERVED=$($counts.observation_only_points) SCOPE=declared_points_only"
      if($env:TEST_FIELD_FAILURE-notin@('workbench_priority_marker','flight_priority_marker')){$marker+="`n$pointMarker"}
-     if($env:TEST_FIELD_FAILURE-eq'workbench_priority_duplicate'){$marker+="`n$pointMarker"}
-     if($env:TEST_FIELD_FAILURE-eq'workbench_priority_truncated'){$marker=$marker.Replace($pointMarker,'SINGLE_REFLECTION_NATIVE_PRIORITY_OCCUPANCY=PASS CHECKED=2')}
-     if($env:TEST_FIELD_FAILURE-eq'workbench_priority_count'){$marker=$marker.Replace("CHECKED=$($counts.checked_points)",'CHECKED=1')}
    }
    else{$operation='build';$marker='SINGLE_REFLECTION_IOB=PASS'}
    if($operation-eq'build'){[IO.File]::WriteAllText((Join-Path $WorkingDirectory 'instrument.iob'),'INERT_IOB_NOT_NATIVE')}
@@ -412,7 +409,7 @@ print(json.dumps(dict(cache_receipt=str(receipt))))
                 if rename_instances:
                     rename_author_instances(request, author)
                 flight=discovery or failure in {'downstream_source_fly','local_fly','fly','fly_held_off','fly_refinement','refinement_flight_ram_floor','missing_fly_budget','missing_replay_budget','flight_ram_floor','flight_native','replay_native','flight_controls','flight_native_controls','flight_marker','flight_mismatch','flight_priority_marker'}
-                workbench=flight or failure in {'workbench','workbench_held_off','missing_flight','missing_workbench_budget','workbench_build','workbench_verify','workbench_drift','field_drift','publication_pin','workbench_priority_marker','workbench_priority_duplicate','workbench_priority_truncated','workbench_priority_count'}
+                workbench=flight or failure in {'workbench','workbench_held_off','missing_flight','missing_workbench_budget','workbench_build','workbench_verify','workbench_drift','field_drift','publication_pin','workbench_priority_marker'}
                 if workbench and failure!='missing_flight':
                     author['flight']=dict(pulse=dict(mode='held_off') if failure in ('workbench_held_off','fly_held_off') else
                                           dict(mode='timed',time_us=10.,width_us=3.),maximum_flight_us=200.,
