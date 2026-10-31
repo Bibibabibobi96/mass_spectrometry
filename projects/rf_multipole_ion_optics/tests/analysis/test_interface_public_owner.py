@@ -34,7 +34,7 @@ class InterfacePublicOwnerTests(unittest.TestCase):
             launcher.write_text("param($TaskScript,$ReportPath,$StartupAttempts,$Limits,$ResourceBudgets,$RunId,$RunDir,$UsagePath,$CompletionPath)\n"
                                 "if($Limits.wall_clock_seconds-ne17-or$ResourceBudgets.solver.memory_bytes-ne4096-or$StartupAttempts-ne1){throw 'budget transport differs'}\n"
                                 "if(-not$UsagePath-or-not$CompletionPath){throw 'completion/usage not forwarded'}\n"
-                                "if($TaskScript-like'*gui*'){foreach($name in @('RFQUAD_COMSOL_MODEL_PATH','RFQUAD_SOLVER_RAW_METADATA_PATH','RFQUAD_GUI_RUN_ROOT')){if([Environment]::GetEnvironmentVariable($name,'Process')-notlike'*execution*'){throw 'GUI execution projection missing'}};if($env:RFQUAD_RUN_CONFIG-cne'frozen/config.json'){throw 'GUI config not reset'}}\n"
+                                "if($TaskScript-like'*gui*'){foreach($name in @('RFQUAD_COMSOL_MODEL_PATH','RFQUAD_SOLVER_RAW_METADATA_PATH','RFQUAD_GUI_RUN_ROOT','RFQUAD_GUI_OBSERVATION_ROOT')){if([Environment]::GetEnvironmentVariable($name,'Process')-notlike'*execution*'){throw 'GUI execution projection missing'}};if($env:RFQUAD_RUN_CONFIG-cne'frozen/config.json'){throw 'GUI config not reset'}}\n"
                                 "$global:LASTEXITCODE=0\n", encoding="utf-8")
             (root / "raw.json").write_text('{"release_files":[{"relative_path":"runtime/particle_001.txt"}]}', encoding="utf-8")
             limits = root / "limits.json"
@@ -57,8 +57,15 @@ $state=@{calls=[Collections.Generic.List[object]]::new();timer=[Diagnostics.Stop
 Invoke-InterfaceComsolTask -Task 'frozen/task.m' -Report 'report.txt' -Stage native -State $state
 $env:RFQUAD_COMSOL_MODEL_PATH=Join-Path ROOT 'model.mph';$env:RFQUAD_SOLVER_RAW_METADATA_PATH=Join-Path ROOT 'raw.json';[Environment]::SetEnvironmentVariable(('RFQUAD_GUI_RUN_'+'R'+'OOT'),ROOT,'Process')
 Remove-Item Env:RFQUAD_RUN_CONFIG -ErrorAction SilentlyContinue
+$observationName='RFQUAD_GUI_OBSERVATION_'+'R'+'OOT'
+[Environment]::SetEnvironmentVariable($observationName,$null,'Process')
+$missing=$false;try{Invoke-InterfaceComsolTask -Task 'frozen/gui.m' -Report 'gui.txt' -Stage gui -State $state}catch{if($_.Exception.Message-cne('GUI native path is missing: '+$observationName)){throw};$missing=$true}
+if(-not$missing-or$state.calls.Count-ne1){throw 'missing owned observation output reached native'}
+[Environment]::SetEnvironmentVariable($observationName,(Join-Path ROOT 'results'),'Process')
 Invoke-InterfaceComsolTask -Task 'frozen/gui.m' -Report 'gui.txt' -Stage gui -State $state
-if($script:requestedPaths.Count-ne7-or$script:requestedPaths[-1]-cne(Join-Path ROOT 'runtime/particle_001.txt')){throw 'GUI referenced file plan incomplete'}
+if($script:requestedPaths.Count-ne8-or$script:requestedPaths[-1]-cne(Join-Path ROOT 'runtime/particle_001.txt')){throw 'GUI referenced file plan incomplete'}
+if(@($script:requestedPaths|Select-Object -Unique).Count-ne$script:requestedPaths.Count){throw 'GUI native input/output path plan contains a duplicate'}
+if($script:requestedPaths[6]-cne(Join-Path ROOT 'results')-or[Environment]::GetEnvironmentVariable($observationName,'Process')-cne(Join-Path (Join-Path ROOT 'execution') 'results')){throw 'owned observation root was not projected by the actual native context'}
 if($state.calls.Count-ne2-or@($state.calls|Where-Object{-not$_.wrapper_returned}).Count){throw 'actual wrapper return facts missing'}
 """.replace('CLI', literal(CLI)).replace('LIMITS', literal(limits)).replace('MISSING', literal(root/'absent.json')).replace('ROOT', literal(root))
             self.run_ps(command)

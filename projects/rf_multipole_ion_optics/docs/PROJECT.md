@@ -466,9 +466,13 @@ pwsh -NoProfile -File projects/rf_multipole_ion_optics/workflows/interface_readi
 
 091203冷读已证明当前保存解的精确birth查询可全NaN。GUI因此只从原有分窗提取器读取真实stored-time inventory，出生时刻没有原生有限样本时记录native_birth_echo_unavailable_saved_observation；不把首个晚时刻当birth、不用canonical源行自证native echo。若恰有原生精确stored birth样本，仍按原1e-12的mm／m/s预算核对，矛盾直接失败。
 
-GUI Compute前后按相同原ID和完整母群比较所有共有真实存储时刻的active／missing掩码及6D，保原1e-12预算；缺共同有限观测不得静默丢粒子。末态观测、原接受条件及现有classifier的unknown／transmitted等结果逐ID保持，未知缺观测不推为实际损失。GUI_PARITY_JSON沿原report交给正常CLI，进入summary.gui_verification；软件完成、source binding、echo可用性、observed-state parity及scientific_result分别表达，科学仍为NOT_EVALUATED。
+1e-12仅用于六列源文件／可取得的精确出生初态运输，不是积分误差或重复求解的全轨迹容差。GUI保持原完整N与期望hits门、几何／驱动／源绑定及各run合法ID／时钟／完整有限6D检查。跨run共有存储时刻的6D残差、active／missing差异、terminal事实及项目接受结果差异仅报告诊断，不要求无数值依据的逐样本／末时刻完全一致；不放大源预算。observed_state_parity_verified=false、numerical_equivalence_status及scientific_result均为NOT_EVALUATED，即使残差为零也不自动授予数值资格。GUI原接受条件PASS／FAIL和操作完成单列，unknown不计实际损失。
 
-该修复不改变源、物理、场、接受面、GUI Study Compute或资源owner，不进入AnalyzeOnly；执行GUI Compute会新增真实求解。原owner用R2025b MCP验证本主题21项纯行为测试，修正MATLAB保留字persistent为persistentRun后21／21通过（0.78996秒）；首轮11 Passed／10 Failed／2 Incomplete的3.6307秒记录保留，其中Incomplete与Failed可重叠。Python薄报告消费测试通过1.064秒。实际COMSOL冷重开／GUI Compute与完整母群对照尚待原owner执行，纯测试不代表GUI或科学资格。
+比较前各持久写一次既有saved／computed提取record至本owner的gui_observations_saved.mat／gui_observations_computed.mat（MAT v7），携带完整原ID／birth／source metadata、单位／frame和绝对时钟；随后小gui_verification.json独立记录结论，正常CLI不再依赖stdout解析。原solver_review保留原始记录和必要原生解，输出进入原manifest。N100×7119时间点按9个double字段估计每侧约51.3MB、双侧约103MB加小metadata，实际压缩／字节以usage为准，沿原2GiB预算计量；不复制父MPH或80MBrawCSV。MAT可在无COMSOL的MATLAB中load并调用同一公开compare_rf_gui_observations函数作纯分析，不新增runner。
+
+原AnalyzeOnly在父native完成及来源保护充分时可复读已有GUI收据／JSON／snapshot角色，保留原PASS或FAIL并单列父GUI退出码，零Compute且不改父请求／科学终态。缺少after记录时明确需另行授权新的GUI动作取得它；原ResumeFinalization仍只补收尾。gui_verified仅表示原GUI操作／接受条件，不能解读为全轨迹数值等价。
+
+该修复不改变源、物理、场、接受面、GUI Study Compute或资源owner；AnalyzeOnly只消费完成证据，新的GUI Compute仍会新增真实求解。原owner用R2025b MCP验证本主题21项纯行为测试，修正MATLAB保留字persistent为persistentRun后21／21通过（0.78996秒）；首轮11 Passed／10 Failed／2 Incomplete的3.6307秒记录保留，其中Incomplete与Failed可重叠。Python薄报告消费测试通过1.064秒。实际COMSOL冷重开／GUI Compute与完整母群对照尚待原owner执行，纯测试不代表GUI或科学资格。
 
 ### 保存模型目录冷读与GUI负结果
 
@@ -484,3 +488,7 @@ terminal／capacity／lease与alias清理完成。原生完成、GUI对照未建
 当轮未在比较前持久化current矩阵，不能从现有文件补出原差值；保全观测后独立分析与准确判据正在整改，
 不得放宽源运输预算或把该失败改写为PASS。两轮原错误、实际收据、usage与仅收尾动作位于
 本项目scratch的comsol_runtime_storage_coldread／gui_saved_observation_run主题目录。
+
+最终公开helper的25项纯MATLAB行为回归通过（1.3093秒，0 Failed／0 Incomplete），覆盖实际冻结helper解析、MAT保存／load、分析失败后原始记录保留及无数值资格的差异诊断。live追加3项Python／PowerShell薄回归通过（2.582秒／外墙3.089151秒），覆盖正常调用真实接线、JSON独立读取、拒绝虚假数值资格／矛盾接受条件、第四owned输出根投影及AnalyzeOnly保留原FAIL且零native。新持久化边界仍尚未取得原生实证；本次软件通过不等同旧21项实现测试的判据成立，也不将112402失败改称本主题原生通过。
+
+独立MAT分析示例：在本项目comsol目录的真实PathFixture／路径下，以`a=load(savedPath); b=load(computedPath); assert(isequal(a.units,b.units)); diagnostic=compare_rf_gui_observations(a.observation,b.observation);`直接调用唯一纯helper，无COMSOL。两参数模式不重建项目物理接受条件，project_outcomes_compared=false／对应差异不可计算；真实GUI提供现owner已分类的两组outcomes。旧JSON复读仅重读旧方法输出，不称用新方法重算；改变方法后的MAT分析必须新owner记录，父不变。

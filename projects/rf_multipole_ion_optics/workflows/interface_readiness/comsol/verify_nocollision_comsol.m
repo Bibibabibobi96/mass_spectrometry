@@ -60,6 +60,14 @@ cpt = model.component('comp1').physics('cpt');
 featureTags = cell(cpt.feature.tags());
 releaseTags = featureTags(startsWith(featureTags, 'rel'));
 runRoot=getenv('RFQUAD_GUI_RUN_ROOT');assert(~isempty(runRoot)&&isfolder(runRoot),'Explicit persistent GUI run base required.');
+observationRoot=getenv('RFQUAD_GUI_OBSERVATION_ROOT');
+assert(~isempty(observationRoot)&&isfolder(observationRoot),'rfquad:GuiObservationOutput','Explicit current-owner observation output directory required.');
+ownerExecutionRoot=getenv('MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY');
+ownerPersistentRoot=getenv('MASS_SPECTROMETRY_RUN_DIRECTORY');
+assert(~isempty(ownerExecutionRoot)&&~isempty(ownerPersistentRoot)&& ...
+ (sameGuiPath(observationRoot,fullfile(ownerExecutionRoot,'results'))|| ...
+  sameGuiPath(observationRoot,fullfile(ownerPersistentRoot,'results'))), ...
+ 'rfquad:GuiObservationOutput','Observation output must be the explicit current public owner result directory.');
 metadata=jsondecode(fileread(getenv('RFQUAD_SOLVER_RAW_METADATA_PATH')));
 nativeOrder=metadata.native_order(:);assert(isequal(sort(nativeOrder),(1:expectedParticles)'),'GUI source mapping is not a full permutation.');
 assert(numel(releaseTags)==metadata.release_group_count,'GUI grouped release count differs from actual source plan.');
@@ -84,11 +92,13 @@ for releaseIndex=1:numel(releaseTags)
 end
 assert(importedCount==expectedParticles,'rfquad:GuiSourceBinding','GUI imported mother population differs.');
 saved=readGuiStoredObservations(model,metadata,nativeOrder,expectedParticles,g);
+persistGuiObservation(fullfile(observationRoot,'gui_observations_saved.mat'),saved,metadata,'saved_before_compute');
 savedBirth=guiNativeBirthObservation(saved,metadata,nativeOrder);
 [savedHits,~,savedOutcomes]=guiCensusAndTerminal(saved,interface,g);
 sourceReport=struct('source_binding_verified',true,'release_bindings',{sourceBindings}, ...
  'saved_native_birth_observation',savedBirth);
 fprintf(fid,'GUI_SOURCE_BINDING_JSON=%s\n',jsonencode(sourceReport));
+writeGuiJson(fullfile(observationRoot,'gui_source_binding.json'),sourceReport);
 for releaseIndex=1:numel(releaseTags)
  release=cpt.feature(releaseTags{releaseIndex});
  release.set('Filename',releasePaths{releaseIndex});release.importData();
@@ -135,13 +145,20 @@ assert(strcmp(afterParticle, initialSolutions), ...
     'std2 GUI Compute generated an unexpected solver sequence.');
 
 current=readGuiStoredObservations(model,metadata,nativeOrder,expectedParticles,g);
+persistGuiObservation(fullfile(observationRoot,'gui_observations_computed.mat'),current,metadata,'computed_after_std1_std2');
 currentBirth=guiNativeBirthObservation(current,metadata,nativeOrder);
 [hits,arrival,currentOutcomes]=guiCensusAndTerminal(current,interface,g);
-parity=compareGuiStoredObservations(saved,current,savedOutcomes,currentOutcomes);
+parity=compare_rf_gui_observations(saved,current,savedOutcomes,currentOutcomes);
 parity.role='rf_interface_gui_parity';parity.source_binding_verified=true;
+parity.gui_operation_completed=true;parity.original_acceptance_verified=(sum(hits)==expectedHits);
+parity.original_acceptance=struct('particles',numel(current.records),'expected_particles',expectedParticles, ...
+ 'hits',sum(hits),'expected_hits',expectedHits);
+parity.status='FAIL';if parity.original_acceptance_verified,parity.status='PASS';end
+parity.snapshot_files={'gui_observations_saved.mat','gui_observations_computed.mat'};
 parity.saved_native_birth_observation=savedBirth;parity.computed_native_birth_observation=currentBirth;
 parity.native_birth_echo_unavailable_saved_observation=savedBirth.native_birth_echo_unavailable_saved_observation;
-assert(isequal(savedHits,hits),'rfquad:GuiParityTerminal','GUI per-ID acceptance differs.');
+parity.per_id_acceptance_difference_count=nnz(savedHits~=hits);
+writeGuiJson(fullfile(observationRoot,'gui_verification.json'),parity);
 fprintf(fid,'GUI_PARITY_JSON=%s\n',jsonencode(parity));
 fprintf(fid, 'PARTICLES=%d\n', numel(current.records));
 fprintf(fid, 'HITS=%d\n', sum(hits));
@@ -363,37 +380,15 @@ for index=1:count
 end
 end
 
-function report=compareGuiStoredObservations(saved,current,savedOutcomes,currentOutcomes)
-tolerance=1e-12; % Existing transport budget; not a convergence qualification.
-assert(saved.time_s(1)==current.time_s(1)&&saved.time_s(end)==current.time_s(end), ...
- 'rfquad:GuiParityClock','GUI Compute changed the actual stored observation window.');
-common=intersect(saved.time_s,current.time_s);
-assert(~isempty(common)&&numel(saved.records)==numel(current.records), ...
- 'rfquad:GuiParityObservation','No common actual stored clock or complete mother population.');
-maxPosition=0;maxVelocity=0;states=0;ids=zeros(1,numel(saved.records));
-for index=1:numel(saved.records)
- a=saved.records{index};b=current.records{index};ids(index)=a.particle_id;
- assert(a.particle_id==b.particle_id,'rfquad:GuiParityIds','GUI reordered or replaced original IDs.');
- [activeA,ia]=ismember(common,a.time_s);[activeB,ib]=ismember(common,b.time_s);
- assert(isequal(activeA,activeB),'rfquad:GuiParityActive','Native active/missing observation masks differ.');
- assert(any(activeA),'rfquad:GuiParityObservation','An original particle has no shared finite stored observation.');
- dp=abs(a.position_mm(ia(activeA),:)-b.position_mm(ib(activeB),:));
- dv=abs(a.velocity_m_s(ia(activeA),:)-b.velocity_m_s(ib(activeB),:));
- maxPosition=max(maxPosition,max(dp,[],'all'));maxVelocity=max(maxVelocity,max(dv,[],'all'));
- states=states+nnz(activeA);
- assert(maxPosition<=tolerance&&maxVelocity<=tolerance,'rfquad:GuiParityState', ...
-  'GUI Compute 6D differs at shared actual stored times under the original transport budget.');
- for field={'solution_end_time_s','last_finite_time_s','finite_at_solution_end','finite_track_ended','native_termination_cause'}
-  assert(isequal(a.terminal_observation.(field{1}),b.terminal_observation.(field{1})), ...
-   'rfquad:GuiParityTerminal','GUI changed a complete-cohort terminal observation fact.');
- end
- assert(isequal(savedOutcomes{index},currentOutcomes{index}),'rfquad:GuiParityTerminal', ...
-  'GUI changed the original project acceptance or unknown/loss outcome.');
+function result=persistGuiObservation(path,observation,metadata,stage)
+% Existing extraction records, with explicit units/original source mapping.
+assert(~isfile(path),'rfquad:GuiObservationOutput','Never overwrite a completed observation snapshot.');
+units=struct('position','mm','velocity','m/s','time','s','clock','absolute_instrument_time','frame','rf_quadrupole_component');
+save(path,'observation','metadata','units','stage','-v7');
+result=struct('path',path,'particles',numel(observation.records),'stage',stage);
 end
-report=struct('status','PASS','scientific_result','NOT_EVALUATED','observed_state_parity_verified',true, ...
- 'particle_ids',ids,'particles',numel(ids),'common_stored_time_count',numel(common), ...
- 'compared_finite_state_count',states,'maximum_position_error_mm',maxPosition, ...
- 'maximum_velocity_error_m_s',maxVelocity,'transport_tolerance_mm_and_m_s',tolerance, ...
- 'stored_time_count_before',numel(saved.time_s),'stored_time_count_after',numel(current.time_s), ...
- 'terminal_outcomes',{currentOutcomes});
+
+function writeGuiJson(path,value)
+fid=fopen(path,'w','n','UTF-8');assert(fid>=0,'rfquad:GuiObservationOutput','Cannot persist GUI diagnostics.');
+cleanup=onCleanup(@()fclose(fid));fprintf(fid,'%s',jsonencode(value));
 end

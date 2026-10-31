@@ -454,4 +454,8 @@ COMSOL6.4官方[mphparticle](https://doc.comsol.com/6.4/doc/com.comsol.help.llma
 
 本机091203只读保存模型探针验证：ID1／50／100精确birth及后一ULP的6D为NaN，返回查询时间与dataonly／默认结果一致；首个原存储有限点晚约4.917／6.895／9.859ns。因此不能以首个finite替换birth或放宽原1e-12，也不能将源文件／canonical源行的回读称native echo。可分别记录实际节点绑定、native精确出生观测不可用，以及同原ID／完整母群在共有实际stored时刻上的GUI重算一致性。读取六项binding不证明一个未独立观测的cached-import初态；native echo未知与科学资格仍须如实保留。
 
-接口GUI沿现有extract_rf_particle_records／visit_rf_particle_windows获取原时间库存及完整ID记录，不新增mphparticle粒子选择参数或出生插值。GUI Compute仍执行实际Study求解，不能称为零新增物理调用的后处理恢复。当前本机冷读证据只说明查询边界，正式新GUI对照待原owner验收。
+接口GUI沿现有extract_rf_particle_records／visit_rf_particle_windows获取原时间库存及完整ID记录，不新增mphparticle粒子选择参数或出生插值。GUI Compute仍执行实际Study求解，不能称零新增物理调用。源运输的1e-12预算不能用于积分后的全6D一致性；原生112402暴露此前这项无依据扩展，原FAIL保留，未证明物理失败或数值等价。官方说明绝对／相对容差控制局部积分步误差，不能由源文本回读精度推出两次求解的全轨迹误差；tlist也不等于内部步长控制。未读回实际solver活动值时不以文档默认值代替本机证据。[Time-dependent误差控制](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_solver.36.122.html)、[Study API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_solver.51.81.html)。
+
+实际提取record在差异分析前各写一次本owner MAT(v7)，可用标准load和同一公开compare_rf_gui_observations函数独立纯分析；小JSON区分GUI动作／原count-hit接受／全轨迹未资格。跨run mask或末时刻差异仅诊断，各run自身ID／时钟／active6D合法性仍检查。已有观测充分时不重做Study，缺after记录不能伪造差值或恢复。
+
+独立MAT分析示例：在本项目comsol目录的真实PathFixture／路径下，以`a=load(savedPath); b=load(computedPath); assert(isequal(a.units,b.units)); diagnostic=compare_rf_gui_observations(a.observation,b.observation);`直接调用唯一纯helper，无COMSOL。两参数模式不重建项目物理接受条件，project_outcomes_compared=false／对应差异不可计算；真实GUI提供现owner已分类的两组outcomes。旧JSON复读仅重读旧方法输出，不称用新方法重算；改变方法后的MAT分析必须新owner记录，父不变。

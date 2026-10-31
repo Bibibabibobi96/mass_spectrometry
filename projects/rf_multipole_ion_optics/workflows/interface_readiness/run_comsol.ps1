@@ -97,7 +97,7 @@ $executionCapacityPaths = @('inputs/frozen_python_package.ps1') +
 function Invoke-InterfaceComsolTask {
     param([string]$Task,[string]$Report,[string]$Stage,[Collections.IDictionary]$State)
     $nativePaths=@($Task,$Report,$package.run_config)
-    $guiEnvironment=@('RFQUAD_COMSOL_MODEL_PATH','RFQUAD_SOLVER_RAW_METADATA_PATH','RFQUAD_GUI_RUN_ROOT')
+    $guiEnvironment=@('RFQUAD_COMSOL_MODEL_PATH','RFQUAD_SOLVER_RAW_METADATA_PATH','RFQUAD_GUI_RUN_ROOT','RFQUAD_GUI_OBSERVATION_ROOT')
     if($Stage-eq'gui'){
         foreach($name in $guiEnvironment){
             $value=[Environment]::GetEnvironmentVariable($name,'Process')
@@ -134,29 +134,56 @@ function Invoke-InterfaceComsolTask {
     finally{$call.elapsed_seconds=$callTimer.Elapsed.TotalSeconds}
 }
 function Read-InterfaceGuiParityReport {
-    param([string]$Path,[long[]]$ExpectedParticleIds)
-    $lines=@(Get-Content -LiteralPath $Path -Encoding UTF8|Where-Object{$_.StartsWith('GUI_PARITY_JSON=')})
-    if($lines.Count-ne1){throw 'GUI requires exactly one completed observed-parity report.'}
-    $value=$lines[0].Substring('GUI_PARITY_JSON='.Length)|ConvertFrom-Json -AsHashtable -Depth 64
-    if($value.role-cne'rf_interface_gui_parity'-or$value.status-cne'PASS'-or
+    param([string]$Path,[long[]]$ExpectedParticleIds,[Parameter(Mandatory)][string]$ObservationRoot,
+      [int]$ExpectedHits=-1,[bool]$RequireAcceptance=$true)
+    $jsonPath=Join-Path $ObservationRoot 'gui_verification.json'
+    if(-not(Test-Path -LiteralPath $jsonPath -PathType Leaf)){
+        if((Test-Path -LiteralPath (Join-Path $ObservationRoot 'gui_observations_saved.mat') -PathType Leaf)-and
+           (Test-Path -LiteralPath (Join-Path $ObservationRoot 'gui_observations_computed.mat') -PathType Leaf)){
+            throw 'GUI diagnostic JSON is missing; retained MAT observations can be loaded and compared by compare_rf_gui_observations without COMSOL. Repair analysis in a new owner; do not repeat Compute.'
+        }
+        throw 'GUI post-Compute observations are missing; inspect its native completion and declared artifacts. A saved pre-GUI model cannot recreate the missing recomputed states; obtain them only through an explicitly requested new GUI action.'
+    }
+    $value=Get-Content -LiteralPath $jsonPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable -Depth 64
+    if($value.role-cne'rf_interface_gui_parity'-or$value.status-notin@('PASS','FAIL')-or
        $value.source_binding_verified-isnot[bool]-or-not$value.source_binding_verified-or
-       $value.observed_state_parity_verified-isnot[bool]-or-not$value.observed_state_parity_verified-or
+       $value.gui_operation_completed-isnot[bool]-or-not$value.gui_operation_completed-or
+       $value.original_acceptance_verified-isnot[bool]-or
+       $value.observed_state_parity_verified-isnot[bool]-or$value.observed_state_parity_verified-or
+       $value.numerical_equivalence_status-cne'NOT_EVALUATED'-or
        $value.native_birth_echo_unavailable_saved_observation-isnot[bool]-or$value.scientific_result-cne'NOT_EVALUATED'){
-        throw 'GUI source binding, native echo availability, observed parity or science scope is unconfirmed.'
+        throw 'GUI operation/source binding, echo availability or numerical qualification scope is unconfirmed.'
     }
     $ids=@($value.particle_ids)
     if($ids.Count-ne$ExpectedParticleIds.Count-or$value.particles-ne$ids.Count-or
        @($ids|Select-Object -Unique).Count-ne$ids.Count-or
        (($ids|Sort-Object)-join',')-cne(($ExpectedParticleIds|Sort-Object)-join',')-or
-       @($value.terminal_outcomes).Count-ne$ids.Count-or$value.common_stored_time_count-lt1-or$value.compared_finite_state_count-lt$ids.Count){
-        throw 'GUI report does not cover the complete original mother population and stored observations.'
+       @($value.terminal_outcomes).Count-ne$ids.Count){throw 'GUI report does not cover the complete original mother population.'}
+    $acceptance=$value.original_acceptance
+    if($acceptance.particles-ne$ids.Count-or$acceptance.expected_particles-ne$ids.Count-or
+       $acceptance.hits-isnot[ValueType]-or$acceptance.expected_hits-isnot[ValueType]-or
+       $acceptance.hits-lt0-or$acceptance.hits-gt$ids.Count-or$acceptance.hits-ne[math]::Truncate($acceptance.hits)-or
+       $acceptance.expected_hits-lt0-or$acceptance.expected_hits-gt$ids.Count-or$acceptance.expected_hits-ne[math]::Truncate($acceptance.expected_hits)-or
+       ($ExpectedHits-ge0-and$acceptance.expected_hits-ne$ExpectedHits)-or
+       $value.original_acceptance_verified-ne($acceptance.hits-eq$acceptance.expected_hits)-or
+       ($value.status-eq'PASS')-ne$value.original_acceptance_verified){throw 'GUI original count/hit acceptance is contradictory.'}
+    foreach($name in @('common_stored_time_count','compared_finite_state_count','active_mask_difference_count','terminal_observation_difference_count','project_outcome_difference_count')){
+        if($value[$name]-isnot[ValueType]-or$value[$name]-is[bool]-or$value[$name]-lt0-or
+           [double]::IsNaN([double]$value[$name])-or[double]::IsInfinity([double]$value[$name])-or
+           $value[$name]-ne[math]::Truncate($value[$name])){throw 'GUI diagnostic count is invalid.'}
     }
-    if($value.transport_tolerance_mm_and_m_s-ne1e-12){throw 'GUI report changed the original transport tolerance.'}
-    foreach($name in @('maximum_position_error_mm','maximum_velocity_error_m_s')){
+    foreach($name in @('maximum_position_error_mm','maximum_velocity_error_m_s','rms_position_component_error_mm','rms_velocity_component_error_m_s')){
         $errorValue=$value[$name]
+        if($value.compared_finite_state_count-eq0-and($null-eq$errorValue-or($errorValue-is[Array]-and$errorValue.Count-eq0))){continue}
         if($errorValue-isnot[ValueType]-or$errorValue-is[bool]-or[double]::IsNaN([double]$errorValue)-or
-           [double]::IsInfinity([double]$errorValue)-or$errorValue-lt0-or$errorValue-gt1e-12){throw 'GUI observed-state error is invalid or exceeds the existing transport tolerance.'}
+           [double]::IsInfinity([double]$errorValue)-or$errorValue-lt0){throw 'GUI observed-state diagnostic is invalid.'}
     }
+    if((@($value.snapshot_files)-join',')-cne'gui_observations_saved.mat,gui_observations_computed.mat'){throw 'GUI snapshot roles differ.'}
+    foreach($name in $value.snapshot_files){
+        $file=Join-Path $ObservationRoot $name
+        if(-not(Test-Path -LiteralPath $file -PathType Leaf)-or(Get-Item $file).Length-le0){throw 'GUI original observations are missing; no zero-Compute analysis is possible.'}
+    }
+    if($RequireAcceptance-and-not$value.original_acceptance_verified){throw 'GUI original count/hit acceptance failed; preserve FAIL and observations, do not rerun Compute for analysis.'}
     return $value
 }
 function Complete-InterfaceOwner {
@@ -356,10 +383,27 @@ runpy.run_module(modules[1],run_name='__main__')
         }
         if($observed.exit_code-ne0-or$observed.resource_budget_exceeded){throw ('Frozen postprocess failed with exit '+$observed.exit_code+'; stderr='+ (Join-Path $package.log_dir 'postprocess.stderr.log')+'; usage='+$usage)}
         $result=@{role='rf_interface_postprocess_summary';execution_status='completed';data_validity='valid';scientific_result='NOT_EVALUATED';gui_verified=$false;parent_request_completed=$false;native_calls=0;new_solve_calls=0;recovery_action='GUI Compute remains a separate requested native solve; not performed by AnalyzeOnly.'}
+        $guiEvidence=Join-Path $parentRoot 'results/gui_verification.json'
+        if(Test-Path -LiteralPath $guiEvidence -PathType Leaf){
+            $phase='saved_gui_report_analysis'
+            $guiReceiptPath=Join-Path $parentRoot 'logs/gui_completion.json'
+            $guiReceipt=Get-Content $guiReceiptPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+            if($guiReceipt.role-cne'comsol_launcher_completion'-or$guiReceipt.run_id-cne$config.run_id){throw 'Saved GUI native completion identity differs.'}
+            $guiReleases=[Collections.Generic.List[object]]::new();$guiReleaseId=if($guiReceipt.host_release.inherited){[string]$guiReceipt.host_release.token}else{'saved-gui'}
+            Add-RunArtifactResourceRelease -ResourceReleases $guiReleases -ReleaseId $guiReleaseId -Receipt $guiReceipt
+            $guiWriter=@{operations=@($guiReceipt.operations|ForEach-Object{@{operation_id=$_.operation_id;observation=$_.observation;resource_release_id=$guiReleaseId}});resource_releases=@($guiReleases.ToArray())}
+            Assert-WorkflowWriterCompletion $guiWriter -PowerShellOwner
+            if($guiWriter.operations.Count-ne1){throw 'Saved GUI actual operation count is unconfirmed.'}
+            $parentNativeSummary=Get-Content (Join-Path $parentRoot 'results/solver_summary.json') -Raw -Encoding UTF8|ConvertFrom-Json
+            $savedGui=Read-InterfaceGuiParityReport -Path (Join-Path $parentRoot 'logs/comsol_gui_compute_report.txt') -ExpectedParticleIds @($raw.source_ids) -ObservationRoot (Join-Path $parentRoot 'results') -ExpectedHits ([int]$parentNativeSummary.hits) -RequireAcceptance $false
+            $result.gui_verification=$savedGui;$result.gui_verified=$savedGui.original_acceptance_verified
+            $result.parent_gui_launcher_returncode=[int]$guiWriter.operations[0].observation.returncode
+            $result.recovery_action='Existing GUI Compute observations re-read; original count/hit PASS or FAIL preserved, numerical equivalence NOT_EVALUATED.'
+        }
         Complete-InterfaceOwner -Status success -Summary $result -Outputs @($summary,$contract,$origin,$usage)
     }catch{
         $failure=$_
-        if($phase-ne'postprocess'){$ownerState.prepare_seconds=$ownerState.timer.Elapsed.TotalSeconds}
+        if($phase-notin@('postprocess','saved_gui_report_analysis')){$ownerState.prepare_seconds=$ownerState.timer.Elapsed.TotalSeconds}
         if($ownerContext-and-not$ownerState.finalization_started){
             try{Complete-InterfaceOwner -Status failed -Summary @{role='rf_interface_postprocess_summary';execution_status='failed';data_validity='unknown';scientific_result='NOT_EVALUATED';gui_verified=$false;parent_request_completed=$false;native_calls=0;new_solve_calls=0;failure_stage=$phase;failure_reason=$failure.Exception.Message;recovery_action='repair_postprocess_and_create_new_analysis_child'} -Outputs @((Get-ChildItem -LiteralPath $package.result_dir,$package.log_dir -File|ForEach-Object FullName)) -Failure $failure}catch{$failure.Exception.Data['failure_closure_error']=[string]$_}
         }elseif(-not$ownerContext-and$capacity){
@@ -395,7 +439,7 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
     -ArtifactRoot $artifactRoot -PathContext $pathContext -RunId $RunId `
     -Project 'rf_multipole_ion_optics' -Mode $workflowId `
-    -Software $software -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'Retain completed native solution for interface GUI review and postprocess recovery.' -CapacityLedgerLifecycleEnabled `
+    -Software $software -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'Retain completed native solution and GUI observations for review and zero-Compute analysis recovery.' -CapacityLedgerLifecycleEnabled `
     -AdditionalDirectories @('comsol','runtime') -UseShortExecutionPath `
     -ExpectedExecutionRelativePaths $executionCapacityPaths
 $runDir,$inputDir,$resultDir,$logDir = $package.run_dir,$package.input_dir,
@@ -415,7 +459,7 @@ $summaryRole = if ($ReleaseConstructionGate) {
 } else {
     'rf_quadrupole_transport_summary'
 }
-$environmentNames = @('SIMULATION_PYTHON_EXE','MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH','MASS_SPECTROMETRY_RUN_DIRECTORY','MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY','RFQUAD_RUN_CONFIG','RFQUAD_COMSOL_MODEL_PATH','RFQUAD_SOLVER_RAW_METADATA_PATH','RFQUAD_GUI_RUN_ROOT',
+$environmentNames = @('SIMULATION_PYTHON_EXE','MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH','MASS_SPECTROMETRY_RUN_DIRECTORY','MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY','RFQUAD_RUN_CONFIG','RFQUAD_COMSOL_MODEL_PATH','RFQUAD_SOLVER_RAW_METADATA_PATH','RFQUAD_GUI_RUN_ROOT','RFQUAD_GUI_OBSERVATION_ROOT',
     'RFQUAD_EXPECTED_PARTICLES','RFQUAD_EXPECTED_HITS',
     'RFQUAD_EXPECTED_RF_PEAK_V','RFQUAD_EXPECTED_FREQUENCY_HZ')
 $environmentSnapshot = Save-RunEnvironment -Names $environmentNames
@@ -491,6 +535,7 @@ try {
         'common/comsol/read_comsol_mesh_size_controls.m',
         'projects/rf_multipole_ion_optics/load_rf_quadrupole_contract.m',
         'projects/rf_multipole_ion_optics/comsol/solve_deterministic_rf_quadrupole_particles.m',
+        'projects/rf_multipole_ion_optics/comsol/compare_rf_gui_observations.m',
         'projects/rf_multipole_ion_optics/comsol/classify_finite_particle_terminal.m',
         'projects/rf_multipole_ion_optics/comsol/visit_rf_particle_windows.m',
         'projects/rf_multipole_ion_optics/comsol/extract_rf_particle_records.m',
@@ -890,6 +935,7 @@ try {
 
     $failureStage = 'comsol_gui_compute_verification'
     $env:RFQUAD_GUI_RUN_ROOT = [string]$package.artifact_run_dir
+    $env:RFQUAD_GUI_OBSERVATION_ROOT=Join-Path $package.artifact_run_dir 'results'
     $env:RFQUAD_COMSOL_MODEL_PATH = Join-Path $env:RFQUAD_GUI_RUN_ROOT 'comsol/rf_multipole_ion_optics__model.mph'
     $env:RFQUAD_SOLVER_RAW_METADATA_PATH = Join-Path $env:RFQUAD_GUI_RUN_ROOT 'results/solver_raw_metadata.json'
     $env:RFQUAD_EXPECTED_PARTICLES = [string]$expectedParticles
@@ -898,7 +944,7 @@ try {
     $env:RFQUAD_EXPECTED_FREQUENCY_HZ = [string]$resolved.drive.frequency_Hz
     Invoke-InterfaceComsolTask -Task (Join-Path $frozenCodeRoot 'projects/rf_multipole_ion_optics/workflows/interface_readiness/comsol/verify_nocollision_comsol.m') -Report $guiVerifyReport -Stage gui -State $ownerState
     $failureStage='comsol_gui_observed_parity_report'
-    $guiParity=Read-InterfaceGuiParityReport -Path $guiVerifyReport -ExpectedParticleIds @($solverSummary.source_ids)
+    $guiParity=Read-InterfaceGuiParityReport -Path $guiVerifyReport -ExpectedParticleIds @($solverSummary.source_ids) -ObservationRoot (Join-Path $package.artifact_run_dir 'results') -ExpectedHits ([int]$solverSummary.hits)
     foreach ($name in $environmentNames | Where-Object {
         $_ -ne 'RFQUAD_RUN_CONFIG'
     }) {
@@ -925,7 +971,7 @@ try {
     })
     $runConfig.parameters.lifecycle_stage = 'complete'
     Write-RunJson -Value $runConfig -Path $package.run_config
-    $outputs = @((Join-Path $resultDir 'release_source_mapping.json'),$modelPath,$rawMetadataPath,$summaryPath,$trajectoryPath,$particleStatePath,
+    $outputs = @((Join-Path $resultDir 'gui_verification.json'),(Join-Path $resultDir 'gui_source_binding.json'),(Join-Path $resultDir 'gui_observations_saved.mat'),(Join-Path $resultDir 'gui_observations_computed.mat'),(Join-Path $resultDir 'release_source_mapping.json'),$modelPath,$rawMetadataPath,$summaryPath,$trajectoryPath,$particleStatePath,
         $rawPhaseSpacePath,$bootstrapReport,$guiVerifyReport,$stateContractReport,
         $package.summary)
     $publicSummary=Get-Content $package.summary -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
