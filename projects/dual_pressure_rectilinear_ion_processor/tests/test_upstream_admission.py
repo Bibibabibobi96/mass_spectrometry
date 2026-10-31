@@ -328,6 +328,10 @@ class AdmissionTests(unittest.TestCase):
         write_component_particle_state_csv(self.inputs/"source_states.csv", self.rows)
         self.refresh("source_states", "source_states.csv")
         consumer, config = self.prepare_consumer()
+        clock_schema = consumer / "inputs/code/common/contracts/schemas/canonical_clock_authority.schema.json"
+        self.assertEqual(clock_schema.read_bytes(),
+                         (PROJECT.parents[1] / "common/contracts/schemas/canonical_clock_authority.schema.json").read_bytes())
+        self.assertIn(str(clock_schema), functional.read_json(consumer / "run_config.json")["inputs"].values())
         self.assertEqual({row["particle_id"]: row["particle_weight"]
                           for row in frozen_release_states(consumer, config)}, weights)
         self.assertEqual(config["source_profile"], "upstream")

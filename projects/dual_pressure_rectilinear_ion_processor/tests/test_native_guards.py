@@ -98,9 +98,11 @@ class NativeGuardTests(unittest.TestCase):
             self.skipTest("PowerShell 7 required")
         with tempfile.TemporaryDirectory() as directory:
             script = Path(directory)/"prepare_observation.ps1"
-            script.write_text(r'''param($Repo,$Runner,$Root)
+            script.write_text(r'''param($Repo,$Runner,$Root,$Python)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 . (Join-Path $Repo 'common/simion/short_pa_path_support.ps1')
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'common/paths/workspace_paths.ps1')
 $errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
 $preparation=$ast.Find({param($a)$a-is[Management.Automation.Language.ForEachStatementAst]-and$a.Extent.Text-match'ION_PROCESSOR_STAGE='},$true)
@@ -127,12 +129,14 @@ function Invoke-ResourceBudgetedProcess {
  throw $nativeException
 }
 $run=$Root;$solver=$Root;$RunId='inert-fixture';$SimionExe='must-not-launch'
-$package=@{result_dir=$Root;log_dir=$Root;run_dir=$Root;summary=(Join-Path $Root 'summary.json')}
+$package=[pscustomobject]@{result_dir=$Root;log_dir=$Root;run_dir=$Root;artifact_run_dir=$Root;summary=(Join-Path $Root 'summary.json');python=$Python;execution_alias=$null;execution_path_capacity=$null}
+$pathEnvironmentNames=@('PYTHONPATH');$savedPathEnvironment=Save-RunEnvironment -Names $pathEnvironmentNames
+$nativeContext=Get-RunNativeExecutionContext -Package $package -Paths @($Root)
 $profile=@{limits=@{};native_field_query_memory_bytes=1}
 $commands=@(@{name='workbench';stage='prepare';arguments=@('--inert')})
 $pa=Join-Path $Root 'processor.pa0';[IO.File]::WriteAllText($pa,'inert native field')
 $paRecord=@{path=$pa;bytes=(Get-Item $pa).Length;sha256=(Get-FileHash $pa -Algorithm SHA256).Hash}
-$iobPreparation=@{requires_vendor_templates=$true;native_pa0_record=$paRecord;script='inert-template.lua'}
+$iobPreparation=@{requires_vendor_templates=$true;native_pa0_record=$paRecord;script=(Join-Path $Root 'inert-template.lua')}
 foreach($kind in @('prepare','template')){foreach($script:mode in @('success','nonzero','confirmed','unknown','missing')){
  $writersStopped=$true;$caught=$null;$script:forbiddenClosures=0;$lease=@{};$capacity=@{}
  $nativeOperations=[Collections.Generic.List[object]]::new();$ownerContext=$null
@@ -145,7 +149,7 @@ foreach($kind in @('prepare','template')){foreach($script:mode in @('success','n
  try {
   try{. ([scriptblock]::Create($(if($kind-eq'prepare'){$preparation.Extent.Text}else{$template.Extent.Text})))}catch{$caught=$_}
   $known=$script:mode-in@('success','nonzero','confirmed')
-  if($writersStopped-ne$known){throw "wrong stop fact for $kind/$script:mode"}
+  if($writersStopped-ne$known){throw "wrong stop fact for $kind/$script:mode : $caught"}
   if(($null-eq$caught)-ne($script:mode-eq'success')){throw "wrong outcome for $kind/$script:mode : $caught"}
   if($script:mode-in@('confirmed','unknown','missing')-and$caught.Exception.Message-ne'ORIGINAL_NATIVE_OBSERVATION_FAILURE'){throw 'primary observation failure was replaced'}
   $held=$global:MassSpectrometryImmutablePaSourceGuards.ContainsKey($pa)
@@ -165,7 +169,7 @@ foreach($kind in @('prepare','template')){foreach($script:mode in @('success','n
 }}
 ''', encoding="utf-8")
             result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(REPO),
-                                     str(PROJECT/"simion/run_functional.ps1"), directory],
+                                     str(PROJECT/"simion/run_functional.ps1"), directory, sys.executable],
                                     cwd=REPO, timeout=30, capture_output=True, text=True,
                                     encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -309,8 +313,9 @@ if($null-ne$summary.failure_stage-or$summary.recovery_action-ne'none'){throw 'su
             self.skipTest("PowerShell 7 required")
         with tempfile.TemporaryDirectory() as directory:
             script = Path(directory)/"finalization.ps1"
-            script.write_text(r'''param($Runner,$Root)
+            script.write_text(r'''param($Runner,$Root,$Repo)
 $ErrorActionPreference='Stop';$errors=$null
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
 $ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
 $node=$ast.Find({param($a)$a-is[Management.Automation.Language.TryStatementAst]-and$null-ne$a.Finally-and$a.Finally.Extent.Text-match'ion_processor_finalization_error'},$true)
@@ -321,10 +326,11 @@ function Set-IonProcessorRunObservation {param($Summary,$Context,$Run,$NativeCom
 $runObservation=@{stage='finalization';timer=[Diagnostics.Stopwatch]::StartNew()};$failureStage='';$failureReason=''
 $configPath=Join-Path $Root 'run_config.json';Set-Content $configPath '{"inputs":{}}'
 $summaryPath=Join-Path $Root 'summary.json';Set-Content $summaryPath '{"status":"failed"}'
-$writersStopped=$true;$lease=$null;$package=@{run_config=$configPath;run_dir=$Root;summary=$summaryPath};$capacity=$null;$runSucceeded=$false;$nativeCompleted=$false
+$writersStopped=$true;$lease=$null;$package=[pscustomobject]@{run_config=$configPath;run_dir=$Root;artifact_run_dir=$Root;summary=$summaryPath;execution_alias=$null;execution_path_capacity=$null;native_path_preparation=@{calls=0;elapsed_seconds=0.0;transport_bytes=0}};$capacity=$null;$runSucceeded=$false;$nativeCompleted=$false
 $nativeOperations=[Collections.Generic.List[object]]::new();$ownerContext=@{result_path=(Join-Path $Root 'result.json')};$run=$Root
 $continuationReadGuards=@{streams=@()};$continuationFieldGuards=@{records=@();manifest_stream=$null}
 $savedPythonPath=$env:PYTHONPATH;$python='fixture';$repoRoot=$Root
+$pathEnvironmentNames=@('PYTHONPATH');$savedPathEnvironment=Save-RunEnvironment -Names $pathEnvironmentNames
 function Write-RunJson {param($Path,$Value) $Value|ConvertTo-Json -Depth 32|Set-Content $Path}
 function Complete-RunArtifactPowerShellOwner {throw 'finalization sentinel'}
 $caught=$null;Push-Location $Root
@@ -334,7 +340,7 @@ try {
 if($caught.Exception.Message-ne'original science sentinel'){throw 'primary error was replaced'}
 if($caught.Exception.Data['ion_processor_finalization_error']-notmatch'finalization sentinel'){throw 'secondary error was not retained'}
 ''', encoding="utf-8")
-            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(PROJECT/"simion/run_functional.ps1"), directory],
+            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(PROJECT/"simion/run_functional.ps1"), directory, str(REPO)],
                                     cwd=REPO, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 

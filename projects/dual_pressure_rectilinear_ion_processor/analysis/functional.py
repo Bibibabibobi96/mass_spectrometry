@@ -505,10 +505,10 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
         target = inputs / "code" / project.relative_to(repo) / "config" / source.name
         target.parent.mkdir(parents=True, exist_ok=True)
         freeze_file(source, target)
-    continuation_schema = repo / "common/contracts/schemas/simion_batch_continuation.schema.json"
+    frozen_resource_sources = set(runtime_resources)
     if admission is not None:
         for source in (repo/"common/contracts/schemas").rglob("*"):
-            if source.is_file() and source != continuation_schema:
+            if source.is_file() and source not in frozen_resource_sources:
                 target = inputs/"code"/source.relative_to(repo)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 freeze_file(source, target)
