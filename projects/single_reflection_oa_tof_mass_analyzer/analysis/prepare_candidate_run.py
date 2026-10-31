@@ -908,10 +908,16 @@ def select_postprocess_parent(parent: Path, consumer_artifact_root: Path) -> dic
         raise ValueError("Original evidence budget authority is missing")
     budget_record = bound(record_path(runtime_paths[0], base_dir=parent))
     budget = validate_artifact_capacity(load_json(Path(budget_record["path"])))
+    if exports is None and int(model_record["bytes"]) > budget["comsol_bytes"]:
+        raise ValueError("COLD_RUNTIME_RESERVATION_INSUFFICIENT: recorded model exceeds the frozen COMSOL engineering reservation; provide an explicitly reassessed request before native opening")
     return {"manifest_record": manifest_record, "config_record": config_record,
             "native_record": native_record, "context_record": context_record,
             "model_record": model_record, "inputs": scientific_inputs, "exports": exports,
-            "budget_record": budget_record, "new_bytes": budget["evidence_bytes"],
+            "budget_record": budget_record,
+            "new_bytes": budget["evidence_bytes"] + (budget["comsol_bytes"] if exports is None else 0),
+            "native_runtime_bytes": budget["comsol_bytes"] if exports is None else 0,
+            "native_runtime_basis": ("Existing frozen Candidate COMSOL engineering reservation covers native temporary/recovery writes; source MPH is protected input, not newly copied output. This is not a measured cold-open peak."
+                                     if exports is None else "No COMSOL process is requested; only new small evidence is reserved."),
             "source_reference": {"manifest_record": manifest_record},
             "science_reference": {"manifest_record": manifest_record},
             "export_source_reference": {"manifest_record": manifest_record},

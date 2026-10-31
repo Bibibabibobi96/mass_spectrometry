@@ -2129,7 +2129,7 @@ def execute_prepared_run(*args):
 
 
 
-def postprocess_source_fixture(directory, *, unknown=False):
+def postprocess_source_fixture(directory, *, unknown=False, cold=False, comsol_bytes=None):
     """Producer-shaped small records; no vendor process or model is fabricated."""
     import csv
     from common.contracts.capacity_ledger import record_capacity_object
@@ -2145,6 +2145,10 @@ def postprocess_source_fixture(directory, *, unknown=False):
     source.write_text("\n".join("0,524,1,0,0,0,0,0,1,1,1" for _ in range(100))+"\n", encoding="utf-8")
     budget = parent / "inputs/candidate_runtime.json"
     budget.write_bytes((PROJECT_ROOT / "config/candidate_runtime.json").read_bytes())
+    if comsol_bytes is not None:
+        budget_document=load_json(budget)
+        budget_document["artifact_capacity"]["comsol_bytes"]=comsol_bytes
+        budget.write_text(json.dumps(budget_document),encoding="utf-8")
     events = parent / "results/comsol_detector_events_Fixture.csv"
     with events.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.writer(stream)
@@ -2170,6 +2174,9 @@ def postprocess_source_fixture(directory, *, unknown=False):
         "artifact_retention":{"policy_version":1,"class":"compact","reason":None},
         "capacity_ledger_lifecycle":{"schema_version":1,"enabled":True,"artifact_root":str(artifact),
                                      "light_evidence_budget_bytes":67108864}}
+    if cold:
+        config["artifact_retention"]={"policy_version":1,"class":"solver_review",
+            "reason":"Opaque saved-input metadata fixture retained for cold admission tests; no vendor opens it."}
     config_path = parent / "run_config.json"
     from common.contracts.write_run_manifest import file_record
     request_path = parent / "inputs/execution_request.json"
@@ -2181,6 +2188,19 @@ def postprocess_source_fixture(directory, *, unknown=False):
         "project":PROJECT_ROOT.name,"run_id":parent.name,"status":"failed","writer_completion":writer,
         "execution_request":file_record(request_path),"run_config":file_record(config_path)}),encoding="utf-8")
     outputs = [events,analysis,native,completion]
+    if cold:
+        # Opaque three-byte admission fixture, never opened by a vendor tool.
+        # It proves metadata/capacity transport, not a physically solved model.
+        events.unlink();analysis.unlink()
+        model=parent/"comsol/model.mph";model.parent.mkdir();model.write_bytes(b"MPH")
+        context=model.with_suffix(".mph.postprocess.json")
+        context.write_text(json.dumps({"schema_version":1,"role":"oatof_saved_particle_solution",
+            "solution_tag":"sol2","dataset_tag":"pdset1","solution_times_s":[0,1e-6],
+            "particle_count":100,"saved_model_bytes":3,"timing":{},"expected_tof":1e-6,
+            "fine_tstep":1e-9,"Tsim":1e-6,"detector_z_mm":0,"detector_x_mm":0,
+            "detector_radius_mm":1,"flight_length_mm":1,"accelerator_exit_mm":0,
+            "contract_path":str(physical),"source_path":str(source)}),encoding="utf-8")
+        outputs=[model,context,native,completion]
     publish_run_manifest(config_path,"failed",output_paths=outputs)
     initialize_capacity_ledger(artifact,objects=[])
     record_capacity_object(artifact,path=parent,object_class="light_evidence",bytes_count=sum(
@@ -2262,6 +2282,61 @@ def cold_export_failed_child_fixture(directory, *, unknown=False, wrong_source=F
 
 
 class CandidatePostprocessTests(unittest.TestCase):
+    def test_native_runtime_reservation_uses_frozen_budget_and_csv_stays_light(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent,prepare_postprocess_request
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            for cold in (False,True):
+                with self.subTest(cold=cold):
+                    artifact,parent,_,_=postprocess_source_fixture(root/str(cold),cold=cold)
+                    before={str(path.relative_to(parent)):path.read_bytes() for path in parent.rglob("*") if path.is_file()}
+                    selected=select_postprocess_parent(parent,artifact)
+                    budget=load_json(Path(selected["budget_record"]["path"]))["artifact_capacity"]
+                    self.assertEqual(selected["native_runtime_bytes"],budget["comsol_bytes"] if cold else 0)
+                    self.assertEqual(selected["new_bytes"],budget["evidence_bytes"]+(budget["comsol_bytes"] if cold else 0))
+                    with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_ARTIFACT_ROOT":str(artifact)}):
+                        request=prepare_postprocess_request(parent,"20261031_151000__analysis__python__runtime-budget")
+                    self.assertEqual(request["capacity"]["committed_new_bytes"],selected["new_bytes"])
+                    self.assertEqual(before,{str(path.relative_to(parent)):path.read_bytes() for path in parent.rglob("*") if path.is_file()})
+            artifact,parent,_,_=postprocess_source_fixture(root/"insufficient",cold=True,comsol_bytes=2)
+            with self.assertRaisesRegex(ValueError,"COLD_RUNTIME_RESERVATION_INSUFFICIENT"):
+                select_postprocess_parent(parent,artifact)
+
+    def test_normal_comsol_commands_transport_the_owner_runtime_directory(self):
+        from types import SimpleNamespace
+        from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import candidate_comsol_stage as adapter
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);run=root/"run";(run/"logs").mkdir(parents=True)
+            execution=root/"execution";execution.mkdir()
+            closure=freeze_candidate_source_closure(run/"inputs/code",root/"artifacts",
+                resolved_contract=PROJECT_ROOT/"config/resolved_geometry.json",
+                analysis_contract=PROJECT_ROOT/"config/analysis_contract.json")
+            request=run/"analysis_request.json";request.write_text("{}",encoding="utf-8")
+            commands=[]
+            def observe(command,log,plan,receipt,role,environment):
+                commands.append(command)
+                report=Path(command[command.index("-ReportPath")+1])
+                report.write_text("STATUS=PASS\nPYTHON_ANALYSIS_REQUEST="+str(request)+"\n",encoding="utf-8")
+            runtime=SimpleNamespace(_verify_frozen_cad_python=lambda *args:sys.executable,_run_managed_stage_command=observe)
+            stage={"environment":{},"report_path":str(run/"logs/build.txt"),"model_path":str(run/"model.mph"),"contract_path":str(PROJECT_ROOT/"config/resolved_geometry.json")}
+            with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY":str(execution)}), \
+                    mock.patch.object(adapter,"analyze_detector_request",return_value=run/"analysis_receipt.json"):
+                adapter.execute_comsol_stage(stage,{"execution_source_closure":closure,"run_root":str(run),"run_id":run.name},sys.executable,runtime=runtime)
+            self.assertEqual(len(commands),2)
+            from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_cad_stage import execute_cad_stage
+            def stop_cad(command,*args):
+                commands.append(command)
+                raise RuntimeError("STOP_AT_CAD_NATIVE_BOUNDARY")
+            runtime._run_managed_stage_command=stop_cad
+            with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY":str(execution)}):
+                with self.assertRaisesRegex(RuntimeError,"STOP_AT_CAD_NATIVE_BOUNDARY"):
+                    execute_cad_stage(dict(stage,output_dir=str(run/"cad")),
+                        {"execution_source_closure":closure,"run_root":str(run),"run_id":run.name},sys.executable,runtime=runtime)
+            self.assertEqual(len(commands),3)
+            self.assertEqual([command[command.index("-RunDir")+1] for command in commands],[str(execution)]*3)
+            self.assertFalse((run/"model.mph").exists())
+            self.assertFalse((run/"cad/oaTOF_solidworks_export_report.json").exists())
+
     def test_original_cli_postprocess_is_explicit_and_rejects_new_science(self):
         argv = ["run_candidate.py","--postprocess-from","parent","--run-id","new"]
         for extra in (["--request","request.json"],["--particle-source-seed","0"],["--reuse-parent","other"],
@@ -2435,6 +2510,7 @@ class CandidatePostprocessTests(unittest.TestCase):
             command=observed[0]
             self.assertEqual(command[command.index("-TaskScript")+1],str(execution/"inputs/cold_postprocess.m"))
             self.assertEqual(command[command.index("-StartupAttempts")+1],"1")
+            self.assertEqual(command[command.index("-RunDir")+1],str(execution))
             request=load_json(child/"inputs/cold_request.json")
             self.assertEqual(request["output_dir"],str(child/"results"))
             self.assertEqual(request["child_run_directory"],str(child))

@@ -649,3 +649,12 @@ Root 验证显式数值编译主题：正式 common/verify.ps1 对完整 test_ca
 Root纯MATLAB首轮28项为22PASS／6FAIL（29.484秒）：五项夹具误期望非空assert identifier，另一个时间token用例揭示上述真实缺陷。修后仅重跑validator，12项PASS（外层3.809秒）；前轮ArtifactContext11项与PlotView10项已PASS，distinct覆盖合计33项，不将两轮误称同轮全绿。相对9ba的929行前缀除两个helper调用名外全文相同，原数值／物理及保存顺序保持。尚未执行本实现的真实COMSOL求解／保存冷重开或GUI验收；这些软件证据不授精度、完整Candidate、Formal或整个Goal资格。
 
 整合后原正式 MATLAB 软件测试 runner 实跑82／82 PASS，MCP外层19.523秒，包含新validator默认接线；它是软件runner，不是Formal科学资格。实际冻结闭包回归PASS2.128秒、冷任务运输回归PASS3.643秒；首次第二方法误用类名导致发现错误，修正类名后仅补跑该方法，不计原错误为通过。新core与validator Code Analyzer无问题，搬移builder仅有输出初始化的未用赋值提示。
+
+
+### Candidate COMSOL 原生临时目录与冷提取容量
+
+只需已有CSV的后处理仍仅承诺原冻结runtime的evidence_bytes（当前合同64MiB），不启动COMSOL、不把父MPH算作新复制。确需冷开时，沿同一现有容量请求额外保留父已冻结的comsol_bytes工程余量（当前合同4GiB），用于实际原生temporary／recovery写入；这是沿已有预算的保守工程承诺，不是已测冷开峰值，不保证任意模型都可容纳。模型记录本身超过该余量时在商业启动前拒绝，要求明确重新评估请求，不能以无另存父MPH推断零临时写。原输入与parent manifest不改写，生产minimum free、物理资格与CPU／内存策略不变。
+
+normal build／sync、CAD的COMSOL打开及cold后处理均向既有launcher传入公共owner提供的执行run目录作为RunDir，使实际temporary／recovery归本run并进入runtime_storage观测；项目不新建临时目录平台或alias。公共路径运输的其余边界仍按正常owner负责，此处不以运输软件测试冒充COMSOL已开模型。
+
+独立HEAD闭包经公共GATE 2CPU／2GiB定向3方法PASS14.535秒（预算9.064／normal1.910／cold运输3.561），随后仅追加真实CAD命令边界sentinel断言的normal方法复验PASS1.935秒；无商业启动。测试使用明确opaque3B元数据载荷，验证原预算／拒绝不足余量、CSV轻量分支、完整请求冻结、父字节不变和真实argv，不代表有效MPH或求解。首轮FAIL5.652秒保留：隔离源码缺已提交reducer及cold fixture错误compact保留类；补真实声明依赖、首次fixture发布前使用原solver_review类后通过，未放宽生产政策。真实native临时峰值与硬资源限制仍以正常入口实际观测／显式请求为准。

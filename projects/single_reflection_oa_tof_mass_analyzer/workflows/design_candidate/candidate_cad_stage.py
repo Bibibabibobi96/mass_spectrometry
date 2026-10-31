@@ -1,6 +1,7 @@
 """Frozen CAD Candidate construction and scientific completion checks."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +40,7 @@ def execute_cad_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: s
             "-ReportPath",
             str(report),
             "-RunId", plan["run_id"],
+            "-RunDir", os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(run_root),
             "-CompletionPath", str(logs / "cad_completion.json"),
         ],
     )

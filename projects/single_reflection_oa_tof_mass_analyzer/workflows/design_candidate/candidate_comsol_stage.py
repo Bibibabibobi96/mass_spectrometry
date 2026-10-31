@@ -1,6 +1,7 @@
 """Frozen COMSOL Candidate construction and scientific completion checks."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +47,7 @@ def execute_comsol_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe
             "-ReportPath",
             str(build_report),
             "-RunId", plan["run_id"],
+            "-RunDir", os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(run_root),
             "-CompletionPath", str(logs / "comsol_build_completion.json"),
         ],
     )
@@ -72,6 +74,7 @@ def execute_comsol_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe
             "-ReportPath",
             str(sync_report),
             "-RunId", plan["run_id"],
+            "-RunDir", os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(run_root),
             "-CompletionPath", str(logs / "comsol_sync_completion.json"),
         ],
     )
@@ -170,6 +173,7 @@ def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: 
         receipt_path = root / "logs/cold_postprocess_completion.json"
         command = _powershell(execution_path(Path(frozen_source_path(closure, "common/comsol/run_comsol_r2025b.ps1"))),
             ["-TaskScript", execution_path(task), "-ReportPath", execution_path(report), "-RunId", root.name,
+             "-RunDir", str(execution),
              "-StartupAttempts", "1", "-CompletionPath", execution_path(receipt_path)])
         runtime._run_managed_stage_command(command, root / "logs/cold_launcher.log", plan,
                                             receipt_path, "comsol_launcher_completion")
