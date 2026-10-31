@@ -71,7 +71,10 @@ if(-not$caught){throw 'Relative observation target was accepted'}
     def test_actual_plan_selects_alias_and_scoped_environment_restores_after_failure(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            deep = root / ("deep-" + "a"*90) / ("nested-" + "b"*90)
+            # Exceed the native compatibility boundary even with CI's short /tmp root.
+            # Keep each component below filesystem limits; production still decides
+            # whether the actual plan needs an execution alias.
+            deep = root / ("deep-" + "a"*90) / ("nested-" + "b"*90) / ("leaf-" + "c"*90)
             source = deep / "inputs/native/control.lua"
             source.parent.mkdir(parents=True)
             source.write_text("frozen native input", encoding="utf-8")
