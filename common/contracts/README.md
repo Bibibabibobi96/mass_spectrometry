@@ -884,3 +884,10 @@ Python prepared请求可选提供`prepared.native_input_paths`绝对文件路径
 公共owner在prepared启动前沿现`New-RunExecutionAlias`原语为过长来源建立必要的只读执行表示，不复制原载荷。`capacity_session.source_execution_context.sources`运输`target_directory`／`execution_directory`成对映射及声明的`input_paths`；项目只在实际原生调用处投影，长期输入、输出与科学身份保持canonical。短输入不建alias，CSV-only不声明此字段，不创建无用表示。
 源junction位于冻结execution_root，名称复用原request的已算SHA和source序号；所需相对后缀仍在创建前检查完整路径预算。同名已有junction不覆盖，返回原owner处理。owner的原始context同时保留在run外Result；callback回写Session不能替换清理authority。writer未知时保留链接与保护；已确认停止后正常／Resume沿原manifest和请求身份校验目标及所有权并幂等清理。自身容量lease重建保留原context，Resume不重建alias或重启prepared。
 此API不建立任意外部路径映射，不替代项目对MPH内容、原生停止和完整科学输入的验证。alias根的结构校验只检查直接目录junction及明确绝对target，允许跨根但不授予消费、写入或删除authority；其行政范围固定计0字节，不遍历target。维护仅延续原内部dangling清理规则，外部dangling留给真实owner。
+
+
+计时检查复用既有 retention 失败与同 run 恢复场景；prepared 异常的 checkpoint、容量账本及保护断言
+由原始异常用例统一验证，身份矩阵保留不同的 writer／请求／生命周期风险，避免相同故障重复准备。
+2026-10-31 同一生产 owner 下，原4项／合并后3项分别通过（66.705／66.698秒）；
+公开墙钟80.131／70.438秒的差异主要来自准入等待11.422／1.743秒，未证明稳定提速。
+本次消除重复场景与重复恢复调用，未将其表述为完整公共套件性能达标。

@@ -165,6 +165,13 @@ foreach($invalid in @([pscustomobject]@{status='released';token=$lease.token;ext
             result=subprocess.run([PWSH,'-NoProfile','-File',str(path),str(REPO)],cwd=REPO,capture_output=True,text=True,encoding='utf-8',timeout=30)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
+    def _assert_owner_timing(self, result: dict) -> None:
+        """Check the existing owner summary clock, independently of command wall time."""
+        self.assertGreater(result["elapsed_seconds"], 0)
+        self.assertTrue(result["timing"])
+        self.assertTrue(all(value >= 0 for value in result["timing"].values()))
+        self.assertAlmostEqual(sum(result["timing"].values()), result["elapsed_seconds"], places=2)
+
     def run_ps(self, root: Path, script: str) -> subprocess.CompletedProcess[str]:
         path = root / "invoke.ps1"
         path.write_text(script, encoding="utf-8")
@@ -927,7 +934,12 @@ if('{external}'-notin@($snapshot.protected_paths)){{throw 'latest source scope w
             with self.subTest(stage=stage, lease=lease_state), tempfile.TemporaryDirectory(prefix="workflow-recover-retention-") as directory:
                 root = Path(directory)
                 first, run, artifacts, process = self.invoke_fixture(root, {"disposable": True}, failure_stage=stage)
-                self.assertNotEqual(process.returncode, 0, process.stdout + process.stderr)
+                self.assertEqual(process.returncode, 7, process.stdout + process.stderr)
+                self._assert_owner_timing(first)
+                self.assertEqual(first["stage"], "retention")
+                self.assertEqual(first["last_completed_stage"], "completion")
+                self.assertEqual(first["resume_action"], "resume_finalization")
+                self.assertIn("prepared", first["timing"])
                 science = (run / "results/science.json").read_bytes()
                 old_id = first["lease_id"]
                 baseline = sum(path.stat().st_size for path in run.rglob("*") if path.is_file())
@@ -944,6 +956,10 @@ if('{external}'-notin@($snapshot.protected_paths)){{throw 'latest source scope w
                     (root / "fixture_callback.py").write_text("raise RuntimeError('must not import again')", encoding="utf-8")
                 result, resumed = self.resume_fixture(root, run)
                 self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+                self._assert_owner_timing(result)
+                self.assertEqual(result["stage"], "complete")
+                self.assertIsNone(result["resume_action"])
+                self.assertNotIn("prepared", result["timing"])
                 self.assertTrue(result["terminal_published"] and result["capacity_finalized"] and result["lease_released"])
                 self.assertEqual((run / "results/science.json").read_bytes(), science)
                 self.assertEqual((root / "callback_count.txt").read_text(), "1")
@@ -1151,29 +1167,6 @@ if('{external}'-notin@($snapshot.protected_paths)){{throw 'latest source scope w
             self.assertEqual(observed, expected)
             self.assertEqual(result["execution_context"]["host_resource_state_path"], expected)
 
-    def test_owner_timing_covers_failed_stage_and_finalization_only_resume(self) -> None:
-        def check(result):
-            self.assertGreater(result["elapsed_seconds"], 0)
-            self.assertTrue(result["timing"])
-            self.assertTrue(all(value >= 0 for value in result["timing"].values()))
-            self.assertAlmostEqual(sum(result["timing"].values()), result["elapsed_seconds"], places=2)
-
-        with tempfile.TemporaryDirectory(prefix="workflow-timing-") as directory:
-            root = Path(directory)
-            result, run, _, output = self.invoke_fixture(root, {}, failure_stage="retention_before")
-            self.assertEqual(output.returncode, 7, output.stdout + output.stderr)
-            check(result)
-            self.assertEqual(result["stage"], "retention")
-            self.assertEqual(result["last_completed_stage"], "completion")
-            self.assertEqual(result["resume_action"], "resume_finalization")
-            self.assertIn("prepared", result["timing"])
-            result, output = self.resume_fixture(root, run)
-            self.assertEqual(output.returncode, 0, output.stdout + output.stderr)
-            check(result)
-            self.assertEqual(result["stage"], "complete")
-            self.assertIsNone(result["resume_action"])
-            self.assertNotIn("prepared", result["timing"])
-            self.assertEqual((root / "callback_count.txt").read_text(), "1")
 
     def test_explicit_control_plane_path_reaches_prepared_without_new_database(self) -> None:
         with tempfile.TemporaryDirectory(prefix="workflow-context-") as directory:
@@ -1221,13 +1214,17 @@ if('{external}'-notin@($snapshot.protected_paths)){{throw 'latest source scope w
 
     def test_prepared_exception_is_structured_when_completion_is_missing(self) -> None:
         with tempfile.TemporaryDirectory(prefix="workflow-original-error-") as directory:
-            result, run, _, output = self.invoke_fixture(Path(directory), {"raise": True})
+            result, run, artifacts, output = self.invoke_fixture(Path(directory), {"raise": True})
             self.assertEqual(output.returncode, 7)
             self.assertEqual(result["exception"]["type"], "RuntimeError")
             self.assertEqual(result["exception"]["message"], "original prepared fixture failure")
             self.assertTrue(result["secondary_errors"])
             self.assertFalse(result["terminal_published"] or result["lease_released"])
             self.assertIn("original prepared fixture failure", (run / "logs/prepared_stderr.log").read_text())
+            self.assertEqual(load_capacity_ledger(artifacts)["objects"][0]["status"], "writing")
+            self.assertEqual(json.loads((run / "run_manifest.json").read_text(encoding="utf-8-sig"))["status"], "checkpoint")
+            self.assertFalse((run / "retention_actions.json").exists())
+            self.assertIn(run.resolve(), load_capacity_protection_leases(artifacts)["protected_paths"])
 
     def test_noncompact_releases_closed_run_before_existing_payload_seal(self) -> None:
         for retention, status in (("solver_review", "success"), ("qualification", "success"), ("solver_review", "failed")):
@@ -1253,7 +1250,10 @@ if('{external}'-notin@($snapshot.protected_paths)){{throw 'latest source scope w
     def test_unknown_or_changed_identity_keeps_checkpoint_and_protection(self) -> None:
         unknown = released_writer()
         unknown["operations"][0]["observation"]["exit_confirmed"] = False
-        for payload in ({"writers": unknown}, {"change_request": True}, {"change_lifecycle": True}, {"raise": True}):
+        # The original-error test above owns the identical prepared-raise case,
+        # including checkpoint/ledger/protection assertions. This matrix retains
+        # the distinct writer, frozen-request and lifecycle-identity failures.
+        for payload in ({"writers": unknown}, {"change_request": True}, {"change_lifecycle": True}):
             with self.subTest(payload=payload), tempfile.TemporaryDirectory(prefix="workflow-reject-") as directory:
                 result, run, artifacts, output = self.invoke_fixture(Path(directory), payload)
                 self.assertEqual(output.returncode, 7)
