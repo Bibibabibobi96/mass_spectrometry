@@ -16,5 +16,8 @@ from integrations.tests.test_support.single_reflection_execute_fixture import Si
 class SingleReflectionExecuteTests(SingleReflectionExecuteFixture):
     def test_field_design_public_stage_consumes_frozen_plan_and_releases_failure(self):
         """Real public freezer/preparation/budget with explicit inert native boundary."""
-        self._check_public_cases(('none','native','population','downstream','elapsed','old_budget','planning','disk_floor','ram_floor',
-            'workbench','missing_flight','missing_workbench_budget','workbench_build','workbench_verify','workbench_drift','field_drift','publication_pin'))
+        # Generic missing-stage/invalid-budget rejection belongs to
+        # test_engineering_budget.test_shared_budget_and_actual_entry_loaders;
+        # retain the real workbench success/failure wiring and cohort check here.
+        self._check_public_cases(('none','native','population','downstream','elapsed','planning','disk_floor','ram_floor',
+            'workbench','missing_flight','workbench_build','workbench_verify','workbench_drift','field_drift','publication_pin'))
