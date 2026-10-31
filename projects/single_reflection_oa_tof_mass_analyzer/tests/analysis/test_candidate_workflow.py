@@ -3072,31 +3072,6 @@ class CandidatePostprocessTests(unittest.TestCase):
 
 
 class CandidateAnalysisReuseTests(CandidateFixtures, unittest.TestCase):
-    def test_legacy_analysis_records_without_authority_reanalyze_bound_csv_only(self):
-        from common.contracts.write_run_manifest import file_record
-        from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import candidate_comsol_stage
-        with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory)
-            artifact,plan=self.native_workflow_plan(root,"20261031_130003")
-            parent,summary=run_candidate_workflow(plan,sys.executable,stage_executor=self.native_fake_executor([]))
-            evidence=next(item['evidence'] for item in summary['stages'] if item['stage_id']=='comsol_candidate')
-            # An explicit historical analysis-output view lacks authority. It
-            # does not pretend that today's successful phase omitted a field,
-            # and neither the parent receipt nor its manifest is modified.
-            legacy_outputs={name:file_record(Path(evidence[name])) for name in ('analysis_request','analysis_receipt')}
-            child=root/'analysis-child';(child/'logs').mkdir(parents=True)
-            closure=freeze_candidate_source_closure(child/'inputs/code',artifact,
-                resolved_contract=PROJECT_ROOT/'config/resolved_geometry.json',
-                analysis_contract=PROJECT_ROOT/'config/analysis_contract.json')
-            before={path:path.read_bytes() for path in parent.rglob('*') if path.is_file()}
-            with mock.patch.object(candidate_workflow,'_run_managed_stage_command',side_effect=AssertionError('COMSOL must not start')):
-                actual,execution=candidate_comsol_stage.refresh_reused_comsol_analysis(dict(evidence),legacy_outputs,
-                    child,closure,parent_root=parent,runtime=candidate_workflow)
-            self.assertEqual(execution,'executed')
-            self.assertTrue(Path(actual['analysis_receipt']).is_relative_to(child))
-            self.assertIn('analysis_contract',legacy_outputs)
-            self.assertEqual({path:path.read_bytes() for path in before},before)
-
     def test_normal_reuse_refreshes_only_changed_or_unrecorded_analysis_authority(self):
         from projects.single_reflection_oa_tof_mass_analyzer.analysis import prepare_candidate_run as preparation
         from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import candidate_comsol_stage

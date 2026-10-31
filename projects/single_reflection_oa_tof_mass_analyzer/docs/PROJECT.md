@@ -633,6 +633,8 @@ catalog所有模块权重现统一来自同一643轮完整test_durations；原�
 
 ### Candidate COMSOL 后处理恢复
 
+正常复用统一由 `execute_reused_comsol_phases` 执行已冻结的 native／export／analysis／sync 判断；旧的无生产消费者分析刷新 helper 及其专属测试已退役。实际入口的同／异分析权威、分析实现变化、CSV-only 后继和旧父证据拒绝回归保留，不放宽阶段完成证据。
+
 正常结构 Candidate 在完整 `sol2` 保存后记录实际解标签、输出时间、母群及冻结科学输入的后处理 context；正常与冷提取使用同一 MATLAB 后处理实现，原事件窗口与全部100粒子命中要求保持。`FieldDesignOnly` 不构成粒子完成证据；质量谱及 Formal 的独立 retrace 不属于此入口。
 
 原 `run_candidate.py --postprocess-from <封存父run> --run-id <新identity>` 创建仅 COMSOL 后处理子run。充分封存CSV可直接运行原Python分析；缺CSV但完整保存解、原生停止、manifest、冻结输入及context充分时，冷开父MPH只提取，不求场、不重飞、不另存父模型。父模型只通过公共 SourceReferences 保护引用；子run只发布实际小CSV、PNG和分析结果，不宣称完整 Candidate 或后继复用 READY。缺依赖、未知writer或保存尺寸/解时间/母群不符均拒绝，不自动求解。

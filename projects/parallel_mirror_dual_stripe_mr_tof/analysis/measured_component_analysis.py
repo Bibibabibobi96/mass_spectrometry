@@ -19,8 +19,7 @@ from common.contracts.canonical_clock_authority import validate_clock_authority
 from common.contracts.component_particle_state import load_component_particle_state_csv
 from common.contracts.file_identity import file_sha256
 from common.contracts.verify_run_manifest import record_path, verify_record
-from common.simion.native_completion import parse_fly_completed_line
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import parse_events, read_scientific_events, unavailable_peak_metadata
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import read_scientific_events, unavailable_peak_metadata
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -89,13 +88,6 @@ def _load_source(path: Path) -> tuple[dict[str, Any], dict[int, dict[str, Any]],
 def _log_roundoff_us(time_us: float) -> float:
     # mrtof_candidate.lua emits event t_us with %.12g: half its last decimal.
     return 0.5 * 10 ** (math.floor(math.log10(abs(time_us))) - 11) if time_us else 0.0
-
-
-def _close_events(text: str, states: dict[int, dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[int, dict[str, Any]], dict[int, dict[str, Any]]]:
-    events = parse_events(text)
-    completed = [completion for line in text.splitlines()
-                 if (completion := parse_fly_completed_line(line)) is not None]
-    return _close_event_rows(events, completed, states)
 
 
 def _close_event_rows(events, completed, states):

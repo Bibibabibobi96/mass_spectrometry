@@ -297,44 +297,6 @@ def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: 
             "native_field_solve_count": 0, "parent_model_saved": False}
 
 
-def refresh_reused_comsol_analysis(evidence: dict, output_records: dict, root: Path, closure: dict, *, parent_root: Path, runtime: Any, force: bool = False) -> tuple[dict, str]:
-    """Reuse native outputs while checking the actual frozen analysis authority."""
-    from common.contracts.verify_run_manifest import verify_record
-    from common.contracts.write_run_manifest import file_record
-    import json
-    authority_id = "projects/single_reflection_oa_tof_mass_analyzer/config/analysis_contract.json"
-    current = next((item for item in closure["sources"] if item["source_id"] == authority_id), None)
-    if current is None:
-        raise ValueError("Current COMSOL analysis authority was not explicitly frozen")
-    previous = output_records.get("analysis_contract")
-    if not force and previous is not None and all(str(previous[key]).upper() == str(current[key]).upper() for key in ("bytes","sha256")):
-        return evidence, "reused"
-    verify_candidate_source_closure(closure)
-    old_request = load_json(Path(evidence["analysis_request"]))
-    old_receipt = load_json(Path(evidence["analysis_receipt"]))
-    raw = old_receipt.get("raw_events")
-    if not isinstance(raw, dict) or Path(old_request["raw_events_csv"]).resolve() != Path(raw.get("path", "")).resolve():
-        raise ValueError("Native/CSV reuse lacks a sufficiently bound detector export; no implicit solve")
-    from common.contracts.verify_run_manifest import record_path
-    parent_manifest = load_json(parent_root / "run_manifest.json")
-    matches = [record for record in parent_manifest["outputs"]
-               if record_path(record, base_dir=parent_root) == Path(raw["path"]).resolve()]
-    if len(matches) != 1 or matches[0]["sha256"].upper() != raw["sha256"].upper():
-        raise ValueError("Reused detector CSV is not bound by the original manifest and analysis receipt")
-    verify_record("reused COMSOL event export", matches[0], base_dir=parent_root)
-    output = root / "results/comsol_reanalysis"
-    output.mkdir(parents=True, exist_ok=True)
-    request = output / "analysis_request.json"
-    old_request["analysis_output_dir"] = str(output / "analysis")
-    request.write_text(json.dumps(old_request, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
-    receipt = analyze_detector_request(request, closure, root / "logs/comsol_reanalysis.log", runtime=runtime)
-    evidence = dict(evidence, analysis_request=str(request), analysis_receipt=str(receipt),
-                    analysis_contract=frozen_source_path(closure, authority_id))
-    for name in ("analysis_request", "analysis_receipt", "analysis_contract"):
-        output_records[name] = file_record(Path(evidence[name]))
-    return evidence, "executed"
-
-
 def execute_reused_comsol_phases(stage: dict, plan: dict, evidence: dict, records: dict,
                                  disposition: dict, *, runtime: Any) -> tuple[dict, dict]:
     """Continue only changed COMSOL post-solve consumers of protected outputs.
