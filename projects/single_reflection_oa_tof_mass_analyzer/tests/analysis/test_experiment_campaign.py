@@ -64,12 +64,105 @@ def authorized_campaign_fixture():
             "path": science_path.relative_to(PROJECT_ROOT).as_posix(),
             "sha256": sha256(science_path),
         }
+        campaign["execution_profile"]["authority"]["sha256"] = sha256(
+            PROJECT_ROOT/campaign["execution_profile"]["authority"]["path"])
         campaign_path = root_path / "campaign.json"
         campaign_path.write_text(json.dumps(campaign), encoding="utf-8")
         yield campaign_path, campaign
 
 
 class ExperimentCampaignTests(unittest.TestCase):
+    def test_external_campaign_public_status_cli_keeps_request_and_authority(self):
+        repo = PROJECT_ROOT.parents[1]
+        with authorized_campaign_fixture() as (inside, _), tempfile.TemporaryDirectory() as directory:
+            outside = Path(directory) / "campaign.json"
+            payload = inside.read_bytes()
+            outside.write_bytes(payload)
+            statuses = []
+            for path in (inside, outside):
+                actual = subprocess.run([sys.executable, "-B", "-m",
+                    "projects.single_reflection_oa_tof_mass_analyzer.workflows.experiment_campaign.run_campaign",
+                    "--campaign", str(path), "--status"], cwd=repo, capture_output=True,
+                    text=True, encoding="utf-8", timeout=30)
+                self.assertEqual(actual.returncode, 0, actual.stdout + actual.stderr)
+                statuses.append(json.loads(actual.stdout))
+                self.assertEqual(path.read_bytes(), payload)
+            self.assertEqual(statuses[0], statuses[1])
+            outside.write_text("{}", encoding="utf-8")
+            rejected = subprocess.run([sys.executable, "-B", "-m",
+                "projects.single_reflection_oa_tof_mass_analyzer.workflows.experiment_campaign.run_campaign",
+                "--campaign", str(outside), "--status"], cwd=repo, capture_output=True,
+                text=True, encoding="utf-8", timeout=30)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertEqual(inside.read_bytes(), payload)
+
+    def test_explicit_external_campaign_relocates_without_changing_rows_or_authority(self):
+        import shutil
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            owner = root/"owner"
+            document = load_json(DEFAULT_CAMPAIGN)
+            document.update(campaign_id="external_request_fixture", status="authorized",
+                            execution_authorized=True, preregistered_before_run=True)
+            records = [document["base_request"], document["execution_profile"]["authority"],
+                       *document["authorities"].values()]
+            for record in records:
+                destination = owner/record["path"]
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(PROJECT_ROOT/record["path"], destination)
+                if record is document["base_request"]:
+                    request = load_json(destination)
+                    request.update(status="approved", approval=dict(approved_by="fixture", approved_on="2026-10-30"))
+                    destination.write_text(json.dumps(request), encoding="utf-8")
+                if record is document["authorities"]["science_profile"]:
+                    science = load_json(destination)
+                    science["current_validated_extent"]["nonzero_design_variables"] = ["reflectron_midgrid_voltage"]
+                    destination.write_text(json.dumps(science), encoding="utf-8")
+                record["sha256"] = sha256(destination)
+            payload = json.dumps(document).encode("utf-8")
+            paths = [root/"case/campaign.json", root/"data/campaign.json"]
+            for path in paths:
+                path.parent.mkdir()
+                path.write_bytes(payload)
+            with mock.patch.object(campaign_module, "PROJECT_ROOT", owner):
+                first, second = [validate_campaign(path, require_authorized=True) for path in paths]
+                for key in ("document", "profile", "authorities", "axes", "request", "sha256"):
+                    self.assertEqual(first[key], second[key])
+                plans = [preflight_campaign(path, "20261030_234500__test__cross__external-campaign",
+                            run_all=True, artifact_root=root/("artifact"+str(index)))
+                         for index,path in enumerate(paths)]
+                self.assertEqual([row["experiment"] for row in plans[0]["rows"]],
+                                 [row["experiment"] for row in plans[1]["rows"]])
+                for left,right in zip(plans[0]["rows"], plans[1]["rows"]):
+                    # Provenance includes each output root; the physical request
+                    # and compiler-governed variations are location-independent.
+                    self.assertEqual(left["request_path"].read_bytes(), right["request_path"].read_bytes())
+                    self.assertEqual(load_json(left["proposal_path"])["values"], load_json(right["proposal_path"])["values"])
+                self.assertTrue(all(path.read_bytes()==payload for path in paths))
+                paths[1].write_text("{}", encoding="utf-8")
+                self.assertEqual(second["source_bytes"], payload)
+                paths[0].write_text("{}", encoding="utf-8")
+                observed = []
+                def no_native_executor(_request, _run_id, **kwargs):
+                    observed.append(kwargs["campaign_table"].read_bytes())
+                    raise RuntimeError("software fixture stops before native")
+                with mock.patch.object(campaign_module, "preflight_campaign", return_value=plans[0]):
+                    run, summary = execute_campaign(paths[0], plans[0]["campaign_run_id"], run_all=True,
+                        artifact_root=plans[0]["artifact_root"], candidate_executor=no_native_executor)
+                self.assertEqual(observed, [payload])
+                self.assertEqual((run/"inputs/experiment_campaign.json").read_bytes(), payload)
+                self.assertEqual(summary["status"], "failed")
+                self.assertEqual(paths[0].read_text(encoding="utf-8"), "{}")
+                document["preregistered_before_run"] = False
+                paths[1].write_text(json.dumps(document), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "not preregistered"):
+                    validate_campaign(paths[1], require_authorized=True)
+                document["base_request"]["path"] = "../external_code.py"
+                paths[1].write_text(json.dumps(document), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "project-relative"):
+                    validate_campaign(paths[1])
+
+
     def test_public_entry_runs_as_repository_module_without_path_injection(self):
         completed = subprocess.run(
             [

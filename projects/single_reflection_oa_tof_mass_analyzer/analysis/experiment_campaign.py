@@ -214,19 +214,28 @@ def _authorization_blockers(
     return blockers
 
 
+def _read_campaign(campaign_path: Path) -> dict[str, Any]:
+    """Read and validate one data request snapshot without assuming current assets."""
+    path = campaign_path.resolve(strict=True)
+    # The campaign is read-only user data. Its authority records deliberately
+    # keep their project-relative base, independent of this file's location.
+    source_bytes = path.read_bytes()
+    document = json.loads(source_bytes.decode("utf-8-sig"))
+    validate_schema(document, "oatof_experiment_campaign.schema.json")
+    if document["execution_authorized"] != (document["status"] == "authorized"):
+        raise ValueError("campaign status and execution_authorized disagree")
+    return dict(path=path, source_bytes=source_bytes, document=document,
+                sha256=hashlib.sha256(source_bytes).hexdigest().upper())
+
+
+
 def validate_campaign(
     campaign_path: Path = DEFAULT_CAMPAIGN,
     *,
     require_authorized: bool = False,
 ) -> dict[str, Any]:
-    path = campaign_path.resolve(strict=True)
-    config_root = (PROJECT_ROOT / "config").resolve()
-    if config_root not in path.parents:
-        raise ValueError("campaign path must remain under the oa-TOF config directory")
-    document = load_json(path)
-    validate_schema(document, "oatof_experiment_campaign.schema.json")
-    if document["execution_authorized"] != (document["status"] == "authorized"):
-        raise ValueError("campaign status and execution_authorized disagree")
+    snapshot = _read_campaign(campaign_path)
+    path, source_bytes, document = (snapshot[key] for key in ("path", "source_bytes", "document"))
     profile = _profile(document)
     authorities = _authority_documents(document)
     axes = _axis_map(document, profile, authorities)
@@ -275,7 +284,8 @@ def validate_campaign(
         raise ValueError("campaign execution is not authorized: " + "; ".join(blockers))
     return {
         "path": path,
-        "sha256": sha256(path),
+        "sha256": snapshot["sha256"],
+        "source_bytes": source_bytes,
         "document": document,
         "profile": profile,
         "authorities": authorities,
@@ -582,7 +592,7 @@ def execute_campaign(
     inputs.mkdir()
     receipts_root.mkdir()
     frozen_table = inputs / "experiment_campaign.json"
-    shutil.copy2(resolved["path"], frozen_table)
+    frozen_table.write_bytes(resolved["source_bytes"])
     shutil.copytree(prepared["scratch"] / "rows", rows_root)
     shutil.rmtree(prepared["scratch"])
     campaign_id = resolved["document"]["campaign_id"]

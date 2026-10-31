@@ -16,6 +16,7 @@ from common.contracts.verify_run_manifest import record_path
 from projects.rf_multipole_ion_optics.analysis.campaign_status import _verify_manifest as verify_campaign_manifest
 from projects.rf_multipole_ion_optics.analysis.numerical_qualification import run_data
 from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
+from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_campaign_path
 
 
 MODES = {
@@ -222,10 +223,7 @@ def campaign_request_preflight(
 
     repo_root = repo_root.resolve()
     workspace_root = workspace_root.resolve()
-    campaign_path = campaign_path.resolve()
-    campaign_root = (repo_root / "projects/rf_multipole_ion_optics/config/campaigns").resolve()
-    if not campaign_path.is_file() or not campaign_path.is_relative_to(campaign_root):
-        raise ValueError("campaign path must name a file in projects/rf_multipole_ion_optics/config/campaigns")
+    campaign_path = resolve_campaign_path(repo_root, campaign_path)
     campaign = _load_json(campaign_path)
     try:
         validate_schema(campaign, "multipole_transport_experiment_campaign.schema.json")

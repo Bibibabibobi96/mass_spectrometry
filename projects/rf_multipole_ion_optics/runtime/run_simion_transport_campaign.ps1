@@ -125,20 +125,17 @@ function Invoke-AnalysisLifecycle {
 
 $repo = [IO.Path]::GetFullPath($RepoRoot)
 $workspace = Split-Path -Parent $repo
-$campaignRoot = [IO.Path]::GetFullPath((Join-Path $repo 'projects\rf_multipole_ion_optics\config\campaigns'))
-$candidate = if ([IO.Path]::IsPathRooted($CampaignPath)) {
-  [IO.Path]::GetFullPath($CampaignPath)
-} else {
-  [IO.Path]::GetFullPath((Join-Path $campaignRoot $CampaignPath))
-}
-$relative = [IO.Path]::GetRelativePath($campaignRoot, $candidate)
-if ($relative -eq '..' -or $relative.StartsWith(('..' + [IO.Path]::DirectorySeparatorChar))) {
-  throw 'CampaignPath must remain under projects\rf_multipole_ion_optics\config\campaigns.'
-}
-if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
-  throw "Campaign file is missing: $candidate"
-}
-
+$python = if ($PythonExe) {[IO.Path]::GetFullPath($PythonExe)} else {Join-Path $repo '.venv\Scripts\python.exe'}
+# Pure input location uses the same project API as resolution/status/analysis.
+# This grants no output, cleanup, solver or external-code permission.
+Push-Location $repo
+try {
+  $resolvedInput=@(& $python -B -c 'from pathlib import Path; import sys; from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_campaign_path; print(resolve_campaign_path(Path(sys.argv[1]), Path(sys.argv[2])))' $repo $CampaignPath)
+  if($LASTEXITCODE-ne0){throw 'Campaign input path could not be resolved.'}
+  $candidate=($resolvedInput-join "`n").Trim()
+} finally {Pop-Location}
+$campaignReadGuard=[IO.File]::Open($candidate,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+try {
 $campaign = Get-Content -LiteralPath $candidate -Raw -Encoding UTF8 | ConvertFrom-Json
 if ([int]$campaign.schema_version -ne 7 -or
   [string]$campaign.role -ne 'multipole_transport_experiment_campaign') {
@@ -254,3 +251,4 @@ try {
 
 Write-Host ('MULTIPOLE_CAMPAIGN=COMPLETE CAMPAIGN={0} EXPERIMENTS={1}' -f `
   [string]$campaign.campaign_id,$resolved.Count)
+} finally {$campaignReadGuard.Dispose()}

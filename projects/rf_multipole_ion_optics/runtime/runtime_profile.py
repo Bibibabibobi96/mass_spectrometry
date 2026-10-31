@@ -133,12 +133,17 @@ def _project_file(project_root: Path, path: Path | str, label: str) -> Path:
     return candidate
 
 
-def _campaign_file(repo_root: Path, path: Path) -> Path:
-    campaign_root = (repo_root / "projects/rf_multipole_ion_optics/config/campaigns").resolve()
-    candidate = path if path.is_absolute() else campaign_root / path
+def resolve_campaign_path(repo_root: Path, path: Path) -> Path:
+    """Locate read-only campaign data, independently of output and code authority.
+
+    A basename selects an existing config/campaigns case. Other relative paths
+    are repository-relative; explicit absolute data paths may be outside it.
+    Resource paths inside the JSON retain their declared repository/project base.
+    """
+    path = Path(path)
+    campaign_root = repo_root / "projects/rf_multipole_ion_optics/config/campaigns"
+    candidate = path if path.is_absolute() else (campaign_root/path if len(path.parts) == 1 else repo_root/path)
     candidate = candidate.resolve()
-    if not candidate.is_relative_to(campaign_root):
-        raise ValueError("campaign path escapes projects/rf_multipole_ion_optics/config/campaigns")
     if not candidate.is_file():
         raise ValueError(f"campaign path is missing: {candidate}")
     return candidate
@@ -652,7 +657,7 @@ def resolve_campaign_experiment(
 
     repo_root = repo_root.resolve()
     project_root = repo_root / "projects" / project_id
-    path = _campaign_file(repo_root, campaign_path)
+    path = resolve_campaign_path(repo_root, campaign_path)
     campaign = _load(path)
     try:
         json.dumps(campaign, allow_nan=False)
@@ -956,7 +961,7 @@ def semantic_diff_campaign_experiments(
 ) -> dict[str, Any]:
     """Resolve two campaign rows and return their deterministic review-only diff."""
 
-    campaign = _load(_campaign_file(repo_root.resolve(), campaign_path))
+    campaign = _load(resolve_campaign_path(repo_root.resolve(), campaign_path))
     rows_by_id = {item["experiment_id"]: item for item in campaign.get("experiments", [])}
     if len(rows_by_id) != len(campaign.get("experiments", [])):
         raise ValueError("campaign experiment_id values must be unique")

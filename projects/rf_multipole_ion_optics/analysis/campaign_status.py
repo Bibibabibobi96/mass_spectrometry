@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.verify_run_manifest import verify_record
-from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_runtime_selection
+from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_campaign_path, resolve_runtime_selection
 
 
 TERMINAL_STATUSES = {"success", "failed", "interrupted", "superseded"}
@@ -54,17 +54,7 @@ def campaign_status(
 
     repo_root = repo_root.resolve()
     workspace_root = repo_root.parent
-    if not campaign_path.is_absolute():
-        repository_relative = repo_root / campaign_path
-        campaign_path = (
-            repository_relative
-            if repository_relative.is_file()
-            else repo_root / "projects/rf_multipole_ion_optics/config/campaigns" / campaign_path
-        )
-    campaign_path = campaign_path.resolve()
-    campaign_root = (repo_root / "projects/rf_multipole_ion_optics/config/campaigns").resolve()
-    if not campaign_path.is_relative_to(campaign_root) or not campaign_path.is_file():
-        raise ValueError("campaign path must name a file in projects/rf_multipole_ion_optics/config/campaigns")
+    campaign_path = resolve_campaign_path(repo_root, campaign_path)
     campaign = _load(campaign_path)
     rows: list[dict[str, Any]] = []
     counts: dict[str, int] = {}

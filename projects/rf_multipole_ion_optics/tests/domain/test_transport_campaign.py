@@ -159,34 +159,11 @@ def analysis_campaign_fixture() -> dict:
 
 @contextmanager
 def written_campaign(document: dict) -> Iterator[Path]:
-    campaign_root_existed = CAMPAIGN_ROOT.is_dir()
-    CAMPAIGN_ROOT.mkdir(exist_ok=True)
-    path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            prefix=".transport_campaign_test_",
-            # The production path guard requires this fixture to remain under
-            # the campaign root. A non-publication suffix keeps concurrent
-            # repository-binding scans from treating the in-flight fixture as
-            # an active campaign.
-            suffix=".tmp",
-            dir=CAMPAIGN_ROOT,
-            delete=False,
-            encoding="utf-8",
-        ) as stream:
-            json.dump(document, stream, indent=2, allow_nan=False)
-            stream.write("\n")
-            path = Path(stream.name)
+    """A research request is data; tests need no write into the code tree."""
+    with tempfile.TemporaryDirectory(prefix="transport_campaign_data_") as directory:
+        path = Path(directory)/"campaign.json"
+        path.write_text(json.dumps(document, indent=2, allow_nan=False)+"\n", encoding="utf-8")
         yield path
-    finally:
-        if path is not None:
-            path.unlink(missing_ok=True)
-        if not campaign_root_existed:
-            try:
-                CAMPAIGN_ROOT.rmdir()
-            except OSError:
-                pass
 
 
 class TransportCampaignTests(unittest.TestCase):
@@ -695,19 +672,70 @@ class TransportCampaignTests(unittest.TestCase):
             )
         self.assertEqual(selected["solver_numerics"]["simion"]["values"], values)
 
-    def test_campaign_path_must_remain_inside_the_project(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "campaign.json"
-            path.write_text(json.dumps(campaign_fixture()), encoding="utf-8")
-            with self.assertRaisesRegex(
-                ValueError, "escapes projects/rf_multipole_ion_optics/config/campaigns"
-            ):
-                resolve_runtime_selection(
-                    REPO_ROOT,
-                    PROJECT_ID,
-                    campaign_path=path,
-                    experiment_id=EXPERIMENT_ID,
-                )
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_explicit_external_campaign_reaches_public_dry_run(self) -> None:
+        with written_campaign(campaign_fixture()) as path, tempfile.TemporaryDirectory() as directory:
+            original = path.read_bytes()
+            output = Path(directory)/"plan.json"
+            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File",
+                str(REPO_ROOT/"projects/rf_multipole_ion_optics/runtime/run_simion_transport_campaign.ps1"),
+                "-CampaignPath", str(path), "-ExperimentId", EXPERIMENT_ID, "-DryRun",
+                "-DryRunOutput", str(output), "-RepoRoot", str(REPO_ROOT), "-PythonExe", sys.executable],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+            plan = json.loads(output.read_text(encoding="utf-8-sig"))
+            expected = resolve_runtime_selection(REPO_ROOT, PROJECT_ID, campaign_path=path, experiment_id=EXPERIMENT_ID)
+            self.assertEqual(plan["experiments"], [expected])
+            self.assertEqual(path.read_bytes(), original)
+            self.assertNotIn("MULTIPOLE_CAMPAIGN=START", result.stdout)
+            self.assertIn("MULTIPOLE_CAMPAIGN=DRY_RUN", result.stdout)
+            overwrite = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File",
+                str(REPO_ROOT/"projects/rf_multipole_ion_optics/runtime/run_simion_transport_campaign.ps1"),
+                "-CampaignPath", str(path), "-ExperimentId", EXPERIMENT_ID, "-DryRun",
+                "-DryRunOutput", str(path), "-RepoRoot", str(REPO_ROOT), "-PythonExe", sys.executable],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+            self.assertNotEqual(overwrite.returncode, 0)
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_explicit_campaign_data_location_keeps_science_and_authorization(self) -> None:
+        from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_campaign_path
+        document = campaign_fixture()
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory(dir=CAMPAIGN_ROOT) as case:
+            root = Path(directory)
+            paths = [Path(case)/"campaign.json", root/"user_data/campaign.json"]
+            payload = json.dumps(document, indent=2).encode("utf-8")
+            resolved = []
+            for path in paths:
+                path.parent.mkdir(exist_ok=True)
+                path.write_bytes(payload)
+                resolved.append(resolve_runtime_selection(REPO_ROOT, PROJECT_ID, campaign_path=path,
+                                                          experiment_id=EXPERIMENT_ID))
+                self.assertEqual(path.read_bytes(), payload)
+                self.assertFalse((path.parent/"runs").exists())
+            for key in ("project_id", "runtime_profile_id", "stop_stage", "case_set",
+                        "design_profile_resolution", "particle_source", "solver_numerics"):
+                self.assertEqual(resolved[0][key], resolved[1][key])
+            self.assertEqual(resolved[0]["engineering_budget"]["inline_contract"],
+                             resolved[1]["engineering_budget"]["inline_contract"])
+            self.assertEqual(resolved[0]["campaign"]["sha256"], resolved[1]["campaign"]["sha256"])
+            self.assertNotEqual(resolved[0]["campaign"]["path"], resolved[1]["campaign"]["path"])
+            relative = Path(__import__("os").path.relpath(paths[1], REPO_ROOT))
+            self.assertEqual(resolve_campaign_path(REPO_ROOT, relative), paths[1].resolve())
+            self.assertEqual(resolve_campaign_path(REPO_ROOT, Path("20260731__noacc_vs_segmented_h15_n100.json")),
+                             (CAMPAIGN_ROOT/"20260731__noacc_vs_segmented_h15_n100.json").resolve())
+            for path in paths:
+                status = campaign_status(REPO_ROOT, path)
+                self.assertEqual(status["campaign_id"], document["campaign_id"])
+                preflight = campaign_request_preflight(REPO_ROOT, REPO_ROOT.parent, path)
+                self.assertEqual(preflight["campaign_id"], document["campaign_id"])
+            document["experiments"][0]["resource_authorization"]["authorized"] = False
+            paths[1].write_text(json.dumps(document), encoding="utf-8")
+            denied = resolve_runtime_selection(REPO_ROOT, PROJECT_ID, campaign_path=paths[1], experiment_id=EXPERIMENT_ID)
+            self.assertFalse(denied["engineering_budget"]["inline_contract"]["pilot_authorization"]["authorized"])
+            document["experiments"][0]["not_a_field"] = "external_script.py"
+            paths[1].write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "invalid multipole transport campaign"):
+                resolve_runtime_selection(REPO_ROOT, PROJECT_ID, campaign_path=paths[1], experiment_id=EXPERIMENT_ID)
 
 
 if __name__ == "__main__":

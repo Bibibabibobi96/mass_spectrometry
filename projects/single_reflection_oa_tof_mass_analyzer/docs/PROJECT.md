@@ -421,3 +421,11 @@ SHA、身份、资格和声明边界；迁移后按根README独立裁剪的可�
 
 profile 分别声明 purpose/action/tools；本次 release 物种由项目 binding 解析，Formal 入口保留其局部资格含义。
 能力查询与执行编译见[公共合同](../../../common/contracts/README.md#执行dry-run)；READY 仅描述声明条件。
+
+## 显式研究请求的位置
+
+原 `workflows.experiment_campaign.run_campaign --campaign <JSON路径>` 接受外部只读研究数据。
+可用 `python -m projects.single_reflection_oa_tof_mass_analyzer.workflows.experiment_campaign.run_campaign --campaign <JSON路径> --status` 查询。
+所有 authority 仍严格相对于本项目，保留其原 SHA、预注册和科学域校验；外部请求不能提供执行代码。
+prepare 一次读取并保留本次请求字节，执行在新 managed campaign run 冻结该字节，不受随后改源影响。
+读取位置不改变既有输出根、运行身份、商业授权或资格要求。

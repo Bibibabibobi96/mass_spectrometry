@@ -405,3 +405,11 @@ L1/L2 传输将身份输入冻结到本次 run；圆杆 L2 在冻结后核对场
 
 正常 wrapper、预算和 COMSOL prepare 共同消费本次 resolved runtime 与 input_definitions；授权及源身份仍在原边界校验。
 能力查询与执行编译见[公共合同](../../../common/contracts/README.md#执行dry-run)；READY 仅描述声明条件。
+
+## 显式研究请求的位置
+
+普通只读 campaign 可由原 `runtime/run_simion_transport_campaign.ps1 -CampaignPath <绝对JSON路径>` 接收。
+单文件名仍选 config/campaigns 具名案例；其他相对路径以仓库根为基准。JSON 内资源继续用原项目／仓库基准，
+不按请求文件目录解释，也不允许引入外部代码。status、analysis preflight 与执行共用同一定位 API。
+正常入口保留读保护，冻结本次解析；输出仍由原 managed run owner 决定，不能覆盖正在读取的请求。
+标准案例、预注册、物理支持域与商业授权保持原合同；位置可读不等于获准运行。
