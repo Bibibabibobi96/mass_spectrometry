@@ -8,6 +8,12 @@ Paper 1 专用研究准备API的归属与退出条件见[分析说明](../analys
 
 ## 当前状态
 
+正常 COMSOL core 的计时与显示移入实际调用的 `oatof_report_model_timing`，该函数不接收模型；
+原 native builder、后处理、同路径 GUI 保存及 context 更新次序保留，不增加求解或保存。
+完整来源仍冻结新 helper，正式 MATLAB 软件 runner 默认发现其两个行为用例。
+Root R2025b 两用例通过（0.750秒），core／report 静态检查无问题；真实冻结 import 与 helper 字节回归通过2.137秒。
+这只分离呈现职责，完整阶段依赖与恢复接线仍在整合，不代表新的求场、GUI 或科学资格。
+
 退休 campaign 的 `--status` 读取原请求及终态事实，当前 authority 缺失或变化以诊断返回，
 不要求用今日配置重新认证历史，也不重新授权执行。活动请求与执行仍走严格校验，状态查询不做科学评价。
 完整对应软件模块15项通过（7.344秒）；同输入对照确认旧实现因 authority 漂移拒绝查询，

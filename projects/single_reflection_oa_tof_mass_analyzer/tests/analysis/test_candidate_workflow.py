@@ -410,6 +410,8 @@ def execute_prepared_run(*args):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             closure = freeze_candidate_source_closure(root / "code", root / "artifacts")
+            report_source = "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_report_model_timing.m"
+            self.assertEqual(Path(frozen_source_path(closure, report_source)).read_bytes(), (REPO_ROOT / report_source).read_bytes())
             result = subprocess.run([
                 sys.executable, "-B", "-c",
                 "from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate_workflow; "

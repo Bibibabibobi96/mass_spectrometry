@@ -8,7 +8,8 @@ fieldSuite = testsuite(fullfile(testDir, 'OaTofFieldIdealizationTest.m'));
 solverSuite = testsuite(fullfile(testDir, 'OaTofSolverPolicyTest.m'));
 plotSuite = testsuite(fullfile(testDir,'OaTofParticlePlotViewTest.m'));
 validationSuite = testsuite(fullfile(testDir,'OaTofCandidateSolutionValidationTest.m'));
-suite = [detectorSuite(:).', fieldSuite(:).', solverSuite(:).',plotSuite(:).',validationSuite(:).'];
+timingSuite = testsuite(fullfile(testDir,'OaTofModelTimingReportTest.m'));
+suite = [detectorSuite(:).', fieldSuite(:).', solverSuite(:).',plotSuite(:).',validationSuite(:).',timingSuite(:).'];
 results = run(suite);
 
 fid = fopen(reportPath, 'w');
