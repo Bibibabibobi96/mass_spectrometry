@@ -15,6 +15,8 @@ COMSOL 正常无碰撞入口支持 `-AnalyzeOnly -ParentManifestPath <原封存m
 
 有限三维 COMSOL 的显式网格最小尺寸、完整源的精确出生分组及未知末态语义见[项目状态](docs/PROJECT.md#当前结论)。两正式原生消费者共享同一项目分组器，不做相位近似。
 
+四极接口 COMSOL 可用 `-AnalyzeOnly -ParentManifestPath <原manifest> -LimitsPath <本次分析预算>` 创建后继分析run，复用已完成native阶段且不启动COMSOL；checkpoint父另须实际 `-StoppedReceiptPath`，科学与恢复范围见[项目状态](docs/PROJECT.md#接口原cli的后继分析)。
+
 ## 固定阅读顺序
 
 1. 仓库根[README](../../README.md)与[执行规则](../../AGENTS.md)。

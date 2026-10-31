@@ -425,4 +425,25 @@ L1/L2 传输将身份输入冻结到本次 run；圆杆 L2 在冻结后核对场
 
 `20261031_091203__test__comsol__saved-rf-birth-probe` 只读保存模型探针通过完整公共 owner：外层69.928秒、Result总69.338秒，商业 wrapper41.526秒，峰值RSS2,760,167,424字节，新载荷5,380,629字节；零新增求解、零父模型保存。15×100查询返回时刻完全匹配，dataonly与默认提取一致；ID1／50／100的精确birth及后一ULP六维均NaN，最早原存储有限点分别晚4.917／6.895／9.859ns。不得将晚时刻改称birth、放宽原1e-12容差，或将producer插入source行当native echo；源绑定、native birth echo可用性、共同真实观测时刻GUI重算一致性分别报告。
 
-同一探针公共 ResumeFinalization 返回 REUSED（2.278秒），manifest字节不变、零新增native；此证据仅验证探针收尾，不代表接口原CLI阶段恢复已实现。090000父run四份小元数据保持原字节；原2GiB预约已按公共机制释放，141,074,317字节／238文件ready并pinned，交接未重新读hash或复制MPH。后继消费必须显式使用实际停止收据，不能改写父记录。
+同一探针公共 ResumeFinalization 返回 REUSED（2.278秒），manifest字节不变、零新增native；此证据仅验证探针收尾；接口原CLI后继分析的独立范围见下节。090000父run四份小元数据保持原字节；原2GiB预约已按公共机制释放，141,074,317字节／238文件ready并pinned，交接未重新读hash或复制MPH。后继消费必须显式使用实际停止收据，不能改写父记录。
+
+
+### 接口原CLI的后继分析
+
+已经完成并保存的interface native transport可由原CLI创建后继分析run：
+
+```powershell
+pwsh -NoProfile -File projects/rf_multipole_ion_optics/workflows/interface_readiness/run_comsol.ps1 `
+  -AnalyzeOnly -ParentManifestPath <原run_manifest.json绝对路径> `
+  -StoppedReceiptPath <原owner实际seal_stopped_payload收据绝对路径> `
+  -LimitsPath <本次分析Limits.json绝对路径> `
+  -RunId <新run身份> -ResultPath <新run外小Result.json> -PythonExe <解释器绝对路径>
+```
+
+此入口只消费显式父冻结科学输入，不接受新的科学参数、Gate或StartupAttempts。示例针对checkpoint父；已终态success／failed父沿原公共保护读取，不要求另造停止收据。StoppedReceiptPath可省略，只有checkpoint父必须显式提供实际收据，缺失仍由公共SourceReferences在建包前拒绝。原生任务PASS、实际launcher停止／release、保存模型事实与完整source/native映射须同时成立；进程退出或存在MPH均不能单独证明阶段完成。checkpoint来源由公共SourceReferences核对实际停止收据及ready/pinned owner后准入，非法收据不创建新run或遗留新lease。父manifest、receipt和载荷保持原字节，不改父终态。
+
+新run冻结当前分析闭包并记录原始阶段来源，保护中引用原CSV／MPH，不复制或散列大模型和原始轨迹。公共managed Python在COMSOL/postprocess轻资源许可下实际执行原metrics和common particle_state模块，记录真实PID、起时、退出、资源观测与host release；未知writer保留保护。Limits仅授权本次真正新增源码、结果与收尾载荷，不继承父2GiB求解承诺；四个Limits整数键沿正常入口，不新增预算格式。
+
+结果明确scientific_result=NOT_EVALUATED、gui_verified=false、parent_request_completed=false，零COMSOL启动和新求解。source authority及canonical状态合同检查不冒充native精确birth echo。GUI Compute是另一个明确请求，执行它会新增实际求解，不能计入零求解后处理恢复。
+
+仅收尾失败沿同一原CLI `-ResumeFinalization -ResultPath <本次小Result> -PythonExe <解释器>`继续，已终态再次恢复REUSED。分析失败创建新的AnalyzeOnly后继，不重飞、不改父记录；原异常与收尾异常分别保留。ca9dfe21隔离源码的软件回归实际执行了完整原CLI：成功分析／幂等恢复、注入分析RuntimeError并保留stderr／失败终态恢复、非法收据回滚、父八个小文件及子manifest不变。最终定向方法38.232秒，unknown薄接线另已通过。此为软件夹具及真实Python进程验证，不是新COMSOL求解或科学资格；090000实际后继验收由原owner另行记录。

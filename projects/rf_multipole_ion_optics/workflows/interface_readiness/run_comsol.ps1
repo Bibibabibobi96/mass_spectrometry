@@ -11,7 +11,10 @@ param(
     [Parameter(Mandatory = $true,ParameterSetName="Run")][string]$OperatingPoint,
     [string]$PythonExe = '',
     [switch]$ReleaseConstructionGate,
-    [Parameter(Mandatory,ParameterSetName='Run')][string]$LimitsPath,
+    [Parameter(Mandatory,ParameterSetName='Run')][Parameter(Mandatory,ParameterSetName='Analyze')][string]$LimitsPath,
+    [Parameter(Mandatory,ParameterSetName='Analyze')][switch]$AnalyzeOnly,
+    [Parameter(Mandatory,ParameterSetName='Analyze')][string]$ParentManifestPath,
+    [Parameter(ParameterSetName='Analyze')][string]$StoppedReceiptPath='',
     [ValidateRange(1,3)][int]$StartupAttempts=1,
     [string]$ResultPath='',
     [Parameter(Mandatory,ParameterSetName='Resume')][switch]$ResumeFinalization
@@ -35,7 +38,7 @@ if($ResumeFinalization){
     $prior=Get-Content -LiteralPath $ResultPath -Raw -Encoding UTF8|ConvertFrom-Json
     if($prior.role-cne'run_artifact_workflow_result'){throw 'Recovery requires the original public workflow Result.'}
     $originalConfig=Get-Content (Join-Path $prior.run_directory 'run_config.json') -Raw -Encoding UTF8|ConvertFrom-Json
-    if($originalConfig.project-cne'rf_multipole_ion_optics'-or$originalConfig.mode-cne'transport_interface_readiness'){throw 'Recovery Result belongs to another workflow.'}
+    if($originalConfig.project-cne'rf_multipole_ion_optics'-or$originalConfig.mode-notin@('transport_interface_readiness','transport_interface_postprocess')){throw 'Recovery Result belongs to another workflow.'}
     $originalRunId=Split-Path -Leaf ([string]$prior.run_directory)
     if($RunId-and$RunId-cne$originalRunId){throw 'Recovery RunId differs from original Result.'}
     $outcome=Invoke-RunArtifactWorkflow -RequestPath (Join-Path $prior.run_directory 'inputs/execution_request.json') -ResultPath $ResultPath -ResumeFinalization
@@ -135,6 +138,7 @@ function Complete-InterfaceOwner {
     $operations=[Collections.Generic.List[object]]::new();$releases=[Collections.Generic.List[object]]::new()
     $usage=@();$confirmed=$false
     try{
+        if($ownerState.writer_unknown){throw 'Analysis writer completion is unknown.'}
         foreach($call in $ownerState.calls){
             $receipt=Get-Content -LiteralPath $call.receipt -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
             if($receipt.role-cne'comsol_launcher_completion'-or$receipt.run_id-cne$RunId){throw 'Actual launcher receipt identity differs.'}
@@ -142,6 +146,17 @@ function Complete-InterfaceOwner {
             Add-RunArtifactResourceRelease -ResourceReleases $releases -ReleaseId $id -Receipt $receipt
             foreach($operation in $receipt.operations){$operations.Add(@{operation_id=($call.stage+'-'+$operation.operation_id);observation=$operation.observation;resource_release_id=$id})}
             if(Test-Path -LiteralPath $call.usage -PathType Leaf){$usage+=@{case_name=$call.stage;path=$call.usage}}
+        }
+        if($ownerState.Contains('analysis_operations')-and$ownerState.analysis_operations.Count){
+            # Invoke-ResourceBudgetedProcess supplied actual Python PID/start/exit.
+            # Unknown completion never reaches this release boundary.
+            $released=Exit-HostResourceStage -Lease $lease -PassThru
+            $hostReceipt=@{host_release=@{inherited=[bool]$lease.inherited;token=[string]$lease.token;result=$released;error=$null}}
+            $id=if($lease.inherited){[string]$lease.token}else{'postprocess'}
+            Add-RunArtifactResourceRelease -ResourceReleases $releases -ReleaseId $id -Receipt $hostReceipt
+            foreach($operation in $ownerState.analysis_operations){$operation.resource_release_id=$id;$operations.Add($operation)}
+            $ownerState.analysis_release=$hostReceipt
+            foreach($item in $ownerState.analysis_usage){if(Test-Path $item.path -PathType Leaf){$usage+=$item}}
         }
         $completion=@{operations=@($operations.ToArray());resource_releases=@($releases.ToArray())}
         Assert-WorkflowWriterCompletion $completion -PowerShellOwner;$confirmed=$true
@@ -185,7 +200,7 @@ function Complete-InterfaceOwner {
         }
     }
     if($Summary.Contains('failure_stage')){$Summary.execution_failure_stage=$Summary.failure_stage}
-    if($ownerState.calls.Count-eq0){$ownerState.prepare_seconds=$ownerState.timer.Elapsed.TotalSeconds}
+    if($ownerState.calls.Count-eq0-and-not$ownerState.Contains('analysis_operations')){$ownerState.prepare_seconds=$ownerState.timer.Elapsed.TotalSeconds}
     $timings=@{prepare=$ownerState.prepare_seconds};[double]$nativeSeconds=0
     foreach($call in $ownerState.calls){$timings[$call.stage]=$call.elapsed_seconds;$nativeSeconds+=$call.elapsed_seconds}
     $timings.analysis_and_validation=[math]::Max(0,$ownerState.timer.Elapsed.TotalSeconds-$ownerState.prepare_seconds-$nativeSeconds)
@@ -201,6 +216,141 @@ function Complete-InterfaceOwner {
       -WritersStopped $confirmed -OriginalFailure $Failure -ResourceUsagePaths $usage
     if($outcome.stage-ne'complete'){throw 'Interface finalization incomplete; resume original Result.'}
     Write-Output "INTERFACE_WORKFLOW_RESULT=$($ownerContext.result_path)"
+}
+function Invoke-InterfacePostprocessChild {
+    # SourceReferences validates the stopped checkpoint and obtains the existing
+    # shared source protection before any native-stage dependency is consumed.
+    $parent=(Resolve-Path -LiteralPath $ParentManifestPath).Path
+    $parentRoot=Split-Path -Parent $parent
+    if((Split-Path -Leaf $parent)-cne'run_manifest.json'){throw 'ParentManifestPath must name the original manifest.'}
+    $references=@(@{manifest_record=(New-WorkflowOwnerFileRecord $parent)})
+    if($StoppedReceiptPath){$references[0].stopped_receipt_record=New-WorkflowOwnerFileRecord (Resolve-Path -LiteralPath $StoppedReceiptPath).Path}
+    if(-not$RunId){$RunId=(Get-Date -Format yyyyMMdd_HHmmss)+'__analysis__python__rf-interface'}
+    $package=$null;$capacity=$null;$ownerContext=$null;$phase='source_admission';$lease=$null
+    $ownerState=@{calls=[Collections.Generic.List[object]]::new();writer_unknown=$false;finalization_started=$false;prepare_seconds=0.;timer=[Diagnostics.Stopwatch]::StartNew();analysis_operations=@();analysis_release=$null;analysis_usage=@()}
+    $names=@('SIMULATION_PYTHON_EXE','MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH')
+    $saved=Save-RunEnvironment -Names $names
+    try{
+        $env:SIMULATION_PYTHON_EXE=$python
+        $env:MASS_SPECTROMETRY_ARTIFACT_ROOT=[string]$pathContext.artifact_root
+        $env:MASS_SPECTROMETRY_EXECUTION_ROOT=[string]$pathContext.execution_root
+        $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=[string]$pathContext.host_resource_state_path
+        $childRoot=Join-Path $artifactRoot ('runs/'+$RunId)
+        $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot $pathContext.artifact_root `
+          -RunDirectory $childRoot -CommittedNewBytes $CommittedNewBytes -ProtectedPaths @($childRoot) `
+          -SourceReferences $references -Owner ('run-artifact-workflow:rf_multipole_ion_optics:'+$RunId)
+        $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -PathContext $pathContext `
+          -RunId $RunId -Project rf_multipole_ion_optics -Mode transport_interface_postprocess -Software @('Python 3.11') `
+          -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled
+        $entry=Join-Path $package.input_dir 'run_comsol.ps1';$null=Copy-VerifiedRunInput -Source $PSCommandPath -Destination $entry
+        $limitsFrozen=Join-Path $package.input_dir 'postprocess_limits.json';$null=Copy-VerifiedRunInput -Source $LimitsPath -Destination $limitsFrozen
+        $budget=$ResourceBudgets.postprocess.Clone();$budget.memory_bytes=[long]$Limits.process_tree_working_set_bytes
+        $budgetPath=Join-Path $package.input_dir 'postprocess_host_budget.json';Write-RunJson -Path $budgetPath -Value $budget
+        $ownerContext=Initialize-RunArtifactPowerShellOwner -Python $python -RepoRoot $repoRoot -Package $package -CapacitySession $capacity `
+          -ResultPath $ResultPath -EntrypointPath $entry -CommitmentInputPaths @($limitsFrozen,$budgetPath) -Software @('Python 3.11')
+        $phase='completed_native_stage_validation'
+        $config=Get-Content (Join-Path $parentRoot 'run_config.json') -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+        if($config.project-cne'rf_multipole_ion_optics'-or$config.mode-cne'transport_interface_readiness'-or
+          $config.parameters.execution_stage-cne'full_particle_transport'){throw 'Parent has no interface native transport stage.'}
+        $nativeReceipt=Join-Path $parentRoot 'logs/native_completion.json'
+        $receipt=Get-Content $nativeReceipt -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+        if($receipt.role-cne'comsol_launcher_completion'-or$receipt.run_id-cne(Split-Path -Leaf $parentRoot)){throw 'Parent native completion identity differs.'}
+        $releases=[Collections.Generic.List[object]]::new()
+        $releaseId=if($receipt.host_release.inherited){$receipt.host_release.token}else{'parent-native'}
+        Add-RunArtifactResourceRelease -ResourceReleases $releases -ReleaseId $releaseId -Receipt $receipt
+        $operations=@($receipt.operations|ForEach-Object{@{operation_id=$_.operation_id;observation=$_.observation;resource_release_id=$releaseId}})
+        Assert-WorkflowWriterCompletion @{operations=$operations;resource_releases=@($releases.ToArray())} -PowerShellOwner
+        if(-not$operations.Count-or@($operations|Where-Object{$_.observation.returncode-ne0}).Count){throw 'Parent native launcher has no successful completed operation.'}
+        $metadata=Join-Path $parentRoot 'results/solver_raw_metadata.json'
+        $state=Join-Path $parentRoot 'results/particle_state.csv'
+        $mapping=Join-Path $parentRoot 'results/release_source_mapping.json'
+        $model=Join-Path $parentRoot 'comsol/rf_multipole_ion_optics__model.mph'
+        $nativeReport=Join-Path $parentRoot 'logs/comsol_bootstrap_report.txt'
+        foreach($file in @($metadata,$state,$mapping,$model,$nativeReport,$config.inputs.particle_table,$config.inputs.interface_contract,$config.inputs.resolved_design)){
+            if(-not(Test-WorkflowPathWithin $file $parentRoot)-or-not(Test-Path $file -PathType Leaf)){throw 'Frozen completed-stage dependency is missing or outside parent.'}
+        }
+        if(-not(Select-String -LiteralPath $nativeReport -Pattern '^STATUS=PASS\s*$' -Quiet)){throw 'Parent native task did not report PASS.'}
+        $raw=Get-Content $metadata -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+        $nativeMap=Get-Content $mapping -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+        if($raw.role-cne'rf_quadrupole_comsol_raw_solver_metadata'-or$raw.raw_solution_persisted-isnot[bool]-or-not$raw.raw_solution_persisted){throw 'Parent has no persisted native solution fact.'}
+        if($nativeMap.native_scope-cne'complete_cohort'){throw 'Parent mapping is not the complete original cohort.'}
+        foreach($key in @('native_order','source_ids','source_birth_s','source_weights','source_initial_position_mm','source_initial_velocity_m_s')){
+            if(-not$nativeMap.Contains($key)-or-not$raw.Contains($key)-or
+              (ConvertTo-Json -InputObject $nativeMap[$key] -Compress -Depth 8)-cne(ConvertTo-Json -InputObject $raw[$key] -Compress -Depth 8)){throw "Saved native/source mapping differs: $key"}
+        }
+        $design=Get-Content $config.inputs.resolved_design -Raw -Encoding UTF8|ConvertFrom-Json
+        $phase='freeze_analysis'
+        $frozen=New-FrozenPythonPackage -SourceRoot $repoRoot -CodeRoot (Join-Path $package.input_dir 'code') -RelativePaths $frozenPythonRelativePaths
+        Assert-FrozenPythonPackage $frozen
+        $child=Get-Content $package.run_config -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+        $child.inputs.native_execution_limits=$limitsFrozen;$child.inputs.native_host_budgets=$budgetPath
+        $child.provenance=@{source_references=$references;referenced_state=$state;parent_request_completed=$false;gui_requested=$false;new_solve_calls=0;
+          completed_native_stage=@{receipt=(New-WorkflowOwnerFileRecord $nativeReceipt);metadata=(New-WorkflowOwnerFileRecord $metadata);source_mapping=(New-WorkflowOwnerFileRecord $mapping);native_report=(New-WorkflowOwnerFileRecord $nativeReport);model_path=$model}}
+        $child.frozen_python=@{package=$frozen}
+        Write-RunJson -Atomic -Path $package.run_config -Value $child -Depth 64
+        $phase='postprocess';$ownerState.prepare_seconds=$ownerState.timer.Elapsed.TotalSeconds
+        $summary=Join-Path $package.result_dir 'solver_summary.json';$contract=Join-Path $package.result_dir 'particle_state_contract.json'
+        $origin=Join-Path $package.result_dir 'analysis_module_origins.json'
+        $usage=Join-Path $package.result_dir 'postprocess_resource_usage.json';$ownerState.analysis_usage=@(@{case_name='postprocess';path=$usage})
+        $lease=Enter-HostResourceStage -StatePath $pathContext.host_resource_state_path -Role COMSOL -Stage postprocess -RunId $RunId -Budget $budget
+        # One existing managed Python process runs the two real module CLIs from
+        # the frozen closure. This is not a new process/registry implementation.
+        $code=@'
+import importlib.util,json,pathlib,runpy,sys
+root=pathlib.Path(sys.argv[1]).resolve()
+metadata,state,summary,particles,contract,frequency,phase,report,origins=sys.argv[2:]
+modules=['projects.rf_multipole_ion_optics.analysis.analyze_comsol_particle_state_metrics','common.contracts.particle_state','common.contracts.particle_physics']
+paths={name:str(pathlib.Path(importlib.util.find_spec(name).origin).resolve()) for name in modules}
+if any(not pathlib.Path(path).is_relative_to(root) for path in paths.values()): raise RuntimeError('analysis escaped frozen source')
+pathlib.Path(origins).write_text(json.dumps(paths,indent=2)+'\n',encoding='utf-8')
+from common.contracts.particle_state import ion11_sources
+raw=json.loads(pathlib.Path(metadata).read_text(encoding='utf-8-sig'))
+source_ids=sorted(ion11_sources(pathlib.Path(particles),float(raw['source_axial_offset_mm'])))
+if raw['source_ids'] != source_ids or sorted(raw['native_order']) != source_ids: raise ValueError('native mapping does not close frozen source cohort')
+if any(len(raw[key]) != len(source_ids) for key in ('source_birth_s','source_weights','source_initial_position_mm','source_initial_velocity_m_s')): raise ValueError('native mapping field length differs from source cohort')
+sys.argv=['metrics','--raw-metadata',metadata,'--particle-state',state,'--output',summary]
+runpy.run_module(modules[0],run_name='__main__')
+sys.argv=['state','--state',state,'--particles',particles,'--source-format','ion11','--contract',contract,'--axial-offset-mm',str(raw['source_axial_offset_mm']),'--frequency-hz',frequency,'--phase-rad',phase,'--solver','COMSOL','--output',report]
+runpy.run_module(modules[1],run_name='__main__')
+'@
+        $arguments=@('-B','-c',$code,$frozen.code_root,$metadata,$state,$summary,$config.inputs.particle_table,$config.inputs.interface_contract,[string]$design.drive.frequency_Hz,[string]$design.drive.phase_rad,$contract,$origin)
+        $quoted=@($arguments|ForEach-Object{'"'+([string]$_).Replace('"','\"')+'"'})
+        try{
+            $observed=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $package.artifact_run_dir -UsagePath $usage -FilePath $python `
+              -ArgumentList $quoted -WorkingDirectory $frozen.code_root -Environment @{PYTHONPATH=$frozen.code_root;PYTHONNOUSERSITE='1';PYTHONDONTWRITEBYTECODE='1'} `
+              -RedirectStandardOutput (Join-Path $package.log_dir 'postprocess.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'postprocess.stderr.log')
+            if($observed.root_process_id-le0-or$observed.root_process_started_at_utc_ticks-le0){$ownerState.writer_unknown=$true;throw 'Managed analysis process identity is unknown.'}
+            $ownerState.analysis_operations=@(@{operation_id='interface-python-postprocess';resource_release_id='postprocess';observation=@{exit_confirmed=$true;returncode=[int]$observed.exit_code;process_id=[int]$observed.root_process_id;process_started_at_utc_ticks=[long]$observed.root_process_started_at_utc_ticks}})
+        }catch{
+            $data=$_.Exception.Data
+            if($data.Contains('observed_process_exit_confirmed')-and[bool]$data['observed_process_exit_confirmed']-and$data.Contains('observed_process_id')-and$data.Contains('observed_process_started_at_utc_ticks')-and$data.Contains('observed_process_returncode')-and$null-ne$data['observed_process_returncode']-and[long]$data['observed_process_id']-gt0-and[long]$data['observed_process_started_at_utc_ticks']-gt0){
+                $ownerState.analysis_operations=@(@{operation_id='interface-python-postprocess';resource_release_id='postprocess';observation=@{exit_confirmed=$true;returncode=[int]$data['observed_process_returncode'];process_id=[int]$data['observed_process_id'];process_started_at_utc_ticks=[long]$data['observed_process_started_at_utc_ticks']}})
+            }else{$ownerState.writer_unknown=$true}
+            throw
+        }
+        if($observed.exit_code-ne0-or$observed.resource_budget_exceeded){throw ('Frozen postprocess failed with exit '+$observed.exit_code+'; stderr='+ (Join-Path $package.log_dir 'postprocess.stderr.log')+'; usage='+$usage)}
+        $result=@{role='rf_interface_postprocess_summary';execution_status='completed';data_validity='valid';scientific_result='NOT_EVALUATED';gui_verified=$false;parent_request_completed=$false;native_calls=0;new_solve_calls=0;recovery_action='GUI Compute remains a separate requested native solve; not performed by AnalyzeOnly.'}
+        Complete-InterfaceOwner -Status success -Summary $result -Outputs @($summary,$contract,$origin,$usage)
+    }catch{
+        $failure=$_
+        if($phase-ne'postprocess'){$ownerState.prepare_seconds=$ownerState.timer.Elapsed.TotalSeconds}
+        if($ownerContext-and-not$ownerState.finalization_started){
+            try{Complete-InterfaceOwner -Status failed -Summary @{role='rf_interface_postprocess_summary';execution_status='failed';data_validity='unknown';scientific_result='NOT_EVALUATED';gui_verified=$false;parent_request_completed=$false;native_calls=0;new_solve_calls=0;failure_stage=$phase;failure_reason=$failure.Exception.Message;recovery_action='repair_postprocess_and_create_new_analysis_child'} -Outputs @((Get-ChildItem -LiteralPath $package.result_dir,$package.log_dir -File|ForEach-Object FullName)) -Failure $failure}catch{$failure.Exception.Data['failure_closure_error']=[string]$_}
+        }elseif(-not$ownerContext-and$capacity){
+            # No native/analysis process was admitted before Initialize. Preserve
+            # the primary bootstrap error even if releasing this lease fails.
+            try{$null=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacity -RemainingCommittedNewBytes 0;$null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacity}catch{$failure.Exception.Data['bootstrap_release_error']=[string]$_}
+        }
+        throw $failure
+    }finally{Restore-RunEnvironment -Names $names -Snapshot $saved}
+}
+
+if($AnalyzeOnly){
+    $allowed=@('AnalyzeOnly','ParentManifestPath','StoppedReceiptPath','LimitsPath','RunId','ResultPath','PythonExe')
+    $ignored=@($PSBoundParameters.Keys|Where-Object{$_-notin$allowed})
+    if($ignored.Count){throw ('AnalyzeOnly consumes parent frozen scientific inputs; new options are not accepted: '+($ignored-join', '))}
+    Invoke-InterfacePostprocessChild
+    return
 }
 $ownerContext=$null;$capacity=$null
 $ownerState=@{calls=[Collections.Generic.List[object]]::new();writer_unknown=$false;finalization_started=$false;prepare_seconds=0.;timer=[Diagnostics.Stopwatch]::StartNew()}
