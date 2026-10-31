@@ -313,7 +313,7 @@ def refresh_candidate_provisional_manifest(run_root: Path, *, checkpoint: bool =
     # retention. Bind only coordinator evidence here: native outputs may still
     # have unknown writers and are hashed only after the owner verifies proof.
     return _write_manifest(root, "checkpoint" if checkpoint else "interrupted", provisional=True,
-                           output_paths=[root / "summary.json"] if checkpoint else None)
+                           output_paths=[root / "summary.json"])
 
 
 def finalize_candidate_run(
@@ -323,6 +323,7 @@ def finalize_candidate_run(
     failure_stage: str | None = None,
     *,
     publish: bool = True,
+    identity_guards: dict | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     run_root = run_root.resolve()
     if (run_root / TERMINAL_JOURNAL_NAME).is_file():
@@ -343,6 +344,49 @@ def finalize_candidate_run(
     if status != "success" and not failure_stage:
         raise ValueError("non-success candidate runs require failure_stage")
     summary = _summary(status, stage_results, failure_stage)
+    source_selection = config.get("inputs", {}).get("postprocess_source_selection")
+    if source_selection:
+        source_path = Path(source_selection)
+        if not source_path.is_relative_to(run_root) or sha256(source_path) != config["input_sha256"].get("postprocess_source_selection"):
+            raise ValueError("Normal post-solve source selection is not frozen in this run")
+        if load_json(source_path).get("science_reference") != config.get("provenance", {}).get("science_reference"):
+            raise ValueError("Normal post-solve scientific provenance differs")
+        summary["source_identity_verified"] = True
+    model_save = config.get("provenance", {}).get("model_save_completion")
+    if isinstance(model_save,dict) and model_save.get("status")=="unknown":
+        summary["data_validity"]="unknown"
+        summary["model_save_status"]="unknown"
+        summary["scientific_result"]="not_evaluated_save_incomplete"
+        summary["candidate_decision"]="no_candidate_decision"
+        summary["failure_substage"]="gui_model_save"
+        summary["recovery_action"]=(f'"{runtime_plan["execution_source_closure"]["runtime"]["python_executable"]}" -m projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate '
+            f'--postprocess-from "{run_root}" --run-id <NEW_RUN_ID>')
+        summary["recovery_requirements"]="Only sufficient sealed CSV is eligible while model save completion is unknown; otherwise inspect original saved/recovery data. No implicit new solve."
+    native_record = config.get("provenance", {}).get("comsol_native_completion")
+    if native_record is not None:
+        from common.contracts.verify_run_manifest import verify_record
+        from common.contracts.stage_reuse import SCHEMA_VERSION, RECEIPT_ROLE
+        receipt_path = run_root / "stage_receipts/comsol_native.json"
+        if Path(native_record.get("path", "")).resolve() != receipt_path:
+            raise ValueError("Native completion must be this run's original public phase receipt")
+        verify_record("native completion receipt", native_record)
+        receipt = load_json(receipt_path)
+        if (receipt.get("schema_version"),receipt.get("role"),receipt.get("project"),receipt.get("run_id"),receipt.get("stage_id"),receipt.get("status")) != (SCHEMA_VERSION,RECEIPT_ROLE,config["project"],run_root.name,"comsol_native","success"):
+            raise ValueError("Native completion public receipt identity differs")
+        if set(receipt.get("outputs", {})) != {"model","saved_context","build_completion"}:
+            raise ValueError("Native phase must retain its original model, saved context and actual build completion")
+        model_record = receipt["outputs"]["model"]
+        model = (run_root / model_record["path"]).resolve(strict=True)
+        from common.contracts.file_identity import FileIdentityGuard
+        guard = (identity_guards or {}).get(model)
+        if type(guard) is not FileIdentityGuard:
+            raise ValueError("Producer native completion requires the same live file identity guard")
+        guard.assert_matches(model,expected_bytes=model_record["bytes"],expected_sha256=model_record["sha256"])
+        for name in ("saved_context","build_completion"):
+            verify_record("native "+name, receipt["outputs"][name], base_dir=run_root)
+        summary["stages"].append({"stage_id":"comsol_native","status":"success",
+            "execution":"executed","evidence":{"receipt":str(receipt_path)},
+            "scope":"saved native solution only; extraction, scientific acceptance and sync are separate"})
     if not publish:
         return summary, {}
     manifest = _write_manifest(run_root, status, summary=summary)

@@ -115,6 +115,98 @@ class FileIdentityTest(unittest.TestCase):
                 with self.assertRaises(OSError):
                     file_sha256_unbuffered(path)
 
+    @unittest.skipUnless(os.name == "nt", "requires Windows write exclusion")
+    def test_owned_producer_establishes_one_identity_and_properties_expire(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "owned.bin"
+            path.write_bytes(b"fresh-output")
+            with mock.patch.object(file_identity, "file_sha256", wraps=file_sha256) as establish:
+                with file_identity.guarded_file_identity(path) as guard:
+                    self.assertEqual(guard.bytes_count, len(b"fresh-output"))
+                    self.assertEqual(guard.sha256, hashlib.sha256(b"fresh-output").hexdigest().upper())
+                    guard.assert_matches(path, expected_bytes=guard.bytes_count, expected_sha256=guard.sha256)
+                    with self.assertRaises(OSError):
+                        path.write_bytes(b"not allowed while protected")
+                self.assertEqual(establish.call_count, 1)
+            for attribute in ("bytes_count", "sha256"):
+                with self.subTest(attribute=attribute), self.assertRaisesRegex(RuntimeError, "no longer active"):
+                    getattr(guard, attribute)
+            path.write_bytes(b"writable after release")
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows write exclusion")
+    def test_owned_producer_expected_identity_must_be_supplied_as_a_pair(self) -> None:
+        with mock.patch.object(file_identity, "_windows_file_api") as native:
+            for arguments in ({"expected_bytes": 0}, {"expected_sha256": "0" * 64}):
+                with self.subTest(arguments=arguments), self.assertRaisesRegex(ValueError, "supplied together"):
+                    with file_identity.guarded_file_identity("unused", **arguments):
+                        self.fail("partial expectation must fail before opening")
+            native.assert_not_called()
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows write exclusion")
+    def test_guarded_identity_denies_write_replace_and_hashes_once(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path, replacement = root / "protected.bin", root / "replacement.bin"
+            path.write_bytes(b"fixture")
+            replacement.write_bytes(b"replace")
+            digest = legacy_sha256(path)
+            with mock.patch.object(file_identity, "file_sha256", wraps=file_sha256) as hash_once:
+                with file_identity.guarded_file_identity(path, expected_bytes=7, expected_sha256=digest) as guard:
+                    self.assertEqual(path.read_bytes(), b"fixture")
+                    with self.assertRaises(OSError):
+                        path.write_bytes(b"changed")
+                    with self.assertRaises(OSError):
+                        replacement.replace(path)
+                    with self.assertRaises(OSError):
+                        path.unlink()
+                    for _ in range(3):
+                        guard.assert_matches(path, expected_bytes=7, expected_sha256=digest.lower())
+                    with self.assertRaises(ValueError):
+                        guard.assert_matches(replacement, expected_bytes=7, expected_sha256=digest)
+                    with self.assertRaises(ValueError):
+                        guard.assert_matches(path, expected_bytes=7, expected_sha256="0" * 64)
+                self.assertEqual(hash_once.call_count, 1)
+            with self.assertRaisesRegex(RuntimeError, "no longer active"):
+                guard.assert_matches(path, expected_bytes=7, expected_sha256=digest)
+            replacement.replace(path)
+            self.assertEqual(path.read_bytes(), b"replace")
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows write exclusion")
+    def test_guarded_identity_failures_and_body_exception_release_handle(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "protected.bin"
+            path.write_bytes(b"fixture")
+            digest = legacy_sha256(path)
+            for size, sha in ((6, digest), (7, "0" * 64)):
+                with self.subTest(size=size, sha=sha):
+                    with self.assertRaises(ValueError):
+                        with file_identity.guarded_file_identity(path, expected_bytes=size, expected_sha256=sha):
+                            self.fail("invalid identity was yielded")
+                    path.write_bytes(b"fixture")
+            with mock.patch.object(file_identity, "file_sha256", side_effect=RuntimeError("hash failed")):
+                with self.assertRaisesRegex(RuntimeError, "hash failed"):
+                    with file_identity.guarded_file_identity(path, expected_bytes=7, expected_sha256=digest):
+                        self.fail("hash failure was yielded")
+            path.write_bytes(b"fixture")
+            with self.assertRaisesRegex(RuntimeError, "consumer failed"):
+                with file_identity.guarded_file_identity(path, expected_bytes=7, expected_sha256=digest) as guard:
+                    raise RuntimeError("consumer failed")
+            with self.assertRaisesRegex(RuntimeError, "no longer active"):
+                guard.assert_matches(path, expected_bytes=7, expected_sha256=digest)
+            path.write_bytes(b"fixture")
+            with path.open("r+b"):
+                with self.assertRaises(OSError):
+                    with file_identity.guarded_file_identity(path, expected_bytes=7, expected_sha256=digest):
+                        self.fail("existing writer must block guard")
+
+    def test_guarded_identity_non_windows_fails_without_hashing(self) -> None:
+        with mock.patch.object(file_identity.os, "name", "posix"):
+            with mock.patch.object(file_identity, "file_sha256") as hash_file:
+                with self.assertRaisesRegex(OSError, "Windows write exclusion"):
+                    with file_identity.guarded_file_identity("unused", expected_bytes=0, expected_sha256="0" * 64):
+                        self.fail("unsupported guard was yielded")
+                hash_file.assert_not_called()
+
     def test_fixed_content_and_empty_file_match_reference(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

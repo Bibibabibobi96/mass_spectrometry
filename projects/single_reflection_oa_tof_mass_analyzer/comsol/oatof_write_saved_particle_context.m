@@ -1,8 +1,11 @@
-function oatof_write_saved_particle_context(modelPath,context)
+function oatof_write_saved_particle_context(modelPath,context,saveState)
 arguments
     modelPath
-    context
+    context (1,1) struct
+    saveState {mustBeTextScalar,mustBeMember(saveState,["raw_complete","gui_update_started","gui_update_complete"])}="raw_complete"
 end
+% The only two-argument producer call is the original completed raw-save boundary.
+context.model_save_state=char(saveState);
 contextPath=[char(modelPath) '.postprocess.json'];
 contextTemp=[contextPath '.tmp'];
 fid=fopen(contextTemp,'w');

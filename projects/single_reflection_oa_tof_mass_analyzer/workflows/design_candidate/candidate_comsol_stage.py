@@ -20,8 +20,6 @@ def _report_value(path: Path, key: str) -> str:
 
 def execute_comsol_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str, *, runtime: Any) -> dict[str, Any]:
     """Execute the declared frozen COMSOL stage using owner-managed processes."""
-    from .candidate_stage_execution import _powershell, _require_pass_report
-    _run_managed_stage_command = runtime._run_managed_stage_command
     _verify_frozen_cad_python = runtime._verify_frozen_cad_python
     closure = plan.get("execution_source_closure")
     if closure is not None:
@@ -31,64 +29,98 @@ def execute_comsol_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe
     if closure is None:
         raise RuntimeError("candidate source closure is required")
     _verify_frozen_cad_python(closure, logs / "cad_python_preflight.log")
-    environment = {key: str(value) for key, value in stage["environment"].items()}
-    environment["OATOF_CANDIDATE_ARTIFACT_ROOT"] = str(
-        Path(closure["runtime"]["candidate_artifact_root"]).resolve().parents[1]
-    )
-    build_report = Path(stage["report_path"])
-    build_command = _powershell(
-        frozen_source_path(closure, "common/comsol/run_comsol_r2025b.ps1"),
-        [
-            "-TaskScript",
-            frozen_source_path(
-                closure,
-                "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_contract_build.m",
-            ),
-            "-ReportPath",
-            str(build_report),
-            "-RunId", plan["run_id"],
-            "-RunDir", os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(run_root),
-            "-CompletionPath", str(logs / "comsol_build_completion.json"),
-        ],
-    )
-    _run_managed_stage_command(build_command, logs / "comsol_build_launcher.log", plan,
-                               logs / "comsol_build_completion.json", "comsol_launcher_completion", environment)
-    _require_pass_report(build_report)
+    build_report = execute_comsol_native_build(stage, plan, runtime=runtime)
     from common.paths.workspace_paths import project_run_path
     analysis_request = Path(project_run_path(_report_value(build_report, "PYTHON_ANALYSIS_REQUEST"),
         os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(run_root), run_root))
     if not analysis_request.is_file():
         raise RuntimeError(f"COMSOL detector-event analysis request is missing: {analysis_request}")
     analysis_receipt = analyze_detector_request(analysis_request, closure, logs / "comsol_detector_event_analysis.log", runtime=runtime)
-    sync_report = logs / "comsol_sync.txt"
-    sync_environment = {
-        "OATOF_COMSOL_MODEL_PATH": stage["model_path"],
-        "OATOF_CONTRACT_PATH": stage["contract_path"],
-    }
-    sync_command = _powershell(
-        frozen_source_path(closure, "common/comsol/run_comsol_r2025b.ps1"),
-        [
-            "-TaskScript",
-            frozen_source_path(
-                closure,
-                "projects/single_reflection_oa_tof_mass_analyzer/comsol/verify_oatof_comsol_sync.m",
-            ),
-            "-ReportPath",
-            str(sync_report),
-            "-RunId", plan["run_id"],
-            "-RunDir", os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(run_root),
-            "-CompletionPath", str(logs / "comsol_sync_completion.json"),
-        ],
-    )
-    _run_managed_stage_command(sync_command, logs / "comsol_sync_launcher.log", plan,
-                               logs / "comsol_sync_completion.json", "comsol_launcher_completion", sync_environment)
-    _require_pass_report(sync_report)
+    sync_report = execute_comsol_model_sync(stage, plan, runtime=runtime)
     return {
         "model": stage["model_path"], "build_report": str(build_report),
         "sync_report": str(sync_report), "analysis_request": str(analysis_request),
         "analysis_receipt": str(analysis_receipt),
         "analysis_contract": frozen_source_path(closure, "projects/single_reflection_oa_tof_mass_analyzer/config/analysis_contract.json"),
     }
+
+
+def comsol_native_inputs(stage: dict[str, Any], closure: dict[str, Any]) -> tuple[str, dict[str, str]]:
+    """Construct the sole native task and its complete frozen scientific inputs."""
+    environment = {key: str(value) for key, value in stage["environment"].items()}
+    environment["OATOF_CANDIDATE_ARTIFACT_ROOT"] = str(
+        Path(closure["runtime"]["candidate_artifact_root"]).resolve().parents[1]
+    )
+    return "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_contract_build.m", environment
+
+
+def comsol_sync_inputs(stage: dict[str, Any], closure: dict[str, Any]) -> tuple[str, dict[str, str]]:
+    """Construct the sole read-only sync task and its actual model/contract."""
+    return "projects/single_reflection_oa_tof_mass_analyzer/comsol/verify_oatof_comsol_sync.m", {
+        "OATOF_COMSOL_MODEL_PATH": stage["model_path"],
+        "OATOF_CONTRACT_PATH": stage["contract_path"],
+    }
+
+
+def execute_comsol_native_build(stage: dict[str, Any], plan: dict[str, Any], *, runtime: Any) -> Path:
+    """Run the sole ordinary saved-model build command with frozen inputs."""
+    from .candidate_stage_execution import _powershell, _require_pass_report
+    closure = plan["execution_source_closure"]
+    logs = Path(plan["run_root"]) / "logs"
+    _run_managed_stage_command = runtime._run_managed_stage_command
+    task_source_id, environment = comsol_native_inputs(stage, closure)
+    build_report = Path(stage["report_path"])
+    build_command = _powershell(
+        frozen_source_path(closure, "common/comsol/run_comsol_r2025b.ps1"),
+        [
+            "-TaskScript",
+            frozen_source_path(closure, task_source_id),
+            "-ReportPath",
+            str(build_report),
+            "-RunId", plan["run_id"],
+            "-RunDir", os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(Path(plan["run_root"])),
+            "-CompletionPath", str(logs / "comsol_build_completion.json"),
+        ],
+    )
+    try:
+        _run_managed_stage_command(build_command, logs / "comsol_build_launcher.log", plan,
+                                   logs / "comsol_build_completion.json", "comsol_launcher_completion", environment)
+    except BaseException as primary:
+        try:
+            runtime._record_candidate_native_completion(stage, plan)
+        except BaseException as secondary:
+            primary.add_note(f"Raw native-save completion could not be established: {secondary}")
+        raise
+    if not runtime._record_candidate_native_completion(stage, plan):
+        raise RuntimeError("COMSOL wrapper completed without sufficient stopped-writer raw-save facts")
+    _require_pass_report(build_report)
+    return build_report
+
+
+def execute_comsol_model_sync(stage: dict[str, Any], plan: dict[str, Any], *, runtime: Any) -> Path:
+    """Run only the declared read-only saved-model synchronization check."""
+    from .candidate_stage_execution import _powershell, _require_pass_report
+    closure = plan["execution_source_closure"]
+    logs = Path(plan["run_root"]) / "logs"
+    _run_managed_stage_command = runtime._run_managed_stage_command
+    sync_report = logs / "comsol_sync.txt"
+    task_source_id, sync_environment = comsol_sync_inputs(stage, closure)
+    sync_command = _powershell(
+        frozen_source_path(closure, "common/comsol/run_comsol_r2025b.ps1"),
+        [
+            "-TaskScript",
+            frozen_source_path(closure, task_source_id),
+            "-ReportPath",
+            str(sync_report),
+            "-RunId", plan["run_id"],
+            "-RunDir", os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(Path(plan["run_root"])),
+            "-CompletionPath", str(logs / "comsol_sync_completion.json"),
+        ],
+    )
+    _run_managed_stage_command(sync_command, logs / "comsol_sync_launcher.log", plan,
+                               logs / "comsol_sync_completion.json", "comsol_launcher_completion", sync_environment)
+    _require_pass_report(sync_report)
+    return sync_report
 
 
 def analyze_detector_request(request: Path, closure: dict[str, Any], log: Path, *, runtime: Any) -> Path:
@@ -105,7 +137,7 @@ def analyze_detector_request(request: Path, closure: dict[str, Any], log: Path, 
     return receipt
 
 
-def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: dict, *, runtime: Any) -> dict:
+def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: dict, *, runtime: Any, analyze: bool = True) -> dict:
     """Postprocess one admitted parent; no parent save or solver dispatch exists."""
     import csv
     import json
@@ -227,13 +259,13 @@ def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: 
             raw_events_csv=str(Path(document["raw_events_csv"])), detector_exports_ready=True,
             native_launch_count=1, native_particle_solve_count=0,
             native_field_solve_count=0, parent_model_saved=False)
-    analysis = analyze_detector_request(analysis_request, closure, root / "logs/detector_analysis.log", runtime=runtime)
-    return {"analysis_request": str(analysis_request), "analysis_receipt": str(analysis),
+    analysis = analyze_detector_request(analysis_request, closure, root / "logs/detector_analysis.log", runtime=runtime) if analyze else None
+    return {"analysis_request": str(analysis_request), "analysis_receipt": str(analysis) if analysis else None,
             "native_launch_count": 0 if exports else 1, "native_particle_solve_count": 0,
             "native_field_solve_count": 0, "parent_model_saved": False}
 
 
-def refresh_reused_comsol_analysis(evidence: dict, output_records: dict, root: Path, closure: dict, *, parent_root: Path, runtime: Any) -> tuple[dict, str]:
+def refresh_reused_comsol_analysis(evidence: dict, output_records: dict, root: Path, closure: dict, *, parent_root: Path, runtime: Any, force: bool = False) -> tuple[dict, str]:
     """Reuse native outputs while checking the actual frozen analysis authority."""
     from common.contracts.verify_run_manifest import verify_record
     from common.contracts.write_run_manifest import file_record
@@ -243,7 +275,7 @@ def refresh_reused_comsol_analysis(evidence: dict, output_records: dict, root: P
     if current is None:
         raise ValueError("Current COMSOL analysis authority was not explicitly frozen")
     previous = output_records.get("analysis_contract")
-    if previous is not None and all(str(previous[key]).upper() == str(current[key]).upper() for key in ("bytes","sha256")):
+    if not force and previous is not None and all(str(previous[key]).upper() == str(current[key]).upper() for key in ("bytes","sha256")):
         return evidence, "reused"
     verify_candidate_source_closure(closure)
     old_request = load_json(Path(evidence["analysis_request"]))
@@ -269,3 +301,84 @@ def refresh_reused_comsol_analysis(evidence: dict, output_records: dict, root: P
     for name in ("analysis_request", "analysis_receipt", "analysis_contract"):
         output_records[name] = file_record(Path(evidence[name]))
     return evidence, "executed"
+
+
+def execute_reused_comsol_phases(stage: dict, plan: dict, evidence: dict, records: dict,
+                                 disposition: dict, *, runtime: Any) -> tuple[dict, dict]:
+    """Continue only changed COMSOL post-solve consumers of protected outputs.
+
+    The caller has already verified each actual owner's manifest/receipt and
+    frozen the disposition. This function never dispatches the build/solve
+    helper and never saves a source model. Export invokes the sole cold adapter;
+    CSV reanalysis invokes the sole existing Python analyzer.
+    """
+    import copy
+    root = Path(plan['run_root'])
+    closure = plan['execution_source_closure']
+    result = dict(evidence)
+    phase_execution = {phase:('pending' if disposition[phase] == 'executed' else 'reused')
+                       for phase in ('native','export','analysis','sync')}
+    if disposition['native'] != 'reused':
+        raise ValueError('A reused COMSOL model cannot be dispatched as a new native solve')
+    if disposition['export'] == 'executed':
+        runtime._freeze_comsol_postprocess_selection(root, disposition['cold_selection'])
+    elif disposition['analysis'] == 'executed':
+        runtime._freeze_comsol_postprocess_selection(root, disposition['csv_selection'])
+    if disposition['export'] == 'executed':
+        selection = disposition['cold_selection']
+        if selection['exports'] is not None:
+            raise ValueError('Changed exporter requires explicit cold extraction, not a previous CSV PASS')
+        plan.setdefault('postprocess_evidence', {})
+        exported = execute_saved_postprocess(selection, root, closure, plan, runtime=runtime, analyze=False)
+        result['analysis_request'] = exported['analysis_request']
+        result['analysis_contract'] = frozen_source_path(closure,
+            'projects/single_reflection_oa_tof_mass_analyzer/config/analysis_contract.json')
+        phase_execution.update(export='executed', analysis='pending')
+        runtime._publish_comsol_phase_sources(root, plan, result, phase_execution, disposition['origins'])
+        runtime.refresh_candidate_provisional_manifest(root)
+    if disposition['analysis'] == 'executed':
+        phase_execution['analysis'] = 'pending'
+        runtime._publish_comsol_phase_sources(root, plan, result, phase_execution, disposition['origins'])
+        runtime.refresh_candidate_provisional_manifest(root)
+        # Export identity was already checked against its actual owner. Reuse
+        # the sole analyzer; do not require an earlier analysis PASS to exist.
+        request = _copy_reused_export_analysis_request(result, root)
+        result['analysis_request'] = str(request)
+        result['analysis_receipt'] = str(analyze_detector_request(request, closure, root/'logs/comsol_reanalysis.log', runtime=runtime))
+        result['analysis_contract'] = frozen_source_path(closure,
+            'projects/single_reflection_oa_tof_mass_analyzer/config/analysis_contract.json')
+        phase_execution['analysis'] = 'executed'
+        runtime._publish_comsol_phase_sources(root, plan, result, phase_execution, disposition['origins'])
+        runtime.refresh_candidate_provisional_manifest(root)
+    if disposition['sync'] == 'executed':
+        phase_execution['sync'] = 'pending'
+        runtime._publish_comsol_phase_sources(root, plan, result, phase_execution, disposition['origins'])
+        runtime.refresh_candidate_provisional_manifest(root)
+        selected = copy.deepcopy(stage)
+        selected['model_path'] = result['model']
+        result['sync_report'] = str(execute_comsol_model_sync(selected, plan, runtime=runtime))
+        phase_execution['sync'] = 'executed'
+    for name in ('analysis_request','analysis_receipt','analysis_contract','sync_report'):
+        if name in result and result[name] != evidence.get(name):
+            from common.contracts.write_run_manifest import file_record
+            records[name] = file_record(Path(result[name]))
+    return result, phase_execution
+
+
+def _copy_reused_export_analysis_request(evidence: dict, root: Path) -> Path:
+    """Project a bound detector export into this analysis output directory."""
+    import csv
+    import json
+    document = load_json(Path(evidence['analysis_request']))
+    if document.get('role') != 'oatof_comsol_detector_events_analysis_request':
+        raise ValueError('Reused detector export request role differs')
+    with Path(document['raw_events_csv']).open(encoding='utf-8-sig', newline='') as stream:
+        rows = list(csv.DictReader(stream))
+    if len(rows) != 100 or {int(row['Ion']) for row in rows} != set(range(1,101)) or any(row['Hit'].lower() not in {'1','true'} or row['Status'] != 'detector_hit' for row in rows):
+        raise ValueError('Reused Candidate detector export does not satisfy the original full-population acceptance')
+    output = root/'results/comsol_reanalysis'
+    output.mkdir(parents=True, exist_ok=True)
+    document['analysis_output_dir'] = str(output/'analysis')
+    request = output/'analysis_request.json'
+    request.write_text(json.dumps(document,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+    return request

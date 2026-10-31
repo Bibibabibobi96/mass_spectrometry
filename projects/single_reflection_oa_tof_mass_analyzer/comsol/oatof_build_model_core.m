@@ -27,10 +27,11 @@ result.saved_solution_context_path=[char(modelPath) '.postprocess.json'];
 t_save1_start=tic;
 % Update GUI nodes at the same persisted path. The raw full-population solution
 % was already saved before extraction and MATLAB rendering began.
+oatof_write_saved_particle_context(modelPath,context,"gui_update_started");
 modelPath = oatof_save_run_model(model,output_model_path,paths);
 result.model_path = modelPath;
 modelFile=dir(modelPath);context.saved_model_bytes=modelFile.bytes;
-oatof_write_saved_particle_context(modelPath,context);
+oatof_write_saved_particle_context(modelPath,context,"gui_update_complete");
 t_save1 = toc(t_save1_start);
 oatof_report_model_timing(state.label,result.nP,state.phase_times,postprocessPhases, ...
     state.t_raw_save,t_save1,state.t_total_start);

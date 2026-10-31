@@ -1,42 +1,14 @@
 %RUN_CANDIDATE_CONTRACT_BUILD Build one isolated N=100 candidate MPH.
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
-contractPath = getenv('OATOF_CANDIDATE_CONTRACT_PATH');
-modelPath = getenv('OATOF_CANDIDATE_MODEL_PATH');
-runConfigPath = getenv('OATOF_CANDIDATE_RUN_CONFIG_PATH');
-artifactRoot = string(getenv('OATOF_CANDIDATE_ARTIFACT_ROOT'));
-assert(strlength(artifactRoot)>0,'Candidate lifecycle ArtifactRoot is required.');
 assert(~isempty(reportPath), 'COMSOL_BOOTSTRAP_REPORT is required.');
-assert(isfile(contractPath), 'Candidate contract is missing: %s', contractPath);
-assert(~isempty(modelPath), 'OATOF_CANDIDATE_MODEL_PATH is required.');
-assert(isfile(runConfigPath), 'Candidate run config is missing: %s', runConfigPath);
-
 testDir = fileparts(mfilename('fullpath'));
 projectRoot = fileparts(fileparts(testDir));
 addpath(projectRoot, fullfile(projectRoot, 'comsol'));
-contract = load_oatof_contract(contractPath);
-runConfig = jsondecode(fileread(runConfigPath));
-assert(isfield(runConfig, 'run_instance') && ...
-    isfield(runConfig.run_instance, 'particle_source_seed') && ...
-    isfield(runConfig.run_instance, 'particle_count'), ...
-    'Candidate run_instance must declare seed and particle_count.');
-assert(runConfig.run_instance.particle_count == 100, ...
-    'Candidate structural workflow requires particle_count=100.');
-assert(isfield(runConfig, 'inputs') && ...
-    isfield(runConfig.inputs, 'candidate_particle_table'), ...
-    'Candidate run config must bind candidate_particle_table.');
-ionPath = runConfig.inputs.candidate_particle_table;
-assert(isfile(ionPath), 'Candidate N=100 particle table is missing: %s', ionPath);
-
 fid = fopen(reportPath, 'w');
 assert(fid >= 0, 'Could not open report: %s', reportPath);
 cleanup = onCleanup(@() fclose(fid));
 try
-    result = run_oatof_model( ...
-        Label="ContractCandidate", ...
-        ParticleCount=runConfig.run_instance.particle_count, ...
-        FixedParticleTable=string(ionPath), ...
-        ArtifactRoot=artifactRoot, ...
-        OutputModelPath=string(modelPath), ContractPath=string(contractPath));
+    [result,contract,modelPath,contractPath]=build_candidate_model();
     assert(isfile(result.saved_solution_context_path), 'Saved solution context was not persisted.');
     fprintf(fid,'SAVED_SOLUTION_CONTEXT=%s\n',result.saved_solution_context_path);
     assert(isfile(modelPath), 'Candidate MPH was not saved.');
@@ -58,3 +30,36 @@ catch exception
     rethrow(exception)
 end
 clear cleanup
+
+function [result,contract,modelPath,contractPath]=build_candidate_model()
+% The sole scientific input reader/build invocation; no mutable model is returned.
+contractPath = getenv('OATOF_CANDIDATE_CONTRACT_PATH');
+modelPath = getenv('OATOF_CANDIDATE_MODEL_PATH');
+runConfigPath = getenv('OATOF_CANDIDATE_RUN_CONFIG_PATH');
+artifactRoot = string(getenv('OATOF_CANDIDATE_ARTIFACT_ROOT'));
+assert(strlength(artifactRoot)>0,'Candidate lifecycle ArtifactRoot is required.');
+assert(isfile(contractPath), 'Candidate contract is missing: %s', contractPath);
+assert(~isempty(modelPath), 'OATOF_CANDIDATE_MODEL_PATH is required.');
+assert(isfile(runConfigPath), 'Candidate run config is missing: %s', runConfigPath);
+
+contract = load_oatof_contract(contractPath);
+runConfig = jsondecode(fileread(runConfigPath));
+assert(isfield(runConfig, 'run_instance') && ...
+    isfield(runConfig.run_instance, 'particle_source_seed') && ...
+    isfield(runConfig.run_instance, 'particle_count'), ...
+    'Candidate run_instance must declare seed and particle_count.');
+assert(runConfig.run_instance.particle_count == 100, ...
+    'Candidate structural workflow requires particle_count=100.');
+assert(isfield(runConfig, 'inputs') && ...
+    isfield(runConfig.inputs, 'candidate_particle_table'), ...
+    'Candidate run config must bind candidate_particle_table.');
+ionPath = runConfig.inputs.candidate_particle_table;
+assert(isfile(ionPath), 'Candidate N=100 particle table is missing: %s', ionPath);
+
+    result = run_oatof_model( ...
+        Label="ContractCandidate", ...
+        ParticleCount=runConfig.run_instance.particle_count, ...
+        FixedParticleTable=string(ionPath), ...
+        ArtifactRoot=artifactRoot, ...
+        OutputModelPath=string(modelPath), ContractPath=string(contractPath));
+end

@@ -124,18 +124,74 @@ $candidateMphSource = [IO.Path]::GetFullPath([string]$comsolStage[0].evidence.mo
 if (-not (Test-Path -LiteralPath $candidateMphSource -PathType Leaf)) {
   throw "Candidate COMSOL evidence is absent: $candidateMphSource"
 }
-$reusePath = $null
+$reuseInputs = [ordered]@{}
+$expectedCandidateMphIdentity = $null
 if ($comsolStage[0].execution -eq 'reused') {
-  $reuseSource = [IO.Path]::GetFullPath([string]$candidateConfig.inputs.stage_reuse_provenance)
-  $reusePath = Copy-VerifiedRunInput -Source $reuseSource `
-    -Destination (Join-Path $inputDir 'candidate_stage_reuse_provenance.json')
-  $reuse = Get-Content -LiteralPath $reusePath -Raw -Encoding UTF8 | ConvertFrom-Json
-  $reusedComsol = @($reuse.reused_stages | Where-Object { $_.stage_id -eq 'comsol_candidate' })
-  if ($reusedComsol.Count -ne 1 -or
-      (Get-FileHash -LiteralPath $candidateMphSource -Algorithm SHA256).Hash -ne
-        [string]$reusedComsol[0].outputs.model.sha256) {
-    throw 'Reused Candidate COMSOL model differs from its frozen reuse provenance.'
+  $stageProofs = $null
+  if ($null -ne $candidateConfig.PSObject.Properties['provenance'] -and
+      $null -ne $candidateConfig.provenance.PSObject.Properties['stage_reuse']) {
+    $stageProofs = $candidateConfig.provenance.stage_reuse
   }
+  if ($null -ne $stageProofs) {
+    foreach ($entry in $stageProofs.PSObject.Properties) {
+      if ($entry.Name -notin @('comsol_candidate','simion_candidate','cad_candidate')) {
+        throw "Candidate stage reuse proof has unsupported stage: $($entry.Name)"
+      }
+      $inputName = "stage_reuse_$($entry.Name)_provenance"
+      $declared = $candidateConfig.inputs.PSObject.Properties[$inputName]
+      if ($null -eq $declared -or [string]$declared.Value -ne [string]$entry.Value.path) {
+        throw "Candidate stage reuse proof is not its declared frozen input: $inputName"
+      }
+      $source = [IO.Path]::GetFullPath([string]$entry.Value.path)
+      $proofIdentity = $null
+      $destination = Copy-VerifiedRunInput -Source $source `
+        -Destination (Join-Path $inputDir "candidate_$($inputName).json") `
+        -VerifiedIdentity ([ref]$proofIdentity)
+      if ([int64]$proofIdentity.bytes -ne [int64]$entry.Value.bytes -or
+          [string]$proofIdentity.sha256 -ne [string]$entry.Value.sha256) {
+        throw "Candidate stage proof content differs from its declared identity: $($entry.Name)"
+      }
+      $proof = Get-Content -LiteralPath $destination -Raw -Encoding UTF8 | ConvertFrom-Json
+      $ownerInputName = "stage_reuse_$($entry.Name)_source_manifest"
+      $ownerInput = $candidateConfig.inputs.PSObject.Properties[$ownerInputName]
+      if ($null -eq $ownerInput) { throw "Candidate stage proof lacks its explicit owner: $($entry.Name)" }
+      $ownerSource = [IO.Path]::GetFullPath([string]$ownerInput.Value)
+      $ownerIdentity = $null
+      $ownerDestination = Copy-VerifiedRunInput -Source $ownerSource `
+        -Destination (Join-Path $inputDir "candidate_$($ownerInputName).json") `
+        -VerifiedIdentity ([ref]$ownerIdentity)
+      if ([IO.Path]::GetFileName($ownerSource) -ne 'run_manifest.json' -or
+          [IO.Path]::GetFileName([IO.Path]::GetDirectoryName($ownerSource)) -ne [string]$proof.parent_run_id -or
+          [int64]$ownerIdentity.bytes -ne [int64]$proof.parent_manifest.bytes -or
+          [string]$ownerIdentity.sha256 -ne [string]$proof.parent_manifest.sha256) {
+        throw "Candidate stage proof is not bound to the declared original owner: $($entry.Name)"
+      }
+      $reuseInputs["candidate_$ownerInputName"] = $ownerDestination
+      $proofStages = @($proof.reused_stages)
+      $expectedStageIds = @([string]$entry.Name)
+      if ($entry.Name -eq 'comsol_candidate') { $expectedStageIds += 'comsol_native' }
+      if ($proofStages.Count -ne 1 -or [string]$proofStages[0].stage_id -notin $expectedStageIds) {
+        throw "Candidate proof does not cover its declared stage: $($entry.Name)"
+      }
+      $reuseInputs["candidate_$inputName"] = $destination
+    }
+    if (-not $reuseInputs.Contains('candidate_stage_reuse_comsol_candidate_provenance')) {
+      throw 'Reused Candidate COMSOL has no explicit native-stage proof.'
+    }
+    $reusePath = $reuseInputs.candidate_stage_reuse_comsol_candidate_provenance
+  } else {
+    # Read-only projection of the previous producer's one genuine proof.
+    $reuseSource = [IO.Path]::GetFullPath([string]$candidateConfig.inputs.stage_reuse_provenance)
+    $reusePath = Copy-VerifiedRunInput -Source $reuseSource `
+      -Destination (Join-Path $inputDir 'candidate_stage_reuse_provenance.json')
+    $reuseInputs.candidate_stage_reuse_provenance = $reusePath
+  }
+  $reuse = Get-Content -LiteralPath $reusePath -Raw -Encoding UTF8 | ConvertFrom-Json
+  $reusedComsol = @($reuse.reused_stages | Where-Object { $_.stage_id -in @('comsol_candidate','comsol_native') })
+  if ($reusedComsol.Count -ne 1 -or $null -eq $reusedComsol[0].outputs.model) {
+    throw 'Reused Candidate COMSOL model lacks its original native-stage identity.'
+  }
+  $expectedCandidateMphIdentity = $reusedComsol[0].outputs.model
 }
 elseif (-not $candidateMphSource.StartsWith(
     $candidateRoot + [IO.Path]::DirectorySeparatorChar,
@@ -144,8 +200,15 @@ elseif (-not $candidateMphSource.StartsWith(
   throw 'Executed Candidate COMSOL model must remain inside its source run.'
 }
 
+$candidateMphIdentity = $null
 $candidateMph = Copy-VerifiedRunInput -Source $candidateMphSource `
-  -Destination (Join-Path $inputDir 'comsol\single_reflection_oa_tof_mass_analyzer__candidate.mph')
+  -Destination (Join-Path $inputDir 'comsol\single_reflection_oa_tof_mass_analyzer__candidate.mph') `
+  -VerifiedIdentity ([ref]$candidateMphIdentity)
+if ($null -ne $expectedCandidateMphIdentity -and
+    ([int64]$candidateMphIdentity.bytes -ne [int64]$expectedCandidateMphIdentity.bytes -or
+     [string]$candidateMphIdentity.sha256 -ne [string]$expectedCandidateMphIdentity.sha256)) {
+  throw 'Copied Candidate COMSOL model differs from its original owner proof.'
+}
 $candidateSimion = Join-Path $inputDir 'simion'
 $simionInputs = [ordered]@{}
 $simionInputIndex = 0
@@ -176,7 +239,7 @@ $inputs = [ordered]@{
   candidate_run_config=$candidateConfigPath; candidate_diff=$candidateDiffPath
   candidate_mph=$candidateMph; shared_ion_table=$ion; candidate_simion_iob=$iob
 }
-if ($null -ne $reusePath) { $inputs.candidate_stage_reuse_provenance = $reusePath }
+foreach ($entry in $reuseInputs.GetEnumerator()) { $inputs[$entry.Key] = $entry.Value }
 foreach ($entry in $simionInputs.GetEnumerator()) {
   if ($entry.Value -notin @($ion,$iob)) { $inputs[$entry.Key] = $entry.Value }
 }

@@ -629,7 +629,7 @@ catalog所有模块权重现统一来自同一643轮完整test_durations；原�
 
 冷提取完成而分析失败的封存后处理子run也可作为同一入口的显式父：仅消费充分CSV，直接绑定原science owner与实际CSV exporter的一跳manifest及原母群ION，不递归寻找模型、不要求原MPH仍存在、不借今日默认补物理。新child沿公共SourceReferences同时保护实际父、science与export owner，原父全记录只读。收尾使用原CLI `--resume-finalization <子run>`，不重分析、不启动原生进程。
 
-该模式冻结本次明确分析合同和父绑定的几何资源，沿原 `analyze_comsol_detector_events` 分析，不使用今日几何补旧输入。正常完整stage复用时还比较原实际分析权威：相同才复用旧分析；改变或旧authority缺失但事件充分时只重分析，保原native结果，不重飞。分析实现源码仍属于原整个COMSOL stage source集合，相关改变的过度失效尚未收口，不能称完全因果复用已完成。
+该模式冻结本次明确分析合同和父绑定的几何资源，沿原 `analyze_comsol_detector_events` 分析，不使用今日几何补旧输入。正常完整stage复用时还比较原实际分析权威：相同才复用旧分析；改变或旧authority缺失但事件充分时只重分析，保原native结果，不重飞。现COMSOL context按实际native、export、analysis与sync依赖分别判断；完整来源仍冻结，完整请求仍须通过各实际后继与科学接受门。软件接线与实际原生保存／冷开验收分开报告。
 
 跨根保护使用公共 `capacity.source_references`；仅需冷模型时声明 `prepared.native_input_paths`，实际MATLAB输入从公共source execution context唯一投影，持久request/results保持原canonical身份，输出保持child执行表示。项目不另建alias或复制模型；公共源运输的软件接线不等于真实深路径COMSOL冷开已经验收。新字节承诺来自显式父 Candidate runtime 的 `artifact_capacity.evidence_bytes`，既有CPU/内存准入仍适用；这不是新增COMSOL硬时间/RSS帽。失败保原数据身份与unknown有效性，不因后处理异常宣称物理数据无效。
 
@@ -715,3 +715,21 @@ normal build／sync、CAD的COMSOL打开及cold后处理均向既有launcher传�
 2026-10-31 正常原生失败诊断中的日志位置映射回本 run 持久路径；实际 argv、cwd 与日志写入仍使用执行表示。
 公共 owner 删除临时 alias 后，真实非零子进程的原退出码仍传播，报告所指日志仍可读取（既有深路径用例补验6.402秒）。
 首次粗网格 COMSOL 启动在输出路径授权处拒绝，未建模、求解或保存；MATLAB junction 身份边界另行修复，不能把此软件诊断通过当作原生验收。
+
+
+### Candidate 因果阶段与已解 checkpoint
+
+正常入口仍用原 `--reuse-parent`／`--reuse-through`，实际COMSOL依赖分为native、export、analysis、sync：分析实现或分析合同改变且CSV充分时只调用原Python分析；导出改变需消费原保存模型及context，冷读不求场／不推进；sync只执行原只读校核。原始母群、源、几何、时钟、数值及科学接受规则保持。报告／cleanup实现不作为native科学输入；真实field生成、参数或任务科学输入改变仍拒绝旧native复用。整个COMSOL及原五主阶段未完成仍FAIL，不把native保存成功称完整Candidate、GUI、CAD或Formal资格。
+
+已确认原生writer停止、原source／contract、实际保存context和模型身份充分时，正常producer可发布具名comsol_native receipt；保存后导出失败仍保原失败并留下待完成phase。只从实际完成事实派生，不凭MPH存在推断解完成，unknown writer保持原保护。raw checkpoint与之后同路径GUI保存是两项事实：core／postprocessor尾仍属于export保存／交付依赖，不能因native输入未变就承诺新GUI交付适用。
+
+后继run按每阶段原owner保留扁平manifest／proof和受保护引用，不复制MPH或伪造child为原生producer；Formal现消费者复制并验证各stage明确proof及原owner。真实同调用FileIdentityGuard覆盖公共receipt、复用与后继消费，producer原生／完整receipt共用一次模型身份；软件计读包括独立terminal manifest边界为两次，不声称跨prepared进程只读一次。progress仅发布小summary，不在writer未确认时扫描大原生输出。
+
+两份已知旧b35／1a producer与当前ES初始化修复后的native科学实现不同，本轮不再保留无合法接受分支的整旧core／GUI／array renderer和合成monolithic接受fixture。原manifest／资产保持只读；无可比较native阶段事实给出必要新native动作，充分封存CSV仍可用原 `--postprocess-from` 零COMSOL分析，不要求旧native与今日实现等价。其他既有owner、原bytecode／来源验证与封存恢复机制不因此退役。
+
+本主题隔离软件9项PASS94.313秒（公共GATE 2CPU／2GiB），覆盖四阶段原owner复用、真实Python CSV分析、原CLI CSV-only／Resume、注册Python writer后的保存故障、模型计读、实际command／env及跨根Formal proof消费。均为明确软件夹具，不是COMSOL求解、真实MPH或完整Formal科学验收。此前两项因误删共享receipt检查ERROR25.009秒及Formal首轮FAIL1.087秒保留；修后受影响三项PASS29.025秒。真实新author保存后故障／冷开零求解与最终GUI／CAD适用验收仍待Root按原预算执行。
+
+
+GUI同路径保存的开始／完成事实沿现小context记录：唯一初始raw-save调用使用writer的raw_complete默认，core在GUI save之前持久gui_update_started，成功写入并更新最后bytes后才持久gui_update_complete。producer与需要MPH的冷准入均拒绝明确未完成状态，不因旧sidecar与同尺寸文件并存就发布native receipt；该保存失败为data_validity=unknown／无科学决定，保原异常与检查保存／recovery数据的动作。独立manifest绑定的充分CSV仍可只分析。旧sidecar不补写新标记；缺字段仅沿原绑定最终task PASS及实际停止、返回0的原native事实准入，不为旧失败raw wrapper伪造完成。
+
+本边界实际Mcore／context writer的纯MATLAB两项PASS1.3798925秒，含GUI save前标记已持久、同尺寸BAD覆盖后抛错仍保持started，以及成功后complete；三M CodeAnalyzer[]。明确供应商边界stub，无COMSOL调用。Python三项PASS38.582秒；随后仅GUI未知科学决定字段补充的受影响一项PASS15.027秒。原提取前raw保存失败仍能经现public validator复用其具名native receipt；没有扩大runAll或部分求解的接受域。真实新author保存／冷开零求解验收仍待执行。

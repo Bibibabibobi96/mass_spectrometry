@@ -838,7 +838,10 @@ def select_postprocess_parent(parent: Path, consumer_artifact_root: Path) -> dic
         cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=60)
     if validation.returncode:
         raise ValueError("SOURCE_WRITER_UNCONFIRMED: "+validation.stderr.strip())
-    if manifest["mode"] == "candidate_comsol_postprocess":
+    if (manifest["mode"] == "candidate_comsol_postprocess" or
+            (manifest["mode"] == "design_candidate" and
+             isinstance(config.get("provenance", {}).get("comsol_phases"), dict) and
+             "postprocess_source_selection" in config.get("inputs", {}))):
         return _select_postprocess_child_exports(parent, manifest_record, manifest, config, completion, bound)
     from projects.single_reflection_oa_tof_mass_analyzer.analysis.native_stage_completion import append_native_stage_completion
     native_receipt = parent / "logs/comsol_build_completion.json"
@@ -882,6 +885,20 @@ def select_postprocess_parent(parent: Path, consumer_artifact_root: Path) -> dic
             raise ValueError("SAVED_CONTEXT_INCOMPLETE: original finite increasing solution times are required")
         if context.get("schema_version") != 1 or context.get("role") != "oatof_saved_particle_solution":
             raise ValueError("Saved solution context identity differs")
+        save_state = context.get("model_save_state")
+        if "model_save_state" in context and (not isinstance(save_state,str) or save_state not in {"raw_complete","gui_update_complete"}):
+            raise ValueError("MODEL_SAVE_COMPLETION_UNKNOWN: same-path GUI model update is not confirmed; sufficient sealed CSV can still be analyzed, otherwise inspect the original saved/recovery data")
+        if "model_save_state" not in context:
+            # Existing sidecars are not rewritten or assigned today's marker.
+            # They need their own bound final-task PASS and stopped successful
+            # native operations; an old failed raw wrapper is insufficient.
+            try:
+                original_report = bound(parent / "logs/comsol_build.txt")
+            except ValueError as error:
+                raise ValueError("MODEL_SAVE_COMPLETION_MISSING: old sidecar lacks original final-save/task completion; use sufficient sealed CSV or inspect saved/recovery data") from error
+            lines = Path(original_report["path"]).read_text(encoding="utf-8").splitlines()
+            if "STATUS=PASS" not in lines or any(op["observation"].get("returncode") != 0 for op in writer["operations"]):
+                raise ValueError("MODEL_SAVE_COMPLETION_MISSING: old sidecar lacks original successful final-save/task facts; use sufficient sealed CSV or inspect the original saved/recovery model")
         model = Path(context_record["path"].removesuffix(".postprocess.json"))
         model_record = bound(model, payload=True)
         if context.get("saved_model_bytes") != model_record["bytes"]:
@@ -954,6 +971,9 @@ def candidate_native_execution_relative_paths(closure: dict, *, code_relative_ro
             raise ValueError("Candidate model must have an explicit child-relative output")
         paths.update((model, Path(str(model) + ".postprocess.json")))
     return sorted(path.as_posix() for path in paths)
+
+
+
 
 def prepare_postprocess_request(parent: Path, run_id: str) -> dict:
     """Freeze only an explicit COMSOL postprocessing child, using the public owner."""
@@ -1072,7 +1092,16 @@ def _select_postprocess_child_exports(parent: Path, manifest_record: dict, manif
         export_manifest = load_json(record_path(export_manifest_record))
         if export_manifest.get("mode") == "design_candidate":
             if export_manifest_record != science_reference["manifest_record"]:
-                raise ValueError("CSV exporter is not the explicitly bound original science owner")
+                # The actual phase producer may export an original owner's
+                # saved model into its own new small CSV outputs. Its flat
+                # native/export provenance must prove those two roles.
+                from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow import _comsol_phase_sources
+                phase_owners = _comsol_phase_sources(export_root)
+                native_reference = phase_owners["native"]["manifest_record"]
+                if (any(native_reference.get(key) != science_reference["manifest_record"].get(key) for key in ("path","bytes","sha256"))
+                        or phase_owners["export"]["owner_directory"] != str(export_root)
+                        or phase_owners["export"]["status"] != "success"):
+                    raise ValueError("CSV phase exporter is not bound to the explicit original science owner")
         elif export_manifest.get("mode") == "candidate_comsol_postprocess":
             export_config = load_json(record_path(export_manifest["run_config"], base_dir=export_root))
             if export_config.get("provenance", {}).get("science_reference") != science_reference:

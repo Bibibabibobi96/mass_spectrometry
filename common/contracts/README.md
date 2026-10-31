@@ -239,6 +239,32 @@ manifest writer 与 verifier 分别只在本次调用内复用重复文件的 `(
 SHA 和保留角色；虚拟终态文档不进入磁盘身份复用。`file_record`／`verify_record` 默认仍逐次读取，
 发布、复核和下游消费之间不保留此临时字典；大小与修改时间仅判断本次已读身份是否可复用。
 
+`guarded_file_identity(path, expected_bytes=..., expected_sha256=...)`仅在Windows提供持续只读防写上下文：
+先以`GENERIC_READ/FILE_SHARE_READ/OPEN_EXISTING`持有句柄，再调用原`file_sha256`核验一次。
+上下文内的`guard.assert_matches(path, expected_bytes=..., expected_sha256=...)`只消费同一活句柄下已验证身份，
+不再次读取载荷；退出或异常后原guard拒绝使用。普通只读消费者可并存，写入、删除和替换被拒绝。
+生产者对自己已完成、最后save且writer确认停止的输出，可同时省略两个expected参数，在同一持续防写句柄内
+用原SHA算法一次建立身份；单独省略一个参数拒绝。外部来源仍须提供原绑定的期待bytes／SHA。
+活guard的只读`bytes_count`／`sha256`属性供记录绑定，退出后取值同样拒绝；它们不证明进程停止或科学适用性。
+`write_stage_receipt(..., identity_guards={canonical_path: guard})`用该同一活身份写实际输出及context记录，
+可贯穿native／完整阶段两份receipt和后续复用验证，不重复读取对应载荷。未提供guard仍按原路径读取；
+假对象、失效guard、错误路径或与原receipt期待身份不符仍拒绝，不把字典、stat或容量lease当作guard。
+非Windows明确失败，不把容量lease或mtime缓存冒充字节防写；调用方仍须验证原manifest/来源authority、
+writer和映射写入已停止，并负责科学资格。此API不刷新或写入源，不产生可持久化PASS或跨调用缓存。
+`validate_and_write_stage_reuse(..., identity_guards={canonical_path: guard})`可传同一活上下文的
+`FileIdentityGuard`；只对对应原receipt中的实际路径/bytes/SHA调用`assert_matches`，不重读该文件。
+父manifest、receipt、retention及其他未列路径仍沿原完整验证；伪字典/callable/失效guard拒绝。
+`provenance_input_name`缺省仍为`stage_reuse_provenance`，保持原`inputs/stage_reuse_provenance.json`。
+每个实际stage可选择不同的合法input名称；目的路径只从child配置已预声明的`inputs`条目读取，
+必须唯一且位于该child的`inputs/`内。各次调用仍独立核验真实父receipt/manifest，失败不创建proof目录，
+不能把命名参数用作外部写路径或覆盖另一stage的proof。项目预声明例如
+`stage_reuse_comsol_candidate_provenance -> inputs/stage_contexts/comsol_candidate/reuse_provenance.json`。
+`identity_guards`未给时保持原SHA行为，退出后不能把guard用于下一次消费。只公开guard类型供运输与严格类型检查，
+实例必须由`guarded_file_identity`取得；本API不产生跨调用缓存。
+当前仅公共小文件行为验证，Candidate等真实消费者迁移须另按实际调用范围完成。
+依据为下列Microsoft `CreateFileW`共享语义及[CloseHandle](https://learn.microsoft.com/en-us/windows/win32/api/handleapi/nf-handleapi-closehandle)
+生命周期；2026-10-31核对，retirement允许删除的私有guard不适用此防替换合同。
+
 大PA的owner可显式调用`file_sha256_unbuffered`，默认`file_sha256`不变。该入口仅支持Windows 8+，
 以只读且仅share-read的`CreateFileW`句柄、`FILE_FLAG_NO_BUFFERING`、实际存储扇区信息和对齐的
 `VirtualAlloc`缓冲区顺序读取一次；尾块请求按扇区向上取整，只哈希`ReadFile`实际返回的文件字节。

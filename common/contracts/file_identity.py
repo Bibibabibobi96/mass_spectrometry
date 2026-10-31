@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
 import os
 from os import PathLike
 from pathlib import Path
-from typing import Any, Iterable, TypeAlias
+from typing import Any, Iterable, Iterator, TypeAlias
 
 import hashlib
 
@@ -44,6 +45,105 @@ def _windows_file_api() -> Any:
         function = getattr(api, name)
         function.argtypes, function.restype = arguments, result
     return api
+
+
+_GUARD_CONSTRUCTION_TOKEN = object()
+
+
+class FileIdentityGuard:
+    """A verified identity usable only while its read-only Windows handle lives.
+
+    Instances are yielded by guarded_file_identity, not persisted as evidence.
+    The caller still owns source authority and stopped/mapped-writer evidence.
+    """
+
+    def __init__(self, path: Path, bytes_count: int, sha256: str, *, _token: object) -> None:
+        if _token is not _GUARD_CONSTRUCTION_TOKEN:
+            raise TypeError("file identity guards must come from guarded_file_identity")
+        self._path = path
+        self._bytes = bytes_count
+        self._sha256 = sha256
+        self._active = True
+
+    def _require_active(self) -> None:
+        if not self._active:
+            raise RuntimeError("guarded file identity is no longer active")
+
+    @property
+    def bytes_count(self) -> int:
+        """Return the established byte count only while this guard is active."""
+        self._require_active()
+        return self._bytes
+
+    @property
+    def sha256(self) -> str:
+        """Return the established SHA-256 only while this guard is active."""
+        self._require_active()
+        return self._sha256
+
+    def assert_matches(self, path: FilePath, *, expected_bytes: int, expected_sha256: str) -> None:
+        """Check this live guarded identity without reading the payload again."""
+        self._require_active()
+        expected_sha256 = _expected_identity(expected_bytes, expected_sha256)
+        if (Path(path).resolve(strict=True), expected_bytes, expected_sha256) != (
+            self._path, self._bytes, self._sha256
+        ):
+            raise ValueError("guarded file identity does not match the requested file record")
+
+
+def _expected_identity(bytes_count: int, sha256: str) -> str:
+    if isinstance(bytes_count, bool) or not isinstance(bytes_count, int) or bytes_count < 0:
+        raise ValueError("expected_bytes must be a non-negative integer")
+    if not isinstance(sha256, str) or len(sha256) != 64 or any(
+        character not in "0123456789abcdefABCDEF" for character in sha256
+    ):
+        raise ValueError("expected_sha256 must be a SHA-256 hex digest")
+    return sha256.upper()
+
+
+@contextmanager
+def guarded_file_identity(
+    path: FilePath, *, expected_bytes: int | None = None, expected_sha256: str | None = None
+) -> Iterator[FileIdentityGuard]:
+    """Verify once and deny writes/replacement until this context exits.
+
+    Windows GENERIC_READ + FILE_SHARE_READ opens no writable handle and does
+    not permit deletion/rename. Hashing uses the existing file_sha256 only.
+    Omit both expectations only for the caller's completed owned output, after
+    its last save and confirmed writer stop; this function does not prove those.
+    Not a flush, mapped-writer stop proof, capacity lease or scientific PASS.
+    """
+    if os.name != "nt":
+        raise OSError("guarded file identity requires Windows write exclusion")
+    if (expected_bytes is None) != (expected_sha256 is None):
+        raise ValueError("expected_bytes and expected_sha256 must be supplied together or both omitted")
+    if expected_bytes is not None:
+        expected_sha256 = _expected_identity(expected_bytes, expected_sha256)
+    import ctypes
+
+    actual = Path(path).resolve(strict=True)
+    api = _windows_file_api()
+    # GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING; ordinary buffered I/O.
+    handle = api.CreateFileW(str(actual), 0x80000000, 1, None, 3, 0, None)
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    identity = None
+    try:
+        size = ctypes.c_longlong()
+        if not api.GetFileSizeEx(handle, ctypes.byref(size)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        if expected_bytes is not None and size.value != expected_bytes:
+            raise ValueError("guarded file byte count does not match the file record")
+        digest = file_sha256(actual)
+        if expected_sha256 is not None and digest != expected_sha256:
+            raise ValueError("guarded file SHA-256 does not match the file record")
+        identity = FileIdentityGuard(actual, size.value, digest, _token=_GUARD_CONSTRUCTION_TOKEN)
+        yield identity
+    finally:
+        if identity is not None:
+            identity._active = False
+        if not api.CloseHandle(handle):
+            raise ctypes.WinError(ctypes.get_last_error())
 
 
 def file_sha256_unbuffered(path: FilePath) -> str:

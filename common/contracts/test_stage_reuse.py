@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from common.contracts.file_identity import file_sha256
+from common.contracts.file_identity import file_sha256, guarded_file_identity
+from common.contracts import file_identity, stage_reuse
 from common.contracts.stage_reuse import (
     StageReuseError,
     validate_and_write_stage_reuse,
@@ -147,6 +150,187 @@ class StageReuseTest(unittest.TestCase):
             project=PROJECT,
             stage_contexts={STAGE: self.child_context},
         )
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows sustained identity guard")
+    def test_owned_model_identity_spans_two_receipt_writes_and_reuse_without_rehash(self) -> None:
+        native_stage = "comsol_native"
+        (self.parent / "run_manifest.json").unlink()
+        self._write_json(self.summary, {"status": "failed", "stages": [
+            {"stage_id": native_stage, "status": "success"}, {"stage_id": STAGE, "status": "success"}]})
+        with mock.patch.object(file_identity, "file_sha256", wraps=file_sha256) as establish:
+            with guarded_file_identity(self.output) as guard:
+                guards = {self.output.resolve(): guard}
+                with mock.patch.object(stage_reuse, "file_sha256", wraps=file_sha256) as stage_hash:
+                    receipts = [write_stage_receipt(self.parent, project=PROJECT, stage_id=stage,
+                        context=self.parent_context, outputs={"model": self.output}, identity_guards=guards)
+                        for stage in (native_stage, STAGE)]
+                    model = {"path": str(self.output.resolve()), "bytes": guard.bytes_count, "sha256": guard.sha256}
+                    self._write_json(self.parent / "run_manifest.json", {
+                        "schema_version": 1, "role": "simulation_run_manifest", "run_id": PARENT_ID,
+                        "project": PROJECT, "status": "failed", "run_config": manifest_record(self.parent_config),
+                        "inputs": {}, "outputs": [model, manifest_record(self.summary),
+                            *(manifest_record(path) for path in receipts),
+                            *(manifest_record(path) for category in self.parent_context.values() for path in category.values())]})
+                    provenance = validate_and_write_stage_reuse(self.child, parent_run_root=self.parent,
+                        project=PROJECT, stage_contexts={native_stage: self.child_context, STAGE: self.child_context},
+                        identity_guards=guards)
+                    self.assertEqual({item["stage_id"] for item in json.loads(provenance.read_text())["reused_stages"]},
+                                     {native_stage, STAGE})
+                    self.assertEqual(sum(Path(call.args[0]).resolve() == self.output.resolve()
+                        for call in stage_hash.call_args_list), 0)
+                    for receipt in receipts:
+                        actual = json.loads(receipt.read_text())["outputs"]["model"]
+                        self.assertEqual((actual["bytes"], actual["sha256"]), (guard.bytes_count, guard.sha256))
+            self.assertEqual(establish.call_count, 1)
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows sustained identity guard")
+    def test_receipt_guard_rejects_expired_impostor_and_wrong_path_without_writing(self) -> None:
+        before = self.receipt.read_bytes()
+        def publish(guards):
+            return write_stage_receipt(self.parent, project=PROJECT, stage_id=STAGE,
+                context=self.parent_context, outputs={"model": self.output}, identity_guards=guards)
+        with self.assertRaisesRegex(StageReuseError, "real FileIdentityGuard"):
+            publish({self.output.resolve(): {"sha256": "0" * 64}})
+        with guarded_file_identity(self.output) as guard:
+            different = next(iter(self.parent_context["inputs"].values()))
+            with self.assertRaisesRegex(StageReuseError, "guarded identity"):
+                publish({different.resolve(): guard})
+        with self.assertRaisesRegex(StageReuseError, "guarded identity"):
+            publish({self.output.resolve(): guard})
+        self.assertEqual(self.receipt.read_bytes(), before)
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows sustained identity guard")
+    def test_guarded_output_hashes_once_and_unlisted_paths_keep_existing_checks(self) -> None:
+        record = manifest_record(self.output)
+        with mock.patch.object(file_identity, "file_sha256", wraps=file_sha256) as initial_hash:
+            with guarded_file_identity(self.output, expected_bytes=record["bytes"], expected_sha256=record["sha256"]) as guard:
+                with mock.patch.object(stage_reuse, "file_sha256", wraps=file_sha256) as stage_hash:
+                    destination = validate_and_write_stage_reuse(
+                        self.child, parent_run_root=self.parent, project=PROJECT,
+                        stage_contexts={STAGE: self.child_context}, identity_guards={self.output.resolve(): guard},
+                    )
+                    self.assertTrue(destination.is_file())
+                    for _ in range(3):
+                        guard.assert_matches(self.output, expected_bytes=record["bytes"], expected_sha256=record["sha256"])
+                    self.assertNotIn(self.output.resolve(), [Path(call.args[0]).resolve() for call in stage_hash.call_args_list])
+                    self.assertIn(self.summary.resolve(), [Path(call.args[0]).resolve() for call in stage_hash.call_args_list])
+            self.assertEqual(initial_hash.call_count, 1)
+        # The old API still performs its own payload validation, not a global cache.
+        with mock.patch.object(stage_reuse, "file_sha256", wraps=file_sha256) as stage_hash:
+            self._validate()
+            self.assertEqual(sum(Path(call.args[0]).resolve() == self.output.resolve() for call in stage_hash.call_args_list), 1)
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows sustained identity guard")
+    def test_guard_mapping_rejects_impostors_expired_and_wrong_expected_identity(self) -> None:
+        record = manifest_record(self.output)
+        def validate(guards):
+            return validate_and_write_stage_reuse(
+                self.child, parent_run_root=self.parent, project=PROJECT,
+                stage_contexts={STAGE: self.child_context}, identity_guards=guards,
+            )
+        for fake in ({"sha256": record["sha256"]}, lambda *args, **kwargs: None, None):
+            with self.subTest(fake=type(fake).__name__):
+                with self.assertRaises(StageReuseError):
+                    validate({self.output.resolve(): fake})
+        with guarded_file_identity(self.output, expected_bytes=record["bytes"], expected_sha256=record["sha256"]) as guard:
+            with self.assertRaises(StageReuseError):
+                validate({str(self.output.resolve()): guard})
+            receipt = json.loads(self.receipt.read_text(encoding="utf-8"))
+            receipt["outputs"]["model"]["sha256"] = "0" * 64
+            self._write_json(self.receipt, receipt)
+            self._write_manifest("failed")
+            with self.assertRaisesRegex(StageReuseError, "guarded identity"):
+                validate({self.output.resolve(): guard})
+        with self.assertRaisesRegex(StageReuseError, "guarded identity"):
+            validate({self.output.resolve(): guard})
+        self.assertFalse((self.child / "inputs/stage_reuse_provenance.json").exists())
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows sustained identity guard")
+    def test_guard_does_not_replace_parent_manifest_binding(self) -> None:
+        record = manifest_record(self.output)
+        self._write_manifest("failed", outputs=[path for path in self._all_outputs() if path != self.output])
+        with guarded_file_identity(self.output, expected_bytes=record["bytes"], expected_sha256=record["sha256"]) as guard:
+            with self.assertRaisesRegex(StageReuseError, "not manifest-bound"):
+                validate_and_write_stage_reuse(
+                    self.child, parent_run_root=self.parent, project=PROJECT,
+                    stage_contexts={STAGE: self.child_context}, identity_guards={self.output.resolve(): guard},
+                )
+        self.assertFalse((self.child / "inputs/stage_reuse_provenance.json").exists())
+
+    def test_named_proofs_for_two_stages_do_not_overwrite_each_other(self) -> None:
+        second_stage = "simion_candidate"
+        (self.parent / "run_manifest.json").unlink()
+        summary = json.loads(self.summary.read_text(encoding="utf-8"))
+        summary["stages"].append({"stage_id": second_stage, "status": "success"})
+        self._write_json(self.summary, summary)
+        second_receipt = write_stage_receipt(
+            self.parent, project=PROJECT, stage_id=second_stage,
+            context=self.parent_context, outputs={"model": self.output},
+        )
+        self._write_manifest("failed", outputs=[*self._all_outputs(), second_receipt])
+        config = json.loads(self.child_config.read_text(encoding="utf-8"))
+        names = {stage: f"stage_reuse_{stage}_provenance" for stage in (STAGE, second_stage)}
+        destinations = {stage: self.child / "inputs/stage_contexts" / stage / "reuse_provenance.json" for stage in names}
+        config["inputs"].update({names[stage]: str(path) for stage, path in destinations.items()})
+        self._write_json(self.child_config, config)
+        first_bytes = None
+        for stage in (STAGE, second_stage):
+            actual = validate_and_write_stage_reuse(
+                self.child, parent_run_root=self.parent, project=PROJECT,
+                stage_contexts={stage: self.child_context}, provenance_input_name=names[stage],
+            )
+            self.assertEqual(actual, destinations[stage])
+            proof = json.loads(actual.read_text(encoding="utf-8"))
+            self.assertEqual([entry["stage_id"] for entry in proof["reused_stages"]], [stage])
+            if stage == STAGE:
+                first_bytes = actual.read_bytes()
+        self.assertEqual(destinations[STAGE].read_bytes(), first_bytes)
+        self.assertFalse((self.child / "inputs/stage_reuse_provenance.json").exists())
+
+    def test_named_provenance_rejects_invalid_undeclared_escaped_and_duplicate_paths(self) -> None:
+        original = json.loads(self.child_config.read_text(encoding="utf-8"))
+        name = "stage_reuse_comsol_candidate_provenance"
+        target = self.child / "inputs/named/proof.json"
+        for scenario in ("invalid_name", "undeclared", "outside", "inputs_directory", "duplicate", "changed_default"):
+            with self.subTest(scenario=scenario):
+                config = json.loads(json.dumps(original))
+                selected_name = name
+                config["inputs"][name] = str(target)
+                if scenario == "invalid_name":
+                    selected_name = "invalid-name"
+                elif scenario == "undeclared":
+                    config["inputs"].pop(name)
+                elif scenario == "outside":
+                    config["inputs"][name] = str(self.workspace / "outside.json")
+                elif scenario == "inputs_directory":
+                    config["inputs"][name] = str(self.child / "inputs")
+                elif scenario == "duplicate":
+                    config["inputs"]["another_name"] = str(target)
+                else:
+                    selected_name = "stage_reuse_provenance"
+                    config["inputs"][selected_name] = str(target)
+                self._write_json(self.child_config, config)
+                with self.assertRaises(StageReuseError):
+                    validate_and_write_stage_reuse(
+                        self.child, parent_run_root=self.parent, project=PROJECT,
+                        stage_contexts={STAGE: self.child_context}, provenance_input_name=selected_name,
+                    )
+                self.assertFalse(target.exists())
+                self.assertFalse((self.workspace / "outside.json").exists())
+
+    def test_failed_named_stage_validation_does_not_create_proof_directory(self) -> None:
+        name = "stage_reuse_comsol_candidate_provenance"
+        target = self.child / "inputs/stage_contexts/comsol/reuse_provenance.json"
+        config = json.loads(self.child_config.read_text(encoding="utf-8"))
+        config["inputs"][name] = str(target)
+        self._write_json(self.child_config, config)
+        self.output.write_bytes(b"changed output")
+        with self.assertRaises(StageReuseError):
+            validate_and_write_stage_reuse(
+                self.child, parent_run_root=self.parent, project=PROJECT,
+                stage_contexts={STAGE: self.child_context}, provenance_input_name=name,
+            )
+        self.assertFalse(target.parent.exists())
 
     def test_failed_parent_with_successful_stage_writes_child_provenance(self) -> None:
         destination = self._validate()

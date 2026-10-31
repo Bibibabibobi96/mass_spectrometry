@@ -135,12 +135,12 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_grid_geometry.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_mesh.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_model_core.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_report_model_timing.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_validate_candidate_solution.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_saved_particle_solution.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_save_run_model.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_write_saved_particle_context.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_postprocess_saved_solution.m",
+    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_report_model_timing.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/reextract_oatof_saved_solution.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_particle_plot_view.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_reflectron_geometry.m",
@@ -499,3 +499,108 @@ def derive_candidate_source_closure(
         "validated_bytecode": caches, "copied_sources": len(sources),
         "parent_modified": False, "bytecode_executed": False,
     }}
+
+
+def project_comsol_native_implementation(closure: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Reuse the actual freezer identities of the sole raw builder/save owners."""
+    declared={item["source_id"]:item for item in closure["sources"]}
+    prefix="projects/single_reflection_oa_tof_mass_analyzer/comsol/"
+    names={"native_builder":"oatof_build_saved_particle_solution.m",
+           "save_model":"oatof_save_run_model.m"}
+    result={}
+    for role,name in names.items():
+        identifier=prefix+name
+        if identifier not in declared:
+            raise ValueError("Original native implementation has no comparable saved-stage fact; request the necessary new native stage or analyze sufficient sealed CSV with --postprocess-from")
+        result[role]={key:declared[identifier][key] for key in ("source_id","bytes","sha256")}
+    return result
+
+
+def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
+    """Publish this project's four real COMSOL dependency projections.
+
+    These descriptors do not replace the complete execution source closure.
+    They only decide which already-supported operation consumes changed code.
+    No process-owner/path transport file is a scientific field identity.
+    """
+    prefix = "projects/single_reflection_oa_tof_mass_analyzer/"
+    sources = {item["source_id"]: item for item in closure["sources"]}
+    def records(names: tuple[str, ...]) -> list[dict[str, Any]]:
+        missing = set(names)-sources.keys()
+        if missing:
+            raise ValueError(f"COMSOL phase lacks declared frozen sources: {sorted(missing)}")
+        return [{key: sources[name][key] for key in ("source_id", "bytes", "sha256")}
+                for name in sorted(names)]
+    native_names = tuple(prefix+name for name in (
+        "load_oatof_contract.m",
+        "comsol/configure_oatof_segmented_output.m", "comsol/oatof_build_accelerator_geometry.m",
+        "comsol/oatof_build_detector_geometry.m", "comsol/oatof_build_drift_geometry.m",
+        "comsol/oatof_build_grid_geometry.m", "comsol/oatof_build_mesh.m",
+        "comsol/oatof_build_reflectron_geometry.m", "comsol/oatof_configure_particle_model.m",
+        "comsol/oatof_cpt_solver_policy.m", "comsol/oatof_parse_field_idealization.m",
+        "comsol/oatof_read_cartesian_release.m"))
+    native_names += ("common/comsol/add_comsol_size_feature.m",
+        "projects/orthogonal_accelerator/comsol/build_sectioned_geometry.m",
+        "projects/orthogonal_accelerator/comsol/build_accelerator_grids.m")
+    export_names = tuple(prefix+name for name in (
+        "workflows/design_candidate/run_candidate_contract_build.m",
+        "comsol/oatof_build_model_core.m", "comsol/oatof_postprocess_saved_solution.m", "comsol/reextract_oatof_saved_solution.m",
+        "comsol/oatof_write_saved_particle_context.m",
+        "comsol/oatof_extract_detector_arrivals.m", "comsol/oatof_detector_arrival_reducer.m", "comsol/oatof_export_detector_events.m",
+        "comsol/oatof_particle_plot_view.m", "comsol/oatof_create_result_nodes.m",
+        "comsol/oatof_validate_candidate_solution.m"))
+    analysis_names = tuple(prefix+"analysis/"+name for name in (
+        "analyze_comsol_detector_events.py", "reference_analysis.py", "reference_analysis_core.py"))
+    analysis_names += tuple(name for name in sources if name.startswith("common/analysis/"))
+    analysis_names += ("common/contracts/file_identity.py",prefix+"config/analysis_contract.json")
+    sync_names = (prefix+"comsol/verify_oatof_comsol_sync.m",
+                  prefix+"load_oatof_contract.m", prefix+"comsol/oatof_cpt_solver_policy.m")
+    return {"native": {"sources": records(native_names),
+                        "implementation": project_comsol_native_implementation(closure),
+                        "dispatch": project_comsol_dispatch(closure,"native"),
+                        "entrypoint": project_comsol_named_entry(closure),
+                        "task_invocation": project_comsol_build_invocation(closure)},
+            "export": {"sources": records(export_names)},
+            "analysis": {"sources": records(analysis_names)},
+            "sync": {"sources": records(sync_names),"dispatch": project_comsol_dispatch(closure,"sync")}}
+
+
+
+
+def project_comsol_dispatch(closure: dict[str, Any], phase: str) -> str:
+    """Bind the sole pure scientific task/env constructor used by production."""
+    import ast
+    if phase not in {"native", "sync"}:
+        raise ValueError("COMSOL dispatch needs native or sync")
+    identifier = "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_comsol_stage.py"
+    source = candidate_frozen_source_text(closure)[identifier]
+    tree = ast.parse(source)
+    functions = {node.name:node for node in tree.body if isinstance(node,ast.FunctionDef)}
+    name = "comsol_native_inputs" if phase == "native" else "comsol_sync_inputs"
+    if sum(isinstance(node,ast.FunctionDef) and node.name == name for node in tree.body) != 1:
+        raise ValueError("COMSOL scientific inputs need one actual production constructor")
+    return ast.dump(functions[name],include_attributes=False)
+
+
+def project_comsol_named_entry(closure: dict[str, Any]) -> str:
+    """Bind the actual named native parameter entry, with no historical lowering."""
+    path=Path(closure["code_root"])/"projects/single_reflection_oa_tof_mass_analyzer/comsol/run_oatof_model.m"
+    return path.read_bytes().decode("utf-8")
+
+
+def project_comsol_build_invocation(closure: dict[str, Any]) -> str:
+    """Bind the actual local scientific input reader/build, not its report tail."""
+    path=Path(closure["code_root"])/"projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_contract_build.m"
+    source=path.read_bytes().decode("utf-8")
+    marker="function [result,contract,modelPath,contractPath]=build_candidate_model()\n"
+    if source.count(marker)!=1:
+        raise ValueError("Candidate build task needs its unique actual scientific input/build function")
+    return marker+source.split(marker,1)[1]
+
+
+def candidate_frozen_source_text(closure: dict[str, Any]) -> dict[str, str]:
+    """Read only the already verified small text members of this exact closure."""
+    verify_candidate_source_closure(closure)
+    root = Path(closure['code_root'])
+    return {record['source_id']:(root/record['source_id']).read_bytes().decode('utf-8')
+            for record in closure['sources'] if Path(record['source_id']).suffix in {'.py','.m','.ps1','.txt'}}

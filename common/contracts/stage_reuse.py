@@ -9,7 +9,7 @@ from typing import Any, Mapping, TypeAlias
 
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.artifact_retention import validate_retention
-from common.contracts.file_identity import file_sha256
+from common.contracts.file_identity import FileIdentityGuard, file_sha256
 from common.contracts.write_run_manifest import require_completed_terminal_publication, retention_api
 
 
@@ -53,8 +53,33 @@ def _inside_file(path: str | Path, root: Path, description: str) -> Path:
         raise StageReuseError(f"{description} must be inside run root: {resolved}") from exc
     return resolved
 
-def _record(path: str | Path, root: Path, description: str) -> dict[str, Any]:
+def _validate_identity_guards(identity_guards: Mapping[Path, FileIdentityGuard] | None) -> None:
+    if identity_guards is None:
+        return
+    if not isinstance(identity_guards, Mapping):
+        raise StageReuseError("identity_guards must map canonical Paths to live FileIdentityGuard objects")
+    for path, guard in identity_guards.items():
+        if not isinstance(path, Path) or not path.is_absolute() or path != path.resolve(strict=True):
+            raise StageReuseError("identity_guards keys must be canonical absolute Paths")
+        if type(guard) is not FileIdentityGuard:
+            raise StageReuseError("identity_guards values must be real FileIdentityGuard objects")
+        try:
+            guard.assert_matches(path, expected_bytes=guard.bytes_count, expected_sha256=guard.sha256)
+        except (OSError, ValueError, RuntimeError) as exc:
+            raise StageReuseError("identity_guards guarded identity is invalid") from exc
+
+
+def _record(path: str | Path, root: Path, description: str,
+            identity_guards: Mapping[Path, FileIdentityGuard] | None = None) -> dict[str, Any]:
     resolved = _inside_file(path, root, description)
+    guard = identity_guards.get(resolved) if identity_guards is not None else None
+    if guard is not None:
+        try:
+            count, digest = guard.bytes_count, guard.sha256
+            guard.assert_matches(resolved, expected_bytes=count, expected_sha256=digest)
+        except (OSError, ValueError, RuntimeError) as exc:
+            raise StageReuseError(f"{description} guarded identity is invalid") from exc
+        return {"path": resolved.relative_to(root).as_posix(), "bytes": count, "sha256": digest}
     return {
         "path": resolved.relative_to(root).as_posix(), "bytes": resolved.stat().st_size,
         "sha256": file_sha256(resolved),
@@ -64,6 +89,7 @@ def _verify_relative_record(
     value: Any,
     root: Path,
     description: str,
+    identity_guards: Mapping[Path, FileIdentityGuard] | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     if not isinstance(value, dict) or set(value) != {"path", "bytes", "sha256"}:
         raise StageReuseError(f"{description} record fields are invalid")
@@ -76,7 +102,13 @@ def _verify_relative_record(
     sha256 = value["sha256"]
     if not isinstance(sha256, str) or not re.fullmatch(r"[0-9A-F]{64}", sha256):
         raise StageReuseError(f"{description}.sha256 must be uppercase SHA-256")
-    if file_sha256(path) != sha256:
+    guard = identity_guards.get(path) if identity_guards is not None else None
+    if guard is not None:
+        try:
+            guard.assert_matches(path, expected_bytes=value["bytes"], expected_sha256=sha256)
+        except (OSError, ValueError, RuntimeError) as exc:
+            raise StageReuseError(f"{description} guarded identity is invalid") from exc
+    elif file_sha256(path) != sha256:
         raise StageReuseError(f"{description} SHA-256 changed")
     return path, dict(value)
 
@@ -125,11 +157,12 @@ def _validate_context(context: ContextPaths) -> None:
         for name in entries:
             _identifier(name, f"{category} identity name")
 
-def _context_records(context: ContextPaths, root: Path) -> dict[str, Any]:
+def _context_records(context: ContextPaths, root: Path,
+                     identity_guards: Mapping[Path, FileIdentityGuard] | None = None) -> dict[str, Any]:
     _validate_context(context)
     return {
         category: {
-            name: _record(path, root, f"{category} identity {name!r}")
+            name: _record(path, root, f"{category} identity {name!r}", identity_guards)
             for name, path in sorted(context[category].items())
         } for category in CONTEXT_CATEGORIES
     }
@@ -179,8 +212,10 @@ def write_stage_receipt(
     context: ContextPaths,
     outputs: PathMap,
     allow_provisional_manifest: bool = False,
+    identity_guards: Mapping[Path, FileIdentityGuard] | None = None,
 ) -> Path:
     """Write a receipt before the parent run's final manifest is created."""
+    _validate_identity_guards(identity_guards)
     root = Path(run_root).resolve(strict=True)
     if (root / "run_manifest.json").exists():
         if not allow_provisional_manifest:
@@ -201,11 +236,11 @@ def write_stage_receipt(
     output_records: dict[str, Any] = {}
     for name, path in sorted(outputs.items()):
         _identifier(name, "stage output name")
-        output_records[name] = _record(path, root, f"stage output {name!r}")
+        output_records[name] = _record(path, root, f"stage output {name!r}", identity_guards)
     receipt = {
         "schema_version": SCHEMA_VERSION, "role": RECEIPT_ROLE,
         "project": project, "run_id": run_id, "stage_id": stage, "status": "success",
-        "context": _context_records(context, root), "outputs": output_records,
+        "context": _context_records(context, root, identity_guards), "outputs": output_records,
     }
     destination = root / "stage_receipts" / f"{stage}.json"
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -269,6 +304,7 @@ def _validate_receipt(
     manifest: dict[str, Any],
     current_context: ContextPaths,
     current_root: Path,
+    identity_guards: Mapping[Path, FileIdentityGuard] | None = None,
 ) -> dict[str, Any]:
     receipt_path = root / "stage_receipts" / f"{stage_id}.json"
     receipt = _load_json(receipt_path, f"stage receipt {stage_id!r}")
@@ -301,7 +337,7 @@ def _validate_receipt(
         compared[category] = {}
         for name, value in sorted(parent_context[category].items()):
             parent_path, parent_record = _verify_relative_record(
-                value, root, f"parent {category} identity {name!r}"
+                value, root, f"parent {category} identity {name!r}", identity_guards
             )
             if not _manifest_binds(manifest, parent_path, parent_record):
                 raise StageReuseError(f"parent {category} identity {name!r} is not manifest-bound")
@@ -322,7 +358,7 @@ def _validate_receipt(
     if not isinstance(receipt["outputs"], dict) or not receipt["outputs"]:
         raise StageReuseError("parent receipt outputs are invalid")
     for name, value in sorted(receipt["outputs"].items()):
-        path, record = _verify_relative_record(value, root, f"parent output {name!r}")
+        path, record = _verify_relative_record(value, root, f"parent output {name!r}", identity_guards)
         if not _manifest_binds(manifest, path, record):
             raise StageReuseError(f"parent output {name!r} is not manifest-bound")
         outputs[name] = record
@@ -335,8 +371,11 @@ def validate_and_write_stage_reuse(
     project: str,
     stage_contexts: Mapping[str, ContextPaths],
     allow_provisional_manifest: bool = False,
+    identity_guards: Mapping[Path, FileIdentityGuard] | None = None,
+    provenance_input_name: str = "stage_reuse_provenance",
 ) -> Path:
     """Validate one parent and publish child-run provenance."""
+    _validate_identity_guards(identity_guards)
     current_root = Path(current_run_root).resolve(strict=True)
     parent_root = Path(parent_run_root).resolve(strict=True)
     if current_root == parent_root:
@@ -364,16 +403,27 @@ def validate_and_write_stage_reuse(
             for path in identity_paths.values():
                 if Path(path).resolve(strict=True) not in declared_inputs.values():
                     raise StageReuseError("current context is not declared by current run_config.inputs")
-    destination = current_root / "inputs" / "stage_reuse_provenance.json"
-    if declared_inputs.get("stage_reuse_provenance") != destination:
-        raise StageReuseError(
-            "current run_config.inputs must predeclare stage_reuse_provenance"
-        )
+    _identifier(provenance_input_name, "provenance input name")
+    destination = declared_inputs.get(provenance_input_name)
+    if destination is None:
+        raise StageReuseError(f"current run_config.inputs must predeclare {provenance_input_name}")
+    inputs_root = (current_root / "inputs").resolve()
+    try:
+        inputs_root.relative_to(current_root)
+        relative = destination.relative_to(inputs_root)
+    except ValueError as exc:
+        raise StageReuseError("reuse provenance must remain inside child inputs") from exc
+    if not relative.parts or (destination.exists() and not destination.is_file()):
+        raise StageReuseError("reuse provenance destination must be a child inputs file")
+    if sum(path == destination for path in declared_inputs.values()) != 1:
+        raise StageReuseError("reuse provenance destination must have one unique input name")
+    if provenance_input_name == "stage_reuse_provenance" and destination != current_root / "inputs/stage_reuse_provenance.json":
+        raise StageReuseError("default stage_reuse_provenance must retain its original destination")
     summary, manifest = _validate_parent(parent_root, project)
     stages = [
         _validate_receipt(
             parent_root, project, _identifier(stage_id, "stage_id"),
-            summary, manifest, context, current_root,
+            summary, manifest, context, current_root, identity_guards,
         ) for stage_id, context in sorted(stage_contexts.items())
     ]
     parent_manifest = parent_root / "run_manifest.json"
