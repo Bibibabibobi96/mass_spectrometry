@@ -534,7 +534,7 @@ producer返回原生完成receipt和实际Program/ION/IOB绑定；补偿与candi
 
 两个入口的新run沿公共workspace resolver选择根，并向原NewRunPackage传同一PathContext；原生别名显式使用该冻结执行根，嵌套调用沿同一主机状态，退出后恢复调用者环境。科学结果合并进原包配置，保留paths、schema、容量owner与其它公共字段。质量谱续跑只接受原run记录的完整paths及匹配的run/root/容量身份；较早记录缺少这些证据时明确阻断并给下一动作，不以今日默认补造旧根。
 
-`mass_spectrum_candidate -ReanalyzeOnly`仍是现有RunId的原位重分析：复用其源与已完成求解记录，但继续写同run的预检、results、run_config、summary和manifest，入口仍执行今日项目Formal可读性guard并要求既有Formal资产路径可用。本次仅准备与冻结路径修订，没有把该分支迁为只读父run加后继analysis，也未接入公共小Result恢复；上述理想场`-AnalyzeOnly -SourceRunPath`能力不能套用到质量谱分支。该未迁范围尚未作为本包已闭合能力或新科学资格验收。
+质量谱封存记录的后继分析与恢复，见[质量谱封存记录重分析](#质量谱封存记录重分析)。
 
 ### 完整软件验证分片
 
@@ -547,3 +547,21 @@ producer返回原生完成receipt和实际Program/ION/IOB绑定；补偿与candi
 当前1c9f9f1c源码包含analysis69＋原根／simion各1，加本主题薄test为72模块，集合始终动态发现。先前5756ca42独立闭包曾为70模块；初始三片旧权重规划259.299669／232.138514／232.138435秒仅记录历史规划，不是当前模块时长预测。candidate模块后来增加legacy正例（另有Root36.360／27.225秒单独补验）及负例，旧259秒不能精确预测当前成本；不强改权重制造达标。完整Owner公墙及资源等待仍待实测，实际CPU预算可能只允许两个分片同时运行。原漏simion模块会通过SIMION官方CLI仅执行pure Lua回调（无PA／Refine／Fly），后续完整运行须单列该进程事实，不称零SIMION启动。
 
 本主题独立闭包小回归：真实项目PS入口与公共selector／partition薄4项通过9.267秒；原角色选择／失败释放及纵向解析理论代表2项通过4.303秒（逐项4.294660／0.008015）；显式false资格参数拒绝扩充后仅受影响方法再验5.816秒。公共GATE自然释放；未执行新完整Owner或商业／Lua原生验证，完整性能目标尚待实测。
+
+### 质量谱封存记录重分析
+
+`mass_spectrum_candidate -ReanalyzeOnly`使用显式`-SourceRunPath`和新的`-RunId`创建后继分析run；父run的输入、CSV、报告、配置、summary与manifest只读，不再执行原位预检或重新发布。其准入先核对实际消费的小记录和原容量owner的ready封存；checkpoint还须`-SourceStoppedReceiptPath`指向原owner已生成的停止receipt。只有运行中的interrupted标记、未知writer、writing范围、缺失或篡改记录均拒绝，并要求回原owner补齐收尾／封存，不由分析入口伪造停写证明。跨根来源沿公共SourceReferences绑定明确manifest与原owner，不猜父根。
+
+重分析直接调用原`analysis.mass_spectrum.analyze_mass_spectrum`，保留每物种COMSOL完整检测、SIMION全母群检测、精确ID／物种／电荷及原峰形、校准和绘图规则。冻结小Python闭包和父manifest绑定的resolved资源，因reference分析在import时读取该几何中的detector中心，不能换用今天默认值。原CSV受保护引用；PA、MPH及ION不复制、不重新物化、无求场或Fly，也不读取未消费的今日Formal资产，今日Formal不可用不阻断充分封存记录的分析。原`ResumeAfterComsol`仍是既有执行续跑，不属于这条新分析路径。
+
+原入口示例（从仓库根执行；8MiB是本次显式小代码／metadata／图表／收尾承诺示例，按实际输入与余量选择，不是隐藏默认或父求解预算）：
+
+```powershell
+.\projects\single_reflection_oa_tof_mass_analyzer\workflows\mass_spectrum_candidate\run_mass_spectrum_candidate.ps1 `
+  -ReanalyzeOnly -SourceRunPath 'D:\artifacts\projects\single_reflection_oa_tof_mass_analyzer\runs\<sealed-parent>' `
+  -RunId '<new-analysis-run-id>' -AnalysisNewBytes 8388608 -PythonExe .\.venv\Scripts\python.exe
+```
+
+分析进程的argv文件、cwd、环境和日志沿运行包的`Get-RunNativeExecutionContext`投影；Python支持的持久深源码import root保持原冻结身份，临时alias由公共owner收尾，不复制源码根。公共GATE普通轻量策略负责CPU／内存准入；分析Python进程沿现有observer记录真实PID、启动、退出及host释放。该调度承诺不是新增硬进程内存帽；现有物理危险监测仍适用。小Result默认在项目`scratch/workflow_results/<RunId>/result.json`。收尾中断使用同CLI的`-ResumeFinalization -RunId <analysis-id> [-ResultPath <原Result>]`，只恢复公共owner收尾，不重分析、不启动求解器；显式Result绑定原冻结根，不随今日根改变。分析本身失败则用原充分父记录创建另一个新分析run。主异常、收尾异常和未确认释放分别保留，不把host释放未知当作粒子或科学结论。
+
+产物仍为六项质量谱CSV／metrics／PNG及本run公共summary、manifest、Result；原有candidate边界、`resolution_claim_allowed=false`及未资格化的时钟说明保持，软件成功不授予新的Formal或全链资格。旧host-role矩阵中缺少封存父输入的伪分析case由`test_mass_spectrum_input_admission`实际公开CLI→分析→公共GATE释放和恢复测试替代；普通mass/SIMION角色case保留。

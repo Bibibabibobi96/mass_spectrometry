@@ -91,10 +91,27 @@ throw 'deliberate guard boundary rejection'
             support = root / "common"
             (support / "contracts").mkdir(parents=True)
             (support / "host_execution_lease.ps1").write_text(LEASE_STUB, encoding="utf-8")
-            (support / "contracts/run_artifact_support.ps1").write_text("", encoding="utf-8")
-            # Both real scripts fail at their first Python operation because
-            # this fixture has no runtime. No scientific assets are copied.
-            environment = dict(os.environ, OA_TEST_PARENT_HEAVY="1" if nested else "0")
+            # Resolve real roots with the explicit interpreter, then fail at
+            # the next absent science dependency. No native asset is copied.
+            paths = support / "paths"
+            paths.mkdir()
+            for name in ("workspace_paths.ps1", "workspace_paths.py"):
+                shutil.copyfile(PROJECT.parents[1] / "common/paths" / name, paths / name)
+            (support / "contracts/run_artifact_support.ps1").write_text(r'''
+. (Join-Path $PSScriptRoot '../host_execution_lease.ps1')
+$public=[Management.Automation.Language.Parser]::ParseFile($env:OA_TEST_PUBLIC_SUPPORT,[ref]$null,[ref]$null)
+foreach($name in @('Save-RunEnvironment','Restore-RunEnvironment')){
+ $functions=@($public.FindAll({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-ceq$name},$true))
+ if($functions.Count-ne1){throw 'Public environment boundary is not unique'}
+ Invoke-Expression $functions[0].Extent.Text
+}
+''', encoding="utf-8", newline="\n")
+            environment = dict(os.environ, OA_TEST_PARENT_HEAVY="1" if nested else "0",
+                SIMULATION_PYTHON_EXE=sys.executable,
+                OA_TEST_PUBLIC_SUPPORT=str(PROJECT.parents[1]/"common/contracts/run_artifact_support.ps1"),
+                MASS_SPECTROMETRY_ARTIFACT_ROOT=str(root/"artifacts"),
+                MASS_SPECTROMETRY_EXECUTION_ROOT=str(root/"execution"),
+                MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root/"host.sqlite3"))
             result = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(target), *arguments],
                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, check=False, env=environment, cwd=root,
@@ -132,9 +149,8 @@ throw 'deliberate guard boundary rejection'
     def test_direct_flight_entrypoints_select_permission_and_release(self) -> None:
         cases = (
             ("workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1", [], "SIMION"),
-            ("workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1", ["-ReanalyzeOnly"], "GATE"),
             ("workflows/formal_reference/run_formal_validation.ps1", [], "SIMION"),
-            ("simion/workbench/run_ideal_field_diagnostic.ps1", ["-AnalyzeOnly"], "SIMION"),
+            ("simion/workbench/run_ideal_field_diagnostic.ps1", ["-AnalyzeOnly", "-SourceRunPath", "fixture-source"], "GATE"),
             ("tests/simion/run_field_idealization_sweep.ps1", [], "SIMION"),
             ("tests/simion/run_field_idealization_sweep.ps1", ["-ValidateConfigOnly"], "GATE"),
         )

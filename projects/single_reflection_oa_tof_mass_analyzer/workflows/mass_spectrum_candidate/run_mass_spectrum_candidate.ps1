@@ -1,14 +1,207 @@
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName='Run')]
 param(
   [string]$RunId = ((Get-Date -Format 'yyyyMMdd_HHmmss') + '__sim__cross__mass-spectrum__five-mass'),
-  [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
-  [Alias('Resume')]
-  [switch]$ResumeAfterComsol,
-  [switch]$ReanalyzeOnly
+  [Parameter(ParameterSetName='Run')][string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
+  [Parameter(ParameterSetName='Run')][Alias('Resume')][switch]$ResumeAfterComsol,
+  [Parameter(Mandatory,ParameterSetName='Analyze')][switch]$ReanalyzeOnly,
+  [Parameter(Mandatory,ParameterSetName='Analyze')][string]$SourceRunPath,
+  [Parameter(ParameterSetName='Analyze')][string]$SourceStoppedReceiptPath='',
+  [Parameter(Mandatory,ParameterSetName='Analyze')][ValidateRange(1,[long]::MaxValue)][long]$AnalysisNewBytes,
+  [Parameter(ParameterSetName='Analyze')][Parameter(ParameterSetName='Resume')][string]$ResultPath='',
+  [Parameter(Mandatory,ParameterSetName='Resume')][switch]$ResumeFinalization,
+  [Parameter(ParameterSetName='Analyze')][Parameter(ParameterSetName='Resume')][string]$PythonExe=''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+# Reanalysis consumes only a sealed parent's sufficient scientific records.
+# Its own run/Result never replaces that parent's publication.
+if($ReanalyzeOnly-or$ResumeFinalization){
+  $analysisProject='single_reflection_oa_tof_mass_analyzer'
+  $analysisRepo=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../..'))
+  $analysisPython=if($PythonExe){(Resolve-Path -LiteralPath $PythonExe).Path}elseif($env:SIMULATION_PYTHON_EXE){
+    (Resolve-Path -LiteralPath $env:SIMULATION_PYTHON_EXE).Path
+  }else{Join-Path $analysisRepo '.venv/Scripts/python.exe'}
+  . (Join-Path $analysisRepo 'common/paths/workspace_paths.ps1')
+  . (Join-Path $analysisRepo 'common/contracts/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
+  if($ResumeFinalization){
+    if(-not$PSBoundParameters.ContainsKey('RunId')){throw 'ResumeFinalization requires the original analysis RunId.'}
+    if(-not$ResultPath){
+      $analysisPaths=Resolve-WorkspacePaths -SourceRoot $analysisRepo -Python $analysisPython
+      $ResultPath=Join-Path $analysisPaths.artifact_root ('projects/'+$analysisProject+'/scratch/workflow_results/'+$RunId+'/result.json')
+    }
+    $priorAnalysis=Get-Content -LiteralPath $ResultPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+    if($priorAnalysis.role-cne'run_artifact_workflow_result'-or-not$priorAnalysis.run_directory-or
+       -not[IO.Path]::IsPathFullyQualified([string]$priorAnalysis.run_directory)-or
+       (Split-Path -Leaf ([string]$priorAnalysis.run_directory))-cne$RunId){throw 'Mass-spectrum Result RunId differs.'}
+    $analysisRequest=Join-Path $priorAnalysis.run_directory 'inputs/execution_request.json'
+    $analysisRequestValue=Get-Content -LiteralPath $analysisRequest -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+    if($analysisRequestValue.package.project-cne$analysisProject-or$analysisRequestValue.package.run_id-cne$RunId-or
+       $analysisRequestValue.package.mode-cne'mass_spectrum_analysis'){throw 'Mass-spectrum Result owner differs.'}
+    $analysisOutcome=Invoke-RunArtifactWorkflow -RequestPath $analysisRequest -ResultPath $ResultPath -ResumeFinalization
+    if(-not$analysisOutcome.terminal_published){throw 'Mass-spectrum finalization remains incomplete.'}
+    return
+  }
+  if(-not$PSBoundParameters.ContainsKey('RunId')){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__analysis__python__mass-spectrum'}
+  $analysisPaths=Resolve-WorkspacePaths -SourceRoot $analysisRepo -Python $analysisPython
+  $analysisRoot=Join-Path $analysisPaths.artifact_root ('projects/'+$analysisProject)
+  $analysisRun=Join-Path $analysisRoot ('runs/'+$RunId)
+  $analysisSource=(Resolve-Path -LiteralPath $SourceRunPath).Path
+  if([IO.Path]::GetFullPath($analysisRun)-ieq$analysisSource-or(Split-Path -Leaf $analysisSource)-ceq$RunId){throw 'Reanalysis requires a distinct new RunId.'}
+  $analysisNames=@('SIMULATION_PYTHON_EXE','PYTHONDONTWRITEBYTECODE','MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH')
+  $analysisSaved=Save-RunEnvironment -Names $analysisNames
+  $analysisTimer=[Diagnostics.Stopwatch]::StartNew()
+  $analysisCapacity=$null;$analysisPackage=$null;$analysisOwner=$null;$analysisLease=$null;$analysisReader=$null
+  $analysisFailure=$null;$analysisCloseFailure=$null;$analysisStopped=$true;$analysisReleaseAttempted=$false
+  $analysisOperations=[Collections.Generic.List[object]]::new();$analysisReleases=[Collections.Generic.List[object]]::new()
+  $analysisPhase='source_admission';$analysisPrepareSeconds=0.0;$analysisStarted=0.0;$analysisUsage=$null
+  $analysisModule='projects.single_reflection_oa_tof_mass_analyzer.analysis.mass_spectrum_reanalysis'
+  try{
+    $env:SIMULATION_PYTHON_EXE=$analysisPython;$env:PYTHONDONTWRITEBYTECODE='1'
+    $env:MASS_SPECTROMETRY_ARTIFACT_ROOT=$analysisPaths.artifact_root
+    $env:MASS_SPECTROMETRY_EXECUTION_ROOT=$analysisPaths.execution_root
+    $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=$analysisPaths.host_resource_state_path
+    $analysisReader=Enter-RunTerminalConsumptionGuard -RunDirectory $analysisSource
+    $selectionArguments=@('-B','-m',$analysisModule,'select','--source',$analysisSource,'--artifact-root',$analysisPaths.artifact_root)
+    if($SourceStoppedReceiptPath){$selectionArguments+=@('--stopped-receipt',$SourceStoppedReceiptPath)}
+    $selectionText=Invoke-RunToolRootContext -RepoRoot $analysisRepo -Operation {
+      & $analysisPython @selectionArguments
+      if($LASTEXITCODE-ne0){throw 'Mass-spectrum parent records or stopped-owner evidence are insufficient; see the source admission error.'}
+    }
+    $analysisSelection=($selectionText-join"`n")|ConvertFrom-Json -AsHashtable -Depth 100
+    $analysisReferences=@{manifest_record=$analysisSelection.manifest_record;protected_paths=@($analysisSource)}
+    if($analysisSelection.stopped_receipt_record){$analysisReferences.stopped_receipt_record=$analysisSelection.stopped_receipt_record}
+    $analysisCapacity=Enter-ArtifactWorkflowCapacitySession -Python $analysisPython -RepoRoot $analysisRepo -ArtifactRoot $analysisPaths.artifact_root `
+      -RunDirectory $analysisRun -CommittedNewBytes $AnalysisNewBytes -Owner ('run-artifact-workflow:'+ $analysisProject+':'+$RunId) `
+      -SourceReferences @($analysisReferences)
+    $analysisPackage=New-RunPackage -Python $analysisPython -RepoRoot $analysisRepo -ArtifactRoot $analysisRoot -PathContext $analysisPaths `
+      -RunId $RunId -Project $analysisProject -Mode mass_spectrum_analysis -Software @('Python 3.11') `
+      -RetentionContractEnabled -CapacityLedgerLifecycleEnabled
+    $analysisPhase='prepare'
+    $selectionPath=Join-Path $analysisPackage.input_dir 'source_selection.json'
+    Write-RunJson -Path $selectionPath -Value $analysisSelection -Depth 100
+    $analysisBudgetPath=Join-Path $analysisPackage.input_dir 'analysis_commitment.json'
+    Write-RunJson -Path $analysisBudgetPath -Value @{committed_new_bytes=$AnalysisNewBytes;authority='explicit AnalysisNewBytes';
+      host_budget=(Get-HostResourceBudget -Role GATE -Stage postprocess);referenced_csv_native_new_bytes=0;
+      scope='frozen analysis code and small authority, plots, metadata and public closeout; no native payload copies'} -Depth 20
+    $analysisEntry=Join-Path $analysisPackage.input_dir 'run_mass_spectrum_candidate.ps1'
+    $null=Copy-VerifiedRunInput -Source $PSCommandPath -Destination $analysisEntry
+    $analysisOwner=Initialize-RunArtifactPowerShellOwner -Python $analysisPython -RepoRoot $analysisRepo -Package $analysisPackage `
+      -CapacitySession $analysisCapacity -ResultPath $ResultPath -EntrypointPath $analysisEntry -CommitmentInputPaths @($analysisBudgetPath,$selectionPath) -Software @('Python 3.11')
+    Write-Host "MASS_SPECTRUM_RESULT=$($analysisOwner.result_path)"
+    $analysisCode=Join-Path $analysisPackage.input_dir 'code'
+    $frozenText=Invoke-RunToolRootContext -RepoRoot $analysisRepo -Operation {
+      & $analysisPython -B -m $analysisModule freeze --repo $analysisRepo --destination $analysisCode --selection $selectionPath
+      if($LASTEXITCODE-ne0){throw 'Mass-spectrum analysis closure preparation failed.'}
+    }
+    $analysisInventory=Join-Path $analysisPackage.input_dir 'code_inventory.json'
+    Write-RunJson -Path $analysisInventory -Value (($frozenText-join"`n")|ConvertFrom-Json -AsHashtable -Depth 100) -Depth 100
+    $analysisConfig=Get-Content -LiteralPath $analysisPackage.run_config -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+    $analysisConfig.inputs.source_selection=$selectionPath;$analysisConfig.inputs.code_inventory=$analysisInventory
+    $analysisConfig.inputs.mode_config=Join-Path $analysisPackage.input_dir 'mass_spectrum.json'
+    $analysisConfig.inputs.resolved_geometry=Join-Path $analysisCode ('projects/'+$analysisProject+'/config/resolved_geometry.json')
+    $analysisConfig.parameters=@{reanalyze_only=$true;source_run_id=$analysisSelection.run_id;solver_native_calls=0;pa_materializations=0}
+    $analysisConfig.provenance=@{parent_manifest_record=$analysisSelection.manifest_record;original_execution=$analysisSelection.execution;
+      particle_source_provenance=$analysisSelection.particle_source_provenance;consumed_exports=$analysisSelection.exports}
+    Write-RunJson -Atomic -Path $analysisPackage.run_config -Value $analysisConfig -Depth 100
+    $analysisPrepareSeconds=$analysisTimer.Elapsed.TotalSeconds;$analysisStarted=$analysisPrepareSeconds;$analysisPhase='analysis'
+    $analysisLease=Enter-HostResourceStage -StatePath $analysisPaths.host_resource_state_path -Role GATE -Stage postprocess -RunId $RunId `
+      -Budget (Get-HostResourceBudget -Role GATE -Stage postprocess)
+    $analysisUsage=Join-Path $analysisPackage.result_dir 'analysis_resource_usage.json'
+    $analysisStdout=Join-Path $analysisPackage.log_dir 'analysis.stdout.log'
+    $analysisStderr=Join-Path $analysisPackage.log_dir 'analysis.stderr.log'
+    # CPython supports the persistent frozen import root. Windows process cwd
+    # and this run's actual files use the existing package execution view.
+    $analysisNative=Get-RunNativeExecutionContext -Package $analysisPackage -Tool 'mass-spectrum Python analysis' `
+      -Paths @($selectionPath,$analysisPackage.result_dir,$analysisStdout,$analysisStderr,$analysisPackage.artifact_run_dir)
+    $analysisEnvironment=@{};foreach($name in $analysisNative.environment.Keys){$analysisEnvironment[$name]=$analysisNative.environment[$name]}
+    $analysisEnvironment.PYTHONDONTWRITEBYTECODE='1'
+    $analysisLaunch='import runpy,sys;sys.path.insert(0,sys.argv.pop(1));runpy.run_module("'+$analysisModule+'",run_name="__main__")'
+    $analysisArgs=@('-I','-B','-c',$analysisLaunch,$analysisCode,'analyze','--selection',$analysisNative.projected_paths[0],'--code-root',$analysisCode,'--output',$analysisNative.projected_paths[1])
+    $analysisArgs=@($analysisArgs|ForEach-Object{'"'+([string]$_).Replace('"','\"')+'"'})
+    $analysisStopped=$false
+    try{
+      $analysisProcess=Invoke-ResourceBudgetedProcess -Limits $null -RunDir $analysisRun -UsagePath $analysisUsage -FilePath $analysisPython `
+        -ArgumentList $analysisArgs -WorkingDirectory $analysisNative.projected_paths[4] -Environment $analysisEnvironment `
+        -RedirectStandardOutput $analysisNative.projected_paths[2] -RedirectStandardError $analysisNative.projected_paths[3]
+      $analysisStopped=$true
+      $analysisObservation=@{exit_confirmed=$true;returncode=[int]$analysisProcess.exit_code;process_id=[int]$analysisProcess.root_process_id;process_started_at_utc_ticks=[long]$analysisProcess.root_process_started_at_utc_ticks}
+      $analysisOperations.Add(@{operation_id='python-analysis';observation=$analysisObservation;resource_release_id='analysis'})
+      if($analysisProcess.resource_budget_exceeded-or$analysisProcess.exit_code-ne0){
+        $analysisDiagnostic=(Get-Content -LiteralPath (Join-Path $analysisPackage.log_dir 'analysis.stderr.log') -Tail 8)-join[Environment]::NewLine
+        throw ('Candidate mass-spectrum reanalysis failed: '+$analysisDiagnostic)
+      }
+    }catch{
+      $analysisData=$_.Exception.Data
+      if($analysisData.Contains('observed_process_exit_confirmed')-and[bool]$analysisData['observed_process_exit_confirmed']-and
+         $analysisData.Contains('observed_process_returncode')-and$null-ne$analysisData['observed_process_returncode']-and
+         $analysisData.Contains('observed_process_id')-and$analysisData.Contains('observed_process_started_at_utc_ticks')){
+        $analysisStopped=$true
+        $analysisOperations.Add(@{operation_id='python-analysis';resource_release_id='analysis';observation=@{
+          exit_confirmed=$true;returncode=[int]$analysisData['observed_process_returncode'];process_id=[int]$analysisData['observed_process_id'];
+          process_started_at_utc_ticks=[long]$analysisData['observed_process_started_at_utc_ticks']}})
+      }
+      throw
+    }
+  }catch{$analysisFailure=$_}finally{
+    try{
+      if($analysisOwner){
+        if($analysisStopped-and$null-ne$analysisLease){
+          $analysisReleaseAttempted=$true
+          $analysisRelease=Exit-HostResourceStage -Lease $analysisLease -PassThru
+          if($analysisOperations.Count){Add-RunArtifactResourceRelease -ResourceReleases $analysisReleases -ReleaseId analysis -Receipt @{host_release=@{
+            inherited=[bool]$analysisLease.inherited;token=[string]$analysisLease.token;result=$analysisRelease;error=$null}}}
+          $analysisLease=$null
+        }
+        $analysisSummary=@{role='oa_tof_candidate_mass_spectrum_analysis';execution_status=$(if($analysisFailure){'failed'}else{'completed'});
+          data_validity=$(if($analysisFailure){'incomplete'}else{'valid'});scientific_result=$(if($analysisFailure){'NOT_EVALUATED'}else{'candidate_diagnostic'});
+          formal_gate_passed=$false;resolution_claim_allowed=$false;solver_native_calls=0;pa_materializations=0;
+          source_run_directory=$analysisSource;result_path=$analysisOwner.result_path;analysis_metrics_path=(Join-Path $analysisPackage.result_dir 'mass_spectrum_metrics.json');
+          failure_stage=$(if($analysisFailure){$analysisPhase}else{$null});failure_reason=$(if($analysisFailure){$analysisFailure.Exception.Message}else{$null});
+          recovery_action=$(if(-not$analysisStopped){'inspect_writer_completion'}elseif($analysisFailure){'repair_analysis_and_create_new_analysis_child'}else{'none'});
+          phase_timings_seconds=@{prepare=$(if($analysisStarted-gt0){$analysisPrepareSeconds}else{$analysisTimer.Elapsed.TotalSeconds});analysis=$(if($analysisStarted-gt0){$analysisTimer.Elapsed.TotalSeconds-$analysisStarted}else{0.0})};total_elapsed_seconds=$analysisTimer.Elapsed.TotalSeconds}
+        $analysisOutputs=@(Get-ChildItem -LiteralPath $analysisPackage.result_dir -File|ForEach-Object FullName)
+        $analysisRequired=@();if(-not$analysisFailure){$analysisRequired=@('mass_spectrum_particles.csv','mass_spectrum_summary.csv','mass_peak_shape_comparison.csv','mass_spectrum_metrics.json','mass_spectrum_comparison.png','mass_detector_landing_comparison.png'|ForEach-Object{Join-Path $analysisPackage.result_dir $_})}
+        $analysisOutcome=Complete-RunArtifactPowerShellOwner -Context $analysisOwner -Status $(if($analysisFailure){'failed'}else{'success'}) `
+          -Summary $analysisSummary -OutputPaths $analysisOutputs -RequiredOutputPaths $analysisRequired `
+          -WriterCompletion @{operations=@($analysisOperations.ToArray());resource_releases=@($analysisReleases.ToArray())} -WritersStopped $analysisStopped -OriginalFailure $analysisFailure
+        if(-not$analysisOutcome.terminal_published){throw 'Mass-spectrum analysis finalization remains incomplete.'}
+        $analysisCapacity=$null
+      }
+    }catch{
+      $analysisCloseFailure=$_
+      if($analysisOwner-and-not$analysisOwner.completion_written){
+        $retainedAnalysis=Get-Content -LiteralPath $analysisOwner.result_path -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+        $primaryAnalysis=if($analysisFailure){$analysisFailure}else{$analysisCloseFailure}
+        $retainedAnalysis.exception=@{type=$primaryAnalysis.Exception.GetType().FullName;message=$primaryAnalysis.Exception.Message;notes=@()}
+        $retainedAnalysis.secondary_errors=@(if($analysisFailure){$analysisCloseFailure.Exception.Message})
+        $retainedAnalysis.status='failed';$retainedAnalysis.execution_status='finalization_failed'
+        $retainedAnalysis.failure_stage=if($analysisReleaseAttempted-and$null-ne$analysisLease){'host_release'}else{'finalization'}
+        $retainedAnalysis.failure_reason=$analysisCloseFailure.Exception.Message
+        $retainedAnalysis.recovery_action=if($retainedAnalysis.failure_stage-eq'host_release'){'inspect_release_without_refly'}else{'inspect_finalization_evidence'}
+        $retainedAnalysis.resume_action=$retainedAnalysis.recovery_action
+        $retainedAnalysis.writers_confirmed=$analysisStopped
+        $retainedAnalysis.terminal_published=$false;$retainedAnalysis.capacity_finalized=$false;$retainedAnalysis.lease_released=$false
+        Write-RunJson -Atomic -Path $analysisOwner.result_path -Value $retainedAnalysis -Depth 64
+      }
+    }finally{
+      try{
+        if(-not$analysisOwner){
+          if($analysisCapacity){$null=Exit-ArtifactWorkflowCapacitySession -Python $analysisPython -RepoRoot $analysisRepo -Session $analysisCapacity}
+          if($analysisPackage){Remove-RunPackageExecutionAlias -Package $analysisPackage}
+        }
+        if($analysisStopped-and$null-ne$analysisLease-and-not$analysisReleaseAttempted){$null=Exit-HostResourceStage -Lease $analysisLease -PassThru}
+        if($analysisStopped-and$analysisReader){$analysisReader.Dispose()}
+      }catch{if($analysisFailure){$analysisFailure.Exception.Data['analysis_cleanup_error']=$_.Exception.Message}else{$analysisCloseFailure=$_}}
+      finally{Restore-RunEnvironment -Names $analysisNames -Snapshot $analysisSaved}
+    }
+  }
+  if($analysisFailure){if($analysisCloseFailure){$analysisFailure.Exception.Data['analysis_finalization_error']=$analysisCloseFailure.Exception.Message};throw $analysisFailure}
+  if($analysisCloseFailure){throw $analysisCloseFailure}
+  return
+}
+
+
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $python = if ($env:SIMULATION_PYTHON_EXE) { (Resolve-Path -LiteralPath $env:SIMULATION_PYTHON_EXE).Path }
@@ -18,8 +211,7 @@ $python = if ($env:SIMULATION_PYTHON_EXE) { (Resolve-Path -LiteralPath $env:SIMU
 $pathContext = Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
 $artifactRoot = Join-Path $pathContext.artifact_root 'projects/single_reflection_oa_tof_mass_analyzer'
 $runDir = Join-Path $artifactRoot "runs\$RunId"
-$resumeExisting = $ResumeAfterComsol -or $ReanalyzeOnly
-if ($ResumeAfterComsol -and $ReanalyzeOnly) { throw 'ResumeAfterComsol and ReanalyzeOnly are mutually exclusive.' }
+$resumeExisting = [bool]$ResumeAfterComsol
 if ($resumeExisting) {
   $frozenConfigPath = Join-Path $runDir 'run_config.json'
   if (-not (Test-Path -LiteralPath $frozenConfigPath -PathType Leaf)) { throw "Resume requires the original run config: $frozenConfigPath" }
@@ -45,7 +237,7 @@ if ($resumeExisting) {
 }
 $environmentNames = @('SIMULATION_PYTHON_EXE','MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH')
 $environmentSnapshot = Save-RunEnvironment -Names $environmentNames
-$hostRole = if ($ReanalyzeOnly) { 'GATE' } else { 'SIMION' }
+$hostRole = 'SIMION'
 $hostExecutionLease = $null
 try {
 $env:SIMULATION_PYTHON_EXE = $python
@@ -186,7 +378,7 @@ $ionGenerator = Join-Path $projectRoot 'simion\workbench\generate_comsol_consist
 $simionAnalyzer = Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.ps1'
 $requiredPaths = @($modePath,$resolvedPath,$formalMph,$formalIob,$python,$ionGenerator,
   $simionAnalyzer,$particleCountPolicyPath)
-if (-not $ReanalyzeOnly) { $requiredPaths += $SimionExe }
+$requiredPaths += $SimionExe
 foreach ($path in $requiredPaths) {
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Required input is absent: $path" }
 }
@@ -364,9 +556,6 @@ foreach ($species in $mode.species) {
       (Test-Path -LiteralPath $reportPath -PathType Leaf) -and
       (Select-String -LiteralPath $reportPath -Pattern ("^" + [regex]::Escape($expected) + '$') -Quiet)
     if ($complete) { continue }
-    if ($ReanalyzeOnly) {
-      throw "ReanalyzeOnly requires complete COMSOL evidence for $speciesId."
-    }
     if (Test-Path -LiteralPath $reportPath -PathType Leaf) {
       $failedReport = $reportPath + '.failed.' + (Get-Date -Format 'yyyyMMdd_HHmmss')
       Move-Item -LiteralPath $reportPath -Destination $failedReport
@@ -425,14 +614,6 @@ try {
 } finally {
   Pop-Location
 }
-if ($ReanalyzeOnly) {
-  foreach ($path in @($simionCsv,$simionSummary)) {
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-      throw "ReanalyzeOnly input is absent: $path"
-    }
-  }
-  $summary = Get-Content -LiteralPath $simionSummary -Raw -Encoding UTF8 | ConvertFrom-Json
-} else {
   $runtimeTaskId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__simion__mass-spectrum-runtime'
   $runtimeRoot = Join-Path $artifactRoot "scratch\$runtimeTaskId"
   $runtimeReceipt = Join-Path $inputDir 'formal_simion_runtime_receipt.json'
@@ -477,7 +658,7 @@ if ($ReanalyzeOnly) {
     -Mode 'mass_spectrum_candidate' -Distribution 'five_species_shared_source' `
     -ParticleCsv $simionCsv
   $summary | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $simionSummary -Encoding UTF8
-}
+
 if ([int]$summary.Hit -ne $totalParticles) {
   throw "SIMION detected $($summary.Hit)/$totalParticles mixed-species ions."
 }
@@ -506,7 +687,7 @@ $scientificConfig = [ordered]@{
     simion = 'one mixed-species fly'
     comsol = 'one particle-tracing solve per species; formal electrostatic solution reused'
     resumed_after_comsol = [bool]$ResumeAfterComsol
-    reanalyze_only = [bool]$ReanalyzeOnly
+    reanalyze_only = $false
     particle_count_contract = 'repository_standard_with_n100_prefix_of_n1000'
     simion_max_tof_us = $simionMaxTofUs
   }
