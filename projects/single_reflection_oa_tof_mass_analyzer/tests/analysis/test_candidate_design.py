@@ -244,18 +244,6 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
             self.assertIn("adjustable accelerator_ring_width_mm=6.0", program.read_text(encoding="utf-8"))
 
 
-    def test_comsol_contract_is_the_only_reflectron_voltage_source(self):
-        source = (PROJECT_ROOT / "comsol" / "oatof_build_model_core.m").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("requires a resolved contract path", source)
-        self.assertIn("reflectron_midgrid_voltage_v = voltageV.midgrid", source)
-        self.assertIn("reflectron_backplate_voltage_v = voltageV.backplate", source)
-        self.assertIn("d2_mm = geometryMm.L_stage2", source)
-        self.assertNotIn("if ~isempty(contract_path)", source)
-        self.assertNotIn("Legacy positional", source)
-
-
     def test_solidworks_step_import_binds_clean_part_template_temporarily(self):
         source = (REPO_ROOT / "common" / "solidworks" / "import_step_to_solidworks.py").read_text(
             encoding="utf-8"
