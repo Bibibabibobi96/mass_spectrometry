@@ -967,8 +967,10 @@ $results | ConvertTo-Json -Depth 32 -Compress
         coarse = cases["coarse"]["compiled"]
         self.assertEqual(coarse["role"], "rf_quadrupole_compiled_comsol_solver_numerics")
         self.assertEqual(coarse["mesh"], {"global_auto_level": 9,
-                                         "working_region_hmax_override_enabled": False})
+                                         "working_region_hmax_override_enabled": False,
+                                         "minimum_element_size_mm": 0.2})
         self.assertEqual(baseline["mesh"]["global_auto_level"], 1)
+        self.assertNotIn("minimum_element_size_mm", baseline["mesh"])
         self.assertEqual(coarse["trajectory"], baseline["trajectory"])
         self.assertEqual(coarse["trajectory"], {"rf_steps_per_period": 80, "maximum_time_us": 80.0})
         self.assertEqual(coarse["authority"], baseline["authority"])

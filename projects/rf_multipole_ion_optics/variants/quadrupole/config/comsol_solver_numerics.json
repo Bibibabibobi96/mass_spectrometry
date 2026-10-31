@@ -4,7 +4,7 @@
   "contract_id": "rf_quadrupole.comsol_solver_numerics.v1",
   "status": "current_candidate_solver_numerics",
   "current": true,
-  "logical_sha256": "1151054D00B9657D54BB6E2D9E03269B61AAD6F36CA83447ADCF1E93FB9202E5",
+  "logical_sha256": "9D5808B8AC7AE746F12E4F9EFE601D68AEC36FC23E756BAF9B1E7A60925E2512",
   "profiles": [
     {
       "profile_id": "baseline",
@@ -38,7 +38,8 @@
       "claim_limit": "Workflow/source-construction development only; no scientific or precision qualification.",
       "mesh": {
         "global_auto_level": 9,
-        "working_region_hmax_override_enabled": false
+        "working_region_hmax_override_enabled": false,
+        "minimum_element_size_mm": 0.2
       },
       "trajectory": {
         "rf_steps_per_period": 80,

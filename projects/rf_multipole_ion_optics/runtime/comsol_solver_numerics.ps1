@@ -5,7 +5,7 @@ $script:RfComsolNumericsIdentity = [ordered]@{
     schema_version=1;role='rf_quadrupole_comsol_solver_numerics'
     contract_id='rf_quadrupole.comsol_solver_numerics.v1'
     status='current_candidate_solver_numerics';current=$true
-    logical_sha256='1151054D00B9657D54BB6E2D9E03269B61AAD6F36CA83447ADCF1E93FB9202E5'
+    logical_sha256='9D5808B8AC7AE746F12E4F9EFE601D68AEC36FC23E756BAF9B1E7A60925E2512'
 }
 
 function Get-RfComsolRequiredProperty {
@@ -210,6 +210,13 @@ function Compile-RfComsolSolverNumerics {
             -Name 'COMSOL mesh working_region_hmax_mm' -Positive
     } elseif ($null -ne $mesh.PSObject.Properties['working_region_hmax_mm']) {
         throw 'COMSOL mesh working_region_hmax_mm must be absent when its override is disabled.'
+    }
+    if ($null -ne $mesh.PSObject.Properties['minimum_element_size_mm']) {
+        $minimum = Get-RfComsolRequiredFiniteNumber -Object $mesh -Property 'minimum_element_size_mm' -Name 'COMSOL mesh minimum_element_size_mm' -Positive
+        if ($hmaxEnabled -and $minimum -gt $compiledMesh.working_region_hmax_mm) {
+            throw 'COMSOL mesh minimum_element_size_mm must not exceed working_region_hmax_mm.'
+        }
+        $compiledMesh.minimum_element_size_mm = [double]$minimum
     }
     $trajectory = Get-RfComsolRequiredProperty -Object $profile -Property 'trajectory' `
         -Name "COMSOL solver-numerics profile '$ProfileId' trajectory"

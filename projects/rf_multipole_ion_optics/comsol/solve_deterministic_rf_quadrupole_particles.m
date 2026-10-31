@@ -225,7 +225,12 @@ mesh=comp.mesh.create('mesh1'); mesh.label('Candidate tetrahedral mesh');
 if isfinite(meshHmaxMm)
     mesh.label(sprintf('Candidate tetrahedral mesh (hmax %.12g mm)',meshHmaxMm));
 end
-configure_comsol_mesh(mesh,'geom1',meshAuto,'',meshHmaxMm);mesh.run;
+minimumElementSizeMm=[];
+if isfield(numerics.mesh,'minimum_element_size_mm')
+    minimumElementSizeMm=requireFiniteScalar(numerics.mesh,'minimum_element_size_mm');
+    assert(minimumElementSizeMm>0,'Explicit minimum element size must be positive.');
+end
+configure_comsol_mesh(mesh,'geom1',meshAuto,'',meshHmaxMm,minimumElementSizeMm);mesh.run;
 mi=mphmeshstats(model,'mesh1'); assert(~mi.isempty && mi.iscomplete && ~mi.hasproblems,'Mesh gate failed.');
 std1=model.study.create('std1');
 std1.label('Stationary differential and static fields');
