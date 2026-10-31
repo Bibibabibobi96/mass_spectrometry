@@ -15,7 +15,7 @@ from integrations.tests.test_single_reflection_preparation import fixture, relea
 from integrations.tests.test_single_reflection_fields import multipole_source
 from integrations.workflows.single_reflection_flight.field_plan import (
     KINDS, bind_parent_fields, build_field_plan, field_bank, frontend_field_identity, audit_input_identity,
-    validate_frozen_generation_metadata, write_audit_spec,
+    validate_frozen_generation_metadata, write_audit_spec, reusable_audit, _bound_source_audit,
 )
 from integrations.workflows.single_reflection_flight.prepare import prepare
 from common.contracts.file_identity import file_sha256
@@ -38,6 +38,48 @@ def prepared(root: Path, *, source=None, entrance_refinement=False, local=False)
 
 
 class DirectFieldPlanTests(unittest.TestCase):
+    def test_retired_alias_audit_uses_unique_manifest_bound_durable_small_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run, plan = prepared(root)
+            member = plan['members'][0]
+            audit_plan = dict(plan, **member)
+            verifier = WORKFLOW/'audit_frontend_working_fields.lua'
+            producer = root/'producer'
+            audit = producer/'logs/parent_carrier_off_fields_audit.json'
+            audit.parent.mkdir(parents=True)
+            audit.write_text(json.dumps(dict(status='pass',
+                audit_input_sha256=audit_input_identity(audit_plan),
+                audit_verifier_sha256=file_sha256(verifier))))
+            durable = file_record(audit)
+            stale = dict(durable, path=str(root/'execution_aliases/retired/logs'/audit.name))
+            manifest = dict(run_config=dict(path=str(producer/'run_config.json')),
+                inputs=dict(field_audit=durable), outputs=[dict(durable, retention_role='lightweight_optional')])
+            bound = _bound_source_audit(manifest, stale)
+            audit_plan['frozen_field_source'] = dict(audit_record=bound)
+            with patch('integrations.workflows.single_reflection_flight.field_plan.load_pa_family_cache_transaction',
+                       side_effect=AssertionError('explicit source must not reread cache or PA')):
+                self.assertEqual(reusable_audit(audit_plan, root/'unused_generation', verifier)['path'], str(audit))
+            for mutation in ('missing', 'identity', 'ambiguous', 'content'):
+                with self.subTest(mutation=mutation):
+                    changed = copy.deepcopy(manifest)
+                    if mutation == 'missing':
+                        changed['inputs'] = {}; changed['outputs'] = []
+                    elif mutation == 'identity':
+                        changed['inputs']['field_audit']['sha256'] = '0'*64
+                        changed['outputs'][0]['sha256'] = '0'*64
+                    elif mutation == 'ambiguous':
+                        changed['outputs'].append(dict(durable, path=str(root/'other'/audit.name)))
+                    else:
+                        audit.write_text('{}')
+                        audit_plan['frozen_field_source']['audit_record'] = _bound_source_audit(changed, stale)
+                        with self.assertRaises(AssertionError):
+                            reusable_audit(audit_plan, root/'unused_generation', verifier)
+                        continue
+                    with self.assertRaisesRegex(ValueError, 'uniquely identity-bound'):
+                        _bound_source_audit(changed, stale)
+
+
     def test_instance_rename_and_reorder_preserve_full_and_local_native_plans(self):
         for local in (False, True):
             with self.subTest(local=local), tempfile.TemporaryDirectory() as directory:
@@ -902,8 +944,8 @@ if($FrozenSource-eq'1'){
   }
  }
  Write-RunJson -Path (Join-Path $secondRun 'inputs/frontend_field_source_receipt.json') -Value $oneReceipt -Depth 100
- $producerOutputs=@(foreach($domain in $oneReceipt.domains){foreach($record in $domain.working_points){@{path=$record.path;bytes=$record.bytes;sha256=$record.sha256}}})
- Write-RunJson -Path (Join-Path $secondRun 'inputs/frontend_field_source_manifest.json') -Value @{role='simulation_run_manifest';outputs=$producerOutputs} -Depth 100
+ $producerOutputs=@(foreach($domain in $oneReceipt.domains){foreach($record in $domain.working_points){@{path=$record.path;bytes=$record.bytes;sha256=$record.sha256};$record.audit_record}})
+ Write-RunJson -Path (Join-Path $secondRun 'inputs/frontend_field_source_manifest.json') -Value @{role='simulation_run_manifest';run_config=@{path=(Join-Path $Run 'run_config.json')};outputs=$producerOutputs} -Depth 100
  $sourceManifest=Join-Path $secondRun 'inputs/frontend_field_source_manifest.json'
  $provenance=Get-Content -LiteralPath (Join-Path $secondRun 'inputs/source_provenance.json') -Raw|ConvertFrom-Json -AsHashtable -Depth 100
  $provenance.input_records.frontend_fields_manifest=@{path=$sourceManifest;bytes=(Get-Item -LiteralPath $sourceManifest).Length;sha256=(Get-FileHash -LiteralPath $sourceManifest -Algorithm SHA256).Hash;source_path=(Join-Path $Run 'run_manifest.json')}

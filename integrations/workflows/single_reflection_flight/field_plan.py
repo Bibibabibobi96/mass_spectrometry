@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 
 from common.contracts.file_identity import file_sha256, canonical_json_sha256
-from common.contracts.verify_run_manifest import verify_record
+from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record
 from common.simion.pa_family_cache import (
     canonical_pa_family_cache_key,
@@ -157,6 +157,29 @@ def _check_source_physics(member: dict) -> None:
         raise ValueError(f"{member['member_id']}: frozen field source physical identity differs")
 
 
+def _bound_source_audit(manifest: dict, record: dict | None) -> dict | None:
+    """Resolve a small audit through the frozen producer's durable manifest.
+
+    Stage receipts can retain a retired execution alias. Terminal publication
+    already records its durable path; never infer an alias replacement or scan
+    files, and keep byte/hash binding and the normal audit verification.
+    """
+    if record is None:
+        return None
+    producer = Path(manifest['run_config']['path']).parent
+    matches = {}
+    for candidate in [*manifest.get('inputs', {}).values(), *manifest.get('outputs', [])]:
+        if (candidate.get('bytes') == record.get('bytes')
+                and str(candidate.get('sha256', '')).upper() == str(record.get('sha256', '')).upper()
+                and Path(candidate.get('path', '')).name == Path(record['path']).name):
+            path = record_path(candidate, base_dir=producer)
+            matches[str(path)] = path
+    if len(matches) != 1:
+        raise ValueError('source field audit is not uniquely identity-bound by its producer manifest')
+    return dict(record, path=str(next(iter(matches.values()))))
+
+
+
 def _frozen_field_source(prepared: Path, design: dict, plans: list[dict]) -> bool:
     request_path = prepared / 'request.json'
     if not request_path.is_file():
@@ -213,7 +236,7 @@ def _frozen_field_source(prepared: Path, design: dict, plans: list[dict]) -> boo
             source = dict(identity=identity, cache_key=info['cache_key'], generation_directory=str(generation),
                 identity_path=str(identity_path), cache_filenames=filenames,
                 source_schema_version=source_version, physical_point=physical_point,
-                record=canonical_record, audit_record=(info.get('audit_record') if version == 3 else
+                record=canonical_record, audit_record=(_bound_source_audit(manifest, info.get('audit_record')) if version == 3 else
                     dict(path=str(generation/AUDIT_NAME), **{k:next(row for row in publication['files'] if row['name']==AUDIT_NAME)[k] for k in ('bytes','sha256')})))
             member['frozen_field_source'] = source
             if domain['domain_id'] == 'parent':
