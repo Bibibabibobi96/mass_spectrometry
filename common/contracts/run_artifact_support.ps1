@@ -272,11 +272,18 @@ function Invoke-RunCapacityCommand {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot,
-    [Parameter(Mandatory)][string[]]$Arguments,[Parameter(Mandatory)][string]$FailureLabel
+    [Parameter(Mandatory)][string[]]$Arguments,[Parameter(Mandatory)][string]$FailureLabel,
+    [AllowEmptyString()][string]$StandardInputJson
   )
+  $hasStandardInput=$PSBoundParameters.ContainsKey('StandardInputJson')
   Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
     $PSNativeCommandUseErrorActionPreference=$false
-    $captured=@(& $Python @Arguments 2>&1)
+    if($hasStandardInput){
+      $OutputEncoding=[Text.UTF8Encoding]::new($false)
+      $captured=@($StandardInputJson | & $Python @Arguments 2>&1)
+    }else{
+      $captured=@(& $Python @Arguments 2>&1)
+    }
     $exitCode=$LASTEXITCODE
     $stdout=@($captured|Where-Object{$_-isnot[Management.Automation.ErrorRecord]})
     $stderr=@($captured|Where-Object{$_-is[Management.Automation.ErrorRecord]})
@@ -941,7 +948,8 @@ from pathlib import Path
 from common.contracts.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
 from common.contracts.verify_run_manifest import record_path
 from common.contracts.capacity_protection import load_capacity_protection_leases,path_is_protected
-session,refs,paths,require=json.loads(sys.argv[1]),json.loads(sys.argv[2]),json.loads(sys.argv[3]),sys.argv[4]=='True'
+request=json.load(sys.stdin)
+session,refs,paths,require=(request[key] for key in ('session','source_references','native_input_paths','require_protection'))
 sources={}
 for ref in refs:
     source=resolve_consumed_run_capacity_owner(ref['manifest_record'],consumer_artifact_root=Path(session['artifact_root']),stopped_receipt_record=ref.get('stopped_receipt_record'))
@@ -971,9 +979,10 @@ for raw in paths:
 rows=[{'target_directory':row['target_directory'],'input_paths':row['input_paths']} for row in sources.values() if row['input_paths']]
 print(json.dumps(sorted(rows,key=lambda row:row['target_directory'])))
 '@
-  $output=@(Invoke-RunCapacityCommand -Python $Python -RepoRoot $RepoRoot -Arguments @('-B','-c',$resolver,
-    ($Session|ConvertTo-Json -Depth 64 -Compress),(ConvertTo-Json -InputObject @($SourceReferences) -Depth 64 -Compress),
-    (ConvertTo-Json -InputObject @($NativeInputPaths) -Compress),([string][bool]$RequireProtection)) -FailureLabel 'Native source authority verification failed')
+  $request=@{session=$Session;source_references=@($SourceReferences);
+    native_input_paths=@($NativeInputPaths);require_protection=[bool]$RequireProtection}
+  $output=@(Invoke-RunCapacityCommand -Python $Python -RepoRoot $RepoRoot -Arguments @('-B','-c',$resolver) `
+    -StandardInputJson (ConvertTo-Json -InputObject $request -Depth 64 -Compress) -FailureLabel 'Native source authority verification failed')
   return @(ConvertFrom-Json -InputObject ($output-join"`n"))
 }
 

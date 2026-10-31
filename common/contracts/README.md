@@ -925,3 +925,5 @@ Python prepared请求可选提供`prepared.native_input_paths`绝对文件路径
 2026-10-31 同一生产 owner 下，原4项／合并后3项分别通过（66.705／66.698秒）；
 公开墙钟80.131／70.438秒的差异主要来自准入等待11.422／1.743秒，未证明稳定提速。
 本次消除重复场景与重复恢复调用，未将其表述为完整公共套件性能达标。
+
+源原生输入的容量authority解析沿现有 `Invoke-RunCapacityCommand -StandardInputJson` 通过UTF-8标准输入运输Session、SourceReferences及输入路径，不把可能含完整准入诊断的大JSON放入Windows命令行；缺省调用、manifest/活保护校验与非零stderr诊断保持原合同。

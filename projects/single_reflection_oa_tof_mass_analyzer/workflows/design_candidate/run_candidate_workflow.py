@@ -162,11 +162,12 @@ def _run_managed_stage_command(
 ) -> None:
     """Carry actual native receipts and canonical persistent paths to the owner."""
     writer = plan.get("writer_completion")
+    native_command, native_environment = _native_stage_execution_view(command, environment, plan)
+    from common.paths.workspace_paths import project_native_run_path
+    native_log = Path(project_native_run_path(log_path))
     failure = None
     try:
-        native_command, native_environment = _native_stage_execution_view(command, environment, plan)
-        from common.paths.workspace_paths import project_native_run_path
-        _run_command(native_command, Path(project_native_run_path(log_path)), native_environment)
+        _run_command(native_command, native_log, native_environment)
     except BaseException as error:
         failure = error
     try:
@@ -1272,7 +1273,7 @@ def execute_prepared_run(
         if summary is None:
             # No stage result is invented when preparation itself failed.
             summary = {"schema_version": 1, "role": "oa_tof_candidate_run_summary", "status": "failed",
-                       "failure_stage": "preparation", "candidate_decision": "candidate_rejected",
+                       "failure_stage": "preparation", "candidate_decision": "no_candidate_decision",
                        "promotion_authorized": False, "performance_claim_allowed": False, "stages": []}
     summary = dict(summary, run_id=run_root.name)
     if load_json(run_root / "run_manifest.json").get("lifecycle_state") == "provisional":
@@ -1425,7 +1426,7 @@ def execute_prepared_postprocess(config_path: Path, session_path: Path, request_
             raise ValueError("Protected parent evidence changed after admission")
         source_verified = True
         evidence = execute_saved_postprocess(selected, root, closure,
-            {"run_id": root.name, "context_sha256": sha256(request_path).lower(), "writer_completion": writer,
+            {"run_id": root.name, "run_root": str(root), "context_sha256": sha256(request_path).lower(), "writer_completion": writer,
              "source_execution_context": session.get("source_execution_context"), "postprocess_evidence": evidence},
             runtime=sys.modules[__name__])
     except BaseException as error:
@@ -1714,7 +1715,7 @@ def _record_candidate_native_completion(stage: dict, plan: dict) -> bool:
     if type(count) is not int or count != 100 or context.get('particle_count') != count:
         raise ValueError('Raw-save population differs from the frozen Candidate request')
     times = context.get('solution_times_s')
-    if not isinstance(times,list) or len(times)<2 or any(type(value) not in (int,float) or not math.isfinite(value) for value in times) or any(right<=left for left,right in zip(times,times[1:])):
+    if not isinstance(times,list) or len(times)<2 or any(type(value) not in (int,float) or not math.isfinite(value) for value in times) or any(right<left for left,right in zip(times,times[1:])) or times[-1]<=times[0]:
         raise ValueError('Raw-save solution times are incomplete')
     if context.get('saved_model_bytes') != model.stat().st_size:
         raise ValueError('Raw-save context does not bind the actual persisted model size')

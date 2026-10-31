@@ -1012,6 +1012,10 @@ function Invoke-RunArtifactWorkflow {
           $result.source_execution_aliases_removed=$true
         }catch{$result.secondary_errors+=@("Source execution alias cleanup failed: "+$_.Exception.Message)}
       }
+      if($null-ne$package){
+        try{Remove-RunPackageExecutionAlias -Package $package;$result.execution_alias_removed=$true}
+        catch{$result.secondary_errors+=@('Initialization execution alias cleanup failed: '+$_.Exception.Message)}
+      }
       try{$null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repo -Session $session;$result.lease_released=$true}
       catch{$result.secondary_errors+=@("Capacity lease cleanup failed: $($_.Exception.Message)")}
     }

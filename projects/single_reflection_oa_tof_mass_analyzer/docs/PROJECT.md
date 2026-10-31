@@ -733,3 +733,9 @@ normal build／sync、CAD的COMSOL打开及cold后处理均向既有launcher传�
 GUI同路径保存的开始／完成事实沿现小context记录：唯一初始raw-save调用使用writer的raw_complete默认，core在GUI save之前持久gui_update_started，成功写入并更新最后bytes后才持久gui_update_complete。producer与需要MPH的冷准入均拒绝明确未完成状态，不因旧sidecar与同尺寸文件并存就发布native receipt；该保存失败为data_validity=unknown／无科学决定，保原异常与检查保存／recovery数据的动作。独立manifest绑定的充分CSV仍可只分析。旧sidecar不补写新标记；缺字段仅沿原绑定最终task PASS及实际停止、返回0的原native事实准入，不为旧失败raw wrapper伪造完成。
 
 本边界实际Mcore／context writer的纯MATLAB两项PASS1.3798925秒，含GUI save前标记已持久、同尺寸BAD覆盖后抛错仍保持started，以及成功后complete；三M CodeAnalyzer[]。明确供应商边界stub，无COMSOL调用。Python三项PASS38.582秒；随后仅GUI未知科学决定字段补充的受影响一项PASS15.027秒。原提取前raw保存失败仍能经现public validator复用其具名native receipt；没有扩大runAll或部分求解的接受域。真实新author保存／冷开零求解验收仍待执行。
+
+正常粗网格N100运行 `20261031_215019__sim__comsol__candidate-save-fault` 实际保存129,857,881字节真实场MPH后，在提取前触发明确的一次性验收故障；外层113.971秒，公共owner111.077秒，终态、容量、租约与alias清理完成且无收尾附加错误。原父run保持失败、只读；其6,934项原解时间库存含一个分段区间端点精确重复，不能把库存等同于严格递增的提取查询向量。恢复保留库存全文及原解编号，要求有限、非递减且至少两个不同时间；冷开仍逐项核对原库存，并在导出前用官方 `mphgetu(soltag,solnum,matrix='on')` 精确比较重复时刻的完整解状态，异态或不可用状态拒绝。提取查询、母群和物理判据不放宽；六项小MATLAB行为回归通过4.591秒，真实边界以下述后继run记录为准。官方COMSOL6.4接口见[解向量读取](https://doc.comsol.com/6.4/doc/com.comsol.help.llmatlab/llmatlab_ug_ref.9.31.html)，查阅2026-10-31；此处只读状态，不重新求解或保存父模型。
+
+正常producer可能以多个输入键绑定同一文件；冷准入只在所有同路径记录存在且bytes／SHA一致时共享一次身份验证，冲突仍拒绝。通用执行或准备失败不再自动给出 `candidate_rejected`；在没有独立结构化科学拒绝事实时保留 `no_candidate_decision`、原失败阶段与原因。成功仍仅代表声明的结构构建合同接受，不授予性能或Formal资格；历史父summary不回写。
+
+后继 `20261031_222630__sim__comsol__candidate-cold-recovery` 已从移除原alias后的保存模型冷开，原解时间库存与重复时刻完整状态检查通过，进入实际分窗提取；没有调用新场／粒子求解或父模型保存。整体仍因原 `Event-window gate` 未满足而失败，公共owner70.356秒、外层74.419秒，封存、容量、租约及所有本次alias收尾完成，无附加错误。该轮证明冷读取与零求解路径，不证明事件完整或科学资格；目前断言位于CSV输出前，负结果观测的提前持久化及后续纯分析仍待收口。此前两次冷请求分别在同文件多key绑定和超过82,000字符的会话argv运输上停止，另一次因冷plan遗漏run_root而在原生启动前停止；均保留原失败证据，未重算场。公共源解析现沿既有UTF-8 stdin传JSON，准备期拒绝不再伪造原生writer记录；未知的已启动writer仍保留保护。

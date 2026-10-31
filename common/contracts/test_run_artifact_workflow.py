@@ -420,6 +420,87 @@ foreach($source in $context.sources){{if($source.execution_alias){{
 """)
         self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
 
+    def test_native_source_resolver_streams_large_session_and_keeps_authority(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="source-stdin-") as directory:
+            root = Path(directory)
+            parent, source_root, model, reference, before = self._native_source_fixture(root, deep=False)
+            consumer = root / "consumer"
+            consumer.mkdir()
+            artifacts = consumer / "artifacts"
+            artifacts.mkdir()
+            initialize_capacity_ledger(artifacts, objects=[])
+            request = root / "source.json"
+            request.write_text(json.dumps({"references": [reference], "path": str(model)}), encoding="utf-8")
+            result = self.run_ps(root, f""". '{OWNER}'
+function Invoke-ArtifactCapacityGate {{return @{{satisfied=$true;fixture_admission=$true}}}}
+$source=Get-Content -Raw '{request}'|ConvertFrom-Json -AsHashtable
+$session=Enter-ArtifactWorkflowCapacitySession -Python '{sys.executable}' -RepoRoot '{REPO}' -ArtifactRoot '{artifacts}' -RunDirectory '{artifacts / 'projects' / PROJECT / 'runs/20261031_120000__test__python__stdin'}' -CommittedNewBytes 0 -SourceReferences $source.references
+try{{
+ $session|Add-Member -Force -NotePropertyName startup_gate -NotePropertyValue @{{diagnostic=('多字节' * 30000)}}
+ $json=$session|ConvertTo-Json -Depth 64 -Compress
+ if($json.Length-lt65536){{throw 'Large session fixture is too small'}}
+ $rows=@(Resolve-RunSourceExecutionInputs -Python '{sys.executable}' -RepoRoot '{REPO}' -Session $session -SourceReferences $source.references -NativeInputPaths @($source.path) -RequireProtection)
+ if($rows.Count-ne1-or$rows[0].input_paths.Count-ne1-or$rows[0].input_paths[0]-ne$source.path){{throw 'Large source resolver result differs'}}
+ $rejected=$false
+ try{{Resolve-RunSourceExecutionInputs -Python '{sys.executable}' -RepoRoot '{REPO}' -Session $session -SourceReferences @() -NativeInputPaths @($source.path) -RequireProtection|Out-Null}}catch{{if($_.Exception.Message-notmatch'uniquely bound'){{throw}};$rejected=$true}}
+ if(-not$rejected){{throw 'Unbound source accepted'}}
+ $inactive=$session|ConvertTo-Json -Depth 64|ConvertFrom-Json -AsHashtable
+ $inactive.status='released'
+ $rejected=$false
+ try{{Resolve-RunSourceExecutionInputs -Python '{sys.executable}' -RepoRoot '{REPO}' -Session $inactive -SourceReferences $source.references -NativeInputPaths @($source.path) -RequireProtection|Out-Null}}catch{{if($_.Exception.Message-notmatch'admitted protection owner'){{throw}};$rejected=$true}}
+ if(-not$rejected){{throw 'Inactive protection accepted'}}
+ Write-Output ('SESSION_UTF16_CHARS='+$json.Length)
+}}finally{{Exit-ArtifactWorkflowCapacitySession -Python '{sys.executable}' -RepoRoot '{REPO}' -Session $session|Out-Null}}
+""")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("SESSION_UTF16_CHARS=", result.stdout)
+            self.assertEqual(before, {path: path.read_bytes() for path in before})
+            self.assertFalse(load_capacity_protection_leases(source_root)["protected_paths"])
+            self.assertFalse(load_capacity_protection_leases(artifacts)["protected_paths"])
+
+    def test_capacity_stdin_keeps_default_and_native_failure_diagnostics(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="capacity-stdin-") as directory:
+            result = self.run_ps(Path(directory), f""". '{OWNER}'
+$plain=@(Invoke-RunCapacityCommand -Python '{sys.executable}' -RepoRoot '{REPO}' -Arguments @('-c',"print('default-no-stdin')") -FailureLabel 'plain fixture')
+if(($plain-join'')-ne'default-no-stdin'){{throw 'Default capacity invocation changed'}}
+$empty=@(Invoke-RunCapacityCommand -Python '{sys.executable}' -RepoRoot '{REPO}' -Arguments @('-c',"import sys;print(repr(sys.stdin.read().strip()))") -StandardInputJson '' -FailureLabel 'empty fixture')
+if(($empty-join'')-ne"''"){{throw 'Explicit empty stdin lost'}}
+$rejected=$false
+try{{Invoke-RunCapacityCommand -Python '{sys.executable}' -RepoRoot '{REPO}' -Arguments @('-c',"import sys;print('stdout-token');print('stderr-token',file=sys.stderr);sys.exit(23)") -StandardInputJson '{{}}' -FailureLabel 'stdin failure fixture'|Out-Null}}catch{{
+ if($_.Exception.Data['native_exit_code']-ne23-or$_.Exception.Message-notmatch'stdout-token'-or$_.Exception.Message-notmatch'stderr-token'){{throw}}
+ $rejected=$true
+}}
+if(-not$rejected){{throw 'Native nonzero was swallowed'}}
+""")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_initialize_source_authority_failure_cleans_only_own_execution_alias(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="initialize-alias-") as directory:
+            root = Path(directory)
+            execution = root / "execution"
+            consumer = root / ("consumer_" + "x" * 180)
+            consumer.mkdir()
+            unbound = root / "unbound.json"
+            unbound.write_text("{}", encoding="utf-8")
+            with unittest.mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_EXECUTION_ROOT": str(execution)}):
+                result, run, artifacts, process = self.invoke_fixture(consumer, {},
+                    source_references=[], native_input_paths=[str(unbound)],
+                    expected_execution_relative_paths=["inputs/task.m"])
+            self.assertNotEqual(process.returncode, 0, process.stdout + process.stderr)
+            self.assertGreater(len(str(run)), 259)
+            self.assertEqual(result["stage"], "initialize")
+            self.assertIn("uniquely bound", result["exception"]["message"])
+            self.assertTrue(result["lease_released"])
+            self.assertTrue(result["execution_alias_removed"])
+            self.assertFalse(list(execution.iterdir()))
+            self.assertFalse((consumer / "callback_count.txt").exists())
+            self.assertIsNone(result["prepared_exit_code"])
+            self.assertFalse(result["terminal_published"])
+            self.assertEqual(result["secondary_errors"], [])
+            self.assertFalse(load_capacity_protection_leases(artifacts)["protected_paths"])
+            self.assertEqual(unbound.read_text(encoding="utf-8"), "{}")
+            self.assertTrue((run / "run_config.json").is_file())
+
     def test_python_native_source_context_short_inputs_need_no_alias(self) -> None:
         with tempfile.TemporaryDirectory(prefix='native-source-short-') as directory:
             root = Path(directory)

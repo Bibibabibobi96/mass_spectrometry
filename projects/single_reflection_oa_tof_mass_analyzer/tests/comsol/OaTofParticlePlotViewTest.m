@@ -1,6 +1,7 @@
 classdef OaTofParticlePlotViewTest < matlab.unittest.TestCase
  properties (TestParameter)
   population=struct('n100',100,'n1000',1000,'n5000',5000);
+  invalidInventory=struct('allEqual',[0;0],'decreasing',[0;1;0],'nonfinite',[0;NaN;1]);
  end
  methods (TestClassSetup)
   function addProjectPath(testCase)
@@ -66,36 +67,35 @@ classdef OaTofParticlePlotViewTest < matlab.unittest.TestCase
    testCase.verifyFalse(isfile(fullfile(folder,'comsol_detector_events_Fixture.csv')));
   end
   function coldAdapterKeepsExecutionOutputSpellingThroughRealHelper(testCase)
-   [context,folder,mockFolder]=postprocessFixture(testCase);
-   parent=fullfile(folder,'parent');mkdir(parent);
-   child=fullfile(folder,'child');mkdir(child);mkdir(fullfile(child,'nested'));
-   request=struct('model_path',fullfile(parent,'model.mph'), ...
-    'context_path',fullfile(parent,'model.mph.postprocess.json'), ...
-    'parent_run_directory',parent,'child_run_directory',child, ...
-    'output_dir',fullfile(child,'nested','..','results'), ...
-    'candidate_contract_path',fullfile(fileparts(fileparts(fileparts(mfilename('fullpath')))), ...
-        'config','resolved_geometry.json'));
-   context.saved_model_bytes=3;
-   context.solution_times_s=[0;.5;1;2;3;4;5;6]*1e-6;
-   writeFixtureText(request.model_path,'MPH');
-   writeFixtureText(request.context_path,jsonencode(context));
-   writeFixtureText(fullfile(mockFolder,'mphopen.m'),sprintf( ...
-    'function model=mphopen(varargin)\nmodel=struct(''param'',[],''result'',struct(''dataset'',@(unused)struct(''getString'',@(key)''sol2'')));\nend\n'));
-   writeFixtureText(fullfile(mockFolder,'mphsolinfo.m'),sprintf( ...
-    'function info=mphsolinfo(varargin)\ninfo=struct(''soltype'',''Time'',''solvals'',[0;.5;1;2;3;4;5;6]*1e-6);\nend\n'));
-   writeFixtureText(fullfile(mockFolder,'oatof_validate_candidate_solution.m'),sprintf( ...
-    'function validation=oatof_validate_candidate_solution(varargin)\nvalidation=struct();\nend\n'));
-   rehash
-   testCase.assertEqual(which('oatof_validate_candidate_solution'), ...
-    fullfile(mockFolder,'oatof_validate_candidate_solution.m'));
-   testCase.assertEqual(which('mphopen'),fullfile(mockFolder,'mphopen.m'));
-   testCase.assertEqual(which('mphsolinfo'),fullfile(mockFolder,'mphsolinfo.m'));
+   request=coldReadFixture(testCase,[0;.5;1;2;3;4;5;6]*1e-6,[1 1]);
    result=reextract_oatof_saved_solution(request);
    testCase.verifyEqual(result.raw_detector_events_path, ...
     fullfile(request.output_dir,'comsol_detector_events_Fixture.csv'));
    testCase.verifyEqual(result.native_particle_solve_count,0);
    testCase.verifyFalse(result.parent_model_saved);
    testCase.verifyEqual(fileread(request.model_path),'MPH');
+  end
+  function exactDuplicateInventoryRetainsAllRowsAndChecksCompleteState(testCase)
+   request=coldReadFixture(testCase,[0;.5;1;1;2;3;4;5;6]*1e-6,[1 1;NaN NaN;3 3]);
+   original=fileread(request.context_path);
+   result=reextract_oatof_saved_solution(request);
+   testCase.verifyEqual(getappdata(0,'oatof_fixture_state_calls'),1);
+   testCase.verifyEqual(fileread(request.context_path),original);
+   testCase.verifyEqual(result.native_particle_solve_count,0);
+   testCase.verifyFalse(result.parent_model_saved);
+   testCase.verifyTrue(isfile(result.raw_detector_events_path));
+  end
+  function equalTimeDifferentCompleteStateFailsBeforeExport(testCase)
+   request=coldReadFixture(testCase,[0;.5;1;1;2;3;4;5;6]*1e-6,[1 2;NaN NaN;3 3]);
+   testCase.verifyError(@()reextract_oatof_saved_solution(request),'oatof:ColdDuplicateState');
+   testCase.verifyEmpty(getappdata(0,'oatof_fixture_calls'));
+   testCase.verifyFalse(isfolder(request.output_dir));
+  end
+  function invalidStoredInventoryFailsBeforeNativeOpen(testCase,invalidInventory)
+   request=coldReadFixture(testCase,invalidInventory,[1 1]);
+   testCase.verifyError(@()reextract_oatof_saved_solution(request),'oatof:ColdTimes');
+   testCase.verifyEmpty(getappdata(0,'oatof_fixture_state_calls'));
+   testCase.verifyEmpty(getappdata(0,'oatof_fixture_calls'));
   end
   function coldAdapterRejectsUnboundRequestBeforeNativeOpen(testCase)
    testCase.verifyError(@()reextract_oatof_saved_solution(struct()),'oatof:ColdRequest');
@@ -149,7 +149,43 @@ for k=1:3,key=sprintf('d%d',k);value.(key)=value.(key)(:,1);end
 save(fullfile(folder,'read_fixture.mat'),'value','population');
 end
 function clearBoundedReaderCounters
-for key={'oatof_fixture_calls','oatof_fixture_max_rows'}
+for key={'oatof_fixture_calls','oatof_fixture_max_rows','oatof_fixture_state_calls'}
  if isappdata(0,key{1}),rmappdata(0,key{1});end
 end
+end
+
+function request=coldReadFixture(testCase,times,states)
+   [context,folder,mockFolder]=postprocessFixture(testCase);
+   parent=fullfile(folder,'parent');mkdir(parent);
+   child=fullfile(folder,'child');mkdir(child);mkdir(fullfile(child,'nested'));
+   request=struct('model_path',fullfile(parent,'model.mph'), ...
+    'context_path',fullfile(parent,'model.mph.postprocess.json'), ...
+    'parent_run_directory',parent,'child_run_directory',child, ...
+    'output_dir',fullfile(child,'nested','..','results'), ...
+    'candidate_contract_path',fullfile(fileparts(fileparts(fileparts(mfilename('fullpath')))), ...
+        'config','resolved_geometry.json'));
+   context.saved_model_bytes=3;
+   context.solution_times_s=times;
+   writeFixtureText(request.model_path,'MPH');
+   writeFixtureText(request.context_path,jsonencode(context));
+   writeFixtureText(fullfile(mockFolder,'mphopen.m'),sprintf( ...
+    'function model=mphopen(varargin)\nmodel=struct(''param'',[],''result'',struct(''dataset'',@(unused)struct(''getString'',@(key)''sol2'')));\nend\n'));
+   writeFixtureText(fullfile(mockFolder,'mphsolinfo.m'),sprintf( ...
+    'function info=mphsolinfo(varargin)\ndata=load(fullfile(fileparts(mfilename(''fullpath'')),''inventory.mat''));info=struct(''soltype'',''Time'',''solvals'',data.times);\nend\n'));
+   writeFixtureText(fullfile(mockFolder,'oatof_validate_candidate_solution.m'),sprintf( ...
+    'function validation=oatof_validate_candidate_solution(varargin)\nvalidation=struct();\nend\n'));
+   rehash
+   testCase.assertEqual(which('oatof_validate_candidate_solution'), ...
+    fullfile(mockFolder,'oatof_validate_candidate_solution.m'));
+   testCase.assertEqual(which('mphopen'),fullfile(mockFolder,'mphopen.m'));
+   testCase.assertEqual(which('mphsolinfo'),fullfile(mockFolder,'mphsolinfo.m'));
+   save(fullfile(mockFolder,'inventory.mat'),'times','states');
+   writeFixtureText(fullfile(mockFolder,'mphgetu.m'),sprintf([ ...
+    'function value=mphgetu(varargin)\n' ...
+    'assert(strcmp(varargin{find(strcmp(varargin,''soltag''))+1},''sol2''));\n' ...
+    'data=load(fullfile(fileparts(mfilename(''fullpath'')),''inventory.mat''));\n' ...
+    'numbers=varargin{find(strcmp(varargin,''solnum''))+1};assert(isequal(numbers,[3 4]));\n' ...
+    'calls=getappdata(0,''oatof_fixture_state_calls'');if isempty(calls),calls=0;end;setappdata(0,''oatof_fixture_state_calls'',calls+1);\n' ...
+    'value=data.states;\nend\n']));
+   rehash
 end

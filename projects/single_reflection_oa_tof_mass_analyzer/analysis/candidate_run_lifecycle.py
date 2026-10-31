@@ -130,8 +130,6 @@ def _summary(status: str, stage_results: list[dict[str, Any]], failure_stage: st
         if not stage_results or any(item.get("status") != "success" for item in stage_results):
             raise ValueError("success requires every declared candidate stage to be successful")
         decision = "candidate_accepted_not_promoted"
-    elif status == "failed":
-        decision = "candidate_rejected"
     else:
         decision = "no_candidate_decision"
     return {

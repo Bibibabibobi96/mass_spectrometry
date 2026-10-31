@@ -797,8 +797,14 @@ def select_postprocess_parent(parent: Path, consumer_artifact_root: Path) -> dic
     def bound(path: Path, *, payload: bool = False) -> dict:
         matches = [value for value in records if isinstance(value, dict)
                    and record_path(value, base_dir=parent) == path]
-        if len(matches) != 1 or matches[0].get("exists") is not True:
+        if not matches or any(value.get("exists") is not True for value in matches):
             raise ValueError(f"Saved dependency is not uniquely manifest bound: {path}")
+        identity = matches[0]
+        if any(value.get("bytes") != identity.get("bytes")
+               or not isinstance(value.get("sha256"), str)
+               or value["sha256"].upper() != str(identity.get("sha256", "")).upper()
+               for value in matches):
+            raise ValueError(f"Saved dependency manifest aliases disagree: {path}")
         record = dict(matches[0], path=str(path))
         if not path.is_file() or path.stat().st_size != record["bytes"]:
             raise ValueError(f"Saved dependency is missing or incomplete: {path}")
@@ -881,7 +887,7 @@ def select_postprocess_parent(parent: Path, consumer_artifact_root: Path) -> dic
         if not required <= context.keys() or context.get("solution_tag") != "sol2" or context.get("dataset_tag") != "pdset1":
             raise ValueError("SAVED_CONTEXT_INCOMPLETE: original solution, times and scientific inputs are required")
         times = context["solution_times_s"]
-        if not isinstance(times, list) or len(times)<2 or any(type(v) not in (int,float) or not math.isfinite(v) for v in times) or any(b<=a for a,b in zip(times,times[1:])):
+        if not isinstance(times, list) or len(times)<2 or any(type(v) not in (int,float) or not math.isfinite(v) for v in times) or any(b<a for a,b in zip(times,times[1:])) or times[-1]<=times[0]:
             raise ValueError("SAVED_CONTEXT_INCOMPLETE: original finite increasing solution times are required")
         if context.get("schema_version") != 1 or context.get("role") != "oatof_saved_particle_solution":
             raise ValueError("Saved solution context identity differs")

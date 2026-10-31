@@ -1228,6 +1228,7 @@ def execute_prepared_run(*args):
                     run_root, status, self.stage_results(plan, stage_status, failure_stage), failure_stage
                 )
                 self.assertEqual(summary["status"], status)
+                self.assertEqual(summary["candidate_decision"], "no_candidate_decision")
                 self.assertEqual(manifest["status"], status)
                 self.assertTrue((run_root / "run_config.json").is_file())
                 self.assertTrue((run_root / "summary.json").is_file())
@@ -2264,7 +2265,7 @@ def execute_prepared_run(*args):
 
 
 
-def postprocess_source_fixture(directory, *, unknown=False, cold=False, comsol_bytes=None, retain_model=False, save_state="raw_complete", legacy_save_complete=False):
+def postprocess_source_fixture(directory, *, unknown=False, cold=False, comsol_bytes=None, retain_model=False, save_state="raw_complete", legacy_save_complete=False, solution_times=None, resolved_alias=False):
     """Producer-shaped small records; no vendor process or model is fabricated."""
     import csv
     from common.contracts.capacity_ledger import record_capacity_object
@@ -2312,6 +2313,8 @@ def postprocess_source_fixture(directory, *, unknown=False, cold=False, comsol_b
     if cold or retain_model:
         config["artifact_retention"]={"policy_version":1,"class":"solver_review",
             "reason":"Opaque saved-input metadata fixture retained for cold admission tests; no vendor opens it."}
+    if resolved_alias:
+        config["inputs"]["simion_candidate_input_001"] = str(physical)
     config_path = parent / "run_config.json"
     from common.contracts.write_run_manifest import file_record
     request_path = parent / "inputs/execution_request.json"
@@ -2331,7 +2334,7 @@ def postprocess_source_fixture(directory, *, unknown=False, cold=False, comsol_b
         model=parent/"comsol/model.mph";model.parent.mkdir();model.write_bytes(b"MPH")
         context=model.with_suffix(".mph.postprocess.json")
         context.write_text(json.dumps({"schema_version":1,"role":"oatof_saved_particle_solution",
-            "solution_tag":"sol2","dataset_tag":"pdset1","solution_times_s":[0,1e-6],
+            "solution_tag":"sol2","dataset_tag":"pdset1","solution_times_s":[0,1e-6] if solution_times is None else solution_times,
             "particle_count":100,"saved_model_bytes":3,"timing":{},"expected_tof":1e-6,
             "fine_tstep":1e-9,"Tsim":1e-6,"detector_z_mm":0,"detector_x_mm":0,
             "detector_radius_mm":1,"flight_length_mm":1,"accelerator_exit_mm":0,
@@ -2448,6 +2451,109 @@ def cold_export_failed_child_fixture(directory, *, unknown=False, wrong_source=F
 
 
 class CandidatePostprocessTests(unittest.TestCase):
+    def test_cold_prepared_plan_uses_public_native_view_and_prelaunch_failure_has_no_receipt(self):
+        from common.contracts.test_run_artifact_workflow import CALLBACK, RunArtifactWorkflowTests
+        from common.contracts.write_run_manifest import file_record
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
+        extra = '''    from unittest import mock
+    from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate_workflow as workflow, candidate_comsol_stage
+    def inert_saved(selection, child, closure, plan, *, runtime):
+        assert plan['run_root'] == str(root.resolve())
+        argv, environment = workflow._native_stage_execution_view([sys.executable, '-I', '-B', '-c', 'pass'],
+            {'OATOF_CANDIDATE_MODEL_PATH':selection['model_record']['path']}, plan)
+        assert environment['OATOF_CANDIDATE_MODEL_PATH']
+        writer_before = json.dumps(plan['writer_completion'], sort_keys=True)
+        wrong = dict(plan, run_root=str(root.parent / 'different-owner'))
+        with mock.patch.object(workflow, '_run_command') as command, mock.patch.object(workflow, 'append_native_stage_completion') as append:
+            try:
+                workflow._run_managed_stage_command(argv, root/'logs/not-launched.log', wrong,
+                    root/'logs/not-launched.json', 'comsol_launcher_completion', environment)
+            except ValueError as error:
+                assert 'active public run context' in str(error)
+            else:
+                raise AssertionError('Mismatched owner must fail before process admission')
+            command.assert_not_called()
+            append.assert_not_called()
+        assert json.dumps(plan['writer_completion'], sort_keys=True) == writer_before
+        (root/'results/cold_native_view_probe.json').write_text(json.dumps({'run_root':plan['run_root'],
+            'writer_unchanged':True,'prelaunch_command_calls':0,'prelaunch_receipt_calls':0}), encoding='utf-8')
+        return {}
+    with mock.patch.object(candidate_comsol_stage, 'execute_saved_postprocess', side_effect=inert_saved):
+        workflow.execute_prepared_postprocess(config_path, session_path, request_path, root/'results/cold_completion.json')
+    cold_completion = json.loads((root/'results/cold_completion.json').read_text(encoding='utf-8'))
+    assert cold_completion['status'] == 'success', cold_completion
+    assert cold_completion['writer_completion'] == {'operations':[],'resource_releases':[]}
+    config = json.loads(config_path.read_text(encoding='utf-8'))
+'''
+        callback = CALLBACK.replace('    counter = Path(payload["counter_path"])', extra + '    counter = Path(payload["counter_path"])')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifact, parent, _, _ = postprocess_source_fixture(root / "source", cold=True)
+            selected = select_postprocess_parent(parent, artifact)
+            closure = freeze_candidate_source_closure(root / "code", artifact / "projects" / PROJECT_ROOT.name,
+                resolved_contract=Path(selected["inputs"]["contract_path"]["path"]),
+                analysis_contract=PROJECT_ROOT / "config/analysis_contract.json")
+            selection = root / "selection.json"
+            selection.write_text(json.dumps(selected), encoding="utf-8")
+            before = {str(path):path.read_bytes() for path in parent.rglob("*") if path.is_file()}
+            fixture = RunArtifactWorkflowTests()
+            (root / "owner").mkdir()
+            result, run, _, outcome = fixture.invoke_fixture(root / "owner", {
+                "postprocess_selection":file_record(selection),"execution_source_closure":closure,
+                "fixture_commitment_bytes":8*1024*1024}, callback_text=callback,
+                source_references=selected["source_references"],
+                native_input_paths=[selected["model_record"]["path"], selected["context_record"]["path"]])
+            self.assertEqual(outcome.returncode,0,outcome.stdout+outcome.stderr+json.dumps(result))
+            probe=load_json(run/"results/cold_native_view_probe.json")
+            self.assertTrue(probe["writer_unchanged"])
+            self.assertEqual(probe["run_root"],str(run.resolve()))
+            self.assertEqual(before,{str(path):path.read_bytes() for path in parent.rglob("*") if path.is_file()})
+
+    def test_saved_dependency_aliases_require_complete_identity_consensus(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
+        cases = (("same", None, None), ("case_normalized", "sha256", "lower"),
+                 ("bytes_conflict", "bytes", -1), ("sha_conflict", "sha256", "0" * 64),
+                 ("missing_alias", "exists", False))
+        for name, field, value in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                artifact, parent, _, _ = postprocess_source_fixture(Path(directory), cold=True, resolved_alias=True)
+                manifest_path = parent / "run_manifest.json"
+                manifest = load_json(manifest_path)
+                aliases = manifest["inputs"]
+                self.assertEqual(aliases["candidate_resolved_geometry.json"]["path"],
+                                 aliases["simion_candidate_input_001"]["path"])
+                if field:
+                    alias = aliases["simion_candidate_input_001"]
+                    alias[field] = alias[field].lower() if value == "lower" else value
+                    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+                before = {str(path): path.read_bytes() for path in parent.rglob("*") if path.is_file()}
+                if name in {"same", "case_normalized"}:
+                    selected = select_postprocess_parent(parent, artifact)
+                    self.assertIsNone(selected["exports"])
+                else:
+                    with self.assertRaisesRegex(ValueError, "Saved dependency.*manifest"):
+                        select_postprocess_parent(parent, artifact)
+                self.assertEqual(before, {str(path): path.read_bytes() for path in parent.rglob("*") if path.is_file()})
+
+    def test_saved_inventory_duplicates_are_preserved_until_guarded_cold_read(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
+        cases = (("duplicate", [0, 1e-6, 1e-6, 2e-6], True),
+                 ("all_equal", [0, 0], False), ("decreasing", [0, 1e-6, 0], False),
+                 ("nonfinite", [0, float("nan"), 1e-6], False))
+        for name, times, accepted in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                artifact, parent, _, _ = postprocess_source_fixture(Path(directory), cold=True, solution_times=times)
+                before = {str(path): path.read_bytes() for path in parent.rglob("*") if path.is_file()}
+                if accepted:
+                    selection = select_postprocess_parent(parent, artifact)
+                    self.assertIsNone(selection["exports"])
+                    context = load_json(parent / "comsol/model.mph.postprocess.json")
+                    self.assertEqual(context["solution_times_s"], times)
+                else:
+                    with self.assertRaisesRegex(ValueError, "original finite increasing solution times"):
+                        select_postprocess_parent(parent, artifact)
+                self.assertEqual(before, {str(path): path.read_bytes() for path in parent.rglob("*") if path.is_file()})
+
     def test_native_execution_paths_use_actual_public_owner_and_preserve_identity(self):
         from common.contracts.test_run_artifact_workflow import CALLBACK, RunArtifactWorkflowTests
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import candidate_native_execution_relative_paths
