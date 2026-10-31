@@ -198,10 +198,13 @@ foreach($statement in $body.Statements){
 if(-not$statements.Count){throw 'capacity boundary not found'}
 $admit=[scriptblock]::Create(($statements-join"`n"))
 function Enter-ArtifactWorkflowCapacitySession {
- param($Python,$RepoRoot,$ArtifactRoot,$RunDirectory,$CommittedNewBytes,$ProtectedPaths)
- $script:admission=@{bytes=$CommittedNewBytes;protected=@($ProtectedPaths)}
+ param($Python,$RepoRoot,$ArtifactRoot,$RunDirectory,$CommittedNewBytes,$ProtectedPaths,$SourceReferences)
+ $script:admission=@{bytes=$CommittedNewBytes;protected=@($ProtectedPaths);sources=@($SourceReferences)}
  return @{}
 }
+# Source projection/lease behavior is covered at its public owner. Here the
+# real admission branch must forward its exact result to the source owner.
+function Get-InstrumentSourceProtectionProjection { return @{source_references=@($expectedReferences)} }
 $Fly=$false;$Python='INERT';$RepoRoot='INERT';$artifacts='INERT';$OutputDirectory='INERT_NEW_RUN';$ownsCapacity=$true
 $downstreamPlan=@{reserved_run_array_payload_bytes=41;frontend_resource_lower_bounds=@{cache_miss_new_disk_payload_bytes_lower_bound=73}}
 foreach($reuseMode in @('none','partial','all')){
@@ -212,11 +215,14 @@ foreach($downstreamReuse in @($false,$true)){
  $receipt=@{input_records=@{}}
  if($reuse){$receipt.input_records.frontend_fields=@{};$receipt.input_records.frontend_fields_manifest=@{source_path=Join-Path $Producer 'run_manifest.json'}}
  if($downstreamReuse){$receipt.input_records.downstream_fields_manifest=@{source_path=Join-Path (Join-Path $Producer 'downstream') 'run_manifest.json'}}
+ $expectedReferences=@()
+ foreach($name in @('frontend_fields_manifest','downstream_fields_manifest')){
+  if($receipt.input_records.ContainsKey($name)){$expectedReferences+=@{manifest_record=$receipt.input_records[$name];protected_paths=@()}}
+ }
  . $admit
  if($script:admission.bytes-ne(41+$floor)){throw 'incorrect private/cold-cache reservation'}
- $expected=@($OutputDirectory);if($reuse){$expected+=$Producer}
- if($downstreamReuse){$expected+=Join-Path $Producer 'downstream'}
- if(($script:admission.protected-join'|')-ne($expected-join'|')){throw 'source producer protection differs'}
+ if(($script:admission.protected-join'|')-ne$OutputDirectory){throw 'target protection must not claim foreign producers'}
+ if(($script:admission.sources|ConvertTo-Json -Depth 20 -Compress)-cne($expectedReferences|ConvertTo-Json -Depth 20 -Compress)){throw 'source owner projection was not forwarded unchanged'}
 }
 }
 'FROZEN_FIELD_SOURCE_CAPACITY=PASS'

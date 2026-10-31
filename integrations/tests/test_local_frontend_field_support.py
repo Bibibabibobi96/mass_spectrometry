@@ -137,7 +137,7 @@ class LocalFrontendFieldSupportTests(unittest.TestCase):
             self.assertEqual(role['rf_reference_voltage_v'], 1.0)
             self.assertNotIn('rf_differential_pa_basename', role)
             self.assertEqual(_resolve_standalone_dynamic_field_bank(
-                result['field_bank'], {'coarse_frontend': 1}), [role])
+                result['field_bank'], {'coarse_frontend': 1}), [dict(role, pulse_delta_scale=1.0)])
             rf_job = next(job for job in result['compositions'] if job['kind'] == 'rf_differential_unit')
             # Raw test responses have a measured 10000 V anchor; the composed
             # response must retain exactly the requested per-volt state.
