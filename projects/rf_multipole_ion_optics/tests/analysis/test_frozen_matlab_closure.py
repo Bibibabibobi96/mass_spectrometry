@@ -50,7 +50,9 @@ foreach($relative in $frozenMatlabRelativePaths){
 }
 $missingDependency=MISSING_DEPENDENCY
 if($missingDependency){Remove-Item -LiteralPath (Join-Path $repoRoot $missingDependency)}
-$command=@($ast.FindAll({param($node) $node-is[System.Management.Automation.Language.CommandAst]-and$node.GetCommandName()-eq'New-FrozenPythonPackage'},$true))
+$normal=@($ast.FindAll({param($node) $node-is[System.Management.Automation.Language.AssignmentStatementAst]-and$node.Left-is[System.Management.Automation.Language.VariableExpressionAst]-and$node.Left.VariablePath.UserPath-in@('frozenPythonPackage','frozenAnalysisPackage')},$true))
+$command=@($normal|ForEach-Object{$_.FindAll({param($node) $node-is[System.Management.Automation.Language.CommandAst]-and$node.GetCommandName()-eq'New-FrozenPythonPackage'},$true)})
+if($command.Count-ne1){throw 'normal MATLAB closure command is not unique'}
 try{$package=& ([scriptblock]::Create($command[0].Extent.Text))}catch{if($missingDependency-and$_.Exception.Message.Contains((Split-Path -Leaf $missingDependency))){exit 0};throw}
 if($missingDependency){throw 'missing MATLAB dependency was accepted'}
 Assert-FrozenPythonPackage -Package $package

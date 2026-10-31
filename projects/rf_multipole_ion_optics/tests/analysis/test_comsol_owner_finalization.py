@@ -118,6 +118,13 @@ ConvertTo-Json -InputObject $records -Compress
             for relative in ("common", "config", "projects/rf_multipole_ion_optics"):
                 shutil.copytree(REPO / relative, source / relative,
                                 ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            policy = source/"common/contracts/artifact_capacity_policy.json"
+            policy_document = json.loads(policy.read_text(encoding="utf-8"))
+            # The family arm declares up to 4 GiB total new commitment.
+            # A fixed 8 GiB fixture ceiling includes 4 GiB of metadata/headroom;
+            # this is admission bookkeeping, not allocated payload or solver RAM.
+            policy_document.update(target_gib=8, minimum_free_gib=0)
+            policy.write_text(json.dumps(policy_document), encoding="utf-8")
             budget = source / "projects/rf_multipole_ion_optics/variants/quadrupole/config/bare_transport_budget.json"
             document = json.loads(budget.read_text(encoding="utf-8-sig"))
             document["pilot_authorization"]["authorized"] = True

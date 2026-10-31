@@ -562,46 +562,76 @@ if($script:calls-ne1-or$state.finalization_started){throw 'Terminal outcome was 
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_continuation_observes_largest_missing_batch_without_repartition(self) -> None:
+        from common.simion.resource_scheduler import plan_simion_dispatch
+        request = dict(solver="SIMION", field_kind="rf", rf_steps_per_period=40,
+                       particle_count=8, independent_particles=True, trajectory_quality=8)
+        initial = plan_simion_dispatch(request, [], available_memory_bytes=10*1024**3,
+                                      total_physical_memory_bytes=20*1024**3, logical_processors=8)
+        batches = [dict(index=i, particle_id_min=low, particle_id_max=high, count=high-low+1,
+                        simion_particle_id_offset=low-1) for i,(low,high) in enumerate(((1,2),(3,6),(7,8)),1)]
+        frozen = dict(role="simion_single_wave_particle_batch_plan", coverage="complete_population",
+                      particle_count=8, batches=batches)
         source = RUNNER.read_text(encoding="utf-8-sig")
         block = source[source.index("    $pendingRuns=@($batchRuns|"):source.index("    # Keep each case's receipt independent:")]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "dispatch.json").write_text(json.dumps({"estimation": {"kind": "observed_formal_batch"}, "limits": {"maximum_concurrency": 3},
-                "waves": [{"batch_count": 2}]}), encoding="utf-8")
-            (root / "batch.json").write_text("original-partition", encoding="utf-8")
+            (root/"dispatch.json").write_text(json.dumps(initial), encoding="utf-8")
+            (root/"batch.json").write_text(json.dumps(frozen), encoding="utf-8")
+            (root/"request.json").write_text(json.dumps(request), encoding="utf-8")
+            (root/"profiles.json").write_text("[]", encoding="utf-8")
+            before = {name:(root/name).read_bytes() for name in ("batch.json", "request.json")}
             script = r"""
-$ErrorActionPreference='Stop';$codeRoot=$env:RF_TEST_ROOT;$runDir=$codeRoot;$logDir=$codeRoot;$solverDir=$codeRoot
-$dispatchPlan=Join-Path $codeRoot 'dispatch.json';$batchPlan=Join-Path $codeRoot 'batch.json'
-$dispatchRequest='request';$resourceProfiles='profiles';$python='Invoke-FixturePython';$simion='unused';$name='primary'
-$rfDriveKernelLua='kernel';$flyArguments=@('a','b','c','d','e','f','g');$continuationPredecessor='parent'
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$codeRoot=$env:RF_TEST_REPO;$runDir=$env:RF_TEST_ROOT;$logDir=$runDir;$solverDir=$runDir
+$dispatchPlan=Join-Path $runDir 'dispatch.json';$batchPlan=Join-Path $runDir 'batch.json'
+$dispatchRequest=Join-Path $runDir 'request.json';$resourceProfiles=Join-Path $runDir 'profiles.json'
+$python='Invoke-FixturePython';$simion='unused';$name='primary'
+$rfDriveKernelLua='unchanged-rf-kernel';$flyArguments=@('a','b','c','d','e','f','g');$continuationPredecessor='parent'
 $script:resourceCalibrationRequired=$true;$script:resourceIdentityWasUnknown=$true
-$continuationLargestMissing=4
 $continuationUnits=@{'primary.batch_01'=@{}}
-$batchRuns=@(
- @{batch=@{index=1;particle_id_min=1;particle_id_max=2};fly2='one';lua_config='one'},
- @{batch=@{index=2;particle_id_min=3;particle_id_max=6};fly2='two';lua_config='two'},
- @{batch=@{index=3;particle_id_min=7;particle_id_max=8};fly2='three';lua_config='three'})
-function Invoke-FixturePython {$global:LASTEXITCODE=0}
+$frozen=Get-Content $batchPlan -Raw|ConvertFrom-Json
+$batchRuns=@($frozen.batches|ForEach-Object{@{batch=$_;fly2=('source_'+$_.index);lua_config=('config_'+$_.index)}})
+$script:plannerCalls=[Collections.Generic.List[object]]::new()
+function Invoke-FixturePython {
+ $script:plannerCalls.Add(@($args))
+ & $env:RF_TEST_PYTHON @args
+ if($LASTEXITCODE-ne0){throw 'public scheduler failed'}
+}
 function Set-SimionBatchesFromPlan {throw 'continuation repartitioned the source'}
 function Write-RunJson {param($Path,$Value,$Depth) $Value|ConvertTo-Json -Depth $Depth|Set-Content -LiteralPath $Path}
 """ + block + r"""
-if($firstSpecification.scheduler_batch.index-ne2-or$firstSpecification.scheduler_batch.count-ne4){throw 'did not observe largest missing batch'}
-$observation=[pscustomobject]@{observed_peak_process_tree_working_set_bytes=100;available_memory_bytes=1000;
- total_physical_memory_bytes=2000;observed_process_cpu_percent=1;observed_background_cpu_percent=2;completed_naturally=$false;
- process_record=[pscustomobject]@{specification=[pscustomobject]@{scheduler_batch=$null}}}
+if($script:plannerCalls.Count-ne1){throw 'fixed preparation was not called exactly once'}
+$preparedArgs=@($script:plannerCalls[0])
+if($preparedArgs-notcontains'--prepare-fixed-recovery-plan'){throw 'private planning bypassed public fixed preparation'}
+$replay=@(for($i=0;$i-lt$preparedArgs.Count;$i++){if($preparedArgs[$i]-eq'--replay-batch-index'){[int]$preparedArgs[$i+1]}})
+if(($replay-join',')-ne'2,3'){throw 'public preparation did not receive only missing units'}
+if($firstSpecification.scheduler_batch.index-ne2-or$firstSpecification.scheduler_batch.count-ne4){throw 'did not observe actual largest missing batch'}
+if($firstSpecification.environment.MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA-ne'unchanged-rf-kernel'-or
+   $firstSpecification.environment.MULTIPOLE_SIMION_RUN_CONFIG_LUA-ne'config_2'-or
+   $firstSpecification.argument_list[6]-ne'--particles'-or$firstSpecification.argument_list[7]-ne'source_2'){
+ throw 'scientific drive/source binding changed during preparation'
+}
+$process=[pscustomobject]@{root_process_id=12345;specification=[pscustomobject]@{scheduler_batch=$null}}
+$observation=[pscustomobject]@{observed_peak_process_tree_working_set_bytes=1073741824;available_memory_bytes=10737418240;
+ total_physical_memory_bytes=21474836480;observed_process_cpu_percent=8;observed_background_cpu_percent=2;completed_naturally=$false;
+ process_record=$process}
 & $replanAction $observation
-if((Get-Content -LiteralPath $batchPlan -Raw)-cne'original-partition'){throw 'frozen partition changed'}
-if($script:resourceCalibrationRequired-or$script:resourceIdentityWasUnknown){throw 'continuation published an inexact profile'}
-if($observation.process_record.specification.scheduler_batch.index-ne2){throw 'wrong observed unit'}
-$continuationLargestMissing=6;$script:resourceCalibrationRequired=$true;$script:resourceIdentityWasUnknown=$true
-& $replanAction $observation
-if((Get-Content -LiteralPath $dispatchPlan -Raw|ConvertFrom-Json).limits.maximum_concurrency-ne1){throw 'larger later batch was not admitted conservatively'}
-exit 0
+if($script:plannerCalls.Count-ne2-or$script:plannerCalls[1]-notcontains'--recovered-missing-plan'-or
+   $script:plannerCalls[1]-contains'--request'){throw 'calibration bypassed the original frozen plan'}
+if($script:resourceCalibrationRequired-or$script:resourceIdentityWasUnknown){throw 'continuation calibration facts were not retained'}
+if(-not[object]::ReferenceEquals($process,$observation.process_record)-or$process.root_process_id-ne12345-or
+   $process.specification.scheduler_batch.index-ne2-or$process.specification.scheduler_batch.count-ne4){throw 'observed formal worker identity changed'}
+$actual=Get-Content $dispatchPlan -Raw|ConvertFrom-Json
+if($actual.estimation.observed_missing_batch_index-ne2-or-not$actual.estimation.recovered_missing_observation_completed){throw 'calibrated wrong unit'}
+if($actual.limits.maximum_concurrency-le1-or$actual.limits.maximum_concurrency-gt$actual.limits.memory_capacity){throw 'observed capacity not respected'}
+if(($actual.waves[0].batches|ConvertTo-Json -Depth 20 -Compress)-cne($frozen.batches|ConvertTo-Json -Depth 20 -Compress)){throw 'public dispatch changed frozen intervals'}
 """
             result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-NonInteractive", "-Command", script],
-                cwd=REPO_ROOT, env={**os.environ, "RF_TEST_ROOT": str(root)}, capture_output=True,
+                cwd=REPO_ROOT, env={**os.environ, "RF_TEST_ROOT": str(root), "RF_TEST_REPO": str(REPO_ROOT),
+                    "RF_TEST_PYTHON": sys.executable, "PYTHONDONTWRITEBYTECODE": "1"}, capture_output=True,
                 text=True, encoding="utf-8", errors="replace", timeout=30)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+            self.assertEqual({name:(root/name).read_bytes() for name in before}, before)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_full_continuation_skips_field_and_iob_native_work(self) -> None:

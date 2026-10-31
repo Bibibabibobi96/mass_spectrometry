@@ -493,6 +493,9 @@ $startingDirectory = (Get-Location).Path
                 input_directory.mkdir()
                 script.extend((
                     "$inputDir = " + _ps(input_directory),
+                    "$frozenInterface = Join-Path $inputDir 'interface_contract.json'",
+                    "$frozenNumericalContract = Join-Path $inputDir 'simion_solver_numerics.json'",
+                    "$SolverNumericsContractPath = " + _ps(PROJECT_ROOT / 'variants/quadrupole/config/simion_solver_numerics.json'),
                     _mass_analysis_setup(workflow / runner_name),
                     """
 $execution = Invoke-IsolatedFrozenPythonModule `

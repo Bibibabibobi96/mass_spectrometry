@@ -137,11 +137,14 @@ $global:LASTEXITCODE=0
             runtime = resolve_campaign_experiment(REPO_ROOT, PROJECT_ID, path, experiment_id)
             with self.subTest(variant=variant):
                 self.assertIs(runtime["engineering_budget"]["inline_contract"]["pilot_authorization"]["authorized"], False)
-                self.assertEqual(resolve_execution_binding(REPO_ROOT, PROJECT_ID, {
+                result = resolve_execution_binding(REPO_ROOT, PROJECT_ID, {
                     "campaign_path": str(path), "experiment_id": experiment_id,
-                }), {
+                })
+                self.assertEqual(result.pop("resolved_runtime"), runtime)
+                self.assertEqual(result, {
                     "project_id": PROJECT_ID, "structural_variant_id": variant,
                     "authorized_run_id": runtime["engineering_budget"]["inline_contract"]["pilot_authorization"]["scope"]["authorized_run_id"],
+                    "tools": ["simion", "python"],
                 })
 
     def test_execution_binding_rejects_incomplete_mixed_and_extra_selectors(self) -> None:
@@ -197,13 +200,8 @@ $global:LASTEXITCODE=0
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "campaign.json"
             path.write_text(json.dumps(campaign), encoding="utf-8")
-            with patch.object(runtime_profile, "_campaign_file", return_value=path):
-                return resolve_campaign_experiment(
-                    REPO_ROOT,
-                    "rf_multipole_ion_optics",
-                    path,
-                    "hex_segmented_h15_n100",
-                )
+            return resolve_campaign_experiment(
+                REPO_ROOT, "rf_multipole_ion_optics", path, "hex_segmented_h15_n100")
 
     def test_campaign_compiles_governed_drive_candidate(self) -> None:
         resolved = self._resolve_campaign_document(self._current_campaign())

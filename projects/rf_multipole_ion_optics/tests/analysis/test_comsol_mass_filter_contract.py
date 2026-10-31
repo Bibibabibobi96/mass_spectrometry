@@ -151,7 +151,7 @@ class ComsolMassFilterContractTests(unittest.TestCase):
             self.assertIn("resolved_design", runner)
             self.assertNotIn("resolve_family_operating_contract", runner)
             self.assertNotIn("family_operating_contract", runner)
-        self.assertIn("--source-format ion11", transport_runner)
+        self.assertIn("'--source-format','ion11'", "".join(transport_runner.split()))
         self.assertIn("common.contracts.particle_state", transport_runner)
 
     def test_mass_filter_functional_pass_does_not_claim_formal_eligibility(self) -> None:

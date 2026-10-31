@@ -109,6 +109,18 @@ $sourceParticlePath = [IO.Path]::GetFullPath($ParticleTablePath)
 if (-not (Test-Path -LiteralPath $sourceParticlePath -PathType Leaf)) {
     throw "Particle table is missing: $sourceParticlePath"
 }
+$bundleMetadataInput = [IO.Path]::GetFullPath($ParticleBundleMetadataPath)
+$sourceFamilyInput = [IO.Path]::GetFullPath($SourceFamilyPath)
+$distributionInput = [IO.Path]::GetFullPath($ParticleDistributionPath)
+if (-not (Test-Path -LiteralPath $bundleMetadataInput -PathType Leaf)) {
+    throw "Paired particle bundle metadata is missing: $bundleMetadataInput"
+}
+if (-not (Test-Path -LiteralPath $sourceFamilyInput -PathType Leaf)) {
+    throw "Particle source family is missing: $sourceFamilyInput"
+}
+if (-not (Test-Path -LiteralPath $distributionInput -PathType Leaf)) {
+    throw "Particle source distribution is missing: $distributionInput"
+}
 $modeInput = 'config/modes/quadrupole_transport_interface_readiness.json'
 $expectedParticles = 0
 
@@ -162,18 +174,6 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Frozen resolved-design identity verification failed.' }
 } finally {
     Pop-Location
-}
-$bundleMetadataInput = [IO.Path]::GetFullPath($ParticleBundleMetadataPath)
-$sourceFamilyInput = [IO.Path]::GetFullPath($SourceFamilyPath)
-$distributionInput = [IO.Path]::GetFullPath($ParticleDistributionPath)
-if (-not (Test-Path -LiteralPath $bundleMetadataInput -PathType Leaf)) {
-    throw "Paired particle bundle metadata is missing: $bundleMetadataInput"
-}
-if (-not (Test-Path -LiteralPath $sourceFamilyInput -PathType Leaf)) {
-    throw "Particle source family is missing: $sourceFamilyInput"
-}
-if (-not (Test-Path -LiteralPath $distributionInput -PathType Leaf)) {
-    throw "Particle source distribution is missing: $distributionInput"
 }
 Copy-VerifiedRunInput -Source $sourceFamilyInput -Destination $frozenSourceFamily | Out-Null
 Copy-VerifiedRunInput -Source $distributionInput -Destination $frozenDistribution | Out-Null

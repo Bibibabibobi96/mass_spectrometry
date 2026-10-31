@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from projects.rf_multipole_ion_optics.tests.test_support.capacity_fixture import capacity_fixture_source
 from pathlib import Path
 
 from common.contracts.capacity_ledger import initialize_capacity_ledger
@@ -857,6 +858,7 @@ exit 0
                 "particle_distribution_path",
                 "simion_solver_numerics_contract_path",
                 "operating_point_id",
+                "comsol_execution_limits_path",
             },
         )
         self.assertEqual(
@@ -1121,68 +1123,8 @@ exit 0
             root = Path(directory)
             particles = root / "empty canonical.csv"
             particles.write_text(",".join(COLUMNS) + "\n", encoding="utf-8")
-            layout_asset = root / "self-contained layout fixture"
-            layout_asset.write_text("test-only layout fixture\n", encoding="utf-8")
-            layout_resolution = root / "layout resolution.json"
-            layout_resolution.write_text(
-                json.dumps(
-                    {
-                        "registry_path": str(layout_asset),
-                        "run_manifest": {"path": str(layout_asset)},
-                        "bundle": {
-                            "iob": {"path": str(layout_asset)},
-                            "con": {"path": str(layout_asset)},
-                            "placeholder_pa0": {"path": str(layout_asset)},
-                        },
-                    }
-                )
-                + "\n",
-                encoding="utf-8",
-            )
-            layout_stub = root / "resolve_layout_fixture.py"
-            layout_stub.write_text(
-                "\n".join(
-                    (
-                        "import os",
-                        "import shutil",
-                        "import sys",
-                        "from pathlib import Path",
-                        "",
-                        "arguments = sys.argv[1:]",
-                        "output = Path(arguments[arguments.index('--output') + 1])",
-                        "output.parent.mkdir(parents=True, exist_ok=True)",
-                        "shutil.copyfile(os.environ['RF_TEST_LAYOUT_RESOLUTION'], output)",
-                        "print('MULTIPOLE_SIMION_LAYOUT_TEMPLATE=PASS TEMPLATE=test_single_pa_v1')",
-                    )
-                )
-                + "\n",
-                encoding="utf-8",
-            )
-            python_wrapper = root / "python_with_layout_fixture.cmd"
-            python_wrapper.write_text(
-                "\r\n".join(
-                    (
-                        "@echo off",
-                        'if "%~1"=="-c" (echo 3.11& exit /b 0)',
-                        'if "%~1"=="-m" if "%~2"=="projects.rf_multipole_ion_optics.runtime.simion_layout_template" goto layout',
-                        '"%RF_TEST_REAL_PYTHON%" %*',
-                        "exit /b %ERRORLEVEL%",
-                        ":layout",
-                        '"%RF_TEST_REAL_PYTHON%" "%RF_TEST_LAYOUT_STUB%" %*',
-                        "exit /b %ERRORLEVEL%",
-                    )
-                )
-                + "\r\n",
-                encoding="ascii",
-            )
+            fixture_source = capacity_fixture_source(REPO_ROOT, root/"fixture_source")
             environment = os.environ.copy()
-            environment.update(
-                {
-                    "RF_TEST_REAL_PYTHON": sys.executable,
-                    "RF_TEST_LAYOUT_STUB": str(layout_stub),
-                    "RF_TEST_LAYOUT_RESOLUTION": str(layout_resolution),
-                }
-            )
             # Exercise the governed project layout in an isolated artifact tree.
             artifact_workspace = root / "artifacts"
             artifact_root = artifact_workspace / "projects" / "rf_multipole_ion_optics"
@@ -1195,7 +1137,7 @@ exit 0
                     "-NoProfile",
                     "-NonInteractive",
                     "-File",
-                    str(RUNNER),
+                    str(fixture_source/RUNNER.relative_to(REPO_ROOT)),
                     "-RunId",
                     run_id,
                     "-ParticleTablePath",
@@ -1213,7 +1155,7 @@ exit 0
                     "-ArtifactRootPath",
                     str(artifact_root),
                     "-PythonExe",
-                    str(python_wrapper),
+                    sys.executable,
                 ],
                 cwd=REPO_ROOT,
                 capture_output=True,
@@ -1245,6 +1187,13 @@ exit 0
             self.assertIn("bundle metadata is missing", summary["reason"].lower())
             self.assertEqual(manifest["status"], "failed")
             self.assertFalse(any((run / "simion").glob("*.pa0")))
+            self.assertFalse((run/"inputs/simion_layout_template").exists())
+            verification = subprocess.run(
+                [sys.executable, "-m", "common.contracts.verify_run_manifest", str(run/"run_manifest.json"),
+                 "--require-status", "failed", "--require-local-run-config"],
+                cwd=fixture_source, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=30,
+            )
+            self.assertEqual(verification.returncode, 0, verification.stdout+verification.stderr)
 
     def test_execution_failure_and_physical_decision_are_separate(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")

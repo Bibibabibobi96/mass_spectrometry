@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from projects.rf_multipole_ion_optics.tests.test_support.capacity_fixture import capacity_fixture_source
 
 from common.contracts.write_run_manifest import file_record
 from common.contracts.capacity_ledger import initialize_capacity_ledger
@@ -167,7 +168,9 @@ class ComsolAnalysisRecoveryTests(unittest.TestCase):
         write(budget_path, engineering_budget(retention_class='compact', transient=transient))
         result = root/'analysis-result.json'
         run_id = '20261031_060001__analysis__python__csv-child'
-        outcome = subprocess.run(['pwsh', '-NoProfile', '-File', str(WRAPPER), '-AnalyzeOnly', *(['-ReextractFromModel'] if reextract else []),
+        source = capacity_fixture_source(REPO, root/'fixture_source')
+        wrapper = source/WRAPPER.relative_to(REPO)
+        outcome = subprocess.run(['pwsh', '-NoProfile', '-File', str(wrapper), '-AnalyzeOnly', *(['-ReextractFromModel'] if reextract else []),
                                   '-ParentManifestPath', str(manifest), '-EngineeringBudgetPath', str(budget_path), '-PythonExe', sys.executable,
                                   '-RunId', run_id, '-ResultPath', str(result)],
                                  cwd=root, text=True, encoding='utf-8', capture_output=True, timeout=300, env=private_host_environment())

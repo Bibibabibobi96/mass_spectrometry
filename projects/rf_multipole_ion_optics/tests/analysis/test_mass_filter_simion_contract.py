@@ -84,7 +84,9 @@ class MassFilterSimionContractTests(unittest.TestCase):
             self.assertNotIn(forbidden_parameter, parameter_block)
         self.assertIn("$modeName = 'mass_filter_reference'", runner)
         self.assertIn("role = 'rf_quadrupole_simion_mass_filter_run_config'", runner)
-        self.assertIn("resolved_design_mass_filter.json", runner)
+        self.assertIn("New-RfPublishedDesignFreshnessPackage", runner)
+        self.assertIn("-Profile mass_filter", runner)
+        self.assertIn("$frozenResolved = $publishedDesignFreshness.resolved_path", runner)
 
     def test_mass_runner_uses_one_paired_ion11_analysis_pipeline(self) -> None:
         runner = (

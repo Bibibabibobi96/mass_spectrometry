@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from projects.rf_multipole_ion_optics.tests.test_support.capacity_fixture import capacity_fixture_source
 from pathlib import Path
 
 from common.contracts.capacity_ledger import initialize_capacity_ledger
@@ -267,7 +268,8 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
             self.assertEqual(arguments["-SimionRunId"], "{simion_run_id}")
 
         functional = profiles["quadrupole_transport_runtime_functional"]
-        self.assertEqual(functional["evidence_levels"], ["plan"])
+        self.assertEqual(functional["action"], "run")
+        self.assertEqual(functional["qualification_support"], ["none"])
         self.assertEqual(
             functional["required_bindings"],
             ["runtime_profile_id", "evidence_contract_path"],
@@ -276,7 +278,7 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
         for step in functional["steps"]:
             if step["kind"] == "run":
                 arguments = dict(zip(step["arguments"][::2], step["arguments"][1::2]))
-                self.assertEqual(arguments["-RuntimeProfileId"], "{runtime_profile_id}")
+                self.assertEqual(arguments["-ResolvedRuntimeProfilePath"], "{resolved_runtime_profile_path}")
                 self.assertEqual(arguments["-EvidenceContractPath"], "{evidence_contract_path}")
 
     def test_interface_entry_is_dedicated_and_shared_solver_has_no_workflow_branch(self) -> None:
@@ -479,7 +481,7 @@ if($index.Count-ne1-or$elements[$index[0]+1].VariablePath.UserPath-cne'StartupAt
         ):
             self.assertIn(token, source)
 
-        diagnostic_helpers = source[source.index("function writeGuiSolverDiagnostic") :]
+        diagnostic_helpers = source[source.index("function writeGuiSolverDiagnostic") : source.index("function binding=validateGuiReleaseBinding")]
         compact_helpers = "".join(diagnostic_helpers.split()).replace("...", "")
         main_body = source[: source.index("function text = joinJavaStrings")]
         self.assertIn("safeDiagnosticGetter", diagnostic_helpers)
@@ -1010,7 +1012,8 @@ $results | ConvertTo-Json -Depth 32 -Compress
             environment.update(MASS_SPECTROMETRY_ARTIFACT_ROOT=str(artifacts),
                 MASS_SPECTROMETRY_EXECUTION_ROOT=str(root / "execution"),
                 MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root / "host.sqlite3"))
-            command = ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(RUNNER),
+            fixture_source = capacity_fixture_source(REPO_ROOT, root/"fixture_source")
+            command = ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(fixture_source/RUNNER.relative_to(REPO_ROOT)),
                 "-RunId", run_id, "-ParticleTablePath", str(invalid_path),
                 "-ParticleBundleMetadataPath", str(invalid_path),
                 "-SourceFamilyPath", str(invalid_path), "-ParticleDistributionPath", str(invalid_path),
