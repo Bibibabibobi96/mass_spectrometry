@@ -139,13 +139,27 @@ class ParallelGateSupportTests(unittest.TestCase):
                 root = Path(directory)
                 child = root / 'child.ps1'
                 child.write_text(r'''
-param($Root,$First,$InternalStage,$InternalLogPath)
+param($Root,$First,[int]$Concurrency,$InternalStage,$InternalLogPath)
+function Wait-FixtureSignal {
+ param($Path)
+ $wait=[Diagnostics.Stopwatch]::StartNew()
+ while(-not(Test-Path -LiteralPath $Path)){
+  # A missing test protocol event fails naturally before run_script's existing
+  # 30-second limit; it is not a scheduler budget or a healthy-worker kill.
+  if($wait.Elapsed.TotalSeconds-ge20){throw "Fixture signal was not published: $Path"}
+  Start-Sleep -Milliseconds 20
+ }
+}
 if($InternalStage-eq'first'-and$First-like'fallback*'){exit 0}
 if($InternalStage-eq'first'){
- Start-Sleep -Milliseconds 200
+ if($Concurrency-gt1){Wait-FixtureSignal (Join-Path $Root 'slow_started')}
  if($First-eq'pass'){Set-Content -LiteralPath (Join-Path $Root 'first_done') -Value done}
 }
-if($InternalStage-eq'slow'){Start-Sleep -Milliseconds 500;Set-Content -LiteralPath (Join-Path $Root 'slow_done') -Value done}
+if($InternalStage-eq'slow'){
+ Set-Content -LiteralPath (Join-Path $Root 'slow_started') -Value started
+ Wait-FixtureSignal (Join-Path $Root 'first_collected')
+ Set-Content -LiteralPath (Join-Path $Root 'slow_done') -Value done
+}
 if($InternalStage-eq'first'-and$First-eq'fail'){
  Set-Content -LiteralPath $InternalLogPath -Value @('TEST_FAILURE_IMMEDIATE=probe','traceback detail','TEST_FAILURE_IMMEDIATE_END','TEST_DURATION_SECONDS=0.125000 TEST=probe')
  Start-Sleep -Milliseconds 300
@@ -156,6 +170,15 @@ if($InternalStage-eq'first'-and$First-eq'fail'){exit 7}
                 summary = root / 'summary.json'
                 completed = self.run_script(self.prelude() + f'''
 $env:TEMP={quote(root)};$env:TMP={quote(root)}
+# Preserve the actual public writer, then signal only its recorded terminal fact.
+$script:writeFixtureStageResult=${{function:Set-GateStageResult}}
+function Set-GateStageResult {{
+ param($Summary,[string]$Name,[Collections.IDictionary]$Result)
+ & $script:writeFixtureStageResult @PSBoundParameters
+ if($Name-eq'first'-and$Result.Contains('status')-and$Result.status-in@('PASS','FAIL','INTERRUPTED')){{
+  Set-Content -LiteralPath {quote(root / 'first_collected')} -Value $Result.status
+ }}
+}}
 if({quote(first)}-eq'launchfail'){{
  function Start-Process {{
   param($FilePath,$ArgumentList,$WindowStyle,[switch]$PassThru)
@@ -173,7 +196,7 @@ $summary=New-GateRunSummary -Items $items -GateName fixture -PythonExe {quote(sy
 $failure=$null
 try {{
  Invoke-IndependentGateStageGroup -Items $items -MaxConcurrency {concurrency} -StopOnFailure:${str(stop).lower()} -Summary $summary `
-  -GateScriptPath {quote(child)} -PythonExe {quote(sys.executable)} -ChildBaseArguments @('-Root',{quote(root)},'-First',{quote(first)}) `
+  -GateScriptPath {quote(child)} -PythonExe {quote(sys.executable)} -ChildBaseArguments @('-Root',{quote(root)},'-First',{quote(first)},'-Concurrency','{concurrency}') `
   -TempNamePrefix gate_fixture_ -FailureMessage failed -InvokeSkipStage {{throw 'unexpected skip'}} -InvokeInlineStage {{
    param($item)
    if($item.Name-ne'first'){{throw 'unexpected fallback'}}
@@ -202,6 +225,7 @@ try {{
                     if concurrency == 2 or not stop:
                         self.assertEqual(records['slow']['status'], 'PASS')
                         self.assertTrue((root / 'slow_done').is_file(), 'started child must finish naturally')
+                        self.assertTrue((root / 'first_collected').is_file(), 'release follows the actual recorded first outcome')
                 else:
                     self.assertTrue(all(row['status'] == 'PASS' for row in records.values()))
                     if first == 'fallback':
