@@ -40,6 +40,16 @@ def _write(path: Path, value: Any) -> None:
     path.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n", encoding="utf-8", newline="\n")
 
 
+def load_request(path: Path) -> dict[str, Any]:
+    """Resolve the three transported record paths against the author request."""
+    path = path.resolve()
+    request = _read(path)
+    validate_schema(request, SCHEMA)
+    for record in (request["source"]["manifest"], request["receiver"]["manifest"], request["composition_plan"]):
+        record["path"] = str(record_path(record, base_dir=path.parent))
+    return request
+
+
 def _rows(path: Path) -> list[dict[str, str]]:
     with path.open(encoding="utf-8-sig", newline="") as stream:
         return list(csv.DictReader(stream))
@@ -139,8 +149,7 @@ def prepare(request_path: Path, run: Path) -> dict[str, Any]:
     output creation. Existing preparation outputs are never overwritten.
     """
     request_path, run = request_path.resolve(), run.resolve()
-    request = _read(request_path)
-    validate_schema(request, SCHEMA)
+    request = load_request(request_path)
     source_run, source_manifest = _producer(request["source"], request_path.parent)
     receiver_run, receiver_manifest = _producer(request["receiver"], request_path.parent)
     if receiver_manifest["status"] != "success":

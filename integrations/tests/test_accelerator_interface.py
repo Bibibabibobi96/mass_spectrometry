@@ -37,6 +37,52 @@ def reference_fixture(root, *, frame_id="astral.xyz.v2"):
 
 
 class AcceleratorInterfaceTests(unittest.TestCase):
+    def test_ip_recovery_compares_normalized_request_to_sealed_preparation(self):
+        powershell = shutil.which("pwsh")
+        if not powershell:
+            self.skipTest("PowerShell 7 required")
+        from integrations.workflows.multipole_ip.prepare import load_request
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = dict(path="producer/run_manifest.json", bytes=1, sha256="a" * 64)
+            request = dict(schema_version=2, role="multipole_ip_preparation_request",
+                source=dict(manifest=dict(record), run_id="source", project_id="rf_multipole_ion_optics", case_id="rf_on"),
+                receiver=dict(manifest=dict(record), run_id="receiver", project_id="dual_pressure_rectilinear_ion_processor"),
+                composition_plan=dict(record), species_id="ion", particle_weight=1)
+            author = root / "author.json"
+            author.write_text(json.dumps(request), encoding="utf-8")
+            normalized = load_request(author)
+            run = root / "preparation"
+            (run / "inputs").mkdir(parents=True)
+            frozen = run / "inputs/multipole_ip_request.json"
+            frozen.write_text(json.dumps(normalized), encoding="utf-8")
+            original = frozen.read_bytes()
+            self.assertEqual(load_request(frozen), normalized)
+            manifest = run / "run_manifest.json"
+            manifest.write_text(json.dumps(dict(project="instrument_assembly", mode="multipole_ip_preparation",
+                status="success", inputs=dict(request=file_record(frozen)), outputs=[])), encoding="utf-8")
+            script = root / "compare.ps1"
+            script.write_text(r'''param($Entry,$Repo,$Run,$Request,$Python)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
+$definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Assert-MultipoleIpRecoveryRequest'},$true)
+Invoke-Expression $definition.Extent.Text
+function Invoke-RunToolRootContext {param($RepoRoot,$Operation) & $Operation}
+$repoRoot=$Repo;$python=$Python
+Assert-MultipoleIpRecoveryRequest -Run $Run -Request $Request
+''', encoding="utf-8")
+            command = [powershell, "-NoProfile", "-File", str(script),
+                str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(REPO), str(run), str(author), sys.executable]
+            equal = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", check=False, timeout=30)
+            self.assertEqual(equal.returncode, 0, equal.stdout + equal.stderr)
+            request["particle_weight"] = 2
+            author.write_text(json.dumps(request), encoding="utf-8")
+            changed = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", check=False, timeout=30)
+            self.assertNotEqual(changed.returncode, 0)
+            self.assertIn("unchanged request", changed.stderr)
+            self.assertEqual(frozen.read_bytes(), original)
+
+
     def test_full_joint_finalization_routes_only_to_existing_flight_owner(self):
         powershell = shutil.which("pwsh")
         if not powershell:
@@ -127,12 +173,18 @@ Invoke-Expression $definition.Extent.Text
 function New-AcceleratorInterfaceRunId {param($Provider) 'final'}
 function Invoke-JointAnalysisPreflight {param($Design,$Source,$Contract)}
 function Assert-JointFieldRunId {param($Id)}
-function Write-FullJointFailure {param($Stage,$Flight,$Reason,$Elapsed)}
+function Write-FullJointFailure {param($Stage,$Flight,$Reason,$Elapsed,$OwnerRun)
+  $script:failedStage=$Stage;$script:failedOwner=$OwnerRun
+}
 function Write-FullJointFlightResult {param($Workbench,$Flight,$Elapsed)}
 function Get-JointDesignReceipt {param($Run) return @{status='prepared'}}
 function Get-MultipoleIpPreparation {param($Run,$ConfigurationDirectory)
   if($ConfigurationDirectory-ne$Root){throw 'configuration was not forwarded'}
   return @{exit_count=$(if($Scenario-eq'zero'){0}else{1});mother_count=2;source=@{run_id='mp-original';case_id='rf_on'}}
+}
+function Assert-MultipoleIpRecoveryRequest {param($Run,$Request)
+  $script:calls.Add('source_reuse')
+  if($Scenario-eq'changed-request'){throw 'request identity differs'}
 }
 function Assert-CompletedIpScientificFailure {param($Run)
   if($Scenario-eq'unsafe'){throw 'incomplete diagnostics'}
@@ -144,6 +196,10 @@ function Invoke-JointOwnerStage {param($Script,$Arguments)
   if($Arguments.ContainsKey('InjectedSource')){
     $script:calls.Add('ip')
     if($Arguments.InjectedSource-ne(Join-Path $workspaceRoot 'artifacts/projects/instrument_assembly/runs/mp/results/multipole_ip/ip_injected_source.json')){throw 'source package differs'}
+    if($Scenario-in@('resume','resume-failure')){
+      if($Arguments.ContinuationPredecessorManifestPath-ne(Join-Path $Root 'parent/run_manifest.json')){throw 'IP parent not forwarded'}
+      if($Scenario-eq'resume-failure'){throw 'IP_RECOVERY_SENTINEL'}
+    }elseif($Arguments.ContainsKey('ContinuationPredecessorManifestPath')){throw 'IP recovery leaked to fresh run'}
     if($Scenario-in@('negative','unsafe','no-policy')){throw 'Analysis or required diagnostics incomplete; see frozen summary and logs'}
     if($Scenario-eq'seal-failure'){throw 'stopped payload sealing failed'}
     return
@@ -175,13 +231,26 @@ $ContinueOnIpScientificFailure=$Scenario-in@('negative','unsafe','seal-failure')
 $MatchingRequestPath='matching';$ContractPath='observation';$ReferenceMrRunPath='reference'
 $FieldRequestPath=Join-Path $Root 'field.json';Set-Content $FieldRequestPath '{"run_id":"field"}'
 $RunId='design';$LuaExe='';$PythonExe='';$SimionExe='';$FinalizeJointWorkbench=$false
-$PreparedInterfaceRunPath='';$JointFieldRunPath='';$PreparedJointWorkbenchRunPath='';$ContinuationPredecessorManifestPath=''
-$failed=$false;try {Invoke-FullJoint} catch {$failed=$true}
-$expected=if($Scenario-eq'zero'){'source'}elseif($Scenario-in@('unsafe','no-policy','seal-failure')){'source,ip'}else{'source,ip,design,field,binding,flight'}
-if(($script:calls -join ',')-ne$expected-or$failed-ne($Scenario-in@('unsafe','no-policy','seal-failure'))){throw "unexpected sequence $script:calls failure=$failed"}
+$PreparedInterfaceRunPath='';$JointFieldRunPath='';$PreparedJointWorkbenchRunPath='';$ContinuationPredecessorManifestPath='';$IonProcessorContinuationPredecessorManifestPath=''
+if($Scenario-in@('resume','resume-failure','changed-request','field-conflict','prepared-conflict','old-design-conflict')){
+  New-Item -ItemType Directory -Path (Join-Path $Root 'parent')|Out-Null
+  $IonProcessorContinuationPredecessorManifestPath=Join-Path $Root 'parent/run_manifest.json'
+  Set-Content $IonProcessorContinuationPredecessorManifestPath 'PARENT_UNCHANGED'
+}
+if($Scenario-eq'field-conflict'){$IonProcessorFieldRunPath='other-field'}
+if($Scenario-eq'prepared-conflict'){$PreparedJointWorkbenchRunPath='ready'}
+if($Scenario-eq'old-design-conflict'){$PreparedInterfaceRunPath='old-source-design'}
+$failed=$false;$message='';try {Invoke-FullJoint} catch {$failed=$true;$message=$_.Exception.Message}
+$expected=if($Scenario-eq'zero'){'source'}elseif($Scenario-in@('field-conflict','prepared-conflict','old-design-conflict')){''}elseif($Scenario-eq'changed-request'){'source_reuse'}elseif($Scenario-eq'resume-failure'){'source_reuse,ip'}elseif($Scenario-eq'resume'){'source_reuse,ip,design,field,binding,flight'}elseif($Scenario-in@('unsafe','no-policy','seal-failure')){'source,ip'}else{'source,ip,design,field,binding,flight'}
+if(($script:calls -join ',')-ne$expected-or$failed-ne($Scenario-in@('unsafe','no-policy','seal-failure','resume-failure','changed-request','field-conflict','prepared-conflict','old-design-conflict'))){throw "unexpected sequence $script:calls failure=$failed error=$message"}
+if($Scenario-eq'resume-failure'){
+  if($message-ne'IP_RECOVERY_SENTINEL'){throw 'IP recovery error was replaced'}
+  if($script:failedStage-ne'ion_processor_flight'-or$script:failedOwner-ne(Join-Path $Root 'artifacts/projects/dual_pressure_rectilinear_ion_processor/runs/ip')){throw 'IP recovery failure reported a different stage owner'}
+}
+if($IonProcessorContinuationPredecessorManifestPath-and(Get-Content $IonProcessorContinuationPredecessorManifestPath)-ne'PARENT_UNCHANGED'){throw 'Parent mutated'}
 Write-Output 'MP_IP_JOINT=PASS'
 ''', encoding="utf-8")
-            for scenario in ("normal", "zero", "negative", "unsafe", "no-policy", "seal-failure"):
+            for scenario in ("normal", "zero", "negative", "unsafe", "no-policy", "seal-failure", "resume", "resume-failure", "changed-request", "field-conflict", "prepared-conflict", "old-design-conflict"):
                 case = root / scenario
                 case.mkdir()
                 result = subprocess.run([powershell, "-NoProfile", "-File", str(script),

@@ -228,6 +228,11 @@ IP源的真实出口为零时，准备run保留完整母群census及源科学状
 IP配置，再传递原始母群；MP零出口直接报告并停止。`-ContinueOnIpScientificFailure`只允许
 原生与诊断已完整但科学门限未通过的结果继续，执行错误或未知状态仍失败关闭。源request仍显式绑定
 MP run、case、接收器、父plan、物种及权重，不能从参考MR或历史结果推测；这是分段状态交接。
+该分支恢复IP阶段时使用独立的`-IonProcessorContinuationPredecessorManifestPath <IP原manifest>`，
+同时提供原已发布的MP→IP准备RunId、未变请求与接收配置，以及新的IP RunId。
+入口复用经验证的源准备，IP owner按原完整分区补缺；不重做已完成批，也不把它称为原生积分checkpoint。
+恢复后的源须重新绑定新接口设计，不能混用旧源设计或另一个IP场。下游Fly恢复仍用独立的
+`-ContinuationPredecessorManifestPath`；参数和适用边界见[IP恢复说明](../../projects/dual_pressure_rectilinear_ion_processor/docs/PROJECT.md#原批分区恢复)。
 
 完整MP／IP／MR父plan可派生IP／MR局部范围；同一完整IP接口同时发布guide_inlet与extraction_exit。
 MR-local几何、原IP→MR直接位姿和唯一clock保持，不按锚点反算放置。真实115429准备已完成81粒子源的
@@ -357,7 +362,7 @@ OA的`sectioned_geometry`是assembly interface、bare-three-zone adapter和singl
 
 首批自然退出且原分区与退出事实已由前驱终态绑定时，若重规划失败，恢复计划保留首批。
 有真实观测值时沿现有 scheduler 重建余下区间；缺观测时，缺失区间不超过原首批，先观察
-首个缺批，再按实际资源校准单通道计划。未确认首批自然退出时不视为可复用。
+首个缺批，再按实际资源画像和CPU／内存约束校准计划。未确认首批自然退出时不视为可复用。
 
 IP→MR 的 FullJoint 在求场前验证设计 manifest 绑定的来源 receipt、粒子状态、时钟与共同脉冲。
 仅已知 v1 zero-birth 到严格验证的 v2 common-pulse 分析升级受支持；其他 Fly 依赖仍保持冻结。

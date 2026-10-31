@@ -1099,7 +1099,8 @@
           "consumers": [
             "multipole_ip",
             "single_reflection_flight",
-            "paired_accelerator_static_field"
+            "paired_accelerator_static_field",
+            "accelerator_interface"
           ]
         },
         {
@@ -1727,7 +1728,8 @@
           "id": "integrations_config_schemas_multipole_ip_request_schema_json",
           "source_repo_path": "integrations/config/schemas/multipole_ip_request.schema.json",
           "consumers": [
-            "multipole_ip"
+            "multipole_ip",
+            "accelerator_interface"
           ]
         },
         {
@@ -1741,7 +1743,8 @@
           "id": "integrations_workflows_multipole_ip_prepare",
           "source_repo_path": "integrations/workflows/multipole_ip/prepare.py",
           "consumers": [
-            "multipole_ip"
+            "multipole_ip",
+            "accelerator_interface"
           ]
         },
         {
@@ -3063,7 +3066,8 @@
             "cooled_frontend",
             "multipole_ip",
             "single_reflection_flight",
-            "paired_accelerator_static_field"
+            "paired_accelerator_static_field",
+            "accelerator_interface"
           ]
         },
         {
@@ -3074,7 +3078,8 @@
             "cooled_frontend",
             "multipole_ip",
             "single_reflection_flight",
-            "paired_accelerator_static_field"
+            "paired_accelerator_static_field",
+            "accelerator_interface"
           ]
         },
         {
@@ -3085,7 +3090,8 @@
             "cooled_frontend",
             "multipole_ip",
             "single_reflection_flight",
-            "paired_accelerator_static_field"
+            "paired_accelerator_static_field",
+            "accelerator_interface"
           ]
         },
         {
@@ -3110,7 +3116,8 @@
             "cooled_frontend",
             "multipole_ip",
             "single_reflection_flight",
-            "paired_accelerator_static_field"
+            "paired_accelerator_static_field",
+            "accelerator_interface"
           ]
         },
         {
@@ -3131,7 +3138,8 @@
             "cooled_frontend",
             "multipole_ip",
             "single_reflection_flight",
-            "paired_accelerator_static_field"
+            "paired_accelerator_static_field",
+            "accelerator_interface"
           ]
         },
         {
@@ -3140,7 +3148,8 @@
           "consumers": [
             "multipole_ip",
             "single_reflection_flight",
-            "paired_accelerator_static_field"
+            "paired_accelerator_static_field",
+            "accelerator_interface"
           ]
         },
         {
@@ -3149,7 +3158,8 @@
           "consumers": [
             "multipole_ip",
             "single_reflection_flight",
-            "paired_accelerator_static_field"
+            "paired_accelerator_static_field",
+            "accelerator_interface"
           ]
         },
         {

@@ -559,11 +559,16 @@ whole-unit plan schema 2直接绑定当前显式前驱manifest输入／输出中
 已自然退出的首个正式批若在重规划前后失败，owner可将原 provisional 计划、首批输入和小退出事实绑定到原run终态。
 `resource_scheduler.plan_recovered_formal_followup`先核对已完成区间；有真实资源观测时沿用既有自适应规划。
 缺少完整观测时保留已完成首批，按不大于原首批的区间冻结缺失批，并先观察第一个缺失批；
-`--recovered-missing-plan`使用该批的真实峰值、CPU与主机内存观测校准原分区，在一个lane内接续其他缺失批，
+`--recovered-missing-plan`使用该批的真实峰值、CPU与主机内存观测校准原分区，按实际CPU／内存容量接续其他缺失批，
 不重新发射已完成首批，也不虚构资源峰值。小退出事实按既有终态manifest验证；未绑定的硬中断事实不授权复用。
-已有完整固定分区的续跑使用`prepare_fixed_partition_dispatch`或`--prepare-fixed-recovery-plan`：
-原分区不变，已观测画像须覆盖最大缺批；否则在真实最大缺批上采集正式资源观测，再以`--recovered-missing-plan`校准。
-观测批索引随计划保留，续跑不扩大并发；不以未执行的首区间大小解释缺批的资源峰值。
+已有完整固定分区的续跑使用`prepare_fixed_partition_dispatch(plan, batch_plan, replay_indices, profiles=...)`
+或`--prepare-fixed-recovery-plan PATH --fixed-batch-plan PATH --profiles PATH --replay-batch-index INDEX`：
+profiles可省略；现有identity匹配的画像须覆盖实际最大缺批，不以普通新计划的bootstrap或批量否定原分区，
+也不丢弃已有覆盖充分的观测计划。覆盖不足时在真实最大缺批上采集正式资源观测，再以`--recovered-missing-plan`校准。
+观测批索引随计划保留；画像不足时仅先启动最大缺批的正式观测，覆盖画像或观测校准充分后，
+按既有CPU、内存和互斥准入决定并发，不再无条件固定单通道。IP、prepared-joint、OA→MR及RF入口消费这组公共API；
+RF finite每个case按实际缺批重新检查覆盖，仍在运行的观测worker计入资源预算。
+原完整批、粒子ID与区间不改变；bootstrap批量不代表原缺失完整批的容量上限。
 项目 adapter 只需提供其冻结的科学输入投影、独立单位及实际终态判据；项目 runner 负责把生成的 plan 接到新的执行与结果物化。公共层不把这些物理语义、粒子
 分类或项目结果布局变成第二套通用合同。
 

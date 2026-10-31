@@ -21,6 +21,21 @@
 HP／LP压力和温度是当前碰撞气体浴的规定输入，不表示已经求解整机压力分布或分子流。
 HS1截面仍为未标定示例值。原解析规定电场已退役，活动生产只使用原生电极场及具名电压合同。
 
+### 原批分区恢复
+
+`simion/run_functional.ps1 -ContinuationPredecessorManifestPath <原manifest> -RunId <新run>`
+保持前驱完整批次分区和原ID；已完成（包括已归档）的单元由manifest引用，缺失完整单元重做。
+公共scheduler按实际最大缺失单元选择同身份画像；画像不足时先执行该原单元观测，保留其实际进程，
+再按实测CPU、内存和现有互斥策略派发剩余单元，不再强制单路恢复。未知writer仍保守处理，
+健康worker自然结束；该恢复不是原生积分checkpoint，不改变前驱终态。
+
+`accelerator_interface/execute.ps1 -FullJoint`的MP→IP分支可独立传
+`-IonProcessorContinuationPredecessorManifestPath <IP原manifest>`，同时提供新IP RunId及原已发布
+MP→IP准备RunId、未变请求和接收配置。复用前核验原准备包、源和冻结接收几何；IP入口继续核验
+冻结源、设计、驱动及数值。恢复后的新IP源生成新接口设计，不能直接套用绑定旧源的接口设计；
+下游完整批恢复仍使用独立的`-ContinuationPredecessorManifestPath`。失败报告提供实际阶段、owner路径
+及原始错误。软件恢复与并行回归不授予新的物理或科学资格。
+
 ## 当前输入权威
 
 | 内容 | 唯一入口 |

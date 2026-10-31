@@ -19,6 +19,106 @@ from projects.rf_multipole_ion_optics.runtime.simion_batch_continuation import p
 
 class RfContinuationTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_prepared_fixed_recovery_transports_existing_profiles_to_public_selector(self):
+        from common.simion.resource_scheduler import plan_simion_dispatch
+        from common.simion.test_resource_scheduler import ResourceSchedulerTests, GIB
+
+        repo = Path(__file__).resolve().parents[4]
+        request = ResourceSchedulerTests.request(particle_count=2)
+        profile = ResourceSchedulerTests.profile(peak=GIB, cpu=80, observed_batch_work_units=1)
+        initial = plan_simion_dispatch(request, [profile], available_memory_bytes=2*GIB,
+            total_physical_memory_bytes=20*GIB, logical_processors=8)
+        self.assertEqual(initial['estimation']['kind'], 'formal_first_batch_observation')
+        fixed = dict(role='simion_single_wave_particle_batch_plan', coverage='complete_population',
+            particle_count=2, batches=[dict(index=i, count=1, particle_id_min=i,
+                particle_id_max=i, simion_particle_id_offset=i-1) for i in (1, 2)])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name, value in (('dispatch', initial), ('fixed', fixed), ('profiles', [profile])):
+                (root/f'{name}.json').write_text(json.dumps(value), encoding='utf-8')
+            script = root/'fixed_profile.ps1'
+            script.write_text(r'''param($Repo,$Root,$Python)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'projects/rf_multipole_ion_optics/runtime/simion_execution.ps1'),[ref]$null,[ref]$errors)
+if($errors.Count){throw ($errors|Out-String)}
+$helper=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Initialize-RfSimionPreparedContinuation'},$true)
+$branch=$helper.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'-not$context.all_reused'},$true)
+$context=@{all_reused=$false};$RunConfig=@{inputs=@{simion_resource_profiles=(Join-Path $Root 'profiles.json')}}
+$DispatchPlanPath=Join-Path $Root 'dispatch.json';$BatchPlanPath=Join-Path $Root 'fixed.json';$PythonExe=$Python;$env:PYTHONPATH=$Repo
+$plan=@{replay=@{units=@(@{key='transport.batch_01';action='reuse'},@{key='transport.batch_02';action='replay'})}}
+Invoke-Expression $branch.Extent.Text
+$actual=Get-Content $DispatchPlanPath -Raw|ConvertFrom-Json
+if($actual.estimation.kind-ne'exact_resource_profile'-or$actual.estimation.observed_batch_work_units-ne1-or$actual.limits.maximum_concurrency-ne1){throw 'RF did not pass its frozen profile to the fixed-unit selector'}
+if($actual.particle_count-ne2-or$actual.waves[0].batches.Count-ne2){throw 'RF original partition changed'}
+exit 0
+''', encoding='utf-8')
+            result = subprocess.run(['pwsh', '-NoProfile', '-File', str(script), str(repo), directory, sys.executable],
+                cwd=repo, capture_output=True, text=True, encoding='utf-8', timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_finite_recovery_rechecks_each_case_actual_missing_unit(self):
+        from common.simion.resource_scheduler import plan_simion_dispatch
+        from common.simion.test_resource_scheduler import ResourceSchedulerTests, GIB
+
+        repo = Path(__file__).resolve().parents[4]
+        initial = plan_simion_dispatch(ResourceSchedulerTests.request(), [],
+            available_memory_bytes=10*GIB, total_physical_memory_bytes=20*GIB, logical_processors=8)
+        counts = [500, 715, 715, 714, 714, 714, 714, 214]
+        batches = []
+        first = 1
+        for index, count in enumerate(counts, 1):
+            batches.append(dict(index=index, count=count, particle_id_min=first,
+                particle_id_max=first+count-1, simion_particle_id_offset=first-1))
+            first += count
+        fixed = dict(role="simion_single_wave_particle_batch_plan", coverage="complete_population",
+            particle_count=5000, batches=batches)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name, document in (("dispatch", initial), ("fixed", fixed), ("profiles", [])):
+                (root/f"{name}.json").write_text(json.dumps(document), encoding="utf-8")
+            script = root/"finite_recovery.ps1"
+            script.write_text(r'''param($Repo,$Root,$Python)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1'),[ref]$null,[ref]$errors)
+if($errors.Count){throw ($errors|Out-String)}
+$fixed=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$continuationPredecessor-and$pendingRuns.Count-gt0'},$true)
+$observe=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$script:resourceCalibrationRequired-and$pendingRuns.Count-gt0'},$true)
+if($null-eq$fixed-or$null-eq$observe){throw 'Missing real finite continuation boundary'}
+$codeRoot=$Repo;$python=$Python;$continuationPredecessor='explicit-parent';$resourceProfiles=Join-Path $Root 'profiles.json'
+$dispatchPlan=Join-Path $Root 'dispatch.json';$batchPlan=Join-Path $Root 'fixed.json'
+$solverDir=$Root;$logDir=$Root;$simion='not-launched';$rfDriveKernelLua='frozen-kernel';$flyArguments=@('a','b','c','d','e','f','g')
+$batchRuns=@((Get-Content $batchPlan -Raw|ConvertFrom-Json).batches|ForEach-Object{[pscustomobject]@{batch=$_;fly2='frozen';lua_config='frozen'}})
+$original=Get-Content $batchPlan -Raw
+foreach($index in @(8,2)){
+ $name='case_'+$index;$pendingRuns=@($batchRuns|Where-Object{$_.batch.index-eq$index})
+ $firstSpecification=$null;$replanAction=$null
+ Invoke-Expression $fixed.Extent.Text
+ $current=Get-Content $dispatchPlan -Raw|ConvertFrom-Json
+ if($current.estimation.kind-ne'formal_first_batch_observation'-or$current.estimation.observed_missing_batch_index-ne$index-or$current.limits.maximum_concurrency-ne1){throw 'Later larger missing unit inherited insufficient observation'}
+ Invoke-Expression $observe.Extent.Text
+ if($firstSpecification.scheduler_batch.index-ne$index-or$firstSpecification.scheduler_batch.count-ne$pendingRuns[0].batch.count){throw 'Original missing unit was repartitioned'}
+ $formal=[pscustomobject]@{observed_peak_process_tree_working_set_bytes=[long]1GB;available_memory_bytes=[long]10GB;total_physical_memory_bytes=[long]20GB;observed_process_cpu_percent=20;observed_background_cpu_percent=0;completed_naturally=$true;process_record=[pscustomobject]@{specification=$firstSpecification}}
+ & $replanAction $formal
+ $actual=Get-Content $dispatchPlan -Raw|ConvertFrom-Json
+ if($actual.estimation.kind-ne'observed_formal_batch'-or$actual.estimation.observed_missing_batch_index-ne$index-or$actual.limits.maximum_concurrency-le1){throw 'Actual fixed-unit observation lost measured parallel capacity'}
+ if(($actual.waves[0].batches|ConvertTo-Json -Compress)-cne($batchRuns.batch|ConvertTo-Json -Compress)-or(Get-Content $batchPlan -Raw)-cne$original){throw 'Frozen partition changed'}
+ if($formal.process_record.specification.scheduler_batch.index-ne$index){throw 'Observed first worker replaced'}
+}
+# All-reuse skips both planning and observation. A real selector error propagates.
+$pendingRuns=@();$before=Get-Content $dispatchPlan -Raw;Invoke-Expression $fixed.Extent.Text
+if((Get-Content $dispatchPlan -Raw)-cne$before){throw 'All-reuse invoked resource planning'}
+$pendingRuns=@($batchRuns[1]);Set-Content $resourceProfiles 'invalid-json';$caught=$false
+try{Invoke-Expression $fixed.Extent.Text}catch{$caught=$_.Exception.Message-eq'SIMION fixed continuation resource planning failed.'}
+if(-not$caught){throw 'Actual selector error was swallowed'}
+'FINITE_FIXED_RECOVERY=PASS FIRST=214 SECOND=715 PARTITION=unchanged NATIVE=0'
+''', encoding="utf-8")
+            result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(repo), directory, sys.executable],
+                cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+            self.assertIn("FINITE_FIXED_RECOVERY=PASS", result.stdout)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_prepared_cli_analysis_failure_retains_complete_units_for_new_run(self):
         repo = Path(__file__).resolve().parents[4]
         for workflow, mode in (("interface_readiness", "transport_interface_readiness"),

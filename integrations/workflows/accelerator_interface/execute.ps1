@@ -9,6 +9,7 @@ param(
   [string]$IonProcessorRunId='',
   [string]$IonProcessorConfigurationDirectory='',
   [string]$IonProcessorFieldRunPath='',
+  [string]$IonProcessorContinuationPredecessorManifestPath='',
   [switch]$ContinueOnIpScientificFailure,
   [switch]$FinalizeJointWorkbench,
   [string]$PreparedInterfaceRunPath='',
@@ -89,6 +90,23 @@ print(json.dumps(receipt))
   }
   return (($output -join "`n")|ConvertFrom-Json -AsHashtable)
 }
+function Assert-MultipoleIpRecoveryRequest {
+  param([string]$Run,[string]$Request)
+  $code=@'
+import sys
+from pathlib import Path
+from integrations.workflows.multipole_ip.prepare import load_request
+from common.contracts.verify_run_manifest import verified_successful_run_reference
+run, request = map(Path, sys.argv[1:])
+frozen = verified_successful_run_reference(run, 'inputs/multipole_ip_request.json', project='instrument_assembly', mode='multipole_ip_preparation')
+if load_request(request) != load_request(frozen):
+    raise ValueError('MP-to-IP recovery request differs from the explicit sealed preparation')
+'@
+  Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+    & $python -B -c $code $Run $Request
+    if($LASTEXITCODE-ne0){throw 'MP-to-IP recovery requires the unchanged request and its explicit sealed preparation.'}
+  }
+}
 function Assert-CompletedIpScientificFailure {
   param([string]$Run)
   $code=@'
@@ -121,8 +139,8 @@ function Get-JointSourceStart {
   return 'unknown'
 }
 function Write-FullJointFailure {
-  param([string]$Stage,[string]$Flight,[string]$Reason,[double]$Elapsed)
-  $recovery='inspect_stage_owner_result';$summaryPath=Join-Path $Flight 'summary.json'
+  param([string]$Stage,[string]$Flight,[string]$Reason,[double]$Elapsed,[string]$OwnerRun='')
+  $recovery='inspect_stage_owner_result';$observedRun=if($OwnerRun){$OwnerRun}else{$Flight};$summaryPath=Join-Path $observedRun 'summary.json'
   if(Test-Path -LiteralPath $summaryPath -PathType Leaf){
     try{
       $summary=Get-Content -LiteralPath $summaryPath -Raw|ConvertFrom-Json -AsHashtable
@@ -133,7 +151,7 @@ function Write-FullJointFailure {
       else{$recovery='inspect_flight_summary_and_use_prepared_joint_owner'}
     }catch{Write-Warning 'Flight summary could not be read; original failure retained.'}
   }
-  Write-Error ("FULL_JOINT=FAILED STAGE={0} DATA_VALIDITY=unknown SCIENCE=unknown FLIGHT={1} RECOVERY={2} TOTAL_SECONDS={3:F3} REASON={4}" -f $Stage,$Flight,$recovery,$Elapsed,$Reason) -ErrorAction Continue
+  Write-Error ("FULL_JOINT=FAILED STAGE={0} DATA_VALIDITY=unknown SCIENCE=unknown FLIGHT={1} RECOVERY={2} TOTAL_SECONDS={3:F3} REASON={4} OWNER_RUN={5}" -f $Stage,$Flight,$recovery,$Elapsed,$Reason,$observedRun) -ErrorAction Continue
 }
 function Write-FullJointFlightResult {
   param([string]$Workbench,[string]$Flight,[double]$Elapsed)
@@ -170,7 +188,7 @@ function Invoke-JointAnalysisPreflight {
 function Invoke-FullJoint {
   $totalWatch=[Diagnostics.Stopwatch]::StartNew()
   if($PreparedJointWorkbenchRunPath){
-    if(-not$ContractPath-or$FinalizeJointWorkbench-or$PreparedInterfaceRunPath-or$JointFieldRunPath-or$MatchingRequestPath-or$FieldRequestPath-or$MultipoleIpRequestPath-or$MultipoleIpRunId-or$IonProcessorRunId-or$IonProcessorConfigurationDirectory-or$IonProcessorFieldRunPath-or$ContinueOnIpScientificFailure){
+    if(-not$ContractPath-or$FinalizeJointWorkbench-or$PreparedInterfaceRunPath-or$JointFieldRunPath-or$MatchingRequestPath-or$FieldRequestPath-or$MultipoleIpRequestPath-or$MultipoleIpRunId-or$IonProcessorRunId-or$IonProcessorConfigurationDirectory-or$IonProcessorFieldRunPath-or$IonProcessorContinuationPredecessorManifestPath-or$ContinueOnIpScientificFailure){
       throw 'A prepared workbench requires ContractPath and cannot be combined with design or field inputs.'
     }
     $workbench=(Resolve-Path -LiteralPath $PreparedJointWorkbenchRunPath).Path
@@ -198,7 +216,11 @@ function Invoke-FullJoint {
     }
     Assert-JointFieldRunId -Id $MultipoleIpRunId
     Assert-JointFieldRunId -Id $IonProcessorRunId
-  }elseif(-not$IonProcessorRunPath-or$MultipoleIpRunId-or$IonProcessorRunId-or$IonProcessorConfigurationDirectory-or$IonProcessorFieldRunPath-or$ContinueOnIpScientificFailure){
+    if($IonProcessorContinuationPredecessorManifestPath-and$IonProcessorFieldRunPath){throw 'IP continuation obtains its field from its explicit predecessor; omit IonProcessorFieldRunPath.'}
+    if($IonProcessorContinuationPredecessorManifestPath-and$PreparedInterfaceRunPath){
+      throw 'IP recovery publishes a new source run; omit PreparedInterfaceRunPath and provide MatchingRequestPath plus an applicable FieldRequestPath. An old design remains bound to its original IP source.'
+    }
+  }elseif(-not$IonProcessorRunPath-or$MultipoleIpRunId-or$IonProcessorRunId-or$IonProcessorConfigurationDirectory-or$IonProcessorFieldRunPath-or$IonProcessorContinuationPredecessorManifestPath-or$ContinueOnIpScientificFailure){
     throw 'FullJoint requires an existing IP source or an explicit MP-to-IP request and its source options.'
   }
   if($FinalizeJointWorkbench-or($JointFieldRunPath-and-not$PreparedInterfaceRunPath)-or
@@ -233,7 +255,11 @@ function Invoke-FullJoint {
       $sourceRun=Join-Path $workspaceRoot "artifacts/projects/instrument_assembly/runs/$MultipoleIpRunId"
       $sourceArguments=@{Request=$sourceRequest;RunId=$MultipoleIpRunId;RepoRoot=$repoRoot}
       if($PythonExe){$sourceArguments.PythonExe=$PythonExe}
-      Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'integrations/workflows/multipole_ip/execute.ps1') -Arguments $sourceArguments
+      if($IonProcessorContinuationPredecessorManifestPath){
+        Assert-MultipoleIpRecoveryRequest -Run $sourceRun -Request $sourceRequest
+      }else{
+        Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'integrations/workflows/multipole_ip/execute.ps1') -Arguments $sourceArguments
+      }
       $sourceReceipt=Get-MultipoleIpPreparation -Run $sourceRun -ConfigurationDirectory $ipConfiguration
       if([int]$sourceReceipt.exit_count-eq0){
         Write-Output ("FULL_JOINT=ZERO_EXIT EXECUTION=success DATA_VALIDITY=valid SCIENCE=not_qualified SOURCE_RUN={0} SOURCE_CASE={1} SOURCE_PREPARATION={2} MOTHER={3} TRANSFERRED=0 IP_FLY=False MR_FIELD=False MR_FLY=False RECOVERY=none TOTAL_SECONDS={4:F3}" -f $sourceReceipt.source.run_id,$sourceReceipt.source.case_id,$sourceRun,$sourceReceipt.mother_count,$totalWatch.Elapsed.TotalSeconds)
@@ -244,6 +270,7 @@ function Invoke-FullJoint {
       $ipArguments=@{RunId=$IonProcessorRunId;InjectedSource=(Join-Path $sourceRun 'results/multipole_ip/ip_injected_source.json');ConfigurationDirectory=$ipConfiguration}
       if($SimionExe){$ipArguments.SimionExe=$SimionExe}
       if($IonProcessorFieldRunPath){$ipArguments.NativeFieldRun=(Resolve-Path -LiteralPath $IonProcessorFieldRunPath).Path}
+      if($IonProcessorContinuationPredecessorManifestPath){$ipArguments.ContinuationPredecessorManifestPath=(Resolve-Path -LiteralPath $IonProcessorContinuationPredecessorManifestPath).Path}
       try {Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'projects/dual_pressure_rectilinear_ion_processor/simion/run_functional.ps1') -Arguments $ipArguments}
       catch {
         $ipFailure=$_
@@ -296,7 +323,8 @@ function Invoke-FullJoint {
     Write-FullJointFlightResult -Workbench $finalRun -Flight $flightRun -Elapsed $totalWatch.Elapsed.TotalSeconds
   }catch{
     Write-Output "FULL_JOINT_INPUTS DESIGN=$designRun FIELD=$fieldRun WORKBENCH=$finalRun"
-    Write-FullJointFailure -Stage $stage -Flight $flightRun -Reason $_.Exception.Message -Elapsed $totalWatch.Elapsed.TotalSeconds
+    $failedOwner=if($stage-eq'ion_processor_flight'){$IonProcessorRunPath}elseif($stage-eq'multipole_ip_preparation'){$sourceRun}elseif($stage-eq'design'){$designRun}elseif($stage-eq'field'){$fieldRun}elseif($stage-eq'binding'){$finalRun}else{$flightRun}
+    Write-FullJointFailure -Stage $stage -Flight $flightRun -Reason $_.Exception.Message -Elapsed $totalWatch.Elapsed.TotalSeconds -OwnerRun $failedOwner
     throw
   }finally{if($temporary-and(Test-Path -LiteralPath $temporary)){Remove-Item -LiteralPath $temporary}}
 }
@@ -315,7 +343,7 @@ if($FullJoint){Invoke-FullJoint;return}
 if($FieldRequestPath){throw 'FieldRequestPath requires FullJoint.'}
 if($ContinuationPredecessorManifestPath){throw 'ContinuationPredecessorManifestPath requires FullJoint.'}
 if($PreparedJointWorkbenchRunPath){throw 'PreparedJointWorkbenchRunPath requires FullJoint.'}
-if($MultipoleIpRequestPath-or$MultipoleIpRunId-or$IonProcessorRunId-or$IonProcessorConfigurationDirectory-or$IonProcessorFieldRunPath-or$ContinueOnIpScientificFailure){throw 'MP-to-IP source options require FullJoint.'}
+if($MultipoleIpRequestPath-or$MultipoleIpRunId-or$IonProcessorRunId-or$IonProcessorConfigurationDirectory-or$IonProcessorFieldRunPath-or$IonProcessorContinuationPredecessorManifestPath-or$ContinueOnIpScientificFailure){throw 'MP-to-IP source options require FullJoint.'}
 if(-not$ReferenceMrRunPath){throw 'ReferenceMrRunPath is required for interface preparation.'}
 $reference=(Resolve-Path -LiteralPath $ReferenceMrRunPath).Path
 if($AcceleratorProvider-eq'dual_pressure_rectilinear_ion_processor'-and-not$IonProcessorRunPath){

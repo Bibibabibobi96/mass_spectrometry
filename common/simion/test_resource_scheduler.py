@@ -26,6 +26,117 @@ GIB = 1024**3
 
 
 class ResourceSchedulerTests(unittest.TestCase):
+    def test_fixed_recovery_matches_profiles_to_original_missing_units_not_new_partition(self) -> None:
+        fixed = dict(role="simion_single_wave_particle_batch_plan", coverage="complete_population",
+            particle_count=5000, batches=[
+                dict(index=1, count=500, particle_id_min=1, particle_id_max=500, simion_particle_id_offset=0),
+                dict(index=2, count=2500, particle_id_min=501, particle_id_max=3000, simion_particle_id_offset=500),
+                dict(index=3, count=2000, particle_id_min=3001, particle_id_max=5000, simion_particle_id_offset=3000)])
+        profile = self.profile(peak=GIB, cpu=80, observed_batch_work_units=2500)
+        initial = plan_simion_dispatch(self.request(), [profile], available_memory_bytes=2*GIB,
+            total_physical_memory_bytes=20*GIB, logical_processors=8)
+        self.assertEqual(initial["estimation"]["kind"], "formal_first_batch_observation")
+        before = json.loads(json.dumps((initial, fixed, profile)))
+        ready = prepare_fixed_partition_dispatch(initial, fixed, [2, 3], profiles=[profile])
+        self.assertEqual(ready["estimation"]["kind"], "exact_resource_profile")
+        self.assertEqual(ready["estimation"]["observed_batch_work_units"], 2500)
+        self.assertNotIn("recovered_missing_observation", ready["estimation"])
+        self.assertEqual(ready["limits"]["maximum_concurrency"], 1)
+        self.assertEqual(ready["particle_count"], 5000)
+        self.assertEqual(ready["waves"][0]["particle_count"], 5000)
+        self.assertEqual(ready["waves"][0]["batches"], fixed["batches"])
+        self.assertEqual(json.loads(json.dumps((initial, fixed, profile))), before)
+        wrong_identity = {**profile, "resource_identity": {**profile["resource_identity"], "rf_steps_per_period": 41}}
+        for invalid in ({**profile, "observed_batch_work_units": 2000}, wrong_identity):
+            observe = prepare_fixed_partition_dispatch(initial, fixed, [2, 3], profiles=[invalid])
+            self.assertEqual(observe["estimation"]["kind"], "formal_first_batch_observation")
+            self.assertEqual(observe["estimation"]["observed_missing_batch_index"], 2)
+            self.assertEqual(observe["waves"][0]["batches"], fixed["batches"])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name, document in (("dispatch", initial), ("fixed", fixed), ("profiles", [profile])):
+                (root/f"{name}.json").write_text(json.dumps(document), encoding="utf-8")
+            completed = subprocess.run([sys.executable, "-m", "common.simion.resource_scheduler",
+                "--prepare-fixed-recovery-plan", str(root/"dispatch.json"), "--fixed-batch-plan", str(root/"fixed.json"),
+                "--profiles", str(root/"profiles.json"), "--replay-batch-index", "2", "--replay-batch-index", "3",
+                "--output", str(root/"dispatch.json")], cwd=Path(__file__).resolve().parents[2],
+                capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
+            self.assertEqual(json.loads((root/"dispatch.json").read_text(encoding="utf-8")), ready)
+
+    def test_fixed_recovery_counts_live_observation_in_memory_and_cpu_capacity(self) -> None:
+        initial = plan_simion_dispatch(self.request(), [], available_memory_bytes=10*GIB,
+            total_physical_memory_bytes=20*GIB, logical_processors=8)
+        fixed = dict(role="simion_single_wave_particle_batch_plan", coverage="complete_population",
+            particle_count=5000, batches=[
+                dict(index=1, count=500, particle_id_min=1, particle_id_max=500, simion_particle_id_offset=0),
+                dict(index=2, count=2500, particle_id_min=501, particle_id_max=3000, simion_particle_id_offset=500),
+                dict(index=3, count=2000, particle_id_min=3001, particle_id_max=5000, simion_particle_id_offset=3000)])
+        plan = prepare_fixed_partition_dispatch(initial, fixed, [2, 3])
+        before = json.loads(json.dumps(plan))
+        # The live observation already occupies one lane. Free memory is
+        # sampled after that worker's allocation; CPU remains whole-host.
+        for completed, free, cpu, memory_lanes, cpu_lanes, lanes in (
+            (False, 2*GIB, 20, 3, 4, 3),
+            (True, 2*GIB, 20, 2, 4, 2),
+            (False, GIB//2, 20, 1, 4, 1),
+            (False, 10*GIB, 80, 11, 1, 1),
+        ):
+            with self.subTest(completed=completed, free=free, cpu=cpu):
+                calibrated = calibrate_recovered_missing_plan(plan, GIB,
+                    observed_cpu_percent=cpu, background_cpu_percent=0,
+                    available_memory_bytes=free, total_physical_memory_bytes=20*GIB,
+                    observed_completed=completed)
+                self.assertEqual(calibrated["limits"]["memory_capacity"], memory_lanes)
+                self.assertEqual(calibrated["limits"]["cpu_capacity"], cpu_lanes)
+                self.assertEqual(calibrated["limits"]["maximum_concurrency"], lanes)
+                self.assertEqual(calibrated["estimation"]["retained_first_batch_counts_toward_concurrency"], not completed)
+                self.assertEqual(calibrated["waves"][0]["batches"], fixed["batches"])
+                self.assertEqual(plan, before)
+        for cpu, lanes in ((20, 2), (80, 1)):
+            with self.subTest(covering_profile_cpu=cpu):
+                profiled = plan_simion_dispatch(self.request(),
+                    [self.profile(peak=GIB, cpu=cpu, observed_batch_work_units=2500)],
+                    available_memory_bytes=2*GIB, total_physical_memory_bytes=20*GIB,
+                    logical_processors=8)
+                ready = prepare_fixed_partition_dispatch(profiled, fixed, [2, 3],
+                    profiles=[self.profile(peak=GIB, cpu=cpu, observed_batch_work_units=2500)])
+                self.assertEqual(ready["estimation"]["kind"], "exact_resource_profile")
+                self.assertNotIn("recovered_missing_observation", ready["estimation"])
+                self.assertEqual(ready["limits"]["maximum_concurrency"], lanes)
+                self.assertEqual(ready["waves"][0]["batches"], fixed["batches"])
+
+    def test_fixed_recovery_5000_population_uses_original_larger_missing_batch(self) -> None:
+        initial = plan_simion_dispatch(self.request(), [], available_memory_bytes=10*GIB,
+            total_physical_memory_bytes=20*GIB, logical_processors=8)
+        counts = [500, 715, 715, 714, 714, 714, 714, 214]
+        batches = []
+        first = 1
+        for index, count in enumerate(counts, 1):
+            batches.append(dict(index=index, count=count, particle_id_min=first,
+                particle_id_max=first+count-1, simion_particle_id_offset=first-1))
+            first += count
+        fixed = dict(role="simion_single_wave_particle_batch_plan", coverage="complete_population",
+                     particle_count=5000, batches=batches)
+        plan = prepare_fixed_partition_dispatch(initial, fixed, [2, 4, 8])
+        self.assertEqual(plan["estimation"]["observed_missing_batch_index"], 2)
+        self.assertEqual(plan["limits"]["maximum_concurrency"], 1)
+        for completed in (False, True):
+            calibrated = calibrate_recovered_missing_plan(plan, GIB,
+                observed_cpu_percent=8, background_cpu_percent=0,
+                available_memory_bytes=10*GIB, total_physical_memory_bytes=20*GIB,
+                observed_completed=completed)
+            self.assertEqual(calibrated["waves"][0]["batches"], batches)
+            self.assertGreater(calibrated["limits"]["maximum_concurrency"], 1)
+            self.assertLessEqual(calibrated["limits"]["maximum_concurrency"],
+                                 calibrated["limits"]["cpu_capacity"])
+        constrained = calibrate_recovered_missing_plan(plan, 9*GIB,
+            observed_cpu_percent=80, background_cpu_percent=0,
+            available_memory_bytes=GIB, total_physical_memory_bytes=20*GIB,
+            observed_completed=False)
+        self.assertEqual(constrained["limits"]["maximum_concurrency"], 1)
+        self.assertEqual(constrained["waves"][0]["batches"], batches)
+
     def test_fixed_partition_calibrates_largest_missing_unit_and_keeps_all_intervals(self) -> None:
         initial = plan_simion_dispatch(self.request(), [], available_memory_bytes=10*GIB,
             total_physical_memory_bytes=20*GIB, logical_processors=8)
@@ -42,10 +153,12 @@ class ResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(calibrated["waves"][0]["batches"], batches)
         self.assertEqual(calibrated["estimation"]["observed_missing_batch_index"], 3)
         self.assertGreaterEqual(calibrated["estimation"]["per_process_memory_budget_bytes"], GIB)
-        self.assertEqual(calibrated["limits"]["maximum_concurrency"], 1)
+        self.assertGreater(calibrated["limits"]["maximum_concurrency"], 1)
+        self.assertLessEqual(calibrated["limits"]["maximum_concurrency"],
+                             calibrated["limits"]["memory_capacity"])
         reuse = prepare_fixed_partition_dispatch(calibrated, fixed, [2])
         self.assertEqual(reuse["estimation"]["kind"], "observed_formal_batch")
-        self.assertEqual(reuse["limits"]["maximum_concurrency"], 1)
+        self.assertEqual(reuse["limits"], calibrated["limits"])
         too_small = json.loads(json.dumps(calibrated))
         too_small["estimation"]["observed_missing_batch_index"] = 1
         reprobe = prepare_fixed_partition_dispatch(too_small, fixed, [2])
@@ -67,7 +180,7 @@ class ResourceSchedulerTests(unittest.TestCase):
             observed_completed=False)
         self.assertEqual(recalibrated["waves"][0]["batches"], batches)
         self.assertEqual(recalibrated["estimation"]["observed_missing_batch_index"], 3)
-        self.assertEqual(recalibrated["limits"]["maximum_concurrency"], 1)
+        self.assertGreater(recalibrated["limits"]["maximum_concurrency"], 1)
         exact["estimation"]["observed_batch_work_units"] = True
         with self.assertRaisesRegex(ValueError, "work-unit count is invalid"):
             prepare_fixed_partition_dispatch(exact, fixed, [2])
@@ -105,7 +218,7 @@ class ResourceSchedulerTests(unittest.TestCase):
         calibrated=calibrate_recovered_missing_plan(fallback,GIB,observed_cpu_percent=8,background_cpu_percent=0,
             available_memory_bytes=10*GIB,total_physical_memory_bytes=20*GIB,observed_completed=False)
         self.assertEqual(calibrated['waves'][0]['batches'],fallback['waves'][0]['batches'])
-        self.assertEqual(calibrated['limits']['maximum_concurrency'],1)
+        self.assertGreater(calibrated['limits']['maximum_concurrency'],1)
         self.assertEqual(calibrated['estimation']['observed_peak_bytes'],GIB)
         with tempfile.TemporaryDirectory() as directory:
             source=Path(directory)/'fallback.json';output=Path(directory)/'calibrated.json'

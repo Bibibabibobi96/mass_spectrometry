@@ -34,11 +34,24 @@ class DependencyTests(unittest.TestCase):
             code = '''
 from pathlib import Path
 from integrations.workflows.accelerator_interface import prepare
+from integrations.workflows.multipole_ip import prepare as handoff
+from common.contracts.machine_contracts import ContractError
 from projects.dual_pressure_rectilinear_ion_processor.analysis import functional
+import tempfile
 root = Path.cwd().resolve()
-for module in (prepare, functional):
+for module in (prepare, functional, handoff):
     Path(module.__file__).resolve().relative_to(root)
+handoff.SCHEMA.resolve().relative_to(root)
 assert callable(functional.validate_configs)
+with tempfile.TemporaryDirectory() as request_directory:
+    invalid = Path(request_directory) / "request.json"
+    invalid.write_text("{}", encoding="utf-8")
+    try:
+        handoff.load_request(invalid)
+    except ContractError as error:
+        assert "required" in str(error), str(error)
+    else:
+        raise AssertionError("frozen request schema must reject missing fields")
 '''
             result = subprocess.run([sys.executable, "-B", "-s", "-c", code], cwd=snapshot,
                 env=dict(os.environ, PYTHONPATH="", PYTHONNOUSERSITE="1"),

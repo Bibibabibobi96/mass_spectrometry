@@ -563,7 +563,8 @@ def plan_recovered_formal_followup(plan: dict[str, Any], completion: dict[str, A
 
 
 def prepare_fixed_partition_dispatch(plan: dict[str, Any], batch_plan: dict[str, Any],
-                                     replay_indices: list[int]) -> dict[str, Any]:
+                                     replay_indices: list[int], *,
+                                     profiles: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Schedule original whole units under a covering profile or new observation."""
     batches = batch_plan.get("batches")
     total = _positive_int(plan.get("particle_count"), "particle_count")
@@ -602,6 +603,27 @@ def prepare_fixed_partition_dispatch(plan: dict[str, Any], batch_plan: dict[str,
             raise ValueError("resource observation work-unit count is invalid")
         if covered < batches[observed-1]["count"]:
             covered = None
+    if covered is None and profiles is not None:
+        # A normal plan may have rejected a profile because its newly proposed
+        # batch is larger than every frozen missing unit. Match the actual
+        # largest replay unit, then use the same planner and profile authority.
+        largest = batches[observed-1]["count"]
+        profile = select_memory_profile(plan["resource_identity"], profiles,
+            required_work_units_per_process=largest)
+        if profile is not None:
+            host = plan["host"]
+            request = _request_from_dispatch_plan(plan)
+            request["particle_count"] = largest
+            plan = plan_simion_dispatch(request, [profile],
+                available_memory_bytes=host.get("available_memory_bytes"),
+                total_physical_memory_bytes=host.get("total_physical_memory_bytes"),
+                logical_processors=host["logical_processors"])
+            plan["particle_count"] = total
+            # Only the temporary workload bound changes; CPU/memory capacities
+            # remain those calculated by the common planner, never extrapolated.
+            plan["limits"]["maximum_concurrency"] = min(total,
+                plan["limits"]["cpu_capacity"], plan["limits"]["memory_capacity"])
+            covered = plan["estimation"]["observed_batch_work_units"]
     if covered is None and kind != "formal_first_batch_observation":
         # An exact profile for a smaller worker cannot bound this whole unit.
         # Return to the existing observation path without changing the frozen
@@ -612,12 +634,16 @@ def prepare_fixed_partition_dispatch(plan: dict[str, Any], batch_plan: dict[str,
             total_physical_memory_bytes=host.get("total_physical_memory_bytes"),
             logical_processors=host["logical_processors"])
     result = json.loads(json.dumps(plan))
-    result["waves"][0].update(batches=json.loads(json.dumps(batches)), batch_count=len(batches), coverage="complete_population")
+    result["waves"][0].update(batches=json.loads(json.dumps(batches)), batch_count=len(batches),
+        particle_count=total, coverage="complete_population")
     if covered is None:
         result["estimation"]["recovered_missing_observation"] = True
         result["estimation"]["observed_missing_batch_index"] = observed
         result["estimation"]["replay_batch_indices"] = list(replay_indices)
-    result["limits"]["maximum_concurrency"] = 1
+    if covered is None:
+        # Before observing the largest missing unit only its single formal
+        # worker is admitted. A covering profile retains normal host capacity.
+        result["limits"]["maximum_concurrency"] = 1
     return result
 
 
@@ -644,7 +670,6 @@ def calibrate_recovered_missing_plan(plan: dict[str, Any], observed_peak_bytes: 
         total_physical_memory_bytes=total_physical_memory_bytes,first_batch_completed=observed_completed)
     result['waves'][0]['batches']=json.loads(json.dumps(batches))
     result['waves'][0]['batch_count']=len(batches)
-    result['limits']['maximum_concurrency']=1
     result['estimation']['recovered_missing_observation_completed']=True
     if fixed_index is not None:
         result['estimation']['observed_missing_batch_index'] = fixed_index
@@ -903,7 +928,8 @@ def main() -> int:
             parser.error("fixed recovery preparation requires the batch plan and replay indices")
         plan = prepare_fixed_partition_dispatch(
             json.loads(args.prepare_fixed_recovery_plan.read_text(encoding="utf-8-sig")),
-            json.loads(args.fixed_batch_plan.read_text(encoding="utf-8-sig")), args.replay_batch_index)
+            json.loads(args.fixed_batch_plan.read_text(encoding="utf-8-sig")), args.replay_batch_index,
+            profiles=(json.loads(args.profiles.read_text(encoding="utf-8-sig")) if args.profiles else None))
     elif args.recovered_missing_plan:
         if (args.observed_formal_peak_bytes is None or args.available_memory_bytes is None
                 or args.total_physical_memory_bytes is None):

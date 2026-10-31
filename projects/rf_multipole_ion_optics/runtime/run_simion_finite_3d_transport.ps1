@@ -935,7 +935,7 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
       reference_comsol_run_id=$ReferenceComsolRunId};
     formal_gate_passed=$false}|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $runConfig -Encoding UTF8
 
-  $continuationUnits=@{};$continuationAllReuse=$false;$continuationLargestMissing=0
+  $continuationUnits=@{};$continuationAllReuse=$false
   if($continuationPredecessor){
     $continuationCases=if($segmented){
       @('axial_acceleration_rf_on')+$(if($CaseSet-eq'primary_and_zero_axial_control'){@('zero_axial_drop_rf_on')}elseif($CaseSet-eq'primary_and_rf_off_energy_control'){@('axial_acceleration_rf_off')}else{@()})
@@ -954,14 +954,6 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
       Set-SimionBatchesFromPlan -Plan $continuation.batch_plan
     }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
     foreach($unit in $continuation.replay.units){if($unit.action-eq'reuse'){$continuationUnits[[string]$unit.key]=$unit}}
-    foreach($unit in $continuation.replay.units|Where-Object{$_.action-eq'replay'}){
-      if([string]$unit.key-notmatch'\.batch_(\d+)$'){throw 'RF continuation unit key is invalid.'}
-      $index=[int]$Matches[1]
-      $plannedBatch=@($simionBatches|Where-Object{[int]$_.index-eq$index})
-      if($plannedBatch.Count-ne1){throw 'RF continuation unit is outside the frozen partition.'}
-      $count=[int]$plannedBatch[0].particle_id_max-[int]$plannedBatch[0].particle_id_min+1
-      $continuationLargestMissing=[Math]::Max($continuationLargestMissing,$count)
-    }
     $continuationAllReuse=([int]$continuation.replay.replay_unit_count-eq0)
     if($continuationAllReuse){$resourceIdentityWasUnknown=$false}
     # Preserve the original partition. An unknown resource identity still
@@ -1163,6 +1155,21 @@ return config
     $firstSpecification=$null;$replanAction=$null
     $flyArguments=@($flyPhysics.fly_args)+@($flightIobPath)
     $pendingRuns=@($batchRuns|Where-Object{-not$continuationUnits.ContainsKey(("{0}.batch_{1:D2}"-f$name,[int]$_.batch.index))})
+    if($continuationPredecessor-and$pendingRuns.Count-gt0){
+      # The source partition is immutable. Each case checks its actual missing
+      # units, so a later larger unit cannot inherit an insufficient observation.
+      $fixedArguments=@('-m','common.simion.resource_scheduler','--prepare-fixed-recovery-plan',$dispatchPlan,
+        '--fixed-batch-plan',$batchPlan,'--profiles',$resourceProfiles,'--output',$dispatchPlan)
+      foreach($pendingRun in $pendingRuns){$fixedArguments+=@('--replay-batch-index',[string]$pendingRun.batch.index)}
+      Push-Location $codeRoot
+      try{
+        $env:PYTHONPATH=$codeRoot
+        & $python @fixedArguments | Out-Host
+        if($LASTEXITCODE-ne0){throw 'SIMION fixed continuation resource planning failed.'}
+      }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+      $script:dispatchPlanDocument=Get-Content -LiteralPath $dispatchPlan -Raw -Encoding UTF8|ConvertFrom-Json
+      $script:resourceCalibrationRequired=([string]$dispatchPlanDocument.estimation.kind-eq'formal_first_batch_observation')
+    }
     if($script:resourceCalibrationRequired-and$pendingRuns.Count-gt0){
       if(-not$continuationPredecessor-and$batchRuns.Count-ne 1){throw 'Unknown resource identity must start from one formal SIMION batch.'}
       $firstRun=@($pendingRuns|Sort-Object -Descending -Property @{Expression={[int]$_.batch.particle_id_max-[int]$_.batch.particle_id_min+1}})[0]
@@ -1183,8 +1190,8 @@ return config
       Push-Location $codeRoot
       try{
         $env:PYTHONPATH=$codeRoot
-        $replanArguments=@('-m','common.simion.resource_scheduler','--request',$dispatchRequest,
-          '--profiles',$resourceProfiles,'--output',$dispatchPlan,
+        $planningSource=if($continuationPredecessor){@('--recovered-missing-plan',$dispatchPlan)}else{@('--request',$dispatchRequest,'--profiles',$resourceProfiles)}
+        $replanArguments=@('-m','common.simion.resource_scheduler')+$planningSource+@('--output',$dispatchPlan,
           '--available-memory-bytes',([string]$formalObservation.available_memory_bytes),
           '--total-physical-memory-bytes',([string]$formalObservation.total_physical_memory_bytes),
           '--observed-formal-peak-bytes',([string]$formalObservation.observed_peak_process_tree_working_set_bytes),
@@ -1197,13 +1204,6 @@ return config
         if([string]$updatedDispatch.estimation.kind-ne'observed_formal_batch'-or
           @($updatedDispatch.waves).Count-ne1-or[int]$updatedDispatch.waves[0].batch_count-lt1){
           throw 'SIMION formal-first dispatch plan is invalid.'
-        }
-        if($continuationPredecessor-and
-          ([int]$firstRun.batch.particle_id_max-[int]$firstRun.batch.particle_id_min+1)-lt$continuationLargestMissing){
-          # A later case contains a larger missing unit than this observation.
-          # Keep admission conservative until that unit has completed.
-          $updatedDispatch.limits.maximum_concurrency=1
-          Write-RunJson -Path $dispatchPlan -Value $updatedDispatch -Depth 20
         }
         if(-not$continuationPredecessor){
           & $python -m common.simion.particle_batching --from-dispatch-plan $dispatchPlan `

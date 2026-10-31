@@ -39,6 +39,11 @@ Fly 配置由冻结的 `simion_fly_physics.json` 同时驱动 Lua 和原生命�
 接口就绪和质量过滤沿同一批次机制保存完整 worker 的原生完成 receipt，引用原始 state／summary，
 compact 续跑不要求已被保留策略删除的轨迹样本。部分缺批保持原分区，只观测并补做缺失完整单元；
 分析失败后可从原 CLI 指定该失败 run 为前驱，在新 run 中重分析。全复用只取得分析资源，不构建 PA 或原生 IOB。
+prepared 与 finite 恢复均使用公共固定分区 selector，按本 case 实际最大缺失完整单元选择冻结画像。
+画像不足时该原单元就是正式观测批，观测进程保留并计入 CPU／内存及互斥准入；覆盖充分后不因恢复而固定单路。
+finite 后续更大缺失单元重新检查画像，不沿用不足的小单元观测；原分区、ID和已完成结果保持不变。
+这项接线已由软件 worker／真实 CLI 参数测试覆盖，未据此新增原生求解或科学资格。
+
 三个 CLI 另接受 `-NativeFieldRunPath <原producer run或manifest>`，仅复用相同实际 GEM/include、grid/cell、
 原生 gem2pa/refine 参数及求解器身份的 fractional 场；源或分析改变不重新求场。两个四极专用入口默认
 采用 `solver_review` 保留原 producer 的 PA family、fractional companion、IOB 和小 checkpoint。

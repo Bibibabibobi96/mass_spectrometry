@@ -434,12 +434,13 @@ try {
   Invoke-PreparedPython -Arguments @('-m','common.simion.resource_scheduler','--request',$requestPath,'--profiles',$profilesPath,'--output',$dispatchPath)
   Invoke-PreparedPython -Arguments @('-m','common.simion.particle_batching','--from-dispatch-plan',$dispatchPath,'--output',$batchPlanPath)
   if($partialContinuation){
-   $safePlan=Get-Content $batchPlanPath -Raw|ConvertFrom-Json
-   $safeSize=($safePlan.batches|Measure-Object -Property count -Maximum).Maximum
-   $oldPlan=Get-Content (Join-Path $run 'inputs/partial_batch_replay/batch_plan.json') -Raw|ConvertFrom-Json
+   $oldPlanPath=Join-Path $run 'inputs/partial_batch_replay/batch_plan.json'
+   $oldPlan=Get-Content $oldPlanPath -Raw|ConvertFrom-Json
    $replayKeys=@($partialPlan.units|Where-Object{$_.action-eq'replay'}|ForEach-Object{$_.key})
-   if(@($oldPlan.batches|Where-Object{('batch_{0:D4}'-f[int]$_.index)-in$replayKeys-and[int]$_.count-gt[int]$safeSize}).Count){throw 'Original missing batch exceeds current scheduler capacity; cannot split an immutable unit'}
-   Copy-Item -LiteralPath (Join-Path $run 'inputs/partial_batch_replay/batch_plan.json') -Destination $batchPlanPath -Force
+   $fixedArguments=@('-m','common.simion.resource_scheduler','--prepare-fixed-recovery-plan',$dispatchPath,'--fixed-batch-plan',$oldPlanPath,'--profiles',$profilesPath,'--output',$dispatchPath)
+   foreach($batch in $oldPlan.batches){if(('batch_{0:D4}'-f[int]$batch.index)-in$replayKeys){$fixedArguments+=@('--replay-batch-index',[string]$batch.index)}}
+   Invoke-PreparedPython -Arguments $fixedArguments
+   Copy-Item -LiteralPath $oldPlanPath -Destination $batchPlanPath -Force
   }
   Invoke-PreparedPython -Arguments @('-m','projects.dual_pressure_rectilinear_ion_processor.analysis.functional','materialize-batches','--run',$run,'--batch-plan',$batchPlanPath)
   function New-IonProcessorProcessSpecification {
@@ -455,21 +456,27 @@ try {
   }
   $dispatch=Get-Content $dispatchPath -Raw|ConvertFrom-Json
   $initial=Get-Content $batchPlanPath -Raw|ConvertFrom-Json
-  $unknown=$dispatch.estimation.kind-eq'formal_first_batch_observation'-and-not$partialContinuation
+  $unknown=$dispatch.estimation.kind-eq'formal_first_batch_observation'
   $formalIndex=$null
   $lease=Update-HostResourceStage -Lease $lease -Stage flight -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
   $writersStopped=$false
   try {
    $firstSpecification=$null;$replan=$null
    if($unknown){
-    $first=$initial.batches[0];$formalIndex=[int]$first.index
+    $first=if($partialContinuation){
+     @($initial.batches|Where-Object{[int]$_.index-eq[int]$dispatch.estimation.observed_missing_batch_index})[0]
+    }else{$initial.batches[0]}
+    $formalIndex=[int]$first.index
     $replan={
     param($formal)
-    $adaptive=@('-m','common.simion.resource_scheduler','--request',$requestPath,'--profiles',$profilesPath,'--output',$dispatchPath,'--observed-formal-peak-bytes',"$($formal.observed_peak_process_tree_working_set_bytes)",'--observed-formal-cpu-percent',"$($formal.observed_process_cpu_percent)",'--observed-background-cpu-percent',"$($formal.observed_background_cpu_percent)",'--available-memory-bytes',"$($formal.available_memory_bytes)",'--total-physical-memory-bytes',"$($formal.total_physical_memory_bytes)")
+    $sourceArguments=if($partialContinuation){@('--recovered-missing-plan',$dispatchPath)}else{@('--request',$requestPath,'--profiles',$profilesPath)}
+    $adaptive=@('-m','common.simion.resource_scheduler')+$sourceArguments+@('--output',$dispatchPath,'--observed-formal-peak-bytes',"$($formal.observed_peak_process_tree_working_set_bytes)",'--observed-formal-cpu-percent',"$($formal.observed_process_cpu_percent)",'--observed-background-cpu-percent',"$($formal.observed_background_cpu_percent)",'--available-memory-bytes',"$($formal.available_memory_bytes)",'--total-physical-memory-bytes',"$($formal.total_physical_memory_bytes)")
     if($formal.process_record.completed){$adaptive+='--first-batch-completed'}
     Invoke-PreparedPython -Arguments $adaptive
-    Invoke-PreparedPython -Arguments @('-m','common.simion.particle_batching','--from-dispatch-plan',$dispatchPath,'--output',$batchPlanPath)
-    Invoke-PreparedPython -Arguments @('-m','projects.dual_pressure_rectilinear_ion_processor.analysis.functional','materialize-batches','--run',$run,'--batch-plan',$batchPlanPath)
+    if(-not$partialContinuation){
+     Invoke-PreparedPython -Arguments @('-m','common.simion.particle_batching','--from-dispatch-plan',$dispatchPath,'--output',$batchPlanPath)
+     Invoke-PreparedPython -Arguments @('-m','projects.dual_pressure_rectilinear_ion_processor.analysis.functional','materialize-batches','--run',$run,'--batch-plan',$batchPlanPath)
+    }
     }
     $firstSpecification=New-IonProcessorProcessSpecification $first
    }

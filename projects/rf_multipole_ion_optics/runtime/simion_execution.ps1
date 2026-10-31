@@ -123,7 +123,7 @@ function Initialize-RfSimionPreparedContinuation {
         $context.all_reused=[int]$plan.replay.replay_unit_count-eq0
         if(-not$context.all_reused){
             $fixed=@('-m','common.simion.resource_scheduler','--prepare-fixed-recovery-plan',$DispatchPlanPath,
-                '--fixed-batch-plan',$BatchPlanPath,'--output',$DispatchPlanPath)
+                '--fixed-batch-plan',$BatchPlanPath,'--profiles',[string]$RunConfig.inputs.simion_resource_profiles,'--output',$DispatchPlanPath)
             foreach($unit in $plan.replay.units|Where-Object{$_.action-eq'replay'}){
                 if($unit.key-notmatch'\.batch_(\d+)$'){throw 'RF continuation batch key is invalid.'}
                 $fixed+=@('--replay-batch-index',[string][int]$Matches[1])

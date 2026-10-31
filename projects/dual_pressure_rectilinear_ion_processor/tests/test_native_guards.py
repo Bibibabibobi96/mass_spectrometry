@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -419,6 +420,167 @@ if(@($result.pending).Count-ne1-or$result.pending[0].scheduler_batch.index-ne2-o
             result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(PROJECT/"simion/run_functional.ps1"), directory],
                                     cwd=REPO, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_continuation_rechecks_frozen_science_before_reuse(self) -> None:
+        import copy
+        from common.contracts.write_run_manifest import file_record
+        from projects.dual_pressure_rectilinear_ion_processor.analysis import batching, functional
+        from projects.dual_pressure_rectilinear_ion_processor.tests.test_batching import BatchingTests
+
+        fixture = BatchingTests("runTest")
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        for name in ("processor.gem", "runtime.lua", "processor.fly2", "source_states.lua"):
+            (fixture.run/"simion"/name).write_text("inert frozen "+name, encoding="utf-8")
+        parent = Path(fixture.temp.name)/"parent"
+        shutil.copytree(fixture.run, parent)
+        manifest = dict(project=functional.PROJECT, mode="native_electrode_functional",
+            run_id=parent.name, status="failed", run_config=file_record(parent/"run_config.json"),
+            inputs={}, outputs=[file_record(path) for path in parent.rglob("*")
+                if path.is_file() and path.name != "run_config.json"])
+        functional.write_json(parent/"run_manifest.json", manifest)
+        before = {path: path.read_bytes() for path in parent.rglob("*") if path.is_file()}
+        _, actual = batching._validate_continuation_science(fixture.run, parent)
+        self.assertEqual(actual, fixture.config)
+        for key in ("baseline", "numerics", "source", "native_operating_point",
+                    "native_projection", "native_timing", "coordinate_transform"):
+            changed = copy.deepcopy(fixture.config)
+            changed[key] = {"changed_frozen_science": True}
+            functional.write_json(fixture.run/"inputs/resolved_model.json", changed)
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "scientific identity differs: "+key):
+                batching._validate_continuation_science(fixture.run, parent)
+        fixture.save_config()
+        (fixture.run/"simion/processor.fly2").write_text("changed source transport", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "native input differs: processor.fly2"):
+            batching._validate_continuation_science(fixture.run, parent)
+        self.assertEqual(before, {path: path.read_bytes() for path in parent.rglob("*") if path.is_file()})
+
+    def test_partial_recovery_calibrates_original_715_particle_unit(self) -> None:
+        from common.simion.resource_scheduler import plan_simion_dispatch
+        from common.simion.test_resource_scheduler import ResourceSchedulerTests, GIB
+
+        counts = [500, 715, 715, 714, 714, 714, 714, 214]
+        batches = []
+        start = 1
+        for index, count in enumerate(counts, 1):
+            batches.append(dict(index=index, count=count, particle_id_min=start,
+                particle_id_max=start+count-1, simion_particle_id_offset=start-1))
+            start += count
+        initial = plan_simion_dispatch(ResourceSchedulerTests().request(), [],
+            available_memory_bytes=10*GIB, total_physical_memory_bytes=20*GIB, logical_processors=8)
+        initial['limits']['launch_stagger_seconds'] = 1
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'inputs/partial_batch_replay').mkdir(parents=True)
+            (root/'results').mkdir()
+            fixed = dict(role='simion_single_wave_particle_batch_plan', coverage='complete_population',
+                         particle_count=5000, batches=batches)
+            (root/'inputs/partial_batch_replay/batch_plan.json').write_text(json.dumps(fixed), encoding='utf-8')
+            (root/'results/dispatch.json').write_text(json.dumps(initial), encoding='utf-8')
+            (root/'results/profiles.json').write_text('[]', encoding='utf-8')
+            (root/'results/covering_profiles.json').write_text(json.dumps([
+                ResourceSchedulerTests.profile(peak=GIB, cpu=80, observed_batch_work_units=715)]), encoding='utf-8')
+            script = root/'fixed_recovery.ps1'
+            script.write_text(r'''param($Runner,$Repo,$Root,$Python)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$errors)
+if($errors.Count){throw ($errors|Out-String)}
+$run=$Root;$dispatchPath=Join-Path $Root 'results/dispatch.json';$batchPlanPath=Join-Path $Root 'results/batches.json';$profilesPath=Join-Path $Root 'results/profiles.json'
+$partialContinuation=$true;$partialPlan=@{units=@(1..8|ForEach-Object{
+ @{key=('batch_{0:D4}'-f$_);action=$(if($_-in@(2,4,8)){'replay'}else{'reuse'})}
+})}
+$python=$Python;$env:PYTHONPATH=$Repo
+. (Join-Path $Repo 'common/resource_budget_support.ps1')
+# Only host measurements and the vendor command adapter are fixture data.
+# The real public phase, process launcher, executor and natural exits run.
+function Assert-HostResourceHeavyStage {}
+function Get-SystemCpuPercent {[double]0}
+function Get-RepositoryAvailableMemoryBytes {[int64](10GB)}
+function Get-RepositoryProcessSnapshot {}
+function Get-ManagedSolverProcessSample {
+ param($RootProcessIds,$TrackedProcessIds,$ProcessSnapshot,$RootProcessStartedAtUtcTicks,$TrackedProcessStartedAtUtcTicks)
+ $live=@(Get-Process -Id $RootProcessIds -ErrorAction SilentlyContinue)
+ [pscustomobject]@{tracked_process_ids=@($RootProcessIds);active_process_ids=@($live|ForEach-Object Id);
+   working_set_bytes=[long]1MB;managed_memory_bytes=[long]1MB;total_processor_time_ticks=[long]0}
+}
+function Invoke-PreparedPython {param($Arguments)
+ if($Arguments[1]-ne'common.simion.resource_scheduler'){throw 'fixed partition was rematerialized'}
+ & $python @Arguments|Out-Host
+ if($LASTEXITCODE-ne0){throw 'real scheduler failed'}
+}
+$baseDispatch=Get-Content $dispatchPath -Raw
+$worker=Join-Path $Root 'inert_worker.ps1'
+@'
+param($Index,$First,$Last)
+Start-Sleep -Seconds 3
+Write-Output "$Index,$First,$Last"
+'@|Set-Content $worker
+function New-IonProcessorProcessSpecification {param($Batch)
+ return [pscustomobject]@{name=('batch_{0:D4}'-f[int]$Batch.index);scheduler_batch=$Batch;
+  file_path=(Join-Path $PSHOME 'pwsh.exe');working_directory=$Root;environment=@{};
+  argument_list=@('-NoProfile','-File',$worker,[string]$Batch.index,[string]$Batch.particle_id_min,[string]$Batch.particle_id_max);
+  stdout=(Join-Path $Root "$scenario.$($Batch.index).out");stderr=(Join-Path $Root "$scenario.$($Batch.index).err")}
+}
+function Start-ObservedFormalProcess {param($DispatchPlanPath,$ProcessSpecification)
+ $record=Start-RepositoryScheduledProcess -Specification $ProcessSpecification
+ $script:observedPid=$record.root_process_id
+ return [pscustomobject]@{resource_budget_exceeded=$false;completed_naturally=$false;exit_code=$null;
+  observed_peak_process_tree_working_set_bytes=[long]1GB;observed_process_cpu_percent=$scenarioCpu;
+  observed_background_cpu_percent=0;available_memory_bytes=[long]10GB;total_physical_memory_bytes=[long]20GB;process_record=$record}
+}
+$setup=$ast.Find({param($a)$a-is[Management.Automation.Language.IfStatementAst]-and$a.Clauses[0].Item1.Extent.Text-eq'$partialContinuation'-and$a.Extent.Text.Contains('$fixedArguments=')},$true)
+$emptyProfilesPath=$profilesPath;$profilesPath=Join-Path $Root 'results/covering_profiles.json'
+Invoke-Expression $setup.Extent.Text
+$covered=Get-Content $dispatchPath -Raw|ConvertFrom-Json
+if($covered.estimation.kind-ne'exact_resource_profile'-or$covered.estimation.observed_batch_work_units-ne715-or$covered.limits.maximum_concurrency-ne1){throw 'IP ignored a covering original-unit profile or over-admitted CPU'}
+$profilesPath=$emptyProfilesPath
+Write-Output 'IP_FIXED_RECOVERY_PROFILE=PASS OBSERVED_WORK_UNITS=715 EXTRA_OBSERVATION=not_required'
+foreach($scenario in @('ample','cpu_tight')){
+ $scenarioCpu=if($scenario-eq'ample'){20}else{80}
+ Set-Content $dispatchPath $baseDispatch
+Invoke-Expression $setup.Extent.Text
+$dispatch=Get-Content $dispatchPath -Raw|ConvertFrom-Json;$initial=Get-Content $batchPlanPath -Raw|ConvertFrom-Json
+$unknown=$dispatch.estimation.kind-eq'formal_first_batch_observation';$firstSpecification=$null;$replan=$null
+$selection=$ast.Find({param($a)$a-is[Management.Automation.Language.IfStatementAst]-and$a.Clauses[0].Item1.Extent.Text-eq'$unknown'},$true)
+Invoke-Expression $selection.Extent.Text
+if($formalIndex-ne2-or$firstSpecification.scheduler_batch.count-ne715){throw 'bootstrap size replaced original missing unit'}
+$pendingAssignment=$ast.Find({param($a)$a-is[Management.Automation.Language.AssignmentStatementAst]-and$a.Left.Extent.Text-eq'$prepareRemaining'},$true)
+Invoke-Expression $pendingAssignment.Extent.Text
+$script:completed=@();$script:completedRecords=@()
+$checkpoint={param($record)$script:completed+=@($record.specification.scheduler_batch.index);$script:completedRecords+=@($record)}
+$usagePath=Join-Path $Root "$scenario.usage.json"
+$waveAssignment=$ast.Find({param($a)$a-is[Management.Automation.Language.AssignmentStatementAst]-and$a.Left.Extent.Text-eq'$wave'-and$a.Extent.Text.Contains('Invoke-SimionBatchPhase')},$true)
+Invoke-Expression $waveAssignment.Extent.Text
+$calibrated=Get-Content $dispatchPath -Raw|ConvertFrom-Json
+if($calibrated.estimation.kind-ne'observed_formal_batch'){throw 'missing-unit capacity was not observed'}
+$usage=Get-Content $usagePath -Raw|ConvertFrom-Json
+$peak=$usage.execution_wave.peak_concurrency
+if($scenario-eq'ample'-and($calibrated.limits.maximum_concurrency-le1-or$peak-le1)){throw 'sufficient measured resources did not execute overlapping missing units'}
+if($scenario-eq'cpu_tight'-and($calibrated.limits.maximum_concurrency-ne1-or$peak-ne1)){throw 'CPU-limited fixed recovery over-admitted'}
+if($wave.resource_budget_exceeded-or($script:completed|Sort-Object)-join','-ne'2,4,8'){throw 'completed unit reran, missing unit skipped or formal batch repeated'}
+$firstRecord=@($script:completedRecords|Where-Object{$_.specification.scheduler_batch.index-eq2})
+if($firstRecord.Count-ne1-or$firstRecord[0].root_process_id-ne$script:observedPid){throw 'live observed process was relaunched instead of retained'}
+foreach($record in $script:completedRecords){
+ $batch=$record.specification.scheduler_batch
+ $expected="$($batch.index),$($batch.particle_id_min),$($batch.particle_id_max)"
+ if((Get-Content $record.specification.stdout -Raw).Trim()-ne$expected-or$record.exit_code-ne0){throw 'original ID interval or natural exit differs'}
+}
+$before=Get-Content (Join-Path $Root 'inputs/partial_batch_replay/batch_plan.json') -Raw
+if((Get-Content $batchPlanPath -Raw)-cne$before){throw 'original full partition changed'}
+Write-Output "IP_FIXED_RECOVERY=PASS SCENARIO=$scenario PEAK_CONCURRENCY=$peak REPLAYED=2,4,8 REUSED=1,3,5,6,7 OBSERVED_BATCH=2 OBSERVED_COUNT=715"
+}
+exit 0
+''', encoding='utf-8')
+            result = subprocess.run(['pwsh', '-NoProfile', '-File', str(script),
+                str(PROJECT/'simion/run_functional.ps1'), str(REPO), directory, sys.executable],
+                cwd=REPO, capture_output=True, text=True, encoding='utf-8', timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('SCENARIO=ample', result.stdout)
+            self.assertIn('SCENARIO=cpu_tight PEAK_CONCURRENCY=1', result.stdout)
+            for line in result.stdout.splitlines():
+                if line.startswith('IP_FIXED_RECOVERY'):
+                    print(line)
+
 
     def test_all_reused_partial_batches_take_real_zero_native_owner_branch(self) -> None:
         pwsh = shutil.which("pwsh")
