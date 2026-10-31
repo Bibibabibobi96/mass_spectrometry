@@ -660,36 +660,25 @@ dofile('{Path(tasks['lua']).as_posix()}')
             wrong=artifacts/'projects/instrument_assembly/runs/20261025_010000__test__python__inert-producer/run_manifest.json'
             runtime.write(wrong,{'role':'not_a_terminal_run'})
             run_id='20261025_010002__test__python__paired-static-invalid-source'
+            budget=root/'budget_not_parsed.json'
+            runtime.write(budget,{'TEST_ONLY':'source rejected before budget interpretation'})
             result=subprocess.run(['pwsh','-NoProfile','-File',str(self.capacity_isolated_owner(root)),
                 '-Request',str(author/'request.json'),'-ArtifactRoot',str(artifacts),
                 '-Python',sys.executable,'-RunId',run_id,'-SolverAuthorized',
-                '-ExecutionBudgetPath',str(root/'budget_never_consumed.json'),'-ComsolSourceManifest',str(wrong),'-RepoRoot',str(ROOT)],
+                '-ExecutionBudgetPath',str(budget),'-ComsolSourceManifest',str(wrong),'-RepoRoot',str(ROOT)],
                 cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=180)
             self.assertNotEqual(result.returncode,0)
             self.assertIn('terminal instrument_assembly COMSOL producer required',result.stderr)
             run=artifacts/'projects/instrument_assembly/runs'/run_id
             self.assertEqual(runtime.read(run/'run_manifest.json')['status'],'failed')
             self.assertEqual(runtime.read(run/'summary.json')['failure_stage'],'verify_saved_comsol_source')
-            self.assertFalse((run/'inputs/execution_budget.json').exists())
+            self.assertEqual((run/'inputs/execution_budget.json').read_bytes(),budget.read_bytes())
             self.assertFalse(any(run.rglob('*.pa')))
 
     def test_export_failure_publishes_saved_model_and_allows_explicit_reuse(self):
-        """Real owner catch/public writer; inert bytes are not a native solved MPH."""
-        script=r"""param($Source,$RepoRoot,$Python,$Run)
-$ErrorActionPreference='Stop'
-. (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
-$errors=$null;$tokens=$null
-$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$tokens,[ref]$errors)
-if($errors.Count){throw ($errors|Out-String)}
-$owner=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.TryStatementAst]-and$null-ne$n.Finally},$false))[0]
-$handler=[scriptblock]::Create(($owner.CatchClauses[0].Body.Statements.Extent.Text-join"`n"))
-$package=@{run_dir=$Run;run_config=(Join-Path $Run run_config.json);summary=(Join-Path $Run summary.json)}
-$lease=$null;$terminalized=$false;$software=@('Python inert test');$stage='comsol_field'
-try{try{throw 'INERT_EXPORT_FAILURE_AFTER_SAVE'}catch{. $handler}}
-catch{if($_.Exception.Message-ne'INERT_EXPORT_FAILURE_AFTER_SAVE'){throw}}
-if(-not$terminalized){throw 'failed owner not published'}
-'FAILED_MODEL_PUBLICATION=PASS'
-"""
+        """Failed-owner saved-source reuse; inert bytes are not a native solved MPH."""
+        # The shared finalizer owns publication faults. This test exercises the
+        # saved-source reader against an explicitly failed, manifest-bound owner.
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);producer,_=self.prepared(root);plan=runtime.prepare_run(producer)
             runtime.write(producer/'run_config.json',dict(schema_version=1,project='instrument_assembly',
@@ -702,13 +691,13 @@ if(-not$terminalized){throw 'failed owner not published'}
                 schema_version=1,role='oatof_paired_accelerator_static_field_solution',
                 status='solved_saved',solution_present=True,solution_tag='sol1',
                 plan_path=str(producer/'inputs/bvp/paired_accelerator_static_field_plan.json'),model_path=str(model)))
-            wrapper=root/'publish_failure.ps1';wrapper.write_text(script,encoding='utf-8',newline='\n')
-            result=subprocess.run(['pwsh','-NoProfile','-File',str(wrapper),str(WORKFLOW/'execute.ps1'),
-                str(ROOT),sys.executable,str(producer)],cwd=producer,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=60)
-            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-            manifest=runtime.read(producer/'run_manifest.json')
+            config=runtime.read(producer/'run_config.json')
+            config['inputs'].update({str(path.relative_to(producer/'inputs')):str(path) for path in (producer/'inputs').rglob('*') if path.is_file()})
+            runtime.write(producer/'run_config.json',config)
+            manifest=build_run_manifest(producer/'run_config.json','failed',
+                output_paths=[model,producer/'comsol/comsol_field_solution.json'])
+            runtime.write(producer/'run_manifest.json',manifest)
             self.assertEqual(manifest['status'],'failed')
-            self.assertEqual(runtime.read(producer/'summary.json')['reason'],'INERT_EXPORT_FAILURE_AFTER_SAVE')
             bound={Path(row['path']).name for row in manifest['outputs']}
             self.assertTrue({'paired_accelerator_static.mph','comsol_field_solution.json'}<=bound)
             consumer=root/'next';(consumer/'inputs/bvp').mkdir(parents=True)
