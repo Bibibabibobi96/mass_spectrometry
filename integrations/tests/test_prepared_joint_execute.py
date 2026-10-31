@@ -575,8 +575,11 @@ $null=Freeze-ConsumerDependencies -RepoRoot '{REPO}' -ContractPath $path -InputD
         shutil.copyfile(waveform, runtime / "joint.voltage_waveforms.lua")
         (runtime / "joint.operating_point.lua").write_text("return {static_field=nil}")
         preparation = fixture.root / "preparation.json"
+        from common.contracts.frozen_inputs import freeze_file
+        writer = freeze_file(snapshot / "common/simion/scientific_event_csv.lua", runtime / "joint.scientific_event_csv.lua")
         preparation.write_text(json.dumps(dict(measured_source_directory=str(fixture.output),
-            frozen_runtime_directory=str(runtime), trajectory_recording=dict(mode="fixed_interval", interval_us=.1))))
+            frozen_runtime_directory=str(runtime), trajectory_recording=dict(mode="fixed_interval", interval_us=.1),
+            scientific_event_writer=writer)), encoding="utf-8")
         batch = fixture.root / "batch"
         environment = dict(os.environ)
         environment.pop("PYTHONPATH", None)
@@ -590,6 +593,22 @@ $null=Freeze-ConsumerDependencies -RepoRoot '{REPO}' -ContractPath $path -InputD
         self.assertEqual((batch / "joint.fly2").read_bytes(), (batch / "measured_source/source.fly2").read_bytes())
         self.assertEqual((batch / "joint.lua").read_bytes(), (snapshot / relative / "mrtof_candidate.lua").read_bytes())
         self.assertEqual((batch / "joint.voltage_waveforms.lua").read_bytes(), waveform.read_bytes())
+        self.assertEqual((batch / "joint.scientific_event_csv.lua").read_bytes(), (snapshot / "common/simion/scientific_event_csv.lua").read_bytes())
+        self.assertEqual(receipt["scientific_event_output"]["csv_writer_path"], writer["path"])
+        missing_preparation = fixture.root / "missing_writer.json"
+        incomplete = json.loads(preparation.read_text(encoding="utf-8"))
+        del incomplete["scientific_event_writer"]
+        missing_preparation.write_text(json.dumps(incomplete), encoding="utf-8")
+        rejected = fixture.root / "missing_writer_batch"
+        command = list(completed.args)
+        command[command.index("--preparation") + 1] = str(missing_preparation)
+        command[command.index("--output") + 1] = str(rejected)
+        failed = subprocess.run(command, cwd=snapshot, env=environment,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertIn("scientific_event_writer", failed.stderr)
+        self.assertFalse((rejected / "batch_receipt.json").exists())
+
 
     def test_equivalence_reads_exact_old_or_new_identity_without_execution_fallback(self):
         from common.contracts.write_run_manifest import file_record

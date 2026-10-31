@@ -146,6 +146,46 @@ assert(#events==2 and events[2].kind=='terminal' and events[2].t_us==0.018 and e
                                     text=True, encoding='utf-8', timeout=30)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
+    def test_merge_explicit_legacy_and_csv_preserves_parent_and_rejects_missing_csv(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            parent = root/"parent"
+            parent.mkdir()
+            columns = ("kind", "ion", "splat", "t_us", "turns", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us", "central_crossings")
+            rows = [dict(zip(columns, ("terminal", ion, 1, 2.125, 0, .25, -.5, 1., .125, 0., -.25, 0), strict=True)) for ion in (1, 2)]
+            legacy = parent/"old.log"
+            legacy.write_text("MRTOF_EVENT terminal " + " ".join(f"{key}={value}" for key, value in rows[0].items() if key != "kind") + "\nstatus,Fly completed. 1 splats\n", encoding="utf-8")
+            native = parent/"current.log"
+            native.write_text("status,Fly completed. 2 splats\n", encoding="utf-8")
+            files = []
+            for name, events in (("one", rows[:1]), ("two", rows)):
+                path = parent/(name+".csv")
+                with path.open("w", encoding="utf-8", newline="") as stream:
+                    writer = csv.DictWriter(stream, fieldnames=columns, lineterminator="\n")
+                    writer.writeheader()
+                    writer.writerows(events)
+                files.append(path)
+            before = {path: path.read_bytes() for path in parent.iterdir()}
+            for mode, first in (("mixed", None), ("all_csv", dict(events_path=str(files[0])))):
+                with self.subTest(mode=mode):
+                    child = root/mode
+                    result = merger.merge_rebased_event_logs(batches=[(legacy, 0, 1), (native, 1, 2)],
+                        particle_count=3, output_path=child/"merged.log", receipt_path=child/"merge.json",
+                        scientific_event_outputs=[first, dict(events_path=str(files[1]))])
+                    events, completions, _ = mr.read_scientific_events(child/"merged.log", scientific_event_output=result["scientific_event_output"])
+                    self.assertEqual([int(row["ion"]) for row in events], [1, 2, 3])
+                    self.assertEqual([row["t_us"] for row in events], [2.125]*3)
+                    self.assertEqual([row["vx_mm_us"] for row in events], [.125]*3)
+                    self.assertEqual(completions[0].splats, 3)
+                    self.assertEqual(result["batches"][0]["scientific_event_output"], first)
+                    self.assertNotIn("MRTOF_EVENT", (child/"merged.log").read_text(encoding="utf-8"))
+            with self.assertRaises(FileNotFoundError):
+                merger.merge_rebased_event_logs(batches=[(legacy, 0, 1)], particle_count=1,
+                    output_path=root/"rejected/log.txt", receipt_path=root/"rejected/receipt.json",
+                    scientific_event_outputs=[dict(events_path=str(parent/"missing.csv"))])
+            self.assertFalse((root/"rejected/receipt.json").exists())
+            self.assertEqual(before, {path: path.read_bytes() for path in parent.iterdir()})
+
     def test_structured_merger_preserves_sparse_ids(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -284,7 +324,7 @@ assert(#events==2 and events[2].kind=='terminal' and events[2].t_us==0.018 and e
         pwsh = shutil.which('pwsh')
         if not pwsh:
             self.skipTest('PowerShell 7 unavailable')
-        code = "param($Owner,$Root,$Repo)\n$ErrorActionPreference='Stop';Set-StrictMode -Version Latest\n. (Join-Path $Repo 'common/paths/workspace_paths.ps1')\n$python='@@PYTHON@@'\n$ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$null,[ref]$null)\nforeach($name in @('New-MrtofBatchRecord','Get-MrtofBatchProcessSpecification')){\n $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)\n . ([scriptblock]::Create($node.Extent.Text))\n}\n$batchRuntimeRoot=Join-Path $Root workers;$resultDir=Join-Path $Root results;$logDir=Join-Path $Root logs\nNew-Item -ItemType Directory -Path $batchRuntimeRoot,$resultDir,$logDir|Out-Null\n$bunchSelectionRequested=$false;$bunchSourceLocal='source-receipt';$temporaryIob='shared-readonly.iob';$simion='inert';$solverDir=$Root\n$package=@{artifact_run_dir=(Join-Path $Root 'governed_run');run_dir=(Join-Path $Root 'execution_alias')};$config=@{parameters=@{}};$trial=@{trajectory_recording=$true};$runConfig=Join-Path $Root run_config.json\nfunction Invoke-ProjectPython {param($Arguments)}\nfunction Write-RunJson {param($Path,$Value,$Depth) [IO.File]::WriteAllText($Path,($Value|ConvertTo-Json -Depth 100))}\n$a=New-MrtofBatchRecord -PlannedBatch @{index=1;count=2;particle_id_min=1;particle_id_max=2}\n$b=New-MrtofBatchRecord -PlannedBatch @{index=2;count=3;particle_id_min=3;particle_id_max=5}\n$x=Get-MrtofBatchProcessSpecification -Record $a;$y=Get-MrtofBatchProcessSpecification -Record $b\n$frozen=Get-Content $runConfig -Raw|ConvertFrom-Json -AsHashtable\nif($x.environment.MRTOF_SCIENTIFIC_EVENTS_PATH-eq$y.environment.MRTOF_SCIENTIFIC_EVENTS_PATH){throw 'shared writer path'}\nif(-not$x.environment.MRTOF_SCIENTIFIC_EVENTS_PATH.StartsWith($package.run_dir)){throw 'native locator was not projected'}\nforeach($record in @($a,$b)){\n $declared=$frozen.parameters.scientific_event_outputs[[string]$record.index]\n if($declared.events_path-ne$record.scientific_event_output.events_path){throw 'dispatch differs from frozen locator'}\n if(-not$declared.events_path.StartsWith([IO.Path]::GetFullPath((Join-Path $package.artifact_run_dir 'results'))+[IO.Path]::DirectorySeparatorChar)){throw 'writer escaped private root'}\n}\n'PRIVATE_BATCH_LOCATORS=PASS'\n"
+        code = "param($Owner,$Root,$Repo)\n$ErrorActionPreference='Stop';Set-StrictMode -Version Latest\n. (Join-Path $Repo 'common/paths/workspace_paths.ps1')\n$python='@@PYTHON@@'\n$ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$null,[ref]$null)\nforeach($name in @('New-MrtofBatchRecord','Get-MrtofBatchProcessSpecification')){\n $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)\n . ([scriptblock]::Create($node.Extent.Text))\n}\n$batchRuntimeRoot=Join-Path $Root workers;$resultDir=Join-Path $Root results;$logDir=Join-Path $Root logs\nNew-Item -ItemType Directory -Path $batchRuntimeRoot,$resultDir,$logDir|Out-Null\n$bunchSelectionRequested=$false;$bunchSourceLocal='source-receipt';$temporaryIob='shared-readonly.iob';$simion='inert';$solverDir=$Root\n$package=@{artifact_run_dir=(Join-Path $Root 'governed_run');run_dir=(Join-Path $Root 'execution_alias')};$trial=@{trajectory_recording=@{schema_version=1;mode='every_step';retention_class='solver_review';reason='inert locator fixture';output_budget_bytes=1}};$runConfig=Join-Path $Root run_config.json\nfunction Invoke-ProjectPython {param($Arguments)}\nfunction Write-RunJson {param($Path,$Value,$Depth) [IO.File]::WriteAllText($Path,($Value|ConvertTo-Json -Depth 100))}\nWrite-RunJson -Path $runConfig -Value @{parameters=@{}} -Depth 100\n$a=New-MrtofBatchRecord -PlannedBatch @{index=1;count=2;particle_id_min=1;particle_id_max=2}\n$b=New-MrtofBatchRecord -PlannedBatch @{index=2;count=3;particle_id_min=3;particle_id_max=5}\n$x=Get-MrtofBatchProcessSpecification -Record $a;$y=Get-MrtofBatchProcessSpecification -Record $b\n$frozen=Get-Content $runConfig -Raw|ConvertFrom-Json -AsHashtable\nif($x.environment.MRTOF_SCIENTIFIC_EVENTS_PATH-eq$y.environment.MRTOF_SCIENTIFIC_EVENTS_PATH){throw 'shared writer path'}\nif(-not$x.environment.MRTOF_SCIENTIFIC_EVENTS_PATH.StartsWith($package.run_dir)){throw 'native locator was not projected'}\nforeach($record in @($a,$b)){\n $declared=$frozen.parameters.scientific_event_outputs[[string]$record.index]\n if($declared.events_path-ne$record.scientific_event_output.events_path){throw 'dispatch differs from frozen locator'}\n if(-not$declared.events_path.StartsWith([IO.Path]::GetFullPath((Join-Path $package.artifact_run_dir 'results'))+[IO.Path]::DirectorySeparatorChar)){throw 'writer escaped private root'}\n}\n'PRIVATE_BATCH_LOCATORS=PASS'\n"
         with tempfile.TemporaryDirectory() as directory:
             script = Path(directory) / 'batch.ps1'
             script.write_text(code.replace('@@PYTHON@@', sys.executable.replace("'", "''")), encoding='utf-8')

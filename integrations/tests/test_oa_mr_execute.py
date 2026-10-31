@@ -145,6 +145,7 @@ if(@($calibrated.waves[0].batches).Count-ne3-or$calibrated.waves[0].batches[0].p
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_bunch_source_and_schedule import _states
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import materialize_bunch_source
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import resolve_trajectory_recording
         from common.contracts.verify_run_manifest import verify_record
         from common.integration.resolve_assembly import compile_assembly_layout, derive_assembly_scope
         from common.integration.test_resolve_assembly import direct_fixture
@@ -154,6 +155,8 @@ if(@($calibrated.waves[0].batches).Count-ne3-or$calibrated.waves[0].batches[0].p
         start = source.index("    if(-not[string]::IsNullOrWhiteSpace($BatchContinuationRunPath)){")
         stages = "  if($isBunchFlight){\n" + source[start:source.index("  # Static component guards remain live", start)]
         python_helper = source[source.index("function Format-InvariantNumber {"):source.index("function Invoke-SimionStage {")]
+        path_import = next(line for line in source.splitlines()
+                           if line.startswith(". ") and "common/paths/workspace_paths.ps1" in line)
         pa_provenance = next(line for line in source.splitlines()
                              if line.strip().startswith("$config['provenance']['pa_bindings']="))
         final_inputs = source[source.index("  $flightInputs=[ordered]@{"):source.index("  foreach($entry in $flightInputs.GetEnumerator())")]
@@ -181,6 +184,7 @@ if(@($calibrated.waves[0].batches).Count-ne3-or$calibrated.waves[0].batches[0].p
                     trial_path = Path(config["inputs"]["trial_materialization"])
                     trial = json.loads(trial_path.read_text())
                     trial["field_binding"] = dict(path=config["inputs"]["static_field_binding"], **metadata)
+                    trial["trajectory_recording"] = resolve_trajectory_recording({"simion": {}})
                     trial_path.write_text(json.dumps(trial))
                 for index, count in ((1, 1), (2, 2)):
                     if index == 2 and case in ("mixed", "mixed_missing"):
@@ -200,6 +204,7 @@ if(@($calibrated.waves[0].batches).Count-ne3-or$calibrated.waves[0].batches[0].p
                     if local_scope is not None:
                         (run/'inputs/oa_mr_local_scope.json').write_text(json.dumps(local_scope),encoding='utf-8')
                 fixture._seal_oa_parent(parent)
+                parent_before = {path: path.read_bytes() for path in parent.rglob("*") if path.is_file()}
                 config = json.loads(config_path.read_text())
                 config.update(run_id="20261025_170000__sim__simion__oa-recovery-fixture",
                               project="instrument_assembly", mode="oa_mr")
@@ -237,6 +242,7 @@ $OutputEncoding=[Text.UTF8Encoding]::new($false)
 $repoRoot=$Repo;$script:pythonRoot=$Repo;$python=$Python
 $simion=if($Case-eq'zero'){Join-Path $Root 'missing_simion.exe'}else{$Python}
 . (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+""" + path_import + r"""
 $helperAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'common/resource_budget_support.ps1'),[ref]$null,[ref]$null)
 $helper=$helperAst.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Invoke-ObservedPreparationFailureDrain'},$true)
 Invoke-Expression $helper.Extent.Text
@@ -247,7 +253,7 @@ Invoke-Expression $helper.Extent.Text
 
 $runDir=$Current;$runConfig=Join-Path $Current run_config.json
 $resultDir=Join-Path $Current results;$logDir=Join-Path $Current logs;$solverDir=Join-Path $Current inputs
-$artifactSolverDir=$solverDir;$package=@{input_dir=$solverDir;artifact_run_dir=$Current}
+$artifactSolverDir=$solverDir;$package=@{input_dir=$solverDir;artifact_run_dir=$Current;run_dir=$Current}
 $compositionPlanLocal=Join-Path $solverDir 'oa_mr_composition_plan.json'
 $scopePath=Join-Path $solverDir 'oa_mr_local_scope.json'
 $localScopeLocal=if(Test-Path -LiteralPath $scopePath){$scopePath}else{$null}
@@ -309,6 +315,10 @@ function Invoke-ResourceBudgetedProcesses {
   $lines=@(for($i=1;$i-le$count;$i++){"MRTOF_EVENT terminal ion=$i splat=1 t_us=2 turns=0 x_mm=0 y_mm=0 z_mm=0 vx_mm_us=0 vy_mm_us=0 vz_mm_us=0 central_crossings=0"})
   $lines+=@("status,Fly completed. $count splats",'IOB_FLIGHT: PASS iob=inert.iob')
   $lines|Set-Content -LiteralPath $spec.stdout
+  # The inert vendor boundary now supplies the production scientific transport.
+  # Historical parent logs above remain untouched and have no invented CSV.
+  $rows=@(for($i=1;$i-le$count;$i++){[pscustomobject]@{kind='terminal';ion=$i;splat=1;t_us=2;turns=0;x_mm=0;y_mm=0;z_mm=0;vx_mm_us=0;vy_mm_us=0;vz_mm_us=0;central_crossings=0}})
+  $rows|ConvertTo-Csv -NoTypeInformation|Set-Content -LiteralPath $spec.environment.MRTOF_SCIENTIFIC_EVENTS_PATH -Encoding utf8
   ''|Set-Content -LiteralPath $spec.stderr
    if($OnProcessCompleted){$null=& $OnProcessCompleted ([pscustomobject]@{specification=$spec;exit_code=0;completed=$true;root_process_id=44;root_process_started_at_utc_ticks=123})}
   @{exit_code=0}
@@ -364,6 +374,7 @@ $checkpointAssemblyInputs=(Get-Content (Join-Path $Current run_manifest.json) -R
                     self.assertNotEqual(completed.returncode, 0, output)
                     self.assertNotIn("MRTOF_BATCH_LOG_MERGE=PASS", output)
                     self.assertFalse((root / 'vendor.txt').exists(), output)
+                    self.assertEqual(parent_before, {path: path.read_bytes() for path in parent.rglob("*") if path.is_file()})
                     continue
                 self.assertEqual(completed.returncode, 0, output)
                 actual = json.loads(completed.stdout.splitlines()[-1])
@@ -403,9 +414,18 @@ $checkpointAssemblyInputs=(Get-Content (Join-Path $Current run_manifest.json) -R
                     self.assertEqual(manifest["inputs"]["reused_batch_001_log"]["path"],
                                      str(parent / "logs/native_two_prism_flight__batch01.log"))
                     self.assertFalse(any(Path(r["path"]).is_relative_to(parent) for r in manifest["outputs"]))
-                merged = (current / "logs/native_two_prism_flight.log").read_text()
-                self.assertIn("terminal ion=3", merged)
+                from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import read_scientific_events
+                merged_path = current / "logs/native_two_prism_flight.log"
+                merged = merged_path.read_text(encoding="utf-8")
+                merged_receipt = json.loads((results / "batch_log_merge_receipt.json").read_text(encoding="utf-8"))
+                events, completions, _ = read_scientific_events(merged_path,
+                    scientific_event_output=merged_receipt["scientific_event_output"])
+                self.assertEqual([int(event["ion"]) for event in events if event["kind"] == "terminal"], [1, 2, 3])
+                self.assertEqual([int(event["splat"]) for event in events if event["kind"] == "terminal"], [1, 1, 1])
+                self.assertEqual(completions[0].splats, 3)
+                self.assertNotIn("MRTOF_EVENT", merged)
                 self.assertIn("Fly completed. 3 splats", merged)
+                self.assertEqual(parent_before, {path: path.read_bytes() for path in parent.rglob("*") if path.is_file()})
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_native_payload_identity_is_checked_inside_guards_before_vendor(self):
@@ -463,6 +483,45 @@ try {
                     payload.write_bytes(original)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_real_batch_record_appends_outputs_without_losing_frozen_config(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = root/"batch_config.ps1"
+            script.write_text(r'''param($Entry,$Repo,$Root)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+$ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
+$node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'New-MrtofBatchRecord'},$true)
+Invoke-Expression $node.Extent.Text
+Remove-Variable config -ErrorAction SilentlyContinue
+$runConfig=Join-Path $Root 'run_config.json';$batchRuntimeRoot=Join-Path $Root 'runtime'
+$package=@{artifact_run_dir=$Root};$logDir=$Root;$temporaryIob='inert-not-flown.iob'
+$bunchSelectionRequested=$false;$bunchSourceLocal='inert-source-receipt';$trial=[pscustomobject]@{trajectory_recording=$null}
+Write-RunJson -Path $runConfig -Value @{inputs=@{frozen='original-source'};provenance=@{source='unchanged'};parameters=@{sentinel=@{ids=@(7,9001);clock='original'};scientific_event_outputs=@{'7'=@{events_path='prior-owned-output'}}}}
+function Invoke-ProjectPython {param($Arguments)
+ if($Arguments[2]-ne'materialize'){throw 'Unexpected native or science operation'}
+ # The source adapter is an inert boundary here. Only the real owner's config
+ # persistence and path declarations are tested; no solver/file is fabricated.
+}
+$first=New-MrtofBatchRecord -PlannedBatch @{index=1;count=2;particle_id_min=1;particle_id_max=2}
+$between=Get-Content $runConfig -Raw|ConvertFrom-Json -AsHashtable
+$between.inputs.checkpoint_added='preserve-latest-checkpoint';Write-RunJson -Path $runConfig -Value $between
+$second=New-MrtofBatchRecord -PlannedBatch @{index=2;count=3;particle_id_min=3;particle_id_max=5}
+$actual=Get-Content $runConfig -Raw|ConvertFrom-Json -AsHashtable
+if($actual.parameters.sentinel.clock-ne'original'-or($actual.parameters.sentinel.ids-join',')-ne'7,9001'-or$actual.inputs.frozen-ne'original-source'-or$actual.inputs.checkpoint_added-ne'preserve-latest-checkpoint'-or$actual.provenance.source-ne'unchanged'){throw 'Batch record replaced frozen inputs, clock or current checkpoint'}
+if($actual.parameters.scientific_event_outputs.Count-ne3-or$actual.parameters.scientific_event_outputs['7'].events_path-ne'prior-owned-output'){throw 'Existing output declaration was lost'}
+foreach($record in @($first,$second)){
+ $stored=$actual.parameters.scientific_event_outputs[[string]$record.index]
+ if($stored.events_path-cne$record.scientific_event_output.events_path-or$stored.Contains('trajectory_path')){throw 'Actual per-batch outputs differ from stored configuration'}
+}
+'BATCH_CONFIG_APPEND=PASS'
+''', encoding="utf-8")
+            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script), str(RUNNER), str(REPO), directory],
+                cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+            self.assertIn("BATCH_CONFIG_APPEND=PASS", result.stdout)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_new_owner_freezes_and_executes_detached_provider(self):
         source = RUNNER.read_text(encoding="utf-8")
         start = source.index("  $failureStage='freeze_executable_dependencies'")
@@ -476,8 +535,10 @@ try {
         stage_fixture = r"""
 # Inert physics/vendor fixture: the real frozen argparse and priority renderer
 # run; neither a native field nor an IOB is built.
+foreach($fixtureBunch in @($false,$true)){
 foreach($staticFieldRequested in @($false,$true)){
- $solverDir=Join-Path $Root $(if($staticFieldRequested){'static'}else{'native'})
+ $fieldKind=if($staticFieldRequested){'static'}else{'native'}
+ $solverDir=Join-Path $Root ($fieldKind+'_'+[string]$fixtureBunch)
  New-Item -ItemType Directory -Path $solverDir|Out-Null
  $providerSimionRoot=Join-Path $script:pythonRoot 'projects/parallel_mirror_dual_stripe_mr_tof/simion'
  $contract='contract';$acceleratorGeometry='geometry';$trajectoryContract='numerics';$reviewed='reviewed'
@@ -485,7 +546,10 @@ foreach($staticFieldRequested in @($false,$true)){
  $acceleratorProviderPlanLocal='provider';$compositionPlanLocal='composition-plan';$localScopeLocal=$null;$acceleratorResolvedCampaignLocal='campaign'
  $Prism1VoltageV=190.;$Prism2VoltageV=-186.;$AcceleratorSourceYOffsetMm=0.
  $Stripe1VoltageV=$null;$fixedMirrorStripeAuthorityLocal=$null;$mirrorVoltageVariationLocal=$null
- $bunchSourceLocal=$null;$bunchSelectionRequested=$false;$TrajectoryStepScale=1.
+ $bunchSourceContract=if($fixtureBunch){[pscustomobject]@{fixture_only=$true}}else{$null}
+ $bunchSourceLocal=if($fixtureBunch){Join-Path $solverDir 'inert_bunch.json'}else{$null}
+ if($fixtureBunch){'{"fixture_only":true}'|Set-Content -LiteralPath $bunchSourceLocal}
+ $bunchSelectionRequested=$false;$TrajectoryStepScale=1.
  $PulseAcceleratorUntilInitialExit=$false;$AcceleratorSafeExitOnly=$false
  $acceleratorPulseScheduleLocal=$null;$TrajectoryProfileId=''
  $fly2Input=Join-Path $solverDir 'source.fly2';$sidecar=Join-Path $solverDir 'operating.lua'
@@ -521,6 +585,7 @@ foreach($staticFieldRequested in @($false,$true)){
   if($text.Contains('corridor_voltage_groups')){throw 'Static field inherited native groups'}
  }elseif(-not$text.Contains('{ 17 }')){throw 'Priority did not use the actual frozen bank groups'}
 }
+}
 'INERT_FROZEN_PRIORITY_ROUTE_PASS'
 """
         with TemporaryDirectory() as directory:
@@ -537,6 +602,7 @@ assert Path(module.__file__).is_relative_to(Path.cwd())
 assert sys.argv[1:3] == ['-m', module.__name__]
 sys.argv = [module.__name__, *sys.argv[3:]]
 def inert_materialize(**arguments):
+    assert arguments['batch_scientific_event_locators'] is (arguments['bunch_source_receipt_path'] is not None)
     sidecar = arguments['sidecar_path']
     manifest = arguments['native_corridor_cache_manifest_path']
     if arguments['field_binding_path'] is None:

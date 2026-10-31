@@ -45,7 +45,7 @@ def materialize_batch_fly2(
 def merge_rebased_event_logs(
     *, batches: list[tuple[Path, int, int]], particle_count: int,
     output_path: Path, receipt_path: Path, particle_id_min: int = 1,
-    scientific_event_outputs: list[dict[str, Any]] | None = None,
+    scientific_event_outputs: list[dict[str, Any] | None] | None = None,
 ) -> dict[str, Any]:
     if not batches:
         raise ValueError("at least one batch log is required")
@@ -131,7 +131,7 @@ def _merge_structured_batches(*, batches, declarations, particle_count, particle
             events.append(row)
         if sorted(terminal) != sorted(actual_ids):
             raise ValueError("structured batch lacks exact terminal coverage")
-        if declaration.get("trajectory_path") is not None:
+        if declaration is not None and declaration.get("trajectory_path") is not None:
             trajectory_path.parent.mkdir(parents=True,exist_ok=True)
             with trajectory_path.open("a" if trajectory_created else "w",encoding="utf-8",newline="") as stream:
                 trajectory_writer=csv.DictWriter(stream,fieldnames=trajectory_columns,lineterminator="\n")

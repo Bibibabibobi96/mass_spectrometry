@@ -181,6 +181,7 @@ $projectId='instrument_assembly'
 $providerProjectId='parallel_mirror_dual_stripe_mr_tof'
 $repoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
 . (Join-Path $repoRoot 'common/require_powershell7.ps1')
+. (Join-Path $repoRoot 'common/paths/workspace_paths.ps1')
 $script:pythonRoot=$repoRoot
 $workspaceRoot=Split-Path -Parent $repoRoot
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
@@ -542,6 +543,7 @@ try{
   $trialReceipt=Join-Path $resultDir 'two_prism_trial_materialization.json'
   $failureStage='materialize_trial'
   $acceleratorInstance='3'
+  $isBunchFlight=$null-ne$bunchSourceContract
   $materializeArguments=@('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','materialize',
     '--contract',$contract,'--accelerator-geometry-contract',$acceleratorGeometry,'--trajectory-contract',$trajectoryContract,'--reviewed-contract',$reviewed,'--mirror-summary',$mirrorLocal,'--stripe-summary',$stripeLocal,
     '--accelerator-receipt',$acceleratorLocal,'--prism-1-v',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$Prism1VoltageV)),
@@ -573,7 +575,6 @@ try{
   else{$materializeArguments+=@('--native-corridor-cache-manifest',(Join-Path $solverDir 'native_corridor_bank_cache_manifest.json'))}
   Invoke-ProjectPython -Arguments $materializeArguments
   $trial=Get-Content -LiteralPath $trialReceipt -Raw -Encoding UTF8|ConvertFrom-Json
-  $isBunchFlight=$null-ne$bunchSourceContract
   if($null-ne$bunchSourceContract){
     $expectedTrialCount=if($bunchSelectionRequested){$BunchParticleIdMax-$BunchParticleIdMin+1}else{[int]$bunchSourceContract.particle_count}
     $expectedTrialIds=if($bunchSelectionRequested){@($BunchParticleIdMin..$BunchParticleIdMax)}else{@($bunchSourceContract.expected_particle_ids)}
@@ -955,9 +956,10 @@ try{
       New-Item -ItemType Directory -Path $scienceDir -Force|Out-Null
       $science=[ordered]@{events_path=[IO.Path]::GetFullPath((Join-Path $scienceDir 'events.csv'))}
       if($trial.trajectory_recording){$science.trajectory_path=[IO.Path]::GetFullPath((Join-Path $scienceDir 'trajectory.csv'))}
-      if(-not$config.parameters.Contains('scientific_event_outputs')){$config.parameters.scientific_event_outputs=@{}}
-      $config.parameters.scientific_event_outputs[[string]$batchIndex]=$science
-      Write-RunJson -Path $runConfig -Depth 100 -Value $config
+      $batchConfig=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+      if(-not$batchConfig.parameters.Contains('scientific_event_outputs')){$batchConfig.parameters.scientific_event_outputs=@{}}
+      $batchConfig.parameters.scientific_event_outputs[[string]$batchIndex]=$science
+      Write-RunJson -Path $runConfig -Depth 100 -Value $batchConfig
       $batchIob=$temporaryIob
       return [pscustomobject]@{
         index=$batchIndex;count=$batchCount;offset=$batchOffset;runtime_dir=$batchDir;iob=$batchIob
@@ -1123,7 +1125,18 @@ try{
     $rawLog=Join-Path $logDir 'native_two_prism_flight.log';$batchMergeReceipt=Join-Path $resultDir 'batch_log_merge_receipt.json'
     $mergeParticleIdMin=if($bunchSelectionRequested){$BunchParticleIdMin}else{1}
     $mergeArgs=@('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight','merge','--particle-count',([string]$trial.source_particle_count),'--particle-id-min',([string]$mergeParticleIdMin),'--output',$rawLog,'--receipt',$batchMergeReceipt)
-    foreach($planned in @($finalBatchPlan.batches)){$record=$batchRecords[[int]$planned.index];$mergeArgs+=@('--batch-log',$record.stdout,([string]$record.offset),([string]$record.count));if($record.PSObject.Properties['scientific_event_output']){$mergeArgs+=@('--batch-scientific-output',($record.scientific_event_output|ConvertTo-Json -Depth 20 -Compress))}}
+    foreach($planned in @($finalBatchPlan.batches)){
+      $record=$batchRecords[[int]$planned.index]
+      $mergeArgs+=@('--batch-log',$record.stdout,([string]$record.offset),([string]$record.count))
+      if($record.PSObject.Properties['scientific_event_output']-and$null-ne$record.scientific_event_output){
+        $declaration=$record.scientific_event_output|ConvertTo-Json -Depth 20 -Compress
+      }elseif($null-ne$batchContinuationPlan-and@($batchContinuationPlan.batches|Where-Object{[int]$_.index-eq[int]$planned.index-and$_.action-eq'reuse'}).Count-eq1){
+        # Only an already verified historical unit may read its legacy events.
+        # A declared missing CSV or a new unit never falls back to stdout.
+        $declaration='null'
+      }else{throw 'New batch lacks its scientific CSV declaration.'}
+      $mergeArgs+=@('--batch-scientific-output',$declaration)
+    }
     Invoke-ProjectPython -Arguments $mergeArgs
   }
   # Static component guards remain live through every worker.  Flight performs
