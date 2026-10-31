@@ -209,7 +209,8 @@ class CooledFrontendTests(unittest.TestCase):
                 self.assertEqual(hit["action_required"], "complete")
                 transaction = cooled_runtime.load_pa_family_cache_transaction(cache_root, plan["cache_key"])
                 self.assertIsNone(transaction["published_pin_reason"])
-                ctx = dict(decision=dict(actual_pulse_time_us=110.), rows=[dict(particle_id=1)],
+                ctx = dict(verify_saved_workbench_replay=json.loads((run/"inputs/request.json").read_text())["verify_saved_workbench_replay"],
+                    decision=dict(actual_pulse_time_us=110.), rows=[dict(particle_id=1)],
                     frontend=dict(frame_id="assembly"), fields=actual, experiment=dict(pressure_scale=1),
                     conditioner=dict(gas=dict(parameters=dict(hp_pressure_pa=1.,cross_section_m2=1e-18,mean_free_path_mm=-1),
                         domain_native_mm=dict(x_min=0.,x_max=10.,transverse_halfwidth=2.))))
@@ -385,15 +386,16 @@ print('INERT_PA_API_BOUNDARY=PASS '..scenario)
                         capture_output=True,text=True,timeout=30,check=False)
                     self.assertEqual(checked.returncode,0,checked.stdout+checked.stderr)
     def test_scheduler_materialization_derives_replay_policy_from_actual_gas(self):
-        for scale, pressure, sigma, mfp, active in (
-                (1, 1., 1e-18, -1., True), (0, 1., 1e-18, -1., False),
-                (1, 0., 1e-18, -1., False), (1, 1., 0., -1., False),
-                (1, 1., 0., 2., True)):
-            with self.subTest(scale=scale, pressure=pressure, sigma=sigma, mfp=mfp), \
+        for scale, pressure, sigma, mfp, active, requested in (
+                (1, 1., 1e-18, -1., True, True), (0, 1., 1e-18, -1., False, True),
+                (1, 0., 1e-18, -1., False, True), (1, 1., 0., -1., False, True),
+                (1, 1., 0., 2., True, True),
+                (0, 1., 1e-18, -1., False, False), (1, 1., 1e-18, -1., True, False)):
+            with self.subTest(scale=scale, pressure=pressure, sigma=sigma, mfp=mfp, requested=requested), \
                     tempfile.TemporaryDirectory() as temporary:
                 run = Path(temporary)
                 (run / "results").mkdir()
-                context = dict(decision=dict(actual_pulse_time_us=110.),
+                context = dict(verify_saved_workbench_replay=requested, decision=dict(actual_pulse_time_us=110.),
                                rows=[dict(particle_id=i) for i in (1, 2)], frontend=dict(frame_id="assembly"),
                                fields=dict(records={"carrier_off": dict(path=str(run/"generation/carrier.pa"), generation_directory=str(run/"generation"))}, receipt={}, identity_validation={}),
                                experiment=dict(pressure_scale=scale),
@@ -423,7 +425,11 @@ print('INERT_PA_API_BOUNDARY=PASS '..scenario)
                 self.assertFalse(receipt["gui_fly_performed"])
                 self.assertEqual(policy["collision_active"], active)
                 self.assertEqual(policy["effective_hp_pressure_pa"], scale*pressure)
-                self.assertEqual(policy["scope"], "saved_controls_only" if active else "fresh_process")
+                self.assertEqual(policy["requested"], requested)
+                self.assertEqual(policy["scope"], "saved_controls_only" if active else
+                                 "fresh_process" if requested else "not_requested")
+                self.assertEqual(receipt["saved_default_replay_verification"],
+                                 "pending" if requested else "not_requested")
                 self.assertEqual(policy["comparison_policy"], "independent_stochastic_collisions"
                                  if active else "deterministic_trajectory_parity")
                 self.assertEqual(policy["gas_domain_native_mm"], context["conditioner"]["gas"]["domain_native_mm"])

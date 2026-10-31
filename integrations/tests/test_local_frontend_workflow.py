@@ -366,7 +366,15 @@ class LocalFrontendTests(unittest.TestCase):
         self.assertEqual(hashed.count((producer / "inputs/clock_authority.json").resolve()), 1)
         for name in ("clock_authority.json", "instrument_epoch.json"):
             self.assertEqual(hashed.count((output / "inputs" / name).resolve()), 1)
-        self.assertEqual(json.loads((output / "inputs/request.json").read_text()), self.request)
+        self.assertEqual(json.loads((output / "inputs/request.json").read_text()),
+                         {**self.request, "verify_saved_workbench_replay": False})
+        self.assertNotIn("verify_saved_workbench_replay", self.request)
+        self.request["verify_saved_workbench_replay"] = True
+        explicit = self.workspace / "explicit_replay_identity"
+        self.prepare(explicit)
+        self.assertEqual(json.loads((explicit / "inputs/request.json").read_text()), self.request)
+        self.assertEqual((explicit / "inputs/release_global.csv").read_bytes(),
+                         (output / "inputs/release_global.csv").read_bytes())
 
     def test_changed_frozen_copy_is_rejected(self):
         release = (self.workspace / self.request["source"]["release_csv"]["path"]).resolve()

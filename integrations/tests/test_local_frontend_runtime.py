@@ -77,7 +77,9 @@ class LocalFrontendRuntimeTests(unittest.TestCase):
         self.assertEqual(result["pending_particle_ids"], [])
         self.assertEqual(result["gui_case"]["expected_particle_ids"], list(range(1, 101)))
         self.assertFalse(result["gui_fly_performed"])
-        self.assertEqual(result["saved_default_replay_verification"], "pending")
+        self.assertEqual(result["saved_default_replay_verification"], "not_requested")
+        self.assertFalse(result["default_replay_policy"]["requested"])
+        self.assertEqual(result["default_replay_policy"]["scope"], "not_requested")
         with (self.run/"inputs/release_global.csv").open(newline="") as handle:
             expected = list(csv.DictReader(handle))
         actual = []
