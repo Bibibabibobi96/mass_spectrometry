@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -249,6 +250,8 @@ if($status-eq'success'){
                 "-NonInteractive",
                 "-File",
                 str(self.runner),
+                "-PythonExe",
+                sys.executable,
                 "-CampaignPath",
                 str(self.campaign),
                 "-CheckpointPath",

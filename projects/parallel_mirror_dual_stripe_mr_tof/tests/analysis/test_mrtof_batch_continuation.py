@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 import tempfile
 import unittest
+import unittest.mock
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError
@@ -336,13 +337,25 @@ class MrtofBatchContinuationTests(unittest.TestCase):
                         self.assertEqual(plan["batches"][1]["action"], "reuse")
 
     def test_legacy_prepared_success_uses_bound_owner_and_aggregate_usage(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
+        # Model the trusted Git lookup, not a real archived solver owner. CI's
+        # shallow checkout need not contain historical commits for a unit test.
+        published_owner = b"# inert legacy owner identity fixture\n"
+        trusted_root = Path(__file__).resolve().parents[4]
+        def lookup_owner(command, *, cwd, capture_output, check, timeout):
+            self.assertEqual(command, ["git", "show",
+                "af158d22c53e5ff85a32e9984f4d9b2bb009777b:integrations/workflows/prepared_joint/execute.ps1"])
+            self.assertEqual((capture_output, check, timeout), (True, True, 30))
+            if Path(cwd).resolve() != trusted_root:
+                raise subprocess.CalledProcessError(128, command)
+            return subprocess.CompletedProcess(command, 0, stdout=published_owner)
+        with tempfile.TemporaryDirectory() as directory, unittest.mock.patch.object(
+                subprocess, "run", side_effect=lookup_owner) as lookup:
             root = Path(directory)
             parent, current = self._prepared_joint_fixture(root, second_complete=True)
             for index in (1, 2):
                 (parent / f"results/batches/batch_{index:03d}/owner_exit.json").unlink()
             owner = parent / "owner.ps1"
-            owner.write_bytes(subprocess.check_output(["git", "show", "af158d22c53e5ff85a32e9984f4d9b2bb009777b:integrations/workflows/prepared_joint/execute.ps1"], cwd=Path(__file__).resolve().parents[4], timeout=30))
+            owner.write_bytes(published_owner)
             usage = parent / "logs/simion_batch_resource_usage.json"
             usage.write_text(json.dumps({"status": "completed", "execution_wave": {"process_count": 2}}))
             config_path = parent / "run_config.json"
@@ -374,6 +387,11 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             self.assertEqual(plan["replay_unit_count"], 0)
             self.assertEqual(plan["batches"][0]["exit_evidence_kind"], "legacy_aggregate_success")
             self.assertEqual(plan["batches"][0]["exit_evidence_manifest"], str(manifest_path.resolve()))
+            lookup.side_effect = subprocess.CalledProcessError(128, ["git", "show"])
+            unavailable = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent,
+                current_preparation=current, output_dir=root / "unavailable_history")
+            self.assertEqual(unavailable["replay_unit_count"], 2)
+            lookup.side_effect = lookup_owner
             owner.write_bytes(owner.read_bytes() + b"\n# different version\n")
             manifest["inputs"]["prepared_joint_integrations_workflows_prepared_joint_execute_ps1"] = file_record(owner)
             manifest_path.write_text(json.dumps(manifest))

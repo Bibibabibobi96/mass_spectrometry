@@ -24,8 +24,8 @@ PROJECT = Path(__file__).resolve().parents[2]
 
 class ControllerStateTests(unittest.TestCase):
     def setUp(self):
-        self.profile = json.loads((PROJECT / "config/simion_candidate_two_zone.json").read_text())["downstream_fixed_grid_workpoint_profile"]
-        self.policy = json.loads((PROJECT / "config/local_model_recovery_policy.json").read_text())
+        self.profile = json.loads((PROJECT / "config/simion_candidate_two_zone.json").read_text(encoding="utf-8"))["downstream_fixed_grid_workpoint_profile"]
+        self.policy = json.loads((PROJECT / "config/local_model_recovery_policy.json").read_text(encoding="utf-8"))
         self.anchor = dict(voltages_v=[-27., 54., 190., -190.], maximum_scaled_abs_residual=20.)
         self.decision = dict(iteration=6, recovery_state=dict(accepted_anchor=self.anchor, model_invalid_reason="topology_loss"))
         self.evidence = dict(materialization="accepted.json", observation="observed.json")
