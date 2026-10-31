@@ -200,6 +200,12 @@ CIM不可用时，原生观测每轮只用一次
 读取。抓表后才创建的同PID身份不能绑定旧父关系，进入既有unknown处理；缺少父项仍按原parent=0语义。
 这是基于Windows官方API的仓库实现，资料核验日期2026-10-25；不把进程名当身份或console豁免依据。
 
+`release`遇到其它reservation的创建身份未知时，只允许核对并减少自己的已知reservation：
+调用者须是当前仍可观测的原owner；自己的未知work进程仍须已有同步等待的精确创建身份完成证据。
+其它reservation的身份、后代、预算和承诺原样保留，不执行foreign refresh，也不准入任何新grant；
+自己的活work子进程仍保留原阶段资源。request、poll、status、transition、register、inherit仍按完整观测失败关闭。
+这修复无关release的耦合，不代表已证明或修复所有退出采样竞态；缺失创建时间仍不等于进程已停止。
+
 阶段通过`Enter-HostResourceStage`申请CPU核数、内存字节、批量I/O槽位及具名独占资源，取得许可后
 才能启动工作；相同独占资源名不能同时授予两个活动阶段。预算是准入声明，不是操作系统强制限额，
 也不修改科学参数或求解器精度。中央策略只区分重任务与轻任务：只有阶段名单列出的PA refine、离子飞行、求解及理论计算

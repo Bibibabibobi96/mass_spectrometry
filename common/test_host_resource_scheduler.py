@@ -480,6 +480,84 @@ class HostResourceSchedulerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_budget(resources)
 
+    def foreign_unknown_release_fixture(self) -> tuple[dict, dict]:
+        self.acquire(1, budget(cpu=2))
+        self.acquire(2, budget(cpu=2))
+        self.assertEqual(self.acquire(3)["status"], "waiting")
+        own_child = dict(pid=99, parent_pid=1, started="0000000000000000002", memory_bytes=GIB//8)
+        foreign_child = dict(pid=98, parent_pid=2, started="0000000000000000003", memory_bytes=GIB//8)
+        self.snapshot["processes"].extend([own_child, foreign_child])
+        self.call("register", token="1", process_id=99)
+        self.call("register", 2, token="2", process_id=98)
+        with closing(sqlite3.connect(self.path)) as connection:
+            before = json.loads(connection.execute("SELECT document FROM state WHERE id=1").fetchone()[0])
+        self.snapshot["processes"] = [p for p in self.snapshot["processes"] if p["pid"] not in {98, 99}]
+        self.snapshot["unknown_process_ids"] = [98, 99]
+        return before, dict(pid=99, started=own_child["started"])
+
+    def test_exact_completed_owner_release_preserves_foreign_unknown_and_does_not_admit(self) -> None:
+        before, completed = self.foreign_unknown_release_fixture()
+        with patch("common.host_resource_scheduler._admit", side_effect=AssertionError("unknown foreign state must not admit")):
+            result = self.call("release", token="1", completed_work_processes=[completed])
+        self.assertEqual(result, {"status": "released", "token": "1"})
+        with closing(sqlite3.connect(self.path)) as connection:
+            after = json.loads(connection.execute("SELECT document FROM state WHERE id=1").fetchone()[0])
+        self.assertEqual(after["records"], [r for r in before["records"] if r["token"] != "1"])
+        self.assertEqual(next(r for r in after["records"] if r["token"] == "3")["status"], "waiting")
+        foreign = next(r for r in after["records"] if r["token"] == "2")
+        self.assertIn({"pid": 98, "started": "0000000000000000003"}, foreign["processes"])
+        self.assertEqual(foreign["budget"]["cpu_cores"], 2)
+        self.assertEqual(foreign["budget"]["memory_bytes"], GIB)
+
+    def test_foreign_unknown_does_not_relax_own_unknown_or_owner_completion_identity(self) -> None:
+        _, completed = self.foreign_unknown_release_fixture()
+        original = self.path.read_bytes()
+        with self.assertRaisesRegex(ValueError, "identity is unavailable"):
+            self.call("release", token="1")
+        self.assertEqual(self.path.read_bytes(), original)
+        with self.assertRaisesRegex(ValueError, "live reservation owner"):
+            self.call("release", 4, token="1", completed_work_processes=[completed])
+        self.assertEqual(self.path.read_bytes(), original)
+        with self.assertRaisesRegex(ValueError, "exact registered"):
+            self.call("release", token="1", completed_work_processes=[dict(pid=98, started="0000000000000000003")])
+        self.assertEqual(self.path.read_bytes(), original)
+        self.snapshot["unknown_process_ids"] = [98]
+        snapshot = copy.deepcopy(self.snapshot)
+        snapshot["observed_at_ticks"] = time.time_ns()
+        with self.assertRaisesRegex(ValueError, "live reservation owner"):
+            transact(self.path, dict(operation="release", token="1", owner=dict(pid=1, started="0000000000000000004")), snapshot, self.policy)
+        self.assertEqual(self.path.read_bytes(), original)
+
+    def test_other_actions_still_fail_closed_on_foreign_unknown(self) -> None:
+        self.foreign_unknown_release_fixture()
+        self.snapshot["unknown_process_ids"] = [98]
+        before = self.path.read_bytes()
+        calls = [
+            ("request", 4, dict(token="4", role="GATE", stage="test", budget=budget())),
+            ("status", 1, {}), ("poll", 1, dict(token="1")),
+            ("transition", 1, dict(token="1", stage="test", budget=budget(), retained_memory_bytes=0)),
+            ("register", 1, dict(token="1", process_id=8)), ("inherit", 1, dict(token="1")),
+        ]
+        for operation, pid, arguments in calls:
+            with self.subTest(operation=operation), self.assertRaisesRegex(ValueError, "identity is unavailable"):
+                self.call(operation, pid, **arguments)
+            self.assertEqual(self.path.read_bytes(), before)
+
+    def test_release_retains_own_live_child_and_preserves_foreign_unknown_without_admission(self) -> None:
+        before, _ = self.foreign_unknown_release_fixture()
+        self.snapshot["processes"].append(dict(pid=99, parent_pid=1, started="0000000000000000002", memory_bytes=GIB//8))
+        self.snapshot["unknown_process_ids"] = [98]
+        with patch("common.host_resource_scheduler._admit", side_effect=AssertionError("unknown foreign state must not admit")):
+            released = self.call("release", token="1")
+        self.assertEqual(released["status"], "acquired")
+        self.assertEqual(released["reason"], "owner_released_descendants_still_live")
+        self.assertIn(99, released["live_process_ids"])
+        self.assertEqual(released["budget"], before["records"][0]["budget"])
+        with closing(sqlite3.connect(self.path)) as connection:
+            after = json.loads(connection.execute("SELECT document FROM state WHERE id=1").fetchone()[0])
+        self.assertEqual([r for r in after["records"] if r["token"] != "1"],
+                         [r for r in before["records"] if r["token"] != "1"])
+
     def test_missing_creation_identity_is_not_process_death(self) -> None:
         reservation = self.acquire(1)
         before = self.path.read_bytes()

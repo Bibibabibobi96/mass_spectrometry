@@ -344,19 +344,30 @@ def _apply(state: dict[str, Any], request: dict[str, Any], snapshot: dict[str, A
     unknown = set(snapshot.get("unknown_process_ids", []))
     exited = _definitely_exited_process_ids(snapshot, processes)
     unavailable = unknown - exited
+    operation = request["operation"]
+    isolated_release = False
     for record in records:
         unavailable_record_pids = unavailable.intersection(process["pid"] for process in record["processes"])
         if record is requested_record:
             unavailable_record_pids.difference_update(pid for pid, _ in completed)
         if unavailable_record_pids:
+            if operation == "release" and record is not requested_record:
+                isolated_release = True
+                continue
             raise ValueError(
                 "a reserved process creation identity is unavailable; reservations are unchanged; "
                 f"unavailable_pids={sorted(unavailable_record_pids)} "
                 f"reservation_token={record['token']} owner_pid={record['owner']['pid']} "
                 f"role={record['role']} stage={record['stage']}"
             )
-    records[:] = [r for r in records if _refresh(r, processes)]
-    operation = request["operation"]
+    if isolated_release and requested_record is not None:
+        owner = request.get("owner")
+        if (not isinstance(owner, dict) or not _same_process(owner, requested_record["owner"])
+                or not _same_process(owner, processes.get(int(owner["pid"]), {"pid": 0, "started": ""}))):
+            raise ValueError("isolated release requires the live reservation owner creation identity")
+    # A release may reduce only its own known reservation while another grant
+    # has unavailable identity. Leave every foreign record and commitment exact.
+    records[:] = [r for r in records if (isolated_release and r is not requested_record) or _refresh(r, processes)]
     record = next((r for r in records if r["token"] == token), None)
     owner = request.get("owner")
     if operation == "request":
@@ -436,7 +447,8 @@ def _apply(state: dict[str, Any], request: dict[str, Any], snapshot: dict[str, A
             return {"status": "released", "token": token}
     elif operation not in {"request", "poll", "transition", "register", "inherit"}:
         raise ValueError(f"unknown operation: {operation}")
-    _admit(records, snapshot, policy)
+    if not isolated_release:
+        _admit(records, snapshot, policy)
     return dict(record)
 
 
