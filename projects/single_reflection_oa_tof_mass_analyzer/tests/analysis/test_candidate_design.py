@@ -2465,6 +2465,28 @@ def execute_prepared_run(*args):
             parent = self.legacy_inline_parent(root, omit_scientific_source=(scenarios == ("missing_scientific_source",)))
             originals = {p: p.read_bytes() for p in parent.rglob("*") if p.is_file()}
             freeze = preparation.freeze_candidate_source_closure
+            # One real prepared source/child suffices for proof-local negative
+            # cases; unknown writer keeps the complete public-owner failure path.
+            direct = len(scenarios) > 1
+            if direct:
+                _, direct_plan_path = self.native_workflow_plan(root, "20260727_195000")
+                direct_root = start_candidate_run(direct_plan_path)
+                direct_plan = load_json(direct_root / "candidate_workflow_plan.json")
+                self.native_fake_executor([])(direct_plan["stages"][0], direct_plan, sys.executable)
+                contexts = {"comsol_candidate": candidate_workflow._stage_context(
+                    direct_root, direct_plan, "comsol_candidate", sys.executable)}
+                direct_code = Path(direct_plan["execution_source_closure"]["code_root"])
+                scientific_source = direct_code / "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_comsol_stage.py"
+                scientific_bytes = scientific_source.read_bytes()
+                expected_errors = {
+                    "missing_request": "legacy source lacks its original frozen execution request",
+                    "unbound_completion": "legacy public completion is not uniquely manifest-bound",
+                    "pending_journal": "run terminal publication is incomplete",
+                    "stage_environment": "legacy actual command/environment plan is not the frozen runtime plan",
+                    "scientific_drift": "legacy scientific implementation differs: comsol_candidate",
+                    "request_context": "legacy actual dispatch lacks its original execution-request context binding",
+                    "incomplete_stage_outputs": "legacy comsol_candidate does not contain the known producer's complete output contract",
+                }
             for index, scenario in enumerate(scenarios):
                 with self.subTest(scenario=scenario):
                     manifest_path = parent / "run_manifest.json"
@@ -2518,15 +2540,31 @@ def execute_prepared_run(*args):
                         record = next(item for item in closure["sources"] if item["source_id"] == source_id)
                         record.update(bytes=path.stat().st_size, sha256=sha256(path))
                         return closure
-                    with mock.patch.object(preparation, "freeze_candidate_source_closure", side_effect=drifted_freeze if scenario == "scientific_drift" else freeze):
-                        _, plan = self.native_workflow_plan(root, f"20260727_19{10+index:02d}00")
-                    observed = []
-                    with self.assertRaises(CandidateWorkflowError) as failure:
-                        run_candidate_workflow(plan, sys.executable, stage_executor=self.native_fake_executor(observed),
-                            reuse_parent=parent, reuse_through="comsol_candidate")
-                    self.assertEqual(observed, ["static_inputs"])
+                    if direct and scenario != "unknown_writer":
+                        if scenario == "scientific_drift":
+                            text = scientific_bytes.decode("utf-8")
+                            self.assertEqual(text.count("run_candidate_contract_build.m"), 1)
+                            scientific_source.write_text(text.replace("run_candidate_contract_build.m", "changed_science.m"),
+                                encoding="utf-8", newline="\n")
+                        try:
+                            with self.assertRaisesRegex(ValueError, expected_errors[scenario]):
+                                candidate_workflow._project_legacy_stage_contexts(
+                                    parent, direct_root, direct_plan, contexts, {"comsol_candidate"})
+                        finally:
+                            scientific_source.write_bytes(scientific_bytes)
+                            shutil.rmtree(direct_root / "inputs/stage_contexts/legacy_projection", ignore_errors=True)
+                    else:
+                        with mock.patch.object(preparation, "freeze_candidate_source_closure", side_effect=drifted_freeze if scenario == "scientific_drift" else freeze):
+                            _, plan = self.native_workflow_plan(root, f"20260727_19{10+index:02d}00")
+                        observed = []
+                        with self.assertRaises(CandidateWorkflowError) as failure:
+                            run_candidate_workflow(plan, sys.executable, stage_executor=self.native_fake_executor(observed),
+                                reuse_parent=parent, reuse_through="comsol_candidate")
+                        self.assertEqual(observed, ["static_inputs"])
+                        self.assertNotEqual(str(failure.exception), "")
+                        if direct:
+                            self.assertIn("legacy writer completion is unconfirmed", str(failure.exception))
                     self.assertEqual(changed_parent, {p:p.read_bytes() for p in changed_parent})
-                    self.assertNotEqual(str(failure.exception), "")
                     # Restore only this explicitly synthetic fixture between cases;
                     # production conversion never writes its parent.
                     (parent / ".run_terminal_publication.json").unlink(missing_ok=True)

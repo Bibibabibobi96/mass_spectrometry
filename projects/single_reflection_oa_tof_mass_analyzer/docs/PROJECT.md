@@ -548,6 +548,10 @@ producer返回原生完成receipt和实际Program/ION/IOB绑定；补偿与candi
 
 本主题独立闭包小回归：真实项目PS入口与公共selector／partition薄4项通过9.267秒；原角色选择／失败释放及纵向解析理论代表2项通过4.303秒（逐项4.294660／0.008015）；显式false资格参数拒绝扩充后仅受影响方法再验5.816秒。公共GATE自然释放；未执行新完整Owner或商业／Lua原生验证，完整性能目标尚待实测。
 
+2026-10-31 新完整Owner轮仍为FAIL：外层公开命令486.585582秒，643条逐测试计时；前置与两个分片通过，分片02的一项observer故障注入失败。三个分片execution分别452.315889／372.154132／411.919764秒，资源等待约2.1秒／片。真实SIMION只执行一次既有官方Lua合同测试（0.093274秒），没有Refine或Fly。原失败轮不被定向修复追认为PASS；该fixture实际误导入正式observer的问题已独立复现并修复，仍需最终联合回归。旧833.605112秒轮与新轮覆盖不同且有并行背景任务，不计算加速倍数；当前公开Owner仍超过5分钟目标，candidate重复完整准备与新增mass恢复测试权重失衡继续处理。原summary、逐测试、外层wall与日志位于本主题`agent4/rebase_1c9/root_owner_r2*`，不以规划权重代替实测。
+
+候选旧资产8类拒绝回归继续保留；7类改为同一真实冻结准备上的严格projector负例，unknown writer仍经完整公共owner失败传播。完整失败执行8→1、子准备8→2；该方法旧完整Owner中76.437936秒，修后定向40.990342秒通过，背景负载不同不宣称公平倍速。原完整owner正例与cache正例不变，最终Owner预算仍待联合实测。
+
 ### 质量谱封存记录重分析
 
 `mass_spectrum_candidate -ReanalyzeOnly`使用显式`-SourceRunPath`和新的`-RunId`创建后继分析run；父run的输入、CSV、报告、配置、summary与manifest只读，不再执行原位预检或重新发布。其准入先核对实际消费的小记录和原容量owner的ready封存；checkpoint还须`-SourceStoppedReceiptPath`指向原owner已生成的停止receipt。只有运行中的interrupted标记、未知writer、writing范围、缺失或篡改记录均拒绝，并要求回原owner补齐收尾／封存，不由分析入口伪造停写证明。跨根来源沿公共SourceReferences绑定明确manifest与原owner，不猜父根。
