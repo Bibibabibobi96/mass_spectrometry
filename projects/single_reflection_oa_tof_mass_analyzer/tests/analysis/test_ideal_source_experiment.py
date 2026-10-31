@@ -163,8 +163,11 @@ class IdealExperimentTests(unittest.TestCase):
             data = load_json(checkpoint)
             data["resolution_gain_percent"] = 999999
             checkpoint.write_text(json.dumps(data), encoding="utf-8")
-            destination = root / "copy"
-            destination.mkdir()
+            destination = root / "tampered_child/results"
+            destination.mkdir(parents=True)
+            # _reuse_case dispatches through the explicit child context before either reuse path.
+            # This is a fresh child with no legacy projection, matching ordinary execute setup.
+            (destination.parent / "run_config.json").write_text(json.dumps({"inputs": {}}), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "mismatch"):
                 runner._reuse_case(failed, data["case"], data["identity"], destination)
 

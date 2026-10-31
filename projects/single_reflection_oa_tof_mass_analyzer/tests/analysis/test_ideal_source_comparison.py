@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from pathlib import Path
 import json
 import tempfile
+import shutil
 import unittest
 from unittest.mock import patch
 from contextlib import ExitStack
@@ -61,6 +62,25 @@ class IdealSourceComparisonTests(unittest.TestCase):
     def legacy_ideal_parent(self, root):
         from common.contracts.capacity_ledger import initialize_capacity_ledger
         from common.contracts.write_run_manifest import publish_run_manifest
+        # Real public capacity CLI/SQLite protection, isolated from workstation-sized disk thresholds.
+        repository = Path(run_comparison.REPO_ROOT)
+        fixture_repo = root / "capacity_fixture_repo"
+        shutil.copytree(repository / "common", fixture_repo / "common",
+                        ignore=shutil.ignore_patterns("assets", "__pycache__", "*.pyc"))
+        shutil.copytree(repository / "config", fixture_repo / "config")
+        # The existing input enumerator also resolves public OA model sources from REPO_ROOT.
+        for source in run_comparison._inputs(root / "experiment.json").values():
+            if source.is_relative_to(repository / "projects"):
+                destination = fixture_repo / source.relative_to(repository)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, destination)
+        policy_path = fixture_repo / "common/contracts/artifact_capacity_policy.json"
+        policy = json.loads(policy_path.read_text(encoding="utf-8"))
+        policy.update(target_gib=1, minimum_free_gib=0)
+        policy_path.write_text(json.dumps(policy), encoding="utf-8")
+        selected_repo = patch.object(run_comparison, "REPO_ROOT", fixture_repo)
+        selected_repo.start()
+        self.addCleanup(selected_repo.stop)
         project = Path(run_comparison.PROJECT_ROOT)
         config = json.loads((project / "config/experiments/ideal_source_comparison.json").read_text(encoding="utf-8"))
         config["sampling"] = {"particle_count": 31, "replicate_count": 1}

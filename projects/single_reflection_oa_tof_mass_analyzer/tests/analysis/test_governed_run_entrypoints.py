@@ -25,8 +25,12 @@ class GovernedRunEntrypointTests(unittest.TestCase):
                 self.assertIn("-CapacityLedgerLifecycleEnabled", source)
                 self.assertIn(f"-RetentionClass {retention_class}", source)
                 self.assertNotIn("Initialize-RunRecord", source)
-                self.assertIn("artifact_retention", source)
-                self.assertIn("capacity_ledger_lifecycle", source)
+                if relative != "simion/workbench/run_ideal_field_diagnostic.ps1":
+                    self.assertIn("artifact_retention", source)
+                    self.assertIn("capacity_ledger_lifecycle", source)
+                # Ideal diagnostics now retain these fields by merging the existing public package.
+                # Its actual normal-entrypoint test checks retained paths/capacity/sentinel values;
+                # the public New-RunPackage/retention/lifecycle switches above remain required here.
         mass_source = (PROJECT_ROOT / "workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1").read_text(encoding="utf-8")
         self.assertIn("Resume requires an existing governed retention and capacity-ledger lifecycle.", mass_source)
 
