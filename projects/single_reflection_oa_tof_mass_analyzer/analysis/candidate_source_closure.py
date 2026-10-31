@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+import hashlib
+import importlib.util
+import io
+import json
+import marshal
+import struct
+import types
 import sys
 from pathlib import Path
 from typing import Any
 
 from common.contracts.machine_contracts import sha256
+from common.contracts.verify_run_manifest import record_path, verify_record
+from common.contracts.write_run_manifest import file_record
 from projects.orthogonal_accelerator.analysis.component_contract import load_accelerator_dependency
 
 
@@ -57,7 +66,9 @@ RELATIVE_PATHS = (
     "common/simion/assemble_native_fast_adjust_family.lua",
     "common/simion/export_standalone_pa.lua",
     "common/simion/voltageize_pa0.lua",
+    "common/contracts/run_artifact_workflow.ps1",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/candidate_source_closure.py",
+    "projects/single_reflection_oa_tof_mass_analyzer/analysis/native_stage_completion.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/compile_candidate_design.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/oatof_oaaccelerator_coupling.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/reflectron_dual_stage_solver.py",
@@ -331,3 +342,126 @@ def frozen_source_path(closure: dict[str, Any], source_id: str) -> str:
     if relative.is_absolute() or ".." in relative.parts or root not in path.parents:
         raise ValueError(f"invalid candidate source path: {normalized}")
     return str(path)
+
+
+def _same_frozen_code(left: Any, right: Any) -> bool:
+    """Compare compiled fields, including metadata ignored by code equality."""
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, types.CodeType):
+        fields = (
+            "co_argcount", "co_posonlyargcount", "co_kwonlyargcount", "co_nlocals",
+            "co_stacksize", "co_flags", "co_code", "co_names", "co_varnames",
+            "co_filename", "co_name", "co_qualname", "co_firstlineno",
+            "co_linetable", "co_exceptiontable", "co_freevars", "co_cellvars", "co_consts",
+        )
+        return all(_same_frozen_code(getattr(left, key), getattr(right, key)) for key in fields)
+    if isinstance(left, tuple):
+        return len(left) == len(right) and all(_same_frozen_code(a, b) for a, b in zip(left, right))
+    if isinstance(left, frozenset):
+        return left == right
+    # Scalars have no marshal object-reference layout; retain float bit patterns.
+    return marshal.dumps(left) == marshal.dumps(right)
+
+
+def derive_candidate_source_closure(
+    parent_manifest_path: Path, parent_closure_path: Path, code_root: Path,
+) -> dict[str, Any]:
+    """Derive read-only parent evidence with authenticated CPython 3.11 caches.
+
+    The normal verifier remains strict. No parent code or bytecode is executed;
+    only declared sources enter the new evidence root. The caller owns terminal
+    consumption guards and publishes the returned closure/derivation in its new run.
+    PEP 552 defines the timestamp header; Python's marshal warning requires the
+    existing manifest identity check before decoding any cached code object.
+    """
+    parent_manifest_path = parent_manifest_path.resolve()
+    parent_closure_path = parent_closure_path.resolve()
+    code_root = code_root.resolve()
+    parent = parent_manifest_path.parent
+    manifest = json.loads(parent_manifest_path.read_bytes())
+    if manifest.get("role") != "simulation_run_manifest" or manifest.get("status") not in {"success", "failed", "interrupted"}:
+        raise ValueError("source derivation requires an explicit terminal parent manifest")
+    bindings = [*manifest.get("inputs", {}).values(), *manifest.get("outputs", [])]
+
+    def bound(path: Path) -> dict[str, Any]:
+        records = [item for item in bindings if isinstance(item, dict) and record_path(item, base_dir=parent) == path]
+        if not records or len({(item.get("bytes"), item.get("sha256")) for item in records}) != 1:
+            raise ValueError(f"parent manifest lacks a unique source identity: {path}")
+        record = {**records[0], "path": str(path)}
+        try:
+            verify_record("parent source derivation", record)
+        except AssertionError as error:
+            raise ValueError(str(error)) from error
+        return record
+
+    closure_record = bound(parent_closure_path)
+    closure = json.loads(parent_closure_path.read_bytes())
+    source_root = Path(closure.get("code_root", "")).resolve()
+    if parent not in source_root.parents or parent not in parent_closure_path.parents:
+        raise ValueError("parent source closure escapes its run")
+    if code_root.exists() or parent == code_root or parent in code_root.parents:
+        raise ValueError("source derivation requires a fresh destination outside the parent")
+    runtime = closure.get("runtime", {})
+    runtime_path = Path(runtime.get("python_executable", "")).resolve()
+    if sys.version_info[:2] != (3, 11) or sys.implementation.name != "cpython" or runtime_path != Path(sys.executable).resolve():
+        raise ValueError("source derivation requires the bound CPython 3.11 runtime")
+    if sha256(runtime_path).lower() != str(runtime.get("python_sha256", "")).lower():
+        raise ValueError("parent Python runtime identity differs")
+    # Validate every declared source using the unchanged verifier in a clean
+    # destination; first collect bytes without allowing any unbound extra file.
+    if closure.get("schema_version") != 2 or closure.get("role") != ROLE or not closure.get("sources"):
+        raise ValueError("invalid parent candidate source closure")
+    sources: dict[Path, bytes] = {}
+    for item in closure["sources"]:
+        relative = Path(item["source_id"])
+        path = (source_root / relative).resolve()
+        if relative.is_absolute() or ".." in relative.parts or source_root not in path.parents or path in sources:
+            raise ValueError("invalid or duplicate parent frozen source")
+        payload = path.read_bytes()
+        if len(payload) != item["bytes"] or hashlib.sha256(payload).hexdigest().lower() != str(item["sha256"]).lower():
+            raise ValueError(f"parent frozen source changed: {item['source_id']}")
+        sources[path] = payload
+    caches = []
+    extras = {path.resolve() for path in source_root.rglob("*") if path.is_file()} - sources.keys()
+    for path in sorted(extras):
+        identity = bound(path)  # Authenticate before marshal; never trust arbitrary caches.
+        try:
+            source = Path(importlib.util.source_from_cache(str(path))).resolve()
+        except ValueError as error:
+            raise ValueError(f"unknown parent source extra: {path}") from error
+        if source not in sources:
+            raise ValueError(f"cached code lacks a declared source: {path}")
+        expected_cache = Path(importlib.util.cache_from_source(str(source), optimization="")).resolve()
+        if path != expected_cache:
+            raise ValueError(f"unsupported parent bytecode cache name: {path}")
+        payload = path.read_bytes()
+        if len(payload) != identity["bytes"] or hashlib.sha256(payload).hexdigest().lower() != str(identity["sha256"]).lower():
+            raise ValueError(f"parent bytecode changed while read: {path}")
+        if len(payload) < 16 or payload[:4] != importlib.util.MAGIC_NUMBER or struct.unpack("<I", payload[4:8])[0] != 0:
+            raise ValueError(f"unsupported parent bytecode header: {path}")
+        if struct.unpack("<II", payload[8:16]) != (int(source.stat().st_mtime) & 0xFFFFFFFF, len(sources[source]) & 0xFFFFFFFF):
+            raise ValueError(f"parent bytecode source metadata differs: {path}")
+        stream = io.BytesIO(payload[16:])
+        try:
+            cached = marshal.load(stream)
+        except (EOFError, ValueError, TypeError) as error:
+            raise ValueError(f"invalid authenticated parent bytecode: {path}") from error
+        rebuilt = compile(sources[source], str(source), "exec", dont_inherit=True, optimize=0)
+        if stream.read() or not isinstance(cached, types.CodeType) or not _same_frozen_code(cached, rebuilt):
+            raise ValueError(f"parent bytecode differs from frozen source: {path}")
+        caches.append({"record": identity, "source_id": source.relative_to(source_root).as_posix(),
+                       "validation": "bound_cpython311_timestamp_code_fields_equal"})
+    code_root.mkdir(parents=True)
+    for source, payload in sources.items():
+        target = code_root / source.relative_to(source_root)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(payload)
+    derived = {**closure, "code_root": str(code_root)}
+    verify_candidate_source_closure(derived)
+    return {"closure": derived, "derivation": {
+        "schema_version": 1, "role": "oa_tof_parent_source_closure_derivation",
+        "parent_manifest": file_record(parent_manifest_path), "parent_closure": closure_record,
+        "validated_bytecode": caches, "copied_sources": len(sources),
+        "parent_modified": False, "bytecode_executed": False,
+    }}

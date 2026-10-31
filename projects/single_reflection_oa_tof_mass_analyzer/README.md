@@ -54,11 +54,17 @@
 | Formal跨求解器诊断 | [`workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1`](workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1) | 只读冻结场与轨迹，只发布diagnostic结果 |
 | 加速器横向场均匀性 | [`workflows/accelerator_transverse_field_uniformity/run_accelerator_transverse_field_uniformity.ps1`](workflows/accelerator_transverse_field_uniformity/run_accelerator_transverse_field_uniformity.ps1) | 只读Formal COMSOL保存场，不重求粒子 |
 | oaTOF径向紧凑化 | [`workflows/radial_compaction/run_campaign.py`](workflows/radial_compaction/run_campaign.py) | 默认[`campaign合同`](config/radial_compaction_campaign.json)，新建可显式`--campaign`；续跑用新run ID与`--resume-from`，范围见[项目状态](docs/PROJECT.md)；SIMION-only Candidate，不自动推广Formal |
-| 反射器电压场补偿 | [`workflows/reflectron_voltage_compensation/run_compensation.py`](workflows/reflectron_voltage_compensation/run_compensation.py) | 固定端点、单调环电压；复用PA，先测量单批峰值内存，再自动分批比较原场/补偿场/理想场 |
+| 反射器电压场补偿 | [`workflows/reflectron_voltage_compensation/run_compensation.py`](workflows/reflectron_voltage_compensation/run_compensation.py) | 固定源、固定端点与单调环电压；新run私有runtime，公共批次比较原场/补偿场/理想场，显式父manifest仅复用完整单元 |
 | CAD导出 | [`cad/ms_export_oatof_to_solidworks.m`](cad/ms_export_oatof_to_solidworks.m) | 读取指定模型与合同 |
 | 项目门禁 | [`verify_project.ps1`](verify_project.ps1)，选择 `-Level` | 按证据等级执行 |
 
 静态Python测试通过公共计时runner即时报告失败和逐测试耗时，原测试发现范围保持完整。
+
+反射器补偿入口使用原`--resume-from <manifest>`创建后继run，复用同一科学输入的完整批次；
+原始case只读，不改母群、ID或birth时钟。`--resume-finalization --run-id <原run> [--result-path <Result>]`
+只恢复公共owner收尾，不接受新的科学输入、不启动原生进程；分析失败则新建后继run复用完整计算并重做分析。
+小Result默认位于项目`scratch/workflow_results/<run_id>/result.json`。软件完成、科学结果和收尾状态分别报告；
+既有三臂粗网格证据仅适用于原冻结实现，不授予新精度或科学资格。
 
 所有workflow从本表导航；目录内不再复制合同和资格说明。命令行细节由入口的`--help`/参数块给出，
 SIMION运行边界见[`docs/SIMION.md`](docs/SIMION.md)，Formal与开放任务见[`docs/PROJECT.md`](docs/PROJECT.md)。
@@ -99,3 +105,5 @@ single_reflection_oa_tof_mass_analyzer/
 ## History索引
 
 [历史索引](docs/history/README.md)集中列出已冻结实验、迁移和旧方案；需要追溯证据时按需进入。
+
+补偿入口沿公共 workspace context 冻结产物根与主机状态；原生参数、工作目录、环境及日志由运行包的公共执行 context 投影，未知释放保留保护与原始失败。

@@ -282,3 +282,38 @@ request和独立GUI/CAD evidence；`Verify`只读复核当前Formal。禁止手�
   projects/single_reflection_oa_tof_mass_analyzer/config/diagnostics/axial_ideal_arm8_analytic_closure.json --output <receipt.json>`运行。receipt明确标记为
   solver-independent analytic closure，不得表述为SIMION、COMSOL或Formal结果。
 - 通用代码只有第二个项目实际复用后才能上移`common/`。
+
+## 反射器电压补偿运行与恢复
+
+`workflows/reflectron_voltage_compensation/run_compensation.py` 保留原场、补偿、理想反射器三臂；
+Python负责实际源/场输入、单调固定端点拟合、整批恢复投影和分析，私有PowerShell适配调用公共
+SIMION批次、资源及run发布owner。父case只读，所有可写PA/IOB/Program均属于新run。
+`--particle-count`默认1000；显式100/5000仅消费父case已冻结的同N ION，不重新采样或编号。
+
+```powershell
+.\.venv\Scripts\python.exe -B -m projects.single_reflection_oa_tof_mass_analyzer.workflows.reflectron_voltage_compensation.run_compensation --case-dir <已发布case目录> --particle-count 100 --run-id <新的合法run_id>
+```
+
+源必须有终态manifest绑定的合同、同N源和verified canonical四实例runtime证据。
+实际缺批需要原生执行时，显式传`--numerics-path <作者solver_numerics.json>`；原producer仅支持
+N100/N1000。科学模式只读取父manifest绑定的`inputs.mode`，核对其与父resolved的身份；
+不从数值请求所在目录或当前Formal默认推定。几何、电压、源、坐标保持父定义，数值设置明确冻结，正式默认不改。
+原`build_formal_delivery.ps1`在同一新run、capacity/session和owner中，从公共standalone缓存建立
+新的可写私有runtime；缺少适用缓存才实际求场。模板IOB只作小结构输入，producer先建立本run场，
+随后重绑模板并原生验证；不先vendor打开模板中的父PA引用。
+新`SourceIonPath`只消费本run inputs内已冻结的原ION，经现有verified-copy边界验证复制，
+不调用源生成器、不重新采样或编号。默认producer调用未传此参数时仍保留原源生成。
+显式前驱的冻结闭包若含已由其manifest绑定的标准CPython3.11缓存，按同一绑定runtime、header及
+逐代码字段静态比对，在新run的`inputs/predecessor_source_closure/`派生独立证据；不执行父字节码，
+不修改父源码、缓存或manifest，不覆盖本次`inputs/code`。未知extra或证据不完整仍拒绝。
+已发布native `.paN` family即使完整复制也不构成安全运行来源；旧copy/materialize及额外IOB构建
+分支已删除。未提供显式重建输入时保持失败关闭，不自动重Refine、不用当前Formal替代。
+当前shield260原standalone cache已缺失；粗网格方案仅是功能候选，真实producer/三臂原生闭环尚待执行，
+不能把软件接线通过当作科学验收完成。恢复同一科学输入时加
+`--resume-from <显式父run_manifest.json>`和新的`--run-id`，保持已完成整批和原分区，
+只执行缺失单元；分析失败仍可复用完整Fly。完整合法父批次全部复用不物化PA、不重建IOB、不启动SIMION。
+原run仅收尾失败时，沿原CLI `--resume-finalization --run-id <原run_id>`读取run外小Result，
+不能把此动作当作新Fly或改变父终态。三臂执行完成与有无分辨率增益分别输出；该对照不是几何、
+网格、步长或分辨率资格认证。
+
+`native_stage_completion.append_native_stage_completion`将原项目receipt投影为现有公共owner的进程与释放事实，Candidate与补偿消费者共同使用；它不启动进程或创建资源账本。`candidate_source_closure.derive_candidate_source_closure`只在受保护的显式终态父证据充分时派生干净源码闭包，不执行或复制父缓存。

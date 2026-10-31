@@ -461,3 +461,42 @@ COMSOL／SIMION 阶段失效；编排入口的报告或收尾文字变化可复�
 ### 冻结 Lua 原生路径运输
 
 受管 Candidate builder在实际Lua脚本argv达到Windows MAX_PATH边界时，沿既有执行alias运输明确冻结代码根；执行位置取本run配置已冻结的`paths.execution_root`，不随今天环境漂移，不复制PA或改变持久输入身份。别名及实际脚本后缀在启动前校验；仅已确认writer结束才清理。纯运输回归不代表新Refine/Fly或GUI资格。
+
+## 反射器补偿公开支路的所有者
+
+保留已有三臂电压补偿研究。原`run_compensation.py`不再原位修改父case，也不再维护
+ThreadPoolExecutor、numpy分批或项目私有调度；实际求解参数与固定端点单调拟合保留。
+实际来源必须遵守公共standalone消费边界；已发布native family的完整copy不能证明关联解除。
+Program和
+拟合profile在Fly前冻结，三臂仅使用进程局部环境和既有adjustable开关，批次间不覆盖科学文件。
+正式首batch属于本次科学群，公共观测后保留；恢复沿公共whole-unit manifest核验与固定分区
+调度，分析失败不重飞。所有小科学输入和原始完成事实随新run发布，父run终态与bytes不改。
+
+默认N1000不变；显式N100消费父已封存ION；不能将结果升格为精度或性能资格。
+原standalone缓存缺失时，显式`--numerics-path`由既有producer在同一个新owner中准备实际四实例
+runtime，保留fractional ground语义。粗网格作者输入仅改变离散设置；真实几何/电压/原N100源不改。
+`SourceIonPath`经原verified-copy边界复制冻结ION，默认producer不传参数仍生成原源。
+父已发布native family不被vendor打开；旧逐PA copy、materialize receipt、重复IOB动作已删除。
+producer返回原生完成receipt和实际Program/ION/IOB绑定；补偿与candidate共同消费项目
+`native_stage_completion`窄适配，原始错误和receipt次错、未知writer继续保留，资源仍由公共owner释放。
+粗producer/三臂普通功能仍在验收；计划预算约309.4MiB不能冒充实测内存或精度资格。
+2026-10-30的N100粗网格运行`20261030_145031__sim__simion__compensation-coarse-n100`
+完成四实例场构建后，父适配误读继承资源退出的null结果，173.183秒以writer未知停止，未Fly；
+原记录和保护保留。`20261030_145701__sim__simion__compensation-coarse-n100-r2`越过该断点，
+但冻结Lua路径长261字符时原生验证无法打开文件，许可正常释放并发布failed终态，仍未Fly。
+继承退出合同已有真实公共函数回归；长Lua输入沿公共执行别名运输，持久IOB/PA仍做规范路径验证。
+随后`20261030_150210__sim__simion__compensation-coarse-n100-r3`越过IOB验证、导出与拟合，
+首批因SIMION预分配容量10不被支持而在实际飞行前退出。已沿既有入口规则改为最少100个预分配槽，
+实际首批仍是原10行源，ID和分区不变；失败前驱不改写。
+`20261030_150614__sim__simion__compensation-coarse-n100-r4`正常完成三臂各N100、各14完整批次，
+每臂100探测记录；公开命令墙钟368.618秒。加速器与反射器响应复用已发布standalone缓存，新增响应Refine为0；
+必要私有controller、ground及IOB准备仍实际执行，不计为零原生运行。仅支持粗网格三臂功能贯通，
+不授予场精度、分辨率或补偿算法性能资格。
+全复用`20261030_152653__sim__simion__compensation-reuse-r2`沿原CLI显式父manifest完成，墙钟63.972秒：
+42完整批次引用、0原生启动、0新IOB/PA，父manifest身份不变，三臂分析均保持完整100 ID。
+首次全复用检查因父代码目录多出17个生产子进程生成的CPython缓存而失败；严格验证器保持拒绝extra。
+后继run只对manifest已绑定且与冻结源码静态编译字段一致的缓存生成独立父闭包派生证据，不执行字节码、
+不删除父文件或覆盖本次源码；未来子进程禁写字节码。缺失或不一致证据继续拒绝。
+运行和恢复命令见[分析API](../analysis/README.md#反射器电压补偿运行与恢复)。
+
+本次公共路径、异常和跨根Result修订以软件行为验收：首轮44项联合运行保留FAIL（52.841秒），其中未受夹具修订影响的28项通过；修正临时仓库Python绑定及旧路径夹具后，两模块16项补验通过（66.344秒）。释放失败保留对象形式的主异常和独立次错，原CLI按原Result定位冻结根恢复，不重飞。上述20261030原生记录仅支持各自冻结实现，不自动变成本次新源码的原生或科学资格。

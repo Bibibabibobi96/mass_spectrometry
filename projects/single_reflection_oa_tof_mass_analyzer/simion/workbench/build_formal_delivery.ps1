@@ -8,6 +8,7 @@ param(
   [string]$CandidateBaselinePath = '',
   [string]$CandidateTextDir = '',
   [string]$ParticleSeed = '',
+  [string]$SourceIonPath = '',
   [Parameter(Mandatory)][string]$CapacitySessionPath,
   [Parameter(Mandatory)][string]$ComponentPlanPath,
   [string]$ProducerHandoffPath = '',
@@ -20,6 +21,39 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+function Copy-ComponentFrozenIon {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Source,[Parameter(Mandatory)][string]$Destination,
+    [Parameter(Mandatory)][string]$RunRoot,[Parameter(Mandatory)][int]$Count,
+    [Parameter(Mandatory)][double]$MassAmu,[Parameter(Mandatory)][int]$Charge,
+    [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot)
+  $sourcePath=(Resolve-Path -LiteralPath $Source).Path
+  $inputRoot=[IO.Path]::GetFullPath((Join-Path $RunRoot 'inputs')).TrimEnd('\','/')+[IO.Path]::DirectorySeparatorChar
+  if(-not[IO.Path]::GetFullPath($sourcePath).StartsWith($inputRoot,[StringComparison]::OrdinalIgnoreCase)){
+    throw 'SourceIonPath must be a frozen input of this managed run.'
+  }
+  $guard=[IO.File]::Open($sourcePath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+  try {
+    $code=@'
+import math,sys
+from pathlib import Path
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.solver_diagnostics import read_ion_table
+path=Path(sys.argv[1]);count=int(sys.argv[2]);mass=float(sys.argv[3]);charge=int(sys.argv[4])
+table=read_ion_table(path)
+assert len(table)==count and table.Ion.tolist()==list(range(1,count+1)), 'frozen source count/IDs differ'
+assert table.MassAmu.eq(mass).all() and table.ChargeState.eq(charge).all(), 'frozen source species differs'
+assert all(math.isfinite(float(v)) for row in path.read_text(encoding='ascii').splitlines() for v in row.split(',')), 'frozen source state is not finite'
+'@
+    Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
+      & $Python -B -c $code $sourcePath ([string]$Count) ($MassAmu.ToString('R',[Globalization.CultureInfo]::InvariantCulture)) ([string]$Charge)
+      if($LASTEXITCODE-ne0){throw 'Frozen SourceIonPath validation failed.'}
+    }
+    # The existing verified-copy API owns byte identity. Do not hash again here.
+    $identity=$null
+    Copy-VerifiedRunInput -Source $sourcePath -Destination $Destination -VerifiedIdentity ([ref]$identity)|Out-Null
+    return $identity
+  } finally {$guard.Dispose()}
+}
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 # Candidate execution freezes this script below runs/<run_id>/inputs/code.  In
@@ -164,6 +198,12 @@ $accelerator = $contract.geometry_derivation.accelerator
 $build = $contract.simion_geometry_build
 $detector = $contract.simion_detector_marker
 $source = $contract.particle_source
+$sourceIonIdentity=$null
+if($SourceIonPath){
+  $sourceIonIdentity=Copy-ComponentFrozenIon -Source $SourceIonPath -Destination (Join-Path $outputFull "oatof_comsol_524amu_gaussian_N$ParticleCount.ion") `
+    -RunRoot $expectedRunRoot -Count $ParticleCount -MassAmu $contract.validation_target.mass_amu `
+    -Charge $contract.validation_target.charge_state -Python $python -RepoRoot $repoRoot
+}
 $voltage = $contract.electrodes_V
 
 function Invoke-OwnedSimionArguments {
@@ -561,6 +601,7 @@ foreach($component in $componentPlan.components){
   $capacitySession=$scope.session
 }
 
+if(-not$SourceIonPath){
 $ionGenerator = Join-Path $PSScriptRoot 'generate_comsol_consistent_ions.ps1'
   foreach ($particleCount in @($ParticleCount)) {
     $ionPath = Join-Path $outputFull "oatof_comsol_524amu_gaussian_N$particleCount.ion"
@@ -572,6 +613,7 @@ $ionGenerator = Join-Path $PSScriptRoot 'generate_comsol_consistent_ions.ps1'
       -CenterYmm $source.center_y_mm -CenterZmm $source.center_z_mm `
       -Seed $particleSeedValue -Output $ionPath | Out-Null
   }
+}
 
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\SIMION_DELIVERY_CHECKLIST.md') `
   -Destination (Join-Path $outputFull 'SIMION_DELIVERY_CHECKLIST.md')
@@ -649,6 +691,7 @@ Write-RunJson -Path $runtimeReceipt -Depth 80 -Value @{
   simion_executable_sha256=(Get-FileHash -LiteralPath $SimionExe -Algorithm SHA256).Hash;
   components=$componentReceipts;files=$runtimeFiles;published_native_members_opened=$false;
   canonical_iob_verified=$true;execution_alias_removed=$true;
+  source_ion=$sourceIonIdentity;source_ion_reused=[bool]$SourceIonPath;
   iob=@{path=$iobOutput;bytes=(Get-Item -LiteralPath $iobOutput).Length;sha256=(Get-FileHash -LiteralPath $iobOutput -Algorithm SHA256).Hash}
 }
 $shaPath = Join-Path $outputFull 'SHA256SUMS.csv'
