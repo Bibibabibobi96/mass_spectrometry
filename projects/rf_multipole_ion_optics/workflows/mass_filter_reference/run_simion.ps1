@@ -93,7 +93,6 @@ try {
     $frozenSourceIon = Join-Path $inputDir 'source_particles.ion'
     $frozenBaseline = Join-Path $inputDir 'baseline.json'
     $frozenMode = Join-Path $inputDir 'mode.json'
-    $frozenResolved = Join-Path $inputDir 'resolved_design.json'
     $frozenInterface = Join-Path $inputDir 'interface_contract.json'
     $frozenNumericalContract = Join-Path $inputDir 'simion_solver_numerics.json'
     $particlePath = Join-Path $inputDir 'mass_scan_particles.ion'
@@ -112,17 +111,20 @@ try {
         -Destination $frozenBaseline | Out-Null
     Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'config\modes\quadrupole_mass_filter_reference.json') `
         -Destination $frozenMode | Out-Null
-    Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'variants\quadrupole\config\resolved_design_mass_filter.json') `
-        -Destination $frozenResolved | Out-Null
-    Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'variants\quadrupole\config\interface_contract.json') `
-        -Destination $frozenInterface | Out-Null
-    Copy-VerifiedRunInput -Source ([IO.Path]::GetFullPath($SolverNumericsContractPath)) `
-        -Destination $frozenNumericalContract | Out-Null
-
     $frozenPythonSupport = Copy-VerifiedRunInput `
         -Source (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') `
         -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
     . $frozenPythonSupport
+    $publishedDesignFreshness = New-RfPublishedDesignFreshnessPackage `
+        -Python $python -SourceRoot $repoRoot `
+        -SnapshotRoot (Join-Path $inputDir 'published_design_snapshot') -Profile mass_filter
+    $frozenResolved = $publishedDesignFreshness.resolved_path
+    $publishedDesignFreshnessPath = Join-Path $inputDir 'published_design_freshness.json'
+    Write-RunJson -Path $publishedDesignFreshnessPath -Value $publishedDesignFreshness -Depth 16
+    Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'variants\quadrupole\config\interface_contract.json') `
+        -Destination $frozenInterface | Out-Null
+    Copy-VerifiedRunInput -Source ([IO.Path]::GetFullPath($SolverNumericsContractPath)) `
+        -Destination $frozenNumericalContract | Out-Null
     $analysisModule = 'projects.rf_multipole_ion_optics.workflows.mass_filter_reference.evaluate_simion'
     $analysisFiles = @(
         'projects\rf_multipole_ion_optics\workflows\__init__.py',
@@ -292,6 +294,7 @@ try {
         inputs = [ordered]@{
             frozen_python_package_support = $frozenPythonSupport
             baseline = $frozenBaseline
+            published_design_freshness = $publishedDesignFreshnessPath
             resolved_design = $frozenResolved
             interface_contract = $frozenInterface
             mode = $frozenMode

@@ -464,9 +464,7 @@ class ExecutionCompilerTests(unittest.TestCase):
         request["target"]["mode"] = "quadrupole_transport_interface_readiness"
         result = self.compile_request(request)
         self.assertEqual(result["status"], "NEEDS_RUNTIME_INPUTS")
-        ready = self.compile_request(
-            request,
-            {
+        bindings = {
                 "comsol_particle_source_path": "C:/data/source.csv",
                 "simion_particle_source_path": "C:/data/source_canonical.csv",
                 "particle_bundle_metadata_path": "C:/data/bundle.json",
@@ -474,8 +472,18 @@ class ExecutionCompilerTests(unittest.TestCase):
                 "particle_distribution_path": "C:/data/distribution.json",
                 "simion_solver_numerics_contract_path": "C:/data/numerics.json",
                 "operating_point_id": "official_100amu_2eV",
-            },
-        )
+            }
+        with tempfile.TemporaryDirectory() as directory:
+            limits = Path(directory)/"limits.json"
+            limits.write_text(json.dumps(dict(wall_clock_seconds=17, transient_run_directory_bytes=8192,
+                                             process_tree_working_set_bytes=4096, minimum_system_available_memory_bytes=1024)), encoding="utf-8")
+            missing = self.compile_request(request, bindings)
+            self.assertEqual(missing["status"], "NEEDS_RUNTIME_INPUTS")
+            self.assertIn("comsol_execution_limits_path", ", ".join(missing["blockers"]))
+            bindings["comsol_execution_limits_path"] = str(limits)
+            ready = self.compile_request(request, bindings)
+            argv = ready["commands"][1]["argv"]
+            self.assertEqual(argv[argv.index("-LimitsPath")+1], str(limits))
         self.assertEqual(ready["status"], "EXECUTION_READY")
         self.assertIn("C:/data/source.csv", ready["commands"][1]["argv"])
         self.assertEqual(len(ready["commands"]), 4)

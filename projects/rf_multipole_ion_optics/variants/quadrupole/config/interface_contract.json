@@ -71,7 +71,8 @@
       "alive",
       "transmitted",
       "lost",
-      "timeout"
+      "timeout",
+      "unknown"
     ],
     "terminal_reason": [
       "none",
@@ -81,7 +82,10 @@
       "backward_escape",
       "timeout",
       "solver_stop",
-      "unknown"
+      "unknown",
+      "time_window_end",
+      "ended_without_loss_evidence",
+      "terminal_cause_unresolved"
     ]
   },
   "comparison_policy": {

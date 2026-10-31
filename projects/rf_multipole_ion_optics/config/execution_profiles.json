@@ -153,7 +153,8 @@
         "particle_source_family_path",
         "particle_distribution_path",
         "simion_solver_numerics_contract_path",
-        "operating_point_id"
+        "operating_point_id",
+        "comsol_execution_limits_path"
       ],
       "steps": [
         {
@@ -195,7 +196,9 @@
             "-OperatingPoint",
             "{operating_point_id}",
             "-PythonExe",
-            "{python_exe}"
+            "{python_exe}",
+            "-LimitsPath",
+            "{comsol_execution_limits_path}"
           ]
         },
         {

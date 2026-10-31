@@ -54,6 +54,8 @@ def derive(raw_metadata: dict[str, Any], state_rows: list[dict[str, str]]) -> di
             "metrics_authority": "python_canonical_particle_state",
             "particles": len(source_ids),
             "hits": len(transmitted),
+            "terminal_status_counts": {status: sum(row["status"] == status for row in terminal)
+                                       for status in ("transmitted", "lost", "timeout", "unknown")},
             "transmission": len(transmitted) / len(source_ids),
             "exit_rms_radius_mm": (
                 math.sqrt(sum(value * value for value in numeric_radii) / len(numeric_radii))

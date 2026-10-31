@@ -385,3 +385,14 @@ IP自身提供的裸八杆导引与本项目八极杆保持不同来源，不能
 圆杆 L2 传输使用已认证 field-screen run 的冻结设计、合同与采样结果，要求与当前解析设计的真实杆阵列、坐标、r0 和极数一致，并仅采用杆半径比例严格匹配且通过场筛选检查的唯一候选；缺失或不匹配时拒绝，不以最优候选替代既定几何。场筛选为带接地外边界的二维场，传输使用其有限余弦谐波沿 z 均匀延拓，不代表三维真实求解或科学资格。当前 octupole 的既有扫参不含基准设计比例 0.5，需要匹配该设计的已认证场数据。
 该近似使用 20 mm 接地边界，不等同于裸 enclosure 的完整场；传输截断为有限余弦谐波，不使用正弦谐波。
 L1/L2 传输将身份输入冻结到本次 run；圆杆 L2 在冻结后核对场源 manifest 的记录并直接分析冻结样本，验证所有选定比例样本与真实杆阵列及完整合同采样网格一致。
+
+
+### 接口正常链的冻结执行与收尾
+
+`workflows/interface_readiness/run_comsol.ps1` 经公共运行 owner 执行；正常入口显式接收 `-LimitsPath`（公共 native Limits 的 JSON），并冻结该输入及由现主机 policy 派生的实际预算。机器 profile 的 `comsol_execution_limits_path` 为必填，缺失时不能编译为可执行计划。源码根、产物根、执行根由现公共路径上下文一次解析；持久配置保留清理执行 alias 后仍可消费的输入和包路径。
+
+发布设计的新鲜度检查由 `New-RfPublishedDesignFreshnessPackage` 从所选项目纯解析器冻结并执行。接口 COMSOL/SIMION 和质量过滤 SIMION 消费实际检查后的 resolved 文件，不在检查后回退当前默认值。COMSOL 后的 metrics 与粒子状态合同同样从冻结 Python 包执行；GUI 读取本次冻结 config 指定的设计和接口，loader 只接受现 resolved schema 3。
+
+原 CLI 的 `-ResumeFinalization -ResultPath <稳定小Result>` 仅继续公共 owner 收尾，不重新求场或飞行。该模式只允许恢复参数及 Python/RunId；科学参数不能被静默忽略。native/GUI 的实际 completion receipt 进入公共聚合，继承的同 token 去重，writer 未知仍保留保护。
+
+确定性四极杆和有限三维 solver 使用同一项目终态分类器。全局时间窗结束且晚出生粒子尚未获得完整运输时长时记 `unknown`，无终止原因不等于 electrode loss；原接受面和几何拒绝事实不变。canonical 状态及 metrics 分开报告 accepted/lost/timeout/unknown，原母群分母、ID、出生/终态时钟及命中率保持不变。软件接线、原生求解、GUI验收与科学资格分别报告。

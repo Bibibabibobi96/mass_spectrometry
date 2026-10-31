@@ -2,9 +2,20 @@ reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 testDir = fileparts(mfilename('fullpath'));
 projectRoot = fileparts(fileparts(fileparts(testDir)));
 addpath(projectRoot);
-paths = rf_quadrupole_paths();
-contract = load_rf_quadrupole_contract();
-interface = jsondecode(fileread(fullfile(projectRoot,'variants', 'quadrupole', 'config','interface_contract.json')));
+runConfigPath=getenv('RFQUAD_RUN_CONFIG');
+assert(~isempty(runConfigPath)&&isfile(runConfigPath),'rfquad:GuiFrozenInputs', ...
+    'RFQUAD_RUN_CONFIG must identify the original frozen GUI task inputs.');
+runConfig=jsondecode(fileread(runConfigPath));
+assert(strcmp(runConfig.role,'rf_quadrupole_comsol_run_config')&& ...
+    strcmp(runConfig.project,'rf_multipole_ion_optics')&& ...
+    strcmp(runConfig.workflow_id,'transport_interface_readiness'), ...
+    'rfquad:GuiFrozenInputs','GUI task inputs belong to another workflow.');
+assert(isfield(runConfig,'inputs')&&isfield(runConfig.inputs,'resolved_design')&& ...
+    isfield(runConfig.inputs,'interface_contract')&& ...
+    isfile(runConfig.inputs.resolved_design)&&isfile(runConfig.inputs.interface_contract), ...
+    'rfquad:GuiFrozenInputs','Frozen GUI design or interface contract is missing.');
+contract=load_rf_quadrupole_contract(runConfig.inputs.resolved_design);
+interface=jsondecode(fileread(runConfig.inputs.interface_contract));
 g = contract.geometry_mm;
 modelPath = getenv('RFQUAD_COMSOL_MODEL_PATH');
 assert(~isempty(modelPath) && isfile(modelPath), ...
@@ -47,7 +58,30 @@ assert(abs(model.param.evaluate('z_acceptance')*1e3 - interface.planes.census.z_
 cpt = model.component('comp1').physics('cpt');
 featureTags = cell(cpt.feature.tags());
 releaseTags = featureTags(startsWith(featureTags, 'rel'));
-assert(numel(releaseTags) == expectedParticles, 'GUI-visible release-node count differs from the run config.');
+runRoot=getenv('RFQUAD_GUI_RUN_ROOT');assert(~isempty(runRoot)&&isfolder(runRoot),'Explicit persistent GUI run base required.');
+metadata=jsondecode(fileread(getenv('RFQUAD_SOLVER_RAW_METADATA_PATH')));
+nativeOrder=metadata.native_order(:);assert(isequal(sort(nativeOrder),(1:expectedParticles)'),'GUI source mapping is not a full permutation.');
+assert(numel(releaseTags)==metadata.release_group_count,'GUI grouped release count differs from actual source plan.');
+% Validate saved cold solution BEFORE rebinding/importing any execution source.
+[~,~,sourceTransportTolerance]=readAndValidateGuiSource(model,metadata,nativeOrder,expectedParticles);
+fprintf(fid,'SAVED_COLD_SOURCE_INITIALIZATION_VALIDATED=%d TRANSPORT_TOLERANCE_MM_AND_M_S=%.17g\n',expectedParticles,sourceTransportTolerance);
+fprintf(fid,'GUI_CANONICAL_RUN_BASE=%s\n',runRoot);
+importedCount=0;
+for releaseIndex=1:numel(releaseTags)
+ release=cpt.feature(releaseTags{releaseIndex});entry=metadata.release_files(releaseIndex);
+ relative=strrep(char(entry.relative_path),'\','/');
+ assert(~isempty(regexp(relative,'^runtime/particle_[0-9]+[.]txt$','once')),'Frozen release role path is invalid.');
+ persistentReleasePath=fullfile(runRoot,relative);data=readmatrix(persistentReleasePath,'FileType','text','Delimiter',char(9));
+ assert(size(data,2)==6&&all(isfinite(data),'all'),'GUI release has invalid 6D.');
+ rows=nativeOrder(importedCount+(1:size(data,1)));assert(isequal(rows(:),entry.source_rows(:)),'Frozen group source order differs.');expected=[metadata.source_initial_position_mm(rows,:) metadata.source_initial_velocity_m_s(rows,:)];
+ assert(isequal(data,expected),'GUI release source 6D differs.');
+ expectedBirth=metadata.source_birth_s(rows);assert(entry.birth_s==expectedBirth(1),'Frozen group birth differs.');assert(all(expectedBirth==expectedBirth(1)),'GUI release merged different exact births.');
+ assert(strcmp(char(release.getString('rt')),sprintf('%.17g[s]',expectedBirth(1))),'GUI release clock differs.');
+ release.set('Filename',persistentReleasePath);release.importData();
+ fprintf(fid,'SOURCE_FILE_REBIND=loaded_copy_only RELEASE_TAG=%s CANONICAL_PATH=%s\n',releaseTags{releaseIndex},persistentReleasePath);
+ importedCount=importedCount+size(data,1);
+end
+assert(importedCount==expectedParticles,'GUI imported mother population differs.');
 assert(~any(contains(lower(string(featureTags)), 'coll')), ...
     'A collision feature is present in the no-collision candidate.');
 assert(any(strcmp(featureTags, 'ef1')), 'GUI-visible RF Electric Force is absent.');
@@ -88,10 +122,11 @@ afterParticle = joinJavaStrings(model.sol.tags);
 assert(strcmp(afterParticle, initialSolutions), ...
     'std2 GUI Compute generated an unexpected solver sequence.');
 
-pd = mphparticle(model, 'dataset', 'pdset1');
-x = squeeze(pd.p(:,:,1));
-y = squeeze(pd.p(:,:,2));
-z = squeeze(pd.p(:,:,3));
+[pd,timeVector,sourceTransportTolerance]=readAndValidateGuiSource(model,metadata,nativeOrder,expectedParticles);
+fprintf(fid,'GUI_COMPUTED_SOURCE_INITIALIZATION_VALIDATED=%d TRANSPORT_TOLERANCE_MM_AND_M_S=%.17g\n',expectedParticles,sourceTransportTolerance);
+x = squeeze(pd.position_mm(:,:,1));
+y = squeeze(pd.position_mm(:,:,2));
+z = squeeze(pd.position_mm(:,:,3));
 radial = sqrt(x.^2 + y.^2);
 assert(size(z,2) == expectedParticles, 'GUI Compute did not preserve the configured particle source.');
 detectorZ = interface.planes.census.z_mm;
@@ -102,7 +137,7 @@ for particle = 1:size(z,2)
     sample = find(z(:,particle) >= detectorZ-1e-6, 1, 'first');
     if ~isempty(sample) && radial(sample,particle) <= detectorRadius
         hits(particle) = true;
-        arrival(particle) = pd.t(sample)*1e6;
+        arrival(particle) = timeVector(sample)*1e6;
     end
 end
 fprintf(fid, 'PARTICLES=%d\n', size(z,2));
@@ -222,5 +257,34 @@ function items = diagnosticTags(values)
 items = cell(1, length(values));
 for idx = 1:length(values)
     items{idx} = char(values(idx));
+end
+end
+
+function [pd,timeVector,sourceTransportTolerance]=readAndValidateGuiSource(model,metadata,nativeOrder,expectedParticles)
+solutionInfo=mphsolinfo(model,'soltag','sol2');timeVector=union(solutionInfo.solvals(:),metadata.source_birth_s(:));
+assert(~isempty(timeVector)&&all(isfinite(timeVector))&&all(diff(timeVector)>0),'GUI solution clock invalid.');
+% Same explicit unit expressions as the validated production window reader.
+expressions={'cpt.pidx','x/1[mm]','y/1[mm]','z/1[mm]', ...
+ 'cpt.vx/1[m/s]','cpt.vy/1[m/s]','cpt.vz/1[m/s]'};
+data=mphparticle(model,'dataset','pdset1','t',timeVector','expr',expressions,'dataonly','on');
+assert(isstruct(data)&&all(isfield(data,{'d1','d2','d3','d4','d5','d6','d7'})),'GUI explicit-unit particle arrays missing.');
+assert(size(data.d1,1)==numel(timeVector),'GUI particle time axis differs from explicit query clock.');
+for fieldIndex=2:7
+ assert(isequal(size(data.(sprintf('d%d',fieldIndex))),size(data.d1)),'GUI explicit-unit 6D/pidx shapes differ.');
+end
+pd=struct('position_mm',cat(3,data.d2,data.d3,data.d4), ...
+ 'velocity_m_s',cat(3,data.d5,data.d6,data.d7),'native_pidx',data.d1);
+assert(size(pd.position_mm,2)==expectedParticles,'GUI native complete mother count differs.');
+assert(isequal(isfinite(pd.position_mm),isfinite(pd.velocity_m_s))&&any(isfinite(pd.velocity_m_s),'all'),'GUI full active 6D required.');
+sourceTransportTolerance=1e-12; % Existing six-column source readback budget: mm and m/s, not integration error.
+for native=1:expectedParticles
+ original=nativeOrder(native);birth=metadata.source_birth_s(original);sourceSample=find(timeVector==birth,1);
+ assert(~isempty(sourceSample),'Authoritative exact birth missing from GUI query clock.');
+ sourcePosition=reshape(pd.position_mm(sourceSample,native,:),1,3);sourceVelocity=reshape(pd.velocity_m_s(sourceSample,native,:),1,3);
+ assert(all(isfinite(sourcePosition))&&all(isfinite(sourceVelocity)),'GUI source initialization cannot be validated: exact-birth active 6D unknown.');
+ assert(max(abs(sourcePosition-metadata.source_initial_position_mm(original,:)))<=sourceTransportTolerance,'GUI actual source position differs from frozen transport budget.');
+ assert(max(abs(sourceVelocity-metadata.source_initial_velocity_m_s(original,:)))<=sourceTransportTolerance,'GUI actual source velocity differs from frozen transport budget.');
+ assert(~any(isfinite(pd.position_mm(1:sourceSample-1,native,:)),'all'),'GUI particle exists before authoritative birth.');
+ ids=pd.native_pidx(:,native);ids=ids(isfinite(ids));assert(~isempty(ids)&&all(ids==native),'GUI native pidx differs.');
 end
 end

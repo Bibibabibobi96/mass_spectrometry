@@ -20,6 +20,20 @@ class ComsolParticleStateMetricsTests(unittest.TestCase):
         self.assertEqual(result["mean_output_energy_eV"], 6.0)
         self.assertAlmostEqual(result["output_energy_standard_deviation_eV"], 2**0.5)
 
+    def test_unknown_loss_timeout_keep_full_mother_denominator(self) -> None:
+        rows = []
+        for particle_id, status in enumerate(("transmitted", "unknown", "lost", "timeout"), 1):
+            for event in ("source", "terminal"):
+                rows.append(dict(particle_id=str(particle_id), event=event,
+                                 status="alive" if event == "source" else status,
+                                 radial_position_mm="0", kinetic_energy_eV="2"))
+        result = derive({"role": "rf_quadrupole_comsol_raw_solver_metadata"}, rows)
+        self.assertEqual(result["particles"], 4)
+        self.assertEqual(result["hits"], 1)
+        self.assertEqual(result["transmission"], .25)
+        self.assertEqual(result["terminal_status_counts"], {"transmitted": 1, "lost": 1, "timeout": 1, "unknown": 1})
+        self.assertEqual(sum(result["terminal_status_counts"].values()), result["particles"])
+
     def test_rejects_terminal_rows_that_do_not_close_source_cohort(self) -> None:
         rows = [{"particle_id": "1", "event": "source", "status": "alive", "radial_position_mm": "0", "kinetic_energy_eV": "2"}]
         with self.assertRaisesRegex(ValueError, "do not close"):

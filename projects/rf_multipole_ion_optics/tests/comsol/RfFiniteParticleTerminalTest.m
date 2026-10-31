@@ -2,6 +2,7 @@ classdef RfFiniteParticleTerminalTest < matlab.unittest.TestCase
  properties (TestParameter)
   ending=struct('finalFinite',true,'endedBeforeFinal',false);
   rejection=struct('none','','rod','usable_radius_exceeded','port','exit_port_envelope_loss');
+  deterministicCase=struct('lateWindowEnd','late','endedUnknown','ended','accepted','accepted','radialRejected','radial');
   exportCase=struct('windowEnd','windowEnd','rejectedWindowEnd','rejected','endedUnknown','ended','accepted','accepted');
  end
  methods (TestClassSetup)
@@ -13,6 +14,7 @@ classdef RfFiniteParticleTerminalTest < matlab.unittest.TestCase
    root=fileparts(fileparts(fileparts(mfilename('fullpath'))));
    folder=testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
    materializeActualExportFunctions(fullfile(root,'comsol','export_finite_3d_particle_outputs.m'),folder.Folder);
+   materializeActualExportFunctions(fullfile(root,'comsol','solve_deterministic_rf_quadrupole_particles.m'),folder.Folder,{'particleStateRow'});
    testCase.applyFixture(matlab.unittest.fixtures.PathFixture(folder.Folder));
    testCase.addTeardown(@clearExportFunctions);
   end
@@ -58,6 +60,44 @@ classdef RfFiniteParticleTerminalTest < matlab.unittest.TestCase
    testCase.verifyError(@()classify_finite_particle_terminal(recordFixture(true),true,'usable_radius_exceeded'), ...
     'rf:TerminalAcceptance');
   end
+  function deterministicActualTerminalCsvKeepsUnknownAndOriginalClock(testCase,deterministicCase)
+   root=fileparts(fileparts(fileparts(mfilename('fullpath'))));
+   text=fileread(fullfile(root,'comsol','solve_deterministic_rf_quadrupole_particles.m'));
+   first=strfind(text,'    finalSample=terminalIndex(i);');last=strfind(text,[newline 'end' newline 'stateNames=']);
+   terminalBody=text(first(1):last(1)-1);
+   i=3;ions=zeros(3,11);ions(:,1)=79.5;source=struct('mass_amu',100);
+   record=recordFixture(true);t=[79.5;79.75;80]*1e-6;
+   record.terminal_observation=struct('solution_end_index',3,'solution_end_time_s',80e-6, ...
+    'last_finite_solution_index',3,'last_finite_time_s',80e-6,'finite_at_solution_end',true, ...
+    'finite_track_ended',false,'native_termination_cause','not_observed');
+   if strcmp(deterministicCase,'ended')
+    t=t(1:2);record.terminal_observation.last_finite_solution_index=2;record.terminal_observation.last_finite_time_s=t(end);
+    record.terminal_observation.finite_at_solution_end=false;record.terminal_observation.finite_track_ended=true;
+   end
+   vx=zeros(size(t));vy=vx;vz=ones(size(t));terminalX=zeros(1,3);terminalY=terminalX;terminalZ=10*ones(1,3);
+   if strcmp(deterministicCase,'radial'),terminalX(i)=21;end
+   terminalIndex=numel(t)*ones(1,3);hit=false(1,3);hit(i)=strcmp(deterministicCase,'accepted');
+   enclosure=struct('outer_half_width_mm',20);maxRodRadius=zeros(1,3);rfFrequencyHz=1.1e6;rfPhaseRad=0.;
+   stateRows=cell(0,17);terminalOutcomes=cell(3,1);
+   eval(terminalBody);
+   namesStart=strfind(text,"stateNames={'particle_id'");
+   writeLine="writetable(cell2table(stateRows,'VariableNames',stateNames),particleStatePath);";
+   writeStart=strfind(text,writeLine);writer=text(namesStart(1):writeStart(1)+strlength(writeLine)-1);
+   namesEnd=strfind(text(namesStart(1):end),';');eval(text(namesStart(1):namesStart(1)+namesEnd(1)-1));
+   interface=struct('particle_state_columns',{stateNames});
+   folder=testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);particleStatePath=fullfile(folder.Folder,'state.csv');
+   eval(writer);rows=readtable(particleStatePath,'TextType','string');
+   expectedStatus='unknown';expectedReason='time_window_end';
+   if strcmp(deterministicCase,'accepted'),expectedStatus='transmitted';expectedReason='acceptance_surface';end
+   if strcmp(deterministicCase,'ended'),expectedReason='ended_without_loss_evidence';end
+   testCase.verifyEqual(rows.status,string(expectedStatus));testCase.verifyEqual(rows.terminal_reason,string(expectedReason));
+   testCase.verifyEqual(rows.particle_id,i);testCase.verifyEqual(rows.time_us,t(end)*1e6,'AbsTol',1e-9);
+   testCase.verifyEqual(rows.elapsed_time_us,(t(end)-ions(i,1)*1e-6)*1e6,'AbsTol',1e-9);
+   testCase.verifyEqual(rows.rf_phase_rad,mod(2*pi*rfFrequencyHz*t(end),2*pi),'AbsTol',1e-9);
+   if strcmp(deterministicCase,'radial')
+    testCase.verifyEqual(terminalOutcomes{i}.acceptance_status,'rejected');testCase.verifyEqual(terminalOutcomes{i}.acceptance_reason,'radial_escape');
+   end
+  end
   function legacyMissingObservationCannotInventCause(testCase)
    testCase.verifyError(@()classify_finite_particle_terminal(struct(),false),'rf:TerminalObservation');
   end
@@ -80,10 +120,10 @@ status='unresolved';reason='none';
 if ~isempty(rejection),status='rejected';reason=rejection;end
 end
 
-function materializeActualExportFunctions(sourcePath,folder)
+function materializeActualExportFunctions(sourcePath,folder,names)
 % A thin ABI fixture: copy exact pure production exporter bodies, not their logic.
 text=fileread(sourcePath);starts=regexp(text,'(?m)^function[^\r\n]*','start');
-names={'analyze_particle_case','write_canonical_particle_state','canonical_state_row','interpolate_particle_plane'};
+if nargin<3,names={'analyze_particle_case','write_canonical_particle_state','canonical_state_row','interpolate_particle_plane'};end
 for index=1:numel(names)
  matched=false;
  for section=1:numel(starts)
@@ -100,7 +140,7 @@ end
 clearExportFunctions;
 end
 function clearExportFunctions
-clear analyze_particle_case write_canonical_particle_state canonical_state_row interpolate_particle_plane
+clear analyze_particle_case write_canonical_particle_state canonical_state_row interpolate_particle_plane particleStateRow
 end
 function [record,source,expected]=exportFixture(kind)
 record=recordFixture(true);record.time_s=[0;1;2];record.solution_index=[1;2;3];

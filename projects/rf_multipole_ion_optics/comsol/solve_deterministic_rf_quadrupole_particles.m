@@ -442,7 +442,7 @@ end
 
 if writeDetailedOutputs,rawExport.run;end
 
-stateRows=cell(0,17);
+stateRows=cell(0,17);terminalOutcomes=cell(nP,1);
 for i=1:nP
     record=particleRecords{i};t=record.time_s;x=record.position_mm(:,1);y=record.position_mm(:,2);z=record.position_mm(:,3);
     vx=record.velocity_m_s(:,1);vy=record.velocity_m_s(:,2);vz=record.velocity_m_s(:,3);
@@ -464,13 +464,15 @@ for i=1:nP
 
     finalSample=terminalIndex(i); terminalState=struct('t_s',t(finalSample),'x_mm',terminalX(i),'y_mm',terminalY(i), ...
         'z_mm',terminalZ(i),'vx_m_s',vx(finalSample),'vy_m_s',vy(finalSample),'vz_m_s',vz(finalSample));
-    terminalRadius=hypot(terminalX(i),terminalY(i)); terminalStatus='lost'; terminalReason='electrode';
-    if hit(i), terminalStatus='transmitted'; terminalReason='acceptance_surface';
-    elseif terminalState.t_s-ions(i,1)*1e-6 >= maximumTimeUs*1e-6-1e-12
-        terminalStatus='timeout'; terminalReason='timeout';
-    elseif terminalZ(i)<0, terminalReason='backward_escape';
-    elseif terminalRadius>enclosure.outer_half_width_mm, terminalReason='radial_escape';
+    terminalRadius=hypot(terminalX(i),terminalY(i));rejectionReason='';
+    if ~hit(i)
+        if terminalZ(i)<0,rejectionReason='backward_escape';
+        elseif terminalRadius>enclosure.outer_half_width_mm,rejectionReason='radial_escape';
+        end
     end
+    outcome=classify_finite_particle_terminal(record,hit(i),rejectionReason);
+    terminalStatus=outcome.status;terminalReason=outcome.reason;
+    outcome.particle_id=i;terminalOutcomes{i}=outcome;
     stateRows(end+1,:)=particleStateRow(i,'terminal',terminalStatus,terminalReason,terminalState,ions(i,1)*1e-6,rfFrequencyHz,rfPhaseRad, ...
         source.mass_amu,terminalRadius,maxRodRadius(i)); %#ok<AGROW>
 end
@@ -481,6 +483,7 @@ assert(isequal(stateNames(:),cellstr(string(interface.particle_state_columns(:))
 writetable(cell2table(stateRows,'VariableNames',stateNames),particleStatePath);
 
 % The solved model was already persisted before extraction; no second save is needed.
+result.terminal_outcomes=terminalOutcomes;
 rawMetadataPath=fullfile(resultsOutputDir,'solver_raw_metadata.json'); fid=fopen(rawMetadataPath,'w'); fprintf(fid,'%s',jsonencode(result,'PrettyPrint',true)); fclose(fid);
 if writeDetailedOutputs
     trajectoryPath=fullfile(resultsOutputDir,'trajectory_samples.csv');

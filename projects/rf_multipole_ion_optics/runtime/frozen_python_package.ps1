@@ -272,3 +272,79 @@ print(json.dumps({
         module_stdout = $moduleOutput
     }
 }
+
+function New-RfPublishedDesignFreshnessPackage {
+    <# Check only the requested fixed publication using frozen governance and its original checker. #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Python,
+        [Parameter(Mandatory)][string]$SourceRoot,
+        [Parameter(Mandatory)][string]$SnapshotRoot,
+        [Parameter(Mandatory)][ValidateSet('interface','mass_filter')][string]$Profile
+    )
+    $sourceFiles = @(
+        'common/contracts/artifact_identity_archive.py',
+        'common/contracts/artifact_naming.py',
+        'common/contracts/build_project_registry.py',
+        'common/contracts/file_identity.py',
+        'common/contracts/machine_contracts.py',
+        'common/contracts/particle_count_policy.py',
+        'common/contracts/particle_physics.py',
+        'common/ion_release/__init__.py',
+        'common/ion_release/continuous_axial_volume.py',
+        'common/ion_release/cylinder.py',
+        'common/ion_release/mt19937_disk_cone_rf_phase.py',
+        'common/ion_release/release.py',
+        'projects/rf_multipole_ion_optics/analysis/resolve_contract.py',
+        'projects/rf_multipole_ion_optics/core/__init__.py',
+        'projects/rf_multipole_ion_optics/core/axial_acceleration.py',
+        'projects/rf_multipole_ion_optics/core/compile_design_request.py',
+        'projects/rf_multipole_ion_optics/core/connector_geometry.py',
+        'projects/rf_multipole_ion_optics/core/family_contract.py',
+        'projects/rf_multipole_ion_optics/core/interface_geometry.py',
+        'projects/rf_multipole_ion_optics/core/round_rod_geometry.py',
+        'projects/rf_multipole_ion_optics/runtime/design_profile.py',
+        'projects/rf_multipole_ion_optics/runtime/particle_source_preflight.py',
+        'projects/rf_multipole_ion_optics/runtime/runtime_profile.py',
+        'projects/rf_multipole_ion_optics/runtime/simion_numerics.py'
+    )
+    # Ask the frozen original PROFILES authority; do not maintain another profile map.
+    $sourcePackage = New-FrozenPythonPackage -SourceRoot $SourceRoot `
+        -CodeRoot $SnapshotRoot -RelativePaths $sourceFiles
+    $selectionScript = @'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1]).resolve()
+sys.path.insert(0, str(root))
+from projects.rf_multipole_ion_optics.analysis import resolve_contract
+assert pathlib.Path(resolve_contract.__file__).resolve().is_relative_to(root)
+profile = resolve_contract.PROFILES[sys.argv[2]]
+print(json.dumps({key: path.relative_to(root).as_posix() for key, path in profile.items()}))
+'@
+    $selectionText = (& $Python -I -B -c $selectionScript $SnapshotRoot $Profile | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) {throw 'Frozen RF publication resource selection failed.'}
+    $selection = $selectionText | ConvertFrom-Json
+    $resources = @($selection.PSObject.Properties | ForEach-Object {[string]$_.Value}) + @(
+        'projects/rf_multipole_ion_optics/config/contracts/family_contract.json'
+    )
+    # Existing schema_registry loads its complete shared metadata set.
+    $resources += @(Get-ChildItem -LiteralPath (Join-Path $SourceRoot 'common/contracts/schemas') `
+        -Filter '*.schema.json' -File | ForEach-Object {
+            [IO.Path]::GetRelativePath($SourceRoot,$_.FullName).Replace('\','/')
+        })
+    $resourcePackage = New-FrozenPythonPackage -SourceRoot $SourceRoot `
+        -CodeRoot $SnapshotRoot -RelativePaths @($resources | Sort-Object -Unique)
+    $package = $sourcePackage
+    $package.files = @($sourcePackage.files) + @($resourcePackage.files)
+    $check = Invoke-IsolatedFrozenPythonModule -Python $Python -Package $package `
+        -Module 'projects.rf_multipole_ion_optics.analysis.resolve_contract' `
+        -Arguments @('--profile',$Profile,'--check') `
+        -DistributionNames @('jsonschema','referencing') `
+        -RequiredModuleNames @('projects.rf_multipole_ion_optics.analysis.resolve_contract') `
+        -ForbiddenRoots @($SourceRoot)
+    [pscustomobject]@{
+        profile = $Profile
+        package = $package
+        execution = $check
+        resolved_path = Get-FrozenPythonPackageFile -Package $package -RelativePath ([string]$selection.output)
+    }
+}

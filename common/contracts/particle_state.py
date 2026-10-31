@@ -23,11 +23,12 @@ PARTICLE_STATE_COLUMNS = [
 ]
 ENUMS = {
     "event": ["source", "rod_exit", "handoff", "terminal"],
-    "status": ["alive", "transmitted", "lost", "timeout"],
+    "status": ["alive", "transmitted", "lost", "timeout", "unknown"],
     "terminal_reason": [
         "none", "acceptance_surface", "acceptance_radius", "acceptance_aperture",
         "electrode", "radial_escape", "backward_escape",
         "timeout", "solver_stop", "unknown",
+        "time_window_end", "ended_without_loss_evidence", "terminal_cause_unresolved",
     ],
 }
 def _close(actual: float, expected: float, tolerance: float, label: str) -> None:

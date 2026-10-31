@@ -109,12 +109,10 @@ $sourceParticlePath = [IO.Path]::GetFullPath($ParticleTablePath)
 if (-not (Test-Path -LiteralPath $sourceParticlePath -PathType Leaf)) {
     throw "Particle table is missing: $sourceParticlePath"
 }
-$resolvedContractInput = 'variants/quadrupole/config/resolved_design_official.json'
 $modeInput = 'config/modes/quadrupole_transport_interface_readiness.json'
 $expectedParticles = 0
 
 $frozenMode = Join-Path $inputDir 'mode.json'
-$frozenResolved = Join-Path $inputDir 'resolved_design.json'
 $frozenInterface = Join-Path $inputDir 'interface_contract.json'
 $frozenSourceFamily = Join-Path $inputDir 'particle_source_family.json'
 $frozenDistribution = Join-Path $inputDir 'particle_source_distribution.json'
@@ -131,8 +129,16 @@ $templateIob = $template.iob
 $templateCon = $template.con
 Copy-VerifiedRunInput -Source (Join-Path $projectRoot ($modeInput -replace '/', '\')) `
     -Destination $frozenMode | Out-Null
-Copy-VerifiedRunInput -Source (Join-Path $projectRoot ($resolvedContractInput -replace '/', '\')) `
-    -Destination $frozenResolved | Out-Null
+    $frozenPythonSupport = Copy-VerifiedRunInput `
+        -Source (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') `
+        -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
+    . $frozenPythonSupport
+    $publishedDesignFreshness = New-RfPublishedDesignFreshnessPackage `
+        -Python $python -SourceRoot $repoRoot `
+        -SnapshotRoot (Join-Path $inputDir 'published_design_snapshot') -Profile interface
+    $frozenResolved = $publishedDesignFreshness.resolved_path
+    $publishedDesignFreshnessPath = Join-Path $inputDir 'published_design_freshness.json'
+    Write-RunJson -Path $publishedDesignFreshnessPath -Value $publishedDesignFreshness -Depth 16
 Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'variants\quadrupole\config\interface_contract.json') `
     -Destination $frozenInterface | Out-Null
 Copy-VerifiedRunInput -Source ([IO.Path]::GetFullPath($SolverNumericsContractPath)) `
@@ -171,9 +177,6 @@ if (-not (Test-Path -LiteralPath $distributionInput -PathType Leaf)) {
 }
 Copy-VerifiedRunInput -Source $sourceFamilyInput -Destination $frozenSourceFamily | Out-Null
 Copy-VerifiedRunInput -Source $distributionInput -Destination $frozenDistribution | Out-Null
-$frozenPythonSupport = Copy-VerifiedRunInput `
-    -Source (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') `
-    -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
 $frozenCodeRoot = Join-Path $inputDir 'code'
 $frozenPythonPackage = New-FrozenPythonPackage `
     -SourceRoot $repoRoot -CodeRoot $frozenCodeRoot -RelativePaths $frozenPythonRelativePaths
@@ -387,7 +390,7 @@ $FrequencyHz = [double]$coreConfig.frequency_hz
 $runConfig = [ordered]@{
     schema_version=1; role='rf_quadrupole_simion_run_config'; run_id=$RunId
     project='rf_multipole_ion_optics'; mode=$mode; project_root=$projectRoot
-    inputs=[ordered]@{resolved_design=$frozenResolved; interface_contract=$frozenInterface; mode=$frozenMode; numerical_contract=$frozenNumericalContract; particle_table=$particlePath; source_states=$sourceStatesLua;
+    inputs=[ordered]@{published_design_freshness=$publishedDesignFreshnessPath;resolved_design=$frozenResolved; interface_contract=$frozenInterface; mode=$frozenMode; numerical_contract=$frozenNumericalContract; particle_table=$particlePath; source_states=$sourceStatesLua;
         simion_layout_template_resolution=$templateResolution;simion_layout_template_registry=$templateRegistry;
         simion_layout_registration_manifest=$templateManifest;simion_layout_template_iob=$templateIob;
         simion_layout_template_con=$templateCon;simion_layout_template_placeholder_pa0=$template.placeholder_pa0}
