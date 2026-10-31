@@ -176,6 +176,18 @@ try {
                 self.assertEqual(json.loads((root / "run_manifest.json").read_text(encoding="utf-8"))["status"], "failed")
                 self.assertFalse((root / TERMINAL_JOURNAL_NAME).exists())
                 self.assertEqual(lock.stat().st_size, 1)
+                # An unfinished publication also blocks a new shared consumer.
+                published_before = (root / "run_manifest.json").read_bytes()
+                (root / TERMINAL_JOURNAL_NAME).write_text("{}", encoding="utf-8")
+                pending_ready = root / "pending-reader-ready"
+                blocked = subprocess.run(
+                    [shutil.which("pwsh"), "-NoProfile", "-NonInteractive", "-File", str(reader),
+                     str(repo), str(root), str(pending_ready), str(releases[1])],
+                    cwd=repo, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+                self.assertNotEqual(blocked.returncode, 0, blocked.stdout + blocked.stderr)
+                self.assertIn("publication is incomplete", blocked.stderr)
+                self.assertFalse(pending_ready.exists())
+                self.assertEqual((root / "run_manifest.json").read_bytes(), published_before)
             finally:
                 # Release only these fixture barriers; healthy children finish.
                 for path in releases:

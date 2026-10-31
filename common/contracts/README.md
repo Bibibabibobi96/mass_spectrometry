@@ -58,6 +58,8 @@
 `Enter-RunTerminalConsumptionGuard`在原终态锁协议中取得共享读保护，多个run可同时消费同一父结果；
 终态发布仍独占同一字节，任何读者尚未释放时不得创建发布journal。读者全部释放后writer才继续，
 不靠延长超时或取消journal解决并发。该锁只保护终态发布边界，PA载荷仍使用既有防写保护。
+共享读者／发布者及 pending journal 拒绝由 `test_terminal_publication_lock` 的同一公共 fixture 验证；
+IP 保留生产场消费 guard 接线，不再复制不调用项目入口的公共锁矩阵。
 
 跨产物根消费沿现`Enter/Update-ArtifactWorkflowCapacitySession -SourceReferences`传递显式来源：
 每项为`@{manifest_record=<已有小fileRecord>;protected_paths=@(...);protected_cache_keys=@(...)}`。

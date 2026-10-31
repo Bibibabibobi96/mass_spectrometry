@@ -263,6 +263,14 @@ stdout的最终owner总耗时另含发布及资源释放。未知写者保留保
 
 ## 机器能力与解析输入
 
+冻结准备回归在独立 Python 进程中实际准备两代包，移走作者目录后仅从第一代冻结源码和资源准备第二代；
+释放、时钟、Fly2及动态资源保持，缺 runtime 或 placeholder 在物化前拒绝。
+小 fixture 的 seed 对共80字节、明确为非原生 opaque 数据，只检查复制／绑定，不读取真实大 placeholder，
+不证明 IOB／PA 格式、Refine、Fly 或科学资格。
+共享读者／发布者及 pending journal 完整矩阵归公共 `test_terminal_publication_lock`；
+项目只保留实际 IP 场消费和部分恢复 guard 接线，退役不调用 IP 的重复公共锁用例。
+Root 六个不同方法取得通过证据：初轮五项通过、一项诊断解码错误；显式 UTF-8 后仅补公共用例通过2.590秒。
+
 profile 区分软件检查与实际科学动作；现有 ConfigurationDirectory 接口继续消费声明配置，不增加新 runner。
 能力查询与执行编译见[公共合同](../../../common/contracts/README.md#执行dry-run)；READY 仅描述声明条件。
 

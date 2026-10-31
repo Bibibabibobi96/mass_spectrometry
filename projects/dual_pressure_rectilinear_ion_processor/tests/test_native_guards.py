@@ -275,47 +275,6 @@ foreach($case in @(@{native='';templates=$false},@{native='explicit-parent';temp
                                     encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_consumption_guard_blocks_real_python_terminal_writer_before_journal(self) -> None:
-        pwsh = shutil.which("pwsh")
-        if pwsh is None:
-            self.skipTest("PowerShell 7 required")
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            writer = root / "writer.py"
-            writer.write_text('''import sys
-from pathlib import Path
-from common.contracts import write_run_manifest as publication
-root = Path(sys.argv[1])
-original = publication.process_file_lock
-publication.process_file_lock = lambda path: original(path, timeout_seconds=0)
-try:
-    publication.publish_terminal_state(root, {"status":"success"},
-        {"status":"success", "run_id":root.name})
-except TimeoutError:
-    assert not (root/publication.TERMINAL_JOURNAL_NAME).exists()
-    print("WRITER_BLOCKED_BEFORE_JOURNAL")
-else:
-    print("WRITER_PUBLISHED")
-''', encoding="utf-8")
-            script = root / "publication_guard.ps1"
-            script.write_text(r'''param($Repo,$Root,$Writer)
-$ErrorActionPreference='Stop'
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
-$python=Join-Path $Repo '.venv/Scripts/python.exe';$env:PYTHONPATH=$Repo
-$guard=Enter-RunTerminalConsumptionGuard -RunDirectory $Root
-try {
- $text=& $python $Writer $Root
- if($LASTEXITCODE-ne0-or$text-ne'WRITER_BLOCKED_BEFORE_JOURNAL'){throw 'consumer and publisher do not share one lock'}
-} finally {$guard.Dispose()}
-$text=& $python $Writer $Root
-if($LASTEXITCODE-ne0-or$text-ne'WRITER_PUBLISHED'){throw 'publication did not resume after consumer release'}
-Set-Content (Join-Path $Root '.run_terminal_publication.json') '{}'
-$caught=$false;try{$guard=Enter-RunTerminalConsumptionGuard -RunDirectory $Root}catch{$caught=$true}
-if(-not$caught){$guard.Dispose();throw 'consumer accepted pending terminal journal'}
-''', encoding="utf-8")
-            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(REPO), str(root), str(writer)],
-                cwd=REPO, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_observation_reports_stage_durations_failure_and_recovery(self) -> None:
         pwsh = shutil.which("pwsh")
