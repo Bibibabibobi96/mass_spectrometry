@@ -393,6 +393,128 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
         self.assertIn("build_candidate_layout_placeholders.lua", builder)
 
 
+    def _explicit_numerics_proposal(self, root):
+        request = self.base_request()
+        request.update(constraints=[], design_variables=[])
+        request_path = root / "design_request.json"
+        request_path.write_text(json.dumps(request), encoding="utf-8")
+        proposal = root / "candidate_proposal.json"
+        proposal.write_text(json.dumps(dict(schema_version=1, role="design_candidate_proposal",
+            candidate_id="explicit_numerics", project_id=PROJECT_ROOT.name,
+            request=dict(path=str(request_path), sha256=sha256(request_path)), values=[])), encoding="utf-8")
+        return proposal
+
+    def test_explicit_solver_numerics_freezes_external_data_without_changing_physics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            proposal = self._explicit_numerics_proposal(root)
+            external = root / "external data/coarse.json"
+            external.parent.mkdir()
+            numerics = load_json(PROJECT_ROOT / "config/formal_solver_numerics.json")
+            numerics["comsol"].update(routine_reflectron_hmax_mm=80., routine_accelerator_hmax_mm=8.,
+                                      fine_output_step_ns=5., field_free_output_step_ns=100.)
+            payload = json.dumps(numerics, indent=2).replace("\n", "\r\n").encode("utf-8")
+            external.write_bytes(payload)
+            baseline, resolved, report = write_candidate(proposal, root / "explicit", solver_numerics_contract=external)
+            self.assertEqual(external.read_bytes(), payload)
+            frozen = resolved.with_name("candidate_solver_numerics.json")
+            self.assertEqual(frozen.read_bytes(), payload)
+            document = load_json(resolved)
+            self.assertEqual(document["comsol_runtime"], numerics["comsol"])
+            self.assertEqual(document["inputs"]["solver_numerics_sha256"], sha256(frozen))
+            self.assertEqual(load_json(report)["provenance"]["solver_numerics"], dict(path=str(external.resolve()), sha256=sha256(frozen)))
+            self.assertFalse(load_json(report)["zero_change_reference_reproduction"])
+            default_baseline, default_resolved, default_report = write_candidate(proposal, root / "default")
+            self.assertTrue(load_json(default_report)["zero_change_reference_reproduction"])
+            self.assertEqual(baseline.read_bytes(), default_baseline.read_bytes())
+            default = load_json(default_resolved)
+            for key in ("geometry_mm", "electrodes_V", "particle_source", "coordinate_convention", "validation_target", "particle_count_policy", "rings"):
+                self.assertEqual(document[key], default[key])
+            self.assertEqual(default_resolved.with_name("candidate_solver_numerics.json").read_bytes(),
+                             (PROJECT_ROOT / "config/formal_solver_numerics.json").read_bytes())
+            original = resolved.read_bytes()
+            external.write_text("{}", encoding="utf-8")
+            self.assertEqual(frozen.read_bytes(), payload)
+            self.assertEqual(resolved.read_bytes(), original)
+
+    def test_explicit_solver_numerics_keeps_existing_rejection_policies(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            proposal = self._explicit_numerics_proposal(root)
+            original = load_json(PROJECT_ROOT / "config/formal_solver_numerics.json")
+            import copy
+            for case in ("role", "missing_layer", "solver_steps", "times_to_store"):
+                with self.subTest(case=case):
+                    document = copy.deepcopy(original)
+                    if case == "role":
+                        document["role"] = "unrelated_contract"
+                    elif case == "missing_layer":
+                        document.pop("comsol")
+                    else:
+                        document["comsol"][case] = "unsupported_policy"
+                    path = root / (case + ".json")
+                    path.write_text(json.dumps(document), encoding="utf-8")
+                    before = path.read_bytes()
+                    with self.assertRaises(ValueError):
+                        write_candidate(proposal, root / case, solver_numerics_contract=path)
+                    self.assertEqual(path.read_bytes(), before)
+            with self.assertRaises(FileNotFoundError):
+                write_candidate(proposal, root / "missing", solver_numerics_contract=root / "absent.json")
+            self.assertFalse((root / "missing").exists())
+
+    def test_candidate_compile_cli_transports_explicit_solver_numerics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            proposal = self._explicit_numerics_proposal(root)
+            contract = root / "coarse.json"
+            document = load_json(PROJECT_ROOT / "config/formal_solver_numerics.json")
+            document["comsol"]["routine_accelerator_hmax_mm"] = 8.
+            contract.write_text(json.dumps(document), encoding="utf-8")
+            output = root / "compiled"
+            result = subprocess.run([sys.executable, "-I", "-B", "-c",
+                "import sys;sys.path.insert(0,sys.argv[1]);sys.argv=sys.argv[2:];"
+                "from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import main;main()",
+                str(REPO_ROOT), "compile_candidate_design", str(proposal), "--output-dir", str(output),
+                "--solver-numerics-contract", str(contract)], cwd=root, capture_output=True,
+                text=True, encoding="utf-8", timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("CANDIDATE_COMPILE=PASS", result.stdout)
+            self.assertEqual(load_json(output / "candidate_resolved_geometry.json")["comsol_runtime"], document["comsol"])
+
+    def test_explicit_solver_mesh_and_time_numbers_reject_before_native(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            proposal = self._explicit_numerics_proposal(root)
+            original = load_json(PROJECT_ROOT / "config/formal_solver_numerics.json")
+            import copy
+            for key in ("routine_reflectron_hmax_mm", "routine_accelerator_hmax_mm", "convergence_accelerator_hmax_mm",
+                        "fine_output_step_ns", "field_free_output_step_ns"):
+                for index, value in enumerate((True, False, 0, -1, float("nan"), float("inf"))):
+                    with self.subTest(key=key, value=value):
+                        document = copy.deepcopy(original)
+                        document["comsol"][key] = value
+                        source = root / (key + str(index) + ".json")
+                        source.write_text(json.dumps(document), encoding="utf-8")
+                        with self.assertRaisesRegex(ValueError, "finite positive number"):
+                            write_candidate(proposal, root / (key + str(index)), solver_numerics_contract=source)
+
+
+
+
+
+    def test_explicit_solver_numerics_rejects_unknown_or_noninteger_version(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            proposal = self._explicit_numerics_proposal(root)
+            for index, version in enumerate((0, 2, True, 1.0)):
+                with self.subTest(version=version):
+                    document = load_json(PROJECT_ROOT / "config/formal_solver_numerics.json")
+                    document["schema_version"] = version
+                    source = root / ("version" + str(index) + ".json")
+                    source.write_text(json.dumps(document), encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, "schema_version"):
+                        write_candidate(proposal, root / ("output" + str(index)), solver_numerics_contract=source)
+
 
 if __name__ == "__main__":
     unittest.main()

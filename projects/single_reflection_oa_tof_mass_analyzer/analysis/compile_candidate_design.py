@@ -543,16 +543,29 @@ def compile_proposal(proposal_path: Path) -> tuple[dict[str, Any], dict[str, Any
     return candidate, report, request
 
 
-def write_candidate(proposal_path: Path, output_dir: Path) -> tuple[Path, Path, Path]:
+def write_candidate(proposal_path: Path, output_dir: Path, *,
+                    solver_numerics_contract: Path | None = None) -> tuple[Path, Path, Path]:
     candidate, report, _ = compile_proposal(proposal_path)
+    numerics_source = (NUMERICS_PATH if solver_numerics_contract is None else solver_numerics_contract).resolve(strict=True)
+    numerics_payload = numerics_source.read_bytes()
     output_dir.mkdir(parents=True, exist_ok=False)
     baseline_path = output_dir / "candidate_baseline.json"
     resolved_path = output_dir / "candidate_resolved_geometry.json"
     numerics_path = output_dir / "candidate_solver_numerics.json"
     report_path = output_dir / "candidate_diff.json"
     baseline_path.write_text(json.dumps(candidate, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    numerics_path.write_text(NUMERICS_PATH.read_text(encoding="utf-8"), encoding="utf-8")
-    resolved_path.write_text(serialized(resolve_contract(baseline_path=baseline_path, mode_path=MODE_PATH, numerics_path=numerics_path)), encoding="utf-8")
+    # Freeze the selected pure-data contract once; all resolution consumes this
+    # copy rather than later external/default values. Validation stays with the
+    # existing geometry/numerics resolver and its original policies.
+    numerics_path.write_bytes(numerics_payload)
+    resolved = resolve_contract(baseline_path=baseline_path, mode_path=MODE_PATH, numerics_path=numerics_path)
+    report["provenance"]["solver_numerics"] = {"path": str(numerics_source),
+        "sha256": resolved["inputs"]["solver_numerics_sha256"]}
+    report["zero_change_reference_reproduction"] = (
+        report["zero_change_reference_reproduction"] and
+        resolved["inputs"]["solver_numerics_sha256"].upper() ==
+        report["provenance"]["formal_solver_numerics"]["sha256"].upper())
+    resolved_path.write_text(serialized(resolved), encoding="utf-8")
     report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return baseline_path, resolved_path, report_path
 
@@ -561,9 +574,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("proposal", type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--solver-numerics-contract", type=Path,
+                        help="Explicit solver numerics JSON; default remains the project contract")
     args = parser.parse_args()
     try:
-        baseline, resolved, report = write_candidate(args.proposal, args.output_dir)
+        baseline, resolved, report = write_candidate(args.proposal, args.output_dir,
+            solver_numerics_contract=args.solver_numerics_contract)
     except EnvelopeReviewRequired as exc:
         raise SystemExit(str(exc)) from exc
     except (OSError, KeyError, ValueError, json.JSONDecodeError) as exc:

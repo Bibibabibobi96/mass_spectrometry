@@ -616,3 +616,9 @@ catalog所有模块权重现统一来自同一643轮完整test_durations；原�
 
 
 Root补充在实际公共freezer生成的150源闭包中，以冻结comsol目录作为MATLAB当前目录，执行前后确认postprocess／array adapter／reducer三个生产函数均来自冻结树：两类46项PASS，公开MCP墙钟11.8644秒；现有Python冻结依赖薄回归1项PASS1.595秒，GATE均已释放。独立一次性旧HEAD oracle对120个小矩阵／240条轨迹作942次完整result比较（多窗及重叠），全相等、1.6579秒；旧函数仅供scratch对照，不进入生产或建立第二分类器。此为软件语义与冻结接线验收，真实COMSOL API时间窗／RSS仍未验证，也不宣称两遍读取提速。
+
+Candidate 编译器可显式接收 solver_numerics_contract（编译 CLI 为 --solver-numerics-contract）；省略时仍使用原项目数值合同。选择的纯 JSON 原字节只冻结一次到 candidate_solver_numerics.json，现 resolved 输入身份及实际消费者继续绑定该副本，后续不重读外部源或默认值；物理 baseline、源、粒子数及现 profile 支持域不因此改变。唯一数值层校验检查原 role／顶层键／求解采样 policy，并拒绝非真实整数1的版本及现五个网格／时间步键的非有限、非正数和 bool。粗网格属于明确功能验收配置，不授予精度、收敛或 Formal 资格；正常 workflow 的公开参数运输随其真实 consumer 接线验证，不能仅凭编译器 API 宣称完整原生链已通过。
+
+差异报告的 provenance.formal_solver_numerics 是原 Formal 数值比较基准，provenance.solver_numerics 才是本次选入的实际数值源；执行仍绑定冻结副本。zero_change_reference_reproduction 仅在物理设计未变且实际冻结数值身份也等于该比较基准时为 true，显式粗网格不能误标为原数值复现。
+
+Root 验证显式数值编译主题：正式 common/verify.ps1 对完整 test_candidate_design 模块及必要前置 PASS，25 项测试 4.269 秒；冻结外部字节、默认物理不变、真实编译 CLI、非法版本和网格／采样值拒绝均覆盖。该范围不代表完整 Owner／Repository 或原生求解验收；最新 1a428 CI 的五项 Candidate 失败仍独立处理。

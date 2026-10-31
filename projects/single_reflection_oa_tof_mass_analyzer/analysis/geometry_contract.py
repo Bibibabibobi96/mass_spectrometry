@@ -46,11 +46,18 @@ def _validate_layers(baseline: dict[str, Any], science: dict[str, Any], numerics
     if science.get("contract_layers") != ["science", "solver_numerics", "run_instance"]:
         raise ValueError("formal science contract has an invalid layer declaration")
     _require_exact_keys(numerics, {"schema_version", "role", "comsol", "simion"}, "solver numerics contract")
+    if type(numerics["schema_version"]) is not int or numerics["schema_version"] != 1:
+        raise ValueError("unsupported solver numerics schema_version; requires integer 1")
     if numerics.get("role") != "oa_tof_formal_solver_numerics":
         raise ValueError("unsupported formal solver numerics contract")
     if not isinstance(science.get("particle"), dict) or not isinstance(numerics.get("comsol"), dict) or not isinstance(numerics.get("simion"), dict):
         raise ValueError("formal contracts are missing required science or solver sections")
     runtime = numerics["comsol"]
+    for key in ("routine_reflectron_hmax_mm", "routine_accelerator_hmax_mm", "convergence_accelerator_hmax_mm",
+                "fine_output_step_ns", "field_free_output_step_ns"):
+        value = runtime.get(key)
+        if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
+            raise ValueError(f"comsol.{key} must be a finite positive number")
     if runtime.get("solver_steps") not in ("free", "intermediate", "strict"):
         raise ValueError("comsol.solver_steps must be free, intermediate or strict")
     if runtime.get("times_to_store") != "tlist":
