@@ -271,7 +271,9 @@ class ChangedTestSelectionTests(unittest.TestCase):
             changed = cases[offset]["paths"][0]
             self.assertEqual(results[offset]["Modules"], [changed])
             self.assertFalse(results[offset]["Expanded"])
-            self.assertFalse(results[offset + 1]["OnlyTestModules"])
+            # An unmapped production source keeps the real caller's complete
+            # owner command; it must not borrow a thin test-only selection.
+            self.assertIsNone(results[offset + 1])
             for index in range(offset + 2, offset + 5):
                 with self.subTest(paths=cases[index]["paths"]):
                     self.assertTrue(results[index]["Expanded"])
@@ -464,19 +466,39 @@ ConvertTo-Json -InputObject $results -Depth 12 -Compress
                     "import os,unittest\nclass Probe(unittest.TestCase):\n"
                     " def test_boundary(self): self.assertFalse(os.environ.get('NUMERICS_ROUTE_RED'), 'NUMERICS_ROUTE_RED')\n",
                     encoding="utf-8", newline="\n")
-            script = r"""
+            # Declared leaf mappings apply only to an existing authority.
+            # This opaque fixture file is selected, never executed.
+            authority = root / changed_path
+            authority.parent.mkdir(parents=True, exist_ok=True)
+            authority.write_text("# Test-only mapped authority, never executed.\n", encoding="utf-8")
+            original_authority = authority.read_bytes()
+            selection_script = r"""
 . __SUPPORT__
 $route=((Get-Content __CATALOG__ -Raw|ConvertFrom-Json).routes|Where-Object stage -eq 'rf_multipole_quadrupole_static')
 $selection=Get-GateChangedTests -Route $route -RepoRoot $PWD.Path -KnownTestRoots @($route.test_selection.roots) `
  -ChangedPaths @(__CHANGED_PATH__)
+"""
+            script = selection_script + r"""
 $modules=@($selection.Modules|ForEach-Object{$_.Substring(0,$_.Length-3).Replace('/','.')})
 $command=ConvertTo-GateExecutionCommand -Command ([pscustomobject]@{runner='python';arguments=@('-m','unittest')+$modules})
 Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYTHON__
 """
-            script = script.replace("__SUPPORT__", powershell_literal(REPO_ROOT / "common/gate_catalog_support.ps1"))
-            script = script.replace("__CATALOG__", powershell_literal(REPO_ROOT / "common/gate_catalog.json"))
-            script = script.replace("__PYTHON__", powershell_literal(sys.executable))
-            script = script.replace("__CHANGED_PATH__", powershell_literal(changed_path))
+            for token, value in (
+                ("__SUPPORT__", REPO_ROOT / "common/gate_catalog_support.ps1"),
+                ("__CATALOG__", REPO_ROOT / "common/gate_catalog.json"),
+                ("__PYTHON__", sys.executable), ("__CHANGED_PATH__", changed_path),
+            ):
+                script = script.replace(token, powershell_literal(value))
+                selection_script = selection_script.replace(token, powershell_literal(value))
+            authority.unlink()
+            try:
+                deleted = subprocess.run(["pwsh", "-NoProfile", "-Command", selection_script +
+                    "if($null-ne$selection){throw 'Deleted authority reused a stale leaf mapping'}"],
+                    cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                self.assertEqual(deleted.returncode, 0, deleted.stdout + deleted.stderr)
+            finally:
+                authority.write_bytes(original_authority)
+            self.assertEqual(authority.read_bytes(), original_authority)
             for red in (False, True):
                 environment = os.environ.copy()
                 environment.pop("PYTHONPATH", None)
