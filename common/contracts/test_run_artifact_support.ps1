@@ -79,7 +79,7 @@ try {
     }
     function Invoke-ArtifactCapacityGate { return [pscustomobject]@{satisfied_after_apply=$true} }
     $leaseFixturePythonExe=$python
-    $script:leaseFixtureCode='import json;print(json.dumps({"lease_id":"fixture"}))'
+    $script:leaseFixtureCode='import json;print(json.dumps({"lease_id":"fixture","protected_paths":[],"protected_cache_keys":[]}))'
     function Invoke-LeaseFixturePython {
       [CmdletBinding(PositionalBinding=$false)]
       param([Parameter(ValueFromRemainingArguments)]$NativeArguments,
@@ -154,6 +154,9 @@ try {
     function Invoke-RunToolRootContext {
       $script:renewalFixtureCalls++
       return (@{satisfied_after_apply=$satisfied;blocking_reason='TARGET_CAPACITY_EXCEEDED';
+        protected_paths=@($session.protected_paths|ForEach-Object{
+          if([IO.Path]::IsPathRooted($_)){[IO.Path]::GetRelativePath($testRoot,$_)}else{$_}
+        });protected_cache_keys=@($session.protected_cache_keys);
         resident_bytes=700;total_active_lease_committed_new_bytes=11;projected_bytes=711;
         target_bytes=600;required_free_bytes=300;free_bytes_before=200}|ConvertTo-Json)
     }
@@ -161,7 +164,7 @@ try {
       @{keys=@(('a'*64),('b'*64));paths=@('one','two')})
     foreach($case in $cases){
       $session=[pscustomobject]@{status='active';artifact_root=$testRoot;lease_id='fixture';owner='fixture';
-        lease_ttl_seconds=60;committed_new_bytes=10;protected_paths=@($case.paths);protected_cache_keys=@($case.keys)}
+        lease=$null;lease_ttl_seconds=60;committed_new_bytes=10;protected_paths=@($case.paths);protected_cache_keys=@($case.keys)}
       $script:renewalFixtureCalls=0
       $first=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $session `
         -ProtectedPaths $case.paths -ProtectedCacheKeys $case.keys
@@ -173,6 +176,7 @@ try {
       }
       Assert-Equal $raised.session.protected_cache_keys.Count $case.keys.Count 'Renewal must not manufacture null keys or retain duplicates.'
       Assert-Equal $raised.session.protected_paths.Count $case.paths.Count 'Renewal must not manufacture null paths or retain duplicates.'
+      Assert-Equal ($raised.session.protected_paths-join',') (@($case.paths|ForEach-Object{Join-Path $testRoot $_})-join',') 'Renewal must retain canonical owner paths from the actual receipt.'
       Assert-Equal ($raised.session.protected_cache_keys-join',') ($case.keys-join',') 'Renewal cache identities changed.'
       Assert-Equal $raised.session.committed_new_bytes 11 'Raised reservation was not retained.'
       Assert-Equal $script:renewalFixtureCalls 4 'Two renewals and raised commitment must call the real re-admission gate.'
@@ -180,7 +184,7 @@ try {
     }
     $satisfied=$false
     $session=[pscustomobject]@{status='active';artifact_root=$testRoot;lease_id='fixture';owner='fixture';
-      lease_ttl_seconds=60;committed_new_bytes=10;protected_paths=@();protected_cache_keys=@();capacity_threshold_action='warn'}
+      lease=$null;lease_ttl_seconds=60;committed_new_bytes=10;protected_paths=@();protected_cache_keys=@();capacity_threshold_action='warn'}
     $message=$null
     try{Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $session `
       -RemainingCommittedNewBytes 11|Out-Null}catch{$message=$_.Exception.Message}
@@ -231,7 +235,7 @@ try {
     $fakeReceipt.blocking_reason='MINIMUM_FREE_CAPACITY_UNAVAILABLE'
     function Invoke-RunToolRootContext {
       $script:capacityStartupTestCalls++
-      if($script:capacityStartupTestCalls-eq1){return '{"lease_id":"fixture"}'}
+      if($script:capacityStartupTestCalls-eq1){return '{"lease_id":"fixture","protected_paths":[],"protected_cache_keys":[]}'}
       if($script:capacityStartupTestCalls-eq2){return ($fakeReceipt|ConvertTo-Json)}
       return '{"deleted":true}'
     }
