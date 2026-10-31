@@ -174,8 +174,8 @@ summary指向实际composition／scope和source provenance；canonical事件及�
 | OA共同场有限脉冲 | [paired_accelerator_pulse/execute.ps1](workflows/paired_accelerator_pulse/execute.ps1)，`-Request`及显式来源 | [阶段／整批恢复与诊断](docs/INTEGRATION.md#共同场与有限脉冲) |
 
 直属静态入口为[verify_integration.ps1](verify_integration.ps1)，不启动商业求解器。
-入口递归枚举`integrations/tests`中的测试模块；Changed范围按统一目录传入`ChangedTestModules`时合并去重，
-保持该入口的Ruff检查。测试使用公共计时runner，即时报出失败详情并逐测试计时；明确的纯测试模块变更
+入口默认递归枚举`integrations/tests`中的测试模块；公共验证按统一目录传入`SelectedTestModules`时仅执行选定集合，
+并保留所需Ruff检查或同轮中央Ruff的显式成功前置。测试使用公共计时runner，即时报出失败详情并逐测试计时；明确的纯测试模块变更
 可由Changed范围精确运行，fixture、删除或未知目录变化扩大到owner。
 软件验证、冻结依赖与最终验收见[状态页](docs/INTEGRATION.md#依赖冻结与门禁)及[操作指南](../docs/OPERATIONS.md#软件验证与科学证据)。
 不使用已退役的旧family或arm CLI执行新实验；历史运行保持原身份。

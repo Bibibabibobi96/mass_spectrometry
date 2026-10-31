@@ -764,7 +764,7 @@ try{
                 self.assertEqual(case["merge_offset"],0)
                 self.assertTrue(Path(case["working_directory"],"cooled_collision_hs1.lua").is_file())
                 if LUA.is_file():
-                    glue=program[program.index("local function single_flight_exact_basename"):program.index("local function single_flight_apply_standalone_dynamic_field")]
+                    glue=program[program.index("local single_flight_native_run_path=(function()"):program.index("local function single_flight_apply_standalone_dynamic_field")]
                     configuration=program.split("end)()\ncooled_frontend_component.install(",1)[1].split(", {\n clock=",1)[0]
                     response_names=expected_paths
                     from integrations.runtime.single_flight_source import lua_value as _lua_value

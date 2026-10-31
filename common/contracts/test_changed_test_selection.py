@@ -436,6 +436,7 @@ try {
             body = source.read_text(encoding="utf-8").replace(
                 "from fixture_import import VALUE", "from integrations.tests.fixture_import import VALUE")
             body = body.replace("if KEY in ('a','b'):", "if KEY in ('a','b') and os.environ.get('PARTIAL_PARALLEL'):")
+            body = body.replace("            time.sleep(1.0", "            if os.environ.get('PARTIAL_PARALLEL'): time.sleep(1.0")
             body = body.replace("self.assertEqual(VALUE, 17)",
                                 "self.assertEqual(VALUE, 17); self.assertEqual(len(list(root.glob('ruff.*'))), 1)")
             (tests / source.name).write_text(body, encoding="utf-8")
@@ -533,6 +534,8 @@ try {
             done = {p.stem: json.loads(p.read_text()) for p in events.glob("*.done")}
             self.assertEqual(set(starts), set(done), output)
             self.assertTrue({"a", "b"}.issubset(starts))
+            if not parallel:
+                self.assertEqual(len({row["pid"] for row in starts.values()}), 1, output)
             timeline = sorted([(v["time"], 1) for v in starts.values()] + [(v["time"], -1) for v in done.values()])
             active = peak = 0
             for _, delta in timeline:
