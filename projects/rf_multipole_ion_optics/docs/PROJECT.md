@@ -7,6 +7,8 @@
 
 ## 当前结论
 
+正常接口 V4 before `20261031_085000__test__comsol__rf-interface-hmin-before` 在网格配置阶段因冻结包缺少 typed Size reader 中止，外层72.637秒，未求场或粒子。interface 与 mass-filter 的正式冻结清单已加入原公共 reader；实际冻结包、移除活动源码和缺依赖拒绝回归2项7场景通过（当前工作树6.065秒）。原失败记录保留，后续新身份 V5 正常求解仍待验收；该软件闭包修复不是求解或科学通过。
+
 RF 软件回归的恢复夹具在使用私有主机资源库时隔离调用者许可身份，真实父 GATE 下复现并修复 token／数据库不匹配；生产容量与许可底线不变。旧私有收尾和源码形状断言已迁至实际公共 owner、冻结导入、环境恢复、预算提前拒绝及原 CLI 恢复接线；公共故障矩阵仍归原 owner。日常验证不再要求浅 checkout 包含旧历史 Git 对象，封存科学负结果和活动模型排除检查保留。定向补验不代表最终整轮 CI 已通过。
 
 四极接口开发 coarse 数值 profile 现显式设置 `minimum_element_size_mm=0.2`，经现有数值编译器与公共 mesh helper 传递；baseline 默认值保持。2026-10-31 mesh-only `20261031_084000__test__comsol__rf-interface-hmin-mesh` 外层68.162秒：实际全局 hmin 从6.69改为0.2 mm、custom开启，其余 auto9/hmax47.8/hcurve1/hgrad2/hnarrow0.1读回不变；网格非空、完整且无problems，原门禁通过。study/solution均为空，没有场或粒子求解。公共终态、容量、租约及alias清理完成，secondary_errors为空；该证据仅关闭粗网格准备断点，不证明完整传输、性能收益或科学资格。原080000/083000失败记录保持。

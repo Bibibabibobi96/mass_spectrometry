@@ -14,6 +14,8 @@ def ps(value):
 
 class FrozenMatlabClosureTests(unittest.TestCase):
     def run_boundary(self, workflow, missing=False, release_gate=False):
+        missing_path = ('projects/rf_multipole_ion_optics/comsol/visit_rf_particle_windows.m'
+                        if missing is True else missing if missing else None)
         runner = PROJECT / 'workflows' / workflow / 'run_comsol.ps1'
         support = REPO / 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1'
         with tempfile.TemporaryDirectory() as temporary:
@@ -46,13 +48,16 @@ foreach($relative in $frozenMatlabRelativePaths){
  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target)|Out-Null
  Copy-Item -LiteralPath $source -Destination $target
 }
-if(MISSING){Remove-Item -LiteralPath (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/comsol/visit_rf_particle_windows.m')}
+$missingDependency=MISSING_DEPENDENCY
+if($missingDependency){Remove-Item -LiteralPath (Join-Path $repoRoot $missingDependency)}
 $command=@($ast.FindAll({param($node) $node-is[System.Management.Automation.Language.CommandAst]-and$node.GetCommandName()-eq'New-FrozenPythonPackage'},$true))
-try{$package=& ([scriptblock]::Create($command[0].Extent.Text))}catch{if(MISSING){exit 0};throw}
-if(MISSING){throw 'missing MATLAB dependency was accepted'}
+try{$package=& ([scriptblock]::Create($command[0].Extent.Text))}catch{if($missingDependency-and$_.Exception.Message.Contains((Split-Path -Leaf $missingDependency))){exit 0};throw}
+if($missingDependency){throw 'missing MATLAB dependency was accepted'}
 Assert-FrozenPythonPackage -Package $package
+$reader=Get-FrozenPythonPackageFile -Package $package -RelativePath 'common/comsol/read_comsol_mesh_size_controls.m'
 if(-not(Test-Path -LiteralPath (Join-Path $package.code_root 'projects/rf_multipole_ion_optics/comsol/plan_rf_exact_birth_releases.m'))){throw 'group helper absent from real frozen closure'}
 [IO.Directory]::Move($repoRoot,$repoRoot+'.disabled')
+if(-not(Test-Path -LiteralPath $reader -PathType Leaf)-or$reader.StartsWith($repoRoot+[IO.Path]::DirectorySeparatorChar)){throw 'Typed size reader escaped frozen closure after active-source removal'}
 $frozenAnalysisPackage=$package;$ReleaseConstructionGate=RELEASE_GATE
 $name=if(WORKFLOW-eq'interface_readiness'){'taskScript'}else{'massScanTask'}
 $assignments=@($ast.FindAll({param($node) $node-is[System.Management.Automation.Language.AssignmentStatementAst]-and$node.Left-is[System.Management.Automation.Language.VariableExpressionAst]-and$node.Left.VariablePath.UserPath-eq$name},$true))
@@ -62,7 +67,7 @@ if(-not$selected.StartsWith($package.code_root+[IO.Path]::DirectorySeparatorChar
 Assert-FrozenPythonPackage -Package $package
 exit 0
 '''.replace('SUPPORT', ps(support)).replace('ROOT', ps(root)).replace('RUNNER', ps(runner))
-.replace('REPO', ps(REPO)).replace('PROJECT', ps(PROJECT)).replace('MISSING', '$true' if missing else '$false')
+.replace('REPO', ps(REPO)).replace('PROJECT', ps(PROJECT)).replace('MISSING_DEPENDENCY', ps(missing_path) if missing_path else '$null')
 .replace('RELEASE_GATE', '$true' if release_gate else '$false').replace('WORKFLOW', ps(workflow)), encoding='utf-8', newline='\n')
             result = subprocess.run(['pwsh','-NoProfile','-File',str(script)], cwd=root,
                                     timeout=30,capture_output=True,text=True,encoding='utf-8',errors='replace')
@@ -75,8 +80,9 @@ exit 0
 
     def test_missing_matlab_dependency_fails_before_native_selection(self):
         for workflow in ('interface_readiness','mass_filter_reference'):
-            with self.subTest(workflow=workflow):
-                self.run_boundary(workflow,missing=True)
+            for missing in (True, 'common/comsol/read_comsol_mesh_size_controls.m'):
+                with self.subTest(workflow=workflow, missing=missing):
+                    self.run_boundary(workflow,missing=missing)
 
 
 if __name__=='__main__':
