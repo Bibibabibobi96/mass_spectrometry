@@ -1377,6 +1377,14 @@
           "PythonExe": "{python}"
         }
       },
+      "test_selection": {
+        "roots": [
+          "projects/single_reflection_oa_tof_mass_analyzer/tests/",
+          "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/",
+          "projects/single_reflection_oa_tof_mass_analyzer/tests/simion/"
+        ],
+        "scope": "projects/single_reflection_oa_tof_mass_analyzer/tests/"
+      },
       "owner": "single_reflection_oa_tof_mass_analyzer"
     },
     {

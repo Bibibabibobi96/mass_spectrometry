@@ -69,6 +69,7 @@ OA生产代码与runtime库存声明的真实消费者依赖保持原路由。
 执行集合；生产与测试混合改动保留原owner门禁。删除、重命名旧路径、共享fixture、包初始化及未知
 测试目录变化扩大到所属owner发现，并报告选择原因。是否仅为测试变更按该owner实际路由影响计算；
 其他owner测试和文档不迫使全量发现，SIMION公共测试也使用同一选择机制。
+单反射项目的独立 Python 测试改动也由该目录选择；源码、共享夹具、删除或未知测试范围仍保留原项目完整检查。
 Git差异保留重命名两端，不能只看到新路径。
 模块集合由实际owner选择；原expected-values、gate、CLOC、dependency及schema元校验触发关系
 归入公共合同owner的`test_selection.dependencies`，不再维护covered专属路由和去重分支。

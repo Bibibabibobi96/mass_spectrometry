@@ -257,6 +257,8 @@ class ChangedTestSelectionTests(unittest.TestCase):
         for prefix, stage, filename in (
             (MR, "parallel_mirror_dual_stripe_mr_tof_static", "test_simion_event_analysis.py"),
             (RF, "rf_multipole_quadrupole_static", "test_mass_filter_l1.py"),
+            ("projects/single_reflection_oa_tof_mass_analyzer",
+             "single_reflection_oa_tof_mass_analyzer_static", "test_simion_delivery_source.py"),
         ):
             changed = f"{prefix}/tests/analysis/{filename}"
             cases.extend(dict(stage=stage, paths=paths) for paths in (
@@ -265,7 +267,7 @@ class ChangedTestSelectionTests(unittest.TestCase):
                 [f"{prefix}/tests/analysis/__init__.py"], [f"{prefix}/tests/test_support/fixture.py"],
             ))
         results = self.selections(REPO_ROOT, cases)
-        for offset in (0, 5):
+        for offset in range(0, len(cases), 5):
             changed = cases[offset]["paths"][0]
             self.assertEqual(results[offset]["Modules"], [changed])
             self.assertFalse(results[offset]["Expanded"])
