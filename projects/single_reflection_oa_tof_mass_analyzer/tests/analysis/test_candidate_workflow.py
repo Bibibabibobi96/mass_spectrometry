@@ -611,17 +611,23 @@ def execute_prepared_run(*args):
             self.assertEqual(Path(comsol_stage["environment"]["OATOF_RUNTIME_DIR"]), run_root / "comsol")
             self.assertEqual(
                 set(plan["candidate_inputs"]),
-                {"candidate_baseline.json", "candidate_resolved_geometry.json", "candidate_solver_numerics.json", "candidate_diff.json",
+                {"candidate_baseline.json", "candidate_resolved_geometry.json", "candidate_solver_numerics.json", "candidate_diff.json", "candidate_analysis_contract.json",
                  "candidate_runtime.json",
                  "candidate_proposal.json", "design_request.json",
                  "candidate_simion_resolved_lua", "candidate_simion_program", "candidate_simion_fly2"},
             )
+            analysis_input = plan["candidate_inputs"]["candidate_analysis_contract.json"]
+            self.assertEqual(analysis_input["sha256"], sha256(Path(analysis_input["path"])))
+            self.assertEqual(Path(analysis_input["path"]).read_bytes(), (PROJECT_ROOT / "config/analysis_contract.json").read_bytes())
             self.assertTrue((planning_root / "run_config.template.json").is_file())
             self.assertTrue((planning_root / "candidate_workflow_plan.json").is_file())
             closure = plan["execution_source_closure"]
             verify_candidate_source_closure(closure)
             source_ids = {item["source_id"] for item in closure["sources"]}
-            self.assertEqual(source_ids, set(RELATIVE_PATHS))
+            self.assertEqual(source_ids, set(RELATIVE_PATHS) | {
+                "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json",
+                "projects/single_reflection_oa_tof_mass_analyzer/config/analysis_contract.json",
+            })
             self.assertTrue({
                 "projects/orthogonal_accelerator/analysis/accelerator_time_focus.py",
                 "projects/orthogonal_accelerator/analysis/component_contract.py",
@@ -1061,10 +1067,12 @@ def execute_prepared_run(*args):
             self.assertFalse(manifest["formal_eligible"])
             self.assertEqual(
                 set(manifest["inputs"]),
-                {"candidate_baseline.json", "candidate_resolved_geometry.json", "candidate_solver_numerics.json", "candidate_diff.json",
+                {"candidate_baseline.json", "candidate_resolved_geometry.json", "candidate_solver_numerics.json", "candidate_diff.json", "candidate_analysis_contract.json",
                  "candidate_proposal.json", "design_request.json", "candidate_runtime.json",
                  "candidate_simion_resolved_lua", "candidate_simion_program", "candidate_simion_fly2"},
             )
+            self.assertEqual(manifest["inputs"]["candidate_analysis_contract.json"]["sha256"],
+                             plan["candidate_inputs"]["candidate_analysis_contract.json"]["sha256"])
             self.assertEqual(verify_project(artifact_root), (1, 0))
 
 

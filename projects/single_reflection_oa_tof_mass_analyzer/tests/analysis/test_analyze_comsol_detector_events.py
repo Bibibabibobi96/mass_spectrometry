@@ -11,13 +11,6 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.analyze_comsol_det
 
 
 class AnalyzeComsolDetectorEventsTest(unittest.TestCase):
-    def test_comsol_core_exports_raw_events_without_peak_math(self) -> None:
-        root = Path(__file__).resolve().parents[2]
-        core = (root / "comsol" / "oatof_build_model_core.m").read_text(encoding="utf-8")
-        self.assertIn("oatof_export_detector_events", core)
-        for prohibited in ("polyfit(", "mass_fwhm_direct", "R_fwhm_sigma_proxy", "mass_bandwidth"):
-            self.assertNotIn(prohibited, core)
-
     def test_python_owns_metrics_for_raw_comsol_events(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

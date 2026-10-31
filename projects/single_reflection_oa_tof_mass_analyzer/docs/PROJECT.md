@@ -658,3 +658,11 @@ Root纯MATLAB首轮28项为22PASS／6FAIL（29.484秒）：五项夹具误期望
 normal build／sync、CAD的COMSOL打开及cold后处理均向既有launcher传入公共owner提供的执行run目录作为RunDir，使实际temporary／recovery归本run并进入runtime_storage观测；项目不新建临时目录平台或alias。公共路径运输的其余边界仍按正常owner负责，此处不以运输软件测试冒充COMSOL已开模型。
 
 独立HEAD闭包经公共GATE 2CPU／2GiB定向3方法PASS14.535秒（预算9.064／normal1.910／cold运输3.561），随后仅追加真实CAD命令边界sentinel断言的normal方法复验PASS1.935秒；无商业启动。测试使用明确opaque3B元数据载荷，验证原预算／拒绝不足余量、CSV轻量分支、完整请求冻结、父字节不变和真实argv，不代表有效MPH或求解。首轮FAIL5.652秒保留：隔离源码缺已提交reducer及cold fixture错误compact保留类；补真实声明依赖、首次fixture发布前使用原solver_review类后通过，未放宽生产政策。真实native临时峰值与硬资源限制仍以正常入口实际观测／显式请求为准。
+
+
+### 2026-10-31 候选分析合同测试接线
+
+候选计划和发布测试核对实际冻结的 `candidate_analysis_contract.json`、来源闭包与 manifest 身份。
+原锁定 MATLAB core 内导出调用位置的字符串测试退役；Python 指标与非法 metric owner 拒绝行为保留，
+保存模型验证另由现有 MATLAB 行为套件承担。两项候选测试及整个 detector 分析模块共4项通过（8.741秒），
+公开命令墙钟14.938秒；这是软件定向验证，不代表最终 CI、原生求解或科学资格完成。
