@@ -5,12 +5,27 @@ arguments
     context (1,1) struct
     resultsDir {mustBeTextScalar}
 end
-required={'schema_version','role','solution_tag','dataset_tag','particle_count','label','mass_amu','expected_tof','fine_tstep','Tsim','d1_mm','reflectron_stage2_min_mm','d2_mm','d2_margin_fraction','allow_particle_loss','timing','fine_end','Ez_accel_ideal','Ez_drift_ideal','Ez_stage1_ideal','Ez_stage2_ideal','field_mode','reflectron_backplate_voltage_v','modelPath','flight_length_mm','reflectron_length_mm','detector_z_mm','detector_x_mm','detector_radius_mm','accelerator_exit_mm','field_idealization','native_particle_solve_count','generate_model_plots'};
+required={'schema_version','role','solution_tag','dataset_tag','particle_count','label','mass_amu','expected_tof','fine_tstep','Tsim','d1_mm','reflectron_stage2_min_mm','d2_mm','d2_margin_fraction','allow_particle_loss','timing','fine_end','Ez_accel_ideal','Ez_drift_ideal','Ez_stage1_ideal','Ez_stage2_ideal','field_mode','reflectron_backplate_voltage_v','modelPath','flight_length_mm','reflectron_length_mm','detector_z_mm','detector_x_mm','detector_radius_mm','accelerator_exit_mm','field_idealization','native_particle_solve_count','generate_model_plots','solution_times_s'};
 assert(all(isfield(context,required)),'oatof:SavedContext','Saved context lacks a required frozen value.');
 assert(context.schema_version==1 && strcmp(context.role,'oatof_saved_particle_solution'), ...
     'oatof:SavedContext','Saved particle context identity differs.');
 assert(strcmp(context.solution_tag,'sol2') && strcmp(context.dataset_tag,'pdset1'), ...
     'oatof:SavedContext','Saved particle solution binding differs.');
+stored_times=context.solution_times_s(:);
+assert(isnumeric(stored_times) && isreal(stored_times) && isvector(context.solution_times_s) && numel(stored_times)>1 && ...
+ all(isfinite(stored_times)) && all(diff(stored_times)>=0) && stored_times(end)>stored_times(1), ...
+ 'oatof:SavedTimes','Stored solution time inventory is missing or invalid.');
+% Both normal and cold paths require equal-time complete states to agree.
+times=stored_times;
+% Keep every original solution number. Equal output times are interchangeable
+% for the unique-time query only if their complete stored states are equal.
+duplicateStarts=find(diff(times)==0);
+for first=duplicateStarts'
+    states=mphgetu(model,'soltag',context.solution_tag,'solnum',[first first+1],'matrix','on');
+    assert(isnumeric(states) && ismatrix(states) && size(states,1)>0 && size(states,2)==2 && ...
+        isequaln(states(:,1),states(:,2)), 'oatof:ColdDuplicateState', ...
+        'Equal saved times have different or unavailable complete states; time-only extraction is ambiguous.');
+end
 label=context.label;
 mass_amu=context.mass_amu;
 expected_tof=context.expected_tof;
@@ -33,19 +48,15 @@ modelPath=context.modelPath;
 p=model.param;
 t_extract_start=tic;
 
-% COMSOL 6.4 documents that dataonly='on' suppresses the default p/v
-% trajectory payload and that the `t` property limits evaluation to an
-% explicit time vector.  Both are required here: requesting every stored
-% time at sub-nanosecond spacing can exhaust the client JVM even for N=100.
-% Keep a sparse whole-flight trace for penetration/plot diagnostics and the
-% exact fine output spacing in a generous window around the expected return.
-% The latter preserves detector-crossing interpolation while omitting
-% output points irrelevant to detector arrival.
+% COMSOL 6.4 `t` selects explicit evaluation times and dataonly avoids p/v.
+% Keep all original observations as well as the previous diagnostic queries;
+% bounded API windows, rather than downsampling, limit client payload size.
+% https://doc.comsol.com/6.4/doc/com.comsol.help.llmatlab/llmatlab_ug_ref.9.51.html
 arrival_half_window = 200e-9;
 arrival_times = (expected_tof-arrival_half_window):fine_tstep: ...
     (expected_tof+arrival_half_window);
 trajectory_times = linspace(0, Tsim, 2001);
-extract_times = unique([trajectory_times, arrival_times, Tsim]);
+extract_times = unique([trajectory_times, arrival_times, Tsim, stored_times.']);
 % Fixed bounded I/O policy: at N5000 a 257-row XYZ payload is 30.84 MB.
 % This is not a solver timestep or an automatic process-RAM budget.
 window_samples=256;t=extract_times(:);nP=context.particle_count;
@@ -89,6 +100,7 @@ end
 state_size=whos('state');
 extraction_observation=struct('passes',2,'logical_window_samples',window_samples, ...
  'api_calls',api_calls,'api_requested_rows',requested_rows,'original_query_rows',numel(t), ...
+ 'stored_inventory_rows',numel(stored_times),'stored_unique_time_rows',numel(unique(stored_times)), ...
  'maximum_api_payload_bytes',maximum_api_payload_bytes,'reducer_state_bytes',state_size.bytes, ...
  'retained_plot_particles',plot_count,'api_seconds',api_seconds);
 zEnd=state.last_raw_xyz(:,3)';zmax=state.raw_maximum_z';initial_xyz=state.initial_xyz;

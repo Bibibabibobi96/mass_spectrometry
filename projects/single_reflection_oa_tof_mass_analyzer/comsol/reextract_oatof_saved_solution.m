@@ -39,15 +39,6 @@ assert(strcmp(info.soltype,'Time') && isequal(info.solvals(:),times), ...
     'oatof:ColdTimes','Cold solution time inventory differs.');
 assert(strcmp(model.result.dataset(context.dataset_tag).getString('solution'),context.solution_tag), ...
     'oatof:ColdDataset','Cold particle dataset is not bound to the saved solution.');
-% Keep every original solution number. Equal output times are interchangeable
-% for the unique-time query only if their complete stored states are equal.
-duplicateStarts=find(diff(times)==0);
-for first=duplicateStarts'
-    states=mphgetu(model,'soltag',context.solution_tag,'solnum',[first first+1],'matrix','on');
-    assert(isnumeric(states) && ismatrix(states) && size(states,1)>0 && size(states,2)==2 && ...
-        isequaln(states(:,1),states(:,2)), 'oatof:ColdDuplicateState', ...
-        'Equal saved times have different or unavailable complete states; time-only extraction is ambiguous.');
-end
 % The shared extractor verifies the full requested population before any export.
 context.modelPath=char(parent);
 context.native_particle_solve_count=0;

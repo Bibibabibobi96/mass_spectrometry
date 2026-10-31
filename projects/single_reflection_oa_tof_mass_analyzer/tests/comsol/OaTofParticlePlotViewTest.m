@@ -2,10 +2,15 @@ classdef OaTofParticlePlotViewTest < matlab.unittest.TestCase
  properties (TestParameter)
   population=struct('n100',100,'n1000',1000,'n5000',5000);
   invalidInventory=struct('allEqual',[0;0],'decreasing',[0;1;0],'nonfinite',[0;NaN;1]);
+  sharedInventory=struct('allEqual',[0;0],'decreasing',[0;1;0], ...
+   'nonfinite',[0;NaN;1],'complex',[0;1i;1],'matrix',[0 1;2 3]);
+  boundaryRow=struct('lastFresh',256,'nextFresh',257);
+  detectorEvent=struct('freeze','frozen_on_detector','crossing','crossing');
  end
  methods (TestClassSetup)
   function addProjectPath(testCase)
    root=fileparts(fileparts(fileparts(mfilename('fullpath'))));
+   testCase.applyFixture(matlab.unittest.fixtures.PathFixture(root));
    testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(root,'comsol')));
   end
  end
@@ -80,6 +85,74 @@ classdef OaTofParticlePlotViewTest < matlab.unittest.TestCase
    request=jsondecode(fileread(fullfile(folder,'comsol_detector_events_Fixture.analysis_request.json')));
    testCase.verifyEqual(request.raw_events_csv,fullfile(folder,'comsol_detector_events_Fixture.csv'));
   end
+  function sharedQueryRetainsEveryStoredAndPreviousTime(testCase)
+   [context,folder]=postprocessFixture(testCase);
+   context.solution_times_s=sort([context.solution_times_s;1.234567891e-6]);
+   original=context.solution_times_s;
+   [result,~]=oatof_postprocess_saved_solution(struct('param',[]),context,folder);
+   expected=fullFixtureQuery(context);
+   queries=getappdata(0,'oatof_fixture_queries');
+   [first,second,overlap]=reconstructQueryPasses(queries);
+   testCase.verifyEqual(first,expected,'AbsTol',0);
+   testCase.verifyEqual(second,expected,'AbsTol',0);
+   testCase.verifyTrue(overlap);
+   testCase.verifyTrue(all(ismember(original,first)));
+   testCase.verifyTrue(all(ismember(oldFixtureQuery(context),first)));
+   testCase.verifyEqual(context.solution_times_s,original,'AbsTol',0);
+   testCase.verifyEqual(result.postprocess_extraction.stored_inventory_rows,numel(original));
+   testCase.verifyEqual(result.nP,2);
+  end
+  function storedApproachAcrossWindowKeepsOriginalDetectorEvent(testCase,boundaryRow,detectorEvent)
+   [context,folder,mockFolder]=postprocessFixture(testCase);
+   [context,approachTime]=configureStoredApproach(mockFolder,context,boundaryRow,detectorEvent);
+   fullTimes=fullFixtureQuery(context);
+   reference=fixtureArrivalReference(mockFolder,context,fullTimes);
+   old=fixtureArrivalReference(mockFolder,context,oldFixtureQuery(context));
+   [result,~]=oatof_postprocess_saved_solution(struct('param',[]),context,folder);
+   testCase.verifyEqual(old.status,repmat(oldDetectorStatus(detectorEvent),2,1));
+   testCase.verifyEqual(reference.event,repmat(string(detectorEvent),2,1));
+   testCase.verifyEqual(result.detectorStatus,reference.status.');
+   testCase.verifyEqual(result.nP,2);testCase.verifyEqual(result.nDet,2);
+   rows=readtable(result.raw_detector_events_path);
+   testCase.verifyEqual(rows.Ion,[1;2]);testCase.verifyTrue(all(rows.Hit));
+   testCase.verifyEqual(string(rows.Event),reference.event);
+   testCase.verifyLessThanOrEqual(getappdata(0,'oatof_fixture_max_rows'),257);
+   queries=getappdata(0,'oatof_fixture_queries');
+   [first,second,overlap]=reconstructQueryPasses(queries);
+   testCase.verifyEqual(first,fullTimes,'AbsTol',0);
+   testCase.verifyEqual(second,fullTimes,'AbsTol',0);testCase.verifyTrue(overlap);
+   testCase.verifyEqual(mod(find(fullTimes==approachTime)-1,256),mod(boundaryRow-1,256));
+  end
+  function invalidSharedInventoryFailsBeforeAnyParticleRead(testCase,sharedInventory)
+   [context,folder]=postprocessFixture(testCase);
+   context.solution_times_s=sharedInventory;
+   testCase.verifyError(@()oatof_postprocess_saved_solution(struct('param',[]),context,folder), ...
+    'oatof:SavedTimes');
+   testCase.verifyEmpty(getappdata(0,'oatof_fixture_calls'));
+   testCase.verifyFalse(isfile(fullfile(folder,'comsol_detector_events_Fixture.csv')));
+  end
+  function missingSharedInventoryFailsBeforeAnyParticleRead(testCase)
+   [context,folder]=postprocessFixture(testCase);
+   context=rmfield(context,'solution_times_s');
+   testCase.verifyError(@()oatof_postprocess_saved_solution(struct('param',[]),context,folder), ...
+    'oatof:SavedContext');
+   testCase.verifyEmpty(getappdata(0,'oatof_fixture_calls'));
+  end
+  function normalSharedReaderChecksEqualTimeCompleteStatesOnce(testCase)
+   request=coldReadFixture(testCase,[0;.5;1;1;2;3;4;5;6]*1e-6,[1 1;NaN NaN;3 3]);
+   context=jsondecode(fileread(request.context_path));
+   [result,~]=oatof_postprocess_saved_solution(struct('param',[]),context,request.output_dir);
+   testCase.verifyEqual(getappdata(0,'oatof_fixture_state_calls'),1);
+   testCase.verifyEqual(result.nP,2);testCase.verifyEqual(result.nDet,2);
+  end
+  function normalSharedReaderRejectsDifferentEqualTimeCompleteStates(testCase)
+   request=coldReadFixture(testCase,[0;.5;1;1;2;3;4;5;6]*1e-6,[1 2;NaN NaN;3 3]);
+   context=jsondecode(fileread(request.context_path));
+   testCase.verifyError(@()oatof_postprocess_saved_solution(struct('param',[]),context,request.output_dir), ...
+    'oatof:ColdDuplicateState');
+   testCase.verifyEmpty(getappdata(0,'oatof_fixture_calls'));
+   testCase.verifyFalse(isfolder(request.output_dir));
+  end
   function coldAdapterKeepsExecutionOutputSpellingThroughRealHelper(testCase)
    request=coldReadFixture(testCase,[0;.5;1;2;3;4;5;6]*1e-6,[1 1]);
    result=reextract_oatof_saved_solution(request);
@@ -139,6 +212,7 @@ fprintf(fid,'%s',sprintf([ ...
  'function value=mphparticle(varargin)\n' ...
  'data=load(fullfile(fileparts(mfilename(''fullpath'')),''read_fixture.mat''));base=data.value;\n' ...
  'times=varargin{find(strcmp(varargin,''t''))+1};times=times(:);value=struct(''t'',times);\n' ...
+ 'queries=getappdata(0,''oatof_fixture_queries'');if isempty(queries),queries={};end;queries{end+1}=times;setappdata(0,''oatof_fixture_queries'',queries);\n' ...
  'calls=getappdata(0,''oatof_fixture_calls'');if isempty(calls),calls=0;end;setappdata(0,''oatof_fixture_calls'',calls+1);\n' ...
  'maximum=getappdata(0,''oatof_fixture_max_rows'');if isempty(maximum),maximum=0;end;setappdata(0,''oatof_fixture_max_rows'',max(maximum,numel(times)));\n' ...
  'for k=1:3,key=sprintf(''d%%d'',k);v=interp1(base.t,base.(key),times,''linear'',NaN);if isfield(data,''population''),v=repmat(v(:,1),1,data.population);end;value.(key)=v;end\nend\n']));fclose(fid);
@@ -155,7 +229,7 @@ context=struct('schema_version',1,'role','oatof_saved_particle_solution', ...
  'field_mode','real','reflectron_backplate_voltage_v',100,'modelPath','unused.mph', ...
  'flight_length_mm',10,'reflectron_length_mm',6,'detector_z_mm',0,'detector_x_mm',0, ...
  'detector_radius_mm',2,'accelerator_exit_mm',1,'field_idealization',struct(), ...
- 'native_particle_solve_count',0,'generate_model_plots',false, ...
+ 'native_particle_solve_count',0,'generate_model_plots',false,'solution_times_s',value.t, ...
  'timing',struct('t_accel_end_s',1e-6,'t_refl_start_s',.5e-6, ...
  't_refl_end_s',4.5e-6,'t_detector_start_s',4e-6,'t_detector_end_s',6e-6));
 end
@@ -172,7 +246,7 @@ for k=1:3,key=sprintf('d%d',k);value.(key)=value.(key)(:,1);end
 save(fullfile(folder,'read_fixture.mat'),'value','population');
 end
 function clearBoundedReaderCounters
-for key={'oatof_fixture_calls','oatof_fixture_max_rows','oatof_fixture_state_calls'}
+for key={'oatof_fixture_calls','oatof_fixture_max_rows','oatof_fixture_state_calls','oatof_fixture_queries'}
  if isappdata(0,key{1}),rmappdata(0,key{1});end
 end
 end
@@ -211,4 +285,57 @@ function request=coldReadFixture(testCase,times,states)
     'calls=getappdata(0,''oatof_fixture_state_calls'');if isempty(calls),calls=0;end;setappdata(0,''oatof_fixture_state_calls'',calls+1);\n' ...
     'value=data.states;\nend\n']));
    rehash
+end
+
+function times=oldFixtureQuery(context)
+arrival=(context.expected_tof-200e-9):context.fine_tstep:(context.expected_tof+200e-9);
+times=unique([linspace(0,context.Tsim,2001),arrival,context.Tsim]).';
+end
+function times=fullFixtureQuery(context)
+times=unique([oldFixtureQuery(context);context.solution_times_s(:)]);
+end
+function [first,second,overlap]=reconstructQueryPasses(queries)
+assert(mod(numel(queries),2)==0);
+count=numel(queries)/2;passes=cell(1,2);overlap=true;
+for pass=1:2
+ times=[];
+ for window=1:count
+  block=queries{(pass-1)*count+window};
+  if window>1
+   overlap=overlap&&block(1)==times(end);
+   block=block(2:end);
+  end
+  times=[times;block]; %#ok<AGROW> Small query vectors, never particle payloads.
+ end
+ passes{pass}=times;
+end
+first=passes{1};second=passes{2};
+end
+function [context,approachTime]=configureStoredApproach(folder,context,boundaryRow,detectorEvent)
+data=load(fullfile(folder,'read_fixture.mat'));value=data.value;
+value.t=[0;.5;1;2;3;4;4.6461;4.6464;4.6467;6]*1e-6;
+final=0;
+if strcmp(detectorEvent,'crossing'),final=-.4;end
+value.d3=repmat([0;2;10;14;12;10;.8;.4;final;final],1,2);
+value.d1=zeros(size(value.d3));value.d2=value.d1;
+context.solution_times_s=value.t;
+approachTime=value.t(8);
+initial=fullFixtureQuery(context);index=find(initial==approachTime);
+target=256*ceil(index/256)+(boundaryRow-256);
+extra=(1:(target-index))'/(target-index+1)*1e-10;
+context.solution_times_s=sort([value.t;extra]);
+save(fullfile(folder,'read_fixture.mat'),'value');
+end
+function result=fixtureArrivalReference(folder,context,times)
+data=load(fullfile(folder,'read_fixture.mat'));value=data.value;
+x=interp1(value.t,value.d1,times,'linear',NaN);
+y=interp1(value.t,value.d2,times,'linear',NaN);
+z=interp1(value.t,value.d3,times,'linear',NaN);
+result=oatof_extract_detector_arrivals(times,x,y,z,context.detector_z_mm, ...
+ 1e-3,.5,context.detector_x_mm,0,context.detector_radius_mm);
+end
+
+function status=oldDetectorStatus(detectorEvent)
+status="detector_hit";
+if strcmp(detectorEvent,'frozen_on_detector'),status="freeze_without_approach_segment";end
 end
