@@ -198,6 +198,8 @@ class SyncGeometryContractTests(unittest.TestCase):
             runtime = root / "config" / "candidate_runtime.json"
             campaign.write_bytes((PROJECT_ROOT / "config" / campaign.name).read_bytes())
             runtime.write_bytes((PROJECT_ROOT / "config" / runtime.name).read_bytes())
+            execution = root / "config" / "execution_profiles.json"
+            execution.write_bytes((PROJECT_ROOT / "config" / execution.name).read_bytes())
             envelope = render_optimization_envelope()
             with patch.object(sync_geometry_contract, "PROJECT_ROOT", root):
                 sync_geometry_contract.update(campaign, render_authority_document(campaign, envelope), True)

@@ -19,7 +19,7 @@ class FrozenIonDeliveryTests(unittest.TestCase):
     def test_long_frozen_lua_uses_public_code_alias_without_changing_canonical_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            code = root / ("frozen-code-" + "x"*70) / ("nested-" + "y"*70)
+            code = root / ("frozen-code-" + "x"*100) / ("nested-" + "y"*100)
             lua = code / "projects/analyzer/simion/verify_iob_runtime_contract.lua"
             lua.parent.mkdir(parents=True)
             lua.write_text("frozen verifier bytes", encoding="utf-8")

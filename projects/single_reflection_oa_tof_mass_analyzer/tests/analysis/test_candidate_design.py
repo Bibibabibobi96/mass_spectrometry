@@ -1996,6 +1996,7 @@ def execute_prepared_run(*args):
                 root_path, "20260720_145000"
             )
             plan = load_json(plan_path)
+            plan["context_sha256"] = sha256(plan_path)
             stage = next(
                 item
                 for item in plan["stages"]
@@ -2032,8 +2033,12 @@ def execute_prepared_run(*args):
             ), mock.patch(
                 "projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow._run_command",
                 side_effect=fake_run,
-            ):
+            ), mock.patch.object(candidate_workflow, "append_native_stage_completion",
+                                 wraps=candidate_workflow.append_native_stage_completion) as completion:
                 execute_stage(stage, plan, "unused")
+            self.assertEqual(completion.call_count, 2)
+            self.assertEqual([call.kwargs["context_sha256"] for call in completion.call_args_list],
+                             [sha256(plan_path)] * 2)
 
             code_root = Path(plan["execution_source_closure"]["code_root"])
             self.assertEqual(len(observed), 3)
@@ -2063,6 +2068,7 @@ def execute_prepared_run(*args):
         with tempfile.TemporaryDirectory() as root:
             artifact_root, plan_path = self.prepared_workflow_plan(Path(root), "20260720_145001")
             plan = load_json(plan_path)
+            plan["context_sha256"] = sha256(plan_path)
             stage = next(item for item in plan["stages"] if item["stage_id"] == "cad_candidate")
             environments = []
 
@@ -2078,8 +2084,12 @@ def execute_prepared_run(*args):
             with mock.patch(
                 "projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow._run_command",
                 side_effect=fake_run,
-            ):
+            ), mock.patch.object(candidate_workflow, "append_native_stage_completion",
+                                 wraps=candidate_workflow.append_native_stage_completion) as completion:
                 execute_stage(stage, plan, "unused")
+            self.assertEqual(completion.call_count, 1)
+            self.assertEqual([call.kwargs["context_sha256"] for call in completion.call_args_list],
+                             [sha256(plan_path)] * 1)
             self.assertEqual(environments[0]["OATOF_CANDIDATE_ARTIFACT_ROOT"], str(artifact_root.parents[1]))
 
     def test_cad_python_preflight_blocks_comsol_before_commercial_launcher(self):
