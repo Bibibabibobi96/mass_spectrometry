@@ -23,12 +23,20 @@ $workspaceRoot=Split-Path -Parent $repoRoot
 $script:pythonRoot=$repoRoot
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv/Scripts/python.exe'}
 if(-not(Test-Path -LiteralPath $python -PathType Leaf)){throw "Python executable is missing: $python"}
+. (Join-Path $repoRoot 'common/paths/workspace_paths.ps1')
+$pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
 . (Join-Path $repoRoot 'common/contracts/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
 if($ResumeFinalization){
   if(-not$RunId){throw 'Finalization recovery requires the existing RunId.'}
-  $projectArtifacts=Join-Path $workspaceRoot "artifacts/projects/$projectId"
+  $projectArtifacts=Join-Path $pathContext.artifact_root "projects/$projectId"
   if(-not$ResultPath){$ResultPath=Join-Path $projectArtifacts "scratch/workflow_results/$RunId/result.json"}
-  $result=Invoke-RunArtifactWorkflow -RequestPath (Join-Path $projectArtifacts "runs/$RunId/inputs/execution_request.json") -ResultPath $ResultPath -ResumeFinalization
+  $recoveryRun=Join-Path $projectArtifacts "runs/$RunId"
+  if(Test-Path -LiteralPath $ResultPath -PathType Leaf){
+    $transport=Get-Content -LiteralPath $ResultPath -Raw|ConvertFrom-Json -AsHashtable
+    if($transport.role-ne'run_artifact_workflow_result'-or(Split-Path -Leaf ([string]$transport.run_directory))-cne$RunId){throw 'Prepared-joint recovery Result identity differs.'}
+    $recoveryRun=[string]$transport.run_directory
+  }
+  $result=Invoke-RunArtifactWorkflow -RequestPath (Join-Path $recoveryRun 'inputs/execution_request.json') -ResultPath $ResultPath -ResumeFinalization
   Write-Output $result
   if($result.status-ne'success'){throw 'Prepared-joint finalization remains incomplete; inspect Result recovery action.'}
   return
@@ -37,11 +45,27 @@ if($PSCmdlet.ParameterSetName-eq'Flight'){
   $simion=if($SimionExe){[IO.Path]::GetFullPath($SimionExe)}else{Join-Path $env:ProgramFiles 'SIMION-2020/simion.exe'}
 }
 
+$script:preparedPackage=$null
 function Invoke-ProjectPython {
   param([string[]]$Arguments)
-  Push-Location -LiteralPath $script:pythonRoot;$saved=$env:PYTHONPATH
-  try{$env:PYTHONPATH=$script:pythonRoot;& $python -B @Arguments;if($LASTEXITCODE-ne0){throw "Python stage failed: $($Arguments -join ' ')"}}
-  finally{$env:PYTHONPATH=$saved;Pop-Location}
+  $root=$script:pythonRoot;$environment=@{}
+  if($null-ne$script:preparedPackage){
+    $execution=Get-RunNativeExecutionContext -Package $script:preparedPackage -Paths @($root) -Tool Python
+    $root=[string]$execution.projected_paths[0];$environment=$execution.environment
+  }
+  Invoke-RunToolRootContext -RepoRoot $root -Environment $environment -Operation {
+    & $python -B @Arguments
+    if($LASTEXITCODE-ne0){throw "Python stage failed: $($Arguments -join ' ')"}
+  }
+}
+
+function Get-PreparedJointSourceReferences {
+  param([string[]]$RunDirectories)
+  # These are explicit run authorities from the request or verified trial,
+  # never inferred ancestors of an arbitrary external file.
+  $code='import json,sys;from pathlib import Path;from common.contracts.write_run_manifest import file_record;print(json.dumps([dict(manifest_record=file_record(Path(p)/"run_manifest.json"),protected_paths=[p],protected_cache_keys=[]) for p in json.loads(sys.argv[1])]))'
+  $json=(@(Invoke-ProjectPython -Arguments @('-c',$code,(ConvertTo-Json -InputObject @($RunDirectories|Where-Object{$_}|Select-Object -Unique) -Compress)))-join"`n")
+  return @($json|ConvertFrom-Json -AsHashtable -Depth 100)
 }
 
 function Invoke-PreparedJointTrial {
@@ -62,21 +86,28 @@ function Invoke-PreparedJointTrial {
   $recording=(@(Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','recording-config','--contract',$observation))-join"`n")|ConvertFrom-Json
   if($null-eq$recording){throw 'Prepared joint flight requires retained trajectory observations.'}
   $jointRunId=if($RunId){$RunId}else{(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__ip-mr-joint-'+[guid]::NewGuid().ToString('N').Substring(0,8)}
-  $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $workspaceRoot "artifacts/projects/$projectId") `
+  $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $pathContext.artifact_root "projects/$projectId") `
     -RunId $jointRunId -Project $projectId -Mode prepared_joint -Software @('SIMION 2020','Python 3.11') `
-    -RetentionContractEnabled -RetentionClass solver_review -RetentionReason $recording.reason -CapacityLedgerLifecycleEnabled
+    -RetentionContractEnabled -RetentionClass solver_review -RetentionReason $recording.reason -CapacityLedgerLifecycleEnabled -PathContext $pathContext
+  $script:preparedPackage=$package
   $runDir=[string]$package.artifact_run_dir
   $resultDir=[string]$package.result_dir
   $logDir=[string]$package.log_dir
   $owner=$null;$finalizationAttempted=$false;$nativeOperations=[Collections.Generic.List[object]]::new();$resourceReleases=[Collections.Generic.List[object]]::new()
   $capacity=$null;$lease=$null;$terminalized=$false;$writerUnknown=$false;$waveInProgress=$false;$failureRecord=$null
   $runTimer=[Diagnostics.Stopwatch]::StartNew();$phaseTimings=[ordered]@{}
-  $guards=[Collections.Generic.List[IO.FileStream]]::new()
+  $guards=[Collections.Generic.List[IDisposable]]::new()
+  $pathEnvironmentNames=@('MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH','MASS_SPECTROMETRY_RUN_DIRECTORY','MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY')
+  $savedPathEnvironment=Save-RunEnvironment -Names $pathEnvironmentNames
   $stage='capacity_startup'
   try {
+ $parentEnvironment=(Get-RunNativeExecutionContext -Package $package -Paths @()).environment
+ foreach($key in $parentEnvironment.Keys){[Environment]::SetEnvironmentVariable([string]$key,[string]$parentEnvironment[$key],'Process')}
+
     $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
-      -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunDirectory $runDir `
-      -CommittedNewBytes ([int64]$recording.output_budget_bytes) -ProtectedPaths (@($runDir,$prepared)+@($parentRun|Where-Object{$_})) -Owner "run-artifact-workflow:${projectId}:$jointRunId"
+      -ArtifactRoot ([string]$pathContext.artifact_root) -RunDirectory $runDir `
+      -CommittedNewBytes ([int64]$recording.output_budget_bytes) -ProtectedPaths @($runDir) `
+      -SourceReferences @(Get-PreparedJointSourceReferences -RunDirectories @($prepared,$parentRun,$TrajectoryEquivalenceReferenceRunPath)) -Owner "run-artifact-workflow:${projectId}:$jointRunId"
     Write-RunJson -Path (Join-Path $resultDir 'artifact_capacity_gate_startup.json') -Depth 14 -Value $capacity
     $stage='freeze_executable_dependencies'
     $dependencyPath=Join-Path $repoRoot 'integrations/config/runtime_dependencies.json'
@@ -94,6 +125,7 @@ function Invoke-PreparedJointTrial {
     foreach($identity in $frozen.identities){$configuration.inputs[$identity.frozen_input_name]=$identity.snapshot_path}
     Write-RunJson -Path $package.run_config -Depth 50 -Value $configuration
     $stage='freeze_measured_joint_trial'
+    if($TrajectoryEquivalenceReferenceRunPath){$guards.Add((Enter-RunTerminalConsumptionGuard -RunDirectory $TrajectoryEquivalenceReferenceRunPath))}
     $prepareArguments=@('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial','prepare','--prepared-run',$prepared,'--contract',$observation,'--run-directory',$runDir,'--source-mode',$PreparedSourceMode)
     if($FieldBindingPath){$prepareArguments+=@('--field-binding',(Resolve-Path -LiteralPath $FieldBindingPath).Path)}
     if($TrajectoryEquivalenceReferenceRunPath){$prepareArguments+=@('--equivalence-reference-run',(Resolve-Path -LiteralPath $TrajectoryEquivalenceReferenceRunPath).Path)}
@@ -102,7 +134,7 @@ function Invoke-PreparedJointTrial {
     $preparationPath=Join-Path $resultDir 'prepared_joint_trial.json'
     $trial=Get-Content -LiteralPath $preparationPath -Raw|ConvertFrom-Json -Depth 60
     $renewal=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacity `
-      -ProtectedPaths (@($runDir)+@($trial.protected_paths)) -RemainingCommittedNewBytes ([int64]$recording.output_budget_bytes)
+      -ProtectedPaths @($runDir) -SourceReferences @(Get-PreparedJointSourceReferences -RunDirectories @($trial.protected_paths)) -RemainingCommittedNewBytes ([int64]$recording.output_budget_bytes)
     $capacity=$renewal.session
     $stage='plan_measured_joint_dispatch'
     $request=Join-Path $resultDir 'simion_dispatch_request.json'
@@ -123,7 +155,7 @@ function Invoke-PreparedJointTrial {
       $request=[string]$continuation.dispatch_request.path
       $profiles=[string]$continuation.resource_profiles.path
     }else{
-      Invoke-ProjectPython -Arguments @('-m','common.simion.resource_profile','discover','--runs-root',(Join-Path $workspaceRoot "artifacts/projects/$projectId/runs"),'--output',$profiles)
+      Invoke-ProjectPython -Arguments @('-m','common.simion.resource_profile','discover','--runs-root',(Join-Path $pathContext.artifact_root "projects/$projectId/runs"),'--output',$profiles)
       Invoke-ProjectPython -Arguments @('-m','common.simion.resource_scheduler','--request',$request,'--profiles',$profiles,'--output',$dispatch)
       Invoke-ProjectPython -Arguments @('-m','common.simion.particle_batching','--from-dispatch-plan',$dispatch,'--output',$plan)
     }
@@ -133,13 +165,18 @@ function Invoke-PreparedJointTrial {
     function New-PreparedJointBatch {
       param($PlannedBatch)
       $batchDirectory=Join-Path $batchRoot ('batch_{0:D3}'-f[int]$PlannedBatch.index)
-      Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight','materialize-joint','--preparation',$preparationPath,'--particle-id-min',([string]$PlannedBatch.particle_id_min),'--particle-id-max',([string]$PlannedBatch.particle_id_max),'--output',$batchDirectory)|Out-Host
+      $nativePaths=@([string]$trial.launcher,$batchDirectory,(Join-Path $batchDirectory 'joint.iob'),
+        (Join-Path $batchDirectory 'joint.fly2'),(Join-Path $batchDirectory 'joint.lua'))+@($trial.guard_paths)
+      $execution=Get-RunNativeExecutionContext -Package $package -Paths $nativePaths
+      Invoke-RunToolRootContext -RepoRoot $script:pythonRoot -Environment $execution.environment -Operation {
+        Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight','materialize-joint','--preparation',$preparationPath,'--particle-id-min',([string]$PlannedBatch.particle_id_min),'--particle-id-max',([string]$PlannedBatch.particle_id_max),'--output',$batchDirectory)|Out-Host
+      }
       return [pscustomobject]@{
         name=('mrtof_ip_measured_batch_{0:D3}'-f[int]$PlannedBatch.index);scheduler_batch=$PlannedBatch
-        file_path=$simion;working_directory=$batchDirectory;environment=@{}
+        file_path=$simion;working_directory=$execution.projected_paths[1];environment=$execution.environment
         stdout=Join-Path $logDir ('joint_flight_batch_{0:D3}.log'-f[int]$PlannedBatch.index)
         stderr=Join-Path $logDir ('joint_flight_batch_{0:D3}.stderr.log'-f[int]$PlannedBatch.index)
-        argument_list=[string[]]@('--nogui','--noprompt','lua',[string]$trial.launcher,(Join-Path $batchDirectory 'joint.iob'),(Join-Path $batchDirectory 'joint.fly2'))
+        argument_list=[string[]]@('--nogui','--noprompt','lua',[string]$execution.projected_paths[0],[string]$execution.projected_paths[2],[string]$execution.projected_paths[3])
         batch_receipt=Join-Path $batchDirectory 'batch_receipt.json'
         owner_exit=Join-Path $batchDirectory 'owner_exit.json'
       }
@@ -178,6 +215,7 @@ function Invoke-PreparedJointTrial {
     $configuration=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
     $configuration.inputs.prepared_joint_trial=$preparationPath
     $configuration.inputs.parent_prepared_manifest=Join-Path $prepared 'run_manifest.json'
+    if($TrajectoryEquivalenceReferenceRunPath){$configuration.inputs.trajectory_equivalence_source_manifest=Join-Path $TrajectoryEquivalenceReferenceRunPath 'run_manifest.json'}
     $configuration.inputs.observation_contract=[string]$trial.trajectory_contract.path
     $configuration.inputs.simion_execution_batch_plan=$plan
     $configuration.inputs.simion_dispatch_request=$request
@@ -216,7 +254,7 @@ function Invoke-PreparedJointTrial {
         $surface=[string]$path+'-surf'
         if(Test-Path -LiteralPath $surface -PathType Leaf){$guards.Add([IO.File]::Open($surface,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))}
       }
-      $lease=Enter-HostResourceStage -Role SIMION -Stage mrtof_flight -Budget (Get-HostResourceBudget -Role SIMION -Stage mrtof_flight) -RunId $jointRunId
+      $lease=Enter-HostResourceStage -StatePath $pathContext.host_resource_state_path -Role SIMION -Stage mrtof_flight -Budget (Get-HostResourceBudget -Role SIMION -Stage mrtof_flight) -RunId $jointRunId
       $stage='joint_asset_identity_before_flight'
       Invoke-ProjectPython -Arguments @('-c','import sys;from pathlib import Path;from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding,verify_joint_asset_records;verify_joint_asset_records(load_binding(Path(sys.argv[1])));print("JOINT_NATIVE_ASSETS=PASS")',[string]$trial.field_binding.path)
       $stage='measured_joint_flight'
@@ -299,6 +337,7 @@ function Invoke-PreparedJointTrial {
     }
     $phaseTimings.analysis_seconds=$runTimer.Elapsed.TotalSeconds-$analysisStarted
     Write-RunJson -Path $package.summary -Depth 20 -Value ([ordered]@{
+      native_path_preparation=$package.native_path_preparation
       schema_version=1;role='mrtof_measured_joint_flight_summary';status='success';mother_particle_count=[int]$trial.mother_particle_count
       execution_status='completed';data_validity='valid';scientific_result='candidate_only';failure_stage=$null;failure_reason=$null
       recovery_action='none';result_path=$package.summary;phase_timings_seconds=$phaseTimings;elapsed_through_analysis_seconds=$runTimer.Elapsed.TotalSeconds
@@ -325,6 +364,7 @@ function Invoke-PreparedJointTrial {
       $writerUnknown=$true
       try {
         Write-RunJson -Path $package.summary -Depth 20 -Value ([ordered]@{
+      native_path_preparation=$package.native_path_preparation
           schema_version=1;role='mrtof_measured_joint_flight_summary';status='writer_completion_unknown'
           reason=$failureRecord.Exception.Message;failure_stage=$stage;drain_error=[string]$drainError
           execution_status='unknown';data_validity='unknown';scientific_result='not_evaluated';failure_reason=$failureRecord.Exception.Message
@@ -351,6 +391,7 @@ function Invoke-PreparedJointTrial {
       $lease=$null
     }
       Write-RunJson -Path $package.summary -Depth 20 -Value ([ordered]@{
+      native_path_preparation=$package.native_path_preparation
         schema_version=1;role='mrtof_measured_joint_flight_summary';status='failed';reason=$failure;failure_stage=$stage
         execution_status='failed';data_validity='unknown';scientific_result='not_evaluated';failure_reason=$failure
         recovery_action='new_run_with_explicit_predecessor';result_path=$package.summary;phase_timings_seconds=$phaseTimings;elapsed_seconds=$runTimer.Elapsed.TotalSeconds
@@ -371,9 +412,11 @@ function Invoke-PreparedJointTrial {
     }
     throw $failureRecord
   }finally{
+    Restore-RunEnvironment -Names $pathEnvironmentNames -Snapshot $savedPathEnvironment
     if(-not$writerUnknown){
       $cleanupErrors=[Collections.Generic.List[string]]::new()
       if($null-ne$lease){try{Exit-HostResourceStage -Lease $lease}catch{$cleanupErrors.Add([string]$_)}}
+      if($null-ne$package){try{Remove-RunPackageExecutionAlias -Package $package}catch{$cleanupErrors.Add([string]$_)}}
       foreach($guard in $guards){try{$guard.Dispose()}catch{$cleanupErrors.Add([string]$_)}}
       if($null-ne$capacity-and-not$finalizationAttempted){try{$null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacity}catch{$cleanupErrors.Add([string]$_)}}
       if($cleanupErrors.Count){
@@ -391,16 +434,18 @@ function Invoke-PreparedJointAnalysis {
   $recording=(@(Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','recording-config','--contract',$contract))-join"`n")|ConvertFrom-Json
   if($null-eq$recording){throw 'Joint analysis requires the original retained-observation budget.'}
   $analysisRunId=if($RunId){$RunId}else{(Get-Date -Format 'yyyyMMdd_HHmmss')+'__analysis__python__ip-mr-joint-'+[guid]::NewGuid().ToString('N').Substring(0,8)}
-  $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $workspaceRoot "artifacts/projects/$projectId") `
+  $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $pathContext.artifact_root "projects/$projectId") `
     -RunId $analysisRunId -Project $projectId -Mode prepared_joint_analysis -Software @('Python 3.11') `
-    -RetentionContractEnabled -RetentionClass solver_review -RetentionReason $recording.reason -CapacityLedgerLifecycleEnabled
+    -RetentionContractEnabled -RetentionClass solver_review -RetentionReason $recording.reason -CapacityLedgerLifecycleEnabled -PathContext $pathContext
+  $script:preparedPackage=$package
   $runDir=[string]$package.artifact_run_dir
   $inputDir=Join-Path $runDir 'inputs'
   $analysisTimer=[Diagnostics.Stopwatch]::StartNew()
   $owner=$null;$capacity=$null;$failure=$null;$stage='capacity_startup'
   try {
-    $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') `
-      -RunDirectory $runDir -CommittedNewBytes ([int64]$recording.output_budget_bytes) -ProtectedPaths @($runDir,$source) -Owner "run-artifact-workflow:${projectId}:$analysisRunId"
+    $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot ([string]$pathContext.artifact_root) `
+      -RunDirectory $runDir -CommittedNewBytes ([int64]$recording.output_budget_bytes) -ProtectedPaths @($runDir) `
+      -SourceReferences @(Get-PreparedJointSourceReferences -RunDirectories @($source)) -Owner "run-artifact-workflow:${projectId}:$analysisRunId"
     $stage='freeze_executable_dependencies'
     $dependencyPath=Join-Path $repoRoot 'integrations/config/runtime_dependencies.json'
     $frozen=Freeze-ConsumerDependencies -RepoRoot $repoRoot -ContractPath $dependencyPath -InputDir $inputDir -OwnerId $projectId -ConsumerId prepared_joint
@@ -426,14 +471,14 @@ function Invoke-PreparedJointAnalysis {
     $configuration.parameters=[ordered]@{source_run=$source;mother_particle_count=$selection.mother_particle_count;launched_particle_count=$selection.launched_particle_count;native_flight_executed=$false;qualification='post_hoc_analysis_only'}
     Write-RunJson -Path $package.run_config -Depth 50 -Value $configuration
     $renewal=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacity `
-      -ProtectedPaths (@($runDir)+@($selection.protected_paths)) -RemainingCommittedNewBytes ([int64]$recording.output_budget_bytes)
+      -ProtectedPaths @($runDir) -SourceReferences @(Get-PreparedJointSourceReferences -RunDirectories @($selection.protected_paths)) -RemainingCommittedNewBytes ([int64]$recording.output_budget_bytes)
     $capacity=$renewal.session
     $stage='joint_diagnostics'
     Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight','analyze-joint',
       '--preparation',[string]$selection.preparation,'--log',[string]$selection.merged_log,'--output',(Join-Path $package.result_dir 'diagnostics'),'--analysis-contract',[string]$selection.analysis_contract)
   }catch{$failure=$_}
   $status=if($null-eq$failure){'success'}else{'failed'}
-  $summary=[ordered]@{schema_version=1;role='prepared_joint_analysis_summary';status=$status;source_run=$source;native_flight_executed=$false;qualification='post_hoc_analysis_only';elapsed_before_finalization_seconds=$analysisTimer.Elapsed.TotalSeconds}
+  $summary=[ordered]@{native_path_preparation=$package.native_path_preparation;schema_version=1;role='prepared_joint_analysis_summary';status=$status;source_run=$source;native_flight_executed=$false;qualification='post_hoc_analysis_only';elapsed_before_finalization_seconds=$analysisTimer.Elapsed.TotalSeconds}
   if($null-ne$failure){$summary.reason=$failure.Exception.Message;$summary.failure_stage=$stage}
   if($null-eq$owner){
     if($null-ne$capacity){$null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacity}
@@ -448,7 +493,7 @@ function Invoke-PreparedJointAnalysis {
 }
 if($PSCmdlet.ParameterSetName-eq'Analysis'){
   . (Join-Path $repoRoot 'common/host_execution_lease.ps1')
-  $analysisLease=Enter-HostExecutionLease -Role GATE -Stage unclassified -RunId $RunId
+  $analysisLease=Enter-HostExecutionLease -StatePath $pathContext.host_resource_state_path -Role GATE -Stage unclassified -RunId $RunId
   $analysisOkay=$false
   try{Invoke-PreparedJointAnalysis;$analysisOkay=$true}
   finally{Exit-HostExecutionLease -Lease $analysisLease -Outcome $(if($analysisOkay){'success'}else{'failed'}) -RunId $RunId}

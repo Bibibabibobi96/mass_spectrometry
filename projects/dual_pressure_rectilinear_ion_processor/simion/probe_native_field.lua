@@ -1,6 +1,7 @@
 -- Read-only native potential audit; coordinates and voltages share Fly inputs.
 local directory=assert(debug.getinfo(1,'S').source:sub(2):match('^(.*[/\\])'))
 local c=assert(loadfile(directory..'frozen_config.lua'))()
+local native_path=assert(loadfile(directory..'native_run_path.lua'))()
 local waveforms=assert(loadfile(directory..'voltage_waveforms.lua'))()
 local drive=assert(loadfile(directory..'native_drive.lua'))(waveforms)
 local kernel=assert(loadfile(directory..'simion_rf_drive.lua'))()
@@ -11,7 +12,7 @@ local rf=kernel.new{waveform='cosine',frequency_hz=b.electric.rf_frequency_hz,
  phase_rad=b.clock.rf_phase_rad,rf_amplitude_v=b.electric.rf_peak_to_peak_v/2,
  rf_scale=1,common_mode_scale=1,group_dc_v={0,0},rf_steps_per_period=c.numerics.rf_steps_per_period,
  electrodes={{electrode_id=1,electrode_group=1,polarity=1,common_mode_v=0}}}
-local pa=simion.pas:open(c.native_field.directory..'/processor.pa0')
+local pa=simion.pas:open(native_path(c.native_field.directory..'/processor.pa0'))
 local origin,grid=c.native_projection.origin_mm,c.native_projection.grid_mm
 local maximum=c.native_projection.maximum_mm
 local radius=d.section_radius_scale*b.geometry.r0_mm

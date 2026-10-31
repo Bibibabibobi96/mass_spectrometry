@@ -277,3 +277,22 @@ canonical状态保留原reason：接受为transmitted、明确逃逸／电极损
 未解析的solver_stop／unknown为unknown，不再全部写lost。母群、capture／extraction及原门限不变。
 原non-exit terminal诊断不证明碰撞原因，未知电极保持unknown。
 软件CSV／冻结／诊断回归不等于新增求场、飞行或科学资格，既有协议timeout及损失解释须按原范围报告。
+
+### 运行根与冻结原生路径
+
+正式`run_functional.ps1`在启动时解析并冻结公共四根，持久身份使用`artifact_run_dir`；
+实际Python与SIMION准备／批次调用沿同一Package的`Get-RunNativeExecutionContext`选择执行表示，
+同步运输cwd、argv、环境及Lua内的种子／场／IOB引用。主机库保持原身份，恢复读取原Result的run位置。
+`functional.prepare`冻结实际动态资源、所选配置和官方seed/placeholder；新解释器可仅凭该源码闭包
+重新准备同一GEM与源，不从今日活动默认配置补输入。公共持续只读guard的一次身份记录直接交dispatch，
+原分区／原ID恢复、未知writer保守处理和科学接受条件不变。
+本改动的软件夹具不等于新场Refine或功能Fly资格；外部PA仍由原owner及既有私有副本／保护边界处理。
+
+2026-10-31 小型真实路径验收 run `20261031_141654__sim__simion__ip-path-probexxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`：
+实际冻结 IP prepare 和原项目 build_workbench，经公共 IOB owner 完成新建11³／0.1mm未求解零场、保存、重开，
+删除旧 execution alias 后以新 alias 冷重开同一 IOB，四个原生进程均实际退出0。
+PA 在 builder 前取得持续防写 guard；保护前可写、保护中拒写，文件属性前后均 Archive，未设置 ReadOnly。
+外层公开调用43.5748秒，纯准备2.5341秒，原生边界6.1688秒，公共路径准备0.76335秒／运输0字节；
+终态、容量、资源释放及两个 alias 清理完成。小 Result 位于该主题 scratch 的
+`agent2/native_ip_proposal/complete_owner_draft/root_native_result.json`。
+该11³ PA仅验证 IOB／pose／路径与保存机制，0 Refine、0 Fly，不代表完整IP场、N=100功能或科学资格。

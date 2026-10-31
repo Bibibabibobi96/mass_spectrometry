@@ -68,7 +68,9 @@ with tempfile.TemporaryDirectory() as request_directory:
         entries = {item["source_repo_path"]: set(item["consumers"])
                    for group in load(INVENTORY)["providers"] for item in group["files"]}
         self.assertEqual(entries["common/contracts/run_artifact_workflow.ps1"],
-                         {"prepared_joint", "oa_mr"})
+                         {"prepared_joint", "oa_mr", "paired_accelerator_static_field",
+                          "paired_accelerator_pulse", "local_frontend", "cooled_frontend",
+                          "single_reflection_flight"})
         self.assertLessEqual(entries["common/contracts/run_artifact_workflow.ps1"],
                              entries["common/resource_budget_support.ps1"])
 

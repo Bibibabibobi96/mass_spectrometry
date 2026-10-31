@@ -26,17 +26,13 @@ function Enter-IonProcessorNativeFlightGuards {
    }
   }
   foreach($path in $paths){
-   $stream=$null
-   try {
-    $stream=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
-    $bytes=$stream.Length
-    $sha=Get-ImmutablePaSourceVerificationSha256 -Stream $stream -Length $bytes
-   } finally {if($null-ne$stream){$stream.Dispose()}}
-   if($path-eq$controller-and($bytes-ne$Pa0Record.bytes-or$sha-ne$Pa0Record.sha256)){throw 'Native controller identity changed before flight'}
-   $entry=[pscustomobject]@{path=$path;bytes=$bytes;before_sha256=$sha;after_sha256=$null;owns_guard=$false;guard_acquired=$false;verified=$false;error=$null}
+   $identity=@{Source=$path}
+   if($path-eq$controller-and$Pa0Record.Contains('sha256')){$identity.ExpectedBytes=[long]$Pa0Record.bytes;$identity.ExpectedSha256=[string]$Pa0Record.sha256}
+   $guard=Protect-ImmutablePaSource @identity
+   $entry=[pscustomobject]@{path=$path;bytes=$guard.bytes;before_sha256=$guard.sha256;after_sha256=$null;
+    owns_guard=(-not$guard.already_protected);guard_acquired=$true;verified=$false;error=$null;
+    stream=$global:MassSpectrometryImmutablePaSourceGuards[[IO.Path]::GetFullPath($path)].stream}
    $Context.records.Add($entry)
-   $guard=Protect-ImmutablePaSource -Source $path -ExpectedBytes $bytes -ExpectedSha256 $sha
-   $entry.owns_guard=-not$guard.already_protected;$entry.guard_acquired=$true
   }
   $Context.status='protected'
  } catch {$Context.error=$_.Exception.Message;throw}
@@ -49,16 +45,23 @@ function Complete-IonProcessorNativeFlightGuards {
   foreach($entry in $Context.records){
    if(-not$entry.guard_acquired){continue}
    try {
-    $stream=$global:MassSpectrometryImmutablePaSourceGuards[[IO.Path]::GetFullPath($entry.path)].stream
-    $entry.after_sha256=Get-ImmutablePaSourceVerificationSha256 -Stream $stream -Length $entry.bytes
-    if($entry.after_sha256-ne$entry.before_sha256){throw 'Native family identity changed during flight'}
+    $live=$global:MassSpectrometryImmutablePaSourceGuards[[IO.Path]::GetFullPath($entry.path)]
+    if($null-eq$live-or-not[object]::ReferenceEquals($live.stream,$entry.stream)){throw 'Native family identity protection interrupted during flight'}
+    $null=Protect-ImmutablePaSource -Source $entry.path -ExpectedBytes $entry.bytes -ExpectedSha256 $entry.before_sha256
+    $entry.after_sha256=$entry.before_sha256
     $entry.verified=$true
    } catch {$entry.error=$_.Exception.Message;$errors.Add($entry.path+': '+$entry.error)}
   }
   $Context.status=$(if($errors.Count){'failed'}else{'verified'})
-  Write-RunJson -Path $VerificationPath -Value @{schema_version=1;role='native_flight_family_identity';status=$Context.status;hash_policy='public_immutable_source_verification_no_buffered_fallback';records=@($Context.records.ToArray());errors=@($errors.ToArray())}
+  Write-RunJson -Path $VerificationPath -Value @{schema_version=1;role='native_flight_family_identity';status=$Context.status;hash_policy='one_identity_read_under_continuous_public_guard';records=@($Context.records|Select-Object -Property * -ExcludeProperty stream);errors=@($errors.ToArray())}
  } finally {
-  foreach($entry in $Context.records){if($entry.owns_guard){Unprotect-ImmutablePaSource -Source $entry.path|Out-Null}}
+  foreach($entry in $Context.records){
+   if(-not$entry.owns_guard){continue}
+   $live=$global:MassSpectrometryImmutablePaSourceGuards[[IO.Path]::GetFullPath($entry.path)]
+   if($null-ne$live-and[object]::ReferenceEquals($live.stream,$entry.stream)){
+    Unprotect-ImmutablePaSource -Source $entry.path|Out-Null
+   }
+  }
  }
  if($errors.Count){throw ($errors -join '; ')}
 }
@@ -162,14 +165,15 @@ function Protect-IonProcessorContinuationInputs {
  }
 }
 function Invoke-IonProcessorCompletedContinuation {
- param([string]$Python,[string]$Run,[string]$Predecessor,[string]$RepoRoot)
- $env:PYTHONPATH=Join-Path $Run 'inputs/code'
- Push-Location $Run
+ param([Parameter(Mandatory)]$Package,[string]$Python,[string]$Run,[string]$Predecessor,[string]$RepoRoot)
+ $pythonContext=Get-RunNativeExecutionContext -Package $Package -Paths @((Join-Path $Run 'inputs/code'),$Run) -Tool Python
+ $env:PYTHONPATH=$pythonContext.projected_paths[0]
+ Push-Location $pythonContext.projected_paths[1]
  try {
   & $Python -m projects.dual_pressure_rectilinear_ion_processor.analysis.functional prepare-continuation --run $Run --baseline-run $Predecessor | Out-Host
   if($LASTEXITCODE-ne0){throw 'IP continuation requires a complete compatible native population'}
  } finally {Pop-Location;$env:PYTHONPATH=$RepoRoot}
- return Enter-HostExecutionLease -Role SIMION -Stage postprocess
+ return Enter-HostExecutionLease -StatePath $pathContext.host_resource_state_path -Role SIMION -Stage postprocess
 }
 function Write-IonProcessorBatchCompletion {
  param($Record,[string]$ResultDirectory,$NativeOperations=$null)
@@ -201,8 +205,10 @@ $workspaceRoot=Split-Path -Parent $repoRoot
 . (Join-Path $repoRoot 'common/resource_budget_support.ps1')
 . (Join-Path $repoRoot 'common/simion/short_pa_path_support.ps1')
 $python=Join-Path $repoRoot '.venv/Scripts/python.exe'
+. (Join-Path $repoRoot 'common/paths/workspace_paths.ps1')
+$pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
 if($ResumeFinalization){
- $projectArtifacts=Join-Path $workspaceRoot 'artifacts/projects/dual_pressure_rectilinear_ion_processor'
+ $projectArtifacts=Join-Path $pathContext.artifact_root 'projects/dual_pressure_rectilinear_ion_processor'
  $recoveryRun=Join-Path $projectArtifacts ('runs/'+$RunId)
  if($ResultPath-and(Test-Path -LiteralPath $ResultPath -PathType Leaf)){
   $transport=Get-Content -LiteralPath $ResultPath -Raw|ConvertFrom-Json -AsHashtable
@@ -239,20 +245,22 @@ if($NativeFieldRun){
  $count=(Get-Content (Join-Path $configurationRoot $sourceFile) -Raw|ConvertFrom-Json).particle_count
  $committedNewBytes=[long][Math]::Max(2GB,([long]$count*50MB+256MB))
 }
-$artifacts=Join-Path $workspaceRoot 'artifacts'
+$artifacts=[string]$pathContext.artifact_root
 $projectArtifacts=Join-Path $artifacts 'projects/dual_pressure_rectilinear_ion_processor'
-$capacity=$null;$package=$null;$lease=$null;$finished=$false;$runSucceeded=$false;$writersStopped=$true;$nativeCompleted=$false
+$capacity=$null;$package=$null;$lease=$null;$finished=$false;$runSucceeded=$false;$writersStopped=$true;$nativeCompleted=$false;$nativeContext=$null
 $primaryRunFailure=$null
 $ownerContext=$null;$nativeOperations=[Collections.Generic.List[object]]::new();$hostRelease=$null
 $runObservation=@{timer=[Diagnostics.Stopwatch]::StartNew();stage='startup';stage_started_seconds=0.0;phase_durations_seconds=[ordered]@{}}
 $failureStage='';$failureReason=''
 $partialContinuation=$false;$partialReplayCount=0;$continuationFieldRun=$null;$continuationFieldGuards=@{records=[Collections.Generic.List[object]]::new();manifest_stream=$null;run_config_stream=$null;publication_guard=$null}
 $continuationReadGuards=@{streams=[Collections.Generic.List[object]]::new()}
+$pathEnvironmentNames=@('MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH','MASS_SPECTROMETRY_RUN_DIRECTORY','MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY')
+$savedPathEnvironment=Save-RunEnvironment -Names $pathEnvironmentNames
 $savedPythonPath=$env:PYTHONPATH;$env:PYTHONPATH=$repoRoot
 Push-Location $repoRoot
 try {
  $artifactPrefix=[IO.Path]::GetFullPath($artifacts).TrimEnd([IO.Path]::DirectorySeparatorChar)+[IO.Path]::DirectorySeparatorChar
- $protected=@();$injectedAuthorities=@();$continuationAuthorities=@()
+ $protected=@();$sourceReferences=@();$injectedAuthorities=@();$continuationAuthorities=@()
  if([IO.Path]::GetFullPath($configurationRoot).StartsWith($artifactPrefix,[StringComparison]::OrdinalIgnoreCase)){$protected+=@($configurationRoot)}
  if($InjectedSource){
   $InjectedSource=(Resolve-Path -LiteralPath $InjectedSource).Path
@@ -260,8 +268,35 @@ try {
   if($LASTEXITCODE-ne0){throw 'Injected source protection projection failed'}
   $injectedAuthorities=@(($projection|ConvertFrom-Json))
   foreach($path in $injectedAuthorities){if([IO.Path]::GetFullPath($path).StartsWith($artifactPrefix,[StringComparison]::OrdinalIgnoreCase)){$protected+=@($path)}}
+  $referenceCode=@'
+import json,sys
+from pathlib import Path
+from common.contracts.verify_run_manifest import record_path
+source=Path(sys.argv[1]);contract=json.loads(source.read_text(encoding='utf-8-sig'))
+paths=[Path(p).resolve() for p in json.loads(sys.argv[2])];refs=[];covered=set()
+for name in ('producer_manifest','preparation_manifest'):
+    record=contract.get(name)
+    if record is None: continue
+    manifest=record_path(record,base_dir=source.parent)
+    if manifest.name!='run_manifest.json': raise ValueError(name+' is not an explicit run manifest')
+    selected=[p for p in paths if p==manifest.parent or manifest.parent in p.parents]
+    if selected:
+        refs.append(dict(manifest_record={**record,'path':str(manifest)},protected_paths=list(map(str,selected)),protected_cache_keys=[]));covered.update(selected)
+root=Path(sys.argv[3]).resolve()
+unbound=[str(p) for p in paths if not p.is_relative_to(root) and p not in covered]
+if unbound: raise ValueError('Injected source lacks explicit producer/preparation manifest coverage: '+repr(unbound))
+print(json.dumps(refs))
+'@
+  $references=& $python -c $referenceCode $InjectedSource (ConvertTo-Json -InputObject @($injectedAuthorities) -Compress) $artifacts
+  if($LASTEXITCODE-ne0){throw 'Injected source protection requires explicit original-owner producer/preparation manifest evidence.'}
+  $sourceReferences+=@(($references|ConvertFrom-Json -AsHashtable -Depth 100))
  }
- if($NativeFieldRun){$NativeFieldRun=(Resolve-Path -LiteralPath $NativeFieldRun).Path;$protected+=@($NativeFieldRun)}
+ if($NativeFieldRun){
+  $NativeFieldRun=(Resolve-Path -LiteralPath $NativeFieldRun).Path
+  $record=& $python -c 'import json,sys;from pathlib import Path;from common.contracts.write_run_manifest import file_record;print(json.dumps(file_record(Path(sys.argv[1])/"run_manifest.json")))' $NativeFieldRun
+  if($LASTEXITCODE-ne0){throw 'Native field requires explicit original-owner manifest evidence.'}
+  $sourceReferences+=@{manifest_record=($record|ConvertFrom-Json -AsHashtable);protected_paths=@($NativeFieldRun);protected_cache_keys=@()}
+ }
  if($ContinuationPredecessorManifestPath){
   $ContinuationPredecessorManifestPath=(Resolve-Path -LiteralPath $ContinuationPredecessorManifestPath).Path
   if([IO.Path]::GetFileName($ContinuationPredecessorManifestPath)-cne'run_manifest.json'){throw 'Continuation requires an explicit predecessor manifest'}
@@ -269,19 +304,26 @@ try {
   $projection=& $python -c 'import json,sys;from pathlib import Path;from projects.dual_pressure_rectilinear_ion_processor.analysis.batching import continuation_protection_paths;print(json.dumps([str(p) for p in continuation_protection_paths(Path(sys.argv[1]))]))' $predecessor
   if($LASTEXITCODE-ne0){throw 'IP continuation ancestry protection projection failed'}
   $continuationAuthorities=@(($projection|ConvertFrom-Json))
-  foreach($path in $continuationAuthorities){if([IO.Path]::GetFullPath($path).StartsWith($artifactPrefix,[StringComparison]::OrdinalIgnoreCase)){$protected+=@($path)}}
+  $records=& $python -c 'import json,sys;from pathlib import Path;from common.contracts.write_run_manifest import file_record;print(json.dumps([dict(manifest_record=file_record(Path(p)/"run_manifest.json"),protected_paths=[p],protected_cache_keys=[]) for p in json.loads(sys.argv[1])]))' (ConvertTo-Json -InputObject @($continuationAuthorities) -Compress)
+  if($LASTEXITCODE-ne0){throw 'IP continuation lacks explicit original-owner manifest evidence.'}
+  $sourceReferences+=@(($records|ConvertFrom-Json -AsHashtable -Depth 100))
   $required=@('results/batch_merge_receipt.json','results/batch_input_validation_receipt.json','results/simion_execution_batch_plan.json','results/simion_batch_resource_usage.json','simion/events.csv','simion/samples.csv','simion/collision_rng_seeds.csv','simion/hs1_bound_parameters.csv','simion/extraction_steps.csv','simion/extraction_impulses.csv','simion/native_field_samples.csv','logs/flight.log')
   $partialContinuation=@($required|Where-Object{-not(Test-Path -LiteralPath (Join-Path $predecessor $_) -PathType Leaf)-and-not($_-eq'simion/native_field_samples.csv'-and(Test-Path -LiteralPath (Join-Path $predecessor 'inputs/partial_batch_replay/field_source.json') -PathType Leaf))}).Count-gt0
   if($partialContinuation){
    $sourceModel=Get-Content (Join-Path $predecessor 'inputs/resolved_model.json') -Raw|ConvertFrom-Json
    $continuationFieldRun=if($sourceModel.native_field.source_manifest){Split-Path -Parent ([string]$sourceModel.native_field.source_manifest)}else{Split-Path -Parent ([string]$sourceModel.native_field.directory)}
    $continuationFieldRun=(Resolve-Path -LiteralPath $continuationFieldRun).Path
-   if([IO.Path]::GetFullPath($continuationFieldRun).StartsWith($artifactPrefix,[StringComparison]::OrdinalIgnoreCase)){$protected+=@($continuationFieldRun)}
+   $record=& $python -c 'import json,sys;from pathlib import Path;from common.contracts.write_run_manifest import file_record;print(json.dumps(file_record(Path(sys.argv[1])/"run_manifest.json")))' $continuationFieldRun
+   if($LASTEXITCODE-ne0){throw 'Continuation field requires explicit original-owner manifest evidence.'}
+   $sourceReferences+=@{manifest_record=($record|ConvertFrom-Json -AsHashtable);protected_paths=@($continuationFieldRun);protected_cache_keys=@()}
   }
  }
- $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifacts -RunDirectory (Join-Path $projectArtifacts "runs/$RunId") -CommittedNewBytes $committedNewBytes -ProtectedPaths $protected -Owner ("run-artifact-workflow:dual_pressure_rectilinear_ion_processor:{0}"-f$RunId)
- $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $projectArtifacts -RunId $RunId -Project dual_pressure_rectilinear_ion_processor -Mode native_electrode_functional -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass $profile.retention_class -RetentionReason $profile.retention_reason -CapacityLedgerLifecycleEnabled -AdditionalDirectories @('simion')
- $run=$package.run_dir;$solver=Join-Path $run 'simion'
+ $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifacts -RunDirectory (Join-Path $projectArtifacts "runs/$RunId") -CommittedNewBytes $committedNewBytes -ProtectedPaths $protected -SourceReferences $sourceReferences -Owner ("run-artifact-workflow:dual_pressure_rectilinear_ion_processor:{0}"-f$RunId)
+ $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $projectArtifacts -RunId $RunId -Project dual_pressure_rectilinear_ion_processor -Mode native_electrode_functional -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass $profile.retention_class -RetentionReason $profile.retention_reason -CapacityLedgerLifecycleEnabled -PathContext $pathContext -AdditionalDirectories @('simion')
+ $run=$package.artifact_run_dir;$solver=Join-Path $run 'simion'
+ $parentEnvironment=(Get-RunNativeExecutionContext -Package $package -Paths @()).environment
+ foreach($key in $parentEnvironment.Keys){[Environment]::SetEnvironmentVariable([string]$key,[string]$parentEnvironment[$key],'Process')}
+
  $ownerPath=Join-Path $package.input_dir 'run_functional.ps1';$ownerIdentity=$null
  Copy-VerifiedRunInput -Source $PSCommandPath -Destination $ownerPath -VerifiedIdentity ([ref]$ownerIdentity)|Out-Null
  $budgetInput=Join-Path $package.input_dir 'runtime_profiles.json'
@@ -322,7 +364,8 @@ try {
  }
  if($partialContinuation){
   Set-IonProcessorRunStage -Context $runObservation -Stage continuation_plan
-  $env:PYTHONPATH=Join-Path $run 'inputs/code';Push-Location $run
+  $pythonContext=Get-RunNativeExecutionContext -Package $package -Paths @((Join-Path $run 'inputs/code'),$run) -Tool Python
+  $env:PYTHONPATH=$pythonContext.projected_paths[0];Push-Location $pythonContext.projected_paths[1]
   try {
    & $python -m projects.dual_pressure_rectilinear_ion_processor.analysis.functional prepare-partial-continuation --run $run --baseline-run $predecessor | Out-Host
    if($LASTEXITCODE-ne0){throw 'IP partial continuation planning failed'}
@@ -343,12 +386,13 @@ try {
   } finally {Pop-Location;$env:PYTHONPATH=$repoRoot}
  }
  if($ContinuationPredecessorManifestPath-and-not$partialContinuation){
-  $lease=Invoke-IonProcessorCompletedContinuation -Python $python -Run $run -Predecessor $predecessor -RepoRoot $repoRoot
+  $lease=Invoke-IonProcessorCompletedContinuation -Package $package -Python $python -Run $run -Predecessor $predecessor -RepoRoot $repoRoot
   $nativeCompleted=$true
   Write-Output "ION_PROCESSOR_CONTINUATION=REANALYZE PREDECESSOR=$predecessor RUN=$run NATIVE_STARTS=0"
  } elseif($partialContinuation-and$partialReplayCount-eq0){
-  $lease=Enter-HostExecutionLease -Role SIMION -Stage postprocess
-  $env:PYTHONPATH=Join-Path $run 'inputs/code';Push-Location $run
+  $lease=Enter-HostExecutionLease -StatePath $pathContext.host_resource_state_path -Role SIMION -Stage postprocess
+  $pythonContext=Get-RunNativeExecutionContext -Package $package -Paths @((Join-Path $run 'inputs/code'),$run) -Tool Python
+  $env:PYTHONPATH=$pythonContext.projected_paths[0];Push-Location $pythonContext.projected_paths[1]
   try {
    & $python -m projects.dual_pressure_rectilinear_ion_processor.analysis.functional merge-batches --run $run --batch-plan (Join-Path $run 'inputs/partial_batch_replay/batch_plan.json') | Out-Host
    if($LASTEXITCODE-ne0){throw 'IP reused batch merge failed'}
@@ -359,7 +403,7 @@ try {
   Write-Output "ION_PROCESSOR_CONTINUATION=REUSE_BATCHES PREDECESSOR=$predecessor RUN=$run NATIVE_STARTS=0"
  } else {
  Set-IonProcessorRunStage -Context $runObservation -Stage native_preparation
- $lease=Enter-HostExecutionLease -Role SIMION -Stage prepare
+ $lease=Enter-HostExecutionLease -StatePath $pathContext.host_resource_state_path -Role SIMION -Stage prepare
  $numerics=Get-Content (Join-Path $package.input_dir 'numerics.json') -Raw|ConvertFrom-Json
  $commands=@(
   @{name='gem';stage='prepare';arguments=@('--nogui','--noprompt','gem2pa','processor.gem','processor.pa#')},
@@ -369,6 +413,12 @@ try {
  )
  if($NativeFieldRun){$commands=@($commands|Where-Object{$_.name-notin@('gem','refine')})}
  Copy-VerifiedRunInput (Join-Path $solver 'runtime.lua') (Join-Path $solver 'processor.lua')|Out-Null
+ $nativeModel=Get-Content (Join-Path $package.input_dir 'resolved_model.json') -Raw|ConvertFrom-Json
+ $nativePaths=@($solver,(Join-Path $solver 'processor.gem'),(Join-Path $solver 'processor.pa#'),
+  (Join-Path $solver 'processor.pa0'),(Join-Path $solver 'processor.iob'),(Join-Path $solver 'processor.lua'),
+  (Join-Path $solver 'processor.fly2'),(Join-Path $solver 'build_workbench.lua'),(Join-Path $solver 'probe_native_field.lua'),
+  [string]$nativeModel.workbench_seed_path)
+ $nativeContext=Get-RunNativeExecutionContext -Package $package -Paths $nativePaths
  foreach($command in $commands){
   Set-IonProcessorRunStage -Context $runObservation -Stage $command.name
   $stageBudget=Get-HostResourceBudget -Role SIMION -Stage $command.stage
@@ -377,7 +427,7 @@ try {
   Write-Output "ION_PROCESSOR_STAGE=$($command.name) RUN=$RunId"
   $writersStopped=$false
   try {
-   $result=Invoke-ResourceBudgetedProcess -Limits $profile.limits -RunDir $run -UsagePath (Join-Path $package.result_dir "$($command.name)_resource_usage.json") -FilePath $SimionExe -ArgumentList $command.arguments -WorkingDirectory $solver -RedirectStandardOutput (Join-Path $package.log_dir "$($command.name).log") -RedirectStandardError (Join-Path $package.log_dir "$($command.name).stderr.log")
+   $result=Invoke-ResourceBudgetedProcess -Limits $profile.limits -RunDir $run -UsagePath (Join-Path $package.result_dir "$($command.name)_resource_usage.json") -FilePath $SimionExe -ArgumentList (Project-RunPath -Paths $command.arguments -ArtifactRunDir $package.artifact_run_dir -RunDir $nativeContext.run_dir -Python $python) -WorkingDirectory $nativeContext.projected_paths[0] -Environment $nativeContext.environment -RedirectStandardOutput (Join-Path $package.log_dir "$($command.name).log") -RedirectStandardError (Join-Path $package.log_dir "$($command.name).stderr.log")
    $writersStopped=$true
    $nativeOperations.Add(@{operation_id=[string]$command.name;observation=@{exit_confirmed=$true;returncode=[int]$result.exit_code;
      process_id=[int]$result.root_process_id;process_started_at_utc_ticks=[long]$result.root_process_started_at_utc_ticks};resource_release_id='simion'})|Out-Null
@@ -391,23 +441,37 @@ try {
  # Python closure, and keep the original heavy permission through all workers.
  $nativeFlightGuardContext=$null
  Set-IonProcessorRunStage -Context $runObservation -Stage flight
- $env:PYTHONPATH=Join-Path $run 'inputs/code'
- Push-Location $run
+ $pythonContext=Get-RunNativeExecutionContext -Package $package -Paths @((Join-Path $run 'inputs/code'),$run) -Tool Python
+ $env:PYTHONPATH=$pythonContext.projected_paths[0]
+ Push-Location $pythonContext.projected_paths[1]
  try {
   function Invoke-PreparedPython {
    param([string[]]$Arguments)
-   & $python @Arguments | Out-Host
-   if($LASTEXITCODE-ne0){throw "Prepared Python boundary failed: $($Arguments -join ' ')"}
+   $execution=Get-RunNativeExecutionContext -Package $package -Paths @((Join-Path $run 'inputs/code')) -Tool Python
+   Invoke-RunToolRootContext -RepoRoot $execution.projected_paths[0] -Environment $execution.environment -Operation {
+    & $python @Arguments | Out-Host
+    if($LASTEXITCODE-ne0){throw "Prepared Python boundary failed: $($Arguments -join ' ')"}
+   }
   }
-  Invoke-PreparedPython -Arguments @('-m','projects.dual_pressure_rectilinear_ion_processor.analysis.functional','prepare-dispatch','--run',$run)
+  $resolvedModel=Get-Content (Join-Path $run 'inputs/resolved_model.json') -Raw|ConvertFrom-Json -AsHashtable
+  $dispatchArguments=@('-m','projects.dual_pressure_rectilinear_ion_processor.analysis.functional','prepare-dispatch','--run',$run)
+  if(-not$resolvedModel.native_field.source_manifest){
+   $nativeFlightGuardContext=@{records=[Collections.Generic.List[object]]::new();status='acquiring';error=$null}
+   $controller=Join-Path $resolvedModel.native_field.directory 'processor.pa0'
+   Enter-IonProcessorNativeFlightGuards -ResolvedModel $resolvedModel -Pa0Record @{path=$controller} -Context $nativeFlightGuardContext -FreshBuild
+   $controllerIdentity=Protect-ImmutablePaSource -Source $controller
+   $dispatchArguments+=@('--native-pa0-record',($controllerIdentity|Select-Object path,bytes,sha256|ConvertTo-Json -Compress))
+  }
+  Invoke-PreparedPython -Arguments $dispatchArguments
   $iobPreparation=Get-Content (Join-Path $run 'inputs/batch_iob_preparation.json') -Raw|ConvertFrom-Json
   if($iobPreparation.requires_vendor_templates){
    $paRecord=$iobPreparation.native_pa0_record
+   $nativeContext=Get-RunNativeExecutionContext -Package $package -Paths @($solver,[string]$iobPreparation.script,[string]$paRecord.path)
    $guard=Protect-ImmutablePaSource -Source $paRecord.path -ExpectedBytes $paRecord.bytes -ExpectedSha256 $paRecord.sha256
    try {
     $writersStopped=$false
     try {
-     $build=Invoke-ResourceBudgetedProcess -Limits $profile.limits -RunDir $run -UsagePath (Join-Path $package.result_dir 'batch_iob_template_resource_usage.json') -FilePath $SimionExe -ArgumentList @('--nogui','--noprompt','lua',$iobPreparation.script) -WorkingDirectory $solver -RedirectStandardOutput (Join-Path $package.log_dir 'batch_iob_templates.log') -RedirectStandardError (Join-Path $package.log_dir 'batch_iob_templates.stderr.log')
+     $build=Invoke-ResourceBudgetedProcess -Limits $profile.limits -RunDir $run -UsagePath (Join-Path $package.result_dir 'batch_iob_template_resource_usage.json') -FilePath $SimionExe -ArgumentList @('--nogui','--noprompt','lua',(Project-RunPath -Path $iobPreparation.script -ArtifactRunDir $package.artifact_run_dir -RunDir $nativeContext.run_dir -Python $python)) -WorkingDirectory $nativeContext.projected_paths[0] -Environment $nativeContext.environment -RedirectStandardOutput (Join-Path $package.log_dir 'batch_iob_templates.log') -RedirectStandardError (Join-Path $package.log_dir 'batch_iob_templates.stderr.log')
      $writersStopped=$true
      $nativeOperations.Add(@{operation_id='batch_iob_templates';observation=@{exit_confirmed=$true;returncode=[int]$build.exit_code;
        process_id=[int]$build.root_process_id;process_started_at_utc_ticks=[long]$build.root_process_started_at_utc_ticks};resource_release_id='simion'})|Out-Null
@@ -416,14 +480,8 @@ try {
      throw
     }
     if($build.exit_code-ne0){throw 'Native batch IOB template preparation failed'}
-    $stream=$global:MassSpectrometryImmutablePaSourceGuards[[IO.Path]::GetFullPath($paRecord.path)].stream
-    if((Get-ImmutablePaSourceVerificationSha256 -Stream $stream -Length $paRecord.bytes)-ne$paRecord.sha256){throw 'Native source PA0 changed during template preparation'}
+    $null=Protect-ImmutablePaSource -Source $paRecord.path -ExpectedBytes $paRecord.bytes -ExpectedSha256 $paRecord.sha256
    } finally {if($writersStopped-and-not$guard.already_protected){Unprotect-ImmutablePaSource -Source $paRecord.path|Out-Null}}
-  }
-  if($iobPreparation.requires_vendor_templates){
-   $nativeFlightGuardContext=@{records=[Collections.Generic.List[object]]::new();status='acquiring';error=$null}
-   $resolvedModel=Get-Content (Join-Path $run 'inputs/resolved_model.json') -Raw|ConvertFrom-Json
-   Enter-IonProcessorNativeFlightGuards -ResolvedModel $resolvedModel -Pa0Record $iobPreparation.native_pa0_record -Context $nativeFlightGuardContext -FreshBuild
   }
   $requestPath=Join-Path $run 'inputs/simion_dispatch_request.json'
   $profilesPath=Join-Path $run 'results/simion_resource_profiles.json'
@@ -446,9 +504,11 @@ try {
   function New-IonProcessorProcessSpecification {
    param($Batch)
    $folder=Join-Path $run ('simion_batch_{0:D4}'-f[int]$Batch.index)
+   $paths=@($folder,(Join-Path $folder 'processor.iob'),(Join-Path $folder 'processor.lua'),(Join-Path $folder 'processor.fly2'))
+   $batchExecution=Get-RunNativeExecutionContext -Package $package -Paths $paths
    return [pscustomobject]@{
     name=('ion_processor_batch_{0:D4}'-f[int]$Batch.index);scheduler_batch=$Batch
-    file_path=$SimionExe;working_directory=$folder;environment=@{}
+    file_path=$SimionExe;working_directory=$batchExecution.projected_paths[0];environment=$batchExecution.environment
     stdout=(Join-Path $package.log_dir ('flight_batch_{0:D4}.log'-f[int]$Batch.index))
     stderr=(Join-Path $package.log_dir ('flight_batch_{0:D4}.stderr.log'-f[int]$Batch.index))
     argument_list=[string[]]@('--nogui','--noprompt','fly','--trajectory-quality',"$($numerics.trajectory_quality)",'--particles','processor.fly2','--programs','1','--retain-trajectories',"$retainBatchTrajectories",'processor.iob')
@@ -516,8 +576,9 @@ try {
  Set-IonProcessorRunStage -Context $runObservation -Stage analysis
  # Run the prepared source closure from the run directory so an editable repo
  # cannot shadow it through Python's current-directory import precedence.
- $env:PYTHONPATH=Join-Path $run 'inputs/code'
- Push-Location $run
+ $pythonContext=Get-RunNativeExecutionContext -Package $package -Paths @((Join-Path $run 'inputs/code'),$run) -Tool Python
+ $env:PYTHONPATH=$pythonContext.projected_paths[0]
+ Push-Location $pythonContext.projected_paths[1]
  try {
   & $python -m projects.dual_pressure_rectilinear_ion_processor.analysis.functional analyze --run $run
   $analysisExit=$LASTEXITCODE
@@ -526,6 +587,7 @@ try {
  $summary=Get-Content $package.summary -Raw|ConvertFrom-Json -AsHashtable
  if($summary.role-ne'ion_processor_functional_summary'){throw 'Missing physical summary'}
  Set-IonProcessorAnalysisConclusion -Summary $summary -AnalysisExit $analysisExit -NativeCompleted $nativeCompleted
+ $summary.native_path_preparation=$package.native_path_preparation
  Write-RunJson -Path $package.summary -Value $summary
  $finished=$true
  $runSucceeded=$analysisExit-eq0
@@ -536,8 +598,9 @@ try {
  if(-not$finished){$failureStage=[string]$runObservation.stage;$failureReason=$_.Exception.Message}
  if($null-ne$package-and-not$finished){
   $failed=@{schema_version=1;role='ion_processor_failed_run';status=$(if($writersStopped){'failed'}else{'writer_completion_unknown'});reason=$_.Exception.Message;drain_error=$_.Exception.Data['simion_first_batch_drain_error'];verification_error=$_.Exception.Data['simion_first_batch_verification_error'];wait_error=$_.Exception.Data['ion_processor_formal_wait_error']}
-  Set-IonProcessorRunObservation -Summary $failed -Context $runObservation -Run $package.run_dir -NativeCompleted $nativeCompleted -WritersStopped $writersStopped -FailureStage $failureStage -FailureReason $failureReason
-  Write-RunJson -Path $package.summary -Value $failed
+  Set-IonProcessorRunObservation -Summary $failed -Context $runObservation -Run $package.artifact_run_dir -NativeCompleted $nativeCompleted -WritersStopped $writersStopped -FailureStage $failureStage -FailureReason $failureReason
+  $failed.native_path_preparation=$package.native_path_preparation
+ Write-RunJson -Path $package.summary -Value $failed
  }
  throw
 } finally {
@@ -564,8 +627,9 @@ try {
     $lease=$null
    }elseif($nativeOperations.Count){throw 'IP native operations lack their actual host release.'}
    $observed=Get-Content -LiteralPath $package.summary -Raw|ConvertFrom-Json -AsHashtable
-   Set-IonProcessorRunObservation -Summary $observed -Context $runObservation -Run $package.run_dir -NativeCompleted $nativeCompleted -WritersStopped $writersStopped -FailureStage $failureStage -FailureReason $failureReason
-   Write-RunJson -Path $package.summary -Value $observed
+   Set-IonProcessorRunObservation -Summary $observed -Context $runObservation -Run $package.artifact_run_dir -NativeCompleted $nativeCompleted -WritersStopped $writersStopped -FailureStage $failureStage -FailureReason $failureReason
+   $observed.native_path_preparation=$package.native_path_preparation
+ Write-RunJson -Path $package.summary -Value $observed
    $status=$(if($runSucceeded){'success'}else{'failed'})
    $configuration=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
    $inputPaths=@($configuration.inputs.Values|Where-Object{$_-is[string]}|ForEach-Object{[IO.Path]::GetFullPath($_)})
@@ -584,13 +648,15 @@ try {
   } else {throw}
  } finally {
   Write-Output "ION_PROCESSOR_OBSERVATION STAGE=$($runObservation.stage) FAILURE_STAGE=$failureStage FAILURE_REASON=$failureReason TOTAL_SECONDS=$($runObservation.timer.Elapsed.TotalSeconds)"
-  if($null-ne$package){Write-Output "ION_PROCESSOR_PATHS MANIFEST=$($package.run_dir)/run_manifest.json SUMMARY=$($package.summary)"}
+  if($null-ne$package){Write-Output "ION_PROCESSOR_PATHS MANIFEST=$($package.artifact_run_dir)/run_manifest.json SUMMARY=$($package.summary)"}
   if($writersStopped){foreach($stream in $continuationReadGuards.streams){$stream.Dispose()}}
   if($writersStopped){foreach($entry in $continuationFieldGuards.records){if($entry.owns_guard){Unprotect-ImmutablePaSource -Source $entry.path|Out-Null}}}
   if($writersStopped){foreach($key in @('manifest_stream','run_config_stream','publication_guard')){
    if($continuationFieldGuards.ContainsKey($key)-and$null-ne$continuationFieldGuards[$key]){$continuationFieldGuards[$key].Dispose()}
   }}
   if($writersStopped-and$null-ne$capacity-and$null-eq$ownerContext){Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacity|Out-Null}
+  if($writersStopped-and$null-ne$package){Remove-RunPackageExecutionAlias -Package $package}
+  Restore-RunEnvironment -Names $pathEnvironmentNames -Snapshot $savedPathEnvironment
   $env:PYTHONPATH=$savedPythonPath
   Pop-Location
  }

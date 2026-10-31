@@ -19,9 +19,10 @@ from typing import Any
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.frozen_inputs import freeze_file
+from common.simion.workbench_seed import freeze_workbench_seed
 from common.contracts.canonical_clock_authority import validate_clock_authority
 from common.contracts.verify_run_manifest import record_path
-from common.contracts.particle_count_policy import POLICY_PATH, validate_positive_particle_count, validate_standard_particle_count
+from common.contracts.particle_count_policy import validate_positive_particle_count, validate_standard_particle_count
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.particle_state import PARTICLE_STATE_COLUMNS, ENUMS, validate_particle_state
 from common.ion_release.release import generate_release_states, materialize_release_from_file, validate_release_spec
@@ -324,21 +325,35 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     repo = project.parent.parent
     configuration = configuration_directory.resolve() if configuration_directory is not None else project / "config"
     inputs, solver = run / "inputs", run / "simion"
-    csv_resource = repo / 'common/simion/scientific_event_csv.lua'
-    if not csv_resource.is_file():
-        raise ValueError('IP prepare scientific CSV writer resource is missing')
-    solver.mkdir(exist_ok=True)
     if source_profile not in {"functional", "exploration"}:
         raise ValueError("source_profile must be functional or exploration")
     config_files = {name: f"{name}.json" for name in
                     ("baseline", "numerics", "source", "acceptance", "native_operating_point", "diagnostics", "field_diagnostics")}
     config_files["source"] = "source_exploration.json" if source_profile == "exploration" else "source.json"
+    # Dynamic language inputs belong to the same runnable frozen package as Python.
+    runtime_resources = [project / "simion" / name for name in
+        ("runtime.lua", "native_drive.lua", "build_workbench.lua", "probe_native_field.lua", "extraction_force_audit.lua")]
+    runtime_resources.extend(repo / relative for relative in (
+        "common/contracts/artifact_retention.json",
+        "common/contracts/particle_count_policy.json", "common/host_resource_policy.json",
+        "common/contracts/schemas/simion_batch_continuation.schema.json",
+        "common/contracts/schemas/canonical_clock_authority.schema.json",
+        "common/simion/rf_drive.lua", "common/simion/voltage_waveforms.lua",
+        "common/simion/scientific_event_csv.lua", "common/paths/native_run_path.lua",
+        "common/simion/assets/iob_instance_seeds/1_instance_seed.iob",
+        "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0"))
+    required_resources = [*runtime_resources, *(configuration / name for name in config_files.values()),
+        simion_dir / "examples/collision_hs1/collision_hs1.lua"]
+    missing = [str(path) for path in required_resources if not path.is_file()]
+    if missing:
+        raise ValueError("IP prepare required resource is missing: " + "; ".join(missing))
     config = {name: read_json(configuration / filename) for name, filename in config_files.items()}
     if (configuration / "coordinate_transform.json").is_file():
         config_files["coordinate_transform"] = "coordinate_transform.json"
         config["coordinate_transform"] = read_json(configuration / "coordinate_transform.json")
     elif configuration_directory is not None:
         raise ValueError("external configuration directory requires its explicit coordinate transform")
+    selected_config_files = dict(config_files)
     config["source_profile"] = source_profile
     config["source_authority_file"] = config_files["source"]
     if injected_source is not None and protected_injected_paths is not None:
@@ -366,6 +381,7 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
             raise ValueError("original upstream particle ID exceeds IP per-particle seed envelope")
         del config_files["source"]
     validate_configs(config)
+    solver.mkdir(exist_ok=True)
     config["native_timing"] = derive_native_timing(config["baseline"])
     write_json(inputs / "native_timing.json", config["native_timing"])
     from projects.dual_pressure_rectilinear_ion_processor.analysis.diagnostics import validate_diagnostics_config
@@ -390,14 +406,14 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     write_json(inputs / "source_context.json", git_context)
     for name in ("runtime.lua", "native_drive.lua", "build_workbench.lua", "probe_native_field.lua", "extraction_force_audit.lua"):
         freeze_file(project / "simion" / name, solver / name)
-    freeze_file(csv_resource, solver / "scientific_event_csv.lua")
+    freeze_file(repo / "common/simion/scientific_event_csv.lua", solver / "scientific_event_csv.lua")
+    freeze_file(repo / "common/paths/native_run_path.lua", solver / "native_run_path.lua")
     freeze_file(repo / "common/simion/rf_drive.lua", solver / "simion_rf_drive.lua")
     freeze_file(repo / "common/simion/voltage_waveforms.lua", solver / "voltage_waveforms.lua")
     collision_original = freeze_file(simion_dir / "examples/collision_hs1/collision_hs1.lua", inputs / "collision_hs1_original.lua")
     original=(inputs/"collision_hs1_original.lua").read_text(encoding="utf-8")
     (solver/"collision_hs1.lua").write_text(adapt_hs1_for_repeat_fly(original),encoding="utf-8")
     write_json(inputs/"collision_adapter.json",dict(schema_version=1,role="hs1_repeat_fly_lifecycle_adapter",original_sha256=collision_original["sha256"],adapted_sha256=file_sha256(solver/"collision_hs1.lua"),algorithm_changed=False,adapter_hooks=["reset_run_state","bound_parameters"],bound_parameters_read_only=True,reason="Run-local lifecycle reset plus read-only audit of module-bound adjustables; SIMION 2020 forbids callback-time workbench imports"))
-    freeze_file(repo / "common/simion/assets/iob_instance_seeds/1_instance_seed.iob", solver / "1_instance_seed.iob")
     if admission is None:
         materialize_release_from_file(inputs / "source.json", inputs / "release.csv", inputs / "release_receipt.json")
         states = generate_release_states(config["source"])
@@ -424,7 +440,9 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     if admission is not None and any(row["arrival_time_us"] >= config["baseline"]["schedule"]["capture_end_us"] for row in states):
         raise ValueError("IP injection must arrive before the declared capture checkpoint")
     (solver / "processor.gem").write_text(render_gem(config["native_projection"]),encoding="utf-8")
-    config["workbench_seed_path"]=str(repo/"common/simion/assets/iob_instance_seeds/1_instance_seed.iob")
+    seed = freeze_workbench_seed(run, repo)
+    config["workbench_seed_path"] = seed["seed"]["frozen"]["path"]
+    config["workbench_seed_records"] = seed
     config["native_field"]={"directory":str(solver),"source_manifest":None}
     external_inputs={}
     if native_field_run is not None:
@@ -473,22 +491,21 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
         target=inputs/"code"/relative
         target.parent.mkdir(parents=True,exist_ok=True)
         freeze_file(path,target)
-    # The imported policy module reads its adjacent JSON at runtime. Freeze the
-    # resource as well as Python sources so an isolated closure is executable.
-    policy_relative = POLICY_PATH.relative_to(Path(__file__).resolve().parents[3])
-    policy_target = inputs / "code" / policy_relative
-    policy_target.parent.mkdir(parents=True, exist_ok=True)
-    freeze_file(repo / policy_relative, policy_target)
-    host_policy = inputs / "code/common/host_resource_policy.json"
-    host_policy.parent.mkdir(parents=True, exist_ok=True)
-    freeze_file(repo / "common/host_resource_policy.json", host_policy)
-    csv_target = inputs / 'code/common/simion/scientific_event_csv.lua'
-    csv_target.parent.mkdir(parents=True, exist_ok=True)
-    freeze_file(csv_resource, csv_target)
+    for source in runtime_resources:
+        target = inputs / "code" / source.relative_to(repo)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        freeze_file(source, target)
+    # Preserve the selected author inputs at the package's normal project location.
+    # An external candidate remains the authority; current repository defaults never fill it.
+    configuration_resources = [configuration / name for name in selected_config_files.values()]
+    configuration_resources.extend(configuration / (name + ".json") for name in
+        ("geometry_sources", "source_parameter_sources", "component_matching_derivation")
+        if (configuration / (name + ".json")).is_file())
+    for source in configuration_resources:
+        target = inputs / "code" / project.relative_to(repo) / "config" / source.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        freeze_file(source, target)
     continuation_schema = repo / "common/contracts/schemas/simion_batch_continuation.schema.json"
-    continuation_target = inputs / "code" / continuation_schema.relative_to(repo)
-    continuation_target.parent.mkdir(parents=True, exist_ok=True)
-    freeze_file(continuation_schema, continuation_target)
     if admission is not None:
         for source in (repo/"common/contracts/schemas").rglob("*"):
             if source.is_file() and source != continuation_schema:
@@ -679,6 +696,7 @@ def main() -> None:
     parser.add_argument("--repeat-fly-count",type=int,choices=(1,2),default=1)
     parser.add_argument("--native-field-run",type=Path)
     parser.add_argument("--batch-plan",type=Path)
+    parser.add_argument("--native-pa0-record",type=json.loads,help=argparse.SUPPRESS)
     parser.add_argument("--status",choices=("success","failed"))
     parser.add_argument("--source-profile",choices=("functional","exploration"),default="functional")
     parser.add_argument("--configuration-directory",type=Path)
@@ -714,7 +732,7 @@ def main() -> None:
         elif args.action == "restore-partial-batches":
             print(json.dumps(batching.restore_reusable_batches(args.run)))
         elif args.action == "prepare-dispatch":
-            print(json.dumps(batching.prepare_request(args.run)))
+            print(json.dumps(batching.prepare_request(args.run,args.native_pa0_record)))
         else:
             if args.batch_plan is None: parser.error("batch action requires --batch-plan")
             action = batching.materialize_batches if args.action == "materialize-batches" else batching.merge_batches

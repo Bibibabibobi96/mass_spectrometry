@@ -16,8 +16,19 @@ function Protect-MrtofContinuationEvidence {
     } finally {$env:PYTHONPATH=$saved;Pop-Location}
   }
   $before=Get-MrtofContinuationProjection
-  $protected=@($before.run_directories)+@($before.files)
-  $Session=(Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $Session -ProtectedPaths @($protected|Select-Object -Unique)).session
+  $sourceReferences=@()
+  foreach($manifestPath in @($before.manifests.Keys|Sort-Object)){
+    $authority=Split-Path -Parent ([string]$manifestPath)
+    if($authority-notin@($before.run_directories)){throw 'Continuation manifest has no explicit projected run authority.'}
+    $prefix=[IO.Path]::GetFullPath($authority).TrimEnd('\','/')+[IO.Path]::DirectorySeparatorChar
+    $authorityFiles=@($before.files|Where-Object{[IO.Path]::GetFullPath([string]$_).StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)})
+    $sourceReferences+=@{manifest_record=@{path=[string]$manifestPath;exists=$true;bytes=[long](Get-Item -LiteralPath $manifestPath).Length;sha256=[string]$before.manifests[$manifestPath]};
+      protected_paths=@($authority)+$authorityFiles;protected_cache_keys=@()}
+  }
+  foreach($path in @($before.run_directories)+@($before.files)){
+    if(-not@($sourceReferences|Where-Object{$root=[string]$_.protected_paths[0];$full=[IO.Path]::GetFullPath([string]$path);$prefix=[IO.Path]::GetFullPath($root).TrimEnd('\','/')+[IO.Path]::DirectorySeparatorChar;$full-eq[IO.Path]::GetFullPath($root)-or$full.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)}).Count){throw 'Continuation evidence lacks an explicit manifest authority.'}
+  }
+  $Session=(Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $Session -ProtectedPaths @() -SourceReferences $sourceReferences).session
   foreach($path in @($before.files|Select-Object -Unique)){
     $Guards.Add([IO.File]::Open([string]$path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
   }

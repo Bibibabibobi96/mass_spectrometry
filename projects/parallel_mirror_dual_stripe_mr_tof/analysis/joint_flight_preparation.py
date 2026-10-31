@@ -498,7 +498,8 @@ def collision_workbench_layout(binding: dict[str, Any]) -> dict[str, Any]:
 
 
 def render_measured_operating_point(reference_path: Path, source_directory: Path, native_field: dict, *, numerics: dict[str, float],
-                                    field_assets_verified: bool = False, source_identity_verified: bool = False) -> str:
+                                    field_assets_verified: bool = False, source_identity_verified: bool = False,
+                                    native_path_projection: bool = False) -> str:
     """Retain the MR core operating point, removing every OA launch-only field."""
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import PS_GROUPS
 
@@ -506,11 +507,15 @@ def render_measured_operating_point(reference_path: Path, source_directory: Path
     # Finalization may bind a closed P/S candidate after the design was frozen.
     # The sealed field, rather than its historical sidecar, owns these settings.
     ps = {name: voltages[ids[0]-1] for name, ids in PS_GROUPS.items()}
+    transport = (
+        "local directory=assert(debug.getinfo(1,'S').source:sub(2):match('^(.*[/\\\\])'))\n"
+        "local native_path=assert(loadfile(directory..'native_run_path.lua'))()\n"
+        if native_path_projection else "local native_path=function(path) return path end\n")
     return (
-        "-- Generated measured-state handoff; old OA fields are not consumed.\n"
-        "local t=assert(loadfile(" + _lua(str(reference_path)) + "))()\n"
+        "-- Generated measured-state handoff; old OA fields are not consumed.\n" + transport +
+        "local t=assert(loadfile(native_path(" + _lua(str(reference_path)) + ")))()\n"
         "t.accelerator_provider='dual_pressure_rectilinear_ion_processor'\n"
-        "t.measured_source_directory=" + _lua(str(source_directory)) + "\n"
+        "t.measured_source_directory=native_path(" + _lua(str(source_directory)) + ")\n"
         + "".join("t." + name + "=" + _lua(numerics[name]) + "\n"
                   for name in ("trajectory_quality", "maximum_step_us", "full_path_timeout_us")) +
         "t.field_assembly_verified=" + _lua(field_assets_verified) + ";t.measured_source_matches_workpoint=" + _lua(source_identity_verified) + "\n"

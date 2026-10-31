@@ -448,3 +448,25 @@ scratch模板先误传目录保留、再误用仅适用native TRACE的`PreserveP
 原冻结CLI仅恢复收尾成功，新增native为0；公共收尾7.3465秒，Result总计36.0018秒。
 最终保留107文件／34,792,626字节，终态、容量、lease及alias清理均完成。
 小Result与两轮失败备份、修正action留在既有`workflow_results`及本次probe scratch，原已终态run只读。
+
+IP和`prepared_joint`的正常入口现在与既有公共Package路径上下文接线：
+持久输入／receipt保持canonical，执行时按本次明确路径投影Python／SIMION的argv、cwd和环境；
+IP的IOB模板及prepared launcher、build spec、原生保存／读取使用同一运输边界。
+MR builder只在prepared launcher显式提供当前冻结公共helper时投影，原直接CLI无该配套时保持原行为；
+未改变场、源、时钟、几何、观测或接受条件。prepared Fly复用仍比较原科学输入和Program，
+不把新增launcher／运输helper全文当作科学身份。
+源、前驱和显式祖先的保护沿已有manifest authority进入`SourceReferences`，不猜PA父目录或扫描其他根；
+原固定分区、观测校准和CPU负例保留，全复用不构造新IOB或启动native。
+冻结依赖表同步真实IP validator和prepared消费者，软件回归包含新解释器仅凭冻结源码的实际prepare、
+生成Lua与公共路径接线。该软件范围不授予新的Refine、连续Fly或科学资格。
+
+prepared_joint 的 measured operating sidecar 与 batch sidecar 持久保存 canonical 内层来源；新准备显式冻结既有 native_run_path.lua companion，并在每批物化时携带，实际 Lua 读取时才按本次执行表示投影。提前建立别名、首次原生调用才建立别名或移除后换新表示，都不改写该来源与科学输入。IP 飞行收尾只释放自己持有的同一 stream；检测到保护被替换时仍失败，且保留替换方 guard。
+
+2026-10-31 小型真实路径验收 run `20261031_141654__sim__simion__ip-path-probexxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`：
+实际冻结 IP prepare 和原项目 build_workbench，经公共 IOB owner 完成新建11³／0.1mm未求解零场、保存、重开，
+删除旧 execution alias 后以新 alias 冷重开同一 IOB，四个原生进程均实际退出0。
+PA 在 builder 前取得持续防写 guard；保护前可写、保护中拒写，文件属性前后均 Archive，未设置 ReadOnly。
+外层公开调用43.5748秒，纯准备2.5341秒，原生边界6.1688秒，公共路径准备0.76335秒／运输0字节；
+终态、容量、资源释放及两个 alias 清理完成。小 Result 位于该主题 scratch 的
+`agent2/native_ip_proposal/complete_owner_draft/root_native_result.json`。
+该11³ PA仅验证 IOB／pose／路径与保存机制，0 Refine、0 Fly，不代表完整IP场、N=100功能或科学资格。

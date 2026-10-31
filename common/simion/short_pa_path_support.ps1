@@ -134,24 +134,27 @@ function Protect-ImmutablePaSource {
   <# Verify and hold one immutable PA source for this PowerShell process.
      The same read-only handle is used for SHA-256 verification and retained
      with FileShare.Read, so Windows rejects writers, deletion, and replacement
-     until an explicit Unprotect call.  Repeating the same request is idempotent. #>
+     until an explicit Unprotect call. Repeating the same request is idempotent.
+     Omit both expected fields only to establish a newly stopped writer's identity. #>
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$Source,
-    [Parameter(Mandatory)][int64]$ExpectedBytes,
-    [Parameter(Mandatory)][ValidatePattern('^[0-9A-Fa-f]{64}$')][string]$ExpectedSha256
+    [int64]$ExpectedBytes,
+    [ValidatePattern('^[0-9A-Fa-f]{64}$')][string]$ExpectedSha256
   )
+  $hasExpected=$PSBoundParameters.ContainsKey('ExpectedBytes')
+  if($hasExpected-ne$PSBoundParameters.ContainsKey('ExpectedSha256')){throw 'Immutable PA expected byte length and SHA256 must be supplied together.'}
   if($ExpectedBytes-lt0){throw 'Expected immutable PA source byte length must be non-negative.'}
   # Resolve against the PS location, then use the same key spelling as release.
   $sourcePath=[IO.Path]::GetFullPath((Resolve-Path -LiteralPath $Source).Path)
-  $expectedHash=$ExpectedSha256.ToUpperInvariant()
+  $expectedHash=if($hasExpected){$ExpectedSha256.ToUpperInvariant()}else{$null}
   if($global:MassSpectrometryImmutablePaSourceGuards.ContainsKey($sourcePath)){
     $record=$global:MassSpectrometryImmutablePaSourceGuards[$sourcePath]
     if($null-eq$record.stream-or-not$record.stream.CanRead){
       throw "Immutable PA source protection is not live: $sourcePath"
     }
-    if([int64]$record.bytes-ne$ExpectedBytes-or
-       -not[string]::Equals([string]$record.sha256,$expectedHash,[StringComparison]::Ordinal)){
+    if($hasExpected-and([int64]$record.bytes-ne$ExpectedBytes-or
+       -not[string]::Equals([string]$record.sha256,$expectedHash,[StringComparison]::Ordinal))){
       throw "Immutable PA source is already protected under a different identity: $sourcePath"
     }
     return [pscustomobject]@{
@@ -164,13 +167,14 @@ function Protect-ImmutablePaSource {
     $stream=[IO.File]::Open(
       $sourcePath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read
     )
-    if([int64]$stream.Length-ne$ExpectedBytes){
+    if($hasExpected-and[int64]$stream.Length-ne$ExpectedBytes){
       throw "Immutable PA source byte length differs from its frozen identity: $sourcePath"
     }
+    if(-not$hasExpected){$ExpectedBytes=[int64]$stream.Length}
     # Open our own handle while the original verified source guard is still
     # live. Ownership remains separate, with no interval permitting a writer.
     $copySource=$global:MassSpectrometryShortPaSourceGuards[$sourcePath]
-    $canReuse=($null-ne$copySource-and
+    $canReuse=($hasExpected-and$null-ne$copySource-and
       $null-ne$copySource.PSObject.Properties['verification_kind']-and
       ($copySource.verification_kind-eq'locked_unbuffered_manifest_hash'-or
        ($copySource.verification_kind-eq'locked_source_stream'-and
@@ -180,7 +184,7 @@ function Protect-ImmutablePaSource {
     $actualHash=if($canReuse){$expectedHash}else{
       Get-ImmutablePaSourceVerificationSha256 -Stream $stream -Length $ExpectedBytes
     }
-    if(-not[string]::Equals($actualHash,$expectedHash,[StringComparison]::Ordinal)){
+    if($hasExpected-and-not[string]::Equals($actualHash,$expectedHash,[StringComparison]::Ordinal)){
       throw "Immutable PA source SHA256 differs from its frozen identity: $sourcePath"
     }
     $global:MassSpectrometryImmutablePaSourceGuards[$sourcePath]=[pscustomobject]@{

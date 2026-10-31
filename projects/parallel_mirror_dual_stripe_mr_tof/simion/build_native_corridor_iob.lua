@@ -14,6 +14,9 @@ local function input(index, label)
   return value
 end
 local measured_mode = input(1, 'mode or seed') == '--measured-source'
+-- Optional explicit companion from the current prepared launcher; old direct CLI stays unchanged.
+local native_path=function(path) return path end
+if measured_mode and arg[3+offset] then native_path=assert(loadfile(arg[3+offset]))() end
 local seed, paths, output, program, fly2, operating_path, voltage_map_path, priority_path
 local origins = {}
 if measured_mode then
@@ -41,7 +44,7 @@ for index = 1, measured_mode and 0 or 4 do
       string.format('instance %d origin axis %d', index, axis))), 'origin must be numeric')
   end
 end
-local priority = assert(dofile(priority_path), 'priority contract is invalid')
+local priority = assert(dofile(native_path(priority_path)), 'priority contract is invalid')
 assert(priority.role == 'mrtof_native_corridor_iob_priority_contract' and type(priority.instances) == 'table' and #priority.instances == #paths,
   'native corridor priority contract is incomplete')
 local expected_roles = measured_mode and {'global_fallback', 'native_corridor', 'ion_processor_collision', 'detector'}
@@ -62,7 +65,7 @@ for index, role in ipairs(expected_roles) do
   assert(role_instances[role] == nil, 'duplicate native corridor instance role: ' .. role)
   role_instances[role] = index
 end
-local operating = assert(loadfile(operating_path), 'operating point sidecar missing')()
+local operating = assert(loadfile(native_path(operating_path)), 'operating point sidecar missing')()
 if measured_mode then
   assert(operating.accelerator_provider == 'dual_pressure_rectilinear_ion_processor'
     and priority.accelerator_provider == operating.accelerator_provider
@@ -86,7 +89,7 @@ else
   assert(paths[2]:match('%.pa0$'), 'corridor must be a native .pa0 family controller')
 end
 if not measured_mode then
-local voltage_map = assert(loadfile(voltage_map_path), 'voltage map sidecar missing')()
+local voltage_map = assert(loadfile(native_path(voltage_map_path)), 'voltage map sidecar missing')()
 local values=voltage_map.physical_voltages(operating.mirror_voltages_v, operating.stripe_biases_v,
   operating.prism_voltages_v, operating.accelerator_voltages_v,
   operating.accelerator_ring_voltages_v, operating.nonaccelerator_scale)
@@ -96,7 +99,7 @@ end
 end
 local wb = assert(simion.wb, 'SIMION Workbench API unavailable')
 assert(wb.load and wb.save and wb.find_at, 'SIMION Workbench load/save/find_at API unavailable')
-wb:load(seed)
+wb:load(native_path(seed))
 assert(wb.filename and #wb.instances == #paths, 'native corridor IOB instance count differs from declared roles')
 -- SIMION 2020 exposes the GUI priority primarily through the persisted PAs
 -- ordering; it does not expose a documented instance.priority setter.  Probe
@@ -109,7 +112,7 @@ end
 for index, path in ipairs(paths) do
   local instance = wb.instances[index]
   assert(priority.instances[index].priority_number == index, 'Workbench priority mapping differs from contract')
-  instance.pa:load(path)
+  instance.pa:load(native_path(path))
   assert(instance._debug_update_size, 'SIMION instance-size refresh unavailable')
   instance:_debug_update_size()
   instance.x, instance.y, instance.z = origins[index][1], origins[index][2], origins[index][3]
@@ -117,9 +120,9 @@ for index, path in ipairs(paths) do
 end
 -- Saving a Workbench also attempts to save dirty PAs.  Persist its geometry
 -- before Fast Adjust so the guarded private controller is never written.
-wb:save(output)
+wb:save(native_path(output))
 -- Reopen the saved IOB and check the explicit role-to-priority binding again.
-wb:load(output)
+wb:load(native_path(output))
 assert(#wb.instances == #paths, 'saved native corridor IOB changed instance count')
 if not measured_mode then
   assert(wb.instances[role_instances.accelerator].pa.symmetry == '3dplanar[x]',
@@ -212,15 +215,15 @@ end
 print('MRTOF_NATIVE_CORRIDOR_PRIORITY_API=' .. (priority_field or 'unavailable_documented_setter'))
 local function copy(source, target)
   if source == target then return end
-  local i = assert(io.open(source, 'rb')); local payload = i:read('*a'); i:close()
-  local o = assert(io.open(target, 'wb')); o:write(payload); o:close()
+  local i = assert(io.open(native_path(source), 'rb')); local payload = i:read('*a'); i:close()
+  local o = assert(io.open(native_path(target), 'wb')); o:write(payload); o:close()
 end
 copy(program, output:gsub('%.iob$', '.lua'))
 copy(fly2, output:gsub('%.iob$', '.fly2'))
 copy(priority_path, output:gsub('%.iob$', '.priority.lua'))
 copy(operating_path, output:gsub('%.iob$', '.operating_point.lua'))
 local scientific_locator=operating_path:gsub('%.lua$','.obs.lua')
-local locator_file=io.open(scientific_locator,'rb')
+local locator_file=io.open(native_path(scientific_locator),'rb')
 if locator_file then locator_file:close();copy(scientific_locator,output:gsub('%.iob$','.operating_point.obs.lua')) end
 if not measured_mode then copy(voltage_map_path, output:gsub('%.iob$', '.voltage_map.lua')) end
 copy(program:gsub('%.lua$', '.mirror_cycle_counter.lua'),
@@ -228,7 +231,7 @@ copy(program:gsub('%.lua$', '.mirror_cycle_counter.lua'),
 copy(program:gsub('%.lua$', '.voltage_waveforms.lua'),
   output:gsub('%.iob$', '.voltage_waveforms.lua'))
 local scalar_module = program:gsub('%.lua$', '.scalar_field_adapter.lua')
-local scalar_file = io.open(scalar_module, 'rb')
+local scalar_file = io.open(native_path(scalar_module), 'rb')
 if scalar_file then
   scalar_file:close()
   copy(scalar_module, output:gsub('%.iob$', '.scalar_field_adapter.lua'))

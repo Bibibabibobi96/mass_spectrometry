@@ -288,6 +288,9 @@ if(($calibrated.waves[0].batches|ConvertTo-Json -Compress)-cne($initial.batches|
             script.write_text(r'''param($Runner,$TestRoot,$PythonRuntime,$Repository,$Scenario)
 $ErrorActionPreference='Stop'
 $null = Set-StrictMode -Version Latest
+. (Join-Path $Repository 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repository 'common/paths/workspace_paths.ps1')
+$pathContext=Resolve-WorkspacePaths -SourceRoot $Repository -ArtifactRoot (Join-Path $TestRoot 'artifacts') -ExecutionRoot (Join-Path $TestRoot 'execution') -HostResourceStatePath (Join-Path $TestRoot 'host.sqlite3') -Python $PythonRuntime
 $ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$null)
 $function=$ast.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Invoke-PreparedJointTrial'},$true)
 $helperAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repository 'common/resource_budget_support.ps1'),[ref]$null,[ref]$null)
@@ -299,6 +302,8 @@ $helper=$helperAst.Find({param($node) $node-is[Management.Automation.Language.Fu
 Invoke-Expression $helper.Extent.Text
 $code=$function.Extent.Text -replace '(?m)^  \. \(Join-Path[^\r\n]+',''
 Invoke-Expression $code
+$sourceRefFunction=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Get-PreparedJointSourceReferences'},$true)
+Invoke-Expression $sourceRefFunction.Extent.Text
 $repoRoot=$TestRoot;$workspaceRoot=$TestRoot;$projectId='instrument_assembly'
 New-Item -ItemType Directory -Path (Join-Path $repoRoot 'integrations/config')|Out-Null
 @{schema_version=2;role='integration_runtime_dependencies';owner_id='instrument_assembly';consumer_ids=@('prepared_joint');providers=@()}|ConvertTo-Json -Depth 5|Set-Content (Join-Path $repoRoot 'integrations/config/runtime_dependencies.json')
@@ -314,15 +319,15 @@ $PreparedJointWorkbenchRunPath=$TestRoot;$ContractPath=$Runner;$RunId='mockrun';
 $ContinuationPredecessorManifestPath=if($Scenario-in@('mixed','mixed_insufficient','zero')){Join-Path $TestRoot 'parent/run_manifest.json'}else{''}
 $PreparedSourceMode='measured_population';$FieldBindingPath='';$TrajectoryEquivalenceReferenceRunPath='';$ResultPath=''
 $script:capacityReleased=$false;$script:hostReleased=$false;$script:retained=$false;$script:sealed=$false
-if($ContinuationPredecessorManifestPath){New-Item -ItemType Directory -Force -Path (Split-Path -Parent $ContinuationPredecessorManifestPath),(Join-Path $TestRoot 'ancestor')|Out-Null;'{}'|Set-Content $ContinuationPredecessorManifestPath;'sealed'|Set-Content (Join-Path $TestRoot 'ancestor/source.log')}
+if($ContinuationPredecessorManifestPath){New-Item -ItemType Directory -Force -Path (Split-Path -Parent $ContinuationPredecessorManifestPath),(Join-Path $TestRoot 'ancestor')|Out-Null;'{}'|Set-Content $ContinuationPredecessorManifestPath;'sealed'|Set-Content (Join-Path $TestRoot 'ancestor/source.log');'{}'|Set-Content (Join-Path $TestRoot 'ancestor/run_manifest.json')}
 $script:projectionCalls=0;$script:projectionCapacity=$false;$script:unprofiled=$false
 function mock {
  $global:LASTEXITCODE=0;$script:projectionCalls++
  $ancestor=Join-Path $TestRoot 'ancestor/source.log'
  if($script:projectionCalls-eq2){$writable=$false;try{$stream=[IO.File]::Open($ancestor,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::ReadWrite);$stream.Dispose();$writable=$true}catch{};if($writable){throw 'Borrowed ancestor was not locked'}}
- @{run_directories=@((Split-Path -Parent $ContinuationPredecessorManifestPath),(Join-Path $TestRoot 'ancestor'));files=@($ContinuationPredecessorManifestPath,$ancestor);manifests=@{}}|ConvertTo-Json -Depth 10 -Compress
+ @{run_directories=@((Split-Path -Parent $ContinuationPredecessorManifestPath),(Join-Path $TestRoot 'ancestor'));files=@($ContinuationPredecessorManifestPath,$ancestor);manifests=@{($ContinuationPredecessorManifestPath)=(Get-FileHash $ContinuationPredecessorManifestPath -Algorithm SHA256).Hash; (Join-Path $TestRoot 'ancestor/run_manifest.json')=(Get-FileHash (Join-Path $TestRoot 'ancestor/run_manifest.json') -Algorithm SHA256).Hash}}|ConvertTo-Json -Depth 10 -Compress
 }
-$script:adapted=$false;$script:observed=$false;$script:dispatched=$false;$script:analyzed=$false;$script:assetChecks=0;$script:leased=$false
+$script:adapted=$false;$script:observed=$false;$script:dispatched=$false;$script:analyzed=$false;$script:assetChecks=0;$script:leased=$false;$script:materialized=0
 function Write-RunJson {param($Path,$Depth,$Value) $Value|ConvertTo-Json -Depth 60|Set-Content $Path}
 function New-RunPackage {
  param($Python,$RepoRoot,$ArtifactRoot,$RunId,$Project,$Mode,$Software,[switch]$RetentionContractEnabled,$RetentionClass,$RetentionReason,[switch]$CapacityLedgerLifecycleEnabled)
@@ -331,11 +336,11 @@ function New-RunPackage {
  New-Item -ItemType Directory -Path (Join-Path $r 'inputs')|Out-Null
  New-Item -ItemType Directory -Path $results,$logs|Out-Null
  $config=Join-Path $r 'run_config.json';'{"run_id":"20261016_200000__sim__simion__fixture","project":"instrument_assembly","mode":"prepared_joint"}'|Set-Content $config
- return @{artifact_run_dir=$r;input_dir=(Join-Path $r 'inputs');result_dir=$results;log_dir=$logs;run_config=$config;summary=(Join-Path $r 'summary.json')}
+ return [pscustomobject]@{artifact_run_dir=$r;run_dir=$r;execution_alias=$null;execution_path_capacity=$null;python=$PythonRuntime;path_context=$pathContext;input_dir=(Join-Path $r 'inputs');result_dir=$results;log_dir=$logs;run_config=$config;summary=(Join-Path $r 'summary.json')}
 }
 function Enter-ArtifactWorkflowCapacitySession {return @{status='active'}}
-function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session,$ProtectedPaths,$RemainingCommittedNewBytes)
- if($ContinuationPredecessorManifestPath-and@($ProtectedPaths)-contains(Join-Path $TestRoot 'ancestor/source.log')){$script:projectionCapacity=$true}
+function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session,$ProtectedPaths,$SourceReferences,$RemainingCommittedNewBytes)
+ if($ContinuationPredecessorManifestPath-and(@($SourceReferences|ForEach-Object{$_.protected_paths})-contains(Join-Path $TestRoot 'ancestor/source.log'))){$script:projectionCapacity=$true}
  return @{session=@{status='active'}}}
 function Exit-ArtifactWorkflowCapacitySession {}
 function Write-VerifiedRunManifest {
@@ -367,6 +372,9 @@ function Complete-ResourceUsage {}
 function Apply-RunArtifactRetention {if($Scenario-eq'closeout_failure'){throw 'Synthetic retention failure'};$script:retained=$true;$r=Join-Path $TestRoot 'run/retention_actions.json';'{}'|Set-Content $r;return $r}
 function Invoke-ProjectPython {
  param($Arguments)
+ if($Arguments[0]-eq'-c'-and$Arguments[1]-like'*manifest_record=file_record*'){
+  & $PythonRuntime -B @Arguments;if($LASTEXITCODE-ne0){throw 'actual source reference metadata failed'};return
+ }
  if($Arguments[0]-eq'-c'){
   if(-not$script:leased){throw 'Payload verification preceded the native-stage lease'}
   $script:assetChecks+=1
@@ -394,7 +402,7 @@ function Invoke-ProjectPython {
  if($command-eq'prepare'){
   $r=Value '--run-directory';$results=Join-Path $r 'results'
   $fieldDirectory=if($Scenario-eq'candidate'){'candidate_fields'}else{'live_fields'}
-  Write-RunJson (Join-Path $results 'prepared_joint_trial.json') 60 @{protected_paths=@();guard_paths=@((Join-Path $TestRoot ($fieldDirectory+'/parent/field.pa')),(Join-Path $TestRoot ($fieldDirectory+'/local/field.pa')));field_binding=@{path=(Join-Path $TestRoot ($fieldDirectory+'/binding.json'))};launched_particle_count=2;mother_particle_count=3;expected_particle_ids=@(1,7);prism_voltages_v=@(1,2);stripe_biases_v=@(0,0);trajectory_contract=@{path=$Runner};launcher='mock_launcher.lua';trajectory_equivalence_reference=@{reference_log='frozen'}}
+  Write-RunJson (Join-Path $results 'prepared_joint_trial.json') 60 @{protected_paths=@();guard_paths=@((Join-Path $TestRoot ($fieldDirectory+'/parent/field.pa')),(Join-Path $TestRoot ($fieldDirectory+'/local/field.pa')));field_binding=@{path=(Join-Path $TestRoot ($fieldDirectory+'/binding.json'))};launched_particle_count=2;mother_particle_count=3;expected_particle_ids=@(1,7);prism_voltages_v=@(1,2);stripe_biases_v=@(0,0);trajectory_contract=@{path=$Runner};launcher=(Join-Path $TestRoot 'run/inputs/mock_launcher.lua');trajectory_equivalence_reference=@{reference_log='frozen'}}
   '{}'|Set-Content (Join-Path $results 'simion_dispatch_request.json')
  }elseif($command-eq'discover'){'{}'|Set-Content (Value '--output')
  }elseif($Arguments[1]-eq'common.simion.resource_scheduler'){
@@ -415,6 +423,7 @@ function Invoke-ProjectPython {
   if($script:adapted){$batches+=@{index=2;particle_id_min=2;particle_id_max=2;count=1}}
   Write-RunJson (Value '--output') 20 @{batches=$batches}
  }elseif($command-eq'materialize-joint'){
+  $script:materialized++
   $d=Value '--output';New-Item -ItemType Directory -Path $d|Out-Null
   '{}'|Set-Content (Join-Path $d 'batch_receipt.json');'local'|Set-Content (Join-Path $d 'joint.fly2')
  }elseif($command-eq'merge-joint'){
@@ -469,7 +478,7 @@ if($Scenario-in@('drain_failure','drain_budget_failure','wave_failure','wave_bud
 $manifest=Get-Content (Join-Path $TestRoot 'run/run_manifest.json') -Raw|ConvertFrom-Json
 $expectedStatus=if($Scenario-in@('analysis_failure','asset_failure')){'failed'}else{'success'}
 if($manifest.status-ne$expectedStatus){throw 'Scientific manifest was incorrectly rewritten'}
-if($Scenario-eq'asset_failure'){if($script:observed-or$script:dispatched-or$script:analyzed){throw 'Bad actual assets reached a vendor consumer'}}elseif($Scenario-in@('mixed','mixed_insufficient','zero')){if(-not($script:analyzed-and$script:sealed)){throw 'Recovery skipped merge or analysis'};if($Scenario-eq'zero'-and($script:observed-or$script:dispatched)){throw 'Zero-missing recovery launched SIMION'};if($Scenario-eq'mixed'-and($script:observed-or-not$script:dispatched)){throw 'Mixed recovery launched wrong batches'};if($Scenario-eq'mixed_insufficient'-and(-not$script:observed-or-not$script:adapted-or$script:dispatched)){throw 'Insufficient profile did not observe only the missing batch'}}elseif(-not($script:observed-and$script:adapted-and$script:dispatched-and$script:analyzed-and$script:sealed)){throw 'Missing public workflow stage'}
+if($Scenario-eq'asset_failure'){if($script:observed-or$script:dispatched-or$script:analyzed){throw 'Bad actual assets reached a vendor consumer'}}elseif($Scenario-in@('mixed','mixed_insufficient','zero')){if(-not($script:analyzed-and$script:sealed)){throw 'Recovery skipped merge or analysis'};if($Scenario-eq'zero'-and($script:observed-or$script:dispatched-or$script:materialized-ne0)){throw 'Zero-missing recovery launched SIMION'};if($Scenario-eq'mixed'-and($script:observed-or-not$script:dispatched)){throw 'Mixed recovery launched wrong batches'};if($Scenario-eq'mixed_insufficient'-and(-not$script:observed-or-not$script:adapted-or$script:dispatched)){throw 'Insufficient profile did not observe only the missing batch'}}elseif(-not($script:observed-and$script:adapted-and$script:dispatched-and$script:analyzed-and$script:sealed)){throw 'Missing public workflow stage'}
 if($ContinuationPredecessorManifestPath-and($script:projectionCalls-ne2-or-not$script:projectionCapacity)){throw 'Ancestor projection was not protected and rechecked'}
 if($ContinuationPredecessorManifestPath){$stream=[IO.File]::Open((Join-Path $TestRoot 'ancestor/source.log'),[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::ReadWrite);$stream.Dispose()}
 if($Scenario-eq'mixed_insufficient'){$original=Get-Content (Join-Path $TestRoot 'ancestor_inputs/simion_repository_dispatch_plan.json') -Raw|ConvertFrom-Json;if($original.estimation.kind-ne'observed_formal_batch'-or-not$script:unprofiled){throw 'Ancestor dispatch was rewritten or insufficient profile reused'}}

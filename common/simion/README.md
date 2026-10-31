@@ -651,3 +651,11 @@ MR和IP正常生产者携带冻结写入器，实际分析调用同一读取器�
 事件和请求的轨迹分别记录，保留原12／17位精度。IP保留原15位及既有诊断采样政策。
 声明CSV后缺失或损坏直接失败；无声明的已封存历史日志只由显式读取适配处理，不回退掩盖CSV错误。
 科学有效性和原生验收见各项目PROJECT；共享IO软件通过不授予新的飞行或物理资格。
+
+本run的新PA在其owner确认所有writer停止并完成必要flush后，
+`Protect-ImmutablePaSource -Source <PA>`可在同一持续只读handle下建立一次身份；
+传预期身份时bytes与SHA必须成对，单项或不匹配拒绝。IP正式dispatch消费这份活guard记录，
+模板生成与收尾不重复读取相同受护PA；guard中断必须重新验证。
+外部发布资产仍用原manifest预期身份，未知writer不得进入新身份建立边界，身份不代表科学适用性。
+IP的prepare也调用现`workbench_seed.freeze_workbench_seed`冻结官方seed和placeholder配套，
+不另复制科学场；其冻结Python闭包同时保留实际Lua资源和已选作者配置。

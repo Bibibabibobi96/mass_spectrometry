@@ -2,10 +2,11 @@
 local directory=assert(debug.getinfo(1,'S').source:sub(2):match('^(.*[/\\])'),
  'invoke the builder using its absolute script path')
 local c = assert(loadfile(directory..'frozen_config.lua'))()
+local native_path=assert(loadfile(directory..'native_run_path.lua'))()
 local wb=simion.wb
-wb:load(c.workbench_seed_path)
+wb:load(native_path(c.workbench_seed_path))
 assert(#wb.instances==1,'one integration volume required')
-wb.instances[1].pa:load(c.native_field.directory..'/processor.pa0')
+wb.instances[1].pa:load(native_path(c.native_field.directory..'/processor.pa0'))
 wb.instances[1]:_debug_update_size()
 local origin=c.native_projection.origin_mm
 local transform=c.coordinate_transform

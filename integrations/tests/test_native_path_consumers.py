@@ -14,6 +14,106 @@ CONSUMER_ROOT = REPO
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell unavailable")
 class NativePathConsumerTests(unittest.TestCase):
+    def test_mr_continuation_routes_only_explicit_manifest_authorities(self):
+        code = r"""param($Support,$Root,$Python)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[Management.Automation.Language.Parser]::ParseFile($Support,[ref]$null,[ref]$null)
+$node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Protect-MrtofContinuationEvidence'},$true)
+Invoke-Expression $node.Extent.Text
+$one=Join-Path $Root one;$two=Join-Path $Root two
+New-Item -ItemType Directory -Path $one,$two|Out-Null
+$files=@();$manifests=@{}
+foreach($run in @($one,$two)){
+ $manifest=Join-Path $run run_manifest.json;Set-Content $manifest '{}'
+ $data=Join-Path $run event.csv;Set-Content $data 'inert event'
+ $files+=@($manifest,$data);$manifests[$manifest]='A'*64
+}
+$projection=Join-Path $Root projection.json
+@{run_directories=@($one,$two);files=$files;manifests=$manifests}|ConvertTo-Json -Depth 20|Set-Content $projection
+$env:INERT_PROTECTION_PROJECTION=$projection
+$fake=Join-Path $Root fake-python.ps1
+Set-Content $fake 'Get-Content -LiteralPath $env:INERT_PROTECTION_PROJECTION -Raw;exit 0'
+$script:calls=0
+function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session,$ProtectedPaths,$SourceReferences)
+ if(@($ProtectedPaths).Count-ne0-or@($SourceReferences).Count-ne2){throw 'foreign paths entered the new root lease'}
+ foreach($ref in $SourceReferences){
+  if($ref.manifest_record.sha256-ne('A'*64)-or$ref.manifest_record.bytes-le0-or@($ref.protected_paths).Count-ne3){throw 'explicit manifest identity or payload protection dropped'}
+ }
+ $script:calls++;return @{session=$Session}
+}
+$guards=[Collections.Generic.List[IDisposable]]::new()
+try{
+ $null=Protect-MrtofContinuationEvidence -Parent $one -Session @{} -Python $fake -RepoRoot $Root -Guards $guards
+ if($script:calls-ne1-or$guards.Count-ne4){throw 'source admission/guards not preserved'}
+ $bad=Get-Content $projection -Raw|ConvertFrom-Json -AsHashtable
+ $bad.files+=Join-Path $Root orphan.csv;Set-Content $bad.files[-1] 'orphan'
+ $bad|ConvertTo-Json -Depth 20|Set-Content $projection
+ try{$null=Protect-MrtofContinuationEvidence -Parent $one -Session @{} -Python $fake -RepoRoot $Root -Guards $guards;throw 'unowned evidence accepted'}catch{if($_.Exception.Message-ne'Continuation evidence lacks an explicit manifest authority.'){throw}}
+ if($script:calls-ne1){throw 'unowned source reached admission'}
+}finally{foreach($guard in $guards){$guard.Dispose()};Remove-Item Env:INERT_PROTECTION_PROJECTION}
+"""
+        with tempfile.TemporaryDirectory() as temporary:
+            script = Path(temporary)/"check.ps1"
+            script.write_text(code, encoding="utf-8", newline="\n")
+            result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script),
+                str(CONSUMER_ROOT/"projects/parallel_mirror_dual_stripe_mr_tof/simion/native_corridor_runtime_support.ps1"),
+                temporary, sys.executable], cwd=REPO, capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+
+
+    def test_ip_and_prepared_joint_use_the_public_package_and_propagate_failure(self):
+        code = r'''param($Ip,$Prepared,$Repo,$Python,$Root)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'common/paths/workspace_paths.ps1')
+$run=Join-Path $Root ('canonical_'+('deep_'*40));New-Item -ItemType Directory -Path $run -Force|Out-Null
+$package=[pscustomobject]@{artifact_run_dir=$run;run_dir=$run;execution_alias=$null;execution_path_capacity=$null;python=$Python;log_dir=(Join-Path $run 'logs');
+ path_context=[pscustomobject]@{source_root=$Repo;artifact_root=(Join-Path $Root 'artifacts');execution_root=(Join-Path $Root 'x');host_resource_state_path=(Join-Path $Root 'host.sqlite3')}}
+function Import-InertBoundary {param($Path,$Name)
+ $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($Path,[ref]$tokens,[ref]$errors)
+ $node=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$Name},$true))
+ if($node.Count-ne1){throw 'actual consumer boundary missing'}
+ Set-Item -Path ('Function:script:'+$Name) -Value ([scriptblock]::Create(($node[0].Body.Extent.Text.TrimStart('{').TrimEnd('}'))))
+}
+try{
+ Import-InertBoundary $Ip 'New-IonProcessorProcessSpecification'
+ $SimionExe='NOT_STARTED';$numerics=@{trajectory_quality=8};$retainBatchTrajectories='0'
+ $batch=[pscustomobject]@{index=1;count=1;particle_id_min=1;particle_id_max=1;simion_particle_id_offset=0}
+ $ipSpec=New-IonProcessorProcessSpecification $batch
+ if($ipSpec.working_directory-eq(Join-Path $run 'simion_batch_0001')-or$ipSpec.stdout-ne(Join-Path $package.log_dir 'flight_batch_0001.log')){throw 'IP mixed native/persistent paths'}
+ if($ipSpec.environment.MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH-ne$package.path_context.host_resource_state_path){throw 'IP host identity drifted'}
+ Import-InertBoundary $Prepared 'New-PreparedJointBatch'
+ $script:pythonRoot=$Repo;$batchRoot=Join-Path $run 'results/batches';$resultDir=Join-Path $run results;$logDir=$package.log_dir
+ $preparationPath=Join-Path $run 'inputs/preparation.json';$simion='NOT_STARTED'
+ $trial=@{launcher=(Join-Path $run 'inputs/code/launcher.lua');guard_paths=@()};$script:materializations=0
+ function Invoke-ProjectPython {param($Arguments)
+  $script:materializations++
+  $index=[array]::IndexOf($Arguments,'--output');$output=[string]$Arguments[$index+1]
+  if(-not$output.StartsWith($package.artifact_run_dir)){throw 'MR persisted alias in materializer arguments'}
+  if($env:MASS_SPECTROMETRY_RUN_DIRECTORY-ne$package.artifact_run_dir-or$env:MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY-ne$package.run_dir){throw 'MR materializer missed scoped execution context'}
+ }
+ $jointSpec=New-PreparedJointBatch $batch
+ if($script:materializations-ne1-or$jointSpec.working_directory.StartsWith($run)-or-not$jointSpec.batch_receipt.StartsWith($run)){throw 'prepared joint did not use public transport'}
+ if($jointSpec.argument_list[3].StartsWith($run)){throw 'prepared joint launcher was not projected'}
+ function Invoke-ProjectPython {throw 'EXPECTED_MATERIALIZATION_FAILURE'}
+ $caught=$null;try{New-PreparedJointBatch $batch}catch{$caught=$_}
+ if($null-eq$caught-or$caught.Exception.Message-ne'EXPECTED_MATERIALIZATION_FAILURE'){throw 'prepared materialization failure was hidden'}
+ 'TWO_NATIVE_CONSUMERS=PASS'
+}finally{Remove-RunPackageExecutionAlias -Package $package}
+'''
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root/"fixture.ps1"
+            path.write_text(code, encoding="utf-8", newline="\n")
+            result = subprocess.run(["pwsh", "-NoProfile", "-File", str(path),
+                str(CONSUMER_ROOT/"projects/dual_pressure_rectilinear_ion_processor/simion/run_functional.ps1"),
+                str(CONSUMER_ROOT/"integrations/workflows/prepared_joint/execute.ps1"),
+                str(REPO), sys.executable, str(root)], cwd=REPO,
+                capture_output=True, text=True, encoding="utf-8", timeout=60, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("TWO_NATIVE_CONSUMERS=PASS", result.stdout)
+
+
     def test_iob_process_fact_precedes_science_and_transport_keeps_canonical_case(self):
         code = r'''param($Source,$Repo,$Python,$Root,$Scenario)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest

@@ -1364,7 +1364,10 @@
           "source_repo_path": "common/simion/workbench_seed.py",
           "consumers": [
             "local_frontend",
-            "cooled_frontend"
+            "cooled_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
           ]
         },
         {
@@ -1392,7 +1395,9 @@
             "local_frontend",
             "cooled_frontend",
             "single_reflection_flight",
-            "paired_accelerator_pulse"
+            "paired_accelerator_pulse",
+            "prepared_joint",
+            "oa_mr"
           ]
         }
       ]

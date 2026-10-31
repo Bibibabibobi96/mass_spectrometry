@@ -377,6 +377,36 @@ Unprotect-ImmutablePaSource -Source $env:PA_SOURCE|Out-Null
             self.assertTrue(result["replace_blocked"])
             self.assertEqual(result["after_release"], "released")
 
+    def test_new_stopped_writer_identity_is_read_once_until_guard_interruption(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.pa"
+            source.write_bytes(b"new stopped writer")
+            script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+""" + PA_HASH_READ_COUNTERS + r"""
+$first=Protect-ImmutablePaSource -Source $env:PA_SOURCE
+$second=Protect-ImmutablePaSource -Source $env:PA_SOURCE -ExpectedBytes $first.bytes -ExpectedSha256 $first.sha256
+if($first.already_protected-or-not$second.already_protected-or$script:paHashReads.Count-ne1){throw 'new identity was not established once'}
+foreach($arguments in @(@{ExpectedBytes=$first.bytes},@{ExpectedSha256=$first.sha256})){
+ $caught=$false;try{Protect-ImmutablePaSource -Source $env:PA_SOURCE @arguments|Out-Null}catch{$caught=$true}
+ if(-not$caught){throw 'partial expected identity accepted'}
+}
+$bad=$false;try{Protect-ImmutablePaSource -Source $env:PA_SOURCE -ExpectedBytes $first.bytes -ExpectedSha256 ('0'*64)|Out-Null}catch{$bad=$true}
+if(-not$bad-or$script:paHashReads.Count-ne1){throw 'live expectation mismatch was not rejected without another read'}
+Unprotect-ImmutablePaSource -Source $env:PA_SOURCE|Out-Null
+$third=Protect-ImmutablePaSource -Source $env:PA_SOURCE -ExpectedBytes $first.bytes -ExpectedSha256 $first.sha256
+if($third.already_protected-or$script:paHashReads.Count-ne2){throw 'interrupted guard skipped fresh verification'}
+Unprotect-AllImmutablePaSources|Out-Null
+'NEW_SOURCE_SINGLE_READ=PASS'
+"""
+            result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
+                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source)})
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("NEW_SOURCE_SINGLE_READ=PASS", result.stdout)
+
     def test_immutable_source_guard_is_process_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "source.pa"

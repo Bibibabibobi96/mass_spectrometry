@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import copy
+import json
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 import tempfile
@@ -41,6 +43,7 @@ class BatchingTests(unittest.TestCase):
         self.config["native_field"]=dict(directory=str(self.field),source_manifest=str(self.manifest))
         for name in ("processor.lua","collision_hs1.lua","native_drive.lua","simion_rf_drive.lua","voltage_waveforms.lua","extraction_force_audit.lua","processor.iob"):
             (self.run/"simion"/name).write_bytes(b"inert frozen control "+name.encode())
+        shutil.copyfile(PROJECT.parents[1]/"common/simion/scientific_event_csv.lua",self.run/"simion/scientific_event_csv.lua")
         self.save_config()
         functional.write_json(self.run/"inputs/runtime_profiles.json",functional.read_json(PROJECT/"config/runtime_profiles.json"))
         functional.write_json(self.run/"run_config.json",dict(inputs={}))
@@ -295,6 +298,71 @@ class BatchingTests(unittest.TestCase):
         with patch.object(sys,"argv",["verifier",str(self.run/"run_manifest.json"),"--require-status","failed"]):
             verify_run_manifest.main()
 
+    def test_guarded_new_controller_identity_avoids_hash_and_rejects_external_override(self) -> None:
+        external = self.run / "inputs/resolved_model.json"
+        record = dict(path=str((self.field/"processor.pa0").resolve()), bytes=(self.field/"processor.pa0").stat().st_size, sha256="A"*64)
+        with self.assertRaisesRegex(ValueError, "external published"):
+            batching.prepare_request(self.run, record)
+        self.config["native_field"].pop("source_manifest")
+        target = self.run/"simion/processor.pa0"
+        target.write_bytes(b"stopped new family")
+        self.config["native_field"]["directory"] = str(target.parent)
+        functional.write_json(external, self.config)
+        record = dict(path=str(target.resolve()), bytes=target.stat().st_size, sha256=file_sha256(target))
+        def guarded_hash(path):
+            if Path(path).resolve() == target.resolve():
+                raise AssertionError("duplicate PA hash")
+            return file_sha256(path)
+        with patch.object(batching, "file_sha256", side_effect=guarded_hash):
+            result = batching.prepare_request(self.run, record)
+        self.assertEqual(result["particle_count"], self.config["source"]["particle_count"])
+        for invalid in (dict(record, path=str(self.field/"processor.pa0")), dict(record, bytes=0), dict(record, sha256="invalid")):
+            with self.assertRaisesRegex(ValueError, "guarded native controller"):
+                batching.prepare_request(self.run, invalid)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_formal_prepare_dispatch_transports_live_guard_identity_without_duplicate_reads(self) -> None:
+        self.config["native_field"] = dict(directory=str(self.run/"simion"), source_manifest=None)
+        functional.write_json(self.run/"inputs/resolved_model.json", self.config)
+        suffixes = ["#", "0", "-surf", *map(str, self.config["native_projection"]["electrode_ids"])]
+        for suffix in suffixes:
+            (self.run/"simion"/("processor.pa"+suffix)).write_bytes(("stopped "+suffix).encode())
+        runner = PROJECT/"simion/run_functional.ps1"
+        source = runner.read_text(encoding="utf-8")
+        start = source.index("  $resolvedModel=Get-Content (Join-Path $run 'inputs/resolved_model.json')")
+        block = source[start:source.index("  $iobPreparation=", start)]
+        script = self.run/"guard_projection.ps1"
+        script.write_text(r"""param($Repo,$Runner,$Run,$Python)
+Set-StrictMode -Version Latest;$ErrorActionPreference='Stop'
+. (Join-Path $Repo 'common/simion/short_pa_path_support.ps1')
+$ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$null)
+foreach($name in @('Enter-IonProcessorNativeFlightGuards','Complete-IonProcessorNativeFlightGuards')){
+ $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
+ Invoke-Expression $node.Extent.Text
+}
+$original=${function:Get-ImmutablePaSourceVerificationSha256};$script:reads=0
+function Get-ImmutablePaSourceVerificationSha256 {param($Stream,$Length) $script:reads++;& $original -Stream $Stream -Length $Length}
+function Invoke-PreparedPython {
+ param($Arguments)
+ foreach($record in $nativeFlightGuardContext.records){if(-not$record.stream.CanRead){throw 'prepare lost live guard'}}
+ if($Arguments-notcontains'--native-pa0-record'){throw 'formal prepare omitted guarded identity'}
+ & $Python @Arguments|Out-Host
+ if($LASTEXITCODE-ne0){throw 'actual prepare CLI failed'}
+}
+function Write-RunJson {param($Path,$Value) $Value|ConvertTo-Json -Depth 20|Set-Content $Path}
+""" + block + r"""
+$count=$nativeFlightGuardContext.records.Count
+if($script:reads-ne$count){throw 'native family read more than once before dispatch'}
+Complete-IonProcessorNativeFlightGuards -Context $nativeFlightGuardContext -VerificationPath (Join-Path $Run 'verification.json')
+if($script:reads-ne$count-or$global:MassSpectrometryImmutablePaSourceGuards.Count){throw 'close reread or leaked protection'}
+'FORMAL_GUARDED_IDENTITY=PASS'
+""", encoding="utf-8")
+        result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script), str(PROJECT.parents[1]),
+            str(runner), str(self.run), sys.executable], cwd=PROJECT.parents[1], capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("FORMAL_GUARDED_IDENTITY=PASS", result.stdout)
+
     def planning(self) -> tuple[dict,dict]:
         request=batching.prepare_request(self.run)
         initial=plan_simion_dispatch(request,[],available_memory_bytes=24*1024**3,total_physical_memory_bytes=48*1024**3)
@@ -365,6 +433,29 @@ class BatchingTests(unittest.TestCase):
         before = batching.prepare_request(self.run)["case_input_sha256"]
         (self.run/"simion/voltage_waveforms.lua").write_bytes(b"changed frozen arithmetic")
         self.assertNotEqual(before, batching.prepare_request(self.run)["case_input_sha256"])
+
+    def test_generated_template_lua_projects_actual_load_save_and_preserves_canonical_receipt(self) -> None:
+        lua=Path('C:/Program Files/SIMION-2020/lua.exe')
+        if not lua.is_file():self.skipTest('Standalone Lua interpreter unavailable')
+        self.config['native_field']=dict(directory=str(self.run/'simion'),source_manifest=None)
+        (self.run/'simion/processor.pa0').write_bytes(b'inert not PA')
+        self.save_config();batching.prepare_request(self.run)
+        helper=PROJECT.parents[1]/'common/paths/native_run_path.lua'
+        shutil.copyfile(helper,self.run/'simion/native_run_path.lua')
+        target=self.run.parent/'execution'
+        harness=self.run/'template_probe.lua'
+        script_path=(self.run/'simion/build_batch_iobs.lua').as_posix()
+        field=(target/'simion/processor.pa0').as_posix()
+        harness.write_text('local expected='+json.dumps(field)+"\nlocal saved={}\nsimion={wb={instances={{pa={path=expected}}}}}\n"
+          +"function simion.wb:load(path) assert(path:gsub(string.char(92),'/')=="+json.dumps((target/'simion/processor.iob').as_posix())+") end\n"
+          +"function simion.wb:save(path) assert(path:gsub(string.char(92),'/'):find("+json.dumps(target.as_posix())+",1,true)==1);saved[#saved+1]=path end\n"
+          +'dofile('+json.dumps(script_path)+")\nassert(#saved==100)\nprint('TEMPLATE_PROJECTION=PASS')\n",encoding='utf-8',newline='\n')
+        result=subprocess.run([str(lua),str(harness)],cwd=self.run,env={**os.environ,'MASS_SPECTROMETRY_RUN_DIRECTORY':str(self.run),
+          'MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY':str(target)},capture_output=True,text=True,encoding='utf-8',timeout=30)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('TEMPLATE_PROJECTION=PASS',result.stdout)
+        receipt=functional.read_json(self.run/'inputs/batch_iob_preparation.json')
+        self.assertEqual(receipt['native_pa0_record']['path'],str((self.run/'simion/processor.pa0').resolve()))
 
     def test_local_native_field_requires_preflight_vendor_templates(self) -> None:
         self.config["native_field"]=dict(directory=str(self.run/"simion"),source_manifest=None)

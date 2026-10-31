@@ -1,5 +1,6 @@
 """Measured joint batch identity/clock tests; no commercial solver."""
 import csv
+import os
 import json
 import shutil
 import subprocess
@@ -208,7 +209,9 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
                             prepare_trial(prepared, path, output)
                         self.assertFalse(output.exists())
                         continue
-                    result = prepare_trial(prepared, path, output)
+                    with patch.dict(os.environ, MASS_SPECTROMETRY_RUN_DIRECTORY=str(output),
+                                    MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=str(output)+'_early_alias' if name=='unchanged' else str(output)):
+                        result = prepare_trial(prepared, path, output)
                 published = json.loads((output / "results/prepared_joint_trial.json").read_text())
                 self.assertEqual(result, published)
                 self.assertEqual(result["assembly_scope"], assembly_plan["scope"])
@@ -228,6 +231,8 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
                 self.assertEqual(result["expected_particle_ids"], selected_ids)
                 self.assertEqual(result["mother_particle_count"], 100)
                 self.assertEqual(result["launched_particle_count"], 97)
+                self.assertTrue((Path(result["frozen_runtime_directory"])/"native_run_path.lua").is_file())
+                self.assertIn(str(Path(result["frozen_runtime_directory"])/"mr_reference.operating_point.lua").replace("\\", "\\\\"), Path(result["operating_point"]["path"]).read_text(encoding="utf-8"))
                 for filename in ("component_particle_state.csv","source.fly2","source_states.lua","source_projection.lua","source_census.csv"):
                     self.assertEqual((Path(result["measured_source_directory"])/filename).read_bytes(),(source/filename).read_bytes())
                 changed_step = name in ("selected_step", "budget_and_selected_step")
@@ -254,6 +259,8 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
                     batch_directory = output / "batch_all_97"
                     batch = materialize_batch(output/"results/prepared_joint_trial.json",1,97,batch_directory)
                     self.assertEqual(batch["original_particle_ids"],selected_ids)
+                    self.assertEqual((batch_directory/"native_run_path.lua").read_bytes(),
+                                     (Path(result["frozen_runtime_directory"])/"native_run_path.lua").read_bytes())
                     lua = shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe"
                     if Path(lua).is_file():
                         script = output/"check_sidecar.lua"
@@ -269,6 +276,32 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
                                                     cwd=root,encoding="utf-8",timeout=30,check=False)
                             self.assertEqual(actual.returncode,0,actual.stdout+actual.stderr)
                             self.assertIn("CONTRACT_STEP_PROPAGATED",actual.stdout)
+                        reopen = output/'check_cold_sidecar.lua'
+                        reopen.write_text("local original=loadfile;local root=arg[2];loadfile=function(p) "
+                            "assert(p:sub(1,#root)~=root,'canonical inner path bypassed projection');return original(p) end;"
+                            "local t=dofile(arg[1]);assert(t.maximum_step_us==.002);"
+                            "assert(t.measured_source_directory==arg[3]);assert(t.scientific_event_output.events_path==arg[4]);print('BATCH_COLD_SOURCE=PASS')", encoding='utf-8')
+                        before_sidecar = (batch_directory/'joint.operating_point.lua').read_bytes()
+                        for label in ('old-execution', 'new-execution'):
+                            execution = root/label
+                            for item in (Path(result['operating_point']['path']),
+                                         Path(result['frozen_runtime_directory'])/'mr_reference.operating_point.lua',
+                                         Path(result['frozen_runtime_directory'])/'native_run_path.lua',
+                                         batch_directory/'joint.operating_point.lua',batch_directory/'native_run_path.lua'):
+                                target = execution/item.relative_to(output)
+                                target.parent.mkdir(parents=True,exist_ok=True)
+                                shutil.copyfile(item,target)
+                            native = execution/batch_directory.relative_to(output)
+                            cold = subprocess.run([lua,str(reopen),str(native/'joint.operating_point.lua'),
+                                str(output),native.as_posix()+'/measured_source',native.as_posix()+'/events.csv'],
+                                cwd=root,env=dict(os.environ,MASS_SPECTROMETRY_RUN_DIRECTORY=str(output),
+                                    MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=execution.as_posix()),
+                                capture_output=True,text=True,encoding='utf-8',timeout=30)
+                            self.assertEqual(cold.returncode,0,cold.stdout+cold.stderr)
+                            self.assertIn('BATCH_COLD_SOURCE=PASS',cold.stdout)
+                            shutil.rmtree(execution)
+                        self.assertEqual((batch_directory/'joint.operating_point.lua').read_bytes(),before_sidecar)
+
         self.assertEqual(original_path.read_bytes(), frozen_original)
         from common.integration.resolve_assembly import compile_assembly_layout
         plan_path = prepared / "inputs/composition_plan.json"
@@ -768,7 +801,27 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
                 runtime/"scientific_event_csv.lua"),
             trajectory_recording=dict(mode="fixed_interval",interval_us=.1))))
         module="projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial"
-        with patch(module+".load_binding",return_value=actual):
+        alias_script=root/'alias.ps1'
+        alias_script.write_text(r"""param($Repo,$Root,$Execution,$Alias,$Mode)
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+if($Mode-eq'create'){
+ $record=New-RunExecutionAlias -TargetDirectory $Root -ExecutionRoot $Execution
+ $record.execution_alias
+}else{Remove-RunExecutionAlias -ExecutionAlias $Alias -TargetDirectory $Root}
+""",encoding='utf-8',newline='\n')
+        repository=Path(__file__).resolve().parents[4]
+        execution=root.parent/(root.name+'_execution')
+        created=subprocess.run(['pwsh','-NoProfile','-File',str(alias_script),str(repository),str(root),str(execution),'unused','create'],
+            cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+        self.assertEqual(created.returncode,0,created.stdout+created.stderr)
+        alias=Path(created.stdout.strip().splitlines()[-1])
+        def cleanup_alias():
+            removed=subprocess.run(['pwsh','-NoProfile','-File',str(alias_script),str(repository),str(root),str(execution),str(alias),'remove'],
+                cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+            self.assertEqual(removed.returncode,0,removed.stdout+removed.stderr)
+            execution.rmdir()
+        self.addCleanup(cleanup_alias)
+        with patch(module+".load_binding",return_value=actual), patch.dict(os.environ,{"MASS_SPECTROMETRY_RUN_DIRECTORY":str(root),"MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY":str(alias)}):
             materialize_batch(preparation,1,2,root/"batch")
         self.assertFalse((root/"batch/joint.iob").exists())
         build=(root/"batch/joint.workbench_build.lua").read_text()
@@ -791,7 +844,7 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
             self.skipTest("Plain Lua unavailable; no solver fallback")
         script = root / "builder_save_overwrites.lua"
         script.write_text(r'''
-local directory,builder=arg[1],arg[2]
+local directory,builder,projection=arg[1],arg[2],arg[3]
 local request=assert(loadfile(directory..'/joint.workbench_build.lua'))()
 assert(request.fly2:gsub('\\','/')==directory..'/measured_source/source.fly2','independent source required')
 local instances={}
@@ -809,13 +862,27 @@ simion={wb={instances=instances,
   handle:close()
  end,
  find_at=function() probes=probes+1;return 0,probes+1 end}}
-arg={'--measured-source',directory..'/joint.workbench_build.lua'}
+local raw_dofile=dofile
+local priority_projected=false
+local native_path=assert(loadfile(projection))()
+dofile=function(path)
+ if path:gsub('\\','/'):match('/joint%.priority%.lua$') then
+  assert(path==native_path(request.priority) and path~=request.priority,
+   'priority contract must use the actual public execution projection')
+  priority_projected=true
+ end
+ return raw_dofile(path)
+end
+arg={'--measured-source',directory..'/joint.workbench_build.lua',projection}
 dofile(builder)
-assert(probes==3)
+assert(probes==3 and priority_projected)
 print('ACTUAL_BUILDER_SAVE_SOURCE_RESTORATION=PASS')
 ''', encoding="utf-8")
         builder = Path(__file__).resolve().parents[2] / "simion/build_native_corridor_iob.lua"
-        result = subprocess.run([lua, str(script), batch_dir.as_posix(), str(builder)], cwd=root,
+        result = subprocess.run([lua, str(script), batch_dir.as_posix(), str(builder),
+                                 str(repository/"common/paths/native_run_path.lua")], cwd=root,
+                                env=dict(os.environ, MASS_SPECTROMETRY_RUN_DIRECTORY=str(root),
+                                         MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=str(alias)),
                                 timeout=30, capture_output=True, text=True, encoding="utf-8", check=False)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("ACTUAL_BUILDER_SAVE_SOURCE_RESTORATION=PASS", result.stdout)
@@ -824,6 +891,13 @@ print('ACTUAL_BUILDER_SAVE_SOURCE_RESTORATION=PASS')
         self.assertEqual((restored["sha256"], restored["bytes"]), (expected["sha256"], expected["bytes"]))
         self.assertEqual((batch_dir / "joint.fly2").read_bytes(), before)
         self.assertEqual(before.count(b"standard_beam {"), 2)
+
+        sidecar=(root/"batch/joint.operating_point.lua").read_text(encoding="utf-8")
+        self.assertIn((alias/"runtime/joint.operating_point.lua").as_posix(),sidecar)
+        self.assertIn((alias/"batch/measured_source").as_posix(),sidecar)
+        receipt=json.loads((root/"batch/batch_receipt.json").read_text(encoding="utf-8"))
+        self.assertTrue(receipt["iob"].startswith(str(root/"batch")))
+        self.assertNotIn(str(alias),receipt["scientific_event_output"]["events_path"])
 
     def test_representation_comparison_preserves_every_prefix_event_and_sample(self):
         from common.contracts.write_run_manifest import file_record

@@ -316,8 +316,10 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
         raise ValueError("Prepared JSON numerics differ from its default trajectory profile")
     numerics = dict(reference_numerics, trajectory_quality=trajectory_profile["trajectory_quality"],
                     maximum_step_us=trajectory_profile["maximum_step_us"])
+    freeze_file(Path(__file__).parents[3] / "common/paths/native_run_path.lua", frozen_runtime / "native_run_path.lua")
     sidecar = render_measured_operating_point(frozen_runtime / reference.name, source_copy,
-        _native_projection(binding), numerics=numerics, field_assets_verified=True, source_identity_verified=True)
+        _native_projection(binding), numerics=numerics, field_assets_verified=True, source_identity_verified=True,
+        native_path_projection=True)
     sidecar = sidecar.replace("\nreturn t\n", "\nlocal crops="+_lua(memory_crops)+"\n"
         "for _,window in ipairs(t.static_field.refinement_windows) do\n"
         "  window.memory_consumer_crop=crops[window.name]\nend\nreturn t\n")
@@ -325,14 +327,16 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
     launcher = Path(__file__).parents[1] / "simion/run_iob_flight.lua"
     freeze_file(launcher, inputs / launcher.name)
     effective_launcher = inputs / launcher.name
+    projection = freeze_file(Path(__file__).parents[3] / "common/paths/native_run_path.lua", inputs / "native_run_path.lua")
     if field_binding_path is not None:
         builder = Path(__file__).parents[1] / "simion/build_native_corridor_iob.lua"
         freeze_file(builder, inputs / builder.name)
         effective_launcher = inputs / "build_and_run_prepared_iob.lua"
-        effective_launcher.write_text("local saved_arg=arg\nlocal iob=assert(arg[1])\n"
-            "arg={'--measured-source',iob:gsub('%.iob$','.workbench_build.lua')}\n"
-            "dofile("+_lua(str(inputs / builder.name))+ ")\narg=saved_arg\n"
-            "dofile("+_lua(str(inputs / launcher.name))+ ")\n", encoding="utf-8", newline="\n")
+        effective_launcher.write_text("local directory=assert(debug.getinfo(1,'S').source:sub(2):match('^(.*[/\\\\])'))\n"
+            "local native_path=assert(loadfile(directory..'native_run_path.lua'))()\nlocal saved_arg=arg\nlocal iob=assert(arg[1])\n"
+            "arg={'--measured-source',iob:gsub('%.iob$','.workbench_build.lua'),directory..'native_run_path.lua'}\n"
+            "dofile(native_path("+_lua(str(inputs / builder.name))+ "))\narg=saved_arg\n"
+            "dofile(native_path("+_lua(str(inputs / launcher.name))+ "))\n", encoding="utf-8", newline="\n")
     identifiers = [int(row["particle_id"]) for row in rows]
     topology = "five" if len(layout["roles"]) == 5 else "four"
     result = dict(schema_version=1, role="mrtof_prepared_joint_trial", parent_prepared_run=str(prepared_run.resolve()),
@@ -361,7 +365,7 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
                   assembly_request=assembly_records["accelerator_request"], assembly_scope=plan["scope"],
                   guard_paths=sorted(set(guard_paths)), protected_paths=[str(prepared_run.resolve()), joint["field_run"], joint["source_run"]],
                   numerics=numerics, frozen_runtime_directory=str(frozen_runtime.resolve()), launcher=str(effective_launcher.resolve()),
-                  source_mode=source_mode, mother_source_directory=str(mother_source_copy.resolve()),
+                  native_path_projection=projection, source_mode=source_mode, mother_source_directory=str(mother_source_copy.resolve()),
                   candidate_iob_rebuild=field_binding_path is not None,
                   prism_voltages_v=[binding["authority"]["analyzer_electrode_voltages_v"][i] for i in (15,16)],
                   stripe_biases_v=[binding["authority"]["analyzer_electrode_voltages_v"][i] for i in (10,12)],
@@ -540,6 +544,9 @@ def materialize_batch(preparation_path: Path, ordinal_min: int, ordinal_max: int
         if preparation.get("candidate_iob_rebuild") and path.name == "joint.iob":
             continue
         shutil.copyfile(path, output_directory / path.name)
+    runtime_projection = bool(preparation.get("native_path_projection"))
+    if runtime_projection:
+        shutil.copyfile(runtime / "native_run_path.lua", output_directory / "native_run_path.lua")
     original = runtime / "joint.operating_point.lua"
     # Only the observation switch and scheduler-local source projection change.
     interval = preparation["trajectory_recording"].get("interval_us")
@@ -548,12 +555,22 @@ def materialize_batch(preparation_path: Path, ordinal_min: int, ordinal_max: int
         trajectory_path=str((output_directory / "trajectory.csv").resolve()),
         csv_writer_path=preparation["scientific_event_writer"]["path"], environment_required=False,
         events_environment_variable="MRTOF_SCIENTIFIC_EVENTS_PATH",trajectory_environment_variable="MRTOF_SCIENTIFIC_TRAJECTORY_PATH")
-    sidecar = ("local t=assert(loadfile("+json.dumps(str(original.resolve()).replace("\\", "/"))+"))()\n"
-               "t.scientific_event_output="+_lua({key: project_native_run_path(value) if key in {"events_path", "trajectory_path", "csv_writer_path"} else value for key, value in scientific_event_output.items()})+"\n"
-               "t.measured_source_directory="+json.dumps(str(source.resolve()).replace("\\", "/"))+"\n"
+    sidecar_prefix = (
+        "local directory=assert(debug.getinfo(1,'S').source:sub(2):match('^(.*[/\\\\])'))\n"
+        "local native_path=assert(loadfile(directory..'native_run_path.lua'))()\n"
+        if runtime_projection else "")
+    original_lua = ("native_path("+_lua(str(original.resolve()))+")" if runtime_projection else
+                    json.dumps(project_native_run_path(str(original.resolve())).replace("\\", "/")))
+    scientific_projection = (
+        "for _,key in ipairs({'events_path','trajectory_path','csv_writer_path'}) do "
+        "t.scientific_event_output[key]=native_path(t.scientific_event_output[key]) end\n"
+        if runtime_projection else "")
+    sidecar = (sidecar_prefix+"local t=assert(loadfile("+original_lua+"))()\n"
+               "t.scientific_event_output="+_lua({key: project_native_run_path(value) if not runtime_projection and key in {"events_path", "trajectory_path", "csv_writer_path"} else value for key, value in scientific_event_output.items()})+"\n"
+               "t.measured_source_directory="+("native_path("+_lua(str(source.resolve()))+")" if runtime_projection else json.dumps(project_native_run_path(str(source.resolve())).replace("\\", "/")))+"\n"
                "t.trajectory_recording_enabled=true\n"
                "t.trajectory_recording_mode="+json.dumps(preparation["trajectory_recording"]["mode"])+"\n"
-               "t.trajectory_recording_interval_us="+interval_lua+"\nreturn t\n")
+               "t.trajectory_recording_interval_us="+interval_lua+"\n"+scientific_projection+"return t\n")
     (output_directory / "joint.operating_point.lua").write_text(sidecar, encoding="utf-8", newline="\n")
     shutil.copyfile(source / "source.fly2", output_directory / "joint.fly2")
     if preparation.get("candidate_iob_rebuild"):

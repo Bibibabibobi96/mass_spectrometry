@@ -33,10 +33,11 @@ $context=@{records=[Collections.Generic.List[object]]::new();status='acquiring';
 $outer=$null
 if($Mode-eq'outer'){$outer=Protect-ImmutablePaSource -Source $controller -ExpectedBytes $record.bytes -ExpectedSha256 $record.sha256}
 $originalHash=(Get-Command Get-ImmutablePaSourceVerificationSha256).ScriptBlock
+$script:hashCount=0
 $script:injectFailure=$false
 function Get-ImmutablePaSourceVerificationSha256 {
  param($Stream,$Length)
- if($script:injectFailure-and$Stream.Name.EndsWith('processor.pa1')){return ('0'*64)}
+ $script:hashCount++
  & $originalHash -Stream $Stream -Length $Length
 }
 if($Mode-eq'acquisition'){
@@ -53,7 +54,7 @@ if($Mode-eq'acquisition'){
   if(-not$blocked){throw 'family member remained writable'}
  }
 }
-if($Mode-eq'drift'){$script:injectFailure=$true}
+if($Mode-eq'drift'){Unprotect-ImmutablePaSource -Source ($prefix+'1')|Out-Null;Protect-ImmutablePaSource -Source ($prefix+'1')|Out-Null}
 $verification=Join-Path $Directory 'verification.json'
 $completionFailed=$false
 try {Complete-IonProcessorNativeFlightGuards $context $verification} catch {$completionFailed=$true}
@@ -61,6 +62,14 @@ if($completionFailed-ne($Mode-in@('drift','acquisition'))){throw 'completion fai
 $report=Get-Content $verification -Raw|ConvertFrom-Json
 if($report.status-ne$(if($completionFailed){'failed'}else{'verified'})){throw 'receipt does not report measured outcome'}
 if($Mode-ne'acquisition'-and$report.records.Count-ne$expectedCount){throw 'receipt omitted native family members'}
+if($Mode-notin@('acquisition','drift')-and$script:hashCount-ne($expectedCount-$(if($Mode-eq'outer'){1}else{0}))){throw "duplicate identity reads: $script:hashCount"}
+if($Mode-eq'drift'){
+ $replacement=$global:MassSpectrometryImmutablePaSourceGuards[[IO.Path]::GetFullPath($prefix+'1')]
+ if($null-eq$replacement){throw 'completion released a replacement guard owned by another acquisition'}
+ $blocked=$false;try{$w=[IO.File]::Open(($prefix+'1'),'Open','Write','ReadWrite');$w.Dispose()}catch{$blocked=$true}
+ if(-not$blocked){throw 'replacement guard is not live'}
+ Unprotect-ImmutablePaSource -Source ($prefix+'1')|Out-Null
+}
 if($Mode-eq'outer'){
  if(-not$global:MassSpectrometryImmutablePaSourceGuards.ContainsKey($controller)){throw 'borrowed outer guard released'}
  Unprotect-ImmutablePaSource -Source $controller|Out-Null
@@ -244,6 +253,7 @@ $node=$calls[0].Parent.Parent.Parent
 if($node-isnot[Management.Automation.Language.IfStatementAst]){throw 'fresh field guard lacks its owner branch'}
 $run=$Root;New-Item -ItemType Directory -Path (Join-Path $Root 'inputs')|Out-Null
 Set-Content (Join-Path $Root 'inputs/resolved_model.json') '{}'
+function Protect-ImmutablePaSource {param($Source) return @{path=$Source;bytes=1;sha256=('A'*64)}}
 function Enter-IonProcessorNativeFlightGuards {
  param($ResolvedModel,$Pa0Record,$Context,[switch]$FreshBuild)
  if(-not$FreshBuild){throw 'newly built family was not persisted before protection'}
@@ -251,6 +261,8 @@ function Enter-IonProcessorNativeFlightGuards {
 }
 foreach($case in @(@{native='';templates=$false},@{native='explicit-parent';templates=$false},@{native='';templates=$true})){
  $NativeFieldRun=$case.native;$partialContinuation=$true;$nativeFlightGuardContext=$null;$script:freshCalls=0
+ $resolvedModel=@{native_field=@{directory=$Root;source_manifest=$null}};$dispatchArguments=@()
+ if(-not$case.templates){$resolvedModel.native_field.source_manifest='published-parent'}
  $iobPreparation=@{requires_vendor_templates=$case.templates;native_pa0_record=@{path='owned-by-field-provider'}}
  . ([scriptblock]::Create($node.Extent.Text))
  if($script:freshCalls-ne[int]$case.templates){throw 'adopted external family entered fresh writable guard or fresh family was skipped'}
@@ -588,18 +600,21 @@ exit 0
             self.skipTest("PowerShell 7 required")
         with tempfile.TemporaryDirectory() as directory:
             script = Path(directory)/"all_reused.ps1"
-            script.write_text(r'''param($Runner,$Root)
+            script.write_text(r'''param($Runner,$Root,$Repo,$PythonRuntime)
 $ErrorActionPreference='Stop';$errors=$null
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'common/paths/workspace_paths.ps1')
+$pathContext=@{host_resource_state_path=(Join-Path $Root 'host.sqlite3')}
 $ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
 $node=$ast.Find({param($a)$a-is[Management.Automation.Language.IfStatementAst]-and$a.Extent.Text.StartsWith('if($ContinuationPredecessorManifestPath-and-not$partialContinuation)')},$true)
 if($null-eq$node){throw 'missing continuation branch'}
 $run=$Root;$repoRoot=$Root;$python='pythonFixture';$ContinuationPredecessorManifestPath='parent';$partialContinuation=$true;$partialReplayCount=0
-$predecessor='parent';$package=@{result_dir=(Join-Path $Root 'results')};$partialPlan=@{units=@(@{action='reuse'},@{action='reuse'})}
+$predecessor='parent';$package=[pscustomobject]@{result_dir=(Join-Path $Root 'results');artifact_run_dir=$Root;run_dir=$Root;execution_alias=$null;execution_path_capacity=$null;python=$PythonRuntime};$partialPlan=@{units=@(@{action='reuse'},@{action='reuse'})}
 New-Item -ItemType Directory -Force -Path $package.result_dir,(Join-Path $Root 'inputs/partial_batch_replay')|Out-Null
 Set-Content (Join-Path $Root 'inputs/partial_batch_replay/batch_plan.json') '{}'
 function pythonFixture {$global:LASTEXITCODE=0;$script:called=@($args)}
-function Enter-HostExecutionLease {param($Role,$Stage) if($Role-ne'SIMION'-or$Stage-ne'postprocess'){throw 'heavy admission'};return @{stage=$Stage}}
+function Enter-HostExecutionLease {param($Role,$Stage,$StatePath) if($Role-ne'SIMION'-or$Stage-ne'postprocess'){throw 'heavy admission'};return @{stage=$Stage}}
 function Invoke-ResourceBudgetedProcess {throw 'native process started'}
 function Invoke-SimionBatchPhase {throw 'native wave started'}
 function Write-RunJson {param($Path,$Value) $Value|ConvertTo-Json -Depth 20|Set-Content -LiteralPath $Path}
@@ -608,7 +623,7 @@ if(-not$nativeCompleted-or$lease.stage-ne'postprocess'-or$script:called-notconta
 $usage=Get-Content (Join-Path $package.result_dir 'simion_batch_resource_usage.json') -Raw|ConvertFrom-Json
 if($usage.execution_wave.process_count-ne0-or$usage.execution_wave.reused_batch_count-ne2){throw 'reuse accounting differs'}
 ''', encoding="utf-8")
-            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(PROJECT/"simion/run_functional.ps1"), directory],
+            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(PROJECT/"simion/run_functional.ps1"), directory,str(REPO),sys.executable],
                                     cwd=REPO, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -712,20 +727,24 @@ if($ast.Extent.Text-notmatch '-OnProcessCompleted \$checkpoint'){throw 'checkpoi
             self.skipTest("PowerShell 7 required")
         with tempfile.TemporaryDirectory() as directory:
             script = Path(directory) / "continuation_fixture.ps1"
-            script.write_text(r'''param($Runner,$Root)
+            script.write_text(r'''param($Runner,$Root,$Repo,$PythonRuntime)
 $ErrorActionPreference='Stop';$errors=$null
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'common/paths/workspace_paths.ps1')
+$pathContext=@{host_resource_state_path=(Join-Path $Root 'host.sqlite3')}
+$package=[pscustomobject]@{artifact_run_dir=$Root;run_dir=$Root;execution_alias=$null;execution_path_capacity=$null;python=$PythonRuntime}
 $ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
 $node=$ast.Find({param($a)$a-is[Management.Automation.Language.FunctionDefinitionAst]-and$a.Name-eq'Invoke-IonProcessorCompletedContinuation'},$true)
 Invoke-Expression $node.Extent.Text
 function pythonFixture {$global:LASTEXITCODE=0; $script:arguments=@($args); 'synthetic continuation'}
-function Enter-HostExecutionLease {param($Role,$Stage) if($Role-ne'SIMION'-or$Stage-ne'postprocess'){throw 'heavy admission'};return @{stage=$Stage}}
+function Enter-HostExecutionLease {param($Role,$Stage,$StatePath) if($Role-ne'SIMION'-or$Stage-ne'postprocess'){throw 'heavy admission'};return @{stage=$Stage}}
 function Invoke-ResourceBudgetedProcess {throw 'native process started'}
 function Invoke-ResourceBudgetedProcesses {throw 'native wave started'}
-$lease=Invoke-IonProcessorCompletedContinuation -Python 'pythonFixture' -Run $Root -Predecessor (Join-Path $Root 'parent') -RepoRoot $Root
+$lease=Invoke-IonProcessorCompletedContinuation -Package $package -Python 'pythonFixture' -Run $Root -Predecessor (Join-Path $Root 'parent') -RepoRoot $Root
 if($lease.stage-ne'postprocess'-or$script:arguments-notcontains'prepare-continuation'){throw 'continuation routing differs'}
 ''', encoding="utf-8")
-            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(PROJECT / "simion/run_functional.ps1"), directory],
+            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(PROJECT / "simion/run_functional.ps1"), directory,str(REPO),sys.executable],
                                     cwd=REPO, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -775,7 +794,7 @@ $text=[IO.File]::ReadAllText($Runner)
 $start=$text.IndexOf('$summary=Get-Content $package.summary')
 $end=$text.IndexOf("`n} catch {",$start)
 if($start-lt0-or$end-lt0){throw 'missing actual summary branch'}
-$package=@{summary=$SummaryPath};$analysisExit=2;$nativeCompleted=$true;$finished=$false;$runSucceeded=$true;$run=Split-Path $SummaryPath
+$package=@{summary=$SummaryPath;native_path_preparation=@{calls=0;elapsed_seconds=0;transport_bytes=0}};$analysisExit=2;$nativeCompleted=$true;$finished=$false;$runSucceeded=$true;$run=Split-Path $SummaryPath
 try {Invoke-Expression $text.Substring($start,$end-$start);throw 'negative exit was accepted'} catch {
  if($_.Exception.Message-notmatch'Analysis or required diagnostics incomplete'){throw}
 }
@@ -797,8 +816,11 @@ if(-not$finished-or$runSucceeded){throw 'negative completion state differs'}
             self.skipTest("PowerShell 7 required")
         with tempfile.TemporaryDirectory() as directory:
             script = Path(directory) / "unknown_fixture.ps1"
-            script.write_text(r'''param($Runner)
+            script.write_text(r'''param($Runner,$Repo)
 $ErrorActionPreference='Stop'
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+$pathEnvironmentNames=@('MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH','MASS_SPECTROMETRY_RUN_DIRECTORY','MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY')
+$savedPathEnvironment=Save-RunEnvironment -Names $pathEnvironmentNames
 $errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
@@ -809,11 +831,11 @@ function Exit-ArtifactWorkflowCapacitySession {throw 'capacity release was calle
 function Apply-RunArtifactRetention {throw 'retention was called'}
 function Set-IonProcessorRunStage {param($Context,$Stage)}
 $runObservation=@{stage='finalization';timer=[Diagnostics.Stopwatch]::StartNew()};$failureStage='';$failureReason=''
-$writersStopped=$false;$lease=@{};$capacity=@{};$package=@{};$savedPythonPath=$env:PYTHONPATH
+$writersStopped=$false;$lease=@{};$capacity=@{};$package=@{artifact_run_dir=$PSScriptRoot;summary=(Join-Path $PSScriptRoot 'unused_summary.json')};$ownerContext=$null;$primaryRunFailure=$null;$savedPythonPath=$env:PYTHONPATH
 Push-Location .
 Invoke-Expression ('try {} finally '+$node.Finally.Extent.Text)
 ''', encoding="utf-8")
-            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(PROJECT / "simion/run_functional.ps1")],
+            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(PROJECT / "simion/run_functional.ps1"),str(REPO)],
                                     cwd=REPO, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -840,7 +862,7 @@ Invoke-Expression ('try {} finally '+$node.Finally.Extent.Text)
                 self.assertEqual(len(receipt["records"]), len(model["native_projection"]["electrode_ids"])+3)
             if mode == "drift":
                 self.assertEqual(sum(r["verified"] for r in receipt["records"]), len(receipt["records"])-1)
-                self.assertIn("identity changed", " ".join(receipt["errors"]))
+                self.assertIn("protection interrupted", " ".join(receipt["errors"]))
 
     def test_all_derived_members_guarded_and_verified(self) -> None:
         self.check_mode("success")

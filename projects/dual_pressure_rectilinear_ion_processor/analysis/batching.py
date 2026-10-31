@@ -512,7 +512,7 @@ def analysis_source_record(run: Path, path: Path) -> dict:
     return dict(path=str(path), bytes=path.stat().st_size, sha256=file_sha256(path))
 
 
-def prepare_request(run: Path) -> dict:
+def prepare_request(run: Path, native_pa0_record: dict | None = None) -> dict:
     """Describe the real one-instance native loading identity without CPU limits."""
     c = _read(run/"inputs/resolved_model.json")
     _archive_policy(run)
@@ -523,11 +523,22 @@ def prepare_request(run: Path) -> dict:
     field = Path(c["native_field"]["directory"])/"processor.pa0"
     source_manifest = c["native_field"].get("source_manifest")
     if source_manifest:
+        if native_pa0_record is not None:
+            raise ValueError("external published field cannot override manifest identity")
         parent = Path(source_manifest).parent
         manifest = _read(Path(source_manifest))
         outputs = manifest["outputs"]
         records = list(manifest["inputs"].values()) + (list(outputs.values()) if isinstance(outputs, dict) else outputs)
         pa_sha = next(r["sha256"] for r in records if record_path(r, base_dir=parent)==field.resolve())
+    elif native_pa0_record is not None:
+        # Internal PS projection: its live public guard owns this new run's PA.
+        # This is not an authorization to reuse external or unprotected assets.
+        if (not field.resolve().is_relative_to(run.resolve())
+                or record_path(native_pa0_record) != field.resolve()
+                or native_pa0_record.get("bytes") != field.stat().st_size
+                or not re.fullmatch(r"[0-9A-Fa-f]{64}", str(native_pa0_record.get("sha256", "")))):
+            raise ValueError("guarded native controller record differs from this run")
+        pa_sha = native_pa0_record["sha256"]
     else:
         pa_sha = file_sha256(field)
     request = dispatch_request_for_field(run, c, pa_sha, retain, processor_program=run/"simion/processor.lua")
@@ -542,9 +553,10 @@ def prepare_request(run: Path) -> dict:
             destinations.append(str((folder/"processor.iob").resolve()).replace("\\","/"))
         canonical=json.dumps(str((run/"simion/processor.iob").resolve()).replace("\\","/"))
         expected=json.dumps(str(field.resolve()).replace("\\","/").lower())
-        script="local wb=simion.wb\nwb:load("+canonical+")\n"
-        script+="assert(wb.instances[1].pa.path:gsub(string.char(92),'/'):lower()=="+expected+",'batch template PA identity mismatch')\n"
-        for target in destinations:script+="wb:save("+json.dumps(target)+")\n"
+        script="local directory=assert(debug.getinfo(1,'S').source:sub(2):match('^(.*[/\\\\])'))\n"
+        script+="local native_path=assert(loadfile(directory..'native_run_path.lua'))()\nlocal wb=simion.wb\nwb:load(native_path("+canonical+"))\n"
+        script+="assert(wb.instances[1].pa.path:gsub(string.char(92),'/'):lower()==native_path("+expected+"):gsub(string.char(92),'/'):lower()"+",'batch template PA identity mismatch')\n"
+        for target in destinations:script+="wb:save(native_path("+json.dumps(target)+"))\n"
         script+="print('ION_PROCESSOR_BATCH_IOB_TEMPLATES=PASS')\n"
         (run/"simion/build_batch_iobs.lua").write_text(script,encoding="utf-8")
     _write(run/"inputs/batch_iob_preparation.json",preparation)
@@ -568,7 +580,7 @@ def materialize_batches(run: Path, batch_plan: Path) -> dict:
     mother = frozen_release_states(run, c)
     if plan["particle_count"] != len(mother):
         raise ValueError("batch plan population differs from frozen mother cohort")
-    controls = ("processor.lua", "collision_hs1.lua", "native_drive.lua", "simion_rf_drive.lua", "voltage_waveforms.lua", "extraction_force_audit.lua", "processor.iob")
+    controls = ("processor.lua", "scientific_event_csv.lua", "collision_hs1.lua", "native_drive.lua", "simion_rf_drive.lua", "voltage_waveforms.lua", "extraction_force_audit.lua", "processor.iob")
     workers = []
     for batch in plan["batches"]:
         if f"batch_{batch['index']:04d}" in reused:

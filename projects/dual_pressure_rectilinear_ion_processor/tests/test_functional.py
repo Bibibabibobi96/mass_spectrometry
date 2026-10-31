@@ -21,6 +21,7 @@ import unittest
 from unittest.mock import patch
 
 from common.simion.collision_hs1 import adapt_hs1_for_repeat_fly
+from common.contracts.particle_count_policy import POLICY_PATH
 from common.ion_release.release import generate_release_states
 from projects.dual_pressure_rectilinear_ion_processor.analysis import functional
 
@@ -304,13 +305,18 @@ class FunctionalContractTests(unittest.TestCase):
         project = repo / "projects" / functional.PROJECT
         (project / "config").mkdir(parents=True)
         (project / "simion").mkdir()
-        policy = repo / "common/contracts" / functional.POLICY_PATH.name
+        policy = repo / "common/contracts" / POLICY_PATH.name
         policy.parent.mkdir(parents=True)
-        shutil.copyfile(functional.POLICY_PATH, policy)
+        shutil.copyfile(POLICY_PATH, policy)
         schema = Path("common/contracts/schemas/simion_batch_continuation.schema.json")
         (repo / schema).parent.mkdir(parents=True)
         shutil.copyfile(PROJECT.parents[1] / schema, repo / schema)
         shutil.copyfile(PROJECT.parents[1] / "common/host_resource_policy.json", repo / "common/host_resource_policy.json")
+        for relative in ("common/contracts/artifact_retention.json",
+                         "common/contracts/schemas/canonical_clock_authority.schema.json"):
+            target = repo / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(PROJECT.parents[1] / relative, target)
         for name in ("baseline", "numerics", "source", "acceptance", "native_operating_point"):
             value = self.config[name]
             functional.write_json(project / "config" / f"{name}.json", value)
@@ -324,9 +330,11 @@ class FunctionalContractTests(unittest.TestCase):
             (project / "simion" / name).write_text("-- inert copy fixture\n", encoding="utf-8")
         vendor = Path(self.temporary.name) / "vendor_copy_fixture"
         fixture_paths = [repo / "common/simion/rf_drive.lua",
-                         repo / "common/simion/scientific_event_csv.lua",
                          repo / "common/simion/voltage_waveforms.lua",
+                         repo / "common/simion/scientific_event_csv.lua",
+                         repo / "common/paths/native_run_path.lua",
                          repo / "common/simion/assets/iob_instance_seeds/1_instance_seed.iob",
+                         repo / "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0",
                          vendor / "examples/collision_hs1/collision_hs1.lua"]
         for path in fixture_paths:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -584,14 +592,58 @@ print(json.dumps(dict(alpha=rows[0].interpolation_alpha, lower=rows[0].lower_anc
         self.write_events(rows)
         self.assertFalse(functional.analyze(self.run)["checks"]["capture_fraction"])
 
+    def test_frozen_closure_performs_actual_prepare_without_active_source_fallback(self) -> None:
+        _, vendor = self.make_prepare_fixture()
+        functional.prepare(self.run, PROJECT, vendor)
+        closure = self.run / "inputs/code"
+        detached = Path(self.temporary.name)/"detached"
+        for name in ("inputs","simion","results"):(detached/name).mkdir(parents=True)
+        functional.write_json(detached/"run_config.json", {"schema_version":1})
+        from common.contracts.frozen_inputs import freeze_file
+        freeze_file(PROJECT/"config/runtime_profiles.json",detached/"inputs/runtime_profiles.json")
+        code = """from pathlib import Path
+import sys
+from projects.dual_pressure_rectilinear_ion_processor.analysis import functional
+closure,run,vendor=map(Path,sys.argv[1:4])
+Path(functional.__file__).resolve().relative_to(closure.resolve())
+project=closure/'projects/dual_pressure_rectilinear_ion_processor'
+functional.prepare(run,project,vendor)
+assert (run/'simion/native_run_path.lua').is_file()
+assert (run/'simion/iob_seed/1_instance_seed.iob').is_file()
+assert (run/'simion/iob_seed/iob_seed_placeholder_01.pa0').is_file()
+assert not (run/'simion/processor.iob').exists()
+# Existing inert template fixture tests metadata/copy wiring only, never vendor IOB validity.
+from common.simion.particle_batching import plan_single_wave_batches
+from projects.dual_pressure_rectilinear_ion_processor.analysis import batching
+import shutil
+shutil.copyfile(run/'simion/runtime.lua',run/'simion/processor.lua')
+plan=plan_single_wave_batches(100,2)
+plan_path=run/'inputs/test_batch_plan.json'
+functional.write_json(plan_path,plan)
+for batch in plan['batches']:
+    folder=run/('simion_batch_%04d'%batch['index']);folder.mkdir()
+    (folder/'processor.iob').write_bytes(b'INERT_ONLY_NOT_NATIVE_IOB')
+result=batching.materialize_batches(run,plan_path)
+for batch in plan['batches']:
+    target=run/('simion_batch_%04d'%batch['index'])/'scientific_event_csv.lua'
+    assert target.read_bytes()==(run/'simion/scientific_event_csv.lua').read_bytes()
+print('FROZEN_ACTUAL_PREPARE=PASS NATIVE=0 TASKS=2 IOB=INERT_TEST_FIXTURE')
+"""
+        result=subprocess.run([sys.executable,'-B','-s','-c',code,str(closure),str(detached),str(vendor)],cwd=detached,
+            env={**os.environ,'PYTHONPATH':str(closure),'PYTHONNOUSERSITE':'1'},capture_output=True,text=True,encoding='utf-8',timeout=45)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('FROZEN_ACTUAL_PREPARE=PASS',result.stdout)
+        self.assertEqual((self.run/'simion/processor.gem').read_bytes(),(detached/'simion/processor.gem').read_bytes())
+        self.assertEqual((self.run/'inputs/release.csv').read_bytes(),(detached/'inputs/release.csv').read_bytes())
+
     def test_frozen_closure_loads_particle_count_policy_in_independent_python(self) -> None:
         # Use the real loaded repository closure but inert vendor input. A fresh
         # interpreter cannot benefit from this unittest process's import cache.
         _, vendor = self.make_prepare_fixture()
         functional.prepare(self.run, PROJECT, vendor)
         closure = self.run / "inputs/code"
-        frozen_policy = closure / "common/contracts" / functional.POLICY_PATH.name
-        self.assertEqual(frozen_policy.read_bytes(), functional.POLICY_PATH.read_bytes())
+        frozen_policy = closure / "common/contracts" / POLICY_PATH.name
+        self.assertEqual(frozen_policy.read_bytes(), POLICY_PATH.read_bytes())
         code = ("from common.contracts import particle_count_policy as p; "
                 "print(p.POLICY_PATH.resolve()); "
                 "assert p.validate_standard_particle_count(100) == 100; "

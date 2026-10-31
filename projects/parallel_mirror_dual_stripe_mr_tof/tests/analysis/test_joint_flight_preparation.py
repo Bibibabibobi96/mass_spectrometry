@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import json
+import os
 
 from common.contracts.write_run_manifest import file_record
 from common.contracts.file_identity import file_sha256
@@ -144,6 +145,62 @@ print('FIVE_ROLE_BUILDER_MOCK=PASS')
             (root / 'check.lua').write_text(check, encoding='utf-8')
             result = subprocess.run([lua, str(root / 'check.lua'), str(root / 'generated.lua')], cwd=root, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_measured_sidecar_keeps_canonical_sources_across_execution_representations(self):
+        lua = shutil.which('lua') or 'C:/Program Files/SIMION-2020/lua.exe'
+        if not Path(lua).is_file():
+            self.skipTest('plain Lua unavailable')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            canonical = root/'persistent'
+            canonical.mkdir()
+            reference = canonical/'reference.lua'
+            reference.write_text('return {mirror_voltages_v={0,1,2,3,4}}', encoding='utf-8')
+            mapper = PROJECT.parents[1]/'common/paths/native_run_path.lua'
+            source = canonical/'source'
+            generated = canonical/'generated.lua'
+            first_bytes = None
+            for prepared_early in (False, True):
+                early = root/'early-alias'
+                with patch.dict(os.environ, MASS_SPECTROMETRY_RUN_DIRECTORY=str(canonical),
+                                MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=str(early if prepared_early else canonical)):
+                    rendered = render_measured_operating_point(reference, source,
+                        dict(assembly_scope='new', analyzer_voltages_v=[0.]*20),
+                        numerics=dict(trajectory_quality=7, maximum_step_us=.003, full_path_timeout_us=123),
+                        native_path_projection=True)
+                self.assertNotIn(str(early), rendered)
+                self.assertIn(_lua(str(reference)), rendered)
+                if first_bytes is None:
+                    first_bytes = rendered
+                self.assertEqual(rendered, first_bytes)
+                generated.write_text(rendered, encoding='utf-8')
+                for suffix in ('first-execution', 'cold-execution'):
+                    execution = root/suffix
+                    execution.mkdir()
+                    shutil.copyfile(generated, execution/'generated.lua')
+                    shutil.copyfile(reference, execution/'reference.lua')
+                    shutil.copyfile(mapper, execution/'native_run_path.lua')
+                    check = execution/'check.lua'
+                    check.write_text(r"""local original=loadfile
+local canonical,expected=arg[2],arg[3]
+loadfile=function(path)
+ assert(path~=canonical,'inner reference bypassed native projection')
+ return original(path)
+end
+local t=dofile(arg[1])
+assert(t.mirror_voltages_v[5]==4 and t.trajectory_quality==7)
+assert(t.measured_source_directory==expected)
+print('CANONICAL_INNER_SOURCE_REOPEN=PASS')
+""", encoding='utf-8')
+                    result = subprocess.run([lua, str(check), str(execution/'generated.lua'),
+                        str(reference), execution.as_posix()+'/source'], cwd=root,
+                        env=dict(os.environ, MASS_SPECTROMETRY_RUN_DIRECTORY=str(canonical),
+                            MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=execution.as_posix()),
+                        capture_output=True, text=True, encoding='utf-8', timeout=30)
+                    self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+                    self.assertIn('CANONICAL_INNER_SOURCE_REOPEN=PASS', result.stdout)
+                    shutil.rmtree(execution)  # Old execution representation is absent before cold read.
+                self.assertEqual(reference.read_text(encoding='utf-8'), 'return {mirror_voltages_v={0,1,2,3,4}}')
 
     def test_reference_json_binds_real_compiler_and_derives_timeout_without_lua_numerics(self):
         import copy
