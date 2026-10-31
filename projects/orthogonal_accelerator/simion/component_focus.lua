@@ -5,6 +5,11 @@ simion.workbench_program()
 local program_path=debug.getinfo(1,'S').source:sub(2)
 local point=assert(loadfile(program_path:gsub('%.lua$','.operating_point.lua')),'operating-point companion required')()
 local source_states=assert(loadfile(program_path:gsub('%.lua$','.source_states.lua')),'authoritative source-states companion required')()
+-- SIMION 2020 examples/test_plane/testplanelib.lua, frozen by the flight runner.
+-- The official library controls landing steps; bounded directed states below
+-- own our event identity/6D projection, without a spatial-tolerance early hit.
+local TestPlane=simion.import 'testplanelib.lua'
+local exit_plane,focus_plane
 local previous_state={}
 local terminal_written={}
 local focus_written={}
@@ -50,12 +55,23 @@ local function capture_focus(particle,focus,current)
  finalize_particle(particle,current,1)
  ion_splat=1
 end
+local function directed_crossing(previous,current,z)
+ -- Same bounded endpoint semantics as common.analysis.plane_crossings:
+ -- positive elapsed time, both velocities forward, no extrapolation.
+ if current.t<=previous.t or previous.vz>=0 or current.vz>=0 or
+    previous.z<z or current.z>z or current.z>=previous.z then return nil end
+ local f=(z-previous.z)/(current.z-previous.z)
+ return {t=previous.t+f*(current.t-previous.t),x=previous.x+f*(current.x-previous.x),y=previous.y+f*(current.y-previous.y),z=z,vx=previous.vx+f*(current.vx-previous.vx),vy=previous.vy+f*(current.vy-previous.vy),vz=previous.vz+f*(current.vz-previous.vz)}
+end
 function segment.initialize_run()
  assert(#simion.wb.instances==1,'one accelerator instance required')
  assert(sim_ions_count==point.particle_count,'component focus particle count differs from frozen source')
  assert(#source_states==point.particle_count,'authoritative source state count differs from frozen source')
  assert(point.focus_plane_tolerance_mm>0,'focus-plane tolerance must be positive')
  assert(point.field_mode=='native' or point.field_mode=='zone1_ideal' or point.field_mode=='zone2_ideal' or point.field_mode=='full_ideal','field mode is invalid')
+ previous_state={};terminal_written={};focus_written={};exit_written={}
+ exit_plane=TestPlane(0,0,point.local_exit_z_mm,0,0,-1,function() end)
+ focus_plane=TestPlane(0,0,point.focus_plane_local_z_mm,0,0,-1,function() end)
  event_file=assert(io.open('component_focus.events.csv','w'),'component focus event CSV cannot be opened')
  event_file:write('kind,ion,code,t_us,x_mm,y_mm,z_mm,vx_mm_us,vy_mm_us,vz_mm_us\n')
  event_file:flush()
@@ -80,26 +96,15 @@ function segment.efield_adjust()
 end
 function segment.tstep_adjust()
  ion_time_step=math.min(ion_time_step,point.maximum_step_us)
- local current=state_now()
- if current.vz>=-1e-12 then return end
- if not exit_written[ion_number] and current.z>point.local_exit_z_mm then
-  local dt_to_exit=(current.z-point.local_exit_z_mm)/(-current.vz)
-  if dt_to_exit>0 and ion_time_step>dt_to_exit then ion_time_step=dt_to_exit end
- end
- if focus_written[ion_number] then return end
- local dz=current.z-point.focus_plane_local_z_mm
- if dz>0 then
-  local dt_to_plane=dz/(-current.vz)
-  if dt_to_plane>0 and ion_time_step>dt_to_plane then ion_time_step=dt_to_plane end
- end
- -- The next callback sees the integrator's actual landed state.  Do not
- -- synthesize a free-flight focus event from the velocity estimate above.
- if math.abs(dz)<=point.focus_plane_tolerance_mm then record_focus(ion_number,current) end
+ if ion_vz_mm>=0 then return end
+ if not exit_written[ion_number] then exit_plane.tstep_adjust() end
+ if not focus_written[ion_number] then focus_plane.tstep_adjust() end
 end
 function segment.initialize()
  -- SIMION calls initialize for the Fly'm; record each ion on its first action.
 end
 function segment.other_actions()
+ exit_plane.other_actions();focus_plane.other_actions()
  local current=state_now()
  local previous=previous_state[ion_number]
  if not previous then
@@ -112,15 +117,10 @@ function segment.other_actions()
   previous_state[ion_number]=current
   return
  end
- if previous.z>point.local_exit_z_mm and current.z<=point.local_exit_z_mm and current.vz<0 then
-  local f=(point.local_exit_z_mm-previous.z)/(current.z-previous.z)
-  record_exit(ion_number,{t=previous.t+f*(current.t-previous.t),x=previous.x+f*(current.x-previous.x),y=previous.y+f*(current.y-previous.y),z=point.local_exit_z_mm,vx=previous.vx+f*(current.vx-previous.vx),vy=previous.vy+f*(current.vy-previous.vy),vz=previous.vz+f*(current.vz-previous.vz)})
- end
- if previous.z>point.focus_plane_local_z_mm and current.z<=point.focus_plane_local_z_mm and current.vz<0 then
-  local f=(point.focus_plane_local_z_mm-previous.z)/(current.z-previous.z)
-  local focus={t=previous.t+f*(current.t-previous.t),x=previous.x+f*(current.x-previous.x),y=previous.y+f*(current.y-previous.y),z=point.focus_plane_local_z_mm,vx=previous.vx+f*(current.vx-previous.vx),vy=previous.vy+f*(current.vy-previous.vy),vz=previous.vz+f*(current.vz-previous.vz)}
-  capture_focus(ion_number,focus,current)
- end
+ local exit=directed_crossing(previous,current,point.local_exit_z_mm)
+ if exit then record_exit(ion_number,exit) end
+ local focus=directed_crossing(previous,current,point.focus_plane_local_z_mm)
+ if focus then capture_focus(ion_number,focus,current) end
  previous_state[ion_number]=current
 end
 function segment.terminate()

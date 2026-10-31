@@ -17,6 +17,7 @@ from typing import Any
 from common.contracts.file_identity import file_sha256
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.ion_release.release import validate_materialized_release, validate_release_spec
+from projects.orthogonal_accelerator.analysis.accelerator_time_focus import time_to_fixed_plane_s
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile
 
 _CSV_FIELDS = ("kind", "ion", "code", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")
@@ -104,7 +105,10 @@ def _source_rows(receipt_path: Path, campaign: dict[str, Any]) -> tuple[dict[int
     with table.open(encoding="utf-8", newline="") as handle:
         rows = list(csv.DictReader(handle))
     state_fields = ("x_mm", "y_mm", "z_mm", "vx_m_s", "vy_m_s", "vz_m_s")
-    result = {int(row["particle_id"]): {key: _finite(row[key], f"source.{key}") for key in state_fields} for row in rows}
+    result = {int(row["particle_id"]): {
+        **{key: _finite(row[key], f"source.{key}") for key in state_fields},
+        "t_us": _finite(_finite(row["birth_time_s"], "source.birth_time_s") * 1.0e6, "source birth us"),
+    } for row in rows}
     count = campaign["release_spec"]["particle_count"]
     if len(rows) != count or sorted(result) != list(range(1, count + 1)):
         raise ComponentFocusError("common ion-release particle identities differ from the component campaign")
@@ -147,18 +151,14 @@ def _arrival_time_diagnostics(hits: list[tuple[dict[str, float], dict[str, float
     }
 
 
-def _positive_root(distance_m: float, velocity_m_s: float, acceleration_m_s2: float) -> float:
-    if distance_m <= 0.0 or acceleration_m_s2 <= 0.0:
-        raise ComponentFocusError("ideal two-zone propagation requires positive distance and acceleration")
-    return (math.sqrt(velocity_m_s * velocity_m_s + 2.0 * acceleration_m_s2 * distance_m) - velocity_m_s) / acceleration_m_s2
+def _ideal_two_zone_contrast(
+    hits: dict[int, tuple[dict[str, float], dict[str, float]]], campaign: dict[str, Any],
+) -> dict[str, Any]:
+    """Pair native hits with the ideal model at the same plane and clock.
 
-
-def _ideal_two_zone_contrast(sources: dict[int, dict[str, float]], campaign: dict[str, Any], native_p2p_ns: float | None) -> dict[str, Any]:
-    """Compare the native PA flight with its matching piecewise-uniform two-zone field.
-
-    The common release states and runtime voltage table are unchanged.  Uniform fields
-    deliberately remove transverse finite-electrode variation; this is a diagnostic,
-    not a physical qualification result.
+    Each requested ID remains visible if ideal propagation fails. Cohort widths
+    require every requested ideal arrival and at least two pairs. Differences
+    describe this reference comparison; they do not identify a physical cause.
     """
     profile = load_geometry_profile(campaign["geometry_profile_id"])
     gap1, gap2 = float(profile["gap_1_mm"]), float(profile["gap_2_mm"])
@@ -166,31 +166,69 @@ def _ideal_two_zone_contrast(sources: dict[int, dict[str, float]], campaign: dic
     voltages = point["electrode_voltages_v"]
     repeller, grid1, exit_v = (_finite(voltages[index], "ideal voltage") for index in (1, 2, 3))
     species = campaign["release_spec"]["species"]
-    mass_kg = _finite(species["mass_amu"], "ion mass") * 1.66053906660e-27
-    charge_c = _finite(species["charge_state"], "ion charge state") * 1.602176634e-19
-    if mass_kg <= 0.0 or charge_c <= 0.0:
+    mass = _finite(species["mass_amu"], "ion mass")
+    charge = _finite(species["charge_state"], "ion charge state")
+    if mass <= 0.0 or charge <= 0.0:
         raise ComponentFocusError("ideal two-zone contrast requires positive ion mass and charge")
-    a1 = charge_c * (repeller - grid1) * 1000.0 / (mass_kg * gap1)
-    a2 = charge_c * (grid1 - exit_v) * 1000.0 / (mass_kg * gap2)
-    arrivals_ns: list[float] = []
-    for state in sources.values():
-        release = gap1 + gap2 - state["z_mm"]
-        if not 0.0 < release < gap1:
-            raise ComponentFocusError("common release is outside the ideal first acceleration gap")
-        t1 = _positive_root((gap1 - release) * 1.0e-3, -state["vz_m_s"], a1)
-        v1 = -state["vz_m_s"] + a1 * t1
-        t2 = _positive_root(gap2 * 1.0e-3, v1, a2)
-        arrivals_ns.append((t1 + t2) * 1.0e9)
-    ideal_p2p = max(arrivals_ns) - min(arrivals_ns)
-    excess = None if native_p2p_ns is None else native_p2p_ns - ideal_p2p
-    status = "native_finite_geometry_excess_supported" if excess is not None and excess > 0.05 else "no_material_native_finite_geometry_excess"
+    drift = -_finite(point["focus_plane_offset_from_exit_mm"], "focus plane")
+    pairs: list[dict[str, Any]] = []
+    for particle, (state, focus) in hits.items():
+        row = {"particle_id": particle, "source_t_us": state["t_us"],
+               "native_arrival_t_us": focus["t_us"], "ideal_arrival_t_us": None,
+               "native_minus_ideal_t_ns": None, "ideal_error": None,
+               "native_propagation_duration_us": focus["t_us"] - state["t_us"],
+               "ideal_propagation_duration_us": None}
+        try:
+            release = gap1 + gap2 - state["z_mm"]
+            if not 0.0 < release < gap1:
+                raise ComponentFocusError("common release is outside the ideal first acceleration gap")
+            duration = _finite(time_to_fixed_plane_s(
+                repeller, grid1, gap1, gap2, release, -state["vz_m_s"],
+                drift, mass / charge, exit_v=exit_v,
+            ) * 1.0e6, "ideal propagation duration")
+            ideal = _finite(state["t_us"] + duration, "ideal arrival time")
+            delta = _finite((focus["t_us"]-ideal)*1000.0, "paired arrival difference")
+            row.update(ideal_arrival_t_us=ideal, native_minus_ideal_t_ns=delta,
+                       ideal_propagation_duration_us=duration)
+        except (ValueError, OverflowError) as error:
+            row["ideal_error"] = str(error)
+        pairs.append(row)
+    valid = [row for row in pairs if row["ideal_error"] is None]
+    failed = [row["particle_id"] for row in pairs if row["ideal_error"] is not None]
+    differences = [row["native_minus_ideal_t_ns"] for row in valid]
+    enough = len(valid) >= 2 and not failed
+    native_width = ((max(row["native_arrival_t_us"] for row in valid)-min(row["native_arrival_t_us"] for row in valid))*1000.0 if enough else None)
+    ideal_width = ((max(row["ideal_arrival_t_us"] for row in valid)-min(row["ideal_arrival_t_us"] for row in valid))*1000.0 if enough else None)
+    status = ("unavailable_no_focus_hits" if not hits else "incomplete_ideal_propagation" if failed
+              else "single_pair_no_width_conclusion" if len(valid) == 1 else "paired_cohort_diagnostic")
     return {
+        "status": status,
         "field_model": "two_zone_piecewise_uniform_ideal_field_v1",
         "same_release_and_runtime_voltages": True,
-        "ideal_peak_to_peak_t_ns": ideal_p2p,
-        "native_minus_ideal_peak_to_peak_t_ns": excess,
-        "diagnosis": status,
-        "interpretation": ("The PA result has additional timing spread beyond the matching uniform two-zone field." if status == "native_finite_geometry_excess_supported" else "The matching uniform two-zone field accounts for the observed timing spread within the diagnostic threshold."),
+        "cohort_policy": "valid_native_focus_particle_ids_only",
+        "requested_particle_ids": list(hits), "paired_particle_ids": [row["particle_id"] for row in valid],
+        "requested_particle_count": len(hits), "paired_particle_count": len(valid),
+        "ideal_propagation_failure_count": len(failed), "ideal_failure_particle_ids": failed,
+        "clock": "authoritative_release_birth_us_plus_elapsed_propagation",
+        "arrival_width_semantics": "instrument_clock_arrival_times",
+        "propagation_duration_width_ns": {
+            key: (max(row[field] for row in valid) - min(row[field] for row in valid))*1000.0 if enough else None
+            for key, field in (("native", "native_propagation_duration_us"), ("ideal", "ideal_propagation_duration_us"))},
+        "observation_plane_offset_from_exit_mm": -drift,
+        "downstream_reference": "field_free_drift_after_two_zone_exit",
+        "particle_pairs": pairs,
+        "paired_time_difference_ns": {"count": len(valid),
+            "mean": fmean(differences) if differences else None,
+            "minimum": min(differences) if differences else None,
+            "maximum": max(differences) if differences else None,
+            "rms": math.sqrt(fmean(value*value for value in differences)) if differences else None,
+            "peak_to_peak": max(differences)-min(differences) if len(differences) >= 2 else None},
+        "width_comparison_available": enough,
+        "native_peak_to_peak_t_ns": native_width, "ideal_peak_to_peak_t_ns": ideal_width,
+        "native_minus_ideal_peak_to_peak_t_ns": native_width-ideal_width if enough else None,
+        "diagnosis": "observed_comparison_cause_unassessed" if enough else "not_assessable",
+        "interpretation": ("Paired arrival differences are descriptive; their cause needs numerical convergence and an error budget."
+            if enough else "No cohort width conclusion: no hits, fewer than two pairs, or ideal propagation failures. Single-particle arrival differences remain descriptive."),
     }
 
 
@@ -225,6 +263,29 @@ def _events(path: Path) -> dict[int, dict[str, dict[str, float]]]:
             raise ComponentFocusError(f"duplicate component-focus {kind} event for ion {int(ion_value)}")
         bucket[kind] = fields
     return result
+
+
+
+
+def _recorded_scalar_equal(left: float, right: float) -> bool:
+    # Each %.12g scalar rounds by at most half its final significant digit.
+    # Two independently rounded records can differ by one such decimal unit.
+    scale = max(abs(left), abs(right))
+    decimal_unit = 10.0 ** (math.floor(math.log10(scale)) - 11) if scale else 0.0
+    return abs(left-right) <= max(decimal_unit, math.ulp(left), math.ulp(right))
+
+
+def _validate_event_sequence(ion: int, record: dict[str, dict[str, float]], plane: float) -> None:
+    # Physical order is per ID, independent of cross-particle CSV row order.
+    present = [kind for kind in ("source", "exit", "focus", "terminal") if kind in record]
+    for before, after in zip(present, present[1:]):
+        left, right = record[before]["t_us"], record[after]["t_us"]
+        if left > right and not _recorded_scalar_equal(left, right):
+            raise ComponentFocusError(f"ion {ion} event order violates {before} <= {after}")
+    if plane == 0.0 and "exit" in record and "focus" in record:
+        for field in ("t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"):
+            if not _recorded_scalar_equal(record["exit"][field], record["focus"][field]):
+                raise ComponentFocusError(f"ion {ion} same-plane exit/focus crossing differs in {field}")
 
 
 def _component_energy_per_charge_v(mass_amu: float, charge_state: float, velocity_m_s: float) -> float:
@@ -354,7 +415,7 @@ def analyze(event_csv_path: Path, release_receipt_path: Path, campaign_path: Pat
         raise ComponentFocusError("component-focus event identities differ from the common release")
     plane = _finite(campaign["operating_point"]["focus_plane_offset_from_exit_mm"], "focus plane")
     plane_tolerance = _finite(campaign["acceptance"]["focus_plane_tolerance_mm"], "focus-plane tolerance")
-    hits: list[tuple[dict[str, float], dict[str, float]]] = []
+    hits: dict[int, tuple[dict[str, float], dict[str, float]]] = {}
     for ion, state in sources.items():
         record = events[ion]
         if "source" not in record or "terminal" not in record:
@@ -362,6 +423,10 @@ def analyze(event_csv_path: Path, release_receipt_path: Path, campaign_path: Pat
         for field in ("x_mm", "y_mm", "z_mm"):
             if not math.isclose(record["source"][field], state[field], rel_tol=0.0, abs_tol=1e-9):
                 raise ComponentFocusError(f"ion {ion} source event differs from common release state")
+        # The event writer uses %.12g; accept only its serialization rounding.
+        if not math.isclose(record["source"]["t_us"], state["t_us"], rel_tol=5e-12, abs_tol=1e-12):
+            raise ComponentFocusError(f"ion {ion} source event clock differs from common release birth")
+        _validate_event_sequence(ion, record, plane)
         focus = record.get("focus")
         if focus is None:
             continue
@@ -369,14 +434,16 @@ def analyze(event_csv_path: Path, release_receipt_path: Path, campaign_path: Pat
             raise ComponentFocusError(f"ion {ion} focus crossing is not -z directed")
         if abs(focus["z_mm"] - plane) > plane_tolerance:
             raise ComponentFocusError(f"ion {ion} focus event differs from declared focus plane")
-        hits.append((state, focus))
+        if focus["t_us"] < record["source"]["t_us"] or focus["t_us"] > record["terminal"]["t_us"]:
+            raise ComponentFocusError(f"ion {ion} focus event clock is outside its source-to-terminal interval")
+        hits[ion] = (state, focus)
     total = len(sources)
     fraction = len(hits) / total
-    rms_radius = math.sqrt(fmean(focus["x_mm"] ** 2 + focus["y_mm"] ** 2 for _, focus in hits)) if hits else None
+    rms_radius = math.sqrt(fmean(focus["x_mm"] ** 2 + focus["y_mm"] ** 2 for _, focus in hits.values())) if hits else None
     acceptance = campaign["acceptance"]
     warnings = ([] if fraction == 1.0 else ["transport_not_complete"])
-    peak_to_peak_time_ns = ((max(focus["t_us"] for _, focus in hits) - min(focus["t_us"] for _, focus in hits)) * 1000.0
-                            if hits else None)
+    peak_to_peak_time_ns = ((max(focus["t_us"] for _, focus in hits.values()) - min(focus["t_us"] for _, focus in hits.values())) * 1000.0
+                            if len(hits) >= 2 else None)
     if peak_to_peak_time_ns is not None and peak_to_peak_time_ns > _finite(acceptance["maximum_focus_peak_to_peak_time_ns"], "maximum focus time spread"):
         warnings.append("longitudinal_time_spread_exceeds_target")
     transport_ok = fraction == _finite(acceptance["required_transport_fraction"], "required transport")
@@ -392,11 +459,20 @@ def analyze(event_csv_path: Path, release_receipt_path: Path, campaign_path: Pat
         "status": "candidate_complete" if hard_gate_passed else "candidate_incomplete",
         "qualification": "candidate_prototype_numeric_component_focus_only",
         "geometry_profile_id": campaign["geometry_profile_id"], "particle_count": total,
-        "focus_particle_count": len(hits), "loss_particle_count": total - len(hits), "transport_fraction": fraction,
-        "focus_metrics": {"mean_t_us": fmean(focus["t_us"] for _, focus in hits) if hits else None, "peak_to_peak_t_ns": peak_to_peak_time_ns, "transverse_rms_radius_mm": rms_radius},
+        "focus_particle_count": len(hits),
+        "not_reached_focus_particle_count": total - len(hits),
+        "not_reached_focus_particle_ids": sorted(set(sources) - set(hits)),
+        "loss_particle_count": total - len(hits),
+        "loss_particle_count_semantics": "legacy_alias_for_not_reached_focus_count_not_physical_loss",
+        "release_mother_particle_count": int(release["mother_particle_count"]),
+        "transport_fraction": fraction, "transport_fraction_denominator_semantics": "this_run_released_cohort",
+        "focus_metrics": {"mean_t_us": fmean(focus["t_us"] for _, focus in hits.values()) if hits else None, "peak_to_peak_t_ns": peak_to_peak_time_ns, "transverse_rms_radius_mm": rms_radius,
+            "clock_semantics": "instrument_clock_arrival_times",
+            "propagation_duration_mean_us": fmean(focus["t_us"]-source["t_us"] for source, focus in hits.values()) if hits else None,
+            "propagation_duration_peak_to_peak_ns": (max(focus["t_us"]-source["t_us"] for source, focus in hits.values())-min(focus["t_us"]-source["t_us"] for source, focus in hits.values()))*1000.0 if len(hits)>=2 else None},
         "exit_energy_assessment": exit_energy,
-        "arrival_time_diagnostics": _arrival_time_diagnostics(hits),
-        "ideal_field_contrast": _ideal_two_zone_contrast(sources, campaign, peak_to_peak_time_ns),
+        "arrival_time_diagnostics": _arrival_time_diagnostics(list(hits.values())),
+        "ideal_field_contrast": _ideal_two_zone_contrast(hits, campaign),
         "warnings": warnings, "hard_gate": {"complete_transport_passed": transport_ok, "exit_slow_energy_passed": slow_energy_ok, "exit_axial_energy_passed": axial_energy_ok, "exit_transverse_energy_passed": transverse_energy_ok, "exit_transverse_velocity_bias_passed": transverse_velocity_bias_ok},
         "time_focus_assessment": {"passed": focus_ok, "threshold_ns": _finite(acceptance["maximum_focus_peak_to_peak_time_ns"], "maximum focus time spread"), "exceedance_policy": acceptance["time_spread_exceedance"]},
         "identity": {"campaign_sha256": file_sha256(campaign_path).lower(), "release_receipt_sha256": file_sha256(release_receipt_path).lower(), "release_state_table_sha256": release["state_table"]["sha256"], "event_csv_sha256": file_sha256(event_csv_path).lower()},

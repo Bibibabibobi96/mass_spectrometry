@@ -75,6 +75,61 @@ profile、campaign和plan，再复用既有PA cache runner与flight runner，发
 获准的Fast Adjust控制器只在请求给定首区压降范围内串行试飞，复用已发布私有runtime；
 搜索耗尽不能发布MR接受收据，不能以追加Refine、缩源或忽略失败粒子制造通过。
 
+### 焦面事件与同面参考修正
+
+2026-10-30复核确认旧`component_focus.lua`在`tstep_adjust`内按空间容差提前记录focus，
+故旧焦面时间不能直接用于解释有限几何色散。当前`tstep_adjust`只调步长；`other_actions`仅在
+同一粒子实际相邻状态夹持声明平面、时间递增且两端均向负z运动时产生一次事件，保留端点与6D插值。
+求解器无关诊断复用`accelerator_time_focus.time_to_fixed_plane_s`，负offset对应同观察面的正自由漂移距离；
+该参考明确为二区均匀场加出口后无场漂移，不声称下游原生边缘场消失。
+
+理想对照只配对实际有效focus命中的相同particle ID，并在release birth微秒时钟上计算理想到达；
+源事件时间须与公共release相符，focus须在该ID的source至terminal时间区间内。
+`ideal_field_contrast.particle_pairs`保留逐ID实际/理想到达、差值或显式传播错误；差值统计同时给出配对数。
+只有至少两对且所有请求ID均可传播时，才报告同群宽度；零命中不可判断，单命中仅提供到达差，
+理想传播失败不会静默缩群。主结果完整母群、未到达数量、传输率分母及完整传输硬门保持不变。
+原先0.05ns宽差直接归因有限几何的分支已删除；现在默认仅报告观察差异、原因待查，
+没有同群同面同钟、相称数值收敛及误差预算时，不解释为具体有限几何机制或分辨率资格。
+
+官方路径核对：SIMION 2020随附`examples/test_plane/testplanelib.lua`（文件标记v2014-04-21，2017版权），
+以及2026-10-30查阅的[SIMION Test Plane](https://simion.com/info/test_plane.html)。飞行入口冻结安装目录中的
+官方库，按官方要求调用其`tstep_adjust`和`other_actions`；官方库负责落面步长，项目薄适配补齐方向、
+相邻状态、完整事件和唯一记录语义。该库仅在PA实例内收到回调，声明的出口和焦面必须仍在冻结PA域内。
+六类离线测试执行真实生产Lua和已安装官方库，覆盖容差内未穿面、精确端点、跨越、方向、去重和交错粒子；
+它们不是原生Fly证据。解析回归覆盖offset=0、−10mm及非零源轴向速度和m/q，原先重复传播公式已删除。
+
+历史`20261013_110000__sim__simion__mrtof-k255-private-oa-source__n100`的封存事件含完整N100母群，
+offset=0且独立exit是同面、同钟的负z穿面。新分析run
+`20261030_063000__analysis__python__oa-focus-exit-correction`复用exit纠正focus，未重飞；
+原run的manifest和summary字节保持不变。逐粒子旧focus提前0.06957735–2.45866176ns，
+时间峰峰值由2.92810890ns修正为1.14999614ns；这纠正旧诊断，不增加器件或整机资格。
+新run的`results/correction_audit.json`保留每ID原值、纠正值与采用条件。
+
+生产Lua另在相同N100源、电压及90×139×501原生网格上完成两档步长验收：
+`20261030_064000__sim__simion__oa-focus-step-500ps`与
+`20261030_064100__sim__simion__oa-focus-step-250ps`，最大步长分别0.0005、0.00025µs。
+两者均100/100穿面，每ID的focus与同面exit时间完全一致；时间峰峰值分别1.150012760、
+1.150012470ns，最大逐ID时间差约1.28fs。原生Fly分别1.82、3.21秒，完整入口分别13.745、13.917秒。
+`20261030_070000__analysis__python__oa-focus-step-convergence`保存逐状态最大差和范围；
+这是固定空间网格上的事件步长验证，不提供空间网格收敛或整机分辨率资格。
+两次Fly共用新建的同几何场`20261030_065000__build__simion__oa-focus-callback-field`，
+存储网格0.25×0.25×0.1mm、x镜像、物理域44.5×34.5×50mm；原生0..19响应Refine约43秒，
+Fly阶段没有重Refine。旧cache已退役且残存runtime归failed owner、没有完整载荷封存身份，
+因此本轮没有绕过复用校验，而按原provider入口新建了这一小场。
+
+修订诊断以封存250ps N100事件新建
+`20261030_101830__analysis__python__oa-focus-paired-reference`，原run的manifest和summary字节不变、
+本次native次数0。100/100实际命中均有理想配对，传播失败0；同群实际/理想时间峰峰值分别
+1.150012470/1.110791690ns，逐ID实际减理想到达差的平均值0.283628162ns、范围
+0.246251676–0.323590218ns。这些是该参考下的描述性差异，原因尚未归因。
+纯分析回归覆盖非零offset、零/单/部分/完整命中、同钟验证和理想传播失败；没有新增商业求解。
+
+未命中焦面只记 `not_reached_focus_particle_count` 与原ID，不推断真实死亡；旧
+`loss_particle_count` 保留为该计数的显式兼容别名，其语义字段声明非物理损失。
+传输分母为本次实际释放群，另保留 release 的原母群规模；例如N100抽样来自1000母群，
+未模拟的900不算损失，也不据此报告完整母群效率。本轮软件回归使用实际安装的
+SIMION 2020所附Lua 5.1.5和官方 `testplanelib.lua`；不把历史反例的Lua 5.4当作本机事实。
+
 ### 已闭合组件证据
 
 2026-10-03的注册缓存提供者保持原冻结请求、释放、几何、网格和电压，完成15环／19电极真实构建，

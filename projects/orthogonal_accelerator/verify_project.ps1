@@ -25,6 +25,13 @@ try {
     if ($LuaExe) {
         & $LuaExe (Join-Path $PSScriptRoot 'tests\simion\test_required_parameters.lua') (Join-Path $PSScriptRoot 'simion')
         if ($LASTEXITCODE -ne 0) { throw 'Accelerator Lua parameter-contract regression failed.' }
+        $testPlaneLibrary = Join-Path (Split-Path -Parent $LuaExe) 'examples\test_plane\testplanelib.lua'
+        if (Test-Path -LiteralPath $testPlaneLibrary -PathType Leaf) {
+            & $LuaExe (Join-Path $PSScriptRoot 'tests\simion\test_component_focus_callbacks.lua') (Join-Path $PSScriptRoot 'simion\component_focus.lua') $testPlaneLibrary
+            if ($LASTEXITCODE -ne 0) { throw 'Accelerator focus callback regression failed.' }
+        } else {
+            Write-Output 'ACCELERATOR_COMPONENT_FOCUS_CALLBACKS=SKIP REASON=official_test_plane_library_unavailable'
+        }
     } else {
         Write-Output 'ACCELERATOR_REQUIRED_PARAMETERS=SKIP REASON=Lua_runtime_unavailable'
     }
