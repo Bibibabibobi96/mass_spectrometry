@@ -1105,7 +1105,7 @@ def execute_prepared_run(*args):
                     "sha256": "B" * 64,
                 },
                 {
-                    "source_id": "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_workflow.py",
+                    "source_id": "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_stage_execution.py",
                     "bytes": 1,
                     "sha256": "C" * 64,
                 },
@@ -2219,6 +2219,81 @@ def execute_prepared_run(*args):
                 load_json(run_root / "run_config.json")["inputs"],
             )
             self.assertEqual(verify_project(artifact_root), (2, 0))
+
+    def test_orchestration_only_change_reuses_all_stages_but_generator_change_rejects(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis import prepare_candidate_run as preparation
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, parent_plan = self.native_workflow_plan(root, '20260727_180100')
+            parent, _ = run_candidate_workflow(parent_plan, sys.executable,
+                stage_executor=self.native_fake_executor([]))
+            before = {p: p.read_bytes() for p in parent.rglob('*') if p.is_file()}
+            freeze = preparation.freeze_candidate_source_closure
+
+            def changed_freeze(*args, **kwargs):
+                closure = freeze(*args, **kwargs)
+                source_id = 'projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/'+changed_name
+                record = next(r for r in closure['sources'] if r['source_id'] == source_id)
+                target = Path(closure['code_root'])/source_id
+                content = target.read_text(encoding='utf-8')
+                if changed_name == 'run_candidate_workflow.py':
+                    content += '\n# report wording only\n'
+                else:
+                    old, new = mutations[changed_name]
+                    self.assertEqual(content.count(old), 1)
+                    content = content.replace(old, new)
+                target.write_text(content, encoding='utf-8', newline='\n')
+                record.update(bytes=target.stat().st_size, sha256=sha256(target))
+                verify_candidate_source_closure(closure)
+                return closure
+
+            mutations = {
+                'candidate_simion_stage.py': ('"-ParticleCount", "100"', '"-ParticleCount", "99"'),
+                'candidate_cad_stage.py': ('"OATOF_CANDIDATE_CAD_DIR": stage["output_dir"]',
+                    '"OATOF_CANDIDATE_CAD_DIR": str(Path(stage["output_dir"]) / "review")'),
+                'candidate_comsol_stage.py': ('run_candidate_contract_build.m', 'different_scientific_builder.m'),
+            }
+            changed_name = 'run_candidate_workflow.py'
+            with mock.patch.object(preparation, 'freeze_candidate_source_closure', side_effect=changed_freeze):
+                _, child_plan = self.native_workflow_plan(root, '20260727_180200')
+            observed = []
+            child, summary = run_candidate_workflow(child_plan, sys.executable,
+                stage_executor=self.native_fake_executor(observed), reuse_parent=parent, reuse_through='cad_candidate')
+            self.assertEqual(observed, ['static_inputs','structural_acceptance'])
+            self.assertTrue(all(item['execution'] == 'reused' for item in summary['stages']
+                if item['stage_id'] in ('comsol_candidate','simion_candidate','cad_candidate')))
+            self.assertEqual({p:p.read_bytes() for p in before}, before)
+
+            changed_name = 'candidate_cad_stage.py'
+            with mock.patch.object(preparation, 'freeze_candidate_source_closure', side_effect=changed_freeze):
+                _, cad_plan = self.native_workflow_plan(root, '20260727_180250')
+            observed = []
+            _, cad_summary = run_candidate_workflow(cad_plan, sys.executable,
+                stage_executor=self.native_fake_executor(observed), reuse_parent=parent, reuse_through='simion_candidate')
+            self.assertEqual(observed, ['static_inputs', 'cad_candidate', 'structural_acceptance'])
+            self.assertEqual([item['stage_id'] for item in cad_summary['stages'] if item['execution'] == 'reused'],
+                ['comsol_candidate', 'simion_candidate'])
+            self.assertEqual({p:p.read_bytes() for p in before}, before)
+
+            changed_name = 'candidate_comsol_stage.py'
+            with mock.patch.object(preparation, 'freeze_candidate_source_closure', side_effect=changed_freeze):
+                _, comsol_plan = self.native_workflow_plan(root, '20260727_180255')
+            observed = []
+            with self.assertRaises(CandidateWorkflowError):
+                run_candidate_workflow(comsol_plan, sys.executable,
+                    stage_executor=self.native_fake_executor(observed), reuse_parent=parent, reuse_through='comsol_candidate')
+            self.assertEqual(observed, ['static_inputs'])
+            self.assertEqual({p:p.read_bytes() for p in before}, before)
+
+            changed_name = 'candidate_simion_stage.py'
+            with mock.patch.object(preparation, 'freeze_candidate_source_closure', side_effect=changed_freeze):
+                _, changed_plan = self.native_workflow_plan(root, '20260727_180300')
+            observed = []
+            with self.assertRaises(CandidateWorkflowError):
+                run_candidate_workflow(changed_plan, sys.executable,
+                    stage_executor=self.native_fake_executor(observed), reuse_parent=parent, reuse_through='cad_candidate')
+            self.assertEqual(observed, ['static_inputs'])
+            self.assertEqual({p:p.read_bytes() for p in before}, before)
 
     def test_native_failed_parent_reuses_prefix_and_runs_only_cad_after_static(self):
         with tempfile.TemporaryDirectory() as root:

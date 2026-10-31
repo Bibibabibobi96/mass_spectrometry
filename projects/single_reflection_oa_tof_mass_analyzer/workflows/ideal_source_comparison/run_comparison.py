@@ -8,7 +8,6 @@ No commercial solver is imported, launched, or required.
 from __future__ import annotations
 
 import argparse
-import csv
 import hashlib
 import json
 import os
@@ -26,22 +25,21 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import scipy
 
-from common.analysis.peak_metrics import AnalysisSettings
 from common.contracts.artifact_naming import validate_run_id
+from common.analysis.peak_metrics import AnalysisSettings
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import load_json
 from common.contracts.verify_run_manifest import verify_record
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import (
-    NumericalSourceSpec, build_numerical_source, build_working_point, propagate_ideal_source,
-)
+
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_experiment import (
     build_case_plan, summarize_stage,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison_plot import (
     export_comparison_figures,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
-    OuterGeometry, ReflectronGeometry,
+
+from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.numerical_case import (
+    _run_case, _working_points, _settings,
 )
 
 
@@ -77,6 +75,7 @@ def _inputs(config_path: Path) -> dict[str, Path]:
              "oatof_oaaccelerator_coupling.py", "reflectron_dual_stage_solver.py"]
     accelerator = REPO_ROOT / "projects/orthogonal_accelerator/analysis"
     return {"experiment": config_path, "entrypoint": Path(__file__),
+            "numerical_case": Path(__file__).with_name("numerical_case.py"),
             "analysis_contract": PROJECT_ROOT / "config/analysis_contract.json",
             "particle_policy": REPO_ROOT / "common/contracts/particle_count_policy.json",
             "peak_metrics": REPO_ROOT / "common/analysis/peak_metrics.py",
@@ -86,59 +85,19 @@ def _inputs(config_path: Path) -> dict[str, Path]:
             **{Path(name).stem: PROJECT_ROOT / "analysis" / name for name in local}}
 
 
-def _settings() -> AnalysisSettings:
-    kde = load_json(PROJECT_ROOT / "config/analysis_contract.json")["kde"]
-    return AnalysisSettings(grid_points=kde["grid_points"], bandwidth_multiplier=kde["bandwidth_multiplier"],
-                            mode_threshold_fraction=kde["significant_mode_threshold_fraction"])
 
 
-def _working_points(config: dict[str, Any]) -> dict[str, Any]:
-    source = NumericalSourceSpec(**config["source"])
-    outer, mirror = OuterGeometry(**config["outer"]), ReflectronGeometry(**config["reflectron"])
-    points = {}
-    for name, eta, slope in (
-        ("three_zone_uncorrelated_setting", config["three_zone_eta"], 0.0),
-        ("three_zone_matched", config["three_zone_eta"], source.velocity_slope_m_per_s_per_mm),
-        ("two_zone_matched", 0.0, source.velocity_slope_m_per_s_per_mm),
-    ):
-        points[name] = build_working_point(source, outer, mirror, eta=eta,
-                                          design_velocity_slope_m_per_s_per_mm=slope,
-                                          focus_drift_mm=config["focus_drift_mm"])
-    return points
 
 
-def _run_case(case: dict[str, Any], config: dict[str, Any], points: dict[str, Any],
-              settings: AnalysisSettings, result_dir: Path) -> dict[str, Any]:
-    source = build_numerical_source(NumericalSourceSpec(**config["source"]),
-                                    particle_count=config["sampling"]["particle_count"], seed=case["seed"],
-                                    full_width_mm=case["full_width_mm"], residual_sigma_m_per_s=case["residual_sigma_m_per_s"])
-    names = ("three_zone_uncorrelated_setting", "three_zone_matched") if case["stage"] == "residual_scan" else ("two_zone_matched", "three_zone_matched")
-    outputs = {name: propagate_ideal_source(source, points[name], settings=settings) for name in names}
-    csv_path = result_dir / f"{case['case_id']}__particles.csv"
-    with csv_path.open("w", newline="", encoding="utf-8") as stream:
-        writer = csv.writer(stream)
-        writer.writerow(["particle_id", "source_x_mm", "source_velocity_m_per_s", *[f"{name}__{field}" for name in names for field in ("classification", "tof_us")]])
-        for index, particle_id in enumerate(source.particle_id):
-            values = [int(particle_id), float(source.source_x_mm[index]), float(source.velocity_z_m_per_s[index])]
-            for name in names:
-                output = outputs[name]
-                values.extend([str(output.classification[index]), float(output.tof_us[index]) if np.isfinite(output.tof_us[index]) else ""])
-            writer.writerow(values)
-    arms = {}
-    for name, result in outputs.items():
-        if result.summary["status"] == "PEAK_METRICS_FAILED":
-            raise ArithmeticError(f"{name}: {result.summary['reason']}")
-        metrics = result.summary["peak_metrics"] or {}
-        arms[name] = {**result.summary, "resolution": metrics.get("mass_resolution"),
-                      "fwhm_ns": metrics.get("direct_fwhm_tof_ns"),
-                      "model_arrival_fraction": result.summary["axial_model_reachability_fraction"]}
-    before, after = (arms[name] for name in names)
-    gain = 100 * (after["resolution"] / before["resolution"] - 1) if before["resolution"] and after["resolution"] else None
-    eligible = gain is not None and all(r["model_arrival_fraction"] == 1 for r in arms.values())
-    return {"case": case, "arms": arms, "resolution_gain_percent": gain,
-            "comparison_eligible": eligible,
-            "reason": "full mother cohort retained" if eligible else "loss, unsupported event topology, or undefined peak; not a fair full-cohort gain claim",
-            "particles": {"path": csv_path.name, "bytes": csv_path.stat().st_size, "sha256": file_sha256(csv_path)}}
+
+
+def _frozen_settings(run_dir: Path) -> AnalysisSettings:
+    """Read the once-frozen analysis authority for every supported comparison role."""
+    frozen_config = load_json(run_dir / "run_config.json")
+    contract = Path(frozen_config["inputs"]["analysis_contract"])
+    if file_sha256(contract) != frozen_config["input_sha256"]["analysis_contract"]:
+        raise ValueError("frozen analysis contract changed after freezing")
+    return _settings(contract)
 
 
 def _reuse_case(previous: Path | None, case: dict[str, Any], identity: str, destination: Path) -> dict[str, Any] | None:
@@ -198,10 +157,14 @@ def _prepare_run(config_path: Path, *, seed: int, run_id: str, resume_from: Path
     config = load_json(config_path)
     inputs = {**_inputs(config_path), **(extra_inputs or {})}
     identities = {name: file_sha256(path) for name, path in inputs.items()}
-    identity = _digest({"inputs": identities, "seed": seed, "python": platform.python_version(), "numpy": np.__version__, "scipy": scipy.__version__})
+    numerical_inputs = {name: value for name, value in identities.items()
+                        if name not in {"entrypoint", "ideal_source_comparison_plot"}}
+    identity = _digest({"inputs": numerical_inputs, "seed": seed, "python": platform.python_version(), "numpy": np.__version__, "scipy": scipy.__version__})
     if resume_from is not None:
         resume_from = resume_from.resolve()
         previous = load_json(resume_from / "run_config.json")
+        if 'numerical_case' not in previous.get('input_sha256', {}):
+            raise ValueError('resume source lacks a frozen numerical_case implementation identity; preserve the legacy run and start a new comparison')
         if previous["numerical_identity"] != identity:
             raise ValueError("resume code/config/seed/environment differs; start a new comparison without --resume-from")
         for name, path in previous["inputs"].items():
@@ -220,7 +183,7 @@ def _prepare_run(config_path: Path, *, seed: int, run_id: str, resume_from: Path
         frozen[name] = str(destination.resolve())
     _write_json(run_dir / "run_config.json", {"schema_version": 2, "run_id": run_id,
                 "project": PROJECT_ROOT.name, "mode": mode, "inputs": frozen,
-                "input_sha256": identities, "numerical_identity": identity,
+                "input_sha256": identities, "numerical_input_sha256": numerical_inputs, "numerical_identity": identity,
                 # Execution provenance is deliberately outside numerical/resume identity.
                 "execution_source_sha256": {
                     name: file_sha256(REPO_ROOT / "common" / name)
@@ -265,7 +228,7 @@ a new run. It never edits or finalizes a previous run, including crash leftovers
     stage, reused, error, current_case = "working_points", 0, None, None
     status = "success"
     try:
-        points, settings = _working_points(config), _settings()
+        points, settings = _working_points(config), _frozen_settings(run_dir)
         _write_json(run_dir / "results/working_points.json", {k: v.to_dict() for k, v in points.items()})
         for stage in ("residual_scan", "width_scan"):
             print(f"IDEAL_COMPARISON STAGE={stage} EVENT=START", flush=True)

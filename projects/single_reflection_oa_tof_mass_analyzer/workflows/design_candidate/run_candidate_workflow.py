@@ -5,11 +5,15 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import time
 import warnings
 from pathlib import Path
 from typing import Any, Callable
+
+from common.contracts.particle_count_policy import validate_standard_particle_count
+from .candidate_stage_execution import _powershell
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -18,7 +22,6 @@ from common.contracts.machine_contracts import load_json, sha256
 from common.contracts.recorded_file_removal import write_json_atomic
 from common.contracts.verify_run_manifest import verify_record
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
-from common.contracts.particle_count_policy import validate_standard_particle_count
 from common.contracts.stage_reuse import validate_and_write_stage_reuse, write_stage_receipt
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_run_lifecycle import (
     finalize_candidate_run,
@@ -31,6 +34,9 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_
     freeze_pa_producer_handoffs, plan_pa_producer_handoffs, validate_artifact_capacity,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.simion_component_pa_plan import compile_component_pa_plan, sum_component_commitments
+
+
+from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_stage_execution import execute_candidate_stage
 
 
 StageExecutor = Callable[[dict[str, Any], dict[str, Any], str], dict[str, Any]]
@@ -52,14 +58,16 @@ STAGE_SOURCE_PREFIXES = {
         "projects/single_reflection_oa_tof_mass_analyzer/oatof_lifecycle_preflight.ps1",
         "projects/single_reflection_oa_tof_mass_analyzer/oatof_paths.m",
         "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_contract_build.m",
-        "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_workflow.py",
+        "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_stage_execution.py",
+        "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_comsol_stage.py",
     ),
     "simion_candidate": (
         "projects/single_reflection_oa_tof_mass_analyzer/simion/",
         "common/ion_release/dotnet_gaussian_box_ion11.py",
         "projects/single_reflection_oa_tof_mass_analyzer/oatof_lifecycle_preflight.ps1",
         "projects/single_reflection_oa_tof_mass_analyzer/oatof_paths.m",
-        "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_workflow.py",
+        "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_stage_execution.py",
+        "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_simion_stage.py",
     ),
     "cad_candidate": (
         "common/comsol/",
@@ -70,7 +78,8 @@ STAGE_SOURCE_PREFIXES = {
         "projects/single_reflection_oa_tof_mass_analyzer/oatof_lifecycle_preflight.ps1",
         "projects/single_reflection_oa_tof_mass_analyzer/oatof_paths.m",
         "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_cad_sync.m",
-        "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_workflow.py",
+        "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_stage_execution.py",
+        "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_cad_stage.py",
     ),
 }
 
@@ -97,11 +106,6 @@ class StageTimedOut(TimeoutError):
     pass
 
 
-def _powershell(entrypoint: str, arguments: list[str]) -> list[str]:
-    # The shared COMSOL launcher uses ProcessStartInfo.ArgumentList, which is
-    # unavailable under Windows PowerShell 5.1.  Keep integrated commercial
-    # workflows on the repository's PowerShell 7 runtime.
-    return ["pwsh.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", entrypoint, *arguments]
 
 
 def _run_command(command: list[str], log_path: Path, environment: dict[str, str] | None = None) -> None:
@@ -140,11 +144,6 @@ def _run_command(command: list[str], log_path: Path, environment: dict[str, str]
         raise RuntimeError(f"command failed with exit code {process.returncode}; log={log_path}")
 
 
-def _ps_arguments(values: dict[str, Any]) -> list[str]:
-    result: list[str] = []
-    for key, value in values.items():
-        result.extend([f"-{key}", str(value)])
-    return result
 
 
 def _run_managed_stage_command(
@@ -214,19 +213,8 @@ def _run_managed_stage_command(
         raise failure
 
 
-def _require_pass_report(path: Path) -> None:
-    if not path.is_file() or "STATUS=PASS" not in path.read_text(encoding="utf-8", errors="replace"):
-        raise RuntimeError(f"required PASS report is missing or failed: {path}")
 
 
-def _report_value(path: Path, key: str) -> str:
-    prefix = f"{key}="
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        if line.startswith(prefix):
-            value = line[len(prefix):].strip()
-            if value:
-                return value
-    raise RuntimeError(f"required {key} record is missing from {path}")
 
 
 def _verify_frozen_cad_python(closure: dict[str, Any], log_path: Path) -> str:
@@ -262,56 +250,21 @@ def _verify_frozen_cad_python(closure: dict[str, Any], log_path: Path) -> str:
     return str(python_executable)
 
 
-def _nonformal_template(stage: dict[str, Any], plan: dict[str, Any]) -> Path:
-    if stage.get("status") == "blocked_requires_explicit_nonformal_template":
-        raise RuntimeError("candidate SIMION stage is blocked until an explicit non-Formal template is frozen")
-    record = stage.get("template_input")
-    if not isinstance(record, dict):
-        raise RuntimeError("candidate SIMION template input is missing")
-    run_inputs = (Path(plan["run_root"]) / "inputs").resolve()
-    if record.get("role") != "oa_tof_candidate_simion_layout_template":
-        raise RuntimeError("candidate SIMION template has an unsupported role")
-    files = record.get("files")
-    if not isinstance(files, dict) or set(files) != {"iob", "con"}:
-        raise RuntimeError("candidate SIMION template requires frozen IOB and CON records")
-    verified: dict[str, Path] = {}
-    for suffix, item in files.items():
-        path = Path(item.get("path", "")).resolve() if isinstance(item, dict) else Path()
-        if not path.is_file() or run_inputs not in path.parents:
-            raise RuntimeError("candidate SIMION template must be a frozen run input")
-        if sha256(path).lower() != str(item.get("sha256", "")).lower():
-            raise RuntimeError("candidate SIMION template changed after freezing")
-        prohibited = {"formal", "archive", "history"}
-        if prohibited.intersection(part.lower() for part in path.parts):
-            raise RuntimeError(
-                "candidate SIMION template must not reference a Formal, archive, or history path"
-            )
-        if path.suffix.lower() != f".{suffix}":
-            raise RuntimeError("candidate SIMION template file suffix is invalid")
-        verified[suffix] = path
-    if verified["iob"].with_suffix(".con").name != verified["con"].name or verified["iob"].parent != verified["con"].parent:
-        raise RuntimeError("candidate SIMION IOB and CON template bundle names do not match")
-    registration_run_id = str(record.get("registration_run_id", ""))
-    registration_record = record.get("registration_manifest", {})
-    registration_manifest = Path(str(registration_record.get("path", ""))).resolve()
-    registration_sha = str(registration_record.get("sha256", ""))
-    registration_document = load_json(registration_manifest)
-    if (
-        not registration_manifest.is_file()
-        or run_inputs not in registration_manifest.parents
-        or not registration_sha
-        or sha256(registration_manifest).lower() != registration_sha.lower()
-        or registration_document.get("run_id") != registration_run_id
-        or registration_document.get("status") != "success"
-    ):
-        raise RuntimeError("candidate SIMION template registration evidence changed after preparation")
-    return verified["iob"]
+
+
+def _ps_arguments(values: dict[str, Any]) -> list[str]:
+    result: list[str] = []
+    for key, value in values.items():
+        result.extend([f"-{key}", str(value)])
+    return result
 
 
 def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) -> dict[str, Any]:
     stage_id = stage["stage_id"]
-    if stage_id == "simion_candidate" and stage.get("status") == "blocked_requires_explicit_nonformal_template":
-        raise RuntimeError("candidate SIMION stage is blocked until an explicit non-Formal template is frozen")
+    if stage_id in {"comsol_candidate", "simion_candidate", "cad_candidate"}:
+        if stage_id == "simion_candidate" and stage.get("status") == "blocked_requires_explicit_nonformal_template":
+            raise RuntimeError("candidate SIMION stage is blocked until an explicit non-Formal template is frozen")
+        return execute_candidate_stage(stage, plan, simion_exe, runtime=sys.modules[__name__])
     closure = plan.get("execution_source_closure")
     if closure is not None:
         verify_candidate_source_closure(closure)
@@ -330,225 +283,6 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
         if not output.is_file():
             raise RuntimeError(f"candidate particle table was not generated: {output}")
         return {"particle_table": str(output)}
-
-    if stage_id == "comsol_candidate":
-        if closure is None:
-            raise RuntimeError("candidate source closure is required")
-        _verify_frozen_cad_python(closure, logs / "cad_python_preflight.log")
-        environment = {key: str(value) for key, value in stage["environment"].items()}
-        environment["OATOF_CANDIDATE_ARTIFACT_ROOT"] = str(
-            Path(closure["runtime"]["candidate_artifact_root"]).resolve().parents[1]
-        )
-        build_report = Path(stage["report_path"])
-        build_command = _powershell(
-            frozen_source_path(closure, "common/comsol/run_comsol_r2025b.ps1"),
-            [
-                "-TaskScript",
-                frozen_source_path(
-                    closure,
-                    "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_contract_build.m",
-                ),
-                "-ReportPath",
-                str(build_report),
-                "-RunId", plan["run_id"],
-                "-CompletionPath", str(logs / "comsol_build_completion.json"),
-            ],
-        )
-        _run_managed_stage_command(build_command, logs / "comsol_build_launcher.log", plan,
-                                   logs / "comsol_build_completion.json", "comsol_launcher_completion", environment)
-        _require_pass_report(build_report)
-        analysis_request = Path(_report_value(build_report, "PYTHON_ANALYSIS_REQUEST"))
-        if not analysis_request.is_file():
-            raise RuntimeError(f"COMSOL detector-event analysis request is missing: {analysis_request}")
-        _run_command(
-            [
-                str(Path(closure["runtime"]["python_executable"]).resolve()),
-                "-m",
-                "projects.single_reflection_oa_tof_mass_analyzer.analysis.analyze_comsol_detector_events",
-                "--request",
-                str(analysis_request),
-            ],
-            logs / "comsol_detector_event_analysis.log",
-        )
-        request_document = load_json(analysis_request)
-        analysis_output = Path(request_document["analysis_output_dir"])
-        analysis_receipt = analysis_output / "analysis_receipt.json"
-        if not analysis_receipt.is_file():
-            raise RuntimeError(f"COMSOL detector-event Python analysis receipt is missing: {analysis_receipt}")
-        sync_report = logs / "comsol_sync.txt"
-        sync_environment = {
-            "OATOF_COMSOL_MODEL_PATH": stage["model_path"],
-            "OATOF_CONTRACT_PATH": stage["contract_path"],
-        }
-        sync_command = _powershell(
-            frozen_source_path(closure, "common/comsol/run_comsol_r2025b.ps1"),
-            [
-                "-TaskScript",
-                frozen_source_path(
-                    closure,
-                    "projects/single_reflection_oa_tof_mass_analyzer/comsol/verify_oatof_comsol_sync.m",
-                ),
-                "-ReportPath",
-                str(sync_report),
-                "-RunId", plan["run_id"],
-                "-CompletionPath", str(logs / "comsol_sync_completion.json"),
-            ],
-        )
-        _run_managed_stage_command(sync_command, logs / "comsol_sync_launcher.log", plan,
-                                   logs / "comsol_sync_completion.json", "comsol_launcher_completion", sync_environment)
-        _require_pass_report(sync_report)
-        return {
-            "model": stage["model_path"], "build_report": str(build_report),
-            "sync_report": str(sync_report), "analysis_request": str(analysis_request),
-            "analysis_receipt": str(analysis_receipt),
-        }
-
-    if stage_id == "simion_candidate":
-        template = _nonformal_template(stage, plan)
-        if closure is None:
-            raise RuntimeError("candidate source closure is required")
-        artifact_project_root = run_root.resolve().parent.parent
-        arguments = [
-            "-OutputDir",
-            stage["output_dir"],
-            "-ArtifactProjectRoot",
-            str(artifact_project_root),
-            "-RunId",
-            plan["run_id"],
-            "-ContractPath",
-            stage["contract_path"],
-            "-CandidateBaselinePath",
-            stage["baseline_path"],
-            "-CandidateTextDir",
-            stage["text_dir"],
-            "-SimionExe",
-            simion_exe,
-            "-DeferRunFinalization",
-            "-TemplateIob",
-            str(template),
-            "-ParticleSeed",
-            str(plan.get("run_instance", {}).get("particle_source_seed", "")),
-            "-CapacitySessionPath", plan["capacity_session_path"],
-            "-ComponentPlanPath", plan["component_plan_path"],
-            "-CompletionPath", str(logs / "simion_build_completion.json"),
-            "-ContextSha256", plan["context_sha256"],
-            "-ParticleCount", "100",
-        ]
-        if plan.get("producer_handoff_path"):
-            arguments.extend(["-ProducerHandoffPath", plan["producer_handoff_path"]])
-        _run_managed_stage_command(
-            _powershell(
-                frozen_source_path(closure, "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_formal_delivery.ps1"), arguments
-            ),
-            logs / "simion_build.log",
-            plan, logs / "simion_build_completion.json", "oatof_component_build_completion",
-        )
-        iob = Path(stage["output_dir"]) / "oatof_ideal_grounded.iob"
-        runtime_report = Path(stage["output_dir"]) / "build_logs" / "canonical_iob_verification.txt"
-        _require_pass_report(runtime_report)
-        summary = Path(stage["output_dir"]) / "stage_summary.json"
-        if load_json(summary).get("status") != "success":
-            raise RuntimeError("SIMION candidate stage summary did not pass")
-        ion_n100 = Path(stage["output_dir"]) / "oatof_comsol_524amu_gaussian_N100.ion"
-        if not ion_n100.is_file():
-            raise RuntimeError(f"SIMION candidate N=100 particle table is missing: {ion_n100}")
-        particle_count = sum(1 for line in ion_n100.read_text(encoding="utf-8").splitlines() if line.strip())
-        validate_standard_particle_count(particle_count)
-        if particle_count != 100:
-            raise RuntimeError("oa-TOF candidate workflow requires the N=100 functional tier")
-        resolved_contract = load_json(Path(stage["contract_path"]))
-        detector_radius_mm = resolved_contract["simion_detector_marker"]["active_radius_mm"]
-        particle_csv = run_root / "results" / "simion_particles.csv"
-        diagnostics = run_root / "results" / "simion_transport_diagnostics.json"
-        transport_summary = run_root / "results" / "simion_transport_summary.json"
-        transport = frozen_source_path(
-            closure, "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/run_n100_transport.ps1"
-        )
-        analyzer = frozen_source_path(
-            closure, "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/analyze_ideal_field_log.ps1"
-        )
-        _run_managed_stage_command(
-            _powershell(
-                transport,
-                [
-                    "-SimionExe", simion_exe,
-                    "-IobPath", str(iob),
-                    "-IonPath", str(ion_n100),
-                    "-LogPath", str(logs / "simion_n100.log"),
-                    "-ErrorPath", str(logs / "simion_n100.stderr.log"),
-                    "-DiagnosticsPath", str(diagnostics),
-                    "-ParticleCsv", str(particle_csv),
-                    "-SummaryPath", str(transport_summary),
-                    "-AnalyzerScript", analyzer,
-                    "-ResolvedContractPath", stage["contract_path"],
-                    "-ExpectedParticleCount", "100",
-                    "-ExpectedTrajectoryQuality", "8",
-                    "-DetectorRadiusMm", str(detector_radius_mm),
-                    "-RuntimeReceiptPath", str(Path(stage["output_dir"]) / "simion_runtime_receipt.json"),
-                    "-CapacitySessionPath", plan["capacity_session_path"],
-                    "-CompletionPath", str(logs / "simion_flight_completion.json"),
-                    "-ContextSha256", plan["context_sha256"],
-                    "-RunId", plan["run_id"],
-                    "-PythonExe", closure["runtime"]["python_executable"],
-                ],
-            ),
-            logs / "simion_transport_launcher.log",
-            plan, logs / "simion_flight_completion.json", "oatof_candidate_flight_process_result",
-        )
-        transport_record = load_json(transport_summary)
-        if (
-            transport_record.get("status") != "success"
-            or transport_record.get("expected_particle_count") != 100
-            or transport_record.get("trajectory_quality") != 8
-            or any(transport_record.get(key) != 100 for key in ("emitted", "crossed", "hit"))
-        ):
-            raise RuntimeError("SIMION candidate N=100 transport summary did not pass")
-        return {
-            "iob": str(iob),
-            "ion_n100": str(ion_n100),
-            "stage_summary": str(summary),
-            "runtime_report": str(runtime_report),
-            "transport_summary": str(transport_summary),
-            "particle_csv": str(particle_csv),
-            "transport_diagnostics": str(diagnostics),
-        }
-
-    if stage_id == "cad_candidate":
-        if closure is None:
-            raise RuntimeError("candidate source closure is required")
-        report = logs / "cad_build.txt"
-        environment = {
-            "OATOF_CANDIDATE_MODEL_PATH": stage["model_path"],
-            "OATOF_CANDIDATE_CAD_DIR": stage["output_dir"],
-            "OATOF_CANDIDATE_ARTIFACT_ROOT": str(
-                Path(closure["runtime"]["candidate_artifact_root"]).resolve().parents[1]
-            ),
-            "OATOF_CANDIDATE_PYTHON_EXECUTABLE": str(
-                Path(closure["runtime"]["python_executable"]).resolve()
-            ),
-        }
-        command = _powershell(
-            frozen_source_path(closure, "common/comsol/run_comsol_r2025b.ps1"),
-            [
-                "-TaskScript",
-                frozen_source_path(
-                    closure,
-                    "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_cad_sync.m",
-                ),
-                "-ReportPath",
-                str(report),
-                "-RunId", plan["run_id"],
-                "-CompletionPath", str(logs / "cad_completion.json"),
-            ],
-        )
-        _run_managed_stage_command(command, logs / "cad_launcher.log", plan,
-                                   logs / "cad_completion.json", "comsol_launcher_completion", environment)
-        _require_pass_report(report)
-        cad_report = Path(stage["output_dir"]) / "oaTOF_solidworks_export_report.json"
-        if not cad_report.is_file():
-            raise RuntimeError(f"candidate CAD report is missing: {cad_report}")
-        return {"report": str(report), "cad_report": str(cad_report)}
-
     if stage_id == "structural_acceptance":
         evidence = {item["stage_id"]: item.get("evidence", {}) for item in plan["stage_results_so_far"]}
         required = {
@@ -600,8 +334,7 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
         path = output_dir / "candidate_acceptance.json"
         path.write_text(json.dumps(acceptance, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return {"acceptance": str(path), "scope": acceptance["scope"]}
-
-    raise ValueError(f"unsupported candidate workflow stage: {stage_id}")
+    return execute_candidate_stage(stage, plan, simion_exe, runtime=sys.modules[__name__])
 
 
 def _write_identity(path: Path, stage_id: str, category: str, records: list[dict[str, Any]]) -> Path:

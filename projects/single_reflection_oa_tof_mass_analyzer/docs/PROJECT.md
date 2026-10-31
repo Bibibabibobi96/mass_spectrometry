@@ -435,3 +435,19 @@ profile 分别声明 purpose/action/tools；本次 release 物种由项目 bindi
 所有 authority 仍严格相对于本项目，保留其原 SHA、预注册和科学域校验；外部请求不能提供执行代码。
 prepare 一次读取并保留本次请求字节，执行在新 managed campaign run 冻结该字节，不受随后改源影响。
 读取位置不改变既有输出根、运行身份、商业授权或资格要求。
+
+## 候选与理想源比较的复用依赖
+
+候选 workflow 分别绑定 `candidate_comsol_stage.py`、`candidate_simion_stage.py`、`candidate_cad_stage.py`
+中的实际命令、模板选择和完成检查，以及既有输入与求解依赖；`candidate_stage_execution.py`
+只保留薄路由和通用参数／报告运输。完整入口仍在 source closure 冻结。CAD 专属参数改变不使已完成的
+COMSOL／SIMION 阶段失效；编排入口的报告或收尾文字变化可复用三阶段，
+实际执行实现变化失败关闭。旧阶段 receipt 缺少新窄实现身份时不能自动追认；PA 缓存的原物理
+身份和消费合同未改变，不能据此推断全部旧 PA 都须重求。当前阶段 receipt 仍包含阶段内分析，
+这不是对任意旧分析变更均可复用整个阶段的承诺。
+
+理想源比较将实际 `_settings`、工作点和传播执行移到 `numerical_case.py`；entrypoint 与 plot
+保留来源但不再作为数值等价依赖。三类既有比较 role 从本 run 的冻结 analysis contract 核验并读取一次，将不可变 settings 显式传给 case／worker，后续不回读活动合同。完成 case 经原 checkpoint 与 CSV 身份核验后复用，数值源
+变化仍拒绝；旧 run 缺新窄实现身份明确受阻，不修改原 run 或伪造等价证书。
+
+现代窄依赖切换是独立软件主题；充分旧证据的新 run 投影仍是必要后续，尚未闭合整个科学复用工作包。

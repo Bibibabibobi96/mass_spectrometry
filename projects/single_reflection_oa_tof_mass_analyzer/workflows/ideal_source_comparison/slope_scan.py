@@ -19,6 +19,7 @@ from typing import Any
 import numpy as np
 
 from common.contracts.file_identity import file_sha256
+from common.analysis.peak_metrics import AnalysisSettings
 from common.contracts.machine_contracts import load_json
 from common.contracts.particle_count_policy import validate_positive_particle_count
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import (
@@ -32,7 +33,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_t
     ReflectronGeometry,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.run_comparison import (
-    REPO_ROOT, _prepare_run, _publish_manifest, _settings,
+    REPO_ROOT, _prepare_run, _publish_manifest, _frozen_settings,
     _write_json,
 )
 
@@ -131,12 +132,12 @@ def _arms(config: dict[str, Any], slope: float) -> dict[str, Any]:
     return {"zero_slope_design": design(0.0), "matching_slope_design": design(slope)}
 
 
-def _record_case(config: dict[str, Any], slope: float, seed: int, result_dir: Path) -> dict[str, Any]:
+def _record_case(config: dict[str, Any], slope: float, seed: int, result_dir: Path, *,
+                 settings: AnalysisSettings) -> dict[str, Any]:
     """Propagate a paired synthetic source through its derived two-arm comparison."""
     source = build_numerical_source(_source(config, slope), particle_count=config["sampling"]["particle_count"],
         seed=seed, full_width_mm=config["full_width_mm"], residual_sigma_m_per_s=config["residual_sigma_m_per_s"])
     points = _arms(config, slope)
-    settings = _settings()
     outputs = {name: propagate_ideal_source(source, point, settings=settings) for name, point in points.items()}
     csv_path = result_dir / f"slope_{slope:g}__seed{seed}__particles.csv"
     with csv_path.open("w", newline="", encoding="utf-8") as stream:
@@ -177,9 +178,10 @@ def execute_slope_scan(config_path: Path, *, seed: int, run_id: str, resume_from
     started, status, error, stage = time.perf_counter(), "success", None, "paired_ideal_propagation"
     records: list[dict[str, Any]] = []
     try:
+        settings = _frozen_settings(run_dir)
         for slope in config["source_slopes_m_per_s_per_mm"]:
             for replicate in range(config["sampling"]["replicate_count"]):
-                record = _record_case(config, float(slope), seed + replicate, run_dir / "results")
+                record = _record_case(config, float(slope), seed + replicate, run_dir / "results", settings=settings)
                 record["numerical_identity"] = identity
                 _write_json(run_dir / "results" / f"slope_{slope:g}__seed{seed + replicate}.json", record)
                 records.append(record)

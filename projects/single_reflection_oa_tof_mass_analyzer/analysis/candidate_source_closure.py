@@ -156,6 +156,10 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_contract_build.m",
     "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate.py",
     "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_workflow.py",
+    "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_stage_execution.py",
+    "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_comsol_stage.py",
+    "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_simion_stage.py",
+    "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_cad_stage.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/solver_diagnostics.py",
 )
 

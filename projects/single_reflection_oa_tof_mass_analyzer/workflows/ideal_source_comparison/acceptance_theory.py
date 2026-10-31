@@ -16,6 +16,7 @@ from typing import Any
 
 import numpy as np
 
+from common.analysis.peak_metrics import AnalysisSettings
 from common.contracts.machine_contracts import load_json
 from common.contracts.particle_count_policy import validate_positive_particle_count
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_design import DesignDomainError, prepare_source_quadrature
@@ -31,7 +32,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_compa
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_experiment import _keys, _numbers
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.run_comparison import (
-    PROJECT_ROOT, _prepare_run, _publish_manifest, _settings, _working_points, _write_json,
+    PROJECT_ROOT, _prepare_run, _publish_manifest, _frozen_settings, _working_points, _write_json,
 )
 
 
@@ -231,10 +232,10 @@ def _select(config: dict[str, Any], baseline: dict[str, Any], reference: Any,
 
 
 def _confirm(config: dict[str, Any], spec: NumericalSourceSpec, point: Any, *, width: float,
-             design_id: str, seed: int, result_dir: Path, include_particles: bool = True,
+             design_id: str, seed: int, result_dir: Path, settings: AnalysisSettings, include_particles: bool = True,
              retain_population_density: bool = True, emit: bool = True) -> dict[str, Any]:
     spec = source_at_point(spec, point)
-    settings, num = _settings(), config["numerics"]
+    num = config["numerics"]
     population = []
     for nx, nv in num["population_orders"]:
         if "density" in num:
@@ -334,19 +335,19 @@ def _is_original_width_supported(spec: NumericalSourceSpec, point: Any, width: f
 
 def _confirm_width_task(config: dict[str, Any], spec: NumericalSourceSpec, reference_point: Any,
                         width: float, screened: list[dict[str, Any]], seed: int,
-                        result_dir_text: str) -> dict[str, Any]:
+                        result_dir_text: str, settings: AnalysisSettings) -> dict[str, Any]:
     """Run one width's dependent density-selection and particle-confirmation chain."""
     result_dir = Path(result_dir_text)
     reports: list[dict[str, Any]] = []
     original_supported = _is_original_width_supported(spec, reference_point, width)
     if original_supported:
         reports.append(_confirm(config, spec, reference_point, width=width,
-            design_id="original_design", seed=seed, result_dir=result_dir, emit=False))
+            design_id="original_design", seed=seed, result_dir=result_dir, settings=settings, emit=False))
     # Screening needs only the deterministic population metrics.  Its sampled
     # density curves are rebuildable intermediates and must not inflate a
     # compact run's terminal evidence.
     population_screen = [_confirm(config, spec, item["point"], width=width,
-        design_id=item["design_id"]+"__screen", seed=seed, result_dir=result_dir,
+        design_id=item["design_id"]+"__screen", seed=seed, result_dir=result_dir, settings=settings,
         include_particles=False, retain_population_density=False, emit=False) for item in screened]
     qualifying = [(item, result) for item, result in zip(screened, population_screen)
                   if result["theoretical_population_pass"]]
@@ -360,7 +361,7 @@ def _confirm_width_task(config: dict[str, Any], spec: NumericalSourceSpec, refer
         "rejected_population_records": population_screen})
     for item, _ in winners:
         reports.append(_confirm(config, spec, item["point"], width=width,
-            design_id=item["design_id"], seed=seed, result_dir=result_dir, emit=False))
+            design_id=item["design_id"], seed=seed, result_dir=result_dir, settings=settings, emit=False))
     return {"width_mm": width, "reports": reports, "screened_count": len(screened),
             "selected_count": len(winners), "estimated_work_units": _width_work_units(
                 config, len(screened), original_supported)}
@@ -368,7 +369,8 @@ def _confirm_width_task(config: dict[str, Any], spec: NumericalSourceSpec, refer
 
 def _confirm_widths_parallel(config: dict[str, Any], spec: NumericalSourceSpec, reference_point: Any,
                              screened: dict[float, list[dict[str, Any]]], seed: int,
-                             result_dir: Path, requested_workers: int | None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+                             result_dir: Path, requested_workers: int | None, *,
+                             settings: AnalysisSettings) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Dispatch independent widths by estimated cost; each width remains sequential internally."""
     widths = config["full_widths_mm"]
     workers = _resolve_parallel_workers(requested_workers, len(widths))
@@ -377,7 +379,7 @@ def _confirm_widths_parallel(config: dict[str, Any], spec: NumericalSourceSpec, 
     completed: list[dict[str, Any]] = []
     with ProcessPoolExecutor(max_workers=workers) as executor:
         futures = {executor.submit(_confirm_width_task, config, spec, reference_point, width,
-                                  screened[width], seed, str(result_dir)): width for width in tasks}
+                                  screened[width], seed, str(result_dir), settings): width for width in tasks}
         for done, future in enumerate(as_completed(futures), 1):
             result = future.result()
             completed.append(result)
@@ -411,6 +413,7 @@ def execute_theory(config_path: Path, *, seed: int, run_id: str, resume_from: Pa
     reports = []
     stage = "baseline_theory_audit"
     try:
+        settings = _frozen_settings(run_dir)
         spec = NumericalSourceSpec(**baseline["source"])
         point = _working_points(baseline)["three_zone_matched"]
         _write_json(run_dir / "results/reference_theory.json", {"point": point.to_dict(), "widths": [
@@ -422,7 +425,7 @@ def execute_theory(config_path: Path, *, seed: int, run_id: str, resume_from: Pa
                                                 max_workers=max_workers, return_dispatch=True)
         stage = "independent_confirmation"
         reports, confirmation_dispatch = _confirm_widths_parallel(
-            config, spec, point, screened, seed, run_dir / "results", max_workers)
+            config, spec, point, screened, seed, run_dir / "results", max_workers, settings=settings)
         run_config = load_json(run_dir / "run_config.json")
         run_config["execution"] = {"requested_max_workers": max_workers,
                                    "resolved_stages": [equation_dispatch, confirmation_dispatch],

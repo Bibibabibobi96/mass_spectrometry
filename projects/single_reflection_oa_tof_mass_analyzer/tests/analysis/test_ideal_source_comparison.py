@@ -1,8 +1,14 @@
 """Small deterministic regressions for the ideal numerical-source comparison."""
 
 from dataclasses import replace
+from concurrent.futures import Future
+from types import SimpleNamespace
 from pathlib import Path
+import json
+import tempfile
 import unittest
+from unittest.mock import patch
+from contextlib import ExitStack
 
 import numpy as np
 
@@ -20,7 +26,9 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_t
     ReflectronGeometry,
     exact_total_normalized_time,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison import slope_scan
+from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison import slope_scan, acceptance_theory
+from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison import run_comparison
+from common.contracts.file_identity import file_sha256
 
 
 class IdealSourceComparisonTests(unittest.TestCase):
@@ -49,6 +57,210 @@ class IdealSourceComparisonTests(unittest.TestCase):
         wide = self.sample(width=2.0, sigma=6.0)
         np.testing.assert_allclose(wide.source_x_mm-self.spec.center_x_mm, 2*(large.source_x_mm-self.spec.center_x_mm), atol=1e-15)
         np.testing.assert_array_equal(wide.residual_m_per_s, 2*large.residual_m_per_s)
+
+    def test_resume_retains_numeric_cases_after_plot_or_report_change_but_rejects_numeric_change(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = {name: root/(name+'.py') for name in
+                     ('entrypoint','ideal_source_comparison_plot','numerical_case')}
+            for name, path in paths.items():
+                path.write_text(name+' initial\n', encoding='utf-8')
+            config = root/'experiment.json'
+            config.write_text(json.dumps(dict(scope='inert dependency fixture')), encoding='utf-8')
+            inputs = dict(experiment=config, **paths)
+            with patch.object(run_comparison, '_inputs', return_value=inputs), \
+                    patch.object(run_comparison, '_command', return_value='fixture'):
+                parent, identity = run_comparison._prepare_run(config, seed=7,
+                    run_id='20261030_130100__analysis__python__numeric-context', resume_from=None, artifact_root=root)
+                case = dict(case_id='fixture')
+                particles = parent/'results/fixture.csv'
+                particles.write_text('particle_id,tof_us\n1,2\n', encoding='utf-8')
+                document = dict(identity=identity, case=case,
+                    particles=dict(path=particles.name, bytes=particles.stat().st_size, sha256=file_sha256(particles)))
+                document['record_sha256'] = run_comparison._digest(document)
+                (parent/'results/fixture.json').write_text(json.dumps(document), encoding='utf-8')
+                before = {p:p.read_bytes() for p in parent.rglob('*') if p.is_file()}
+                paths['entrypoint'].write_text('changed reporting only\n', encoding='utf-8')
+                paths['ideal_source_comparison_plot'].write_text('changed display only\n', encoding='utf-8')
+                child, child_identity = run_comparison._prepare_run(config, seed=7,
+                    run_id='20261030_130200__analysis__python__numeric-context', resume_from=parent, artifact_root=root)
+                self.assertEqual(child_identity, identity)
+                self.assertEqual(run_comparison._reuse_case(parent, case, child_identity, child/'results'), document)
+                self.assertEqual((child/'results/fixture.csv').read_bytes(), particles.read_bytes())
+                frozen = json.loads((child/'run_config.json').read_text(encoding='utf-8'))
+                self.assertIn('entrypoint', frozen['input_sha256'])
+                self.assertIn('ideal_source_comparison_plot', frozen['input_sha256'])
+                self.assertNotIn('entrypoint', frozen['numerical_input_sha256'])
+                self.assertNotIn('ideal_source_comparison_plot', frozen['numerical_input_sha256'])
+                paths['numerical_case'].write_text('changed propagation formula\n', encoding='utf-8')
+                with self.assertRaisesRegex(ValueError, 'resume code/config/seed/environment differs'):
+                    run_comparison._prepare_run(config, seed=7,
+                        run_id='20261030_130300__analysis__python__numeric-context', resume_from=parent, artifact_root=root)
+                self.assertEqual({p:p.read_bytes() for p in before}, before)
+
+    def test_legacy_comparison_without_frozen_numerical_case_fails_before_new_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / 'experiment.json'
+            config.write_text(json.dumps(dict(scope='inert legacy binding fixture')), encoding='utf-8')
+            helper = root / 'numerical_case.py'
+            helper.write_text('frozen numerical implementation\n', encoding='utf-8')
+            legacy = root / 'legacy'
+            legacy.mkdir()
+            (legacy / 'run_config.json').write_text(json.dumps(dict(
+                schema_version=2, input_sha256={}, inputs={}, numerical_identity='old-full-runner-identity')),
+                encoding='utf-8')
+            before = (legacy / 'run_config.json').read_bytes()
+            run_id = '20261031_130100__analysis__python__legacy-evidence-gap'
+            with patch.object(run_comparison, '_inputs', return_value=dict(experiment=config, numerical_case=helper)), \
+                    patch.object(run_comparison, '_command', return_value='fixture'):
+                with self.assertRaisesRegex(ValueError, 'lacks a frozen numerical_case implementation identity'):
+                    run_comparison._prepare_run(config, seed=7, run_id=run_id,
+                                                resume_from=legacy, artifact_root=root)
+            self.assertFalse((root / 'runs' / run_id).exists())
+            self.assertEqual((legacy / 'run_config.json').read_bytes(), before)
+
+    def test_execute_uses_frozen_settings_after_active_drift_and_rejects_invalid_frozen_settings(self):
+        for scenario in ('active_drift', 'invalid_frozen', 'frozen_tamper'):
+            invalid_frozen = scenario == 'invalid_frozen'
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                config = root / 'experiment.json'
+                config.write_text(json.dumps(dict(scope='inert frozen settings transport')), encoding='utf-8')
+                active = root / 'active_analysis_contract.json'
+                good = dict(kde=dict(grid_points=4001, bandwidth_multiplier=1.06,
+                                     significant_mode_threshold_fraction=0.10))
+                bad = dict(kde=dict(grid_points=1, bandwidth_multiplier=1.06,
+                                    significant_mode_threshold_fraction=0.10))
+                active.write_text(json.dumps(bad if invalid_frozen else good), encoding='utf-8')
+                prepare = run_comparison._prepare_run
+
+                def freeze_then_change_active(*args, **kwargs):
+                    prepared = prepare(*args, **kwargs)
+                    active.write_text(json.dumps(good if invalid_frozen else bad), encoding='utf-8')
+                    if scenario == 'frozen_tamper':
+                        frozen_config = json.loads((prepared[0] / 'run_config.json').read_text(encoding='utf-8'))
+                        Path(frozen_config['inputs']['analysis_contract']).write_text(json.dumps(bad), encoding='utf-8')
+                    return prepared
+
+                with patch.object(run_comparison, '_inputs', return_value=dict(experiment=config, analysis_contract=active)), \
+                     patch.object(run_comparison, '_command', return_value='fixture'), \
+                     patch.object(run_comparison, '_prepare_run', side_effect=freeze_then_change_active), \
+                     patch.object(run_comparison, 'build_case_plan', return_value=[]), \
+                     patch.object(run_comparison, '_working_points', return_value={}), \
+                     patch.object(run_comparison, '_settings', wraps=run_comparison._settings) as settings, \
+                     patch.object(run_comparison, '_run_case', side_effect=AssertionError('propagation must not start')) as propagation, \
+                     patch.object(run_comparison, 'summarize_stage', return_value=dict(scientific_status='NOT_EVALUATED', reason='fixture')), \
+                     patch.object(run_comparison, 'export_comparison_figures'), \
+                     patch.object(run_comparison, '_write_report'), \
+                     patch.object(run_comparison, '_publish_manifest'):
+                    run = run_comparison.execute(config, seed=7,
+                        run_id='20261031_130200__analysis__python__frozen-settings', artifact_root=root)
+                frozen = json.loads((run / 'run_config.json').read_text(encoding='utf-8'))
+                summary = json.loads((run / 'summary.json').read_text(encoding='utf-8'))
+                if scenario == 'frozen_tamper':
+                    settings.assert_not_called()
+                    self.assertIn('frozen analysis contract changed after freezing', summary['failure_reason'])
+                else:
+                    settings.assert_called_once_with(Path(frozen['inputs']['analysis_contract']))
+                    self.assertNotEqual(settings.call_args.args[0], active)
+                self.assertEqual(summary['status'], 'success' if scenario == 'active_drift' else 'failed')
+                if invalid_frozen:
+                    self.assertIn('grid_points must be an integer of at least three', summary['failure_reason'])
+                    self.assertEqual(summary['failure_stage'], 'working_points')
+                propagation.assert_not_called()
+
+    def test_other_comparison_consumers_transport_the_same_explicit_settings(self):
+        source = self.sample(count=7)
+        point = self.point()
+        result = SimpleNamespace(classification=np.array(['hit'] * 7), tof_us=np.arange(7) / 10 + 1,
+            summary=dict(status='COMPUTED', peak_metrics=dict(mass_resolution=1000.0, direct_fwhm_tof_ns=1.0)))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            slope_config = dict(sampling=dict(particle_count=7), full_width_mm=1.0, residual_sigma_m_per_s=1.0)
+            with patch.object(slope_scan, '_source', return_value=self.spec), \
+                 patch.object(slope_scan, 'build_numerical_source', return_value=source), \
+                 patch.object(slope_scan, '_arms', return_value=dict(zero_slope_design=point, matching_slope_design=point)), \
+                 patch.object(slope_scan, 'propagate_ideal_source', return_value=result) as propagated:
+                slope_scan._record_case(slope_config, 1.0, 73, root, settings=self.settings)
+            self.assertEqual(propagated.call_count, 2)
+            self.assertTrue(all(call.kwargs['settings'] is self.settings for call in propagated.call_args_list))
+            launched = []
+
+            class ImmediateExecutor:
+                def __init__(self, max_workers):
+                    launched.append(max_workers)
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *args):
+                    return False
+
+                def submit(self, function, *args):
+                    future = Future()
+                    future.set_result(function(*args))
+                    return future
+
+            config = dict(full_widths_mm=[1.0], residual_sigma_m_per_s=1.0, minimum_resolution=1000.0,
+                          sampling=dict(particle_count=7, replicate_count=1),
+                          numerics=dict(population_orders=[], population_resolution_relative_tolerance=0.1),
+                          design=dict(selected_per_width=1, selection='transport fixture'))
+            with patch.object(acceptance_theory, 'ProcessPoolExecutor', ImmediateExecutor), \
+                 patch.object(acceptance_theory, 'source_at_point', return_value=self.spec), \
+                 patch.object(acceptance_theory, 'build_numerical_source', return_value=source), \
+                 patch.object(acceptance_theory, 'accepted', return_value=False), \
+                 patch.object(acceptance_theory, 'propagate_ideal_source', return_value=result) as propagated:
+                reports, _ = acceptance_theory._confirm_widths_parallel(
+                    config, self.spec, point, {1.0: []}, 73, root, 1, settings=self.settings)
+            self.assertEqual(launched, [1])
+            self.assertEqual(len(reports), 1)
+            self.assertFalse(reports[0]['theoretical_population_pass'])
+            propagated.assert_called_once()
+            self.assertIs(propagated.call_args.kwargs['settings'], self.settings)
+
+    def test_supported_role_entries_read_frozen_settings_once_before_cases_or_workers(self):
+        for mode in ('slope', 'acceptance'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+                root = Path(directory)
+                run = root / 'run'
+                for name in ('inputs', 'results', 'logs'):
+                    (run / name).mkdir(parents=True)
+                contract = run / 'inputs/analysis_contract.json'
+                contract.write_text(json.dumps(dict(kde=dict(grid_points=self.settings.grid_points,
+                    bandwidth_multiplier=self.settings.bandwidth_multiplier,
+                    significant_mode_threshold_fraction=self.settings.mode_threshold_fraction))), encoding='utf-8')
+                (run / 'run_config.json').write_text(json.dumps(dict(inputs=dict(analysis_contract=str(contract)),
+                    input_sha256=dict(analysis_contract=file_sha256(contract)))), encoding='utf-8')
+                config_path = root / 'experiment.json'
+                module = slope_scan if mode == 'slope' else acceptance_theory
+                stack.enter_context(patch.object(module, '_prepare_run', return_value=(run, 'fixture')))
+                stack.enter_context(patch.object(module, '_publish_manifest'))
+                settings = stack.enter_context(patch.object(module, '_frozen_settings', wraps=run_comparison._frozen_settings))
+                if mode == 'slope':
+                    config_path.write_text(json.dumps(dict(source_slopes_m_per_s_per_mm=[0.0],
+                        sampling=dict(replicate_count=1), historical_slope_receipt='fixture')), encoding='utf-8')
+                    stack.enter_context(patch.object(module, 'validate_slope_scan_config'))
+                    stack.enter_context(patch.object(module, '_receipt_path', return_value=config_path))
+                    consumer = stack.enter_context(patch.object(module, '_record_case', return_value=dict(
+                        source_slope_m_per_s_per_mm=0.0, seed=73, resolution_gain_percent=0.0,
+                        arms=dict(zero_slope_design=dict(resolution=1.0), matching_slope_design=dict(resolution=1.0)))))
+                    module.execute_slope_scan(config_path, seed=73, run_id='fixture', resume_from=None, artifact_root=root)
+                else:
+                    baseline = root / 'reference.json'
+                    baseline.write_text(json.dumps(dict(source=vars(self.spec))), encoding='utf-8')
+                    config_path.write_text(json.dumps(dict(reference_config=str(baseline), numerics={},
+                        full_widths_mm=[], scope='inert role settings transport')), encoding='utf-8')
+                    stack.enter_context(patch.object(module, 'validate_theory_config'))
+                    stack.enter_context(patch.object(module, '_working_points', return_value=dict(three_zone_matched=self.point())))
+                    stack.enter_context(patch.object(module, '_select', return_value=({}, {})))
+                    consumer = stack.enter_context(patch.object(module, '_confirm_widths_parallel', return_value=([], {})))
+                    module.execute_theory(config_path, seed=73, run_id='fixture', resume_from=None, artifact_root=root, max_workers=1)
+                settings.assert_called_once_with(run)
+                consumer.assert_called_once()
+                self.assertIsInstance(consumer.call_args.kwargs['settings'], AnalysisSettings)
+                self.assertEqual(consumer.call_args.kwargs['settings'].grid_points, self.settings.grid_points)
+                self.assertEqual(json.loads((run / 'summary.json').read_text(encoding='utf-8'))['status'], 'success')
 
     def test_quadratic_mean_and_no_detector_fit(self) -> None:
         spec = replace(self.spec, velocity_quadratic_m_per_s_per_mm2=17.0)
