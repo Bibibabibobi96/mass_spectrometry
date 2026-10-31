@@ -98,7 +98,11 @@ Owner别名回归核对实际unittest模块与catalog所属发现集合（包括
 `common/verify.ps1 -Scope Changed|Owner|Repository`是唯一软件验证入口；Owner范围必须提供`-Owner`。
 普通命令自动规划、执行并汇总，`-PlanOnly`用于可选预览。Changed的`-FullScope`保留原Core／Static
 选择，不等于Repository。原两个驱动已移除，活动消费者统一使用此入口。
-`.github/workflows/lightweight-gate.yml`在push运行Changed，Repository由`workflow_dispatch`启动。
+`.github/workflows/lightweight-gate.yml`在push运行Changed，手动`workflow_dispatch`默认运行Repository。
+手动指定`comparison_base`可在所选代码版本上运行从该提交到当前提交的Changed范围，例如
+`gh workflow run lightweight-gate.yml --ref <任务分支> -f comparison_base=<40位提交SHA>`。
+显式比较基线必须可取得、非零且差异非空；不满足时在规划前拒绝，不静默改为另一范围。
+比较性能时仍须核对实际覆盖与环境，不能将不同catalog选择的墙钟直接当作同范围提速。
 Changed可能包含完整integration行为回归；CI预算包括环境安装与整轮验证，不能按单个Core检查估算。
 两个CI job在门禁前将后续步骤的`TEMP/TMP`设为[官方`RUNNER_TEMP`](https://docs.github.com/en/actions/reference/workflows-and-actions/variables)的规范绝对路径，
 通过[`GITHUB_ENV`](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#setting-an-environment-variable)传递，避免Windows用户目录短别名与长路径在测试夹具中混用。

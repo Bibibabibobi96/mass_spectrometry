@@ -3,6 +3,12 @@ name: Software verification
 on:
   push:
   workflow_dispatch:
+    inputs:
+      comparison_base:
+        description: 'Optional 40-hex commit for a comparable Changed run; empty runs Repository'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -13,7 +19,7 @@ concurrency:
 
 jobs:
   changed_scope:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.comparison_base != '')
     runs-on: windows-latest
     # The selected software scope may contain integration behavior suites.
     timeout-minutes: 60
@@ -51,9 +57,18 @@ jobs:
       - name: Resolve changed scope
         id: scope
         shell: pwsh
+        env:
+          PUBLIC_GATE_EVENT_NAME: ${{ github.event_name }}
+          PUBLIC_GATE_PUSH_BEFORE: ${{ github.event.before }}
+          PUBLIC_GATE_COMPARISON_BASE: ${{ inputs.comparison_base }}
+          PUBLIC_GATE_AFTER: ${{ github.sha }}
         run: |
-          $before = '${{ github.event.before }}'
-          $after = '${{ github.sha }}'
+          $manualComparison = $env:PUBLIC_GATE_EVENT_NAME -eq 'workflow_dispatch'
+          $before = if ($manualComparison) { $env:PUBLIC_GATE_COMPARISON_BASE } else { $env:PUBLIC_GATE_PUSH_BEFORE }
+          $after = $env:PUBLIC_GATE_AFTER
+          if ($manualComparison -and ($before -notmatch '^[0-9a-f]{40}$' -or $before -match '^[0]+$')) {
+            throw 'comparison_base must be a nonzero 40-hex commit.'
+          }
           $baseAvailable = $false
           if ($before -notmatch '^[0]+$') {
             & git cat-file -e "$before^{commit}" 2>$null
@@ -67,14 +82,18 @@ jobs:
               $baseAvailable = $LASTEXITCODE -eq 0
             }
           }
+          if ($manualComparison -and -not $baseAvailable) {
+            throw 'comparison_base commit is unavailable; refusing a different scope.'
+          }
           $scope = [ordered]@{ full_scope = $true; changed_paths = @() }
           if ($baseAvailable) {
             $changedPaths = @(& git diff --name-only --no-renames --diff-filter=ACMRD "$before..$after")
-            if ($LASTEXITCODE -ne 0) { throw 'Unable to calculate changed paths for push gate.' }
+            if ($LASTEXITCODE -ne 0) { throw 'Unable to calculate changed paths for the comparison gate.' }
             if ($changedPaths.Count -gt 0) {
               $scope.full_scope = $false
               $scope.changed_paths = $changedPaths
             } else {
+              if ($manualComparison) { throw 'comparison_base diff is empty; refusing a different scope.' }
               Write-Warning 'Push diff is empty; using the full gate catalog.'
             }
           } else {
@@ -149,7 +168,7 @@ jobs:
             ${{ runner.temp }}/changed_gate_*/**
           if-no-files-found: warn
   repository_integration:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.comparison_base == ''
     runs-on: windows-latest
     timeout-minutes: 60
     steps:

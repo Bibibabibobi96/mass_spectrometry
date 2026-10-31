@@ -67,6 +67,108 @@ class ParallelGateSupportTests(unittest.TestCase):
         return subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(root/"common/verify.ps1"),
             "-MaxConcurrency","1",*map(str,arguments)],cwd=root,env=environment,capture_output=True,text=True,encoding="utf-8",timeout=60)
 
+    def workflow_step_script(self, *, scope=False):
+        text=(ROOT/".github/workflows/lightweight-gate.yml").read_text(encoding="utf-8-sig")
+        job=text.split("  changed_scope:\n",1)[1].split("  repository_integration:\n",1)[0]
+        steps=re.split(r"(?m)^      - ",job)[1:]
+        selected=[step for step in steps if ("        id: scope\n" in step if scope
+                  else "changed_gate_command_timing.json" in step and "        run: |\n" in step)]
+        self.assertEqual(len(selected),1,"actual workflow step is missing or ambiguous")
+        body=selected[0].split("        run: |\n",1)[1]
+        return "\n".join(line[10:] if line.startswith("          ") else line
+                         for line in body.splitlines())+"\n"
+
+    def invoke_workflow_scope(self, root, environment, destination, *, event, before, after, comparison=""):
+        destination.mkdir()
+        script=destination/"scope.ps1"
+        script.write_text(self.workflow_step_script(scope=True),encoding="utf-8",newline="\n")
+        env={**environment,"RUNNER_TEMP":str(destination),"GITHUB_OUTPUT":str(destination/"outputs"),
+             "PUBLIC_GATE_EVENT_NAME":event,"PUBLIC_GATE_PUSH_BEFORE":before,
+             "PUBLIC_GATE_COMPARISON_BASE":comparison,"PUBLIC_GATE_AFTER":after,
+             "PATH":str(Path(sys.executable).parent)+os.pathsep+environment["PATH"]}
+        result=subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(script)],cwd=root,env=env,
+            capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=60)
+        return result,env
+
+    def test_workflow_manual_comparison_matches_push_plan_and_propagates_real_failure(self):
+        base,root,environment=self.plan_transport_fixture(git=True)
+        before=subprocess.check_output(["git","rev-parse","HEAD"],cwd=root,text=True,encoding="utf-8",timeout=30).strip()
+        (root/"fixture.policy").write_text("changed selection\n",encoding="utf-8")
+        for command in (["git","add","fixture.policy"],["git","-c","user.name=Test","-c","user.email=test@example.invalid","commit","--quiet","-m","Changed"]):
+            subprocess.run(command,cwd=root,capture_output=True,check=True,timeout=30)
+        after=subprocess.check_output(["git","rev-parse","HEAD"],cwd=root,text=True,encoding="utf-8",timeout=30).strip()
+        plans=[]
+        for event in ("push","workflow_dispatch"):
+            destination=base/event
+            result,env=self.invoke_workflow_scope(root,environment,destination,event=event,before=before,
+                after=after,comparison=before if event=="workflow_dispatch" else "")
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            plans.append(json.loads((destination/"software_gate_plan.json").read_text(encoding="utf-8-sig")))
+            self.assertEqual(json.loads((destination/"changed_scope.json").read_text(encoding="utf-8-sig")),
+                             {"full_scope":False,"changed_paths":["fixture.policy"]})
+            self.assertIn("dependency_profile=stdlib",(destination/"outputs").read_text(encoding="utf-8-sig"))
+        self.assertEqual(plans[0]["selection"],plans[1]["selection"])
+        self.assertEqual(plans[0]["stages"],plans[1]["stages"])
+        self.assertEqual((base/"catalog_reads").read_text().splitlines(),["read","read"])
+        self.assertFalse((base/"admissions").exists())
+        env["PLAN_FAIL"]="7"
+        script=destination/"execute.ps1"
+        script.write_text(self.workflow_step_script(),encoding="utf-8",newline="\n")
+        executed=subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(script)],cwd=root,env=env,
+            capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=60)
+        self.assertNotEqual(executed.returncode,0,executed.stdout+executed.stderr)
+        timing=json.loads((destination/"changed_gate_command_timing.json").read_text())
+        self.assertEqual(timing["exit_code"],executed.returncode)
+        self.assertEqual(json.loads((destination/"changed_gate_summary.json").read_text(encoding="utf-8-sig"))["status"],"FAIL")
+        self.assertEqual((base/"catalog_reads").read_text().splitlines(),["read","read"])
+
+    def test_workflow_explicit_bad_or_unavailable_base_fails_before_planning(self):
+        base,root,environment=self.plan_transport_fixture(git=True)
+        after=subprocess.check_output(["git","rev-parse","HEAD"],cwd=root,text=True,encoding="utf-8",timeout=30).strip()
+        marker=base/"injected"
+        for index,value in enumerate(("0"*40,"not-a-commit","f"*40,
+                                      "';New-Item '"+str(marker)+"';#",after)):
+            with self.subTest(value=value):
+                output=base/("bad_"+str(index))
+                result,_=self.invoke_workflow_scope(root,environment,output,event="workflow_dispatch",
+                    before=after,after=after,comparison=value)
+                self.assertNotEqual(result.returncode,0,result.stdout+result.stderr)
+                self.assertFalse((output/"software_gate_plan.json").exists())
+                self.assertFalse((base/"catalog_reads").exists())
+                self.assertFalse((base/"admissions").exists())
+                self.assertFalse(marker.exists())
+        workflow=(ROOT/".github/workflows/lightweight-gate.yml").read_text(encoding="utf-8-sig")
+        self.assertRegex(workflow,r"(?s)comparison_base:.*?required: false.*?type: string.*?default: ''")
+        self.assertIn("github.event_name == 'workflow_dispatch' && inputs.comparison_base == ''",workflow)
+        self.assertNotIn("${{",self.workflow_step_script(scope=True))
+
+    def test_workflow_comparison_fetches_only_requested_shallow_base(self):
+        base,root,environment=self.plan_transport_fixture(git=True)
+        before=subprocess.check_output(["git","rev-parse","HEAD"],cwd=root,text=True,encoding="utf-8",timeout=30).strip()
+        revisions=[]
+        for value in ("middle","after"):
+            (root/"fixture.policy").write_text(value+"\n",encoding="utf-8")
+            for command in (["git","add","fixture.policy"],["git","-c","user.name=Test","-c","user.email=test@example.invalid","commit","--quiet","-m",value]):
+                subprocess.run(command,cwd=root,capture_output=True,check=True,timeout=30)
+            revisions.append(subprocess.check_output(["git","rev-parse","HEAD"],cwd=root,text=True,encoding="utf-8",timeout=30).strip())
+        origin=base/"origin.git";checkout=base/"shallow"
+        subprocess.run(["git","clone","--bare","--quiet",str(root),str(origin)],cwd=base,check=True,capture_output=True,timeout=30)
+        subprocess.run(["git","clone","--quiet","--depth=1",origin.as_uri(),str(checkout)],cwd=base,check=True,capture_output=True,timeout=30)
+        # Git does not retain the existing fixture's empty discovery roots.
+        for name in ("projects","integrations"):
+            (checkout/name).mkdir(exist_ok=True)
+        missing=subprocess.run(["git","cat-file","-e",before+"^{commit}"],cwd=checkout,capture_output=True,timeout=30)
+        self.assertNotEqual(missing.returncode,0)
+        trace=base/"git_trace.txt"
+        result,_=self.invoke_workflow_scope(checkout,{**environment,"GIT_TRACE":str(trace)},base/"fetched",
+            event="workflow_dispatch",before="",after=revisions[-1],comparison=before)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertEqual(subprocess.run(["git","cat-file","-e",before+"^{commit}"],cwd=checkout,capture_output=True,timeout=30).returncode,0)
+        self.assertNotEqual(subprocess.run(["git","cat-file","-e",revisions[0]+"^{commit}"],cwd=checkout,capture_output=True,timeout=30).returncode,0)
+        fetches=[line for line in trace.read_text(encoding="utf-8").splitlines() if "built-in: git fetch " in line]
+        self.assertEqual(len(fetches),1)
+        self.assertIn("fetch --no-tags --depth=1 origin "+before,fetches[0])
+
     def test_root_consumes_one_plan_with_scope_failure_policy_and_explicit_summary(self):
         for scope in ("Changed","Owner","Repository"):
             with self.subTest(scope=scope):
