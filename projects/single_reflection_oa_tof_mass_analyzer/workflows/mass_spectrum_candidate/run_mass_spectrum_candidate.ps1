@@ -11,23 +11,52 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
-$workspaceRoot = Split-Path -Parent $repoRoot
-$artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+$python = if ($env:SIMULATION_PYTHON_EXE) { (Resolve-Path -LiteralPath $env:SIMULATION_PYTHON_EXE).Path }
+  else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
+. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $repoRoot 'common/paths/workspace_paths.ps1')
+$pathContext = Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
+$artifactRoot = Join-Path $pathContext.artifact_root 'projects/single_reflection_oa_tof_mass_analyzer'
+$runDir = Join-Path $artifactRoot "runs\$RunId"
+$resumeExisting = $ResumeAfterComsol -or $ReanalyzeOnly
+if ($ResumeAfterComsol -and $ReanalyzeOnly) { throw 'ResumeAfterComsol and ReanalyzeOnly are mutually exclusive.' }
+if ($resumeExisting) {
+  $frozenConfigPath = Join-Path $runDir 'run_config.json'
+  if (-not (Test-Path -LiteralPath $frozenConfigPath -PathType Leaf)) { throw "Resume requires the original run config: $frozenConfigPath" }
+  $frozenConfig = Get-Content -LiteralPath $frozenConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
+  if (-not $frozenConfig.ContainsKey('paths')) {
+    throw 'Resume lacks frozen path context. ACTION=use_original_frozen_entry_or_create_new_run_with_verified_inputs'
+  }
+  if (@('run_id','project','mode','capacity_ledger_lifecycle' | Where-Object { -not $frozenConfig.ContainsKey($_) }).Count -or
+      $frozenConfig.capacity_ledger_lifecycle -isnot [Collections.IDictionary] -or
+      -not $frozenConfig.capacity_ledger_lifecycle.Contains('artifact_root')) {
+    throw 'Resume lacks frozen run/capacity identity. ACTION=use_original_frozen_entry_or_create_new_run_with_verified_inputs'
+  }
+  $pathContext = Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python -FrozenContext $frozenConfig.paths
+  $frozenArtifactRoot = Join-Path $pathContext.artifact_root 'projects/single_reflection_oa_tof_mass_analyzer'
+  $frozenRun = [IO.Path]::GetFullPath((Join-Path $frozenArtifactRoot "runs\$RunId"))
+  if (-not $frozenRun.Equals([IO.Path]::GetFullPath($runDir),[StringComparison]::OrdinalIgnoreCase) -or
+      $frozenConfig.run_id -cne $RunId -or $frozenConfig.project -cne 'single_reflection_oa_tof_mass_analyzer' -or
+      $frozenConfig.mode -cne 'mass_spectrum_candidate' -or
+      [IO.Path]::GetFullPath([string]$frozenConfig.capacity_ledger_lifecycle.artifact_root) -ine $pathContext.artifact_root) {
+    throw 'Resume frozen run/root/capacity identity differs.'
+  }
+  $artifactRoot = $frozenArtifactRoot
+}
+$environmentNames = @('SIMULATION_PYTHON_EXE','MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH')
+$environmentSnapshot = Save-RunEnvironment -Names $environmentNames
 $hostRole = if ($ReanalyzeOnly) { 'GATE' } else { 'SIMION' }
-. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
-$hostStage = 'prepare'
-$hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage $hostStage
+$hostExecutionLease = $null
 try {
+$env:SIMULATION_PYTHON_EXE = $python
+$env:MASS_SPECTROMETRY_ARTIFACT_ROOT = [string]$pathContext.artifact_root
+$env:MASS_SPECTROMETRY_EXECUTION_ROOT = [string]$pathContext.execution_root
+$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = [string]$pathContext.host_resource_state_path
+$hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage prepare -StatePath $pathContext.host_resource_state_path
 . (Join-Path $projectRoot 'oatof_lifecycle_preflight.ps1')
 Assert-OaTofFormalAssetsReadable -ProjectRoot $projectRoot
 & $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
-$runDir = Join-Path $artifactRoot "runs\$RunId"
-$resumeExisting = $ResumeAfterComsol -or $ReanalyzeOnly
-if ($ResumeAfterComsol -and $ReanalyzeOnly) {
-  throw 'ResumeAfterComsol and ReanalyzeOnly are mutually exclusive.'
-}
 if ($resumeExisting) {
   $inputDir = Join-Path $runDir 'inputs'
   $resultDir = Join-Path $runDir 'results'
@@ -56,7 +85,7 @@ if ($resumeExisting) {
     -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'mass_spectrum_candidate' `
     -Software @('COMSOL 6.4','SIMION 2020','Python 3.11') -RetentionContractEnabled `
     -RetentionClass solver_review -RetentionReason 'Candidate mass-spectrum solver evidence requires review.' `
-    -CapacityLedgerLifecycleEnabled -AdditionalDirectories @('ions','comsol')
+    -CapacityLedgerLifecycleEnabled -AdditionalDirectories @('ions','comsol') -PathContext $pathContext
   $runDir = $package.artifact_run_dir
   $inputDir = $package.input_dir
   $resultDir = $package.result_dir
@@ -92,12 +121,20 @@ trap {
 }
 
 $liveModePath = Join-Path $projectRoot 'config\modes\mass_spectrum.json'
-$liveResolvedPath = Join-Path $projectRoot 'config\resolved_geometry.json'
 $liveParticleCountPolicyPath = Join-Path $repoRoot 'common\contracts\particle_count_policy.json'
 $modePath = Join-Path $inputDir 'mass_spectrum.json'
 $resolvedPath = Join-Path $inputDir 'resolved_geometry.json'
 $particleCountPolicyPath = Join-Path $inputDir 'particle_count_policy.json'
+$geometryFrozenInputs = [ordered]@{}
 if ($resumeExisting) {
+  $resolvedPath = [IO.Path]::GetFullPath([string]$existingLifecycle.inputs.resolved_geometry)
+  $frozenInputPrefix = [IO.Path]::GetFullPath($inputDir).TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar
+  if (-not $resolvedPath.StartsWith($frozenInputPrefix,[StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Recorded geometry must remain within this run frozen inputs.'
+  }
+  foreach ($entry in $existingLifecycle.inputs.PSObject.Properties) {
+    if ($entry.Name.StartsWith('geometry_freshness_')) {$geometryFrozenInputs[$entry.Name] = [string]$entry.Value}
+  }
   foreach ($frozenInput in @($modePath,$resolvedPath,$particleCountPolicyPath)) {
     if (-not (Test-Path -LiteralPath $frozenInput -PathType Leaf)) {
       throw "Resume frozen input is absent: $frozenInput"
@@ -105,7 +142,35 @@ if ($resumeExisting) {
   }
 } else {
   Copy-Item -LiteralPath $liveModePath -Destination $modePath
-  Copy-Item -LiteralPath $liveResolvedPath -Destination $resolvedPath
+  $geometrySnapshotRoot = Join-Path $inputDir 'geometry_freshness_snapshot'
+  $geometrySources = [ordered]@{
+    geometry_freshness_resolver = 'projects/single_reflection_oa_tof_mass_analyzer/analysis/resolve_geometry.py'
+    geometry_freshness_contract = 'projects/single_reflection_oa_tof_mass_analyzer/analysis/geometry_contract.py'
+    geometry_freshness_file_identity = 'common/contracts/file_identity.py'
+    geometry_freshness_machine_contracts = 'common/contracts/machine_contracts.py'
+    geometry_freshness_aperture = 'common/simion/aperture.py'
+    geometry_freshness_simion_package = 'common/simion/__init__.py'
+    geometry_freshness_grounded_shield = 'projects/rf_multipole_ion_optics/core/grounded_shield.py'
+    geometry_freshness_rf_package = 'projects/rf_multipole_ion_optics/core/__init__.py'
+    geometry_freshness_baseline = 'projects/single_reflection_oa_tof_mass_analyzer/config/baseline.json'
+    geometry_freshness_science = 'projects/single_reflection_oa_tof_mass_analyzer/config/modes/formal.json'
+    geometry_freshness_numerics = 'projects/single_reflection_oa_tof_mass_analyzer/config/formal_solver_numerics.json'
+    geometry_freshness_published = 'projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json'
+  }
+  foreach ($entry in $geometrySources.GetEnumerator()) {
+    $geometryFrozenInputs[$entry.Key] = Copy-VerifiedRunInput `
+      -Source (Join-Path $repoRoot $entry.Value) -Destination (Join-Path $geometrySnapshotRoot $entry.Value)
+  }
+  $resolvedPath = $geometryFrozenInputs.geometry_freshness_published
+  $geometryRunConfigPath = Join-Path $runDir 'run_config.json'
+  $geometryRunConfig = Get-Content -LiteralPath $geometryRunConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
+  $geometryRunConfig.inputs = [ordered]@{mode_config=$modePath;resolved_geometry=$resolvedPath}
+  foreach ($entry in $geometryFrozenInputs.GetEnumerator()) {$geometryRunConfig.inputs[$entry.Key]=$entry.Value}
+  $geometryRunConfig.parameters = [ordered]@{lifecycle_stage='geometry_input_freshness'}
+  Write-RunJson -Path $geometryRunConfigPath -Value $geometryRunConfig -Depth 12
+  $geometryCheck = "import runpy,sys;sys.path.insert(0,sys.argv[1]);sys.argv=['resolve_geometry','--check'];runpy.run_module('projects.single_reflection_oa_tof_mass_analyzer.analysis.resolve_geometry',run_name='__main__')"
+  & $python -I -B -c $geometryCheck $geometrySnapshotRoot
+  if ($LASTEXITCODE -ne 0) {throw 'Frozen mass-spectrum geometry input freshness failed.'}
   Copy-Item -LiteralPath $liveParticleCountPolicyPath -Destination $particleCountPolicyPath
 }
 $mode = Get-Content -LiteralPath $modePath -Raw | ConvertFrom-Json
@@ -135,6 +200,7 @@ $preflightRunConfig.inputs = [ordered]@{
   resolved_geometry = $resolvedPath
   particle_count_policy = $particleCountPolicyPath
 }
+foreach ($entry in $geometryFrozenInputs.GetEnumerator()) {$preflightRunConfig.inputs[$entry.Key] = $entry.Value}
 $preflightRunConfig.particle_source_preflight = @()
 $preflightRunConfig.parameters = [ordered]@{
   lifecycle_stage = 'particle_source_preflight'
@@ -373,9 +439,9 @@ if ($ReanalyzeOnly) {
   $runtimeRoot = New-OaTofFormalSimionRuntime -ProjectRoot $projectRoot `
     -ArtifactRoot $artifactRoot -PythonExe $python -Destination $runtimeRoot `
     -Receipt $runtimeReceipt
-  $executionAlias = New-RunExecutionAlias -TargetDirectory $runDir `
+  $executionAlias = New-RunExecutionAlias -TargetDirectory $runDir -ExecutionRoot $pathContext.execution_root `
     -ExpectedExecutionRelativePaths @('ions\wide_mz_combined.ion')
-  $runtimeAlias = New-RunExecutionAlias -TargetDirectory $runtimeRoot `
+  $runtimeAlias = New-RunExecutionAlias -TargetDirectory $runtimeRoot -ExecutionRoot $pathContext.execution_root `
     -ExpectedExecutionRelativePaths @('oatof_ideal_grounded.iob')
   $runtimeIob = Join-Path $runtimeAlias.execution_alias 'oatof_ideal_grounded.iob'
   $executionIon = Join-Path $executionAlias.execution_alias 'ions\wide_mz_combined.ion'
@@ -428,15 +494,10 @@ $runInputs = [ordered]@{
   formal_simion_iob = $formalIob
   formal_simion_runtime_receipt = Join-Path $inputDir 'formal_simion_runtime_receipt.json'
 }
-$runConfig = [ordered]@{
-  schema_version = 2
-  artifact_retention = $lifecycleConfig.artifact_retention
-  capacity_ledger_lifecycle = $lifecycleConfig.capacity_ledger_lifecycle
+foreach ($entry in $geometryFrozenInputs.GetEnumerator()) {$runInputs[$entry.Key] = $entry.Value}
+$runConfig = Get-Content -LiteralPath $runConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
+$scientificConfig = [ordered]@{
   role = 'oa_tof_mass_spectrum_run_config'
-  run_id = $RunId
-  project = 'single_reflection_oa_tof_mass_analyzer'
-  project_root = $projectRoot
-  mode = 'mass_spectrum_candidate'
   formal_gate_passed = $false
   inputs = $runInputs
   species = $mode.species
@@ -450,7 +511,8 @@ $runConfig = [ordered]@{
     simion_max_tof_us = $simionMaxTofUs
   }
 }
-$runConfig | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
+foreach ($entry in $scientificConfig.GetEnumerator()) { $runConfig[$entry.Key] = $entry.Value }
+Write-RunJson -Path $runConfigPath -Value $runConfig -Depth 100
 $summaryPath = Join-Path $runDir 'summary.json'
 $summaryRecord = Get-Content -LiteralPath (Join-Path $resultDir 'mass_spectrum_metrics.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $summaryRecord | Add-Member -NotePropertyName status -NotePropertyValue 'success' -Force
@@ -494,5 +556,6 @@ $runRecordComplete = $true
 Write-Output "MASS_SPECTRUM_CANDIDATE=PASS RUN_ID=$RunId PARTICLES=$totalParticles"
 
 } finally {
-  if ($null -ne $hostExecutionLease) { Exit-HostExecutionLease -Lease $hostExecutionLease }
+  try { if ($null -ne $hostExecutionLease) { Exit-HostExecutionLease -Lease $hostExecutionLease } }
+  finally { Restore-RunEnvironment -Names $environmentNames -Snapshot $environmentSnapshot }
 }

@@ -516,3 +516,22 @@ producer返回原生完成receipt和实际Program/ION/IOB绑定；补偿与candi
 本次公共路径、异常和跨根Result修订以软件行为验收：首轮44项联合运行保留FAIL（52.841秒），其中未受夹具修订影响的28项通过；修正临时仓库Python绑定及旧路径夹具后，两模块16项补验通过（66.344秒）。释放失败保留对象形式的主异常和独立次错，原CLI按原Result定位冻结根恢复，不重飞。上述20261030原生记录仅支持各自冻结实现，不自动变成本次新源码的原生或科学资格。
 
 旧理想比较的reference-only恢复仅写入公共路径上下文选定的`projects/<本项目>`受管目录；`MASS_SPECTROMETRY_ARTIFACT_ROOT`可选择非默认短根。每个新run冻结本次实际paths，运行内不重读环境默认。此新legacy分支不把任意Python API输出目录自动当容量owner；未受管目标在租约/CSV读取前明确拒绝，普通非legacy API行为不变。跨根来源仍要求公共SourceReferences已有充分冻结capacity-owner证据；无该证据的旧源不按目录猜根。
+
+## 局部理想场诊断与重分析
+
+`simion/workbench/run_ideal_field_diagnostic.ps1`的正常运行只准备一次实际消费的隔离SIMION runtime，
+并通过`verify_geometry_contract.ps1 -PreparedRuntime`核对该runtime的IOB、Program、几何、优先级与场；
+使用其自带冻结resolved合同，不先物化另一份验证副本。正常物化前仍执行既有Formal可读性guard，`formal_revalidation_pending`提前拒绝；局部runtime核对不授予Formal资格。完整CAD、COMSOL与历史Formal资格仍由
+`workflows/formal_reference/verify_geometry_contract.ps1`默认显式入口验证，不是局部诊断前置。
+
+重分析使用原入口的`-AnalyzeOnly -SourceRunPath <已封存诊断run> -RunId <新analysis ID>`。
+它在公共终态消费guard内按父manifest的consumer projection核对并冻结实际24份日志、4份ION及父控制，
+继承父N和seed，只做日志分析与新结果发布；不生成ION、不准入SIMION、不物化PA，
+也不要求未消费的当前Formal、CAD、MPH或SIMION安装存在。缺日志或源身份不匹配明确失败。
+这两条路径都不重新授予Formal资格；分析沿既有出生相对时钟、母群和Gaussian proxy定义。
+
+`mass_spectrum_candidate`仅把原纯几何新鲜度移到正常新run的实际prepare：原Formal可读guard先执行，pending仍拒绝；guard允许后冻结原纯resolver及实际输入并检查同snapshot的resolved。Resume／ReanalyzeOnly继续消费该run记录的冻结输入，不重新绑定今天baseline。未调用sync、跨求解器资格、GUI或CAD，也未解锁Formal；本次软件回归不能替代该入口缺少的科学验收。
+
+两个入口的新run沿公共workspace resolver选择根，并向原NewRunPackage传同一PathContext；原生别名显式使用该冻结执行根，嵌套调用沿同一主机状态，退出后恢复调用者环境。科学结果合并进原包配置，保留paths、schema、容量owner与其它公共字段。质量谱续跑只接受原run记录的完整paths及匹配的run/root/容量身份；较早记录缺少这些证据时明确阻断并给下一动作，不以今日默认补造旧根。
+
+`mass_spectrum_candidate -ReanalyzeOnly`仍是现有RunId的原位重分析：复用其源与已完成求解记录，但继续写同run的预检、results、run_config、summary和manifest，入口仍执行今日项目Formal可读性guard并要求既有Formal资产路径可用。本次仅准备与冻结路径修订，没有把该分支迁为只读父run加后继analysis，也未接入公共小Result恢复；上述理想场`-AnalyzeOnly -SourceRunPath`能力不能套用到质量谱分支。该未迁范围尚未作为本包已闭合能力或新科学资格验收。

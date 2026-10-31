@@ -1,12 +1,38 @@
 param(
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = '',
+  [string]$PreparedRuntime = '',
+  [string]$RuntimeReportPath = '',
   [switch]$SkipRuntime
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $componentDir = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+# Local diagnostics validate the one runtime they will actually consume. Full
+# cross-solver/CAD/history qualification remains the default explicit entry.
+if ($PreparedRuntime) {
+  if ($SkipRuntime) { throw 'PreparedRuntime requires native runtime validation.' }
+  if (-not (Test-Path -LiteralPath $PreparedRuntime -PathType Container)) { throw 'Prepared runtime is missing.' }
+  $runtimeRoot = [IO.Path]::GetFullPath($PreparedRuntime)
+  $runtimeIob = Join-Path $runtimeRoot 'oatof_ideal_grounded.iob'
+  $runtimeResolved = Join-Path $runtimeRoot 'oatof_resolved.lua'
+  $report = if ($RuntimeReportPath) { [IO.Path]::GetFullPath($RuntimeReportPath) }
+    else { Join-Path $env:TEMP ('oatof_prepared_runtime_'+[guid]::NewGuid().ToString('N')+'.txt') }
+  & (Join-Path $componentDir 'simion\workbench\verify_iob_runtime_contract.ps1') `
+    -IobPath $runtimeIob -ExpectedTrajectoryQuality 8 -ExpectedInstances 4 -SimionExe $SimionExe
+  if ($LASTEXITCODE -ne 0) { throw 'Prepared diagnostic IOB validation failed.' }
+  Push-Location -LiteralPath $runtimeRoot
+  try {
+    & $SimionExe --nogui lua (Join-Path $componentDir 'simion\workbench\verify_formal_runtime.lua') `
+      $report $runtimeIob $runtimeResolved
+    if ($LASTEXITCODE -ne 0 -or -not (Select-String -LiteralPath $report -Pattern '^STATUS=PASS$' -Quiet)) {
+      throw 'Prepared diagnostic runtime geometry validation failed.'
+    }
+  } finally { Pop-Location }
+  Write-Output 'PREPARED_RUNTIME_GEOMETRY=PASS'
+  return
+}
 . (Join-Path $componentDir 'oatof_lifecycle_preflight.ps1')
 Assert-OaTofFormalAssetsReadable -ProjectRoot $componentDir
 $repoRoot = (Resolve-Path (Join-Path $componentDir '..\..')).Path

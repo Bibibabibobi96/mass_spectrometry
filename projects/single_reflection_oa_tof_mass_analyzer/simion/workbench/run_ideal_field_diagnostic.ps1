@@ -5,6 +5,7 @@ param(
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$OutputDir = '',
   [string]$RunId = '',
+  [string]$SourceRunPath = '',
   [switch]$AnalyzeOnly
 )
 
@@ -12,33 +13,44 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$hostRole = 'SIMION' # AnalyzeOnly still performs the runtime geometry gate.
-. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
-$hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage prepare
+if ($AnalyzeOnly -and -not $SourceRunPath) { throw 'AnalyzeOnly requires an explicit SourceRunPath.' }
+if (-not $AnalyzeOnly -and $SourceRunPath) { throw 'SourceRunPath is only valid with AnalyzeOnly.' }
+$python = if ($env:SIMULATION_PYTHON_EXE) { (Resolve-Path -LiteralPath $env:SIMULATION_PYTHON_EXE).Path }
+  else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
+. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $repoRoot 'common/paths/workspace_paths.ps1')
+$pathContext = Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
+$artifactRoot = Join-Path $pathContext.artifact_root 'projects/single_reflection_oa_tof_mass_analyzer'
+$environmentNames = @('SIMULATION_PYTHON_EXE','MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH')
+$environmentSnapshot = Save-RunEnvironment -Names $environmentNames
+$hostRole = if ($AnalyzeOnly) { 'GATE' } else { 'SIMION' }
+$hostExecutionLease = $null
 try {
-$projectRoot = Split-Path -Parent $repoRoot
-$artifactRoot = Join-Path $projectRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
-$formalDir = Join-Path $artifactRoot 'formal\simion'
+$env:SIMULATION_PYTHON_EXE = $python
+$env:MASS_SPECTROMETRY_ARTIFACT_ROOT = [string]$pathContext.artifact_root
+$env:MASS_SPECTROMETRY_EXECUTION_ROOT = [string]$pathContext.execution_root
+$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = [string]$pathContext.host_resource_state_path
+$hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage prepare -StatePath $pathContext.host_resource_state_path
 $componentRoot = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer'
 . (Join-Path $componentRoot 'oatof_lifecycle_preflight.ps1')
 if (-not $RunId) {
   if ($OutputDir) { $RunId = Split-Path -Leaf ([IO.Path]::GetFullPath($OutputDir)) }
+  elseif ($AnalyzeOnly) { $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + "__analysis__python__ideal-field-matrix" }
   else { $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + "__test__simion__ideal-field-matrix__n${N}" }
 }
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 & $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 $expectedOutputDir = [IO.Path]::GetFullPath((Join-Path $artifactRoot "runs\$RunId"))
 if ($OutputDir -and [IO.Path]::GetFullPath($OutputDir) -cne $expectedOutputDir) {
   throw 'OutputDir must be the canonical artifacts/runs/RunId directory.'
 }
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 $runRecordComplete = $false
+$software = if ($AnalyzeOnly) { @('Python 3.11') } else { @('SIMION 2020','Python 3.11') }
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'simion_ideal_field_matrix' `
-  -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass solver_review `
+  -Software $software -RetentionContractEnabled -RetentionClass solver_review `
   -RetentionReason 'Public ideal-field diagnostic workbench evidence requires review.' `
-  -CapacityLedgerLifecycleEnabled -AdditionalDirectories @('simion')
+  -CapacityLedgerLifecycleEnabled -AdditionalDirectories @('simion') -PathContext $pathContext
 $OutputDir = $package.artifact_run_dir
 $inputDir = $package.input_dir
 $artifactResultDir = $package.result_dir
@@ -68,7 +80,7 @@ trap {
   }
   exit 1
 }
-$executionAlias = New-RunExecutionAlias -TargetDirectory $OutputDir `
+$executionAlias = New-RunExecutionAlias -TargetDirectory $OutputDir -ExecutionRoot $pathContext.execution_root `
   -AdditionalDirectories @('results','logs','simion') `
   -ExpectedExecutionRelativePaths @('logs/energy_only__ideal_reflectron.stderr.log','simion/ions_energy_only_N1000000.ion')
 $executionOutputDir = [string]$executionAlias.execution_alias
@@ -76,25 +88,20 @@ $resultDir = Join-Path $executionOutputDir 'results'
 $logDir = Join-Path $executionOutputDir 'logs'
 $simionDir = Join-Path $executionOutputDir 'simion'
 
-$sourceLua = Join-Path $PSScriptRoot 'formal\oatof_ideal_grounded.lua'
-$runtimeLua = Join-Path $formalDir 'oatof_ideal_grounded.lua'
-$formalIob = Join-Path $formalDir 'oatof_ideal_grounded.iob'
-$iob = $formalIob
-if ((Get-FileHash $sourceLua -Algorithm SHA256).Hash -ne (Get-FileHash $runtimeLua -Algorithm SHA256).Hash) {
-  throw 'Formal SIMION Lua differs from source; rebuild the formal delivery before diagnosis.'
-}
-$geometryGate = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\workflows\formal_reference\verify_geometry_contract.ps1'
-& $geometryGate -SimionExe $SimionExe | ForEach-Object { Write-Host $_ }
+$geometryGate = Join-Path $componentRoot 'workflows/formal_reference/verify_geometry_contract.ps1'
 $runtimeReceipt = Join-Path $inputDir 'formal_simion_runtime_receipt.json'
 if (-not $AnalyzeOnly) {
+  Assert-OaTofFormalAssetsReadable -ProjectRoot $componentRoot
   $runtimeTaskId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__simion__ideal-field-runtime'
   $runtimeRoot = New-OaTofFormalSimionRuntime -ProjectRoot $componentRoot `
     -ArtifactRoot $artifactRoot -PythonExe $python `
     -Destination (Join-Path $artifactRoot "scratch\$runtimeTaskId") `
     -Receipt $runtimeReceipt
-  $runtimeAlias = New-RunExecutionAlias -TargetDirectory $runtimeRoot `
+  $runtimeAlias = New-RunExecutionAlias -TargetDirectory $runtimeRoot -ExecutionRoot $pathContext.execution_root `
     -ExpectedExecutionRelativePaths @('oatof_ideal_grounded.iob')
   $iob = Join-Path $runtimeAlias.execution_alias 'oatof_ideal_grounded.iob'
+  & $geometryGate -PreparedRuntime $runtimeAlias.execution_alias -SimionExe $SimionExe `
+    -RuntimeReportPath (Join-Path $logDir 'actual_runtime_geometry.txt') | ForEach-Object { Write-Host $_ }
 }
 
 $generator = Join-Path $PSScriptRoot 'generate_comsol_consistent_ions.ps1'
@@ -115,13 +122,40 @@ $modes = @(
 )
 
 $ionFiles = @{}
-foreach ($d in $distributions) {
-  $ion = Join-Path $simionDir ("ions_{0}_N{1}.ion" -f $d.Name,$N)
-  $generatorArgs = @{}
-  if ($N -notin @(100,1000)) { $generatorArgs.AllowNonstandardDiagnosticCount = $true }
-  & $generator -N $N -Seed $Seed -HalfWidthXmm $d.HX -HalfWidthYmm $d.HY `
-    -HalfWidthZmm $d.HZ -EnergyStdEv $d.ES -Output $ion @generatorArgs | Out-Null
-  $ionFiles[$d.Name] = $ion
+$analysisSource = $null
+if ($AnalyzeOnly) {
+  $SourceRunPath = (Resolve-Path -LiteralPath $SourceRunPath).Path
+  $sourceGuard = Enter-RunTerminalConsumptionGuard -RunDirectory $SourceRunPath
+  try {
+    $freezeArguments = @('-B','-m','projects.single_reflection_oa_tof_mass_analyzer.analysis.stage_formal_simion_runtime',
+      '--artifact-root',$artifactRoot,'--analysis-source-run',$SourceRunPath,
+      '--destination',(Join-Path $inputDir 'diagnostic_source'),'--receipt',(Join-Path $inputDir 'analysis_source_receipt.json'))
+    foreach ($d in $distributions) { foreach ($m in $modes) { $freezeArguments += @('--case',($d.Name+'__'+$m.Name)) } }
+    $sourceErrorLog = Join-Path $artifactLogDir 'analysis_source_validation.stderr.log'
+    $sourceJson = & $python @freezeArguments 2> $sourceErrorLog
+    if ($LASTEXITCODE -ne 0) {
+      throw "Diagnostic analysis input freezing failed; details: $sourceErrorLog. ACTION=provide_complete_manifest_bound_diagnostic_logs_and_original_ION_or_run_normal_diagnostic"
+    }
+    $analysisSource = $sourceJson | ConvertFrom-Json -AsHashtable -Depth 100
+  } finally { $sourceGuard.Dispose() }
+  if (($PSBoundParameters.ContainsKey('N') -and $N -ne $analysisSource.particle_count) -or
+      ($PSBoundParameters.ContainsKey('Seed') -and $Seed -ne $analysisSource.seed)) {
+    throw 'AnalyzeOnly must retain the source run particle count and seed.'
+  }
+  $N = [int]$analysisSource.particle_count
+  $Seed = [int]$analysisSource.seed
+  foreach ($d in $distributions) {
+    $ionFiles[$d.Name] = [string]$analysisSource.inputs[('ions/ions_{0}_N{1}.ion' -f $d.Name,$N)].path
+  }
+} else {
+  foreach ($d in $distributions) {
+    $ion = Join-Path $simionDir ("ions_{0}_N{1}.ion" -f $d.Name,$N)
+    $generatorArgs = @{}
+    if ($N -notin @(100,1000)) { $generatorArgs.AllowNonstandardDiagnosticCount = $true }
+    & $generator -N $N -Seed $Seed -HalfWidthXmm $d.HX -HalfWidthYmm $d.HY `
+      -HalfWidthZmm $d.HZ -EnergyStdEv $d.ES -Output $ion @generatorArgs | Out-Null
+    $ionFiles[$d.Name] = $ion
+  }
 }
 
 $summaries = [Collections.Generic.List[object]]::new()
@@ -129,10 +163,11 @@ try {
   foreach ($d in $distributions) {
     foreach ($m in $modes) {
     $stem = "{0}__{1}" -f $d.Name,$m.Name
-    $stdout = Join-Path $logDir ($stem + '.log')
+    $stdout = if ($AnalyzeOnly) { [string]$analysisSource.inputs[('logs/'+$stem+'.log')].path }
+      else { Join-Path $logDir ($stem + '.log') }
     $stderr = Join-Path $logDir ($stem + '.stderr.log')
     $particleCsv = Join-Path $resultDir ($stem + '_particles.csv')
-    $args = @(
+    $args = if (-not $AnalyzeOnly) { @(
       '--default-num-particles', [string]$N,
       '--nogui','fly',
       '--trajectory-quality', [string]$TrajectoryQuality,
@@ -144,7 +179,7 @@ try {
       '--adjustable', ("ideal_refl_stage2_enable={0}" -f $m.S2),
       '--adjustable', 'trajectory_log_enable=1',
       $iob
-    )
+    ) } else { @() }
     if (-not $AnalyzeOnly) {
       Write-Host ("Running {0} / {1}" -f $d.Name,$m.Name)
       $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage flight `
@@ -178,12 +213,23 @@ try {
 $summaryCsv = Join-Path $resultDir 'ideal_field_matrix_summary.csv'
 $summaries | Export-Csv -LiteralPath $summaryCsv -NoTypeInformation -Encoding UTF8
 $runConfig = Join-Path $OutputDir 'run_config.json'
-[ordered]@{schema_version=2;run_id=$RunId;project='single_reflection_oa_tof_mass_analyzer';mode='simion_ideal_field_matrix';project_root=(Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer');artifact_retention=$($lifecycleConfig.artifact_retention);capacity_ledger_lifecycle=$($lifecycleConfig.capacity_ledger_lifecycle);inputs=[ordered]@{formal_iob=$formalIob;formal_simion_runtime_receipt=$runtimeReceipt};formal_gate_passed=$false;particles=$N;seed=$Seed} |
-  ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $runConfig -Encoding UTF8
+$runInputs = if ($AnalyzeOnly) {
+  $values = @{analysis_source_receipt=(Join-Path $inputDir 'analysis_source_receipt.json')}
+  foreach ($key in $analysisSource.inputs.Keys) { $values[$key] = [string]$analysisSource.inputs[$key].path }
+  $values
+} else { @{formal_simion_runtime_receipt=$runtimeReceipt} }
+$finalConfig = Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
+$finalConfig.inputs = $runInputs
+$finalConfig.formal_gate_passed = $false
+$finalConfig.analysis_only = [bool]$AnalyzeOnly
+$finalConfig.particles = $N
+$finalConfig.seed = $Seed
+Write-RunJson -Path $runConfig -Value $finalConfig -Depth 100
 $summaryPath = Join-Path $OutputDir 'summary.json'
 [ordered]@{schema_version=1;role='oa_tof_ideal_field_matrix_summary';status='success';cases=$summaries.Count;results='results/ideal_field_matrix_summary.csv'} |
   ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
-$manifestArgs=@((Join-Path $repoRoot 'common\contracts\write_run_manifest.py'),'--run-config',$runConfig,'--status','success','--software','SIMION 2020','--output',$summaryPath)
+$manifestArgs=@((Join-Path $repoRoot 'common\contracts\write_run_manifest.py'),'--run-config',$runConfig,'--status','success','--output',$summaryPath)
+foreach($name in $software){$manifestArgs+=@('--software',$name)}
 foreach($file in Get-ChildItem -LiteralPath $artifactResultDir,$artifactLogDir,$artifactSimionDir -Recurse -File){$manifestArgs+=@('--output',$file.FullName)}
 & $python @manifestArgs
 if($LASTEXITCODE -ne 0){throw 'Ideal-field diagnostic manifest failed.'}
@@ -198,5 +244,6 @@ $summaries | Sort-Object Distribution,Mode | Format-Table Distribution,Mode,Hit,
 Write-Host "Summary: $summaryCsv"
 
 } finally {
-  Exit-HostExecutionLease -Lease $hostExecutionLease
+  try { if ($null -ne $hostExecutionLease) { Exit-HostExecutionLease -Lease $hostExecutionLease } }
+  finally { Restore-RunEnvironment -Names $environmentNames -Snapshot $environmentSnapshot }
 }
