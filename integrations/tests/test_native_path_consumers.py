@@ -14,6 +14,235 @@ CONSUMER_ROOT = REPO
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell unavailable")
 class NativePathConsumerTests(unittest.TestCase):
+    def test_workbench_receipt_evidence_survives_execution_alias_cleanup(self):
+        code = r"""param($Repo,$Root,$Mode)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. (Join-Path $Repo 'common/contracts/run_artifact_workflow.ps1')
+$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'integrations/workflows/single_reflection_flight/execute.ps1'),[ref]$null,[ref]$null)
+$node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Write-InstrumentWorkbenchReceipt'},$true)
+Invoke-Expression $node.Extent.Text
+$run=Join-Path $Root 'persistent';New-Item -ItemType Directory -Path (Join-Path $run 'results/single_reflection') -Force|Out-Null
+$alias=$null;$execution=$run
+if($Mode-eq'alias'){
+ $alias=New-RunExecutionAlias -TargetDirectory $run -ExecutionRoot (Join-Path $Root 'execution') -ExpectedExecutionRelativePaths @('results/single_reflection/workbench_execution_records.json','results/single_reflection/flight_execution_records.json')
+ $execution=$alias.execution_alias
+}
+try{
+ $RunPackage=[pscustomobject]@{run_dir=$execution;artifact_run_dir=$run}
+ $workbenchReceiptPath=Join-Path $execution 'results/single_reflection/workbench_preparation.json'
+ $workbenchEvidencePath=Join-Path $execution 'results/single_reflection/workbench_execution_records.json'
+ $flightEvidencePath=Join-Path $execution 'results/single_reflection/flight_execution_records.json'
+ [IO.File]::WriteAllText($workbenchEvidencePath,'{"kind":"native"}')
+ [IO.File]::WriteAllText($flightEvidencePath,'{"kind":"flight"}')
+ $workbench=@{phase='full_instrument'};$workbenchOkay=$true;$Fly=$true
+ $workbenchExecution=@(@{operation='verify';exit_code=0;native_priority_occupancy_validation=@{checked_points=1;observation_only_points=0}})
+ $flightExecution=@(@{phase='full_instrument';exit_code=0});$nativePhases=@('full_instrument');$phaseCollection=@('batch1')
+ $defaultReplayRequested=$false;$continuationSource=$false
+ if($Mode-eq'external_workbench'){$workbenchEvidencePath=Join-Path ($run+'-sibling') 'evidence.json'}
+ if($Mode-eq'external_flight'){$flightEvidencePath=Join-Path ($run+'-sibling') 'evidence.json'}
+ if($Mode-eq'traversal_workbench'){$workbenchEvidencePath=Join-Path $execution '../outside.json'}
+ if($Mode-eq'traversal_flight'){$flightEvidencePath=Join-Path $execution '../outside.json'}
+ $caught=$null
+ try{Write-InstrumentWorkbenchReceipt -PhaseOkay $true}catch{$caught=$_}
+ if($Mode-notin@('alias','direct')){
+  if($null-eq$caught-or$caught.Exception.Message-notmatch'execution evidence is outside its owning run'){throw 'Foreign evidence reference was accepted'}
+  if(Test-Path -LiteralPath $workbenchReceiptPath){throw 'Foreign receipt was published'}
+ }else{
+  if($caught){throw $caught}
+  if($null-ne$alias){
+   Remove-RunExecutionAlias -ExecutionAlias $alias.execution_alias -TargetDirectory $run
+   if(Test-Path -LiteralPath $execution){throw 'Execution alias was not removed'}
+  }
+  $receipt=Get-Content -LiteralPath (Join-Path $run 'results/single_reflection/workbench_preparation.json') -Raw -Encoding UTF8|ConvertFrom-Json
+  foreach($pair in @(@($receipt.native_validation,'native'),@($receipt.flight_validation,'flight'))){
+   $path=[string]$pair[0].execution_records_path
+   if(-not(Test-WorkflowPathWithin $path $run)){throw 'Receipt retained an ephemeral or external path'}
+   $actual=Get-Content -LiteralPath $path -Raw -Encoding UTF8|ConvertFrom-Json
+   if($actual.kind-cne$pair[1]){throw 'Receipt no longer locates its actual evidence'}
+  }
+ }
+ 'PERSISTENT_RECEIPT_EVIDENCE=PASS'
+}finally{
+ if($null-ne$alias){Remove-RunExecutionAlias -ExecutionAlias $alias.execution_alias -TargetDirectory $run}
+}
+"""
+        for mode in ("alias", "direct", "external_workbench", "external_flight",
+                     "traversal_workbench", "traversal_flight"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                script = root / "receipt.ps1"
+                script.write_text(code, encoding="utf-8")
+                result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(REPO),
+                                         str(root), mode], cwd=root, capture_output=True,
+                                        text=True, encoding="utf-8", timeout=30)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("PERSISTENT_RECEIPT_EVIDENCE=PASS", result.stdout)
+
+    def test_field_and_replay_retain_actual_process_facts_before_checks(self):
+        code = r"""param($Repo,$Python,$Root)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'integrations/runtime/frontend_flight_support.ps1')
+$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'integrations/runtime/local_frontend_field_support.ps1'),[ref]$null,[ref]$null)
+$node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-LocalFieldNative'},$true)
+Invoke-Expression $node.Extent.Text
+$memberAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'integrations/workflows/single_reflection_flight/field_stage.ps1'),[ref]$null,[ref]$null)
+$memberNode=$memberAst.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-FrontendFieldNative'},$true)
+Invoke-Expression $memberNode.Extent.Text
+New-Item -ItemType Directory -Path (Join-Path $Root inputs),(Join-Path $Root logs) -Force|Out-Null
+$Package=[pscustomobject]@{python=$Python;artifact_run_dir=$Root;run_dir=$Root;execution_alias=$null;execution_path_capacity=$null;native_path_preparation=@{calls=0;elapsed_seconds=0.0;transport_bytes=0L}}
+$run=$Root;$log=Join-Path $Root logs;$logs=$log;$StageElapsed=$null;$Limits=@{};$SimionExe='INERT_NOT_A_SOLVER'
+$fieldNativeContext=@{run_dir=$Root;environment=@{}}
+$NativeResourceReleaseId='actual-test-grant'
+$script:nativeCalls=0
+function Invoke-ResourceBudgetedProcess {
+ param($Limits,$RunDir,$UsagePath,$FilePath,$WorkingDirectory,$ArgumentList,$Environment,$RedirectStandardOutput,$RedirectStandardError)
+ $script:nativeCalls++
+ if($mode-eq'unknown'){
+  try{throw 'ORIGINAL_NATIVE_OBSERVATION_FAILURE'}catch{
+   $_.Exception.Data['observed_process_exit_confirmed']=$false
+   $_.Exception.Data['observed_process_returncode']=$null
+   $_.Exception.Data['observed_process_id']=701
+   $_.Exception.Data['observed_process_started_at_utc_ticks']=801L
+   throw
+  }
+ }
+ return @{completed=$true;exit_code=$(if($mode-eq'nonzero'){7}else{0});root_process_id=701;root_process_started_at_utc_ticks=801L;resource_budget_exceeded=$false}
+}
+function Get-HostResourceBudget {param($Role,$Stage);return @{}}
+function Update-HostResourceStage {param($Lease,$Stage,$Budget,$RetainedMemoryBytes);return $Lease}
+function Invoke-FrontendRuntimePython {
+ param($Python,$RepoRoot,$RunDirectory,$Name,$Arguments,[switch]$Json)
+ if($Name-eq'default_replay_prepare'){return @{working_directory=$Root;control_records=@();argument_list=@('--nogui','fly',(Join-Path $Root saved.iob));environment=@{};usage_path=(Join-Path $Root usage.json);stdout=(Join-Path $Root replay.log);stderr=(Join-Path $Root replay.err)}}
+ if($Name-eq'default_replay_compare'){
+  if($NativeOperations.Count-ne1){throw 'Native completion was not recorded before analysis'}
+  throw 'ORIGINAL_COMPARISON_FAILURE'
+ }
+ throw 'Unexpected runtime call'
+}
+foreach($boundary in @('field','member','replay')){foreach($mode in @('nonzero','unknown','analysis_failure')){
+ $NativeOperations=[Collections.Generic.List[object]]::new();$caught=$null;$before=$nativeCalls
+ try{
+  if($boundary-in@('field','member')){
+   if($boundary-eq'field'){Invoke-LocalFieldNative -Arguments @('--nogui') -Directory $Root -Name field_test}
+   else{Invoke-FrontendFieldNative -Arguments @('--nogui') -Directory $Root -Name member_test}
+   if($NativeOperations.Count-ne1){throw 'Field completion was not recorded before analysis'}
+   throw 'ORIGINAL_COMPARISON_FAILURE'
+  }else{
+   $lease=@{};$materialized=@{default_replay_policy=@{scope='fresh_process';comparison_policy='deterministic_trajectory_parity'};gui_case=@{iob_path=(Join-Path $Root saved.iob)};batches=@()}
+   $null=Invoke-FrontendDefaultReplay -Package $Package -Materialized $materialized -HostLease ([ref]$lease) -RunDirectory $Root -RepoRoot $Repo -Python $Python -SimionExe $SimionExe -Limits @{} -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId
+  }
+ }catch{$caught=$_}
+ if($null-eq$caught-or$nativeCalls-ne($before+1)-or$NativeOperations.Count-ne1){throw 'Failure lost actual native facts or restarted the operation'}
+ $fact=$NativeOperations[0]
+ if($fact.resource_release_id-ne$NativeResourceReleaseId-or$fact.observation.process_id-ne701){throw 'Process or grant identity changed'}
+ if($mode-eq'unknown'){
+  if($fact.observation.exit_confirmed-or$null-ne$fact.observation.returncode-or$caught.Exception.Message-ne'ORIGINAL_NATIVE_OBSERVATION_FAILURE'){throw 'Unknown writer was made complete or its cause masked'}
+ }elseif(-not$fact.observation.exit_confirmed-or$fact.observation.returncode-ne$(if($mode-eq'nonzero'){7}else{0})){throw 'Actual stopped process fact changed'}
+ if($mode-eq'analysis_failure'-and$caught.Exception.Message-ne'ORIGINAL_COMPARISON_FAILURE'){throw 'Analysis cause was masked'}
+}}
+"""
+        with tempfile.TemporaryDirectory() as temporary:
+            script = Path(temporary)/"facts.ps1"
+            script.write_text(code, encoding="utf-8", newline="\n")
+            result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(REPO), sys.executable, temporary],
+                cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+
+    def test_phase_completion_captures_scientific_callback_before_owner_parameter_scope(self):
+        code = r"""param($Source,$Root)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
+foreach($name in @('Add-FrontendNativeOperation','Invoke-FrontendFlightPhase')){
+ $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
+ Invoke-Expression $node.Extent.Text
+}
+function Invoke-FrontendRuntimePython {param($Python,$RepoRoot,$RunDirectory,$Name,$Arguments,[switch]$Json)
+ if($Name-like'*.dispatch-plan'){@{estimation=@{kind='inert_fixed'}}|ConvertTo-Json -Depth 5|Set-Content (Join-Path $RunDirectory 'results/extraction.dispatch_plan.json')}
+ if($Name-like'*.materialize-initial'){return $script:initial}
+}
+function Complete-ResourceUsage {param($RunDir,$UsagePath)}
+function Invoke-SimionBatchPhase {
+ param($DispatchPlanPath,$RunDir,$UsagePath,$FirstSpecification,$Replan,$PrepareRemaining,$AfterDrain,$OnProcessCompleted)
+ # Deliberately use the actual owner's parameter name, which dynamically shadows the caller.
+ $record=@{name='batch_1';root_process_id=701;root_process_started_at_utc_ticks=801L;completed=$true;exit_code=0}
+ & $OnProcessCompleted $record
+ return @{prepared=@{materialized=$script:initial};resource_budget_exceeded=$false;processes=@($record)}
+}
+foreach($mode in @('success','science_failure','no_science','no_operations')){
+ $run=Join-Path $Root $mode;New-Item -ItemType Directory -Path (Join-Path $run results) -Force|Out-Null
+ $script:initial=[pscustomobject]@{batches=@();gui_case=$null;coverage='complete_population';pending_particle_ids=@()}
+ $script:scienceCalls=0;$ops=[Collections.Generic.List[object]]::new()
+ $expectedOps=if($mode-eq'no_operations'){0}else{1}
+ $science={param($record)
+  $script:scienceCalls++
+  if($ops.Count-ne$expectedOps){throw 'scientific callback preceded native fact'}
+  if($mode-eq'science_failure'){throw 'original scientific checkpoint failure'}
+ }
+ if($mode-eq'no_science'){$science=$null}
+ $arguments=@{NativeOperations=$ops;NativeResourceReleaseId='actual-lease';Package=[pscustomobject]@{};RunDirectory=$run;ProjectRunsRoot=$Root;RepoRoot=$Root;Python='unused';RuntimeModule='fixture';SimionExe='unused';Limits=@{};Phase='extraction';Prepared=@{dispatch_request_path='inert'};OnProcessCompleted=$science}
+ if($mode-eq'no_operations'){$arguments.NativeOperations=$null}
+ $caught=$null
+ try{$null=Invoke-FrontendFlightPhase @arguments}catch{$caught=$_}
+ if($mode-eq'science_failure'){
+  if($null-eq$caught-or$caught.Exception.Message-ne'original scientific checkpoint failure'){throw 'scientific failure was replaced'}
+ }elseif($caught){throw $caught}
+ if($ops.Count-ne$expectedOps-or$script:scienceCalls-ne$(if($mode-eq'no_science'){0}else{1})){throw 'completion recursively called or dropped'}
+ if($ops.Count-and($ops[0].resource_release_id-ne'actual-lease'-or$ops[0].observation.process_id-ne701)){throw 'actual native identity or lease was dropped'}
+}
+"""
+        with tempfile.TemporaryDirectory() as temporary:
+            script = Path(temporary)/"check.ps1"
+            script.write_text(code, encoding="utf-8", newline="\n")
+            result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(FRONTEND), temporary],
+                cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+
+    def test_prepared_joint_explicit_source_uses_its_original_root_lease(self):
+        import json
+        from common.contracts.capacity_ledger import initialize_capacity_ledger
+        from common.contracts.capacity_protection import load_capacity_protection_leases
+        from common.contracts.test_cross_root_protection import CrossRootProtectionTests
+
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            source, _ = CrossRootProtectionTests().source(base/"source")
+            target = base/"target"
+            target.mkdir()
+            initialize_capacity_ledger(target, objects=[])
+            before = (source/"run_manifest.json").read_bytes()
+            request = base/"request.json"
+            request.write_text(json.dumps(dict(source=str(source), target=str(target))), encoding="utf-8")
+            script = base/"check.ps1"
+            script.write_text(r"""param($Repo,$Entry,$Python,$Request)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+$ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
+foreach($name in @('Invoke-ProjectPython','Get-PreparedJointSourceReferences')){
+ $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
+ Invoke-Expression $node.Extent.Text
+}
+$script:preparedPackage=$null
+$script:pythonRoot=$Repo;$python=$Python
+$data=Get-Content $Request -Raw|ConvertFrom-Json -AsHashtable
+function Invoke-ArtifactWorkflowCapacityAdmission {return @{satisfied=$true;fixture_admission=$true}}
+$references=@(Get-PreparedJointSourceReferences -RunDirectories @($data.source))
+$session=Enter-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -ArtifactRoot $data.target -RunDirectory (Join-Path $data.target 'projects/fixture/runs/new') -CommittedNewBytes 1024 -SourceReferences $references
+try{
+ if($session.source_protection_leases.Count-ne1){throw 'entry did not retain original source capacity owner'}
+ if($session.source_protection_leases[0].artifact_root-eq$session.artifact_root){throw 'source root was relabeled target'}
+ $lease=Get-Content (Join-Path $session.source_protection_leases[0].artifact_root ('common/capacity_protection_leases/'+$session.source_protection_leases[0].lease_id+'.json')) -Raw|ConvertFrom-Json
+ if($lease.committed_new_bytes-ne0){throw 'borrowed data counted as new bytes'}
+}finally{$null=Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -Session $session}
+""", encoding="utf-8", newline="\n")
+            result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(REPO),
+                str(CONSUMER_ROOT/"integrations/workflows/prepared_joint/execute.ps1"), sys.executable,
+                str(request)], cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+            self.assertEqual((source/"run_manifest.json").read_bytes(), before)
+            self.assertFalse(load_capacity_protection_leases(base/"source")["protected_paths"])
+            self.assertFalse(load_capacity_protection_leases(target)["protected_paths"])
+
     def test_mr_continuation_routes_only_explicit_manifest_authorities(self):
         code = r"""param($Support,$Root,$Python)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest

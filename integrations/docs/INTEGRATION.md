@@ -511,3 +511,10 @@ accelerator_interface 与 multipole_ip 的公开入口启动时解析一次公�
 优先级marker保留一次真实完整准备，重复／截断／计数等非法marker改由实际Get-InstrumentNativePriorityOccupancyEvidence直接验证（2有效、6无效）；borrowed容量保留成功和native失败，standalone成功／native／planning仍由原field阶段矩阵覆盖。planning拒绝发生在owner分叉之前，不重复其borrowed组合。仅移除退休的三种marker生成分支，不删除其他字段／Fly风险覆盖。
 
 同production、公共GATE2CPU／2GiB隔离闭包串行对照：原2方法122.910秒→3方法33.112秒，实际完整准备11→3，减少8次；公开墙钟134.409→37.047秒，租约释放差异不归因于夹具。全部对照通过、健康任务自然完成；无商业调用，不宣称完整Owner／Repository预算已经达成。
+
+
+### 2026-10-31 原生消费者薄接线保护
+
+四项项目适配回归覆盖：workbench receipt在alias清理后引用持久证据且拒绝越界；field／member／replay在后续检查前登记观测边界提供的完成事实；公共批次回调在owner动态参数作用域内仍保留科学回调及原错；prepared-joint显式来源使用原根保护租约，借用载荷不计新字节。供应商／进程观测边界stub不冒充实际原生验收，公共完整writer故障矩阵不在消费者复制。
+
+新增三方法的有效软件证据为7.262、2.666、2.837秒；最后一项首次因夹具漏正式脚本的preparedPackage初始值而失败，补齐仅复验该项。第四回调方法逐字匹配并复用原四场景9.654秒证据。无商业调用，不把这些薄回归作为求解或科学资格。
