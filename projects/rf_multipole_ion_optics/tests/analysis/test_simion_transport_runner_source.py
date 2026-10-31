@@ -69,6 +69,88 @@ def write_canonical_source(path: Path) -> None:
 
 
 class SimionTransportRunnerSourceTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('pwsh'), 'PowerShell 7 required')
+    def test_finite_recovery_uses_actual_missing_unit_profiles_and_rechecks_each_case(self):
+        from common.simion.resource_scheduler import plan_simion_dispatch
+        from common.simion.test_resource_scheduler import ResourceSchedulerTests, GIB
+
+        counts = [500, 715, 715, 714, 714, 714, 714, 214]
+        batches = []
+        first = 1
+        for index, count in enumerate(counts, 1):
+            batches.append(dict(index=index, count=count, particle_id_min=first,
+                particle_id_max=first+count-1, simion_particle_id_offset=first-1))
+            first += count
+        fixed = dict(role='simion_single_wave_particle_batch_plan', coverage='complete_population',
+                     particle_count=5000, batches=batches)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'batches.json').write_text(json.dumps(fixed), encoding='utf-8')
+            for mode, profiles in (
+                ('covering', [ResourceSchedulerTests.profile(peak=GIB, cpu=80, observed_batch_work_units=715)]),
+                ('small_profile', [ResourceSchedulerTests.profile(peak=GIB, cpu=8, observed_batch_work_units=500)]),
+                ('case_increase', []),
+            ):
+                initial = plan_simion_dispatch(ResourceSchedulerTests.request(), profiles,
+                    available_memory_bytes=10*GIB, total_physical_memory_bytes=20*GIB, logical_processors=16)
+                self.assertEqual(initial['estimation']['kind'],
+                    'exact_resource_profile' if mode == 'small_profile' else 'formal_first_batch_observation')
+                (root/f'{mode}.json').write_text(json.dumps(initial), encoding='utf-8')
+                (root/f'{mode}.profiles.json').write_text(json.dumps(profiles), encoding='utf-8')
+            script = root/'finite_fixed.ps1'
+            script.write_text(r'''param($Repo,$Root,$Python)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$errors=$null;$entry=Join-Path $Repo 'projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1'
+$ast=[Management.Automation.Language.Parser]::ParseFile($entry,[ref]$null,[ref]$errors)
+if($errors.Count){throw ($errors|Out-String)}
+$pending=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$pendingRuns'},$true)
+$fixed=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$continuationPredecessor-and$pendingRuns.Count-gt0'},$true)
+$observation=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$script:resourceCalibrationRequired-and$pendingRuns.Count-gt0'},$true)
+$python=$Python;$codeRoot=$Repo;$continuationPredecessor='verified-parent';$simion='must-not-launch'
+$solverDir=$Root;$logDir=$Root;$rfDriveKernelLua='frozen-kernel';$dispatchRequest='unused'
+$flyArguments=@('--nogui','--noprompt','fly','--trajectory-quality','8','--programs','1','frozen.iob')
+$batchPlan=Join-Path $Root 'batches.json';$originalPartition=Get-Content $batchPlan -Raw
+function Set-SimionBatchesFromPlan {throw 'fixed recovery repartitioned the mother population'}
+$batchRuns=@((Get-Content $batchPlan -Raw|ConvertFrom-Json).batches|ForEach-Object{
+ [pscustomobject]@{batch=$_;fly2='frozen.fly2';lua_config='frozen.lua'}
+})
+foreach($mode in @('covering','small_profile','case_increase')){
+ $dispatchPlan=Join-Path $Root 'dispatch.json';Copy-Item (Join-Path $Root "$mode.json") $dispatchPlan -Force
+ $resourceProfiles=Join-Path $Root "$mode.profiles.json"
+ $sequence=if($mode-eq'case_increase'){@(8,2)}else{@(2)}
+ foreach($missingIndex in $sequence){
+  $name=if($missingIndex-eq8){'primary'}else{'control'}
+  $continuationUnits=@{}
+  foreach($run in $batchRuns){if($run.batch.index-ne$missingIndex){$continuationUnits[("{0}.batch_{1:D2}"-f$name,[int]$run.batch.index)]=@{action='reuse'}}}
+  $firstSpecification=$null;$replanAction=$null
+  Invoke-Expression $pending.Extent.Text
+  Invoke-Expression $fixed.Extent.Text
+  Invoke-Expression $observation.Extent.Text
+  if($mode-eq'covering'){
+   if($null-ne$firstSpecification-or$script:resourceCalibrationRequired){throw '715 profile was rejected because normal planner temporarily wanted 5000'}
+  }else{
+   if($null-eq$firstSpecification-or$firstSpecification.scheduler_batch.index-ne$missingIndex){throw 'finite recovery bypassed required largest missing-unit observation'}
+   $expected=if($missingIndex-eq8){214}else{715}
+   if($firstSpecification.scheduler_batch.count-ne$expected){throw 'finite observation changed the original complete unit'}
+   $formal=[pscustomobject]@{completed_naturally=$false;observed_peak_process_tree_working_set_bytes=[long]1GB;
+    observed_process_cpu_percent=8;observed_background_cpu_percent=0;available_memory_bytes=[long]10GB;
+    total_physical_memory_bytes=[long]20GB;process_record=[pscustomobject]@{specification=@{scheduler_batch=@{}}}}
+   & $replanAction $formal
+   $updated=Get-Content $dispatchPlan -Raw|ConvertFrom-Json
+   if($updated.estimation.observed_missing_batch_index-ne$missingIndex-or$updated.limits.maximum_concurrency-le1){throw 'finite replan did not retain resource-bounded parallel fixed units'}
+  }
+  $actual=Get-Content $dispatchPlan -Raw|ConvertFrom-Json
+  if(($actual.waves[0].batches|ForEach-Object{$_.count})-join','-ne'500,715,715,714,714,714,714,214'){throw 'finite dispatch partition changed'}
+  if((Get-Content $batchPlan -Raw)-cne$originalPartition){throw 'finite original source partition was rewritten'}
+ }
+}
+exit 0
+''', encoding='utf-8')
+            completed = subprocess.run(['pwsh', '-NoProfile', '-File', str(script), str(REPO_ROOT), directory, sys.executable],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding='utf-8', timeout=30)
+            self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
+
+
     def test_preparation_completion_never_turns_unknown_descendants_into_stopped(self) -> None:
         script = r"""
 $ErrorActionPreference='Stop'

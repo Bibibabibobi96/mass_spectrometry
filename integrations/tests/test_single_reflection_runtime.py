@@ -46,6 +46,22 @@ def write_json(path, value):
 
 
 class WorkbenchMaterializationTests(unittest.TestCase):
+    def test_reporting_propagation_extent_does_not_change_actual_fly_or_field_controls(self):
+        context = _prepare_context(self.preparation, self.field_receipt, file_record(self.downstream_path),
+            self.run, snapshot_root=self.snapshot, flight=self.flight)
+        directory = self.run/'simion/reporting_only_preview'
+        views = []
+        for scope in ('declared_source_to_terminal', 'original_birth_to_terminal'):
+            context['provenance']['propagation_scope'] = scope
+            context['provenance'].setdefault('input_records', {})['validation_contract'] = dict(path=scope+'.json')
+            # Continuation uses actual source/PA/Program/build controls rather
+            # than the full author request or this reporting provenance.
+            views.append(runtime.preview_case_controls(context, context['source'], directory))
+        for key in ('program', 'particles', 'build_spec', 'instance_rows', 'build_metadata'):
+            self.assertEqual(views[0][key], views[1][key], key)
+        self.assertFalse(directory.exists(), 'identity preview must not build an IOB')
+
+
     def test_parent_reference_keeps_native_program_instances_particles_and_clock(self):
         results = []
         original = copy.deepcopy(self.geometry)

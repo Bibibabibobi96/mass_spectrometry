@@ -338,8 +338,17 @@ foreach($status in @('success','failed')){
             self.assertIn("ACTUAL_INTERFACE_REWRITE_FINALIZED=failed", output)
 
     def test_real_profile_exposes_required_file_binding(self):
+        from common.contracts.compile_execution_plan import _binding_authorities, _resolved_inputs
         profile = next(p for p in json.loads(PROFILES.read_text(encoding="utf-8"))["profiles"]
                        if p["profile_id"] == "quadrupole_transport_interface_readiness_candidate")
         self.assertIn("comsol_execution_limits_path", profile["required_bindings"])
+        self.assertEqual(profile["binding_types"]["comsol_execution_limits_path"], "file")
         step = next(s for s in profile["steps"] if s["step_id"] == "comsol_run")
         self.assertEqual(step["arguments"][step["arguments"].index("-LimitsPath")+1], "{comsol_execution_limits_path}")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/"limits.json"
+            _, unavailable = _resolved_inputs(profile, PROJECT, {"comsol_execution_limits_path": str(path)})
+            self.assertTrue(any("comsol_execution_limits_path" in reason for reason in unavailable))
+            path.write_text('{"wall_clock_seconds":17}', encoding="utf-8")
+            records, _ = _binding_authorities(profile, {"comsol_execution_limits_path": str(path)})
+            self.assertEqual(records[0]["name"], "comsol_execution_limits_path")

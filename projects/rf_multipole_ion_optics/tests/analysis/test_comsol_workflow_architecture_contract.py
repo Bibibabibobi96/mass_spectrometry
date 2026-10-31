@@ -564,6 +564,7 @@ $tail=$owner.CatchClauses[0].Extent.Text+'finally'+$owner.Finally.Extent.Text
 $caught=$null;try{. ([scriptblock]::Create("try{throw [InvalidOperationException]::new('original solver failure')}"+$tail))}catch{$caught=$_}
 if($null-eq$caught-or$caught.Exception.Message-cne'original solver failure'){throw 'Primary failure was replaced'}
 if($caught.Exception.Data['failure_closure_error']-cne'injected host release failure'-or$caught.Exception.Data['host_release_error']-cne'injected host release failure'){throw 'Host/closure facts were lost'}
+if($caught.Exception.Data.Contains('host_unknown_result_error')){throw ('Unknown-host Result failed: '+$caught.Exception.Data['host_unknown_result_error'])}
 if($script:releases-ne1-or$script:cleanups-ne0-or-not$hostReleaseState.unknown-or-not$deferFinalization){throw 'Unknown host ownership was released'}
 if(Test-Path (Join-Path $root 'results/execution_completion.json')){throw 'Unconfirmed host published completion'}
 if([IO.File]::ReadAllText($manifestPath)-cne$manifestBefore){throw 'Unconfirmed host changed parent terminal authority'}

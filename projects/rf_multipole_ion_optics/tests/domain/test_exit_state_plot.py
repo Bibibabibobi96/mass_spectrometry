@@ -1,5 +1,9 @@
 import csv
 import json
+import os
+import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from dataclasses import replace
@@ -107,6 +111,53 @@ def write_fixture(
 
 
 class ExitStatePlotTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell7 required")
+    def test_finite_plot_fragment_skips_zero_exit_and_propagates_bad_source(self):
+        repo = Path(__file__).resolve().parents[4]
+        runner = (repo / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
+        start = runner.rfind("  Push-Location $codeRoot", 0, runner.index("    $exitStatePlotLabel="))
+        end = runner.index("  if($axialTopology-ne'none'){", start)
+        fragment = runner[start:end]
+        invoke_start = runner.index("  $invokePython={")
+        invoke_end = runner.index("\n  $metrics=", invoke_start)
+        invoke_python = runner[invoke_start:invoke_end]
+        summary_start = runner.index("  [ordered]@{schema_version=1;role='multipole_finite_3d_transport_summary';status='success';")
+        summary_end = runner.index("\n  $outputs=", summary_start)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixtures = []
+            for name in ("zero", "bad"):
+                folder = root / name
+                folder.mkdir()
+                source = folder / "state.csv"
+                write_fixture(source, selected_count=0)
+                if name == "bad":
+                    source.write_text("particle_id,event,status\n1,source,alive\n", encoding="utf-8")
+                fixtures.append(dict(name=name, folder=str(folder), source=str(source)))
+            quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+            script = "$ErrorActionPreference='Stop'\n$codeRoot=" + quote(repo) + ";$repoRoot=$codeRoot;$python=" + quote(sys.executable) + "\n"
+            script += "$AnalysisLimits=$null\n" + invoke_python + "\n"
+            script += "$fixtures=ConvertFrom-Json " + quote(json.dumps(fixtures)) + "\n$records=[Collections.Generic.List[object]]::new()\n"
+            script += "foreach($fixture in $fixtures){$primaryState=$fixture.source;$RunId='fixture';$ProjectId='rf_multipole_ion_optics';$exitStatePlot=Join-Path $fixture.folder 'plot.png';$exitStatePlotManifest=Join-Path $fixture.folder 'plot.json';$summary=Join-Path $fixture.folder 'summary.json'\ntry{\n"
+            script += fragment + "\n$qualification='UNQUALIFIED';$DesignProfileId='fixture';$resolvedHash='fixture';$primary=[pscustomobject]@{transmission_fraction=0};$control=$primary\n" + runner[summary_start:summary_end]
+            script += "\n$records.Add(@{name=$fixture.name;ok=$true;document=(Get-Content -LiteralPath $summary -Raw|ConvertFrom-Json);png=(Test-Path -LiteralPath $exitStatePlot)})}catch{$records.Add(@{name=$fixture.name;ok=$false;error=$_.Exception.Message;summary_exists=(Test-Path -LiteralPath $summary)})}}\nConvertTo-Json -InputObject ($records.ToArray()) -Depth 10"
+            env = os.environ.copy()
+            env["PYTHONDONTWRITEBYTECODE"] = "1"
+            env["MPLCONFIGDIR"] = str(root / "mpl")
+            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script], cwd=repo,
+                                    env=env, capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            rows = json.loads(result.stdout)
+            self.assertTrue(rows[0]["ok"], rows[0])
+            self.assertFalse(rows[0]["png"])
+            self.assertEqual(rows[0]["document"]["exit_state_plot_status"], "not_applicable")
+            self.assertEqual(rows[0]["document"]["exit_state_plot_reason"], "no_supported_exit_state_rows")
+            self.assertFalse(rows[1]["ok"])
+            self.assertIn("exit-state diagnostic plot failed", rows[1]["error"])
+            self.assertFalse(rows[1]["summary_exists"])
+            self.assertIn("missing columns", result.stderr)
+
+
     def test_no_exit_is_opt_in_and_records_no_image_or_new_payload_hash(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
