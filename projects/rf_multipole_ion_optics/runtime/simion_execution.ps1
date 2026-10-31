@@ -12,14 +12,14 @@ function Get-RfSimionStoppedWriterCompletion {
             if($HostLease.inherited){
                 $result=Invoke-HostResourceTransaction -StatePath $HostLease.state_path -Request @{operation='inherit';token=$token}
                 if($result.status-cne'acquired'-or$result.token-cne$token){throw 'Inherited RF host grant is unconfirmed.'}
-                Exit-HostResourceStage -Lease $HostLease|Out-Null
+                $result=Exit-HostResourceStage -Lease $HostLease -PassThru
             }else{
                 $result=Exit-HostResourceStage -Lease $HostLease -PassThru
                 if($result.status-cne'released'-or$result.token-cne$token){throw 'RF host release is unconfirmed.'}
             }
         }catch{$_.Exception.Data['rf_host_release_unconfirmed']=$true;throw}
         if($NativeOperations.Count){$releases+=@{release_id='simion';completion_receipt=@{host_release=@{
-            inherited=[bool]$HostLease.inherited;token=$token;result=@{status=[string]$result.status;token=$token};error=$null}}}}
+            inherited=[bool]$HostLease.inherited;token=$token;result=$(if($HostLease.inherited){$result}else{@{status=[string]$result.status;token=$token}});error=$null}}}}
     }elseif($NativeOperations.Count){throw 'RF native operations lack their host owner.'}
     $State.completion=@{operations=@($NativeOperations|ForEach-Object{$_});resource_releases=@($releases)}
     $State.released=$true

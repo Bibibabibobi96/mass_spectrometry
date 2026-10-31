@@ -2300,6 +2300,9 @@ foreach($fail in @($false,$true)){
         end = runner.index("\nfunction Assert-MultipoleFieldSolveReport", start)
         assertion_function = runner[start:end]
         required_lines = [
+            "MESH_STRATEGY=physical_segment_hybrid_swept_tetra_v1",
+            "MESH_GLOBAL_EMPTY=0", "MESH_GLOBAL_HAS_PROBLEMS=0",
+            "MESH_VACUUM_EMPTY=0", "MESH_VACUUM_HAS_PROBLEMS=0", "MESH_VACUUM_ELEMENTS=80",
             "STOP_STAGE=mesh_build",
             "FIELD_PHYSICS_CREATED=0",
             "FIELD_STUDIES_CREATED=0",
@@ -2336,9 +2339,9 @@ foreach($fail in @($false,$true)){
                     )
                 escaped_path = str(report_path).replace("'", "''")
                 command = (
-                    f"{assertion_function}\n"
+                    f"$ErrorActionPreference='Stop';\n{assertion_function}\n"
                     f"$cells=Assert-MultipoleMeshBuildReport -Path '{escaped_path}' "
-                    "-MaximumMeshCells 100;"
+                    "-ExpectedMeshStrategy physical_segment_hybrid_swept_tetra_v1 -MaximumMeshCells 100;"
                     'Write-Output "MESH_CELLS=$cells"'
                 )
                 return subprocess.run(

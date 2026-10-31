@@ -7,6 +7,8 @@
 
 ## 当前结论
 
+RF SIMION 继承 host grant 时仍核验原 token，但 completion 记录实际子任务退出结果（继承许可没有独立 release transaction）；许可事实未知时拒绝发布，重复收尾不再次释放。该接线修复不授予物理资格。
+
 finite COMSOL 正常无碰撞 CLI 已接公共 PowerShell owner：原生前持久化 run 外小 Result、request 和实际容量会话，
 收尾使用 COMSOL wrapper 真实 PID／起时／退出和 host release receipt。原命令 `-ResumeFinalization -RunId`
 仅恢复原收尾，不重新解析科学输入或启动原生；明确路径及限制见[COMSOL说明](COMSOL.md#finite-原-cli-的收尾恢复)。

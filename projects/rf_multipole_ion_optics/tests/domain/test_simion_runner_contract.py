@@ -47,17 +47,19 @@ class SimionRunnerContractTests(unittest.TestCase):
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 . (Join-Path $env:RF_TEST_REPO 'common/contracts/run_artifact_workflow.ps1')
 . (Join-Path $env:RF_TEST_REPO 'projects/rf_multipole_ion_optics/runtime/simion_execution.ps1')
-function Exit-HostResourceStage {param($Lease,[switch]$PassThru);$script:exits++;return @{status=$(if($scenario-eq'mismatch'){'retained'}else{'released'});token=$Lease.token}}
-function Invoke-HostResourceTransaction {param($StatePath,$Request);return @{status='acquired';token=$Request.token}}
-foreach($scenario in @('owned','inherited','mismatch')){
- $script:exits=0;$hostReleaseState=@{released=$false;completion=$null}
- $hostExecutionLease=@{token='actual-token';inherited=($scenario-eq'inherited');state_path='fixture'}
+function Exit-HostResourceStage {param($Lease,[switch]$PassThru);$script:exits++;if($Lease.inherited){return $null};return @{status=$(if($scenario-eq'mismatch'){'retained'}else{'released'});token=$Lease.token}}
+function Invoke-HostResourceTransaction {param($StatePath,$Request);$script:inherits++;if($Request.operation-ne'inherit'-or$Request.token-cne'actual-token'){throw 'Actual inheritance identity changed'};return @{status=$(if($scenario-eq'inherited_unknown'){'unknown'}else{'acquired'});token=$Request.token}}
+foreach($scenario in @('owned','inherited','mismatch','inherited_unknown')){
+ $script:exits=0;$script:inherits=0;$hostReleaseState=@{released=$false;completion=$null}
+ $hostExecutionLease=@{token='actual-token';inherited=($scenario-in@('inherited','inherited_unknown'));state_path='fixture'}
  $nativeOperations=@(@{operation_id='fly';observation=@{exit_confirmed=$true;returncode=0;process_id=12;process_started_at_utc_ticks=123};resource_release_id='simion'})
- if($scenario-eq'mismatch'){
+ if($scenario-in@('mismatch','inherited_unknown')){
   $blocked=$false;try{Get-RfSimionStoppedWriterCompletion -HostLease $hostExecutionLease -NativeOperations $nativeOperations -State $hostReleaseState|Out-Null}catch{$blocked=[bool]$_.Exception.Data['rf_host_release_unconfirmed']}
-  if(-not$blocked-or$hostReleaseState.released){throw 'Unconfirmed host release lost its protection'}
+  if(-not$blocked-or$hostReleaseState.released-or($scenario-eq'inherited_unknown'-and$script:exits-ne0)){throw 'Unconfirmed host release lost its protection'}
  }else{
   $facts=Get-RfSimionStoppedWriterCompletion -HostLease $hostExecutionLease -NativeOperations $nativeOperations -State $hostReleaseState;Assert-WorkflowWriterCompletion $facts -PowerShellOwner
+  $receipt=$facts.resource_releases[0].completion_receipt.host_release
+  if($receipt.token-cne'actual-token'-or($scenario-eq'inherited'-and($null-ne$receipt.result-or$script:inherits-ne1))){throw 'Actual inherited null release or grant identity changed'}
   $again=Get-RfSimionStoppedWriterCompletion -HostLease $hostExecutionLease -NativeOperations $nativeOperations -State $hostReleaseState
   if($script:exits-ne1-or$again.resource_releases[0].completion_receipt.host_release.inherited-ne($scenario-eq'inherited')){throw 'Host release repeated or identity changed'}
  }
