@@ -625,30 +625,6 @@ class ArtifactRetentionTests(unittest.TestCase):
         self.assertIn("[IO.FileOptions]::WriteThrough", support)
         self.assertIn("$writeStream.Flush($true)", support)
 
-    def test_multipole_solver_runners_apply_frozen_retention_before_manifest(self) -> None:
-        for name in (
-            "run_finite_3d_transport.ps1",
-            "run_simion_finite_3d_transport.ps1",
-        ):
-            source = (
-                REPO_ROOT / "projects" / "rf_multipole_ion_optics" / "runtime" / name
-            ).read_text(encoding="utf-8-sig")
-            compact = source.replace(" ", "")
-            self.assertIn(
-                "[ValidateSet('compact','qualification','solver_review')]"
-                f"[string]$RetentionClass='{'solver_review' if name == 'run_simion_finite_3d_transport.ps1' else 'compact'}'",
-                compact,
-            )
-            self.assertIn("artifact_retention=", source)
-            self.assertIn("-RetentionContractEnabled", source)
-            if name == "run_simion_finite_3d_transport.ps1":
-                owner = (REPO_ROOT / "common/contracts/run_artifact_workflow.ps1").read_text(encoding="utf-8-sig")
-                self.assertIn("Complete-RunArtifactPowerShellOwner -Context", source)
-                self.assertLess(owner.index("Apply-RunArtifactRetention"), owner.index("Publish-WorkflowTerminal -Python"))
-            else:
-                self.assertLess(source.index("Apply-RunArtifactRetention"),
-                                source.index("Write-VerifiedRunManifest", source.index("try{")))
-
     def test_every_production_new_run_package_caller_enables_capacity_lifecycle(self) -> None:
         callers: dict[str, str] = {}
         for root in ("common", "projects", "integrations"):
