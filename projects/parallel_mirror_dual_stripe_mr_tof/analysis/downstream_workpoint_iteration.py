@@ -12,7 +12,6 @@ import copy
 import json
 import math
 import re
-import sys
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -42,7 +41,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_operating_po
 
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.workpoint_controller_state import (
-    dispatch_controller_request, relative_voltage_step,
+    relative_voltage_step,
 )
 
 
@@ -2688,7 +2687,6 @@ def _load_prior_prism_decision(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--controller-request", choices=("-",), help=argparse.SUPPRESS)
     parser.add_argument("--prior", type=Path)
     parser.add_argument("--observation", type=Path)
     parser.add_argument("--child-manifest", type=Path)
@@ -2727,11 +2725,6 @@ def main() -> int:
                         help="emit the best fully qualified physical workpoint for bunch screening")
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
-    if args.controller_request is not None:
-        if str(args.output) != "-":
-            parser.error("internal controller request writes only to stdout")
-        print(json.dumps(dispatch_controller_request(json.load(sys.stdin))))
-        return 0
     if args.prior_prism_decision_manifest is not None and args.control_stage != "prism_preclosure":
         parser.error("--prior-prism-decision-manifest is only available for prism_preclosure")
     if args.control_stage is not None:

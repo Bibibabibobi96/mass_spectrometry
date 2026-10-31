@@ -406,7 +406,7 @@ function Invoke-WorkpointControllerRequest {
   Push-Location -LiteralPath $RepoRoot
   try{
     $PSNativeCommandUseErrorActionPreference=$false
-    $captured=@($Request|ConvertTo-Json -Depth 100 -Compress|& $Python -X utf8 -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration --controller-request - --output - 2>&1)
+    $captured=@($Request|ConvertTo-Json -Depth 100 -Compress|& $Python -X utf8 -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.workpoint_controller_state --controller-request - --output - 2>&1)
     $exitCode=$LASTEXITCODE
     $output=@($captured|Where-Object{$_-isnot[Management.Automation.ErrorRecord]})
     $stderr=@($captured|Where-Object{$_-is[Management.Automation.ErrorRecord]})

@@ -778,3 +778,24 @@ def dispatch_controller_request(request: Mapping[str, Any]) -> Any:
     if action == "interrupted_topology_recovery_decision":
         return interrupted_topology_recovery_decision(request["history"])
     raise CandidateContractError(f"unknown controller request: {action}")
+
+
+def main() -> int:
+    """Transport one internal controller request through the pure owner."""
+    import argparse
+    import json
+    import sys
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--controller-request", choices=("-",), required=True,
+                        help=argparse.SUPPRESS)
+    parser.add_argument("--output", required=True)
+    args = parser.parse_args()
+    if args.output != "-":
+        parser.error("internal controller request writes only to stdout")
+    print(json.dumps(dispatch_controller_request(json.load(sys.stdin))))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -270,7 +270,8 @@ z=0方法／设置／时钟拒绝及真实当前producer输出消费。仅证明
 ## 工作点控制决策职责
 
 staged工作点的一整次trial规划由既有`workpoint_controller_state.py`纯决策实现，经
-`downstream_workpoint_iteration --controller-request - --output -`传输。层级与正反列次序、
+`workpoint_controller_state --controller-request - --output -`传输，不再为纯状态请求加载数值分析栈。
+数值分析仍由`downstream_workpoint_iteration`承担；旧隐藏controller分支已删除。层级与正反列次序、
 候选缩放、声明边界、L∞步长下限、候选／飞行预算和终态在同一请求返回；PowerShell继续
 核验冻结身份、写入pending checkpoint及调用实际飞行。普通回合只增加一次完整规划请求；
 仅累计拒绝触发局域模型重置时，先发prepare请求并保存，再读取新科学decision并规划trial，
@@ -280,6 +281,9 @@ transport seed 的整批有序候选、bootstrap 四步长与重试比例、已�
 逐次保存/执行次序。物理 gate 每份实际 observation 使用一次完整反馈请求，未将完整
 manifest 验证缩成 record 子集。其他 stencil/recovery 状态转移仍按原入口执行，尚未据此
 宣称全部 PowerShell 科学决策迁移完成。
+同机Python 3.11、公共2CPU／2GiB租约的串行对照中，三个原工作点恢复测试合计
+129.613→27.713秒，原5／8／2组场景、请求和预算断言保持；两个新增行为回归覆盖真实stdio
+非法输入拒绝及PowerShell错误传播。该局部测量不代表完整项目或Repository提速，也不新增科学资格。
 bootstrap stencil 每次调用另用一次完整计划返回五个轴组的有序候选；保留原
 `direction * forward_step * step_scale` 两次乘法。旧记录的重复身份、signed step及SHA
 仍在该候选实际被消费时核验，不因预先规划而提前拒绝未来候选或改变前序checkpoint。

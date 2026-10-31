@@ -581,5 +581,46 @@ class ControllerStateTests(unittest.TestCase):
                 self.assertEqual(result["compose_payload_use"], "keep" if qualified else "stencil")
 
 
+    def test_stdio_owner_preserves_actual_requests_and_rejects_invalid_transport(self):
+        import subprocess
+        import sys
+        from tempfile import TemporaryDirectory
+
+        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.workpoint_controller_state"
+        command = [sys.executable, "-X", "utf8", "-m", module,
+                   "--controller-request", "-", "--output", "-"]
+        request = dict(action="center_trial_physical_gate", observation=dict(status="lost"),
+                       diagnostic_label="非ASCII source")
+        result = subprocess.run(command, input=json.dumps(request, ensure_ascii=False),
+                                cwd=PROJECT.parents[1], capture_output=True, text=True,
+                                encoding="utf-8", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout), dispatch_controller_request(request))
+        self.assertEqual(result.stderr, "")
+        for payload in ("{", json.dumps(dict(action="unknown_action")),
+                        json.dumps(dict(action="center_trial_physical_gate", observation={
+                            "residuals": {"Stripe_target_phase_y_minus_origin_mm": "bad"}}))):
+            with self.subTest(payload=payload):
+                failed = subprocess.run(command, input=payload, cwd=PROJECT.parents[1],
+                                        capture_output=True, text=True, encoding="utf-8", timeout=30)
+                self.assertNotEqual(failed.returncode, 0)
+                self.assertTrue(failed.stderr)
+                self.assertEqual(failed.stdout, "")
+        with TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "must-not-write.json"
+            failed = subprocess.run(command[:-1] + [str(destination)], input=json.dumps(request),
+                                    cwd=PROJECT.parents[1], capture_output=True, text=True,
+                                    encoding="utf-8", timeout=30)
+            self.assertEqual(failed.returncode, 2)
+            self.assertIn("writes only to stdout", failed.stderr)
+            self.assertFalse(destination.exists())
+        old = command.copy()
+        old[4] = module.replace("workpoint_controller_state", "downstream_workpoint_iteration")
+        failed = subprocess.run(old, input=json.dumps(request), cwd=PROJECT.parents[1],
+                                capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(failed.returncode, 2)
+        self.assertIn("unrecognized arguments: --controller-request", failed.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

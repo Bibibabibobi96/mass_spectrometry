@@ -3989,5 +3989,34 @@ Write-Output 'BOOTSTRAP=PASS'
         self.assertIn("& $bunchScreeningRunner @screeningArguments", source)
 
 
+    def test_controller_request_failure_keeps_actual_ps_error_boundary(self):
+        script = r"""
+param($Source,$Python,$Repo)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
+$node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-WorkpointControllerRequest'},$true)
+Invoke-Expression $node.Extent.Text
+$before=(Get-Location).Path
+try {
+ $null=Invoke-WorkpointControllerRequest -Request @{action='unknown_action';state=@{stage='fixture-stage'}} -Python $Python -RepoRoot $Repo
+ throw 'Unknown request was accepted'
+} catch {
+ if($_.Exception.Message-notlike'Controller decision failed: action=unknown_action stage=fixture-stage exit_code=1;*'){throw}
+ if($_.Exception.Message-notlike'*unknown controller request: unknown_action*'){throw}
+}
+if((Get-Location).Path-ne$before){throw 'Caller location was not restored'}
+'CONTROLLER_FAILURE_PROPAGATED'
+"""
+        with TemporaryDirectory() as temporary:
+            fixture = Path(temporary) / "controller.ps1"
+            fixture.write_text(script, encoding="utf-8")
+            result = subprocess.run(["pwsh", "-NoProfile", "-File", str(fixture),
+                                     str(PROJECT / "analysis/run_downstream_workpoint_iteration.ps1"),
+                                     sys.executable, str(PROJECT.parents[1])], cwd=PROJECT,
+                                    capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("CONTROLLER_FAILURE_PROPAGATED", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
