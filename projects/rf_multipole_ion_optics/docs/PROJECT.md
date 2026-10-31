@@ -528,7 +528,7 @@ saved／computed MAT分别26885573／26885713B，已在比较前写入并按solv
 | Result累计 | 314.0028799 | 332.6474731 | +18.6445932 |
 | 独立公开pwsh启动至退出外墙 | 315.7878095 | 334.2198387 | +18.4320292 |
 
-**仅本次N100构造段缩短20.4967%，完整正常命令反而增加5.8368%，未取得整流程收益。** 此为一次串行配对，不是统计稳定倍速；表中区间存在包含关系，不能相加。after的solver准入有io_pressure／WAIT_SECONDS=0观测，但没有累计等待秒字段，不能把wrapper与进程usage残差全归为资源等待。实测较大的增加位于GUI wrapper／进程区间；未单独输出load／每Study／extract计时，不能据此进一步猜测其内部热点。两臂原有GUI动作正常执行，未为性能跳过。
+**仅本次N100构造段缩短20.4967%，完整正常命令反而增加5.8368%，未取得整流程收益。** 此为一次串行配对，不是统计稳定倍速；表中区间存在包含关系，不能相加。after的solver准入有io_pressure／WAIT_SECONDS=0观测，但没有累计等待秒字段，不能把wrapper与进程usage残差全归为资源等待。实测较大的增加位于GUI wrapper／进程区间。原小报告已有每Study计时：std1为6.895367→7.749342秒，std2为22.327502→21.763708秒，两项合计仅增加0.290181秒；因此不能把GUI增加14.429248秒归因于Compute。load／binding／双侧extract／persist仍未分项，不能进一步猜测其内部热点。两臂原有GUI动作正常执行，未为性能跳过。
 
 四份完整冻结科学JSON（设计、mode、interface、numerics）、compiled科学投影、100个ID／native_order／birth／完整源6D／权重／color、质量／驱动、release_files／complete_cohort映射及每ID terminaloutcomes均相等。保持原100个不同birth、9037元素／auto9／hmin0.2mm／每周期80步及80µs，均N100／H67；原count-hit接受与source binding通过。公共particle_state_comparison_core读取两份小state各396事件，key相同、完整母群无缺／额外ID、categorical差异0；296行存在浮点变化（最大时刻差1.2519763004092965e-10µs、横向y差9.711800252887315e-10mm、vx差3.934019332518801e-7m/s），只作差异诊断。未建立积分误差资格，scientific_result／numerical_equivalence仍NOT_EVALUATED，native精确birth echo仍不可用。
 
@@ -537,3 +537,12 @@ native／GUI峰值RSS分别control3401359360／3705380864B、after3641393152／3
 首次冻结control `20261031_124443__test__comsol__rf-release-control`在包创建／native前2.4579062秒失败，原因是scratch闭包遗漏3个已绑定retired descriptor小JSON；原失败保留，r2只从同提交补足12062B原authority，原身份guard两臂实际PASS后使用新runID。未放宽校验或恢复整个历史。小读数、完整逐字段相等性／state诊断及源码差分位于本项目scratch的`rf-feedback-hotspot/agent4/deterministic_release_updates/delivery_v2/modern_two_arm_01f0_r2/comparison_readout/comparison.json`及相邻source_identity／control_after.diff。
 
 本轮未擅自增加规模或重跑。后续高收益动作可先在现正常阶段增加窄load／solve／persist／extract计时定位GUI主成本；已有充分保存观测允许沿现纯helper分析，不能借性能省去明确请求的GUI动作。源构造规模收益仍待更大既定工作量及整命令收益证据，不以N100局部减少关闭Goal。
+
+
+### 确定性接口提取的consumer成本归因
+
+原两臂native metadata中的分窗提取为23.7186873／24.1707277秒，包含实际mphparticle与MATLAB consumer，不能据总时长直接选择向量化。现共有visitor保留原extract_seconds，并分列mphparticle_seconds、consume_seconds、实际调用数和去重消费时刻行数；采样、精度、原时刻／ID和输出记录不变。
+
+2026-10-31由原owner经MCP执行既有RfParticleRecordReductionTest的2个新增方法通过（整测试外层7.4082秒，公共GATE已自然释放）。纯夹具沿真实consumer处理100个稀疏ID×7119时刻／28窗、逆序原生列、晚出生和末NaN：native式4面／stride5调用墙钟0.8883秒，stub读取0.0355秒、consumer0.8070秒；GUI式0面／stride1墙钟0.7773秒，stub读取0.0279秒、consumer0.6931秒。小用例同时核对实际调用和unique rows。该单次合成基线只归因MATLAB侧工作，不模拟COMSOL耗时、不与真实24秒相除称提速，也不把未知末态当损失。
+
+consumer不足1秒，当前没有证据支持优先改其循环；未做向量化。测试循环随后仅原样移至本文件local helper，调用顺序、实参和断言保持，未为机械移动重复长套件。实际GUI内部增加仍需既有report内的load／binding／两次extract／MAT保存分项观测；尚未执行这项新原生测量。原N100局部release减少而完整命令变慢的结论、原112402FAIL及科学NOT_EVALUATED保持，第二consumer端到端性能目标未关闭。

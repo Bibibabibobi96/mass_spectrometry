@@ -19,10 +19,13 @@ assert(~isempty(times)&&all(isfinite(times))&&all(diff(times)>0),'Original solut
 expressions={[physicsIdentifier '.pidx'],'x/1[mm]','y/1[mm]','z/1[mm]', ...
  [physicsIdentifier '.vx/1[m/s]'],[physicsIdentifier '.vy/1[m/s]'],[physicsIdentifier '.vz/1[m/s]']};
 timer=tic;windows=0;maxBytes=0;uniqueRows=0;
+mphparticleSeconds=0;consumeSeconds=0;
 for first=1:windowSamples:numel(times)
  last=min(first+windowSamples-1,numel(times));
  overlap=double(first>1);selected=max(1,first-overlap):last;
+ apiTimer=tic;
  data=mphparticle(model,'dataset',datasetTag,'expr',expressions,'t',times(selected)','dataonly','on');
+ mphparticleSeconds=mphparticleSeconds+toc(apiTimer);
  assert(isstruct(data)&&all(isfield(data,{'d1','d2','d3','d4','d5','d6','d7'})), ...
   'rf:ParticleShape','Particle expression result lacks the explicit seven arrays.');
  window=struct('time_s',times(selected),'first_solution_index',selected(1), ...
@@ -38,9 +41,12 @@ for first=1:windowSamples:numel(times)
    isequal(size(window.(key{1})),shape),'rf:ParticleShape','Particle expression dimensions differ.');
  end
  bytes=whos('window');maxBytes=max(maxBytes,bytes.bytes);
- consume(window);windows=windows+1;uniqueRows=uniqueRows+numel(selected)-overlap;
+ consumeTimer=tic;consume(window);consumeSeconds=consumeSeconds+toc(consumeTimer);
+ windows=windows+1;uniqueRows=uniqueRows+numel(selected)-overlap;
 end
 assert(uniqueRows==numel(times),'Window extraction dropped or repeated original time rows.');
 receipt=struct('windows',windows,'original_time_rows',numel(times), ...
- 'physics_identifier',physicsIdentifier,'window_samples',windowSamples,'maximum_window_bytes',maxBytes,'extract_seconds',toc(timer));
+ 'physics_identifier',physicsIdentifier,'window_samples',windowSamples,'maximum_window_bytes',maxBytes,'extract_seconds',toc(timer), ...
+ 'mphparticle_seconds',mphparticleSeconds,'consume_seconds',consumeSeconds, ...
+ 'mphparticle_calls',windows,'consumed_time_rows',uniqueRows);
 end

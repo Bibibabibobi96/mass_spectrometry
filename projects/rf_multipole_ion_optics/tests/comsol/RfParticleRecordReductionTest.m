@@ -22,6 +22,7 @@ classdef RfParticleRecordReductionTest < matlab.unittest.TestCase
    writeStub(fullfile(temp.Folder,'mphparticle.m'),sprintf([ ...
     'function result=mphparticle(~,varargin)\n' ...
     'data=getappdata(0,''rf_reducer_unit_data'');\n' ...
+    'calls=getappdata(0,''rf_reducer_unit_calls'');if isempty(calls),calls=0;end;setappdata(0,''rf_reducer_unit_calls'',calls+1);\n' ...
     'expr=varargin{find(strcmp(varargin,''expr''))+1};setappdata(0,''rf_reducer_unit_expr'',expr);\n' ...
     'times=varargin{find(strcmp(varargin,''t''))+1};[found,rows]=ismember(times,data.time);assert(all(found));\n' ...
     'assert(strcmp(varargin{find(strcmp(varargin,''dataonly''))+1},''on''));\n' ...
@@ -33,6 +34,27 @@ classdef RfParticleRecordReductionTest < matlab.unittest.TestCase
   end
  end
  methods (Test)
+  function timingReceiptCountsActualCallsAndUniqueRows(testCase)
+   setData(makeData((1:6)',(0:5)',ones(6,1)));
+   [~,receipt]=extract_rf_particle_records([], 'sol','part','cpt',[17 91],2.5,[0 10],100,3);
+   testCase.verifyEqual(receipt.mphparticle_calls,2);
+   testCase.verifyEqual(getappdata(0,'rf_reducer_unit_calls'),2);
+   testCase.verifyEqual(receipt.consumed_time_rows,6);
+   testCase.verifyEqual(receipt.original_time_rows,6);
+   testCase.verifyGreaterThanOrEqual(receipt.mphparticle_seconds,0);
+   testCase.verifyGreaterThanOrEqual(receipt.consume_seconds,0);
+   testCase.verifyGreaterThanOrEqual(receipt.extract_seconds, ...
+    receipt.mphparticle_seconds+receipt.consume_seconds);
+  end
+  function n100OriginalInventoryConsumerCostBaseline(testCase)
+   % Synthetic workload shape only; never a measured COMSOL API or science case.
+   % Small warmup avoids warming with an extra full production-shape traversal.
+   setData(makeData((1:6)',(0:5)',ones(6,1)));
+   extract_rf_particle_records([], 'sol','part','cpt',[17 91],2.5,[0 10],5,3);
+   data=makeN100Inventory;ids=17+3*(0:99);setData(data);
+   % Act and Assert: the local harness preserves both measured modes and every check.
+   exerciseConsumerModes(testCase,data,ids);
+  end
   function preservesEachParticleNarrowerRodRegionMaximum(testCase)
    setData(makeData((1:4)',[1;2;4;8],[9;5;4;1]));
    regions=zeros(2,2,2);regions(:,:,1)=[3 10;0 10];regions(:,:,2)=[3 10;2 10];
@@ -124,7 +146,7 @@ fid=fopen(path,'w');cleanup=onCleanup(@()fclose(fid));fprintf(fid,'%s',text); %#
 end
 function clearReaderFixture
 clear mphparticle mphsolinfo
-for key={'rf_reducer_unit_data','rf_reducer_unit_expr'}
+for key={'rf_reducer_unit_data','rf_reducer_unit_expr','rf_reducer_unit_calls'}
  if isappdata(0,key{1}),rmappdata(0,key{1});end
 end
 end
@@ -157,4 +179,50 @@ else
  data=makeData((1:4)',(0:3)',ones(4,1));data.d1(:,2)=1;
  expectedError='rf:ParticleIndex';
 end
+end
+
+function data=makeN100Inventory
+% Full distinct IDs, late births beyond the first window and observed endings.
+count=7119;particles=100;time=linspace(0,80e-6,count)';
+data=struct('time',time,'d1',repmat(1:particles,count,1));
+for k=2:7,key=sprintf('d%d',k);data.(key)=NaN(count,particles);end
+for index=1:particles
+ first=1+mod(index*17,600);last=count-mod(index,3)*113;rows=(first:last)';
+ data.d2(rows,index)=index/100+sin(rows/1000)/100;
+ data.d3(rows,index)=cos(rows/1000)/100;data.d4(rows,index)=80*(rows-first)/(count-first);
+ data.d5(rows,index)=1;data.d6(rows,index)=2;data.d7(rows,index)=1000;
+ data.d1(1:first-1,index)=NaN;
+end
+% Native output columns may be unordered; mapping remains the original source IDs.
+data=reorderColumns(data,particles:-1:1);
+end
+
+function exerciseConsumerModes(testCase,data,ids)
+   modes={'native','gui'};
+   for modeIndex=1:numel(modes)
+    if strcmp(modes{modeIndex},'native'),planes=[20 40 60 60-1e-6];stride=5;
+    else,planes=[];stride=1;end
+    setappdata(0,'rf_reducer_unit_calls',0);timer=tic;
+    [records,receipt]=extract_rf_particle_records([], 'sol','part','cpt',ids,planes,[0 80],stride,256);
+    elapsed=toc(timer);
+    testCase.verifyEqual(receipt.original_time_rows,7119);
+    testCase.verifyEqual(receipt.consumed_time_rows,7119);
+    testCase.verifyEqual(receipt.mphparticle_calls,28);
+    testCase.verifyEqual(getappdata(0,'rf_reducer_unit_calls'),28);
+    testCase.verifyEqual(cellfun(@(r)r.particle_id,records),ids);
+    for index=1:100
+     record=records{index};active=find(isfinite(data.d2(:,101-index)));
+     testCase.verifyEqual(record.solution_index(1),active(1));
+     testCase.verifyEqual(record.solution_index(end),active(end));
+     testCase.verifyEqual(record.time_s,data.time(record.solution_index));
+     testCase.verifyEqual(record.position_mm,[data.d2(record.solution_index,101-index), ...
+      data.d3(record.solution_index,101-index),data.d4(record.solution_index,101-index)]);
+     testCase.verifyEqual(record.velocity_m_s,[data.d5(record.solution_index,101-index), ...
+      data.d6(record.solution_index,101-index),data.d7(record.solution_index,101-index)]);
+     testCase.verifyEqual(record.terminal_observation.native_termination_cause,'not_observed');
+     if strcmp(modes{modeIndex},'gui'),testCase.verifyEqual(record.solution_index,active);end
+    end
+    fprintf('RF_CONSUMER_BASELINE_JSON=%s\n',jsonencode(struct('mode',modes{modeIndex}, ...
+     'api','deterministic_stub_not_comsol','wall_seconds',elapsed,'receipt',receipt)));
+   end
 end
