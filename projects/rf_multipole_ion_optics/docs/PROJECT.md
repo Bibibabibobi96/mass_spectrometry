@@ -555,3 +555,10 @@ RF公共visitor保持原256逻辑窗口。已知N100且原库存不超过7119时
 逻辑窗口仍28次，端点、每窗口极值、firstAbove、穿面邻接及稀疏采样集合不变；API调用目标28→14，重复请求边界行27→13。另外14个逻辑重叠来自同次API返回切片，不能称独立vendor重读；跨真实API边界仍核对重叠及ID／6D／生命周期。receipt区分逻辑windows、实际mphparticle_calls、消费行数、API请求行数及API最大返回量；原maximum_window_bytes保持逻辑含义。
 
 2026-10-31 原owner经MCP执行完整 RfParticleRecordReductionTest：24项通过，公开MCP调用墙钟11.7402秒，公共GATE已释放；覆盖全部逻辑窗口等价、真实extractor手算端点／极值／firstAbove／完整6D及跨实际API边界错误传播。N100夹具实际API为14次、逻辑窗口28次、unique rows 7119、请求行7132；vendor接口为确定性stub，不是COMSOL性能证据。未运行新COMSOL冷读或完整正常命令，不宣称调用数减少已成为耗时收益，端到端性能目标仍未达。后续先只读同一受保护模型比较API批量，再决定当前HEAD冻结源码的完整公开命令对照，旧503文件树不作最终源码证据。
+
+
+2026-10-31 以已提交 fd5ab025 的12文件小源码闭包，经公共owner执行只读冷开比较 `20261031_172033__test__comsol__rf-api-batch-cold`。来源为成功的 `20261031_124715__test__comsol__rf-release-control` 的48,589,906B模型；一次 mphload，零新Compute、零父模型保存，公共SourceReferences与持续FileShare.Read保护原结果。全部28个实际逻辑窗口（原时钟、原生ID、完整6D及NaN）和观测统计逐项相等；不是重新评价项目67hits或科学资格，scientific_result仍NOT_EVALUATED。
+
+同一固定顺序对照中，API28→14，visitor调用墙钟24.0988→14.6059秒，内部extract计时23.9121→14.5497秒；独立API重读边界27→13，逻辑窗口仍28，原7119时刻不减采样。模型load15.6607秒，整次公开命令149.7001秒，native wrapper123.9683秒；两臂共享一次load，未排除先后顺序缓存偏差，不能把局部差值写成完整正常命令提速或RF性能目标完成。
+
+真实usage峰值RSS2,963,816,448B、run临时占盘49,034,876B；占盘超出冻结32MiB预算，保留原RESOURCE_BUDGET_WARNING，不修改在途输入或强杀健康任务。无显式父copy/save不等于COMSOL运行时零临时写；后续预算必须计入本次实测原生临时/recovery余量。公共Result最终success/complete，terminal_published、capacity_finalized、lease_released、writers_confirmed、execution_alias_removed均true；实际launcher-attempt-1 PID30308/exit0。父小证据及模型stat前后不变，stat只是补充审计，防写由持续handle提供。路径准备0.1291秒/1调用/transport_bytes0。稳定证据为该run的results/api_batch_comparison.json、logs/resource_usage.json与launcher_completion.json，以及scratch/rf-feedback-hotspot/agent4/api_batch_coldread同run目录的小Result、parent_audit与公开墙钟。此只读原生边界通过，不代替最终正常CLI两臂、另一生产consumer或完整软件回归。
