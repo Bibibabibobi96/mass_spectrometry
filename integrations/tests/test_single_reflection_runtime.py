@@ -832,6 +832,7 @@ class FourSlotIobTests(unittest.TestCase):
         request, run, _ = fixture(self.root)
         prepare(request, run)
         self.geometry = json.loads((run / "inputs/frontend_geometry.json").read_text())
+        self.interface_oatof = json.loads((run / "inputs/components/oatof/resolved_design.json").read_text())
         self.rows = []
         domains = {"flight_tube" if r["role"] == "flight_tube_shield" else r["role"]: r
                    for r in self.geometry["downstream_pa_instances"]}
@@ -866,6 +867,7 @@ class FourSlotIobTests(unittest.TestCase):
                      for kind in ("rf_reference", "pulse_delta")]
         spec = dict(schema_version=1, role="single_reflection_iob_build", instances=self.rows,
                     response_fields=responses,
+                    interface_field_probes=runtime.interface_field_probes(self.geometry, self.interface_oatof),
                     native_priority_occupancy_probes=[
                         dict(label="known_metal", point_mm=[0., 0., 0.], expected_instance=3, expected_electrode=True,
                              expected_node_electrode=True, expected_adjacent_metal_cell=True, basis=dict(kind='resolved_physical_sample',
@@ -908,6 +910,14 @@ class FourSlotIobTests(unittest.TestCase):
                         spec['fixture_nodes'][f'n_{g[0]+dx}_{g[1]+dy}_{g[2]+dz}'] = [value, metal]
         if mode == 'verify_missing_probes':
             spec.pop('native_priority_occupancy_probes')
+        if mode == 'verify_missing_interfaces':
+            spec.pop('interface_field_probes')
+        if mode in {'verify_interface_endpoint_roundoff', 'verify_interface_outside'}:
+            # Exact frozen 093627 endpoint arithmetic: 1 ULP above nz-1.
+            self.rows[2]['placement']['z_mm'] = -41.929186803411028
+            self.rows[2]['grid'].update(nz=3201, dz_mm=.1)
+            for point in spec['interface_field_probes'][0]['points_mm']:
+                point[2] = 278.07081319658903 + (1e-6 if mode.endswith('outside') else 0.)
         spec_path = self.root / "build_spec.lua"
         spec_path.write_text("return " + _lua_value(spec) + "\n", encoding="utf-8")
         mock = self.root / "mock.lua"
@@ -949,6 +959,15 @@ function simion.pas:open(...)
   assert(row.path==path,'actual response path changed')
   local pa={}
   for key,value in pairs(row.grid) do pa[key]=value end
+  function pa:point() return 0,true end
+  function pa:potential_vc(x,y,z)
+   if mode=='verify_interface_endpoint_roundoff' or mode=='verify_interface_outside' then
+    assert(z<=self.nz-1,'fixture z outside PA')
+   end
+   return mode=='verify_interface_response' and 1 or 0
+  end
+  function pa:inside_vc() return true end
+  function pa:field_vc() return 0,0,17 end
   if mode=='verify_response_grid' then pa.dx_mm=pa.dx_mm*2 end
   response_active=true
   function pa:close() assert(response_active);response_active=false;response_closed=response_closed+1 end
@@ -995,6 +1014,7 @@ function simion.command(command)
    item.x,item.y,item.z=p.x_mm,p.y_mm,p.z_mm
    item.az,item.el,item.rt,item.scale=p.az_deg,p.el_deg,p.rt_deg,p.scale
    function pa:point(x,y,z)
+    if z==1000 or index==2 then return 0,mode~='verify_interface_metal' end
     assert(index==((mode=='verify_source_fine' or mode=='verify_crop_fine_layer') and 5 or 3),'wrong physical-sample source instance')
     local probe=spec.native_priority_occupancy_probes[1]
     if spec.fixture_nodes then
@@ -1005,6 +1025,7 @@ function simion.command(command)
     return 4372.125,not (mode=='verify_source_node_missing' or mode=='verify_source_sheet_missing' or mode=='verify_source_boundary_missing')
    end
    function item:wb_to_pa_coords(x,y,z)
+    if z~=0 then return 1000,1000,1000 end
     if spec.fixture_nodes then return unpack(spec.native_priority_occupancy_probes[1].basis.gu) end
     assert(x==0 and y==0 and z==0,'diagnostic world point moved')
     return .25,-1.5,2.75
@@ -1020,6 +1041,13 @@ function simion.command(command)
     return mode=='verify_source_parent'
    end
    function pa:load() error('verify cannot reload or replace a PA') end
+   function pa:potential_vc() return mode=='verify_interface_potential' and 1 or 0 end
+   function pa:inside_vc() return true end
+   function pa:field_vc()
+    if mode=='verify_interface_nonfinite' then return 0/0,0,0 end
+    return index==2 and 2.5 or 0,0,index==3 and 23 or 0
+   end
+   function item:pa_to_wb_orient(x,y,z) if index==2 then return -z,y,x end return x,y,z end
    if index==5 and mode=='verify_fine_grid' then pa.nx=pa.nx+1 end
    if index==2 then
     if mode=='verify_grid' then pa.nx=pa.nx+1 end
@@ -1055,7 +1083,6 @@ if mode:match('^verify') then assert(reference_closed,'temporary path reference 
 """, encoding="utf-8", newline="\n")
         return subprocess.run([str(LUA), str(mock), str(spec_path), str(BUILDER), mode],
                               cwd=self.root, capture_output=True, text=True, timeout=20)
-
     def test_four_physical_slots_keep_provider_pose_and_prepared_companions(self):
         result = self.invoke()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

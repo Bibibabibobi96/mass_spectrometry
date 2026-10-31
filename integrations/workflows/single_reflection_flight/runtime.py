@@ -368,6 +368,46 @@ def iob_pa_copies(context: dict) -> list[dict]:
     return copies
 
 
+def interface_field_probes(geometry: dict, oatof: dict) -> list[dict]:
+    """Declare bounded checks at the provider's grounded ideal-grid interfaces.
+
+    These are screening boundaries of the supported split-field model, not a
+    certificate of the omitted finite-grid edge coupling. Normal field jumps
+    across an ideal electrode are permitted. No PA payload is read here.
+    """
+    g = geometry['accelerator_projection']
+    parent = geometry['numerical_domains']['parent']
+    downstream = {row['role']: row for row in geometry['downstream_pa_instances']}
+    reflectron = downstream['reflectron']
+    coord = oatof['coordinate_convention']
+    definitions = (
+        ('accelerator_exit', 3, [g['axis_x_mm'], g['axis_y_mm'], g['grid2_z_mm']],
+         g['bore_width_mm'] / 4, parent['cell_mm_xyz']['z'],
+         min(parent['cell_mm_xyz']['x'], parent['cell_mm_xyz']['y'])),
+        ('reflectron_entry', 2, [coord['reflectron_axis'][0], coord['reflectron_axis'][1],
+                               oatof['geometry_mm']['L_flight']],
+         oatof['geometry_mm']['bore_r'] / 2,
+         reflectron['grid_numerics']['cell_axial_mm'],
+         reflectron['grid_numerics']['cell_radial_mm']),
+    )
+    probes = []
+    for label, instance, center, radius, axial_step, tangent_step in definitions:
+        points = [list(center)]
+        for axis in (0, 1):
+            for sign in (-1, 1):
+                point = list(center)
+                point[axis] += sign * radius
+                points.append(point)
+        probes.append(dict(label=label, instance_index=instance, grounded_instance_index=1,
+            normal=[0., 0., 1.], points_mm=points, axial_step_mm=axial_step,
+            tangent_step_mm=tangent_step, physical_surface='zero_thickness_grounded_ideal_grid',
+            expected_potential_v=0., voltage_tolerance_v=1e-8,
+            tolerance_basis='bounded imposed-zero-electrode binary64/interpolation audit; not field accuracy',
+            validity_scope='declared interior grid samples only; finite-grid edge coupling unqualified'))
+    return probes
+
+
+
 def compile_case_controls(context: dict, source: list[dict]) -> tuple[str, dict, list[dict]]:
     """Compile actual Program and instance controls without staging native assets."""
     snapshot_root = Path(context["snapshot_root"])
@@ -423,12 +463,14 @@ def preview_case_controls(context: dict, source: list[dict], directory: Path) ->
             cache[path] = record
         seed_records.append(record)
     probes = native_priority_occupancy_probes(context["geometry"], context["design"])
+    interfaces = interface_field_probes(context['geometry'], context['oatof'])
     checked = sum(any(key in row for key in ("expected_instance", "expected_electrode", "expected_node_electrode"))
                   for row in probes)
     return dict(program=program, particles=render_restart_fly2(source), build_metadata=metadata, instance_rows=rows,
         native_priority_occupancy_expected_counts=dict(checked_points=checked, observation_only_points=len(probes) - checked),
         build_spec="return " + _lua_value(dict(schema_version=1, role="single_reflection_iob_build", instances=rows,
             response_fields=response_fields,
+            interface_field_probes=interfaces,
             native_priority_occupancy_probes=probes,
             seed_iob=(seed / seed_names[0]).as_posix(), output_iob=iob.as_posix())) + "\n",
         builder_path=str(Path(context["snapshot_root"]) / "integrations/workflows/single_reflection_flight/build_iob.lua"),

@@ -402,3 +402,12 @@ seed／placeholder沿[公共小配套冻结](../../common/simion/README.md#共�
 仅将OA向量减半，保留其余operator；Refine、原生operation和probe／聚合PA运输均0，七原generation及七原CSV直引，pulse绝对scale=0.5。
 它们只证明该冻结场构建、静态probe和受保护成员复用；不证明粒子冷却、N=100轨迹功能或整机科学资格。
 本提交新增的收尾参数拒绝与seed运输顺序由软件回归验证，没有重跑上述Refine，也不以fixture零native替代真实科学Fly。
+
+### 同步已冻结的理想栅接口审计源码
+
+`111659`原生实际冻结builder包含OA出口／reflectron入口的grounded-sheet与有界endpoint检查，
+b18源码尚未包含该部分。本次从当前同一core前向还原无路径transport的CLI builder，
+与该run冻结builder完整18311字节相等；runtime按同一resolved几何提供两组五点接口声明。
+这同步已取得原生审计的源码，不新增场或Fly，不把诊断变化当成场／轨迹科学identity。
+既有理想0V栅与粗网格适用范围保持；软件负例覆盖缺失声明、非电极、非零势／非有限场、
+坐标二进制roundoff与真实越界，不能扩称有限边缘场或Formal资格。
