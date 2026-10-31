@@ -9,8 +9,9 @@ from typing import Any
 
 from projects.orthogonal_accelerator.analysis.component_focus_analysis import _load_campaign
 from projects.orthogonal_accelerator.analysis.accelerator_time_focus import accelerator_state
+from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile
 from projects.orthogonal_accelerator.simion.two_zone_candidate import (
-    _load_geometry_profile, compile_closed_two_zone_accelerator,
+    compile_closed_two_zone_accelerator,
 )
 
 
@@ -93,7 +94,7 @@ def derive(campaign_path: Path) -> dict[str, Any]:
         raise ComponentFocusPAPlanError("component focus PA mesh is invalid")
     declared_spans = [_positive(value, "PA span") for value in span]
     mesh_xyz = [_positive(value, "PA mesh") for value in mesh]
-    profile = _load_geometry_profile(campaign["geometry_profile_id"])
+    profile = load_geometry_profile(campaign["geometry_profile_id"])
     # The provider derives transverse PA extents from its closed grounded shell,
     # retaining one mesh cell on either side.  Consumers cannot waste cache
     # capacity by prescribing a larger numerical aperture.

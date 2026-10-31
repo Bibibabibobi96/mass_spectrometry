@@ -1,11 +1,13 @@
 """Pure geometry regressions for the existing sectioned provider adapter."""
 from __future__ import annotations
 
+from projects.orthogonal_accelerator.analysis.sectioned_geometry import resolve_bare_three_zone_component
+
 import copy
 import unittest
 
 from projects.orthogonal_accelerator.simion.bare_three_zone_component import (
-    resolve_bare_three_zone_component, render_bare_three_zone_electrode_body,
+    render_bare_three_zone_electrode_body,
 )
 from projects.orthogonal_accelerator.simion.sectioned_accelerator import render_accelerator_local_geometry
 

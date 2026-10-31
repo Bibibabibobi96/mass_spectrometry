@@ -17,7 +17,7 @@ from typing import Any
 from common.contracts.file_identity import file_sha256
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.ion_release.release import validate_materialized_release, validate_release_spec
-from projects.orthogonal_accelerator.simion.two_zone_candidate import _load_geometry_profile
+from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile
 
 _CSV_FIELDS = ("kind", "ion", "code", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")
 _REQUIRED = {
@@ -63,7 +63,7 @@ def _load_campaign(path: Path) -> dict[str, Any]:
             or not math.isfinite(_finite(point["instance_center_y_mm"], "instance center y"))
             or not math.isfinite(_finite(point["finite_3d_gain_correction_v"], "finite-3D gain correction"))):
         raise ComponentFocusError("component-focus must declare an exit or downstream -z focus plane")
-    profile = _load_geometry_profile(value["geometry_profile_id"])
+    profile = load_geometry_profile(value["geometry_profile_id"])
     electrode_count = 4 + int(profile["ring_count"])
     voltages = point["electrode_voltages_v"]
     if not isinstance(voltages, list) or len(voltages) != electrode_count:
@@ -160,7 +160,7 @@ def _ideal_two_zone_contrast(sources: dict[int, dict[str, float]], campaign: dic
     deliberately remove transverse finite-electrode variation; this is a diagnostic,
     not a physical qualification result.
     """
-    profile = _load_geometry_profile(campaign["geometry_profile_id"])
+    profile = load_geometry_profile(campaign["geometry_profile_id"])
     gap1, gap2 = float(profile["gap_1_mm"]), float(profile["gap_2_mm"])
     point = campaign["operating_point"]
     voltages = point["electrode_voltages_v"]
@@ -232,7 +232,7 @@ def _component_energy_per_charge_v(mass_amu: float, charge_state: float, velocit
 
 
 def _target_axial_energy_per_charge_v(campaign: dict[str, Any], release_z_mm: float | None = None) -> float:
-    profile = _load_geometry_profile(campaign["geometry_profile_id"])
+    profile = load_geometry_profile(campaign["geometry_profile_id"])
     gap1, gap2 = float(profile["gap_1_mm"]), float(profile["gap_2_mm"])
     release_z = _finite(
         campaign["release_spec"]["geometry"]["center_mm"][2] if release_z_mm is None else release_z_mm,

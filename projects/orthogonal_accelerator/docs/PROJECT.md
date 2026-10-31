@@ -40,6 +40,27 @@
 封闭二区可用SIMION的planar x镜像存储半域；物理跨度、存储跨度、镜像面和IOB原点均进入身份。
 带侧孔几何不复用封闭PA资格。提供者机制的调用与冻结闭包回归不等于新的原生场或飞行验收。
 
+### 机械模型与求解器投影
+
+`analysis/two_zone_geometry.py`公开`load_geometry_profile`与`resolve_closed_two_zone_geometry`，
+拥有封闭二区物理profile、源包络、屏蔽/栅框/环及侧口解析；三区显式机械解析由
+`analysis/sectioned_geometry.py`拥有。装配接口、聚焦分析、SIMION及经canonical数据消费的CAD/采样
+共用这些模型，不另存器件尺寸。SIMION adapter只校验本次PA网格/包络、投影原点并发射GEM；
+`resolve_closed_two_zone_electrodes`允许实际装配取得已校验PA投影，不先生成再丢弃一份独立PA GEM。
+
+二区机械接口使用已有`orthogonal_accelerator_exit_origin_v1`：出口z=0，当前profile首区侧口z=32 mm。
+旧`accelerator_centered_transverse_local_z_mm`接口把PA留白混入机械坐标；campaign中的6 mm来自
+`focus_padding - focus_offset`，不是新增机械尺寸。机械接口不再消费`local_pa`的span、mesh、margin或原点；
+非法机械输入仍拒绝，非法PA在SIMION准备边界拒绝。默认独立PA仍投影到出口z=6 mm，原默认GEM、
+布局及PA坐标canonical电极保持相同；改变数值原点只改变该投影，不移动机械接口。
+
+两份活动二区composition plan已沿原compiler重编：机械坐标减去旧PA平移，同时位姿增加旋转后的平移，
+世界端口、法向和间隙不变。装配adapter将机械pose转换为canonical PA pose一次，CAD与电位采样继续
+消费canonical数据对应的同一pose。旧封存run和旧frame记录不改写，不能将旧PA坐标直接当新机械frame；
+新活动plan使用机械frame；MR消费者对已有合法PA frame按其原坐标显式解释，未知frame拒绝。
+跨frame接口比较先投影到同一声明frame，不改写旧plan；其他provider物理接口不匹配仍拒绝。
+本次纯软件几何/依赖等价不授予新求场、Fly、GUI/CAD或科学资格，也不因机械frame命名迁移自动重Refine。
+
 ### 组件工作流与验收
 
 `simion/run_component_focus_workflow.ps1`消费窄器件request与公共ion-release spec，先冻结

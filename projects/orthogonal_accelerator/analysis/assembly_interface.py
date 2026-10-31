@@ -9,12 +9,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from projects.orthogonal_accelerator.simion.bare_three_zone_component import (
+from projects.orthogonal_accelerator.analysis.sectioned_geometry import (
     resolve_bare_three_zone_component,
 )
-from projects.orthogonal_accelerator.simion.two_zone_candidate import (
-    compile_closed_two_zone_accelerator,
-)
+from projects.orthogonal_accelerator.analysis.two_zone_geometry import resolve_closed_two_zone_geometry
 
 
 def _validate_assembly_inputs(
@@ -49,7 +47,7 @@ def _two_zone_component_electrodes(geometry: Mapping[str, Any]) -> list[dict[str
 def resolve_assembly_interface(
     requirements: Mapping[str, Any], *, geometry_profile_id: str | None,
 ) -> dict[str, Any]:
-    """Compile a schema-1 local mechanical interface from explicit OA inputs.
+    """Resolve a schema-1 local mechanical interface from explicit OA inputs.
 
     The profile selects the existing two-zone geometry; for the explicit
     three-zone geometry it may be null when no named profile exists; a label
@@ -57,20 +55,22 @@ def resolve_assembly_interface(
     the outer wall, not its midplane.
     Two-zone geometry publishes its axial exit and any actual side entry;
     three-zone geometry publishes its confirmed side entry only. Invalid inputs
-    and unknown variants raise ValueError. No files or inputs are changed.
+    and unknown variants raise ValueError. Two-zone positions use the existing
+    orthogonal_accelerator_exit_origin_v1 frame, independent of local PA padding;
+    old PA-coordinate interfaces are not silently relabelled. No files or inputs
+    are changed and no solver numerical settings are required.
     """
     variant = _validate_assembly_inputs(requirements, geometry_profile_id)
     if variant == "two_zone":
         if geometry_profile_id is None:
             raise ValueError("two-zone assembly requires an explicit geometry_profile_id")
-        resolved = compile_closed_two_zone_accelerator(
+        resolved = resolve_closed_two_zone_geometry(
             requirements, geometry_profile_id=geometry_profile_id,
-        ).resolved_electrodes
-        geometry = resolved.to_dict()
-        frame = geometry["coordinate_frame"]
-        if geometry["acceleration_direction"] != "-z":
-            raise ValueError("closed two-zone axial exit must have negative-z acceleration")
-        opening = geometry["grounded_enclosure"]["exit_opening_box_mm"]
+        )
+        frame = "orthogonal_accelerator_exit_origin_v1"
+        opening = dict(x_min_mm=-resolved.aperture_half_x_mm, x_max_mm=resolved.aperture_half_x_mm,
+                       y_min_mm=-resolved.aperture_half_y_mm, y_max_mm=resolved.aperture_half_y_mm,
+                       z_min_mm=0.0, z_max_mm=resolved.enclosure.guard_wall_mm)
         x_min, x_max = float(opening["x_min_mm"]), float(opening["x_max_mm"])
         y_min, y_max = float(opening["y_min_mm"]), float(opening["y_max_mm"])
         z_min, z_max = float(opening["z_min_mm"]), float(opening["z_max_mm"])
@@ -98,7 +98,12 @@ def resolve_assembly_interface(
                     "width_axis": [1, 0, 0], "height_axis": [0, 0, 1],
                 },
             }
-        component_electrodes = _two_zone_component_electrodes(geometry)
+        component_electrodes = _two_zone_component_electrodes({
+            "grounded_enclosure": {"component_electrode_id": 15},
+            "repeller": {"component_electrode_id": 22},
+            "grid_supports": [{"component_electrode_id": item["id"]} for item in resolved.grid_supports],
+            "rings": [{"component_electrode_id": item["id"]} for item in resolved.rings],
+        })
     elif variant == "three_zone":
         resolved = resolve_bare_three_zone_component(dict(requirements))
         port = resolved["port"]

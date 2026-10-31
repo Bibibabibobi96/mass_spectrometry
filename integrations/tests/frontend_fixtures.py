@@ -26,7 +26,7 @@ def canonical_frontend_fixture() -> tuple[dict, dict, dict]:
     """Return an artifact-free two-zone provider contract."""
     from projects.rf_multipole_ion_optics.core.round_rod_geometry import build_rod_array
     from projects.orthogonal_accelerator.simion.two_zone_candidate import (
-        compile_closed_two_zone_accelerator,
+        resolve_closed_two_zone_electrodes,
     )
 
     requirements = dict(schema_version=2, role="orthogonal_accelerator_two_zone_requirements", variant_id="two_zone",
@@ -36,13 +36,13 @@ def canonical_frontend_fixture() -> tuple[dict, dict, dict]:
                         local_pa=dict(span_mm=[64, 64, 84], mesh_mm_per_gu=[.25, .25, .1], exit_z_mm=6, margin_z_mm=6),
                         placement=dict(focus_y_mm=0, global_repeller_z_mm=34, global_exit_z_mm=0),
                         side_entry=dict(face="negative_y", half_width_x_mm=1.5, half_width_z_mm=1.4))
-    compiled = compile_closed_two_zone_accelerator(requirements)
+    resolved = resolve_closed_two_zone_electrodes(requirements)
     ids = {15: 9, 22: 10, 23: 11, 24: 27, **{26 + i: 12 + i for i in range(15)}}
     volts = {15: 0.0, 22: 4400.0, 23: 4000.0, 24: 0.0,
-             **{int(row["id"]): 4000 * (row["center_z_mm"] - 6) / 30 for row in compiled.resolved_electrodes.rings}}
+             **{int(row["id"]): 4000 * (row["center_z_mm"] - 6) / 30 for row in resolved.rings}}
     component = dict(schema_version=1, role="rf_oatof_accelerator_component", variant_id="two_zone",
                      geometry_profile_id="closed_two_zone_compact_mr_axial_r3_gap1_4mm", requirements=requirements,
-                     transform=dict(rotation=[[0, 1, 0], [1, 0, 0], [0, 0, -1]], translation_mm=[0, 0, 40]),
+                     transform=dict(rotation=[[0, 1, 0], [1, 0, 0], [0, 0, -1]], translation_mm=[0, 0, 34]),
                      local_electrode_ids={str(key): value for key, value in ids.items()},
                      electrode_voltages_v={str(key): value for key, value in volts.items()},
                      pulse_voltage_policy_id="all_accelerator_electrodes_zero_before_pulse_v1")
@@ -121,7 +121,8 @@ def compile_direct_mr_frontend() -> dict:
     from integrations.runtime.single_flight_frontend import compile_frontend
 
     upstream, connection, component = canonical_frontend_fixture()
-    component["transform"] = dict(rotation=[[1, 0, 0], [0, 1, 0], [0, 0, 1]], translation_mm=[0, 0, -40])
+    # Mechanical exit-origin pose; the SIMION projection remains at PA z=-40.
+    component["transform"] = dict(rotation=[[1, 0, 0], [0, 1, 0], [0, 0, 1]], translation_mm=[0, 0, -34])
     connection["spatial_registration"] = dict(rotation_upstream_to_downstream=[[1, 0, 0], [0, 0, 1], [0, -1, 0]],
                                                 translation_mm=[0, -47, -2])
     return compile_frontend(upstream, connection, cell_mm_xyz=dict(x=.1, y=.2, z=.1),

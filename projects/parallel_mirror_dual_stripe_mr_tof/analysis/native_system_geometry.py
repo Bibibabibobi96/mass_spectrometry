@@ -31,7 +31,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
     load_contract,
 )
 from projects.orthogonal_accelerator.analysis.assembly_interface import resolve_assembly_interface as resolve_oa_assembly_interface
-from projects.orthogonal_accelerator.simion.two_zone_candidate import compile_closed_two_zone_accelerator
+from projects.orthogonal_accelerator.simion.two_zone_candidate import resolve_closed_two_zone_electrodes
 
 
 def build_static_c0_gem(
@@ -394,7 +394,17 @@ def resolve_oa_mr_direct_pose(
         raise CandidateContractError("current OA/MR renderer requires identity relative rotation")
     oa_translation = oa_to_mr.translation_mm
     oa_port = components[oa_id]["ports"]["axial_exit"]
-    expected_center = [0.0, 0.0, float(domain["local_exit_z_mm"])]
+    provider_exit = float(domain["local_exit_z_mm"])
+    frame = components[oa_id]["local_frame_id"]
+    if frame == "orthogonal_accelerator_exit_origin_v1":
+        expected_center = [0.0, 0.0, 0.0]
+        # The public recipe pose is mechanical; the renderer consumes the
+        # frozen provider PA projection. Relative rotation is identity above.
+        oa_translation = (oa_translation[0], oa_translation[1], oa_translation[2]-provider_exit)
+    elif frame == "accelerator_centered_transverse_local_z_mm":
+        expected_center = [0.0, 0.0, provider_exit]
+    else:
+        raise CandidateContractError("unsupported OA component coordinate frame")
     if oa_port["center_mm"] != expected_center or oa_port["outward_normal"] != [0, 0, -1]:
         raise CandidateContractError("composition OA axial exit differs from provider local exit")
     unsupported = selected - {oa_id, mr_id}
@@ -436,6 +446,15 @@ def resolve_accelerator_iob_origin(
     actual_oa = resolve_oa_assembly_interface(
         requirements, geometry_profile_id=layout.get("geometry_profile_id"),
     )
+    declared_frame = direct_pose["resolved_plan"]["components"][direct_pose["oa_instance_id"]]["local_frame_id"]
+    if declared_frame == "accelerator_centered_transverse_local_z_mm":
+        # Compare the legal frozen PA-coordinate interface in its own frame;
+        # never relabel or mutate that original composition plan.
+        for port in actual_oa["ports"].values():
+            port["center_mm"][2] += float(provider_plan["numerical_domain"]["local_exit_z_mm"])
+        actual_oa["local_frame_id"] = declared_frame
+    elif declared_frame != "orthogonal_accelerator_exit_origin_v1":
+        raise CandidateContractError("unsupported OA component coordinate frame")
     actual_mr = resolve_mr_assembly_interface(
         resolved, geometry_profile_id=resolved["metadata"]["accelerator_component_geometry_profile_id"],
     )
@@ -465,9 +484,9 @@ def resolve_accelerator_iob_origin(
     if accelerator_y_max >= stripe_y_min:
         raise CandidateContractError("accelerator pose overlaps the Stripe assembly")
 
-    local_to_pa = compile_closed_two_zone_accelerator(
+    local_to_pa = resolve_closed_two_zone_electrodes(
         requirements, geometry_profile_id=layout["geometry_profile_id"],
-    ).resolved_electrodes.to_dict()["local_to_pa_translation_mm"]
+    ).to_dict()["local_to_pa_translation_mm"]
     return tuple(oa_translation[index] - float(local_to_pa[index]) for index in range(3))
 
 

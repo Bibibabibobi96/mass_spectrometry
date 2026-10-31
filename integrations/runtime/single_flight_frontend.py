@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from projects.orthogonal_accelerator.analysis.sectioned_geometry import resolve_bare_three_zone_component
+
 import json
 import math
 from typing import Any
@@ -41,7 +43,7 @@ def _canonical_three_zone_component(component: dict[str, Any], *, cells: dict[st
                                     target_solver_frame: str | None) -> dict[str, Any]:
     """Project the existing explicit sectioned provider; copy no OA CSG model."""
     from projects.orthogonal_accelerator.simion.bare_three_zone_component import (
-        resolve_bare_three_zone_component, render_bare_three_zone_electrode_body,
+        render_bare_three_zone_electrode_body,
     )
     from integrations.runtime.single_flight_electrode_contract import (
         project_pa_plus_mode_voltages, resolve_three_zone_bare_pa_plus_solution_model,
@@ -117,7 +119,7 @@ def _canonical_component(component: dict[str, Any], *, target_solver_frame: str 
             raise ValueError("sectioned canonical adapter requires its actual xyz PA grid")
         return _canonical_three_zone_component(component, cells=cells, target_solver_frame=target_solver_frame)
     from projects.orthogonal_accelerator.simion.two_zone_candidate import (
-        compile_closed_two_zone_accelerator, render_closed_two_zone_electrode_body,
+        resolve_closed_two_zone_electrodes, render_closed_two_zone_electrode_body,
     )
     from integrations.runtime.single_flight_electrode_contract import (
         project_pa_plus_mode_voltages, resolve_two_zone_bare_pa_plus_solution_model,
@@ -139,8 +141,13 @@ def _canonical_component(component: dict[str, Any], *, target_solver_frame: str 
     if (not isinstance(translation, list) or len(translation) != 3
             or any(isinstance(v, bool) or not isinstance(v, (float, int)) or not math.isfinite(v) for v in translation)):
         raise ValueError("component translation must be finite xyz")
-    compiled = compile_closed_two_zone_accelerator(component["requirements"], geometry_profile_id=component["geometry_profile_id"])
-    resolved = compiled.resolved_electrodes
+    resolved = resolve_closed_two_zone_electrodes(component["requirements"], geometry_profile_id=component["geometry_profile_id"])
+    # Recipe poses use the mechanical exit-origin frame. Canonical electrodes
+    # retain the explicit legacy PA-coordinate projection consumed by CAD and
+    # voltage sampling; transform that projection back exactly once.
+    translation = [translation[a]-rotation[a][2]*resolved.local_exit_z_mm for a in range(3)]
+    projected_component = json.loads(json.dumps(component))
+    projected_component["transform"]["translation_mm"] = translation
     if resolved.side_entry is None:
         raise ValueError("continuous bare guide requires an explicit provider side entry")
     electrodes = frontend_electrodes(ring_count=len(resolved.rings), three_zone=False, variant=_BARE_VARIANT)
@@ -191,7 +198,7 @@ def _canonical_component(component: dict[str, Any], *, target_solver_frame: str 
                           width_mm=2*float(port["half_width_x_mm"]), height_mm=2*float(port["half_width_z_mm"])),
                 pa_plus_solution_model=model, operating_voltages_v={str(k): v for k, v in values.items()},
                 off_voltages_v={str(k): 0.0 for k in values}, pulse_voltage_policy_id=component["pulse_voltage_policy_id"],
-                canonical_electrodes=data, accelerator_component=json.loads(json.dumps(component)))
+                canonical_electrodes=data, accelerator_component=projected_component)
 
 
 def _canonical_grid(raw_bounds: dict[str, float], cells: dict[str, float], *, origin: dict | None = None) -> dict:

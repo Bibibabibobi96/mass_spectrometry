@@ -20,7 +20,7 @@ from common.ion_release.release import validate_release_spec
 from projects.orthogonal_accelerator.analysis.component_focus_analysis import _load_campaign
 from projects.orthogonal_accelerator.analysis.component_focus_pa_plan import derive
 from projects.orthogonal_accelerator.analysis.accelerator_time_focus import accelerator_state, time_to_plane_s
-from projects.orthogonal_accelerator.simion.two_zone_candidate import _load_geometry_profile
+from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile
 
 
 class ComponentFocusWorkflowError(ValueError):
@@ -77,7 +77,7 @@ def _number(value: object, label: str) -> float:
 def _place_release_at_first_gap_center(request: dict[str, Any], release: dict[str, Any]) -> dict[str, Any]:
     """Provider owns the axial source position; consumers supply only its envelope."""
     resolved = json.loads(json.dumps(release))
-    profile = _load_geometry_profile(request["geometry_profile_id"])
+    profile = load_geometry_profile(request["geometry_profile_id"])
     resolved["geometry"]["center_mm"][2] = float(profile["gap_2_mm"]) + float(profile["gap_1_mm"]) / 2.0
     return resolved
 
@@ -98,7 +98,7 @@ def _operating_point(request: dict[str, Any], release: dict[str, Any]) -> dict[s
     lower, upper = (_number(value, "gap1 voltage-drop bound") for value in bounds)
     if not 0.0 < lower < upper:
         raise ComponentFocusWorkflowError("component workflow time_focus voltage bounds are invalid")
-    profile = _load_geometry_profile(request["geometry_profile_id"])
+    profile = load_geometry_profile(request["geometry_profile_id"])
     gap1, gap2 = float(profile["gap_1_mm"]), float(profile["gap_2_mm"])
     ring_count = int(profile["ring_count"])
     center_z = _number(release["geometry"]["center_mm"][2], "release centre z")

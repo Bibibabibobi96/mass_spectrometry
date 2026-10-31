@@ -350,6 +350,31 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         direct = resolve_oa_mr_direct_pose(provider_plan, composition_plan)
         self.assertEqual(direct["oa_translation_mm"], (0., -55., -6.))
         self.assertEqual(direct["exit_project_mm"], (0., -55., 0.))
+        legacy = copy.deepcopy(composition_plan)
+        legacy_oa = legacy["components"][direct["oa_instance_id"]]
+        legacy_oa["local_frame_id"] = "accelerator_centered_transverse_local_z_mm"
+        shift = provider_plan["numerical_domain"]["local_exit_z_mm"]
+        for port in legacy_oa["ports"].values():
+            port["center_mm"][2] += shift
+        for instance in legacy["recipe"]["instances"]:
+            if instance["instance_id"] == direct["oa_instance_id"]:
+                transform = instance["transform"]
+                transform["from_frame_id"] = legacy_oa["local_frame_id"]
+                transform["translation_mm"] = [transform["translation_mm"][i]-transform["rotation"][i][2]*shift
+                                               for i in range(3)]
+        legacy = compile_assembly_layout(legacy["recipe"], legacy["components"])
+        legacy_bytes = json.dumps(legacy, sort_keys=True)
+        with patch("projects.orthogonal_accelerator.simion.two_zone_candidate.render_closed_two_zone_local_pa",
+                   side_effect=AssertionError("IOB pose query must not render a discarded GEM")):
+            self.assertEqual(resolve_accelerator_iob_origin(contract, provider_plan, legacy), origin)
+        self.assertEqual(json.dumps(legacy, sort_keys=True), legacy_bytes)
+        unknown = copy.deepcopy(legacy)
+        unknown["components"][direct["oa_instance_id"]]["local_frame_id"] = "unknown_oa_frame"
+        for instance in unknown["recipe"]["instances"]:
+            if instance["instance_id"] == direct["oa_instance_id"]:
+                instance["transform"]["from_frame_id"] = "unknown_oa_frame"
+        with self.assertRaisesRegex(CandidateContractError, "unsupported OA component coordinate frame"):
+            resolve_oa_mr_direct_pose(provider_plan, unknown)
         for rotation in (((1, 0, 0), (0, 1, 0), (0, 0, 1)),
                          ((0, -1, 0), (1, 0, 0), (0, 0, 1)),
                          ((math.cos(.37), -math.sin(.37), 0), (math.sin(.37), math.cos(.37), 0), (0, 0, 1))):

@@ -52,7 +52,7 @@
         "transform": {
           "schema_version": 1,
           "role": "rigid_transform",
-          "from_frame_id": "accelerator_centered_transverse_local_z_mm",
+          "from_frame_id": "orthogonal_accelerator_exit_origin_v1",
           "to_frame_id": "mrtof_global_cartesian",
           "rotation": [
             [
@@ -72,9 +72,9 @@
             ]
           ],
           "translation_mm": [
-            0,
+            0.0,
             51.5,
-            -6.0
+            0.0
           ]
         }
       }
@@ -219,7 +219,7 @@
       "project_id": "orthogonal_accelerator",
       "variant_id": "two_zone",
       "geometry_profile_id": "closed_two_zone_compact_mr_axial_r3_gap1_4mm",
-      "local_frame_id": "accelerator_centered_transverse_local_z_mm",
+      "local_frame_id": "orthogonal_accelerator_exit_origin_v1",
       "length_unit": "mm",
       "ports": {
         "axial_exit": {
@@ -227,7 +227,7 @@
           "center_mm": [
             0.0,
             0.0,
-            6.0
+            0.0
           ],
           "outward_normal": [
             0,
@@ -256,7 +256,7 @@
           "center_mm": [
             0.0,
             -17.0,
-            38.0
+            32.0
           ],
           "outward_normal": [
             0,

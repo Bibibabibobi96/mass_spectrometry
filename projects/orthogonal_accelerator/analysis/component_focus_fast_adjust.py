@@ -9,7 +9,7 @@ from typing import Any
 
 from common.contracts.file_identity import file_sha256
 from projects.orthogonal_accelerator.analysis.component_focus_analysis import _load_campaign
-from projects.orthogonal_accelerator.simion.two_zone_candidate import _load_geometry_profile
+from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile
 
 
 class ComponentFocusFastAdjustError(ValueError):
@@ -49,7 +49,7 @@ def _parameters(campaign: dict[str, Any]) -> dict[str, float]:
 
 def _candidate_campaign(campaign: dict[str, Any], parameters: dict[str, float]) -> dict[str, Any]:
     """Change only runtime placement and voltages; PA geometry remains untouched."""
-    profile = _load_geometry_profile(campaign["geometry_profile_id"])
+    profile = load_geometry_profile(campaign["geometry_profile_id"])
     gap1, gap2 = float(profile["gap_1_mm"]), float(profile["gap_2_mm"])
     ring_count = int(profile["ring_count"])
     center_z = _number(campaign["release_spec"]["geometry"]["center_mm"][2], "release centre z")
@@ -146,7 +146,7 @@ def _tier(maximum_normalized_residual: float) -> float:
 
 
 def _scale(campaign: dict[str, Any]) -> float:
-    profile = _load_geometry_profile(campaign["geometry_profile_id"])
+    profile = load_geometry_profile(campaign["geometry_profile_id"])
     base = campaign["operating_point"]["electrode_voltages_v"]
     gap1, gap2 = float(profile["gap_1_mm"]), float(profile["gap_2_mm"])
     release_z = _number(campaign["release_spec"]["geometry"]["center_mm"][2], "release centre z")

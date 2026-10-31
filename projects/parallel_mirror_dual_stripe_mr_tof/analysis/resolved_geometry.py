@@ -24,7 +24,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_
     build_two_zone_accelerator_requirements,
 )
 from projects.orthogonal_accelerator.simion.two_zone_candidate import (
-    compile_closed_two_zone_accelerator,
+    resolve_closed_two_zone_layout,
 )
 
 
@@ -1309,7 +1309,7 @@ def resolve_geometry(
     if not isinstance(accelerator, dict) or accelerator.get("axis") != "z_negative":
         raise CandidateContractError("detector placement requires the -z two-zone accelerator")
     accelerator_requirements = build_two_zone_accelerator_requirements(contract)
-    accelerator_layout = compile_closed_two_zone_accelerator(accelerator_requirements).layout.to_dict()
+    accelerator_layout = resolve_closed_two_zone_layout(accelerator_requirements).to_dict()
     placement = accelerator_requirements["placement"]
     if not isinstance(placement, dict):
         raise CandidateContractError("accelerator provider placement request is invalid")
