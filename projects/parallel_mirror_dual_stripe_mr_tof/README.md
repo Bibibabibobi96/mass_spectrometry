@@ -45,9 +45,11 @@ COMSOL 或其他求解器是否已有可执行入口，以 PROJECT 的当前说�
 
 项目描述符只登记已经稳定的机器能力和合同路径；当前物理状态、运行证据与未关闭任务仍以
 [PROJECT](docs/PROJECT.md)为准。尚未形成单一正式执行链的试验 runner 不会为了目录可发现性而全部登记成
-execution profile；轻量项目门禁统一由[`verify_project.ps1`](verify_project.ps1)进入，且不会启动商业求解器。
-`Core`保留固定合同回归，并合并L1按[统一测试目录](../../common/README.md#门禁编排)传入的
-`ChangedTestModules`，相同模块只运行一次。完整静态回归仍由`Static`承担；Core通过不证明其他未选模块通过。
+execution profile。软件验证从仓库根使用`common/verify.ps1 -Scope Changed`，指定本项目完整软件范围时
+使用`common/verify.ps1 -Scope Owner -Owner parallel_mirror_dual_stripe_mr_tof`；范围与失败策略见
+[统一验证入口](../../common/README.md#门禁编排)，不启动商业求解器。
+[`verify_project.ps1`](verify_project.ps1)承接目录选出的项目职责：内部`Core`保留固定合同并合并所选模块，
+`Static`承接完整软件集合或显式分片。摘要只证明实际执行范围，不赋予求解或科学资格。
 
 ## 历史补充索引
 
