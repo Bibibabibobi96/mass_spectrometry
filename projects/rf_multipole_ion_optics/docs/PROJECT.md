@@ -567,3 +567,25 @@ SIMION接口普通入口在确认粒子表存在后，先核对显式bundle meta
 
 
 RF软件CI的4baad4d1运行41184422189真实失败，公开墙钟1603.5464秒；后续b35不同改动范围的green不能替代该RF范围。此次定向修复旧私有campaign补丁、resolved输入/argv接线、固定缺失批次画像、冻结闭包上下文及测试容量策略泄漏。原bad_plot真实分析失败发布负例保留，并恢复待提交误删；生产容量底线不改。原25个distinct失败方法最终由首轮23项PASS加normal两臂方法34.8818秒、原missing-bundle方法5.5160秒补验覆盖，首轮及中间FAIL保留，不称同轮完整RF通过。Root当前整合补验missing-bundle与固定分区恢复2项PASS5.752秒／公开9.8033秒，公共GATE已释放，无SIMION／COMSOL调用。最终完整RF及Repository验证与预算仍待验收。
+
+### N100正常公开CLI的K1/K2端到端实测
+
+2026-10-31以snapshot18bb244（Root确认与a71生产代码相同、差异仅文档）同源串行control `20261031_183129__test__comsol__rf-api-k1-control`／after `20261031_183613__test__comsol__rf-api-k2-after`完成原interface_readiness正常CLI。唯一源码差异为visitor API分组K1／K2；release分组、disableUpdates、原求解／GUI／分析及收尾均保留。完整100个不同birth、ID／原生映射／6D／物种权重／母群、驱动和9037元素网格相同，两臂N100／H67；67是原接受条件参考，未放宽新阈值。
+
+|同口径秒|K1|K2|
+|---|---:|---:|
+|独立公开pwsh启动至退出|266.6230172|239.7341619|
+|Result累计|265.0392198|238.2968612|
+|prepare|14.3748232|12.1069303|
+|native wrapper|130.3234821|114.5367483|
+|GUI wrapper|112.4902559|103.9933564|
+|native extract／其中API|18.8890825／18.1167948|15.5416816／14.7423067|
+|收尾|6.7982013|6.6368351|
+
+本次公开整命令减少26.8888553秒（10.085%）；单次顺序配对存在缓存／顺序及并行软件背景局限，不宣称稳定通用倍速，不能把全部差值归因API。native实际API28→14，逻辑窗口仍28、7119原时刻、145353保留采样、完整100粒子；API请求行7146→7132，逻辑最大窗口1442805B不变，API最大返回1444552→2880200B。GUI两臂原source binding及100个per-ID原接受条件通过，707591共同有限观测／7119时刻，active／terminal／project outcome差异均0；GUI小JSON未持久逐次APIreceipt，本次不读MAT或大raw／trajectory来扩大逐记录等价声明。
+
+两份小particle_state均396事件，ID/event key相同、categorical差异0；浮点差异仅诊断（最大时刻9.4801e-11µs、横向x3.7810e-10mm、vx3.5151e-7m/s）。native精确birth echo仍不可用，numerical_equivalence及scientific_result均NOT_EVALUATED，不把canonical源绑定当原生echo或积分精度资格。
+
+native／GUI峰值RSS：K1 3681587200／3725475840B，K2 3639189504／3782770688B；目录峰值K1 195159584／195159674B、K2 194969186／194969276B，无预算warning。两臂路径准备2次、transport_bytes0，耗时.2418773／.2214781秒；四实际launcher PID25080／12308／29048／31520均exit0并hostreleased。Result success／complete，terminal／capacity／lease／writers／alias五事实全true、secondary_errors为空。父8份小输入与冻结前像仍字节相同；来源读／冻结由公共共享消费guard与FileShare.Read保护，不读取／hash／复制父MPH或大载荷。
+
+保留此前release局部收益但完整315.788→334.220秒负结果；本次K2正常链结果与此前coldAPI局部实测分别报告，不能据一个成功配对关闭任意规模或另一solver消费者的性能资格。小读数见scratch/rf-feedback-hotspot/agent4/api_batch_full_cli_589d/measurement.json及原两run小证据；无新商业执行由本次比较触发。
