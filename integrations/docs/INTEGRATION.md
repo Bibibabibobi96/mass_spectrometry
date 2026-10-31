@@ -101,6 +101,8 @@ request 的 `verify_saved_workbench_replay` 只能为布尔，默认 false。解
 声明时保持原选择、顺序与绑定。完整批恢复显式绑定前驱manifest，不扫描最新run、不重飞已完成批或重复求场。
 held-OFF由原科学mode派生场依赖，仅省略恒0脉冲响应；完整carrier仍保留真实金属mask，timed／discover保持所需响应。
 
+单反射Program由同一编译器输出原生执行文本及仅省略路径运输的`numerical_program`。续跑比较科学数值控制，仍保留完整原生来源：原生文本须由数值文本与父manifest绑定的原helper精确前向生成；core、build spec或非单位pulse的真实数值变化仍拒绝。已退役alias的小控制／审计记录只从producer manifest按原名称、bytes／SHA唯一解析持久路径，不搜索历史目录或读取大PA。原生执行证据的大清单沿现有小JSON运输，不把未完成分析写成成功。
+
 工作流内部采用单向依赖：`census`读取原生日志证据，`pulse`派生阶段控制，`continuation`验证父记录并规划
 完整批复用，`runtime`物化所需批次；下游发布字段由`downstream_fields`统一验证。各调用保留原母群、
 源行顺序、时钟和错误判据；元数据准备不读取PA载荷。已有冻结清单覆盖这些模块，隔离快照可独立导入及执行，
@@ -241,7 +243,9 @@ OA、IP和MR分别拥有自身设计与科学约束。IP设计必须显式提供
 `-FinalizeJointWorkbench`只消费设计run已冻结的父plan、matching request及实际源／场，不回读活动默认。
 它会建立／重开IOB和做场审计，**不执行Fly**。完整输入参数以该入口为准。
 
-同一入口的`-FullJoint`显式选择IP完整链，须提供`-IonProcessorRunPath`、
+同一入口的`-FullJoint`在未提供`-PreparedJointWorkbenchRunPath`时选择IP分段接续链，
+仅此分支自动采用IP provider并拒绝显式不兼容provider；直接prepared workbench分支不选择设计provider，
+只执行其声明的下游范围。IP接续运行须提供`-IonProcessorRunPath`、
 `-ReferenceMrRunPath`、`-ContractPath`，并分别提供新设计的`-MatchingRequestPath`或
 已有设计的`-PreparedInterfaceRunPath`、新场的`-FieldRequestPath`或已有场的`-JointFieldRunPath`。
 场请求由作者指定局部数值域、surface容量预估及符合仓库规则的新场run_id；各层计算预算沿设计冻结的
@@ -268,6 +272,8 @@ MP run、case、接收器、父plan、物种及权重，不能从参考MR或历�
 入口复用经验证的源准备，IP owner按原完整分区补缺；不重做已完成批，也不把它称为原生积分checkpoint。
 恢复后的源须重新绑定新接口设计，不能混用旧源设计或另一个IP场。下游Fly恢复仍用独立的
 `-ContinuationPredecessorManifestPath`；参数和适用边界见[IP恢复说明](../../projects/dual_pressure_rectilinear_ion_processor/docs/PROJECT.md#原批分区恢复)。
+
+IP阶段恢复的原`-MultipoleIpRunId`须指成功封存准备，当前请求须与其manifest绑定的冻结request结构相同；来源、接收几何或请求变化不回退重建。新的IP run不能同时指定`-IonProcessorFieldRunPath`，也不能沿用绑定旧源的`-PreparedInterfaceRunPath`；当前支持用`-MatchingRequestPath`与适用`-FieldRequestPath`接续。直接prepared workbench或ResumeFinalization拒绝这些IP恢复参数，不宣称任意断点全链全复用。
 
 完整MP／IP／MR父plan可派生IP／MR局部范围；同一完整IP接口同时发布guide_inlet与extraction_exit。
 MR-local几何、原IP→MR直接位姿和唯一clock保持，不按锚点反算放置。真实115429准备已完成81粒子源的
@@ -393,10 +399,10 @@ OA 纯几何仍归项目提供者，OA→MR 和单反射等消费者从同一冻
 后续文档与运行边界修复、失败及复验见[系统审查](../../docs/history/20261027__system-maintainability-review.md)。
 先前权限、宿主、夹具和发布失败仍按固定源码及原日志解释，focused通过不拼成失败整轮通过。
 后续改动按[操作指南](../../docs/OPERATIONS.md#软件验证与科学证据)运行适用门禁；软件检查不授予新原生、数值或Formal资格。
-本轮最终L1为24/24阶段通过、1337.500秒。完整L2主体44/45阶段通过、1578.351秒，RF失败责任阶段
+改造前记录的L1为24/24阶段通过、1337.500秒。完整L2主体44/45阶段通过、1578.351秒，RF失败责任阶段
 修正后以正式quadrupole Static完整复验通过（298.011秒）；原失败整轮不改写为PASS。
 正常FullJoint的原CLI重复收尾4.401秒通过，子summary／manifest及父manifest字节均未改；不重飞、不求场。
-集成测试入口的模块枚举及L1选择边界见[入口说明](../README.md#活动工作流)；
+集成测试入口的模块枚举及Changed选择边界见[入口说明](../README.md#活动工作流)；
 未执行模块和未选阶段不计为通过，机器摘要只记录本轮实际阶段结果。
 
 ## 实施与退出条件
@@ -432,6 +438,8 @@ run_artifact_workflow owner，保存实际原生完成／释放事实、run 外�
 显式父 manifest 仅引用已绑定完成证据；静场已有完整同身份导出可跳过相应原生采样／求解。
 源、物理支持域、商业授权和原父终态保持原合同。DryRun 只证明准备，诊断成功不授予数值／科学资格。
 
+既有小型SIMION路径探针`20261030_194622__sim__simion__cold-reopen-path-probexxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`经正式IOB builder/core完成四个准备／保存／重开操作，原alias删除后由新表示冷开成功；首次收尾失败保留，修正公共收据运输后仅收尾6.223秒完成，零新增原生。该证据无Refine／Fly，不代替N100功能或科学资格。
+
 ## Local/cooled 正常执行与独立场复用
 
 两原CLI使用公共run_artifact_workflow owner和run外小Result；`-ResumeFinalization -ResultPath <原Result>`
@@ -442,6 +450,7 @@ cooled七个普通Laplace工作场使用原缓存事务逐成员命名，受保�
 固定geometry/operator/grid/solver仅改合法OA pulse工作电压，其余六场保持复用；有充分线性证据时pulse可按系数投影。
 GEM、真实边界、网格或数值改变仍使受影响成员失效；源母群、分析和显示不被误当场求解身份。
 同字段owner的小采样与引用式probe记录保留原manifest绑定及raw数据，analysis／reference沿真实比例读取，不改写原CSV。
+`cooled_member_execution_costs.json`与`cooled_static_probe_costs.json`分别报告实际Refine／native、聚合及probe运输；完整复用的`native_executed=false`只说明本轮没有原生操作，不否定所引用原生来源。
 seed／placeholder沿[公共小配套冻结](../../common/simion/README.md#共用工作台种子与独立场成员)复用，
 科学身份用单反射既有field_plan提供者；未新增万能runner、字段注册表或历史搜索。准备、软件接线与真实科学资格分别报告。
 

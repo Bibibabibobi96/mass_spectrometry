@@ -468,6 +468,10 @@ SHA、身份、资格和声明边界；迁移后按根README独立裁剪的可�
 [radial-p4-reanalysis]: ../../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261029_073507__test__simion__radial-p4-reanalysis/summary.json
 [radial-gui-retirement]: ../../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261029_083000__test__simion__radial-p3-gui-r3/solver_review_retirement_receipt.json
 
+## 普通执行计划的软件边界
+
+`mass_spectrum_candidate`直接调用原五质量候选入口，不每次先跑`static_gate`；其原Formal可读guard、冻结派生物新鲜度、资源与科学判据不变。能力分别声明purpose/action/tools和局部资格；质量谱只交付谱与评价，消费原Formal MPH不等于新交付COMSOL模型。明确Formal验证走原Formal入口，不借软件Level选择科学任务，亦不因此新建跨求解器／CAD资产。
+
 ## 机器能力与解析输入
 
 profile 分别声明 purpose/action/tools；本次 release 物种由项目 binding 解析，Formal 入口保留其局部资格含义。

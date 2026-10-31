@@ -7,6 +7,7 @@
 ## 当前状态与封存边界
 
 本项目拥有HP／LP拓扑、RF驱动、气体与碰撞、捕获／转运／聚集／抬升／正交引出时序及独立验收。
+公共收尾故障矩阵归common owner；`tests/test_owner_finalization_recovery.py`仅保留原CLI恢复与未知writer接线，避免重复执行完整公共矩阵。
 可复用裸导引、冷却组件和完整IP是不同输出边界；裸导引不包含HP／LP、气体浴或完整IP资格。
 真实上游接入、器件间位姿和下游联合飞行归[统一集成](../../../integrations/README.md)。
 
@@ -240,7 +241,7 @@ IP批次请求可在提供已验证场身份及冻结程序后计算，计算过
 多代重分析先验证前驱与数据源的 manifest 绑定，在容量会话中保护来源链，再引用原始完整母群；出口也沿该绑定读取原生证据。
 正式批次完成回调持久记录每个原生进程的实际退出码与批次身份；旧结果缺少该证据时不能仅凭结束日志推断单批成功。
 未归并的终态前驱按原批次计划恢复：完整单元须有原进程退出码、日志、输入和输出的 manifest 绑定；
-未知或不完整单元整批重飞，不能安全容纳原批的当前资源预算会直接拒绝，不改变分区。原始 worker 数据由受保护的前驱提供；
+未知或不完整单元整批重飞，保持原分区和ID。公共`prepare_fixed_partition_dispatch`检查真实画像覆盖；bootstrap不是容量上限，画像不足时观测最大的原缺批，再由`calibrate_recovered_missing_plan`按实际CPU／内存规划。仅首观测单worker；在运行观测批占用计入预算，资源不足仍保守准入，不多送CPU通道。真实短进程接线已覆盖5000粒子原分区／2、4、8缺批及充足资源重叠、紧张时串行；它不运行SIMION或冒称全装配链恢复。原始 worker 数据由受保护的前驱提供；
 已归档 worker 的四个 CSV 在新 run 解包供现有 merger 读取，种子、HS1 和日志仍引用原始证据。
 合并后按既有文件移除合同删除临时解包；多次部分失败沿每代绑定追溯原完成单元，不重新启动已复用批。
 全批复用只执行合并和分析，不启动 SIMION；混合恢复引用前驱场并持有防写锁，使用新 run 发布结果，不修改父 run。
@@ -248,7 +249,7 @@ IP批次请求可在提供已验证场身份及冻结程序后计算，计算过
 `native_field_consumption.json`，后者保留精确 family records 和几何／网格／Refine投影。
 准备的元数据绑定本身不授权原生消费：正式 `NativeFieldRun` 和混合恢复均在首个原生调用前逐成员执行一次
 公共 immutable-source 字节校验并持有防写／删除句柄，持续到新 run 发布与完整验证结束。
-消费侧同时持有原终态发布的既有 byte-lock，拒绝 pending journal；来源 manifest、run config 和PA不能
+消费侧同时持有原终态发布的共享读取byte-lock，拒绝pending journal；多个reader可同时消费，publisher须等待全部reader退出。来源 manifest、run config 和PA不能
 在此窗口被替换。后续投影与子manifest不再重复读取原owner的大PA，不新增跳过校验参数。
 部分恢复按冻结场的来源判断外部家族，沿用上述保护；不会因未传`NativeFieldRun`而把已接续场误当新建家族写打开。
 显式场与部分恢复同时指定时，只在实际adopt前获取一次最终来源保护，不重复获取同一终态发布锁；全批复用不进入该adopt分支。
@@ -262,6 +263,11 @@ stdout的最终owner总耗时另含发布及资源释放。未知写者保留保
 `component_exit.load_component_source`验证封存的IP来源与结果；科学门限失败、诊断失败与写入状态未知分别记录，
 未知写入者不发布终态或显式释放受保护资源。
 原生准备命令与IOB模板构建同样以公共观察器的实际退出事实决定停写；退出未知时保留PA句柄、资源和容量保护，原始异常不被收尾覆盖。
+
+## 普通执行计划与新场身份
+
+`native_functional`只调用原`run_functional.ps1`，不每次先跑整套软件回归；编译结果以`ConfigurationDirectory`运输同一冻结功能源、科学／数值／接受配置。action=run不等于已完成原生或科学通过。
+新PA在writer确认停止及必要flush后，由公共immutable guard在持续防写句柄内建立一次身份；内部prepare-dispatch、模板及收尾复用同一活guard，不重复全文读取。保护中断或未知writer不放行；外部已发布家族仍核对manifest期望身份，不能用新场投影覆盖。
 
 ## 机器能力与解析输入
 

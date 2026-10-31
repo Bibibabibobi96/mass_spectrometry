@@ -436,6 +436,12 @@ pd = mphparticle(model, 'dataset', 'pdset1');
 
 RF finite 正式已解读取边界为项目 `reextract_finite_3d_transport(request,fid)`：原冻结设计／源／数值投影与实际 source/native-order 映射绑定原两组解，通过 `mphload` 只读加载，再调用正常求解后的同一分窗导出 helper。缺原映射不推断粒子顺序；不存在必要 Particle dataset 时只在内存建立并绑定已解 solution，不调用 Study Compute／runAll，不保存父模型。2026-10-31正常 CLI 的071000→062508冷提取读取43,350,302 B原MPH，七份CSV与原导出逐字节一致，原父manifest不变；这是既有解读取／接口验证，不新增物理、收敛或完整传输资格。后继纯CSV分析及仅收尾恢复不加载模型，精确记录见[RF项目状态](../../projects/rf_multipole_ion_optics/docs/PROJECT.md#当前结论)。
 
+### 显式 hmin 与 Size 属性回读
+
+COMSOL6.4 [Size API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_mesh.49.100.html)区分hmax与hmin；hauto会重设尺寸参数，显式hmin在其后施加。default Size不提供hminactive，局部Size按实际节点启用。公共helper省略hmin时保持原控制；指定时由typed reader按[PropFeature](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/api/com/comsol/model/PropFeature.html)的getValueType选择getter，记录原始类型／值，不把double擅自换算为mm。
+RF finite与接口开发网格已实际回读这一路径；只证明相应冻结控制／网格，不等于场、粒子或空间收敛资格，具体证据见[RF状态](../../projects/rf_multipole_ion_optics/docs/PROJECT.md#当前结论)。
+问题选择沿官方[MeshProblem selection](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_mesh.49.044.html)与[MeshSelection](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/api/com/comsol/model/MeshSelection.html)的dimension/entities读取；不可读时明确不可用，不丢弃问题或放宽门禁。
+
 ### 重复节点构造的自动更新
 
 COMSOL6.4官方[变量更新说明](https://doc.comsol.com/6.4/doc/com.comsol.help.llmatlab/llmatlab_ug_functionality.7.54.html)

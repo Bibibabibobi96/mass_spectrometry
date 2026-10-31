@@ -414,8 +414,8 @@ OA→MR 和 prepared joint 共用 MR `Protect-MrtofContinuationEvidence`：沿�
 
 ## 机器能力与解析输入
 
-原 native candidate 入口通过 execution profile 声明；binding 从本次 release 读取物种，不为无 variant 项目虚造极数。
-能力查询与执行编译见[公共合同](../../../common/contracts/README.md#执行dry-run)；READY 仅描述声明条件。
+`native_condition`指向原条件runner，显式消费ConditionPath、ContextPath与CompositionPlanPath，不猜latest资产。`analysis/execution_binding.py`从本次release/context小合同核对实际质量／电荷，物种不匹配不能READY；无结构变体时返回null。Candidate／Formal请求须符合真实支持域，不能静默降级。现公开profile的100／524 Da、+1条件仅表示输入适用范围，不代表科学资格。
+编译结果绑定小定义并持续保护，原owner从同一定义准备／冻结／执行；能力查询不生成GEM、不读大PA。OA几何与IOB pose消费纯几何提供者，新机械exit-origin与合法旧PA frame显式转换；未知frame拒绝，旧plan只读，世界布局不变。查询与执行入口见[公共合同](../../../common/contracts/README.md#执行dry-run)，READY不代表科学资格。
 
 ## 结构化科学记录
 

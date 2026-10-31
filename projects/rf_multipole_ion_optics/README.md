@@ -14,6 +14,7 @@ COMSOL 正常无碰撞入口支持 `-AnalyzeOnly -ParentManifestPath <原封存m
 两个 COMSOL solver 通过项目共用分窗 API 提取原解；保存、实际原生读取证据和范围见[项目状态](docs/PROJECT.md#当前结论)。
 
 有限三维 COMSOL 的显式网格最小尺寸、完整源的精确出生分组及未知末态语义见[项目状态](docs/PROJECT.md#当前结论)。两正式原生消费者共享同一项目分组器，不做相位近似。
+四极接口COMSOL正常入口须显式`-LimitsPath`；仅收尾使用原`-ResultPath`，不重新传科学输入。
 
 四极接口 COMSOL 可用 `-AnalyzeOnly -ParentManifestPath <原manifest> -LimitsPath <本次分析预算>` 创建后继分析run，复用已完成native阶段且不启动COMSOL；checkpoint父另须实际 `-StoppedReceiptPath`，科学与恢复范围见[项目状态](docs/PROJECT.md#接口原cli的后继分析)。
 
@@ -59,7 +60,7 @@ COMSOL 正常无碰撞入口支持 `-AnalyzeOnly -ParentManifestPath <原封存m
 | 科学问题 | 入口 |
 |---|---|
 | 预登记campaign与输入解释 | [运行与输入合同](docs/IMPLEMENTATION.md#粒子源与runtime-profile) |
-| 六／八极杆无加速设计的理想场、圆杆场筛选与传输 | [L1传输](analysis/run_transport.ps1)、[L2场筛选](analysis/run_round_rod_field_screen.ps1)、[L2传输](analysis/run_round_rod_transport.ps1)；显式选择对应无加速DesignProfileId，其他设计拒绝 |
+| 六／八极杆无加速设计的理想场、圆杆场筛选与传输 | [理想多极场传输](analysis/run_transport.ps1)、[圆杆场筛选](analysis/run_round_rod_field_screen.ps1)、[圆杆场传输](analysis/run_round_rod_transport.ps1)；显式选择对应无加速DesignProfileId，其他设计拒绝 |
 | 三变体有限三维无碰撞传输 | [COMSOL](workflows/no_collision_transport/run_comsol.ps1)、[SIMION](workflows/no_collision_transport/run_simion.ps1) |
 | 四极接口就绪 | [COMSOL](workflows/interface_readiness/run_comsol.ps1)、[SIMION](workflows/interface_readiness/run_simion.ps1) |
 | 四极RF+DC质量过滤 | [COMSOL](workflows/mass_filter_reference/run_comsol.ps1)、[SIMION](workflows/mass_filter_reference/run_simion.ps1)、[响应比较](workflows/mass_filter_reference/compare_responses.ps1) |
@@ -78,9 +79,9 @@ python -m projects.rf_multipole_ion_optics.analysis.plot_transport_phase_diagnos
 
 内部物理handoff不自动等于机械外出口；冻结旧几何运行不能继承为当前裸杆或新壳体的验证。
 配置编译、纯回归、真实求解、GUI/CAD和Formal资格分别判断，边界见PROJECT。
-L1按[统一测试目录](../../common/README.md#门禁编排)给项目门禁传入`ChangedTestModules`，
+改动范围的软件验证按[统一测试目录](../../common/README.md#门禁编排)给项目门禁传入`ChangedTestModules`，
 使四极`Core`同时运行本次改动的测试；`Static`运行所选变体的完整回归，Freshness前置保持。
-L1的fixture／未知目录回退和`-FullScope`由统一目录发现并补充模块；独立`Static`不自动推断新目录归属。
+fixture／未知目录的owner发现沿公共目录；Core／Static内部集合不是物理模型或科学资格等级。
 
 ## 目录与产物
 

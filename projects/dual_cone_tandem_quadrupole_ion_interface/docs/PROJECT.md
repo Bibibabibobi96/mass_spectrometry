@@ -137,6 +137,12 @@ COMSOL 气流成功只证明上游场计算完成，不证明离子传输。SIMI
 轨迹各自使用独立 run 三件套；下游 SIMION run 冻结上游 manifest 和气体场副本。旧 Python run 只读
 保留，不因主链退役而删除或改写。
 
+## 普通执行计划
+
+`axisymmetric_gas_flow_screening_static`保留既有profile身份，普通计划不再先运行整套`static_gate`；独立软件验证、原COMSOL气流／资源／输出准入及Prototype边界保持。
+公共profile删除未消费的虚假binding，固定`geometry_baseline`、`resolved_geometry`、`gas_flow_science`和`comsol_solver_numerics`四项。编译结果保存同一小JSON定义，经`ResolvedInputsPath`交原runner冻结；缺baseline的旧bundle要求重新编译，不用当前默认补造旧resolved来源。
+prepare在同一snapshot运行原`resolve_geometry --baseline ... --check ...`，实际模块与NumPy沿正式环境记录来源；输入／派生物失配在商业调用前失败。气流成功不代表离子传输或新资格。
+
 ## 机器能力与解析输入
 
 gas-flow profile 的 baseline 与 resolved geometry 传入原 runner；prepare 冻结原 resolver 和输入并核对新鲜度，失配在下游原生调用前失败。

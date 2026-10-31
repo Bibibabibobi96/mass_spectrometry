@@ -62,6 +62,8 @@ build-only入口冻结实际MATLAB、解析器与公共运行依赖；源码闭�
 
 普通build-only profile及真实runner移除重复整套Static回归。run-local冻结baseline／numerical modes／resolved仍由原resolver核对，summary报告`input_freshness_passed`；输入集合防写、商业构建及证据不合格边界保持。`verify_project.ps1`继续独立验证软件；构建成功不代表求解或Candidate／Formal资格。
 
+普通build-only编译结果固定baseline、numerical_modes、resolved_model及原build-only mode，经`ResolvedInputsPath`交原runner复制，不再选当前默认。profile的action=build且科学结果未评价；本owner测试只验真实描述符／接线，完整注册表新鲜度归公共owner一次检查。该解析接线不改变原输入防写、商业构建、生命周期或既有不合格边界。
+
 ## 机器能力与解析输入
 
 build-only profile 传入本次解析输入，原 runner 冻结该输入；普通物理工作流不再默认包含整套 Static。

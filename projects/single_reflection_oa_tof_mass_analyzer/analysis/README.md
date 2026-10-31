@@ -82,6 +82,8 @@ shield边界和rebuild plan均由该函数一次性闭合。API严格拒绝profi
 生产seed必须来自`run_config.run_instance.particle_source_seed`。success固定表示
 `candidate_accepted_not_promoted`和`formal_eligible=false`；晋升由独立Formal事务完成。
 
+阶段复用由既有stage context绑定实际合同、生成器、求解参数及`candidate_stage_execution.py`；完整入口仍冻结作来源。日志／收尾修改不使无关科学阶段失效，真实执行实现变化仍拒绝。旧阶段只在现有具名迁移器取得充分冻结证据时于新run派生，不改父receipt或用当前默认追认，范围见[已知旧Candidate阶段](../docs/PROJECT.md#已知旧-candidate-阶段的派生复用)。
+
 ## 核心分析
 
 - `ideal_source_comparison.py`：可控均匀空间源、线性/二次速度关系和独立Gaussian残差；复用精确轴向TOF与canonical峰宽，保留完整母cohort及模型域/碰撞分类。工作点仅重算反射器电压，不移动加速器或漂移参考面。
@@ -178,6 +180,7 @@ ID解析统一在`reference_analysis_core.py`：CSV仅将选定ID列保留为原
 科学配置控制源分布、固定几何、扫描轴和科学阈值；峰宽数值口径仍来自项目分析合同；seed/run ID只在
 run instance冻结。`--resume-from <旧run目录>`保持相同配置和seed，自动创建新run，校验代码/配置/环境
 及已完成case内容后复用；旧run及失败证据不改写，不需要手工指定下一阶段。未原子发布的case重算。
+数值身份绑定`numerical_case.py`及实际科学依赖；绘图／报告只保来源，不使完成case失效。旧格式仅沿现有具名reference-only迁移及充分冻结设置重验，不能一概追认，也不因缺新键一概重算。
 
 运行状态为`success/failed/interrupted`，科学状态独立报告`SUPPORTED/NOT_SUPPORTED/INCONCLUSIVE`
 或已表征的接受范围；负结果不阻止另一项低成本比较。技术异常停止并保存`failure_stage`、`failure_reason`

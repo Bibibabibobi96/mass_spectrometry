@@ -19,7 +19,8 @@
 该门禁通过公共计时runner即时报告失败及逐测试耗时，保持原完整测试发现范围。
 
 公共规划的`native_functional`只支持固定524 Da／+1功能源及capture/extraction fraction指标，证据请求限`plan`。
-它通过现有静态门禁和`run_functional.ps1`执行，不接受设计变量、真实上游状态或私有预算的隐式绑定；
+普通研究通过`run_functional.ps1`执行实际输入、资源及资产准入；源码修改另做相称软件验证，
+不接受设计变量、真实上游状态或私有预算的隐式绑定；
 完整配置边界见[公共执行登记](config/execution_profiles.json)，科学资格仍按PROJECT判断。
 
 ## 所有权

@@ -78,6 +78,7 @@ finite 3D、interface readiness 与 mass-filter 的正式批次通过公共 `Inv
 新 run 验证冻结 Fly 输入和原批分区，并通过公共 whole-unit plan 引用被容量保护及只读锁保护的完整批次。
 全复用跳过 PA、IOB 和原生飞行；缺失的完整批次重飞。旧 run 若缺少完整批次 receipt 或冻结身份则不能复用。
 这是软件完成证据，不代表科学通过。
+公共收尾故障矩阵由common owner集中验证，项目原CLI恢复仅由`tests/analysis/test_owner_finalization_recovery.py`验证薄接线，避免公共／项目重复整流程。
 三条 SIMION 消费者共用 `runtime/simion_field_checkpoint_support.ps1` 的原 producer 场检查点：
 正常入口默认 `solver_review`，显式 campaign 的 retention 声明仍优先。
 `-NativeFieldRunPath` 可独立于粒子源/Fly 前驱指定原终态场 owner；静态 GEM（含 include）、网格、
@@ -116,8 +117,7 @@ package、容量 session、冻结 PS 入口、原生退出和实际 host release
 再沿原解时间库存分窗读取，保留必要穿面邻接、区域极值、首末态及既有轨迹采样，不由绘图触发新推进。
 窗口大小是I/O批量而非时间降采样；实际physics identifier与原source ID由消费者显式传入。
 完整6D、晚出生、跨窗重叠和未知内部缺口有14项纯MATLAB回归；实际冻结wrapper及分析闭包8项Python回归通过。
-接口就绪仍保留完整母群MPH与GUI重算合同，质量过滤／finite原源构造循环尚未改为顺序分块，不能据此声称源构造提速。
-当前COMSOL原CLI尚未接通仅后处理恢复；持久化事实不代表该能力。
+接口就绪仍保留完整母群MPH与显式GUI重算合同。源构造／提取收益只按后述已预声明N100实测范围解释，不外推一般规模；顺序分块探针不是生产默认路径。finite与interface的AnalyzeOnly／ResumeFinalization已接通各自原CLI，具体充分完成证据、0Compute或0native边界见本页相应段落。
 
 实际公共提取器另经`20261030_212512__test__comsol__rf-window-read-n3`验证：冻结本次两个helper后，
 只读重开保存模型，以cpt／cpt2／cpt3分别消费201个原时刻、7个窗口；保留70／46／24个科学样本，
@@ -404,6 +404,10 @@ L1/L2 传输将身份输入冻结到本次 run；圆杆 L2 在冻结后核对场
 原 CLI 的 `-ResumeFinalization -ResultPath <稳定小Result>` 仅继续公共 owner 收尾，不重新求场或飞行。该模式只允许恢复参数及 Python/RunId；科学参数不能被静默忽略。native/GUI 的实际 completion receipt 进入公共聚合，继承的同 token 去重，writer 未知仍保留保护。
 
 确定性四极杆和有限三维 solver 使用同一项目终态分类器。全局时间窗结束且晚出生粒子尚未获得完整运输时长时记 `unknown`，无终止原因不等于 electrode loss；原接受面和几何拒绝事实不变。canonical 状态及 metrics 分开报告 accepted/lost/timeout/unknown，原母群分母、ID、出生/终态时钟及命中率保持不变。软件接线、原生求解、GUI验收与科学资格分别报告。
+
+## 普通执行计划的软件边界
+
+四极普通传输、接口、质量过滤及六／八极campaign的普通profile不再前置整套`static_gate`；实际源／资产／预算准入及科学判据保留，源码修改仍走独立软件验证。机器显示使用理想多极场、圆杆有限场、有限三维多极场与轨迹等实际模型名，旧L1／L2身份不解释为软件级别。
 
 ## 机器能力与解析输入
 
