@@ -1383,7 +1383,25 @@
           "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/",
           "projects/single_reflection_oa_tof_mass_analyzer/tests/simion/"
         ],
-        "scope": "projects/single_reflection_oa_tof_mass_analyzer/tests/"
+        "scope": "projects/single_reflection_oa_tof_mass_analyzer/tests/",
+        "module_parameter": "SelectedTestModules",
+        "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "projects/single_reflection_oa_tof_mass_analyzer/analysis/experiment_campaign.py",
+                "reason": "campaign_leaf_and_canonical_consumers"
+              }
+            ],
+            "modules": [
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_experiment_campaign.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_three_zone_theory_experiment.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_paper1_c3_j3_mapping.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_three_zone_t5_simion_candidate.py"
+            ],
+            "dependency_profile": "locked"
+          }
+        ]
       },
       "owner": "single_reflection_oa_tof_mass_analyzer",
       "repository_integration_command": {

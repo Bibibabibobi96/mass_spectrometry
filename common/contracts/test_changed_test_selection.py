@@ -625,6 +625,147 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
             })
             self.assertIn("GATE_STAGE=PASS NAME=common_contracts", output)
 
+    def campaign_leaf_fixture(self, root: Path) -> tuple[str, list[str], str]:
+        """Tiny catalog fixture, real planner and SFI owner, inert prerequisites."""
+        common = root / "common"
+        common.mkdir(parents=True)
+        (root / "integrations").mkdir()
+        for name in ("verify.ps1", "parallel_gate_support.ps1", "gate_catalog_support.ps1",
+                     "require_powershell7.ps1", "gate_unittest.py"):
+            shutil.copyfile(REPO_ROOT / "common" / name, common / name)
+        owner = "projects/single_reflection_oa_tof_mass_analyzer"
+        project = root / owner
+        for directory in ("tests/analysis", "tests/simion", "config", "analysis", "docs"):
+            (project / directory).mkdir(parents=True)
+        shutil.copyfile(REPO_ROOT / owner / "verify_project.ps1", project / "verify_project.ps1")
+        (project / "config/project.json").write_text('{"lifecycle_status":"formal_revalidation_pending"}', encoding="utf-8")
+        (project / "oatof_lifecycle_preflight.ps1").write_text(
+            "Add-Content -LiteralPath $env:LEAF_EVENTS -Value 'preflight'\n", encoding="utf-8")
+        for provider, name in ((owner, "resolve_geometry"), (owner, "reflectron_dual_stage_solver"),
+                               (owner, "oatof_oaaccelerator_coupling"),
+                               ("projects/orthogonal_accelerator", "accelerator_time_focus")):
+            path = root / provider / "analysis" / (name + ".py")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("# Inert theory prerequisite for owner transport only.\n", encoding="utf-8")
+        catalog = json.loads((REPO_ROOT / "common/gate_catalog.json").read_text(encoding="utf-8"))
+        route = next(x for x in catalog["routes"] if x["stage"] == "single_reflection_oa_tof_mass_analyzer_static")
+        peer = next(x for x in catalog["routes"] if x["stage"] == "common_contracts")
+        for item in (route, peer):
+            item.pop("runtime_dependencies_path", None)
+        catalog["routes"] = [route, peer]
+        dependency = next(x for x in route["test_selection"]["dependencies"]
+                          if any(m.get("exact") == owner + "/analysis/experiment_campaign.py" for m in x["matches"]))
+        modules = dependency["modules"]
+        for relative in [*modules, owner + "/tests/analysis/test_unrelated.py", "common/contracts/test_cross_owner.py"]:
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("import os,unittest\nclass Probe(unittest.TestCase):\n"
+                            " def test_probe(self): self.assertFalse(os.environ.get('LEAF_FAIL') == __name__, 'LEAF_FAILURE_PROPAGATED')\n", encoding="utf-8")
+        leaf = owner + "/analysis/experiment_campaign.py"
+        second = owner + "/analysis/second_leaf.py"
+        (root / leaf).write_text("# Declared production leaf.\n", encoding="utf-8")
+        (root / second).write_text("# Fixture-only second declared dependency.\n", encoding="utf-8")
+        (project / "analysis/unmapped.py").write_text("# Unknown production change.\n", encoding="utf-8")
+        (project / "docs/PROJECT.md").write_text("# Fixture docs\n", encoding="utf-8")
+        route["test_selection"]["dependencies"].append(dict(
+            matches=[dict(exact=second, reason="fixture_second_leaf")],
+            modules=[owner + "/tests/analysis/test_unrelated.py"], dependency_profile="locked"))
+        (common / "gate_catalog.json").write_text(json.dumps(catalog), encoding="utf-8")
+        (common / "host_execution_lease.ps1").write_text(
+            "function Get-HostResourceBudget {param($Role,$Stage) @{}}\n"
+            "function Enter-HostResourceStage {param($Role,$Stage,$Budget) @{}}\n"
+            "function Exit-HostResourceStage {param($Lease)}\n"
+            "function Enter-HostExecutionLease {param($Role,$Stage) @{}}\n"
+            "function Exit-HostExecutionLease {param($Lease)}\n", encoding="utf-8")
+        (common / "verify_repository_hygiene.ps1").write_text("# Inert hygiene prerequisite.\n", encoding="utf-8")
+        (common / "verify_documentation.ps1").write_text("param($PythonExe,$StructureOnly,[string[]]$ChangedPath)\n", encoding="utf-8")
+        for name in ("verify_repository_text_bytes", "verify_development_standards"):
+            (common / (name + ".py")).write_text("# Inert global prerequisite.\n", encoding="utf-8")
+        (root / "ruff").mkdir()
+        (root / "ruff/__init__.py").write_text("", encoding="utf-8")
+        (root / "ruff/__main__.py").write_text("# Inert lint prerequisite.\n", encoding="utf-8")
+        return leaf, modules, second
+
+    def test_campaign_leaf_subset_complete_union_and_fallbacks_use_real_planner(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="campaign_leaf_plan_") as directory:
+            root = Path(directory)
+            leaf, modules, second = self.campaign_leaf_fixture(root)
+            owner = "projects/single_reflection_oa_tof_mass_analyzer"
+            requests = [dict(name="leaf", paths=[leaf]),
+                        dict(name="docs_and_test", paths=[leaf, owner + "/docs/PROJECT.md", modules[0]]),
+                        dict(name="pure_test", paths=[modules[0]]),
+                        dict(name="cross_owner", paths=[leaf, "common/contracts/test_cross_owner.py"]),
+                        dict(name="mapped_union", paths=[leaf, second]),
+                        dict(name="complete_test_union", paths=[leaf, owner + "/tests/analysis/test_unrelated.py"]),
+                        dict(name="unknown", paths=[owner + "/analysis/unmapped.py"]),
+                        dict(name="mixed_unknown", paths=[leaf, owner + "/analysis/unmapped.py"]),
+                        dict(name="deleted", paths=[leaf]), dict(name="owner", scope="Owner"),
+                        dict(name="repository", scope="Repository")]
+            (root / "probes.json").write_text(json.dumps(requests), encoding="utf-8")
+            script = root / "plan_matrix.ps1"
+            script.write_text(r"""param($Root,$Python)
+$ErrorActionPreference='Stop';$reports=@{}
+foreach($probe in (Get-Content (Join-Path $Root 'probes.json') -Raw|ConvertFrom-Json)){
+ $plan=Join-Path $Root ($probe.name+'.json');$source=Join-Path $Root 'projects/single_reflection_oa_tof_mass_analyzer/analysis/experiment_campaign.py'
+ if($probe.name-eq'deleted'){Remove-Item -LiteralPath $source}
+ try{
+  if($probe.name-eq'owner'){& (Join-Path $Root 'common/verify.ps1') -Scope Owner -Owner single_reflection_oa_tof_mass_analyzer -PythonExe $Python -PlanOnly -PlanPath $plan|Out-Null}
+  elseif($probe.name-eq'repository'){& (Join-Path $Root 'common/verify.ps1') -Scope Repository -PythonExe $Python -PlanOnly -PlanPath $plan|Out-Null}
+  else{& (Join-Path $Root 'common/verify.ps1') -ChangedPath @($probe.paths) -PythonExe $Python -PlanOnly -PlanPath $plan|Out-Null}
+  $reports[$probe.name]=Get-Content -LiteralPath $plan -Raw|ConvertFrom-Json -Depth 100
+ }finally{if($probe.name-eq'deleted'){'# Restored fixture leaf'|Set-Content -LiteralPath $source}}
+}
+$reports|ConvertTo-Json -Depth 100|Set-Content -LiteralPath (Join-Path $Root 'plans.json') -Encoding utf8
+""", encoding="utf-8")
+            outcome = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(root), sys.executable],
+                                     cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=90)
+            self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)
+            plans = json.loads((root / "plans.json").read_text(encoding="utf-8-sig"))
+            stage = "single_reflection_oa_tof_mass_analyzer_static"
+            expected = {x[:-3].replace("/", ".") for x in modules}
+            for name in ("leaf", "docs_and_test", "cross_owner"):
+                selected = [x for x in plans[name]["stages"] if x["name"].startswith(stage)]
+                self.assertEqual(len(selected), 1, name)
+                self.assertEqual(selected[0]["command"]["runner"], "powershell")
+                self.assertEqual(set(selected[0]["command"]["parameters"]["SelectedTestModules"]), expected)
+                self.assertNotIn("PreflightValidated", selected[0]["command"]["parameters"])
+            pure = next(x for x in plans["pure_test"]["stages"] if x["name"] == stage)
+            self.assertEqual(pure["command"]["runner"], "python")
+            for name in ("mapped_union", "complete_test_union", "unknown", "mixed_unknown", "deleted", "owner", "repository"):
+                selected = [x for x in plans[name]["stages"] if x["name"].startswith(stage)]
+                parent = next(x for x in selected if x["name"] == stage)
+                self.assertTrue(parent["command"]["parameters"]["PreflightOnly"], name)
+                shards = [x for x in selected if x["name"] != stage]
+                self.assertEqual(len(shards), 4, name)
+                actual = [m for x in shards for m in x["command"]["parameters"]["SelectedTestModules"]]
+                self.assertEqual(len(actual), len(set(actual)), name)
+                self.assertEqual(set(actual), expected | {owner.replace("/", ".") + ".tests.analysis.test_unrelated"}, name)
+            self.assertTrue(any(x["name"] == "common_contracts" for x in plans["cross_owner"]["stages"]))
+
+    def test_campaign_leaf_real_owner_runs_preflight_and_propagates_selected_failure(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="campaign_leaf_dispatch_") as directory:
+            root = Path(directory)
+            leaf, modules, _ = self.campaign_leaf_fixture(root)
+            for failed in (False, True):
+                environment = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", LEAF_EVENTS=str(root / (str(failed)+".events")))
+                environment.pop("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN", None)
+                environment.pop("PYTHONPATH", None)
+                environment["LEAF_FAIL"] = modules[0][:-3].replace("/", ".") if failed else ""
+                command = ["pwsh", "-NoProfile", "-File", str(root / "common/verify.ps1"), "-ChangedPath", leaf,
+                           "-PythonExe", sys.executable, "-MaxConcurrency", "2", "-SummaryPath", str(root / (str(failed)+".json"))]
+                outcome = subprocess.run(command, cwd=root, env=environment, capture_output=True,
+                                         text=True, encoding="utf-8", timeout=90)
+                self.assertEqual(outcome.returncode != 0, failed, outcome.stdout + outcome.stderr)
+                self.assertEqual(Path(environment["LEAF_EVENTS"]).read_text().splitlines(), ["preflight"])
+                summary = json.loads((root / (str(failed)+".json")).read_text(encoding="utf-8-sig"))
+                stages = [x for x in summary["stages"] if x["selected"] and x["name"].startswith("single_reflection")]
+                self.assertEqual(len(stages), 1)
+                self.assertEqual(stages[0]["status"], "FAIL" if failed else "PASS")
+                self.assertEqual(len(stages[0]["test_durations"]), 4)
+                if failed:
+                    self.assertIn("LEAF_FAILURE_PROPAGATED", outcome.stdout + outcome.stderr)
+                    self.assertIn("TEST_FAILURE_IMMEDIATE=", outcome.stdout + outcome.stderr)
+
     def copy_checkout(self, root: Path) -> None:
         clone = subprocess.run(["git", "-c", "core.longpaths=true", "clone", "--quiet", "--shared",
                                 "-c", "core.longpaths=true", "-c", "core.autocrlf=false",

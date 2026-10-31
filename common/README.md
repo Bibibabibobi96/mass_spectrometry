@@ -343,3 +343,5 @@ Python向PowerShell传递派生预算可使用任务临时JSON，解析后由调
 RF 资源预算的两个调度用例改由真实 admission-pause 事件释放短测试 worker，纯报告矩阵合批执行。
 同范围三项实测39.189→15.879秒、父PowerShell启动9→3；后者使用隔离的已提交生产源码并保留worker退出检查。
 其他失败、未知writer与自然排空测试保留；这不是完整模块、Owner或Repository耗时。缺失释放信号、错误接受全部报告、外层非零及坏JSON的变异检查均能使测试失败。
+
+生产leaf可在现catalog的test_selection.dependencies用exact匹配声明受影响模块；已删除leaf和未知来源仍回退完整owner。SFI的SelectedTestModules复用原CLI与实际前置，完整分片按实际模块union判定，不能将替换式subset误当追加式完整范围。Owner／Repository保持全范围；纯测试Changed快路径保持，窄leaf结果不代表完整owner或Repository通过。

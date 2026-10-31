@@ -387,6 +387,9 @@ function Get-GateChangedTests {
     $mappedProfiles = @()
     if (-not $FullScope -and $null -ne $selection.PSObject.Properties['dependencies']) {
         foreach ($path in $ChangedPaths) {
+            # Deleted authorities need the existing full-owner fallback, not a
+            # stale leaf dependency mapping.
+            if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot $path) -PathType Leaf)) { continue }
             foreach ($dependency in $selection.dependencies) {
                 if (Get-ChangedRouteReason -Route $dependency -Paths @($path)) {
                     $mappedPaths += $path
@@ -416,6 +419,9 @@ function Get-GateChangedTests {
                 $path.StartsWith($_, [StringComparison]::OrdinalIgnoreCase)
             }).Count -eq 0)
     })
+    if (-not $FullScope -and @($ChangedPaths | Where-Object {
+        $_ -notin $mappedPaths -and $_ -notin $related -and -not (Test-DocumentationPath $_)
+    }).Count -gt 0) { return $null }
     if ($FullScope) { $related = @($roots | ForEach-Object { $_ + '__init__.py' }) }
     if ($related.Count -eq 0 -and $mappedModules.Count -eq 0) { return $null }
     $modules = @($related | Where-Object {

@@ -297,7 +297,7 @@ if ($FullScope) {
 
 $partitionParents = @{}
 function Test-CompletePartitionOwnerCommand {
-    param($Route, $Command, $TestSelection)
+    param($Route, $Command, $TestSelection, [string]$RepoRoot)
     if ($null -eq $Route.PSObject.Properties['repository_integration_partition'] -or
         $Command.runner -notin @('powershell','python')) { return $false }
     $complete = if ($null -ne $Route.PSObject.Properties['repository_integration_command']) {
@@ -315,6 +315,16 @@ function Test-CompletePartitionOwnerCommand {
     $moduleParameter = if ($null -ne $Route.test_selection.PSObject.Properties['module_parameter']) {
         [string]$Route.test_selection.module_parameter
     } else { '' }
+    if ($moduleParameter -and
+        $moduleParameter -ceq [string]$Route.repository_integration_partition.parameter -and
+        $null -ne $Command.parameters.PSObject.Properties[$moduleParameter]) {
+        # The partition parameter executes a replacement module set. Compare
+        # its actual union, not just the surrounding owner command shape.
+        $selectedModules = @($Command.parameters.$moduleParameter | Sort-Object -Unique)
+        $completeModules = @(Get-GateRepositoryTestPartitions -Route $Route -RepoRoot $RepoRoot |
+            ForEach-Object { $_.modules } | Sort-Object -Unique)
+        if (($selectedModules -join '|') -cne ($completeModules -join '|')) { return $false }
+    }
     $actualNames = @($Command.parameters.PSObject.Properties.Name | Where-Object { $_ -ne $moduleParameter } | Sort-Object)
     $completeNames = @($complete.parameters.PSObject.Properties.Name | Where-Object { $_ -ne 'PreflightOnly' } | Sort-Object)
     if (($actualNames -join '|') -cne ($completeNames -join '|')) { return $false }
@@ -377,7 +387,7 @@ foreach ($route in $routes) {
         }
         $partitions = @()
         if (($null -eq $testSelection -or -not $testSelection.OnlyTestModules) -and
-            (Test-CompletePartitionOwnerCommand -Route $route -Command $command -TestSelection $testSelection)) {
+            (Test-CompletePartitionOwnerCommand -Route $route -Command $command -TestSelection $testSelection -RepoRoot $repoRoot)) {
             $partitionArguments = @{Route=$route;RepoRoot=$repoRoot}
             if ($command.runner -eq 'python' -and $null -ne $testSelection -and $testSelection.CompleteOwner) {
                 $partitionArguments.Modules = @($testSelection.Modules)
