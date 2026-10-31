@@ -64,7 +64,7 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
             },
         )
         self.assertTrue(
-            all(profile["evidence_levels"] == ["plan"] for profile in profiles["profiles"])
+            all(profile["action"] == "run" and profile["qualification_support"] == ["none"] for profile in profiles["profiles"])
         )
         run_steps = [
             step

@@ -54,5 +54,5 @@ oa-TOF上游接口。具体数值不在本文复制，避免与机器合同形�
 
 ## 机器能力与解析输入
 
-现有仅 Static 的 profile 明确为 software_check，不表示存在 COMSOL 模型或物理链。
+当前没有已注册的物理执行 profile；软件验证保持独立，不表示存在可执行的 COMSOL 模型或物理链。
 能力查询与执行编译见[公共合同](../../../common/contracts/README.md#执行dry-run)；READY 仅描述声明条件。

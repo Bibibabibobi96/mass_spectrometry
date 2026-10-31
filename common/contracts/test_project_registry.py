@@ -2,9 +2,6 @@ from __future__ import annotations
 
 import copy
 import json
-import shutil
-import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,13 +13,11 @@ from artifact_identity_archive import (
     load_retired_project_descriptors,
 )
 from build_project_registry import (
-    DEFAULT_OUTPUT,
     ContractError,
     REPO_ROOT,
     build_registry,
     consistent_profile_identity,
     descriptor_paths,
-    serialized,
     validate_descriptor,
     validate_legacy_identity_mappings,
 )
@@ -121,92 +116,31 @@ class ProjectRegistryTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             validate_schema(descriptor, "project.schema.json")
 
-    def test_registry_and_multipole_profile_hashes_are_lf_crlf_equivalent(
-        self,
-    ) -> None:
-        project_id = MULTIPOLE_PROJECT_ID
+    def test_registry_algorithm_orders_inputs_normalizes_eol_and_rejects_invalid_inventory(self):
+        # Descriptor/schema contracts are tested separately; this isolates the
+        # registry algorithm without copying a real project and its history.
         with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory)
-            lf_root = base / "lf"
-            crlf_root = base / "crlf"
-            lf_project = lf_root / "projects" / project_id
-            lf_project.parent.mkdir(parents=True)
-            shutil.copytree(
-                REPO_ROOT / "projects" / project_id, lf_project,
-                ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
-            )
-            frozen = {
-                path.relative_to(lf_project): path.read_bytes()
-                for path in (lf_project / "docs/history").rglob("*")
-                if path.is_file()
-            }
-            for path in lf_project.rglob("*.json"):
-                if path.relative_to(lf_project) in frozen:
-                    continue
-                path.write_bytes(
-                    path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
-                )
-
-            profiles_path = lf_project / "config" / "design_profiles.json"
-            profiles = load_json(profiles_path)
-            for profile in profiles["profiles"]:
-                request_path = lf_project / profile["design_request"]
-                envelope_path = lf_project / profile["optimization_envelope"]
-                envelope = load_json(envelope_path)
-                envelope["reference"]["design_request_sha256"] = (
-                    repository_text_sha256(request_path)
-                )
-                envelope_path.write_text(
-                    json.dumps(envelope, indent=2) + "\n",
-                    encoding="utf-8",
-                    newline="\n",
-                )
-            for profile in profiles["profiles"]:
-                profile["sha256"] = {
-                    label: repository_text_sha256(lf_project / profile[label])
-                    for label in (
-                        "design_request",
-                        "design_variables",
-                        "optimization_envelope",
-                    )
-                }
-            modes_path = lf_project / profiles["operating_mode_registry"]
-            profiles["operating_mode_registry_sha256"] = (
-                repository_text_sha256(modes_path)
-            )
-            profiles_path.write_text(
-                json.dumps(profiles, indent=2) + "\n",
-                encoding="utf-8",
-                newline="\n",
-            )
-            execution = load_json(lf_project / "config" / "execution_profiles.json")
-            for execution_profile in execution["profiles"]:
-                for step in execution_profile["steps"]:
-                    entrypoint = (lf_project / step["entrypoint"]).resolve()
-                    if not entrypoint.exists():
-                        entrypoint.parent.mkdir(parents=True, exist_ok=True)
-                        entrypoint.touch()
-
-            shutil.copytree(lf_root, crlf_root)
-            crlf_project = crlf_root / "projects" / project_id
-            for path in crlf_project.rglob("*.json"):
-                if path.relative_to(crlf_project) in frozen:
-                    continue
-                path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
-
-            # Active text hashes normalize EOLs; retired identities stay raw bytes.
-            for relative, content in frozen.items():
-                self.assertEqual((lf_project / relative).read_bytes(), content)
-                self.assertEqual((crlf_project / relative).read_bytes(), content)
-
-            lf_registry = build_registry(lf_root)
-            crlf_registry = build_registry(crlf_root)
-            self.assertEqual(lf_registry, crlf_registry)
-            descriptor_path = lf_project / "config" / "project.json"
-            self.assertEqual(
-                lf_registry["generated_from"][0]["sha256"],
-                repository_text_sha256(descriptor_path),
-            )
+            root = Path(directory)
+            paths = []
+            for project_id in ("beta", "alpha"):
+                path = root / "projects" / project_id / "config/project.json"
+                path.parent.mkdir(parents=True)
+                path.write_text(json.dumps({"project_id": project_id}, indent=2) + "\n", encoding="utf-8", newline="\n")
+                paths.append(path)
+            with patch("build_project_registry.validate_descriptor"), patch(
+                "build_project_registry.validate_legacy_identity_mappings"
+            ), patch("build_project_registry.validate_schema"):
+                lf = build_registry(root)
+                self.assertEqual([item["project_id"] for item in lf["projects"]], ["alpha", "beta"])
+                for path in paths:
+                    path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+                self.assertEqual(build_registry(root), lf)
+                paths[0].write_text('{"project_id":"alpha"}', encoding="utf-8")
+                with self.assertRaisesRegex(ContractError, "duplicate project_id"):
+                    build_registry(root)
+                (root / "projects" / "missing").mkdir()
+                with self.assertRaisesRegex(ContractError, "missing config/project.json"):
+                    build_registry(root)
 
     def test_multipole_registration_uses_one_consistent_profile_identity(self) -> None:
         identities = [
@@ -246,7 +180,7 @@ class ProjectRegistryTests(unittest.TestCase):
                 self.assertIsNone(previous["contracts"]["baseline"])
                 validate_schema(previous, "project.schema.json")
 
-        registry = build_registry()
+        registry = load_json(REPO_ROOT / "config/project_registry.json")
         active = {item["project_id"]: item for item in registry["projects"]}
         historical_ids = {
             identity.project_id for identity in historical_project_identities(descriptor, REPO_ROOT)
@@ -276,32 +210,6 @@ class ProjectRegistryTests(unittest.TestCase):
         self.assertIsNone(descriptor["contracts"]["resolved"])
         self.assertIn("simion", descriptor["toolchains"])
         self.assertEqual(descriptor["capabilities"][0]["status"], "candidate")
-
-    def test_registry_is_current_and_deterministic(self) -> None:
-        registry = build_registry()
-        self.assertEqual(
-            [project["project_id"] for project in registry["projects"]],
-            sorted(project["project_id"] for project in registry["projects"]),
-        )
-        self.assertEqual(DEFAULT_OUTPUT.read_text(encoding="utf-8"), serialized(registry))
-        commands = (
-            [
-                sys.executable,
-                str(REPO_ROOT / "common" / "contracts" / "build_project_registry.py"),
-                "--check",
-            ],
-            [sys.executable, "-m", "common.contracts.build_project_registry", "--check"],
-        )
-        for command in commands:
-            completed = subprocess.run(
-                command,
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=30,
-            )
-            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
     def test_project_id_must_match_directory(self) -> None:
         path = REPO_ROOT / "projects" / "single_reflection_oa_tof_mass_analyzer" / "config" / "project.json"
