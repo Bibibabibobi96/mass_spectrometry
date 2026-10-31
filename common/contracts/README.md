@@ -104,7 +104,13 @@ owner从live公共`Resolve-HostResourceStatePath`取得实际控制面路径（�
 
 请求为schema 1、role `run_artifact_workflow_request`，固定包含`repository_root`、`python_executable`、
 `package`、`capacity`、`prepared`和不透明科学`payload`。`package`声明project/run_id/mode、
-`artifact_project_root`、software、retention_class/reason；`capacity`声明非负整数committed_new_bytes、
+`artifact_project_root`、software、retention_class/reason；可选的
+`package.expected_execution_relative_paths`为本次计划派生的原生输出和配套文件相对路径数组，
+在prepared回调启动前交给既有路径容量检查及运行包选择执行表示。绝对路径、越界路径和非字符串成员
+在创建run前拒绝；外部来源仍用`prepared.native_input_paths`及原有来源保护声明。
+owner的持久目录与配置引用保持规范位置，原生参数使用执行表示，别名清理后仍可收尾。
+未声明该数组时保持原有路径选择行为，不把此声明当作求解完成证据。
+`capacity`声明非负整数committed_new_bytes、
 非空commitment_inputs文件身份、protected_paths/protected_cache_keys；`prepared`声明module、固定function
 `execute_prepared_run`、import_root和entrypoint文件身份。所有文件身份复用`file_record`的
 `path/exists/bytes/sha256`，必须存在且内容一致。缺少预算来源不能用零或默认物理尺寸补齐。

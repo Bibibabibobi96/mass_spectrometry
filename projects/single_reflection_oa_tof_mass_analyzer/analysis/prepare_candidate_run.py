@@ -925,6 +925,36 @@ def select_postprocess_parent(parent: Path, consumer_artifact_root: Path) -> dic
             "scope": "comsol_postprocessing_only", "parent": str(parent)}
 
 
+def candidate_native_execution_relative_paths(closure: dict, *, code_relative_root: Path,
+                                               model_relative_path: Path | None = None,
+                                               cold: bool = False) -> list[str]:
+    """Declare this project's actual child-native files to the existing package.
+
+    Source-owner model paths are separately admitted native_input_paths. This
+    list covers only future files within this child and contains no new alias
+    construction, tool selector, scientific configuration, or budget defaults.
+    """
+    root = Path(code_relative_root)
+    if root.is_absolute() or ".." in root.parts:
+        raise ValueError("Candidate native code must have an explicit child-relative base")
+    paths = {root / item["source_id"] for item in closure["sources"]
+             if Path(item["source_id"]).suffix.lower() in {".m", ".lua", ".gem", ".fly2", ".iob", ".con", ".ps1"}}
+    paths.update(Path(name) for name in ("comsol_tmp", "comsol_recovery", "inputs/native_run_config.json", "inputs/oatof_candidate_N100.ion"))
+    if cold:
+        paths.update(Path(name) for name in ("inputs/cold_postprocess.m", "inputs/cold_request.json",
+            "logs/cold_postprocess.txt", "logs/cold_postprocess_completion.json", "logs/cold_launcher.log",
+            "results/cold_postprocess_result.json"))
+    else:
+        paths.update(Path(name) for name in ("logs/comsol_build.txt", "logs/comsol_build_completion.json",
+            "logs/comsol_build_launcher.log", "logs/comsol_sync.txt", "logs/comsol_sync_completion.json",
+            "logs/comsol_sync_launcher.log", "logs/cad_build.txt", "logs/cad_completion.json", "logs/cad_launcher.log"))
+    if model_relative_path is not None:
+        model = Path(model_relative_path)
+        if model.is_absolute() or ".." in model.parts:
+            raise ValueError("Candidate model must have an explicit child-relative output")
+        paths.update((model, Path(str(model) + ".postprocess.json")))
+    return sorted(path.as_posix() for path in paths)
+
 def prepare_postprocess_request(parent: Path, run_id: str) -> dict:
     """Freeze only an explicit COMSOL postprocessing child, using the public owner."""
     from common.paths.workspace_paths import resolve_workspace_paths
@@ -956,7 +986,10 @@ def prepare_postprocess_request(parent: Path, run_id: str) -> dict:
             "repository_root": str(REPO_ROOT), "python_executable": closure["runtime"]["python_executable"],
             "package": {"project": PROJECT_ROOT.name, "run_id": run_id, "mode": "candidate_comsol_postprocess",
                         "artifact_project_root": str(project_root), "software": ["COMSOL 6.4", "MATLAB R2025b", "Python 3.11"],
-                        "retention_class": "compact", "retention_reason": ""},
+                        "retention_class": "compact", "retention_reason": "",
+                        **({"expected_execution_relative_paths": candidate_native_execution_relative_paths(
+                            closure, code_relative_root=Path("inputs/code"), cold=True)}
+                           if selection["exports"] is None else {})},
             "capacity": {"committed_new_bytes": selection["new_bytes"],
                          "commitment_inputs": [file_record(selection_path), selection["budget_record"]],
                          "protected_paths": [str(planning)], "protected_cache_keys": [],

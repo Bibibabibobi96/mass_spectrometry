@@ -129,6 +129,51 @@ def released_writer() -> dict:
 
 @unittest.skipUnless(PWSH and os.name == "nt", "Windows PowerShell workflow boundary")
 class RunArtifactWorkflowTests(unittest.TestCase):
+    def test_declared_future_native_paths_select_managed_execution_before_callback(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="workflow-native-plan-") as directory:
+            root = Path(directory) / ("p" * 24)
+            root.mkdir()
+            relative = "results/native/" + ("n" * 90) + ".csv"
+            extra = """    if payload.get("future_native_relative"):
+        relative = payload["future_native_relative"]
+        canonical = root / relative
+        native_root = Path(os.environ["MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY"])
+        native = native_root / relative
+        assert len(str(canonical)) > 259
+        assert len(str(native)) <= 259 and native_root != root and native_root.is_dir()
+        native.parent.mkdir(parents=True, exist_ok=True)
+        native.write_text("inert_path_probe\\n1\\n", encoding="utf-8")
+        assert canonical.read_bytes() == native.read_bytes()
+        probe = root / "results/native_path_probe.json"
+        probe.write_text(json.dumps({"canonical": str(canonical), "execution": str(native), "alias": str(native_root)}), encoding="utf-8")
+        completion["output_paths"].extend([str(canonical), str(probe)])
+"""
+            needle = '    completion_path.write_text(json.dumps(completion), encoding="utf-8")'
+            self.assertEqual(CALLBACK.count(needle), 1)
+            callback = CALLBACK.replace(needle, extra + needle)
+            with unittest.mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_EXECUTION_ROOT": str(Path(directory) / "x")}):
+                result, run, _, outcome = self.invoke_fixture(root, {"future_native_relative": relative},
+                    callback_text=callback, expected_execution_relative_paths=[relative])
+            self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)
+            probe = json.loads((run / "results/native_path_probe.json").read_text(encoding="utf-8"))
+            self.assertTrue(Path(probe["canonical"]).is_file())
+            self.assertFalse(Path(probe["alias"]).exists())
+            self.assertTrue(result["execution_alias_removed"])
+            self.assertEqual(json.loads((run / "inputs/execution_request.json").read_text(encoding="utf-8"))["package"]["expected_execution_relative_paths"], [relative])
+
+
+    def test_declared_native_paths_reject_escape_and_invalid_types_before_run(self) -> None:
+        for value in (["../escape.csv"], [str(REPO / "outside.csv")], "results/file.csv", [7]):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                result, run, _, outcome = self.invoke_fixture(root, {}, expected_execution_relative_paths=value)
+                self.assertNotEqual(outcome.returncode, 0)
+                self.assertEqual(result["stage"], "validate")
+                self.assertFalse(run.exists())
+                self.assertFalse((root / "callback_count.txt").exists())
+                self.assertIn("path", (outcome.stdout + outcome.stderr).lower())
+
+
     def test_direct_powershell_release_keeps_actual_transaction_fields(self):
         script=r'''param($Repo)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
@@ -219,7 +264,7 @@ Write-Output 'RECEIPTS=PASS'
     def invoke_fixture(self, root: Path, payload: dict, *, retention: str = "compact", host_state: str | None = None,
                        observation_failure: bool = False, failure_stage: str | None = None, project: str = PROJECT,
                        callback_text: str | None = None, source_references=None,
-                       capacity_trace: Path | None = None, native_input_paths=None) -> tuple[dict, Path, Path, subprocess.CompletedProcess[str]]:
+                       capacity_trace: Path | None = None, native_input_paths=None, expected_execution_relative_paths=None) -> tuple[dict, Path, Path, subprocess.CompletedProcess[str]]:
         artifacts = root / "artifacts"
         artifacts.mkdir()
         initialize_capacity_ledger(artifacts, objects=[])
@@ -248,6 +293,8 @@ Write-Output 'RECEIPTS=PASS'
             request["capacity"]["source_references"] = source_references
         if native_input_paths is not None:
             request["prepared"]["native_input_paths"] = native_input_paths
+        if expected_execution_relative_paths is not None:
+            request["package"]["expected_execution_relative_paths"] = expected_execution_relative_paths
         request_path, result_path = root / "request.json", root / "result.json"
         request_path.write_text(json.dumps(request), encoding="utf-8")
         # Only disk/host admission is isolated: capacity lease CRUD, package,

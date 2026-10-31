@@ -54,7 +54,9 @@ def execute_comsol_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe
     _run_managed_stage_command(build_command, logs / "comsol_build_launcher.log", plan,
                                logs / "comsol_build_completion.json", "comsol_launcher_completion", environment)
     _require_pass_report(build_report)
-    analysis_request = Path(_report_value(build_report, "PYTHON_ANALYSIS_REQUEST"))
+    from common.paths.workspace_paths import project_run_path
+    analysis_request = Path(project_run_path(_report_value(build_report, "PYTHON_ANALYSIS_REQUEST"),
+        os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(run_root), run_root))
     if not analysis_request.is_file():
         raise RuntimeError(f"COMSOL detector-event analysis request is missing: {analysis_request}")
     analysis_receipt = analyze_detector_request(analysis_request, closure, logs / "comsol_detector_event_analysis.log", runtime=runtime)

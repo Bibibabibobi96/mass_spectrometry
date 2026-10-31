@@ -670,3 +670,10 @@ normal build／sync、CAD的COMSOL打开及cold后处理均向既有launcher传�
 原锁定 MATLAB core 内导出调用位置的字符串测试退役；Python 指标与非法 metric owner 拒绝行为保留，
 保存模型验证另由现有 MATLAB 行为套件承担。两项候选测试及整个 detector 分析模块共4项通过（8.741秒），
 公开命令墙钟14.938秒；这是软件定向验证，不代表最终 CI、原生求解或科学资格完成。
+
+
+### Candidate 原生执行路径运输
+
+正常与冷后处理请求从实际冻结源码清单、任务及模型输出派生本child相对路径，交同一公共运行包在准入前自动选择执行表示；CSV-only后处理不声明原生路径。原生argv、cwd、环境、日志和transport-only配置沿现公共映射，正式run_config及源身份保留canonical。冷开外部模型与context继续消费已准入SourceReferences对应的source_execution_context，不新造alias。实际writer停止后只将本child小JSON长期引用归回canonical；未知writer保留原保护。
+
+隔离HEAD闭包软件验证：冷导出成功后分析失败的原CLI新child CSV恢复/Resume通过48.067秒，冷调用运输通过3.505秒；真实公共owner深路径与原生输入transport-only配置、已停止Python惰性边界及alias清理通过6.062秒。首轮缺隔离测试support和后续callback变量冲突失败记录均保留。未运行COMSOL、求解、模型保存/冷重开或GUI；软件运输通过不授予这些资格。

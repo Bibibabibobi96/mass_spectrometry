@@ -515,7 +515,17 @@ function Invoke-RunArtifactWorkflow {
     $request=Get-Content -LiteralPath $requestFile -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
     Assert-WorkflowFields $request @('schema_version','role','repository_root','python_executable','package','capacity','prepared','payload') 'Workflow request'
     if($request.schema_version-ne1-or$request.role-cne'run_artifact_workflow_request'){throw 'Workflow request identity differs.'}
-    Assert-WorkflowFields $request.package @('project','run_id','mode','artifact_project_root','software','retention_class','retention_reason') 'Workflow package'
+    $packageFields=@('project','run_id','mode','artifact_project_root','software','retention_class','retention_reason')
+    if($request.package-is[Collections.IDictionary]-and$request.package.Contains('expected_execution_relative_paths')){$packageFields+='expected_execution_relative_paths'}
+    Assert-WorkflowFields $request.package $packageFields 'Workflow package'
+    $expectedExecutionRelativePaths=@()
+    if($request.package.Contains('expected_execution_relative_paths')){
+      if($request.package.expected_execution_relative_paths-isnot[array]){throw 'Expected native execution paths must be an array.'}
+      foreach($path in $request.package.expected_execution_relative_paths){
+        if($path-isnot[string]){throw 'Expected native execution paths must contain strings.'}
+      }
+      $expectedExecutionRelativePaths=@($request.package.expected_execution_relative_paths)
+    }
     $capacityFields=@('committed_new_bytes','commitment_inputs','protected_paths','protected_cache_keys')
     if($request.capacity.Contains('source_references')){$capacityFields+='source_references'}
     if($request.capacity.Contains('ownership')-or$request.capacity.Contains('session_owner')){$capacityFields+=@('ownership','session_owner')}
@@ -574,6 +584,7 @@ function Invoke-RunArtifactWorkflow {
     $artifactRoot=Split-Path -Parent (Split-Path -Parent $projectRoot)
     . (Join-Path $PSScriptRoot '../paths/workspace_paths.ps1')
     $runRoot=Join-Path (Join-Path $projectRoot 'runs') $request.package.run_id
+    $null=Get-RunPackagePathCapacity -RunDirectory $runRoot -ExpectedExecutionRelativePaths $expectedExecutionRelativePaths
     $recoveryConfig=$null
     if($ResumeFinalization-and(Test-Path -LiteralPath (Join-Path $runRoot 'run_config.json') -PathType Leaf)){
       $recoveryConfig=Get-Content -LiteralPath (Join-Path $runRoot 'run_config.json') -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
@@ -654,7 +665,12 @@ function Invoke-RunArtifactWorkflow {
     $package=New-RunPackage -Python $python -RepoRoot $repo -ArtifactRoot $projectRoot `
       -RunId $request.package.run_id -Project $request.package.project -Mode $request.package.mode `
       -Software $request.package.software -RetentionContractEnabled -RetentionClass $request.package.retention_class `
-      -RetentionReason $request.package.retention_reason -CapacityLedgerLifecycleEnabled -CapacityLedgerArtifactRoot $artifactRoot -PathContext $pathContext
+      -RetentionReason $request.package.retention_reason -CapacityLedgerLifecycleEnabled -CapacityLedgerArtifactRoot $artifactRoot -PathContext $pathContext `
+      -ExpectedExecutionRelativePaths $expectedExecutionRelativePaths
+    # The owner persists identities beyond disposal of the execution view.
+    foreach($entry in @{input_dir='inputs';result_dir='results';log_dir='logs';run_config='run_config.json';summary='summary.json'}.GetEnumerator()){
+      $package.($entry.Key)=Join-Path $package.artifact_run_dir $entry.Value
+    }
     $result.execution_context=$pathContext
     $frozenRequest=Join-Path $package.input_dir 'execution_request.json'
     $copyIdentity=$null

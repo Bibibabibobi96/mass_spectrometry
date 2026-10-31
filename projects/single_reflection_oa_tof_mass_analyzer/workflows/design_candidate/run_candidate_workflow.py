@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Any, Callable
 
 from common.contracts.particle_count_policy import validate_standard_particle_count
-from .candidate_stage_execution import _powershell
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -40,7 +39,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.simion_component_pa_plan import compile_component_pa_plan, sum_component_commitments
 
 
-from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_stage_execution import execute_candidate_stage
+from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_stage_execution import execute_candidate_stage, _powershell
 
 
 StageExecutor = Callable[[dict[str, Any], dict[str, Any], str], dict[str, Any]]
@@ -150,24 +149,87 @@ def _run_command(command: list[str], log_path: Path, environment: dict[str, str]
 
 
 
+def _native_stage_execution_view(command: list[str], environment: dict[str, str] | None,
+                                 plan: dict[str, Any]) -> tuple[list[str], dict[str, str]]:
+    """Transport only this owner's actual native paths through its public view."""
+    from common.paths.workspace_paths import project_native_run_path
+    persistent = os.environ.get("MASS_SPECTROMETRY_RUN_DIRECTORY")
+    if persistent and Path(persistent).resolve() != Path(plan["run_root"]).resolve():
+        raise ValueError("Native stage does not belong to the active public run context")
+    native_environment = {key: project_native_run_path(value) for key, value in (environment or {}).items()}
+    original_config = (environment or {}).get("OATOF_CANDIDATE_RUN_CONFIG_PATH")
+    if original_config and Path(original_config).is_file():
+        # Only the execution view of actual inputs changes. The owner config,
+        # capacity metadata and scientific values remain the frozen authority.
+        document = load_json(Path(original_config))
+        document["inputs"] = {key: project_native_run_path(value)
+                              for key, value in document.get("inputs", {}).items()}
+        projected_config = Path(plan["run_root"]) / "inputs/native_run_config.json"
+        write_json_atomic(projected_config, document)
+        native_environment["OATOF_CANDIDATE_RUN_CONFIG_PATH"] = project_native_run_path(projected_config)
+    return [project_native_run_path(value) for value in command], native_environment
+
+
+def _persist_native_json_paths(plan: dict[str, Any]) -> None:
+    """Normalize stopped-writer JSON references, never a model or parent input."""
+    from common.paths.workspace_paths import project_run_path
+    root = Path(plan["run_root"])
+    execution = os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY")
+    if not execution or execution == str(root):
+        return
+    def canonical(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {key: canonical(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [canonical(item) for item in value]
+        if isinstance(value, str):
+            return project_run_path(value, execution, root)
+        return value
+    paths = [*root.glob("comsol/*.mph.postprocess.json"), *root.glob("results/*.analysis_request.json")]
+    paths += [root / "results/cold_postprocess_result.json", root / "inputs/native_run_config.json"]
+    for path in paths:
+        if path.is_file():
+            document = load_json(path)
+            normalized = canonical(document)
+            if normalized != document:
+                write_json_atomic(path, normalized)
+
+
 def _run_managed_stage_command(
     command: list[str], log_path: Path, plan: dict[str, Any], receipt_path: Path,
     role: str, environment: dict[str, str] | None = None,
 ) -> None:
-    """Carry the actual native and host-owner receipts across the PS boundary."""
+    """Carry actual native receipts and canonical persistent paths to the owner."""
     writer = plan.get("writer_completion")
     failure = None
     try:
-        _run_command(command, log_path, environment)
+        native_command, native_environment = _native_stage_execution_view(command, environment, plan)
+        from common.paths.workspace_paths import project_native_run_path
+        _run_command(native_command, Path(project_native_run_path(log_path)), native_environment)
     except BaseException as error:
         failure = error
-    append_native_stage_completion(
-        writer, receipt_path, role=role, run_id=plan["run_id"],
-        context_sha256=plan["context_sha256"], original_failure=failure,
-    )
-
-
-
+    try:
+        append_native_stage_completion(
+            writer, receipt_path, role=role, run_id=plan["run_id"],
+            context_sha256=plan["context_sha256"], original_failure=failure,
+        )
+    except BaseException as error:
+        failure = error
+    observed = [] if writer is None else [operation for operation in writer["operations"]
+        if operation.get("resource_release_id") == receipt_path.stem]
+    # This permits editing only our JSON after actual native exit. It does not
+    # declare host release/capacity/publication complete; the public owner still
+    # validates those independent facts and retains protection when unknown.
+    if observed and all(item.get("observation", {}).get("exit_confirmed") is True for item in observed):
+        try:
+            _persist_native_json_paths(plan)
+        except BaseException as secondary:
+            if failure is None:
+                failure = secondary
+            else:
+                failure.add_note(f"Native JSON path closeout also failed: {secondary}")
+    if failure is not None:
+        raise failure
 
 
 
@@ -1285,6 +1347,7 @@ def _prepare_execution_request(
     pa_producer_handoffs: list[tuple[Path, Path]] | None = None,
 ) -> dict[str, Any]:
     """Read the frozen plan and reserve disk from its explicit authorities."""
+    from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import candidate_native_execution_relative_paths
     plan_path = plan_path.resolve(strict=True)
     plan = load_json(plan_path)
     if plan.get("status") != "EXECUTION_READY":
@@ -1329,6 +1392,11 @@ def _prepare_execution_request(
             "project": "single_reflection_oa_tof_mass_analyzer", "run_id": plan["run_id"],
             "mode": "design_candidate", "artifact_project_root": str(run_root.parent.parent),
             "software": ["COMSOL", "SIMION", "SolidWorks"], "retention_class": "solver_review",
+            **({"expected_execution_relative_paths": candidate_native_execution_relative_paths(
+                closure, code_relative_root=code_root.relative_to(plan_path.parent),
+                model_relative_path=Path(next(stage["model_path"] for stage in plan["stages"]
+                    if stage["stage_id"] == "comsol_candidate")).relative_to(run_root))}
+               if reuse_through != "cad_candidate" else {}),
             "retention_reason": "Candidate MPH, CAD and private SIMION delivery remain available for explicit structural review; no promotion is authorized.",
         },
         "capacity": {
