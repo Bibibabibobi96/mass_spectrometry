@@ -96,6 +96,7 @@ class ExperimentCampaignTests(unittest.TestCase):
             self.assertNotEqual(rejected.returncode, 0)
             self.assertEqual(inside.read_bytes(), payload)
 
+
     def test_explicit_external_campaign_relocates_without_changing_rows_or_authority(self):
         import shutil
         with tempfile.TemporaryDirectory() as directory:
@@ -162,6 +163,23 @@ class ExperimentCampaignTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "project-relative"):
                     validate_campaign(paths[1])
 
+    def test_retired_status_reports_changed_authority_without_reauthorizing_history(self):
+        before = DEFAULT_CAMPAIGN.read_bytes()
+        document = json.loads(before)
+        document["execution_profile"]["authority"]["sha256"] = "0" * 64
+        with tempfile.TemporaryDirectory() as directory:
+            stale = Path(directory) / "stale_retired_campaign.json"
+            stale.write_text(json.dumps(document), encoding="utf-8")
+            stale_before = stale.read_bytes()
+            status = campaign_status(stale)
+            self.assertEqual(status["status"], "retired")
+            self.assertFalse(status["execution_authorized"])
+            self.assertEqual(status["science_status"], "not_evaluated")
+            self.assertTrue(any(row["authority"] == "execution_profile" for row in status["authority_diagnostics"]))
+            self.assertEqual(stale.read_bytes(), stale_before)
+            with self.assertRaisesRegex(ValueError, "status is retired"):
+                validate_campaign(stale, require_authorized=True)
+        self.assertEqual(DEFAULT_CAMPAIGN.read_bytes(), before)
 
     def test_authority_refresh_uses_current_profile_without_reauthorizing_campaign(self):
         from projects.single_reflection_oa_tof_mass_analyzer.analysis import sync_geometry_contract as sync
@@ -186,6 +204,7 @@ class ExperimentCampaignTests(unittest.TestCase):
             path.write_text(json.dumps(changed), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "unexpected execution profile authority path"):
                 sync.render_authority_document(path, sync.render_optimization_envelope())
+
 
     def test_public_entry_runs_as_repository_module_without_path_injection(self):
         completed = subprocess.run(
@@ -213,7 +232,7 @@ class ExperimentCampaignTests(unittest.TestCase):
             status = campaign_status(artifact_root=artifact_root)
             self.assertEqual(status["status"], "retired")
             self.assertFalse(status["execution_authorized"])
-            self.assertIn("campaign status is not authorized", status["authorization_blockers"])
+            self.assertIn("campaign status is retired", status["authorization_blockers"])
             self.assertFalse(status["mass_spectrum_internal_species_are_campaign_rows"])
             self.assertEqual(
                 [item["status"] for item in status["experiments"]],

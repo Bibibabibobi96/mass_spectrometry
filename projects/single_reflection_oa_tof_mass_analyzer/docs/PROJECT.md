@@ -8,6 +8,11 @@ Paper 1 专用研究准备API的归属与退出条件见[分析说明](../analys
 
 ## 当前状态
 
+退休 campaign 的 `--status` 读取原请求及终态事实，当前 authority 缺失或变化以诊断返回，
+不要求用今日配置重新认证历史，也不重新授权执行。活动请求与执行仍走严格校验，状态查询不做科学评价。
+完整对应软件模块15项通过（7.344秒）；同输入对照确认旧实现因 authority 漂移拒绝查询，
+修复后仍为 retired／execution_authorized=false，输入原字节保持、零原生调用。
+
 普通 COMSOL builder 恢复在配置电势节点前创建 `es` Electrostatics，并绑定既有 `sel_vac`；
 不改变真空选择、几何、电压、材料或数值合同。该三行初始化在静态 ON 重构时遗漏，
 `20261031_201923__sim__comsol__candidate-save-fault` 已在几何完成后、网格及求解前真实失败，

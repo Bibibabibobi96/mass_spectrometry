@@ -228,14 +228,16 @@ def _read_campaign(campaign_path: Path) -> dict[str, Any]:
                 sha256=hashlib.sha256(source_bytes).hexdigest().upper())
 
 
-
 def validate_campaign(
     campaign_path: Path = DEFAULT_CAMPAIGN,
     *,
     require_authorized: bool = False,
+    _snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    snapshot = _read_campaign(campaign_path)
+    snapshot = _snapshot if _snapshot is not None else _read_campaign(campaign_path)
     path, source_bytes, document = (snapshot[key] for key in ("path", "source_bytes", "document"))
+    if require_authorized and document["status"] == "retired":
+        raise ValueError("campaign execution is not authorized: campaign status is retired")
     profile = _profile(document)
     authorities = _authority_documents(document)
     axes = _axis_map(document, profile, authorities)
@@ -353,11 +355,30 @@ def campaign_status(
     *,
     artifact_root: Path = DEFAULT_ARTIFACT_ROOT,
 ) -> dict[str, Any]:
-    resolved = validate_campaign(campaign_path)
-    document = resolved["document"]
+    snapshot = _read_campaign(campaign_path)
+    document = snapshot["document"]
+    authority_diagnostics = []
+    if document["status"] == "retired":
+        # Status reads historical facts, not a request to requalify old inputs
+        # against today's defaults. Planning/execution still use strict validate.
+        records = {"base_request": document["base_request"],
+                   "execution_profile": document["execution_profile"]["authority"],
+                   **document["authorities"]}
+        for name, record in records.items():
+            try:
+                _project_file(record, name)
+            except (OSError, ValueError) as error:
+                authority_diagnostics.append(dict(authority=name, status="unavailable_or_changed", reason=str(error)))
+        for experiment in document["experiments"]:
+            validate_run_id(experiment["authorized_run_id"])
+        resolved = {**snapshot, "authorization_blockers": ["campaign status is retired", "execution_authorized is false"]}
+    else:
+        resolved = validate_campaign(campaign_path, _snapshot=snapshot)
     return {
         "schema_version": 1,
         "role": "oatof_experiment_campaign_status",
+        "authority_diagnostics": authority_diagnostics,
+        "science_status": "not_evaluated",
         "campaign_id": document["campaign_id"],
         "campaign_sha256": resolved["sha256"],
         "status": document["status"],
