@@ -603,3 +603,14 @@ mass_filter_reference正式case数组与manifest Outputs包含每case实际deter
 同轮 Freshness 的 PowerShell 解析可由实际变体软件入口显式复用；独立入口仍做适用前置。回归保留缺前置、坏语法、变体测试失败的非零传播，并在不支持的 Formal 资格请求进入软件检查前拒绝。软件主入口为 `common/verify.ps1 -Scope Owner -Owner rf_multipole_ion_optics`，内部 Core／Static／Freshness 不表示新的科学资格。
 
 2026-10-31，以上三个测试模块在隔离的 `7816f614` 生产源码上经公共 GATE 运行：28 项通过，测试区间 52.753 秒、外层 53.2210032 秒（2 CPU／2 GiB 准入）。范围仅 campaign request、dual-backend campaign 和项目 verify 接线；商业调用为 0，不代表完整 RF Owner／Repository、原生性能或科学资格验收。
+
+
+### 2026-10-31 有限三维最终公共读取消费者
+
+原CLI的-AnalyzeOnly -ReextractFromModel将本owner实际execution_run_directory传入既有COMSOL launcher的RunDir，并把原export返回receipt保留在原报告单行JSON；不新增路径机制、API调用或状态账本。深路径／真实wrapper／原模型只读和失败传播薄测试通过12.506秒；首次夹具将嵌套退出7误当wrapper退出码的失败保留，修后核对真实wrapper1及原stderr。
+
+实际后继20261031_231624__analysis__comsol__rf-finite-k2-cold只读原071000已解模型，零Compute／零父保存。primary／control各100ID、705原时刻、3逻辑窗、2实际API调用，保留4233／4108科学样本。七CSV共1,818,851B，与原结果逐字节相同；全部16个共同metrics递归相同，新增source_binding仅核对100原母群ID，不冒充native初态echo。实际科学状态仍UNQUALIFIED，未知和零出口保持原义。公开墙钟81.871秒，Result总78.570秒（收尾6.344秒），双case提取4.403秒；不是新的正常全链提速对照。
+
+实际tmp／recovery均owned于新run，峰RSS3,097,391,104B、run峰6,909,739B，在4GiB／128MiB及minAvailable8GiB预算内，无warning。launcher实际退出0、host released，终态／容量／租约／writer确认完成，无附加错误；父记录不变。执行根已是持久根，未虚构不存在的alias_removed字段；路径准备0.110秒、搬运0字节，临时native request在writer停止后删除。对照在既有终态共享guard下各读一次小CSV，无新MPH／MAT／大raw读取、hash或复制。
+
+本轮finite与deterministic的N100目标均在运行前明定，并非事后降低：原finite源分组正常命令157.443→102.883秒，deterministic正常K1／K2命令266.623→239.734秒；早期deferred-update正常整命令315.788→334.220秒的负结果仍保留。本次补齐最终finite读取接线，不外推较大N、全尺度精度或Formal资格，也不新增N1000研究门槛。

@@ -592,6 +592,7 @@ fprintf(fid,'TASK=MULTIPOLE_FINITE_SAVED_EXTRACTION\n');
 try
  request=jsondecode(fileread(getenv('RF_FINITE_REEXTRACTION_REQUEST')));
  receipt=reextract_finite_3d_transport(request,fid);
+ fprintf(fid,'EXTRACTION_RECEIPT_JSON=%s\n',jsonencode(receipt));
  assert(receipt.native_solves==0 && ~receipt.parent_model_saved,'Cold reader changed original model.');
  fprintf(fid,'CHECKPOINT=PARTICLE_EXPORT_COMPLETE\nNATIVE_SOLVES=0\nPARENT_MODEL_SAVED=false\nSTATUS=PASS\n');
 catch exception
@@ -625,7 +626,7 @@ end
   $nativeEnvironment.SIMULATION_PYTHON_EXE=$Python
   $nativeStopped=$false
   $quote={param($value) "'"+([string]$value).Replace("'","''")+"'"}
-  $command="& $(& $quote $nativeMap[$launcher]) -TaskScript $(& $quote $nativeMap[$task]) -ReportPath $(& $quote $nativeMap[$report]) -StartupAttempts 1 -RunId $(& $quote $RunId) -CompletionPath $(& $quote $nativeMap[$State.launcher_receipt]) -ResourceBudgets (Get-Content -LiteralPath $(& $quote $nativeMap[$budgetsPath]) -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable)"
+  $command="& $(& $quote $nativeMap[$launcher]) -TaskScript $(& $quote $nativeMap[$task]) -ReportPath $(& $quote $nativeMap[$report]) -StartupAttempts 1 -RunId $(& $quote $RunId) -RunDir $(& $quote $Context.execution_run_directory) -CompletionPath $(& $quote $nativeMap[$State.launcher_receipt]) -ResourceBudgets (Get-Content -LiteralPath $(& $quote $nativeMap[$budgetsPath]) -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable)"
   $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
   try{
     try{

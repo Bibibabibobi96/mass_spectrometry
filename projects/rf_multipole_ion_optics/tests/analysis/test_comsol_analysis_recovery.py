@@ -437,7 +437,7 @@ $source.stage_evidence|ConvertTo-Json -Depth 20 -Compress
             launcher = code/'common/comsol/run_comsol_r2025b.ps1'
             launcher.parent.mkdir(parents=True)
             launcher.write_text(r"""
-param($TaskScript,$ReportPath,$StartupAttempts,$RunId,$CompletionPath,$ResourceBudgets)
+param($TaskScript,$ReportPath,$StartupAttempts,$RunId,$RunDir,$CompletionPath,$ResourceBudgets)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../host_execution_lease.ps1')
 $request=Get-Content -LiteralPath $env:RF_FINITE_REEXTRACTION_REQUEST -Raw|ConvertFrom-Json
@@ -445,13 +445,18 @@ if($ResourceBudgets.solver.memory_bytes-ne2147483648){throw 'EXPLICIT_HOST_BUDGE
 if($request.context.acceptance.exit_interface.cross_section.shape-cne'open_rod_envelope'){throw 'OPEN_PORT_CHANGED'}
 if($request.context.geometry.census_plane_z-ne10){throw 'FROZEN_GEOMETRY_LOST'}
 if(-not(Test-Path -LiteralPath $TaskScript)){throw 'FROZEN_TASK_MISSING'}
+if($RunDir-cne(Split-Path -Parent (Split-Path -Parent $ReportPath))-or$RunDir.Length-gt260){throw 'OWNER_EXECUTION_RUN_ROOT_LOST'}
+$taskText=Get-Content -LiteralPath $TaskScript -Raw
+if($taskText-notmatch 'EXTRACTION_RECEIPT_JSON=%s\\n.*jsonencode\(receipt\)'){throw 'ACTUAL_RETURN_RECEIPT_NOT_RECORDED'}
 if($TaskScript.Length-gt260-or$ReportPath.Length-gt260-or$env:RF_FINITE_REEXTRACTION_REQUEST.Length-gt260){throw 'NATIVE_PATH_NOT_PROJECTED'}
 foreach($path in $request.context.outputs.PSObject.Properties.Value){if($path.Length-gt260){throw 'OUTPUT_PATH_NOT_PROJECTED'}}
 $lease=Enter-HostResourceStage -Role COMSOL -Stage postprocess -RunId $RunId -Budget $ResourceBudgets.postprocess
 foreach($path in $request.context.outputs.PSObject.Properties.Value){Set-Content -LiteralPath $path -Value 'INERT_COMMERCIAL_BOUNDARY_OUTPUT'}
-Set-Content -LiteralPath $ReportPath -Value "TASK=MULTIPOLE_FINITE_SAVED_EXTRACTION`nCHECKPOINT=PARTICLE_EXPORT_COMPLETE`nNATIVE_SOLVES=0`nPARENT_MODEL_SAVED=false`nSTATUS=PASS"
+$extraction=@{primary=@{mphparticle_calls=14;windows=28;api_logical_windows=2};control=@{mphparticle_calls=14;windows=28;api_logical_windows=2};native_solves=0;parent_model_saved=$false}|ConvertTo-Json -Depth 6 -Compress
+Set-Content -LiteralPath $ReportPath -Value "TASK=MULTIPOLE_FINITE_SAVED_EXTRACTION`nCHECKPOINT=PARTICLE_EXPORT_COMPLETE`nNATIVE_SOLVES=0`nPARENT_MODEL_SAVED=false`nEXTRACTION_RECEIPT_JSON=$extraction`nSTATUS=PASS"
 $release=Exit-HostResourceStage -Lease $lease -PassThru
 @{schema_version=1;role='comsol_launcher_completion';run_id=$RunId;operations=@();host_release=@{inherited=$false;token=$lease.token;result=$release;error=$null}}|ConvertTo-Json -Depth 20|Set-Content -LiteralPath $CompletionPath
+if($env:RF_INERT_COLD_LAUNCHER_FAIL-eq'1'){[Console]::Error.WriteLine('INERT_COLD_LAUNCHER_FAILURE');exit 7}
 """, encoding='utf-8')
             script = root/'exercise-cold.ps1'
             script.write_text(r"""
@@ -473,8 +478,13 @@ $limits=[pscustomobject]@{wall_clock_seconds=60;process_tree_working_set_bytes=2
 $result=Invoke-FiniteComsolSavedExtraction -Context $context -State $state -Source $fixture.source -Frozen $fixture.frozen -CodeRoot (Join-Path $run 'inputs/code') -Python $Python -RunId 'inert-cold-wiring' -Limits $limits
 $completion=Get-FiniteComsolWriterCompletion -State $state -RunId 'inert-cold-wiring'
 $alias=$package.execution_alias
+$env:RF_INERT_COLD_LAUNCHER_FAIL='1'
+$negativeState=@{native_attempted=$false;wrapper_observation=$null;host_lease=$null;writer_unknown=$false;phase_timings=@{};timer=[Diagnostics.Stopwatch]::StartNew()}
+$caught=$null;try{Invoke-FiniteComsolSavedExtraction -Context $context -State $negativeState -Source $fixture.source -Frozen $fixture.frozen -CodeRoot (Join-Path $run 'inputs/code') -Python $Python -RunId 'inert-cold-wiring' -Limits $limits}catch{$caught=$_}
+if($null-eq$caught-or$caught.Exception.Message-notlike'*Saved-solution extraction failed; no solve was requested.*'){throw 'Actual wrapper failure was swallowed or replaced'}
+Remove-Item Env:RF_INERT_COLD_LAUNCHER_FAIL
 Remove-RunPackageExecutionAlias -Package $package
-@{completion=$completion;state=$state;result=$result;removed_alias=$alias;alias_exists=(Test-Path -LiteralPath $alias)}|ConvertTo-Json -Depth 30 -Compress
+@{completion=$completion;state=$state;result=$result;negative_observation=$negativeState.wrapper_observation;removed_alias=$alias;alias_exists=(Test-Path -LiteralPath $alias)}|ConvertTo-Json -Depth 30 -Compress
 """, encoding='utf-8')
             outcome = subprocess.run(['pwsh', '-NoProfile', '-File', str(script), str(REPO), sys.executable, str(root)],
                                      capture_output=True, text=True, encoding='utf-8', cwd=root, timeout=300, env=private_host_environment())
@@ -483,6 +493,16 @@ Remove-RunPackageExecutionAlias -Package $package
             observation = result['completion']['operations'][0]['observation']
             self.assertTrue(observation['exit_confirmed'])
             self.assertEqual(observation['returncode'], 0)
+            self.assertTrue(result['negative_observation']['exit_confirmed'])
+            # PowerShell -EncodedCommand maps its nested script's nonzero exit
+            # to wrapper exit 1; assert the actual wrapper plus child sentinel.
+            self.assertEqual(result['negative_observation']['returncode'], 1)
+            self.assertIn('INERT_COLD_LAUNCHER_FAILURE', (run/'logs/saved_extraction.stderr.log').read_text(encoding='utf-8-sig'))
+            receipt_line = next(line for line in (run/'logs/comsol_saved_extraction.txt').read_text(encoding='utf-8-sig').splitlines() if line.startswith('EXTRACTION_RECEIPT_JSON='))
+            receipt = json.loads(receipt_line.split('=', 1)[1])
+            self.assertEqual(receipt['primary']['mphparticle_calls'], 14)
+            self.assertEqual(receipt['control']['windows'], 28)
+            self.assertFalse(receipt['parent_model_saved'])
             self.assertGreater(observation['process_id'], 0)
             self.assertGreater(observation['process_started_at_utc_ticks'], 0)
             self.assertEqual(model.read_bytes(), before)
