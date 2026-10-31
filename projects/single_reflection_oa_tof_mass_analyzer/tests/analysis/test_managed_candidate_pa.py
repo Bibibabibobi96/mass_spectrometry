@@ -710,14 +710,19 @@ foreach($path in @($global:MassSpectrometryImmutablePaSourceGuards.Keys)){Unprot
         with tempfile.TemporaryDirectory(prefix="candidate-pa-worker-") as directory:
             root = Path(directory)
             fixture_repo = root / "observer_failure_repo"
-            for relative in ("common/host_resource_python.py", "common/simion/process_observation.py",
+            for relative in ("common/host_resource_python.py", "common/simion/__init__.py", "common/simion/process_observation.py",
                              "common/contracts/recorded_file_removal.py", "common/contracts/file_identity.py"):
                 target = fixture_repo / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO / relative, target)
             observer = fixture_repo / "common/simion/process_observation.py"
+            loaded = root / "observer_failure_loaded.txt"
+            # Preserve the real package boundary even when the public gate adds
+            # its repository to PYTHONPATH; prove the injected module executed.
             observer.write_text(observer.read_text(encoding="utf-8") +
-                "\ndef process_working_set_bytes(process_id):\n    raise RuntimeError('deliberate native metric failure')\n",
+                "\ndef process_working_set_bytes(process_id):\n" +
+                f"    Path({str(loaded)!r}).write_text(str(Path(__file__).resolve()), encoding='utf-8')\n" +
+                "    raise RuntimeError('deliberate native metric failure')\n",
                 encoding="utf-8")
             driver = root / "driver.ps1"
             driver.write_text(r'''
@@ -766,7 +771,9 @@ try{
 $report.ToArray()|ConvertTo-Json -Depth 32|Set-Content -LiteralPath (Join-Path $Root 'report.json') -Encoding utf8
 ''', encoding="utf-8")
             result = subprocess.run(["pwsh", "-NoProfile", "-File", str(driver), str(REPO), sys.executable,
-                str(root), str(BUILDER), str(fixture_repo)], cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=90)
+                str(root), str(BUILDER), str(fixture_repo)], cwd=REPO,
+                env=dict(os.environ, PYTHONPATH=str(REPO)),
+                capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=90)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             rows = {row["label"]: row for row in json.loads((root / "report.json").read_text(encoding="utf-8-sig"))}
             for code in (0, 7):
@@ -781,6 +788,8 @@ $report.ToArray()|ConvertTo-Json -Depth 32|Set-Content -LiteralPath (Join-Path $
                 for key in ("ownership_confirmed", "worker_exit_confirmed", "launcher_exit_confirmed", "stdout_drained", "stderr_drained"):
                     self.assertTrue(completion[key], completion)
             failure = rows["observer_failure"]
+            self.assertTrue(loaded.is_file(), "The fault observer was bypassed by another package import")
+            self.assertEqual(Path(loaded.read_text(encoding="utf-8")), observer.resolve())
             self.assertFalse(failure["returned"], failure)
             self.assertTrue(failure["stopped"], failure)
             self.assertEqual(failure["facts"]["observation"]["returncode"], 0)
