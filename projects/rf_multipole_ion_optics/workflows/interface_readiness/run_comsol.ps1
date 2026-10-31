@@ -173,6 +173,18 @@ function Complete-InterfaceOwner {
         Write-RunJson -Atomic -Path $configPath -Value $persistentConfig -Depth 64
     }
     $Summary.native_wrapper_calls=@($ownerState.calls.ToArray())
+    $Summary.completed_computations=@()
+    foreach($call in $ownerState.calls){
+        if($call.stage-eq'native'-and$call.wrapper_returned-and-not$call.Contains('wrapper_error')){
+            $metadataPath=Join-Path $ownerContext.run_directory 'results/solver_raw_metadata.json'
+            $savedModel=Join-Path $ownerContext.run_directory 'comsol/rf_multipole_ion_optics__model.mph'
+            if((Test-Path $metadataPath -PathType Leaf)-and(Test-Path $savedModel -PathType Leaf)){
+                $metadata=Get-Content $metadataPath -Raw -Encoding UTF8|ConvertFrom-Json
+                if($metadata.raw_solution_persisted){$Summary.completed_computations+=@{stage='native_transport';model_path=$savedModel;raw_metadata_path=$metadataPath;gui_verified=(@($ownerState.calls|Where-Object{$_.stage-eq'gui'-and$_.wrapper_returned-and-not$_.Contains('wrapper_error')}).Count-gt0)}}
+            }
+        }
+    }
+    if($Summary.Contains('failure_stage')){$Summary.execution_failure_stage=$Summary.failure_stage}
     if($ownerState.calls.Count-eq0){$ownerState.prepare_seconds=$ownerState.timer.Elapsed.TotalSeconds}
     $timings=@{prepare=$ownerState.prepare_seconds};[double]$nativeSeconds=0
     foreach($call in $ownerState.calls){$timings[$call.stage]=$call.elapsed_seconds;$nativeSeconds+=$call.elapsed_seconds}
@@ -181,9 +193,11 @@ function Complete-InterfaceOwner {
     $Summary.total_elapsed_seconds=$ownerState.timer.Elapsed.TotalSeconds
     $ownerState.finalization_started=$true
     $actual=@($Outputs|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf})
-    $preserve=@($actual|Where-Object{[IO.Path]::GetExtension($_)-eq'.mph'-or[IO.Path]::GetFileName($_)-like'particle_*.txt'})
+    # Native solutions follow the declared solver_review policy; SIMION trace
+    # PreservePaths is not a native-model retention exception.
+    if($confirmed){Write-RunJson -Atomic -Path (Join-Path $ownerContext.run_directory 'summary.json') -Value $Summary -Depth 64}
     $outcome=Complete-RunArtifactPowerShellOwner -Context $ownerContext -Status $Status -Summary $Summary `
-      -OutputPaths $actual -RetentionPreservePaths $preserve -WriterCompletion $(if($confirmed){$completion}else{@{operations=@();resource_releases=@()}}) `
+      -OutputPaths $actual -WriterCompletion $(if($confirmed){$completion}else{@{operations=@();resource_releases=@()}}) `
       -WritersStopped $confirmed -OriginalFailure $Failure -ResourceUsagePaths $usage
     if($outcome.stage-ne'complete'){throw 'Interface finalization incomplete; resume original Result.'}
     Write-Output "INTERFACE_WORKFLOW_RESULT=$($ownerContext.result_path)"
@@ -205,7 +219,7 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
     -ArtifactRoot $artifactRoot -PathContext $pathContext -RunId $RunId `
     -Project 'rf_multipole_ion_optics' -Mode $workflowId `
-    -Software $software -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled `
+    -Software $software -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'Retain completed native solution for interface GUI review and postprocess recovery.' -CapacityLedgerLifecycleEnabled `
     -AdditionalDirectories @('comsol','runtime') -UseShortExecutionPath `
     -ExpectedExecutionRelativePaths $executionCapacityPaths
 $runDir,$inputDir,$resultDir,$logDir = $package.run_dir,$package.input_dir,

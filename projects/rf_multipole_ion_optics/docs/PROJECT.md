@@ -417,3 +417,12 @@ L1/L2 传输将身份输入冻结到本次 run；圆杆 L2 在冻结后核对场
 不按请求文件目录解释，也不允许引入外部代码。status、analysis preflight 与执行共用同一定位 API。
 正常入口保留读保护，冻结本次解析；输出仍由原 managed run owner 决定，不能覆盖正在读取的请求。
 标准案例、预注册、物理支持域与商业授权保持原合同；位置可读不等于获准运行。
+
+
+### 接口保存原生解与收尾边界
+
+接口就绪 COMSOL 入口使用现有 solver_review 保留级别及明确复核／恢复理由；Limits 的新增载荷承诺不变。MPH 和 release 文件沿原生命周期保留，不再误用仅供可恢复 SIMION TRACE 的 PreservePaths。确认 writer 停止后，实际失败阶段及已保存 native transport 事实先持久化到 summary。真实 GUI wrapper 成功返回才记录 gui_verified，未运行或失败不冒充通过。公共 owner 薄测试覆盖成功／失败两终态及惰性 MPH 保留（15.028秒）；另0.657秒纯聚合测试覆盖GUI成功、GUI失败和缺保存证据。这不等于真实求解、GUI或科学资格。
+
+`20261031_091203__test__comsol__saved-rf-birth-probe` 只读保存模型探针通过完整公共 owner：外层69.928秒、Result总69.338秒，商业 wrapper41.526秒，峰值RSS2,760,167,424字节，新载荷5,380,629字节；零新增求解、零父模型保存。15×100查询返回时刻完全匹配，dataonly与默认提取一致；ID1／50／100的精确birth及后一ULP六维均NaN，最早原存储有限点分别晚4.917／6.895／9.859ns。不得将晚时刻改称birth、放宽原1e-12容差，或将producer插入source行当native echo；源绑定、native birth echo可用性、共同真实观测时刻GUI重算一致性分别报告。
+
+同一探针公共 ResumeFinalization 返回 REUSED（2.278秒），manifest字节不变、零新增native；此证据仅验证探针收尾，不代表接口原CLI阶段恢复已实现。090000父run四份小元数据保持原字节；原2GiB预约已按公共机制释放，141,074,317字节／238文件ready并pinned，交接未重新读hash或复制MPH。后继消费必须显式使用实际停止收据，不能改写父记录。

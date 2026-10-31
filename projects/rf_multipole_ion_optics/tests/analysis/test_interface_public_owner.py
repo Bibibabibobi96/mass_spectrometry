@@ -181,6 +181,47 @@ foreach($unknown in @($false,$true)){
 """.replace('REPO', literal(repo)).replace('ENTRY', literal(CLI)).replace('ROOT', literal(directory))
             self.run_ps(command)
 
+    def test_completed_native_summary_uses_actual_stage_facts(self):
+        # Pure project aggregation test: public writer/retention behavior has its
+        # own real-owner test below. These receipts are explicitly inert inputs.
+        with tempfile.TemporaryDirectory() as directory:
+            command = r"""
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$t=$null;$e=$null;$ast=[Management.Automation.Language.Parser]::ParseFile(ENTRY,[ref]$t,[ref]$e)
+$f=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Complete-InterfaceOwner'},$true)
+. ([scriptblock]::Create($f.Extent.Text))
+function Add-RunArtifactResourceRelease {param($ResourceReleases,$ReleaseId,$Receipt)}
+function Assert-WorkflowWriterCompletion {param($Completion,[switch]$PowerShellOwner)}
+function Convert-WorkflowOwnerPath {param($Context,$Path);$Path}
+function Write-RunJson {param([switch]$Atomic,$Path,$Value,$Depth);$Value|ConvertTo-Json -Depth 64|Set-Content -LiteralPath $Path}
+function Complete-RunArtifactPowerShellOwner {
+ param($Context,$Status,$Summary,$OutputPaths,$WriterCompletion,$WritersStopped,$OriginalFailure,$ResourceUsagePaths)
+ $script:captured=$Summary
+ @{stage='complete'}
+}
+$root=ROOT;$RunId='inert-aggregation';New-Item -ItemType Directory -Force (Join-Path $root 'results'),(Join-Path $root 'comsol')|Out-Null
+$ownerContext=@{run_directory=$root;result_path=(Join-Path $root 'result.json')}
+@{inputs=@{}}|ConvertTo-Json|Set-Content (Join-Path $root 'run_config.json')
+$receipt=Join-Path $root 'receipt.json';@{role='comsol_launcher_completion';run_id=$RunId;host_release=@{inherited=$false};operations=@()}|ConvertTo-Json|Set-Content $receipt
+$model=Join-Path $root 'comsol/rf_multipole_ion_optics__model.mph';'inert saved model'|Set-Content $model
+$metadata=Join-Path $root 'results/solver_raw_metadata.json'
+foreach($case in @('gui_failed','gui_succeeded','metadata_missing')){
+ if($case-eq'metadata_missing'){Remove-Item $metadata}else{@{raw_solution_persisted=$true}|ConvertTo-Json|Set-Content $metadata}
+ $calls=[Collections.Generic.List[object]]::new()
+ $calls.Add(@{stage='native';receipt=$receipt;usage=(Join-Path $root 'absent');wrapper_returned=$true;elapsed_seconds=1.})
+ $gui=@{stage='gui';receipt=$receipt;usage=(Join-Path $root 'absent');wrapper_returned=$true;elapsed_seconds=1.}
+ if($case-eq'gui_failed'){$gui.wrapper_error='actual stage failed'}
+ $calls.Add($gui)
+ $ownerState=@{calls=$calls;timer=[Diagnostics.Stopwatch]::StartNew();prepare_seconds=0.;finalization_started=$false;writer_unknown=$false}
+ Complete-InterfaceOwner -Status failed -Summary @{role='fixture';failure_stage='comsol_gui_compute_verification'} -Outputs @($model)
+ $facts=@($script:captured.completed_computations)
+ if($case-eq'metadata_missing'){if($facts.Count){throw 'missing persistence evidence invented completed solve'}}
+ else{if($facts.Count-ne1-or$facts[0].gui_verified-ne($case-eq'gui_succeeded')){throw ('GUI fact differs '+$case)}}
+ $persisted=Get-Content (Join-Path $root 'summary.json') -Raw|ConvertFrom-Json
+ if($persisted.execution_failure_stage-cne'comsol_gui_compute_verification'){throw 'actual GUI failure stage lost before finalization'}
+}
+""".replace('ENTRY', literal(CLI)).replace('ROOT', literal(directory))
+            self.run_ps(command)
     def test_actual_config_rewrite_preserves_public_schema_and_finalizes(self):
         from common.contracts.capacity_ledger import initialize_capacity_ledger
         repo = PROJECT.parents[1]
@@ -255,9 +296,11 @@ foreach($status in @('success','failed')){
  if($actual.inputs.resolved_design-cne$authority-or$actual.inputs.native_execution_limits-cne$authority-or$actual.inputs.native_host_budgets-cne$hostAuthority){throw 'project input binding lost'}
  $original=$null;if($status-eq'failed'){try{throw 'original interface analysis failure'}catch{$original=$_}}
  $output=Join-Path $package.result_dir 'data.json';Write-RunJson -Path $output -Value @{fixture=$true}
+ $nativeModel=Join-Path $package.run_dir 'comsol/native.mph';New-Item -ItemType Directory -Force (Split-Path $nativeModel)|Out-Null;'inert native saved bytes'|Set-Content $nativeModel
  $aliasBefore=[string]$package.execution_alias
  $ownerState=@{calls=[Collections.Generic.List[object]]::new();timer=[Diagnostics.Stopwatch]::StartNew();prepare_seconds=0.;writer_unknown=$false;finalization_started=$false}
- Complete-InterfaceOwner -Status $status -Summary @{role='rf_quadrupole_transport_summary';scientific_result='NOT_EVALUATED'} -Outputs @($output) -Failure $original
+ Complete-InterfaceOwner -Status $status -Summary @{role='rf_quadrupole_transport_summary';scientific_result='NOT_EVALUATED'} -Outputs @($output,$nativeModel) -Failure $original
+ if(-not(Test-Path (Join-Path $ownerContext.run_directory 'comsol/native.mph'))){throw 'solver_review removed the sole saved native model'}
  if(Test-Path -LiteralPath $aliasBefore){throw 'completed owner execution alias remains'}
  $persisted=Get-Content (Join-Path $ownerContext.run_directory 'run_config.json') -Raw|ConvertFrom-Json -AsHashtable
  foreach($name in @('run_dir','results_dir','comsol_dir','runtime_dir','logs_dir')){
