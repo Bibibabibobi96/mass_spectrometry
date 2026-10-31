@@ -556,6 +556,8 @@ producer返回原生完成receipt和实际Program/ION/IOB绑定；补偿与candi
 
 候选旧资产8类拒绝回归继续保留；7类改为同一真实冻结准备上的严格projector负例，unknown writer仍经完整公共owner失败传播。完整失败执行8→1、子准备8→2；该方法旧完整Owner中76.437936秒，修后定向40.990342秒通过，背景负载不同不宣称公平倍速。原完整owner正例与cache正例不变，最终Owner预算仍待联合实测。
 
+2026-10-31 四分区完整Owner已PASS：643条逐测试计时，公开墙钟304.537123秒，summary302.817740秒；仍超5分钟目标4.537123秒，性能未达标。各片execution275.144611／255.513878／249.077378／261.496516秒，前置7.089548秒。正常公共GATE自然释放，既有SIMION仅一次pure Lua合同检查，0 Refine／Fly。随后只按该PASS轮74个模块的实际方法耗时更新既有catalog权重，测试和资源预算不变；新权重规划约255.45秒／片，不是新的实测墙钟。原失败486.585582秒轮保留，背景负载和单项修复不同，不计算公平提速倍数。完整证据为该主题`agent4/root_owner_r3_summary.json`及`root_owner_r3_wall.json`。
+
 ### 质量谱封存记录重分析
 
 `mass_spectrum_candidate -ReanalyzeOnly`使用显式`-SourceRunPath`和新的`-RunId`创建后继分析run；父run的输入、CSV、报告、配置、summary与manifest只读，不再执行原位预检或重新发布。其准入先核对实际消费的小记录和原容量owner的ready封存；checkpoint还须`-SourceStoppedReceiptPath`指向原owner已生成的停止receipt。只有运行中的interrupted标记、未知writer、writing范围、缺失或篡改记录均拒绝，并要求回原owner补齐收尾／封存，不由分析入口伪造停写证明。跨根来源沿公共SourceReferences绑定明确manifest与原owner，不猜父根。
