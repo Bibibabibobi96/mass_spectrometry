@@ -340,6 +340,29 @@ def execute_prepared_run(*args):
                 self.assertEqual(config["run_id"], request["package"]["run_id"])
                 self.assertTrue(config["capacity_ledger_lifecycle"]["enabled"])
                 self.assertEqual(config["artifact_retention"]["class"], "solver_review")
+                from common.contracts.stage_reuse import validate_and_write_stage_reuse
+                receipt = load_json(run / "stage_receipts/comsol_candidate.json")
+                child = root / "runs/20261028_140100__analysis__python__candidate-v2-reuse"
+                child.mkdir(parents=True)
+                context = {}
+                declared = {}
+                for category, records in receipt["context"].items():
+                    context[category] = {}
+                    for name, record in records.items():
+                        original_file = run / record["path"]
+                        destination = child / "inputs" / category / (name + original_file.suffix)
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(original_file, destination)
+                        context[category][name] = destination
+                        declared[name] = str(destination)
+                declared["stage_reuse_provenance"] = str(child / "inputs/stage_reuse_provenance.json")
+                (child / "run_config.json").write_text(json.dumps({"schema_version": 1, "run_id": child.name,
+                    "project": config["project"], "inputs": declared}), encoding="utf-8")
+                before_parent = (run / "run_manifest.json").read_bytes()
+                provenance = validate_and_write_stage_reuse(child, parent_run_root=run, project=config["project"],
+                    stage_contexts={"comsol_candidate": context})
+                self.assertEqual(load_json(provenance)["parent_run_status"], "failed" if failed else "success")
+                self.assertEqual((run / "run_manifest.json").read_bytes(), before_parent)
                 self.assertEqual(load_json(run / "summary.json")["status"], result["status"])
                 objects = load_capacity_ledger(artifacts)["objects"]
                 self.assertEqual(len(objects), 1)

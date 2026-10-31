@@ -10,6 +10,7 @@ from typing import Any, Mapping, TypeAlias
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.artifact_retention import validate_retention
 from common.contracts.file_identity import file_sha256
+from common.contracts.write_run_manifest import require_completed_terminal_publication, retention_api
 
 
 SCHEMA_VERSION = 1
@@ -94,8 +95,14 @@ def _manifest_binds(
             and record.get("bytes") == expected["bytes"]
             and str(record.get("sha256", "")).upper() == expected["sha256"]
         ):
+            if manifest.get("schema_version") == 2 and record in manifest.get("outputs", []):
+                classify_file = retention_api()[0]
+                expected_role = classify_file(path, bytes_count=int(record["bytes"]))
+                if record.get("retention_role") != expected_role:
+                    raise StageReuseError(f"parent output retention role differs: {path}")
             return True
     return False
+
 
 def _stage_is_success(summary: dict[str, Any], stage_id: str) -> None:
     stages = summary.get("stages")
@@ -211,6 +218,10 @@ def _validate_parent(root: Path, project: str) -> tuple[dict[str, Any], dict[str
     manifest_path = root / "run_manifest.json"
     config = _load_json(config_path, "parent run config")
     summary = _load_json(summary_path, "parent summary")
+    try:
+        require_completed_terminal_publication(manifest_path)
+    except ValueError as error:
+        raise StageReuseError(f"parent terminal publication is incomplete: {error}") from error
     manifest = _load_json(manifest_path, "parent manifest")
     run_id = config.get("run_id")
     if not isinstance(run_id, str):
@@ -222,10 +233,19 @@ def _validate_parent(root: Path, project: str) -> tuple[dict[str, Any], dict[str
         manifest.get("schema_version"), manifest.get("role"),
         manifest.get("run_id"), manifest.get("project"),
     )
-    if manifest_identity != (1, "simulation_run_manifest", run_id, project):
+    if manifest_identity not in {(version, "simulation_run_manifest", run_id, project) for version in (1, 2)}:
         raise StageReuseError("parent manifest identity does not match")
+    if manifest["schema_version"] == 2:
+        try:
+            retention = validate_retention(config.get("artifact_retention"))
+        except ValueError as error:
+            raise StageReuseError(f"parent v2 retention contract is invalid: {error}") from error
+        expected = {"policy_version": retention.policy_version, "class": retention.class_id, "reason": retention.reason}
+        if config.get("schema_version") != 2 or manifest.get("artifact_retention") != expected:
+            raise StageReuseError("parent v2 manifest and run config retention differ")
     status = manifest.get("status")
-    if status not in TERMINAL_STATUSES or summary.get("status") != status:
+    if (status not in TERMINAL_STATUSES or summary.get("status") != status
+            or manifest.get("lifecycle_state") == "provisional"):
         raise StageReuseError("parent summary and manifest must share a reusable terminal status")
     config_record = manifest.get("run_config")
     actual_config = _record(config_path, root, "parent run_config")

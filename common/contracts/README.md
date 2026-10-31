@@ -662,6 +662,10 @@ provenance冻结单一`parent_run_id`及父manifest的bytes/SHA，不保存个�
 manifest。旧manifest若记录绝对路径，只有仍位于原路径且全部哈希可复核时才可作为父run；工作区迁移
 后必须先按artifact迁移合同重建身份，不能靠路径猜测。
 
+已封存父 manifest 接受现有 v1 与 v2 格式；v2 必须与已绑定的 v2 run config 保留合同完全一致，
+未完成终态 journal 或 provisional 父记录仍被拒绝。正式 Candidate 公共 owner 的 v2 成功／失败父可复用
+其中独立成功的阶段；这不代替项目对旧生成实现、科学依赖和真实完成证据的证明。
+
 公共层不复制大文件、不解释器件参数或物理判据，也不允许不同父run拼接。项目层仍负责声明可复用阶段、
 把实际文件映射为三类上下文、执行未复用阶段并完成本项目最终验收。
 

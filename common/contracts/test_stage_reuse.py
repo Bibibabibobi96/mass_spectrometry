@@ -168,6 +168,46 @@ class StageReuseTest(unittest.TestCase):
         document = json.loads(self._validate().read_text(encoding="utf-8"))
         self.assertEqual(document["parent_run_status"], "success")
 
+    def test_v2_parent_retention_and_completed_terminal_contract(self) -> None:
+        for scenario in ("valid", "missing_retention", "different_retention", "wrong_config_schema", "pending_journal", "provisional", "wrong_output_role"):
+            with self.subTest(scenario=scenario):
+                retention = {"policy_version": 1, "class": "solver_review", "reason": "explicit stage reuse fixture"}
+                config = json.loads(self.parent_config.read_text(encoding="utf-8"))
+                config.update(schema_version=2, artifact_retention=retention)
+                if scenario == "missing_retention":
+                    del config["artifact_retention"]
+                if scenario == "wrong_config_schema":
+                    config["schema_version"] = 1
+                self._write_json(self.parent_config, config)
+                self._write_manifest("failed")
+                manifest_path = self.parent / "run_manifest.json"
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                manifest.update(schema_version=2, artifact_retention=dict(retention))
+                from common.contracts.artifact_retention import classify_file
+                for record in manifest["outputs"]:
+                    record["retention_role"] = classify_file(Path(record["path"]), bytes_count=record["bytes"])
+                if scenario == "wrong_output_role":
+                    manifest["outputs"][0]["retention_role"] = "invalid"
+                if scenario == "different_retention":
+                    manifest["artifact_retention"]["reason"] = "another reason"
+                if scenario == "provisional":
+                    manifest["status"] = "interrupted"
+                    manifest["lifecycle_state"] = "provisional"
+                self._write_json(manifest_path, manifest)
+                journal = self.parent / ".run_terminal_publication.json"
+                if scenario == "pending_journal":
+                    self._write_json(journal, {})
+                try:
+                    if scenario == "valid":
+                        result = self._validate()
+                        self.assertEqual(json.loads(result.read_text(encoding="utf-8"))["parent_run_status"], "failed")
+                        result.unlink()
+                    else:
+                        with self.assertRaises(StageReuseError):
+                            self._validate()
+                finally:
+                    journal.unlink(missing_ok=True)
+
     def test_receipt_cannot_be_retroactively_added_to_finalized_run(self) -> None:
         with self.assertRaisesRegex(StageReuseError, "after the final run manifest"):
             write_stage_receipt(
