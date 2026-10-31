@@ -75,83 +75,29 @@ class SingleReflectionExecuteFixture(unittest.TestCase):
                          {path.resolve() for path in copies})
 
 
-    def _check_public_cases(self, cases, *, rename_instances=False, borrowed_capacity=False, lightweight_seeds=True, verify_replay=True, omit_replay_budget=False):
-        # Every case below replaces the vendor builder and Fly with the same inert
-        # boundary; it never parses native seed bytes. Freeze tiny seed inputs
-        # before preparation, retaining real identity, closure and failure checks.
-        contract=json.loads((REPO/'integrations/config/runtime_dependencies.json').read_text())
-        full_source = None
-        for failure in cases:
-            case_started = time.perf_counter()
-            with self.subTest(failure=failure),tempfile.TemporaryDirectory() as directory:
-                root=Path(directory)
-                discovery = failure in {'discovery_fly','local_discovery_fly','discovery_missing','missing_discovery_budget'}
-                local = failure in {'local_fly','local_discovery_fly'}
-                if local or discovery:
-                    request,empty_run,author,_ = release_fixture(root, instance_id='oatof')
-                    if local:
-                        author['providers']['instances'].pop('multipole')
-                        author['local_scope'] = dict(instance_ids=['oatof'], research_scope='OA birth through detector',
-                            boundary_assumptions='Omit upstream multipole metal and fields; retain the actual open side entry.')
-                        author['numerics'].pop('rf_reference_voltage_v')
-                        author['numerics']['frontend_domains']['parent']['refine_convergence_v'].pop('rf_reference')
-                else:
-                    request,empty_run,author=fixture(root)
-                if verify_replay is not None:
-                    author['verify_saved_workbench_replay'] = verify_replay
-                    request.write_text(json.dumps(author), encoding='utf-8', newline='\n')
-                if rename_instances:
-                    rename_author_instances(request, author)
-                flight=discovery or failure in {'downstream_source_fly','local_fly','fly','fly_held_off','fly_refinement','refinement_flight_ram_floor','missing_fly_budget','missing_replay_budget','flight_ram_floor','flight_native','replay_native','flight_controls','flight_native_controls','flight_marker','flight_mismatch','flight_priority_marker'}
-                workbench=flight or failure in {'workbench','workbench_held_off','missing_flight','missing_workbench_budget','workbench_build','workbench_verify','workbench_drift','field_drift','publication_pin','workbench_priority_marker','workbench_priority_duplicate','workbench_priority_truncated','workbench_priority_count'}
-                if workbench and failure!='missing_flight':
-                    author['flight']=dict(pulse=dict(mode='held_off') if failure in ('workbench_held_off','fly_held_off') else
-                                          dict(mode='timed',time_us=10.,width_us=3.),maximum_flight_us=200.,
-                                          maximum_step_us=.001,trajectory_quality=17,rf_steps_per_period=80)
-                    if discovery:
-                        author['flight']['pulse']=dict(mode='discover',width_us=.1,candidate_times_us=[42.25,42.5])
-                    if local:
-                        author['flight'].pop('rf_steps_per_period')
-                    request.write_text(json.dumps(author),encoding='utf-8',newline='\n')
-                domains=author['numerics']['frontend_domains']
-                if failure in ('fly_refinement','refinement_flight_ram_floor'):
-                    domains['entrance_refinement']={**copy.deepcopy(domains['parent']),'guard_cells':1}
-                    request.write_text(json.dumps(author),encoding='utf-8',newline='\n')
-                if failure=='downstream_source_fly':
-                    from integrations.tests.test_single_reflection_preparation import downstream_field_source_fixture
-                    downstream_field_source_fixture(root, request, author)
-                counts=[]
-                for domain in domains.values():
-                    bounds,pitch=domain['pa_bounds_mm'],domain['cell_mm_xyz']
-                    counts.append(math.prod(math.ceil((bounds[axis+'_max']-bounds[axis+'_min'])/pitch[axis])+1 for axis in 'xyz'))
-                nodes=sum(counts)
-                # Inert execution allocates no PA. Budget the direct field
-                # construction and the actual private runtime fields honestly.
-                field_count = (1 if local else 2) + int(author.get('flight', {}).get('pulse', {}).get('mode') != 'held_off')
-                disk_budget=nodes*8*field_count*2+1024**2
-                ram_budget=max(20*counts[0],10*nodes,20*counts[1] if len(counts)>1 else 0)+1024**2
-                (empty_run/'inputs').rmdir();empty_run.rmdir()
-                repo=root/'repo'
-                paths={row['source_repo_path'] for group in contract['providers'] for row in group['files']
-                       if 'single_reflection_flight' in row['consumers']}
-                paths.update({'integrations/config/runtime_dependencies.json','integrations/registry.json',
-                              'integrations/runtime/dependencies.ps1','common/contracts/artifact_naming.py'})
-                seed_names = {f'iob_seed_placeholder_{number:02d}.pa0' for number in range(1, 6)}
-                seed_paths = {f'common/simion/assets/iob_instance_seeds/{name}' for name in seed_names}
-                if lightweight_seeds:
-                    self.assertTrue(seed_paths <= paths)
-                for relative in paths:
-                    target=repo/relative;target.parent.mkdir(parents=True,exist_ok=True)
-                    if lightweight_seeds and relative in seed_paths:
-                        # This fixture's native builder is inert. Keep the real
-                        # freezer/manifest binding, without copying five unused
-                        # 16 MB native seeds into each isolated test repository.
-                        target.write_bytes(b'INERT_TEST_SEED_NOT_A_PA\n')
-                    else:
-                        shutil.copyfile(REPO/relative,target)
-                # Only the isolated test repository's solver/capacity boundary is inert.
-                support=repo/'integrations/workflows/single_reflection_flight/field_stage.ps1'
-                support.write_text(r'''
+    def _prepare_source_template(self, directory, contract, *, lightweight_seeds):
+        source_started=time.perf_counter()
+        repo=directory/'repo'
+        paths={row['source_repo_path'] for group in contract['providers'] for row in group['files']
+               if 'single_reflection_flight' in row['consumers']}
+        paths.update({'integrations/config/runtime_dependencies.json','integrations/registry.json',
+                      'integrations/runtime/dependencies.ps1','common/contracts/artifact_naming.py'})
+        seed_names = {f'iob_seed_placeholder_{number:02d}.pa0' for number in range(1, 6)}
+        seed_paths = {f'common/simion/assets/iob_instance_seeds/{name}' for name in seed_names}
+        if lightweight_seeds:
+            self.assertTrue(seed_paths <= paths)
+        for relative in paths:
+            target=repo/relative;target.parent.mkdir(parents=True,exist_ok=True)
+            if lightweight_seeds and relative in seed_paths:
+                # This fixture's native builder is inert. Keep the real
+                # freezer/manifest binding, without copying five unused
+                # 16 MB native seeds into each isolated test repository.
+                target.write_bytes(b'INERT_TEST_SEED_NOT_A_PA\n')
+            else:
+                shutil.copyfile(REPO/relative,target)
+        # Only the isolated test repository's solver/capacity boundary is inert.
+        support=repo/'integrations/workflows/single_reflection_flight/field_stage.ps1'
+        support.write_text(r'''
 if($env:TEST_FIELD_FAILURE-eq'planning'){
  # Deliberately corrupt only this inert fixture's already-frozen closure.
  $snapshot=Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
@@ -420,6 +366,80 @@ print(json.dumps(dict(cache_receipt=str(receipt))))
  return @{scope='INERT_NATIVE_BOUNDARY_ONLY';fly_performed=$false}
 }
 ''',encoding='utf-8',newline='\n')
+        if os.environ.get('SIMULATION_TEST_FIXTURE_TIMING')=='1':
+            print(f'SOURCE_FIXTURE files={len(paths)} copies={len(paths-seed_paths) if lightweight_seeds else len(paths)} wall_seconds={time.perf_counter()-source_started:.9f}',flush=True)
+        return repo
+
+    def _check_public_cases(self, cases, *, rename_instances=False, borrowed_capacity=False, lightweight_seeds=True, verify_replay=True, omit_replay_budget=False):
+        # Every case below replaces the vendor builder and Fly with the same inert
+        # boundary; it never parses native seed bytes. Freeze tiny seed inputs
+        # before preparation, retaining real identity, closure and failure checks.
+        contract=json.loads((REPO/'integrations/config/runtime_dependencies.json').read_text())
+        # The source template is read-only; every case still freezes a private
+        # snapshot and owns its request, budget, run, failures and native stubs.
+        with tempfile.TemporaryDirectory() as source_directory:
+            repo=self._prepare_source_template(Path(source_directory),contract,lightweight_seeds=lightweight_seeds)
+            before={path.relative_to(repo):(path.stat().st_size,path.stat().st_mtime_ns)
+                    for path in repo.rglob('*') if path.is_file()}
+            self._check_cases_with_source(cases,repo,rename_instances=rename_instances,
+                borrowed_capacity=borrowed_capacity,verify_replay=verify_replay,omit_replay_budget=omit_replay_budget,
+                lightweight_seeds=lightweight_seeds)
+            after={path.relative_to(repo):(path.stat().st_size,path.stat().st_mtime_ns)
+                   for path in repo.rglob('*') if path.is_file()}
+            self.assertEqual(after,before,'case modified the shared source template')
+
+    def _check_cases_with_source(self,cases,repo,*,rename_instances,borrowed_capacity,verify_replay,omit_replay_budget,lightweight_seeds):
+        full_source = None
+        for failure in cases:
+            case_started = time.perf_counter()
+            with self.subTest(failure=failure),tempfile.TemporaryDirectory() as directory:
+                root=Path(directory)
+                discovery = failure in {'discovery_fly','local_discovery_fly','discovery_missing','missing_discovery_budget'}
+                local = failure in {'local_fly','local_discovery_fly'}
+                if local or discovery:
+                    request,empty_run,author,_ = release_fixture(root, instance_id='oatof')
+                    if local:
+                        author['providers']['instances'].pop('multipole')
+                        author['local_scope'] = dict(instance_ids=['oatof'], research_scope='OA birth through detector',
+                            boundary_assumptions='Omit upstream multipole metal and fields; retain the actual open side entry.')
+                        author['numerics'].pop('rf_reference_voltage_v')
+                        author['numerics']['frontend_domains']['parent']['refine_convergence_v'].pop('rf_reference')
+                else:
+                    request,empty_run,author=fixture(root)
+                if verify_replay is not None:
+                    author['verify_saved_workbench_replay'] = verify_replay
+                    request.write_text(json.dumps(author), encoding='utf-8', newline='\n')
+                if rename_instances:
+                    rename_author_instances(request, author)
+                flight=discovery or failure in {'downstream_source_fly','local_fly','fly','fly_held_off','fly_refinement','refinement_flight_ram_floor','missing_fly_budget','missing_replay_budget','flight_ram_floor','flight_native','replay_native','flight_controls','flight_native_controls','flight_marker','flight_mismatch','flight_priority_marker'}
+                workbench=flight or failure in {'workbench','workbench_held_off','missing_flight','missing_workbench_budget','workbench_build','workbench_verify','workbench_drift','field_drift','publication_pin','workbench_priority_marker','workbench_priority_duplicate','workbench_priority_truncated','workbench_priority_count'}
+                if workbench and failure!='missing_flight':
+                    author['flight']=dict(pulse=dict(mode='held_off') if failure in ('workbench_held_off','fly_held_off') else
+                                          dict(mode='timed',time_us=10.,width_us=3.),maximum_flight_us=200.,
+                                          maximum_step_us=.001,trajectory_quality=17,rf_steps_per_period=80)
+                    if discovery:
+                        author['flight']['pulse']=dict(mode='discover',width_us=.1,candidate_times_us=[42.25,42.5])
+                    if local:
+                        author['flight'].pop('rf_steps_per_period')
+                    request.write_text(json.dumps(author),encoding='utf-8',newline='\n')
+                domains=author['numerics']['frontend_domains']
+                if failure in ('fly_refinement','refinement_flight_ram_floor'):
+                    domains['entrance_refinement']={**copy.deepcopy(domains['parent']),'guard_cells':1}
+                    request.write_text(json.dumps(author),encoding='utf-8',newline='\n')
+                if failure=='downstream_source_fly':
+                    from integrations.tests.test_single_reflection_preparation import downstream_field_source_fixture
+                    downstream_field_source_fixture(root, request, author)
+                counts=[]
+                for domain in domains.values():
+                    bounds,pitch=domain['pa_bounds_mm'],domain['cell_mm_xyz']
+                    counts.append(math.prod(math.ceil((bounds[axis+'_max']-bounds[axis+'_min'])/pitch[axis])+1 for axis in 'xyz'))
+                nodes=sum(counts)
+                # Inert execution allocates no PA. Budget the direct field
+                # construction and the actual private runtime fields honestly.
+                field_count = (1 if local else 2) + int(author.get('flight', {}).get('pulse', {}).get('mode') != 'held_off')
+                disk_budget=nodes*8*field_count*2+1024**2
+                ram_budget=max(20*counts[0],10*nodes,20*counts[1] if len(counts)>1 else 0)+1024**2
+                (empty_run/'inputs').rmdir();empty_run.rmdir()
                 budget=root/'budget.json'
                 budget_document=dict(schema_version=2,role='integration_resolved_engineering_budget',
                     integration_id='instrument_assembly',workflow_id='single_reflection_flight',retention_class='solver_review',
@@ -476,6 +496,7 @@ try {
 }
 ''',encoding='utf-8',newline='\n')
                 env={key:value for key,value in os.environ.items() if key.upper()!='PROGRAMFILES'}
+                env['PYTHONDONTWRITEBYTECODE']='1'
                 env.update(ProgramFiles=str(root/'ProgramFiles'),TEST_FIELD_FAILURE=failure,
                          TEST_WORKBENCH='1' if workbench else '0',TEST_FLY='1' if flight else '0',
                          TEST_BORROWED_CAPACITY='1' if borrowed_capacity else '0')

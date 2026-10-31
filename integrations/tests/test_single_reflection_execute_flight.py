@@ -24,7 +24,7 @@ class SingleReflectionExecuteTests(SingleReflectionExecuteFixture):
         self._check_public_cases(('flight_priority_marker',))
 
 
-    def test_normal_fly_omits_replay_but_explicit_action_keeps_it(self):
-        # Same real freezer, contracts, IDs and N=100; only the requested action changes.
+    def test_normal_fly_omits_replay_and_its_budget(self):
+        # Explicit True is exercised by the full-mother test above. Keep the
+        # omitted action and omitted replay budget through the same real freezer.
         self._check_public_cases(('fly',), lightweight_seeds=True, verify_replay=None, omit_replay_budget=True)
-        self._check_public_cases(('fly',), lightweight_seeds=True, verify_replay=True)
