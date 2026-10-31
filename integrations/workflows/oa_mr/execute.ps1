@@ -703,18 +703,8 @@ try{
       else{$batchContinuationPlan.batches|Where-Object{$_.action-eq'replay'}|ForEach-Object{[int]$_.index}}
     )
     if($null-ne$batchContinuationPlan-and$replayBatchIndexes.Count-gt0){
-      $currentDispatch=Get-Content -LiteralPath $runtimeDispatchPlanPath -Raw|ConvertFrom-Json
-      $largestMissing=(@($initialBatchPlan.batches|Where-Object{$replayBatchIndexes-contains[int]$_.index})|Measure-Object -Property count -Maximum).Maximum
-      $covered=0
-      if($currentDispatch.estimation.kind-eq'exact_resource_profile'){$covered=[int]$currentDispatch.estimation.observed_batch_work_units}
-      elseif($currentDispatch.estimation.kind-eq'observed_formal_batch'){
-        $priorIndex=if($currentDispatch.estimation.PSObject.Properties['observed_missing_batch_index']){[int]$currentDispatch.estimation.observed_missing_batch_index}else{1}
-        $covered=[int]$currentDispatch.waves[0].batches[$priorIndex-1].count
-      }
-      if($currentDispatch.estimation.kind-ne'formal_first_batch_observation'-and$covered-lt$largestMissing){
-        Invoke-ProjectPython -Arguments @('-m','common.simion.resource_scheduler','--request',$dispatchRequestPath,'--output',$runtimeDispatchPlanPath)
-      }
       $fixedArguments=@('-m','common.simion.resource_scheduler','--prepare-fixed-recovery-plan',$runtimeDispatchPlanPath,'--fixed-batch-plan',$batchPlanPath,'--output',$runtimeDispatchPlanPath)
+      if($resourceProfilesPath){$fixedArguments+=@('--profiles',$resourceProfilesPath)}
       foreach($index in $replayBatchIndexes){$fixedArguments+=@('--replay-batch-index',[string]$index)}
       Invoke-ProjectPython -Arguments $fixedArguments
       $checkpointConfig.inputs.simion_repository_dispatch_plan=$runtimeDispatchPlanPath

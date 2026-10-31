@@ -365,8 +365,9 @@ OA的`sectioned_geometry`是assembly interface、bare-three-zone adapter和singl
 ## 已完成首批后的资源恢复
 
 首批自然退出且原分区与退出事实已由前驱终态绑定时，若重规划失败，恢复计划保留首批。
-有真实观测值时沿现有 scheduler 重建余下区间；缺观测时，缺失区间不超过原首批，先观察
-首个缺批，再按实际资源画像和CPU／内存约束校准计划。未确认首批自然退出时不视为可复用。
+OA→MR与prepared_joint将已有冻结画像交公共fixed selector，按原缺失最大完整批判断覆盖；
+画像不足时先观察该最大缺失批，再按实际CPU／内存校准，保持完整区间和原父dispatch只读。
+未确认首批自然退出时不视为可复用，全复用不构造新IOB或启动native。
 
 IP→MR 的 FullJoint 在求场前验证设计 manifest 绑定的来源 receipt、粒子状态、时钟与共同脉冲。
 仅已知 v1 zero-birth 到严格验证的 v2 common-pulse 分析升级受支持；其他 Fly 依赖仍保持冻结。

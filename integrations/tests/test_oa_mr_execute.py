@@ -14,6 +14,70 @@ RUNNER = REPO / "integrations/workflows/oa_mr/execute.ps1"
 
 class TwoPrismTrialRunnerTest(unittest.TestCase):
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_joint_owners_transport_profiles_for_actual_fixed_missing_intervals(self):
+        from common.simion.resource_scheduler import plan_simion_dispatch
+        from common.simion.test_resource_scheduler import ResourceSchedulerTests, GIB
+
+        profile = ResourceSchedulerTests.profile(peak=GIB, cpu=80, observed_batch_work_units=2500)
+        initial = plan_simion_dispatch(ResourceSchedulerTests.request(), [profile],
+            available_memory_bytes=2*GIB, total_physical_memory_bytes=20*GIB, logical_processors=8)
+        self.assertEqual(initial['estimation']['kind'], 'formal_first_batch_observation')
+        fixed = dict(role='simion_single_wave_particle_batch_plan', coverage='complete_population',
+            particle_count=5000, batches=[
+                dict(index=1, count=500, particle_id_min=1, particle_id_max=500, simion_particle_id_offset=0),
+                dict(index=2, count=2500, particle_id_min=501, particle_id_max=3000, simion_particle_id_offset=500),
+                dict(index=3, count=2000, particle_id_min=3001, particle_id_max=5000, simion_particle_id_offset=3000)])
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'results').mkdir()
+            for name, value in (('initial', initial), ('fixed', fixed)):
+                (root/f'{name}.json').write_text(json.dumps(value), encoding='utf-8')
+            script = root/'fixed_joint.ps1'
+            script.write_text(r'''param($Repo,$Root,$Python,$Owner,$Covered)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$errors=$null;$entry=Join-Path $Repo "integrations/workflows/$Owner/execute.ps1"
+$ast=[Management.Automation.Language.Parser]::ParseFile($entry,[ref]$null,[ref]$errors)
+if($errors.Count){throw ($errors|Out-String)}
+$env:PYTHONPATH=$Repo
+function Invoke-ProjectPython {param($Arguments) & $Python @Arguments|Out-Host;if($LASTEXITCODE-ne0){throw 'fixed joint scheduler failed'}}
+function Write-RunJson {param($Path,$Value) $Value|ConvertTo-Json -Depth 30|Set-Content $Path}
+$plan=Join-Path $Root 'fixed.json';$profiles=Join-Path $Root 'profiles.json';$resultDir=Join-Path $Root results
+$initial=Get-Content (Join-Path $Root 'initial.json') -Raw
+if($Owner-eq'prepared_joint'){
+ $dispatch=Join-Path $Root 'parent-dispatch.json';Set-Content $dispatch $initial
+ $parentBefore=Get-Content $dispatch -Raw
+ $missing=@((Get-Content $plan -Raw|ConvertFrom-Json).batches|Where-Object{$_.index-in@(2,3)})
+ $branch=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$missing.Count'},$true)
+}else{
+ $runtimeDispatchPlanPath=Join-Path $Root 'results/oa-dispatch.json';Set-Content $runtimeDispatchPlanPath $initial
+ $batchContinuationPlan=@{};$replayBatchIndexes=@(2,3);$batchPlanPath=$plan;$resourceProfilesPath=$profiles
+ $checkpointConfig=@{inputs=@{}};$runConfig=Join-Path $Root 'run_config.json'
+ $branch=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$null-ne$batchContinuationPlan-and$replayBatchIndexes.Count-gt0'},$true)
+}
+Invoke-Expression $branch.Extent.Text
+$output=if($Owner-eq'prepared_joint'){$dispatch}else{$runtimeDispatchPlanPath}
+$actual=Get-Content $output -Raw|ConvertFrom-Json
+if($Covered-eq'yes'){
+ if($actual.estimation.kind-ne'exact_resource_profile'-or$actual.estimation.observed_batch_work_units-ne2500){throw 'covering frozen profile was ignored'}
+ if($actual.limits.maximum_concurrency-ne1){throw 'CPU-limited joint profile over-admitted'}
+}else{
+ if($actual.estimation.kind-ne'formal_first_batch_observation'-or$actual.estimation.observed_missing_batch_index-ne2){throw 'insufficient profile skipped largest original missing-unit observation'}
+}
+if($actual.particle_count-ne5000-or(($actual.waves[0].batches|ForEach-Object{$_.count})-join',')-ne'500,2500,2000'){throw 'joint original partition changed'}
+if($Owner-eq'prepared_joint'-and(Get-Content (Join-Path $Root 'parent-dispatch.json') -Raw)-cne$parentBefore){throw 'parent dispatch was rewritten'}
+exit 0
+''', encoding='utf-8')
+            for owner in ('prepared_joint', 'oa_mr'):
+                for covered in (True, False):
+                    with self.subTest(owner=owner, covered=covered):
+                        current = {**profile, 'observed_batch_work_units': 2500 if covered else 2000}
+                        (root/'profiles.json').write_text(json.dumps([current]), encoding='utf-8')
+                        result = subprocess.run(['pwsh', '-NoProfile', '-File', str(script), str(REPO), directory,
+                            sys.executable, owner, 'yes' if covered else 'no'], cwd=REPO,
+                            capture_output=True, text=True, encoding='utf-8', timeout=30)
+                        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_fixed_partition_observes_largest_missing_not_reused_prefix(self):
         from common.simion.resource_scheduler import plan_simion_dispatch, prepare_fixed_partition_dispatch
         request = {"solver":"SIMION", "field_kind":"rf", "rf_steps_per_period":40,
@@ -39,10 +103,15 @@ function Publish-MrtofFirstBatchAberration {{param($Record)}}
 function Invoke-ProjectPython {{param($Arguments) & {quote(sys.executable)} @Arguments;if($LASTEXITCODE-ne0){{throw 'calibration failed'}}}}
 {block}
 if($firstSpec.index-ne3-or$formalBatchIndex-ne3){{throw 'did not observe largest missing unit'}}
-$formal=[pscustomobject]@{{process_record=[pscustomobject]@{{completed=$true}};observed_peak_process_tree_working_set_bytes=1073741824;observed_process_cpu_percent=8;observed_background_cpu_percent=2;available_memory_bytes=10737418240;total_physical_memory_bytes=21474836480}}
-& $replan $formal
-$result=Get-Content $runtimeDispatchPlanPath -Raw|ConvertFrom-Json
-if($result.estimation.observed_missing_batch_index-ne3-or$result.limits.maximum_concurrency-ne6-or$result.waves[0].batches[2].count-ne3){{throw 'calibrated fixed partition differs'}}
+$before=Get-Content $runtimeDispatchPlanPath -Raw
+foreach($cpu in @(8,80)){{
+ Set-Content $runtimeDispatchPlanPath $before
+ $formal=[pscustomobject]@{{process_record=[pscustomobject]@{{completed=$true}};observed_peak_process_tree_working_set_bytes=1073741824;observed_process_cpu_percent=$cpu;observed_background_cpu_percent=2;available_memory_bytes=10737418240;total_physical_memory_bytes=21474836480}}
+ & $replan $formal
+ $result=Get-Content $runtimeDispatchPlanPath -Raw|ConvertFrom-Json
+ if($result.estimation.observed_missing_batch_index-ne3-or$result.waves[0].batches[2].count-ne3){{throw 'calibrated fixed partition differs'}}
+ if(($cpu-eq8-and$result.limits.maximum_concurrency-le1)-or($cpu-eq80-and$result.limits.maximum_concurrency-ne1)){{throw 'fixed callback ignored observed CPU capacity'}}
+}}
 '''
             path = root/"fixed.ps1"; path.write_text(script, encoding="utf-8")
             result = subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(path)],cwd=REPO,
@@ -131,6 +200,8 @@ if(-not$caught-or$script:admitted){throw 'Missing explicit authority reached adm
         start = source.index("    $dispatch=Get-Content -Raw -LiteralPath $runtimeDispatchPlanPath|ConvertFrom-Json")
         end = source.index("    $checkpointAction={", start)
         block = source[start:end]
+        pending_start = source.index("    $pendingSpecs=@($finalBatchPlan.batches|Where-Object{")
+        pending = source[pending_start:source.index("      [pscustomobject]@{pending=",pending_start)]
         with TemporaryDirectory() as directory:
             root = Path(directory)
             dispatch = root / "dispatch.json"
@@ -151,6 +222,9 @@ $calibrated=Get-Content $runtimeDispatchPlanPath -Raw|ConvertFrom-Json
 if(-not$calibrated.estimation.recovered_missing_observation_completed-or$calibrated.limits.maximum_concurrency-ne3){{throw 'wrong calibrated identity'}}
 if($calibrated.estimation.observed_peak_bytes-ne1073741824-or$calibrated.estimation.observed_process_cpu_percent-ne8-or$calibrated.estimation.background_cpu_percent-ne2-or$calibrated.host.available_memory_bytes-ne10737418240-or$calibrated.host.total_physical_memory_bytes-ne21474836480){{throw 'actual observation changed'}}
 if(@($calibrated.waves[0].batches).Count-ne3-or$calibrated.waves[0].batches[0].particle_id_max-ne1-or$calibrated.waves[0].batches[1].particle_id_min-ne2){{throw 'fixed intervals changed'}}
+$finalBatchPlan=@{{batches=@($calibrated.waves[0].batches)}};$replayBatchIndexes=@($replanState.replayIndexes)
+{pending}
+if(@($pendingSpecs).Count-ne1-or$pendingSpecs[0].index-ne3){{throw 'observed or reused batch entered pending dispatch'}}
 '''
             path = root / "test.ps1"
             path.write_text(script, encoding="utf-8")

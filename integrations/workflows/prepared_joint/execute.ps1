@@ -194,20 +194,11 @@ function Invoke-PreparedJointTrial {
     if($null-ne$continuation){
       $missing=@($initial.batches|Where-Object{ $record=$records[[int]$_.index];-not($record.PSObject.Properties.Name-contains'reused') })
       if($missing.Count){
-        $priorDispatch=Get-Content -LiteralPath $dispatch -Raw|ConvertFrom-Json -Depth 100
         $localDispatch=Join-Path $resultDir 'simion_repository_dispatch_plan.json'
-        $largest=[int](($missing|Measure-Object -Property count -Maximum).Maximum)
-        $covered=$null
-        if($priorDispatch.estimation.kind-eq'exact_resource_profile'){$covered=[int]$priorDispatch.estimation.observed_batch_work_units}
-        elseif($priorDispatch.estimation.kind-eq'observed_formal_batch'){
-          $index=if($priorDispatch.estimation.PSObject.Properties['observed_missing_batch_index']){[int]$priorDispatch.estimation.observed_missing_batch_index}else{1}
-          $covered=[int]$priorDispatch.waves[0].batches[$index-1].count
-        }
-        if($null-ne$covered-and$covered-lt$largest){
-          Invoke-ProjectPython -Arguments @('-m','common.simion.resource_scheduler','--request',$request,'--output',$localDispatch)
-        }else{Copy-Item -LiteralPath $dispatch -Destination $localDispatch}
+        Copy-Item -LiteralPath $dispatch -Destination $localDispatch
         $dispatch=$localDispatch
         $fixedArgs=@('-m','common.simion.resource_scheduler','--prepare-fixed-recovery-plan',$dispatch,'--fixed-batch-plan',$plan,'--output',$dispatch)
+        if($profiles){$fixedArgs+=@('--profiles',$profiles)}
         foreach($batch in $missing){$fixedArgs+=@('--replay-batch-index',([string]$batch.index))}
         Invoke-ProjectPython -Arguments $fixedArgs
       }

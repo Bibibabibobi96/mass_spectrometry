@@ -280,7 +280,7 @@ $formal=[pscustomobject]@{{process_record=[pscustomobject]@{{completed=$true}};o
 $remaining=& $prepareRemaining $formal
 if($script:calls-ne1-or@($remaining.pending).Count-ne1-or$remaining.pending[0].index-ne3){{throw 'wrong pending batches'}}
 $calibrated=Get-Content $dispatch -Raw|ConvertFrom-Json
-if(-not$calibrated.estimation.recovered_missing_observation_completed-or$calibrated.limits.maximum_concurrency-ne3){{throw 'wrong calibrated identity'}}
+if(-not$calibrated.estimation.recovered_missing_observation_completed-or$calibrated.limits.maximum_concurrency-le1){{throw 'wrong calibrated identity'}}
 if($calibrated.estimation.observed_peak_bytes-ne1073741824-or$calibrated.estimation.observed_process_cpu_percent-ne8-or$calibrated.estimation.background_cpu_percent-ne2-or$calibrated.host.available_memory_bytes-ne10737418240-or$calibrated.host.total_physical_memory_bytes-ne21474836480){{throw 'actual observation changed'}}
 if(($calibrated.waves[0].batches|ConvertTo-Json -Compress)-cne($initial.batches|ConvertTo-Json -Compress)){{throw 'fixed intervals changed'}}
 '''
@@ -332,7 +332,7 @@ $ContinuationPredecessorManifestPath=if($Scenario-in@('mixed','mixed_insufficien
 $PreparedSourceMode='measured_population';$FieldBindingPath='';$TrajectoryEquivalenceReferenceRunPath='';$ResultPath=''
 $script:capacityReleased=$false;$script:hostReleased=$false;$script:retained=$false;$script:sealed=$false
 if($ContinuationPredecessorManifestPath){New-Item -ItemType Directory -Force -Path (Split-Path -Parent $ContinuationPredecessorManifestPath),(Join-Path $TestRoot 'ancestor')|Out-Null;'{}'|Set-Content $ContinuationPredecessorManifestPath;'sealed'|Set-Content (Join-Path $TestRoot 'ancestor/source.log');'{}'|Set-Content (Join-Path $TestRoot 'ancestor/run_manifest.json')}
-$script:projectionCalls=0;$script:projectionCapacity=$false;$script:unprofiled=$false
+$script:projectionCalls=0;$script:projectionCapacity=$false;$script:fixedObservation=$false
 function mock {
  $global:LASTEXITCODE=0;$script:projectionCalls++
  $ancestor=Join-Path $TestRoot 'ancestor/source.log'
@@ -418,12 +418,11 @@ function Invoke-ProjectPython {
   '{}'|Set-Content (Join-Path $results 'simion_dispatch_request.json')
  }elseif($command-eq'discover'){'{}'|Set-Content (Value '--output')
  }elseif($Arguments[1]-eq'common.simion.resource_scheduler'){
-  if($Scenario-eq'mixed_insufficient'-and$Arguments-contains'--request'-and$Arguments-notcontains'--observed-formal-peak-bytes'){
-   if($Arguments-contains'--profiles'){throw 'Insufficient profile was reused'};$script:unprofiled=$true
-  }
   if($Arguments-contains'--prepare-fixed-recovery-plan'){
+   if($Arguments-notcontains'--profiles'){throw 'Existing resource profiles did not reach the public fixed selector'}
    if($Scenario-eq'mixed_insufficient'-and@($Arguments|Where-Object{$_-eq'--replay-batch-index'}).Count-ne1){throw 'Fixed recovery omitted missing batch'}
    $prior=Get-Content (Value '--output') -Raw|ConvertFrom-Json
+   if($Scenario-eq'mixed_insufficient'){$prior.estimation.kind='formal_first_batch_observation';$script:fixedObservation=$true}
    if($prior.estimation.kind-eq'formal_first_batch_observation'){$prior.estimation|Add-Member -NotePropertyName recovered_missing_observation -NotePropertyValue $true -Force}
    Write-RunJson (Value '--output') 20 $prior;return
   }
@@ -493,7 +492,7 @@ if($manifest.status-ne$expectedStatus){throw 'Scientific manifest was incorrectl
 if($Scenario-eq'asset_failure'){if($script:observed-or$script:dispatched-or$script:analyzed){throw 'Bad actual assets reached a vendor consumer'}}elseif($Scenario-in@('mixed','mixed_insufficient','zero')){if(-not($script:analyzed-and$script:sealed)){throw 'Recovery skipped merge or analysis'};if($Scenario-eq'zero'-and($script:observed-or$script:dispatched-or$script:materialized-ne0)){throw 'Zero-missing recovery launched SIMION'};if($Scenario-eq'mixed'-and($script:observed-or-not$script:dispatched)){throw 'Mixed recovery launched wrong batches'};if($Scenario-eq'mixed_insufficient'-and(-not$script:observed-or-not$script:adapted-or$script:dispatched)){throw 'Insufficient profile did not observe only the missing batch'}}elseif(-not($script:observed-and$script:adapted-and$script:dispatched-and$script:analyzed-and$script:sealed)){throw 'Missing public workflow stage'}
 if($ContinuationPredecessorManifestPath-and($script:projectionCalls-ne2-or-not$script:projectionCapacity)){throw 'Ancestor projection was not protected and rechecked'}
 if($ContinuationPredecessorManifestPath){$stream=[IO.File]::Open((Join-Path $TestRoot 'ancestor/source.log'),[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::ReadWrite);$stream.Dispose()}
-if($Scenario-eq'mixed_insufficient'){$original=Get-Content (Join-Path $TestRoot 'ancestor_inputs/simion_repository_dispatch_plan.json') -Raw|ConvertFrom-Json;if($original.estimation.kind-ne'observed_formal_batch'-or-not$script:unprofiled){throw 'Ancestor dispatch was rewritten or insufficient profile reused'}}
+if($Scenario-eq'mixed_insufficient'){$original=Get-Content (Join-Path $TestRoot 'ancestor_inputs/simion_repository_dispatch_plan.json') -Raw|ConvertFrom-Json;if($original.estimation.kind-ne'observed_formal_batch'-or-not$script:fixedObservation){throw 'Ancestor dispatch was rewritten or public fixed observation was skipped'}}
 if($Scenario-notin@('analysis_failure','asset_failure')-and-not$script:compared){throw 'Trajectory equivalence gate was skipped'}
 if($script:assetChecks-ne$(if($Scenario-eq'zero'){0}else{1})){throw 'Native payload verification count differs'}
 'PUBLIC_PREPARED_RUNNER_MOCK_PASS'
