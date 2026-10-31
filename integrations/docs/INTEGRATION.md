@@ -482,3 +482,5 @@ PA 在 builder 前取得持续防写 guard；保护前可写、保护中拒写�
 单反射执行测试的同组场景共用一次只读源码模板，各场景仍通过真实 freezer 建立独立冻结副本，
 并隔离请求、预算、run、故障注入与资源收尾。显式回放 True 的完整母群正例由 Fly 矩阵维护，
 normal 入口另验证省略回放及其预算；不重复执行相同参数的完整正例。此为测试夹具去重，不改变科学入口或验收条件。
+
+accelerator_interface 与 multipole_ip 的公开入口启动时解析一次公共工作区上下文；新设计、源、IP、场、绑定及飞行 run 均使用本次产物根，子 owner 临时继承同一产物／执行／主机调度根，调用后恢复环境。run package 冻结该上下文；显式父 run 不搬到新根，沿原 manifest 的 SourceReferences 保护其真实 owner。MP composition plan 仍是冻结输入，不伪装成 run authority。此项部署路径接线由无原生薄回归验证，不代表新的求解或科学资格。

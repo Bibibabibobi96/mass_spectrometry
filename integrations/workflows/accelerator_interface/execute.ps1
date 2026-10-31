@@ -41,18 +41,23 @@ $repoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
 $script:pythonRoot=$repoRoot
 . (Join-Path $repoRoot 'common/require_powershell7.ps1')
 . (Join-Path $repoRoot 'integrations/runtime/dependencies.ps1')
-$workspaceRoot=Split-Path -Parent $repoRoot
 . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
 $python=if($PythonExe){(Resolve-Path -LiteralPath $PythonExe).Path}else{Join-Path $repoRoot '.venv/Scripts/python.exe'}
+. (Join-Path $repoRoot 'common/paths/workspace_paths.ps1')
+$pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
+$artifactRoot=[string]$pathContext.artifact_root
+$pathEnvironment=@{MASS_SPECTROMETRY_ARTIFACT_ROOT=$artifactRoot;
+  MASS_SPECTROMETRY_EXECUTION_ROOT=[string]$pathContext.execution_root;
+  MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=[string]$pathContext.host_resource_state_path}
 function Invoke-JointOwnerStage {
   param([string]$Script,[hashtable]$Arguments)
   $watch=[Diagnostics.Stopwatch]::StartNew()
-  try{& $Script @Arguments}
+  try{Invoke-RunToolRootContext -RepoRoot $repoRoot -Environment $pathEnvironment -Operation {& $Script @Arguments}}
   finally{Write-Output ("JOINT_STAGE OWNER={0} ELAPSED_SECONDS={1:F3}" -f $Script,$watch.Elapsed.TotalSeconds)}
 }
 function Get-JointDesignReceipt {
   param([string]$Run)
-  $path=Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+  $path=Invoke-RunToolRootContext -RepoRoot $repoRoot -Environment $pathEnvironment -Operation {
     & $python -B -c 'import sys;from pathlib import Path;from integrations.workflows.accelerator_interface.prepare import verified_preparation_reference;print(verified_preparation_reference(Path(sys.argv[1]),"results/accelerator_interface_preparation.json"))' $Run
     if($LASTEXITCODE-ne0){throw 'Design preparation receipt failed its owner and manifest validation.'}
   }
@@ -84,7 +89,7 @@ if record_path(receipt['injected_source'], base_dir=run) != source:
 verify_record('injected source', receipt['injected_source'], base_dir=run)
 print(json.dumps(receipt))
 '@
-  $output=Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+  $output=Invoke-RunToolRootContext -RepoRoot $repoRoot -Environment $pathEnvironment -Operation {
     & $python -B -c $code $Run $ConfigurationDirectory
     if($LASTEXITCODE-ne0){throw 'MP-to-IP preparation or receiver configuration failed validation.'}
   }
@@ -102,7 +107,7 @@ frozen = verified_successful_run_reference(run, 'inputs/multipole_ip_request.jso
 if load_request(request) != load_request(frozen):
     raise ValueError('MP-to-IP recovery request differs from the explicit sealed preparation')
 '@
-  Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+  Invoke-RunToolRootContext -RepoRoot $repoRoot -Environment $pathEnvironment -Operation {
     & $python -B -c $code $Run $Request
     if($LASTEXITCODE-ne0){throw 'MP-to-IP recovery requires the unchanged request and its explicit sealed preparation.'}
   }
@@ -118,7 +123,7 @@ if not (summary.get('status') == 'failed' and summary.get('execution_status') ==
     raise ValueError('IP failure lacks completed native and analysis evidence')
 print(json.dumps(summary))
 '@
-  $output=Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+  $output=Invoke-RunToolRootContext -RepoRoot $repoRoot -Environment $pathEnvironment -Operation {
     & $python -B -c $code $Run
     if($LASTEXITCODE-ne0){throw 'IP failure is not a verified completed scientific negative result.'}
   }
@@ -126,7 +131,7 @@ print(json.dumps(summary))
 }
 function Assert-JointFieldRunId {
   param([string]$Id)
-  Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+  Invoke-RunToolRootContext -RepoRoot $repoRoot -Environment $pathEnvironment -Operation {
     & $python -B -m common.contracts.artifact_naming run $Id|Out-Null
     if($LASTEXITCODE-ne0){throw "Run ID '$Id' does not satisfy the repository run naming contract."}
   }
@@ -180,7 +185,7 @@ function Write-FullJointFlightResult {
 }
 function Invoke-JointAnalysisPreflight {
   param([string]$Design,[string]$Source,[string]$Contract)
-  Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+  Invoke-RunToolRootContext -RepoRoot $repoRoot -Environment $pathEnvironment -Operation {
     & $python -B -c 'import sys;from pathlib import Path;from integrations.workflows.accelerator_interface.prepare import preflight_joint_analysis;preflight_joint_analysis(*map(Path,sys.argv[1:]))' $Design $Source $Contract
     if($LASTEXITCODE-ne 0){throw "Joint analysis preflight failed (exit $LASTEXITCODE)."}
   }
@@ -193,7 +198,7 @@ function Invoke-FullJoint {
     }
     $workbench=(Resolve-Path -LiteralPath $PreparedJointWorkbenchRunPath).Path
     $flightId=if($RunId){$RunId}else{(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__ip-mr-joint-'+[guid]::NewGuid().ToString('N').Substring(0,8)}
-    $flightRun=Join-Path $workspaceRoot "artifacts/projects/instrument_assembly/runs/$flightId"
+    $flightRun=Join-Path $artifactRoot "projects/instrument_assembly/runs/$flightId"
     $flight=@{PreparedJointWorkbenchRunPath=$workbench;ContractPath=$ContractPath;RunId=$flightId;RepoRoot=$repoRoot}
     if($ResultPath){$flight.ResultPath=$ResultPath}
     if($PythonExe){$flight.PythonExe=$PythonExe};if($SimionExe){$flight.SimionExe=$SimionExe}
@@ -238,12 +243,12 @@ function Invoke-FullJoint {
     Assert-JointFieldRunId -Id $fieldId
   }
   $designId=if($RunId){$RunId}else{New-AcceleratorInterfaceRunId -Provider $AcceleratorProvider}
-  $designRun=if($PreparedInterfaceRunPath){(Resolve-Path -LiteralPath $PreparedInterfaceRunPath).Path}else{Join-Path $workspaceRoot "artifacts/projects/instrument_assembly/runs/$designId"}
-  $fieldRun=if($JointFieldRunPath){(Resolve-Path -LiteralPath $JointFieldRunPath).Path}else{Join-Path $workspaceRoot "artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/$fieldId"}
+  $designRun=if($PreparedInterfaceRunPath){(Resolve-Path -LiteralPath $PreparedInterfaceRunPath).Path}else{Join-Path $artifactRoot "projects/instrument_assembly/runs/$designId"}
+  $fieldRun=if($JointFieldRunPath){(Resolve-Path -LiteralPath $JointFieldRunPath).Path}else{Join-Path $artifactRoot "projects/parallel_mirror_dual_stripe_mr_tof/runs/$fieldId"}
   $finalId=New-AcceleratorInterfaceRunId -Provider $AcceleratorProvider
-  $finalRun=Join-Path $workspaceRoot "artifacts/projects/instrument_assembly/runs/$finalId"
+  $finalRun=Join-Path $artifactRoot "projects/instrument_assembly/runs/$finalId"
   $flightId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__ip-mr-joint-'+[guid]::NewGuid().ToString('N').Substring(0,8)
-  $flightRun=Join-Path $workspaceRoot "artifacts/projects/instrument_assembly/runs/$flightId"
+  $flightRun=Join-Path $artifactRoot "projects/instrument_assembly/runs/$flightId"
   $common=@{ReferenceMrRunPath=$ReferenceMrRunPath;AcceleratorProvider=$AcceleratorProvider;IonProcessorRunPath=$IonProcessorRunPath;RepoRoot=$repoRoot}
   if($LuaExe){$common.LuaExe=$LuaExe};if($PythonExe){$common.PythonExe=$PythonExe};if($SimionExe){$common.SimionExe=$SimionExe}
   $stage='design';$temporary=$null
@@ -252,7 +257,7 @@ function Invoke-FullJoint {
       $stage='multipole_ip_preparation'
       $sourceRequest=(Resolve-Path -LiteralPath $MultipoleIpRequestPath).Path
       $ipConfiguration=(Resolve-Path -LiteralPath $IonProcessorConfigurationDirectory).Path
-      $sourceRun=Join-Path $workspaceRoot "artifacts/projects/instrument_assembly/runs/$MultipoleIpRunId"
+      $sourceRun=Join-Path $artifactRoot "projects/instrument_assembly/runs/$MultipoleIpRunId"
       $sourceArguments=@{Request=$sourceRequest;RunId=$MultipoleIpRunId;RepoRoot=$repoRoot}
       if($PythonExe){$sourceArguments.PythonExe=$PythonExe}
       if($IonProcessorContinuationPredecessorManifestPath){
@@ -266,7 +271,7 @@ function Invoke-FullJoint {
         return
       }
       $stage='ion_processor_flight'
-      $IonProcessorRunPath=Join-Path $workspaceRoot "artifacts/projects/dual_pressure_rectilinear_ion_processor/runs/$IonProcessorRunId"
+      $IonProcessorRunPath=Join-Path $artifactRoot "projects/dual_pressure_rectilinear_ion_processor/runs/$IonProcessorRunId"
       $ipArguments=@{RunId=$IonProcessorRunId;InjectedSource=(Join-Path $sourceRun 'results/multipole_ip/ip_injected_source.json');ConfigurationDirectory=$ipConfiguration}
       if($SimionExe){$ipArguments.SimionExe=$SimionExe}
       if($IonProcessorFieldRunPath){$ipArguments.NativeFieldRun=(Resolve-Path -LiteralPath $IonProcessorFieldRunPath).Path}
@@ -376,9 +381,9 @@ if($FinalizeJointWorkbench){
 }
 if(-not$RunId){$RunId=New-AcceleratorInterfaceRunId -Provider $AcceleratorProvider}
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
-  -ArtifactRoot (Join-Path $workspaceRoot "artifacts/projects/$projectId") `
+  -ArtifactRoot (Join-Path $artifactRoot "projects/$projectId") `
   -RunId $RunId -Project $projectId -Mode accelerator_interface_preparation `
-  -Software $software -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled
+  -Software $software -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled -PathContext $pathContext
 $terminalized=$false
 $capacitySession=$null
 $lease=$null
@@ -388,13 +393,15 @@ $stage='capacity_startup'
 try{
   # One frozen PA template plus up to five temporary hard-linked companions
   # count toward the logical-file peak; no field PA or samples are copied.
-  $protected=@($package.artifact_run_dir,$reference)
-  if($sourceRun){$protected+=@($sourceRun)}
-  if($designRun){$protected+=@($designRun)}
-  if($fieldRun){$protected+=@($fieldRun)}
+  $parents=@(@($reference,$sourceRun,$designRun,$fieldRun)|Where-Object{$_}|Select-Object -Unique)
+  $sourceRecords=Invoke-RunToolRootContext -RepoRoot $repoRoot -Environment $pathEnvironment -Operation {
+    & $python -B -c 'import json,sys;from pathlib import Path;from common.contracts.write_run_manifest import file_record;print(json.dumps([dict(manifest_record=file_record(Path(p)/"run_manifest.json"),protected_paths=[p]) for p in json.loads(sys.argv[1])]))' ($parents|ConvertTo-Json -Compress -AsArray)
+    if($LASTEXITCODE-ne0){throw 'Interface source manifest binding failed.'}
+  }
+  $sourceReferences=@(($sourceRecords-join"`n")|ConvertFrom-Json -AsHashtable)
   $capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunDirectory $package.artifact_run_dir `
-    -CommittedNewBytes 134217728 -ProtectedPaths $protected -Owner "instrument-assembly-accelerator-interface:$RunId"
+    -ArtifactRoot ($artifactRoot) -RunDirectory $package.artifact_run_dir `
+    -CommittedNewBytes 134217728 -ProtectedPaths @($package.artifact_run_dir) -SourceReferences $sourceReferences -Owner "instrument-assembly-accelerator-interface:$RunId"
   $startup=Join-Path $package.result_dir 'artifact_capacity_gate_startup.json'
   Write-RunJson -Path $startup -Depth 14 -Value $capacitySession
   $stage='freeze_executable_dependencies'
@@ -415,7 +422,7 @@ try{
   if($FinalizeJointWorkbench){$arguments+=@('--finalize-joint-workbench','--prepared-interface-run',$designRun,'--joint-field-run',$fieldRun)}
   if($executionContract){$arguments+=@('--contract',$executionContract)}
   $log=Join-Path $package.log_dir 'prepare_accelerator_interface.log'
-  Invoke-RunToolRootContext -RepoRoot $script:pythonRoot -Operation {
+  Invoke-RunToolRootContext -RepoRoot $script:pythonRoot -Environment $pathEnvironment -Operation {
     & $python -B @arguments 2>&1|Tee-Object -FilePath $log
     if($LASTEXITCODE-ne0){throw "Accelerator interface preparation failed; Python source error is retained in $log"}
   }
@@ -437,7 +444,7 @@ try{
     }
     $lease=Enter-HostExecutionLease -Role SIMION -Stage preparation
     $stage='joint_asset_identity_before_iob'
-    Invoke-RunToolRootContext -RepoRoot $script:pythonRoot -Operation {
+    Invoke-RunToolRootContext -RepoRoot $script:pythonRoot -Environment $pathEnvironment -Operation {
       & $python -B -c 'import sys;from pathlib import Path;from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding,verify_joint_asset_records;verify_joint_asset_records(load_binding(Path(sys.argv[1])));print("JOINT_NATIVE_ASSETS=PASS")' (Join-Path $package.result_dir 'joint_workbench/static_field_binding.json')
       if($LASTEXITCODE-ne0){throw 'Joint workbench live asset identity verification failed; no vendor consumer was started.'}
     }
@@ -446,7 +453,7 @@ try{
     $extraOutputs+=@($buildLog)
     $builder=Join-Path $package.result_dir 'joint_workbench/runtime/build_workbench.lua'
     $request=Join-Path $package.result_dir 'joint_workbench/runtime/workbench_build.lua'
-    Invoke-RunToolRootContext -RepoRoot $script:pythonRoot -Operation {
+    Invoke-RunToolRootContext -RepoRoot $script:pythonRoot -Environment $pathEnvironment -Operation {
       & $SimionExe --nogui --noprompt lua $builder -- --measured-source $request 2>&1|Tee-Object -FilePath $buildLog
       if($LASTEXITCODE-ne0){throw 'Joint workbench IOB assembly failed; no joint flight was attempted.'}
     }
@@ -463,14 +470,14 @@ try{
     $extraOutputs+=@($auditLog)
     # A new vendor process loads only source basis + proven highest-priority IP
     # fine level. It does not inherit the builder's large PA collection.
-    Invoke-RunToolRootContext -RepoRoot $script:pythonRoot -Operation {
+    Invoke-RunToolRootContext -RepoRoot $script:pythonRoot -Environment $pathEnvironment -Operation {
       & $SimionExe --nogui --noprompt lua $audit.program -- $audit.lua_request 2>&1|Tee-Object -FilePath $auditLog
       if($LASTEXITCODE-ne0){throw 'Read-only interface field audit failed.'}
     }
     if((Get-Content -LiteralPath $auditLog -Raw)-notmatch'MRTOF_INTERFACE_FIELD_AUDIT=PASS'){
       throw 'Interface field audit did not close all measured crossings and centroid.'
     }
-    Invoke-RunToolRootContext -RepoRoot $script:pythonRoot -Operation {
+    Invoke-RunToolRootContext -RepoRoot $script:pythonRoot -Environment $pathEnvironment -Operation {
       & $python -B -c 'import sys;from pathlib import Path;from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import summarize_interface_field_audit;summarize_interface_field_audit(Path(sys.argv[1]))' (Split-Path -Parent $audit.raw_output)
       if($LASTEXITCODE-ne0){throw 'Interface energy/field ledger reduction failed.'}
     }
@@ -517,7 +524,7 @@ try{
   $terminalized=$true
   $stage='capacity_finalization'
   Invoke-RunCapacityLifecycleAdapter -Python $python -RepoRoot $repoRoot `
-    -Action finalize-ready -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunConfig $package.run_config|Out-Null
+    -Action finalize-ready -ArtifactRoot ($artifactRoot) -RunConfig $package.run_config|Out-Null
   if($receipt.status-eq'zero_exit'){
     Write-Output "ACCELERATOR_PREPARATION=ZERO_EXIT PROVIDER=$AcceleratorProvider RUN_ID=$RunId MOTHER=$($receipt.source_exit.counts.source) TRANSFERRED=0 SCIENTIFIC_QUALIFICATION=not_passed SOLVER_EXECUTED=False"
   }else{Write-Output "ACCELERATOR_PREPARATION=PASS PROVIDER=$AcceleratorProvider RUN_ID=$RunId SOLVER_EXECUTED=False"}

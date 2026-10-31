@@ -12,32 +12,39 @@ $repoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
 . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
 . (Join-Path $repoRoot 'integrations/runtime/dependencies.ps1')
 $python=if($PythonExe){(Resolve-Path -LiteralPath $PythonExe).Path}else{Join-Path $repoRoot '.venv/Scripts/python.exe'}
+. (Join-Path $repoRoot 'common/paths/workspace_paths.ps1')
+$pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
+$artifactRoot=[string]$pathContext.artifact_root
+$pathEnvironment=@{MASS_SPECTROMETRY_ARTIFACT_ROOT=$artifactRoot;
+  MASS_SPECTROMETRY_EXECUTION_ROOT=[string]$pathContext.execution_root;
+  MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=[string]$pathContext.host_resource_state_path}
 $requestPath=(Resolve-Path -LiteralPath $Request).Path
-$requestDocument=Get-Content -LiteralPath $requestPath -Raw|ConvertFrom-Json -Depth 100
-$requestDirectory=Split-Path -Parent $requestPath
-$sourceManifest=[IO.Path]::GetFullPath([string]$requestDocument.source.manifest.path,$requestDirectory)
-$receiverManifest=[IO.Path]::GetFullPath([string]$requestDocument.receiver.manifest.path,$requestDirectory)
-$parentPlan=[IO.Path]::GetFullPath([string]$requestDocument.composition_plan.path,$requestDirectory)
+$parsedRequest=Invoke-RunToolRootContext -RepoRoot $repoRoot -Environment $pathEnvironment -Operation {
+  & $python -B -c 'import json,sys;from pathlib import Path;from integrations.workflows.multipole_ip.prepare import load_request;print(json.dumps(load_request(Path(sys.argv[1]))))' $requestPath
+  if($LASTEXITCODE-ne0){throw 'Multipole-to-IP request parsing failed.'}
+}
+$requestDocument=($parsedRequest-join"`n")|ConvertFrom-Json -Depth 100
+$sourceManifest=[string]$requestDocument.source.manifest.path
+$receiverManifest=[string]$requestDocument.receiver.manifest.path
 if(-not$RunId){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__analysis__python__multipole-ip-preparation'}
-$workspace=Split-Path -Parent $repoRoot
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
-  -ArtifactRoot (Join-Path $workspace 'artifacts/projects/instrument_assembly') `
+  -ArtifactRoot (Join-Path $artifactRoot 'projects/instrument_assembly') `
   -RunId $RunId -Project instrument_assembly -Mode multipole_ip_preparation `
-  -Software @('Python 3.11') -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled
+  -Software @('Python 3.11') -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled -PathContext $pathContext
+$sourceReferences=@(
+  @{manifest_record=$requestDocument.source.manifest|ConvertTo-Json -Depth 20|ConvertFrom-Json -AsHashtable;protected_paths=@(Split-Path $sourceManifest -Parent)},
+  @{manifest_record=$requestDocument.receiver.manifest|ConvertTo-Json -Depth 20|ConvertFrom-Json -AsHashtable;protected_paths=@(Split-Path $receiverManifest -Parent)})
 $capacity=$null;$lease=$null;$terminalized=$false;$stage='capacity_startup'
 try{
   $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot (Join-Path $workspace 'artifacts') -RunDirectory $package.artifact_run_dir `
-    -CommittedNewBytes 16777216 -ProtectedPaths @($package.artifact_run_dir,(Split-Path $sourceManifest -Parent),(Split-Path $receiverManifest -Parent)) `
+    -ArtifactRoot ($artifactRoot) -RunDirectory $package.artifact_run_dir `
+    -CommittedNewBytes 16777216 -ProtectedPaths @($package.artifact_run_dir) -SourceReferences $sourceReferences `
     -Owner "instrument-assembly-multipole-ip:$RunId"
   $stage='freeze_inputs'
   $dependencyPath=Join-Path $repoRoot 'integrations/config/runtime_dependencies.json'
   $frozen=Freeze-ConsumerDependencies -RepoRoot $repoRoot -ContractPath $dependencyPath -InputDir $package.input_dir -OwnerId instrument_assembly -ConsumerId multipole_ip
   $frozenRequest=Join-Path $package.input_dir 'multipole_ip_request.json'
-  # Resolve only transport paths before freezing; author geometry and state stay unchanged.
-  $requestDocument.source.manifest.path=$sourceManifest
-  $requestDocument.receiver.manifest.path=$receiverManifest
-  $requestDocument.composition_plan.path=$parentPlan
+  # The shared request parser resolved transport paths before freezing.
   Write-RunJson -Path $frozenRequest -Depth 100 -Value $requestDocument
   $configuration=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
   $configuration.inputs=[ordered]@{request=$frozenRequest;source_manifest=$sourceManifest;receiver_manifest=$receiverManifest;code_inventory=$frozen.code_inventory_path;dependency_contract=$frozen.dependency_contract_path}
