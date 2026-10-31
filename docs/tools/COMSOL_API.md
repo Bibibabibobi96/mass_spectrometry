@@ -459,3 +459,9 @@ COMSOL6.4官方[mphparticle](https://doc.comsol.com/6.4/doc/com.comsol.help.llma
 实际提取record在差异分析前各写一次本owner MAT(v7)，可用标准load和同一公开compare_rf_gui_observations函数独立纯分析；小JSON区分GUI动作／原count-hit接受／全轨迹未资格。跨run mask或末时刻差异仅诊断，各run自身ID／时钟／active6D合法性仍检查。已有观测充分时不重做Study，缺after记录不能伪造差值或恢复。
 
 独立MAT分析示例：在本项目comsol目录的真实PathFixture／路径下，以`a=load(savedPath); b=load(computedPath); assert(isequal(a.units,b.units)); diagnostic=compare_rf_gui_observations(a.observation,b.observation);`直接调用唯一纯helper，无COMSOL。两参数模式不重建项目物理接受条件，project_outcomes_compared=false／对应差异不可计算；真实GUI提供现owner已分类的两组outcomes。旧JSON复读仅重读旧方法输出，不称用新方法重算；改变方法后的MAT分析必须新owner记录，父不变。
+
+### GUI实际观测保存与后续纯分析
+
+2026-10-31的`20261031_121732__test__comsol__rf-gui-observations`以原090000保存模型／冻结N100源完成1次launcher、std1／std2各1次Compute和原H67接受条件。既有提取record在比较前分别写成26885573／26885713B的MAT(v7)，public owner以solver_review完成封存与alias清理，父小记录／MPH stat不变；未用SIMION专用RetentionPreservePaths例外。707591个共有有限状态的最大分量差为9.385230370639874e-10mm／4.3199906940571964e-7m/s，只是诊断；数值／科学仍NOT_EVALUATED，原native精确birth echo两侧均不可用，源配置回读不等于native初态echo。
+
+已保存MAT与同run冻结的compare_rf_gui_observations可支持后续标准load后的纯比较，无COMSOL／Compute；两参数模式不重建项目物理接受条件。当前实测覆盖写入、真实GUI原接受条件、公共收尾及持久文件保留，尚未额外执行该资产的MAT-only冷读／新方法分析。本轮与112402旧FAIL各自保留，阶段／资源口径及结果链接见[RF项目状态](../../projects/rf_multipole_ion_optics/docs/PROJECT.md#121732-gui观测与公共收尾实测)。

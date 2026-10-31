@@ -492,3 +492,24 @@ terminal／capacity／lease与alias清理完成。原生完成、GUI对照未建
 最终公开helper的25项纯MATLAB行为回归通过（1.3093秒，0 Failed／0 Incomplete），覆盖实际冻结helper解析、MAT保存／load、分析失败后原始记录保留及无数值资格的差异诊断。live追加3项Python／PowerShell薄回归通过（2.582秒／外墙3.089151秒），覆盖正常调用真实接线、JSON独立读取、拒绝虚假数值资格／矛盾接受条件、第四owned输出根投影及AnalyzeOnly保留原FAIL且零native。新持久化边界仍尚未取得原生实证；本次软件通过不等同旧21项实现测试的判据成立，也不将112402失败改称本主题原生通过。
 
 独立MAT分析示例：在本项目comsol目录的真实PathFixture／路径下，以`a=load(savedPath); b=load(computedPath); assert(isequal(a.units,b.units)); diagnostic=compare_rf_gui_observations(a.observation,b.observation);`直接调用唯一纯helper，无COMSOL。两参数模式不重建项目物理接受条件，project_outcomes_compared=false／对应差异不可计算；真实GUI提供现owner已分类的两组outcomes。旧JSON复读仅重读旧方法输出，不称用新方法重算；改变方法后的MAT分析必须新owner记录，父不变。
+
+### 121732 GUI观测与公共收尾实测
+
+`20261031_121732__test__comsol__rf-gui-observations`补齐上段尚待原生验证的观测持久化边界。沿原public owner只读引用090000已保存单器件模型及原100粒子／不同birth源，保持原粗网格和139.81792V／1.1MHz驱动；17文件闭包来自fa0cdaf1，仅一次性副本加入明确计时和两Study范围guard。真实1次COMSOL launcher执行std1／std2各1次，原完整N=100／H=67接受条件通过。scope为saved_parent_gui_only，parent_request_completed=false，不改090000或112402的原FAIL。
+
+7119个共有实际stored时刻比较707591个有限6D状态：最大位置／速度**分量差**分别为9.385230370639874e-10mm／4.3199906940571964e-7m/s，RMS分量差为4.178305899101451e-11mm／1.818373628953439e-8m/s；active mask、terminal事实、项目outcome及逐ID接受差异均0。这些是诊断，observed_state_parity_verified=false、numerical_equivalence_status／scientific_result仍为NOT_EVALUATED。100组实际Release绑定通过，saved／computed两侧原生精确birth echo均有100个ID不可用、独立验证ID为空；源文件／canonical回读不冒充native初态echo。
+
+| 已测阶段 | 秒 |
+|---|---:|
+| 加载／源绑定 | 9.3507749／6.1864063 |
+| 原解提取／MAT保存 | 25.3728916／0.8134210 |
+| std1／std2 Compute | 7.150058／21.737052 |
+| 重算解提取／MAT保存 | 24.1157905／0.7945261 |
+| native wrapper／usage观测区间 | 148.3537029／142.162 |
+| Result累计／其中公共收尾 | 167.9655095／6.9236631 |
+
+各计时有不同边界，不相加冒充外命令墙钟或提速。usage覆盖本次单GUI进程树与run目录：峰值RSS3753705472B、最低可用内存22144454656B、采样目录峰值／终态manifest前保留量54618511B，无warning；预算为16GiB RSS、最低8GiB可用、2GiB新增、300秒仅告警。最终停止载荷收据54683572B／45文件，和usage的manifest前口径分别保留。
+
+saved／computed MAT分别26885573／26885713B，已在比较前写入并按solver_review保留。真实launcher PID20880／start ticks639290170706302411／exit0，非继承host token `2dd4e6cfbf8348e6bbf733524bc4a6b1`实际released。Result为success／complete，terminal、capacity、lease、writer确认和alias移除均成立；12份父小记录（原8角色及原Result、receipt、两completion）前后字节记录一致，原MPH仅stat核对且不变，没有新hash／复制父MPH或读取80MBraw。
+
+[诊断JSON](../../../../artifacts/projects/rf_multipole_ion_optics/runs/20261031_121732__test__comsol__rf-gui-observations/results/gui_verification.json)、[实际launcher收据](../../../../artifacts/projects/rf_multipole_ion_optics/runs/20261031_121732__test__comsol__rf-gui-observations/logs/launcher_completion.json)、[usage](../../../../artifacts/projects/rf_multipole_ion_optics/runs/20261031_121732__test__comsol__rf-gui-observations/logs/resource_usage.json)及本主题run外Result／parent_audit保留。后续可只load两MAT，调用本run冻结的compare_rf_gui_observations作纯诊断而零Compute；本轮未额外执行资产MAT冷读或新方法重分析，不将旧JSON复读称新分析。GUI操作／原接受条件完成不授予精度、完整整机或其他源规模资格，RF源构造性能仍独立待办。
