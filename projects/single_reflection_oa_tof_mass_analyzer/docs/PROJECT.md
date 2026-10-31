@@ -457,3 +457,7 @@ COMSOL／SIMION 阶段失效；编排入口的报告或收尾文字变化可复�
 变化仍拒绝；旧 run 缺新窄实现身份明确受阻，不修改原 run 或伪造等价证书。
 
 现代窄依赖切换是独立软件主题；充分旧证据的新 run 投影仍是必要后续，尚未闭合整个科学复用工作包。
+
+### 冻结 Lua 原生路径运输
+
+受管 Candidate builder在实际Lua脚本argv达到Windows MAX_PATH边界时，沿既有执行alias运输明确冻结代码根；执行位置取本run配置已冻结的`paths.execution_root`，不随今天环境漂移，不复制PA或改变持久输入身份。别名及实际脚本后缀在启动前校验；仅已确认writer结束才清理。纯运输回归不代表新Refine/Fly或GUI资格。

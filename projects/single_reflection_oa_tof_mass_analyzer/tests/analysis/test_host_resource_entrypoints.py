@@ -146,6 +146,76 @@ throw 'deliberate guard boundary rejection'
                     self.assertEqual(output.count(f"TEST_LEASE_EXIT={role}"), 1, output)
                     self.assertIn(f"TEST_LEASE_INHERITED={nested}", output)
 
+    def test_deep_lua_transport_uses_frozen_root_and_preserves_unknown_writer(self) -> None:
+        script = r"""
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. (Join-Path $env:OA_TEST_REPO 'common/contracts/run_artifact_support.ps1')
+$ast=[Management.Automation.Language.Parser]::ParseFile($env:OA_TEST_BUILDER,[ref]$null,[ref]$null)
+$f=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-SimionLua'},$true)
+. ([scriptblock]::Create($f.Extent.Text))
+$cleanup=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Extent.Text.StartsWith('if($null-ne$script:codeExecutionAlias-and$script:allOperationsStopped)')},$true)
+if($null-eq$cleanup){throw 'Actual builder cleanup missing'}
+function Invoke-OwnedSimionArguments {
+ param($ArgumentList,$OperationId)
+ $script:observedLua=[string]$ArgumentList[3]
+ if($script:observedLua.Length-ge260){throw 'Native Lua argv still exceeds MAX_PATH'}
+ if((Get-Content -LiteralPath $script:observedLua -Raw)-cne'frozen Lua fixture'){throw 'Wrong source transport'}
+ if($script:mode-ne'success'){
+  $e=[Exception]::new('NATIVE_PRIMARY_SENTINEL')
+  $e.Data['native_operation_observation']=@{observation=@{exit_confirmed=($script:mode-ne'unknown');returncode=$(if($script:mode-eq'unknown'){$null}else{7})};managed_process_completion=@{}}
+  throw $e
+ }
+ return @{observation=@{exit_confirmed=$true;returncode=0};managed_process_completion=@{}}
+}
+$expectedRunRoot=Join-Path $env:TEMP 'managed-run'
+[IO.Directory]::CreateDirectory($expectedRunRoot)|Out-Null
+$repoRoot=Join-Path $expectedRunRoot 'inputs/code'
+while($repoRoot.Length-lt285){$repoRoot=Join-Path $repoRoot 'frozen_segment'}
+[IO.Directory]::CreateDirectory($repoRoot)|Out-Null
+$lua=Join-Path $repoRoot 'fixture.lua';[IO.File]::WriteAllText($lua,'frozen Lua fixture')
+$execution=Join-Path $env:TEMP 'frozen-execution'
+Write-RunJson -Path (Join-Path $expectedRunRoot 'run_config.json') -Value @{paths=@{execution_root=$execution}}
+$env:MASS_SPECTROMETRY_EXECUTION_ROOT=Join-Path $env:TEMP 'drifted-default'
+$removeAlias=${function:Remove-RunExecutionAlias}
+foreach($mode in @('success','failed','unknown','cleanup_failure')){
+ $script:mode=$mode;$script:codeExecutionAlias=$null;$script:nativeSequence=0
+ $nativeOperations=[Collections.Generic.List[object]]::new();$caught=$null
+ try{Invoke-SimionLua $lua @()}catch{$caught=$_}
+ if(($mode-eq'success')-ne($null-eq$caught)){throw 'Wrong native failure propagation'}
+ if($null-ne$caught-and$caught.Exception.Message-cne'NATIVE_PRIMARY_SENTINEL'){throw $caught}
+ $alias=$script:codeExecutionAlias.execution_alias
+ if((Split-Path -Parent $alias)-ine$execution){throw 'Frozen execution root was not used'}
+ $script:allOperationsStopped=$mode-ne'unknown';$buildFailure=$caught
+ if($mode-eq'cleanup_failure'){function Remove-RunExecutionAlias {param($ExecutionAlias,$TargetDirectory);throw 'CLEANUP_SECONDARY_SENTINEL'}}
+ . ([scriptblock]::Create($cleanup.Extent.Text))
+ if($null-ne$buildFailure-and$buildFailure.Exception.Message-cne'NATIVE_PRIMARY_SENTINEL'){throw 'Cleanup masked native primary'}
+ if($mode-eq'cleanup_failure'){
+  if(-not(Test-Path -LiteralPath $alias)){throw 'Failed cleanup alias unexpectedly vanished'}
+  Set-Item Function:Remove-RunExecutionAlias $removeAlias
+  Remove-RunExecutionAlias -ExecutionAlias $alias -TargetDirectory $repoRoot
+ }
+ if((Test-Path -LiteralPath $alias)-ne($mode-eq'unknown')){throw 'Known/unknown alias cleanup differs'}
+ if($mode-eq'unknown'){
+  # No real writer was started by this inert fixture. Keep the production
+  # unknown protection assertion above, then remove only this fixture junction.
+  Remove-RunExecutionAlias -ExecutionAlias $alias -TargetDirectory $repoRoot
+ }
+}
+$script:codeExecutionAlias=$null
+$outside=Join-Path (Split-Path -Parent $repoRoot) 'outside.lua';[IO.File]::WriteAllText($outside,'external')
+$rejected=$false
+try{Invoke-SimionLua $outside @()}catch{if($_.Exception.Message-notlike'*outside its frozen*'){throw};$rejected=$true}
+if(-not$rejected-or$null-ne$script:codeExecutionAlias){throw 'External code was transported'}
+'DEEP_LUA_TRANSPORT=PASS'
+"""
+        with tempfile.TemporaryDirectory(prefix="oa-lua-path-") as directory:
+            environment = dict(os.environ, TEMP=directory, OA_TEST_REPO=str(PROJECT.parents[1]),
+                               OA_TEST_BUILDER=str(PROJECT / "simion/workbench/build_formal_delivery.ps1"))
+            result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                                    cwd=PROJECT, env=environment, capture_output=True, encoding="utf-8", errors="replace", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("DEEP_LUA_TRANSPORT=PASS", result.stdout)
+
     def test_refining_lua_builders_switch_stage_and_propagate_failure(self) -> None:
         script = r"""
 $ErrorActionPreference='Stop'

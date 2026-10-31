@@ -128,6 +128,7 @@ print(json.dumps(load_pa_producer_handoffs(path,run,expected_cache_keys=keys,cap
 }
 $hostExecutionLease = Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
 $outputAlias=$null
+$script:codeExecutionAlias=$null
 try {
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
   if ([string]::IsNullOrWhiteSpace($RunId)) {
@@ -238,7 +239,30 @@ function Invoke-SimionLua([string]$Script, [object[]]$Arguments, [switch]$Refine
   $nativeOperations.Add($operation)
   try{
     $argumentsText=@($Arguments|ForEach-Object{if($_-is[IFormattable]){$_.ToString($null,[Globalization.CultureInfo]::InvariantCulture)}else{[string]$_}})
-    $observed=Invoke-OwnedSimionArguments -ArgumentList (@('--nogui','--noprompt','lua',$Script)+$argumentsText) -OperationId $name
+    $nativeScript=$Script
+    # The Lua opener retains MAX_PATH; only the explicit frozen code root is
+    # transported. Persistent field/IOB identities are not changed or copied.
+    if([IO.Path]::GetFullPath($Script).Length-ge260){
+      $relative=[IO.Path]::GetRelativePath($repoRoot,[IO.Path]::GetFullPath($Script))
+      if([IO.Path]::IsPathFullyQualified($relative)-or$relative-eq'..'-or
+         $relative.StartsWith('..'+[IO.Path]::DirectorySeparatorChar)){
+        throw 'Native Lua script is outside its frozen repository root.'
+      }
+      if($null-eq$script:codeExecutionAlias){
+        $runConfig=Get-Content -LiteralPath (Join-Path $expectedRunRoot 'run_config.json') -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+        if(-not$runConfig.Contains('paths')-or$runConfig.paths-isnot[Collections.IDictionary]-or
+           -not$runConfig.paths.Contains('execution_root')-or$runConfig.paths.execution_root-isnot[string]-or
+           -not[IO.Path]::IsPathFullyQualified($runConfig.paths.execution_root)){
+          throw 'Frozen run paths.execution_root is required for Lua transport.'
+        }
+        $script:codeExecutionAlias=New-RunExecutionAlias -TargetDirectory $repoRoot `
+          -ExecutionRoot $runConfig.paths.execution_root -ExpectedExecutionRelativePaths @($relative)
+      }
+      $nativeScript=Join-Path $script:codeExecutionAlias.execution_alias $relative
+      $null=Assert-RunPackagePathCapacity -Report (Get-RunPackagePathCapacity `
+        -RunDirectory $script:codeExecutionAlias.execution_alias -ExpectedExecutionRelativePaths @($relative))
+    }
+    $observed=Invoke-OwnedSimionArguments -ArgumentList (@('--nogui','--noprompt','lua',$nativeScript)+$argumentsText) -OperationId $name
     $operation.observation=$observed.observation;$operation.managed_process_completion=$observed.managed_process_completion
   }catch{
     if($_.Exception.Data.Contains('native_operation_observation')){
@@ -653,6 +677,10 @@ Write-RunJson -Path $summaryPath -Depth 12 -Value @{schema_version=1;role='oa_to
     if($null-ne$buildFailure){Write-Warning "Host release failed after the original build error: $_"}else{throw}
   }
   finally{
+    if($null-ne$script:codeExecutionAlias-and$script:allOperationsStopped){
+      try{Remove-RunExecutionAlias -ExecutionAlias $script:codeExecutionAlias.execution_alias -TargetDirectory $repoRoot}
+      catch{if($null-ne$buildFailure){Write-Warning "Code alias cleanup failed after the original build error: $_"}else{throw}}
+    }
     if($null-ne$outputAlias-and$script:allOperationsStopped){
       try{Remove-RunExecutionAlias -ExecutionAlias $outputAlias.execution_alias -TargetDirectory $outputFull}
       catch{if($null-ne$buildFailure){Write-Warning "Execution alias cleanup failed after the original build error: $_"}else{throw}}
