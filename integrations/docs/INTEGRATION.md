@@ -436,3 +436,15 @@ paired pulse在MATLAB／COMSOL前段迁移前保留early alias，不以此提交
 因此本次不转换旧key或声称历史资产自动兼容；缺资产时最小恢复范围是该local basis重新构造与验收，
 不是重新采样源或无条件重飞。本主题仅软件接线验证，没有新Refine、场精度或科学资格结论。
 verifier与response-set contract仍作为现publication资格约束保守入key；本次不宣称任意验收方法变化也零Refine。
+
+20261031 `120158__sim__simion__paired-path-probe` 完成公共原生路径边界验收：
+现`Invoke-FrontendIobBuild`消费当前paired Program/builder，在深持久路径、公共短执行表示下保存IOB；
+确认writer退出并删除旧alias后，以不同新alias冷重开同一IOB，原source/companions未变，未重建IOB。
+对象为显式11³未求解零势PA和N1机制输入，0Refine、0Fly；不能作为N100功能、新场求解或科学资格。
+四次native阶段合计5.9882秒（create/build/verify/cold各1.6132/1.4792/1.3797/1.5162），
+原准备与执行28.6553秒，公共路径6次调用0.7337542秒、运输0字节。
+scratch模板先误传目录保留、再误用仅适用native TRACE的`PreservePaths`，分别在completion和retention失败；
+已有四份真实PID/exit0与host释放事实保持。按原`solver_review`策略清空该例外字段后，
+原冻结CLI仅恢复收尾成功，新增native为0；公共收尾7.3465秒，Result总计36.0018秒。
+最终保留107文件／34,792,626字节，终态、容量、lease及alias清理均完成。
+小Result与两轮失败备份、修正action留在既有`workflow_results`及本次probe scratch，原已终态run只读。
