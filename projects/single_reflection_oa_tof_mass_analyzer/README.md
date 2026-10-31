@@ -56,9 +56,10 @@
 | oaTOF径向紧凑化 | [`workflows/radial_compaction/run_campaign.py`](workflows/radial_compaction/run_campaign.py) | 默认[`campaign合同`](config/radial_compaction_campaign.json)，新建可显式`--campaign`；续跑用新run ID与`--resume-from`，范围见[项目状态](docs/PROJECT.md)；SIMION-only Candidate，不自动推广Formal |
 | 反射器电压场补偿 | [`workflows/reflectron_voltage_compensation/run_compensation.py`](workflows/reflectron_voltage_compensation/run_compensation.py) | 固定源、固定端点与单调环电压；新run私有runtime，公共批次比较原场/补偿场/理想场，显式父manifest仅复用完整单元 |
 | CAD导出 | [`cad/ms_export_oatof_to_solidworks.m`](cad/ms_export_oatof_to_solidworks.m) | 读取指定模型与合同 |
-| 项目门禁 | [`verify_project.ps1`](verify_project.ps1)，选择 `-Level` | 按证据等级执行 |
+| 项目软件验证 | [`common/verify.ps1`](../../common/verify.ps1) `-Scope Owner -Owner single_reflection_oa_tof_mass_analyzer` | 一次前置检查及完整测试的计权分片；不代表物理资格 |
+| 既有资格适配 | [`verify_project.ps1`](verify_project.ps1) `-Level Candidate`／`Formal` | 保留原明确请求的原生／发布动作，不是软件验证新等级 |
 
-静态Python测试通过公共计时runner即时报告失败和逐测试耗时，原测试发现范围保持完整。
+软件验证通过公共计时runner即时报告失败和逐测试耗时。完整Owner／Repository及源码影响范围保持原freshness与理论前置，并沿公共计权机制执行完整tests范围；单独选定现存测试模块的Changed请求按真实影响执行。详见[项目状态](docs/PROJECT.md#完整软件验证分片)。
 
 反射器补偿入口使用原`--resume-from <manifest>`创建后继run，复用同一科学输入的完整批次；
 原始case只读，不改母群、ID或birth时钟。`--resume-finalization --run-id <原run> [--result-path <Result>]`

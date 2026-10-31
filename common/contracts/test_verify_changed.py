@@ -95,6 +95,37 @@ foreach($case in $cases){{
             self.assertEqual(full["command"]["parameters"]["Level"], "Static")
         self.assertEqual(len({row["name"] for row in repository["stages"]}), len(repository["stages"]))
 
+    def test_sfi_owner_plan_retains_preflight_and_unique_test_shards(self):
+        prefix = 'projects/single_reflection_oa_tof_mass_analyzer'
+        stage = 'single_reflection_oa_tof_mass_analyzer_static'
+        expected = {'.'.join(path.relative_to(REPO_ROOT).with_suffix('').parts)
+                    for path in (REPO_ROOT / prefix / 'tests').rglob('test_*.py')}
+        for arguments in (
+            ('-Scope', 'Owner', '-Owner', 'single_reflection_oa_tof_mass_analyzer'),
+            ('-ChangedPath', prefix + '/analysis/reflectron_dual_stage_solver.py'),
+        ):
+            with self.subTest(arguments=arguments):
+                request, _ = self.plan(*arguments)
+                rows = {row['name']: row for row in request['stages'] if row['selected']}
+                self.assertEqual(rows[stage]['command']['runner'], 'powershell')
+                self.assertTrue(rows[stage]['command']['parameters']['PreflightOnly'])
+                shards = [row for name, row in rows.items() if name.startswith(stage + '__tests_')]
+                self.assertEqual(len(shards), 3)
+                actual = [module for row in shards
+                          for module in row['command']['parameters']['SelectedTestModules']]
+                self.assertCountEqual(actual, expected)
+                self.assertEqual(len(actual), len(set(actual)))
+                for row in shards:
+                    self.assertIn(stage, row['requires_stages'])
+                    self.assertTrue(row['command']['parameters']['PreflightValidated'])
+                    self.assertNotIn('PreflightOnly', row['command']['parameters'])
+        changed = prefix + '/tests/analysis/test_simion_delivery_source.py'
+        request, _ = self.plan('-ChangedPath', changed)
+        rows = {row['name']: row for row in request['stages'] if row['selected']}
+        self.assertEqual(rows[stage]['command']['runner'], 'python')
+        self.assertEqual(rows[stage]['command']['arguments'], ['-m', 'common.gate_unittest', changed])
+        self.assertFalse(any(name.startswith(stage + '__tests_') for name in rows))
+
     def test_owner_scope_selects_complete_owner_checks_without_unrelated_project_scan(self):
         request, _ = self.plan("-Scope", "Owner", "-Owner", "orthogonal_accelerator")
         stages = {row["name"]:row for row in request["stages"]}

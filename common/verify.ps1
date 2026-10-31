@@ -312,7 +312,9 @@ function Test-CompletePartitionOwnerCommand {
     if ($Command.runner -ne $complete.runner -or $Command.script -ne $complete.script) { return $false }
     # ChangedTestModules augments the complete owner discovery. Other command
     # differences matter: Changed Core checks must not become Repository Static checks.
-    $moduleParameter = [string]$Route.test_selection.module_parameter
+    $moduleParameter = if ($null -ne $Route.test_selection.PSObject.Properties['module_parameter']) {
+        [string]$Route.test_selection.module_parameter
+    } else { '' }
     $actualNames = @($Command.parameters.PSObject.Properties.Name | Where-Object { $_ -ne $moduleParameter } | Sort-Object)
     $completeNames = @($complete.parameters.PSObject.Properties.Name | Where-Object { $_ -ne 'PreflightOnly' } | Sort-Object)
     if (($actualNames -join '|') -cne ($completeNames -join '|')) { return $false }

@@ -277,6 +277,38 @@ class ChangedTestSelectionTests(unittest.TestCase):
                     self.assertTrue(results[index]["Expanded"])
                     self.assertIn(changed, results[index]["Modules"])
 
+    def test_sfi_weighted_partitions_cover_actual_scope_without_duplicates(self) -> None:
+        script = r"""
+. __SUPPORT__
+$route=(Get-Content -LiteralPath __CATALOG__ -Raw|ConvertFrom-Json).routes|
+ Where-Object stage -eq 'single_reflection_oa_tof_mass_analyzer_static'
+$partitions=@(Get-GateRepositoryTestPartitions -Route $route -RepoRoot $PWD.Path)
+$roots=@($route.test_selection.roots)
+$selection=Get-GateChangedTests -Route $route -RepoRoot $PWD.Path -KnownTestRoots $roots -FullScope -ChangedPaths @()
+@{partitions=$partitions;selected=@($selection.Modules);expanded=$selection.Expanded;
+ only_tests=$selection.OnlyTestModules;preflight=$route.repository_integration_command.parameters.PreflightOnly;
+ parent_preserved=($null-eq$route.PSObject.Properties['partition_preflight'] -or $route.partition_preflight)}|
+ ConvertTo-Json -Depth 12 -Compress
+"""
+        script = script.replace('__SUPPORT__', powershell_literal(REPO_ROOT / 'common/gate_catalog_support.ps1'))
+        script = script.replace('__CATALOG__', powershell_literal(REPO_ROOT / 'common/gate_catalog.json'))
+        result = subprocess.run(['pwsh', '-NoProfile', '-Command', script], cwd=REPO_ROOT,
+                                capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        data = json.loads(result.stdout)
+        prefix = 'projects/single_reflection_oa_tof_mass_analyzer/tests'
+        expected = {path.relative_to(REPO_ROOT).as_posix()[:-3].replace('/', '.')
+                    for path in (REPO_ROOT / prefix).rglob('test_*.py')}
+        actual = [module for part in data['partitions'] for module in part['modules']]
+        self.assertEqual(len(data['partitions']), 3)
+        self.assertEqual(set(actual), expected)
+        self.assertEqual(len(actual), len(set(actual)))
+        self.assertEqual({path[:-3].replace('/', '.') for path in data['selected']}, expected)
+        self.assertTrue(data['expanded'])
+        self.assertFalse(data['only_tests'])
+        self.assertTrue(data['preflight'])
+        self.assertTrue(data['parent_preserved'])
+
     def test_unknown_fixture_and_deleted_test_execute_the_remaining_owner_tests(self) -> None:
         with tempfile.TemporaryDirectory(prefix="changed_owner_discovery_") as directory:
             root = Path(directory)

@@ -2,6 +2,9 @@ param(
   [ValidateSet('Static','Candidate','Formal')][string]$Level = 'Static',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = '',
+  [string[]]$SelectedTestModules = @(),
+  [switch]$PreflightOnly,
+  [switch]$PreflightValidated,
   [ValidateSet('SIMION','COMSOL','CAD')][string]$CandidateTarget = 'SIMION',
   [string]$CandidateModelPath,
   [string]$CandidateContractPath,
@@ -13,6 +16,18 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
+$partitionOptions = @('SelectedTestModules','PreflightOnly','PreflightValidated')
+if (($Level -ne 'Static' -and @($partitionOptions | Where-Object { $PSBoundParameters.ContainsKey($_) }).Count) -or
+    ($PreflightOnly -and ($PreflightValidated -or $SelectedTestModules.Count)) -or
+    ($PreflightValidated -and -not $SelectedTestModules.Count)) {
+  throw 'Static preflight and selected test modules are incompatible with other qualification modes.'
+}
+$testModules = @($SelectedTestModules | Sort-Object -Unique)
+if ($testModules.Count -ne $SelectedTestModules.Count -or @($testModules | Where-Object {
+  $_ -notmatch '^projects\.single_reflection_oa_tof_mass_analyzer\.tests\.[A-Za-z0-9_.]+$' -or
+  -not (Test-Path -LiteralPath (Join-Path $repoRoot ($_.Replace('.', '/')+'.py')) -PathType Leaf)
+}).Count) { throw 'SFI test partition contains duplicate, foreign or missing modules.' }
+$savedPythonPath = $env:PYTHONPATH
 $hostExecutionLease = $null
 $hostExecutionLeaseSupport = Join-Path $repoRoot 'common\host_execution_lease.ps1'
 . $hostExecutionLeaseSupport
@@ -26,10 +41,12 @@ $hostRole = if ($Level -eq 'Formal' -or ($Level -eq 'Candidate' -and $CandidateT
 $hostStage = 'prepare'
 $hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage $hostStage
 try {
+$env:PYTHONPATH = (@($repoRoot,(Join-Path $projectRoot 'tests'),(Join-Path $projectRoot 'tests/analysis'),(Join-Path $projectRoot 'tests/simion'),$savedPythonPath) | Where-Object { $_ }) -join [IO.Path]::PathSeparator
 $workspaceRoot = Split-Path -Parent $repoRoot
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 runtime missing: $python" }
 $gateTimer = [Diagnostics.Stopwatch]::StartNew()
+if (-not $PreflightValidated) {
 . (Join-Path $projectRoot 'oatof_lifecycle_preflight.ps1')
 $projectContract = Get-Content -LiteralPath (Join-Path $projectRoot 'config\project.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 
@@ -55,8 +72,22 @@ if ($projectContract.lifecycle_status -ne 'formal_revalidation_pending') {
   & (Join-Path $projectRoot 'workflows\formal_reference\verify_geometry_contract.ps1') -SkipRuntime -SimionExe $SimionExe -PythonExe $python
   if ($LASTEXITCODE -ne 0) { throw 'Static cross-solver geometry gate failed.' }
 }
-& $python -m common.gate_unittest discover -s (Join-Path $projectRoot 'tests\analysis') -p 'test_*.py'
+}
+if ($PreflightOnly) {
+  'SFI_STATIC_PREFLIGHT=PASS PYTHON_TESTS=DEFERRED'
+  return
+}
+if (-not $testModules.Count) {
+  $testModules = @(Get-ChildItem -LiteralPath (Join-Path $projectRoot 'tests') -Filter 'test_*.py' -File -Recurse | ForEach-Object {
+    $_.FullName.Substring($repoRoot.Length + 1).Replace('\','.') -replace '\.py$',''
+  } | Sort-Object -Unique)
+}
+& $python -m common.gate_unittest @testModules
 if (-not $? -or $LASTEXITCODE -ne 0) { throw 'Python analysis tests failed.' }
+if ($SelectedTestModules.Count) {
+  "SFI_TEST_PARTITION=PASS PREFLIGHT_PREVALIDATED=$([bool]$PreflightValidated) FULL_PROJECT_GATE=False"
+  return
+}
 
 if ($Level -eq 'Candidate') {
   if ($CandidateTarget -eq 'SIMION') {
@@ -208,6 +239,7 @@ elseif ($Level -eq 'Formal') {
 $gateTimer.Stop()
 "PROJECT_GATE=PASS PROJECT=single_reflection_oa_tof_mass_analyzer LEVEL=$Level ELAPSED_SECONDS=$([Math]::Round($gateTimer.Elapsed.TotalSeconds, 3))"
 } finally {
+  $env:PYTHONPATH = $savedPythonPath
   if ($null -ne $hostExecutionLease) {
     Exit-HostExecutionLease -Lease $hostExecutionLease
   }
