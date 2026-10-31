@@ -485,7 +485,8 @@ class HeavyConsumerEntryTests(unittest.TestCase):
             config = root / "config.json"
             config.write_text('{"scope":"fixture"}', encoding="utf-8")
             with patch.object(module, "REPO_ROOT", root), \
-                    patch.object(module, "_inputs", return_value={"experiment": config}), \
+                    patch.object(module, "_inputs", return_value={"experiment": config,
+                        "numerical_case": Path(module.__file__).with_name("numerical_case.py")}), \
                     patch.object(module, "_command", return_value="fixture"):
                 first, identity = module._prepare_run(
                     config, seed=1, run_id="20260914_180000__analysis__python__host-entry-a",
