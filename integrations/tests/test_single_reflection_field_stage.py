@@ -791,6 +791,7 @@ function Invoke-RunToolRootContext {
 function Write-RunJson {param($Path,$Value,$Depth) [IO.File]::WriteAllText($Path,($Value|ConvertTo-Json -Depth $Depth),[Text.UTF8Encoding]::new($false))}
 function Update-ArtifactWorkflowCapacitySession {
  param($Python,$RepoRoot,$Session,$ProtectedCacheKeys,$RemainingCommittedNewBytes)
+ if($script:sourceOnly-and@($ProtectedCacheKeys|Where-Object{$_}).Count){throw 'explicit source cache was incorrectly pinned at target owner'}
  $Session.protected_cache_keys=@(@($Session.protected_cache_keys)+@($ProtectedCacheKeys)|Select-Object -Unique)
  $script:scopes+=,@($Session.protected_cache_keys)
  if($BudgetFailure-eq'1'-and$PSBoundParameters.ContainsKey('RemainingCommittedNewBytes')-and$RemainingCommittedNewBytes-gt$Session.committed_new_bytes){throw 'INERT public capacity admission rejected'}

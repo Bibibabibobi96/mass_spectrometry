@@ -32,10 +32,6 @@ def working_point_member_id(point: dict) -> str:
     return member
 
 
-def _physical_working_points(points: list[dict], convergence: dict) -> list[dict]:
-    """Cache physics excludes instance and member labels."""
-    return [dict(kind=point['kind'], electrode_voltages_v=point['electrode_voltages_v'],
-                 refine_convergence_v=convergence[point['kind']]) for point in points]
 AUDIT_NAME = 'frontend_working_fields_audit.json'
 _SOURCE_RECEIPT = 'frontend_field_source_receipt.json'
 
