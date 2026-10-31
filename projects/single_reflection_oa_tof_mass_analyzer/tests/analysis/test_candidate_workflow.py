@@ -2361,12 +2361,46 @@ def postprocess_source_fixture(directory, *, unknown=False, cold=False, comsol_b
 
 
 def postprocess_public_entry(root, artifact):
+    from common.contracts.frozen_inputs import enumerate_python_sources
+
     author=root/"author"
-    for path in REPO_ROOT.rglob("*"):
-        if path.is_file() and "__pycache__" not in path.parts and path.suffix in {".py",".ps1",".json",".m",".lua",".gem",".fly2",".md"}:
-            target=author/path.relative_to(REPO_ROOT)
-            target.parent.mkdir(parents=True,exist_ok=True)
-            shutil.copyfile(path,target)
+    # The real CLI must perform its own runtime binding. Copy original authors,
+    # not the transformed output of freeze_candidate_source_closure.
+    selected=set(RELATIVE_PATHS)
+    dependency=load_json(PROJECT_ROOT/"config/accelerator_dependency.json")
+    provider_contract=REPO_ROOT/dependency["provider_contract"]
+    provider_root=provider_contract.parents[1].relative_to(REPO_ROOT)
+    selected.update((provider_root/name).as_posix()
+                    for name in load_json(provider_contract)["implementation_modules"])
+    package_roots={"common"} | {Path(name).parent.as_posix() for name in selected
+                                 if Path(name).suffix == ".py"}
+    package_roots={name for name in package_roots if not any(
+        name != other and Path(other) in Path(name).parents for other in package_roots)}
+    selected.update(enumerate_python_sources(REPO_ROOT, package_roots=tuple(sorted(package_roots))))
+    # Host owner scripts load dynamic PS/JSON resources outside the scientific
+    # closure. Bound this copy to common; omit tests and historical payloads.
+    for path in (REPO_ROOT/"common").rglob("*"):
+        relative=path.relative_to(REPO_ROOT)
+        if (path.is_file() and path.suffix in {".ps1", ".json"}
+                and not path.name.startswith("test_")
+                and not any(part in {"tests", "test_support", "testing_support", "history", "__pycache__"}
+                            for part in relative.parts)):
+            selected.add(relative.as_posix())
+    selected.add("config/project_registry.json")
+    selected.add(f"projects/{PROJECT_ROOT.name}/config/analysis_contract.json")
+    # NewRunPackage checks every active descriptor and its explicitly bound
+    # retired identities. Keep those small authorities without whole history.
+    for descriptor in (REPO_ROOT/"projects").glob("*/config/project.json"):
+        selected.add(descriptor.relative_to(REPO_ROOT).as_posix())
+        selected.update(row["path"] for row in load_json(descriptor).get("retired_project_descriptors", []))
+    copied_bytes=0
+    for relative in sorted(selected):
+        path=REPO_ROOT/relative
+        target=author/relative
+        target.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copyfile(path,target)
+        copied_bytes+=path.stat().st_size
+    print("POSTPROCESS_AUTHOR_FIXTURE="+json.dumps({"files":len(selected),"bytes":copied_bytes}), flush=True)
     policy=author/"common/contracts/artifact_capacity_policy.json"
     document=load_json(policy)
     document["minimum_free_gib"]=0

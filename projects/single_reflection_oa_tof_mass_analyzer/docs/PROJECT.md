@@ -583,6 +583,12 @@ producer返回原生完成receipt和实际Program/ION/IOB绑定；补偿与candi
 
 项目软件验证从公共`common/verify.ps1 -Scope Owner -Owner single_reflection_oa_tof_mass_analyzer`进入。源码／fixture／Owner／Repository范围沿公共GetGateRepositoryTestPartitions使用4个计权分片；原发布新鲜度、几何检查与理论前置执行一次，分片依赖此前置通过，保留实际测试的PS／Lua及公共owner接线责任。原Candidate／Formal物理与发布动作保持，拒绝混入软件分片参数。direct SelectedTestModules默认先跑原前置；内部PreflightValidated只供已完成同轮前置的调度。
 
+Candidate后处理CLI夹具按现有科学资源、提供者实现声明、公共源码枚举及小型项目身份记录构建隔离author，
+不再复制全仓文本；每场景7463文件／117,512,304字节降至361文件／约4.88MB。
+同机同工作树两原方法公开墙钟124.797→102.587秒，全部原故障、CSV后继与Resume断言保持；
+该工作树含既有差异，另在8f14404e已提交源码隔离树验证最强冷导出方法63.286秒通过，未回退活动源码。
+本项只减少软件夹具复制，不代表完整Owner／Repository提速或新的原生、科学资格。
+
 20261031终态旧完整范围为PASS：公开summary833.605112秒，SFI stage750.056879秒／execution736.4489991秒。69个原analysis模块已计时测试合计727.917333秒；权重来自该轮完整test_durations，不把stage或并行耗时相加。热点candidate_design259.299669、managed_candidate_pa145.080768、radial_compaction_campaign66.727523、compensation_powershell_adapter57.008262秒。分片只是相同职责的调度，尚未实测新完整Owner公墙，不能据规划时间宣称达到5分钟。
 
 完整测试集合统一按tests递归，显式纳入原discover tests/analysis漏掉的根直属与simion各1个既有模块，加本主题薄接线测试；模块union随实际文件派生、不硬编码数量。纯Changed仅现存测试模块仍保已验证快路径，fixture／删除／未知范围不静默减为小测试。原单次顺序discover实现被同一模块集合／显式分片调用替代，不删有效测试或另建scheduler。
