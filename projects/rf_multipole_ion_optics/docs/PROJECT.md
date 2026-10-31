@@ -446,4 +446,15 @@ pwsh -NoProfile -File projects/rf_multipole_ion_optics/workflows/interface_readi
 
 结果明确scientific_result=NOT_EVALUATED、gui_verified=false、parent_request_completed=false，零COMSOL启动和新求解。source authority及canonical状态合同检查不冒充native精确birth echo。GUI Compute是另一个明确请求，执行它会新增实际求解，不能计入零求解后处理恢复。
 
-仅收尾失败沿同一原CLI `-ResumeFinalization -ResultPath <本次小Result> -PythonExe <解释器>`继续，已终态再次恢复REUSED。分析失败创建新的AnalyzeOnly后继，不重飞、不改父记录；原异常与收尾异常分别保留。ca9dfe21隔离源码的软件回归实际执行了完整原CLI：成功分析／幂等恢复、注入分析RuntimeError并保留stderr／失败终态恢复、非法收据回滚、父八个小文件及子manifest不变。最终定向方法38.232秒，unknown薄接线另已通过。此为软件夹具及真实Python进程验证，不是新COMSOL求解或科学资格；090000实际后继验收由原owner另行记录。
+仅收尾失败沿同一原CLI `-ResumeFinalization -ResultPath <本次小Result> -PythonExe <解释器>`继续，已终态再次恢复REUSED。分析失败创建新的AnalyzeOnly后继，不重飞、不改父记录；原异常与收尾异常分别保留。ca9dfe21隔离源码的软件回归实际执行了完整原CLI：成功分析／幂等恢复、注入分析RuntimeError并保留stderr／失败终态恢复、非法收据回滚、父八个小文件及子manifest不变。最终定向方法38.232秒，unknown薄接线另已通过。此为软件夹具及真实Python进程验证，不是新COMSOL求解或科学资格；原090000保存结果的实际后继验收见下节。
+
+
+#### 090000保存结果的原CLI后继验收
+
+`20261031_100510__analysis__python__rf-interface`通过原CLI的AnalyzeOnly，引用原`20261031_090000__test__comsol__rf-interface-hmin-before`及实际停止收据，完成原metrics与particle_state分析并封存为success／complete、data_validity=valid。分析命令外层墙钟29.0469427秒；唯一受预算Python进程观测1.917秒，PID33508／起时639290091313294688／exit0，实际postprocess host token `a597e3c7f7d448998dd08d2388c6cd23` 已released。该过程峰值RSS9,830,400字节，run目录观测416,944字节（终态manifest写入前的观测范围），不能当作完整命令墙钟或完整封存后字节量。
+
+同一子run以原CLI ResumeFinalization再次返回WORKFLOW_TERMINAL=REUSED、success／complete；最终100913跟进的恢复命令墙钟2.7428653秒。子manifest、config、summary、completion、analysis usage及module origins保持原字节；父八个小记录、原090000 Result、停止收据与原execution／GUI completion保持原字节，原MPH大小和LastWriteTime保持不变，仅stat、未读hash或复制载荷。分析与恢复均零商业wrapper／launcher receipt、零新场／粒子求解。公共完成证据仅有真实Python后处理操作；纯分析没有owner声明的execution_alias，native_path_preparation.calls=0，临时别名清理在本次不适用。
+
+一次性审计的三次FAIL保留：100510错误要求不存在的Result别名字段；100817与100842漏捕获内嵌Python的REUSED stdout，尽管原CLI均已成功恢复。100913改由独立pwsh进程捕获OS stdout后，审计terminal0／PASS；没有新建run、重复分析或重求场／粒子。原失败审计没有被改写，也不计为生产分析失败。小证据位于本项目scratch的`rf-feedback-hotspot/agent4/interface_analysis_child/root_090000_successor/`，包含首次分析目录及三个followup目录。
+
+本次完成的是已保存native阶段的后处理与原CLI收尾恢复。scientific_result仍为NOT_EVALUATED、gui_verified=false、parent_request_completed=false；未重新执行GUI Compute，原090000整体请求与GUI资格未完成，未提供native精确birth echo或新的科学资格。
