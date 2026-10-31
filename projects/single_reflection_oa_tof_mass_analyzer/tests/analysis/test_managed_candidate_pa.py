@@ -19,12 +19,12 @@ BUILDER = REPO / "projects/single_reflection_oa_tof_mass_analyzer/simion/workben
 
 class ManagedCandidatePaTests(unittest.TestCase):
     def test_detached_handoff_reuses_completed_responses_and_rebuilds_only_incomplete_component(self):
-        self._exercise_detached_handoff(("complete_and_partial", "verification_fails", "prepared_and_unproven"))
+        self._exercise_detached_handoff(("complete_and_partial", "verification_fails", "prepared_and_unproven"), small_reflectron=True)
 
     def test_repeated_handoff_keeps_original_build_proof_through_publication_failures(self):
         self._exercise_detached_handoff(("repeated_publication_failure",))
 
-    def _exercise_detached_handoff(self, cases):
+    def _exercise_detached_handoff(self, cases, *, small_reflectron=False):
         """Real PS/cache/lease; inert native bytes never claim a solved field."""
         from unittest.mock import patch
         from common.contracts.capacity_ledger import record_capacity_object
@@ -54,9 +54,19 @@ class ManagedCandidatePaTests(unittest.TestCase):
                     frozen_builder = frozen_source_path(closure, BUILDER.relative_to(REPO).as_posix())
                     inputs = root / "science"
                     inputs.mkdir()
-                    contract = json.loads((project / "config/resolved_geometry.json").read_text(encoding="utf-8"))
+                    if small_reflectron:
+                        # A supported private 2+3 ring design keeps every response
+                        # and real worker while reducing repeated fixture work.
+                        from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import resolve_contract
+                        baseline = json.loads((project / "config/baseline.json").read_text(encoding="utf-8"))
+                        baseline["rings"].update(stage1_count=2, stage2_count=3)
+                        (inputs / "baseline.json").write_text(json.dumps(baseline), encoding="utf-8")
+                        contract = resolve_contract(baseline_path=inputs / "baseline.json")
+                        self.assertEqual((contract["rings"]["stage1_count"], contract["rings"]["stage2_count"]), (2, 3))
+                    else:
+                        contract = json.loads((project / "config/resolved_geometry.json").read_text(encoding="utf-8"))
+                        shutil.copyfile(project / "config/baseline.json", inputs / "baseline.json")
                     (inputs / "resolved.json").write_text(json.dumps(contract), encoding="utf-8")
-                    shutil.copyfile(project / "config/baseline.json", inputs / "baseline.json")
                     for name, payload in {
                         "oatof_resolved.lua": render_resolved_lua(contract),
                         "oatof_ideal_grounded.lua": render_program(contract),
@@ -66,6 +76,9 @@ class ManagedCandidatePaTests(unittest.TestCase):
                     for name in ("template.iob", "template.con"):
                         (inputs / name).write_text("inert fixture, never vendor-opened", encoding="utf-8")
                     plan = compile_component_pa_plan(contract, repository_root=REPO, simion_exe=Path(sys.executable))
+                    if small_reflectron:
+                        self.assertEqual([item["role"] for item in plan["components"]], ["accelerator", "reflectron", "flight_tube", "detector"])
+                        self.assertEqual(plan["components"][1]["response_ids"], list(range(1, 4 + 2 + 3 + 1)))
                     (inputs / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
                     config = json.loads(fixture.producer_run_config.read_text(encoding="utf-8"))
                     config["artifact_retention"] = {"policy_version": 1, "class": "solver_review", "reason": "software handoff fixture"}
