@@ -15,8 +15,10 @@ from integrations.tests.test_support.single_reflection_execute_fixture import Si
 @unittest.skipUnless(shutil.which('pwsh'), 'PowerShell 7 is required')
 class SingleReflectionExecuteTests(SingleReflectionExecuteFixture):
     def test_full_mother_fly_and_default_replay_public_stage(self):
-        self._check_public_cases(('fly','missing_fly_budget','missing_replay_budget','flight_ram_floor',
-            'flight_native','replay_native','flight_controls','flight_native_controls','flight_marker','flight_mismatch'), lightweight_seeds=True)
+        # Missing-stage policy belongs to test_engineering_budget; separate
+        # native/control faults below keep real consumer failure coverage.
+        self._check_public_cases(('fly','flight_ram_floor',
+            'flight_native','replay_native','flight_controls','flight_marker','flight_mismatch'), lightweight_seeds=True)
 
 
     def test_batch_priority_point_evidence_is_bound_before_any_fly(self):
