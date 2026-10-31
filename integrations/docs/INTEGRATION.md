@@ -260,6 +260,11 @@ IOB保存／独立重开及接口场审计；审计完成不等于物理匹配�
 OA→MR在实际物化前决定单粒／束源，原生路径投影从公共模块显式导入；每批只追加到当前冻结run config，
 保留既有源、时钟和其他checkpoint字段。旧log复用批与新CSV缺失批沿同一归并入口核验，
 不会因结构化运输迁移而拒绝合法旧完整单元，也不会对缺失CSV回退stdout。
+
+prepared_joint 在新CSV单元及已验证批次复用后，把声明的事件／轨迹路径写入本run输入记录；
+原batch receipt没有科学CSV声明或显式为null时保持旧日志边界。原自动centroid probe分析及轨迹等价CLI
+消费同一merge receipt，不能丢弃新CSV后退回原生日志；声明CSV缺失仍由原公共reader拒绝。
+此项只接通既有CSV与receipt，不改采样、物理判据或父run；既有原生边界证据范围不扩为新科学资格。
 本次针对CI断口的8项独立软件行为联合通过58.067秒；不据此新增原生Fly或科学资格。
 
 OA→MR owner的异常收尾保留原科学错误，guard、runtime、host、临时目录和别名的独立失败逐项报告，

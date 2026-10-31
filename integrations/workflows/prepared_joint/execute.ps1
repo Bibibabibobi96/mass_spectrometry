@@ -222,6 +222,14 @@ function Invoke-PreparedJointTrial {
           $configuration.inputs[($prefix+'_log')]=[string]$record.stdout
           $configuration.inputs[($prefix+'_receipt')]=[string]$record.batch_receipt
           $configuration.inputs[($prefix+'_fly2')]=[string]$record.fly2
+          $batchScience=Get-Content -LiteralPath $record.batch_receipt -Raw|ConvertFrom-Json -AsHashtable
+          if($batchScience.Contains('scientific_event_output')-and$null-ne$batchScience.scientific_event_output){
+            foreach($pair in @(@('events_path','scientific_events'),@('trajectory_path','scientific_trajectory'))){
+              if($batchScience.scientific_event_output.Contains($pair[0])){
+                $configuration.inputs[($prefix+'_'+$pair[1])]=[string]$batchScience.scientific_event_output[$pair[0]]
+              }
+            }
+          }
           if($record.owner_exit){$configuration.inputs[($prefix+'_owner_exit')]=[string]$record.owner_exit}
           if($record.owner_manifest){$configuration.inputs[($prefix+'_owner_manifest')]=[string]$record.owner_manifest}
         }
@@ -318,13 +326,13 @@ function Invoke-PreparedJointTrial {
     Invoke-ProjectPython -Arguments $merge
     $stage='automatic_joint_diagnostics'
     if($PreparedSourceMode-eq'centroid_probe'){
-      Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial','analyze-probe','--preparation',$preparationPath,'--log',$merged,'--output',(Join-Path $resultDir 'diagnostics'))
+      Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial','analyze-probe','--preparation',$preparationPath,'--log',$merged,'--scientific-event-receipt',$mergeReceipt,'--output',(Join-Path $resultDir 'diagnostics'))
     }else{
       Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight','analyze-joint','--preparation',$preparationPath,'--log',$merged,'--output',(Join-Path $resultDir 'diagnostics'))
     }
     if($trial.PSObject.Properties.Name-contains'trajectory_equivalence_reference'-and$null-ne$trial.trajectory_equivalence_reference){
       $stage='field_consumer_trajectory_equivalence'
-      Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight','compare-joint','--preparation',$preparationPath,'--log',$merged,'--output',(Join-Path $resultDir 'trajectory_equivalence_receipt.json'))
+      Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight','compare-joint','--preparation',$preparationPath,'--log',$merged,'--scientific-event-receipt',$mergeReceipt,'--output',(Join-Path $resultDir 'trajectory_equivalence_receipt.json'))
     }
     $phaseTimings.analysis_seconds=$runTimer.Elapsed.TotalSeconds-$analysisStarted
     Write-RunJson -Path $package.summary -Depth 20 -Value ([ordered]@{

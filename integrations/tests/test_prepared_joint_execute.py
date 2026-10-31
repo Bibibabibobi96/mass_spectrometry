@@ -247,6 +247,97 @@ if os.environ['ANALYSIS_TEST_SEAL_FAIL']=='1': raise RuntimeError('Explicit iner
 
 
 class PreparedJointExecuteTests(unittest.TestCase):
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_scientific_receipt_arguments_reach_actual_probe_and_equivalence_clis(self):
+        import contextlib
+        import io
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import prepared_joint_trial, mrtof_batch_flight
+        runner = REPO / "integrations/workflows/prepared_joint/execute.ps1"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = root / "arguments.ps1"
+            script.write_text(r'''param($Runner,$Root)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$null)
+$commands=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Invoke-ProjectPython'-and
+ ($n.Extent.Text.Contains("'analyze-probe'")-or$n.Extent.Text.Contains("'compare-joint'"))},$true))
+if($commands.Count-ne2){throw 'Actual prepared analysis commands are not unique'}
+$preparationPath=Join-Path $Root 'preparation.json';$merged=Join-Path $Root 'native.log'
+$mergeReceipt=Join-Path $Root 'merge.json';$resultDir=$Root
+$script:calls=[Collections.Generic.List[object]]::new();$script:fail=$false
+function Invoke-ProjectPython {param($Arguments)
+ if($script:fail){throw 'ORIGINAL_SCIENTIFIC_FAILURE'}
+ $script:calls.Add(@($Arguments))
+}
+foreach($command in $commands){
+ Invoke-Expression $command.Extent.Text
+ $script:fail=$true;$caught=$null
+ try{Invoke-Expression $command.Extent.Text}catch{$caught=$_.Exception.Message}
+ $script:fail=$false
+ if($caught-cne'ORIGINAL_SCIENTIFIC_FAILURE'){throw 'Analysis failure was swallowed or replaced'}
+}
+ConvertTo-Json -InputObject @($script:calls) -Depth 10 -Compress
+''', encoding="utf-8")
+            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script), str(runner), str(root)],
+                                    cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+            calls = json.loads(result.stdout.strip().splitlines()[-1])
+            self.assertEqual(len(calls), 2)
+            for arguments in calls:
+                self.assertEqual(arguments.count("--scientific-event-receipt"), 1)
+                self.assertEqual(Path(arguments[arguments.index("--scientific-event-receipt")+1]), root/"merge.json")
+                cli = prepared_joint_trial if arguments[1].endswith("prepared_joint_trial") else mrtof_batch_flight
+                function = "analyze_centroid_probe" if cli is prepared_joint_trial else "compare_trajectory_representation"
+                with patch.object(prepared_joint_trial, function) as actual_analysis, \
+                        patch.object(sys, "argv", [arguments[1], *arguments[2:]]), contextlib.redirect_stdout(io.StringIO()):
+                    cli.main()
+                    self.assertEqual(actual_analysis.call_args.kwargs["scientific_event_receipt"], root/"merge.json")
+                    actual_analysis.side_effect = RuntimeError("ORIGINAL_CLI_ANALYSIS_FAILURE")
+                    with self.assertRaisesRegex(RuntimeError, "ORIGINAL_CLI_ANALYSIS_FAILURE"):
+                        cli.main()
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_reused_csv_paths_bind_and_legacy_receipts_remain_unchanged(self):
+        runner = REPO / "integrations/workflows/prepared_joint/execute.ps1"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = dict(events_path=str(root/"events.csv"), trajectory_path=str(root/"trajectory.csv"))
+            for name in paths.values():
+                Path(name).write_text("fixture scientific data; no native flight\n", encoding="utf-8")
+            receipts = [root/f"batch_{index}.json" for index in range(1,4)]
+            for path, value in zip(receipts, [dict(scientific_event_output=paths), dict(scientific_event_output=None), {}]):
+                path.write_text(json.dumps(value), encoding="utf-8")
+            before = {path: path.read_bytes() for path in receipts}
+            script = root/"inputs.ps1"
+            script.write_text(r'''param($Runner,$Root)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$null)
+$block=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and
+ $n.Clauses[0].Item1.Extent.Text-eq'$null-ne$continuation'-and$n.Extent.Text.Contains('$batchScience=')},$true))
+if($block.Count-ne1){throw 'Actual inherited-input block is not unique'}
+$configuration=@{inputs=@{unchanged='original'}};$continuation=@{};$parentManifest='parent.json';$continuationPlanPath='plan.json'
+$initial=@{batches=@(@{index=1},@{index=2},@{index=3})};$records=@{}
+foreach($index in 1..3){$records[$index]=[pscustomobject]@{reused=$true;stdout="log$index";fly2="fly$index";
+ batch_receipt=(Join-Path $Root "batch_$index.json");owner_exit=$null;owner_manifest=$null}}
+Invoke-Expression $block[0].Extent.Text
+if($configuration.inputs.unchanged-cne'original'){throw 'Existing frozen input changed'}
+foreach($index in 2..3){
+ if($configuration.inputs.ContainsKey(('reused_batch_{0:D3}_scientific_events'-f$index))-or
+    $configuration.inputs.ContainsKey(('reused_batch_{0:D3}_scientific_trajectory'-f$index))){throw 'Legacy log became invented CSV'}
+}
+$records[1].batch_receipt=Join-Path $Root 'missing.json';$caught=$null
+try{Invoke-Expression $block[0].Extent.Text}catch{$caught=$_}
+if($null-eq$caught){throw 'Missing declared batch receipt was swallowed'}
+$configuration.inputs|ConvertTo-Json -Depth 10 -Compress
+''', encoding="utf-8")
+            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script), str(runner), str(root)],
+                                    cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+            inputs = json.loads(result.stdout.strip().splitlines()[-1])
+            self.assertEqual(inputs["reused_batch_001_scientific_events"], paths["events_path"])
+            self.assertEqual(inputs["reused_batch_001_scientific_trajectory"], paths["trajectory_path"])
+            self.assertEqual(before, {path: path.read_bytes() for path in receipts})
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_missing_observation_calibrates_first_missing_batch_only(self):
         from common.simion.resource_scheduler import plan_recovered_formal_followup, plan_simion_dispatch
