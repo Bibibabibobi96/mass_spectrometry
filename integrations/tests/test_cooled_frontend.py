@@ -37,7 +37,7 @@ def cooled_fixture(variant="three_zone"):
     model, guide, registration, request, ids = buncher_fixture()
     conditioner = build_cooled_buncher_contract(model, guide_contract=guide, native_to_assembly=native_pose(guide, registration), request=request, electrode_ids=ids)
     _, _, component = canonical_three_zone_frontend_fixture() if variant == "three_zone" else canonical_frontend_fixture()
-    component["transform"] = dict(rotation=[[0,1,0],[1,0,0],[0,0,-1]], translation_mm=[0.,51.5,34.]) if variant == "three_zone" else dict(rotation=[[1,0,0],[0,1,0],[0,0,1]], translation_mm=[0.,51.5,-6.])
+    component["transform"] = dict(rotation=[[0,1,0],[1,0,0],[0,0,-1]], translation_mm=[0.,51.5,34.]) if variant == "three_zone" else dict(rotation=[[1,0,0],[0,1,0],[0,0,1]], translation_mm=[0.,51.5,0.])
     connection = dict(spatial_registration=registration)
     drive = dict(capture_voltages_v={k:0. for k in ids}, closed_voltages_v={k:1. for k in ids}, release_voltages_v={k:2. for k in ids}, entrance_close_us=20., release_start_us=100.)
     return guide, connection, component, conditioner, drive
@@ -67,7 +67,7 @@ def cooled_request_fixture(workspace,variant="three_zone"):
     native = native_pose(guide, connection["spatial_registration"])
     oa = resolve_assembly_interface(component["requirements"], geometry_profile_id=component["geometry_profile_id"])
     oa_pose = RigidTransform(oa["local_frame_id"], "mrtof_global_cartesian", component.pop("transform")["rotation"],
-                            [0., 51.5, 34.] if variant == "three_zone" else [0., 51.5, -6.]).to_contract()
+                            [0., 51.5, 34.] if variant == "three_zone" else [0., 51.5, 0.]).to_contract()
     recipe = dict(schema_version=1, role="assembly_recipe", integration_id="instrument_assembly",
         recipe_id="cooled_oa", assembly_frame_id="mrtof_global_cartesian", position_tolerance_mm=1e-9, angular_tolerance_rad=1e-12,
         instances=[dict(instance_id="cooler", project_id="dual_pressure_rectilinear_ion_processor", transform=native),
@@ -145,6 +145,37 @@ def publish_inert_fields(run, cache_root):
 
 
 class CooledFrontendTests(unittest.TestCase):
+    def test_two_zone_author_recipe_uses_mechanical_frame(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            author, request = cooled_request_fixture(root, "two_zone")
+            plan = json.loads(_parent_path(request).read_text())
+            accelerator = next(row for row in plan["recipe"]["instances"]
+                               if row["instance_id"] == "accelerator")
+            self.assertEqual(accelerator["transform"]["translation_mm"], [0., 51.5, 0.])
+            result = prepare_cooled_frontend(author, root / "run", REPO, root,
+                run_id="20261022_120000__build__python__cooled-fixture")
+            region = result["frontend"]["accelerator_local_region"]
+            self.assertEqual(region["planes"], dict(repeller=34., grid1=30., exit=0.))
+            self.assertEqual(region["port"]["center_mm"], [0., 35., 32.])
+
+
+    def test_two_zone_fixture_preserves_world_gate_and_exit_geometry(self):
+        guide, connection, component, conditioner, _ = cooled_fixture("two_zone")
+        self.assertEqual(component["transform"]["translation_mm"], [0., 51.5, 0.])
+        _, frontend = compile_cooled_frontend(guide, connection, component, conditioner,
+            cell_mm_xyz=dict(x=.2, y=.2, z=.2), exit_gap_mm=1.)
+        region = frontend["accelerator_local_region"]
+        self.assertEqual(region["planes"], dict(repeller=34., grid1=30., exit=0.))
+        self.assertEqual(conditioner["geometry"]["exit_face_center_mr_mm"], [0., 33.5, 32.])
+        self.assertEqual(region["port"]["center_mm"], [0., 35., 32.])
+        self.assertEqual(region["port"]["flange_min_mm"] - 33.5, 1.)
+        misplaced = copy.deepcopy(component)
+        misplaced["transform"]["translation_mm"][2] = -6.
+        with self.assertRaisesRegex(ValueError, "OA side aperture must follow and align"):
+            compile_cooled_frontend(guide, connection, misplaced, conditioner,
+                cell_mm_xyz=dict(x=.2, y=.2, z=.2), exit_gap_mm=1.)
+
     def test_saved_workbench_requires_public_pin_but_field_metadata_does_not(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

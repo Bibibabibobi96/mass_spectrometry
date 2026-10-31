@@ -76,7 +76,7 @@ def fixture(workspace: Path) -> tuple[Path, dict]:
                   for key, record in identities.items()}
     _, connection, component = canonical_frontend_fixture()
     resolved = compile_closed_two_zone_accelerator(component["requirements"]).resolved_electrodes
-    component["transform"] = dict(rotation=[[1, 0, 0], [0, 1, 0], [0, 0, 1]], translation_mm=[0, -50, -resolved.local_exit_z_mm])
+    component["transform"] = dict(rotation=[[1, 0, 0], [0, 1, 0], [0, 0, 1]], translation_mm=[0, -50, 0])
     port = resolved.side_entry
     shift = [0, -50-resolved.enclosure.guard_half_y_mm-connection["connector"]["length_mm"]-29,
              port["center_mm"][2]-resolved.local_exit_z_mm]
