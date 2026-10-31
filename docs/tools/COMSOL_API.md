@@ -429,3 +429,17 @@ pd = mphparticle(model, 'dataset', 'pdset1');
 
 
 RF finite 正式已解读取边界为项目 `reextract_finite_3d_transport(request,fid)`：原冻结设计／源／数值投影与实际 source/native-order 映射绑定原两组解，通过 `mphload` 只读加载，再调用正常求解后的同一分窗导出 helper。缺原映射不推断粒子顺序；不存在必要 Particle dataset 时只在内存建立并绑定已解 solution，不调用 Study Compute／runAll，不保存父模型。2026-10-31正常 CLI 的071000→062508冷提取读取43,350,302 B原MPH，七份CSV与原导出逐字节一致，原父manifest不变；这是既有解读取／接口验证，不新增物理、收敛或完整传输资格。后继纯CSV分析及仅收尾恢复不加载模型，精确记录见[RF项目状态](../../projects/rf_multipole_ion_optics/docs/PROJECT.md#当前结论)。
+
+## 运行内临时与 recovery 目录
+
+公共 `common/comsol/run_comsol_r2025b.ps1` 对显式 RunDir 使用其已投影的执行路径，在运行内创建
+`comsol_tmp`、`comsol_recovery`，可写准入后将 `-tmpdir/-recoverydir` 放在 `matlab` target 之前。
+官方6.4 Windows 全局选项适用于 `comsolmphserver matlab`；`COMSOL_TMPDIR` 仅是 tmpdir 的替代，
+不能代替 recovery 归属。recovery 还可能承载卸载数据，不应以关闭 autosave 推断零占盘。
+实际目录进入原 completion 的 runtime_storage 与原 RunDir 计量；持久身份、容量和删除仍属现有 owner。
+无 RunDir 的旧连接调用明确 owned=false。替身 argv/退出回归只证明软件接线，真实路径可用
+`ModelUtil.getRecoveryDir(modelTag)` 只读核对；尚未取得原生读回，不声称已验证供应商落盘行为。
+
+官方来源（2026-10-31复核）：[Windows命令](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_running.38.31.html)、
+[恢复与卸载](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_environment.18.22.html)、
+[ModelUtil](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/api/com/comsol/model/util/ModelUtil.html)。

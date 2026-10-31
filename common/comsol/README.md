@@ -114,6 +114,16 @@ launcher 启动后立即登记 PID；等待报告和 Compute 期间复用公共�
 实际释放，完整 manifest 与容量终态闭合。最终 bootstrap 报告为 `STATUS=PASS`，不从被覆盖的
 中间文本推导版本号或模型计数；此测试未创建／加载模型、Study 或 Compute，不提供物理或 GUI 资格。
 
+传入非空 `-RunDir` 时，入口直接消费 owner 已准备的原生执行路径，在其下创建 `comsol_tmp` 和
+`comsol_recovery`，实际探测可写后，将官方全局参数 `-tmpdir/-recoverydir` 置于 `matlab` target 之前。
+它们由同一运行目录的容量计划和 usage 计量覆盖；调用方预算须包含临时文件、recovery/offload 与收尾余量。
+`comsol_launcher_completion.runtime_storage` 记录实际执行位置及 `owned`，不推测 canonical 身份；长期
+身份转换沿已有运行 owner。未传 RunDir 的既有连接调用保持供应商默认并明确记录 `owned=false`，不能据此
+声称临时载荷已归本 run。入口不改用户偏好、许可证或全局配置，不关闭 recovery，也不自行删除目录；
+活动或未知 writer 的保护和退休仍由原 owner 决定。目录冲突或写入准入失败发生在 launcher 启动之前。
+参数传递与惰性进程替身回归不代替真实 COMSOL recovery 路径读回或 GUI Compute 验收。
+依据：[COMSOL 6.4 Windows 全局参数](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_running.38.31.html)。
+
 可选`-Limits -RunDir -UsagePath`传入已冻结预算及其受管计量位置；普通耗时、进程树工作集、目录体积和
 可用内存预算越限只告警。目录计量沿公共采样间隔，不在每轮进程观测时递归扫描。
 未传`Limits`时仍观察物理危险，但不生成usage文件或虚构工程预算。危险保留量和持续时间只读取

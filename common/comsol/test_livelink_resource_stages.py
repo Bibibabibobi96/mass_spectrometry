@@ -56,7 +56,7 @@ function Start-ComsolLauncherProcess {
     $global:FakeLaunchCount++
     $global:FakeServerLive=$true
     Write-Event 'launch'
-    if ($env:STAGE_SCENARIO -eq 'assembly_arguments') {
+    if ($env:STAGE_SCENARIO -eq 'assembly_arguments' -or $env:STAGE_STORAGE) {
         Write-Event ('launcher_arguments:' + (ConvertTo-Json -InputObject @($Arguments) -Compress))
     }
     $reportText = "STATUS=PASS`n"
@@ -131,7 +131,7 @@ class LiveLinkResourceStageTests(unittest.TestCase):
     def run_scenario(
         self, scenario: str, *, supplied_budget: int = 0, assembly_mode: str | None = None,
         crash_scenario: str | None = None, observation_scenario: str | None = None,
-        completion: bool = False, release: str = '',
+        completion: bool = False, release: str = '', storage: str = '',
     ) -> tuple[int, list[str], str]:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -150,6 +150,22 @@ class LiveLinkResourceStageTests(unittest.TestCase):
                 "function Get-ComsolRuntimeWritePaths { param($UserProfile,$TempPath) return @() }\n"
                 "function Assert-ComsolRuntimeWriteAccess { param($Paths) }", encoding="utf-8"
             )
+            if storage:
+                environment_source = (ROOT / "common/comsol/livelink_environment.ps1").read_text(encoding="utf-8")
+                (comsol / "livelink_environment.ps1").write_text(
+                    environment_source + "\nfunction Get-ComsolRuntimeWritePaths { param($UserProfile,$TempPath) return @() }\n",
+                    encoding="utf-8")
+                if storage == 'denied':
+                    with (comsol / "livelink_environment.ps1").open('a', encoding='utf-8') as stream:
+                        stream.write(r"""
+# TEST_ONLY one filesystem permission result; real Assert and all other probes remain.
+$script:originalWriteProbe=${function:Test-ComsolDirectoryWriteAccess}
+function Test-ComsolDirectoryWriteAccess {
+ param($Path)
+ if((Split-Path -Leaf $Path)-eq'comsol_recovery'){return $false}
+ return & $script:originalWriteProbe -Path $Path
+}
+""")
             shutil.copy2(ROOT / "common/comsol/livelink_failure_classification.ps1", comsol)
             shutil.copy2(ROOT / "common/comsol/run_comsol_r2025b.ps1", comsol)
             (root / "launcher.exe").write_bytes(b"test double; never executed")
@@ -213,6 +229,7 @@ if ($env:CRASH_SCENARIO) {
 function Start-ComsolLauncherProcess {
     param($FilePath,$Arguments)
     Write-Event 'launch'
+    if($env:STAGE_STORAGE){Write-Event ('launcher_arguments:'+(ConvertTo-Json -InputObject @($Arguments) -Compress))}
     $global:FakeServerLive=$true
     $global:FakeLauncherProcess=Start-ControlledChildProcess -FilePath $FilePath -Arguments @('-NoProfile','-File',(Join-Path $repoRoot 'controlled_child.ps1'))
     Write-Event ("launcher_identity:{0}:{1}" -f $global:FakeLauncherProcess.Id,$global:FakeLauncherProcess.StartTime.ToUniversalTime().Ticks)
@@ -263,6 +280,15 @@ $global:FakeLaunchCount=0
 $global:FakeServerLive=$false
 $arguments=@{TaskScript=(Join-Path $PSScriptRoot 'task.m');ReportPath=(Join-Path $PSScriptRoot 'logs/report.txt');StartupRetryDelaySeconds=1;RunId='test-resource-stages'}
 if($env:STAGE_COMPLETION -eq '1'){$arguments.CompletionPath=Join-Path $PSScriptRoot 'completion.json'}
+if($env:STAGE_STORAGE){
+ $arguments.RunDir=Join-Path $PSScriptRoot 'owned run with spaces'
+ $null=[IO.Directory]::CreateDirectory($arguments.RunDir)
+ $null=[IO.Directory]::CreateDirectory((Join-Path $PSScriptRoot 'unrelated storage'))
+ [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'unrelated storage/keep.txt'),'unrelated')
+ if($env:STAGE_STORAGE-eq'collision'){
+  [IO.File]::WriteAllText((Join-Path $arguments.RunDir 'comsol_recovery'),'TEST_ONLY preexisting file')
+ }
+}
 if($env:OBSERVATION_SCENARIO-in@('ordinary','metric_failure')){
  $arguments.Limits=[pscustomobject]@{wall_clock_seconds=1;process_tree_working_set_bytes=1;transient_run_directory_bytes=1;minimum_system_available_memory_bytes=1;compact_final_retained_bytes=1}
  $arguments.RunDir=$PSScriptRoot;$arguments.UsagePath=Join-Path $PSScriptRoot 'logs/usage.json'
@@ -294,7 +320,7 @@ try { & $path @arguments } finally {
                                STAGE_SUPPLIED_BUDGET=str(int(supplied_budget)),
                                STAGE_ASSEMBLY_MODE=assembly_mode or '',
                                CRASH_SCENARIO=crash_scenario or '', OBSERVATION_SCENARIO=observation_scenario or '')
-            environment.update(STAGE_COMPLETION='1' if completion else '0', STAGE_RELEASE=release)
+            environment.update(STAGE_COMPLETION='1' if completion else '0', STAGE_RELEASE=release, STAGE_STORAGE=storage)
             if crash_scenario:
                 environment["FAKE_LAUNCHER"] = str(shutil.which("pwsh"))
             if scenario == 'prelaunch_failure':
@@ -315,7 +341,7 @@ try { & $path @arguments } finally {
                 self.assertEqual(receipt['schema_version'], 1)
                 self.assertEqual(receipt['role'], 'comsol_launcher_completion')
                 self.assertEqual(receipt['run_id'], 'test-resource-stages')
-                self.assertEqual(len(receipt['operations']), 0 if scenario == 'prelaunch_failure' else 1)
+                self.assertEqual(len(receipt['operations']), 0 if scenario == 'prelaunch_failure' or storage in ('collision', 'denied') else 1)
                 for operation in receipt['operations']:
                     self.assertTrue(operation['observation']['exit_confirmed'])
                     self.assertIsInstance(operation['observation']['returncode'], int)
@@ -333,6 +359,30 @@ try { & $path @arguments } finally {
                 else:
                     self.assertEqual(receipt['host_release']['result']['status'], release or 'released')
                 self.assertEqual(list(root.glob('completion.json.*.tmp')), [])
+                runtime = receipt['runtime_storage']
+                self.assertEqual(runtime['owned'], bool(storage and storage not in ('collision', 'denied')) or
+                                 observation_scenario in ('ordinary', 'metric_failure'))
+                if storage:
+                    owned = root / 'owned run with spaces'
+                    self.assertEqual(Path(runtime['run_directory']), owned)
+                    self.assertEqual(Path(runtime['temporary_directory']), owned / 'comsol_tmp')
+                    self.assertEqual(Path(runtime['recovery_directory']), owned / 'comsol_recovery')
+                    self.assertEqual((root / 'unrelated storage/keep.txt').read_text(), 'unrelated')
+                    self.assertEqual(list(owned.rglob('.mass_spectrometry_write_probe_*')), [])
+                    if storage == 'collision':
+                        self.assertEqual((owned / 'comsol_recovery').read_text(), 'TEST_ONLY preexisting file')
+                    else:
+                        self.assertTrue((owned / 'comsol_tmp').is_dir())
+                        self.assertTrue((owned / 'comsol_recovery').is_dir())
+                        arguments = [] if storage == 'denied' else json.loads(next(e.split(':', 1)[1] for e in entries
+                                                    if e.startswith('launcher_arguments:')))
+                        for option, child in (() if storage == 'denied' else (('-tmpdir', 'comsol_tmp'), ('-recoverydir', 'comsol_recovery'))):
+                            self.assertEqual(arguments.count(option), 1)
+                            self.assertLess(arguments.index(option), arguments.index('matlab'))
+                            self.assertEqual(arguments[arguments.index(option) + 1], str(owned / child))
+                elif not observation_scenario:
+                    self.assertEqual(runtime, dict(owned=False, run_directory=None,
+                                                  temporary_directory=None, recovery_directory=None))
             if observation_scenario:
                 output += "\nOBSERVATION_EVENTS=" + repr(entries)
             if observation_scenario:
@@ -364,6 +414,35 @@ try { & $path @arguments } finally {
                     self.assertFalse(source.exists())
                     self.assertEqual(destination.read_bytes(), expected)
             return completed.returncode, entries, output
+
+    def test_owned_storage_uses_official_argv_and_actual_launcher_completion(self) -> None:
+        code, entries, output = self.run_scenario('success', storage='owned',
+                                                   crash_scenario='success', completion=True)
+        self.assertEqual(code, 0, output)
+        self.assertEqual(entries.count('launch'), 1)
+        self.assertEqual(entries[-1], 'exit')
+
+    def test_owned_storage_preflight_collision_stops_before_native(self) -> None:
+        code, entries, output = self.run_scenario('success', storage='collision', completion=True)
+        self.assertNotEqual(code, 0, output)
+        self.assertNotIn('launch', entries)
+        self.assertEqual(entries[-1], 'exit')
+
+    def test_owned_storage_write_denial_fails_before_native(self) -> None:
+        code, entries, output = self.run_scenario('success', storage='denied', completion=True)
+        self.assertNotEqual(code, 0, output)
+        self.assertIn('EXECUTION_ENVIRONMENT_BLOCKED', output)
+        self.assertIn('comsol_recovery', output)
+        self.assertNotIn('launch', entries)
+        self.assertEqual(entries[-1], 'exit')
+
+    def test_owned_storage_retains_paths_when_release_is_unknown_and_keeps_primary(self) -> None:
+        code, entries, output = self.run_scenario('task_failure', storage='owned',
+                                                   completion=True, release='retained')
+        self.assertNotEqual(code, 0, output)
+        self.assertIn('R2025b LiveLink task failed', output)
+        self.assertIn('COMSOL_CLOSEOUT_ERROR=COMSOL_HOST_RELEASE_UNCONFIRMED', output)
+        self.assertEqual(entries.count('launch'), 1)
 
     def test_completion_receipt_keeps_native_and_actual_release_separate(self) -> None:
         for release in ('', 'retained', 'error', 'inherited'):

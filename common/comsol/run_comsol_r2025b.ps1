@@ -68,6 +68,7 @@ if ($completionFile -and (Test-Path -LiteralPath $completionFile)) {
 }
 $launcherCompletions = [Collections.Generic.List[object]]::new()
 $taskFailure = $null
+$runtimeStorage = @{owned=$false;run_directory=$null;temporary_directory=$null;recovery_directory=$null}
 $resourceLease = Enter-HostResourceStage -Role COMSOL -Stage prepare `
     -Budget $stageBudgets.prepare -RunId $RunId
 try {
@@ -92,7 +93,19 @@ if (-not (Test-Path -LiteralPath $matlabRoot -PathType Container)) {
 . $environmentPreflight
 
 $runtimeWritePaths = @(Get-ComsolRuntimeWritePaths -UserProfile $env:USERPROFILE -TempPath $env:TEMP)
+if ($RunDir) {
+    # Consume the caller's existing native execution representation, not a new alias.
+    $storageRoot = [IO.Path]::GetFullPath($RunDir)
+    $runtimeStorage.run_directory = $storageRoot
+    $runtimeStorage.temporary_directory = Join-Path $storageRoot 'comsol_tmp'
+    $runtimeStorage.recovery_directory = Join-Path $storageRoot 'comsol_recovery'
+    foreach ($storagePath in @($runtimeStorage.temporary_directory, $runtimeStorage.recovery_directory)) {
+        $null = [IO.Directory]::CreateDirectory($storagePath)
+    }
+    $runtimeWritePaths += @($runtimeStorage.temporary_directory, $runtimeStorage.recovery_directory)
+}
 Assert-ComsolRuntimeWriteAccess -Paths $runtimeWritePaths
+$runtimeStorage.owned = [bool]$RunDir
 
 function Get-ComsolServerProcessIds {
     return @(Get-Process -Name 'comsolmphserver' -ErrorAction SilentlyContinue |
@@ -170,6 +183,10 @@ try {
         }
         if ($AssemblyScalabilityMode -ne 'auto') {
             $launcherArguments += @('-memoptassem', $AssemblyScalabilityMode)
+        }
+        if ($runtimeStorage.owned) {
+            $launcherArguments += @('-tmpdir', $runtimeStorage.temporary_directory,
+                                    '-recoverydir', $runtimeStorage.recovery_directory)
         }
         $launcherArguments += @(
             '-login', 'auto', 'matlab',
@@ -385,7 +402,7 @@ throw "LiveLink task did not create its report after $StartupAttempts clean star
         $temporaryCompletion = $completionFile + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
         try {
             $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($completionFile))
-            $receipt = @{schema_version=1;role='comsol_launcher_completion';run_id=$RunId;operations=@($launcherCompletions.ToArray());host_release=$hostRelease}
+            $receipt = @{schema_version=1;role='comsol_launcher_completion';run_id=$RunId;operations=@($launcherCompletions.ToArray());host_release=$hostRelease;runtime_storage=$runtimeStorage}
             [IO.File]::WriteAllText($temporaryCompletion, ($receipt | ConvertTo-Json -Depth 30), [Text.UTF8Encoding]::new($false))
             [IO.File]::Move($temporaryCompletion, $completionFile)
         } catch {
