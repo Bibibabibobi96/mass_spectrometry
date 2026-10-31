@@ -157,7 +157,10 @@ def prepare_reference(run: Path) -> dict:
     for kind,record in design["native_probe_records"].items():
         path=runtime._verified_small_record(record,workspace)
         if not any(runtime._same_identity(record,r,workspace) for r in owner.get("outputs",[])):
-            raise ValueError("reference theory/probe file is not bound by sealed field owner outputs")
+            original = design.get("response_projections", {}).get(kind, {}).get("probe_owner_manifest_record")
+            if original is None:
+                raise ValueError("reference theory/probe file is not bound by sealed field owner outputs")
+            runtime.validate_static_probe_reference(run, kind, record, original, field_context["records"][kind])
         responses[kind]=pd.read_csv(path)
     with (inputs/"release_global.csv").open(encoding="utf-8-sig",newline="") as handle:
         original=list(csv.DictReader(handle))

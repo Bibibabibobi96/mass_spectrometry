@@ -64,15 +64,32 @@ def _member_projection(identity: dict, member: dict, *, member_id: str) -> dict:
     return result
 
 
-def _domain_inputs(design: dict, domain: dict, point: dict) -> dict:
-    identity = dict(geometry=dict(dimensions=domain['dimensions'], bounds_mm=domain['bounds_mm']),
-        gem=domain['gem_sha256'],
-        working_points=_physical_working_points([point], domain['refine_convergence_v']),
-        mesh=domain['cell_mm_xyz'], grid_phase=domain['instance_origin_mm'], surface=design['surface'],
-        boundary_policy=domain['boundary_policy'])
+def laplace_member_identity(*, dimensions: dict, bounds_mm: dict, gem_sha256: str,
+                            cell_mm_xyz: dict, instance_origin_mm: dict, surface: str,
+                            boundary_policy: str | dict, point: dict,
+                            refine_convergence_v: float, rf_reference_voltage_v: float | None = None) -> dict:
+    """Identity of one linear working solve, independent of source and member label.
+
+    Callers retain ownership of endpoint/geometry validation and boundary policy:
+    zero Dirichlet and native zero Neumann are deliberately different operators.
+    """
+    identity = dict(geometry=dict(dimensions=dimensions, bounds_mm=bounds_mm), gem=gem_sha256,
+        working_points=[dict(kind=point['kind'], electrode_voltages_v=point['electrode_voltages_v'],
+                             refine_convergence_v=refine_convergence_v)],
+        mesh=cell_mm_xyz, grid_phase=instance_origin_mm, surface=surface, boundary_policy=boundary_policy)
     if point['kind'] == 'rf_reference':
-        identity['rf_reference_voltage_v'] = design['rf_reference_voltage_v']
+        identity['rf_reference_voltage_v'] = rf_reference_voltage_v
     return identity
+
+
+
+def _domain_inputs(design: dict, domain: dict, point: dict) -> dict:
+    return laplace_member_identity(dimensions=domain['dimensions'], bounds_mm=domain['bounds_mm'],
+        gem_sha256=domain['gem_sha256'], cell_mm_xyz=domain['cell_mm_xyz'],
+        instance_origin_mm=domain['instance_origin_mm'], surface=design['surface'],
+        boundary_policy=domain['boundary_policy'], point=point,
+        refine_convergence_v=domain['refine_convergence_v'][point['kind']],
+        rf_reference_voltage_v=design.get('rf_reference_voltage_v'))
 
 
 def _parent_boundary(parent_origin: dict, parent: dict) -> dict:

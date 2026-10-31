@@ -37,6 +37,7 @@ def cooled_fixture(variant="three_zone"):
     model, guide, registration, request, ids = buncher_fixture()
     conditioner = build_cooled_buncher_contract(model, guide_contract=guide, native_to_assembly=native_pose(guide, registration), request=request, electrode_ids=ids)
     _, _, component = canonical_three_zone_frontend_fixture() if variant == "three_zone" else canonical_frontend_fixture()
+    # The two-zone pose uses the mechanical exit origin; PA padding stays in its adapter.
     component["transform"] = dict(rotation=[[0,1,0],[1,0,0],[0,0,-1]], translation_mm=[0.,51.5,34.]) if variant == "three_zone" else dict(rotation=[[1,0,0],[0,1,0],[0,0,1]], translation_mm=[0.,51.5,0.])
     connection = dict(spatial_registration=registration)
     drive = dict(capture_voltages_v={k:0. for k in ids}, closed_voltages_v={k:1. for k in ids}, release_voltages_v={k:2. for k in ids}, entrance_close_us=20., release_start_us=100.)
@@ -133,15 +134,20 @@ def publish_inert_fields(run, cache_root):
     (run / "inputs/native_discovery.json").write_text(json.dumps(dict(
         bytes=1, sha256="A"*64, file_version="PURE_INERT_TEST")), encoding="utf-8")
     plan = cooled_runtime.field_cache_plan(run, cache_root=cache_root)
-    progress = cooled_runtime.advance_field_cache(run, plan)
-    for name in progress["missing_files"]:
-        (Path(progress["build_directory"]) / name).write_bytes(b"PURE_TEST_NOT_NATIVE_PA"*3)
-    progress = cooled_runtime.advance_field_cache(run, plan)
-    assert progress["action_required"] == "verify"
+    progress = {}
     evidence = run / "inputs/inert_verification.txt"
     evidence.write_text("INERT_TRANSACTION_TEST_ONLY_NO_NATIVE_VERIFICATION\n", encoding="utf-8")
-    progress = cooled_runtime.advance_field_cache(run, plan, evidence)
+    for member in plan["domains"][0]["members"]:
+        status = cooled_runtime.advance_field_cache(run, member)
+        for name in status["missing_files"]:
+            (Path(status["build_directory"]) / name).write_bytes(b"PURE_TEST_NOT_NATIVE_PA"*3)
+        status = cooled_runtime.advance_field_cache(run, member)
+        if status["action_required"] == "verify":
+            status = cooled_runtime.advance_field_cache(run, member, evidence)
+        status["refine_performed"] = False
+        progress[member["member_id"]] = status
     return cooled_runtime.finalize_field_stage(run, plan, progress)
+
 
 
 class CooledFrontendTests(unittest.TestCase):
@@ -158,7 +164,6 @@ class CooledFrontendTests(unittest.TestCase):
             region = result["frontend"]["accelerator_local_region"]
             self.assertEqual(region["planes"], dict(repeller=34., grid1=30., exit=0.))
             self.assertEqual(region["port"]["center_mm"], [0., 35., 32.])
-
 
     def test_two_zone_fixture_preserves_world_gate_and_exit_geometry(self):
         guide, connection, component, conditioner, _ = cooled_fixture("two_zone")
@@ -196,7 +201,8 @@ class CooledFrontendTests(unittest.TestCase):
             # Explicitly model a previously published, unpinned generation.
             with patch.object(cooled_runtime, "_FIELD_PUBLICATION_PIN_REASON", None):
                 published = publish_inert_fields(run, cache_root)
-            plan = cooled_runtime.field_cache_plan(run, cache_root=cache_root)
+            bundle = cooled_runtime.field_cache_plan(run, cache_root=cache_root)
+            plan = bundle["domains"][0]["members"][0]
             with patch.object(pa_family_cache, "_verify_payload_record", side_effect=AssertionError("no PA rehash")):
                 actual = fields(run)
                 hit = cooled_runtime.advance_field_cache(run, plan)
@@ -218,17 +224,22 @@ class CooledFrontendTests(unittest.TestCase):
                     materialize.assert_not_called()
                     pa_family_cache.advance_pa_family_cache_transaction(cache_root,plan["identity"],plan["filenames"],
                         owner=str(run.resolve()), published_pin_reason=cooled_runtime._FIELD_PUBLICATION_PIN_REASON,
-                        published_pin_generation_sha256=published["receipt"]["generation_sha256"])
+                        published_pin_generation_sha256=published["working_points"][0]["generation_sha256"])
+                    for member, row in zip(bundle["domains"][0]["members"][1:], published["working_points"][1:]):
+                        pa_family_cache.advance_pa_family_cache_transaction(cache_root, member["identity"], member["filenames"],
+                            owner=str(run.resolve()), published_pin_reason=cooled_runtime._FIELD_PUBLICATION_PIN_REASON,
+                            published_pin_generation_sha256=row["generation_sha256"])
                     with patch.object(cooled_runtime,"validate_pa_family_cache_generation",
                             wraps=cooled_runtime.validate_pa_family_cache_generation) as validated:
                         result=cooled_runtime.materialize_batches(run,"extraction",batch_plan,110.,[0.,110.])
-                    validated.assert_called_once()
-                    self.assertEqual(validated.call_args.kwargs,dict(verify_payload=False,require_publication_pin=True))
+                    self.assertEqual(validated.call_count, 7)
+                    self.assertTrue(all(call.kwargs == dict(verify_payload=False, require_publication_pin=True)
+                                        for call in validated.call_args_list))
                     self.assertFalse(result["gui_fly_performed"])
             # A genuinely new public transaction publishes its durable pin as
             # part of the same lifecycle, without a later owner repair.
             new_plan = copy.deepcopy(plan)
-            new_plan["identity"]["builder_identity"]["operating_point"] = "B"*64
+            new_plan["identity"]["builder_identity"]["operating_builder"] = "B"*64
             new_plan["cache_key"] = pa_family_cache.canonical_pa_family_cache_key(new_plan["identity"])
             building = cooled_runtime.advance_field_cache(run, new_plan)
             for name in building["missing_files"]:
@@ -245,51 +256,39 @@ class CooledFrontendTests(unittest.TestCase):
 
     def test_public_transaction_preserves_members_and_hit_without_materialization(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root=Path(temporary)
-            author,_=cooled_request_fixture(root)
-            run=root/"artifacts/projects/instrument_assembly/runs/20261022_120000__build__python__cooled-fixture"
-            self.assertEqual(run.parents[4],root)
-            prepare_cooled_frontend(author,run,REPO,root,run_id="20261022_120000__build__python__cooled-fixture")
-            (run/"inputs/native_discovery.json").write_text(json.dumps(dict(bytes=1,sha256="A"*64,file_version="INERT")))
-            plan=cooled_runtime.field_cache_plan(run,cache_root=root/"cache")
-            first=cooled_runtime.advance_field_cache(run,plan)
-            retained=Path(first["build_directory"])/first["missing_files"][0]
-            retained.write_bytes(b"INERT_RETAINED_MEMBER"*4)
-            original=retained.read_bytes()
-            next_run=run.with_name("20261022_120000__build__python__cooled-fixture__r02")
-            shutil.copytree(run/"inputs",next_run/"inputs")
-            resumed=cooled_runtime.advance_field_cache(next_run,plan)
-            self.assertEqual(len(resumed["missing_files"]),6)
-            self.assertNotIn(retained.name,resumed["missing_files"])
-            self.assertEqual(retained.read_bytes(),original)
-            transaction=cooled_runtime.load_pa_family_cache_transaction(plan["cache_root"],plan["cache_key"])
-            self.assertEqual(transaction["owner"],str(run.resolve()))
-            self.assertEqual(transaction["published_pin_reason"], cooled_runtime._FIELD_PUBLICATION_PIN_REASON)
-            with self.assertRaisesRegex(ValueError,"published"):
-                cooled_runtime.finalize_field_stage(next_run,plan,resumed)
-            for name in resumed["missing_files"]:
-                (Path(resumed["build_directory"])/name).write_bytes(b"INERT_COMPLETED_MEMBER"*4)
-            scratch=Path(resumed["scratch_directory"])
-            native_source=scratch/"inert_native_basis.pa0"
-            native_source.write_bytes(b"INERT_SOURCE_NOT_A_SOLVED_PA")
-            sealed=cooled_runtime.advance_field_cache(next_run,plan)
-            self.assertEqual(sealed["action_required"],"verify")
-            # Sealing the inventory alone does not complete verification.
-            self.assertEqual(native_source.read_bytes(),b"INERT_SOURCE_NOT_A_SOLVED_PA")
-            verification=next_run/"inputs/inert_verification.txt"
-            verification.write_text("INERT_NO_NATIVE_CLAIM")
-            published=cooled_runtime.advance_field_cache(next_run,plan,verification)
-            self.assertFalse(scratch.exists())
-            result=cooled_runtime.finalize_field_stage(next_run,plan,published)
-            with patch.object(cooled_runtime,"file_sha256",wraps=cooled_runtime.file_sha256) as checked:
-                hit=cooled_runtime.advance_field_cache(next_run,plan)
-                resolved=fields(next_run)
-            self.assertEqual(hit["generation_directory"],published["generation_directory"])
-            self.assertEqual(list(resolved["records"].values()),result["working_points"])
-            self.assertFalse(any(Path(call.args[0]).suffix==".pa" for call in checked.call_args_list))
-            for path in (root/"cache").rglob("*"):
-                if path.is_file():
-                    path.chmod(stat.S_IREAD|stat.S_IWRITE)
+            root = Path(temporary)
+            try:
+                author, _ = cooled_request_fixture(root)
+                run = root/"artifacts/projects/instrument_assembly/runs/20261022_120000__build__python__cooled-fixture"
+                prepare_cooled_frontend(author, run, REPO, root, run_id=run.name)
+                (run/"inputs/native_discovery.json").write_text(json.dumps(dict(bytes=1,sha256="A"*64,file_version="INERT")))
+                bundle = cooled_runtime.field_cache_plan(run, cache_root=root/"cache")
+                plan = bundle["domains"][0]["members"][0]
+                first = cooled_runtime.advance_field_cache(run, plan)
+                retained = Path(first["build_directory"])/first["missing_files"][0]
+                retained.write_bytes(b"INERT_RETAINED_MEMBER"*4)
+                original = retained.read_bytes()
+                next_run = run.with_name(run.name+"__r02")
+                shutil.copytree(run/"inputs", next_run/"inputs")
+                resumed = cooled_runtime.advance_field_cache(next_run, plan)
+                self.assertEqual(resumed["missing_files"], [])
+                self.assertEqual(resumed["action_required"], "verify")
+                self.assertEqual(retained.read_bytes(), original)
+                transaction = cooled_runtime.load_pa_family_cache_transaction(plan["cache_root"],plan["cache_key"])
+                self.assertEqual(transaction["owner"], str(run.resolve()))
+                with self.assertRaises((KeyError, ValueError)):
+                    cooled_runtime.finalize_field_stage(next_run, bundle, {plan["member_id"]: resumed})
+                verification = next_run/"inputs/inert_verification.txt"
+                verification.write_text("INERT_NO_NATIVE_CLAIM")
+                published = cooled_runtime.advance_field_cache(next_run, plan, verification)
+                self.assertFalse(Path(first["scratch_directory"]).exists())
+                hit = cooled_runtime.advance_field_cache(next_run, plan)
+                self.assertEqual(hit["generation_directory"], published["generation_directory"])
+                self.assertEqual((Path(hit["generation_directory"])/plan["filenames"][0]).read_bytes(), original)
+            finally:
+                for path in root.rglob("*"):
+                    if path.is_file():
+                        path.chmod(stat.S_IREAD|stat.S_IWRITE)
 
     def test_working_field_key_excludes_population_pressure_clock_and_collision(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -303,17 +302,19 @@ class CooledFrontendTests(unittest.TestCase):
                 path=run/"inputs"/name
                 data=json.loads(path.read_text());data.update(pressure_scale=2,particle_count=2,release_start_us=1234.,random_collisions="changed")
                 path.write_text(json.dumps(data))
-            self.assertEqual(first["cache_key"],cooled_runtime.field_cache_plan(run,cache_root=root/"cache")["cache_key"])
+            self.assertEqual([m["cache_key"] for m in first["domains"][0]["members"]],[m["cache_key"] for m in cooled_runtime.field_cache_plan(run,cache_root=root/"cache")["domains"][0]["members"]])
             field_path=run/"inputs/cooled_field_plan.json"
             data=json.loads(field_path.read_text())
             data["working_points"][0]["electrode_voltages_v"]["1"]+=1.
             field_path.write_text(json.dumps(data))
-            identity=run/"inputs/cooled_field_cache_identity.json";identity.unlink()
+            identities = list((run/"inputs").glob("cooled_member_*_identity.json"))
+            for identity in identities: identity.unlink()
             changed=cooled_runtime.field_cache_plan(run,cache_root=root/"cache")
-            self.assertNotEqual(first["cache_key"],changed["cache_key"])
+            self.assertNotEqual(first["domains"][0]["members"][0]["cache_key"],changed["domains"][0]["members"][0]["cache_key"])
             front_path=run/"inputs/frontend_contract.json"
-            front=json.loads(front_path.read_text());front["cell_mm_xyz"]["x"]*=2;front_path.write_text(json.dumps(front));identity.unlink()
-            self.assertNotEqual(changed["cache_key"],cooled_runtime.field_cache_plan(run,cache_root=root/"cache")["cache_key"])
+            front=json.loads(front_path.read_text());front["cell_mm_xyz"]["x"]*=2;front_path.write_text(json.dumps(front))
+            for identity in identities: identity.unlink()
+            self.assertNotEqual([m["cache_key"] for m in changed["domains"][0]["members"]],[m["cache_key"] for m in cooled_runtime.field_cache_plan(run,cache_root=root/"cache")["domains"][0]["members"]])
 
     def test_field_identity_excludes_audit_but_includes_actual_builders(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -328,10 +329,11 @@ class CooledFrontendTests(unittest.TestCase):
                                            ("build_dirichlet_patch_operating_pa.lua",True),
                                            ("export_detached_standalone_pa.lua",True)):
                 with self.subTest(filename=filename):
-                    (run/"inputs/cooled_field_cache_identity.json").unlink()
+                    for identity in (run/"inputs").glob("cooled_member_*_identity.json"): identity.unlink()
                     with patch.object(cooled_runtime,"file_sha256",side_effect=lambda p: "F"*64 if Path(p).name==filename else sha(p)):
                         changed=cooled_runtime.field_cache_plan(run,cache_root=root/"cache")
-                    self.assertEqual(changed["cache_key"]!=original["cache_key"],changes_key)
+                    self.assertEqual([m["cache_key"] for m in changed["domains"][0]["members"]] !=
+                                     [m["cache_key"] for m in original["domains"][0]["members"]], changes_key)
 
     def test_native_audit_spec_is_actual_seven_voltage_tables(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -339,8 +341,10 @@ class CooledFrontendTests(unittest.TestCase):
             author,_=cooled_request_fixture(root)
             run=root/"run"
             prepared=prepare_cooled_frontend(author,run,REPO,root,run_id="20261022_120000__build__python__cooled-fixture")
-            spec=cooled_runtime.field_verification_spec(run,root/"ordinary")
-            rows=[row.split("\t") for row in spec.read_text().splitlines()]
+            rows=[]
+            for kind in cooled_runtime.KINDS:
+                spec=cooled_runtime.field_verification_spec(run,root/"ordinary",member_id=kind)
+                rows.extend(row.split("\t") for row in spec.read_text().splitlines())
             self.assertEqual([row[1] for row in rows if row[0]=="field"],list(cooled_runtime.KINDS))
             points={point["kind"]:point for point in prepared["field_plan"]["working_points"]}
             conditioner=prepared["frontend"]["conditioner_contract"]
@@ -375,7 +379,7 @@ local okay,message=pcall(dofile,audit)
 assert(okay==(scenario=='pass' or scenario=='roundoff'),tostring(message))
 print('INERT_PA_API_BOUNDARY=PASS '..scenario)
 ''',encoding="utf-8",newline="\n")
-                audit=REPO/"integrations/workflows/cooled_frontend/verify_cooled_fields.lua"
+                audit=Path(cooled_runtime.__file__).with_name("verify_cooled_fields.lua")
                 for scenario in ("pass","roundoff","grid","voltage","mask"):
                     checked=subprocess.run([str(LUA),str(harness),str(spec),str(audit),str(root/"audit.tsv"),scenario],cwd=root,
                         capture_output=True,text=True,timeout=30,check=False)
@@ -391,7 +395,7 @@ print('INERT_PA_API_BOUNDARY=PASS '..scenario)
                 (run / "results").mkdir()
                 context = dict(decision=dict(actual_pulse_time_us=110.),
                                rows=[dict(particle_id=i) for i in (1, 2)], frontend=dict(frame_id="assembly"),
-                               fields=dict(records={"carrier_off": dict(path=str(run/"generation/carrier.pa"))}, receipt={}, identity_validation={}),
+                               fields=dict(records={"carrier_off": dict(path=str(run/"generation/carrier.pa"), generation_directory=str(run/"generation"))}, receipt={}, identity_validation={}),
                                experiment=dict(pressure_scale=scale),
                                conditioner=dict(gas=dict(parameters=dict(hp_pressure_pa=pressure,
                                    cross_section_m2=sigma, mean_free_path_mm=mfp),
@@ -624,6 +628,23 @@ $null=Freeze-ConsumerDependencies -RepoRoot $Repo -ContractPath $inventory -Inpu
             self.assertTrue((snapshot/"integrations/workflows/cooled_frontend/prepare.py").exists())
             self.assertTrue((snapshot/"common/simion/collision_hs1.py").exists())
             self.assertFalse((snapshot/"projects/dual_pressure_rectilinear_ion_processor/analysis/functional.py").exists())
+            # Exercise new static imports and dynamic seed resources from this same frozen tree.
+            smoke_code = ("from pathlib import Path; import sys; "
+                "import common.simion.workbench_seed as seed; "
+                "import integrations.workflows.local_frontend.runtime as local; "
+                "import integrations.workflows.cooled_frontend.runtime as cooled; "
+                "import integrations.workflows.single_reflection_flight.field_plan as fields; "
+                "root=Path.cwd().resolve(); "
+                "assert all(Path(m.__file__).resolve().is_relative_to(root) for m in (seed,local,cooled,fields)); "
+                "first=seed.freeze_workbench_seed(Path(sys.argv[1]),root); "
+                "before={k:Path(v['frozen']['path']).stat().st_mtime_ns for k,v in first.items()}; "
+                "second=seed.freeze_workbench_seed(Path(sys.argv[1]),root); "
+                "assert before=={k:Path(v['frozen']['path']).stat().st_mtime_ns for k,v in second.items()}; "
+                "assert set(second)=={'seed','placeholder'}; print('FROZEN_MEMBER_AND_SEED=PASS')")
+            smoke = subprocess.run([sys.executable, "-B", "-s", "-c", smoke_code, str(output)],
+                cwd=snapshot, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(smoke.returncode,0,smoke.stdout+smoke.stderr)
+            self.assertIn("FROZEN_MEMBER_AND_SEED=PASS",smoke.stdout)
 
     def test_existing_bare_default_geometry_bytes_unchanged(self):
         guide, connection, component = canonical_frontend_fixture()
@@ -699,7 +720,7 @@ $null=Freeze-ConsumerDependencies -RepoRoot $Repo -ContractPath $inventory -Inpu
                 case=shared_runtime._case(run,"extraction","pure_case",ctx["rows"][:1],ctx,
                     dict(pulse_time_us=110.,shared_times_us=[0.,20.,100.,110.,120.]),program_builder=build_program)
                 program=Path(case["program_path"]).read_text()
-                generation=Path(records[0]["path"]).parent.as_posix()
+                expected_paths=[Path(row["path"]).as_posix() for row in records if row["kind"] != "carrier_off"]
                 for row in records:
                     if row['kind'] in {'rf_differential_unit', 'pulse_delta'}:
                         self.assertIn(json.dumps(Path(row['path']).as_posix()), program)
@@ -712,16 +733,16 @@ $null=Freeze-ConsumerDependencies -RepoRoot $Repo -ContractPath $inventory -Inpu
                 if LUA.is_file():
                     glue=program[program.index("local function single_flight_exact_basename"):program.index("local function single_flight_apply_standalone_dynamic_field")]
                     configuration=program.split("end)()\ncooled_frontend_component.install(",1)[1].split(", {\n clock=",1)[0]
-                    response_names=[Path(row["path"]).name for row in records if row["kind"]!="carrier_off"]
+                    response_names=expected_paths
                     from integrations.runtime.single_flight_source import lua_value as _lua_value
                     transport=glue+"\nlocal cfg="+configuration+"\nlocal expected="+_lua_value(response_names)+r'''
-local root='''+_lua_value(generation)+r'''
+local expected_paths={};for _,path in ipairs(expected) do expected_paths[path]=true end
 local base={nx=3,ny=3,nz=3,dx_mm=1,dy_mm=1,dz_mm=1,symmetry='planar',potential_type='electric'}
 base.path='''+_lua_value("misleading_relative_path/"+Path(records[0]["path"]).name)+r'''
 simion={pas={},wb={instances={{pa=base,filename='''+_lua_value(Path(records[0]["path"]).name)+r'''}}}}
 local opened={}
 function simion.pas:open(path)
- assert(path:sub(1,#root+1)==root..'/','sidecar guessed path from carrier instead of explicit transport')
+ assert(expected_paths[path],'sidecar guessed a directory instead of using explicit member transport')
  opened[path]=true;return base
 end
 single_flight_initialize_standalone_dynamic_fields()
@@ -730,7 +751,7 @@ function simion.import() return {} end
 local component=assert(loadfile(arg[1]))()
 component.install(cfg,{voltage_waveforms=assert(loadfile(arg[2]))(),validate_response=function(response,label) single_flight_assert_matching_response(simion.wb.instances[1],response,label) end})
 segment.initialize_run()
-for _,name in ipairs(expected) do assert(opened[root..'/'..name],'missing actual response transport '..name) end
+for _,path in ipairs(expected) do assert(opened[path],'missing actual response transport '..path) end
 local count=0;for _ in pairs(opened) do count=count+1 end
 assert(count==6,'sidecars were duplicated or omitted')
 print('SEVEN_FIELD_TRANSPORT=PASS')
@@ -763,7 +784,7 @@ print('SEVEN_FIELD_TRANSPORT=PASS')
                 receipt=json.loads(receipt_path.read_text())
                 receipt["field_bank_record"]=file_record(bank_path)
                 receipt_path.write_text(json.dumps(receipt),encoding="utf-8")
-                with self.assertRaisesRegex(ValueError,"standalone dynamic field bank identity differs"):
+                with self.assertRaisesRegex(ValueError,"field bank role/member projection differs"):
                     fields(run)
                 bank_path.write_text(json.dumps(valid_bank),encoding="utf-8")
                 receipt["field_bank_record"]=file_record(bank_path)

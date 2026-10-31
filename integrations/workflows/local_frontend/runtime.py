@@ -7,6 +7,8 @@ or rehashed: the completed same-owner field stage supplies verified identities.
 """
 from __future__ import annotations
 
+from common.simion.workbench_seed import freeze_workbench_seed
+
 import argparse
 import csv
 import io
@@ -137,27 +139,6 @@ def response_field_paths(records: dict) -> dict:
     }}
 
 
-def _shared_iob_seed(run: Path, repo: Path) -> dict:
-    """Freeze the official one-slot seed and its sole placeholder once per run.
-
-    The seed README requires both files together. Keeping them outside the
-    deep code snapshot avoids the demonstrated SIMION2020 companion-path limit.
-    These are source fixtures, never copies of a physical working field.
-    """
-    source_root = repo/"common/simion/assets/iob_instance_seeds"
-    destination = run/"simion/iob_seed"
-    identities = {}
-    for name, key in (("1_instance_seed.iob", "seed"), ("iob_seed_placeholder_01.pa0", "placeholder")):
-        source, frozen = source_root/name, destination/name
-        _write_bytes_once(frozen, source.read_bytes())
-        identities[key] = dict(source=file_record(source), frozen=file_record(frozen),
-                               frozen_path_utf16_units=len(str(frozen).encode("utf-16-le"))//2)
-        if identities[key]["source"]["sha256"] != identities[key]["frozen"]["sha256"]:
-            raise ValueError("official IOB seed source and frozen bytes differ")
-    _json_once(run/"inputs/local_iob_seed.json", identities)
-    return identities
-
-
 def _context(run: Path, *, field_provider=None) -> dict:
     inputs = run/"inputs"
     source = inputs/"release_global.csv"
@@ -174,6 +155,9 @@ def _context(run: Path, *, field_provider=None) -> dict:
             raise ValueError("source has non-finite states or negative birth clocks")
     if identity["native_clock_projection"] != SOURCE_CLOCK:
         raise ValueError("source clock projection differs")
+    replay_requested = _load(inputs/"request.json")["verify_saved_workbench_replay"]
+    if type(replay_requested) is not bool:
+        raise ValueError("frozen verify_saved_workbench_replay must be a boolean")
     numerics = _load(inputs/"numerics.json")
     if type(numerics["trajectory_quality"]) is not int or not 1 <= numerics["trajectory_quality"] <= 500:
         raise ValueError("trajectory quality must be explicit positive integer")
@@ -188,7 +172,9 @@ def _context(run: Path, *, field_provider=None) -> dict:
         if key in _PROGRAM_SOURCES:
             sources[key] = original.read_text(encoding="utf-8-sig")
     horizon = max(float(row["instrument_time_us"]) for row in rows) + numerics["maximum_flight_us"]
-    return dict(rows=rows, flight_horizon_us=horizon, iob_seed=_shared_iob_seed(run, repo),
+    seed = freeze_workbench_seed(run, repo)
+    _json_once(run/"inputs/local_iob_seed.json", seed)
+    return dict(rows=rows, verify_saved_workbench_replay=replay_requested, flight_horizon_us=horizon, iob_seed=seed,
                 guide=_load(inputs/"guide_contract.json"), frontend=_load(inputs/"frontend_contract.json"),
                 numerics=numerics, fields=fields, sources=sources, code_records=code_records,
                 source_record=file_record(source), source_identity_record=file_record(inputs/"source_identity.json"))
@@ -349,8 +335,8 @@ def materialize_batches(run: Path, phase: str, batch_plan: dict[str, Any], pulse
                    field_validation=context["fields"]["identity_validation"], batches=cases, gui_case=gui,
                    default_load_iob=gui["iob_path"], gui_fly_performed=False,
                    default_replay_policy=default_replay_policy if default_replay_policy is not None else dict(
-                       comparison_policy="deterministic_trajectory_parity", scope="fresh_process", collision_active=False),
-                   saved_default_replay_verification="pending", receipt_path=str(receipt_path))
+                       requested=context["verify_saved_workbench_replay"], comparison_policy="deterministic_trajectory_parity", scope="fresh_process" if context["verify_saved_workbench_replay"] else "not_requested", collision_active=False),
+                   saved_default_replay_verification=("pending" if context["verify_saved_workbench_replay"] else "not_requested"), receipt_path=str(receipt_path))
     _json_once(receipt_path, receipt)
     return receipt
 

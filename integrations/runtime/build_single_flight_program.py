@@ -94,6 +94,7 @@ def _resolve_standalone_dynamic_field_bank(
                 "carrier_pa_basename",
                 "rf_differential_pa_basenames",
                 "pulse_delta_pa_basename",
+                "pulse_delta_scale",
                 "rf_reference_voltage_v",
             }
         ):
@@ -130,6 +131,10 @@ def _resolve_standalone_dynamic_field_bank(
         )
         if not rf_differential and "rf_reference_voltage_v" in row:
             raise ValueError("RF-free field bank cannot declare an RF reference")
+        pulse_scale = row.get("pulse_delta_scale", 1.)
+        if (isinstance(pulse_scale, bool) or not isinstance(pulse_scale, (int, float))
+                or not math.isfinite(pulse_scale) or (pulse_delta is None and "pulse_delta_scale" in row)):
+            raise ValueError("pulse scale requires a finite coefficient and its actual pulse member")
         reference = row.get("rf_reference_voltage_v") if rf_differential else None
         if rf_differential and (isinstance(reference, bool) or not isinstance(reference, (int, float))
                 or not math.isfinite(reference) or reference <= 0):
@@ -150,6 +155,7 @@ def _resolve_standalone_dynamic_field_bank(
                 **({"rf_differential_pa_basenames":rf_differential,"rf_reference_voltage_v":float(reference)}
                    if rf_differential else {}),
                 "pulse_delta_pa_basename": pulse_delta,
+                "pulse_delta_scale": float(pulse_scale),
             }
         )
     if seen_roles != set(expected_role_indices):
@@ -479,7 +485,21 @@ def _bind_standalone_dynamic_field_paths(
 
 def _standalone_dynamic_field_lua(specs: list[dict[str, Any]]) -> str:
     """Share exact sidecar validation and RF/pulse field composition glue."""
-    standalone_dynamic_specs_lua = _lua_value(specs)
+    # Unit scaling uses the original arithmetic, with no redundant multiply.
+    # Both execution and numerical controls are rendered by this same template.
+    unit_pulse = all(row.get("pulse_delta_scale", 1.) == 1. for row in specs)
+    emitted_specs = [dict(row) for row in specs]
+    if unit_pulse:
+        for row in emitted_specs:
+            row.pop("pulse_delta_scale", None)
+    standalone_dynamic_specs_lua = _lua_value(emitted_specs)
+    pulse_field = ("    ion_dvoltsx_gu=ion_dvoltsx_gu-ex\n"
+                   "    ion_dvoltsy_gu=ion_dvoltsy_gu-ey\n"
+                   "    ion_dvoltsz_gu=ion_dvoltsz_gu-ez") if unit_pulse else (
+                   "    local coefficient=spec.pulse_delta_scale\n"
+                   "    ion_dvoltsx_gu=ion_dvoltsx_gu-coefficient*ex\n"
+                   "    ion_dvoltsy_gu=ion_dvoltsy_gu-coefficient*ey\n"
+                   "    ion_dvoltsz_gu=ion_dvoltsz_gu-coefficient*ez")
     return f"""local function single_flight_exact_basename(value,label)
   assert(type(value)=='string',label..' filename must be a string')
   local basename=value:gsub('\\\\','/'):match('([^/]+)$')
@@ -547,9 +567,7 @@ local function single_flight_apply_standalone_dynamic_field(instance,time)
     ex,ey,ez=spec.pulse_delta_pa:field_vc(x,y,z)
     assert(ex~=nil and ey~=nil and ez~=nil,
       'pulse-delta standalone field is undefined for '..spec.role)
-    ion_dvoltsx_gu=ion_dvoltsx_gu-ex
-    ion_dvoltsy_gu=ion_dvoltsy_gu-ey
-    ion_dvoltsz_gu=ion_dvoltsz_gu-ez
+{pulse_field}
   end
 end
 """

@@ -395,7 +395,11 @@ def prepare_local_frontend(request_path: Path, output_directory: Path | None, wo
     request_path = Path(request_path).resolve(strict=True)
     request = _load(request_path)
     _keys(request, {"schema_version", "role", "source", "accelerator_component", "composition_plan", "numerics", "pulse", "diagnostics"}
-          | ({"local_scope"} if "local_scope" in request else set()), "request")
+          | ({"local_scope"} if "local_scope" in request else set())
+          | ({"verify_saved_workbench_replay"} if "verify_saved_workbench_replay" in request else set()), "request")
+    if type(request.get("verify_saved_workbench_replay", False)) is not bool:
+        raise ValueError("verify_saved_workbench_replay must be a boolean")
+    request = {**request, "verify_saved_workbench_replay": request.get("verify_saved_workbench_replay", False)}
     if type(request["schema_version"]) is not int or request["schema_version"] != 3 or request["role"] != ROLE:
         raise ValueError("unsupported local frontend request")
     if output_directory is not None:
@@ -485,6 +489,7 @@ def prepare_local_frontend(request_path: Path, output_directory: Path | None, wo
                     grid_phase=frontend["instance_origin_mm"], surface="none", refine_policy="official_defaults",
                     scope="physical_builder_inputs_only__native_identity_and_public_cache_key_added_by_executor")
     result = dict(schema_version=1, role="instrument_assembly_local_frontend_preparation", status="validated", particle_count=len(raw_rows),
+                  default_replay_requested=request["verify_saved_workbench_replay"],
                   input_records={name: dict(path=str(path), exists=True, bytes=request["source"][name]["bytes"],
                                             sha256=request["source"][name]["sha256"].upper()) for name, path in paths.items()} | clock["records"]
                   | {"composition_plan": dict(parent_record, path=str(frozen_parent or parent_path), source_path=str(parent_path))},

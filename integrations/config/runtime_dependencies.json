@@ -366,7 +366,9 @@
             "prepared_joint",
             "oa_mr",
             "paired_accelerator_static_field",
-            "paired_accelerator_pulse"
+            "paired_accelerator_pulse",
+            "local_frontend",
+            "cooled_frontend"
           ]
         },
         {
@@ -1248,7 +1250,8 @@
             "cooled_frontend",
             "oa_mr",
             "paired_accelerator_static_field",
-            "paired_accelerator_pulse"
+            "paired_accelerator_pulse",
+            "local_frontend"
           ]
         },
         {
@@ -1352,6 +1355,14 @@
             "single_reflection_flight",
             "paired_accelerator_static_field",
             "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_simion_workbench_seed_py",
+          "source_repo_path": "common/simion/workbench_seed.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend"
           ]
         }
       ]
@@ -1842,7 +1853,8 @@
           "id": "assembly_integrations_workflows_single_reflection_flight_field_plan_py",
           "source_repo_path": "integrations/workflows/single_reflection_flight/field_plan.py",
           "consumers": [
-            "single_reflection_flight"
+            "single_reflection_flight",
+            "cooled_frontend"
           ]
         },
         {

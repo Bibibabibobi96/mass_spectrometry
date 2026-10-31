@@ -22,6 +22,19 @@ from projects.dual_pressure_rectilinear_ion_processor.analysis.cooled_buncher im
 )
 
 
+def project_member_samples(frame: pd.DataFrame, kind: str, scale: float) -> pd.DataFrame:
+    """Project sampled source fields; preserve positions, names and raw data."""
+    if (isinstance(scale, bool) or not isinstance(scale, (int, float))
+            or not math.isfinite(scale) or (kind != "pulse_delta" and scale != 1)):
+        raise ValueError("invalid proven field member scale")
+    projected = frame.copy()
+    columns = ["potential_v", "ex_v_per_mm", "ey_v_per_mm", "ez_v_per_mm"]
+    projected[columns] = projected[columns] * scale
+    if not np.isfinite(projected[columns].to_numpy(dtype=float)).all():
+        raise ValueError("nonfinite projected field samples")
+    return projected
+
+
 def compose_samples(responses: dict[str, pd.DataFrame], coefficients: dict[str, float],
                     *, rf_amplitude_v: float) -> pd.DataFrame:
     """Compose measured DC and a guide-normalized unit RF response by point ID."""
@@ -155,9 +168,26 @@ def analyze_field_run(run: Path) -> dict:
     source = pd.read_csv(run/"inputs/release_global.csv")
     if len(source[["mass_amu","charge_state"]].drop_duplicates()) != 1:
         raise ValueError("single-species curvature design required")
-    paths = {p["kind"]:run/"results/cooled_field_probe"/(p["kind"]+".csv")
-             for p in read("cooled_field_plan.json")["working_points"]}
-    responses = {k:pd.read_csv(p) for k,p in paths.items()}
+    # Native probes sample the actual immutable source member.  A proven
+    # Laplace rescaling is a scientific projection, never a rewritten CSV.
+    from .runtime import KINDS, static_probe_analysis_records
+    stage = read("cooled_frontend_field_stage_receipt.json")
+    rows = stage["working_points"]
+    actual_probes = static_probe_analysis_records(run, rows)
+    probe_records = actual_probes["native_probe_records"]
+    paths = {kind: Path(record["path"]) for kind, record in probe_records.items()}
+    if tuple(row["kind"] for row in rows) != KINDS or set(paths) != set(KINDS):
+        raise ValueError("complete ordered field member evidence required")
+    responses = {}
+    projections = {}
+    for row in rows:
+        kind = row["kind"]
+        scale = row["field_scale"]
+        responses[kind] = project_member_samples(pd.read_csv(paths[kind]), kind, scale)
+        projections[kind] = dict(scale=scale, source_member=row,
+                                raw_probe_record=probe_records[kind])
+        if kind in actual_probes["probe_owner_manifest_records"]:
+            projections[kind]["probe_owner_manifest_record"] = actual_probes["probe_owner_manifest_records"][kind]
     output = run/"results/cooled_field_design"
     output.mkdir(exist_ok=False)
     try:
@@ -176,7 +206,8 @@ def analyze_field_run(run: Path) -> dict:
         result = dict(schema_version=1,role="cooled_frontend_actual_field_voltage_design",
                       design_status="target_not_identifiable_or_feasible",reason=str(error),
                       qualification="Native fields remain evidence; failed theory target does not qualify capture or focusing")
-    result["native_probe_records"] = {k:file_record(p) for k,p in paths.items()}
+    result["native_probe_records"] = probe_records
+    result["response_projections"] = projections
     result["target_record"] = file_record(run/"inputs/cooled_design_targets.json")
     (output/"voltage_design.json").write_text(json.dumps(result,indent=2,allow_nan=False)+"\n",encoding="utf-8",newline="\n")
     return result

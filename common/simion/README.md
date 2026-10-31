@@ -13,6 +13,7 @@
 |---|---|
 | 将已冻结的粒子状态投影和序列化为 FLY2 | [粒子序列化](particle_source.py)：`project_direct_velocity`共用6D、时间及直接速度投影；坐标变换、原ID映射和科学能量仍由消费者拥有 |
 | 序列化几何、检查孔拓扑 | [几何与 Workbench](#几何与-workbench) |
+| 冻结工作台seed小配套、定义独立Laplace成员 | [共用工作台种子与独立场成员](#共用工作台种子与独立场成员) |
 | 缓存 PA family、导出 standalone 工作点 | [PA 缓存与工作点](#pa-缓存与工作点) |
 | 长 PA 输入与缓存写隔离 | 先读[跨项目边界](../../docs/tools/SIMION_REFERENCE.md#长pa输入路径)，再读 [API 与证据](#长路径输入-api与证据) |
 | 读取原生 Fly 完成事实 | [原生完成事实](#原生完成事实) |
@@ -624,3 +625,11 @@ Windows能力依据（2026-08-26查阅）：Microsoft `MEMORYSTATUSEX/GlobalMemo
 - [MEMORYSTATUSEX](https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/ns-sysinfoapi-memorystatusex)
 - [.NET Process](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.process?view=net-10.0)
 - [taskkill](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/taskkill)
+
+## 共用工作台种子与独立场成员
+
+`workbench_seed.freeze_workbench_seed(run, repo)`只冻结官方一实例seed与必需placeholder的小配套对；
+同run再次消费核对已有副本，不能复制或替代科学PA family。local context与cooled的实际复用context共同调用，
+原local私有seed复制实现已删除。源资源的用途见[官方种子](assets/iob_instance_seeds/README.md)。
+独立Laplace身份继续由integration的`single_reflection_flight.field_plan.laplace_member_identity`提供；
+单反射domain与cooled七成员共用该投影，缓存事务仍归本目录，物理operator／边界条件由原owner校验。

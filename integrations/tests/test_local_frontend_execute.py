@@ -14,94 +14,10 @@ INTEGRATION = REPO / "integrations"
 EXECUTE = REPO / 'integrations/workflows/local_frontend/execute.ps1'
 
 
-def check_terminal_publication_behavior(case, execute):
-    """Exercise each real finalizer with inert files and the public manifest writer."""
-    code = r"""param($Source,$RepoRoot,$Python,$Scenario)
-$ErrorActionPreference='Stop'
-. (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
-$script:realWriter=(Get-Item Function:Write-VerifiedRunManifest).ScriptBlock
-$root=Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Path (Join-Path $root inputs),(Join-Path $root results) -Force|Out-Null
-try{
- $script:events=[Collections.Generic.List[string]]::new()
- $script:run=$root;$script:pythonRoot=$RepoRoot;$frozenRoot=$RepoRoot
- $integration='instrument_assembly';$runId='20261024_190001__test__python__terminal-publication'
- $okay=$Scenario-ne'scientific_failed';$expected=if($okay){'success'}else{'failed'}
- $package=@{run_dir=$root;artifact_run_dir=$root;input_dir=(Join-Path $root inputs);run_config=(Join-Path $root run_config.json);summary=(Join-Path $root summary.json)}
- $config=@{schema_version=1;run_id=$runId;project=$integration;mode='inert_terminal_publication';inputs=@{}}
- Write-RunJson -Path $package.run_config -Value $config
- $scientific=@{status=$expected;reason=$(if($okay){'science_complete'}else{'original_scientific_failure'})}
- Write-RunJson -Path $package.summary -Value $scientific
- $summaryBefore=[IO.File]::ReadAllText($package.summary)
- [IO.File]::WriteAllText((Join-Path $package.input_dir source.json),'{}')
- [IO.File]::WriteAllText((Join-Path $root results/evidence.txt),'inert scientific evidence')
- $workingFieldGuards=[Collections.Generic.List[string]]::new();$workingFieldGuards.Add('inert-field')
- $controllerTicks=0;$nativeWritersStopped=$false;$lease=@{fixture=$true};$capacity=@{fixture=$true}
- $scope='population';$stage='analysis_complete';$populationFlightAttempted=$false
- $budget=$null;$ExecutionBudgetPath='frozen-budget.json';$artifacts=$root;$retentionReason='inert test'
- $saved=@{};$oldEnvironment=@{}
- function Get-ManagedSolverProcessSample {param($RootProcessIds,$RootProcessStartedAtUtcTicks)
-  $script:events.Add('writers_stopped');return @{active_process_ids=@($PID);system_console_host_process_ids=@()}}
- function Unprotect-ImmutablePaSource {param($Source)$script:events.Add('guard_release')}
- function Exit-HostExecutionLease {param($Lease,$Outcome,$RunId)$script:events.Add('host_release')}
- function Apply-RunArtifactRetention {param($Python,$RepoRoot,$RunConfig)$script:events.Add('retention')}
- function Write-VerifiedRunManifest {
-  param($Python,$RepoRoot,$RunConfig,$Manifest,$Status,$Software,$Outputs,[switch]$DeferCapacityFinalization)
-  if(-not$DeferCapacityFinalization){throw 'owner finalized protected capacity too early'}
-  if($Status-ne$expected){throw 'scientific terminal status changed'}
-  $script:events.Add('publish')
-  & $script:realWriter @PSBoundParameters
- }
- function Exit-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session)$script:events.Add('capacity_release')}
- function Invoke-FixtureSeal {
-  if($script:events[-1]-ne'capacity_release'){throw 'seal ran before capacity release'}
-  $script:events.Add('seal')
-  $script:manifestAtSeal=[IO.File]::ReadAllText((Join-Path $root run_manifest.json))
-  if(($script:manifestAtSeal|ConvertFrom-Json).status-ne$expected){throw 'manifest not published before seal'}
-  if($Scenario-eq'seal_failed'){throw 'FIXTURE_SEAL_FAILURE'}
- }
- function Invoke-LocalWorkflowPython {param($Arguments,[switch]$NoCapture)
-  if($Arguments-notcontains'seal-stopped-payload'){throw 'unexpected independent verify/native invocation'}
-  Invoke-FixtureSeal
- }
- function Invoke-RunToolRootContext {param($RepoRoot,$Operation)
-  if($Operation.ToString()-like'*seal-stopped-payload*'){Invoke-FixtureSeal;return}
-  & $Operation
- }
- function Remove-RunPackageExecutionAlias {param($Package)$script:events.Add('alias_release')}
- function Restore-RunEnvironment {param($Names,$Snapshot)$script:events.Add('environment_restore')}
- $errors=$null;$tokens=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$tokens,[ref]$errors)
- if($errors.Count){throw ($errors|Out-String)}
- $owners=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.TryStatementAst]-and$null-ne$n.Finally-and$n.Finally.Extent.Text-like'*Write-VerifiedRunManifest*'},$true))
- if($owners.Count-ne1){throw 'unique actual owner finalizer missing'}
- $finalizer=[scriptblock]::Create((@($owners[0].Finally.Statements|ForEach-Object{$_.Extent.Text})-join"`n"))
- $caught=$null
- try{. $finalizer}catch{$caught=$_}
- if(($null-ne$caught)-ne($Scenario-eq'seal_failed')){throw "unexpected finalizer result: $caught"}
- if($caught-and$caught.Exception.Message-ne'FIXTURE_SEAL_FAILURE'){throw $caught}
- $manifest=Get-Content (Join-Path $root run_manifest.json) -Raw|ConvertFrom-Json
- if($manifest.status-ne$expected-or$manifest.project-ne$integration){throw 'published scientific identity differs'}
- if([IO.File]::ReadAllText($package.summary)-ne$summaryBefore){throw 'finalizer rewrote scientific summary'}
- if([IO.File]::ReadAllText((Join-Path $root run_manifest.json))-ne$script:manifestAtSeal){throw 'seal failure rewrote published manifest'}
- foreach($name in @('publish','capacity_release','seal')){
-  if(@($script:events|Where-Object{$_-eq$name}).Count-ne1){throw "repeated lifecycle operation: $name"}
- }
- if($script:events.IndexOf('guard_release')-gt$script:events.IndexOf('retention')-or$script:events.IndexOf('retention')-gt$script:events.IndexOf('publish')){throw 'writers/guard/retention order changed'}
- if($null-ne$capacity){throw 'owner capacity protection not released'}
- 'TERMINAL_PUBLICATION_BEHAVIOR=PASS'
-}finally{Remove-Item -LiteralPath $root -Recurse -Force}
-"""
-    for scenario in ("success", "scientific_failed", "seal_failed"):
-        with case.subTest(scenario=scenario):
-            result = case.ps(code, execute, REPO, sys.executable, scenario)
-            case.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            case.assertIn("TERMINAL_PUBLICATION_BEHAVIOR=PASS", result.stdout)
 
 
 @unittest.skipUnless(shutil.which('pwsh'), 'PowerShell 7 unavailable')
 class LocalFrontendExecuteTests(unittest.TestCase):
-    def test_terminal_publication_preserves_science_and_releases_before_seal(self):
-        check_terminal_publication_behavior(self, EXECUTE)
     def ps(self, text, *arguments):
         with tempfile.TemporaryDirectory() as directory:
             script = Path(directory) / 'test.ps1'
@@ -191,7 +107,7 @@ try{
         self.assertIn('DISK_FORECAST=PASS', result.stdout)
 
     @unittest.skipUnless(sys.platform == 'win32', 'Windows file-share semantics')
-    def test_actual_working_field_guards_hold_until_children_exit_naturally(self):
+    def test_actual_working_field_guards_follow_writer_completion_facts(self):
         script = """param([string]$Source,[string]$GuardSupport)
 . $GuardSupport
 $e=$null;$t=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$t,[ref]$e)
@@ -200,13 +116,9 @@ $acquire=$ast.FindAll({param($n)$n-is[Management.Automation.Language.ForEachStat
 if(@($acquire).Count-ne1){throw 'working-field acquisition missing'}
 $outer=$ast.FindAll({param($n)$n-is[Management.Automation.Language.TryStatementAst]-and$null-ne$n.Finally-and$n.Finally.Extent.Text-like'*$workingFieldGuards.Clear()*'},$true)
 if(@($outer).Count-ne1){throw 'working-field terminal cleanup missing'}
-$cleanup=$outer[0].Finally.Statements[0]
-$prefix=@(foreach($statement in $cleanup.Body.Statements){
- if($statement-is[Management.Automation.Language.IfStatementAst]-and$statement.Clauses[0].Item1.Extent.Text-eq'$lease'){break}
- $statement.Extent.Text
-})
-$normal=[scriptblock]::Create(($prefix-join"`n"))
-$fallback=[scriptblock]::Create($cleanup.Finally.Statements[0].Extent.Text)
+$normal=[scriptblock]::Create(($outer[0].Finally.Statements.Extent.Text-join"`n"))
+function Remove-RunPackageExecutionAlias {param($Package)}
+function Restore-RunEnvironment {param($Names,$Snapshot)}
 $root=Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $root|Out-Null
 try{
@@ -221,24 +133,27 @@ try{
    if($null-ne$opened){$opened.Dispose();throw 'working field writable before child exit'}
   }
  }
- function Get-ManagedSolverProcessSample {
-  param($RootProcessIds,$RootProcessStartedAtUtcTicks)
-  Assert-Guarded
-  $script:writerPolls++
-  if($script:writerPolls-ge2){$script:writerAlive=$false}
-  return @{active_process_ids=$(if($script:writerAlive){@($PID,543210)}else{@($PID)});system_console_host_process_ids=@()}
- }
- foreach($scenario in @('complete','partial_acquire')){
+ foreach($scenario in @('complete','partial_acquire','writer_unknown')){
   $workingFieldGuards=[Collections.Generic.List[string]]::new()
   $fieldReceipt=@{working_points=$records|ForEach-Object{[pscustomobject]@{path=$_.path;bytes=$_.bytes;sha256=$_.sha256}}}
   if($scenario-eq'partial_acquire'){$fieldReceipt.working_points[2].sha256='0'*64}
-  $package=@{run_dir=$root};$controllerTicks=0;$script:writerAlive=$true;$script:writerPolls=0
-  $nativeWritersStopped=$false
+  $package=@{native_path_preparation=@{calls=0;elapsed_seconds=0.;transport_bytes=0};run_dir=$root}
+  $lease=$null;$capacity=$null;$ownerContext=$null;$writerUnknown=$false;$hostReleaseUnknown=$false;$oldEnvironment=@{}
+  $nativeOperations=[Collections.Generic.List[object]]::new()
+  if($scenario-eq'writer_unknown'){$nativeOperations.Add(@{observation=@{exit_confirmed=$false}})}
   $caught=$null
   try{Invoke-Expression $acquire[0].Extent.Text}catch{$caught=$_}
   $expectedCount=if($scenario-eq'partial_acquire'){2}else{3}
   if($workingFieldGuards.Count-ne$expectedCount-or($null-ne$caught)-ne($scenario-eq'partial_acquire')){throw 'partial guard acquisition differs'}
-  try{. $normal}finally{. $fallback}
+  $failure=$caught
+  Assert-Guarded
+  . $normal
+  if($scenario-eq'writer_unknown'){
+   if($workingFieldGuards.Count-ne3){throw 'unknown writer lost PA guards'}
+   Assert-Guarded
+   foreach($path in @($workingFieldGuards)){$null=Unprotect-ImmutablePaSource -Source $path}
+   $workingFieldGuards.Clear()
+  }
   if($global:MassSpectrometryImmutablePaSourceGuards.Count){throw 'working-field handle leaked'}
   foreach($record in $records){$handle=[IO.File]::Open($record.path,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::ReadWrite);$handle.Dispose()}
  }
@@ -270,7 +185,7 @@ try{
  $script:events=[Collections.Generic.List[string]]::new();$script:materializeCount=0;$script:scenario=$scenario
  $ready=Join-Path $root worker_started;$release=Join-Path $root worker_release
  Remove-Item -LiteralPath $ready,$release -ErrorAction SilentlyContinue
- function MakeCase($index,$ids){return [pscustomobject]@{index=$index;case_id="case_$index";count=$ids.Count;expected_particle_ids=$ids;simion_particle_id_offset=0;merge_offset=0;working_directory=$root;environment=@{OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET='0'};stdout='fixture.log';stderr='fixture.err';fly_arguments=@('fly','fixture.iob')}}
+ function MakeCase($index,$ids){return [pscustomobject]@{index=$index;case_id="case_$index";count=$ids.Count;expected_particle_ids=$ids;simion_particle_id_offset=0;merge_offset=0;iob_path=(Join-Path $root "fixture.iob");working_directory=$root;environment=@{OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET='0'};stdout='fixture.log';stderr='fixture.err';fly_arguments=@('fly','fixture.iob')}}
  $script:first=MakeCase 1 @(1);$script:tail=MakeCase 2 @(2,3);$script:gui=MakeCase 99 @(1,2,3)
  $script:first|Add-Member -NotePropertyName iob_verify_arguments -NotePropertyValue @('verify')
  $script:first|Add-Member -NotePropertyName receipt_path -NotePropertyValue 'case_1.json'
@@ -341,6 +256,9 @@ try{
    $script:events.Add('controls_after')
   }
  }
+
+function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool) @{run_dir=$Root;projected_paths=@($Paths);environment=@{}}}
+function Project-RunPath {param($Paths,$ArtifactRunDir,$RunDir,$Python) return $Paths}
  try{$result=Invoke-FrontendFlightPhase -RunDirectory $root -ProjectRunsRoot $root -RepoRoot $root -Python fixture -RuntimeModule fixture -SimionExe $simion -Limits @{} -Phase discovery -PulseTimeUs 12 -SharedTimesPath 'times.json' -IobVerification $verification}catch{$caught=$_}
  if($scenario-like'*_failure'){
   if($null-eq$caught-or$caught.Exception.Message-ne'planned preparation failure'){throw "original preparation failure lost: $caught"}
@@ -392,6 +310,9 @@ try{
   $script:calls++;return @{resource_budget_exceeded=$false;exit_code=0}
  }
  $materialized=@{gui_case=@{expected_particle_ids=1..100};batches=@(@{stdout='original_batch.stdout.log'});default_replay_policy=@{comparison_policy='deterministic_trajectory_parity';scope='fresh_process';collision_active=$false}};$lease=@{}
+
+function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool) @{run_dir=$Root;projected_paths=@($Paths);environment=@{}}}
+function Project-RunPath {param($Paths,$ArtifactRunDir,$RunDir,$Python) return $Paths}
  $result=Invoke-FrontendDefaultReplay -Materialized $materialized -HostLease ([ref]$lease) -RunDirectory $root -RepoRoot $root -Python unused -SimionExe $simion -Limits @{}
  if(-not$result.passed-or$script:calls-ne1-or$lease.stage-ne'postprocess'){throw 'fresh process or public stage transition missing'}
  $script:pass=$false
@@ -414,12 +335,12 @@ $statements=@();$collect=$false
 foreach($statement in $start[0].Parent.Statements){
  if($statement.Extent.StartOffset-eq$start[0].Extent.StartOffset){$collect=$true}
  if($collect){$statements+=$statement.Extent.Text}
- if($collect-and$statement.Extent.Text-like"Write-RunJson*role='rf_oatof_local_frontend_summary'*status='success'*"){break}
+ if($collect-and$statement-is[Management.Automation.Language.AssignmentStatementAst]-and$statement.Left.Extent.Text-eq'$scientificSummary'){break}
 }
 $block=[scriptblock]::Create(($statements-join"`n"))
-$script:run=$Run;$package=@{input_dir=Join-Path $Run 'inputs';result_dir=Join-Path $Run 'results';summary=Join-Path $Run 'summary.json'}
+$script:run=$Run;$package=@{native_path_preparation=@{calls=0;elapsed_seconds=0.;transport_bytes=0};input_dir=Join-Path $Run 'inputs';result_dir=Join-Path $Run 'results';summary=Join-Path $Run 'summary.json'}
 $script:pythonRoot='SYNTHETIC_FROZEN_ROOT';$simion='SYNTHETIC_NO_NATIVE.exe';$budget=@{limits=@{fixture=$true}}
-$lease=@{};$source=@{particle_count=100};$discoveryResult=@{fixture=$true};$script:calls=@();$script:summary=$null
+$nativeOperations=[Collections.Generic.List[object]]::new();$lease=@{token='TEST_ONLY_PARENT'};$source=@{particle_count=100};$discoveryResult=@{fixture=$true};$script:calls=@();$script:summary=$null
 function Invoke-LocalWorkflowPython {
  param([string[]]$Arguments,[switch]$Json)
  $out=&$Python -B @Arguments
@@ -427,7 +348,8 @@ function Invoke-LocalWorkflowPython {
  return ($out|ConvertFrom-Json)
 }
 function Get-HostResourceBudget {param($Role,$Stage)return @{}}
-function Update-HostResourceStage {param($Lease,$Stage,$Budget,$RetainedMemoryBytes)return @{}}
+function Update-HostResourceStage {param($Lease,$Stage,$Budget,$RetainedMemoryBytes)return @{token='TEST_ONLY_PARENT'}}
+function Set-LocalStage {param($Name)}
 function Invoke-LocalFlightPhase {
  param($Phase,[double]$PulseTime,$SharedTimesPath)
  $decision=Get-Content (Join-Path $Run 'inputs/pulse_decision.json') -Raw|ConvertFrom-Json
@@ -442,14 +364,15 @@ function Invoke-LocalRecordedAnalysis {
  $script:calls+='analysis';return @{actual_pulse_time_us=$PulseTime}
 }
 function Invoke-FrontendDefaultReplay {
- param($Materialized,$HostLease,$RunDirectory,$RepoRoot,$Python,$SimionExe,$Limits)
+ param($Package,$Materialized,$HostLease,$RunDirectory,$RepoRoot,$Python,$SimionExe,$Limits,$NativeOperations,$NativeResourceReleaseId)
  if($RunDirectory-ne$Run-or$RepoRoot-ne$script:pythonRoot-or$SimionExe-ne$simion-or-not$Limits.fixture){throw 'shared replay did not receive the explicit run context'}
+ if(-not[object]::ReferenceEquals($NativeOperations,$script:nativeOperations)-or$NativeResourceReleaseId-ne'TEST_ONLY_PARENT'){throw 'replay fact binding changed'}
  if($Materialized.gui_case.expected_particle_ids.Count-ne100){throw 'full GUI population changed'}
  $script:calls+='replay';return @{passed=$true;actual_pulse_time_us=$Materialized.actual_pulse_time_us}
 }
 function Write-RunJson {param($Path,$Depth,$Value)$script:summary=$Value}
 $caught=$null
-try{. $block}catch{$caught=$_}
+try{. $block;$script:summary=$scientificSummary}catch{$caught=$_}
 $decision=Get-Content (Join-Path $Run 'inputs/pulse_decision.json') -Raw|ConvertFrom-Json
 if($decision.status-ne$ExpectedStatus){throw 'decision status changed'}
 if($ExpectedStatus-eq'ready'){

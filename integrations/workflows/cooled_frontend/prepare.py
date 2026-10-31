@@ -63,10 +63,12 @@ def validate_request(request: dict) -> None:
     """Validate authored physics/numerics before source I/O or output writes."""
     required = {"schema_version", "role", "source", "accelerator_component", "composition_plan", "numerics", "conditioner", "drive", "pressure_scale", "pulse", "diagnostics",
                 "field_source", "common_pulse_decision", "design_targets"}
-    if set(request) not in (required, required | {"local_scope"}):
+    if not required <= set(request) or set(request) - required - {"local_scope", "verify_saved_workbench_replay"}:
         raise ValueError("cooled request fields differ from the current contract")
     if type(request["schema_version"]) is not int or request["schema_version"] != 3 or request["role"] != ROLE:
         raise ValueError("unsupported cooled frontend request")
+    if type(request.get("verify_saved_workbench_replay", False)) is not bool:
+        raise ValueError("verify_saved_workbench_replay must be a boolean")
     record = request["composition_plan"]
     if (not isinstance(record, dict) or not {"path", "bytes", "sha256"} <= set(record)
             or not set(record) <= {"path", "bytes", "sha256", "exists", "retention_role"}
@@ -170,6 +172,7 @@ def prepare_cooled_frontend(request_path: Path, output_directory: Path | None,
     request_path = Path(request_path).resolve(strict=True)
     request = _load(request_path)
     validate_request(request)
+    request = {**request, "verify_saved_workbench_replay": request.get("verify_saved_workbench_replay", False)}
     parent_record = request["composition_plan"]
     parent_path = record_path(parent_record, base_dir=request_path.parent)
     frozen_parent = None
@@ -243,6 +246,7 @@ def prepare_cooled_frontend(request_path: Path, output_directory: Path | None,
     if numerical["collision_seed"] + len(rows)-1 > 2147483646:
         raise ValueError("per-original-ID collision seeds exceed the existing integer contract")
     result = dict(schema_version=1, role="instrument_assembly_cooled_frontend_preparation", status="validated", particle_count=len(rows),
+                  default_replay_requested=request["verify_saved_workbench_replay"],
                   pressure_scale=request["pressure_scale"], frontend=frontend, conditioner=conditioner,
                   field_plan=field_plan, probe_plan=probe_plan, input_records={k: dict(path=str(v), exists=True, bytes=request["source"][k]["bytes"], sha256=request["source"][k]["sha256"].upper()) for k, v in paths.items()} | clock["records"],
                   assembly_plan=plan, geometry_gem=gem,

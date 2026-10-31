@@ -846,3 +846,12 @@ paired static/pulse 的原 PowerShell 入口消费现有 Initialize/Complete own
 删除各自重复 retention、manifest、容量释放和 seal 控制。实际求解器进程完成与 host release 分别运输，
 沿原输入冻结和持久 Result 恢复，不改父结果；未知完成保留保护。公共故障矩阵仍由本 owner 维护，
 paired 只验证实际参数、原始错误／载荷传递及入口恢复。
+
+### Local/cooled 消费者的公共收尾
+
+local_frontend与cooled_frontend原入口接入同一PowerShell owner及`-ResumeFinalization -ResultPath <原Result>`。
+消费者运输真实进程／释放事实、原异常与原始结果，删除私有retention／manifest／seal收尾。
+普通未请求的保存工作台回放明确`not_requested`；这不改写科学Fly完成事实或其失败状态。
+消费者验证参数和错误传播，完整收尾故障矩阵继续只在公共owner维护。
+恢复只接受原Result，新增预算、Python或执行范围参数在调用owner前拒绝；
+原failed终态在收尾完成后仍非零退出，并明确区分原科学失败与未完成收尾。

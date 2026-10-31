@@ -24,6 +24,7 @@ from integrations.workflows.cooled_frontend import reference, runtime
 from integrations.workflows.local_frontend import runtime as shared
 from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from common.simion.particle_batching import plan_single_wave_batches
+from common.simion import pa_family_cache
 
 
 def write(path,value):
@@ -32,6 +33,85 @@ def write(path,value):
 
 
 class SharedFieldIdentityTests(unittest.TestCase):
+    def test_complete_legacy_aggregate_can_supply_members_without_relabeling_source(self):
+        # Recreate the documented schema2 shape using one real public cache
+        # transaction with INERT bytes. No historical artifact is rewritten.
+        rows, _ = runtime.published_members(self.owner)
+        members = [rows[kind] for kind in runtime.KINDS]
+        first = members[0]["raw_identity"]
+        identity = dict(first, geometry=dict(dimensions=first["geometry"]["dimensions"]),
+            working_points=[dict(row["raw_identity"]["working_points"][0],
+                                 output_basename=Path(row["path"]).name) for row in members],
+            rf_reference_voltage_v=1., builder_identity=dict(
+                operating_point=first["builder_identity"]["operating_builder"],
+                standalone_export=first["builder_identity"]["exporter"]))
+        names = [Path(row["path"]).name for row in members]
+        cache = self.workspace/"legacy_cache"
+        status = pa_family_cache.advance_pa_family_cache_transaction(cache, identity, names, owner="inert-schema2")
+        for name in names:
+            (status.build_directory/name).write_bytes(b"INERT_SCHEMA2_NOT_NATIVE"*3)
+        status = pa_family_cache.advance_pa_family_cache_transaction(cache, identity, names)
+        transaction = pa_family_cache.load_pa_family_cache_transaction(cache,status.cache_key)
+        report = self.owner/"inputs/legacy_inert_verification.txt"
+        report.write_text("INERT_SCHEMA2_TRANSACTION_ONLY",encoding="utf-8")
+        verifier = Path(runtime.__file__).with_name("verify_cooled_fields.lua")
+        evidence = dict(schema_version=1,role="simion_pa_family_verification",status="pass",
+            cache_key=status.cache_key,inventory_sha256=transaction["inventory_sha256"],
+            solver_release="SIMION 2020",verifier_path=str(verifier),verifier_sha256=file_record(verifier)["sha256"],
+            verification_output_path=str(report),verification_output_sha256=file_record(report)["sha256"])
+        status = pa_family_cache.advance_pa_family_cache_transaction(cache,identity,names,verification_evidence=evidence)
+        generation = pa_family_cache.validate_pa_family_cache_generation(status.generation_directory,verify_payload=False)
+        native_rows = [dict(row,path=str(status.generation_directory/row["name"]),kind=kind,read_only=True)
+                       for kind,row in zip(runtime.KINDS, sorted(generation["files"],key=lambda row:names.index(row["name"])))]
+        identity_path = self.owner/"inputs/cooled_field_cache_identity.json"
+        write(identity_path,identity)
+        stage_path = self.owner/"inputs/cooled_frontend_field_stage_receipt.json"
+        previous = json.loads(stage_path.read_text())
+        bank_path = Path(previous["field_bank_path"])
+        bank = json.loads(bank_path.read_text());bank["dynamic_roles"][0].pop("pulse_delta_scale")
+        write(bank_path,bank)
+        stage = dict(schema_version=2,role=runtime.FIELD_ROLE,status="success",working_points=native_rows,
+            geometry_record=previous["geometry_record"],field_plan_record=previous["field_plan_record"],
+            cache_identity_record=file_record(identity_path),cache_key=status.cache_key,
+            generation_directory=str(status.generation_directory),generation_sha256=generation["generation_sha256"],
+            field_bank_path=str(bank_path),field_bank_record=file_record(bank_path))
+        write(stage_path,stage)
+        manifest = self.owner/"run_manifest.json"
+        owner=json.loads(manifest.read_text());owner["inputs"].update(stage=file_record(stage_path),
+            legacy_identity=file_record(identity_path),bank=file_record(bank_path));owner["outputs"]=native_rows
+        # The stage key has the original receipt path, so replace its prior
+        # record as well as exposing the canonical legacy evidence names.
+        owner["inputs"]["field_stage"]=file_record(stage_path)
+        write(manifest,owner)
+        parent_before = manifest.read_bytes()
+        self.envelope.update(field_stage_receipt_record=file_record(stage_path),
+                             source_owner_manifest_record=file_record(manifest))
+        envelope=self.workspace/"artifacts/legacy_source.json";write(envelope,self.envelope)
+        self.request["field_source"]=file_record(envelope);write(self.request_path,self.request)
+        consumer=self.workspace/"artifacts/integrations/test_integration/runs/legacy_consumer"
+        prepare_cooled_frontend(self.request_path,consumer,REPO,self.workspace,run_id="20261022_120000__test__python__legacy-consumer")
+        actual=fields(consumer)
+        self.assertEqual({row["cache_key"] for row in actual["records"].values()},{status.cache_key})
+        self.assertTrue(all(row["source_schema_version"]==2 for row in actual["records"].values()))
+        native = first["simion_identity"]
+        write(consumer/"inputs/native_discovery.json",dict(bytes=native["executable_bytes"],
+            sha256=native["executable_sha256"],file_version=native["file_version"]))
+        plan_path=consumer/"inputs/cooled_field_plan.json"
+        plan=json.loads(plan_path.read_text())
+        pulse=next(row for row in plan["working_points"] if row["kind"]=="pulse_delta")
+        pulse["electrode_voltages_v"]={key:value*2 for key,value in pulse["electrode_voltages_v"].items()}
+        write(plan_path,plan)
+        candidate=runtime.field_cache_plan(consumer,cache_root=self.workspace/"target_cache")
+        planned=candidate["domains"][0]["members"]
+        self.assertTrue(all(row["frozen_field_source"]["cache_key"]==status.cache_key for row in planned))
+        self.assertEqual(next(row for row in planned if row["member_id"]=="pulse_delta")["field_scale"],2.)
+        result=runtime.finalize_field_stage(consumer,candidate,{})
+        self.assertEqual(result["receipt"]["actual_refine_count"],0)
+        self.assertEqual(result["receipt"]["aggregate_pa_copy_bytes"],0)
+        self.assertEqual(fields(consumer)["bank"]["dynamic_roles"][0]["pulse_delta_scale"],2.)
+        self.assertFalse((self.workspace/"target_cache").exists())
+        self.assertEqual(manifest.read_bytes(),parent_before)
+
     def setUp(self):
         # Reference science fixtures use an unmanaged inert cache. Durable pin
         # behavior is exercised with the real governed cache in test_cooled_frontend.
@@ -56,7 +136,8 @@ class SharedFieldIdentityTests(unittest.TestCase):
         write(manifest,dict(status="success",run_config=file_record(config),inputs=dict(
             field_profile=file_record(profile),field_stage=file_record(Path(receipt["receipt_path"])),
             geometry=receipt["receipt"]["geometry_record"],field_plan=receipt["receipt"]["field_plan_record"],
-            cache_identity=receipt["receipt"]["cache_identity_record"]),outputs=records))
+            **{f"member_{i}":row["requested_identity_record"] for i,row in enumerate(records)},
+            **{f"source_member_{i}":row["cache_identity_record"] for i,row in enumerate(records)}),outputs=records))
         self.envelope=dict(schema_version=1,role="rf_oatof_cooled_frontend_field_source",
             field_stage_receipt_record=file_record(Path(receipt["receipt_path"])),
             source_owner_manifest_record=file_record(manifest),source_owner_profile_record=file_record(profile))
@@ -83,9 +164,9 @@ class SharedFieldIdentityTests(unittest.TestCase):
         self.assertEqual((consumer/"inputs/cooled_field_source_run_config.json").read_bytes(),(self.owner/"run_config.json").read_bytes())
         self.assertFalse(any(Path(call.args[0]).suffix==".pa" for call in checked.call_args_list))
         stage=json.loads(Path(resolved["receipt"]["path"]).read_text())
-        transaction=runtime.load_pa_family_cache_transaction(self.workspace/"cache",stage["cache_key"])
+        transaction=runtime.load_pa_family_cache_transaction(self.workspace/"cache",stage["working_points"][0]["cache_key"])
         with patch.object(runtime,"load_pa_family_cache_transaction",return_value=dict(transaction,status="building")):
-            with self.assertRaisesRegex(ValueError,"not published"):
+            with self.assertRaisesRegex(ValueError,"not its exact published"):
                 fields(consumer)
 
     def test_fields_hashes_each_distinct_geometry_and_plan_once(self):
@@ -105,7 +186,7 @@ class SharedFieldIdentityTests(unittest.TestCase):
                 path=run/"inputs"/name;content=path.read_bytes()
                 path.write_bytes(content+b"\n")
                 try:
-                    with self.assertRaisesRegex(ValueError,"frozen small-file identity differs|pressure control changed"):
+                    with self.assertRaisesRegex(ValueError,"frozen small-file identity differs|pressure control changed|requested seven-member operator"):
                         fields(run)
                 finally:
                     path.write_bytes(content)
@@ -387,6 +468,46 @@ class SharedFieldIdentityTests(unittest.TestCase):
 
 
 class ReferenceTrialTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 unavailable")
+    def test_reference_unknown_writer_keeps_guards_and_cleanup_preserves_cause(self):
+        code = r"""param($Support,$Root)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. $Support
+function Invoke-FrontendRuntimePython {
+ param($Python,$RepoRoot,$RunDirectory,$Name,$Arguments,[switch]$Json)
+ if($Name-eq'reference_prepare'){return @{working_points=@(@{path='INERT_FIELD';bytes=1;sha256='TEST_ONLY'});shared_times_path='INERT_TIMES'}}
+ throw 'ORIGINAL_REFERENCE_ANALYSIS_FAILURE'
+}
+function Protect-ImmutablePaSource {param($Source,$ExpectedBytes,$ExpectedSha256);$script:protected++}
+function Unprotect-ImmutablePaSource {param($Source);$script:released++;if($mode-eq'cleanup_failure'){throw 'SECONDARY_GUARD_RELEASE_FAILURE'}}
+function Get-HostResourceBudget {param($Role,$Stage);return @{}}
+function Update-HostResourceStage {param($Lease,$Stage,$Budget,$RetainedMemoryBytes);return $Lease}
+function Invoke-FrontendFlightPhase {
+ param($Package,$RunDirectory,$ProjectRunsRoot,$RepoRoot,$Python,$RuntimeModule,$SimionExe,$Limits,$Phase,$PulseTimeUs,$SharedTimesPath,$NativeOperations,$NativeResourceReleaseId)
+ if(-not[object]::ReferenceEquals($NativeOperations,$script:operations)-or$NativeResourceReleaseId-ne'actual-reference-grant'){throw 'Reference omitted actual native fact authority'}
+ if($mode-eq'unknown_data'){
+  try{throw 'ORIGINAL_REFERENCE_OBSERVATION_FAILURE'}catch{$_.Exception.Data['simion_wave_writer_completion_confirmed']=$false;throw}
+ }
+ $NativeOperations.Add(@{observation=@{exit_confirmed=($mode-ne'unknown_fact')}})
+ if($mode-eq'unknown_fact'){throw 'ORIGINAL_REFERENCE_OBSERVATION_FAILURE'}
+}
+foreach($mode in @('unknown_data','unknown_fact','known','cleanup_failure')){
+ $script:protected=0;$script:released=0;$script:operations=[Collections.Generic.List[object]]::new();$lease=@{};$caught=$null
+ try{$null=Invoke-CooledReferenceCalibration -Package @{artifact_run_dir=$Root;input_dir=$Root} -RepoRoot INERT -Python INERT -SimionExe INERT -Limits @{} -ProjectRunsRoot $Root -HostLease ([ref]$lease) -NativeOperations $operations -NativeResourceReleaseId 'actual-reference-grant'}catch{$caught=$_}
+ if($null-eq$caught-or$protected-ne1-or$released-ne$(if($mode-like'unknown*'){0}else{1})){throw 'Reference guard lifetime differs from actual writer facts'}
+ $expected=if($mode-like'unknown*'){'ORIGINAL_REFERENCE_OBSERVATION_FAILURE'}else{'ORIGINAL_REFERENCE_ANALYSIS_FAILURE'}
+ if($caught.Exception.Message-ne$expected){throw 'Reference primary cause was replaced'}
+ if($mode-eq'cleanup_failure'-and$caught.Exception.Data['reference_guard_release_error'].Exception.Message-ne'SECONDARY_GUARD_RELEASE_FAILURE'){throw 'Reference cleanup cause was lost'}
+}
+"""
+        with tempfile.TemporaryDirectory() as temporary:
+            script = Path(temporary)/"reference_failure.ps1"
+            script.write_text(code, encoding="utf-8", newline="\n")
+            result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script),
+                str(REPO/"integrations/workflows/cooled_frontend/reference_support.ps1"), temporary],
+                cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+
     def test_each_native_trial_keeps_clock_without_duplicating_complete_events(self):
         for count in (0, 1, 2):
             with self.subTest(exit_count=count), tempfile.TemporaryDirectory() as temporary:

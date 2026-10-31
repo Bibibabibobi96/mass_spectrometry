@@ -7,14 +7,16 @@ function Invoke-CooledReferenceCalibration {
   [Parameter(Mandatory)]$Package,[Parameter(Mandatory)][string]$RepoRoot,
   [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$SimionExe,
   [Parameter(Mandatory)]$Limits,[Parameter(Mandatory)][string]$ProjectRunsRoot,
-  [Parameter(Mandatory)][ref]$HostLease
+  [Parameter(Mandatory)][ref]$HostLease,
+  $NativeOperations=$null,[string]$NativeResourceReleaseId='simion'
  )
  $module='integrations.workflows.cooled_frontend.reference'
- $context=@{Python=$Python;RepoRoot=$RepoRoot;RunDirectory=[string]$Package.run_dir}
+ $context=@{Python=$Python;RepoRoot=$RepoRoot;RunDirectory=[string]$Package.artifact_run_dir}
  $metadata=Invoke-FrontendRuntimePython @context -Name reference_prepare `
   -Arguments @('-m',$module,'prepare-reference','--run',[string]$Package.artifact_run_dir) -Json
  $guards=[Collections.Generic.List[string]]::new()
  $trials=[Collections.Generic.List[object]]::new()
+ $referenceFailure=$null;$referenceWriterUnknown=$false
  try{
   foreach($record in $metadata.working_points){
    $null=Protect-ImmutablePaSource -Source ([string]$record.path) -ExpectedBytes ([long]$record.bytes) -ExpectedSha256 ([string]$record.sha256)
@@ -23,9 +25,10 @@ function Invoke-CooledReferenceCalibration {
   $trialPath=Join-Path $Package.input_dir 'reference_observed_trials.json'
   $verifiedTrial=$null
   $HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage flight -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
-  $null=Invoke-FrontendFlightPhase -RunDirectory $Package.run_dir -ProjectRunsRoot $ProjectRunsRoot `
+  $null=Invoke-FrontendFlightPhase -RunDirectory $Package.artifact_run_dir -ProjectRunsRoot $ProjectRunsRoot `
    -RepoRoot $RepoRoot -Python $Python -RuntimeModule $module -SimionExe $SimionExe -Limits $Limits `
-   -Phase held_off -SharedTimesPath ([string]$metadata.shared_times_path)
+   -Phase held_off -SharedTimesPath ([string]$metadata.shared_times_path) `
+   -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId
   $discovery=Invoke-FrontendRuntimePython @context -Name reference_collect_held_off `
    -Arguments @('-m',$module,'collect-trial','--run',[string]$Package.artifact_run_dir,'--phase','held_off') -Json
   if($discovery.status-ne'window_observed'){throw "Reference calibration stopped: held-OFF discovery status=$($discovery.status); native evidence retained."}
@@ -51,9 +54,10 @@ print(json.dumps(propose_common_pulse(trials,target_y_mm=metadata['target_y_mm']
     $pulse=[double]$proposal.proposal_time_us
    }
    $HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage flight -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
-   $null=Invoke-FrontendFlightPhase -RunDirectory $Package.run_dir -ProjectRunsRoot $ProjectRunsRoot `
+   $null=Invoke-FrontendFlightPhase -RunDirectory $Package.artifact_run_dir -ProjectRunsRoot $ProjectRunsRoot `
     -RepoRoot $RepoRoot -Python $Python -RuntimeModule $module -SimionExe $SimionExe -Limits $Limits `
-    -Phase $phase -PulseTimeUs $pulse -SharedTimesPath ([string]$metadata.shared_times_path)
+    -Phase $phase -PulseTimeUs $pulse -SharedTimesPath ([string]$metadata.shared_times_path) `
+    -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId
    $trial=Invoke-FrontendRuntimePython @context -Name ("reference_collect_"+$phase) `
     -Arguments @('-m',$module,'collect-trial','--run',[string]$Package.artifact_run_dir,'--phase',$phase) -Json
    $trials.Add($trial)
@@ -82,7 +86,17 @@ print(json.dumps(dict(decision=decision,decision_record=file_record(output.resol
    -Arguments @('-c',$freeze,[string]$metadata.metadata_path,$trialPath,(Join-Path $Package.result_dir 'reference/common_pulse_decision.json'),$verifiedPath) -Json
   return [pscustomobject]@{discovery=$discovery;reference_trials=$trials.ToArray();common_pulse_decision=$decision;mother_count=[int]$metadata.mother_count;
    simulated_reference_count=1;mother_population_flight=$false;qualification='Native cold-reference centering only; original-mother capture and population focusing remain unverified.'}
+ }catch{
+  $referenceFailure=$_
+  if(($_.Exception.Data.Contains('observed_process_exit_confirmed')-and-not[bool]$_.Exception.Data['observed_process_exit_confirmed'])-or
+     ($_.Exception.Data.Contains('simion_wave_writer_completion_confirmed')-and-not[bool]$_.Exception.Data['simion_wave_writer_completion_confirmed'])){$referenceWriterUnknown=$true}
+  throw
  }finally{
-  foreach($path in $guards){$null=Unprotect-ImmutablePaSource -Source $path}
+  if($null-ne$NativeOperations-and@($NativeOperations|Where-Object{-not$_.observation.exit_confirmed}).Count){$referenceWriterUnknown=$true}
+  if(-not$referenceWriterUnknown){
+   try{foreach($path in $guards){$null=Unprotect-ImmutablePaSource -Source $path}}catch{
+    if($referenceFailure){$referenceFailure.Exception.Data['reference_guard_release_error']=$_}else{throw}
+   }
+  }
  }
 }

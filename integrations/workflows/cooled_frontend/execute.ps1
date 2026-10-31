@@ -1,6 +1,8 @@
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName="Run")]
 param(
- [Parameter(Mandatory)][string]$Request,
+ [Parameter(Mandatory,ParameterSetName="Run")][string]$Request,
+ [Parameter(Mandatory,ParameterSetName="Resume")][switch]$ResumeFinalization,
+ [string]$ResultPath='',
  [string]$RepoRoot=(Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))),
  [string]$Python='',
  [switch]$ValidateOnly,[switch]$PrepareOnly,[switch]$SolverAuthorized,
@@ -8,18 +10,36 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
+if(-not$ResumeFinalization){
 if(([int][bool]$ValidateOnly+[int][bool]$PrepareOnly+[int][bool]$SolverAuthorized)-ne1){throw 'Select exactly one cooled frontend execution mode.'}
 if(($FieldDesignOnly-or$ReferenceCalibrationOnly)-and-not$SolverAuthorized){throw 'FieldDesignOnly requires SolverAuthorized; it changes execution scope only.'}
 if($PrepareOnly-and-not$OutputDirectory){throw 'PrepareOnly requires a managed OutputDirectory.'}
 if(-not$PrepareOnly-and$OutputDirectory){throw 'OutputDirectory belongs to PrepareOnly.'}
 if($SolverAuthorized-and-not$ExecutionBudgetPath){throw 'SolverAuthorized requires an execution budget.'}
 if($FieldDesignOnly-and$ReferenceCalibrationOnly){throw 'Select one cooled execution scope.'}
+}
+$RepoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
+. (Join-Path $RepoRoot 'common/contracts/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
+if($ResumeFinalization){
+ $resumeOverrides=@('Python','ValidateOnly','PrepareOnly','SolverAuthorized','OutputDirectory','ExecutionBudgetPath','FieldDesignOnly','ReferenceCalibrationOnly')
+ if(@($resumeOverrides|Where-Object{$PSBoundParameters.ContainsKey($_)}).Count){throw 'ResumeFinalization uses the original frozen operation; new input or execution-scope arguments are not accepted.'}
+ if(-not$ResultPath){throw 'ResumeFinalization requires the original ResultPath.'}
+ $prior=Get-Content -LiteralPath $ResultPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+ $result=Invoke-RunArtifactWorkflow -RequestPath (Join-Path $prior.run_directory 'inputs/execution_request.json') -ResultPath $ResultPath -ResumeFinalization
+ Write-Output $result
+ if($result.status-ne'success'){
+  if($result.stage-eq'complete'){throw ("Cooled finalization completed; original terminal status is {0}. Inspect Result for the original failure."-f[string]$result.status)}
+  throw 'Cooled finalization remains incomplete; inspect Result recovery_action.'
+ }
+ return
+}
 $RepoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
 if(-not$Python){$Python=Join-Path $RepoRoot '.venv/Scripts/python.exe'}
 $Python=(Resolve-Path -LiteralPath $Python).Path
 $Request=(Resolve-Path -LiteralPath $Request).Path
 . (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
 . (Join-Path $RepoRoot 'common/paths/workspace_paths.ps1')
+$pathContext=Resolve-WorkspacePaths -SourceRoot $RepoRoot -Python $Python
 . (Join-Path $RepoRoot 'integrations/runtime/engineering_budget.ps1')
 . (Join-Path $RepoRoot 'common/resource_budget_support.ps1')
 . (Join-Path $RepoRoot 'common/simion/short_pa_path_support.ps1')
@@ -41,90 +61,150 @@ function Invoke-CooledNative {
   [Parameter(Mandatory)][pscustomobject]$Package,
   [Parameter(Mandatory)][string[]]$Arguments,[Parameter(Mandatory)][string]$Name,
   [Parameter(Mandatory)][string]$RunDirectory,[Parameter(Mandatory)][string]$SimionExe,
-  [Parameter(Mandatory)]$Limits,[Parameter(Mandatory)][string]$WorkingDirectory
+  [Parameter(Mandatory)]$Limits,[Parameter(Mandatory)][string]$WorkingDirectory,
+  $NativeOperations=$null,[string]$NativeResourceReleaseId='simion'
  )
- $RunDirectory=[string]$Package.artifact_run_dir
  $nativePaths=@($WorkingDirectory)+@($Arguments|Where-Object{[IO.Path]::IsPathFullyQualified([string]$_)})
  $execution=Get-RunNativeExecutionContext -Package $Package -Paths $nativePaths -Tool SIMION
  $projected=Project-RunPath -Paths (@($WorkingDirectory)+$Arguments) -ArtifactRunDir $Package.artifact_run_dir -RunDir $execution.run_dir -Python $Package.python
+ try{
  $result=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $RunDirectory -FilePath $SimionExe `
   -ArgumentList @($projected|Select-Object -Skip 1) -WorkingDirectory $projected[0] -Environment $execution.environment `
   -UsagePath (Join-Path $RunDirectory "logs/$Name.resource_usage.json") `
   -RedirectStandardOutput (Join-Path $RunDirectory "logs/$Name.stdout.log") `
   -RedirectStandardError (Join-Path $RunDirectory "logs/$Name.stderr.log")
+ if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId $Name -ProcessRecord $result}
+ }catch{if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId $Name -ExceptionData $_.Exception.Data};throw}
  if($result.resource_budget_exceeded-or[int]$result.exit_code-ne0){throw "Cooled native stage failed: $Name"}
 }
 
 function Invoke-CooledOrdinaryFieldBuild {
  [CmdletBinding()]
  param($Package,[string]$FrozenRepoRoot,[string]$Python,[string]$RuntimeModule,
-       [string]$SimionExe,$Limits,[ref]$HostLease,[Parameter(Mandatory)][ref]$CapacitySession)
- $run=[string]$Package.run_dir
+       [string]$SimionExe,$Limits,[ref]$HostLease,[Parameter(Mandatory)][ref]$CapacitySession,$NativeOperations=$null,[string]$NativeResourceReleaseId='simion')
+ $elapsed=[Diagnostics.Stopwatch]::StartNew();$nativeCalls=0;$gem2paCalls=0;$verificationCalls=0;$exportCalls=0
+ $run=[string]$Package.artifact_run_dir
  $context=@{RunDirectory=$run;RepoRoot=$FrozenRepoRoot;Python=$Python}
+ $planCode=@'
+import json,sys
+from pathlib import Path
+from integrations.workflows.cooled_frontend.runtime import field_cache_plan
+print(json.dumps(field_cache_plan(Path(sys.argv[1]))))
+'@
+ $bundle=Invoke-FrontendRuntimePython @context -Name field_member_plan -Arguments @('-c',$planCode,$run) -Json
+ $plans=@($bundle.domains[0].members);$progress=@{};$memberFiles=@{};$keys=@();$paths=@()
+ foreach($member in $plans){
+  $keys+=@([string]$member.cache_key)
+  if($member.PSObject.Properties.Name-contains'frozen_field_source'){
+   $keys+=@([string]$member.frozen_field_source.cache_key);$paths+=@([string]$member.frozen_field_source.generation_directory)
+  }
+ }
+ $updated=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $FrozenRepoRoot -Session $CapacitySession.Value -ProtectedCacheKeys @($keys|Select-Object -Unique) -ProtectedPaths @($paths|Select-Object -Unique)
+ $CapacitySession.Value=$updated.session
+ $bundlePath=Join-Path $Package.input_dir 'cooled_member_transaction_plan.json'
+ Write-RunJson -Path $bundlePath -Value $bundle -Depth 100
  $advanceCode=@'
 import json,sys
 from pathlib import Path
-from integrations.workflows.cooled_frontend.runtime import field_cache_plan,advance_field_cache
-run=Path(sys.argv[1]);plan=field_cache_plan(run)
-output=Path(sys.argv[2]) if len(sys.argv)>2 else None
-print(json.dumps(dict(plan=plan,progress=advance_field_cache(run,plan,output))))
+from integrations.workflows.cooled_frontend.runtime import advance_field_cache
+run,plan=map(Path,sys.argv[1:3]);data=json.loads(plan.read_text(encoding='utf-8-sig'))
+report=Path(sys.argv[3]) if len(sys.argv)>3 else None
+print(json.dumps(advance_field_cache(run,data,report)))
 '@
- $bundle=Invoke-FrontendRuntimePython @context -Name field_cache_plan -Arguments @('-c',$advanceCode,$run) -Json
- $updated=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $FrozenRepoRoot -Session $CapacitySession.Value -ProtectedCacheKeys @([string]$bundle.plan.cache_key)
- $CapacitySession.Value=$updated.session
- $plan=Get-Content -LiteralPath (Join-Path $Package.input_dir 'cooled_field_plan.json') -Raw|ConvertFrom-Json -Depth 100
+ foreach($member in $plans){
+  $kind=[string]$member.member_id
+  if($member.PSObject.Properties.Name-contains'frozen_field_source'){continue}
+  $memberPath=Join-Path $Package.input_dir ('cooled_'+$kind+'_transaction_plan.json')
+  Write-RunJson -Path $memberPath -Value $member -Depth 100;$memberFiles[$kind]=$memberPath
+  $progress[$kind]=Invoke-FrontendRuntimePython @context -Name ($kind+'_begin') -Arguments @('-c',$advanceCode,$run,$memberPath) -Json
+ }
  $front=Get-Content -LiteralPath (Join-Path $Package.input_dir 'frontend_contract.json') -Raw|ConvertFrom-Json -Depth 100
+ $plan=Get-Content -LiteralPath (Join-Path $Package.input_dir 'cooled_field_plan.json') -Raw|ConvertFrom-Json -Depth 100
+ $pending=@($progress.Values|Where-Object{$_.action_required-ne'complete'}).Count
+ [long]$floor=[long]$front.field_storage_forecast.potential_bytes_per_array*$(if($pending){$pending+3}else{1})
+ if([long]$CapacitySession.Value.committed_new_bytes-le$floor){throw 'Author commitment cannot cover missing member payloads and shared construction/probe scratch.'}
+ Write-RunJson -Path (Join-Path $Package.result_dir 'cooled_member_storage_forecast.json') -Value @{
+  schema_version=1;missing_members=$pending;potential_payload_floor_bytes=$floor;aggregate_pa_copy_bytes=0;
+  scope='Only missing member publications plus shared raw/working/publication scratch; unchanged generations remain referenced.'}
+ $scratch=Join-Path $run 'simion/cooled_member_geometry';$raw=Join-Path $scratch 'frontend.pa#'
  $origin=(@('x','y','z')|ForEach-Object{([double]$front.instance_origin_mm.$_).ToString('G17',[Globalization.CultureInfo]::InvariantCulture)})-join','
- while($bundle.progress.action_required-ne'complete'){
-  $progress=$bundle.progress
-  $build=[string]$progress.scratch_directory
-  $native=@{Package=$Package;RunDirectory=$run;SimionExe=$SimionExe;Limits=$Limits;WorkingDirectory=$build}
-  if($progress.action_required-eq'build'){
-   $raw=Join-Path $build 'frontend.pa#';$working=Join-Path $build 'working.pa0'
-   foreach($temporary in @($raw,$working,(Join-Path $build 'pending.pa'))){
-    if(Test-Path -LiteralPath $temporary -PathType Leaf){Remove-Item -LiteralPath $temporary -Force}
-   }
-   Invoke-CooledNative @native -Name field_gem2pa -Arguments @('--nogui','--noprompt','gem2pa',(Join-Path $Package.input_dir 'frontend.gem'),$raw)
-   foreach($point in $plan.working_points){
-    if($progress.missing_files-notcontains$point.output_basename){continue}
-    $ordered=@($point.electrode_voltages_v.PSObject.Properties|Sort-Object{[int]$_.Name})
-    for($i=0;$i-lt$ordered.Count;$i++){if([int]$ordered[$i].Name-ne$i+1){throw 'Field endpoint IDs must explicitly cover1..maxID.'}}
-    $voltages=($ordered|ForEach-Object{([double]$_.Value).ToString('G17',[Globalization.CultureInfo]::InvariantCulture)})-join','
-    $HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage refine -Budget (Get-HostResourceBudget -Role SIMION -Stage refine) -RetainedMemoryBytes 0
-    Invoke-CooledNative @native -Name ('field_refine_'+$point.kind) -Arguments @('--nogui','--noprompt','lua',
-     (Join-Path $FrozenRepoRoot 'common/simion/build_dirichlet_patch_operating_pa.lua'),$raw,$working,'zero_dirichlet','0,0,0',$origin,$voltages,
-     ([double]$plan.refine_convergence_v).ToString('G17',[Globalization.CultureInfo]::InvariantCulture))
-    $HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage prepare -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
-    $pending=Join-Path $build 'pending.pa'
-    Invoke-CooledNative @native -Name ('field_export_'+$point.kind) -Arguments @('--nogui','--noprompt','lua',
-     (Join-Path $FrozenRepoRoot 'common/simion/export_detached_standalone_pa.lua'),$working,$pending)
-    if(-not(Test-Path -LiteralPath $pending -PathType Leaf)-or(Get-Item -LiteralPath $pending).Length-lt56){throw 'Standalone export is incomplete.'}
-    Move-Item -LiteralPath $pending -Destination (Join-Path $progress.build_directory $point.output_basename)
-   }
-   $bundle=Invoke-FrontendRuntimePython @context -Name field_cache_seal -Arguments @('-c',$advanceCode,$run) -Json
-  }elseif($progress.action_required-eq'verify'){
-   $native.WorkingDirectory=[string]$progress.build_directory
-   $specCode=@'
+ foreach($member in $plans){
+  $kind=[string]$member.member_id
+  if($member.PSObject.Properties.Name-contains'frozen_field_source'){continue}
+  $point=$member.working_points[0];$status=$progress[$kind];$refined=$false
+  while($status.action_required-ne'complete'){
+   $native=@{Package=$Package;RunDirectory=$run;SimionExe=$SimionExe;Limits=$Limits;WorkingDirectory=[string]$status.scratch_directory;NativeOperations=$NativeOperations;NativeResourceReleaseId=$NativeResourceReleaseId}
+   if($status.action_required-eq'build'){
+    if(-not(Test-Path -LiteralPath $raw)){
+     New-Item -ItemType Directory -Path $scratch -Force|Out-Null
+     $null=Invoke-CooledNative @native -Name field_gem2pa -Arguments @('--nogui','--noprompt','gem2pa',(Join-Path $Package.input_dir 'frontend.gem'),$raw)
+     $nativeCalls++;$gem2paCalls++
+    }
+    $working=Join-Path $status.scratch_directory 'working.pa0'
+    $voltages=($point.electrode_voltages_v.PSObject.Properties|Sort-Object{[int]$_.Name}|ForEach-Object{([double]$_.Value).ToString('G17',[Globalization.CultureInfo]::InvariantCulture)})-join','
+    $HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage pa_refine -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
+    try{
+     $null=Invoke-CooledNative @native -Name ('field_refine_'+$kind) -Arguments @('--nogui','--noprompt','lua',
+      (Join-Path $FrozenRepoRoot 'common/simion/build_dirichlet_patch_operating_pa.lua'),$raw,$working,'zero_dirichlet','0,0,0',$origin,$voltages,
+      ([double]$plan.refine_convergence_v).ToString('G17',[Globalization.CultureInfo]::InvariantCulture))
+     $refined=$true
+     $nativeCalls++
+    }finally{$HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage prepare -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0}
+    $pendingPath=Join-Path $status.scratch_directory 'pending.pa'
+    if(Test-Path -LiteralPath $pendingPath){Remove-Item -LiteralPath $pendingPath -Force}
+    $null=Invoke-CooledNative @native -Name ('field_export_'+$kind) -Arguments @('--nogui','--noprompt','lua',
+     (Join-Path $FrozenRepoRoot 'common/simion/export_detached_standalone_pa.lua'),$working,$pendingPath)
+    $nativeCalls++;$exportCalls++
+    if(-not(Test-Path -LiteralPath $pendingPath -PathType Leaf)-or(Get-Item -LiteralPath $pendingPath).Length-lt56){throw 'Standalone member export is incomplete.'}
+    Move-Item -LiteralPath $pendingPath -Destination (Join-Path $status.build_directory $point.output_basename)
+    $status=Invoke-FrontendRuntimePython @context -Name ($kind+'_seal') -Arguments @('-c',$advanceCode,$run,$memberFiles[$kind]) -Json
+   }elseif($status.action_required-eq'verify'){
+    $specCode=@'
 import json,sys
 from pathlib import Path
 from integrations.workflows.cooled_frontend.runtime import field_verification_spec
-print(json.dumps(dict(path=str(field_verification_spec(Path(sys.argv[1]),Path(sys.argv[2]))))))
+print(json.dumps(dict(path=str(field_verification_spec(Path(sys.argv[1]),Path(sys.argv[2]),member_id=sys.argv[3])))))
 '@
-   $spec=Invoke-FrontendRuntimePython @context -Name field_verification_spec -Arguments @('-c',$specCode,$run,[string]$progress.build_directory) -Json
-   $report=Join-Path $run 'logs/cooled_field_verification.tsv'
-   Invoke-CooledNative @native -Name field_verification -Arguments @('--nogui','--noprompt','lua',[string]$bundle.plan.verifier_path,[string]$spec.path,$report)
-   $bundle=Invoke-FrontendRuntimePython @context -Name field_cache_publish -Arguments @('-c',$advanceCode,$run,$report) -Json
-  }else{throw "Unsupported public field transaction action: $($progress.action_required)"}
+    $spec=Invoke-FrontendRuntimePython @context -Name ($kind+'_verification_spec') -Arguments @('-c',$specCode,$run,[string]$status.build_directory,$kind) -Json
+    $report=Join-Path $run ('logs/cooled_field_'+$kind+'_verification.tsv')
+    $null=Invoke-CooledNative @native -Name ('field_verification_'+$kind) -Arguments @('--nogui','--noprompt','lua',[string]$bundle.verifier_path,[string]$spec.path,$report)
+    $nativeCalls++;$verificationCalls++
+    $status=Invoke-FrontendRuntimePython @context -Name ($kind+'_publish') -Arguments @('-c',$advanceCode,$run,$memberFiles[$kind],$report) -Json
+   }else{throw ('Unsupported member transaction action: '+$status.action_required)}
+  }
+  $status|Add-Member -NotePropertyName refine_performed -NotePropertyValue $refined -Force;$progress[$kind]=$status
  }
+ $progressPath=Join-Path $Package.result_dir 'cooled_member_progress.json';Write-RunJson -Path $progressPath -Value $progress -Depth 100
  $finalCode=@'
 import json,sys
 from pathlib import Path
-from integrations.workflows.cooled_frontend.runtime import field_cache_plan,advance_field_cache,finalize_field_stage
-run=Path(sys.argv[1]);plan=field_cache_plan(run)
-print(json.dumps(finalize_field_stage(run,plan,advance_field_cache(run,plan))))
+from integrations.workflows.cooled_frontend.runtime import finalize_field_stage
+run,plan,progress=map(Path,sys.argv[1:])
+print(json.dumps(finalize_field_stage(run,json.loads(plan.read_text(encoding='utf-8-sig')),json.loads(progress.read_text(encoding='utf-8-sig')))))
 '@
- $stage=Invoke-FrontendRuntimePython @context -Name field_stage_receipt -Arguments @('-c',$finalCode,$run) -Json
- return [pscustomobject]@{receipt=$stage;working_points=@($stage.working_points);field_directory=[string]$bundle.progress.generation_directory;retained_native_build_objects=@()}
+ $stage=Invoke-FrontendRuntimePython @context -Name field_stage_receipt -Arguments @('-c',$finalCode,$run,$bundlePath,$progressPath) -Json
+ $carrier=@($stage.working_points|Where-Object{$_.kind-eq'carrier_off'})[0]
+ Write-RunJson -Path (Join-Path $Package.result_dir 'cooled_member_execution_costs.json') -Value @{
+  schema_version=1;actual_refine_count=$stage.receipt.actual_refine_count;native_calls=$nativeCalls;
+  gem2pa_calls=$gem2paCalls;standalone_export_calls=$exportCalls;verification_calls=$verificationCalls;
+  aggregate_pa_copy_bytes=0;elapsed_seconds=$elapsed.Elapsed.TotalSeconds;
+  scope='Member construction only; static probe copies/native calls are reported separately.'}
+ return [pscustomobject]@{receipt=$stage;working_points=@($stage.working_points);field_directory=(Split-Path -Parent $carrier.path);
+  field_directories=@($stage.receipt.generation_directories);retained_native_build_objects=@()}
+}
+function Protect-CooledStaticProbeSources {
+ param([string]$RunDirectory,[string]$RepoRoot,[string]$Python,[ref]$CapacitySession,
+       [Collections.Generic.List[object]]$SourceReaders)
+ $context=@{RunDirectory=$RunDirectory;RepoRoot=$RepoRoot;Python=$Python}
+  $sourceCode='import json,sys;from pathlib import Path;from integrations.workflows.cooled_frontend.runtime import static_probe_source_references;print(json.dumps(static_probe_source_references(Path(sys.argv[1]))))'
+  $references=@(Invoke-FrontendRuntimePython @context -Name probe_source_owners -Arguments @('-c',$sourceCode,$RunDirectory) -Json)
+  if($references.Count){
+   if($null-eq$SourceReaders){throw 'Static probe reuse requires its public owner source readers.'}
+   foreach($reference in $references){$SourceReaders.Add((Enter-RunTerminalConsumptionGuard -RunDirectory (Split-Path -Parent $reference.manifest_record.path)))}
+   $references=@($references|ForEach-Object{$_|ConvertTo-Json -Depth 100|ConvertFrom-Json -AsHashtable -Depth 100})
+   $updated=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $CapacitySession.Value -SourceReferences $references
+   $CapacitySession.Value=$updated.session
+  }
 }
 
 function Invoke-CooledFieldDesign {
@@ -136,9 +216,11 @@ function Invoke-CooledFieldDesign {
   [Parameter(Mandatory)]$Package,[Parameter(Mandatory)][string]$FrozenRepoRoot,
   [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RuntimeModule,
   [Parameter(Mandatory)][string]$SimionExe,[Parameter(Mandatory)]$Limits,
-  [Parameter(Mandatory)][ref]$HostLease,[Parameter(Mandatory)][ref]$CapacitySession
+  [Parameter(Mandatory)][ref]$HostLease,[Parameter(Mandatory)][ref]$CapacitySession,
+  $NativeOperations=$null,[string]$NativeResourceReleaseId='simion',
+  [Collections.Generic.List[object]]$SourceReaders=$null
  )
- $run=[string]$Package.run_dir
+ $run=[string]$Package.artifact_run_dir
  $inputs=[string]$Package.input_dir
  $fieldPlan=Get-Content -LiteralPath (Join-Path $inputs 'cooled_field_plan.json') -Raw|ConvertFrom-Json -Depth 100
  $front=Get-Content -LiteralPath (Join-Path $inputs 'frontend_contract.json') -Raw|ConvertFrom-Json -Depth 100
@@ -148,7 +230,7 @@ function Invoke-CooledFieldDesign {
  New-Item -ItemType Directory -Path $directory,$build -Force|Out-Null
  $raw=Join-Path $build 'frontend.pa#'
  $working=Join-Path $build 'working.pa0'
- $native=@{Package=$Package;RunDirectory=$run;SimionExe=$SimionExe;Limits=$Limits;WorkingDirectory=$build}
+ $native=@{Package=$Package;RunDirectory=$run;SimionExe=$SimionExe;Limits=$Limits;WorkingDirectory=$build;NativeOperations=$NativeOperations;NativeResourceReleaseId=$NativeResourceReleaseId}
  $context=@{RunDirectory=$run;RepoRoot=$FrozenRepoRoot;Python=$Python}
  $meshCheck=$fieldPlan.role-eq'cooled_frontend_local_dirichlet_mesh_check_plan'
  $origin=(@('x','y','z')|ForEach-Object{([double]$front.instance_origin_mm.$_).ToString('G17',[Globalization.CultureInfo]::InvariantCulture)})-join','
@@ -201,23 +283,60 @@ rows=[dict(file_record(run/'simion/cooled_fields'/p['output_basename'],'solver_n
  $stage=$null
  $records=@(Get-Content -LiteralPath $recordsPath -Raw|ConvertFrom-Json -Depth 100)
  }else{
-  $cached=Invoke-CooledOrdinaryFieldBuild -Package $Package -FrozenRepoRoot $FrozenRepoRoot -Python $Python -RuntimeModule $RuntimeModule -SimionExe $SimionExe -Limits $Limits -HostLease $HostLease -CapacitySession $CapacitySession
+  $cached=Invoke-CooledOrdinaryFieldBuild -Package $Package -FrozenRepoRoot $FrozenRepoRoot -Python $Python -RuntimeModule $RuntimeModule -SimionExe $SimionExe -Limits $Limits -HostLease $HostLease -CapacitySession $CapacitySession -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId
   $stage=$cached.receipt;$records=@($cached.working_points);$directory=$cached.field_directory
  }
  $sampler=Join-Path $FrozenRepoRoot ([string]$probe.sampler_repository_path)
  $samples=Join-Path $inputs 'cooled_probe_points.csv'
  $probeDirectory=Join-Path $Package.result_dir 'cooled_field_probe'
  New-Item -ItemType Directory -Path $probeDirectory -Force|Out-Null
+ $probeElapsed=[Diagnostics.Stopwatch]::StartNew();[long]$probeCopiedBytes=0;$probeNativeCalls=0
+ $probeSelection=@{native_probe_records=@{};probe_owner_manifest_records=@{};missing_members=@($records|ForEach-Object kind)}
+ if(-not$meshCheck){
+  Protect-CooledStaticProbeSources -RunDirectory $run -RepoRoot $FrozenRepoRoot -Python $Python -CapacitySession $CapacitySession -SourceReaders $SourceReaders
+  $selectionCode='import json,sys;from pathlib import Path;from integrations.workflows.cooled_frontend.runtime import static_probe_reuse_plan;print(json.dumps(static_probe_reuse_plan(Path(sys.argv[1]))))'
+  $probeSelection=Invoke-FrontendRuntimePython @context -Name probe_reuse_plan -Arguments @('-c',$selectionCode,$run) -Json
+ }
  foreach($record in $records){
+  if($record.kind-notin$probeSelection.missing_members){continue}
   $temporary=Join-Path ([IO.Path]::GetTempPath()) ('simion_pa_links_cooled_probe_'+[guid]::NewGuid().ToString('N').Substring(0,12))
+  $probeWriterStopped=$true
   try{
    $copy=New-ShortPaCopy -Source ([string]$record.path) -Destination (Join-Path $temporary 'field.pa') `
     -ExpectedBytes ([long]$record.bytes) -ExpectedSha256 ([string]$record.sha256)
-   Invoke-CooledNative @native -Name ('field_probe_'+$record.kind) -Arguments @('--nogui','--noprompt','lua',$sampler,
-    [string]$copy,$origin,$samples,(Join-Path $probeDirectory ($record.kind+'.csv')))
+   $probeCopiedBytes+=[long]$record.bytes
+   $probeWriterStopped=$false
+   try{
+    Invoke-CooledNative @native -Name ('field_probe_'+$record.kind) -Arguments @('--nogui','--noprompt','lua',$sampler,
+     [string]$copy,$origin,$samples,(Join-Path $probeDirectory ($record.kind+'.csv')))
+    $probeWriterStopped=$true
+   }catch{
+    $probeFailure=$_
+    if($_.Exception.Data.Contains('observed_process_exit_confirmed')-and[bool]$_.Exception.Data['observed_process_exit_confirmed']){$probeWriterStopped=$true}
+    if(-not$probeWriterStopped){
+     $probeFailure.Exception.Data['cooled_probe_private_copy_directory']=$temporary
+     try{Write-RunJson -Path (Join-Path $Package.result_dir 'cooled_static_probe_costs.json') -Value @{
+      execution_status='writer_completion_unknown';pending_private_copy_directory=$temporary;standalone_transport_bytes=$probeCopiedBytes;
+      native_probe_calls=$probeNativeCalls;failure_reason=$probeFailure.Exception.Message;recovery_action='inspect_writer_completion_before_private_copy_cleanup'}}
+     catch{$probeFailure.Exception.Data['probe_metadata_error']=$_.Exception.Message}
+    }
+    throw $probeFailure
+   }
+   $probeNativeCalls++
    $null=Confirm-ShortPaCopyIdentity -Path ([string]$copy)
-  }finally{Remove-ShortPaCopyDirectory -Path $temporary}
+  }finally{if($probeWriterStopped){Remove-ShortPaCopyDirectory -Path $temporary}}
  }
+ $probeMetadata=@{native_probe_records=@{};probe_owner_manifest_records=@{}}
+ if(-not$meshCheck){
+  $selectionPath=Join-Path $probeDirectory 'selection.json';Write-RunJson -Path $selectionPath -Value $probeSelection -Depth 100
+  $completeCode='import json,sys;from pathlib import Path;from integrations.workflows.cooled_frontend.runtime import complete_static_probe_records;print(json.dumps(complete_static_probe_records(Path(sys.argv[1]),json.loads(Path(sys.argv[2]).read_text(encoding="utf-8-sig")))))'
+  $probeMetadata=Invoke-FrontendRuntimePython @context -Name probe_records -Arguments @('-c',$completeCode,$run,$selectionPath) -Json
+ }
+ Write-RunJson -Path (Join-Path $Package.result_dir 'cooled_static_probe_costs.json') -Value @{
+  schema_version=1;native_probe_calls=$probeNativeCalls;standalone_transport_bytes=$probeCopiedBytes;
+  elapsed_seconds=$probeElapsed.Elapsed.TotalSeconds;reused_probe_count=(@($records).Count-$probeNativeCalls);
+  native_probe_records=$probeMetadata.native_probe_records;probe_owner_manifest_records=$probeMetadata.probe_owner_manifest_records;
+  scope='Original sealed raw probes are referenced when fully bound; only missing probes use private PA transport/native sampling. Current proven scale is applied once in analysis.'}
  if($meshCheck){
   Invoke-CooledNative @native -Name mesh_raw_physical_mask -Arguments @('--nogui','--noprompt','lua',$sampler,$raw,$origin,$samples,
    (Join-Path $probeDirectory 'raw_physical_mask.csv'))
@@ -254,7 +373,7 @@ path.write_text(json.dumps(times,allow_nan=False)+'\n',encoding='utf-8',newline=
 print(json.dumps(dict(actual_pulse_time_us=pulse,release_start_us=release,shared_times_path=str(path),
  working_points=list(ctx['fields']['records'].values())),allow_nan=False))
 '@
- return Invoke-FrontendRuntimePython -Python $Python -RepoRoot $RepoRoot -RunDirectory $Package.run_dir -Name population_clock `
+ return Invoke-FrontendRuntimePython -Python $Python -RepoRoot $RepoRoot -RunDirectory $Package.artifact_run_dir -Name population_clock `
   -Arguments @('-c',$code,[string]$Package.artifact_run_dir,$RuntimeModule) -Json
 }
 
@@ -274,7 +393,7 @@ result=importlib.import_module(sys.argv[5]).analyze_cooled_frontend(run,
  shared_times_us=json.loads(times.read_text(encoding='utf-8-sig')),pulse_time_us=float(sys.argv[4]))
 print(json.dumps(result,allow_nan=False))
 '@
- return Invoke-FrontendRuntimePython -Python $Python -RepoRoot $RepoRoot -RunDirectory $Package.run_dir -Name population_analysis `
+ return Invoke-FrontendRuntimePython -Python $Python -RepoRoot $RepoRoot -RunDirectory $Package.artifact_run_dir -Name population_analysis `
   -Arguments @('-c',$code,[string]$Package.artifact_run_dir,$logs,$Times,$PulseTimeUs.ToString('G17',[Globalization.CultureInfo]::InvariantCulture),$Module) -Json
 }
 
@@ -282,7 +401,8 @@ function Invoke-CooledCompiledAperture {
  [CmdletBinding()]
  param([Parameter(Mandatory)]$Package,[Parameter(Mandatory)]$Frontend,
   [Parameter(Mandatory)][string]$PaPath,[string]$RepoRoot=(Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))),
-  [Parameter(Mandatory)][string]$SimionExe,[Parameter(Mandatory)]$Limits)
+  [Parameter(Mandatory)][string]$SimionExe,[Parameter(Mandatory)]$Limits,
+  $NativeOperations=$null,[string]$NativeResourceReleaseId='simion')
  . (Join-Path $RepoRoot 'common/simion/aperture_topology_support.ps1')
  $port=$Frontend.accelerator_local_region.port;$origin=$Frontend.instance_origin_mm;$cell=$Frontend.cell_mm_xyz
  $parameters=@{PaPath=$PaPath;NormalAxis=[string]$port.normal_axis;
@@ -294,15 +414,44 @@ function Invoke-CooledCompiledAperture {
   ReportPath=(Join-Path $Package.result_dir 'compiled_aperture_topology.json');
   VerifierPath=(Join-Path $RepoRoot 'common/simion/verify_aperture_topology.lua')}
  $parameters.InvokeVerifier={param($VerifierPath)
-  Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $Package.run_dir -FilePath $SimionExe -WorkingDirectory $Package.run_dir `
+  try{$record=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $Package.artifact_run_dir -FilePath $SimionExe -WorkingDirectory $Package.artifact_run_dir `
    -ArgumentList @('--nogui','--noprompt','lua',$VerifierPath) -UsagePath (Join-Path $Package.log_dir 'aperture_topology.resource_usage.json') `
    -RedirectStandardOutput (Join-Path $Package.log_dir 'aperture_topology.stdout.log') -RedirectStandardError (Join-Path $Package.log_dir 'aperture_topology.stderr.log')
+   if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId aperture_topology -ProcessRecord $record}
+   return $record
+  }catch{if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId aperture_topology -ExceptionData $_.Exception.Data};throw}
  }
  return Invoke-SimionCompiledApertureTopologyCheck @parameters
 }
 
+function Close-CooledHostStage {
+ if(-not$lease){return}
+ $token=[string]$lease.token
+ try{$released=Exit-HostResourceStage -Lease $lease -PassThru}catch{$script:writerUnknown=$true;$script:hostReleaseUnknown=$true;throw}
+ if(-not$lease.inherited-and($null-eq$released-or$released.status-ne'released'-or$released.token-ne$token)){
+  $script:writerUnknown=$true;$script:hostReleaseUnknown=$true;throw 'Cooled host release is unconfirmed.'
+ }
+ if(@($nativeOperations|Where-Object resource_release_id -eq $token).Count){
+  Add-RunArtifactResourceRelease -ResourceReleases $resourceReleases -ReleaseId $token -Receipt @{host_release=@{inherited=[bool]$lease.inherited;token=$token;result=$released;error=$null}}
+ }
+ $script:lease=$null
+}
+function Register-CooledInputs {
+ $config=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable -Depth 100
+ foreach($file in Get-ChildItem -LiteralPath $package.input_dir -Recurse -File){
+  $relative=[IO.Path]::GetRelativePath($package.input_dir,$file.FullName)
+  $config.inputs[$relative]=Join-Path (Join-Path $package.artifact_run_dir 'inputs') $relative
+ }
+ $config.parameters=@{workflow='cooled_frontend';execution_scope=$scope;population_flight_attempted=$populationFlightAttempted;scientific_request=(Join-Path $package.artifact_run_dir 'inputs/request.json');execution_budget=$(if($budget){Convert-WorkflowOwnerPath $ownerContext $budget.frozen_budget}else{$ExecutionBudgetPath});stage=$stage;gui_executed=$false;full_analyzer_flight_executed=$false}
+ Write-RunJson -Path $package.run_config -Value $config -Depth 100
+}
+function Set-CooledStage([string]$Name){
+ if($stage){$phaseTimings[$stage]=[double]$stageClock.Elapsed.TotalSeconds}
+ $script:stage=$Name;$stageClock.Restart()
+}
+
 $workspace=Split-Path -Parent $RepoRoot
-$artifacts=Join-Path $workspace 'artifacts'
+$artifacts=[string]$pathContext.artifact_root
 $project=Join-Path $artifacts ('projects/'+$integration)
 $author=Get-Content -LiteralPath $Request -Raw|ConvertFrom-Json -Depth 100
 $meshCheckRequest=($author.PSObject.Properties.Name-contains'role')-and$author.role-eq'rf_oatof_cooled_frontend_mesh_check_request'
@@ -333,7 +482,7 @@ if($PrepareOnly){
  return
 }
 if($FieldDesignOnly-and-not$meshCheckRequest){
- if($null-ne$author.field_source-or$null-ne$author.common_pulse_decision){throw 'Initial FieldDesignOnly requires explicit null field_source and common_pulse_decision.'}
+ if($null-ne$author.common_pulse_decision){throw 'FieldDesignOnly requires null common_pulse_decision; field_source may name explicit member reuse candidates.'}
 }elseif($ReferenceCalibrationOnly){
  if($meshCheckRequest-or$null-eq$author.field_source-or$null-ne$author.common_pulse_decision-or$author.pressure_scale-ne0){throw 'Reference calibration requires sealed fields, vacuum and no production decision.'}
 }elseif(-not$meshCheckRequest-and($null-eq$author.field_source-or$null-eq$author.common_pulse_decision)){throw 'Population flight requires an explicit sealed field source and common actual-field pulse decision.'}
@@ -346,11 +495,13 @@ $summaryRole=if($meshCheckRequest){'cooled_frontend_local_mesh_check_summary'}el
 $retentionReason=if($FieldDesignOnly){'Retain cooled-to-OA field endpoints and native static probes for explicitly bound pressure arms'}elseif($ReferenceCalibrationOnly){'Retain native cold-reference trials and the verified common pulse decision; no original-mother qualification'}else{'Retain complete original mother cooling/OA raw/canonical loss and default-replay evidence; consume sealed shared field endpoints'}
 $runId=(Get-Date -Format yyyyMMdd_HHmmss)+$(if($meshCheckRequest){'__build__simion__cooled-frontend-mesh-check'}elseif($FieldDesignOnly){'__build__simion__cooled-frontend-fielddesign'}elseif($ReferenceCalibrationOnly){'__sim__simion__cooled-frontend-reference'}else{'__sim__simion__cooled-frontend-population'})
 $destination=Join-Path $project ('runs/'+$runId)
-$capacity=$null;$package=$null;$lease=$null;$budget=$null;$field=$null;$failure=$null;$okay=$false;$populationFlightAttempted=$false
+$capacity=$null;$package=$null;$lease=$null;$budget=$null;$field=$null;$failure=$null;$populationFlightAttempted=$false
 $stage='capacity_startup';$frozenRoot=$RepoRoot
 $workingFieldGuards=[Collections.Generic.List[string]]::new()
-$controllerTicks=[Diagnostics.Process]::GetCurrentProcess().StartTime.ToUniversalTime().Ticks
-$saved=Save-RunEnvironment -Names @('PYTHONPATH','PYTHONNOUSERSITE','SIMULATION_PYTHON_EXE')
+$sourceReaders=[Collections.Generic.List[object]]::new();$writerUnknown=$false;$hostReleaseUnknown=$false;$ownerContext=$null;$scientificSummary=$null
+$nativeOperations=[Collections.Generic.List[object]]::new();$resourceReleases=[Collections.Generic.List[object]]::new()
+$phaseTimings=[ordered]@{};$stageClock=[Diagnostics.Stopwatch]::StartNew();$runClock=[Diagnostics.Stopwatch]::StartNew()
+$saved=Save-RunEnvironment -Names @('PYTHONPATH','PYTHONNOUSERSITE','SIMULATION_PYTHON_EXE','MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH','MASS_SPECTROMETRY_RUN_DIRECTORY','MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY')
 $env:SIMULATION_PYTHON_EXE=$Python
 try{
  $sourceAuthor=$author
@@ -367,6 +518,7 @@ try{
   $envelope=Get-Content -LiteralPath $fieldEnvelopePath -Raw|ConvertFrom-Json -Depth 100
   $ownerManifest=[string]$envelope.source_owner_manifest_record.path
   if(-not[IO.Path]::IsPathRooted($ownerManifest)){$ownerManifest=Join-Path $workspace $ownerManifest}
+  $sourceReaders.Add((Enter-RunTerminalConsumptionGuard -RunDirectory (Split-Path -Parent $ownerManifest)))
   $candidates+=@($fieldEnvelopePath,(Split-Path -Parent $ownerManifest))
  }
  if($sourceAuthor.common_pulse_decision){
@@ -377,38 +529,45 @@ try{
  $artifactPrefix=[IO.Path]::GetFullPath($artifacts).TrimEnd([IO.Path]::DirectorySeparatorChar)+[IO.Path]::DirectorySeparatorChar
  $protected=@($candidates|ForEach-Object{[IO.Path]::GetFullPath($_)}|Where-Object{$_.StartsWith($artifactPrefix,[StringComparison]::OrdinalIgnoreCase)}|Select-Object -Unique)
  $capacity=Enter-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -ArtifactRoot $artifacts `
-  -RunDirectory $destination -CommittedNewBytes $commitment -ProtectedPaths $protected
+  -RunDirectory $destination -CommittedNewBytes $commitment -ProtectedPaths $protected -Owner ("run-artifact-workflow:{0}:{1}"-f$integration,$runId)
  $package=New-RunPackage -Python $Python -RepoRoot $RepoRoot -ArtifactRoot $project -RunId $runId -Project $integration `
   -Mode $(if($meshCheckRequest){'cooled_frontend_local_static_mesh_check'}elseif($FieldDesignOnly){'cooled_frontend_field_design'}elseif($ReferenceCalibrationOnly){'cooled_frontend_reference_calibration'}else{'cooled_frontend_population'}) -Software @('SIMION 2020','Python 3.11','PowerShell 7') -RetentionContractEnabled `
   -RetentionClass solver_review -RetentionReason $retentionReason `
-  -CapacityLedgerLifecycleEnabled -UseShortExecutionPath -AdditionalDirectories @('simion')
+  -CapacityLedgerLifecycleEnabled -PathContext $pathContext -UseShortExecutionPath -AdditionalDirectories @('simion')
+ $parentEnvironment=(Get-RunNativeExecutionContext -Package $package -Paths @()).environment
+ foreach($key in $parentEnvironment.Keys){[Environment]::SetEnvironmentVariable([string]$key,[string]$parentEnvironment[$key],'Process')}
  Copy-VerifiedRunInput -Source $PSCommandPath -Destination (Join-Path $package.input_dir 'execute_cooled_frontend.ps1')|Out-Null
  $budget=Initialize-IntegrationStageBudget -ResolvedBudget $ExecutionBudgetPath -InputDir $package.input_dir `
   -ExpectedIntegrationId $integration -ExpectedWorkflowId cooled_frontend -StageId single_flight_transport -Solver simion -ExpectedRetentionClass solver_review
- $lease=Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $runId
- $context=@{Python=$Python;RepoRoot=$frozenRoot;RunDirectory=[string]$package.run_dir}
- $stage='freeze_runtime_closure'
+ $ownerContext=Initialize-RunArtifactPowerShellOwner -Python $Python -RepoRoot $RepoRoot -Package $package -CapacitySession $capacity `
+  -EntrypointPath (Join-Path $package.input_dir 'execute_cooled_frontend.ps1') -CommitmentInputPaths @($budget.frozen_budget) -ResultPath $ResultPath -Software @('SIMION 2020','Python 3.11','PowerShell 7')
+ $ResultPath=[string]$ownerContext.result_path
+ $lease=Enter-HostExecutionLease -StatePath $pathContext.host_resource_state_path -Role SIMION -Stage prepare -RunId $runId
+ $context=@{Python=$Python;RepoRoot=$frozenRoot;RunDirectory=[string]$package.artifact_run_dir}
+ Set-CooledStage 'freeze_runtime_closure'
  $frozen=Freeze-CooledRuntime -InputDir $package.input_dir
  $frozenRoot=[string]$frozen.execution_root
  . (Join-Path $frozenRoot ($relative+'/runtime/frontend_flight_support.ps1'))
  . (Join-Path $frozenRoot 'integrations/workflows/cooled_frontend/reference_support.ps1')
  $context.RepoRoot=$frozenRoot
- $stage='prepare_complete_source_and_geometry'
- Invoke-FrontendRuntimePython @context -Name prepare -Arguments ($prepare+@('--output-directory',[string]$package.run_dir,'--run-id',$runId))
+ Set-CooledStage 'prepare_complete_source_and_geometry'
+ Invoke-FrontendRuntimePython @context -Name prepare -Arguments ($prepare+@('--output-directory',[string]$package.artifact_run_dir,'--run-id',$runId))
  if($fieldSource){
   $frozenEnvelope=Get-Content -LiteralPath (Join-Path $package.input_dir 'cooled_field_source.json') -Raw|ConvertFrom-Json -Depth 100
   $stagePath=[string]$frozenEnvelope.field_stage_receipt_record.path
   if(-not[IO.Path]::IsPathRooted($stagePath)){$stagePath=Join-Path $workspace $stagePath}
   $publishedFields=Get-Content -LiteralPath $stagePath -Raw|ConvertFrom-Json -Depth 100
-  if($publishedFields.schema_version-ne2){throw 'Current cooled fields require a schema2 published generation receipt.'}
-  $updated=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $frozenRoot -Session $capacity -ProtectedCacheKeys @([string]$publishedFields.cache_key)
+  if($publishedFields.schema_version-notin@(2,3)){throw 'Cooled fields require complete frozen schema2/3 member evidence.'}
+  $fieldKeys=if($publishedFields.schema_version-eq2){@([string]$publishedFields.cache_key)}else{@($publishedFields.working_points|ForEach-Object{[string]$_.cache_key})}
+  $generations=if($publishedFields.schema_version-eq2){@([string]$publishedFields.generation_directory)}else{@($publishedFields.working_points|ForEach-Object{[string]$_.generation_directory})}
+  $updated=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $frozenRoot -Session $capacity -ProtectedCacheKeys @($fieldKeys|Select-Object -Unique) -ProtectedPaths @($generations|Select-Object -Unique)
   $capacity=$updated.session
  }
  $source=Get-Content -LiteralPath (Join-Path $package.input_dir 'source_identity.json') -Raw|ConvertFrom-Json
  if([int]$source.particle_count-ne[int]$rawBudget.particle_count){throw 'Cooled budget must retain the complete frozen source population.'}
  $front=Get-Content -LiteralPath (Join-Path $package.input_dir 'frontend_contract.json') -Raw|ConvertFrom-Json -Depth 100
  $plan=Get-Content -LiteralPath (Join-Path $package.input_dir 'cooled_field_plan.json') -Raw|ConvertFrom-Json -Depth 100
- $minimumPayload=if($FieldDesignOnly){[long]$front.field_storage_forecast.potential_bytes_per_array*(@($plan.working_points).Count+3)}else{0L}
+ $minimumPayload=0L # Ordinary member/scratch floor is checked after actual cache resolution.
  if($meshCheckRequest){
   $largestParent=($plan.working_points|ForEach-Object{[long]$_.source_pa_record.bytes}|Measure-Object -Maximum).Maximum
   $minimumPayload=[long]$front.field_storage_forecast.potential_bytes_per_array*(@($plan.working_points).Count+2)+[long]$largestParent
@@ -420,16 +579,17 @@ try{
  $simion=(Resolve-Path -LiteralPath (Join-Path $env:ProgramFiles 'SIMION-2020/simion.exe')).Path
  Write-RunJson -Path (Join-Path $package.input_dir 'native_discovery.json') -Value @{path=$simion;bytes=(Get-Item -LiteralPath $simion).Length;sha256=Get-RunFileSha256 -Path $simion;file_version=(Get-Item -LiteralPath $simion).VersionInfo.FileVersion}
  if($FieldDesignOnly){
- $stage='native_fielddesign_and_static_probe'
+ Set-CooledStage 'native_fielddesign_and_static_probe'
  $field=Invoke-CooledFieldDesign -Package $package -FrozenRepoRoot $frozenRoot -Python $Python -RuntimeModule ($module+'.runtime') `
-  -SimionExe $simion -Limits $budget.limits -HostLease ([ref]$lease) -CapacitySession ([ref]$capacity)
- $stage='actual_field_theory_proposal'
+  -SimionExe $simion -Limits $budget.limits -HostLease ([ref]$lease) -CapacitySession ([ref]$capacity) `
+  -NativeOperations $nativeOperations -NativeResourceReleaseId ([string]$lease.token) -SourceReaders $sourceReaders
+ Set-CooledStage 'actual_field_theory_proposal'
  if($meshCheckRequest){
   $meshAnalysis="import json,sys;from pathlib import Path;from $module.mesh_check import analyze_mesh_check;print(json.dumps(analyze_mesh_check(Path(sys.argv[1])),allow_nan=False))"
-  Invoke-FrontendRuntimePython -Python $Python -RepoRoot $frozenRoot -RunDirectory $package.run_dir -Name local_mesh_analysis `
+  Invoke-FrontendRuntimePython -Python $Python -RepoRoot $frozenRoot -RunDirectory $package.artifact_run_dir -Name local_mesh_analysis `
    -Arguments @('-c',$meshAnalysis,[string]$package.artifact_run_dir)
  }else{
-  Invoke-FrontendRuntimePython -Python $Python -RepoRoot $frozenRoot -RunDirectory $package.run_dir -Name field_design_theory `
+  Invoke-FrontendRuntimePython -Python $Python -RepoRoot $frozenRoot -RunDirectory $package.artifact_run_dir -Name field_design_theory `
    -Arguments @('-m',($module+'.field_design'),'--run',[string]$package.artifact_run_dir)
  }
  $profileCode=@'
@@ -438,27 +598,31 @@ from pathlib import Path
 from common.contracts.write_run_manifest import file_record
 run=Path(sys.argv[1]).resolve();root=run/'inputs'
 mesh=sys.argv[2]=='local_static_mesh_check'
-profile=dict(schema_version=1,role='cooled_frontend_local_mesh_profile' if mesh else 'cooled_frontend_field_design_profile',native_executed=True,fly_executed=False,
+native_count=int(sys.argv[3])
+if native_count<0: raise ValueError('native operation count must be nonnegative')
+profile=dict(schema_version=1,role='cooled_frontend_local_mesh_profile' if mesh else 'cooled_frontend_field_design_profile',native_executed=native_count>0,fly_executed=False,
  geometry_record=file_record(root/'frontend.gem'),frontend_contract_record=file_record(root/'frontend_contract.json'),
  field_plan_record=file_record(root/'cooled_field_plan.json'),probe_plan_record=file_record(root/'cooled_probe_plan.json'),
  probe_points_record=file_record(root/'cooled_probe_points.csv'),native_discovery_record=file_record(root/'native_discovery.json'),
  boundary_policy='same_kind_actual_parent_on_crop_faces__synthetic_not_physical' if mesh else 'explicit_zero_dirichlet_far_faces_not_mechanical_metal')
 (root/'cooled_field_design_profile.json').write_text(json.dumps(profile,indent=2)+'\n',encoding='utf-8',newline='\n')
 '@
- Invoke-FrontendRuntimePython -Python $Python -RepoRoot $frozenRoot -RunDirectory $package.run_dir -Name fielddesign_profile `
-  -Arguments @('-c',$profileCode,[string]$package.artifact_run_dir,$scope)
- Write-RunJson -Path $package.summary -Depth 30 -Value @{schema_version=1;role=$summaryRole;status='success';execution_scope=$scope;
+ Invoke-FrontendRuntimePython -Python $Python -RepoRoot $frozenRoot -RunDirectory $package.artifact_run_dir -Name fielddesign_profile `
+  -Arguments @('-c',$profileCode,[string]$package.artifact_run_dir,$scope,[string]$nativeOperations.Count)
+ $scientificSummary=@{native_path_preparation=$package.native_path_preparation;schema_version=1;role=$summaryRole;status='success';execution_scope=$scope;
   source_mother_count=[int]$rawBudget.particle_count;simulated_mother_count=0;field_design_only=$true;fly_executed=$false;gui_executed=$false;full_analyzer_flight_executed=$false;
   field_stage_receipt=$(if($meshCheckRequest){$null}else{Join-Path $package.artifact_run_dir 'inputs/cooled_frontend_field_stage_receipt.json'});
   field_design_profile=(Join-Path $package.artifact_run_dir 'inputs/cooled_field_design_profile.json');
   static_probe_directory=(Join-Path $package.artifact_run_dir 'results/cooled_field_probe');
   qualification='Real native field construction and probes only; no cooling, capture, extraction or focusing result'}
  }elseif($ReferenceCalibrationOnly){
- $stage='actual_field_cold_reference_calibration'
- $reference=Invoke-CooledReferenceCalibration -Package $package -RepoRoot $frozenRoot -Python $Python -SimionExe $simion -Limits $budget.limits -ProjectRunsRoot (Join-Path $project 'runs') -HostLease ([ref]$lease)
- Write-RunJson -Path $package.summary -Depth 100 -Value @{schema_version=1;role=$summaryRole;status='success';execution_scope=$scope;reference=$reference;mother_population_flight=$false;gui_executed=$false;qualification=$reference.qualification}
+ Set-CooledStage 'actual_field_cold_reference_calibration'
+ Protect-CooledStaticProbeSources -RunDirectory $package.artifact_run_dir -RepoRoot $frozenRoot -Python $Python -CapacitySession ([ref]$capacity) -SourceReaders $sourceReaders
+ $reference=Invoke-CooledReferenceCalibration -Package $package -RepoRoot $frozenRoot -Python $Python -SimionExe $simion -Limits $budget.limits -ProjectRunsRoot (Join-Path $project 'runs') -HostLease ([ref]$lease) `
+  -NativeOperations $nativeOperations -NativeResourceReleaseId ([string]$lease.token)
+ $scientificSummary=@{native_path_preparation=$package.native_path_preparation;schema_version=1;role=$summaryRole;status='success';execution_scope=$scope;reference=$reference;mother_population_flight=$false;gui_executed=$false;qualification=$reference.qualification}
  }else{
- $stage='verified_shared_fields_and_snapshot_clock'
+ Set-CooledStage 'verified_shared_fields_and_snapshot_clock'
  $state=Invoke-CooledPopulationClock -Package $package -RepoRoot $frozenRoot -Python $Python -RuntimeModule ($module+'.runtime')
  foreach($record in $state.working_points){
   $null=Protect-ImmutablePaSource -Source ([string]$record.path) -ExpectedBytes ([long]$record.bytes) -ExpectedSha256 ([string]$record.sha256)
@@ -467,66 +631,70 @@ profile=dict(schema_version=1,role='cooled_frontend_local_mesh_profile' if mesh 
  foreach($warningCode in @($front.accelerator_local_region.accelerator_port_aperture_discretization.grid_alignment.warnings)){
   Write-Warning "SIMION authoritative aperture discretization warning: $warningCode"
  }
- $stage='compiled_aperture_topology'
+ Set-CooledStage 'compiled_aperture_topology'
  $carrier=@($state.working_points|Where-Object{$_.kind-eq'carrier_off'})
  if($carrier.Count-ne1){throw 'Exactly one immutable carrier field required.'}
  $null=Invoke-CooledCompiledAperture -Package $package -Frontend $front -PaPath ([string]$carrier[0].path) `
-  -RepoRoot $frozenRoot -SimionExe $simion -Limits $budget.limits
+  -RepoRoot $frozenRoot -SimionExe $simion -Limits $budget.limits `
+  -NativeOperations $nativeOperations -NativeResourceReleaseId ([string]$lease.token)
  $lease=Update-HostResourceStage -Lease $lease -Stage flight -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
- $stage='complete_mother_population_flight'
+ Set-CooledStage 'complete_mother_population_flight'
  $populationFlightAttempted=$true
- $materialized=Invoke-FrontendFlightPhase -RunDirectory $package.run_dir -ProjectRunsRoot (Join-Path $project 'runs') `
+ $materialized=Invoke-FrontendFlightPhase -RunDirectory $package.artifact_run_dir -ProjectRunsRoot (Join-Path $project 'runs') `
   -RepoRoot $frozenRoot -Python $Python -RuntimeModule ($module+'.runtime') -SimionExe $simion -Limits $budget.limits `
-  -Phase extraction -PulseTimeUs ([double]$state.actual_pulse_time_us) -SharedTimesPath ([string]$state.shared_times_path)
+  -Phase extraction -PulseTimeUs ([double]$state.actual_pulse_time_us) -SharedTimesPath ([string]$state.shared_times_path) `
+  -NativeOperations $nativeOperations -NativeResourceReleaseId ([string]$lease.token)
  $lease=Update-HostResourceStage -Lease $lease -Stage postprocess -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
- $stage='complete_mother_recorded_diagnostics'
+ Set-CooledStage 'complete_mother_recorded_diagnostics'
  $analysis=Invoke-CooledPopulationAnalysis -Package $package -RepoRoot $frozenRoot -Python $Python -Module ($module+'.analyze') `
   -Materialized $materialized -Times ([string]$state.shared_times_path) -PulseTimeUs ([double]$state.actual_pulse_time_us)
- $stage='saved_workbench_validation'
- $replay=Invoke-FrontendDefaultReplay -Materialized $materialized -HostLease ([ref]$lease) -RunDirectory $package.run_dir `
-  -RepoRoot $frozenRoot -Python $Python -SimionExe $simion -Limits $budget.limits
- Write-RunJson -Path $package.summary -Depth 100 -Value @{schema_version=1;role=$summaryRole;status='success';
+ Set-CooledStage 'saved_workbench_validation'
+ $replay=Invoke-FrontendDefaultReplay -Materialized $materialized -HostLease ([ref]$lease) -RunDirectory $package.artifact_run_dir `
+  -RepoRoot $frozenRoot -Python $Python -SimionExe $simion -Limits $budget.limits `
+  -NativeOperations $nativeOperations -NativeResourceReleaseId ([string]$lease.token)
+ $scientificSummary=@{native_path_preparation=$package.native_path_preparation;schema_version=1;role=$summaryRole;status='success';
   mother_count=[int]$source.particle_count;pressure_scale=[double]$author.pressure_scale;field_design_only=$false;
   fly_executed=$true;gui_executed=$false;full_analyzer_flight_executed=$false;actual_pulse_time_us=[double]$state.actual_pulse_time_us;
   common_pulse_decision=$author.common_pulse_decision;field_source=$author.field_source;extraction=$analysis;
   default_load_iob=$materialized.default_load_iob;default_replay=$replay;
   qualification='Local complete mother pressure-control evidence only; no MR acceptance or resolution claim'}
  }
- $okay=$true
 }catch{
  $failure=$_
- if($package){Write-RunJson -Path $package.summary -Value @{schema_version=1;role=$summaryRole;status='failed';stage=$stage;reason=$_.Exception.Message;population_flight_attempted=$populationFlightAttempted;gui_executed=$false}}
+ if(($_.Exception.Data.Contains('observed_process_exit_confirmed')-and-not[bool]$_.Exception.Data['observed_process_exit_confirmed'])-or
+    ($_.Exception.Data.Contains('simion_wave_writer_completion_confirmed')-and-not[bool]$_.Exception.Data['simion_wave_writer_completion_confirmed'])-or
+    ($_.Exception.Data.Contains('simion_first_batch_writer_unknown')-and[bool]$_.Exception.Data['simion_first_batch_writer_unknown'])){$writerUnknown=$true}
 }finally{
  try{
-  if($package){
-   $sample=Get-ManagedSolverProcessSample -RootProcessIds @($PID) -RootProcessStartedAtUtcTicks @{([string]$PID)=$controllerTicks}
-   $writers=@($sample.active_process_ids|Where-Object{$_-ne$PID-and$_-notin@($sample.system_console_host_process_ids)})
-   if($writers.Count){Write-Warning 'RUN_FINALIZATION_WAITING_FOR_MANAGED_SOLVER_WRITERS'}
-   do{$sample=Get-ManagedSolverProcessSample -RootProcessIds @($PID) -RootProcessStartedAtUtcTicks @{([string]$PID)=$controllerTicks};$writers=@($sample.active_process_ids|Where-Object{$_-ne$PID-and$_-notin@($sample.system_console_host_process_ids)});if($writers.Count){Start-Sleep -Milliseconds 500}}while($writers.Count)
-   foreach($path in $workingFieldGuards){$null=Unprotect-ImmutablePaSource -Source $path}
-   $workingFieldGuards.Clear()
-   $config=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
-   foreach($file in Get-ChildItem -LiteralPath $package.input_dir -Recurse -File){
-    $canonical=Join-Path $package.artifact_run_dir ([IO.Path]::GetRelativePath($package.run_dir,$file.FullName))
-    $config.inputs[$canonical]=$canonical
+  if(@($nativeOperations|Where-Object{-not$_.observation.exit_confirmed}).Count){$writerUnknown=$true}
+  if(-not$writerUnknown){
+   try{if($lease){Close-CooledHostStage}}catch{if($failure){$failure.Exception.Data['host_release_error']=$_}else{$failure=$_};$writerUnknown=$true}
+   if(-not$writerUnknown){
+    try{foreach($path in $workingFieldGuards){$null=Unprotect-ImmutablePaSource -Source $path};$workingFieldGuards.Clear();foreach($reader in $sourceReaders){$reader.Dispose()};$sourceReaders.Clear()}catch{if($failure){$failure.Exception.Data['asset_release_error']=$_}else{$failure=$_}}
    }
-   $config.parameters=@{workflow='cooled_frontend';execution_scope=$scope;scientific_request=(Join-Path $package.artifact_run_dir 'inputs/request.json');stage=$stage;population_flight_attempted=$populationFlightAttempted;gui_executed=$false}
-   Write-RunJson -Path $package.run_config -Value $config -Depth 100
-   # Native PAs remain manifest-bound. Exact retired build objects must pass
-   # the public owner-disposition lifecycle after sealing; TRACE retention is
-   # not a native-PA deletion authority.
-   $null=Apply-RunArtifactRetention -Python $Python -RepoRoot $frozenRoot -RunConfig $package.run_config
-   $outputs=@(Get-ChildItem -LiteralPath $package.run_dir -Recurse -File|Where-Object{-not$_.FullName.StartsWith($package.input_dir+[IO.Path]::DirectorySeparatorChar)-and$_.Name-notin@('run_config.json','run_manifest.json')}|ForEach-Object{$_.FullName})
-   Write-VerifiedRunManifest -Python $Python -RepoRoot $frozenRoot -RunConfig $package.run_config -Manifest (Join-Path $package.run_dir 'run_manifest.json') -Status $(if($okay){'success'}else{'failed'}) -Software @('SIMION 2020','Python 3.11','PowerShell 7') -Outputs $outputs -DeferCapacityFinalization
   }
-  if($capacity){$null=Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $capacity;$capacity=$null}
-  if($package){Invoke-RunToolRootContext -RepoRoot $frozenRoot -Operation {& $Python -B -m common.contracts.run_capacity_lifecycle --action seal-stopped-payload --artifact-root $artifacts --run-config $package.run_config --owner $integration --confirm-writing-stopped --retention-reason $retentionReason;if($LASTEXITCODE-ne0){throw 'Cooled fielddesign capacity sealing failed.'}}}
+  if(-not$ownerContext-and-not$writerUnknown){
+   try{if($capacity){$null=Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $capacity};if($package){Remove-RunPackageExecutionAlias -Package $package}}catch{if($failure){$failure.Exception.Data['bootstrap_cleanup_error']=$_}else{$failure=$_}}
+  }
+  if($ownerContext-and-not$ownerContext.completion_written){
+   if(-not$writerUnknown){try{Register-CooledInputs}catch{if($failure){$failure.Exception.Data['input_binding_error']=$_}else{$failure=$_}}}
+   $phaseTimings[$stage]=[double]$stageClock.Elapsed.TotalSeconds
+   $summary=if($null-ne$scientificSummary){$scientificSummary}else{@{schema_version=1;role=$summaryRole;execution_scope=$scope;population_flight_attempted=$populationFlightAttempted;gui_executed=$false;full_analyzer_flight_executed=$false}}
+   $summary.execution_status=if($hostReleaseUnknown){'host_release_unconfirmed'}elseif($writerUnknown){'writer_completion_unknown'}elseif($failure){'failed'}else{'completed'}
+   $summary.data_validity=if($failure){'incomplete'}else{'valid'}
+   $summary.scientific_result=if($failure){'NOT_EVALUATED'}else{'scope_limited_evidence__no_MR_acceptance_or_resolution_claim'}
+   $summary.failure_stage=if($failure){$stage}else{$null};$summary.failure_reason=if($failure){$failure.Exception.Message}else{$null}
+   $summary.recovery_action=if($hostReleaseUnknown){'inspect_host_release'}elseif($writerUnknown){'inspect_writer_completion'}elseif($failure){'inspect_preserved_stage_evidence_or_resume_finalization'}else{'none'}
+   $summary.secondary_errors=@(if($failure){foreach($key in @('host_release_error','asset_release_error','bootstrap_cleanup_error','input_binding_error')){if($failure.Exception.Data.Contains($key)){[string]$failure.Exception.Data[$key]}}})
+   $summary.result_path=$ResultPath;$summary.phase_timings_seconds=$phaseTimings;$summary.total_elapsed_seconds=$runClock.Elapsed.TotalSeconds
+   $outputs=@(Get-ChildItem -LiteralPath $package.artifact_run_dir -Recurse -File|Where-Object{-not$_.FullName.StartsWith($package.input_dir+[IO.Path]::DirectorySeparatorChar)-and$_.Name-notin@('run_config.json','run_manifest.json')}|ForEach-Object FullName)
+   $ownerContext.session=$capacity
+   try{$outcome=Complete-RunArtifactPowerShellOwner -Context $ownerContext -Status $(if($failure){'failed'}else{'success'}) -Summary $summary -OutputPaths $outputs `
+    -WriterCompletion @{operations=@($nativeOperations.ToArray());resource_releases=@($resourceReleases.ToArray())} -WritersStopped (-not$writerUnknown) -OriginalFailure $failure;Write-Output $outcome}catch{if($failure){$failure.Exception.Data['finalization_error']=$_}else{$failure=$_}}
+  }
  }finally{
-  if($lease){Exit-HostExecutionLease -Lease $lease -Outcome $(if($okay){'success'}else{'failed'}) -RunId $runId}
-  if($capacity){$null=Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $capacity}
-  if($package){Remove-RunPackageExecutionAlias -Package $package}
-  Restore-RunEnvironment -Names @('PYTHONPATH','PYTHONNOUSERSITE','SIMULATION_PYTHON_EXE') -Snapshot $saved
+  Restore-RunEnvironment -Names @('PYTHONPATH','PYTHONNOUSERSITE','SIMULATION_PYTHON_EXE','MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH','MASS_SPECTROMETRY_RUN_DIRECTORY','MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY') -Snapshot $saved
  }
 }
 if($failure){throw $failure}
-Write-Output "COOLED_FRONTEND=PASS SCOPE=$scope RUN=$($package.artifact_run_dir) GUI=False"
+Write-Output "COOLED_FRONTEND=PASS SCOPE=$scope RUN=$($package.artifact_run_dir) RESULT=$ResultPath GUI=False FULL_ANALYZER=False"

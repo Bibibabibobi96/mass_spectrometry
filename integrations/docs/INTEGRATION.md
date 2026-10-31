@@ -7,12 +7,6 @@
 
 ## 当前边界
 
-cooled场构建的现有原生helper已接公共运行上下文，按实际cwd和绝对参数投影短执行路径，
-进程环境携带canonical/execution成对位置，诊断身份仍归持久run。该迁移不改变PA隔离、
-物理场或原收尾路径，也不声明其他原生消费者均已迁移。公共运行根说明见
-[common/paths](../../common/paths/README.md#公共运行根与原生执行表示)。
-
-
 跨项目工作流已迁到根`integrations/`，声明链路的执行、完整批次恢复和已保存模型导出已有实证。
 成功执行、数值等价、物理性能和Formal资格分别判断；负结果与原运行身份不因迁移而改写。
 
@@ -359,3 +353,24 @@ run_artifact_workflow owner，保存实际原生完成／释放事实、run 外�
 失败 Result 保留原始失败与收尾原因，未知 writer／未确认 host release 不释放保护、不发布终态。
 显式父 manifest 仅引用已绑定完成证据；静场已有完整同身份导出可跳过相应原生采样／求解。
 源、物理支持域、商业授权和原父终态保持原合同。DryRun 只证明准备，诊断成功不授予数值／科学资格。
+
+## Local/cooled 正常执行与独立场复用
+
+两原CLI使用公共run_artifact_workflow owner和run外小Result；`-ResumeFinalization -ResultPath <原Result>`
+仅推进未完成收尾，未知writer／host release继续保留保护，原始与cleanup异常分别保留。
+正常科学Fly与保存工作台资格分开：默认不再附加第二轮全母群Fly；显式`verify_saved_workbench_replay=true`
+才执行相应确定性回放，随机碰撞仍验证saved controls，summary如实区分`not_requested`、controls与实际Fly。
+cooled七个普通Laplace工作场使用原缓存事务逐成员命名，受保护原成员可直接跨generation引用，不建聚合PA副本。
+固定geometry/operator/grid/solver仅改合法OA pulse工作电压，其余六场保持复用；有充分线性证据时pulse可按系数投影。
+GEM、真实边界、网格或数值改变仍使受影响成员失效；源母群、分析和显示不被误当场求解身份。
+同字段owner的小采样与引用式probe记录保留原manifest绑定及raw数据，analysis／reference沿真实比例读取，不改写原CSV。
+seed／placeholder沿[公共小配套冻结](../../common/simion/README.md#共用工作台种子与独立场成员)复用，
+科学身份用单反射既有field_plan提供者；未新增万能runner、字段注册表或历史搜索。准备、软件接线与真实科学资格分别报告。
+
+既有正常field-only证据限定为开发网格0.5/0.5/0.2mm、准备N=100源而未Fly／GUI：
+[040843原生成员构建](../../../artifacts/projects/instrument_assembly/runs/20261031_040843__build__simion__cooled-frontend-fielddesign/summary.json)
+的Refine／导出／验证各7次、gem2pa一次；member阶段189.636秒，probe7次／258603408 B私有运输／18.443秒，聚合搬运0。
+[041904后继线性复用](../../../artifacts/projects/instrument_assembly/runs/20261031_041904__build__simion__cooled-frontend-fielddesign/summary.json)
+仅将OA向量减半，保留其余operator；Refine、原生operation和probe／聚合PA运输均0，七原generation及七原CSV直引，pulse绝对scale=0.5。
+它们只证明该冻结场构建、静态probe和受保护成员复用；不证明粒子冷却、N=100轨迹功能或整机科学资格。
+本提交新增的收尾参数拒绝与seed运输顺序由软件回归验证，没有重跑上述Refine，也不以fixture零native替代真实科学Fly。

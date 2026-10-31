@@ -336,11 +336,15 @@ function Invoke-FrontendDefaultReplay {
   [Parameter(Mandatory)]$Materialized,[Parameter(Mandatory)][ref]$HostLease,
   [Parameter(Mandatory)][string]$RunDirectory,[Parameter(Mandatory)][string]$RepoRoot,
   [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$SimionExe,
-  [Parameter(Mandatory)]$Limits
+  [Parameter(Mandatory)]$Limits,
+  $NativeOperations=$null,[string]$NativeResourceReleaseId='simion'
  )
+ $policy=$Materialized.default_replay_policy
+ if($policy.scope-eq'not_requested'){
+  return @{status='not_requested';requested=$false;native_fly_performed=$false;scope='not_requested'}
+ }
  $casePath=Join-Path $RunDirectory 'inputs/default_replay_gui_case.json'
  Write-RunJson -Path $casePath -Value $Materialized.gui_case -Depth 100
- $policy=$Materialized.default_replay_policy
  if($policy.comparison_policy-eq'independent_stochastic_collisions'-and$policy.scope-eq'saved_controls_only'){
   $verify=@'
 import json,sys
@@ -349,6 +353,7 @@ from integrations.workflows.local_frontend.replay import verify_saved_controls
 run=Path(sys.argv[1])
 receipt=verify_saved_controls(run,json.loads(Path(sys.argv[2]).read_text()))
 receipt['default_replay_policy']=json.loads(Path(sys.argv[3]).read_text())['default_replay_policy']
+receipt['requested']=receipt['default_replay_policy']['requested']
 path=run/'results/saved_controls_verification.json'
 if path.exists():
     raise ValueError('refuse to overwrite saved controls verification')
@@ -373,10 +378,16 @@ print(json.dumps(prepare_default_replay(Path(sys.argv[1]),json.loads(Path(sys.ar
  $HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage flight -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
  # A new process consumes the saved IOB defaults. No Program, Q, particles,
  # retention, preload Lua, or other flight setting is supplied on the CLI.
+ try{
  $result=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $RunDirectory -FilePath $SimionExe `
   -ArgumentList ([string[]]$spec.argument_list) -WorkingDirectory ([string]$spec.working_directory) `
   -Environment ($spec.environment|ConvertTo-Json -Compress|ConvertFrom-Json -AsHashtable) `
   -UsagePath ([string]$spec.usage_path) -RedirectStandardOutput ([string]$spec.stdout) -RedirectStandardError ([string]$spec.stderr)
+  if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId 'default_replay.fly' -ProcessRecord $result}
+ }catch{
+  if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId 'default_replay.fly' -ExceptionData $_.Exception.Data}
+  throw
+ }
  if($result.resource_budget_exceeded-or[int]$result.exit_code-ne0){throw 'Saved-default fresh-process Fly failed; original and replay logs retained.'}
  $HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage postprocess -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
  $compare=@'
@@ -388,5 +399,8 @@ print(json.dumps(compare_default_replay(run,[Path(p) for p in json.loads(logs.re
 '@
  $comparison=Invoke-FrontendRuntimePython -Python $Python -RepoRoot $RepoRoot -RunDirectory $RunDirectory -Name default_replay_compare -Arguments @('-c',$compare,$RunDirectory,$logsPath,([string]$spec.stdout)) -Json
  if(-not$comparison.passed){throw 'Saved-default replay differs from scheduled mother evidence; complete comparison retained.'}
+ $comparison|Add-Member -NotePropertyName requested -NotePropertyValue $true -Force
+ $comparison|Add-Member -NotePropertyName native_fly_performed -NotePropertyValue $true -Force
+ $comparison|Add-Member -NotePropertyName status -NotePropertyValue completed -Force
  return $comparison
 }

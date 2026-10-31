@@ -20,7 +20,7 @@ import pandas as pd
 from common.contracts.particle_physics import AMU_KG, BOLTZMANN_CONSTANT_J_K, ELEMENTARY_CHARGE_C
 from common.contracts.write_run_manifest import file_record
 from integrations.workflows.cooled_frontend.field_design import (
-    analyze_field_run, compose_samples, design_voltage_controls,
+    analyze_field_run, compose_samples, design_voltage_controls, project_member_samples,
 )
 
 
@@ -75,6 +75,20 @@ def design_arguments() -> dict:
 
 
 class CooledFrontendFieldDesignTests(unittest.TestCase):
+    def test_pulse_projection_preserves_raw_probe_and_coordinates(self):
+        raw = harmonic_response_fixture()["hp_common_unit"]
+        original = raw.copy(deep=True)
+        for scale in (2., 0., -1.):
+            projected = project_member_samples(raw, "pulse_delta", scale)
+            pd.testing.assert_frame_equal(raw, original)
+            pd.testing.assert_frame_equal(projected[["name", "x_mm", "y_mm", "z_mm"]],
+                                          raw[["name", "x_mm", "y_mm", "z_mm"]])
+            for column in ("potential_v", "ex_v_per_mm", "ey_v_per_mm", "ez_v_per_mm"):
+                np.testing.assert_array_equal(projected[column], raw[column] * scale)
+        for kind, scale in (("carrier_off", 2.), ("pulse_delta", float("nan")), ("pulse_delta", True)):
+            with self.subTest(kind=kind, scale=scale), self.assertRaises(ValueError):
+                project_member_samples(raw, kind, scale)
+
     def test_checkpoint_owner_can_publish_field_proposal_and_bound_records(self):
         # Temporary analytic samples exercise the actual run adapter, not a
         # solver or a manufactured native field result.
@@ -85,6 +99,7 @@ class CooledFrontendFieldDesignTests(unittest.TestCase):
             inputs.mkdir(parents=True)
             probes.mkdir(parents=True)
             responses = harmonic_response_fixture()
+            responses["pulse_delta"] = responses["hp_common_unit"].copy()
             for values in responses.values():
                 values["name"] = values["name"].replace({"well_center":"well_62", "oa_entry":"oa_side_entry"})
             payloads = {
@@ -93,6 +108,10 @@ class CooledFrontendFieldDesignTests(unittest.TestCase):
                     gas=dict(parameters=dict(temperature_k=300.))),
                 "guide_contract.json":dict(drive=dict(frequency_hz=3.7e6,rf_amplitude_v=500.)),
                 "cooled_field_plan.json":dict(working_points=[dict(kind=kind) for kind in responses]),
+                "cooled_frontend_field_stage_receipt.json": dict(working_points=[
+                    dict(kind=kind, field_scale=2. if kind == "pulse_delta" else 1.)
+                    for kind in ("carrier_off", "rf_differential_unit", "entry_close_delta",
+                                 "release_delta", "pulse_delta", "inner_auxiliary_unit", "hp_common_unit")]),
             }
             for name, payload in payloads.items():
                 (inputs/name).write_text(json.dumps(payload), encoding="utf-8")
