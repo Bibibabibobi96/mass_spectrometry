@@ -133,6 +133,32 @@ function Invoke-InterfaceComsolTask {
     }catch{$call.wrapper_error=$_.Exception.Message;throw}
     finally{$call.elapsed_seconds=$callTimer.Elapsed.TotalSeconds}
 }
+function Read-InterfaceGuiParityReport {
+    param([string]$Path,[long[]]$ExpectedParticleIds)
+    $lines=@(Get-Content -LiteralPath $Path -Encoding UTF8|Where-Object{$_.StartsWith('GUI_PARITY_JSON=')})
+    if($lines.Count-ne1){throw 'GUI requires exactly one completed observed-parity report.'}
+    $value=$lines[0].Substring('GUI_PARITY_JSON='.Length)|ConvertFrom-Json -AsHashtable -Depth 64
+    if($value.role-cne'rf_interface_gui_parity'-or$value.status-cne'PASS'-or
+       $value.source_binding_verified-isnot[bool]-or-not$value.source_binding_verified-or
+       $value.observed_state_parity_verified-isnot[bool]-or-not$value.observed_state_parity_verified-or
+       $value.native_birth_echo_unavailable_saved_observation-isnot[bool]-or$value.scientific_result-cne'NOT_EVALUATED'){
+        throw 'GUI source binding, native echo availability, observed parity or science scope is unconfirmed.'
+    }
+    $ids=@($value.particle_ids)
+    if($ids.Count-ne$ExpectedParticleIds.Count-or$value.particles-ne$ids.Count-or
+       @($ids|Select-Object -Unique).Count-ne$ids.Count-or
+       (($ids|Sort-Object)-join',')-cne(($ExpectedParticleIds|Sort-Object)-join',')-or
+       @($value.terminal_outcomes).Count-ne$ids.Count-or$value.common_stored_time_count-lt1-or$value.compared_finite_state_count-lt$ids.Count){
+        throw 'GUI report does not cover the complete original mother population and stored observations.'
+    }
+    if($value.transport_tolerance_mm_and_m_s-ne1e-12){throw 'GUI report changed the original transport tolerance.'}
+    foreach($name in @('maximum_position_error_mm','maximum_velocity_error_m_s')){
+        $errorValue=$value[$name]
+        if($errorValue-isnot[ValueType]-or$errorValue-is[bool]-or[double]::IsNaN([double]$errorValue)-or
+           [double]::IsInfinity([double]$errorValue)-or$errorValue-lt0-or$errorValue-gt1e-12){throw 'GUI observed-state error is invalid or exceeds the existing transport tolerance.'}
+    }
+    return $value
+}
 function Complete-InterfaceOwner {
     param([string]$Status,[Collections.IDictionary]$Summary,[string[]]$Outputs=@(),$Failure=$null)
     $operations=[Collections.Generic.List[object]]::new();$releases=[Collections.Generic.List[object]]::new()
@@ -871,6 +897,8 @@ try {
     $env:RFQUAD_EXPECTED_RF_PEAK_V = [string]$resolved.drive.rf_amplitude_V_zero_to_peak_per_group
     $env:RFQUAD_EXPECTED_FREQUENCY_HZ = [string]$resolved.drive.frequency_Hz
     Invoke-InterfaceComsolTask -Task (Join-Path $frozenCodeRoot 'projects/rf_multipole_ion_optics/workflows/interface_readiness/comsol/verify_nocollision_comsol.m') -Report $guiVerifyReport -Stage gui -State $ownerState
+    $failureStage='comsol_gui_observed_parity_report'
+    $guiParity=Read-InterfaceGuiParityReport -Path $guiVerifyReport -ExpectedParticleIds @($solverSummary.source_ids)
     foreach ($name in $environmentNames | Where-Object {
         $_ -ne 'RFQUAD_RUN_CONFIG'
     }) {
@@ -902,6 +930,7 @@ try {
         $package.summary)
     $publicSummary=Get-Content $package.summary -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
     $publicSummary.execution_status='completed';$publicSummary.data_validity='valid';$publicSummary.scientific_result='NOT_EVALUATED'
+    $publicSummary.gui_verification=$guiParity
     Complete-InterfaceOwner -Status success -Summary $publicSummary -Outputs $outputs
     "STATUS=PASS RUN_ID=$RunId HITS=$($solverSummary.hits) TRANSMISSION=$($solverSummary.transmission)"
 } catch {

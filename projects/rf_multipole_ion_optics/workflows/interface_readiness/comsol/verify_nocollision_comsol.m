@@ -2,6 +2,7 @@ reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 testDir = fileparts(mfilename('fullpath'));
 projectRoot = fileparts(fileparts(fileparts(testDir)));
 addpath(projectRoot);
+addpath(fullfile(projectRoot,'comsol'));
 runConfigPath=getenv('RFQUAD_RUN_CONFIG');
 assert(~isempty(runConfigPath)&&isfile(runConfigPath),'rfquad:GuiFrozenInputs', ...
     'RFQUAD_RUN_CONFIG must identify the original frozen GUI task inputs.');
@@ -62,26 +63,37 @@ runRoot=getenv('RFQUAD_GUI_RUN_ROOT');assert(~isempty(runRoot)&&isfolder(runRoot
 metadata=jsondecode(fileread(getenv('RFQUAD_SOLVER_RAW_METADATA_PATH')));
 nativeOrder=metadata.native_order(:);assert(isequal(sort(nativeOrder),(1:expectedParticles)'),'GUI source mapping is not a full permutation.');
 assert(numel(releaseTags)==metadata.release_group_count,'GUI grouped release count differs from actual source plan.');
-% Validate saved cold solution BEFORE rebinding/importing any execution source.
-[~,~,sourceTransportTolerance]=readAndValidateGuiSource(model,metadata,nativeOrder,expectedParticles);
-fprintf(fid,'SAVED_COLD_SOURCE_INITIALIZATION_VALIDATED=%d TRANSPORT_TOLERANCE_MM_AND_M_S=%.17g\n',expectedParticles,sourceTransportTolerance);
-fprintf(fid,'GUI_CANONICAL_RUN_BASE=%s\n',runRoot);
-importedCount=0;
+% Bind the complete frozen source before changing the loaded model. This is
+% configuration/file evidence, separate from availability of a native birth echo.
+assert(numel(metadata.source_birth_s)==expectedParticles&& ...
+ isequal(size(metadata.source_initial_position_mm),[expectedParticles 3])&& ...
+ isequal(size(metadata.source_initial_velocity_m_s),[expectedParticles 3]), ...
+ 'rfquad:GuiSourceBinding','Frozen source 6D/birth dimensions differ.');
+sourceBindings=cell(1,numel(releaseTags));releasePaths=cell(size(sourceBindings));importedCount=0;
 for releaseIndex=1:numel(releaseTags)
  release=cpt.feature(releaseTags{releaseIndex});entry=metadata.release_files(releaseIndex);
- relative=strrep(char(entry.relative_path),'\','/');
+ assert(strcmp(char(release.getType()),'ReleaseFromDataFile'),'rfquad:GuiSourceBinding','GUI release feature type differs.');
+ relative=strrep(char(entry.relative_path),char(92),'/');
  assert(~isempty(regexp(relative,'^runtime/particle_[0-9]+[.]txt$','once')),'Frozen release role path is invalid.');
- persistentReleasePath=fullfile(runRoot,relative);data=readmatrix(persistentReleasePath,'FileType','text','Delimiter',char(9));
- assert(size(data,2)==6&&all(isfinite(data),'all'),'GUI release has invalid 6D.');
- rows=nativeOrder(importedCount+(1:size(data,1)));assert(isequal(rows(:),entry.source_rows(:)),'Frozen group source order differs.');expected=[metadata.source_initial_position_mm(rows,:) metadata.source_initial_velocity_m_s(rows,:)];
- assert(isequal(data,expected),'GUI release source 6D differs.');
- expectedBirth=metadata.source_birth_s(rows);assert(entry.birth_s==expectedBirth(1),'Frozen group birth differs.');assert(all(expectedBirth==expectedBirth(1)),'GUI release merged different exact births.');
- assert(strcmp(char(release.getString('rt')),sprintf('%.17g[s]',expectedBirth(1))),'GUI release clock differs.');
- release.set('Filename',persistentReleasePath);release.importData();
- fprintf(fid,'SOURCE_FILE_REBIND=loaded_copy_only RELEASE_TAG=%s CANONICAL_PATH=%s\n',releaseTags{releaseIndex},persistentReleasePath);
+ releasePaths{releaseIndex}=fullfile(runRoot,relative);
+ data=readmatrix(releasePaths{releaseIndex},'FileType','text','Delimiter',char(9));
+ assert(importedCount+size(data,1)<=expectedParticles,'rfquad:GuiSourceBinding','Release files exceed the original mother population.');
+ rows=nativeOrder(importedCount+(1:size(data,1)));
+ sourceBindings{releaseIndex}=validateGuiReleaseBinding(release,entry,rows,metadata,data,guiAllowedReleaseFilenames(runConfig,runRoot,relative));
  importedCount=importedCount+size(data,1);
 end
-assert(importedCount==expectedParticles,'GUI imported mother population differs.');
+assert(importedCount==expectedParticles,'rfquad:GuiSourceBinding','GUI imported mother population differs.');
+saved=readGuiStoredObservations(model,metadata,nativeOrder,expectedParticles,g);
+savedBirth=guiNativeBirthObservation(saved,metadata,nativeOrder);
+[savedHits,~,savedOutcomes]=guiCensusAndTerminal(saved,interface,g);
+sourceReport=struct('source_binding_verified',true,'release_bindings',{sourceBindings}, ...
+ 'saved_native_birth_observation',savedBirth);
+fprintf(fid,'GUI_SOURCE_BINDING_JSON=%s\n',jsonencode(sourceReport));
+for releaseIndex=1:numel(releaseTags)
+ release=cpt.feature(releaseTags{releaseIndex});
+ release.set('Filename',releasePaths{releaseIndex});release.importData();
+ fprintf(fid,'SOURCE_FILE_REBIND=loaded_copy_only RELEASE_TAG=%s CANONICAL_PATH=%s\n',releaseTags{releaseIndex},releasePaths{releaseIndex});
+end
 assert(~any(contains(lower(string(featureTags)), 'coll')), ...
     'A collision feature is present in the no-collision candidate.');
 assert(any(strcmp(featureTags, 'ef1')), 'GUI-visible RF Electric Force is absent.');
@@ -122,25 +134,16 @@ afterParticle = joinJavaStrings(model.sol.tags);
 assert(strcmp(afterParticle, initialSolutions), ...
     'std2 GUI Compute generated an unexpected solver sequence.');
 
-[pd,timeVector,sourceTransportTolerance]=readAndValidateGuiSource(model,metadata,nativeOrder,expectedParticles);
-fprintf(fid,'GUI_COMPUTED_SOURCE_INITIALIZATION_VALIDATED=%d TRANSPORT_TOLERANCE_MM_AND_M_S=%.17g\n',expectedParticles,sourceTransportTolerance);
-x = squeeze(pd.position_mm(:,:,1));
-y = squeeze(pd.position_mm(:,:,2));
-z = squeeze(pd.position_mm(:,:,3));
-radial = sqrt(x.^2 + y.^2);
-assert(size(z,2) == expectedParticles, 'GUI Compute did not preserve the configured particle source.');
-detectorZ = interface.planes.census.z_mm;
-detectorRadius = g.enclosure.physical_detector_radius_mm;
-hits = false(1, size(z,2));
-arrival = nan(1, size(z,2));
-for particle = 1:size(z,2)
-    sample = find(z(:,particle) >= detectorZ-1e-6, 1, 'first');
-    if ~isempty(sample) && radial(sample,particle) <= detectorRadius
-        hits(particle) = true;
-        arrival(particle) = timeVector(sample)*1e6;
-    end
-end
-fprintf(fid, 'PARTICLES=%d\n', size(z,2));
+current=readGuiStoredObservations(model,metadata,nativeOrder,expectedParticles,g);
+currentBirth=guiNativeBirthObservation(current,metadata,nativeOrder);
+[hits,arrival,currentOutcomes]=guiCensusAndTerminal(current,interface,g);
+parity=compareGuiStoredObservations(saved,current,savedOutcomes,currentOutcomes);
+parity.role='rf_interface_gui_parity';parity.source_binding_verified=true;
+parity.saved_native_birth_observation=savedBirth;parity.computed_native_birth_observation=currentBirth;
+parity.native_birth_echo_unavailable_saved_observation=savedBirth.native_birth_echo_unavailable_saved_observation;
+assert(isequal(savedHits,hits),'rfquad:GuiParityTerminal','GUI per-ID acceptance differs.');
+fprintf(fid,'GUI_PARITY_JSON=%s\n',jsonencode(parity));
+fprintf(fid, 'PARTICLES=%d\n', numel(current.records));
 fprintf(fid, 'HITS=%d\n', sum(hits));
 fprintf(fid, 'TRANSMISSION=%.12g\n', mean(hits));
 fprintf(fid, 'MEAN_DETECTOR_TIME_US=%.12g\n', mean(arrival,'omitnan'));
@@ -260,31 +263,137 @@ for idx = 1:length(values)
 end
 end
 
-function [pd,timeVector,sourceTransportTolerance]=readAndValidateGuiSource(model,metadata,nativeOrder,expectedParticles)
-solutionInfo=mphsolinfo(model,'soltag','sol2');timeVector=union(solutionInfo.solvals(:),metadata.source_birth_s(:));
-assert(~isempty(timeVector)&&all(isfinite(timeVector))&&all(diff(timeVector)>0),'GUI solution clock invalid.');
-% Same explicit unit expressions as the validated production window reader.
-expressions={'cpt.pidx','x/1[mm]','y/1[mm]','z/1[mm]', ...
- 'cpt.vx/1[m/s]','cpt.vy/1[m/s]','cpt.vz/1[m/s]'};
-data=mphparticle(model,'dataset','pdset1','t',timeVector','expr',expressions,'dataonly','on');
-assert(isstruct(data)&&all(isfield(data,{'d1','d2','d3','d4','d5','d6','d7'})),'GUI explicit-unit particle arrays missing.');
-assert(size(data.d1,1)==numel(timeVector),'GUI particle time axis differs from explicit query clock.');
-for fieldIndex=2:7
- assert(isequal(size(data.(sprintf('d%d',fieldIndex))),size(data.d1)),'GUI explicit-unit 6D/pidx shapes differ.');
+function binding=validateGuiReleaseBinding(release,entry,rows,metadata,data,allowedFilenames)
+% Settings/file authority are not an independent native initial-state echo.
+binding=struct();
+for name={'Filename','icolp','VelocitySpecification','InitialVelocity','icolv','rt'}
+ binding.(name{1})=char(release.getString(name{1}));
 end
-pd=struct('position_mm',cat(3,data.d2,data.d3,data.d4), ...
- 'velocity_m_s',cat(3,data.d5,data.d6,data.d7),'native_pidx',data.d1);
-assert(size(pd.position_mm,2)==expectedParticles,'GUI native complete mother count differs.');
-assert(isequal(isfinite(pd.position_mm),isfinite(pd.velocity_m_s))&&any(isfinite(pd.velocity_m_s),'all'),'GUI full active 6D required.');
-sourceTransportTolerance=1e-12; % Existing six-column source readback budget: mm and m/s, not integration error.
-for native=1:expectedParticles
- original=nativeOrder(native);birth=metadata.source_birth_s(original);sourceSample=find(timeVector==birth,1);
- assert(~isempty(sourceSample),'Authoritative exact birth missing from GUI query clock.');
- sourcePosition=reshape(pd.position_mm(sourceSample,native,:),1,3);sourceVelocity=reshape(pd.velocity_m_s(sourceSample,native,:),1,3);
- assert(all(isfinite(sourcePosition))&&all(isfinite(sourceVelocity)),'GUI source initialization cannot be validated: exact-birth active 6D unknown.');
- assert(max(abs(sourcePosition-metadata.source_initial_position_mm(original,:)))<=sourceTransportTolerance,'GUI actual source position differs from frozen transport budget.');
- assert(max(abs(sourceVelocity-metadata.source_initial_velocity_m_s(original,:)))<=sourceTransportTolerance,'GUI actual source velocity differs from frozen transport budget.');
- assert(~any(isfinite(pd.position_mm(1:sourceSample-1,native,:)),'all'),'GUI particle exists before authoritative birth.');
- ids=pd.native_pidx(:,native);ids=ids(isfinite(ids));assert(~isempty(ids)&&all(ids==native),'GUI native pidx differs.');
+assert(any(cellfun(@(path)sameGuiPath(binding.Filename,path),allowedFilenames)), ...
+ 'rfquad:GuiSourceBinding','Saved release Filename is not the declared current/persistent/original-owner path.');
+assert(strcmp(binding.icolp,'0')&&strcmp(binding.VelocitySpecification,'SpecifyVelocity')&& ...
+ strcmp(binding.InitialVelocity,'FromFile')&&strcmp(binding.icolv,'3'), ...
+ 'rfquad:GuiSourceBinding','Saved position/velocity column binding differs.');
+assert(isequal(rows(:),entry.source_rows(:)),'rfquad:GuiSourceBinding','Group source-row order differs.');
+birth=metadata.source_birth_s(rows);
+assert(all(isfinite(birth))&&all(birth==birth(1))&&entry.birth_s==birth(1)&& ...
+ strcmp(binding.rt,sprintf('%.17g[s]',birth(1))), ...
+ 'rfquad:GuiSourceBinding','Saved exact release time differs from the frozen group.');
+expected=[metadata.source_initial_position_mm(rows,:) metadata.source_initial_velocity_m_s(rows,:)];
+assert(isequal(size(data),size(expected))&&size(data,2)==6&&all(isfinite(data),'all')&&isequal(data,expected), ...
+ 'rfquad:GuiSourceBinding','Release file does not preserve the complete frozen six columns.');
+binding.source_rows=rows(:)';binding.particle_ids=metadata.source_ids(rows);binding.birth_s=birth(1);
+binding.source_binding_verified=true;
 end
+
+function paths=guiAllowedReleaseFilenames(runConfig,runRoot,relative)
+% The one historical representation is proven by that original owner's actual
+% completion. Do not search roots or accept another file by its basename.
+persistentRun=fullfile(runConfig.paths.artifact_root,'projects',runConfig.project,'runs',runConfig.run_id);
+paths={fullfile(runRoot,relative),fullfile(persistentRun,relative)};
+receiptPath=fullfile(persistentRun,'results','execution_completion.json');
+if isfile(receiptPath)
+ receipt=jsondecode(fileread(receiptPath));
+ assert(strcmp(receipt.role,'run_artifact_workflow_completion')&&strcmp(receipt.run_id,runConfig.run_id), ...
+  'rfquad:GuiSourceBinding','Original owner completion identity differs.');
+ if isfield(receipt,'execution_alias')
+  alias=receipt.execution_alias;
+  assert(sameGuiPath(alias.target_directory,persistentRun),'rfquad:GuiSourceBinding','Original alias target is not this frozen run.');
+  paths{end+1}=fullfile(alias.path,relative);
+ end
+end
+end
+
+function equal=sameGuiPath(a,b)
+a=strrep(char(a),char(92),'/');b=strrep(char(b),char(92),'/');
+if ispc,equal=strcmpi(a,b);else,equal=strcmp(a,b);end
+end
+
+function saved=readGuiStoredObservations(model,metadata,nativeOrder,expectedParticles,g)
+info=mphsolinfo(model,'soltag','sol2');times=info.solvals(:);
+assert(strcmp(info.soltype,'Time')&&~isempty(times)&&all(isfinite(times))&&all(diff(times)>0), ...
+ 'rfquad:GuiObservationClock','Stored solution clock is invalid.');
+ids=metadata.source_ids(:);
+assert(numel(ids)==expectedParticles&&all(isfinite(ids))&&all(ids==fix(ids))&&all(ids>0)&&numel(unique(ids))==expectedParticles, ...
+ 'rfquad:GuiSourceBinding','Frozen original particle IDs are not complete and unique.');
+% Stride1 retains every finite ORIGINAL stored observation, with the shared
+% reader's full-ID mapping, inactive-state and lifecycle-gap checks.
+[records,receipt]=extract_rf_particle_records(model,'sol2','pdset1','cpt', ...
+ ids(nativeOrder)',[],[g.rod_z_min g.rod_z_max],1,256);
+assert(numel(records)==expectedParticles,'rfquad:GuiObservationCount','Stored mother population differs.');
+saved=struct('time_s',times,'records',{records},'extraction',receipt);
+end
+
+function echo=guiNativeBirthObservation(saved,metadata,nativeOrder)
+tolerance=1e-12; % Preserve the prior source readback budget, mm and m/s.
+verified=[];unavailable=[];
+for native=1:numel(nativeOrder)
+ row=nativeOrder(native);record=saved.records{native};birth=metadata.source_birth_s(row);
+ assert(~any(record.time_s<birth),'rfquad:GuiSourceClock','Finite native state precedes frozen birth.');
+ sample=find(record.time_s==birth,1);
+ if isempty(sample)
+  unavailable(end+1)=record.particle_id; %#ok<AGROW>
+ else
+  assert(max(abs(record.position_mm(sample,:)-metadata.source_initial_position_mm(row,:)))<=tolerance&& ...
+   max(abs(record.velocity_m_s(sample,:)-metadata.source_initial_velocity_m_s(row,:)))<=tolerance, ...
+   'rfquad:GuiNativeBirth','Available exact stored birth state differs from source authority.');
+  verified(end+1)=record.particle_id; %#ok<AGROW>
+ end
+end
+echo=struct('native_birth_echo_unavailable_saved_observation',~isempty(unavailable), ...
+ 'unavailable_particle_ids',unavailable,'verified_exact_stored_birth_particle_ids',verified, ...
+ 'source_transport_tolerance_mm_and_m_s',tolerance);
+end
+
+function [hits,arrival,outcomes]=guiCensusAndTerminal(saved,interface,g)
+count=numel(saved.records);hits=false(1,count);arrival=nan(1,count);outcomes=cell(1,count);
+for index=1:count
+ record=saved.records{index};p=record.position_mm;radial=hypot(p(:,1),p(:,2));
+ sample=find(p(:,3)>=interface.planes.census.z_mm-1e-6,1,'first');
+ if ~isempty(sample)&&radial(sample)<=g.enclosure.physical_detector_radius_mm
+  hits(index)=true;arrival(index)=record.time_s(sample)*1e6;
+ end
+ rejection='';
+ if ~hits(index)
+  if p(end,3)<0,rejection='backward_escape';
+  elseif radial(end)>g.enclosure.outer_half_width_mm,rejection='radial_escape';end
+ end
+ outcome=classify_finite_particle_terminal(record,hits(index),rejection);
+ outcome.particle_id=record.particle_id;outcomes{index}=outcome;
+end
+end
+
+function report=compareGuiStoredObservations(saved,current,savedOutcomes,currentOutcomes)
+tolerance=1e-12; % Existing transport budget; not a convergence qualification.
+assert(saved.time_s(1)==current.time_s(1)&&saved.time_s(end)==current.time_s(end), ...
+ 'rfquad:GuiParityClock','GUI Compute changed the actual stored observation window.');
+common=intersect(saved.time_s,current.time_s);
+assert(~isempty(common)&&numel(saved.records)==numel(current.records), ...
+ 'rfquad:GuiParityObservation','No common actual stored clock or complete mother population.');
+maxPosition=0;maxVelocity=0;states=0;ids=zeros(1,numel(saved.records));
+for index=1:numel(saved.records)
+ a=saved.records{index};b=current.records{index};ids(index)=a.particle_id;
+ assert(a.particle_id==b.particle_id,'rfquad:GuiParityIds','GUI reordered or replaced original IDs.');
+ [activeA,ia]=ismember(common,a.time_s);[activeB,ib]=ismember(common,b.time_s);
+ assert(isequal(activeA,activeB),'rfquad:GuiParityActive','Native active/missing observation masks differ.');
+ assert(any(activeA),'rfquad:GuiParityObservation','An original particle has no shared finite stored observation.');
+ dp=abs(a.position_mm(ia(activeA),:)-b.position_mm(ib(activeB),:));
+ dv=abs(a.velocity_m_s(ia(activeA),:)-b.velocity_m_s(ib(activeB),:));
+ maxPosition=max(maxPosition,max(dp,[],'all'));maxVelocity=max(maxVelocity,max(dv,[],'all'));
+ states=states+nnz(activeA);
+ assert(maxPosition<=tolerance&&maxVelocity<=tolerance,'rfquad:GuiParityState', ...
+  'GUI Compute 6D differs at shared actual stored times under the original transport budget.');
+ for field={'solution_end_time_s','last_finite_time_s','finite_at_solution_end','finite_track_ended','native_termination_cause'}
+  assert(isequal(a.terminal_observation.(field{1}),b.terminal_observation.(field{1})), ...
+   'rfquad:GuiParityTerminal','GUI changed a complete-cohort terminal observation fact.');
+ end
+ assert(isequal(savedOutcomes{index},currentOutcomes{index}),'rfquad:GuiParityTerminal', ...
+  'GUI changed the original project acceptance or unknown/loss outcome.');
+end
+report=struct('status','PASS','scientific_result','NOT_EVALUATED','observed_state_parity_verified',true, ...
+ 'particle_ids',ids,'particles',numel(ids),'common_stored_time_count',numel(common), ...
+ 'compared_finite_state_count',states,'maximum_position_error_mm',maxPosition, ...
+ 'maximum_velocity_error_m_s',maxVelocity,'transport_tolerance_mm_and_m_s',tolerance, ...
+ 'stored_time_count_before',numel(saved.time_s),'stored_time_count_after',numel(current.time_s), ...
+ 'terminal_outcomes',{currentOutcomes});
 end

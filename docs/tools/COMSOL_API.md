@@ -443,3 +443,11 @@ RF finite 正式已解读取边界为项目 `reextract_finite_3d_transport(reque
 官方来源（2026-10-31复核）：[Windows命令](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_running.38.31.html)、
 [恢复与卸载](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_environment.18.22.html)、
 [ModelUtil](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/api/com/comsol/model/util/ModelUtil.html)。
+
+### Release绑定与native出生观测的区别
+
+COMSOL6.4官方[mphparticle](https://doc.comsol.com/6.4/doc/com.comsol.help.llmatlab/llmatlab_ug_ref.9.51.html)支持expr、dataset、t及dataonly，默认读取模型存储时刻；官方未承诺每个释放边界都有可观测6D，也未保证非存储birth的插值结果有限。[Release from Data File](https://doc.comsol.com/6.4/doc/com.comsol.help.particle/particle_ug_math.06.27.html)说明位置／速度来自文本列，列索引为零基，位置首列0及From file速度首列3；[PropFeature.getString](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/api/com/comsol/model/PropFeature.html)可读配置属性。查阅日期2026-10-31，适用COMSOL6.4／R2025b。
+
+本机091203只读保存模型探针验证：ID1／50／100精确birth及后一ULP的6D为NaN，返回查询时间与dataonly／默认结果一致；首个原存储有限点晚约4.917／6.895／9.859ns。因此不能以首个finite替换birth或放宽原1e-12，也不能将源文件／canonical源行的回读称native echo。可分别记录实际节点绑定、native精确出生观测不可用，以及同原ID／完整母群在共有实际stored时刻上的GUI重算一致性。读取六项binding不证明一个未独立观测的cached-import初态；native echo未知与科学资格仍须如实保留。
+
+接口GUI沿现有extract_rf_particle_records／visit_rf_particle_windows获取原时间库存及完整ID记录，不新增mphparticle粒子选择参数或出生插值。GUI Compute仍执行实际Study求解，不能称为零新增物理调用的后处理恢复。当前本机冷读证据只说明查询边界，正式新GUI对照待原owner验收。
