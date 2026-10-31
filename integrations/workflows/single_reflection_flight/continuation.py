@@ -22,6 +22,27 @@ from integrations.workflows.single_reflection_flight.census import read_native_e
 from common.simion.native_completion import frontend_batch_completion_path, validate_frontend_batch_completion
 
 
+def render_legacy_iob_builder(core: str) -> str:
+    """Forward-render this core under the known pre-projection CLI/address ABI.
+
+    Only current source is lowered; the historical builder is compared whole.
+    An unknown envelope or additional locator primitive fails closed.
+    """
+    header = "".join(core.splitlines(keepends=True)[:4])
+    prefix = header + "return function(spec,mode,native_path)\n"
+    suffix = "end\n"
+    if not core.startswith(prefix) or not core.endswith(suffix):
+        raise ValueError("current IOB core ABI envelope differs")
+    body = core[len(prefix):-len(suffix)]
+    primitive = "    path_reference.path=native_path(path)\n"
+    if body.count(primitive) != 1 or body.count("native_path(") != 1:
+        raise ValueError("current IOB core path locator primitive differs")
+    body = body.replace(primitive, "    path_reference.path=path\n")
+    cli = ("local spec=dofile(assert(arg[1], 'frozen IOB build specification is required'))\n"
+           "local mode=arg[2] or 'build'\n")
+    return header + cli + body
+
+
 def _read(path: Path, label: str) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -678,7 +699,6 @@ def prepare_phase_continuation(preparation: Mapping[str, Any], current_workbench
                     if _verified_text(file_record(parent_wrapper), "parent IOB transport wrapper") != known_wrapper:
                         raise ValueError("single-reflection continuation IOB transport wrapper differs")
             else:
-                from integrations.workflows.single_reflection_flight.runtime import render_legacy_iob_builder
                 parent_builder_path = Path(parent_case["iob_builder_arguments"][3])
                 _bound_parent_file(parent_builder_path, parent_records, "legacy IOB builder")
                 if render_legacy_iob_builder(current_core) != _verified_text(file_record(parent_builder_path), "parent IOB builder"):

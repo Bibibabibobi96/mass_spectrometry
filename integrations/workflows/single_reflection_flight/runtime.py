@@ -410,27 +410,6 @@ def interface_field_probes(geometry: dict, oatof: dict) -> list[dict]:
 
 
 
-def render_legacy_iob_builder(core: str) -> str:
-    """Forward-render this core under the known pre-projection CLI/address ABI.
-
-    Only current source is lowered; the historical builder is compared whole.
-    An unknown envelope or additional locator primitive fails closed.
-    """
-    header = "".join(core.splitlines(keepends=True)[:4])
-    prefix = header + "return function(spec,mode,native_path)\n"
-    suffix = "end\n"
-    if not core.startswith(prefix) or not core.endswith(suffix):
-        raise ValueError("current IOB core ABI envelope differs")
-    body = core[len(prefix):-len(suffix)]
-    primitive = "    path_reference.path=native_path(path)\n"
-    if body.count(primitive) != 1 or body.count("native_path(") != 1:
-        raise ValueError("current IOB core path locator primitive differs")
-    body = body.replace(primitive, "    path_reference.path=path\n")
-    cli = ("local spec=dofile(assert(arg[1], 'frozen IOB build specification is required'))\n"
-           "local mode=arg[2] or 'build'\n")
-    return header + cli + body
-
-
 def compile_case_controls(context: dict, source: list[dict], *, native_path_projection: bool = True) -> tuple[str, dict, list[dict]]:
     """Compile actual Program and instance controls without staging native assets."""
     snapshot_root = Path(context["snapshot_root"])

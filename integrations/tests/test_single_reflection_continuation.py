@@ -15,7 +15,7 @@ from common.contracts.write_run_manifest import file_record
 from common.simion.particle_batching import plan_single_wave_batches
 from integrations.tests import test_single_reflection_runtime as runtime_tests
 from integrations.workflows.single_reflection_flight import runtime
-from integrations.workflows.single_reflection_flight.continuation import prepare_phase_continuation, _published_case
+from integrations.workflows.single_reflection_flight.continuation import prepare_phase_continuation, _published_case, render_legacy_iob_builder
 from integrations.workflows.single_reflection_flight.collect import collect_log
 
 
@@ -231,7 +231,7 @@ class SingleReflectionContinuationTests(unittest.TestCase):
         legacy_builder = parent/'inputs/runtime_snapshot/integrations/workflows/single_reflection_flight/build_iob.lua'
         legacy_builder.parent.mkdir(parents=True)
         core = Path(workbench['batches'][0]['iob_builder_core_record']['path']).read_text(encoding='utf-8')
-        legacy_builder.write_text(runtime.render_legacy_iob_builder(core),encoding='utf-8',newline='\n')
+        legacy_builder.write_text(render_legacy_iob_builder(core),encoding='utf-8',newline='\n')
         for case in workbench['batches']:
             numeric = case['outputs'].pop('numerical_program')
             case.pop('iob_builder_core_record')

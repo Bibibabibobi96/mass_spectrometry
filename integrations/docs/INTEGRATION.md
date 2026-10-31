@@ -470,3 +470,5 @@ PA 在 builder 前取得持续防写 guard；保护前可写、保护中拒写�
 终态、容量、资源释放及两个 alias 清理完成。小 Result 位于该主题 scratch 的
 `agent2/native_ip_proposal/complete_owner_draft/root_native_result.json`。
 该11³ PA仅验证 IOB／pose／路径与保存机制，0 Refine、0 Fly，不代表完整IP场、N=100功能或科学资格。
+
+单反射旧 IOB ABI 的严格前向渲染由实际消费它的 continuation 模块持有；runtime 仅沿单向依赖调用批次恢复，不再形成反向导入。旧 builder 全字节比较和失败关闭保持，模块依赖检查包含局部导入；该修复不是动态 ImportError 或新的原生验收。
