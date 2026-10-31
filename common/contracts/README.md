@@ -150,6 +150,13 @@ owner还须独立确认实际prepared worker已退出且日志停止写入；Win
 都必须存在；它不自动获得保留豁免。retention_preserve_paths仅透传既有retention API，由原边界检查
 run-local路径、类别和completed恢复日志。被保留策略移除的可选输出必须有对应receipt，不接受无解释消失。
 
+若场事务在停止后仍无法完成既有`--record-stage-only`核算，原session的
+`defer_capacity_finalization`保留原owner给出的原因。公共owner持久保留completion和小Result，
+现有完成与资源事实校验通过后，报告`capacity_accounting_deferred`／`return_to_capacity_accounting_owner`，writer已确认停止；继承host grant已失效时仍先按原资源owner恢复规则阻断，hold不清除。
+原核算owner解决之前，不做retention、终态发布、承诺缩减、lease释放或封存；原正承诺和保护保留。
+`ResumeFinalization`不重新求解，不清除该事实，也不借恢复Result覆盖原session的hold。
+原始科学异常与核算失败分别保留；通用owner不猜测缺少明确事务来源的cache核算已经完成。
+
 终态journal完成后，compact沿`finalize-ready`再释放session；solver_review/qualification先把同session
 承诺置零并释放，再沿原owner/reason调用`seal-stopped-payload`，因为该入口拒绝任何活动保护。释放后
 不得再向run追加日志、summary或usage；seal失败留下writing登记和已发布科学终态，交原owner恢复。

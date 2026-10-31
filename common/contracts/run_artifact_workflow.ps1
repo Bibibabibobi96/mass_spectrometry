@@ -507,6 +507,7 @@ function Invoke-RunArtifactWorkflow {
   $session=$null;$package=$null;$writersConfirmed=$false;$preparedStarted=[bool]$ResumeFinalization;$failure=$null
   $maximumRunBytes=$null;$python=$null;$repo=$null;$powershellOwner=$false;$completion=$null
   $inheritedCapacity=$false;$inheritedAlreadyReady=$false;$requiresParentOwner=$false
+  $capacityAccountingDeferred=$false;$capacityAccountingDeferredReason=$null
   try{
     $requestFile=(Resolve-Path -LiteralPath $RequestPath).Path
     $requestHash=(Get-FileHash -LiteralPath $requestFile -Algorithm SHA256).Hash
@@ -584,6 +585,14 @@ function Invoke-RunArtifactWorkflow {
       $initial=$recoveryConfig
       $sessionPath=Join-Path $runRoot 'logs/capacity_session.json'
       $session=Get-Content -LiteralPath $sessionPath -Raw -Encoding UTF8|ConvertFrom-Json
+      # The stopped-stage accounting owner is the only authority that can
+      # reconcile this marker. A recovery Result cannot erase the original hold.
+      if($session.PSObject.Properties.Name-contains'defer_capacity_finalization'){
+        $capacityAccountingDeferredReason=if($session.defer_capacity_finalization-is[string]-and
+          -not[string]::IsNullOrWhiteSpace($session.defer_capacity_finalization)){
+          $session.defer_capacity_finalization
+        }else{'Stopped-stage capacity accounting has an invalid unresolved deferral marker.'}
+      }
       $expectedOwner=if($request.capacity.Contains('session_owner')){[string]$request.capacity.session_owner}else{"run-artifact-workflow:{0}:{1}"-f$request.package.project,$request.package.run_id}
       if($session.role-cne'artifact_workflow_capacity_session'-or$session.owner-cne$expectedOwner-or
          [IO.Path]::GetFullPath($session.artifact_root)-ine$artifactRoot){throw 'Workflow recovery session identity differs.'}
@@ -767,6 +776,12 @@ function Invoke-RunArtifactWorkflow {
     $expectedReason=if($request.package.retention_class-eq'compact'){$null}else{$request.package.retention_reason}
     if($finalConfig.artifact_retention.reason-cne$expectedReason){throw 'Workflow frozen retention reason differs.'}
     $writersConfirmed=$true
+    if($null-ne$capacityAccountingDeferredReason){
+      $capacityAccountingDeferred=$true
+      Set-WorkflowStage capacity_accounting
+      $result.capacity_accounting_deferred_reason=$capacityAccountingDeferredReason
+      throw ('Capacity accounting is deferred; return to the original capacity/cache accounting owner: '+$capacityAccountingDeferredReason)
+    }
     if($completion.Contains('execution_alias')){
       $alias=$completion.execution_alias
       Assert-WorkflowFields $alias @('path','target_directory') 'Execution alias cleanup'
@@ -913,10 +928,10 @@ function Invoke-RunArtifactWorkflow {
     }
     if($null-eq$result.exception){$result.exception=@{type=$_.Exception.GetType().FullName;message=$_.Exception.Message;notes=@()}}
     else{$result.secondary_errors+=@($_.Exception.Message)}
-    $result.resume_action=if($requiresParentOwner){'parent_capacity_owner_finalize'}elseif($writersConfirmed){'resume_finalization'}elseif($preparedStarted){'inspect_writer_completion'}else{'correct_request_and_use_new_run'}
+    $result.resume_action=if($capacityAccountingDeferred){'return_to_capacity_accounting_owner'}elseif($requiresParentOwner){'parent_capacity_owner_finalize'}elseif($writersConfirmed){'resume_finalization'}elseif($preparedStarted){'inspect_writer_completion'}else{'correct_request_and_use_new_run'}
     # No writer was launched before package/preparation setup failed. Once a
     # writer starts, unknown completion must retain the existing protection.
-    if($null-ne$session-and-not$preparedStarted){
+    if($null-ne$session-and-not$preparedStarted-and-not$capacityAccountingDeferred){
       try{$null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repo -Session $session;$result.lease_released=$true}
       catch{$result.secondary_errors+=@("Capacity lease cleanup failed: $($_.Exception.Message)")}
     }
@@ -932,7 +947,7 @@ function Invoke-RunArtifactWorkflow {
   }
   if($powershellOwner){
     $summaryFields=if($null-ne$completion-and$completion.Contains('summary')-and$completion.summary-is[Collections.IDictionary]){$completion.summary}else{@{}}
-    $result.execution_status=if($null-ne$failure){'finalization_failed'}elseif($summaryFields.Contains('execution_status')){$summaryFields.execution_status}else{$result.status}
+    $result.execution_status=if($capacityAccountingDeferred){'capacity_accounting_deferred'}elseif($null-ne$failure){'finalization_failed'}elseif($summaryFields.Contains('execution_status')){$summaryFields.execution_status}else{$result.status}
     $result.data_validity=if($summaryFields.Contains('data_validity')){$summaryFields.data_validity}else{'unknown'}
     $result.scientific_result=if($summaryFields.Contains('scientific_result')){$summaryFields.scientific_result}elseif($summaryFields.Contains('science_status')){$summaryFields.science_status}else{'NOT_EVALUATED'}
     $result.failure_stage=if($null-ne$failure){$result.stage}elseif($summaryFields.Contains('failure_stage')){$summaryFields.failure_stage}else{$null}
