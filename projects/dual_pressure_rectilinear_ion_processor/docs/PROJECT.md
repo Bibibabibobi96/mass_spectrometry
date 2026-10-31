@@ -296,3 +296,12 @@ PA 在 builder 前取得持续防写 guard；保护前可写、保护中拒写�
 终态、容量、资源释放及两个 alias 清理完成。小 Result 位于该主题 scratch 的
 `agent2/native_ip_proposal/complete_owner_draft/root_native_result.json`。
 该11³ PA仅验证 IOB／pose／路径与保存机制，0 Refine、0 Fly，不代表完整IP场、N=100功能或科学资格。
+
+
+### 已有CLI恢复的解释器运输
+
+IP原CLI沿公共workspace路径约定优先消费SIMULATION_PYTHON_EXE，未显式提供时保留仓库.venv默认。选定后准入及后续Python消费者使用同一解释器；无效显式路径仍由公共路径检查拒绝，不静默回退。GitHub system Python环境无需伪造仓库.venv即可按原CLI恢复publication／seal收尾，unknown writer仍保留保护；生产容量底线与科学输入不变。
+
+历史CI604的accelerator五个subfail及5dd的IP publication／seal两个subfail均保留原FAIL。当前HEAD隔离源码不含.venv，由既有外部解释器执行：IP原方法三个场景通过33.398秒；accelerator四个方法最终分别通过dispatch2.933／实际provider8.664／请求归一化3.960／terminal4.495秒（首轮两项fixture上下文补齐前失败记录保留）。另以当前JointWorkflow命名和已迁project恢复测试作消费者投影，三个accelerator方法通过10.974／5.059／4.840秒；原未改dirty dispatch另验3.172秒，确认已修而跳过live重复补丁。迁IP fixture补回原HEAD已有惰性native_path_preparation后，publication／seal／unknown三个场景通过37.516秒，保留初次三FAIL及全部原保护／错误断言。
+
+上述为定向软件方法及真实PowerShell／Python进程，公共GATE自然释放、零商业调用；两种隔离投影都使用HEAD公共机制，不依赖dirty common支持。不是最终全范围CI、SIMION物理或科学资格，也不把不同scope的b771成功当作覆盖。

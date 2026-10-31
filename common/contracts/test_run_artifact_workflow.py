@@ -782,7 +782,7 @@ try {{
                 terminal_before = (run / "run_manifest.json").read_bytes()
                 command = [PWSH, "-NoProfile", "-File", str(cli), "-RunId", run.name,
                            "-ResultPath", str(result_path), "-ResumeFinalization"]
-                resumed = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=90)
+                resumed = subprocess.run(command, cwd=REPO, env={**os.environ,"SIMULATION_PYTHON_EXE":sys.executable}, capture_output=True, text=True, encoding="utf-8", timeout=90)
                 if failure == "unknown":
                     self.assertNotEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
                     self.assertEqual((run / "run_manifest.json").read_bytes(), terminal_before)
@@ -797,7 +797,7 @@ try {{
                     self.assertEqual((run / "run_manifest.json").read_bytes(), terminal_before)
                 manifest_bytes = (run / "run_manifest.json").read_bytes()
                 summary_bytes = (run / "summary.json").read_bytes()
-                repeated = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=90)
+                repeated = subprocess.run(command, cwd=REPO, env={**os.environ,"SIMULATION_PYTHON_EXE":sys.executable}, capture_output=True, text=True, encoding="utf-8", timeout=90)
                 self.assertEqual(repeated.returncode, 0, repeated.stdout + repeated.stderr)
                 self.assertEqual((run / "run_manifest.json").read_bytes(), manifest_bytes)
                 self.assertEqual((run / "summary.json").read_bytes(), summary_bytes)

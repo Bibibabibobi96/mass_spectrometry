@@ -83,7 +83,7 @@ $ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$
 $definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Assert-MultipoleIpRecoveryRequest'},$true)
 Invoke-Expression $definition.Extent.Text
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation) & $Operation}
-$repoRoot=$Repo;$python=$Python
+$repoRoot=$Repo;$python=$Python;$pathEnvironment=@{}
 Assert-MultipoleIpRecoveryRequest -Run $Run -Request $Request
 ''', encoding="utf-8")
             command = [powershell, "-NoProfile", "-File", str(script),
@@ -383,15 +383,19 @@ function Invoke-JointOwnerStage {
     New-Item -ItemType Directory -Force $Arguments.RunDirectory|Out-Null
     Set-Content (Join-Path $Arguments.RunDirectory 'run_manifest.json') '{}'
   }elseif($Arguments.ContainsKey('FinalizeJointWorkbench')){
-    $p=Join-Path $workspaceRoot 'artifacts/projects/instrument_assembly/runs/final';New-Item -ItemType Directory -Force $p|Out-Null;Set-Content (Join-Path $p 'run_manifest.json') '{}'
+    $p=Join-Path $artifactRoot 'projects/instrument_assembly/runs/final';New-Item -ItemType Directory -Force $p|Out-Null;Set-Content (Join-Path $p 'run_manifest.json') '{}'
   }else{
-    $p=Join-Path $workspaceRoot ('artifacts/projects/instrument_assembly/runs/'+$Arguments.RunId);New-Item -ItemType Directory -Force $p|Out-Null;Set-Content (Join-Path $p 'summary.json') '{"status":"success","diagnostics":"fixture","actual_native_batch_count":0,"reused_batch_count":1}'
+    $p=Join-Path $artifactRoot ('projects/instrument_assembly/runs/'+$Arguments.RunId);New-Item -ItemType Directory -Force $p|Out-Null;Set-Content (Join-Path $p 'summary.json') '{"status":"success","diagnostics":"fixture","actual_native_batch_count":0,"reused_batch_count":1}'
   }
 }
+. (Join-Path $Repo 'common/paths/workspace_paths.ps1')
+$context=Resolve-WorkspacePaths -SourceRoot $Repo -ArtifactRoot (Join-Path $Root 'selected-store') -Python $Python
+$artifactRoot=[string]$context.artifact_root;$pathEnvironment=@{}
+$MultipoleIpRequestPath='';$MultipoleIpRunId='';$IonProcessorRunId='';$IonProcessorConfigurationDirectory='';$IonProcessorFieldRunPath='';$ContinueOnIpScientificFailure=$false;$ResultPath=''
 $repoRoot=$Repo;$workspaceRoot=$Root;$PreparedInterfaceRunPath=$Root;$JointFieldRunPath='';$python=$Python
 $AcceleratorProvider='dual_pressure_rectilinear_ion_processor';$IonProcessorRunPath='source';$ReferenceMrRunPath='reference'
 $MatchingRequestPath='';$FieldRequestPath=$Template;$ContractPath='observation';$RunId='';$LuaExe='';$PythonExe='';$SimionExe=''
-$PreparedJointWorkbenchRunPath='';$ContinuationPredecessorManifestPath='';$FinalizeJointWorkbench=$false
+$PreparedJointWorkbenchRunPath='';$ContinuationPredecessorManifestPath='';$IonProcessorContinuationPredecessorManifestPath='';$FinalizeJointWorkbench=$false
 Invoke-FullJoint
 $before=$script:ownerCalls
 $bad=Get-Content $Template -Raw|ConvertFrom-Json -AsHashtable;$bad.run_id='field-fixture';$bad|ConvertTo-Json -Depth 20|Set-Content $Template
@@ -480,11 +484,11 @@ function Invoke-JointOwnerStage {
 . (Join-Path $SourceRoot 'common/paths/workspace_paths.ps1')
 $context=Resolve-WorkspacePaths -SourceRoot $SourceRoot -ArtifactRoot (Join-Path $Root 'selected-store') -Python $Python
 $MultipoleIpRequestPath='';$MultipoleIpRunId='';$IonProcessorRunId='';$IonProcessorConfigurationDirectory='';$IonProcessorFieldRunPath='';$ContinueOnIpScientificFailure=$false;$ResultPath=''
-$artifactRoot=[string]$context.artifact_root;$repoRoot=$Root;$AcceleratorProvider='dual_pressure_rectilinear_ion_processor'
+$artifactRoot=[string]$context.artifact_root;$pathEnvironment=@{};$repoRoot=$Root;$AcceleratorProvider='dual_pressure_rectilinear_ion_processor'
 $IonProcessorRunPath='source';$MatchingRequestPath='matching';$ContractPath='observation';$ReferenceMrRunPath='reference'
 $FieldRequestPath=Join-Path $Root 'field.json';$RunId='design';$LuaExe='';$PythonExe='';$SimionExe=''
 $FinalizeJointWorkbench=$false;$PreparedInterfaceRunPath='';$JointFieldRunPath=''
-$PreparedJointWorkbenchRunPath='';$ContinuationPredecessorManifestPath=''
+$PreparedJointWorkbenchRunPath='';$ContinuationPredecessorManifestPath='';$IonProcessorContinuationPredecessorManifestPath=''
 Set-Content $FieldRequestPath '{"run_id":"field","ion_processor_local_grid":{"pitch_mm":[0.05,0.1,0.05]}}'
 try { Invoke-FullJoint } catch { if(-not$Fail){throw} }
 $expected=if($Fail-eq'preflight'){@('design')}elseif($Fail){@('design','field')}else{@('design','field','binding','flight')}
@@ -816,6 +820,8 @@ $handler=[scriptblock]::Create(($owner.CatchClauses[0].Body.Statements.Extent.Te
 $finalizer=[scriptblock]::Create(($owner.Finally.Statements.Extent.Text)-join"`n")
 $package=@{run_config=(Join-Path $Run 'run_config.json');summary=(Join-Path $Run 'summary.json');result_dir=(Join-Path $Run 'results');artifact_run_dir=$Run}
 $repoRoot=$Repo;$workspaceRoot=Split-Path -Parent $Run;$python=$Python
+$expectedArtifactRoot=[string](Get-Content $package.run_config -Raw|ConvertFrom-Json).capacity_ledger_lifecycle.artifact_root
+$artifactRoot=$expectedArtifactRoot
 $terminalized=$false;$stage='fixture';$software=@('Python inert boundary');$extraOutputs=@()
 $AcceleratorProvider='orthogonal_accelerator';$RunId=Split-Path -Leaf $Run
 $receipt=@{status='prepared'}
@@ -834,6 +840,7 @@ function Update-ArtifactWorkflowCapacitySession {
 }
 function Invoke-RunCapacityLifecycleAdapter {
  param($Python,$RepoRoot,$Action,$ArtifactRoot,$RunConfig)
+ if($ArtifactRoot-cne$expectedArtifactRoot){throw 'Actual lifecycle root differs from frozen run'}
  if($Action-eq'assert-retention'){return @{status='retention_valid'}}
  if($Action-ne'finalize-ready'){throw 'unexpected lifecycle action'}
  $script:finalized=$true

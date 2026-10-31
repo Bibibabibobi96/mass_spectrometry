@@ -204,7 +204,7 @@ $workspaceRoot=Split-Path -Parent $repoRoot
 . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
 . (Join-Path $repoRoot 'common/resource_budget_support.ps1')
 . (Join-Path $repoRoot 'common/simion/short_pa_path_support.ps1')
-$python=Join-Path $repoRoot '.venv/Scripts/python.exe'
+$python=if($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{Join-Path $repoRoot '.venv/Scripts/python.exe'}
 . (Join-Path $repoRoot 'common/paths/workspace_paths.ps1')
 $pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
 if($ResumeFinalization){
