@@ -1,4 +1,4 @@
-"""Actual public lifecycle recovery through the two original assembly CLIs."""
+"""Actual public lifecycle recovery through the original assembly CLIs."""
 from contextlib import ExitStack
 import json
 import os
@@ -18,9 +18,13 @@ REPO = Path(__file__).resolve().parents[2]
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
 class AssemblyFinalizationRecoveryTests(unittest.TestCase):
     def test_retention_failure_resumes_original_cli_without_scientific_inputs(self):
-        cases = tuple((workflow, failure)
-                      for workflow in ("prepared_joint", "oa_mr")
-                      for failure in ("retention", "publication", "unknown"))
+        # The common owner owns the full fault cross-product. These are CLI
+        # adapters: cover the original entrypoints and each propagation kind
+        # without repeating that matrix for each identical owner invocation.
+        cases = (("prepared_joint", "retention"), ("oa_mr", "publication"),
+                 ("prepared_joint", "unknown"),
+                 ("paired_accelerator_static_field", "retention"),
+                 ("paired_accelerator_pulse", "publication"))
         # Keep artifact roots and capacity ledgers private while amortizing only
         # preparation-host startup. Each original recovery CLI remains a new process.
         with ExitStack() as stack:
@@ -111,18 +115,33 @@ foreach($case in (Get-Content -LiteralPath $env:WF_REQUEST -Raw|ConvertFrom-Json
                     self.assertEqual(json.loads(result.read_text(encoding="utf-8-sig"))["resume_action"],
                                      "inspect_writer_completion" if unknown else "resume_finalization")
                     command = [shutil.which("pwsh"), "-NoProfile", "-File", str(cli), "-ResumeFinalization",
-                               "-RunId", run_id, "-RepoRoot", str(facade), "-PythonExe", sys.executable]
-                    resumed = subprocess.run(command, cwd=REPO, capture_output=True, text=True,
+                               "-RunId", run_id, "-RepoRoot", str(facade)]
+                    command += (["-ResultPath", str(result), "-Python", sys.executable] if workflow.startswith("paired_accelerator_")
+                                else ["-PythonExe", sys.executable])
+                    before_manifest = (run / "run_manifest.json").read_bytes()
+                    science = (run / "results/analysis.json").read_bytes()
+                    authority = (run / "inputs/authority.json").read_bytes()
+                    completion_path = run / "results/execution_completion.json"
+                    completion = completion_path.read_bytes() if completion_path.exists() else None
+                    resumed = subprocess.run(command, cwd=REPO, env=env, capture_output=True, text=True,
                         encoding="utf-8", timeout=40)
                     self.assertEqual(resumed.returncode == 0, not unknown, resumed.stdout + resumed.stderr)
                     manifest_path = run / "run_manifest.json"
+                    self.assertEqual((run / "results/analysis.json").read_bytes(), science)
+                    self.assertEqual((run / "inputs/authority.json").read_bytes(), authority)
                     if unknown:
+                        self.assertEqual(manifest_path.read_bytes(), before_manifest)
                         self.assertEqual(json.loads(manifest_path.read_text(encoding="utf-8-sig"))["status"], "checkpoint")
                         self.assertFalse((run / "results/execution_completion.json").exists())
                     else:
+                        self.assertEqual(completion_path.read_bytes(), completion)
+                        resumed_result = json.loads(result.read_text(encoding="utf-8-sig"))
+                        self.assertEqual(resumed_result["status"], "success")
+                        self.assertTrue(resumed_result["terminal_published"] and resumed_result["capacity_finalized"]
+                                        and resumed_result["lease_released"])
                         self.assertEqual(json.loads(manifest_path.read_text(encoding="utf-8-sig"))["status"], "success")
                         original = manifest_path.read_bytes()
-                        again = subprocess.run(command, cwd=REPO, capture_output=True, text=True,
+                        again = subprocess.run(command, cwd=REPO, env=env, capture_output=True, text=True,
                             encoding="utf-8", timeout=40)
                         self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
                         self.assertEqual(manifest_path.read_bytes(), original)
