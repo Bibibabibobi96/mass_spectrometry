@@ -170,7 +170,8 @@ jobs:
   repository_integration:
     if: github.event_name == 'workflow_dispatch' && inputs.comparison_base == ''
     runs-on: windows-latest
-    timeout-minutes: 60
+    # Collect actual failures and drain active suites; the feedback target is
+    # not a process-kill timeout. Retain GitHub's platform job limit.
     steps:
       - name: Check out repository
         uses: actions/checkout@v6

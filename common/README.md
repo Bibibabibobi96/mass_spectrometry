@@ -75,9 +75,9 @@ Git差异保留重命名两端，不能只看到新路径。
 归入公共合同owner的`test_selection.dependencies`，不再维护covered专属路由和去重分支。
 短分析模块逻辑上独立选择，按stdlib／locked分别合为unittest执行批次，逐测试计时及失败保持。
 Core的成功不能替代未运行测试的证据。
-当前Repository实际规划39阶段：4个全局职责、33条逻辑route去掉9条分析独立进程、1个
-integration纯Ruff preflight和1个公共合同父进程，再加2个分析批次、8个MR／integration测试分片
-及3个公共合同分片。相比4058基线45阶段减少6；逻辑route由37减为33是四条covered归回公共合同选择，不能再算一次任务减少。
+当前Repository实际规划43阶段：4个全局职责、33条逻辑route去掉9条分析独立进程、1个
+integration纯Ruff preflight和1个公共合同父进程，再加2个分析批次、12个MR／单反射／integration测试分片
+及3个公共合同分片。相比4058基线45阶段减少2；逻辑route由37减为33是四条covered归回公共合同选择，不能再算一次任务减少。
 九个短分析模块按依赖分为stdlib四模块、locked五模块，保留标准库范围无需安装科学环境的能力，
 因此是九进程收敛为二，而非混装成一个。该数量是当前选择结果，不是未来配额或实际native进程计数。
 
@@ -103,6 +103,9 @@ Owner别名回归核对实际unittest模块与catalog所属发现集合（包括
 `gh workflow run lightweight-gate.yml --ref <任务分支> -f comparison_base=<40位提交SHA>`。
 显式比较基线必须可取得、非零且差异非空；不满足时在规划前拒绝，不静默改为另一范围。
 比较性能时仍须核对实际覆盖与环境，不能将不同catalog选择的墙钟直接当作同范围提速。
+Repository保留[GitHub平台job上限](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idtimeout-minutes)，
+不再另设60分钟强制取消；反馈性能目标不变，超目标必须继续报告和处理。原 CI 41222211656
+在60分钟边界附近取消，尾部仍在执行测试；该轮有真实失败，不能视为完整Repository验收。
 Changed可能包含完整integration行为回归；CI预算包括环境安装与整轮验证，不能按单个Core检查估算。
 两个CI job在门禁前将后续步骤的`TEMP/TMP`设为[官方`RUNNER_TEMP`](https://docs.github.com/en/actions/reference/workflows-and-actions/variables)的规范绝对路径，
 通过[`GITHUB_ENV`](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#setting-an-environment-variable)传递，避免Windows用户目录短别名与长路径在测试夹具中混用。
