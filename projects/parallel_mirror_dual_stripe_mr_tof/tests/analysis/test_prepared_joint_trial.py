@@ -8,6 +8,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+from common.contracts.frozen_inputs import freeze_file
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight import merge_measured_event_logs
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial import (
@@ -762,7 +763,9 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
             ["new_parent.pa","original_corridor.pa","original_fine_occupancy.pa","original_detector.pa"])])
         preparation=root/"prepared.json"
         preparation.write_text(json.dumps(dict(candidate_iob_rebuild=True,field_binding=file_record(binding),
-            measured_source_directory=str(fixture.output),frozen_runtime_directory=str(runtime),
+            measured_source_directory=str(fixture.output),frozen_runtime_directory=str(runtime),scientific_event_writer=freeze_file(
+                Path(__file__).resolve().parents[4]/"common/simion/scientific_event_csv.lua",
+                runtime/"scientific_event_csv.lua"),
             trajectory_recording=dict(mode="fixed_interval",interval_us=.1))))
         module="projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial"
         with patch(module+".load_binding",return_value=actual):
@@ -884,7 +887,9 @@ print('ACTUAL_BUILDER_SAVE_SOURCE_RESTORATION=PASS')
         (runtime / "joint.operating_point.lua").write_text("return {static_field=nil}")
         preparation = root / "prepared.json"
         preparation.write_text(json.dumps(dict(measured_source_directory=str(fixture.output),
-            frozen_runtime_directory=str(runtime), trajectory_recording=dict(mode="fixed_interval",interval_us=.1))))
+            frozen_runtime_directory=str(runtime),scientific_event_writer=freeze_file(
+                Path(__file__).resolve().parents[4]/"common/simion/scientific_event_csv.lua",
+                runtime/"scientific_event_csv.lua"), trajectory_recording=dict(mode="fixed_interval",interval_us=.1))))
         batch_dir = root / "batch"
         batch = materialize_batch(preparation, 2, 2, batch_dir)
         self.assertEqual(batch["original_particle_ids"], [7])

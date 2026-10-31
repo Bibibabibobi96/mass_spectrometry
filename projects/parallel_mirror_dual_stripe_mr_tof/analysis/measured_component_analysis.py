@@ -20,7 +20,7 @@ from common.contracts.component_particle_state import load_component_particle_st
 from common.contracts.file_identity import file_sha256
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.simion.native_completion import parse_fly_completed_line
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import parse_events, unavailable_peak_metadata
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import parse_events, read_scientific_events, unavailable_peak_metadata
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -95,6 +95,10 @@ def _close_events(text: str, states: dict[int, dict[str, Any]]) -> tuple[list[di
     events = parse_events(text)
     completed = [completion for line in text.splitlines()
                  if (completion := parse_fly_completed_line(line)) is not None]
+    return _close_event_rows(events, completed, states)
+
+
+def _close_event_rows(events, completed, states):
     if not completed or sum(completion.splats for completion in completed) != len(states):
         raise ValueError("Fly completion count differs from transferred source")
     terminals, detectors, splats = {}, {}, {}
@@ -315,7 +319,8 @@ def _save_detector_peak(output: Path, peak: dict[str, Any], spectra: dict[str, A
 
 def analyze_measured_component(log_path: Path, source_receipt_path: Path, output_directory: Path, *,
                                peak_analysis_contract: dict[str, Any] | None = None,
-                               contract_base_directory: Path | None = None) -> dict[str, Any]:
+                               contract_base_directory: Path | None = None,
+                               scientific_event_output: dict[str, Any] | None = None) -> dict[str, Any]:
     """Publish complete per-ID census and observed timing from absolute-time logs.
 
     Source receipt is the authority for original IDs, initial 6D, clock and full
@@ -325,7 +330,8 @@ def analyze_measured_component(log_path: Path, source_receipt_path: Path, output
     if output_directory.exists():
         raise FileExistsError(f"Refusing to overwrite measured analysis: {output_directory}")
     receipt, states, census, census_path = _load_source(source_receipt_path)
-    events, terminals, detectors = _close_events(log_path.read_text(encoding="utf-8-sig"), states)
+    actual, completions, log_identity = read_scientific_events(log_path, scientific_event_output=scientific_event_output)
+    events, terminals, detectors = _close_event_rows(actual, completions, states)
     rows = _population_rows(census, states, terminals, detectors)
     mother = [int(row["particle_id"]) for row in census]
     partition = partition_cohort(mother, [(row["particle_id"], row["downstream_status"]) for row in rows],
@@ -356,7 +362,7 @@ def analyze_measured_component(log_path: Path, source_receipt_path: Path, output
     if peak_analysis_contract is not None:
         _save_detector_peak(output_directory, peak, spectra, states, detectors,
                             dict(counts=counts, clock_epoch_id=receipt["clock_epoch_id"],
-                                 inputs={"log": _identity(log_path), "source_receipt": _identity(source_receipt_path)},
+                                 inputs={"log": dict(path=str(log_path.resolve()), bytes=log_path.stat().st_size, sha256=log_identity.upper()), "source_receipt": _identity(source_receipt_path)},
                                  producer=_identity(Path(__file__))))
     report = {"schema_version": 1, "role": "mrtof_measured_component_analysis", "status": "population_closed",
               "qualification": "recorded_lifecycle_and_timing_only", "physical_performance_pass": None,
@@ -372,7 +378,7 @@ def analyze_measured_component(log_path: Path, source_receipt_path: Path, output
               "detector_peak": peak,
               "peak_time_policy": "Use common absolute arrival axis for packet width; never subtract individual handoff times for peak analysis.",
               "plot_consumer": "particle_census.csv and parsed_events.json retain original IDs/absolute times for existing MR diagnostic plotting; no OA ideal-source receipt is fabricated.",
-              "inputs": {"log": _identity(log_path), "source_receipt": _identity(source_receipt_path)},
+              "inputs": {"log": dict(path=str(log_path.resolve()), bytes=log_path.stat().st_size, sha256=log_identity.upper()), "source_receipt": _identity(source_receipt_path)},
               "outputs": {path.stem: _identity(path) for path in sorted(output_directory.iterdir())}}
     _write(output_directory / "analysis_receipt.json", report)
     return report

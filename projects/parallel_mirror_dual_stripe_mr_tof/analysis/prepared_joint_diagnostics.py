@@ -7,6 +7,7 @@ states or qualifies old centre-point criteria as whole-cohort acceptance.
 from __future__ import annotations
 
 import csv
+from common.simion.scientific_event_io import iter_csv_rows
 import json
 import math
 from pathlib import Path
@@ -454,7 +455,7 @@ def build_loss_figure(census: list[dict]):
     return figure, axes
 
 
-def _loss_evidence(merged_log: Path, destination: Path, census: list[dict], source_receipt: dict) -> dict:
+def _loss_evidence(merged_log: Path, destination: Path, census: list[dict], source_receipt: dict, *, scientific_event_output=None) -> dict:
     destination.mkdir()
     downstream = {int(row["particle_id"]) for row in census if row["downstream_status"] in {"loss", "timeout"}}
     upstream = {int(row["particle_id"]) for row in census if row["downstream_status"] == "not_transferred"}
@@ -462,13 +463,23 @@ def _loss_evidence(merged_log: Path, destination: Path, census: list[dict], sour
     handles = {particle: (destination/f"particle_{particle:05d}.jsonl").open("w", encoding="utf-8") for particle in counts}
     sources = []
     try:
-        with merged_log.open(encoding="utf-8-sig") as source:
-            for line_number, line in enumerate(source, 1):
-                match = re.search(r"\bion=(\d+)\b", line)
-                if match and int(match[1]) in downstream:
-                    particle = int(match[1])
-                    handles[particle].write(json.dumps(dict(source=str(merged_log), line_number=line_number, raw_line=line))+"\n")
-                    counts[particle] += 1
+        if scientific_event_output is not None:
+            for key in ("events_path","trajectory_path"):
+                if not scientific_event_output.get(key): continue
+                path=Path(scientific_event_output[key])
+                for row_number,row in enumerate(iter_csv_rows(path,("ion",)),2):
+                    particle=int(float(row["ion"]))
+                    if particle in downstream:
+                        handles[particle].write(json.dumps(dict(source=str(path),row_number=row_number,fields=row))+"\n")
+                        counts[particle]+=1
+        else:
+            with merged_log.open(encoding="utf-8-sig") as source:
+                for line_number, line in enumerate(source, 1):
+                    match = re.search(r"\bion=(\d+)\b", line)
+                    if match and int(match[1]) in downstream:
+                        particle = int(match[1])
+                        handles[particle].write(json.dumps(dict(source=str(merged_log), line_number=line_number, raw_line=line))+"\n")
+                        counts[particle] += 1
         handoff_path = _bound(source_receipt["inputs"]["handoff_receipt"], merged_log.parent)
         handoff = _read(handoff_path)
         component_path = _bound(handoff["inputs"]["component_receipt"], handoff_path.parent)
@@ -541,6 +552,7 @@ def analyze_prepared_joint_flight(preparation_receipt: Path, merged_log: Path, o
     binding = load_binding(binding_path)
     if binding["geometry"]["frame_id"] != source["frame_id"]:
         raise ValueError("Loss diagnostic native geometry and measured source frame differ")
+    scientific_event_output = None
     if merge_receipt is not None:
         merged = _read(merge_receipt)
         if (merged.get("schema_version") != 1 or merged.get("role") != "mrtof_measured_batch_log_merge"
@@ -554,6 +566,7 @@ def analyze_prepared_joint_flight(preparation_receipt: Path, merged_log: Path, o
         if (_bound(merged["preparation"], merge_receipt.parent).resolve() != preparation_receipt.resolve()
                 or _bound(merged["merged_log"], merge_receipt.parent).resolve() != merged_log.resolve()):
             raise ValueError("Measured merge receipt differs from preparation/log identity")
+        scientific_event_output = merged.get("scientific_event_output")
         batches = merged["batches"]
         if not batches:
             raise ValueError("Measured merge receipt lacks completed source batches")
@@ -573,25 +586,28 @@ def analyze_prepared_joint_flight(preparation_receipt: Path, merged_log: Path, o
             {key: file_record(_bound(row[key], merge_receipt.parent)) for key in ("log", "batch_receipt", "fly2")}
             for row in batches]
     output_directory.mkdir(parents=True)
-    event_log = output_directory / "events.log"
-    _project_events(merged_log, event_log)
+    event_log = merged_log
+    if scientific_event_output is None:
+        event_log = output_directory / "events.log"
+        _project_events(merged_log, event_log)
     population = analyze_measured_component(event_log, source_path, output_directory / "population",
         peak_analysis_contract=contract.get("peak_analysis"),
-        contract_base_directory=contract_base)
+        contract_base_directory=contract_base, scientific_event_output=scientific_event_output)
     events = _read(output_directory / "population/parsed_events.json")
     census = _rows(output_directory / "population/particle_census.csv")
     trajectory = extract_trajectory_samples(log_path=merged_log, output_path=output_directory / "trajectory_samples.csv",
-                                           receipt_path=output_directory / "trajectory_receipt.json", recording_config=prepared["trajectory_recording"])
+                                           receipt_path=output_directory / "trajectory_receipt.json", recording_config=prepared["trajectory_recording"], scientific_event_output=scientific_event_output)
+    actual_trajectory = Path(trajectory["trajectory_csv"])
     birth_authority = _validate_birth_clock_projection(source, states, source_path.parent)
     birth_authority["actual_launch_evidence"] = _validate_completed_source_batches(prepared, states, preparation_receipt.parent)
-    lifetimes = _trajectory_lifetimes(output_directory / "trajectory_samples.csv", states,
+    lifetimes = _trajectory_lifetimes(actual_trajectory, states,
                                      {int(event["ion"]): event for event in events if event["kind"] == "terminal"},
                                      initialization_epoch_us=birth_authority["epoch_us"])
     if any(value["birth_clock_projected"] for value in lifetimes.values()) and birth_authority["actual_launch_evidence"]["status"] != "verified_actual_launched_sources":
         raise ValueError("Initialize birth-clock projection requires verified actual launched batch FLY2 evidence")
     birth_projection = _record_birth_clock_projection(output_directory, lifetimes, birth_authority)
     times = _snapshot_times(lifetimes, events)
-    snapshots, gap = _snapshot_rows(output_directory / "trajectory_samples.csv", lifetimes, mother,
+    snapshots, gap = _snapshot_rows(actual_trajectory, lifetimes, mother,
                                   {int(r["particle_id"]): r["downstream_status"] for r in census}, times)
     _write_rows(output_directory / "timed_spatial_clouds.csv", snapshots, list(snapshots[0]))
     prism = _prism_rows(events, states)
@@ -608,11 +624,11 @@ def analyze_prepared_joint_flight(preparation_receipt: Path, merged_log: Path, o
     _write_rows(output_directory / "prism_phase_space.csv", prism, prism_columns)
     species = {(float(r["mass_amu"]), int(r["charge_state"])) for r in states.values()}
     standard = _prism_phase_space_diagnostic(events, tuple(sorted(states)), *next(iter(species))) if len(species) == 1 else None
-    loss = _loss_evidence(merged_log, output_directory / "loss_evidence", census, source)
+    loss = _loss_evidence(merged_log, output_directory / "loss_evidence", census, source, scientific_event_output=scientific_event_output)
     acceptance_rows, collisions = prepare_loss_rows(events, states, census, binding["geometry"])
     _write_rows(output_directory / "loss_acceptance.csv", acceptance_rows, list(acceptance_rows[0]))
     domain_rows, crossing_rows, domain = prepare_mirror_domain_rows(
-        output_directory / "trajectory_samples.csv", binding, set(states),
+        actual_trajectory, binding, set(states),
         {int(e["ion"]): e for e in events if e["kind"] == "terminal"})
     domain_columns = ["particle_id", "window", "scope", "sample_count", "inside_x_sample_count", "outside_x_sample_count",
                       "inside_active_box_sample_count", "maximum_abs_x_mm", "x_min_mm", "x_max_mm", "z_min_mm", "z_max_mm"]

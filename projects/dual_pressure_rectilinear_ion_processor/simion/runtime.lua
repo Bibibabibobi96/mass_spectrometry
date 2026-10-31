@@ -2,6 +2,7 @@
 simion.workbench_program()
 local program_file=debug.getinfo(1,'S').source:sub(2)
 local directory=program_file:match('^(.*[/\\])') or './'
+local CSV=assert(loadfile(directory..'scientific_event_csv.lua'))()
 local waveforms=assert(loadfile(directory..'voltage_waveforms.lua'))()
 local c=assert(loadfile(directory..'frozen_config.lua'))()
 local b,n,g=c.baseline,c.numerics,c.baseline.geometry
@@ -159,8 +160,7 @@ local function draw_numerical_exit_outline()
 end
 local function write_state(event,reason,state)
  state=world_state(state)
- events:write(string.format('%s,%d,%s,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g\n',
-  event,output_particle_id(ion_number),reason or 'none',state.t,state.x,state.y,state.z,state.vx,state.vy,state.vz))
+ events:write({event,string.format('%d',output_particle_id(ion_number)),reason or 'none',state.t,state.x,state.y,state.z,state.vx,state.vy,state.vz})
 end
 local function now()
  local x,y,z=local_position(ion_px_mm,ion_py_mm,ion_pz_mm)
@@ -200,10 +200,8 @@ function segment.initialize_run()
  draw_numerical_exit_outline()
  assert(#simion.wb.instances==1 and #source==sim_ions_count,'source/volume mismatch')
  force_audit=force_module.new(c,simion.wb.instances[1].pa,drive,rf,directory)
- events=assert(io.open(directory..'events.csv','w'))
- events:write('event,particle_id,reason,t_us,x_mm,y_mm,z_mm,vx_mm_us,vy_mm_us,vz_mm_us\n')
- trace=assert(io.open(directory..'samples.csv','w'))
- trace:write('particle_id,t_us,x_mm,y_mm,z_mm,vx_mm_us,vy_mm_us,vz_mm_us\n')
+ events=CSV.open(directory..'events.csv',{'event','particle_id','reason','t_us','x_mm','y_mm','z_mm','vx_mm_us','vy_mm_us','vz_mm_us'},15)
+ trace=CSV.open(directory..'samples.csv',{'particle_id','t_us','x_mm','y_mm','z_mm','vx_mm_us','vy_mm_us','vz_mm_us'},15)
  rng_audit=assert(io.open(directory..'collision_rng_seeds.csv','w'))
  rng_audit:write('particle_id,global_particle_id,seed\n')
  sim_trajectory_quality=n.trajectory_quality
@@ -280,7 +278,7 @@ function segment.other_actions()
  end
  if s.t>=next_sample[id] then
   local output=world_state(s)
-  trace:write(string.format('%d,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g\n',output_particle_id(id),output.t,output.x,output.y,output.z,output.vx,output.vy,output.vz))
+  trace:write({string.format('%d',output_particle_id(id)),output.t,output.x,output.y,output.z,output.vx,output.vy,output.vz})
   local interval=extraction_trace[id] and n.extraction_sample_interval_us or n.sample_interval_us
   next_sample[id]=s.t+interval
  end

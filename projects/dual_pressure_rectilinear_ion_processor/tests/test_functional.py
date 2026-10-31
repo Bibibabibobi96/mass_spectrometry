@@ -324,6 +324,7 @@ class FunctionalContractTests(unittest.TestCase):
             (project / "simion" / name).write_text("-- inert copy fixture\n", encoding="utf-8")
         vendor = Path(self.temporary.name) / "vendor_copy_fixture"
         fixture_paths = [repo / "common/simion/rf_drive.lua",
+                         repo / "common/simion/scientific_event_csv.lua",
                          repo / "common/simion/voltage_waveforms.lua",
                          repo / "common/simion/assets/iob_instance_seeds/1_instance_seed.iob",
                          vendor / "examples/collision_hs1/collision_hs1.lua"]
@@ -741,6 +742,38 @@ print(json.dumps(dict(alpha=rows[0].interpolation_alpha, lower=rows[0].lower_anc
         self.assertEqual(result["status"], "success")
         self.assertAlmostEqual(result["metrics"]["extraction_exit"]["mean_kinetic_energy_ev"],
                                4000, places=8)
+
+    def test_analyze_preserves_timeout_unknown_and_observed_escape_separately(self) -> None:
+        rows = event_fixture(self.config)
+        replacements = {1: "timeout", 2: "solver_stop", 3: "unknown", 4: "radial_escape"}
+        selected = []
+        for row in rows:
+            particle = row["particle_id"]
+            if particle in replacements and row["event"] == "extraction_exit":
+                continue
+            if particle == 4 and row["event"] not in {"source", "terminal"}:
+                continue
+            if particle in replacements and row["event"] == "terminal":
+                row = {**row, "reason": replacements[particle],
+                       "t_us": 20 if particle == 4 else self.config["baseline"]["schedule"]["terminal_us"],
+                       "y_mm": self.config["baseline"]["geometry"]["boundary_radius_mm"] + 1 if particle == 4 else 0,
+                       "z_mm": 0, "vx_mm_us": 0, "vy_mm_us": 0, "vz_mm_us": 0}
+            selected.append(row)
+        self.write_events(selected)
+        result = functional.analyze(self.run)
+        with (self.run / "results/particle_state.csv").open(encoding="utf-8", newline="") as stream:
+            canonical = list(csv.DictReader(stream))
+        terminal = {int(row["particle_id"]): row for row in canonical if row["event"] == "terminal"}
+        self.assertEqual([terminal[i]["status"] for i in range(1, 6)],
+                         ["timeout", "unknown", "unknown", "lost", "transmitted"])
+        self.assertEqual([terminal[i]["terminal_reason"] for i in range(1, 5)],
+                         ["timeout", "solver_stop", "unknown", "radial_escape"])
+        self.assertEqual(len(terminal), self.config["source"]["particle_count"])
+        self.assertTrue(all(row["status"] == "alive" for row in canonical if row["event"] == "source"))
+        self.assertEqual(result["actual_particle_count"], 100)
+        self.assertEqual(result["capture_fraction"], .99)
+        self.assertEqual(result["extraction_fraction"], .96)
+        self.assertEqual(result["terminal_reasons"]["solver_stop"], 1)
 
     def test_analyze_rejects_missing_terminal(self) -> None:
         rows = event_fixture(self.config)

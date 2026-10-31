@@ -33,12 +33,11 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
 )
-from common.simion.native_completion import parse_fly_completed_line
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
     histogram_half_height_bin_span,
     peak_time_metrics,
     collision_diagnostics,
-    parse_events,
+    read_scientific_events,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import (
     _collision_geometry_projection,
@@ -1026,7 +1025,7 @@ def _batches_from_receipt(
         elif file_sha256(path).lower() != sha256.lower():
             raise CandidateContractError(f"native batch log {index} differs from merge receipt")
         covered.extend(range(offset + 1, offset + count + 1))
-        result.append((path, offset, count))
+        result.append((path, offset, count, batch["scientific_event_output"]) if "scientific_event_output" in batch else (path, offset, count))
     if covered != list(range(1, particle_count + 1)):
         raise CandidateContractError("batch logs do not cover the cohort exactly once")
     return result
@@ -1037,13 +1036,13 @@ def _load_selected_events(
 ) -> tuple[dict[tuple[str, int], list[dict[str, Any]]], list[dict[str, Any]]]:
     selected: dict[tuple[str, int], list[dict[str, Any]]] = {}
     evidence: list[dict[str, Any]] = []
-    for path, offset, count in batches:
-        text = path.read_text(encoding="utf-8-sig")
-        completions = [completion for line in text.splitlines()
-                       if (completion := parse_fly_completed_line(line)) is not None]
+    for batch in batches:
+        path,offset,count=batch[:3]
+        declaration=batch[3] if len(batch)>3 else None
+        actual,completions,log_identity=read_scientific_events(path,scientific_event_output=declaration)
         if len(completions) != 1 or completions[0].splats != count:
             raise CandidateContractError(f"native log completion differs from its batch plan: {path}")
-        for event in parse_events(text):
+        for event in actual:
             local_id = int(event.get("ion", -1))
             if not 1 <= local_id <= count:
                 raise CandidateContractError(f"native log event ID is outside its batch: {path}")
@@ -1052,7 +1051,7 @@ def _load_selected_events(
             event = dict(event)
             event["ion"] = local_id + offset
             selected.setdefault((event["kind"], int(event["ion"])), []).append(event)
-        evidence.append({"path": str(path), "sha256": file_sha256(path).lower(), "offset": offset, "count": count})
+        evidence.append({"path": str(path), "sha256": log_identity, "offset": offset, "count": count})
     return selected, evidence
 
 
@@ -1972,21 +1971,14 @@ def _controlled_fast_turn_history(
 
 
 def analyze_controlled_aberration_first_batch(
-    *, first_batch_log: Path, source_receipt_path: Path,
+    *, first_batch_log: Path, source_receipt_path: Path, scientific_event_output: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Analyze the frozen centre and controlled pairs as soon as batch 1 completes."""
-    text = first_batch_log.read_text(encoding="utf-8-sig")
-    completions = [completion for line in text.splitlines()
-                   if (completion := parse_fly_completed_line(line)) is not None]
-    if len(completions) != 1 or completions[0].splats != 10:
-        raise CandidateContractError(
-            "controlled aberration early report requires one completed 10-particle first batch"
-        )
     expected_ids = list(range(1, 11))
     source_rows, receipt = _source_rows_from_receipt(
         source_receipt_path, expected_ids,
     )
-    events, _ = _load_selected_events([(first_batch_log, 0, 10)])
+    events, _ = _load_selected_events([(first_batch_log, 0, 10, scientific_event_output)] if scientific_event_output is not None else [(first_batch_log, 0, 10)])
     observed_ids = sorted(
         ion for (kind, ion), matches in events.items()
         if kind == "terminal" and len(matches) == 1
@@ -2674,6 +2666,7 @@ def main() -> int:
     parser.add_argument("--observation", type=Path)
     parser.add_argument("--batch-merge-receipt", type=Path)
     parser.add_argument("--first-batch-log", type=Path)
+    parser.add_argument("--scientific-events", type=Path)
     parser.add_argument("--source-receipt", type=Path)
     parser.add_argument("--te1-reference", type=Path)
     parser.add_argument("--build-te1-reference", action="store_true")
@@ -2753,6 +2746,7 @@ def main() -> int:
         result = analyze_controlled_aberration_first_batch(
             first_batch_log=args.first_batch_log,
             source_receipt_path=args.source_receipt,
+            scientific_event_output=dict(events_path=str(args.scientific_events)) if args.scientific_events is not None else None,
         )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(

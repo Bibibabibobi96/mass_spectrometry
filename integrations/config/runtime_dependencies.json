@@ -1364,6 +1364,24 @@
             "local_frontend",
             "cooled_frontend"
           ]
+        },
+        {
+          "id": "common_simion_scientific_event_io_py",
+          "source_repo_path": "common/simion/scientific_event_io.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "common_simion_scientific_event_csv_lua",
+          "source_repo_path": "common/simion/scientific_event_csv.lua",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
         }
       ]
     },

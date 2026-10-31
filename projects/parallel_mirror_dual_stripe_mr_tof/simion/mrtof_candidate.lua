@@ -37,6 +37,53 @@ local function event_id()
   if measured_source then return measured_source.source_id(ion_number) end
   return ion_number
 end
+-- The frozen sidecar explicitly declares per-batch persistent science files.
+local scientific_output=assert(operating_point.scientific_event_output,'frozen scientific event output required')
+local scientific_events,scientific_trajectory
+local scientific_csv=assert(loadfile(assert(scientific_output.csv_writer_path,'frozen CSV writer path required')))()
+local scientific_columns={'kind','ion','accelerator','accelerator_fast_adjust','after_t_us','after_vy_mm_us','after_vz_mm_us','after_z_mm','before_t_us','before_vy_mm_us','before_vz_mm_us','before_z_mm','central_crossings','code','corridor','corridor_fast_adjust','direction_after','direction_before','direction_ok','direction_y','direction_z','fast_adjust','field','fraction','fractional_k','from_instance','geometry','gui_field_queries_equivalent','half_cycles','inside_aperture','instance','k','k_before','localization','n','native_splat','phase','phase_crossing_t_us','phase_crossing_y_mm','phase_period_us','phase_time_residual_us','physical_collision','projection_dt_us','raw_t_us','raw_x_mm','raw_y_mm','raw_z_mm','reason','scheduled_t_us','slow_coordinate_residual_mm','splat','status','step_span_us','t_us','termination_kind','to_instance','trigger','turns','volts','vx_mm_us','vy_mm_us','vz_mm_us','x_mm','y_mm','z_mm'}
+local trajectory_columns={'ion','phase','t_us','x_mm','y_mm','z_mm','vx_mm_us','vy_mm_us','vz_mm_us'}
+local function initialize_scientific_output()
+  local events_path,trajectory_path
+  if scientific_output.environment_required then
+    events_path=os.getenv(scientific_output.events_environment_variable)
+    trajectory_path=os.getenv(scientific_output.trajectory_environment_variable)
+    assert(events_path and #events_path>0,'batch scientific event locator is required')
+    if operating_point.trajectory_recording_enabled then assert(trajectory_path and #trajectory_path>0,'batch scientific trajectory locator is required') end
+  else
+    events_path=scientific_output.events_path
+    trajectory_path=scientific_output.trajectory_path
+  end
+  assert(events_path and #events_path>0,'declared event output missing')
+  scientific_events=scientific_csv.open(events_path,scientific_columns,12)
+  if operating_point.trajectory_recording_enabled then
+    assert(trajectory_path and #trajectory_path>0,'declared trajectory output missing')
+    scientific_trajectory=scientific_csv.open(trajectory_path,trajectory_columns,17)
+  end
+end
+local function scientific_particle_id(value)
+  assert(type(value)=='number' and value>=1 and value<=9007199254740991 and value%1==0,
+    'scientific particle ID must be a positive safe integer')
+  return string.format('%.0f',value)
+end
+local function record_scientific(kind, row, extra)
+  assert(type(row)=='table','scientific event fields required')
+  if extra then
+    for key,value in pairs(extra) do
+      assert(row[key]==nil,'duplicate project scientific event field')
+      row[key]=value
+    end
+  end
+  local trajectory=kind==nil
+  if not trajectory then row.kind=kind end
+  local columns=trajectory and trajectory_columns or scientific_columns
+  local writer=assert(trajectory and scientific_trajectory or scientific_events,'scientific output is not initialized')
+  local values={}
+  for i,key in ipairs(columns) do values[i]=row[key] or '' end
+  writer:write(values)
+  if kind=='terminal' then writer:flush();if scientific_trajectory then scientific_trajectory:flush() end end
+end
+
 -- Official SIMION initialize/other_actions/terminate callbacks expose actual
 -- solver states. Observation only: no time-step or particle-state assignment.
 -- https://simion.com/info/trajectory_programming.html (SIMION 8.1+, 2026-10-16).
@@ -57,9 +104,7 @@ local function record_trajectory_sample(phase, explicit_time_us)
         and bucket <= trajectory_sample_buckets[ion_number] then return end
     trajectory_sample_buckets[ion_number] = bucket
   end
-  print(string.format('MRTOF_TRAJECTORY ion=%d phase=%s t_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_us=%.17g vy_mm_us=%.17g vz_mm_us=%.17g',
-    event_id(), phase, sample_time_us, ion_px_mm, ion_py_mm, ion_pz_mm,
-    ion_vx_mm, ion_vy_mm, ion_vz_mm))
+  record_scientific(nil, {ion=scientific_particle_id(event_id()), phase=phase, t_us=string.format('%.17g',sample_time_us), x_mm=string.format('%.17g',ion_px_mm), y_mm=string.format('%.17g',ion_py_mm), z_mm=string.format('%.17g',ion_pz_mm), vx_mm_us=string.format('%.17g',ion_vx_mm), vy_mm_us=string.format('%.17g',ion_vy_mm), vz_mm_us=string.format('%.17g',ion_vz_mm)})
 end
 local static_field_adjust
 if static_field then
@@ -326,21 +371,14 @@ local function emit_cycle_events(events)
       if event.stage == 'before_main_drift' and event.side == -1
         and prism_stage[ion_number] == 'p1_complete' then
         prism_stage[ion_number] = 'awaiting_p2_entry'
-        print(string.format('MRTOF_EVENT pre_injection_mirror_turn ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          event_id(), event.t_us, event.x_mm, event.y_mm, event.z_mm,
-          event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+        record_scientific('pre_injection_mirror_turn', {ion=scientific_particle_id(event_id()), t_us=event.t_us, x_mm=event.x_mm, y_mm=event.y_mm, z_mm=event.z_mm, vx_mm_us=event.vx_mm_us, vy_mm_us=event.vy_mm_us, vz_mm_us=event.vz_mm_us})
       end
       if event.accepted then
         local n = event.is_pre_origin_turn and 0 or event.half_cycles
-        print(string.format('MRTOF_EVENT turn ion=%d n=%d t_us=%.12g z_mm=%.12g',
-          event_id(), n, event.t_us, event.z_mm))
-        print(string.format('MRTOF_EVENT fast_turn ion=%d n=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          event_id(), n, event.t_us, event.x_mm, event.y_mm, event.z_mm,
-          event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+        record_scientific('turn', {ion=scientific_particle_id(event_id()), n=string.format('%d',n), t_us=event.t_us, z_mm=event.z_mm})
+        record_scientific('fast_turn', {ion=scientific_particle_id(event_id()), n=string.format('%d',n), t_us=event.t_us, x_mm=event.x_mm, y_mm=event.y_mm, z_mm=event.z_mm, vx_mm_us=event.vx_mm_us, vy_mm_us=event.vy_mm_us, vz_mm_us=event.vz_mm_us})
         if event.is_pre_origin_turn then
-          print(string.format('MRTOF_EVENT pre_origin_positive_mirror_turn ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-            event_id(), event.t_us, event.x_mm, event.y_mm, event.z_mm,
-            event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+          record_scientific('pre_origin_positive_mirror_turn', {ion=scientific_particle_id(event_id()), t_us=event.t_us, x_mm=event.x_mm, y_mm=event.y_mm, z_mm=event.z_mm, vx_mm_us=event.vx_mm_us, vy_mm_us=event.vy_mm_us, vz_mm_us=event.vz_mm_us})
         end
       elseif event.stage == 'after_main_drift' then
         if prism_stage[ion_number] == 'awaiting_return_positive_mirror'
@@ -350,10 +388,7 @@ local function emit_cycle_events(events)
           -- toward the detector at z>0 with v_z<0; requiring a second P1 pass
           -- would put the detector behind its reviewed physical plane.
           prism_stage[ion_number] = 'awaiting_static_detector'
-          print(string.format('MRTOF_EVENT return_positive_mirror_turn ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          event_id(), event.t_us,
-          event.x_mm, event.y_mm, event.z_mm,
-          event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+          record_scientific('return_positive_mirror_turn', {ion=scientific_particle_id(event_id()), t_us=event.t_us, x_mm=event.x_mm, y_mm=event.y_mm, z_mm=event.z_mm, vx_mm_us=event.vx_mm_us, vy_mm_us=event.vy_mm_us, vz_mm_us=event.vz_mm_us})
         else
           return_sequence_error[ion_number] = 'unexpected_post_return_mirror_turn'
         end
@@ -365,41 +400,23 @@ local function emit_cycle_events(events)
         -- forming the designed -z beam.  This is launch formation, not an
         -- analyser reflection; the mirror-only reversal invariant begins at
         -- the first safe accelerator exit.
-        print(string.format('MRTOF_EVENT accelerator_launch_vz_zero ion=%d direction_before=%d direction_after=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          event_id(), event.direction_before, event.direction_after,
-          event.t_us, event.x_mm, event.y_mm, event.z_mm,
-          event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+        record_scientific('accelerator_launch_vz_zero', {ion=scientific_particle_id(event_id()), direction_before=string.format('%d',event.direction_before), direction_after=string.format('%d',event.direction_after), t_us=event.t_us, x_mm=event.x_mm, y_mm=event.y_mm, z_mm=event.z_mm, vx_mm_us=event.vx_mm_us, vy_mm_us=event.vy_mm_us, vz_mm_us=event.vz_mm_us})
       else
         return_sequence_error[ion_number] = 'nonmirror_vz_reversal'
-        print(string.format('MRTOF_EVENT nonmirror_reversal ion=%d direction_before=%d direction_after=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          event_id(), event.direction_before, event.direction_after,
-          event.t_us, event.x_mm, event.y_mm, event.z_mm,
-          event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+        record_scientific('nonmirror_reversal', {ion=scientific_particle_id(event_id()), direction_before=string.format('%d',event.direction_before), direction_after=string.format('%d',event.direction_after), t_us=event.t_us, x_mm=event.x_mm, y_mm=event.y_mm, z_mm=event.z_mm, vx_mm_us=event.vx_mm_us, vy_mm_us=event.vy_mm_us, vz_mm_us=event.vz_mm_us})
       end
     elseif event.kind == 'drift_phase_origin' then
-      print(string.format('MRTOF_EVENT drift_phase_origin ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-        event_id(), event.t_us, event.x_mm, event.y_mm, event.z_mm,
-        event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+      record_scientific('drift_phase_origin', {ion=scientific_particle_id(event_id()), t_us=event.t_us, x_mm=event.x_mm, y_mm=event.y_mm, z_mm=event.z_mm, vx_mm_us=event.vx_mm_us, vy_mm_us=event.vy_mm_us, vz_mm_us=event.vz_mm_us})
     elseif event.kind == 'drift_phase_candidate' then
-      print(string.format('MRTOF_EVENT drift_phase_candidate ion=%d k=%.12g half_cycles=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-        event_id(), event.period_ratio, event.half_cycles,
-        event.t_us, event.x_mm, event.y_mm, event.z_mm,
-        event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+      record_scientific('drift_phase_candidate', {ion=scientific_particle_id(event_id()), k=event.period_ratio, half_cycles=string.format('%d',event.half_cycles), t_us=event.t_us, x_mm=event.x_mm, y_mm=event.y_mm, z_mm=event.z_mm, vx_mm_us=event.vx_mm_us, vy_mm_us=event.vy_mm_us, vz_mm_us=event.vz_mm_us})
       if event.half_cycles == target_half_oscillation_count then
-        print(string.format('MRTOF_EVENT target_k_phase_sample ion=%d k=%.12g half_cycles=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          event_id(), event.period_ratio, event.half_cycles, event.t_us, event.x_mm, event.y_mm, event.z_mm,
-          event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+        record_scientific('target_k_phase_sample', {ion=scientific_particle_id(event_id()), k=event.period_ratio, half_cycles=string.format('%d',event.half_cycles), t_us=event.t_us, x_mm=event.x_mm, y_mm=event.y_mm, z_mm=event.z_mm, vx_mm_us=event.vx_mm_us, vy_mm_us=event.vy_mm_us, vz_mm_us=event.vz_mm_us})
       end
     elseif event.kind == 'drift_phase_return' then
-      print(string.format('MRTOF_EVENT drift_phase_return ion=%d k=%.12g half_cycles=%d slow_coordinate_residual_mm=%.12g t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-        event_id(), event.period_ratio, event.half_cycles, event.slow_coordinate_residual_mm,
-        event.t_us, event.x_mm, event.y_mm, event.z_mm,
-        event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+      record_scientific('drift_phase_return', {ion=scientific_particle_id(event_id()), k=event.period_ratio, half_cycles=string.format('%d',event.half_cycles), slow_coordinate_residual_mm=event.slow_coordinate_residual_mm, t_us=event.t_us, x_mm=event.x_mm, y_mm=event.y_mm, z_mm=event.z_mm, vx_mm_us=event.vx_mm_us, vy_mm_us=event.vy_mm_us, vz_mm_us=event.vz_mm_us})
       if event.half_cycles == target_half_oscillation_count and not target_k_emitted[ion_number] then
         target_k_emitted[ion_number] = true
-        print(string.format('MRTOF_EVENT target_k ion=%d k=%.12g half_cycles=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g',
-          event_id(), event.period_ratio, event.half_cycles,
-          event.t_us, event.x_mm, event.y_mm, event.z_mm))
+        record_scientific('target_k', {ion=scientific_particle_id(event_id()), k=event.period_ratio, half_cycles=string.format('%d',event.half_cycles), t_us=event.t_us, x_mm=event.x_mm, y_mm=event.y_mm, z_mm=event.z_mm})
         if prism_stage[ion_number] == 'p2_complete' then
           prism_stage[ion_number] = 'awaiting_return_p2_entry'
         else
@@ -408,28 +425,19 @@ local function emit_cycle_events(events)
       end
     elseif event.kind == 'slow_coordinate' then
       y0_crossings[ion_number] = (y0_crossings[ion_number] or 0) + 1
-      print(string.format('MRTOF_EVENT slow_coordinate_y0 ion=%d n=%d direction_y=%d t_us=%.12g x_mm=%.12g y_mm=0 z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-        event_id(), y0_crossings[ion_number], event.direction,
-        event.t_us, event.x_mm, event.z_mm,
-        event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+      record_scientific('slow_coordinate_y0', {ion=scientific_particle_id(event_id()), n=string.format('%d',y0_crossings[ion_number]), direction_y=string.format('%d',event.direction), t_us=event.t_us, x_mm=event.x_mm, y_mm=0, z_mm=event.z_mm, vx_mm_us=event.vx_mm_us, vy_mm_us=event.vy_mm_us, vz_mm_us=event.vz_mm_us})
     elseif event.kind == 'drift_coordinate_return' then
-      local phase_fields = ''
+      local phase_fields = {}
       if event.phase_crossing_t_us then
-        phase_fields = string.format(' phase_crossing_t_us=%.12g phase_crossing_y_mm=%.12g phase_time_residual_us=%.12g phase_period_us=%.12g',
-          event.phase_crossing_t_us, event.phase_crossing_y_mm,
-          event.phase_time_residual_us, event.phase_period_us)
+        phase_fields = {phase_crossing_t_us=event.phase_crossing_t_us, phase_crossing_y_mm=event.phase_crossing_y_mm,
+          phase_time_residual_us=event.phase_time_residual_us, phase_period_us=event.phase_period_us}
       end
-      print(string.format('MRTOF_EVENT drift_coordinate_return ion=%d k_before=%.12g fractional_k=%.12g%s t_us=%.12g x_mm=%.12g y_mm=0 z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-        event_id(), event.k_before, event.fractional_k, phase_fields,
-        event.t_us, event.x_mm, event.z_mm, event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+      record_scientific('drift_coordinate_return', {ion=scientific_particle_id(event_id()), k_before=event.k_before, fractional_k=event.fractional_k, t_us=event.t_us, x_mm=event.x_mm, y_mm=0, z_mm=event.z_mm, vx_mm_us=event.vx_mm_us, vy_mm_us=event.vy_mm_us, vz_mm_us=event.vz_mm_us}, phase_fields)
     elseif event.kind == 'central_plane' and event.stage == 'main_drift' then
       crossings[ion_number] = (crossings[ion_number] or 0) + 1
       local n = crossings[ion_number]
-      print(string.format('MRTOF_EVENT central_plane ion=%d n=%d t_us=%.12g x_mm=%.12g y_mm=%.12g',
-        event_id(), n, event.t_us, event.x_mm, event.y_mm))
-      print(string.format('MRTOF_EVENT central_plane_directional ion=%d n=%d direction_z=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-        event_id(), n, event.direction, event.t_us, event.x_mm, event.y_mm, event.z_mm,
-        event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+      record_scientific('central_plane', {ion=scientific_particle_id(event_id()), n=string.format('%d',n), t_us=event.t_us, x_mm=event.x_mm, y_mm=event.y_mm})
+      record_scientific('central_plane_directional', {ion=scientific_particle_id(event_id()), n=string.format('%d',n), direction_z=string.format('%d',event.direction), t_us=event.t_us, x_mm=event.x_mm, y_mm=event.y_mm, z_mm=event.z_mm, vx_mm_us=event.vx_mm_us, vy_mm_us=event.vy_mm_us, vz_mm_us=event.vz_mm_us})
     end
   end
   -- Flush the complete turn event group, never every integration step.
@@ -440,6 +448,7 @@ local function emit_cycle_events(events)
 end
 
 function segment.initialize_run()
+  initialize_scientific_output()
   trajectory_sample_buckets = {}
   solver_birth_times = {}
   detector_native_contacts = {}
@@ -616,9 +625,7 @@ function segment.other_actions()
       and not accelerator_pulse_complete[ion_number]
       and instrument_time_us() >= accelerator_pulse_off_time_us then
     accelerator_pulse_complete[ion_number] = true
-    print(string.format('MRTOF_EVENT accelerator_global_pulse_applied ion=%d t_us=%.12g scheduled_t_us=%.12g instance=%d x_mm=%.12g y_mm=%.12g z_mm=%.12g trigger=fixed_global_time',
-      event_id(), instrument_time_us(), accelerator_pulse_off_time_us, ion_instance,
-      ion_px_mm, ion_py_mm, ion_pz_mm))
+    record_scientific('accelerator_global_pulse_applied', {ion=scientific_particle_id(event_id()), t_us=instrument_time_us(), scheduled_t_us=accelerator_pulse_off_time_us, instance=string.format('%d',ion_instance), x_mm=ion_px_mm, y_mm=ion_py_mm, z_mm=ion_pz_mm, trigger='fixed_global_time'})
   end
   local accelerator_instance = accelerator_instance_number()
   local maximum_instance = maximum_instance_number()
@@ -629,14 +636,11 @@ function segment.other_actions()
           and selected_instances[ion_number] == accelerator_instance
           and ion_instance ~= accelerator_instance then
         accelerator_safe_exit_observed[ion_number] = true
-        print(string.format('MRTOF_EVENT accelerator_safe_exit ion=%d t_us=%.12g from_instance=%d to_instance=%d x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          event_id(), instrument_time_us(), selected_instances[ion_number], ion_instance,
-          ion_px_mm, ion_py_mm, ion_pz_mm, ion_vx_mm, ion_vy_mm, ion_vz_mm))
+        record_scientific('accelerator_safe_exit', {ion=scientific_particle_id(event_id()), t_us=instrument_time_us(), from_instance=string.format('%d',selected_instances[ion_number]), to_instance=string.format('%d',ion_instance), x_mm=ion_px_mm, y_mm=ion_py_mm, z_mm=ion_pz_mm, vx_mm_us=ion_vx_mm, vy_mm_us=ion_vy_mm, vz_mm_us=ion_vz_mm})
         if accelerator_safe_exit_only then
           splat_codes[ion_number] = 1
           splat_event_emitted[ion_number] = true
-          print(string.format('MRTOF_EVENT splat ion=%d code=1 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g turns=0 central_crossings=0',
-            event_id(), instrument_time_us(), ion_px_mm, ion_py_mm, ion_pz_mm))
+          record_scientific('splat', {ion=scientific_particle_id(event_id()), code=1, t_us=instrument_time_us(), x_mm=ion_px_mm, y_mm=ion_py_mm, z_mm=ion_pz_mm, turns=0, central_crossings=0})
           selected_instances[ion_number] = ion_instance
           ion_splat = 1
           return
@@ -646,21 +650,16 @@ function segment.other_actions()
           and selected_instances[ion_number] ~= accelerator_instance
           and ion_instance == accelerator_instance then
         return_sequence_error[ion_number] = 'accelerator_reentry_after_safe_exit'
-        print(string.format('MRTOF_EVENT accelerator_reentry ion=%d t_us=%.12g instance=%d x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          event_id(), instrument_time_us(), ion_instance, ion_px_mm, ion_py_mm, ion_pz_mm,
-          ion_vx_mm, ion_vy_mm, ion_vz_mm))
+        record_scientific('accelerator_reentry', {ion=scientific_particle_id(event_id()), t_us=instrument_time_us(), instance=string.format('%d',ion_instance), x_mm=ion_px_mm, y_mm=ion_py_mm, z_mm=ion_pz_mm, vx_mm_us=ion_vx_mm, vy_mm_us=ion_vy_mm, vz_mm_us=ion_vz_mm})
       end
       if accelerator_pulse_mode == 'initial_exit_triggered_single_center'
           and not accelerator_pulse_complete[ion_number]
           and selected_instances[ion_number] == accelerator_instance
           and ion_instance ~= accelerator_instance then
         accelerator_pulse_complete[ion_number] = true
-        print(string.format('MRTOF_EVENT accelerator_pulse_off ion=%d t_us=%.12g from_instance=%d to_instance=%d x_mm=%.12g y_mm=%.12g z_mm=%.12g',
-          event_id(), instrument_time_us(), selected_instances[ion_number], ion_instance,
-          ion_px_mm, ion_py_mm, ion_pz_mm))
+        record_scientific('accelerator_pulse_off', {ion=scientific_particle_id(event_id()), t_us=instrument_time_us(), from_instance=string.format('%d',selected_instances[ion_number]), to_instance=string.format('%d',ion_instance), x_mm=ion_px_mm, y_mm=ion_py_mm, z_mm=ion_pz_mm})
       end
-      print(string.format('MRTOF_EVENT instance_transition ion=%d t_us=%.12g instance=%d x_mm=%.12g y_mm=%.12g z_mm=%.12g',
-        event_id(), instrument_time_us(), ion_instance, ion_px_mm, ion_py_mm, ion_pz_mm))
+      record_scientific('instance_transition', {ion=scientific_particle_id(event_id()), t_us=instrument_time_us(), instance=string.format('%d',ion_instance), x_mm=ion_px_mm, y_mm=ion_py_mm, z_mm=ion_pz_mm})
       selected_instances[ion_number] = ion_instance
   end
   -- Timeout is elapsed downstream flight, independent of instrument epoch
@@ -668,9 +667,7 @@ function segment.other_actions()
   local elapsed_us = ion_time_of_flight - (solver_birth_times[ion_number] or 0)
   if elapsed_us >= full_path_timeout_us and ion_splat == 0 then
     splat_codes[ion_number] = 2
-    print(string.format('MRTOF_EVENT splat ion=%d code=2 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g turns=%d central_crossings=%d',
-      event_id(), instrument_time_us(), ion_px_mm, ion_py_mm, ion_pz_mm,
-      turns[ion_number] or 0, crossings[ion_number] or 0))
+    record_scientific('splat', {ion=scientific_particle_id(event_id()), code=2, t_us=instrument_time_us(), x_mm=ion_px_mm, y_mm=ion_py_mm, z_mm=ion_pz_mm, turns=string.format('%d',turns[ion_number] or 0), central_crossings=string.format('%d',crossings[ion_number] or 0)})
     splat_event_emitted[ion_number] = true
     ion_splat = 2
     return
@@ -699,9 +696,7 @@ function segment.other_actions()
         (accelerator_exit_plane_z-pz)/dz)
       if exit.vz_mm_us < 0 then
         accelerator_geometric_exit_observed[ion_number] = true
-        print(string.format('MRTOF_EVENT accelerator_geometric_exit ion=%d localization=linear_bracket t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          event_id(), exit.t_us, exit.x_mm, exit.y_mm, accelerator_exit_plane_z,
-          exit.vx_mm_us, exit.vy_mm_us, exit.vz_mm_us))
+        record_scientific('accelerator_geometric_exit', {ion=scientific_particle_id(event_id()), localization='linear_bracket', t_us=exit.t_us, x_mm=exit.x_mm, y_mm=exit.y_mm, z_mm=accelerator_exit_plane_z, vx_mm_us=exit.vx_mm_us, vy_mm_us=exit.vy_mm_us, vz_mm_us=exit.vz_mm_us})
       end
     end
     if pz > first_prism_l0.target_plane_z_mm and ion_pz_mm <= first_prism_l0.target_plane_z_mm then
@@ -713,15 +708,10 @@ function segment.other_actions()
           px + fraction*(ion_px_mm-px), py + fraction*(ion_py_mm-py), first_prism_l0.target_plane_z_mm,
           pvx + fraction*(ion_vx_mm-pvx), pvy + fraction*(ion_vy_mm-pvy), vz,
           pt + fraction*(instrument_time_us()-pt))
-        print(string.format('MRTOF_EVENT p1_plane ion=%d n=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          event_id(), p1_crossings[ion_number], p1_crossing.t_us,
-          p1_crossing.x_mm, p1_crossing.y_mm, p1_crossing.z_mm,
-          p1_crossing.vx_mm_us, p1_crossing.vy_mm_us, p1_crossing.vz_mm_us))
+        record_scientific('p1_plane', {ion=scientific_particle_id(event_id()), n=string.format('%d',p1_crossings[ion_number]), t_us=p1_crossing.t_us, x_mm=p1_crossing.x_mm, y_mm=p1_crossing.y_mm, z_mm=p1_crossing.z_mm, vx_mm_us=p1_crossing.vx_mm_us, vy_mm_us=p1_crossing.vy_mm_us, vz_mm_us=p1_crossing.vz_mm_us})
         if state.stage == 'before_main_drift' and prism_stage[ion_number] == 'awaiting_p1_exit' then
           prism_stage[ion_number] = 'p1_complete'
-          print(string.format('MRTOF_EVENT prism_pass ion=%d n=1 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-            event_id(), p1_crossing.t_us, p1_crossing.x_mm, p1_crossing.y_mm, p1_crossing.z_mm,
-            p1_crossing.vx_mm_us, p1_crossing.vy_mm_us, p1_crossing.vz_mm_us))
+          record_scientific('prism_pass', {ion=scientific_particle_id(event_id()), n=1, t_us=p1_crossing.t_us, x_mm=p1_crossing.x_mm, y_mm=p1_crossing.y_mm, z_mm=p1_crossing.z_mm, vx_mm_us=p1_crossing.vx_mm_us, vy_mm_us=p1_crossing.vy_mm_us, vz_mm_us=p1_crossing.vz_mm_us})
         end
       end
     end
@@ -738,9 +728,7 @@ function segment.other_actions()
         (prism_regions.p2.z_min_mm-pz)/dz)
       if inside_region(entry, prism_regions.p2) then
         prism_stage[ion_number] = 'inside_p2_station'
-        print(string.format('MRTOF_EVENT prism_entry ion=%d n=2 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          event_id(), entry.t_us, entry.x_mm, entry.y_mm, entry.z_mm,
-          entry.vx_mm_us, entry.vy_mm_us, entry.vz_mm_us))
+        record_scientific('prism_entry', {ion=scientific_particle_id(event_id()), n=2, t_us=entry.t_us, x_mm=entry.x_mm, y_mm=entry.y_mm, z_mm=entry.z_mm, vx_mm_us=entry.vx_mm_us, vy_mm_us=entry.vy_mm_us, vz_mm_us=entry.vz_mm_us})
       end
     end
     if dz > 0 and prism_stage[ion_number] == 'inside_p2_station'
@@ -749,9 +737,7 @@ function segment.other_actions()
         (prism_regions.p2.z_max_mm-pz)/dz)
       if inside_region(exit, prism_regions.p2) then
         prism_stage[ion_number] = 'p2_complete'
-        print(string.format('MRTOF_EVENT prism_pass ion=%d n=2 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          event_id(), exit.t_us, exit.x_mm, exit.y_mm, exit.z_mm,
-          exit.vx_mm_us, exit.vy_mm_us, exit.vz_mm_us))
+        record_scientific('prism_pass', {ion=scientific_particle_id(event_id()), n=2, t_us=exit.t_us, x_mm=exit.x_mm, y_mm=exit.y_mm, z_mm=exit.z_mm, vx_mm_us=exit.vx_mm_us, vy_mm_us=exit.vy_mm_us, vz_mm_us=exit.vz_mm_us})
         state = emit_cycle_events(counter:arm_main_drift(exit))
       end
     end
@@ -769,18 +755,9 @@ function segment.other_actions()
           and reference.y_mm <= p2_low_field_reference.y_max_mm
       local direction_ok = reference.vy_mm_us > 0 and reference.vz_mm_us > 0
       p2_low_field_reference_emitted[ion_number] = true
-      print(string.format('MRTOF_EVENT p2_low_field_crossing ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g inside_aperture=%d direction_ok=%d fraction=%.17g before_t_us=%.17g before_z_mm=%.17g before_vy_mm_us=%.17g before_vz_mm_us=%.17g after_t_us=%.17g after_z_mm=%.17g after_vy_mm_us=%.17g after_vz_mm_us=%.17g',
-        event_id(), reference.t_us, reference.x_mm, reference.y_mm,
-        reference.z_mm, reference.vx_mm_us, reference.vy_mm_us,
-        reference.vz_mm_us, inside_aperture and 1 or 0,
-        direction_ok and 1 or 0, (p2_low_field_reference.z_mm-pz)/dz,
-        before.t_us, before.z_mm, before.vy_mm_us, before.vz_mm_us,
-        after.t_us, after.z_mm, after.vy_mm_us, after.vz_mm_us))
+      record_scientific('p2_low_field_crossing', {ion=scientific_particle_id(event_id()), t_us=reference.t_us, x_mm=reference.x_mm, y_mm=reference.y_mm, z_mm=reference.z_mm, vx_mm_us=reference.vx_mm_us, vy_mm_us=reference.vy_mm_us, vz_mm_us=reference.vz_mm_us, inside_aperture=string.format('%d',inside_aperture and 1 or 0), direction_ok=string.format('%d',direction_ok and 1 or 0), fraction=string.format('%.17g',(p2_low_field_reference.z_mm-pz)/dz), before_t_us=string.format('%.17g',before.t_us), before_z_mm=string.format('%.17g',before.z_mm), before_vy_mm_us=string.format('%.17g',before.vy_mm_us), before_vz_mm_us=string.format('%.17g',before.vz_mm_us), after_t_us=string.format('%.17g',after.t_us), after_z_mm=string.format('%.17g',after.z_mm), after_vy_mm_us=string.format('%.17g',after.vy_mm_us), after_vz_mm_us=string.format('%.17g',after.vz_mm_us)})
       if inside_aperture and direction_ok then
-        print(string.format('MRTOF_EVENT p2_low_field_reference ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          event_id(), reference.t_us, reference.x_mm, reference.y_mm,
-          reference.z_mm, reference.vx_mm_us, reference.vy_mm_us,
-          reference.vz_mm_us))
+        record_scientific('p2_low_field_reference', {ion=scientific_particle_id(event_id()), t_us=reference.t_us, x_mm=reference.x_mm, y_mm=reference.y_mm, z_mm=reference.z_mm, vx_mm_us=reference.vx_mm_us, vy_mm_us=reference.vy_mm_us, vz_mm_us=reference.vz_mm_us})
       end
     end
     if dz > 0 and prism_stage[ion_number] == 'awaiting_return_p2_entry'
@@ -789,9 +766,7 @@ function segment.other_actions()
         (prism_regions.p2.z_min_mm-pz)/dz)
       if inside_region(entry, prism_regions.p2) then
         prism_stage[ion_number] = 'inside_return_p2'
-        print(string.format('MRTOF_EVENT return_p2_entry ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          event_id(), entry.t_us, entry.x_mm, entry.y_mm, entry.z_mm,
-          entry.vx_mm_us, entry.vy_mm_us, entry.vz_mm_us))
+        record_scientific('return_p2_entry', {ion=scientific_particle_id(event_id()), t_us=entry.t_us, x_mm=entry.x_mm, y_mm=entry.y_mm, z_mm=entry.z_mm, vx_mm_us=entry.vx_mm_us, vy_mm_us=entry.vy_mm_us, vz_mm_us=entry.vz_mm_us})
       end
     end
     if dz > 0 and prism_stage[ion_number] == 'inside_return_p2'
@@ -800,9 +775,7 @@ function segment.other_actions()
         (prism_regions.p2.z_max_mm-pz)/dz)
       if inside_region(exit, prism_regions.p2) then
         prism_stage[ion_number] = 'awaiting_return_positive_mirror'
-        print(string.format('MRTOF_EVENT return_p2_pass ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          event_id(), exit.t_us, exit.x_mm, exit.y_mm, exit.z_mm,
-          exit.vx_mm_us, exit.vy_mm_us, exit.vz_mm_us))
+        record_scientific('return_p2_pass', {ion=scientific_particle_id(event_id()), t_us=exit.t_us, x_mm=exit.x_mm, y_mm=exit.y_mm, z_mm=exit.z_mm, vx_mm_us=exit.vx_mm_us, vy_mm_us=exit.vy_mm_us, vz_mm_us=exit.vz_mm_us})
       end
     end
     state = emit_cycle_events(counter:sample(cycle_sample(
@@ -815,19 +788,14 @@ function segment.other_actions()
       splat_event_emitted[ion_number] = true
       -- ion_splat is SIMION's only programmatic stop mechanism.  Code 4 is a
       -- project topology rejection, not contact with an electrode.
-      print(string.format('MRTOF_EVENT splat ion=%d code=4 termination_kind=programmatic_topology_rejection physical_collision=0 reason=%s t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g turns=%d central_crossings=%d',
-        event_id(), rejection_reason,
-        instrument_time_us(), ion_px_mm, ion_py_mm, ion_pz_mm,
-        turns[ion_number] or 0, crossings[ion_number] or 0))
+      record_scientific('splat', {ion=scientific_particle_id(event_id()), code=4, termination_kind='programmatic_topology_rejection', physical_collision=0, reason=rejection_reason, t_us=instrument_time_us(), x_mm=ion_px_mm, y_mm=ion_py_mm, z_mm=ion_pz_mm, turns=string.format('%d',turns[ion_number] or 0), central_crossings=string.format('%d',crossings[ion_number] or 0)})
       ion_splat = 4
       return
     end
     if pvy * ion_vy_mm < 0 then
       local fraction = -pvy / (ion_vy_mm - pvy)
       slow_turns[ion_number] = (slow_turns[ion_number] or 0) + 1
-      print(string.format('MRTOF_EVENT slow_turn ion=%d n=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g',
-        event_id(), slow_turns[ion_number], pt + fraction*(instrument_time_us()-pt),
-        px + fraction*(ion_px_mm-px), py + fraction*(ion_py_mm-py), pz + fraction*(ion_pz_mm-pz)))
+      record_scientific('slow_turn', {ion=scientific_particle_id(event_id()), n=string.format('%d',slow_turns[ion_number]), t_us=pt + fraction*(instrument_time_us()-pt), x_mm=px + fraction*(ion_px_mm-px), y_mm=py + fraction*(ion_py_mm-py), z_mm=pz + fraction*(ion_pz_mm-pz)})
     end
     local detector_contact = detector_contact_sample(before, after, ion_splat,
       ion_instance, prism_stage[ion_number])
@@ -844,20 +812,18 @@ function segment.other_actions()
         local detector_direction = detector_contact and -1 or (dz < 0 and -1 or 1)
         local detector_time = pt + fraction * (instrument_time_us() - pt)
         local localization = 'linear_bracket'
-        local contact_evidence = ''
+        local contact_evidence = {}
         if detector_contact then
           x,y,vx,vy,vz = detector_contact.x_mm,detector_contact.y_mm,
             detector_contact.vx_mm_us,detector_contact.vy_mm_us,detector_contact.vz_mm_us
           detector_time = detector_contact.t_us
           localization = 'detector_contact_projection'
           detector_native_contacts[ion_number] = true
-          contact_evidence = string.format(' native_splat=-1 raw_t_us=%.17g raw_x_mm=%.17g raw_y_mm=%.17g raw_z_mm=%.17g projection_dt_us=%.17g step_span_us=%.17g',
-            instrument_time_us(),ion_px_mm,ion_py_mm,ion_pz_mm,
-            detector_time-instrument_time_us(),instrument_time_us()-pt)
+          contact_evidence = {native_splat=-1, raw_t_us=string.format('%.17g',instrument_time_us()),
+            raw_x_mm=string.format('%.17g',ion_px_mm), raw_y_mm=string.format('%.17g',ion_py_mm), raw_z_mm=string.format('%.17g',ion_pz_mm),
+            projection_dt_us=string.format('%.17g',detector_time-instrument_time_us()), step_span_us=string.format('%.17g',instrument_time_us()-pt)}
         end
-        print(string.format('MRTOF_EVENT detector_plane ion=%d direction_z=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g localization=%s%s',
-          event_id(), detector_direction, detector_time, x, y,
-          detector_z, vx, vy, vz,localization,contact_evidence))
+        record_scientific('detector_plane', {ion=scientific_particle_id(event_id()), direction_z=string.format('%d',detector_direction), t_us=detector_time, x_mm=x, y_mm=y, z_mm=detector_z, vx_mm_us=vx, vy_mm_us=vy, vz_mm_us=vz, localization=localization}, contact_evidence)
         if detector_direction == -1
           and prism_stage[ion_number] == 'awaiting_static_detector'
           and not detected[ion_number]
@@ -865,13 +831,10 @@ function segment.other_actions()
           and y >= detector_box[2] and y <= detector_box[5] then
           detected[ion_number] = true
           prism_stage[ion_number] = 'static_detector_complete'
-          print(string.format('MRTOF_EVENT detector ion=%d direction_z=-1 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g localization=%s%s',
-            event_id(), detector_time, x, y, detector_z,localization,contact_evidence))
+          record_scientific('detector', {ion=scientific_particle_id(event_id()), direction_z=-1, t_us=detector_time, x_mm=x, y_mm=y, z_mm=detector_z, localization=localization}, contact_evidence)
           splat_codes[ion_number] = 1
           splat_event_emitted[ion_number] = true
-          print(string.format('MRTOF_EVENT splat ion=%d code=1 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g turns=%d central_crossings=%d localization=%s%s',
-            event_id(), detector_time, x, y, detector_z,
-            turns[ion_number] or 0, crossings[ion_number] or 0,localization,contact_evidence))
+          record_scientific('splat', {ion=scientific_particle_id(event_id()), code=1, t_us=detector_time, x_mm=x, y_mm=y, z_mm=detector_z, turns=string.format('%d',turns[ion_number] or 0), central_crossings=string.format('%d',crossings[ion_number] or 0), localization=localization}, contact_evidence)
           ion_splat = 1
         end
       end
@@ -879,10 +842,7 @@ function segment.other_actions()
   end
   if ion_splat ~= 0 and not splat_event_emitted[ion_number] then
     splat_event_emitted[ion_number] = true
-    print(string.format('MRTOF_EVENT splat ion=%d code=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g turns=%d central_crossings=%d',
-      event_id(), splat_codes[ion_number] or ion_splat, instrument_time_us(),
-      ion_px_mm, ion_py_mm, ion_pz_mm,
-      turns[ion_number] or 0, crossings[ion_number] or 0))
+    record_scientific('splat', {ion=scientific_particle_id(event_id()), code=string.format('%d',splat_codes[ion_number] or ion_splat), t_us=instrument_time_us(), x_mm=ion_px_mm, y_mm=ion_py_mm, z_mm=ion_pz_mm, turns=string.format('%d',turns[ion_number] or 0), central_crossings=string.format('%d',crossings[ion_number] or 0)})
   end
   previous_x[ion_number], previous_y[ion_number], previous_z[ion_number] = ion_px_mm, ion_py_mm, ion_pz_mm
   previous_vx[ion_number], previous_vy[ion_number], previous_vz[ion_number], previous_t[ion_number] = ion_vx_mm, ion_vy_mm, ion_vz_mm, instrument_time_us()
@@ -891,11 +851,11 @@ end
 function segment.terminate()
   record_trajectory_sample('terminal')
   local contact_evidence = detector_native_contacts[ion_number]
-    and ' native_splat=-1 localization=detector_contact_projection' or ''
-  print(string.format('MRTOF_EVENT terminal ion=%d splat=%d instance=%d volts=%.12g t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g turns=%d central_crossings=%d%s',
-    event_id(), splat_codes[ion_number] or 0,
-    ion_instance, ion_volts,
-    instrument_time_us(), ion_px_mm, ion_py_mm, ion_pz_mm,
-    ion_vx_mm, ion_vy_mm, ion_vz_mm,
-    turns[ion_number] or 0, crossings[ion_number] or 0,contact_evidence))
+    and {native_splat=-1,localization='detector_contact_projection'} or {}
+  record_scientific('terminal', {ion=scientific_particle_id(event_id()), splat=string.format('%d',splat_codes[ion_number] or 0), instance=string.format('%d',ion_instance), volts=ion_volts, t_us=instrument_time_us(), x_mm=ion_px_mm, y_mm=ion_py_mm, z_mm=ion_pz_mm, vx_mm_us=ion_vx_mm, vy_mm_us=ion_vy_mm, vz_mm_us=ion_vz_mm, turns=string.format('%d',turns[ion_number] or 0), central_crossings=string.format('%d',crossings[ion_number] or 0)}, contact_evidence)
+end
+
+function segment.terminate_run()
+  if scientific_events then scientific_events:close();scientific_events=nil end
+  if scientific_trajectory then scientific_trajectory:close();scientific_trajectory=nil end
 end

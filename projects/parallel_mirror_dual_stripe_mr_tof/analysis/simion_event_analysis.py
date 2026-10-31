@@ -7,6 +7,9 @@ import hashlib
 import json
 import math
 import re
+from io import StringIO
+from collections.abc import Iterable
+from common.simion.scientific_event_io import iter_csv_rows
 from pathlib import Path
 from statistics import mean, median, pstdev
 from typing import Any
@@ -175,8 +178,13 @@ def _event_error(event: dict[str, Any]) -> str | None:
 
 def parse_events(text: str) -> list[dict[str, Any]]:
     """Read only explicitly emitted Candidate events from a SIMION log."""
+    return parse_event_lines(StringIO(text))
+
+
+def parse_event_lines(lines: Iterable[str]) -> list[dict[str, Any]]:
+    """Legacy stdout adapter; each input line is consumed once."""
     events: list[dict[str, Any]] = []
-    for line_number, line in enumerate(text.splitlines(), 1):
+    for line_number, line in enumerate(lines, 1):
         match = EVENT.match(line.strip())
         if not match:
             continue
@@ -1766,20 +1774,64 @@ def load_particle_source(input_manifest: Path, source_key: str) -> dict[str, Any
                            "derived_contract_sha256": manifest["derived_contract"]["sha256"]}}
 
 
-def analyze_log(log_path: Path, output_path: Path, *, input_manifest: Path, source_key: str) -> dict[str, Any]:
-    """Parse a run log and write a stable JSON Candidate result receipt."""
+def read_scientific_events(log_path: Path, *, scientific_event_output: dict[str, Any] | None = None, native_log_observer=None) -> tuple[list[dict[str, Any]], list[Any], str]:
+    """Read declared CSV or legacy event lines, with one native-log byte scan.
+
+    CSV paths must come from the caller's frozen run/receipt. A declared missing
+    or malformed CSV never falls back to stdout. Native completion is separate.
+    """
+    digest = hashlib.sha256()
+    completions = []
+    def lines():
+        with log_path.open("rb") as stream:
+            for number, raw in enumerate(stream):
+                digest.update(raw)
+                line = raw.decode("utf-8-sig" if number == 0 else "utf-8")
+                if native_log_observer is not None:
+                    native_log_observer(line)
+                completion = parse_fly_completed_line(line)
+                if completion is not None:
+                    completions.append(completion)
+                yield line
+    if scientific_event_output is None:
+        events = parse_event_lines(lines())
+    else:
+        if "events_path" not in scientific_event_output:
+            raise ValueError("declared scientific event output lacks events_path")
+        for _ in lines():
+            pass
+        events = []
+        for number, row in enumerate(iter_csv_rows(Path(scientific_event_output["events_path"]), ("kind", "ion"), expected_record=scientific_event_output.get("events_record")), 2):
+            event = {}
+            for key, value in row.items():
+                if value == "":
+                    continue
+                try:
+                    event[key] = float(value) if key != "kind" else value
+                except ValueError:
+                    event[key] = value
+            error = _event_error(event)
+            if not error and not LOG_REQUIRED_FIELDS[event["kind"]] <= event.keys():
+                error = "incomplete_log_event"
+            if error:
+                raise ValueError(f"{error} at CSV row {number}")
+            events.append(event)
+    return events, completions, digest.hexdigest()
+
+
+def analyze_log(log_path: Path, output_path: Path, *, input_manifest: Path, source_key: str,
+                scientific_event_output: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Analyze declared scientific data; stdout remains native process evidence."""
     source = load_particle_source(input_manifest, source_key)
-    text = log_path.read_text(encoding="utf-8")
-    completions = [completion for line in text.splitlines()
-                   if (completion := parse_fly_completed_line(line)) is not None]
+    events, completions, log_sha256 = read_scientific_events(log_path, scientific_event_output=scientific_event_output)
     reported_splat_count = completions[0].splats if len(completions) == 1 else None
-    summary = summarize_events(parse_events(text), source["target_k"], reported_splat_count,
+    summary = summarize_events(events, source["target_k"], reported_splat_count,
                                expected_particle_ids=source["expected_particle_ids"], completion_count=len(completions),
                                kinetic_energy_ev=source["axial_kinetic_energy_ev"],
                                mass_th=(float(source["species"]["mass_th"]) if source["species"] else None),
                                charge_e=(float(source["species"]["charge_e"]) if source["species"] else None))
     summary["source"] = source["provenance"]
-    summary["log_sha256"] = hashlib.sha256(log_path.read_bytes()).hexdigest()
+    summary["log_sha256"] = log_sha256
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     return summary

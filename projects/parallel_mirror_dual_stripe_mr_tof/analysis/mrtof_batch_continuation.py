@@ -117,7 +117,7 @@ def continuation_protection_projection(predecessor_run_dir: Path) -> dict[str, A
         planner_roles = set(REQUIRED_INPUT_ROLES) | {
             "trial_materialization", "prepared_joint_trial", "simion_execution_batch_plan",
             "simion_dispatch_request", "simion_resource_profiles", "simion_repository_dispatch_plan",
-            "static_field_binding", "scalar_field_adapter", "observation_contract",
+            "static_field_binding", "scalar_field_adapter", "observation_contract", "scientific_csv_writer", "scientific_event_locator",
         }
         for role in planner_roles:
             record = parent["inputs"].get(role)
@@ -138,7 +138,7 @@ def continuation_protection_projection(predecessor_run_dir: Path) -> dict[str, A
                         raise ContractError(f"continuation prepared trial input is missing: {role}")
                     files.add(path)
         for role, record in parent["inputs"].items():
-            if not re.fullmatch(r"reused_batch_\d+_(?:log|receipt|fly2|owner_exit|owner_manifest)", role):
+            if not re.fullmatch(r"reused_batch_\d+_(?:log|receipt|fly2|owner_exit|owner_manifest|scientific_events|scientific_trajectory)", role):
                 continue
             if not isinstance(record, dict) or not record.get("exists") or not isinstance(record.get("sha256"), str):
                 raise ContractError(f"continuation borrowed input is unbound: {role}")
@@ -183,6 +183,18 @@ def continuation_protection_projection(predecessor_run_dir: Path) -> dict[str, A
             if not isinstance(record, dict) or not record.get("path"):
                 continue
             path = record_path(record, base_dir=run)
+            if path.name in {"owner_exit.json", "batch_receipt.json"} and path.is_file():
+                try:
+                    declared = _load_object(path,"batch scientific output declaration").get("scientific_event_output")
+                except ContractError:
+                    declared = None
+                if declared is not None:
+                    for key in ("events_path","trajectory_path"):
+                        if not declared.get(key): continue
+                        data=Path(declared[key]).resolve()
+                        candidates=[item for item in parent["outputs"] if isinstance(item,dict) and record_path(item,base_dir=run)==data]
+                        if len(candidates)==1 and data.is_file():
+                            files.add(data)
             if batch_pattern.search(path.name) and path.is_file():
                 if run_for(path) != run:
                     raise ContractError("continuation local output belongs to another run")
@@ -212,10 +224,23 @@ def _trial_execution_identity(trial: dict[str, Any], config: Mapping[str, Any],
         if key not in trial:
             raise ContractError(f"MR-TOF scientific trial identity is missing: {key}")
     identity = copy.deepcopy(trial)
+    science = identity.get("scientific_event_output")
+    if science is not None:
+        if not isinstance(science,dict): raise ContractError("scientific output locator is invalid")
+        point_parent=_configured_path(config,"operating_point_lua").parent
+        for key in ("events_path","trajectory_path","csv_writer_path"):
+            if science.get(key) is not None and Path(science[key]).resolve().parent!=point_parent:
+                raise ContractError("scientific output locator escaped the private materialization root")
+        locator=identity.pop("scientific_event_locator")
+        if Path(locator["path"]).resolve()!=_configured_path(config,"scientific_event_locator"):
+            raise ContractError("scientific output locator provenance differs")
+        verify_record("scientific output locator",locator)
+        identity["scientific_event_output"]={key:value for key,value in science.items() if key not in {"events_path","trajectory_path","csv_writer_path"}}
     priority = identity.get("native_corridor_priority_contract")
     if not isinstance(priority, dict):
         raise ContractError("MR-TOF priority contract record is missing")
     records = [("native_corridor_priority_contract", priority)]
+    if science is not None: records.append(("scientific_csv_writer",identity["scientific_csv_writer"]))
     binding = identity.get("field_binding")
     if isinstance(binding, dict):
         role = "static_field_binding"
@@ -237,31 +262,62 @@ def _trial_execution_identity(trial: dict[str, Any], config: Mapping[str, Any],
     return identity
 
 
-def _complete_oa_batch(log: Path, count: int) -> bool:
+def _complete_oa_batch(log: Path, count: int, scientific_event_output=None) -> bool:
     """Recognize the existing OA native terminal grammar, without hashing PA."""
     if not log.is_file():
         return False
     terminals, completions, sentinels, last_line = [], [], 0, ""
-    with log.open(encoding="utf-8-sig") as stream:
-        for raw in stream:
+    if scientific_event_output is None:
+        with log.open(encoding="utf-8-sig") as stream:
+            for raw in stream:
+                line = raw.rstrip("\r\n")
+                if line:
+                    last_line = line
+                if line.startswith("MRTOF_EVENT terminal "):
+                    match = TERMINAL_PATTERN.fullmatch(line)
+                    if match is None:
+                        raise ContractError("MR-TOF native terminal record is malformed")
+                    terminals.append(int(match["ion"]))
+                completion = parse_fly_completed_line(line)
+                if completion is not None:
+                    completions.append(completion.splats)
+                if line.startswith("IOB_FLIGHT: PASS iob="):
+                    sentinels += 1
+    else:
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import read_scientific_events
+        def observe(raw):
+            nonlocal sentinels, last_line
             line = raw.rstrip("\r\n")
             if line:
                 last_line = line
-            if line.startswith("MRTOF_EVENT terminal "):
-                match = TERMINAL_PATTERN.fullmatch(line)
-                if match is None:
-                    raise ContractError("MR-TOF native terminal record is malformed")
-                terminals.append(int(match["ion"]))
-            completion = parse_fly_completed_line(line)
-            if completion is not None:
-                completions.append(completion.splats)
             if line.startswith("IOB_FLIGHT: PASS iob="):
                 sentinels += 1
+        try:
+            events, finished, _ = read_scientific_events(
+                log, scientific_event_output=scientific_event_output,
+                native_log_observer=observe)
+        except (OSError, ValueError, KeyError, TypeError):
+            return False
+        completions = [item.splats for item in finished]
+        terminals = [int(row["ion"]) for row in events if row["kind"] == "terminal"]
     if not last_line.startswith("IOB_FLIGHT: PASS iob="):
         return False
     if sorted(terminals) != list(range(1, count+1)) or completions != [count] or sentinels != 1:
         raise ContractError("MR-TOF native batch terminal identity differs")
     return True
+
+
+def _bound_scientific_output(declaration,manifest,run):
+    if not isinstance(declaration,dict) or not declaration.get("events_path"): return None
+    result=dict(declaration)
+    records=[*manifest.get("inputs",{}).values(),*manifest.get("outputs",[])]
+    for key,record_key in (("events_path","events_record"),("trajectory_path","trajectory_record")):
+        if not declaration.get(key): continue
+        path=Path(declaration[key]).resolve()
+        matches=[record for record in records if isinstance(record,dict) and record.get("path") and record_path(record,base_dir=run)==path]
+        if len(matches)!=1 or not path.is_file(): return None
+        result[record_key]=dict(matches[0],path=str(path))
+    return result
 
 
 def _owner_exit_complete(path: Path, index: int) -> bool:
@@ -419,6 +475,8 @@ def build_continuation_plan(
     roles = REQUIRED_INPUT_ROLES
     if (trial.get("field_binding") or {}).get("mode") in {"comsol_static_scalar_v", "native_static_pa"}:
         roles = roles[:-2] + ("static_field_binding", "scalar_field_adapter")
+    if "scientific_csv_writer" in current.get("inputs",{}) or "scientific_csv_writer" in parent_inputs:
+        roles=(*roles,"scientific_csv_writer")
     hashes = {}
     for role in roles:
         record = _bound_parent_input(parent_inputs=parent_inputs, manifest=manifest, role=role)
@@ -464,9 +522,14 @@ def build_continuation_plan(
             exit_role = f"reused_batch_{index:03d}_owner_exit"
             if exit_role in parent_inputs:
                 owner_exit = Path(_bound_parent_input(parent_inputs=parent_inputs, manifest=manifest, role=exit_role)["path"])
-        complete = _owner_exit_complete(owner_exit, index) and _complete_oa_batch(log, size)
-        units.append(WholeUnitReplayUnit(key=f"batch-{index:03d}", terminal_outputs=(log, owner_exit), is_complete=complete))
-        normalized.append(dict(index=index, particle_id_min=first, particle_id_max=last, count=size, offset=first-1))
+        exit_complete = _owner_exit_complete(owner_exit,index)
+        science = _load_object(owner_exit,"SIMION batch owner exit").get("scientific_event_output") if exit_complete else None
+        declared_science=science
+        if science is not None: science=_bound_scientific_output(science,manifest,predecessor_run_dir)
+        extra=tuple(Path(science[key]) for key in ("events_path","trajectory_path") if science and science.get(key))
+        complete = exit_complete and (declared_science is None or science is not None) and _complete_oa_batch(log, size, science)
+        units.append(WholeUnitReplayUnit(key=f"batch-{index:03d}", terminal_outputs=(log, owner_exit,*extra), is_complete=complete))
+        normalized.append(dict(index=index, particle_id_min=first, particle_id_max=last, count=size, offset=first-1, scientific_event_output=science))
     if expected_first != count+1:
         raise ContractError("MR-TOF predecessor batches do not cover the frozen cohort")
     result = build_whole_unit_replay_plan(predecessor_run_dir=predecessor_run_dir, output_dir=output_dir, units=units)
@@ -504,6 +567,11 @@ def _prepared_identity(path: Path) -> dict[str, Any]:
         if not isinstance(record, dict) or not isinstance(record.get("sha256"), str):
             raise ContractError(f"prepared-joint scientific identity is invalid: {key}")
         identity[key] = {"sha256": record["sha256"].upper()}
+    if "scientific_event_writer" in value:
+        record=value["scientific_event_writer"]
+        if not isinstance(record,dict) or not isinstance(record.get("sha256"),str):
+            raise ContractError("prepared-joint scientific writer identity is invalid")
+        identity["scientific_event_writer"]={"sha256":record["sha256"].upper()}
     return identity
 
 
@@ -579,7 +647,7 @@ def _bound_parent_input(
 def build_prepared_joint_whole_unit_plan(
     *, predecessor_run_dir: Path, current_preparation: Path, output_dir: Path, trusted_repo_root: Path | None = None,
 ) -> dict[str, Any]:
-    """Build whole-batch replay actions for the measured IP→MR runner.
+    """Build whole-batch replay actions for the measured IP鈫扢R runner.
 
     The parent final batch plan fixes the source-row intervals.  We deliberately
     do not call the scheduler here: replay admission happens only after this
@@ -669,8 +737,14 @@ def build_prepared_joint_whole_unit_plan(
             usage = None
         if log.is_file() and receipt.is_file() and (own_exit or usage is not None):
             try:
+                scientific = _load_object(receipt, "measured batch receipt").get("scientific_event_output")
+                if scientific is not None:
+                    scientific = _bound_scientific_output(scientific, parent_manifest, predecessor_run_dir)
+                    if scientific is None:
+                        raise ContractError("prepared-joint scientific output is not manifest-bound")
                 ids, _, validated_fly = validate_measured_batch_terminal(
                     log_path=log, batch_receipt_path=receipt, preparation=current,
+                    scientific_event_output=scientific,
                 )
                 if validated_fly.resolve() != fly.resolve():
                     raise ContractError("prepared-joint inherited batch FLY2 differs")
@@ -684,8 +758,10 @@ def build_prepared_joint_whole_unit_plan(
             if not own_exit:
                 evidence_manifests[index] = str(evidence_manifest)
         evidence = (owner_exit,) if own_exit else ((usage,) if usage is not None else ())
+        scientific = scientific if complete else None
+        extra = tuple(Path(scientific[key]) for key in ("events_path","trajectory_path") if scientific and scientific.get(key))
         units.append(WholeUnitReplayUnit(
-            key=f"batch-{index:03d}", terminal_outputs=(log, receipt, fly, *evidence) if complete else (log,),
+            key=f"batch-{index:03d}", terminal_outputs=(log, receipt, fly, *evidence, *extra) if complete else (log,),
             is_complete=complete,
         ))
     result = build_whole_unit_replay_plan(

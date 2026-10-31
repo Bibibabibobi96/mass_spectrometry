@@ -33,7 +33,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
     load_contract,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
-    parse_events,
+    read_scientific_events,
 )
 
 
@@ -1392,7 +1392,8 @@ def freeze_bunch_pulse_schedule_from_files(
     maximum_step_us = _finite(
         trajectory.get("maximum_step_us"), "pilot maximum trajectory step"
     )
-    events = parse_events(pilot_log_path.read_text(encoding="utf-8"))
+    events, _, pilot_log_identity = read_scientific_events(
+        pilot_log_path, scientific_event_output=trial.get("scientific_event_output"))
     schedule = derive_bunch_pulse_schedule(
         events=events,
         expected_particle_ids=expected_particle_ids,
@@ -1405,7 +1406,7 @@ def freeze_bunch_pulse_schedule_from_files(
     )
     schedule["inputs"] = {
         "source_receipt_sha256": file_sha256(source_receipt_path).lower(),
-        "pilot_log_sha256": file_sha256(pilot_log_path).lower(),
+        "pilot_log_sha256": pilot_log_identity.lower(),
         "pilot_trial_receipt_sha256": file_sha256(pilot_trial_receipt_path).lower(),
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)

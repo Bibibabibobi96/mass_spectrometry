@@ -5,6 +5,8 @@ import json
 from decimal import Decimal
 from functools import partial
 import re
+from common.paths.workspace_paths import project_native_run_path
+
 from pathlib import Path
 import shutil
 import subprocess
@@ -28,6 +30,8 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import _lua, collision_workbench_layout, render_measured_operating_point
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import resolve_trajectory_recording
 from common.simion.native_completion import parse_fly_completed_line
+from common.simion.scientific_event_io import iter_csv_rows
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import read_scientific_events
 
 
 verified_preparation_reference = partial(
@@ -298,6 +302,7 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
     if waveform_provenance is not None:
         waveforms_record["continuation_source"] = waveform_provenance
     source_runtime_record = freeze_file(source_copy / "source_runtime.lua", frozen_runtime / "joint.source_runtime.lua")
+    science_writer_record = freeze_file(Path(__file__).resolve().parents[3] / "common/simion/scientific_event_csv.lua", frozen_runtime / "joint.scientific_event_csv.lua")
     freeze_file(Path(__file__).parents[1] / "simion/scalar_field_adapter.lua",
                 frozen_runtime / "joint.scalar_field_adapter.lua")
     reference = runtime / "mr_reference.operating_point.lua"
@@ -346,6 +351,7 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
                   source_receipt=file_record(source_copy / "source_receipt.json"),
                   flight_program=program_record,
                   source_runtime=source_runtime_record,
+                  scientific_event_writer=science_writer_record,
                   voltage_waveforms=waveforms_record,
                   field_consumer_adapter=file_record(frozen_runtime / "joint.scalar_field_adapter.lua"),
                   memory_consumer_crops=memory_crops,
@@ -381,6 +387,10 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
     if reference_flight_run is not None:
         result["trajectory_equivalence_reference"] = freeze_equivalence_reference(
             reference_flight_run, result, inputs)
+    reference=result.get("trajectory_equivalence_reference")
+    if reference is not None and reference.get("scientific_event_output") is not None:
+        result["protected_paths"].append(reference["source_run"])
+        result["guard_paths"].extend(reference["scientific_event_output"][key] for key in ("events_path","trajectory_path") if reference["scientific_event_output"].get(key))
     _write(results / "simion_dispatch_request.json", result["dispatch_request"])
     _write(results / "prepared_joint_trial.json", result)
     return result
@@ -437,6 +447,19 @@ def freeze_equivalence_reference(reference_run: Path, preparation: dict[str, Any
                 clean_exit = True
             if line.lower().startswith("error,"):
                 raise ValueError("Equivalence reference batch reported a solver error")
+    reference_science=None
+    batch_receipt=(reference_run/"results/batches/batch_001/batch_receipt.json").resolve()
+    if batch_receipt in outputs:
+        batch=_read(batch_receipt)
+        if "scientific_event_output" in batch:
+            reference_science=dict(batch["scientific_event_output"])
+            for key,record_key in (("events_path","events_record"),("trajectory_path","trajectory_record")):
+                if not reference_science.get(key): continue
+                path=Path(reference_science[key]).resolve()
+                if path not in outputs: raise ValueError("Equivalence scientific output is not manifest-bound")
+                reference_science[record_key]=dict(outputs[path],path=str(path))
+            actual,_,_=read_scientific_events(log,scientific_event_output=reference_science)
+            terminal_ids=[int(row["ion"]) for row in actual if row["kind"]=="terminal"]
     if (len(completions) != 1 or not clean_exit or completions[0] != len(terminal_ids)
             or terminal_ids != preparation["expected_particle_ids"][:completions[0]]):
         raise ValueError("Equivalence reference lacks one naturally completed exact source prefix")
@@ -445,12 +468,13 @@ def freeze_equivalence_reference(reference_run: Path, preparation: dict[str, Any
     freeze_file(log, frozen_log)
     freeze_file(reference_run / "run_manifest.json", frozen_manifest)
     return dict(reference_log=file_record(frozen_log), reference_manifest=file_record(frozen_manifest),
+                source_run=str(reference_run.resolve()),scientific_event_output=reference_science,
                 original_particle_ids=terminal_ids, completed_particle_count=len(terminal_ids),
                 source_and_field_identity_verified=True, reference_status="interrupted")
 
 
 def compare_trajectory_representation(preparation_path: Path, log_path: Path,
-                                       output_path: Path) -> dict[str, Any]:
+                                       output_path: Path, *, scientific_event_receipt: Path | None = None) -> dict[str, Any]:
     """Require exact event/sample text for the frozen prefix, retaining the whole new wave."""
     preparation = _read(preparation_path)
     reference = preparation["trajectory_equivalence_reference"]
@@ -466,16 +490,37 @@ def compare_trajectory_representation(preparation_path: Path, log_path: Path,
                     match = re.search(r"\bion=(\d+)", line)
                     if match and int(match[1]) in identifiers:
                         yield line.rstrip("\r\n")
+    current_science=_read(scientific_event_receipt)["scientific_event_output"] if scientific_event_receipt is not None else None
+    reference_science=reference.get("scientific_event_output")
+    def selected_records(path,science):
+        events,_,_=read_scientific_events(path,scientific_event_output=science)
+        for event in events:
+            if int(event["ion"]) in identifiers: yield ("event",event)
+        if science is not None:
+            columns=("ion","phase","t_us","x_mm","y_mm","z_mm","vx_mm_us","vy_mm_us","vz_mm_us")
+            if not science.get("trajectory_path"): raise ValueError("equivalence requires explicit complete trajectory output")
+            samples=iter_csv_rows(Path(science["trajectory_path"]),columns,exact_header=columns,expected_record=science.get("trajectory_record"))
+        else:
+            def legacy_samples():
+                with path.open(encoding="utf-8-sig") as source:
+                    for line in source:
+                        if line.startswith("MRTOF_TRAJECTORY "): yield dict(token.split("=",1) for token in line.split()[1:])
+            samples=legacy_samples()
+        for sample in samples:
+            if int(sample["ion"]) in identifiers:
+                yield ("trajectory",{key:value if key=="phase" else float(value) for key,value in sample.items()})
+    structured = current_science is not None or reference_science is not None
+    baseline_rows=selected_records(Path(reference["reference_log"]["path"]),reference_science) if structured else selected_lines(Path(reference["reference_log"]["path"]))
+    current_rows=selected_records(log_path,current_science) if structured else selected_lines(log_path)
     mismatches, lines = [], 0
-    for index, (baseline, current) in enumerate(zip_longest(
-            selected_lines(Path(reference["reference_log"]["path"])), selected_lines(log_path)), 1):
+    for index, (baseline, current) in enumerate(zip_longest(baseline_rows,current_rows), 1):
         lines = index
         if baseline != current and len(mismatches) < 10:
             mismatches.append(dict(selected_line=index, reference=baseline, current=current))
     result = dict(schema_version=1, role="mrtof_field_consumer_trajectory_equivalence",
                   status="pass" if not mismatches and lines else "fail", compared_line_count=lines,
                   original_particle_ids=reference["original_particle_ids"],
-                  scope="complete_event_and_trajectory_text_of_manifest_bound_completed_prefix",
+                  scope="complete_event_and_trajectory_fields_of_manifest_bound_completed_prefix" if structured else "complete_event_and_trajectory_text_of_manifest_bound_completed_prefix",
                   physical_matching_qualified=False, numerical_representation_only=True,
                   reference=reference, new_log=file_record(log_path), first_mismatches=mismatches)
     _write(output_path, result)
@@ -499,7 +544,12 @@ def materialize_batch(preparation_path: Path, ordinal_min: int, ordinal_max: int
     # Only the observation switch and scheduler-local source projection change.
     interval = preparation["trajectory_recording"].get("interval_us")
     interval_lua = "nil" if interval is None else repr(interval)
+    scientific_event_output = dict(events_path=str((output_directory / "events.csv").resolve()),
+        trajectory_path=str((output_directory / "trajectory.csv").resolve()),
+        csv_writer_path=preparation["scientific_event_writer"]["path"], environment_required=False,
+        events_environment_variable="MRTOF_SCIENTIFIC_EVENTS_PATH",trajectory_environment_variable="MRTOF_SCIENTIFIC_TRAJECTORY_PATH")
     sidecar = ("local t=assert(loadfile("+json.dumps(str(original.resolve()).replace("\\", "/"))+"))()\n"
+               "t.scientific_event_output="+_lua({key: project_native_run_path(value) if key in {"events_path", "trajectory_path", "csv_writer_path"} else value for key, value in scientific_event_output.items()})+"\n"
                "t.measured_source_directory="+json.dumps(str(source.resolve()).replace("\\", "/"))+"\n"
                "t.trajectory_recording_enabled=true\n"
                "t.trajectory_recording_mode="+json.dumps(preparation["trajectory_recording"]["mode"])+"\n"
@@ -521,12 +571,12 @@ def materialize_batch(preparation_path: Path, ordinal_min: int, ordinal_max: int
             operating=str((output_directory / "joint.operating_point.lua").resolve()),
             priority=str((output_directory / "joint.priority.lua").resolve()))
         (output_directory / "joint.workbench_build.lua").write_text("return "+_lua(build)+"\n", encoding="utf-8", newline="\n")
-    result = dict(source_batch, iob=str((output_directory / "joint.iob").resolve()))
+    result = dict(source_batch, iob=str((output_directory / "joint.iob").resolve()), scientific_event_output=scientific_event_output)
     _write(output_directory / "batch_receipt.json", result)
     return result
 
 
-def analyze_centroid_probe(preparation_path: Path, log_path: Path, output_directory: Path) -> dict[str, Any]:
+def analyze_centroid_probe(preparation_path: Path, log_path: Path, output_directory: Path, *, scientific_event_receipt: Path | None = None) -> dict[str, Any]:
     """Project genuine N1 events for the existing controller's measured-source branch.
 
     This does not impersonate an OA trial or evaluate any field potential,
@@ -535,7 +585,7 @@ def analyze_centroid_probe(preparation_path: Path, log_path: Path, output_direct
     import csv
     import math
     from common.contracts.particle_physics import kinetic_energy_ev
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import parse_events
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import read_scientific_events
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
         ProjectPhaseSpaceState, observation_from_simion_events, prism_handoff_residuals,
     )
@@ -555,10 +605,10 @@ def analyze_centroid_probe(preparation_path: Path, log_path: Path, output_direct
     row, = load_component_particle_state_csv(source_directory / "component_particle_state.csv").rows
     source = ProjectPhaseSpaceState(tuple(float(row[f"position_{a}_mm"]) for a in "xyz"),
                                    tuple(float(row[f"velocity_{a}_m_s"])/1000 for a in "xyz"))
-    events = parse_events(log_path.read_text(encoding="utf-8-sig"))
+    science = _read(scientific_event_receipt)["scientific_event_output"] if scientific_event_receipt is not None else None
+    events, finished, _ = read_scientific_events(log_path,scientific_event_output=science)
     terminals = [event for event in events if event["kind"] == "terminal"]
-    completions = [completion.splats for line in log_path.read_text(encoding="utf-8-sig").splitlines()
-                   if (completion := parse_fly_completed_line(line)) is not None]
+    completions = [completion.splats for completion in finished]
     if len(terminals) != 1 or completions != [1] or any(int(e["ion"]) != 1 for e in events):
         raise ValueError("Probe event population or natural completion does not close")
     reference = _read(Path(preparation["reference_materialization"]["path"]))
@@ -652,6 +702,7 @@ def main() -> None:
     analyze.add_argument("--preparation", type=Path, required=True)
     analyze.add_argument("--log", type=Path, required=True)
     analyze.add_argument("--output", type=Path, required=True)
+    analyze.add_argument("--scientific-event-receipt", type=Path)
     args = parser.parse_args()
     if args.command == "prepare":
         destination = _read(args.run_directory / "run_config.json")
@@ -663,7 +714,7 @@ def main() -> None:
                       field_binding_path=args.field_binding,source_mode=args.source_mode,
                       continuation_predecessor_manifest=args.continuation_predecessor_manifest)
     else:
-        analyze_centroid_probe(args.preparation,args.log,args.output)
+        analyze_centroid_probe(args.preparation,args.log,args.output,scientific_event_receipt=args.scientific_event_receipt)
 
 
 if __name__ == "__main__":

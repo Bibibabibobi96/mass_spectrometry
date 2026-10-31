@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from bisect import bisect_left
 import csv
+from common.simion.scientific_event_io import iter_csv_rows
 from itertools import chain
 import json
 import math
@@ -87,20 +88,8 @@ def _json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
-def _iter_csv(path: Path, required: set[str]):
-    """Validate the header once and stream each actual recorded row."""
-    with path.open(encoding="utf-8-sig", newline="") as stream:
-        reader = csv.DictReader(stream)
-        if not required <= set(reader.fieldnames or []):
-            raise ValueError(f"missing diagnostic columns in {path.name}")
-        for row in reader:
-            if None in row or any(value is None for value in row.values()):
-                raise ValueError(f"malformed diagnostic row in {path.name}")
-            yield row
-
-
 def _csv(path: Path, required: set[str]) -> list[dict]:
-    rows = list(_iter_csv(path, required))
+    rows = list(iter_csv_rows(path, required))
     if not rows:
         raise ValueError(f"empty diagnostic input {path.name}")
     return rows
@@ -164,8 +153,8 @@ def prepare_data(run: Path) -> dict[str, Any]:
     validate_diagnostics_config(contract)
     from projects.dual_pressure_rectilinear_ion_processor.analysis.batching import native_data_directory
     native = native_data_directory(run)
-    events = _iter_csv(native / "events.csv", {"particle_id", "event", "reason", "t_us", *VALUES})
-    samples = _iter_csv(native / "samples.csv", {"particle_id", "t_us", *VALUES})
+    events = iter_csv_rows(native / "events.csv", {"particle_id", "event", "reason", "t_us", *VALUES})
+    samples = iter_csv_rows(native / "samples.csv", {"particle_id", "t_us", *VALUES})
     canonical = _csv(run / "results/particle_state.csv", {"particle_id", "event", "status"})
     sources, terminals, tracks, exits = {}, {}, {}, {}
     mass = c["source"]["species"]["mass_amu"]

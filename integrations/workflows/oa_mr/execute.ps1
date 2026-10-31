@@ -550,6 +550,7 @@ try{
     '--prism-2-v',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$Prism2VoltageV)),
     '--workbench-accelerator-instance',$acceleratorInstance,
     '--fly2',$fly2Input,'--sidecar',$sidecar,'--receipt',$trialReceipt)
+  if($isBunchFlight){$materializeArguments+='--batch-scientific-event-locators'}
   # A frozen N>1 source stores positions in the resolved accelerator frame,
   # including its own centre.  The single-ion injection offset must not be
   # applied a second time to a frozen cohort.
@@ -640,6 +641,8 @@ try{
       trial_materialization=$trialReceipt
       resolved_iob_pose=$posePath
       operating_point_lua=$sidecar
+      scientific_event_locator=[string]$trial.scientific_event_locator.path
+      scientific_csv_writer=[string]$trial.scientific_csv_writer.path
       frozen_source_fly2=$fly2Input
       iob_builder=Join-Path $solverDir 'build_native_corridor_iob.lua'
       iob_seed=Join-Path $solverDir '4_instance_seed.iob'
@@ -720,7 +723,8 @@ try{
       foreach($entry in @($batchContinuationPlan.batches|Where-Object{$_.action-eq'reuse'})){
         $checkpointConfig.inputs[('reused_batch_{0:D3}_log'-f[int]$entry.index)]=[string]$entry.terminal_outputs[0].path
         if(@($entry.terminal_outputs).Count-gt1){$checkpointConfig.inputs[('reused_batch_{0:D3}_owner_exit'-f[int]$entry.index)]=[string]$entry.terminal_outputs[1].path}
-        if(@($entry.terminal_outputs).Count-gt2){$checkpointConfig.inputs[('reused_batch_{0:D3}_owner_manifest'-f[int]$entry.index)]=[string]$entry.terminal_outputs[2].path}
+        if(@($entry.terminal_outputs).Count-gt2-and[IO.Path]::GetFileName([string]$entry.terminal_outputs[2].path)-eq'run_manifest.json'){$checkpointConfig.inputs[('reused_batch_{0:D3}_owner_manifest'-f[int]$entry.index)]=[string]$entry.terminal_outputs[2].path}
+        if($entry.PSObject.Properties['scientific_event_output']-and$null-ne$entry.scientific_event_output){foreach($pair in @(@('events_path','scientific_events'),@('trajectory_path','scientific_trajectory'))){if($entry.scientific_event_output.PSObject.Properties[$pair[0]]-and$entry.scientific_event_output.($pair[0])){$checkpointConfig.inputs[('reused_batch_{0:D3}_{1}'-f[int]$entry.index,$pair[1])]=[string]$entry.scientific_event_output.($pair[0])}}}
       }
       Write-RunJson -Path $runConfig -Value $checkpointConfig
     }
@@ -947,10 +951,18 @@ try{
       # return value.  Keep diagnostics visible without allowing them to turn
       # the structured batch record below into a heterogeneous array.
       Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight','materialize','--receipt',$bunchSourceLocal,'--particle-id-min',([string]$batchParticleIdMin),'--particle-id-max',([string]$batchParticleIdMax),'--output',$batchFly2) | Out-Host
+      $scienceDir=Join-Path (Join-Path ([string]$package.artifact_run_dir) 'results') ('batches/batch_{0:D3}'-f$batchIndex)
+      New-Item -ItemType Directory -Path $scienceDir -Force|Out-Null
+      $science=[ordered]@{events_path=[IO.Path]::GetFullPath((Join-Path $scienceDir 'events.csv'))}
+      if($trial.trajectory_recording){$science.trajectory_path=[IO.Path]::GetFullPath((Join-Path $scienceDir 'trajectory.csv'))}
+      if(-not$config.parameters.Contains('scientific_event_outputs')){$config.parameters.scientific_event_outputs=@{}}
+      $config.parameters.scientific_event_outputs[[string]$batchIndex]=$science
+      Write-RunJson -Path $runConfig -Depth 100 -Value $config
       $batchIob=$temporaryIob
       return [pscustomobject]@{
         index=$batchIndex;count=$batchCount;offset=$batchOffset;runtime_dir=$batchDir;iob=$batchIob
         source_fly2=$batchFly2
+        scientific_event_output=$science
         stdout=Join-Path $logDir ('native_two_prism_flight__batch{0:D2}.log'-f$batchIndex)
         stderr=Join-Path $logDir ('native_two_prism_flight__batch{0:D2}.stderr.log'-f$batchIndex)
         scheduler_batch=$PlannedBatch
@@ -960,7 +972,7 @@ try{
       param([Parameter(Mandatory)]$Record)
       return [pscustomobject]@{
         name=('mrtof_simion_batch_{0:D2}'-f$Record.index);scheduler_batch=$Record.scheduler_batch
-        file_path=$simion;working_directory=$Record.runtime_dir;stdout=$Record.stdout;stderr=$Record.stderr;environment=@{}
+        file_path=$simion;working_directory=$Record.runtime_dir;stdout=$Record.stdout;stderr=$Record.stderr;environment=@{MRTOF_SCIENTIFIC_EVENTS_PATH=(Project-RunPath -Path ([string]$Record.scientific_event_output.events_path) -ArtifactRunDir $package.artifact_run_dir -RunDir $package.run_dir -Python $python);MRTOF_SCIENTIFIC_TRAJECTORY_PATH=$(if($Record.scientific_event_output.Contains('trajectory_path')){Project-RunPath -Path ([string]$Record.scientific_event_output.trajectory_path) -ArtifactRunDir $package.artifact_run_dir -RunDir $package.run_dir -Python $python}else{''})}
         argument_list=[string[]]@('--nogui','--noprompt','lua',(Join-Path $solverDir 'run_iob_flight.lua'),$Record.iob,$Record.source_fly2)
       }
     }
@@ -974,11 +986,13 @@ try{
          $null-eq$energyPair-or$null-eq$energyPair.Value-or
          $null-eq$transversePair-or$null-eq$transversePair.Value-or
          (Test-Path -LiteralPath $earlyAberrationReport -PathType Leaf)){return}
-      Invoke-ProjectPython -Arguments @(
+      $aberrationArguments=@(
         '-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic',
         '--first-batch-log',$Record.stdout,'--source-receipt',$bunchSourceLocal,
         '--output',$earlyAberrationReport
       )
+      if($Record.PSObject.Properties['scientific_event_output']){$aberrationArguments+=@('--scientific-events',[string]$Record.scientific_event_output.events_path)}
+      Invoke-ProjectPython -Arguments $aberrationArguments
       [void]$checkpointOutputs.Add($earlyAberrationReport)
       Write-Host "MRTOF_CONTROLLED_ABERRATION_FIRST_BATCH=PASS PATH=$earlyAberrationReport"
     }
@@ -988,10 +1002,14 @@ try{
         $batchRecords[$index]=New-MrtofBatchRecord -PlannedBatch $planned
       }else{
         $reused=@($batchContinuationPlan.batches|Where-Object{[int]$_.index-eq$index-and$_.action-eq'reuse'})
-        if($reused.Count-ne1-or@($reused[0].terminal_outputs).Count-notin@(1,2,3)){throw 'MR-TOF continuation requires a sealed whole-batch log and owner exit evidence.'}
+        if($reused.Count-ne1-or@($reused[0].terminal_outputs).Count-notin@(1,2,3,4)){throw 'MR-TOF continuation requires a sealed whole-batch log and owner exit evidence.'}
         $batchRecords[$index]=[pscustomobject]@{
           index=$index;count=[int]$planned.count;offset=([int]$reused[0].offset+$(if($bunchSelectionRequested){$BunchParticleIdMin-1}else{0}))
           stdout=[string]$reused[0].terminal_outputs[0].path;stderr=$null;scheduler_batch=$planned
+        }
+        if(@($reused[0].terminal_outputs).Count-ge2){
+          $priorExit=Get-Content -LiteralPath ([string]$reused[0].terminal_outputs[1].path) -Raw|ConvertFrom-Json -AsHashtable
+          if($priorExit.Contains('scientific_event_output')){$batchRecords[$index]|Add-Member -NotePropertyName scientific_event_output -NotePropertyValue $priorExit.scientific_event_output}
         }
       }
     }
@@ -1057,7 +1075,12 @@ try{
       $exitDirectory=Join-Path $resultDir ('batches/batch_{0:D3}'-f$completedBatchIndex)
       New-Item -ItemType Directory -Path $exitDirectory -Force|Out-Null
       $exitPath=Join-Path $exitDirectory 'owner_exit.json'
-      Write-RunJson -Path $exitPath -Value ([ordered]@{schema_version=1;role='simion_batch_owner_exit';batch_index=$completedBatchIndex;completed=$true;exit_code=[int]$completedRecord.exit_code})
+      $exitValue=[ordered]@{schema_version=1;role='simion_batch_owner_exit';batch_index=$completedBatchIndex;completed=$true;exit_code=[int]$completedRecord.exit_code}
+      if($batchRecords[$completedBatchIndex].PSObject.Properties['scientific_event_output']){
+        $exitValue.scientific_event_output=$batchRecords[$completedBatchIndex].scientific_event_output
+        foreach($path in @($exitValue.scientific_event_output.Values)){if(Test-Path -LiteralPath $path -PathType Leaf){if(-not$checkpointOutputs.Contains($path)){[void]$checkpointOutputs.Add($path)}}}
+      }
+      Write-RunJson -Path $exitPath -Value $exitValue
       if(-not$checkpointOutputs.Contains($exitPath)){[void]$checkpointOutputs.Add($exitPath)}
       if($batchRecords.ContainsKey($completedBatchIndex)){
         Publish-MrtofFirstBatchAberration -Record $batchRecords[$completedBatchIndex]
@@ -1100,7 +1123,7 @@ try{
     $rawLog=Join-Path $logDir 'native_two_prism_flight.log';$batchMergeReceipt=Join-Path $resultDir 'batch_log_merge_receipt.json'
     $mergeParticleIdMin=if($bunchSelectionRequested){$BunchParticleIdMin}else{1}
     $mergeArgs=@('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight','merge','--particle-count',([string]$trial.source_particle_count),'--particle-id-min',([string]$mergeParticleIdMin),'--output',$rawLog,'--receipt',$batchMergeReceipt)
-    foreach($planned in @($finalBatchPlan.batches)){$record=$batchRecords[[int]$planned.index];$mergeArgs+=@('--batch-log',$record.stdout,([string]$record.offset),([string]$record.count))}
+    foreach($planned in @($finalBatchPlan.batches)){$record=$batchRecords[[int]$planned.index];$mergeArgs+=@('--batch-log',$record.stdout,([string]$record.offset),([string]$record.count));if($record.PSObject.Properties['scientific_event_output']){$mergeArgs+=@('--batch-scientific-output',($record.scientific_event_output|ConvertTo-Json -Depth 20 -Compress))}}
     Invoke-ProjectPython -Arguments $mergeArgs
   }
   # Static component guards remain live through every worker.  Flight performs
@@ -1117,7 +1140,9 @@ try{
     Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','extract-trajectory','--log',$rawLog,'--output',$trajectorySamples,'--receipt',$trajectorySampleReceipt)
   }
   $failureStage='analyze_trial'
-  Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','analyze','--log',$rawLog,'--trial-receipt',$trialReceipt,'--output',$observation)
+  $analysisArguments=@('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','analyze','--log',$rawLog,'--trial-receipt',$trialReceipt,'--output',$observation)
+  if($isBunchFlight){$analysisArguments+=@('--scientific-event-receipt',$batchMergeReceipt)}
+  Invoke-ProjectPython -Arguments $analysisArguments
   $observed=Get-Content -LiteralPath $observation -Raw -Encoding UTF8|ConvertFrom-Json
   $collectionGatePath=$null;$collectionGate=$null
   $isSafeExitOnly=([string]$trial.execution_scope-eq'accelerator_safe_exit_envelope_only')
@@ -1194,6 +1219,20 @@ try{
     $iobAcceleratorInput=$persistentAcceleratorController
     $iobDetectorInput=$sourceDetector
     $guiWorkbenchIob=$temporaryIob
+    $guiOperating=$guiWorkbenchIob.Replace('.iob','.operating_point.lua')
+    if([IO.Path]::GetFullPath($guiOperating)-eq[IO.Path]::GetFullPath($sidecar)){throw 'GUI scientific projection must not rewrite the flight sidecar.'}
+    $guiWriter=Join-Path $temporarySolverDir 'scientific_event_csv.lua'
+    Copy-RequiredInput -Source ([string]$trial.scientific_event_output.csv_writer_path) -Destination $guiWriter -Label 'GUI scientific CSV writer'|Out-Null
+    $guiProjection=@'
+local directory=debug.getinfo(1,'S').source:sub(2):match('^(.*[/\\])') or './'
+t.scientific_event_output={events_path=directory..'gui_scientific_events.csv',
+ trajectory_path=t.trajectory_recording_enabled and directory..'gui_scientific_trajectory.csv' or nil,
+ csv_writer_path=directory..'scientific_event_csv.lua',environment_required=false,
+ events_environment_variable='MRTOF_SCIENTIFIC_EVENTS_PATH',trajectory_environment_variable='MRTOF_SCIENTIFIC_TRAJECTORY_PATH'}
+return t
+'@
+    $guiText="local t=(function()`n"+[IO.File]::ReadAllText($guiOperating)+"`nend)()`n"+$guiProjection
+    [IO.File]::WriteAllText($guiOperating,$guiText,[Text.UTF8Encoding]::new($false))
     $guiWorkbenchReceipt=Join-Path $resultDir 'gui_workbench_receipt.json'
     if([IO.Path]::GetFullPath($temporarySolverDir)-ne[IO.Path]::GetFullPath($guiWorkbenchDirectory)){
       throw 'Retained GUI workbench escaped its registered solver_review directory.'
@@ -1204,6 +1243,8 @@ try{
     $guiWorkbenchOutputs=@(
       $privateIobSeed,
       $guiWorkbenchIob,
+      $guiWriter,
+      $guiOperating.Replace('.lua','.obs.lua'),
       [IO.Path]::ChangeExtension($guiWorkbenchIob,'.lua'),
       [IO.Path]::ChangeExtension($guiWorkbenchIob,'.fly2'),
       $guiWorkbenchIob.Replace('.iob','.priority.lua'),
@@ -1362,6 +1403,12 @@ try{
     if($null-ne$path-and(Test-Path -LiteralPath $path -PathType Leaf)){$manifestOutputs+=$path}
   }
   if($isBunchFlight){foreach($index in $replayBatchIndexes){$record=$batchRecords[$index];$exitPath=Join-Path $resultDir ('batches/batch_{0:D3}/owner_exit.json'-f[int]$index);foreach($path in @($record.stdout,$record.stderr,$exitPath)){if($null-ne$path-and(Test-Path -LiteralPath $path -PathType Leaf)){$manifestOutputs+=$path}}}}
+  if($isBunchFlight){foreach($index in $replayBatchIndexes){$record=$batchRecords[$index];if($record.PSObject.Properties['scientific_event_output']){foreach($path in @($record.scientific_event_output.Values)){if(Test-Path -LiteralPath $path -PathType Leaf){$manifestOutputs+=$path}}}}}
+  if($isBunchFlight-and(Test-Path -LiteralPath $batchMergeReceipt)){$mergedScience=Get-Content $batchMergeReceipt -Raw|ConvertFrom-Json -AsHashtable;if($mergedScience.Contains('scientific_event_output')){foreach($key in @('events_path','trajectory_path')){if($mergedScience.scientific_event_output.Contains($key)){$manifestOutputs+=[string]$mergedScience.scientific_event_output[$key]}}}}
+  if(-not$isBunchFlight){foreach($key in @('events_path','trajectory_path')){if($null-ne$trial.scientific_event_output.PSObject.Properties[$key]-and$trial.scientific_event_output.$key-and(Test-Path -LiteralPath $trial.scientific_event_output.$key)){$manifestOutputs+=[string]$trial.scientific_event_output.$key}}}
+  $manifestOutputs+=[string]$trial.scientific_event_output.csv_writer_path
+  $manifestOutputs+=[string]$trial.scientific_event_locator.path
+
   if($null-ne$capacityProtectionRenewalPath){$manifestOutputs+=$capacityProtectionRenewalPath}
   if($null-ne$guiWorkbenchReceipt){$manifestOutputs+=$guiWorkbenchReceipt}
   if($guiWorkbenchOutputs.Count){$manifestOutputs+=@($guiWorkbenchOutputs)}

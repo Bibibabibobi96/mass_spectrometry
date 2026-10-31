@@ -324,6 +324,9 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     repo = project.parent.parent
     configuration = configuration_directory.resolve() if configuration_directory is not None else project / "config"
     inputs, solver = run / "inputs", run / "simion"
+    csv_resource = repo / 'common/simion/scientific_event_csv.lua'
+    if not csv_resource.is_file():
+        raise ValueError('IP prepare scientific CSV writer resource is missing')
     solver.mkdir(exist_ok=True)
     if source_profile not in {"functional", "exploration"}:
         raise ValueError("source_profile must be functional or exploration")
@@ -387,6 +390,7 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     write_json(inputs / "source_context.json", git_context)
     for name in ("runtime.lua", "native_drive.lua", "build_workbench.lua", "probe_native_field.lua", "extraction_force_audit.lua"):
         freeze_file(project / "simion" / name, solver / name)
+    freeze_file(csv_resource, solver / "scientific_event_csv.lua")
     freeze_file(repo / "common/simion/rf_drive.lua", solver / "simion_rf_drive.lua")
     freeze_file(repo / "common/simion/voltage_waveforms.lua", solver / "voltage_waveforms.lua")
     collision_original = freeze_file(simion_dir / "examples/collision_hs1/collision_hs1.lua", inputs / "collision_hs1_original.lua")
@@ -478,6 +482,9 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     host_policy = inputs / "code/common/host_resource_policy.json"
     host_policy.parent.mkdir(parents=True, exist_ok=True)
     freeze_file(repo / "common/host_resource_policy.json", host_policy)
+    csv_target = inputs / 'code/common/simion/scientific_event_csv.lua'
+    csv_target.parent.mkdir(parents=True, exist_ok=True)
+    freeze_file(csv_resource, csv_target)
     continuation_schema = repo / "common/contracts/schemas/simion_batch_continuation.schema.json"
     continuation_target = inputs / "code" / continuation_schema.relative_to(repo)
     continuation_target.parent.mkdir(parents=True, exist_ok=True)
@@ -564,6 +571,13 @@ def analyze(run: Path) -> dict[str, Any]:
             local_velocity = to_local_vector(c, [float(event[k]) for k in ("vx_mm_us", "vy_mm_us", "vz_mm_us")])
             if t<timing["primary_quench_us"] or abs(local_position[1]-b["geometry"]["extraction_end_y_mm"])>1e-9 or local_velocity[1]<=0:
                 raise ValueError("extraction event is outside its acceptance plane/clock/direction")
+    # Canonical lifecycle is separate from the recorded stop reason and from
+    # this owner's acceptance/counting rules. A time budget is not physical loss.
+    status_by_reason = {
+        "none": "alive", "acceptance_surface": "transmitted", "timeout": "timeout",
+        "acceptance_radius": "lost", "acceptance_aperture": "lost", "electrode": "lost",
+        "radial_escape": "lost", "backward_escape": "lost", "downstream_domain_exit": "lost",
+    }
     rows = []
     local_guide_positions = {}
     for r in raw:
@@ -581,7 +595,7 @@ def analyze(run: Path) -> dict[str, Any]:
         reason = r["reason"]
         event = r["event"]
         local_guide_positions[(int(r["particle_id"]), event)] = lx
-        rows.append(dict(zip(PARTICLE_STATE_COLUMNS, [int(r["particle_id"]),event,"transmitted" if reason == "acceptance_surface" else "lost" if reason != "none" else "alive",reason,t,t-source["birth_time_s"]*1e6,(2*math.pi*b["electric"]["rf_frequency_hz"]*t*1e-6+b["clock"]["rf_phase_rad"])%(2*math.pi),*position,*(v*1000 for v in velocity),kinetic_energy_ev(mass,vx*1000,vy*1000,vz*1000),radius,divergence,b["geometry"]["boundary_radius_mm"]])))
+        rows.append(dict(zip(PARTICLE_STATE_COLUMNS, [int(r["particle_id"]),event,status_by_reason.get(reason, "unknown"),reason,t,t-source["birth_time_s"]*1e6,(2*math.pi*b["electric"]["rf_frequency_hz"]*t*1e-6+b["clock"]["rf_phase_rad"])%(2*math.pi),*position,*(v*1000 for v in velocity),kinetic_energy_ev(mass,vx*1000,vy*1000,vz*1000),radius,divergence,b["geometry"]["boundary_radius_mm"]])))
     output = run / "results/particle_state.csv"
     with output.open("w", encoding="utf-8", newline="") as f:
         writer=csv.DictWriter(f,fieldnames=PARTICLE_STATE_COLUMNS); writer.writeheader(); writer.writerows(rows)

@@ -219,6 +219,9 @@ copy(program, output:gsub('%.iob$', '.lua'))
 copy(fly2, output:gsub('%.iob$', '.fly2'))
 copy(priority_path, output:gsub('%.iob$', '.priority.lua'))
 copy(operating_path, output:gsub('%.iob$', '.operating_point.lua'))
+local scientific_locator=operating_path:gsub('%.lua$','.obs.lua')
+local locator_file=io.open(scientific_locator,'rb')
+if locator_file then locator_file:close();copy(scientific_locator,output:gsub('%.iob$','.operating_point.obs.lua')) end
 if not measured_mode then copy(voltage_map_path, output:gsub('%.iob$', '.voltage_map.lua')) end
 copy(program:gsub('%.lua$', '.mirror_cycle_counter.lua'),
   output:gsub('%.iob$', '.mirror_cycle_counter.lua'))

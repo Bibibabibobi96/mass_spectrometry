@@ -12,6 +12,23 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from common.simion.native_completion import parse_fly_completed_line
+
+
+def mock_recorded_scientific_events(events):
+    # Algorithm fixtures provide event rows, while completion and provenance
+    # still come from their real small native-log bytes.
+    def read(log_path, **_):
+        data = log_path.read_bytes()
+        completed = [value for line in data.decode("utf-8-sig").splitlines()
+                     if (value := parse_fly_completed_line(line)) is not None]
+        return events, completed, hashlib.sha256(data).hexdigest()
+    return patch(
+        "projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis.read_scientific_events",
+        side_effect=read,
+    )
+
+
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import two_prism_simion_trial
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
     materialize_bunch_source,
@@ -966,7 +983,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
                 "target_k_handoff_histogram_analysis": {"status": "computed"},
             }
             with (
-                patch.object(two_prism_simion_trial, "parse_events", return_value=events),
+                mock_recorded_scientific_events(events),
                 patch.object(two_prism_simion_trial, "summarize_events", return_value=cohort),
             ):
                 result = analyze_trial(
@@ -1171,7 +1188,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
                 "detection_rate": 0.0, "peak_analysis": {"status": "unavailable"},
             }
             with (
-                patch.object(two_prism_simion_trial, "parse_events", return_value=downstream_loss),
+                mock_recorded_scientific_events(downstream_loss),
                 patch.object(two_prism_simion_trial, "summarize_events", return_value=cohort),
             ):
                 published = analyze_trial(
@@ -1403,7 +1420,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
             "vy_mm_us": 1.0,
             "vz_mm_us": 2.0,
         })
-        with patch.object(two_prism_simion_trial, "parse_events", return_value=events):
+        with mock_recorded_scientific_events(events):
             return analyze_trial(
                 log_path=log, trial_receipt_path=receipt, output_path=output,
             )
@@ -2050,7 +2067,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
             safe_exits = [
                 {"kind": "accelerator_safe_exit", "ion": ion} for ion in (97, 98)
             ]
-            with patch.object(two_prism_simion_trial, "parse_events", return_value=safe_exits), \
+            with mock_recorded_scientific_events(safe_exits), \
                     patch.object(two_prism_simion_trial, "summarize_events", return_value=cohort) as summarize:
                 result = analyze_trial(
                     log_path=log, trial_receipt_path=receipt,
@@ -2107,7 +2124,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
                 "all_losses_retained": True,
             }
             safe_exit = [{"kind": "accelerator_safe_exit", "ion": 1}]
-            with patch.object(two_prism_simion_trial, "parse_events", return_value=safe_exit), \
+            with mock_recorded_scientific_events(safe_exit), \
                     patch.object(two_prism_simion_trial, "summarize_events", return_value=cohort) as summarize:
                 result = analyze_trial(
                     log_path=log,
@@ -2140,7 +2157,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
                 receipt.write_text(json.dumps(trial), encoding="utf-8")
                 log = root / "flight.log"
                 log.write_text("status,Fly completed. 1 splats\n", encoding="utf-8")
-                with patch.object(two_prism_simion_trial, "parse_events", return_value=[]), \
+                with mock_recorded_scientific_events([]), \
                         patch.object(two_prism_simion_trial, "summarize_events", return_value={
                             "event_integrity_passed": True, "particle_terminal_count": 1,
                             "splat_code_histogram": {"1": 1}, "all_losses_retained": True,

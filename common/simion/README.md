@@ -16,6 +16,7 @@
 | 冻结工作台seed小配套、定义独立Laplace成员 | [共用工作台种子与独立场成员](#共用工作台种子与独立场成员) |
 | 缓存 PA family、导出 standalone 工作点 | [PA 缓存与工作点](#pa-缓存与工作点) |
 | 长 PA 输入与缓存写隔离 | 先读[跨项目边界](../../docs/tools/SIMION_REFERENCE.md#长pa输入路径)，再读 [API 与证据](#长路径输入-api与证据) |
+| 科学事件／轨迹CSV与流式读取 | [科学事件CSV](#科学事件-csv)；帧、时钟和科学分类仍由实际项目拥有 |
 | 读取原生 Fly 完成事实 | [原生完成事实](#原生完成事实) |
 | HS1运行副本的重复Fly复位与参数审计 | [HS1生命周期](#hs1运行副本生命周期) |
 | 共用电压边沿步长计算 | [电压边沿](#电压边沿) |
@@ -633,3 +634,15 @@ Windows能力依据（2026-08-26查阅）：Microsoft `MEMORYSTATUSEX/GlobalMemo
 原local私有seed复制实现已删除。源资源的用途见[官方种子](assets/iob_instance_seeds/README.md)。
 独立Laplace身份继续由integration的`single_reflection_flight.field_plan.laplace_member_identity`提供；
 单反射domain与cooled七成员共用该投影，缓存事务仍归本目录，物理operator／边界条件由原owner校验。
+
+## 科学事件 CSV
+
+`scientific_event_csv.lua`按调用者给出的列和有效数字写入CSV，检查列、行完整性及write／flush／close失败；
+`scientific_event_io.iter_csv_rows`流式校验表头、行宽和CSV语法。`expected_record`或`identity_result`
+请求身份时，在同一次完整读取中计算原字节身份；未读至EOF不产生已验证身份。普通读取不新增哈希。
+帧、单位、绝对时钟、方向、母群与实际损失仍由项目解释，IO不定义新科学schema。
+
+MR和IP正常生产者携带冻结写入器，实际分析调用同一读取器；MR进程日志只保留运行／完成信息，
+事件和请求的轨迹分别记录，保留原12／17位精度。IP保留原15位及既有诊断采样政策。
+声明CSV后缺失或损坏直接失败；无声明的已封存历史日志只由显式读取适配处理，不回退掩盖CSV错误。
+科学有效性和原生验收见各项目PROJECT；共享IO软件通过不授予新的飞行或物理资格。

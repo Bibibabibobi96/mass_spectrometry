@@ -10,10 +10,16 @@ from __future__ import annotations
 
 import argparse
 import copy
+from contextlib import nullcontext
+from common.simion.scientific_event_io import iter_csv_rows
+from common.contracts.write_run_manifest import file_record
 import csv
 import hashlib
 import json
+import shutil
 import math
+from common.paths.workspace_paths import project_native_run_path
+
 from pathlib import Path
 from typing import Any
 
@@ -41,7 +47,8 @@ def resolve_trajectory_recording(contract: dict[str, Any]) -> dict[str, Any] | N
 
 
 def extract_trajectory_samples(*, log_path: Path, output_path: Path, receipt_path: Path,
-                               recording_config: dict[str, Any] | None = None) -> dict[str, Any]:
+                               recording_config: dict[str, Any] | None = None,
+                               scientific_event_output: dict[str, Any] | None = None) -> dict[str, Any]:
     """Stream solver callback states into CSV, rejecting incomplete per-ion lifecycles."""
     recording = resolve_trajectory_recording({"simion": {"trajectory_recording": recording_config}})
     mode = recording["mode"] if recording else "every_step"
@@ -52,13 +59,24 @@ def extract_trajectory_samples(*, log_path: Path, output_path: Path, receipt_pat
     last_state: dict[int, tuple[float, ...]] = {}
     terminal_clock_backsteps = []
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with log_path.open(encoding="utf-8-sig") as source, output_path.open("w", encoding="utf-8", newline="") as target:
-        writer = csv.DictWriter(target, fieldnames=columns)
-        writer.writeheader()
-        for line in source:
-            if not line.startswith("MRTOF_TRAJECTORY "):
-                continue
-            row = dict(item.split("=", 1) for item in line.split()[1:])
+    trajectory_identity = {}
+    declared_path = None
+    def actual_rows():
+        nonlocal declared_path
+        if scientific_event_output is not None:
+            if not scientific_event_output.get("trajectory_path"):
+                raise ValueError("declared trajectory output missing")
+            declared_path = Path(scientific_event_output["trajectory_path"])
+            yield from iter_csv_rows(declared_path, columns, exact_header=columns, identity_result=trajectory_identity, expected_record=scientific_event_output.get("trajectory_record"))
+        else:
+            with log_path.open(encoding="utf-8-sig") as source:
+                for line in source:
+                    if line.startswith("MRTOF_TRAJECTORY "):
+                        yield dict(item.split("=", 1) for item in line.split()[1:])
+    with (output_path.open("w",encoding="utf-8",newline="") if scientific_event_output is None else nullcontext(None)) as target:
+        writer=csv.DictWriter(target,fieldnames=columns) if target is not None else None
+        if writer is not None: writer.writeheader()
+        for row in actual_rows():
             if set(row) != set(columns):
                 raise ValueError("trajectory sample has missing or unknown fields")
             ion, time = int(row["ion"]), float(row["t_us"])
@@ -90,7 +108,8 @@ def extract_trajectory_samples(*, log_path: Path, output_path: Path, receipt_pat
             last[ion] = (time, phase)
             last_state[ion] = state
             counts[ion] = counts.get(ion, 0) + 1
-            writer.writerow(row)
+            if writer is not None: writer.writerow(row)
+    if declared_path is not None: output_path=declared_path
     minimum_samples = 2 if mode == "fixed_interval" else 3
     if not counts or any(phase != "terminal" or counts[ion] < minimum_samples for ion, (_, phase) in last.items()):
         raise ValueError("trajectory is empty or lacks steps/terminal state")
@@ -106,7 +125,7 @@ def extract_trajectory_samples(*, log_path: Path, output_path: Path, receipt_pat
               "terminal_clock_backsteps": terminal_clock_backsteps,
               "record_order": "solver_callback_order__raw_terminal_clock_retained",
               "source_log": str(log_path.resolve()), "source_log_sha256": file_sha256(log_path).lower(),
-              "trajectory_csv": str(output_path.resolve()), "trajectory_csv_sha256": file_sha256(output_path).lower()}
+              "trajectory_csv": str(output_path.resolve()), "trajectory_csv_sha256": trajectory_identity["sha256"] if declared_path is not None else file_sha256(output_path).lower()}
     receipt_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     return result
 
@@ -158,10 +177,8 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
     resolve_trajectory_profile,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
-    parse_events,
     summarize_events,
 )
-from common.simion.native_completion import parse_fly_completed_line
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
     ProjectPhaseSpaceState,
     observation_from_simion_events,
@@ -1440,13 +1457,13 @@ def _bunch_center_stripe_stage_validation(
 
 def _accelerator_safe_exit_observation(
     events: list[dict[str, Any]], trial: dict[str, Any], *,
-    log_path: Path, trial_receipt_path: Path,
+    log_path: Path, trial_receipt_path: Path, log_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Publish one measured accelerator exit, failing closed on invalid state."""
     exits = [event for event in events if event["kind"] == "accelerator_safe_exit"]
     base: dict[str, Any] = {
         "event_count": len(exits),
-        "input_log": {"path": str(log_path.resolve()), "sha256": file_sha256(log_path).lower()},
+        "input_log": {"path": str(log_path.resolve()), "sha256": log_sha256 or file_sha256(log_path).lower()},
         "trial_identity": {
             "path": str(trial_receipt_path.resolve()),
             "sha256": file_sha256(trial_receipt_path).lower(),
@@ -1835,6 +1852,7 @@ def materialize_trial(
     bunch_source_receipt_path: Path | None = None,
     bunch_particle_id_min: int | None = None,
     bunch_particle_id_max: int | None = None,
+    batch_scientific_event_locators: bool = False,
     accelerator_instance: int = 3,
     trajectory_step_scale: float = 1.0,
     source_y_offset_mm: float = 0.0,
@@ -2232,9 +2250,28 @@ def materialize_trial(
             f"analyzer_voltages_v = {_lua_vector(field_binding['authority']['analyzer_electrode_voltages_v'])}, "
             f"accelerator_voltages_v = {_lua_vector([0.0, *endpoint_voltages, *ring_voltages])} }}, "
         )
+    scientific_directory = sidecar_path.parent.resolve()
+    writer_source = Path(__file__).resolve().parents[3] / "common/simion/scientific_event_csv.lua"
+    writer_path = scientific_directory / "scientific_event_csv.lua"
+    writer_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(writer_source, writer_path)
+    scientific_event_output = dict(events_path=str(scientific_directory / "mrtof_events.csv"),
+        trajectory_path=str(scientific_directory / "mrtof_trajectory.csv") if trajectory_recording else None,
+        csv_writer_path=str(writer_path), environment_required=batch_scientific_event_locators,
+        events_environment_variable="MRTOF_SCIENTIFIC_EVENTS_PATH",
+        trajectory_environment_variable="MRTOF_SCIENTIFIC_TRAJECTORY_PATH")
+    locator_path = sidecar_path.with_suffix(".obs.lua")
+    def locator_value(key, value):
+        if value is None: return "nil"
+        if isinstance(value,bool): return str(value).lower()
+        return json.dumps(project_native_run_path(str(value)).replace(chr(92),"/") if key in {"events_path", "trajectory_path", "csv_writer_path"} else str(value),ensure_ascii=False)
+    locator_path.write_text("return {"+",".join(key+"="+locator_value(key, value) for key,value in scientific_event_output.items())+"}\n",encoding="utf-8",newline="\n")
     sidecar = (
         "-- Generated run-local finite-3D P1/P2 voltage trial; do not edit.\n"
-        f"return {{ qualification = 'p1_p2_finite_3d_voltage_trial_only', mirror_voltages_v = {_lua_vector(mirror_voltages)}, "
+        "local point_path=debug.getinfo(1,'S').source:sub(2)\n"
+        "local scientific_output=assert(loadfile(point_path:gsub('%.lua$','.obs.lua')))()\n"
+        f"return {{ scientific_event_output = scientific_output, "
+        f"qualification = 'p1_p2_finite_3d_voltage_trial_only', mirror_voltages_v = {_lua_vector(mirror_voltages)}, "
         f"stripe_biases_v = {_lua_vector(stripe_biases)}, prism_voltages_v = {_lua_vector([p1, p2])}, "
         f"accelerator_voltages_v = {_lua_vector(endpoint_voltages)}, accelerator_ring_voltages_v = {_lua_vector(ring_voltages)}, "
         f"first_prism_l0 = {{ target_plane_z_mm = {p1_plane:.17g}, target_plane_x_mm = 0, target_plane_y_acceptance_mm = {_lua_vector([float(v) for v in p1_acceptance])} }}, "
@@ -2404,6 +2441,9 @@ def materialize_trial(
         "charge_state": charge,
         "trajectory_profile": trajectory_profile,
         "trajectory_recording": trajectory_recording,
+        "scientific_event_output": scientific_event_output,
+        "scientific_event_locator": file_record(locator_path),
+        "scientific_csv_writer": file_record(writer_path),
         "nonaccelerator_mesh_mm_per_gu": list(
             simion["component_mesh_mm_per_gu"]["analyzer"]
         ),
@@ -2499,14 +2539,15 @@ def _project_selected_center_observation(result: dict[str, Any], trial: dict[str
         result["status"] = "selected_center_observation_incomplete"
 
 
-def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path) -> dict[str, Any]:
+def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path, scientific_event_receipt: Path | None = None) -> dict[str, Any]:
     trial = _load(trial_receipt_path)
     if trial.get("prism_switch") is not None:
         raise CandidateContractError(
             "active MR-TOF Candidate observation forbids all P1/P2 voltage switching"
         )
-    log_text = log_path.read_text(encoding="utf-8")
-    events = parse_events(log_text)
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import read_scientific_events
+    science = _load(scientific_event_receipt)["scientific_event_output"] if scientific_event_receipt is not None else trial.get("scientific_event_output")
+    events, native_completions, _log_identity = read_scientific_events(log_path, scientific_event_output=science)
     if any(event["kind"] == "prism_voltage_switch" for event in events):
         raise CandidateContractError(
             "active MR-TOF Candidate log contains a forbidden P1/P2 voltage switch"
@@ -2582,7 +2623,7 @@ def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path
         ),
         "prism_voltages_v": trial["prism_voltages_v"],
         "event_counts": kinds,
-        "log_sha256": file_sha256(log_path).lower(),
+        "log_sha256": _log_identity,
         "trial_receipt_sha256": file_sha256(trial_receipt_path).lower(),
         "accelerator_pulse_diagnostic": {
             "mode": pulse_mode,
@@ -2609,8 +2650,7 @@ def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path
             raise CandidateContractError(
                 "bunch trial receipt lacks one complete contiguous ordered particle cohort"
             )
-        completion_matches = [completion for line in log_text.splitlines()
-                              if (completion := parse_fly_completed_line(line)) is not None]
+        completion_matches = native_completions
         reported_splats = (
             completion_matches[0].splats
             if len(completion_matches) == 1 else None
@@ -2791,7 +2831,7 @@ def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path
     source, source_state = _single_center_source_state(trial)
     result["source_release_state"] = source_state
     result["accelerator_safe_exit_observation"] = _accelerator_safe_exit_observation(
-        events, trial, log_path=log_path, trial_receipt_path=trial_receipt_path,
+        events, trial, log_path=log_path, trial_receipt_path=trial_receipt_path, log_sha256=_log_identity,
     )
     target_k_contract = _finite(trial.get("target_drift_period_ratio"), "target drift period ratio")
     result["termination_diagnostic"] = _termination_diagnostic(events)
@@ -3016,12 +3056,14 @@ def main() -> int:
     materialize.add_argument("--fly2", required=True, type=Path)
     materialize.add_argument("--sidecar", required=True, type=Path)
     materialize.add_argument("--receipt", required=True, type=Path)
+    materialize.add_argument("--batch-scientific-event-locators", action="store_true")
     materialize.add_argument("--field-binding", type=Path)
     materialize.add_argument("--native-corridor-cache-manifest", type=Path)
     analyze = sub.add_parser("analyze")
     analyze.add_argument("--log", required=True, type=Path)
     analyze.add_argument("--trial-receipt", required=True, type=Path)
     analyze.add_argument("--output", required=True, type=Path)
+    analyze.add_argument("--scientific-event-receipt", type=Path)
     recording = sub.add_parser("recording-config")
     recording.add_argument("--contract", required=True, type=Path)
     extract = sub.add_parser("extract-trajectory")
@@ -3066,13 +3108,14 @@ def main() -> int:
             accelerator_instance=args.workbench_accelerator_instance,
             fly2_path=args.fly2,
             sidecar_path=args.sidecar,
+            batch_scientific_event_locators=args.batch_scientific_event_locators,
             receipt_path=args.receipt,
             field_binding_path=args.field_binding,
             native_corridor_cache_manifest_path=args.native_corridor_cache_manifest,
         )
         print(f"MRTOF_TWO_PRISM_TRIAL_MATERIALIZE=PASS P1={result['prism_voltages_v'][0]:.12g} P2={result['prism_voltages_v'][1]:.12g}")
     elif args.command == "analyze":
-        result = analyze_trial(log_path=args.log, trial_receipt_path=args.trial_receipt, output_path=args.output)
+        result = analyze_trial(log_path=args.log, trial_receipt_path=args.trial_receipt, output_path=args.output, scientific_event_receipt=args.scientific_event_receipt)
         short_exit_failed = (
             result.get("execution_scope") == "accelerator_safe_exit_envelope_only"
             and result.get("status") != "accelerator_geometric_exit_observed"

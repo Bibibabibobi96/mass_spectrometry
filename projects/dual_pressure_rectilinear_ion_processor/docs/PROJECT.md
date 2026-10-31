@@ -250,3 +250,15 @@ stdout的最终owner总耗时另含发布及资源释放。未知写者保留保
 
 profile 区分软件检查与实际科学动作；现有 ConfigurationDirectory 接口继续消费声明配置，不增加新 runner。
 能力查询与执行编译见[公共合同](../../../common/contracts/README.md#执行dry-run)；READY 仅描述声明条件。
+
+## 结构化记录与默认诊断
+
+`runtime.lua`以公共`scientific_event_csv.lua`写events／samples，原15位精度、采样与轨迹请求政策不变；
+`functional.prepare`在输出前检查并把同一写入器冻结到运行及可执行源码闭包，缺资源拒绝。
+`diagnostics`默认流式读取，保留完整母群、原ID、6D和绝对时钟；帧／权重继续沿既有权威解释。
+格式损坏失败，不用少行输入制造通过。新公共化不改变碰撞种子、驱动、积分或接受规则。
+
+canonical状态保留原reason：接受为transmitted、明确逃逸／电极损失为lost；协议timeout为timeout，
+未解析的solver_stop／unknown为unknown，不再全部写lost。母群、capture／extraction及原门限不变。
+原non-exit terminal诊断不证明碰撞原因，未知电极保持unknown。
+软件CSV／冻结／诊断回归不等于新增求场、飞行或科学资格，既有协议timeout及损失解释须按原范围报告。
