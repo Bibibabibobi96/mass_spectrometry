@@ -512,7 +512,7 @@ class RadialCompactionCampaignTests(unittest.TestCase):
                 "from common.host_resource_python import await_managed_process_start; await_managed_process_start(); "
                 "import json, os; from projects.single_reflection_oa_tof_mass_analyzer.workflows.radial_compaction "
                 "import run_campaign; print(json.dumps({'source': run_campaign.__file__, "
-                "'host_state': os.environ['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH']}), flush=True)"
+                "'host_state': os.environ['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH'], 'pid': os.getpid()}), flush=True)"
             )
             stdout, stderr = root / "stdout.log", root / "stderr.log"
             receipt = radial.run_managed_python_process(
@@ -525,8 +525,12 @@ class RadialCompactionCampaignTests(unittest.TestCase):
             self.assertEqual(receipt["role"], "repository_managed_python_completion")
             self.assertTrue(receipt["ownership_confirmed"] and receipt["worker_exit_confirmed"])
             self.assertTrue(receipt["stdout_drained"] and receipt["stderr_drained"])
-            self.assertNotEqual(receipt["worker_process_id"], receipt["launcher_process_id"])
+            self.assertGreater(receipt["worker_started_at_utc_ticks"], 0)
+            self.assertGreater(receipt["launcher_process_id"], 0)
+            self.assertTrue(receipt["launcher_exit_confirmed"] and receipt["ack_attempted"])
             observed = json.loads(stdout.read_text(encoding="utf-8").splitlines()[-1])
+            self.assertEqual(receipt["worker_process_id"], observed["pid"])
+            print("FROZEN_ACTUAL_WORKER=" + json.dumps({"python": sys.executable, "actual": observed, "completion": receipt}))
             self.assertEqual(Path(observed["source"]).resolve(),
                              Path(radial.frozen_source_path(closure, radial.EXTRA_SOURCE_IDS[0])).resolve())
             self.assertEqual(observed["host_state"], str(shared_state))
@@ -1262,7 +1266,7 @@ def run(case_root, run_id, context, managed):
                 path = root / f"N{count}.ion"
                 result = subprocess.run(["pwsh", "-NoProfile", "-File",
                     str(PROJECT_ROOT / "simion/workbench/generate_comsol_consistent_ions.ps1"),
-                    "-N", str(count), "-Output", str(path),
+                    "-PythonExe", sys.executable, "-N", str(count), "-Output", str(path),
                     *[value for key, value in options.items() for value in (f"-{key}", str(value))]],
                     cwd=radial.REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=120,
                     env={**radial.os.environ, "PYTHONPATH": str(radial.REPO_ROOT), "PYTHONDONTWRITEBYTECODE": "1"})

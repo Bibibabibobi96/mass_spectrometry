@@ -169,6 +169,8 @@ PYTHON_ASSIGNMENT = "$python = Join-Path $repoRoot '.venv\\Scripts\\python.exe'"
 HOST_PYTHON_ASSIGNMENT = "$python = if ($env:SIMULATION_PYTHON_EXE) { $env:SIMULATION_PYTHON_EXE } else {\n    Join-Path $repo '.venv/Scripts/python.exe'\n  }"
 ANALYSIS_PYTHON_ASSIGNMENT = "$python = if ($env:SIMULATION_PYTHON_EXE) { $env:SIMULATION_PYTHON_EXE } else {\n  Join-Path $repoRoot '.venv\\Scripts\\python.exe'\n}"
 
+GENERATOR_PYTHON_ASSIGNMENT = "$python = if ($PythonExe) {\n  [IO.Path]::GetFullPath($PythonExe)\n} elseif ($env:SIMULATION_PYTHON_EXE) {\n  [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)\n} else {\n  Join-Path $repoRoot '.venv\\Scripts\\python.exe'\n}"
+
 
 def _source_path(source_id: str) -> Path:
     relative = Path(source_id)
@@ -237,6 +239,8 @@ def freeze_candidate_source_closure(
                 assignment = HOST_PYTHON_ASSIGNMENT
             elif source_id == "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/analyze_ideal_field_log.ps1":
                 assignment = ANALYSIS_PYTHON_ASSIGNMENT
+            elif source_id == "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/generate_comsol_consistent_ions.ps1":
+                assignment = GENERATOR_PYTHON_ASSIGNMENT
             else:
                 assignment = PYTHON_ASSIGNMENT
             payload = _bind_python_runtime(payload, python_path, assignment)

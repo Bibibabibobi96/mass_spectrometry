@@ -15,7 +15,8 @@ param(
   [string]$Output = '',
   [switch]$AllowNonstandardDiagnosticCount,
   [switch]$ValidateExisting,
-  [string]$ValidationReport = ''
+  [string]$ValidationReport = '',
+  [string]$PythonExe = ''
 )
 
 Set-StrictMode -Version Latest
@@ -29,7 +30,16 @@ $hy = if ($HalfWidthYmm -ge 0) { $HalfWidthYmm } else { $HalfWidthMm }
 $hz = if ($HalfWidthZmm -ge 0) { $HalfWidthZmm } else { $HalfWidthMm }
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+$python = if ($PythonExe) {
+  [IO.Path]::GetFullPath($PythonExe)
+} elseif ($env:SIMULATION_PYTHON_EXE) {
+  [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)
+} else {
+  Join-Path $repoRoot '.venv\Scripts\python.exe'
+}
+if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
+  throw "ION generation requires the selected Python runtime: $python"
+}
 $arguments = @(
   (Join-Path $projectRoot '..\..\common\ion_release\dotnet_gaussian_box_ion11.py')
   '--particle-count'; [string]$N

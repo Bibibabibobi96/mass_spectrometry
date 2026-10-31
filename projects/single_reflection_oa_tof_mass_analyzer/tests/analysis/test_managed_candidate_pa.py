@@ -540,6 +540,18 @@ $node=@($ast.FindAll({param($node) $node-is[Management.Automation.Language.Funct
  $node.Name-eq'Invoke-ComponentCache'},$true))
 if($node.Count-ne1){throw 'Expected the unique production cache dispatch.'}
 . ([scriptblock]::Create($node[0].Extent.Text))
+$script:cacheFactIndex=0
+$actualManaged=(Get-Item Function:Invoke-RepositoryManagedPythonProcess).ScriptBlock
+function Invoke-RepositoryManagedPythonProcess {
+ param($Python,$ArgumentList,$WorkingDirectory,$StandardOutputPath,$StandardErrorPath)
+ $ArgumentList=@($ArgumentList)
+ $fact=Join-Path $Root ('worker-'+$script:cacheFactIndex+'.json');$script:cacheFactIndex++
+ $ArgumentList[2]=$ArgumentList[2].Replace('import runpy;',
+  'import os,json,sys; from pathlib import Path; Path(os.environ["CACHE_WORKER_FACT"]).write_text(json.dumps({"pid":os.getpid(),"python":sys.executable}),encoding="utf-8"); import runpy;')
+ & $actualManaged -Python $Python -ArgumentList $ArgumentList -WorkingDirectory $WorkingDirectory `
+  -StandardOutputPath $StandardOutputPath -StandardErrorPath $StandardErrorPath `
+  -Environment @{CACHE_WORKER_FACT=$fact}
+}
 $repoRoot=$Repo;$python=$Python;$buildLogs=Join-Path $Root 'logs';New-Item -ItemType Directory $buildLogs|Out-Null
 $nativeOperations=[Collections.Generic.List[object]]::new()
 $arguments=@('--cache-root',(Join-Path $Root 'cache'),'--identity',(Join-Path $Root 'identity.json'),
@@ -567,8 +579,16 @@ try{$null=Invoke-ComponentCache ($arguments+@('--action','not-an-action')) 'bad-
                 self.assertTrue(operation["observation"]["exit_confirmed"])
                 self.assertEqual(operation["observation"]["returncode"] == 0, index < 2)
                 self.assertTrue(operation["managed_process_completion"]["ownership_confirmed"])
-                self.assertNotEqual(operation["managed_process_completion"]["worker_process_id"],
-                                    operation["managed_process_completion"]["launcher_process_id"])
+                receipt = operation["managed_process_completion"]
+                actual = json.loads((root / f"worker-{index}.json").read_text(encoding="utf-8"))
+                self.assertEqual(receipt["worker_process_id"], actual["pid"])
+                self.assertEqual(Path(actual["python"]).resolve(), Path(sys.executable).resolve())
+                self.assertGreater(receipt["worker_started_at_utc_ticks"], 0)
+                self.assertGreater(receipt["launcher_process_id"], 0)
+                self.assertTrue(receipt["ack_attempted"] and receipt["worker_exit_confirmed"]
+                                and receipt["launcher_exit_confirmed"]
+                                and receipt["stdout_drained"] and receipt["stderr_drained"])
+                print("CACHE_ACTUAL_WORKER=" + json.dumps({"actual": actual, "completion": receipt}))
 
     def test_guarded_flight_real_entry_keeps_guards_until_native_and_worker_completion(self):
         # Admission alone is a software fixture adapter. The production entry,

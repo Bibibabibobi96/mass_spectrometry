@@ -8,6 +8,8 @@ Paper 1 专用研究准备API的归属与退出条件见[分析说明](../analys
 
 ## 当前状态
 
+ION 生成入口支持显式 `-PythonExe`，其次使用 `SIMULATION_PYTHON_EXE`，否则使用仓库 Python 3.11 环境；所选文件缺失即拒绝。Candidate 冻结源码时仍将该选择绑定为本次唯一解释器，不在后续运行重新选择。受管进程按真实 worker PID、创建身份、握手、退出和输出排空确认归属；系统 Python 的 worker 与 launcher 同 PID 合法，venv 也可能不同，不能用 PID 不等代替归属证据。
+
 径向紧凑化及结构Candidate的公共owner Result保留在项目scratch的`workflow_results/<run_id>/result.json`；
 原入口的finalization-only恢复使用该Result与run内冻结request，不重飞或改变父运行的科学终态。
 显式PA交接Result仍由调用者指定。该软件接线不构成新求解或Formal验收。
