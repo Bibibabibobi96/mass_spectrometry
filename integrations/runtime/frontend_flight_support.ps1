@@ -1,6 +1,37 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
+function Add-FrontendNativeOperation {
+  <# Transport the public process owner's facts before scientific callbacks. #>
+  [CmdletBinding(DefaultParameterSetName='Record')]
+  param([Parameter(Mandatory)]$NativeOperations,[Parameter(Mandatory)][string]$NativeResourceReleaseId,
+    [Parameter(Mandatory)][string]$OperationId,
+    [Parameter(Mandatory,ParameterSetName='Record')]$ProcessRecord,
+    [Parameter(Mandatory,ParameterSetName='Exception')][Collections.IDictionary]$ExceptionData)
+  if($null-eq$NativeOperations){return}
+  if($PSCmdlet.ParameterSetName-eq'Exception'){
+    if(-not$ExceptionData.Contains('observed_process_exit_confirmed')){return}
+    $confirmed=$ExceptionData['observed_process_exit_confirmed'];$code=$ExceptionData['observed_process_returncode']
+    $id=$ExceptionData['observed_process_id'];$birth=$ExceptionData['observed_process_started_at_utc_ticks']
+  }else{
+    $code=$ProcessRecord.exit_code;$id=$ProcessRecord.root_process_id;$birth=$ProcessRecord.root_process_started_at_utc_ticks
+    $confirmed=$null-ne$code
+    if(($ProcessRecord-is[Collections.IDictionary]-and$ProcessRecord.Contains('completed'))-or
+       $ProcessRecord.PSObject.Properties.Name-contains'completed'){$confirmed=[bool]$ProcessRecord.completed}
+  }
+  if($confirmed-and(($id-isnot[int]-and$id-isnot[long])-or[long]$id-le0-or
+      ($birth-isnot[int]-and$birth-isnot[long])-or[long]$birth-le0-or
+      ($code-isnot[int]-and$code-isnot[long]))){throw 'Frontend native completion lacks actual process identity/exit evidence.'}
+  if($null-ne$id-and$null-ne$birth-and[long]$id-gt0-and[long]$birth-gt0){
+    foreach($operation in $NativeOperations){
+      if($operation.observation.process_id-eq$id-and$operation.observation.process_started_at_utc_ticks-eq$birth){return}
+    }
+  }
+  $NativeOperations.Add(@{operation_id=($OperationId+'.'+[string]$id+'.'+[string]$birth);
+    observation=@{exit_confirmed=[bool]$confirmed;returncode=$code;process_id=$id;process_started_at_utc_ticks=$birth};
+    resource_release_id=$NativeResourceReleaseId})|Out-Null
+}
+
 function Invoke-FrontendRuntimePython {
   [CmdletBinding()]
   param(
@@ -87,18 +118,22 @@ function Write-FrontendBatchCheckpoint {
 function Invoke-FrontendIobBuild {
   [CmdletBinding()]
   param(
+    $NativeOperations=$null,[string]$NativeResourceReleaseId='simion',
     [Parameter(Mandatory)]$Case,[Parameter(Mandatory)][string]$Phase,
     [Parameter(Mandatory)][string]$RunDirectory,
     [Parameter(Mandatory)][string]$SimionExe,[Parameter(Mandatory)]$Limits,
     [string]$Python='', [string]$RepoRoot='', [scriptblock]$IobVerification=$null
   )
   $name=[string]$Case.case_id
+  $nativeReturned=$false
   try {
   $result=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $RunDirectory -FilePath $SimionExe `
     -ArgumentList ([string[]]$Case.iob_builder_arguments) -WorkingDirectory ([string]$Case.working_directory) `
     -UsagePath (Join-Path $RunDirectory "logs/$Phase.$name.assembly.resource_usage.json") `
     -RedirectStandardOutput (Join-Path $RunDirectory "logs/$Phase.$name.assembly.stdout.log") `
     -RedirectStandardError (Join-Path $RunDirectory "logs/$Phase.$name.assembly.stderr.log")
+  $nativeReturned=$true
+  if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId ($Phase+'.iob.'+$name) -ProcessRecord $result}
   if($result.resource_budget_exceeded-or[int]$result.exit_code-ne0-or-not(Test-Path -LiteralPath ([string]$Case.iob_path))){
     throw "Frontend IOB assembly failed: $Phase/$name"
   }
@@ -107,10 +142,12 @@ function Invoke-FrontendIobBuild {
       -SimionExe $SimionExe -Limits $Limits -Python $Python -RepoRoot $RepoRoot
   }
   } catch {
+    if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId ($Phase+'.iob.'+$name) -ExceptionData $_.Exception.Data}
     # This helper also builds the first IOB before a batch wave exists. Carry
     # an unknown native builder/inspector to the same owner release boundary.
-    if($_.Exception.Data.Contains('observed_process_exit_confirmed')-and
-       -not[bool]$_.Exception.Data['observed_process_exit_confirmed']){
+    if((-not$nativeReturned-and(-not$_.Exception.Data.Contains('observed_process_exit_confirmed')-or
+         $_.Exception.Data['observed_process_exit_confirmed']-isnot[bool]-or-not[bool]$_.Exception.Data['observed_process_exit_confirmed']))-or
+       ($_.Exception.Data.Contains('observed_process_exit_confirmed')-and-not[bool]$_.Exception.Data['observed_process_exit_confirmed'])){
       $_.Exception.Data['simion_wave_writer_completion_confirmed']=$false
     }
     throw
@@ -123,6 +160,7 @@ function Invoke-FrontendFlightPhase {
      first-formal observation and remaining work; the GUI case is assembled. #>
   [CmdletBinding()]
   param(
+    $NativeOperations=$null,[string]$NativeResourceReleaseId='simion',
     [Parameter(Mandatory)][string]$RunDirectory,
     [Parameter(Mandatory)][string]$ProjectRunsRoot,
     [Parameter(Mandatory)][string]$RepoRoot,[Parameter(Mandatory)][string]$Python,
@@ -141,7 +179,7 @@ function Invoke-FrontendFlightPhase {
     [scriptblock]$OnProcessCompleted=$null
   )
   $context=@{Python=$Python;RepoRoot=$RepoRoot;RunDirectory=$RunDirectory}
-  $native=@{RunDirectory=$RunDirectory;SimionExe=$SimionExe;Limits=$Limits;Phase=$Phase;Python=$Python;RepoRoot=$RepoRoot}
+  $native=@{NativeOperations=$NativeOperations;NativeResourceReleaseId=$NativeResourceReleaseId;RunDirectory=$RunDirectory;SimionExe=$SimionExe;Limits=$Limits;Phase=$Phase;Python=$Python;RepoRoot=$RepoRoot}
   if($IobVerification){$native.IobVerification=$IobVerification}
   $phaseArgs=@('--run',$RunDirectory,'--phase',$Phase)+$RuntimeInputArguments
   if($SharedTimesPath){$phaseArgs+=@('--shared-times-json',$SharedTimesPath)}
@@ -255,9 +293,20 @@ function Invoke-FrontendFlightPhase {
     $specifications=@($pending|ForEach-Object{New-FrontendFlightSpecification -Case $_ -SimionExe $SimionExe})
     [pscustomobject]@{pending=$specifications;materialized=$materialized}
   }
+  # Capture the caller's callback and function implementation before the public
+  # batch owner introduces its own OnProcessCompleted dynamic parameter scope.
+  $completionWriter=${function:Add-FrontendNativeOperation}
+  $scientificCompletion=$OnProcessCompleted
+  $completionOperations=$NativeOperations
+  $completionReleaseId=$NativeResourceReleaseId
+  $completionPhase=$Phase
+  $completion={param($record)
+    if($null-ne$completionOperations){& $completionWriter -NativeOperations $completionOperations -NativeResourceReleaseId $completionReleaseId -OperationId ($completionPhase+'.fly.'+[string]$record.name) -ProcessRecord $record}
+    if($scientificCompletion){& $scientificCompletion $record}
+  }.GetNewClosure()
   $wave=Invoke-SimionBatchPhase -DispatchPlanPath $dispatch -RunDir $RunDirectory -UsagePath $usage `
     -FirstSpecification $firstSpecification -Replan $replan -PrepareRemaining $prepareRemaining -AfterDrain $afterDrain `
-    -OnProcessCompleted $OnProcessCompleted
+    -OnProcessCompleted $completion
   $materialized=$wave.prepared.materialized
   if($wave.resource_budget_exceeded-or@($wave.processes|Where-Object{[int]$_.exit_code-ne0}).Count){
     try{throw "Frontend $Phase batch flight failed."}catch{

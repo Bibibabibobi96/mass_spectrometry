@@ -191,8 +191,50 @@ def _completed_comsol_exports(run: Path, manifest_path: Path, source: dict, plan
     return dict(samples=samples, native_facts=facts_record, plan=exported_plan, points=points)
 
 
-def materialize_tasks(run: Path, code: Path, pa: Path, *, saved_model: Path | None = None,
-                      saved_model_stage: str = 'solved_saved', comsol_required: bool = True) -> dict:
+def completed_simion_exports(run: Path, manifest_path: Path, cache: dict, code: Path) -> dict | None:
+    """Consume manifest-bound complete samples, never the PA, for identical sampling."""
+    manifest = read(run/'inputs/comsol_source_manifest.json')
+    base = manifest_path.parent
+    records = [*manifest['inputs'].values(), *manifest['outputs']]
+    def bound(path):
+        matches = [row for row in records if record_path(row, base_dir=base) == Path(path).resolve()]
+        if not matches: return None
+        if any((row['bytes'], row['sha256']) != (matches[0]['bytes'], matches[0]['sha256']) for row in matches):
+            raise ValueError('SIMION export records conflict')
+        verify_record('completed SIMION export', matches[0], base_dir=base)
+        return dict(matches[0],path=str(record_path(matches[0],base_dir=base)))
+    samples=bound(base/'results/simion_field_samples.csv')
+    facts=bound(base/'logs/simion_field_native_facts.txt')
+    identity=bound(base/'inputs/pa_cache_identity.json')
+    exporter_path='projects/single_reflection_oa_tof_mass_analyzer/simion/export_paired_accelerator_field.lua'
+    exporters=[row for row in manifest['inputs'].values() if record_path(row,base_dir=base).as_posix().endswith('/'+exporter_path)]
+    exporter=bound(record_path(exporters[0],base_dir=base)) if len(exporters)==1 else None
+    if samples is None and facts is None:
+        source=bound(base/'inputs/comsol_source.json')
+        carried=read(record_path(source,base_dir=base)).get('simion_exports') if source else None
+        if carried:
+            samples,facts,identity,exporter=(bound(record_path(carried[key],base_dir=base)) for key in ('samples','native_facts','cache_identity','exporter'))
+            if any(row is None for row in (samples,facts,identity,exporter)):
+                raise ValueError('Borrowed SIMION exports lack published bindings')
+    if any(row is None for row in (samples,facts,identity,exporter)): return None
+    if read(record_path(identity,base_dir=base)) != cache['identity']: return None
+    if exporter['sha256'].lower() != file_record(code/exporter_path)['sha256'].lower(): return None
+    plan=read(run/'inputs/bvp/paired_accelerator_static_field_plan.json')
+    try: validate_samples(plan,record_path(samples,base_dir=base))
+    except ValueError: return None
+    text=record_path(facts,base_dir=base).read_text(encoding='utf-8-sig')
+    header=dict(line.split('=',1) for line in text.splitlines() if '=' in line)
+    if (header.get('backend')!='SIMION' or header.get('api')!='pa:field_vc' or header.get('native_field_unit')!='V/gu'
+            or header.get('export_field_unit')!='V/m' or header.get('field_sign')!='negative_potential_gradient'
+            or int(header.get('point_count',-1))!=plan['sample_points']['count']):
+        raise ValueError('Completed SIMION export native facts differ')
+    result=dict(samples=samples,native_facts=facts,cache_identity=identity,exporter=exporter)
+    source=read(run/'inputs/comsol_source.json');source['simion_exports']=result;write(run/'inputs/comsol_source.json',source)
+    return result
+
+
+def materialize_tasks(run: Path, code: Path, pa: Path | None, *, saved_model: Path | None = None,
+                      saved_model_stage: str = 'solved_saved', comsol_required: bool = True, simion_required: bool = True) -> dict:
     """Write only vendor-required Lua/MATLAB tasks; transport the existing plan."""
     # Run execution junctions are removed at terminal publication. Native model
     # facts must name enduring scientific paths before MATLAB saves them.
@@ -201,23 +243,26 @@ def materialize_tasks(run: Path, code: Path, pa: Path, *, saved_model: Path | No
     plan_path = run/'inputs/bvp/paired_accelerator_static_field_plan.json'
     plan = read(plan_path)
     grid = plan['native_geometry_compilation']['grid']
-    # A fixed adapter interface, not a general Lua serializer or another plan.
-    quote = lambda path: json.dumps(str(path).replace('\\', '/'), ensure_ascii=False)
-    p, o, n = grid['cell_mm_xyz'], grid['instance_origin_mm'], grid['dimensions']
-    lua = ("local export=dofile(%s)\n"
-           "local plan={schema_version=1,role='%s',coordinate_frame='oatof_global',"
-           "native_geometry_compilation={grid={dimensions={nx=%s,ny=%s,nz=%s},"
-           "cell_mm_xyz={x=%s,y=%s,z=%s},instance_origin_mm={x=%s,y=%s,z=%s}}},"
-           "sample_points={path=%s,count=%s}}\n"
-           "local count=export(%s,plan,%s,%s)\nprint('PAIRED_FIELD_EXPORT=PASS samples='..count)\n") % (
-               quote(code/'projects'/PROJECT/'simion/export_paired_accelerator_field.lua'), ROLE,
-               n['nx'], n['ny'], n['nz'], repr(p['x']), repr(p['y']), repr(p['z']),
-               repr(o['x']), repr(o['y']), repr(o['z']),
-               quote(run/'inputs/bvp/paired_accelerator_field_points.csv'), plan['sample_points']['count'],
-               quote(pa), quote(run/'results/simion_field_samples.csv'), quote(run/'logs/simion_field_native_facts.txt'))
-    lua_path = run/'inputs/export_simion_field.lua'; lua_path.write_text(lua, encoding='utf-8', newline='\n')
+    lua_path = run/'inputs/export_simion_field.lua'
+    if simion_required:
+        if pa is None: raise ValueError('SIMION sampling requires its real PA input')
+        # A fixed adapter interface, not a general Lua serializer or another plan.
+        quote = lambda path: json.dumps(str(path).replace('\\', '/'), ensure_ascii=False)
+        p, o, n = grid['cell_mm_xyz'], grid['instance_origin_mm'], grid['dimensions']
+        lua = ("local export=dofile(%s)\n"
+               "local plan={schema_version=1,role='%s',coordinate_frame='oatof_global',"
+               "native_geometry_compilation={grid={dimensions={nx=%s,ny=%s,nz=%s},"
+               "cell_mm_xyz={x=%s,y=%s,z=%s},instance_origin_mm={x=%s,y=%s,z=%s}}},"
+               "sample_points={path=%s,count=%s}}\n"
+               "local count=export(%s,plan,%s,%s)\nprint('PAIRED_FIELD_EXPORT=PASS samples='..count)\n") % (
+                   quote(code/'projects'/PROJECT/'simion/export_paired_accelerator_field.lua'), ROLE,
+                   n['nx'], n['ny'], n['nz'], repr(p['x']), repr(p['y']), repr(p['z']),
+                   repr(o['x']), repr(o['y']), repr(o['z']),
+                   quote(run/'inputs/bvp/paired_accelerator_field_points.csv'), plan['sample_points']['count'],
+                   quote(pa), quote(run/'results/simion_field_samples.csv'), quote(run/'logs/simion_field_native_facts.txt'))
+        lua_path.write_text(lua, encoding='utf-8', newline='\n')
     if not comsol_required:
-        return dict(lua=str(lua_path), matlab=None)
+        return dict(lua=str(lua_path) if simion_required else None, matlab=None)
     if saved_model is not None:
         saved_model = saved_model.resolve(strict=True)
     def matlab(path: Path | str) -> str:
@@ -230,7 +275,7 @@ def materialize_tasks(run: Path, code: Path, pa: Path, *, saved_model: Path | No
         f"addpath({matlab(code/'projects'/PROJECT/'comsol')});\n"
         f"build_and_export_paired_accelerator_field({matlab(plan_path)},{matlab(run/'comsol')},"
         f"{matlab(saved_model) if saved_model is not None else chr(39)+chr(39)}{stage_argument});\n", encoding='utf-8', newline='\n')
-    return dict(lua=str(lua_path), matlab=str(task_path))
+    return dict(lua=str(lua_path) if simion_required else None, matlab=str(task_path))
 
 
 def field_build_arguments(plan: dict) -> dict:

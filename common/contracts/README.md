@@ -839,3 +839,10 @@ envelope，并输出可审阅的候选合同与差异。它不得修改正式bas
 RF 正常 wrapper、资源预算和 COMSOL prepare 消费冻结 resolved runtime/input_definitions，
 不再次选择默认设计；NEEDS_SOURCE_FREEZE 表示正常准备仍需冻结源，不代表科学 PASS。
 OA/MR binding 使用各自项目纯解析 API；执行计划的可用性不授予商业求解或局部资格。
+
+### Paired 消费者的收尾接线
+
+paired static/pulse 的原 PowerShell 入口消费现有 Initialize/Complete owner 与 ResumeFinalization，
+删除各自重复 retention、manifest、容量释放和 seal 控制。实际求解器进程完成与 host release 分别运输，
+沿原输入冻结和持久 Result 恢复，不改父结果；未知完成保留保护。公共故障矩阵仍由本 owner 维护，
+paired 只验证实际参数、原始错误／载荷传递及入口恢复。

@@ -348,3 +348,12 @@ IP→MR 的 FullJoint 在求场前验证设计 manifest 绑定的来源 receipt�
 
 现有 integration registry 声明 recipe、workflow 和模拟路径，公共编译器直接派生查询视图，
 不把装配注册为器件项目。实际源起点、状态重启和场耦合仍由所选 recipe 与原 workflow 报告。
+
+## Paired 静场／脉冲的公共收尾
+
+`paired_accelerator_static_field/execute.ps1` 与 `paired_accelerator_pulse/execute.ps1` 使用公共
+run_artifact_workflow owner，保存实际原生完成／释放事实、run 外小 Result 和稳定的冻结输入路径。
+原入口的 `-ResumeFinalization -ResultPath <原Result>` 只恢复公共收尾，不进入源、求场或飞行；
+失败 Result 保留原始失败与收尾原因，未知 writer／未确认 host release 不释放保护、不发布终态。
+显式父 manifest 仅引用已绑定完成证据；静场已有完整同身份导出可跳过相应原生采样／求解。
+源、物理支持域、商业授权和原父终态保持原合同。DryRun 只证明准备，诊断成功不授予数值／科学资格。

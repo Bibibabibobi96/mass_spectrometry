@@ -1,6 +1,8 @@
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName="Run")]
 param(
-  [Parameter(Mandatory)][string]$Request,
+  [Parameter(Mandatory,ParameterSetName="Run")][string]$Request,
+  [Parameter(Mandatory,ParameterSetName='Resume')][switch]$ResumeFinalization,
+  [string]$ResultPath='',
   [string]$ExecutionBudgetPath='',
   [string]$RunId='',
   [switch]$DryRun,
@@ -15,6 +17,17 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $RepoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
+. (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $RepoRoot 'common/contracts/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
+if($ResumeFinalization){
+  if(-not$ResultPath){throw 'ResumeFinalization requires the original ResultPath.'}
+  $prior=Get-Content -LiteralPath $ResultPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+  if($RunId-and(Split-Path -Leaf $prior.run_directory)-ne$RunId){throw 'Result belongs to a different run.'}
+  $result=Invoke-RunArtifactWorkflow -RequestPath (Join-Path $prior.run_directory 'inputs/execution_request.json') -ResultPath $ResultPath -ResumeFinalization
+  Write-Output $result
+  if($result.status-ne'success'){throw 'Paired finalization remains incomplete; inspect Result recovery_action.'}
+  return
+}
 $Request=(Resolve-Path -LiteralPath $Request).Path
 if(-not$DryRun-and(-not$SolverAuthorized-or-not$ExecutionBudgetPath)){
   throw 'Native paired field execution requires SolverAuthorized and an explicit ExecutionBudgetPath.'
@@ -25,8 +38,13 @@ if(-not$DryRun-and(-not$SolverAuthorized-or-not$ExecutionBudgetPath)){
 . (Join-Path $RepoRoot 'integrations/runtime/dependencies.ps1')
 . (Join-Path $RepoRoot 'common/resource_budget_support.ps1')
 . (Join-Path $RepoRoot 'common/simion/short_pa_path_support.ps1')
+. (Join-Path $RepoRoot 'integrations/runtime/frontend_flight_support.ps1')
 if(-not$Python){$Python=Join-Path $RepoRoot '.venv/Scripts/python.exe'}
-if(-not$ArtifactRoot){$ArtifactRoot=Join-Path (Split-Path -Parent $RepoRoot) 'artifacts'}
+. (Join-Path $RepoRoot 'common/paths/workspace_paths.ps1')
+$pathArguments=@{SourceRoot=$RepoRoot;Python=$Python}
+if($ArtifactRoot){$pathArguments.ArtifactRoot=$ArtifactRoot}
+$pathContext=Resolve-WorkspacePaths @pathArguments
+$ArtifactRoot=[string]$pathContext.artifact_root
 if(-not$RunId){$RunId=(Get-Date -Format yyyyMMdd_HHmmss)+$(if($DryRun){'__test__python__paired-accelerator-static-field'}else{'__sim__cross__paired-accelerator-static-field'})}
 $project='instrument_assembly';$consumer='paired_accelerator_static_field'
 $reason='Paired OA-only common static BVP; retain solved fields and evidence after postprocessing failure; no numerical-equivalence qualification.'
@@ -34,7 +52,10 @@ $software=@('Python 3.11','PowerShell 7')
 if(-not$DryRun){$software+=@('SIMION 2020','COMSOL 6.4','MATLAB R2025b')}
 $package=$null;$capacity=$null;$lease=$null;$buildAlias=$null;$guard=$null;$terminalized=$false
 $frozen=$null;$stage='initialization';$cache=$null;$reusedComsol=$false;$savedModel=$null;$comsolSourceStage=''
-$completedComsolExports=$null;$comsolNativeExecuted=$false
+$completedComsolExports=$null;$completedSimionExports=$null;$comsolNativeExecuted=$false
+$plan=$null;$ownerContext=$null;$writersStopped=$true;$hostReleaseUnknown=$false;$writerUnknown=$false;$failure=$null
+$nativeOperations=[Collections.Generic.List[object]]::new();$resourceReleases=[Collections.Generic.List[object]]::new()
+$phaseTimings=[ordered]@{};$runClock=[Diagnostics.Stopwatch]::StartNew();$stageClock=[Diagnostics.Stopwatch]::StartNew()
 $protected=@();if($ComsolSourceManifest){$protected+=Split-Path -Parent (Resolve-Path -LiteralPath $ComsolSourceManifest).Path}
 $header="import json,sys; from pathlib import Path; from integrations.workflows.paired_accelerator_static_field.runtime import *; "
 function Invoke-PairedPython {
@@ -48,25 +69,76 @@ function Invoke-PairedPython {
     return Get-Content -LiteralPath $stdout -Raw|ConvertFrom-Json -AsHashtable -Depth 100
   }
 }
+function Register-PairedInputs {
+  $config=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable -Depth 100
+  foreach($file in Get-ChildItem -LiteralPath $package.input_dir -Recurse -File){
+    $relative=[IO.Path]::GetRelativePath($package.input_dir,$file.FullName)
+    $config.inputs[$relative]=Join-Path (Join-Path $package.artifact_run_dir 'inputs') $relative
+  }
+  Write-RunJson -Path $package.run_config -Depth 100 -Value $config
+}
+function Close-PairedHostStage {
+  if(-not$lease){return}
+  $token=[string]$lease.token
+  try{$released=Exit-HostResourceStage -Lease $lease -PassThru}catch{$script:writerUnknown=$true;$script:hostReleaseUnknown=$true;throw}
+  # Inherited stages restore their environment without releasing the parent grant.
+  if(-not$lease.inherited-and($null-eq$released-or$released.status-ne'released'-or$released.token-ne$token)){$script:writerUnknown=$true;$script:hostReleaseUnknown=$true;throw 'Paired host release is unconfirmed.'}
+  if(@($nativeOperations|Where-Object resource_release_id -eq $token).Count){
+    Add-RunArtifactResourceRelease -ResourceReleases $resourceReleases -ReleaseId $token -Receipt @{host_release=@{inherited=[bool]$lease.inherited;token=$token;result=$released;error=$null}}
+  }
+  $script:lease=$null
+}
 function Invoke-PairedNative {
   param([string]$Name,[string[]]$Arguments,[string]$Directory)
-  $record=Invoke-ResourceBudgetedProcess -Limits ([pscustomobject]$budget.limits) -RunDir $package.run_dir `
-    -UsagePath (Join-Path $package.log_dir ($Name+'.resource_usage.json')) -FilePath $SimionExe `
-    -ArgumentList $Arguments -WorkingDirectory $Directory `
-    -RedirectStandardOutput (Join-Path $package.log_dir ($Name+'.stdout.log')) `
-    -RedirectStandardError (Join-Path $package.log_dir ($Name+'.stderr.log'))
+  $script:writersStopped=$false
+  try{
+    $record=Invoke-ResourceBudgetedProcess -Limits ([pscustomobject]$budget.limits) -RunDir $package.run_dir `
+      -UsagePath (Join-Path $package.log_dir ($Name+'.resource_usage.json')) -FilePath $SimionExe `
+      -ArgumentList $Arguments -WorkingDirectory $Directory `
+      -RedirectStandardOutput (Join-Path $package.log_dir ($Name+'.stdout.log')) `
+      -RedirectStandardError (Join-Path $package.log_dir ($Name+'.stderr.log'))
+    Add-FrontendNativeOperation -NativeOperations $nativeOperations -NativeResourceReleaseId ([string]$lease.token) -OperationId $Name -ProcessRecord $record
+    $script:writersStopped=$true
+  }catch{
+    Add-FrontendNativeOperation -NativeOperations $nativeOperations -NativeResourceReleaseId ([string]$lease.token) -OperationId $Name -ExceptionData $_.Exception.Data
+    $script:writersStopped=($_.Exception.Data.Contains('observed_process_exit_confirmed')-and[bool]$_.Exception.Data['observed_process_exit_confirmed'])
+    if(-not$writersStopped){$script:writerUnknown=$true}
+    throw
+  }
   if($record.resource_budget_exceeded-or$record.exit_code-ne0){throw "Native paired field stage failed: $Name"}
 }
+function Set-PairedStage([string]$Name){
+  if($stage){$phaseTimings[$stage]=[double]$stageClock.Elapsed.TotalSeconds}
+  $script:stage=$Name;$stageClock.Restart()
+}
+
+$pathEnvironmentNames=@('MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH','MASS_SPECTROMETRY_RUN_DIRECTORY','MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY')
+$savedPathEnvironment=Save-RunEnvironment -Names $pathEnvironmentNames
 try{
-  $lease=Enter-HostResourceStage -Role GATE -Stage prepare -Budget (Get-HostResourceBudget -Role GATE -Stage prepare) -RunId $RunId
+  $destination=Join-Path $ArtifactRoot ('projects/instrument_assembly/runs/'+$RunId)
+  $parentEnvironment=@{MASS_SPECTROMETRY_ARTIFACT_ROOT=$ArtifactRoot;MASS_SPECTROMETRY_EXECUTION_ROOT=$pathContext.execution_root;
+    MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=$pathContext.host_resource_state_path;MASS_SPECTROMETRY_RUN_DIRECTORY=$destination;MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=$destination}
+  foreach($key in $parentEnvironment.Keys){[Environment]::SetEnvironmentVariable([string]$key,[string]$parentEnvironment[$key],'Process')}
+  $lease=Enter-HostResourceStage -StatePath $pathContext.host_resource_state_path -Role GATE -Stage prepare -Budget (Get-HostResourceBudget -Role GATE -Stage prepare) -RunId $RunId
   $package=New-RunPackage -Python $Python -RepoRoot $RepoRoot -ArtifactRoot (Join-Path $ArtifactRoot 'projects/instrument_assembly') `
     -RunId $RunId -Project $project -Mode $consumer -Software $software -RetentionContractEnabled -RetentionClass solver_review `
-    -RetentionReason $reason -CapacityLedgerLifecycleEnabled -CapacityLedgerArtifactRoot $ArtifactRoot `
+    -RetentionReason $reason -CapacityLedgerLifecycleEnabled -CapacityLedgerArtifactRoot $ArtifactRoot -PathContext $pathContext `
     -UseShortExecutionPath -AdditionalDirectories @('simion','comsol')
   $capacity=Enter-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -ArtifactRoot $ArtifactRoot `
-    -RunDirectory $package.artifact_run_dir -CommittedNewBytes 0 -Owner ('paired-static:'+$RunId) -ProtectedPaths $protected
-  $stage='freeze_inputs'
+    -RunDirectory $package.artifact_run_dir -CommittedNewBytes 0 -Owner ("run-artifact-workflow:{0}:{1}"-f$project,$RunId) -ProtectedPaths $protected
+  Set-PairedStage 'freeze_inputs'
   $requestPath=Copy-VerifiedRunInput -Source $Request -Destination (Join-Path $package.input_dir 'request.json')
+  $commitmentInputs=@($requestPath)
+  if(-not$DryRun){$budgetPath=Copy-VerifiedRunInput -Source $ExecutionBudgetPath -Destination (Join-Path $package.input_dir 'execution_budget.json');$commitmentInputs+=@($budgetPath)}
+  $ownerEntrypoint=Copy-VerifiedRunInput -Source $PSCommandPath -Destination (Join-Path $package.input_dir 'owner.ps1')
+  $bootstrapConfig=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable -Depth 100
+  $bootstrapConfig.inputs.request=$requestPath;$bootstrapConfig.inputs.owner_entrypoint=$ownerEntrypoint
+  if(-not$DryRun){$bootstrapConfig.inputs.execution_budget=$budgetPath}
+  Write-RunJson -Path $package.run_config -Value $bootstrapConfig -Depth 100
+  $ownerContext=Initialize-RunArtifactPowerShellOwner -Python $Python -RepoRoot $RepoRoot -Package $package -CapacitySession $capacity `
+    -ResultPath $ResultPath -EntrypointPath $ownerEntrypoint `
+    -CommitmentInputPaths $commitmentInputs -Software $software
+  $ResultPath=$ownerContext.result_path
   $author=Get-Content -LiteralPath $requestPath -Raw|ConvertFrom-Json -AsHashtable -Depth 100
   foreach($name in @('parent_manifest','frontend_geometry','oatof_resolved')){
     $source=[string]$author.source_records[$name].path
@@ -76,7 +148,8 @@ try{
   $frozen=Freeze-ConsumerDependencies -RepoRoot $RepoRoot -ContractPath (Join-Path $RepoRoot 'integrations/config/runtime_dependencies.json') `
     -InputDir $package.input_dir -OwnerId $project -ConsumerId $consumer
   $config=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable -Depth 100
-  $config.inputs.code_inventory=$frozen.code_inventory_path;$config.inputs.dependency_contract=$frozen.dependency_contract_path
+  $config.inputs.code_inventory=Convert-WorkflowOwnerPath $ownerContext $frozen.code_inventory_path
+  $config.inputs.dependency_contract=Convert-WorkflowOwnerPath $ownerContext $frozen.dependency_contract_path
   $config.parameters=@{workflow=$consumer;request_source_path=$Request;dry_run=[bool]$DryRun;solver_authorized=[bool]$SolverAuthorized}
   Write-RunJson -Path $package.run_config -Depth 100 -Value $config
   $plan=Invoke-PairedPython 'print(json.dumps(prepare_run(Path(sys.argv[1]))))' @($package.run_dir)
@@ -84,7 +157,7 @@ try{
     schema_version=1;role='paired_accelerator_static_field_preparation';status='success';solver_executed=$false
     plan=(Join-Path $package.input_dir 'bvp/paired_accelerator_static_field_plan.json');sample_points=$plan.sample_points.count}
   if(-not$DryRun-and$ComsolSourceManifest){
-    $stage='verify_saved_comsol_source'
+    Set-PairedStage 'verify_saved_comsol_source'
     $ComsolSourceManifest=(Resolve-Path -LiteralPath $ComsolSourceManifest).Path
     $null=Copy-VerifiedRunInput -Source $ComsolSourceManifest -Destination (Join-Path $package.input_dir 'comsol_source_manifest.json')
     $source=Invoke-PairedPython 'print(json.dumps(comsol_reuse(Path(sys.argv[1]),Path(sys.argv[2]))))' @($package.run_dir,$ComsolSourceManifest)
@@ -104,7 +177,6 @@ try{
     }
   }
   if(-not$DryRun){
-    $budgetPath=Copy-VerifiedRunInput -Source $ExecutionBudgetPath -Destination (Join-Path $package.input_dir 'execution_budget.json')
     $budget=Get-Content -LiteralPath $budgetPath -Raw|ConvertFrom-Json -AsHashtable -Depth 100
     if([long]$budget.committed_new_bytes-le0){throw 'Positive explicit committed_new_bytes required.'}
     foreach($name in @('wall_clock_seconds','transient_run_directory_bytes','process_tree_working_set_bytes','minimum_system_available_memory_bytes','compact_final_retained_bytes')){
@@ -114,11 +186,21 @@ try{
     $SimionExe=(Resolve-Path -LiteralPath $SimionExe).Path
     $cache=Invoke-PairedPython 'print(json.dumps(cache_plan(*map(Path,sys.argv[1:]))))' @($package.run_dir,$frozen.execution_root,$SimionExe,(Join-Path $ArtifactRoot 'common/simion/pa_family_cache'))
     $cachePath=Join-Path $package.input_dir 'pa_cache_plan.json';Write-RunJson -Path $cachePath -Depth 100 -Value $cache
+    if($ComsolSourceManifest){
+      $completedSimionExports=Invoke-PairedPython 'print(json.dumps(completed_simion_exports(*map(Path,sys.argv[1:3]),read(Path(sys.argv[3])),Path(sys.argv[4]))))' @($package.run_dir,$ComsolSourceManifest,(Join-Path $package.input_dir 'pa_cache_plan.json'),$frozen.execution_root)
+      if($completedSimionExports){
+        $config=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable -Depth 100
+        foreach($name in @('samples','native_facts','cache_identity','exporter')){$config.inputs["completed_simion_$name"]=[string]$completedSimionExports[$name].path;$protected+=@([string]$completedSimionExports[$name].path)}
+        Write-RunJson -Path $package.run_config -Value $config -Depth 100
+      }
+    }
     $update=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $capacity `
       -RemainingCommittedNewBytes ([long]$budget.committed_new_bytes) -ProtectedCacheKeys @($cache.cache_key) -ProtectedPaths $protected
     $capacity=$update.session
-    Exit-HostResourceStage -Lease $lease;$lease=$null
-    $stage='simion_working_field'
+    Register-PairedInputs
+    Close-PairedHostStage
+    if(-not$completedSimionExports){
+    Set-PairedStage 'simion_working_field'
     $cacheLease=@{lease_id=$capacity.lease_id;owner=$capacity.owner}
     $cacheArguments=@($package.run_dir,$cachePath,($cacheLease|ConvertTo-Json -Compress))
     if($PaProducerStoppedReceipt){$cacheArguments+=@((Resolve-Path -LiteralPath $PaProducerStoppedReceipt).Path)}
@@ -129,7 +211,7 @@ try{
       $buildAlias=New-RunExecutionAlias -TargetDirectory $scratch
       $short=[string]$buildAlias.execution_alias
       $build=Invoke-PairedPython 'print(json.dumps(field_build_arguments(read(Path(sys.argv[1])))))' @((Join-Path $package.input_dir 'bvp/paired_accelerator_static_field_plan.json'))
-      $lease=Enter-HostResourceStage -Role SIMION -Stage prepare -Budget $budget.host_budgets.simion_prepare -RunId $RunId
+      $lease=Enter-HostResourceStage -StatePath $pathContext.host_resource_state_path -Role SIMION -Stage prepare -Budget $budget.host_budgets.simion_prepare -RunId $RunId
       Invoke-PairedNative -Name gem2pa -Directory $short -Arguments @('--nogui','--noprompt','gem2pa',(Join-Path $package.input_dir 'bvp/paired_accelerator.gem'),(Join-Path $short 'working.pa#'))
       $lease=Update-HostResourceStage -Lease $lease -Stage pa_refine -Budget $budget.host_budgets.simion_refine -RetainedMemoryBytes 0
       Assert-HostResourceHeavyStage
@@ -139,7 +221,7 @@ try{
       $lease=Update-HostResourceStage -Lease $lease -Stage prepare -Budget $budget.host_budgets.simion_prepare -RetainedMemoryBytes 0
       Invoke-PairedNative -Name detach_static_on -Directory $short -Arguments @('--nogui','--noprompt','lua',
         (Join-Path $frozen.execution_root 'common/simion/export_detached_standalone_pa.lua'),(Join-Path $short 'working.pa0'),(Join-Path $short 'working.pa'))
-      Exit-HostResourceStage -Lease $lease;$lease=$null
+      Close-PairedHostStage
       Move-Item -LiteralPath (Join-Path $short 'working.pa') -Destination (Join-Path $progress.build_directory 'paired_static_on.pa')
       Remove-RunExecutionAlias -ExecutionAlias $buildAlias.execution_alias -TargetDirectory $scratch;$buildAlias=$null
       $progress=Invoke-PairedPython 'print(json.dumps(advance_cache(Path(sys.argv[1]),read(Path(sys.argv[2])))))' @($package.run_dir,$cachePath)
@@ -155,69 +237,88 @@ try{
       $(if($savedModel){$comsolSourceStage}else{'solved_saved'}),$(if($completedComsolExports){'false'}else{'true'}))
     $taskCode='print(json.dumps(materialize_tasks(Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]),saved_model=Path(sys.argv[4]) if sys.argv[4] else None,saved_model_stage=sys.argv[5],comsol_required=sys.argv[6]=="true")))'
     $tasks=Invoke-PairedPython $taskCode $taskArguments
-    $lease=Enter-HostResourceStage -Role SIMION -Stage prepare -Budget $budget.host_budgets.simion_prepare -RunId $RunId
+    $lease=Enter-HostResourceStage -StatePath $pathContext.host_resource_state_path -Role SIMION -Stage prepare -Budget $budget.host_budgets.simion_prepare -RunId $RunId
     Invoke-PairedNative -Name sample_static_on -Directory $package.run_dir -Arguments @('--nogui','--noprompt','lua',$tasks.lua)
-    Exit-HostResourceStage -Lease $lease;$lease=$null
+    Close-PairedHostStage
     $null=Invoke-PairedPython 'validate_samples(read(Path(sys.argv[1])),Path(sys.argv[2]));print("{}")' @((Join-Path $package.input_dir 'bvp/paired_accelerator_static_field_plan.json'),(Join-Path $package.result_dir 'simion_field_samples.csv'))
     if($progress.action_required-eq'verify'){
       $progress=Invoke-PairedPython 'print(json.dumps(advance_cache(Path(sys.argv[1]),read(Path(sys.argv[2])),Path(sys.argv[3]))))' @($package.run_dir,$cachePath,(Join-Path $package.log_dir 'simion_field_native_facts.txt'))
       if($progress.action_required-ne'complete'){throw 'Public working PA publication did not complete.'}
     }
     Write-RunJson -Path (Join-Path $package.result_dir 'simion_field_publication.json') -Depth 100 -Value $progress
+      $simionSamples=Join-Path $package.result_dir 'simion_field_samples.csv'
+    }else{
+      $simionSamples=[string]$completedSimionExports.samples.path
+      if(-not$completedComsolExports){
+        $tasks=Invoke-PairedPython 'print(json.dumps(materialize_tasks(Path(sys.argv[1]),Path(sys.argv[2]),None,saved_model=Path(sys.argv[3]) if sys.argv[3] else None,saved_model_stage=sys.argv[4],simion_required=False)))' @($package.run_dir,$frozen.execution_root,$(if($savedModel){$savedModel}else{''}),$(if($savedModel){$comsolSourceStage}else{'solved_saved'}))
+      }
+    }
     $comsolSamples=Join-Path $package.run_dir 'comsol/comsol_field_samples.csv'
     if($completedComsolExports){
       $comsolSamples=[string]$completedComsolExports.samples.path
     }else{
-      $stage='comsol_field';$comsolNativeExecuted=$true
-      & (Join-Path $RepoRoot 'common/comsol/run_comsol_r2025b.ps1') -TaskScript $tasks.matlab `
-        -ReportPath (Join-Path $package.log_dir 'comsol_bootstrap.txt') -ResourceBudgets $budget.host_budgets.comsol -RunId $RunId
+      Set-PairedStage 'comsol_field';$comsolNativeExecuted=$true
+      $comsolCompletion=Join-Path $package.artifact_run_dir 'logs/comsol_completion.json';$writersStopped=$false;$comsolFailure=$null
+      try{
+        & (Join-Path $RepoRoot 'common/comsol/run_comsol_r2025b.ps1') -TaskScript $tasks.matlab `
+          -ReportPath (Join-Path $package.log_dir 'comsol_bootstrap.txt') -ResourceBudgets $budget.host_budgets.comsol -RunId $RunId -CompletionPath $comsolCompletion `
+          -Limits ([pscustomobject]$budget.limits) -RunDir $package.artifact_run_dir -UsagePath (Join-Path $package.log_dir 'comsol.resource_usage.json')
+      }catch{$comsolFailure=$_}finally{
+        try{
+          if(-not(Test-Path -LiteralPath $comsolCompletion)){throw 'COMSOL completion receipt is missing.'}
+          $observed=Get-Content -LiteralPath $comsolCompletion -Raw|ConvertFrom-Json -AsHashtable
+          $releaseId=[string]$observed.host_release.token
+          foreach($operation in $observed.operations){$operation.resource_release_id=$releaseId;$nativeOperations.Add($operation)}
+          if($observed.operations.Count){Add-RunArtifactResourceRelease -ResourceReleases $resourceReleases -ReleaseId $releaseId -Receipt $observed}
+          $writersStopped=(@($observed.operations|Where-Object{-not$_.observation.exit_confirmed}).Count-eq0)
+          if($observed.host_release.error-or(-not$observed.host_release.inherited-and($null-eq$observed.host_release.result-or$observed.host_release.result.status-ne'released'-or$observed.host_release.result.token-ne$observed.host_release.token))){$writerUnknown=$true;$hostReleaseUnknown=$true}
+        }catch{$writerUnknown=$true;if($comsolFailure){$comsolFailure.Exception.Data['completion_receipt_error']=$_}else{$comsolFailure=$_}}
+      }
+      if($comsolFailure){throw $comsolFailure}
       if($LASTEXITCODE-ne0){throw 'COMSOL field build/export failed; any solved/saved MPH is retained.'}
       $null=Invoke-PairedPython 'validate_samples(read(Path(sys.argv[1])),Path(sys.argv[2]));print("{}")' @((Join-Path $package.input_dir 'bvp/paired_accelerator_static_field_plan.json'),$comsolSamples)
     }
-    $stage='diagnostic_comparison'
+    Set-PairedStage 'diagnostic_comparison'
     Invoke-RunToolRootContext -RepoRoot $frozen.execution_root -Operation {
       &$Python -B -m projects.single_reflection_oa_tof_mass_analyzer.analysis.compare_vector_field_samples `
-        $comsolSamples (Join-Path $package.result_dir 'simion_field_samples.csv') --output (Join-Path $package.result_dir 'comparison')
+        $comsolSamples $simionSamples --output (Join-Path $package.result_dir 'comparison')
       if($LASTEXITCODE-ne0){throw 'Static field diagnostic comparison failed.'}
     }
   }
-  $stage='terminal_publication'
-  if($lease){Exit-HostResourceStage -Lease $lease;$lease=$null}
-  $config=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable -Depth 100
-  foreach($file in Get-ChildItem -LiteralPath $package.input_dir -Recurse -File){$config.inputs[[IO.Path]::GetRelativePath($package.input_dir,$file.FullName)]=$file.FullName}
-  Write-RunJson -Path $package.run_config -Depth 100 -Value $config
-  Write-RunJson -Path $package.summary -Value @{
-    schema_version=1;role='paired_accelerator_static_field_summary';status='success';dry_run=[bool]$DryRun
-    native_executed=(-not$DryRun);comsol_reused_solution=$reusedComsol;comsol_source_stage=$comsolSourceStage;sample_points=$plan.sample_points.count
-    comsol_reused_exports=[bool]$completedComsolExports;comsol_native_executed=$comsolNativeExecuted
-    qualification='preparation_only_or_static_diagnostic__no_numerical_equivalence_or_particle_qualification'}
-  $null=Apply-RunArtifactRetention -Python $Python -RepoRoot $RepoRoot -RunConfig $package.run_config
-  $outputs=@(Get-ChildItem $package.result_dir,$package.log_dir,(Join-Path $package.run_dir 'comsol') -Recurse -File|ForEach-Object FullName)+@($package.summary)
-  Write-VerifiedRunManifest -Python $Python -RepoRoot $RepoRoot -RunConfig $package.run_config -Status success -Outputs $outputs -Software $software -DeferCapacityFinalization
-  $terminalized=$true
+  Set-PairedStage 'terminal_publication'
+  if($lease){Close-PairedHostStage}
+  Register-PairedInputs
 }catch{
   $failure=$_
-  if($lease){Exit-HostResourceStage -Lease $lease;$lease=$null}
-  if($package-and-not$terminalized){
-    $comsolOutputs=@()
-    $comsolDirectory=Join-Path $package.run_dir 'comsol'
-    if(Test-Path -LiteralPath $comsolDirectory -PathType Container){
-      $comsolOutputs=@(Get-ChildItem -LiteralPath $comsolDirectory -Recurse -File|ForEach-Object FullName)
-    }
-    Complete-FailedRun -Python $Python -RepoRoot $RepoRoot -RunConfig $package.run_config -Summary $package.summary `
-      -SummaryRole paired_accelerator_static_field_summary -Reason $failure.Exception.Message -FailureStage $stage `
-      -Software $software -AdditionalOutputs $comsolOutputs -DeferCapacityFinalization
-    $terminalized=$true
-  }
-  throw $failure
 }finally{
-  if($guard){Unprotect-ImmutablePaSource -Source $guard.path}
-  if($buildAlias){Remove-RunExecutionAlias -ExecutionAlias $buildAlias.execution_alias -TargetDirectory $buildAlias.target_directory}
-  if($capacity){$null=Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $capacity}
-  if($package-and$terminalized){
-    &$Python -B -m common.contracts.run_capacity_lifecycle --action seal-stopped-payload --artifact-root $ArtifactRoot `
-      --run-config $package.run_config --owner $project --confirm-writing-stopped --retention-reason $reason
-    if($LASTEXITCODE-ne0){throw 'Paired static-field stopped-payload sealing failed; published scientific terminal retained.'}
+  try{
+  if(-not$writersStopped){$writerUnknown=$true}
+  if(-not$writerUnknown){
+    try{if($lease){Close-PairedHostStage}}catch{if($failure){$failure.Exception.Data['host_release_error']=$_}else{$failure=$_};$writerUnknown=$true}
+    if(-not$writerUnknown){
+      try{if($guard){Unprotect-ImmutablePaSource -Source $guard.path;$guard=$null};if($buildAlias){Remove-RunExecutionAlias -ExecutionAlias $buildAlias.execution_alias -TargetDirectory $buildAlias.target_directory;$buildAlias=$null}}catch{if($failure){$failure.Exception.Data['asset_release_error']=$_}else{$failure=$_}}
+    }
   }
-  if($package){Remove-RunPackageExecutionAlias -Package $package}
+  if(-not$ownerContext-and-not$writerUnknown){
+    try{if($capacity){$null=Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $capacity};if($package){Remove-RunPackageExecutionAlias -Package $package}}catch{if($failure){$failure.Exception.Data['bootstrap_cleanup_error']=$_}else{$failure=$_}}
+  }
+  if($ownerContext-and-not$ownerContext.completion_written){
+    if(-not$writerUnknown){try{Register-PairedInputs}catch{if($failure){$failure.Exception.Data['input_binding_error']=$_}else{$failure=$_}}}
+    $phaseTimings[$stage]=[double]$stageClock.Elapsed.TotalSeconds
+    $status=if($failure){'failed'}else{'success'}
+    $summary=@{schema_version=1;role='paired_accelerator_static_field_summary';execution_status=$(if($hostReleaseUnknown){'host_release_unconfirmed'}elseif($writerUnknown){'writer_completion_unknown'}elseif($failure){'failed'}else{'completed'});
+      data_validity=$(if($failure){'incomplete'}else{'valid'});scientific_result=$(if($failure){'NOT_EVALUATED'}elseif($DryRun){'preparation_only'}else{'diagnostic_only'});qualification='no_numerical_equivalence_or_particle_qualification';dry_run=[bool]$DryRun;
+      sample_points=$(if($plan){$plan.sample_points.count}else{$null});native_executed=($nativeOperations.Count-gt0);comsol_reused_solution=$reusedComsol;comsol_source_stage=$comsolSourceStage;
+      comsol_reused_exports=[bool]$completedComsolExports;simion_reused_exports=[bool]$completedSimionExports;comsol_native_executed=$comsolNativeExecuted;
+      failure_stage=$(if($failure){$stage}else{$null});failure_reason=$(if($failure){$failure.Exception.Message}else{$null});
+      recovery_action=$(if($hostReleaseUnknown){'inspect_host_release'}elseif($writerUnknown){'inspect_writer_completion'}elseif($failure){'inspect_preserved_stage_evidence_or_resume_finalization'}else{'none'});
+      secondary_errors=@(if($failure){foreach($key in @('host_release_error','asset_release_error','bootstrap_cleanup_error','completion_receipt_error','comsol_closeout_error')){if($failure.Exception.Data.Contains($key)){[string]$failure.Exception.Data[$key]}}});result_path=$ResultPath;phase_timings_seconds=$phaseTimings;total_elapsed_seconds=$runClock.Elapsed.TotalSeconds}
+    $outputs=@(Get-ChildItem $package.result_dir,$package.log_dir,(Join-Path $package.run_dir 'comsol') -Recurse -File|ForEach-Object FullName)
+    $ownerContext.session=$capacity
+    try{$outcome=Complete-RunArtifactPowerShellOwner -Context $ownerContext -Status $status -Summary $summary -OutputPaths $outputs `
+      -WriterCompletion @{operations=@($nativeOperations|ForEach-Object{$_});resource_releases=@($resourceReleases|ForEach-Object{$_})} `
+      -WritersStopped (-not$writerUnknown) -OriginalFailure $failure;Write-Output $outcome}catch{if($failure){$failure.Exception.Data['finalization_error']=$_}else{$failure=$_}}
+  }
+  }finally{Restore-RunEnvironment -Names $pathEnvironmentNames -Snapshot $savedPathEnvironment}
 }
+if($failure){throw $failure}

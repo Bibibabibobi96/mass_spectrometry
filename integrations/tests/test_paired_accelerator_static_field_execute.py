@@ -27,6 +27,30 @@ WORKFLOW = ROOT/'integrations/workflows/paired_accelerator_static_field'
 
 
 class PairedStaticExecutionTests(unittest.TestCase):
+    def test_completed_simion_samples_reuse_bound_identity_without_pa_or_model_read(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);run,producer,model,samples,_,_=self.completed_comsol_source(root)
+            runtime.comsol_reuse(run,producer/'run_manifest.json')
+            cache_identity=dict(geometry='TEST_ONLY frozen BVP',mesh=[1,1,1])
+            identity=producer/'inputs/pa_cache_identity.json';runtime.write(identity,cache_identity)
+            exporter_relative=Path('projects/single_reflection_oa_tof_mass_analyzer/simion/export_paired_accelerator_field.lua')
+            exporter=producer/'inputs/runtime_snapshot'/exporter_relative;exporter.parent.mkdir(parents=True);shutil.copyfile(ROOT/exporter_relative,exporter)
+            simion=producer/'results/simion_field_samples.csv';simion.parent.mkdir(exist_ok=True);shutil.copyfile(samples,simion)
+            facts=producer/'logs/simion_field_native_facts.txt';facts.parent.mkdir(exist_ok=True)
+            facts.write_text('backend=SIMION\napi=pa:field_vc\nnative_field_unit=V/gu\nexport_field_unit=V/m\nfield_sign=negative_potential_gradient\npoint_count=115\n')
+            config=runtime.read(producer/'run_config.json');config['inputs'].update(simion_identity=str(identity),simion_exporter=str(exporter));runtime.write(producer/'run_config.json',config)
+            outputs=[Path(row['path']) for row in runtime.read(producer/'run_manifest.json')['outputs']]+[simion,facts]
+            manifest=build_run_manifest(producer/'run_config.json','success',output_paths=outputs);runtime.write(producer/'run_manifest.json',manifest);runtime.write(run/'inputs/comsol_source_manifest.json',manifest)
+            model.unlink()
+            with patch.object(runtime,'verify_record',wraps=runtime.verify_record) as verified:
+                selected=runtime.completed_simion_exports(run,producer/'run_manifest.json',dict(identity=cache_identity),ROOT)
+            self.assertEqual(Path(selected['samples']['path']),simion)
+            self.assertFalse(any(Path(call.args[1]['path'])==model or Path(call.args[1]['path']).suffix in {'.pa','.pa0','.mph'} for call in verified.call_args_list))
+            self.assertIsNone(runtime.completed_simion_exports(run,producer/'run_manifest.json',dict(identity=dict(cache_identity,mesh=[2,1,1])),ROOT))
+            facts.write_text(facts.read_text()+'corruption\n')
+            with self.assertRaises(AssertionError): runtime.completed_simion_exports(run,producer/'run_manifest.json',dict(identity=cache_identity),ROOT)
+
+
     def capacity_isolated_owner(self, root):
         """Startup capacity admission is inert; lease and lifecycle operations remain real."""
         source=(WORKFLOW/'execute.ps1').read_text(encoding='utf-8')
@@ -297,22 +321,26 @@ $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$tokens,[re
 if($errors.Count){throw ($errors|Out-String)}
 $branch=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and
  $n.Clauses[0].Item1.Extent.Text-eq'$completedComsolExports'-and$n.Extent.Text-like'*comsol_bootstrap.txt*'},$true)
-$summary=$ast.Find({param($n)$n-is[Management.Automation.Language.CommandAst]-and
- $n.GetCommandName()-eq'Write-RunJson'-and$n.Extent.Text-like"*role='paired_accelerator_static_field_summary'*"},$true)
-if($null-eq$branch-or$null-eq$summary){throw 'Actual owner boundaries missing'}
+$summaryNode=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and
+ $n.Left.Extent.Text-eq'$summary'-and$n.Extent.Text-like"*role='paired_accelerator_static_field_summary'*"},$true)
+if($null-eq$branch-or$null-eq$summaryNode){throw 'Actual owner boundaries missing'}
 $RepoRoot=$Directory;$Python='unused';$RunId='inert';$stage='inert';$DryRun=$false
-$package=@{run_dir=$Directory;input_dir=$Directory;log_dir=$Directory;summary='unused'}
-$frozen=@{execution_root=$Directory};$pa='unused';$budget=@{host_budgets=@{comsol=@{}}}
+$package=@{run_dir=$Directory;artifact_run_dir=$Directory;input_dir=$Directory;log_dir=$Directory;summary='unused'}
+$null=New-Item -ItemType Directory -Path (Join-Path $Directory logs) -Force
+$nativeOperations=[Collections.Generic.List[object]]::new();$nativeOperations.Add(@{TEST_ONLY='inert SIMION boundary'})
+$failure=$null;$hostReleaseUnknown=$false;$writerUnknown=$false;$ResultPath='TEST_ONLY';$phaseTimings=@{};$runClock=[Diagnostics.Stopwatch]::StartNew();$completedSimionExports=$null
+$frozen=@{execution_root=$Directory};$pa='unused';$budget=@{host_budgets=@{comsol=@{}};limits=@{}}
 $plan=@{sample_points=@{count=115}};$reusedComsol=$true;$comsolSourceStage='solved_saved'
 $launcher=Join-Path $Directory 'common/comsol/run_comsol_r2025b.ps1'
 $null=New-Item -ItemType Directory -Path (Split-Path $launcher) -Force
 @'
-param($TaskScript,$ReportPath,$ResourceBudgets,$RunId)
+param($TaskScript,$ReportPath,$ResourceBudgets,$RunId,$CompletionPath,$Limits,$RunDir,$UsagePath)
+[IO.File]::WriteAllText($CompletionPath,'{"operations":[],"host_release":{"inherited":false,"token":"TEST_ONLY_NO_NATIVE","result":{"status":"released","token":"TEST_ONLY_NO_NATIVE"},"error":null}}')
 $global:nativeCalls++;$global:LASTEXITCODE=0
 '@ | Set-Content -LiteralPath $launcher
 $global:nativeCalls=0
 function Invoke-PairedPython {param($Code,$Arguments) $script:taskInvocation=@($Code,$Arguments);@{lua='inert.lua';matlab='inert.m'}}
-function Write-RunJson {param($Path,$Value) $script:publishedSummary=$Value}
+function Set-PairedStage {param($Name);$script:stage=$Name}
 foreach($completed in @($true,$false)){
  $completedComsolExports=if($completed){@{samples=@{path='borrowed-original.csv'}}}else{$null}
  $savedModel=if($completed){'absent-original.mph'}else{''}
@@ -325,7 +353,8 @@ foreach($completed in @($true,$false)){
  $assignment=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$comsolSamples'},$true)
  . ([scriptblock]::Create($assignment.Extent.Text))
  . ([scriptblock]::Create($branch.Extent.Text))
- . ([scriptblock]::Create($summary.Extent.Text))
+ . ([scriptblock]::Create($summaryNode.Extent.Text))
+ $publishedSummary=$summary
  if($completed){
   if($global:nativeCalls-ne0-or$comsolSamples-ne'borrowed-original.csv'){throw 'Completed exports invoked native or changed sample ownership'}
   if(-not$publishedSummary.comsol_reused_exports-or$publishedSummary.comsol_native_executed){throw 'Reused COMSOL summary scope differs'}
@@ -623,86 +652,6 @@ dofile('{Path(tasks['lua']).as_posix()}')
             self.assertFalse(any(run.rglob('*.pa')))
             self.assertFalse(any(run.rglob('*.mph')))
 
-    def test_owner_retention_and_terminal_boundaries_close_success_and_failure(self):
-        """Run actual owner boundaries and public lifecycle; skip all vendor work."""
-        script=r"""param($Source,$RepoRoot,$Python,$ArtifactRoot,$Outcome,$RunId)
-$ErrorActionPreference='Stop'
-. (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
-function Invoke-ArtifactCapacityGate { [pscustomobject]@{satisfied_after_apply=$true} }
-$tokens=$null;$errors=$null
-$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$tokens,[ref]$errors)
-if($errors.Count){throw ($errors|Out-String)}
-$owner=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.TryStatementAst]-and$null-ne$n.Finally},$false))[0]
-$terminal=@($owner.Body.Statements|Where-Object{$_.Extent.Text-eq"`$stage='terminal_publication'"})[0]
-$early=@($owner.Body.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Apply-RunArtifactRetention'-and$n.Extent.StartOffset-lt$terminal.Extent.StartOffset},$true))
-$success=[scriptblock]::Create((@($owner.Body.Statements|Where-Object{$_.Extent.StartOffset-ge$terminal.Extent.StartOffset}).Extent.Text-join"`n"))
-$handler=[scriptblock]::Create(($owner.CatchClauses[0].Body.Statements.Extent.Text-join"`n"))
-$finalizer=[scriptblock]::Create(($owner.Finally.Statements.Extent.Text-join"`n"))
-$project='instrument_assembly';$software=@('Python lifecycle fixture');$reason='Inert owner-boundary lifecycle regression; no solver.'
-$package=New-RunPackage -Python $Python -RepoRoot $RepoRoot -ArtifactRoot (Join-Path $ArtifactRoot 'projects/instrument_assembly') `
- -Project $project -Mode paired_accelerator_static_field -RunId $RunId -Software $software `
- -RetentionContractEnabled -RetentionClass solver_review -RetentionReason $reason `
- -CapacityLedgerLifecycleEnabled -CapacityLedgerArtifactRoot $ArtifactRoot -AdditionalDirectories @('comsol','simion')
-$capacity=Enter-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -ArtifactRoot $ArtifactRoot `
- -RunDirectory $package.artifact_run_dir -CommittedNewBytes 0 -Owner ('paired-static:'+$RunId)
-$lease=$null;$guard=$null;$buildAlias=$null;$terminalized=$false;$stage='inert_vendor_boundary'
-$DryRun=$false;$reusedComsol=$false;$comsolSourceStage='';$plan=@{sample_points=@{count=2}}
-$completedComsolExports=$null;$comsolNativeExecuted=$false
-$failureMessage=''
-$sourceBranch=@($owner.Body.FindAll({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and
- $n.Clauses[0].Item1.Extent.Text-eq'-not$DryRun-and$ComsolSourceManifest'},$true))
-$renewal=@($owner.Body.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and
- $n.GetCommandName()-eq'Update-ArtifactWorkflowCapacitySession'-and$n.Extent.Text-like'*ProtectedPaths $protected*'},$true))
-if($sourceBranch.Count-ne1-or$renewal.Count-ne1){throw 'Expected one actual model source/renewal boundary'}
-$actualModel=Join-Path $ArtifactRoot 'original_model_owner/comsol/inert.mph'
-$ComsolSourceManifest=Join-Path $ArtifactRoot 'selected_export_owner/run_manifest.json'
-New-Item -ItemType Directory -Path (Split-Path $actualModel),(Split-Path $ComsolSourceManifest)-Force|Out-Null
-[IO.File]::WriteAllText($actualModel,'INERT_IDENTITY_ONLY_NOT_A_MODEL')
-[IO.File]::WriteAllText($ComsolSourceManifest,'{"fixture":"inert source boundary only"}')
-$protected=@((Split-Path $ComsolSourceManifest));$cache=@{cache_key=('A'*64)};$budget=@{committed_new_bytes=0}
-function Invoke-PairedPython {param($Code,$Arguments)
- [pscustomobject]@{model=[pscustomobject]@{path=$actualModel};source_stage='solved_saved';exports=$null}
-}
-try{
- try{
-  . ([scriptblock]::Create($sourceBranch[0].Extent.Text))
-  $update=. ([scriptblock]::Create($renewal[0].Extent.Text));$capacity=$update.session
-  if($capacity.protected_paths-notcontains$actualModel){throw 'Actual original model absent from renewed protection'}
-  $stored=Get-Content (Join-Path $ArtifactRoot ('common/capacity_protection_leases/'+$capacity.lease_id+'.json')) -Raw|ConvertFrom-Json
-  $relative=[IO.Path]::GetRelativePath($ArtifactRoot,$actualModel).Replace('\','/')
-  if($stored.protected_paths-notcontains$relative){throw 'Public lease did not persist original model protection'}
-  foreach($call in $early){$null=& ([scriptblock]::Create($call.Extent.Text))}
-  Write-RunJson -Path (Join-Path $package.result_dir 'inert_boundary.json') -Value @{solver_executed=$false}
-  if($Outcome-eq'failed'){throw 'INERT_SCIENTIFIC_STAGE_FAILURE'}
-  . $success
- }catch{. $handler}
-}catch{$failureMessage=$_.Exception.Message}
-finally{. $finalizer}
-$manifest=Get-Content -LiteralPath (Join-Path $package.artifact_run_dir 'run_manifest.json') -Raw|ConvertFrom-Json
-if($manifest.status-ne$Outcome){throw "Owner terminal expected $Outcome; got $($manifest.status); $failureMessage"}
-if($Outcome-eq'success'-and$failureMessage){throw $failureMessage}
-if($Outcome-eq'failed'-and$failureMessage-ne'INERT_SCIENTIFIC_STAGE_FAILURE'){throw "Original failure changed: $failureMessage"}
-$receipt=Get-Content (Join-Path $package.artifact_run_dir 'retention_actions.json') -Raw|ConvertFrom-Json
-if($receipt.status-ne'complete'){throw 'Retention was not reconciled.'}
-'OWNER_LIFECYCLE=PASS'
-"""
-        for outcome in ('success','failed'):
-            with self.subTest(outcome=outcome),tempfile.TemporaryDirectory() as directory:
-                root=Path(directory);artifacts=root/'artifacts';artifacts.mkdir()
-                initialize_capacity_ledger(artifacts,objects=[])
-                wrapper=root/'owner_boundaries.ps1';wrapper.write_text(script,encoding='utf-8',newline='\n')
-                run_id=f'20261026_040001__test__python__paired-owner-{outcome}'
-                result=subprocess.run(['pwsh','-NoProfile','-File',str(wrapper),str(WORKFLOW/'execute.ps1'),
-                    str(ROOT),sys.executable,str(artifacts),outcome,run_id],cwd=ROOT,capture_output=True,
-                    text=True,encoding='utf-8',errors='replace',timeout=180)
-                self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-                self.assertIn('OWNER_LIFECYCLE=PASS',result.stdout)
-                run=artifacts/'projects/instrument_assembly/runs'/run_id
-                self.assertEqual(runtime.read(run/'run_manifest.json')['status'],outcome)
-                ledger=runtime.read(artifacts/'common/capacity_ledger.json')
-                entry=next(row for row in ledger['objects'] if row['path']==run.relative_to(artifacts).as_posix())
-                self.assertEqual(entry['status'],'ready')
-
     def test_invalid_saved_model_source_fails_before_any_vendor_and_seals_failure(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory).resolve();_,author=self.prepared(root)
@@ -723,40 +672,6 @@ if($receipt.status-ne'complete'){throw 'Retention was not reconciled.'}
             self.assertEqual(runtime.read(run/'summary.json')['failure_stage'],'verify_saved_comsol_source')
             self.assertFalse((run/'inputs/execution_budget.json').exists())
             self.assertFalse(any(run.rglob('*.pa')))
-
-    def test_actual_finally_releases_capacity_before_seal_and_never_rewrites_terminal(self):
-        script=r"""param($Source,$Run)
-$ErrorActionPreference='Stop'
-$errors=$null;$tokens=$null
-$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$tokens,[ref]$errors)
-if($errors.Count){throw ($errors|Out-String)}
-$owner=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.TryStatementAst]-and$null-ne$n.Finally},$false))[0]
-$finalizer=[scriptblock]::Create(($owner.Finally.Statements.Extent.Text-join"`n"))
-$script:released=$false;$terminalized=$true;$guard=$null;$buildAlias=$null
-$capacity=@{fixture=$true};$package=@{run_config=(Join-Path $Run run_config.json)}
-$RepoRoot='unused';$ArtifactRoot=$Run;$project='instrument_assembly';$reason='inert seal failure'
-$Python='Fixture-Python'
-function Exit-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session)$script:released=$true}
-function Fixture-Python {
- if(-not$script:released){throw 'capacity not released before seal'}
- if($args-notcontains'seal-stopped-payload'){throw 'unexpected native invocation'}
- throw 'INERT_SEAL_FAILURE'
-}
-function Remove-RunPackageExecutionAlias {throw 'must not reach alias removal after seal failure'}
-$before=[IO.File]::ReadAllText((Join-Path $Run run_manifest.json))
-try{. $finalizer;throw 'seal failure swallowed'}catch{if($_.Exception.Message-ne'INERT_SEAL_FAILURE'){throw}}
-if([IO.File]::ReadAllText((Join-Path $Run run_manifest.json))-cne$before){throw 'published terminal changed'}
-'FINALIZER_FAILURE=PASS'
-"""
-        with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory)
-            runtime.write(root/'run_manifest.json',{'status':'success','science':'retained'})
-            runtime.write(root/'run_config.json',{})
-            path=root/'test.ps1';path.write_text(script,encoding='utf-8',newline='\n')
-            result=subprocess.run(['pwsh','-NoProfile','-File',str(path),str(WORKFLOW/'execute.ps1'),str(root)],
-                cwd=root,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30)
-            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-            self.assertIn('FINALIZER_FAILURE=PASS',result.stdout)
 
     def test_export_failure_publishes_saved_model_and_allows_explicit_reuse(self):
         """Real owner catch/public writer; inert bytes are not a native solved MPH."""

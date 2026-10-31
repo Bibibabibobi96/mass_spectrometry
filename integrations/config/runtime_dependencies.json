@@ -364,7 +364,9 @@
           "source_repo_path": "common/contracts/run_artifact_workflow.ps1",
           "consumers": [
             "prepared_joint",
-            "oa_mr"
+            "oa_mr",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
           ]
         },
         {
@@ -407,7 +409,8 @@
             "oa_mr",
             "multipole_ip",
             "single_reflection_flight",
-            "paired_accelerator_static_field"
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
           ]
         },
         {
@@ -448,7 +451,9 @@
             "accelerator_interface",
             "cooled_frontend",
             "oa_mr",
-            "single_reflection_flight"
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
           ]
         },
         {
@@ -471,7 +476,9 @@
             "accelerator_interface",
             "cooled_frontend",
             "oa_mr",
-            "single_reflection_flight"
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
           ]
         },
         {
@@ -483,7 +490,9 @@
             "accelerator_interface",
             "cooled_frontend",
             "oa_mr",
-            "single_reflection_flight"
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
           ]
         },
         {
@@ -506,7 +515,9 @@
             "accelerator_interface",
             "cooled_frontend",
             "oa_mr",
-            "single_reflection_flight"
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
           ]
         },
         {
@@ -518,7 +529,9 @@
             "accelerator_interface",
             "cooled_frontend",
             "oa_mr",
-            "single_reflection_flight"
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
           ]
         },
         {
@@ -530,7 +543,9 @@
             "accelerator_interface",
             "cooled_frontend",
             "oa_mr",
-            "single_reflection_flight"
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
           ]
         },
         {
@@ -1334,7 +1349,9 @@
             "accelerator_interface",
             "cooled_frontend",
             "oa_mr",
-            "single_reflection_flight"
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
           ]
         }
       ]
@@ -2054,6 +2071,13 @@
         {
           "id": "projects_orthogonal_accelerator_comsol_build_sectioned_geometry_m",
           "source_repo_path": "projects/orthogonal_accelerator/comsol/build_sectioned_geometry.m",
+          "consumers": [
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "orthogonal_accelerator_sectioned_geometry",
+          "source_repo_path": "projects/orthogonal_accelerator/analysis/sectioned_geometry.py",
           "consumers": [
             "paired_accelerator_static_field"
           ]

@@ -41,7 +41,7 @@ $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$null,[ref]$null)
 $branch=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'-not$reusedReplay'-and$n.Extent.Text.Contains('plan_simion_replay_continuation')},$true)
 if($null-eq$branch){throw 'public replay branch missing'}
-$package=@{run_config=(Join-Path $Root 'run_config.json');artifact_run_dir=$Root;result_dir=$Root}
+$package=@{native_path_preparation=@{calls=0;elapsed_seconds=0.;transport_bytes=0};run_config=(Join-Path $Root 'run_config.json');artifact_run_dir=$Root;result_dir=$Root}
 '{"inputs":{}}'|Set-Content $package.run_config
 $workbench=[pscustomobject]@{batches=@([pscustomobject]@{case_id='a'},[pscustomobject]@{case_id='b'})}
 $Python='unused';$RepoRoot='unused';$frozen=@{execution_root='unused'};$planPath='unused';$stagesPath='unused';$workbenchPath=Join-Path $Root 'workbench.json';$dispatchPath='unused'
@@ -54,7 +54,8 @@ function Invoke-PulsePython {param($Code,$Arguments)
  return @{}
 }
 function Write-RunJson {param($Path,$Value,$Depth) $Value|ConvertTo-Json -Depth 30|Set-Content $Path}
-function New-FrontendFlightSpecification {param($Case,$SimionExe) return @{name=$Case.case_id}}
+function New-FrontendFlightSpecification {param($Package,$Case,$SimionExe) return @{name=$Case.case_id}}
+function Set-PairedStage {param($Name);if($Name-notin@('default_replay','collect_replay')){throw 'Unexpected replay stage'}}
 function Update-HostResourceStage {param($Lease,$Stage,$Budget,$RetainedMemoryBytes) return @{}}
 function Get-HostResourceBudget {param($Role,$Stage) return @{}}
 function Invoke-ResourceBudgetedProcesses {param($DispatchPlanPath,$RunDir,$UsagePath,$ProcessSpecifications,$OnProcessCompleted) $script:starts=@($ProcessSpecifications|ForEach-Object{$_.name});return @{resource_budget_exceeded=$false;processes=@(@{name='b';exit_code=0})}}
@@ -192,64 +193,6 @@ ConvertTo-Json -InputObject $strings -Compress -Depth 4
                 cwd=frozen, env=environment, capture_output=True, text=True, encoding='utf-8', timeout=60, check=False)
             self.assertEqual(analysis_import.returncode, 0, analysis_import.stdout + analysis_import.stderr)
 
-    def test_actual_terminal_and_failure_blocks_preserve_raw_cpt_evidence(self):
-        script = r'''param($Owner,$RepoRoot,$Python,$ArtifactRoot,$RunId,$Outcome)
-$ErrorActionPreference='Stop'
-. (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
-function Invoke-ArtifactCapacityGate { [pscustomobject]@{satisfied_after_apply=$true} }
-$tokens=$null;$errors=$null
-$ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$tokens,[ref]$errors)
-if($errors.Count){throw ($errors|Out-String)}
-$body=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.TryStatementAst]-and$null-ne$n.Finally},$false))[0]
-$start=@($body.Body.Statements|Where-Object{$_.Extent.Text-eq"`$stage='terminal_publication'"})[0]
-$success=[scriptblock]::Create((@($body.Body.Statements|Where-Object{$_.Extent.StartOffset-ge$start.Extent.StartOffset}).Extent.Text-join"`n"))
-$handler=[scriptblock]::Create(($body.CatchClauses[0].Body.Statements.Extent.Text-join"`n"))
-$finalizer=[scriptblock]::Create(($body.Finally.Statements.Extent.Text-join"`n"))
-$register=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Register-PulseInputs'},$true)
-. ([scriptblock]::Create($register.Extent.Text))
-$project='instrument_assembly';$software=@('TEST_ONLY inert vendor boundary');$reason='TEST_ONLY pulse lifecycle; no native model or particle simulation.'
-$package=New-RunPackage -Python $Python -RepoRoot $RepoRoot -ArtifactRoot (Join-Path $ArtifactRoot 'projects/instrument_assembly') `
- -Project $project -Mode paired_accelerator_pulse -RunId $RunId -Software $software -RetentionContractEnabled `
- -RetentionClass solver_review -RetentionReason $reason -CapacityLedgerLifecycleEnabled -CapacityLedgerArtifactRoot $ArtifactRoot `
- -AdditionalDirectories @('comsol','simion') -UseShortExecutionPath
-$capacity=Enter-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -ArtifactRoot $ArtifactRoot `
- -RunDirectory $package.artifact_run_dir -CommittedNewBytes 0 -Owner ('test-pulse:'+$RunId)
-$terminalized=$false;$writerUnknown=$false;$lease=$null;$guard=$null;$failure=$null;$DryRun=$false;$reusedParticleSolution=$false;$reusedBaseline=$false;$reusedReplay=$false;$reusedParticleExports=$false;$nativeExecuted=$false;$paGuards=@()
-$plan=@{particle_count=2};$stage='inert_particle_export';$failureText=''
-$payload=Join-Path $package.artifact_run_dir 'comsol/paired_accelerator_pulse.mph'
-[IO.File]::WriteAllBytes($payload,[Text.Encoding]::UTF8.GetBytes('TEST_ONLY_INERT_CPT_MODEL_IDENTITY'))
-Write-RunJson -Path (Join-Path $package.artifact_run_dir 'comsol/paired_pulse_solution.json') -Value @{
- schema_version=1;role='TEST_ONLY_inert_vendor_fact';status='solved_saved';model_path=$payload}
-try{
- try{
-  if($Outcome-eq'failed'){throw 'TEST_ONLY_PARTICLE_EXPORT_FAILURE'}
-  . $success
- }catch{. $handler}
-}catch{$failureText=$_.Exception.Message}
-finally{. $finalizer}
-$manifest=Get-Content (Join-Path $package.artifact_run_dir 'run_manifest.json') -Raw|ConvertFrom-Json
-if($manifest.status-ne$Outcome){throw "Wrong scientific terminal: $failureText"}
-if($Outcome-eq'failed'-and$failureText-ne'TEST_ONLY_PARTICLE_EXPORT_FAILURE'){throw "Scientific failure hidden: $failureText"}
-if($Outcome-eq'success'-and$failureText){throw $failureText}
-if(@($manifest.outputs|Where-Object{[IO.Path]::GetFileName($_.path)-eq'paired_accelerator_pulse.mph'}).Count-ne1){throw 'Raw CPT model omitted from terminal manifest'}
-if(-not(Test-Path -LiteralPath $payload)){throw 'Raw CPT evidence was removed'}
-if((Get-Content (Join-Path $package.artifact_run_dir 'retention_actions.json') -Raw|ConvertFrom-Json).status-ne'complete'){throw 'Terminal retention incomplete'}
-'TEST_ONLY_OWNER_LIFECYCLE=PASS'
-'''
-        for outcome in ('success', 'failed'):
-            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                artifacts = root / 'artifacts'
-                artifacts.mkdir()
-                initialize_capacity_ledger(artifacts, objects=[])
-                wrapper = root / 'owner_boundary.ps1'
-                wrapper.write_text(script, encoding='utf-8', newline='\n')
-                run_id = f'20261026_060002__test__python__pulse-{outcome}'
-                result = self.invoke(['-File', str(wrapper), str(OWNER), str(ROOT), sys.executable,
-                    str(artifacts), run_id, outcome])
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertIn('TEST_ONLY_OWNER_LIFECYCLE=PASS', result.stdout)
-
     def test_predecessor_reuses_completed_stages_and_only_runs_missing_fly(self):
         script = r'''param($Owner,$PublicRepo,$Python,$Root,$Completed)
 $ErrorActionPreference='Stop'
@@ -258,14 +201,14 @@ $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
 $ownerBody=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.TryStatementAst]-and$null-ne$n.Finally},$false))[0]
-$native=@($ownerBody.Body.Statements|Where-Object{$_.Extent.Text.StartsWith('if(-not$DryRun){')})[0]
+$native=@($ownerBody.Body.Statements|Where-Object{$_.Extent.Text.StartsWith('if(-not$DryRun){')-and$_.Extent.Text.Contains('Invoke-FrontendFlightPhase')})[0]
 $execute=[scriptblock]::Create(($native.Clauses[0].Item2.Statements.Extent.Text-join"`n"))
 $RepoRoot=Join-Path $Root repo
 $run=Join-Path $Root run
 foreach($name in @('inputs','logs','results','comsol','simion')){$null=New-Item -ItemType Directory -Path (Join-Path $run $name) -Force}
 $comsolStub=Join-Path $RepoRoot 'common/comsol/run_comsol_r2025b.ps1'
 $null=New-Item -ItemType Directory -Path (Split-Path -Parent $comsolStub) -Force
-[IO.File]::WriteAllText($comsolStub,('param($TaskScript,$ReportPath,$ResourceBudgets,$RunId,$Limits,$RunDir,$UsagePath);if($null-eq$Limits-or$UsagePath-ne(Join-Path $RunDir ''logs/comsol.resource_usage.json'')-or$ReportPath-ne(Join-Path $RunDir ''logs/comsol_bootstrap.txt'')){{throw ''Owner omitted canonical budget observation''}};[IO.File]::WriteAllText(''{0}'',''TEST_ONLY_NATIVE_MODEL_BOUNDARY'');$global:LASTEXITCODE=0' -f (Join-Path $Root 'native_model_called').Replace("'","''")))
+[IO.File]::WriteAllText($comsolStub,('param($TaskScript,$ReportPath,$ResourceBudgets,$RunId,$Limits,$RunDir,$UsagePath,$CompletionPath);[IO.File]::WriteAllText($CompletionPath,''{{"operations":[],"host_release":{{"inherited":false,"token":"TEST_ONLY_NO_NATIVE","result":{{"status":"released","token":"TEST_ONLY_NO_NATIVE"}},"error":null}}}}'');if($null-eq$Limits-or$UsagePath-ne(Join-Path $RunDir ''logs/comsol.resource_usage.json'')-or$ReportPath-ne(Join-Path $RunDir ''logs/comsol_bootstrap.txt'')){{throw ''Owner omitted canonical budget observation''}};[IO.File]::WriteAllText(''{0}'',''TEST_ONLY_NATIVE_MODEL_BOUNDARY'');$global:LASTEXITCODE=0' -f (Join-Path $Root 'native_model_called').Replace("'","''")))
 $generation=Join-Path $Root 'generation';$null=New-Item -ItemType Directory $generation
 $publication=Join-Path $run 'inputs/publication.json'
 Write-RunJson -Path $publication -Value @{generation_directory=$generation;cache_key='TEST_ONLY_CACHE_IDENTITY'}
@@ -276,18 +219,19 @@ $priorResults=Join-Path $Root 'prior_simion.json';[IO.File]::WriteAllText($prior
 $null=New-Item -ItemType Directory -Path (Join-Path $Root 'predecessor')
 $PredecessorManifest=Join-Path $Root 'predecessor/run_manifest.json';[IO.File]::WriteAllText($PredecessorManifest,'{"TEST_ONLY":true}')
 $configPath=Join-Path $run 'run_config.json';Write-RunJson -Path $configPath -Value @{inputs=@{}}
-$package=@{artifact_run_dir=$run;input_dir=(Join-Path $run inputs);result_dir=(Join-Path $run results);log_dir=(Join-Path $Root 'removed_execution_alias/logs');run_config=$configPath}
+$package=@{python=$Python;execution_alias=$null;execution_path_capacity=$null;native_path_preparation=@{calls=0;elapsed_seconds=0.;transport_bytes=0};run_dir=$run;artifact_run_dir=$run;input_dir=(Join-Path $run inputs);result_dir=(Join-Path $run results);log_dir=(Join-Path $Root 'removed_execution_alias/logs');run_config=$configPath}
 $plan=@{model=@{path=$staticModelPath};input_records=@{simion_field_publication=@{path=$publication}}}
 $planPath=Join-Path $run 'inputs/plan.json'
 $frozen=@{execution_root=$PublicRepo};$capacity=@{lease_id='TEST_ONLY';owner='TEST_ONLY'};$lease=@{token='TEST_ONLY'}
+$pathContext=@{host_resource_state_path=(Join-Path $Root 'host.json')}
 $RunId='TEST_ONLY_OWNER_BRANCH';$SimionExe=Join-Path $Root 'never-executed.exe';[IO.File]::WriteAllText($SimionExe,'TEST_ONLY')
-$ExecutionBudgetPath=Join-Path $Root 'budget.json'
+$ExecutionBudgetPath=Join-Path $Root 'budget.json';$budgetPath=$ExecutionBudgetPath
 Write-RunJson -Path $ExecutionBudgetPath -Value @{committed_new_bytes=10000;limits=@{wall_clock_seconds=100;transient_run_directory_bytes=10000;process_tree_working_set_bytes=10000;minimum_system_available_memory_bytes=10000;compact_final_retained_bytes=10000};host_budgets=@{simion_flight=@{};comsol=@{}}}
 $script:simionCalls=0;$script:replayCalls=0;$script:modelVerifications=0;$script:collected=0
 . (Join-Path $PublicRepo 'integrations/runtime/frontend_flight_support.ps1')
 $oldIob=Join-Path $Root 'original.iob';[IO.File]::WriteAllText($oldIob,'TEST_ONLY_ORIGINAL_IOB_IDENTITY')
 $sourceReceipt=Join-Path $Root 'original_case.json';[IO.File]::WriteAllText($sourceReceipt,'TEST_ONLY_READONLY_SOURCE_RECEIPT')
-$case=[pscustomobject]@{index=1;case_id='borrowed';count=2;expected_particle_ids=@(100,99);source_row_range=@(1,2);simion_particle_id_offset=0;merge_offset=0;working_directory=$Root;environment=@{};stdout='TEST_ONLY_original.stdout';stderr='TEST_ONLY_original.stderr';fly_arguments=@('--nogui','--noprompt','fly',$oldIob);receipt_path=$sourceReceipt;control_records=@(@{path=$oldIob});iob_reopen_record=@{path=$priorResults}}
+$case=[pscustomobject]@{index=1;case_id='borrowed';count=2;expected_particle_ids=@(100,99);source_row_range=@(1,2);simion_particle_id_offset=0;merge_offset=0;iob_path=$oldIob;working_directory=$Root;environment=@{};stdout='TEST_ONLY_original.stdout';stderr='TEST_ONLY_original.stderr';fly_arguments=@('--nogui','--noprompt','fly',$oldIob);receipt_path=$sourceReceipt;control_records=@(@{path=$oldIob});iob_reopen_record=@{path=$priorResults}}
 $oldWorkbench=Join-Path $Root 'prior_workbench.json';Write-RunJson -Path $oldWorkbench -Value @{batches=@($case)} -Depth 100
 $oldDispatch=Join-Path $Root 'prior_dispatch.json';Write-RunJson -Path $oldDispatch -Value @{TEST_ONLY=$true}
 function Invoke-PulsePython {
@@ -315,12 +259,16 @@ function Update-ArtifactWorkflowCapacitySession {
  return @{session=$Session}
 }
 function Protect-ImmutablePaSource {param($Source,$ExpectedBytes,$ExpectedSha256)return @{path=$Source}}
-function Enter-HostResourceStage {param($Role,$Stage,$Budget,$RunId)return @{token='TEST_ONLY'}}
+function Enter-HostResourceStage {param($StatePath,$Role,$Stage,$Budget,$RunId);if($StatePath-ne$pathContext.host_resource_state_path){throw 'Frozen host identity omitted'};return @{token='TEST_ONLY'}}
 function Update-HostResourceStage {param($Lease,$Stage,$Budget,$RetainedMemoryBytes)return $Lease}
 function Exit-HostResourceStage {param($Lease)}
 function Get-HostResourceBudget {param($Role,$Stage)return @{}}
 function Register-PulseInputs {}
-function Invoke-FrontendFlightPhase {param($RunDirectory,$ProjectRunsRoot,$RepoRoot,$Python,$RuntimeModule,$SimionExe,$Limits,$Phase,$RuntimeInputArguments,$WorkbenchReceiptPath,$IobVerification,$OnProcessCompleted)$script:simionCalls++;return @{batches=@($case);native_process_records=@(@{TEST_ONLY=$true})}}
+function Set-PairedStage {param($Name);$script:stage=$Name}
+function Close-PairedHostStage {$script:lease=$null}
+$writersStopped=$true;$writerUnknown=$false;$hostReleaseUnknown=$false
+$nativeOperations=[Collections.Generic.List[object]]::new();$resourceReleases=[Collections.Generic.List[object]]::new()
+function Invoke-FrontendFlightPhase {param($RunDirectory,$ProjectRunsRoot,$RepoRoot,$Python,$RuntimeModule,$SimionExe,$Limits,$Phase,$RuntimeInputArguments,$WorkbenchReceiptPath,$IobVerification,$OnProcessCompleted,$NativeOperations,$NativeResourceReleaseId)$script:simionCalls++;return @{batches=@($case);native_process_records=@(@{TEST_ONLY=$true})}}
 function Invoke-ResourceBudgetedProcesses {
  param($DispatchPlanPath,$RunDir,$UsagePath,$ProcessSpecifications,$OnProcessCompleted)
  if($ProcessSpecifications.Count-ne1-or$ProcessSpecifications[0].argument_list[-1]-ne$oldIob){throw 'Replay did not use the original saved IOB defaults'}
@@ -372,8 +320,11 @@ $case=[pscustomobject]@{case_id='batch_0001';working_directory=$Root;reopen_argu
 $buildLog=Join-Path $Root 'logs/pulse.batch_0001.assembly.stdout.log'
 [IO.File]::WriteAllText($buildLog,'PAIRED_ACCELERATOR_PULSE_IOB_BUILD=PASS TEST_ONLY')
 $script:reopenCalls=0
+$package=@{python=$Python;execution_alias=$null;execution_path_capacity=$null;artifact_run_dir=$Root;run_dir=$Root;native_path_preparation=@{calls=0;elapsed_seconds=0.0;transport_bytes=0L}}
+$nativeOperations=[Collections.Generic.List[object]]::new();$lease=@{token='TEST_ONLY_INERT_CALLBACK'};$writersStopped=$true;$writerUnknown=$false
+function Add-FrontendNativeOperation {param($NativeOperations,$NativeResourceReleaseId,$OperationId,$ProcessRecord,$ExceptionData);if($PSBoundParameters.ContainsKey('ExceptionData')){return};if($NativeResourceReleaseId-ne$lease.token-or$ProcessRecord.exit_code-ne0){throw 'Reopen completion was not passed through'} }
 function Invoke-ResourceBudgetedProcess {
- param($Limits,$RunDir,$FilePath,$ArgumentList,$WorkingDirectory,$UsagePath,$RedirectStandardOutput,$RedirectStandardError)
+ param($Limits,$RunDir,$FilePath,$ArgumentList,$WorkingDirectory,$Environment,$UsagePath,$RedirectStandardOutput,$RedirectStandardError)
  if($ArgumentList[0]-ne'TEST_ONLY_REOPEN'){throw 'Unexpected native boundary'}
  $script:reopenCalls++
  [IO.File]::WriteAllText($RedirectStandardOutput,'PAIRED_ACCELERATOR_PULSE_IOB_VERIFY=PASS TEST_ONLY')
