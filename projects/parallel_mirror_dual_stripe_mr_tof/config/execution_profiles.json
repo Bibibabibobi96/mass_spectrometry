@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "role": "project_execution_profiles",
+  "project_id": "parallel_mirror_dual_stripe_mr_tof",
+  "profiles": [
+    {
+      "profile_id": "native_condition",
+      "capability_id": "multiple_reflection_mass_analysis",
+      "mode": "native_condition",
+      "supported_objectives": [
+        "detection_fraction",
+        "target_oscillation_fraction",
+        "time_of_flight",
+        "mass_resolving_power",
+        "spatial_return_residual"
+      ],
+      "supported_operating_points": [
+        {
+          "mass": {
+            "value": 100,
+            "unit": "Da"
+          },
+          "charge_state": 1
+        },
+        {
+          "mass": {
+            "value": 524,
+            "unit": "Da"
+          },
+          "charge_state": 1
+        }
+      ],
+      "supported_design_variables": [],
+      "supported_constraints": [],
+      "deliverable_outputs": [
+        "simulation_results",
+        "simion_model",
+        "validation_report"
+      ],
+      "required_bindings": [
+        "condition_path",
+        "context_path",
+        "composition_plan_path"
+      ],
+      "binding_types": {
+        "condition_path": "file",
+        "context_path": "file",
+        "composition_plan_path": "file"
+      },
+      "steps": [
+        {
+          "step_id": "native_run",
+          "kind": "run",
+          "shell": "powershell",
+          "entrypoint": "analysis/run_native_candidate_condition.ps1",
+          "run_id_template": "{timestamp}__sim__simion__native-condition",
+          "arguments": [
+            "-RunId",
+            "{native_run_id}",
+            "-ConditionPath",
+            "{condition_path}",
+            "-ContextPath",
+            "{context_path}",
+            "-CompositionPlanPath",
+            "{composition_plan_path}"
+          ]
+        }
+      ],
+      "limitations": [
+        "Existing explicit-input workflow; the original owner performs scientific preparation and acceptance.",
+        "Plan readiness does not establish native execution or scientific qualification."
+      ],
+      "purpose": "candidate_condition",
+      "action": "run",
+      "tools": [
+        "simion",
+        "python"
+      ],
+      "model": "平行镜双条带MR-TOF原生候选条件",
+      "scientific_status": "not_evaluated",
+      "qualification_support": [
+        "none",
+        "candidate"
+      ],
+      "runtime_binding": {
+        "entrypoint": "analysis/execution_binding.py",
+        "required_bindings": [
+          "condition_path",
+          "context_path",
+          "composition_plan_path"
+        ]
+      }
+    }
+  ]
+}

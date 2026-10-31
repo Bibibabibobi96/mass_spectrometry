@@ -4,7 +4,216 @@
   "integrations": [
     {
       "integration_id": "instrument_assembly",
-      "root": "integrations"
+      "root": "integrations",
+      "workflows": [
+        {
+          "workflow_id": "single_reflection_flight",
+          "entrypoint": "integrations/workflows/single_reflection_flight/run.ps1",
+          "required_bindings": [
+            "request",
+            "execution_budget_path"
+          ],
+          "arguments": [
+            "-Request",
+            "{request}",
+            "-ExecutionBudgetPath",
+            "{execution_budget_path}",
+            "-RunId",
+            "{run_id}"
+          ],
+          "outputs": [
+            "run_config",
+            "summary",
+            "run_manifest",
+            "analysis_receipts"
+          ],
+          "simulation_paths": [
+            "segmented_handoff",
+            "continuous_assembly"
+          ],
+          "recipes": [
+            "integrations/config/recipes/guide_oa_three_zone_functional_plan.json"
+          ],
+          "limitations": [
+            "Classification follows the request propagation scope and source restart facts; trajectory and field coupling are separate."
+          ],
+          "binding_types": {
+            "request": "file",
+            "execution_budget_path": "file"
+          },
+          "purpose": "assembly_propagation",
+          "action": "run",
+          "tools": [
+            "simion",
+            "python"
+          ],
+          "model": "请求声明的装配场域、接口与轨迹传播",
+          "scientific_status": "not_evaluated"
+        },
+        {
+          "workflow_id": "prepared_joint_flight",
+          "entrypoint": "integrations/workflows/prepared_joint/execute.ps1",
+          "required_bindings": [
+            "prepared_joint_workbench_run_path",
+            "contract_path"
+          ],
+          "arguments": [
+            "-PreparedJointWorkbenchRunPath",
+            "{prepared_joint_workbench_run_path}",
+            "-ContractPath",
+            "{contract_path}",
+            "-RunId",
+            "{run_id}"
+          ],
+          "outputs": [
+            "run_config",
+            "summary",
+            "run_manifest",
+            "analysis_receipts"
+          ],
+          "simulation_paths": [
+            "continuous_assembly"
+          ],
+          "recipes": [
+            "integrations/config/recipes/ip_mr_y_minus55_plan.json"
+          ],
+          "limitations": [
+            "Only the declared downstream prepared-source scope is continuous; no upstream history is newly executed."
+          ],
+          "binding_types": {
+            "prepared_joint_workbench_run_path": "directory",
+            "contract_path": "file"
+          },
+          "purpose": "assembly_propagation",
+          "action": "run",
+          "tools": [
+            "simion",
+            "python"
+          ],
+          "model": "请求声明的装配场域、接口与轨迹传播",
+          "scientific_status": "not_evaluated"
+        },
+        {
+          "workflow_id": "ip_mr_chain",
+          "entrypoint": "integrations/workflows/accelerator_interface/execute.ps1",
+          "required_bindings": [
+            "ion_processor_run_path",
+            "reference_mr_run_path",
+            "matching_request_path",
+            "field_request_path",
+            "contract_path"
+          ],
+          "arguments": [
+            "-FullJoint",
+            "-IonProcessorRunPath",
+            "{ion_processor_run_path}",
+            "-ReferenceMrRunPath",
+            "{reference_mr_run_path}",
+            "-MatchingRequestPath",
+            "{matching_request_path}",
+            "-FieldRequestPath",
+            "{field_request_path}",
+            "-ContractPath",
+            "{contract_path}",
+            "-RunId",
+            "{run_id}"
+          ],
+          "outputs": [
+            "run_config",
+            "summary",
+            "run_manifest",
+            "analysis_receipts"
+          ],
+          "simulation_paths": [
+            "segmented_handoff"
+          ],
+          "recipes": [
+            "integrations/config/recipes/multipole_ip_mr_y_minus55_plan.json",
+            "integrations/config/recipes/ip_mr_y_minus55_plan.json"
+          ],
+          "limitations": [
+            "Existing IP source is handed off to the downstream joint field; IP own partial recovery is not automatic full-chain recovery."
+          ],
+          "binding_types": {
+            "ion_processor_run_path": "directory",
+            "reference_mr_run_path": "directory",
+            "matching_request_path": "file",
+            "field_request_path": "file",
+            "contract_path": "file"
+          },
+          "purpose": "assembly_propagation",
+          "action": "run",
+          "tools": [
+            "simion",
+            "python"
+          ],
+          "model": "请求声明的装配场域、接口与轨迹传播",
+          "scientific_status": "not_evaluated"
+        },
+        {
+          "workflow_id": "oa_mr_flight",
+          "entrypoint": "integrations/workflows/oa_mr/execute.ps1",
+          "required_bindings": [
+            "geometry_review_run_path",
+            "mirror_run_path",
+            "stripe_run_path",
+            "accelerator_provider_receipt_path",
+            "composition_plan_path",
+            "prism1_voltage_v",
+            "prism2_voltage_v"
+          ],
+          "arguments": [
+            "-GeometryReviewRunPath",
+            "{geometry_review_run_path}",
+            "-MirrorRunPath",
+            "{mirror_run_path}",
+            "-StripeRunPath",
+            "{stripe_run_path}",
+            "-AcceleratorProviderReceiptPath",
+            "{accelerator_provider_receipt_path}",
+            "-CompositionPlanPath",
+            "{composition_plan_path}",
+            "-Prism1VoltageV",
+            "{prism1_voltage_v}",
+            "-Prism2VoltageV",
+            "{prism2_voltage_v}",
+            "-RunId",
+            "{run_id}"
+          ],
+          "outputs": [
+            "run_config",
+            "summary",
+            "run_manifest",
+            "analysis_receipts"
+          ],
+          "simulation_paths": [
+            "continuous_assembly"
+          ],
+          "recipes": [
+            "integrations/config/recipes/oa_mr_two_zone_gap30_plan.json"
+          ],
+          "limitations": [
+            "Continuous only within the declared prepared-source propagation and supported field/interface domain."
+          ],
+          "binding_types": {
+            "geometry_review_run_path": "directory",
+            "mirror_run_path": "directory",
+            "stripe_run_path": "directory",
+            "accelerator_provider_receipt_path": "file",
+            "composition_plan_path": "file",
+            "prism1_voltage_v": "number",
+            "prism2_voltage_v": "number"
+          },
+          "purpose": "assembly_propagation",
+          "action": "run",
+          "tools": [
+            "simion",
+            "python"
+          ],
+          "model": "请求声明的装配场域、接口与轨迹传播",
+          "scientific_status": "not_evaluated"
+        }
+      ]
     }
   ]
 }

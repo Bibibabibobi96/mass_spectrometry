@@ -7,9 +7,6 @@
       "profile_id": "quadrupole_transport_runtime_functional",
       "capability_id": "quadrupole_ion_transport",
       "mode": "quadrupole_transport_no_collision",
-      "evidence_levels": [
-        "plan"
-      ],
       "supported_objectives": [
         "transmission_fraction",
         "mean_tof",
@@ -44,24 +41,11 @@
       ],
       "runtime_binding": {
         "entrypoint": "runtime/runtime_profile.py",
-        "required_bindings": ["runtime_profile_id"]
+        "required_bindings": [
+          "runtime_profile_id"
+        ]
       },
       "steps": [
-        {
-          "step_id": "static_gate",
-          "kind": "gate",
-          "shell": "powershell",
-          "entrypoint": "verify_project.ps1",
-          "run_id_template": null,
-          "arguments": [
-            "-Level",
-            "Static",
-            "-PythonExe",
-            "{python_exe}",
-            "-StructuralVariant",
-            "quadrupole"
-          ]
-        },
         {
           "step_id": "comsol_run",
           "kind": "run",
@@ -69,8 +53,8 @@
           "entrypoint": "workflows/no_collision_transport/run_comsol.ps1",
           "run_id_template": "{timestamp}__sim__comsol__rf-transport__no-collision",
           "arguments": [
-            "-RuntimeProfileId",
-            "{runtime_profile_id}",
+            "-ResolvedRuntimeProfilePath",
+            "{resolved_runtime_profile_path}",
             "-EvidenceContractPath",
             "{evidence_contract_path}",
             "-RunId",
@@ -86,8 +70,8 @@
           "entrypoint": "workflows/no_collision_transport/run_simion.ps1",
           "run_id_template": "{timestamp}__sim__simion__rf-transport__no-collision",
           "arguments": [
-            "-RuntimeProfileId",
-            "{runtime_profile_id}",
+            "-ResolvedRuntimeProfilePath",
+            "{resolved_runtime_profile_path}",
             "-EvidenceContractPath",
             "{evidence_contract_path}",
             "-RunId",
@@ -102,15 +86,29 @@
       "limitations": [
         "The named runtime profile binds its structural design, source and solver numerics; no free particle-source override is accepted.",
         "Execution is a functional plan only and does not inherit numerical convergence, Candidate or Formal qualification."
+      ],
+      "binding_types": {
+        "runtime_profile_id": "string",
+        "evidence_contract_path": "file"
+      },
+      "purpose": "finite_transport",
+      "action": "run",
+      "tools": [
+        "comsol",
+        "matlab",
+        "simion",
+        "python"
+      ],
+      "model": "四极杆有限三维电场与轨迹",
+      "scientific_status": "not_evaluated",
+      "qualification_support": [
+        "none"
       ]
     },
     {
       "profile_id": "quadrupole_transport_interface_readiness_candidate",
       "capability_id": "quadrupole_ion_transport",
       "mode": "quadrupole_transport_interface_readiness",
-      "evidence_levels": [
-        "candidate"
-      ],
       "supported_objectives": [
         "transmission_fraction",
         "mean_tof",
@@ -157,21 +155,6 @@
         "comsol_execution_limits_path"
       ],
       "steps": [
-        {
-          "step_id": "static_gate",
-          "kind": "gate",
-          "shell": "powershell",
-          "entrypoint": "verify_project.ps1",
-          "run_id_template": null,
-          "arguments": [
-            "-Level",
-            "Static",
-            "-PythonExe",
-            "{python_exe}",
-            "-StructuralVariant",
-            "quadrupole"
-          ]
-        },
         {
           "step_id": "comsol_run",
           "kind": "run",
@@ -249,15 +232,36 @@
       "limitations": [
         "Requires explicit paired-bundle metadata, source-family, distribution, COMSOL ION11, and SIMION canonical10 bindings",
         "Current strict interface comparison is an allowed candidate FAIL, not a formal capability"
+      ],
+      "binding_types": {
+        "comsol_particle_source_path": "file",
+        "simion_particle_source_path": "file",
+        "particle_bundle_metadata_path": "file",
+        "particle_source_family_path": "file",
+        "particle_distribution_path": "file",
+        "simion_solver_numerics_contract_path": "file",
+        "operating_point_id": "string",
+        "comsol_execution_limits_path": "file"
+      },
+      "purpose": "interface_readiness",
+      "action": "run",
+      "tools": [
+        "comsol",
+        "matlab",
+        "simion",
+        "python"
+      ],
+      "model": "四极杆有限场跨求解器接口对照",
+      "scientific_status": "not_evaluated",
+      "qualification_support": [
+        "none",
+        "candidate"
       ]
     },
     {
       "profile_id": "quadrupole_mass_filter_simion_functional_reference",
       "capability_id": "quadrupole_mass_filter_reference",
       "mode": "quadrupole_mass_filter_reference",
-      "evidence_levels": [
-        "static"
-      ],
       "supported_objectives": [
         "transmission_fraction",
         "mass_peak_centroid"
@@ -287,21 +291,6 @@
       ],
       "steps": [
         {
-          "step_id": "static_gate",
-          "kind": "gate",
-          "shell": "powershell",
-          "entrypoint": "verify_project.ps1",
-          "run_id_template": null,
-          "arguments": [
-            "-Level",
-            "Static",
-            "-PythonExe",
-            "{python_exe}",
-            "-StructuralVariant",
-            "quadrupole"
-          ]
-        },
-        {
           "step_id": "simion_mass_response",
           "kind": "run",
           "shell": "powershell",
@@ -320,15 +309,27 @@
       "limitations": [
         "The SIMION functional scan includes the finite reference geometry but is not a cross-solver comparison",
         "The seven-point N=100-per-mass response is the functional check tier and does not qualify resolving power or Candidate maturity"
+      ],
+      "binding_types": {
+        "mass_filter_base_source_ion11_path": "file",
+        "simion_solver_numerics_contract_path": "file"
+      },
+      "purpose": "mass_filter_response",
+      "action": "run",
+      "tools": [
+        "simion",
+        "python"
+      ],
+      "model": "有限长四极杆RF/DC质量过滤",
+      "scientific_status": "not_evaluated",
+      "qualification_support": [
+        "none"
       ]
     },
     {
       "profile_id": "hexapole_simion_transport_campaign_engineering",
       "capability_id": "hexapole_finite_3d_transport",
       "mode": "hexapole_finite_3d_no_collision",
-      "evidence_levels": [
-        "plan"
-      ],
       "supported_objectives": [
         "transmission_fraction",
         "exit_rms_radius",
@@ -381,22 +382,12 @@
       ],
       "runtime_binding": {
         "entrypoint": "runtime/runtime_profile.py",
-        "required_bindings": ["campaign_path", "experiment_id"]
+        "required_bindings": [
+          "campaign_path",
+          "experiment_id"
+        ]
       },
       "steps": [
-        {
-          "step_id": "static_gate",
-          "kind": "gate",
-          "shell": "powershell",
-          "entrypoint": "verify_project.ps1",
-          "run_id_template": null,
-          "arguments": [
-            "-PythonExe",
-            "{python_exe}",
-            "-StructuralVariant",
-            "hexapole"
-          ]
-        },
         {
           "step_id": "simion_campaign_run",
           "kind": "run",
@@ -409,22 +400,36 @@
             "-ExperimentId",
             "{experiment_id}",
             "-PythonExe",
-            "{python_exe}"
+            "{python_exe}",
+            "-ResolvedRuntimeProfilePath",
+            "{resolved_runtime_profile_path}"
           ]
         }
       ],
       "limitations": [
         "Only explicitly preregistered SIMION engineering rows may run through this profile.",
         "A successful run does not establish numerical convergence, cross-solver equivalence or Candidate maturity."
+      ],
+      "binding_types": {
+        "campaign_path": "file",
+        "experiment_id": "string"
+      },
+      "purpose": "finite_transport_campaign",
+      "action": "run",
+      "tools": [
+        "simion",
+        "python"
+      ],
+      "model": "六极杆有限三维电场与轨迹",
+      "scientific_status": "not_evaluated",
+      "qualification_support": [
+        "none"
       ]
     },
     {
       "profile_id": "octupole_simion_transport_campaign_engineering",
       "capability_id": "octupole_finite_3d_transport",
       "mode": "octupole_finite_3d_no_collision",
-      "evidence_levels": [
-        "plan"
-      ],
       "supported_objectives": [
         "transmission_fraction",
         "exit_rms_radius",
@@ -468,6 +473,7 @@
       "deliverable_outputs": [
         "simulation_results",
         "simion_model",
+        "comsol_model",
         "validation_report",
         "interface_state"
       ],
@@ -477,22 +483,12 @@
       ],
       "runtime_binding": {
         "entrypoint": "runtime/runtime_profile.py",
-        "required_bindings": ["campaign_path", "experiment_id"]
+        "required_bindings": [
+          "campaign_path",
+          "experiment_id"
+        ]
       },
       "steps": [
-        {
-          "step_id": "static_gate",
-          "kind": "gate",
-          "shell": "powershell",
-          "entrypoint": "verify_project.ps1",
-          "run_id_template": null,
-          "arguments": [
-            "-PythonExe",
-            "{python_exe}",
-            "-StructuralVariant",
-            "octupole"
-          ]
-        },
         {
           "step_id": "simion_campaign_run",
           "kind": "run",
@@ -505,13 +501,32 @@
             "-ExperimentId",
             "{experiment_id}",
             "-PythonExe",
-            "{python_exe}"
+            "{python_exe}",
+            "-ResolvedRuntimeProfilePath",
+            "{resolved_runtime_profile_path}"
           ]
         }
       ],
       "limitations": [
-        "Only explicitly preregistered SIMION engineering rows may run through this profile.",
+        "Only explicitly preregistered SIMION/COMSOL engineering rows may run through this existing campaign entry; COMSOL candidate geometry is limited to vacuum_z_min.",
         "A successful run does not establish numerical convergence, cross-solver equivalence or Candidate maturity."
+      ],
+      "binding_types": {
+        "campaign_path": "file",
+        "experiment_id": "string"
+      },
+      "purpose": "finite_transport_campaign",
+      "action": "run",
+      "tools": [
+        "simion",
+        "comsol",
+        "matlab",
+        "python"
+      ],
+      "model": "八极杆有限三维电场与轨迹",
+      "scientific_status": "not_evaluated",
+      "qualification_support": [
+        "none"
       ]
     }
   ]

@@ -47,6 +47,137 @@ public sealed class RunTerminalSharedReadGuard : IDisposable {
 '@
 }
 
+function Invoke-CompiledExecutionPlan {
+  <# Execute only an existing owner's declared structured steps; owners retain native/resource lifecycle. #>
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$PlanPath,[Parameter(Mandatory)][string]$RepoRoot,[switch]$PrepareUnfrozenSources)
+  $plan=Get-Content -LiteralPath $PlanPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable -Depth 100
+  if($plan.role-ne'execution_dry_run'-or(-not$plan.safe_to_execute-and
+      -not($PrepareUnfrozenSources-and$plan.status-eq'NEEDS_SOURCE_FREEZE'-and$plan.can_prepare_sources))){throw 'Compiled execution plan is not ready or its source is not frozen.'}
+  $repository=[IO.Path]::GetFullPath($RepoRoot)
+  $streams=[Collections.Generic.List[object]]::new()
+  $directory=Join-Path ([IO.Path]::GetTempPath()) ('compiled_inputs_'+[guid]::NewGuid().ToString('N'))
+  try{
+    $contractPath=[IO.Path]::GetFullPath([string]$plan.execution_contract.path)
+    if(-not$contractPath.StartsWith($repository+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Execution contract is outside the repository.'}
+    if($plan.ContainsKey('owner_kind')-and$plan.owner_kind-eq'integration'){
+      if($contractPath-ne[IO.Path]::GetFullPath((Join-Path $repository 'integrations/registry.json'))){throw 'Integration execution must use the registered owner contract.'}
+    }else{
+      $registryPath=Join-Path $repository 'config/project_registry.json'
+      $registryStream=[IO.File]::Open($registryPath,'Open','Read','Read');$streams.Add($registryStream)
+      $registry=Get-Content -LiteralPath $registryPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable -Depth 100
+      $owners=@($registry.projects|Where-Object{$_.project_id-eq$plan.project_id})
+      if($owners.Count-ne1-or-not$owners[0].contracts.execution){throw 'Project execution owner is not registered.'}
+      $registered=Join-Path (Join-Path $repository ('projects/'+$plan.project_id)) ([string]$owners[0].contracts.execution)
+      if($contractPath-ne[IO.Path]::GetFullPath($registered)){throw 'Execution contract differs from the registered owner.'}
+    }
+    $contractStream=[IO.File]::Open($contractPath,'Open','Read','Read');$streams.Add($contractStream)
+    $hasher=[Security.Cryptography.SHA256]::Create()
+    try{$actual=[Convert]::ToHexString($hasher.ComputeHash($contractStream))}finally{$hasher.Dispose()}
+    if($actual-ne$plan.execution_contract.sha256){throw 'Execution profile changed after compilation.'}
+    $contract=Get-Content -LiteralPath $contractPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable -Depth 100
+    $entryRoot=Split-Path -Parent (Split-Path -Parent $contractPath)
+    if($plan.ContainsKey('owner_kind')-and$plan.owner_kind-eq'integration'){
+      $owners=@($contract.integrations|Where-Object{$_.integration_id-eq$plan.owner_id})
+      if($owners.Count-ne1){throw 'Compiled integration owner is not registered.'}
+      $workflows=@($owners[0].workflows|Where-Object{$_.workflow_id-eq$plan.profile_id})
+      if($workflows.Count-ne1){throw 'Compiled integration workflow is not registered.'}
+      $profiles=@(@{profile_id=$plan.profile_id;steps=@(@{step_id=$plan.profile_id;shell='powershell';entrypoint=$workflows[0].entrypoint;arguments=$workflows[0].arguments})})
+      $entryRoot=$repository
+    }else{$profiles=@($contract.profiles|Where-Object{$_.profile_id-eq$plan.profile_id})}
+    if($profiles.Count-ne1){throw 'Compiled execution profile is not unique.'}
+    if(@($plan.commands).Count-ne@($profiles[0].steps).Count){throw 'Compiled execution omits or adds owner steps.'}
+    foreach($record in @($plan.planning_sources)+@($plan.binding_authorities)){
+      $stream=[IO.File]::Open([string]$record.path,'Open','Read','Read');$streams.Add($stream)
+      $hasher=[Security.Cryptography.SHA256]::Create()
+      try{$actual=[Convert]::ToHexString($hasher.ComputeHash($stream))}finally{$hasher.Dispose()}
+      if($stream.Length-ne[long]$record.bytes-or$actual-ne$record.sha256){throw "Compiled authority changed: $($record.path)"}
+    }
+    foreach($source in @($plan.binding_sources)){
+      $streams.Add([IO.File]::Open([string]$source,'Open','Read','Read'))
+    }
+    New-Item -ItemType Directory -Path $directory|Out-Null
+    foreach($record in @($plan.resolved_inputs)){
+      if(-not$profiles[0].ContainsKey('fixed_inputs')-or
+         $profiles[0].fixed_inputs[[string]$record.name]-ne$record.relative_path){throw 'Compiled fixed input is not declared by the profile.'}
+      $stream=[IO.File]::Open([string]$record.path,'Open','Read','Read');$streams.Add($stream)
+      $hasher=[Security.Cryptography.SHA256]::Create()
+      try{$actual=[Convert]::ToHexString($hasher.ComputeHash($stream))}finally{$hasher.Dispose()}
+      if($stream.Length-ne[long]$record.bytes-or$actual-ne$record.sha256){throw "Compiled input changed: $($record.path)"}
+      $contentBytes=[Text.UTF8Encoding]::new($false).GetBytes([string]$record.content)
+      $hasher=[Security.Cryptography.SHA256]::Create()
+      try{$contentHash=[Convert]::ToHexString($hasher.ComputeHash($contentBytes))}finally{$hasher.Dispose()}
+      if($contentBytes.Length-ne[long]$record.bytes-or$contentHash-ne$record.sha256){throw 'Compiled resolved definition differs from its frozen source.'}
+      $destination=[IO.Path]::GetFullPath((Join-Path $directory ([string]$record.relative_path)))
+      if(-not$destination.StartsWith($directory+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Compiled input destination escapes its private directory.'}
+      New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination)|Out-Null
+      [IO.File]::WriteAllText($destination,[string]$record.content,[Text.UTF8Encoding]::new($false))
+    }
+    $bundle=Join-Path $directory 'resolved_inputs.json'
+    Write-RunJson -Path $bundle -Depth 100 -Value @{schema_version=1;role='compiled_execution_inputs';project_id=$(if($plan.ContainsKey('project_id')){$plan.project_id}else{$null});root=$directory;files=@($plan.resolved_inputs)}
+    $runtime=Join-Path $directory 'resolved_runtime.json'
+    if($null-ne$plan.resolved_runtime){Write-RunJson -Path $runtime -Depth 100 -Value $plan.resolved_runtime}
+    $stepIndex=0
+    foreach($command in $plan.commands){
+      $steps=@($profiles[0].steps|Where-Object{$_.step_id-eq$command.step_id})
+      if($steps.Count-ne1){throw 'Compiled step is not declared by its owner.'}
+      $step=$steps[0]
+      if($profiles[0].steps[$stepIndex].step_id-ne$command.step_id){throw 'Compiled execution changed owner step order.'}
+      $stepIndex++
+      $entry=[IO.Path]::GetFullPath((Join-Path $entryRoot ([string]$step.entrypoint)))
+      if($entry-ne[IO.Path]::GetFullPath([string]$command.entrypoint)-or$step.shell-ne$command.shell){throw 'Compiled command differs from declared entrypoint.'}
+      if(@($step.arguments).Count-ne@($command.arguments).Count){throw 'Compiled arguments differ from the declared owner inputs.'}
+      for($argumentIndex=0;$argumentIndex-lt@($step.arguments).Count;$argumentIndex++){
+        $template=[string]$step.arguments[$argumentIndex]
+        if($template-notmatch'\{[A-Za-z_]\w*\}'-and$template-cne[string]$command.arguments[$argumentIndex]){throw 'Compiled arguments changed a fixed owner input.'}
+      }
+      $arguments=@($command.arguments|ForEach-Object{
+        switch([string]$_){
+          '__COMPILED_INPUTS__' {$bundle;break}
+          '__COMPILED_CONFIGURATION__' {(Join-Path $directory 'config');break}
+          '__COMPILED_RUNTIME__' {$runtime;break}
+          default {[string]$_}
+        }
+      })
+      Push-Location -LiteralPath $repository
+      try{
+        $global:LASTEXITCODE=0
+        if($step.shell-eq'powershell'){
+          $parameters=(Get-Command -Name $entry -ErrorAction Stop).Parameters
+          $named=@{}
+          for($index=0;$index-lt$arguments.Count;$index++){
+            $name=[string]$arguments[$index]
+            if(-not$name.StartsWith('-')-or-not$parameters.ContainsKey($name.Substring(1))){throw "Compiled PowerShell argument is not a declared parameter: $name"}
+            $name=$name.Substring(1)
+            if($named.ContainsKey($name)){throw "Repeated compiled parameter: $name"}
+            if($parameters[$name].ParameterType-eq[Management.Automation.SwitchParameter]){$named[$name]=$true}
+            else{
+              $index++
+              if($index-ge$arguments.Count){throw "Compiled parameter value is missing: $name"}
+              $named[$name]=$arguments[$index]
+            }
+          }
+          & $entry @named
+        }
+        elseif($step.shell-eq'python'){
+          $module=[IO.Path]::GetRelativePath($repository,$entry).Replace('\','.').Replace('/','.').Substring(0,[IO.Path]::GetRelativePath($repository,$entry).Length-3)
+          if(-not$plan.ContainsKey('python_executable')-or$plan.python_executable-isnot[string]-or
+             -not[IO.Path]::IsPathFullyQualified($plan.python_executable)-or
+             -not(Test-Path -LiteralPath $plan.python_executable -PathType Leaf)){
+            throw 'Compiled Python interpreter is missing or unavailable; recompile with the intended Python executable.'
+          }
+          & $plan.python_executable -m $module @arguments
+        }else{throw 'Unsupported declared execution shell.'}
+        if(-not$?-or$LASTEXITCODE-ne0){throw "Compiled owner step failed: $($command.step_id) (exit $LASTEXITCODE)"}
+      }finally{Pop-Location}
+    }
+    Write-Output 'COMPILED_EXECUTION=COMPLETED SCIENCE=not_evaluated__see_owner_results'
+  }finally{
+    foreach($stream in $streams){$stream.Dispose()}
+    if(Test-Path -LiteralPath $directory){Remove-Item -LiteralPath $directory -Recurse -Force}
+  }
+}
+
 function Enter-RunTerminalConsumptionGuard {
   <# Shared readers and the existing exclusive publisher use the same byte.
      Windows LockFileEx is required because FileStream.Lock is exclusive.

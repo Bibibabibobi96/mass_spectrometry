@@ -245,3 +245,8 @@ stdout的最终owner总耗时另含发布及资源释放。未知写者保留保
 `component_exit.load_component_source`验证封存的IP来源与结果；科学门限失败、诊断失败与写入状态未知分别记录，
 未知写入者不发布终态或显式释放受保护资源。
 原生准备命令与IOB模板构建同样以公共观察器的实际退出事实决定停写；退出未知时保留PA句柄、资源和容量保护，原始异常不被收尾覆盖。
+
+## 机器能力与解析输入
+
+profile 区分软件检查与实际科学动作；现有 ConfigurationDirectory 接口继续消费声明配置，不增加新 runner。
+能力查询与执行编译见[公共合同](../../../common/contracts/README.md#执行dry-run)；READY 仅描述声明条件。

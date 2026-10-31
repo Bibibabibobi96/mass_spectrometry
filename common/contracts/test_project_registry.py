@@ -55,6 +55,9 @@ class ProjectRegistryTests(unittest.TestCase):
     def test_nonmultipole_profiles_register_without_pole_counts_or_rf_geometry(self) -> None:
         descriptor = load_json(REPO_ROOT / "projects/orthogonal_accelerator/config/project.json")
         descriptor["contracts"]["interface"] = None
+        descriptor["contracts"]["execution"] = None
+        for capability in descriptor["capabilities"]:
+            capability["modes"] = []
         descriptor["contracts"]["design_profiles"] = "config/design_profiles.json"
         identity = {key: descriptor[key] for key in ("project_id", "family_id")}
         with tempfile.TemporaryDirectory() as directory:

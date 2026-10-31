@@ -16,15 +16,15 @@
     },
     {
       "descriptor": "projects/orthogonal_accelerator/config/project.json",
-      "sha256": "7A8D56D7CFDA992D30B34D39CB51A88EDAD38EAB28A36746571D2E51C7FD567A"
+      "sha256": "AC2213548374B7F7CE10EA175BD97BD0B067F211860340CE68E15EA0F7DF5012"
     },
     {
       "descriptor": "projects/parallel_mirror_dual_stripe_mr_tof/config/project.json",
-      "sha256": "C956B6C1F8C6AB9C6603D205A567A54D89300B2D08AE6320D388D677A94EF64C"
+      "sha256": "48BD85BC2ECFC80A3DE8D59EA7BDBAC0F9A5331D0FACDD663C097F5CBEEDAFCF"
     },
     {
       "descriptor": "projects/rf_multipole_ion_optics/config/project.json",
-      "sha256": "52BDE196A44B7079C99AF17629FC50F2B7EB33EFCA56F6E5E51C503381EEDD4E"
+      "sha256": "8B68382247795EC29583AE7E78F551AB0DCDC3E724A72018F590B6E9EF5D9AD7"
     },
     {
       "descriptor": "projects/single_reflection_oa_tof_mass_analyzer/config/project.json",
@@ -245,7 +245,7 @@
         "resolved": null,
         "analysis": null,
         "interface": "config/component_contract.json",
-        "execution": null,
+        "execution": "config/execution_profiles.json",
         "design_variables": null,
         "optimization_envelope": null
       },
@@ -270,7 +270,9 @@
           "capability_id": "two_zone_orthogonal_acceleration",
           "function": "orthogonal_acceleration",
           "status": "prototype",
-          "modes": [],
+          "modes": [
+            "component_focus"
+          ],
           "metrics": [
             "first_time_focus_distance",
             "first_time_focus_derivative"
@@ -337,7 +339,7 @@
         "resolved": null,
         "analysis": null,
         "interface": null,
-        "execution": null,
+        "execution": "config/execution_profiles.json",
         "design_variables": null,
         "optimization_envelope": null
       },
@@ -346,7 +348,9 @@
           "capability_id": "multiple_reflection_mass_analysis",
           "function": "mass_analysis",
           "status": "candidate",
-          "modes": [],
+          "modes": [
+            "native_condition"
+          ],
           "metrics": [
             "detection_fraction",
             "target_oscillation_fraction",
@@ -465,7 +469,8 @@
             "segment_entrance_common_mode",
             "segment_exit_common_mode",
             "segment_output_reference"
-          ]
+          ],
+          "model": "有限三维多极场与轨迹"
         },
         {
           "capability_id": "quadrupole_collision_cooling",
@@ -478,7 +483,8 @@
             "exit_energy",
             "collision_count"
           ],
-          "design_variables": []
+          "design_variables": [],
+          "model": "碰撞冷却（未注册运行入口）"
         },
         {
           "capability_id": "quadrupole_mass_filter_reference",
@@ -498,7 +504,8 @@
             "common_mode_offset",
             "rf_frequency",
             "rf_phase"
-          ]
+          ],
+          "model": "有限长四极杆RF/DC质量过滤"
         },
         {
           "capability_id": "hexapole_ideal_transport",
@@ -512,7 +519,8 @@
             "exit_rms_radius",
             "maximum_radius"
           ],
-          "design_variables": []
+          "design_variables": [],
+          "model": "理想多极场"
         },
         {
           "capability_id": "hexapole_round_rod_l2_transport",
@@ -528,7 +536,8 @@
           ],
           "design_variables": [
             "rod_radius_ratio"
-          ]
+          ],
+          "model": "圆杆有限场"
         },
         {
           "capability_id": "hexapole_finite_3d_transport",
@@ -562,7 +571,8 @@
             "segment_entrance_common_mode",
             "segment_exit_common_mode",
             "segment_output_reference"
-          ]
+          ],
+          "model": "有限三维多极场与轨迹"
         },
         {
           "capability_id": "octupole_ideal_transport",
@@ -576,7 +586,8 @@
             "exit_rms_radius",
             "maximum_radius"
           ],
-          "design_variables": []
+          "design_variables": [],
+          "model": "理想多极场"
         },
         {
           "capability_id": "octupole_round_rod_l2_transport",
@@ -592,7 +603,8 @@
           ],
           "design_variables": [
             "rod_radius_ratio"
-          ]
+          ],
+          "model": "圆杆有限场"
         },
         {
           "capability_id": "octupole_finite_3d_transport",
@@ -626,7 +638,8 @@
             "segment_entrance_common_mode",
             "segment_exit_common_mode",
             "segment_output_reference"
-          ]
+          ],
+          "model": "有限三维多极场与轨迹"
         }
       ],
       "formal_assets": {

@@ -416,3 +416,8 @@ SHA、身份、资格和声明边界；迁移后按根README独立裁剪的可�
 [radial-p3-recovery]: ../../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261029_040300__test__simion__radial-handoff-p3/summary.json
 [radial-p4-reanalysis]: ../../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261029_073507__test__simion__radial-p4-reanalysis/summary.json
 [radial-gui-retirement]: ../../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261029_083000__test__simion__radial-p3-gui-r3/solver_review_retirement_receipt.json
+
+## 机器能力与解析输入
+
+profile 分别声明 purpose/action/tools；本次 release 物种由项目 binding 解析，Formal 入口保留其局部资格含义。
+能力查询与执行编译见[公共合同](../../../common/contracts/README.md#执行dry-run)；READY 仅描述声明条件。

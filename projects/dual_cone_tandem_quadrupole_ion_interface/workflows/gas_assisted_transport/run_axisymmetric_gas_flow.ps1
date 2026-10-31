@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory=$true)][string]$RunId,
-  [string]$PythonExe=''
+  [string]$PythonExe='',
+  [string]$ResolvedInputsPath=''
 )
 
 Set-StrictMode -Version Latest
@@ -39,8 +40,14 @@ try{
   $capacityStartupPath=Join-Path $package.result_dir 'artifact_capacity_gate_startup.json'
   Write-RunJson -Path $capacityStartupPath -Value $capacitySession -Depth 14
   $failureStage='freeze_inputs'
+  $compiledInputs=$null
+  if($ResolvedInputsPath){
+    $compiledInputs=Get-Content -LiteralPath $ResolvedInputsPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable -Depth 100
+    if($compiledInputs.role-ne'compiled_execution_inputs'-or$compiledInputs.project_id-ne$projectId){throw 'Compiled gas-flow input identity differs.'}
+  }
   $frozen=[ordered]@{}
   $sourceFiles=[ordered]@{
+    geometry_baseline='config\baseline.json'
     resolved_geometry='config\resolved_geometry.json'
     gas_flow_science='config\gas_flow_science.json'
     comsol_solver_numerics='config\comsol_solver_numerics.json'
@@ -61,9 +68,57 @@ try{
   }
   foreach($key in $sourceFiles.Keys){
     $source=Join-Path $projectRoot $sourceFiles[$key]
+    if($null-ne$compiledInputs-and$key-in@('geometry_baseline','resolved_geometry','gas_flow_science','comsol_solver_numerics')){
+      $records=@($compiledInputs.files|Where-Object{$_.name-eq$key})
+      if($records.Count-ne1){throw "Compiled gas-flow input is missing or ambiguous: $key; recompile with the current execution profile."}
+      $source=Join-Path $compiledInputs.root ([string]$records[0].relative_path)
+    }
     $destination=Join-Path (Join-Path $package.input_dir 'project_snapshot') $sourceFiles[$key]
     $frozen[$key]=Copy-VerifiedRunInput -Source $source -Destination $destination
   }
+  $geometrySnapshotRoot=Join-Path $package.input_dir 'project_snapshot'
+  $geometryCodeFiles=[ordered]@{
+    geometry_resolver='projects/dual_cone_tandem_quadrupole_ion_interface/analysis/resolve_geometry.py'
+    geometry_resolver_package='projects/dual_cone_tandem_quadrupole_ion_interface/analysis/__init__.py'
+    round_rod_geometry='projects/rf_multipole_ion_optics/core/round_rod_geometry.py'
+    round_rod_package='projects/rf_multipole_ion_optics/core/__init__.py'
+  }
+  foreach($key in $geometryCodeFiles.Keys){
+    $frozen[$key]=Copy-VerifiedRunInput -Source (Join-Path $repoRoot $geometryCodeFiles[$key]) `
+      -Destination (Join-Path $geometrySnapshotRoot $geometryCodeFiles[$key])
+  }
+  $failureStage='geometry_input_freshness'
+  $geometryCheck=@'
+import importlib, json, pathlib, sys
+root = pathlib.Path(sys.argv[1]).resolve()
+sys.path.insert(0, str(root))
+resolver = importlib.import_module('projects.dual_cone_tandem_quadrupole_ion_interface.analysis.resolve_geometry')
+def owned_origins():
+    result = {}
+    for name, module in tuple(sys.modules.items()):
+        if name not in ('common', 'projects') and not name.startswith(('common.', 'projects.')):
+            continue
+        file = getattr(module, '__file__', None)
+        paths = [file] if file else list(getattr(module, '__path__', ()))
+        if not paths or any(not pathlib.Path(path).resolve().is_relative_to(root) for path in paths):
+            raise RuntimeError(f'geometry admission imported outside its frozen snapshot: {name}: {paths}')
+        result[name] = [str(pathlib.Path(path).resolve()) for path in paths]
+    return result
+owned_origins()
+sys.argv = ['resolve_geometry', '--baseline', sys.argv[2], '--check', sys.argv[3]]
+resolver.main()
+numpy = sys.modules['numpy']
+print('DUAL_GEOMETRY_ENVIRONMENT=' + json.dumps(dict(
+    python_executable=sys.executable, owned_modules=owned_origins(),
+    numpy=dict(version=numpy.__version__, module_path=numpy.__file__))))
+'@
+  $geometryValidationOutput=@(& $python -I -B -c $geometryCheck $geometrySnapshotRoot `
+    $frozen.geometry_baseline $frozen.resolved_geometry)
+  if($LASTEXITCODE-ne 0){throw 'Frozen dual-cone baseline and resolved geometry differ.'}
+  $geometryValidationOutput | ForEach-Object {Write-Output $_}
+  $geometryEnvironmentLine=@($geometryValidationOutput | Where-Object {$_ -like 'DUAL_GEOMETRY_ENVIRONMENT=*'})
+  if($geometryEnvironmentLine.Count-ne1){throw 'Frozen dual-cone geometry environment evidence is missing.'}
+  $geometryValidationEnvironment=([string]$geometryEnvironmentLine[0]).Substring('DUAL_GEOMETRY_ENVIRONMENT='.Length)|ConvertFrom-Json
   foreach($key in $schedulerFiles.Keys){
     $source=Join-Path $repoRoot $schedulerFiles[$key]
     $destination=Join-Path (Join-Path $package.input_dir 'repository_snapshot') $schedulerFiles[$key]
@@ -86,7 +141,15 @@ try{
       sha256=Get-RunFileSha256 -Path $frozen[$key]
     }
   }
+  foreach($key in $geometryCodeFiles.Keys){
+    $configuration.inputs[$key]=Join-Path $package.artifact_run_dir ("inputs/project_snapshot/"+$geometryCodeFiles[$key])
+    $configuration.input_identity[$key]=[ordered]@{
+      path=$configuration.inputs[$key]
+      sha256=Get-RunFileSha256 -Path $frozen[$key]
+    }
+  }
   $configuration.parameters=[ordered]@{
+    geometry_validation_environment=$geometryValidationEnvironment
     lifecycle_stage='prepared_for_comsol_solve'
     evidence_scope='axisymmetric_empty_enclosure_qualitative_prototype'
     gas_species='N2';upstream_pressure_pa=101325;rear_pressure_pa=400

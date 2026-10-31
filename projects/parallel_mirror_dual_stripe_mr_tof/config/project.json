@@ -24,13 +24,17 @@
   "display_name": "开放路径平行镜双条带多次反射飞行时间质量分析器",
   "purpose": "平行等时镜与两套独立偏压、独立形状漂移条带构成的开放路径MR-TOF质量分析",
   "lifecycle_status": "candidate",
-  "toolchains": ["python", "simion", "solidworks"],
+  "toolchains": [
+    "python",
+    "simion",
+    "solidworks"
+  ],
   "contracts": {
     "baseline": "config/simion_candidate_two_zone.json",
     "resolved": null,
     "analysis": null,
     "interface": null,
-    "execution": null,
+    "execution": "config/execution_profiles.json",
     "design_variables": null,
     "optimization_envelope": null
   },
@@ -39,7 +43,9 @@
       "capability_id": "multiple_reflection_mass_analysis",
       "function": "mass_analysis",
       "status": "candidate",
-      "modes": [],
+      "modes": [
+        "native_condition"
+      ],
       "metrics": [
         "detection_fraction",
         "target_oscillation_fraction",

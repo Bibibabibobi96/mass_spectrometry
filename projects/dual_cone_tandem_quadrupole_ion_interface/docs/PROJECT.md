@@ -136,3 +136,8 @@ COMSOL 气流成功只证明上游场计算完成，不证明离子传输。SIMI
 活动产物位于 `artifacts/projects/dual_cone_tandem_quadrupole_ion_interface/`。COMSOL 气流和 SIMION
 轨迹各自使用独立 run 三件套；下游 SIMION run 冻结上游 manifest 和气体场副本。旧 Python run 只读
 保留，不因主链退役而删除或改写。
+
+## 机器能力与解析输入
+
+gas-flow profile 的 baseline 与 resolved geometry 传入原 runner；prepare 冻结原 resolver 和输入并核对新鲜度，失配在下游原生调用前失败。
+能力查询与执行编译见[公共合同](../../../common/contracts/README.md#执行dry-run)；READY 仅描述声明条件。

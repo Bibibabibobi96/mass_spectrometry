@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "role": "project_execution_profiles",
+  "project_id": "orthogonal_accelerator",
+  "profiles": [
+    {
+      "profile_id": "component_focus",
+      "capability_id": "two_zone_orthogonal_acceleration",
+      "mode": "component_focus",
+      "supported_objectives": [
+        "first_time_focus_distance",
+        "first_time_focus_derivative"
+      ],
+      "supported_operating_points": [
+        {
+          "mass": {
+            "value": 100,
+            "unit": "Da"
+          },
+          "charge_state": 1
+        },
+        {
+          "mass": {
+            "value": 524,
+            "unit": "Da"
+          },
+          "charge_state": 1
+        }
+      ],
+      "supported_design_variables": [],
+      "supported_constraints": [],
+      "deliverable_outputs": [
+        "simulation_results",
+        "simion_model",
+        "validation_report"
+      ],
+      "required_bindings": [
+        "component_request_path",
+        "release_spec_path"
+      ],
+      "binding_types": {
+        "component_request_path": "file",
+        "release_spec_path": "file"
+      },
+      "steps": [
+        {
+          "step_id": "native_run",
+          "kind": "run",
+          "shell": "powershell",
+          "entrypoint": "simion/run_component_focus_workflow.ps1",
+          "run_id_template": "{timestamp}__sim__simion__component-focus",
+          "arguments": [
+            "-RunId",
+            "{native_run_id}",
+            "-RequestPath",
+            "{component_request_path}",
+            "-ReleaseSpecPath",
+            "{release_spec_path}"
+          ]
+        }
+      ],
+      "limitations": [
+        "Existing explicit-input workflow; the original owner performs scientific preparation and acceptance.",
+        "Plan readiness does not establish native execution or scientific qualification."
+      ],
+      "purpose": "component_focus",
+      "action": "run",
+      "tools": [
+        "simion",
+        "python"
+      ],
+      "model": "封闭二区正交加速器原生场与聚焦",
+      "scientific_status": "not_evaluated",
+      "qualification_support": [
+        "none"
+      ],
+      "runtime_binding": {
+        "entrypoint": "analysis/execution_binding.py",
+        "required_bindings": [
+          "component_request_path",
+          "release_spec_path"
+        ]
+      }
+    }
+  ]
+}

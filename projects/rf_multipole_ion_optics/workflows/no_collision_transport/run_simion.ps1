@@ -1,13 +1,18 @@
 [CmdletBinding(DefaultParameterSetName = 'RuntimeProfile')]
 param(
-  [Parameter(Mandatory = $true, ParameterSetName = 'RuntimeProfile')]
-  [string]$RuntimeProfileId,
+  [Parameter(ParameterSetName = 'RuntimeProfile')]
+  [string]$RuntimeProfileId='',
+  [Parameter(ParameterSetName = 'RuntimeProfile')]
+  [Parameter(ParameterSetName = 'CampaignExperiment')]
+  [string]$ResolvedRuntimeProfilePath='',
   [Parameter(Mandatory = $true, ParameterSetName = 'CampaignExperiment')]
   [string]$CampaignPath,
   [Parameter(Mandatory = $true, ParameterSetName = 'CampaignExperiment')]
   [string]$ExperimentId,
   [string]$EvidenceContractPath = '',
   [Parameter(Mandatory = $true, ParameterSetName = 'Recovery')]
+  [Parameter(ParameterSetName = 'RuntimeProfile')]
+  [Parameter(ParameterSetName = 'CampaignExperiment')]
   [string]$RunId = '',
   [string]$RetentionClass = 'solver_review',
   [string]$RetentionReason = 'Producer-owned fractional field/IOB and complete batch evidence retained for explicit stage reuse.',
@@ -51,6 +56,7 @@ if ($ResumeFinalization) {
   ReferenceComsolRunId = $ReferenceComsolRunId
   SimionExe = $SimionExe
   ContinuationPredecessorManifestPath = $ContinuationPredecessorManifestPath
+  ResolvedRuntimeProfilePath = $ResolvedRuntimeProfilePath
   NativeFieldRunPath = $NativeFieldRunPath
   ResultPath = $ResultPath
 }

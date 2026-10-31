@@ -116,6 +116,7 @@ def resolve_runtime_profile(repo_root: Path, project_id: str, runtime_profile_id
         "engineering_budget": {
             "path": str(budget_path),
             "sha256": _sha256(budget_path),
+            "inline_contract": _load(budget_path),
         },
     }
 
@@ -144,6 +145,10 @@ def _campaign_file(repo_root: Path, path: Path) -> Path:
 
 
 def _serializable_design(design: dict[str, Any]) -> dict[str, Any]:
+    definitions = {key: _load(Path(value)) for key, value in design["paths"].items()}
+    if "candidate_request" in design:
+        definitions["base_design_request"] = definitions["design_request"]
+        definitions["design_request"] = design["candidate_request"]
     return {
         **design,
         "project_root": str(design["project_root"]),
@@ -151,6 +156,7 @@ def _serializable_design(design: dict[str, Any]) -> dict[str, Any]:
         "registry_path": str(design["registry_path"]),
         "profiles_path": str(design["profiles_path"]),
         "paths": {key: str(value) for key, value in design["paths"].items()},
+        "input_definitions": definitions,
     }
 
 
@@ -329,7 +335,7 @@ def _set_pointer(document: dict[str, Any], pointer: str, value: int | float) -> 
 
 def _resolve_execution_profile(
     project_root: Path, project_id: str, execution_profile_id: str,
-    *, structural_variant_id: str,
+    *, structural_variant_id: str, solver: str = "simion",
 ) -> dict[str, Any]:
     path = project_root / "config" / "execution_profiles.json"
     registry = _load(path)
@@ -353,14 +359,16 @@ def _resolve_execution_profile(
     run_steps = [item for item in profile["steps"] if item["kind"] == "run"]
     if (
         capabilities[0]["function"] != "ion_transport"
-        or profile["evidence_levels"] != ["plan"]
+        or profile["action"] != "run"
+        or profile["qualification_support"] != ["none"]
         or set(profile["required_bindings"]) != {"campaign_path", "experiment_id"}
-        or not {"simulation_results", "simion_model", "interface_state"}.issubset(profile["deliverable_outputs"])
+        or solver not in profile["tools"]
+        or not {"simulation_results", f"{solver}_model", "interface_state"}.issubset(profile["deliverable_outputs"])
         or len(run_steps) != 1
         or (project_root / run_steps[0]["entrypoint"]).resolve()
         != (project_root / "runtime" / "run_simion_transport_campaign.ps1").resolve()
     ):
-        raise ValueError("execution profile is not the governed SIMION campaign engineering workflow")
+        raise ValueError(f"execution profile is not the governed {solver.upper()} campaign engineering workflow")
     return {
         "profile_id": execution_profile_id,
         "path": path.resolve(),
@@ -517,6 +525,7 @@ def _compile_campaign_design_candidate(
         project_id,
         experiment["execution_profile_id"],
         structural_variant_id=design["profile"]["structural_variant_id"],
+        solver=experiment["solver"],
     )
     catalog = _load(design["paths"]["design_variables"])
     envelope = _load(design["paths"]["optimization_envelope"])
@@ -639,7 +648,7 @@ def resolve_campaign_experiment(
     campaign_path: Path,
     experiment_id: str,
 ) -> dict[str, Any]:
-    """Resolve one preregistered SIMION experiment through existing authorities."""
+    """Resolve one preregistered no-collision solver experiment through existing authorities."""
 
     repo_root = repo_root.resolve()
     project_root = repo_root / "projects" / project_id
@@ -659,6 +668,15 @@ def resolve_campaign_experiment(
     if len(matches) != 1:
         raise ValueError(f"unknown campaign experiment: {experiment_id}")
     experiment = matches[0]
+    if experiment["solver"] == "comsol":
+        unsupported = {
+            "particle_source_phase_policy", "particle_source_transform_policy",
+            "simion_pa_basis_policy", "analysis_requests",
+        } & campaign.keys()
+        if unsupported or any(key in experiment for key in ("simion_dispatch", "source_kinetic_energy_eV", "case_set")):
+            raise ValueError("COMSOL campaign supports existing resolved no-collision transport only; SIMION-specific policies are unsupported")
+        if "design_variable_authorization" in campaign and set(campaign["design_variable_authorization"]["allowed_variable_ids"]) != {"vacuum_z_min"}:
+            raise ValueError("COMSOL campaign design variables support vacuum_z_min only; SIMION-specific policies are unsupported")
     if experiment["project_id"] != project_id:
         raise ValueError("campaign experiment project identity differs")
 
@@ -738,7 +756,7 @@ def resolve_campaign_experiment(
             "comsol": comsol["profile_id"],
             "simion": simion["profile_id"],
         },
-        "allowed_solvers": ["simion"],
+        "allowed_solvers": [experiment["solver"]],
         "retention_class": experiment["retention_class"],
         "authorized_run_id": experiment["authorized_run_id"],
     }
@@ -766,6 +784,7 @@ def resolve_campaign_experiment(
         "runtime_profile_registry_sha256": campaign_sha256,
         "stop_stage": experiment["stop_stage"],
         "case_set": experiment.get("case_set"),
+        "retention_class": experiment["retention_class"],
         "design_profile_id": experiment["design_profile_id"],
         "design_profile_resolution": _serializable_design(design),
         "particle_source": source,
@@ -834,6 +853,7 @@ def resolve_runtime_selection(
 
 def resolve_execution_binding(
     repo_root: Path, project_id: str, bindings: dict[str, str],
+    *, request_path: Path | None = None,
 ) -> dict[str, str | None]:
     """Project a validated runtime selection into command-preview identity only.
 
@@ -851,13 +871,46 @@ def resolve_execution_binding(
         )
     else:
         raise ValueError("execution binding requires runtime_profile_id or campaign_path + experiment_id")
+    if runtime["stop_stage"] != "transport":
+        raise ValueError("transport execution binding requires stop_stage=transport; use the existing stage-specific workflow CLI")
     authorized_run_id = None
+    if "campaign" in runtime and request_path is not None:
+        request = _load(Path(request_path))
+        solvers = runtime["engineering_budget"]["inline_contract"]["pilot_authorization"]["scope"]["allowed_solvers"]
+        if len(solvers) != 1 or solvers[0] not in {"simion", "comsol"}:
+            raise ValueError("campaign binding requires one actual backend")
+        solver = solvers[0]
+        other_model = "simion_model" if solver == "comsol" else "comsol_model"
+        if other_model in request["required_outputs"]:
+            raise ValueError(f"{solver.upper()} campaign cannot deliver {other_model}")
+        if solver == "comsol" and any(item["parameter"] == "phase_matched_particle_source" for item in request["constraints"]):
+            raise ValueError("COMSOL campaign cannot enforce SIMION phase_matched_particle_source")
+        if solver == "comsol":
+            design = runtime["design_profile_resolution"]
+            allowed = (set(design["campaign_design_variables"]["allowed_variable_ids"])
+                       if "campaign_design_variables" in design else set())
+            unsupported_variables = set(request["design_variables"]) - allowed
+            if unsupported_variables:
+                raise ValueError("COMSOL campaign cannot consume requested design variables: "
+                                 + ", ".join(sorted(unsupported_variables)))
     if "campaign" in runtime:
         authorized_run_id = runtime["engineering_budget"]["inline_contract"]["pilot_authorization"]["scope"]["authorized_run_id"]
+    solvers = (runtime["engineering_budget"]["inline_contract"]["pilot_authorization"]["scope"]["allowed_solvers"]
+               if "campaign" in runtime else list(runtime["solver_numerics"]))
+    if not solvers or not set(solvers) <= {"comsol", "simion"}:
+        raise ValueError("runtime binding actual solver set is unknown")
+    tools = []
+    if "comsol" in solvers:
+        tools.extend(["comsol", "matlab"])
+    if "simion" in solvers:
+        tools.append("simion")
+    tools.append("python")
     return {
         "project_id": runtime["project_id"],
         "structural_variant_id": runtime["design_profile_resolution"]["profile"]["structural_variant_id"],
         "authorized_run_id": authorized_run_id,
+        "resolved_runtime": runtime,
+        "tools": tools,
     }
 
 

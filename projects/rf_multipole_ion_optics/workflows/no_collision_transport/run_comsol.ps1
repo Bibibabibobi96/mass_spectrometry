@@ -3,6 +3,7 @@ param(
   [Parameter(ParameterSetName='RuntimeProfile')][string]$RuntimeProfileId='',
   [Parameter(Mandatory=$true,ParameterSetName='CampaignExperiment')][string]$CampaignPath,
   [Parameter(Mandatory=$true,ParameterSetName='CampaignExperiment')][string]$ExperimentId,
+  [string]$ResolvedRuntimeProfilePath='',
   [string]$EvidenceContractPath = '',
   [Parameter(Mandatory,ParameterSetName='Recovery')][Parameter(ParameterSetName='Analyze')][Parameter(ParameterSetName='RuntimeProfile')][Parameter(ParameterSetName='CampaignExperiment')][string]$RunId = '',
   [Parameter(Mandatory,ParameterSetName='Recovery')][switch]$ResumeFinalization,
@@ -28,7 +29,7 @@ if($ResumeFinalization){
 }
 if($AnalyzeOnly){
   if([string]::IsNullOrWhiteSpace($EngineeringBudgetPath)){throw 'AnalyzeOnly requires an explicit EngineeringBudgetPath for new analysis payload; parent native budget is not a fallback.'}
-  if($EvidenceContractPath){throw 'AnalyzeOnly uses parent frozen scientific authority; scientific overrides are not accepted.'}
+  if($EvidenceContractPath-or$ResolvedRuntimeProfilePath){throw 'AnalyzeOnly uses parent frozen scientific authority; scientific overrides are not accepted.'}
   & (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1') -AnalyzeOnly `
     -ReextractFromModel:$ReextractFromModel -ParentManifestPath $ParentManifestPath -EngineeringBudgetPath $EngineeringBudgetPath -RunId $RunId -ResultPath $ResultPath -PythonExe $PythonExe `
     -RetentionClass $RetentionClass -RetentionReason $RetentionReason
@@ -41,7 +42,7 @@ if($PSCmdlet.ParameterSetName-eq'CampaignExperiment'){
 }else{$selection.RuntimeProfileId=$RuntimeProfileId}
 if($PSCmdlet.ParameterSetName-eq'RuntimeProfile'-or$PSBoundParameters.ContainsKey('RetentionClass')){$selection.RetentionClass=$RetentionClass}
 Invoke-MultipoleProjectFinite3dTransport -Solver comsol @selection `
-  -ProjectId 'rf_multipole_ion_optics' `
+  -ProjectId 'rf_multipole_ion_optics' -ResolvedRuntimeProfilePath $ResolvedRuntimeProfilePath `
   -RepoRoot $repoRoot -EvidenceContractPath $EvidenceContractPath -RunId $RunId `
   -RetentionReason $RetentionReason `
   -PythonExe $PythonExe -ResultPath $ResultPath

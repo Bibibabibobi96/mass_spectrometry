@@ -15,7 +15,8 @@ param(
   [string]$DryRunOutput = '',
   [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')),
   [string]$PythonExe = '',
-  [string]$SimionExe = ''
+  [string]$SimionExe = '',
+  [string]$ResolvedRuntimeProfilePath = ''
 )
 
 Set-StrictMode -Version Latest
@@ -174,18 +175,26 @@ foreach($plan in @($preflight.analyses)){
   if([string]$plan.status-eq'FAILED'){throw "Campaign analysis is failed closed: $($plan.reason)"}
 }
 $resolved = @()
+$boundCampaignSha=if($ResolvedRuntimeProfilePath){(Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash}else{$null}
 try {
   foreach ($experiment in $selected) {
     $snapshot = Join-Path ([IO.Path]::GetTempPath()) ('multipole_campaign_preflight_{0}.json' -f [guid]::NewGuid())
+    if($ResolvedRuntimeProfilePath){
+      if($selected.Count-ne1){throw 'A compiled runtime binds exactly one campaign experiment.'}
+      Copy-Item -LiteralPath $ResolvedRuntimeProfilePath -Destination $snapshot
+    }else{
     & $python -m projects.rf_multipole_ion_optics.runtime.runtime_profile --repo-root $repo `
       --project-id ([string]$experiment.project_id) --campaign-path $candidate `
       --experiment-id ([string]$experiment.experiment_id) --output $snapshot
     if ($LASTEXITCODE -ne 0) {throw "Campaign preflight failed: $($experiment.experiment_id)"}
+    }
     $profile = Get-Content -LiteralPath $snapshot -Raw -Encoding UTF8 | ConvertFrom-Json
+    if($ResolvedRuntimeProfilePath-and[string]$profile.campaign.sha256-ine$boundCampaignSha){throw 'Compiled runtime campaign binding differs.'}
     $scope = $profile.engineering_budget.inline_contract.pilot_authorization.scope
     if ([string]$profile.project_id -ne [string]$experiment.project_id -or
       [string]$profile.runtime_profile_id -ne [string]$experiment.experiment_id -or
-      [string]$scope.authorized_run_id -ne [string]$experiment.authorized_run_id) {
+      [string]$scope.authorized_run_id -ne [string]$experiment.authorized_run_id -or
+      (@($scope.allowed_solvers)-join ',')-cne[string]$experiment.solver) {
       throw "Campaign preflight identity differs: $($experiment.experiment_id)"
     }
     $resolved += [pscustomobject]@{experiment=$experiment;snapshot=$snapshot;profile=$profile}
@@ -212,7 +221,7 @@ try {
   foreach ($item in $resolved) {
     $experiment = $item.experiment
     if ($DryRun) {
-      $caseSet = if ($experiment.PSObject.Properties.Name -contains 'case_set' -and
+      $caseSet = if ([string]$experiment.solver-eq'comsol') {"comsol_stage_$($experiment.stop_stage)"} elseif ($experiment.PSObject.Properties.Name -contains 'case_set' -and
         -not [string]::IsNullOrWhiteSpace([string]$experiment.case_set)) {
         [string]$experiment.case_set
       } else {
@@ -225,11 +234,11 @@ try {
     }
     Write-Host ('MULTIPOLE_CAMPAIGN=START CAMPAIGN={0} EXPERIMENT={1} RUN={2}' -f `
       [string]$campaign.campaign_id,[string]$experiment.experiment_id,[string]$experiment.authorized_run_id)
-    $arguments = @{Solver='simion';ProjectId=[string]$experiment.project_id;CampaignPath=$candidate;
+    $arguments = @{Solver=[string]$experiment.solver;ProjectId=[string]$experiment.project_id;CampaignPath=$candidate;
       ExperimentId=[string]$experiment.experiment_id;RepoRoot=$repo;RunId=[string]$experiment.authorized_run_id;
-      RetentionClass=[string]$experiment.retention_class;PythonExe=$python}
-    if ($SimionExe) {$arguments.SimionExe = $SimionExe}
-    if ($experiment.PSObject.Properties.Name -contains 'case_set' -and
+      RetentionClass=[string]$experiment.retention_class;PythonExe=$python;ResolvedRuntimeProfilePath=$item.snapshot}
+    if ($SimionExe-and[string]$experiment.solver-eq'simion') {$arguments.SimionExe = $SimionExe}
+    if ([string]$experiment.solver-eq'simion'-and $experiment.PSObject.Properties.Name -contains 'case_set' -and
       -not [string]::IsNullOrWhiteSpace([string]$experiment.case_set)) {$arguments.CaseSet = [string]$experiment.case_set}
     Invoke-MultipoleProjectFinite3dTransport @arguments
     Write-Host ('MULTIPOLE_CAMPAIGN=PASS CAMPAIGN={0} EXPERIMENT={1}' -f `

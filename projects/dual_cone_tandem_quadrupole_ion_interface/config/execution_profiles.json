@@ -7,21 +7,70 @@
       "profile_id": "axisymmetric_gas_flow_screening_static",
       "capability_id": "axisymmetric_gas_flow_field_generation",
       "mode": "axisymmetric_gas_flow_screening",
-      "evidence_levels": ["plan"],
-      "supported_objectives": ["gas_flow_field_generation"],
-      "supported_operating_points": [{"mass": {"value": 500.0, "unit": "Da"}, "charge_state": 1}],
+      "supported_objectives": [
+        "gas_flow_field_generation"
+      ],
+      "supported_operating_points": [
+        {
+          "mass": {
+            "value": 500.0,
+            "unit": "Da"
+          },
+          "charge_state": 1
+        }
+      ],
       "supported_design_variables": [],
-      "supported_constraints": ["positive_clearance", "nonoverlapping_axial_sections"],
-      "deliverable_outputs": ["comsol_model", "simulation_results", "interface_state"],
-      "required_bindings": ["geometry_baseline", "resolved_geometry", "gas_flow_science", "comsol_solver_numerics"],
+      "supported_constraints": [
+        "positive_clearance",
+        "nonoverlapping_axial_sections"
+      ],
+      "deliverable_outputs": [
+        "comsol_model",
+        "simulation_results",
+        "interface_state"
+      ],
+      "required_bindings": [],
       "steps": [
-        {"step_id": "static_gate", "kind": "gate", "shell": "powershell", "entrypoint": "verify_project.ps1", "run_id_template": null, "arguments": ["-PythonExe", "{python_exe}"]},
-        {"step_id": "comsol_gas_flow", "kind": "run", "shell": "powershell", "entrypoint": "workflows/gas_assisted_transport/run_axisymmetric_gas_flow.ps1", "run_id_template": "{timestamp}__sim__comsol__dual-cone-gas-flow", "arguments": ["-RunId", "{run_id}", "-PythonExe", "{python_exe}"]}
+        {
+          "step_id": "comsol_gas_flow",
+          "kind": "run",
+          "shell": "powershell",
+          "entrypoint": "workflows/gas_assisted_transport/run_axisymmetric_gas_flow.ps1",
+          "run_id_template": "{timestamp}__sim__comsol__dual-cone-gas-flow",
+          "arguments": [
+            "-RunId",
+            "{run_id}",
+            "-PythonExe",
+            "{python_exe}",
+            "-ResolvedInputsPath",
+            "{resolved_inputs_path}"
+          ]
+        }
       ],
       "limitations": [
         "The registered run remains an axisymmetric empty-enclosure qualitative prototype, not a quantitative instrument CFD result.",
         "The operating point is an identity placeholder and does not affect the gas-only solve.",
-        "A gas-flow result alone does not establish ion transmission."
+        "A gas-flow result alone does not establish ion transmission.",
+        "Geometry and gas inputs are fixed to the displayed project contracts, not caller bindings; the compiled snapshot is consumed by the runner."
+      ],
+      "fixed_inputs": {
+        "geometry_baseline": "config/baseline.json",
+        "resolved_geometry": "config/resolved_geometry.json",
+        "gas_flow_science": "config/gas_flow_science.json",
+        "comsol_solver_numerics": "config/comsol_solver_numerics.json"
+      },
+      "binding_types": {},
+      "purpose": "field_generation",
+      "action": "run",
+      "tools": [
+        "comsol",
+        "matlab",
+        "python"
+      ],
+      "model": "轴对称空包络可压缩气流",
+      "scientific_status": "not_evaluated",
+      "qualification_support": [
+        "none"
       ]
     }
   ]

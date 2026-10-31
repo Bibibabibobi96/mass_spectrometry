@@ -122,3 +122,8 @@ runtime checkpoint复用已经使用，但未发布事务的跨run重入仍未�
 
 独立器件新运行归`artifacts/projects/orthogonal_accelerator/`。既有OA/MR run、冻结包与Formal资产
 保持原owner及身份。
+
+## 机器能力与解析输入
+
+execution profile 由纯几何与 release 解析器绑定本次结构、质量和电荷；准备状态不表示 SIMION 运行完成。
+能力查询与执行编译见[公共合同](../../../common/contracts/README.md#执行dry-run)；READY 仅描述声明条件。

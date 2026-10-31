@@ -7,9 +7,6 @@
       "profile_id": "wehnelt_build_only_smoke",
       "capability_id": "wehnelt_thermal_electron_transport",
       "mode": "build_only_smoke",
-      "evidence_levels": [
-        "plan"
-      ],
       "supported_objectives": [],
       "supported_operating_points": [
         {
@@ -35,7 +32,9 @@
           "run_id_template": "{timestamp}__test__comsol__wehnelt-build-only-smoke",
           "arguments": [
             "-RunId",
-            "{run_id}"
+            "{run_id}",
+            "-ResolvedInputsPath",
+            "{resolved_inputs_path}"
           ]
         }
       ],
@@ -43,6 +42,25 @@
         "The commercial step builds geometry, mesh, electrostatics, and CPT trees but does not run either solver or produce performance evidence.",
         "The low-particle build fixture is explicitly evidence-ineligible.",
         "The functional_reference mode remains unregistered until an N>=100 solver runner, usable-final-state classification, GUI Compute replay, and governed evidence lifecycle exist."
+      ],
+      "binding_types": {},
+      "fixed_inputs": {
+        "baseline": "config/baseline.json",
+        "numerical_modes": "config/numerical_modes.json",
+        "resolved_contract": "config/resolved_model.json",
+        "mode": "config/modes/build_only_smoke.json"
+      },
+      "purpose": "model_tree_build",
+      "action": "build",
+      "tools": [
+        "comsol",
+        "matlab",
+        "python"
+      ],
+      "model": "横置Wehnelt电子枪模型树（不求解）",
+      "scientific_status": "not_evaluated",
+      "qualification_support": [
+        "none"
       ]
     }
   ]

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mass-spectrometry.local/schemas/multipole_transport_experiment_campaign.schema.json",
-  "title": "Declarative SIMION multipole transport experiment campaign",
+  "title": "Declarative no-collision multipole SIMION/COMSOL transport experiment campaign",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -31,7 +31,7 @@
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": {"enum": ["rf_amplitude", "rf_frequency", "rf_phase", "common_mode_offset", "segment_entrance_common_mode", "segment_exit_common_mode", "segment_output_reference"]}
+          "items": {"enum": ["vacuum_z_min", "rf_amplitude", "rf_frequency", "rf_phase", "common_mode_offset", "segment_entrance_common_mode", "segment_exit_common_mode", "segment_output_reference"]}
         },
         "variable_limits": {
           "type": "array",
@@ -41,8 +41,8 @@
             "additionalProperties": false,
             "required": ["variable_id", "unit", "minimum", "maximum"],
             "properties": {
-              "variable_id": {"enum": ["rf_amplitude", "rf_frequency", "rf_phase", "common_mode_offset", "segment_entrance_common_mode", "segment_exit_common_mode", "segment_output_reference"]},
-              "unit": {"enum": ["V", "Hz", "rad"]},
+              "variable_id": {"enum": ["vacuum_z_min", "rf_amplitude", "rf_frequency", "rf_phase", "common_mode_offset", "segment_entrance_common_mode", "segment_exit_common_mode", "segment_output_reference"]},
+              "unit": {"enum": ["V", "Hz", "rad", "mm"]},
               "minimum": {"type": "number"},
               "maximum": {"type": "number"}
             }
@@ -180,6 +180,46 @@
       }
     },
     "experiment": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "solver": {
+                "const": "simion"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "stop_stage": {"const": "transport"},
+              "resource_authorization": {
+                "properties": {
+                  "limits": {
+                    "required": [
+                      "maximum_pa_grid_points"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "resource_authorization": {
+                "properties": {
+                  "limits": {
+                    "not": {
+                      "required": [
+                        "maximum_pa_grid_points"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -209,8 +249,8 @@
           "type": "string",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
         },
-        "solver": {"const": "simion"},
-        "stop_stage": {"const": "transport"},
+        "solver": {"enum": ["simion", "comsol"]},
+        "stop_stage": {"enum": ["transport", "mesh_build"]},
         "case_set": {"enum": ["primary_only", "primary_and_zero_axial_control", "primary_and_rf_off_energy_control"]},
         "design_profile_id": {"type": "string", "minLength": 1},
         "source_kinetic_energy_eV": {
@@ -223,6 +263,7 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "vacuum_z_min": {"type": "number"},
             "rf_amplitude": {"type": "number"},
             "rf_frequency": {"type": "number"},
             "rf_phase": {"type": "number"},
@@ -345,7 +386,6 @@
         "process_tree_working_set_bytes",
         "minimum_system_available_memory_bytes",
         "compact_final_retained_bytes",
-        "maximum_pa_grid_points",
         "automatic_retry_count"
       ],
       "properties": {

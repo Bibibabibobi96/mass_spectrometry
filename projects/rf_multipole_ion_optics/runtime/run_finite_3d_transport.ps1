@@ -18,6 +18,7 @@ param(
   [string]$SourceFamilyPath='',
   [string]$OperatingPointId='',
   [ValidateSet('transport','mesh_build','field_solve')][string]$StopStage='transport',
+  [string]$ResolvedRuntimeProfilePath='',
   [Parameter(Mandatory,ParameterSetName='Resume')][switch]$ResumeFinalization,
   [Parameter(Mandatory,ParameterSetName='Analyze')][switch]$AnalyzeOnly,
   [Parameter(ParameterSetName='Analyze')][switch]$ReextractFromModel,
@@ -802,7 +803,7 @@ function Invoke-FiniteComsolAnalysisChild {
 }
 
 if($AnalyzeOnly){
-  $overrides=@('EvidenceContractPath','MeshAutoLevel','WorkingRegionMaximumElementSizeMm','MinimumElementSizeMm','RfStepsPerPeriod','MaximumTimeUs','SourceFamilyPath','OperatingPointId','StopStage')
+  $overrides=@('EvidenceContractPath','MeshAutoLevel','WorkingRegionMaximumElementSizeMm','MinimumElementSizeMm','RfStepsPerPeriod','MaximumTimeUs','SourceFamilyPath','OperatingPointId','StopStage','ResolvedRuntimeProfilePath')
   if(@($overrides|Where-Object{$PSBoundParameters.ContainsKey($_)}).Count){throw 'AnalyzeOnly uses parent frozen scientific authority; scientific overrides are not accepted.'}
   Invoke-FiniteComsolAnalysisChild -ParentManifestPath $ParentManifestPath -EngineeringBudgetPath $EngineeringBudgetPath -Python $python -RepoRoot $repoRoot -RunId $RunId `
     -ResultPath $ResultPath -RetentionClass $RetentionClass -RetentionReason $RetentionReason -ReextractFromModel:$ReextractFromModel
@@ -831,7 +832,8 @@ try{
       --budget $engineeringBudgetInput --project-id $ProjectId --solver comsol `
       --runtime-profile-id $RuntimeProfileId --design-profile-id $DesignProfileId `
       --particle-source $particleSourceInput --retention-class $RetentionClass `
-      --output $budgetPreflight
+      --output $budgetPreflight `
+      @($(if($ResolvedRuntimeProfilePath){'--resolved-runtime-profile';$ResolvedRuntimeProfilePath}))
   }finally{Pop-Location}
   if($LASTEXITCODE-ne 0){throw 'COMSOL resource-budget preflight failed.'}
   $resolvedBudget=Get-Content -LiteralPath $budgetPreflight -Raw -Encoding UTF8|ConvertFrom-Json
@@ -981,6 +983,12 @@ $comsolRunFailure=$null
     -ResultPath $ResultPath -EntrypointPath $ownerSource -CommitmentInputPaths @($engineeringBudget) -Software @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
   $ResultPath=$ownerContext.result_path
 
+  $compiledRuntime=$null
+  if($ResolvedRuntimeProfilePath){
+    $compiledRuntime=Get-Content -LiteralPath $ResolvedRuntimeProfilePath -Raw -Encoding UTF8|ConvertFrom-Json -Depth 100
+    if($compiledRuntime.project_id-ne$ProjectId-or$compiledRuntime.design_profile_id-ne$DesignProfileId-or$compiledRuntime.runtime_profile_id-ne$RuntimeProfileId){throw 'Compiled COMSOL runtime identity differs.'}
+    Write-RunJson -Path $profileResolution -Value $compiledRuntime.design_profile_resolution -Depth 100
+  }else{
   Push-Location $codeRoot
   try{
     $env:PYTHONPATH=$codeRoot
@@ -988,6 +996,7 @@ $comsolRunFailure=$null
       --design-profile-id $DesignProfileId --output $profileResolution
     if($LASTEXITCODE-ne 0){throw 'Governed design profile resolution failed.'}
   }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+  }
   $profile=Get-Content -LiteralPath $profileResolution -Raw -Encoding UTF8|ConvertFrom-Json
   $identity=$profile.profile.identity
   $registry=Join-Path $inputDir 'project_registry.json'
@@ -998,19 +1007,30 @@ $comsolRunFailure=$null
   Copy-Item -LiteralPath $profile.registry_path -Destination $registry
   Copy-Item -LiteralPath $profile.descriptor_path -Destination $descriptor
   Copy-Item -LiteralPath $profile.profiles_path -Destination $profiles
+  if($null-ne$compiledRuntime){
+    if($null-eq$profile.PSObject.Properties['input_definitions']){throw 'Compiled COMSOL runtime omits its resolved design input definitions.'}
+    Write-RunJson -Path $request -Value $profile.input_definitions.design_request -Depth 100
+    Write-RunJson -Path $variables -Value $profile.input_definitions.design_variables -Depth 100
+    Write-RunJson -Path $envelope -Value $profile.input_definitions.optimization_envelope -Depth 100
+  }else{
   Copy-Item -LiteralPath $profile.paths.design_request -Destination $request
   Copy-Item -LiteralPath $profile.paths.design_variables -Destination $variables
   Copy-Item -LiteralPath $profile.paths.optimization_envelope -Destination $envelope
+  }
   if($profile.profile.PSObject.Properties.Name-contains'mode_id'){
     $modeId=[string]$profile.profile.mode_id
     if(-not($profile.paths.PSObject.Properties.Name-contains'operating_mode_registry')){
       throw 'Typed design profile is missing its resolved operating-mode registry path.'
     }
     $modeRegistry=Join-Path $inputDir 'operating_modes.json'
-    Copy-Item -LiteralPath $profile.paths.operating_mode_registry -Destination $modeRegistry
+    if($null-ne$compiledRuntime){Write-RunJson -Path $modeRegistry -Value $profile.input_definitions.operating_mode_registry -Depth 100}
+    else{Copy-Item -LiteralPath $profile.paths.operating_mode_registry -Destination $modeRegistry}
   }
 
   $resolved=Join-Path $inputDir 'multipole_resolved_design.json'
+  if($null-ne$compiledRuntime){
+    Write-RunJson -Path $resolved -Value $compiledRuntime.design_profile_resolution.resolved_design -Depth 100
+  }else{
   Push-Location $codeRoot
   try{
     $env:PYTHONPATH=$codeRoot
@@ -1026,6 +1046,7 @@ $comsolRunFailure=$null
     & $python @compileArguments
     if($LASTEXITCODE-ne 0){throw 'Governed multipole design compilation failed.'}
   }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+  }
   $design=Get-Content -LiteralPath $resolved -Raw -Encoding UTF8|ConvertFrom-Json
   $resolvedHash=[string]$design.resolved_sha256
   $expectedResolvedHash=[string]$resolvedBudget.expected_run_parent_resolved_design_sha256

@@ -2,7 +2,8 @@
 param(
   [Parameter(Mandatory = $true)]
   [string]$RunId,
-  [string]$PythonExe = ''
+  [string]$PythonExe = '',
+  [string]$ResolvedInputsPath = ''
 )
 
 Set-StrictMode -Version Latest
@@ -283,9 +284,20 @@ try {
     analysis_package = 'analysis\__init__.py'
     resolver = 'analysis\resolve_contract.py'
   }
+  $compiledInputs=$null
+  if($ResolvedInputsPath){
+    $compiledInputs=Get-Content -LiteralPath $ResolvedInputsPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable -Depth 100
+    if($compiledInputs.role-ne'compiled_execution_inputs'-or$compiledInputs.project_id-ne'transverse_helical_filament_wehnelt_electron_gun'){throw 'Compiled Wehnelt input identity differs.'}
+  }
   foreach ($entry in $projectFrozenFiles.GetEnumerator()) {
+    $inputSource=Join-Path $projectRoot $entry.Value
+    if($null-ne$compiledInputs-and$entry.Key-in@('baseline','numerical_modes','resolved_contract','mode')){
+      $records=@($compiledInputs.files|Where-Object{$_.name-eq$entry.Key})
+      if($records.Count-ne1){throw "Compiled Wehnelt input is missing: $($entry.Key)"}
+      $inputSource=Join-Path $compiledInputs.root ([string]$records[0].relative_path)
+    }
     $frozenInputs[$entry.Key] = Copy-VerifiedRunInput `
-      -Source (Join-Path $projectRoot $entry.Value) `
+      -Source $inputSource `
       -Destination (Join-Path $codeRoot $entry.Value)
   }
   foreach ($file in Get-ChildItem -LiteralPath (Join-Path $projectRoot 'tests\analysis') `

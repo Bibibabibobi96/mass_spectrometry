@@ -830,3 +830,12 @@ python common/contracts/write_formal_asset_manifest.py `
 项目候选编译器必须把获批提案写入隔离run，验证请求/提案身份、单位、变量范围、项目硬约束和当前
 envelope，并输出可审阅的候选合同与差异。它不得修改正式baseline、运行求解器或创建正式资产。
 具体包络策略、候选文件名和编译入口属于消费项目，不在公共合同README维护第二份说明。
+
+## 本次解析输入的实际执行
+
+`compile_execution_plan` 从现有 descriptor、execution_profiles 和 integration registry 派生能力视图；
+`--list-capabilities` 区分器件与集成，`--execute` 使用同一解析结果。
+`Invoke-CompiledExecutionPlan` 依序调用声明入口并在首个非零退出停止；项目保留科学及授权判断。
+RF 正常 wrapper、资源预算和 COMSOL prepare 消费冻结 resolved runtime/input_definitions，
+不再次选择默认设计；NEEDS_SOURCE_FREEZE 表示正常准备仍需冻结源，不代表科学 PASS。
+OA/MR binding 使用各自项目纯解析 API；执行计划的可用性不授予商业求解或局部资格。

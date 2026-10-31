@@ -191,6 +191,10 @@
             "items": {
               "$ref": "#/$defs/identifier"
             }
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1
           }
         }
       }

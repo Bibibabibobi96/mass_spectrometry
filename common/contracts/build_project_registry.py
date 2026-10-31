@@ -145,6 +145,13 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
     if project_root.parent != repo_root / "projects":
         raise ContractError(f"{path}: descriptor is outside projects/<project>/config")
 
+    execution_relative = descriptor["contracts"]["execution"]
+    execution_modes = set()
+    execution_document = None
+    if execution_relative is not None and (project_root/execution_relative).is_file():
+        execution_document = load_json(project_root/execution_relative)
+        validate_schema(execution_document, "execution_profiles.schema.json")
+        execution_modes = {(profile["capability_id"], profile["mode"]) for profile in execution_document["profiles"]}
     capability_ids: set[str] = set()
     for capability in descriptor["capabilities"]:
         capability_id = capability["capability_id"]
@@ -155,7 +162,9 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
             raise ContractError(f"{path}: capability {capability_id!r} exceeds project maturity")
         for mode in capability["modes"]:
             mode_path = project_root / "config" / "modes" / f"{mode}.json"
-            if not mode_path.is_file():
+            # Caller-input workflows need no invented fixed scientific mode file.
+            # Their entrypoint, inputs and outputs are checked below by the same owner.
+            if not mode_path.is_file() and (capability_id, mode) not in execution_modes:
                 raise ContractError(f"{path}: capability {capability_id!r} references missing mode {mode_path}")
 
     validate_structural_variants(descriptor, None, path)
@@ -264,8 +273,7 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
     execution_relative = descriptor["contracts"]["execution"]
     if execution_relative is not None:
         execution_path = project_root / execution_relative
-        execution = load_json(execution_path)
-        validate_schema(execution, "execution_profiles.schema.json")
+        execution = execution_document
         if execution["project_id"] != descriptor["project_id"]:
             raise ContractError(f"{execution_path}: project_id differs from project descriptor")
         capabilities = {item["capability_id"]: item for item in descriptor["capabilities"]}
@@ -286,8 +294,9 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
             if key in profile_keys:
                 raise ContractError(f"{execution_path}: duplicate capability/mode profile {key!r}")
             profile_keys.add(key)
-            if any(EVIDENCE[level] > MATURITY[capability["status"]] for level in profile["evidence_levels"]):
-                raise ContractError(f"{execution_path}: profile evidence exceeds capability maturity")
+            if any({"none": -1, "candidate": 2, "formal": 3}[level] > MATURITY[capability["status"]]
+                   for level in profile["qualification_support"]):
+                raise ContractError(f"{execution_path}: requested qualification exceeds capability maturity")
             for step in profile["steps"]:
                 entrypoint = project_root / step["entrypoint"]
                 if not entrypoint.is_file():
@@ -465,6 +474,47 @@ def build_registry(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
 
 def serialized(registry: dict[str, Any]) -> str:
     return json.dumps(registry, indent=2, ensure_ascii=False) + "\n"
+
+
+def query_capabilities(registry: dict[str, Any], *, repo_root: Path = REPO_ROOT,
+                       owner: str | None = None) -> list[dict[str, Any]]:
+    """Derive one view from existing project and integration owners, without another registry."""
+    result = []
+    for project in registry["projects"]:
+        identity = project["project_id"]
+        if owner is not None and owner != identity:
+            continue
+        contract = project["contracts"]["execution"]
+        profiles = []
+        if contract is not None:
+            document = load_json(repo_root/"projects"/identity/contract)
+            validate_schema(document, "execution_profiles.schema.json")
+            profiles = document["profiles"]
+        capabilities = [{**capability, "execution_profiles": [profile["profile_id"] for profile in profiles
+                         if profile["capability_id"] == capability["capability_id"]]}
+                        for capability in project["capabilities"]]
+        result.append(dict(owner_kind="project", owner_id=identity,
+                           capabilities=capabilities, profiles=profiles,
+                           execution_support="declared_owner_entries" if profiles else "no_registered_physical_entry",
+                           limitations=project["known_gaps"]))
+    integration_path = repo_root/"integrations/registry.json"
+    if integration_path.is_file():
+        integrations = load_json(integration_path)
+        validate_schema(integrations, "integration_registry.schema.json")
+        for integration in integrations["integrations"]:
+            identity = integration["integration_id"]
+            if owner is not None and owner != identity:
+                continue
+            for workflow in integration.get("workflows", []):
+                for relative in [workflow["entrypoint"], *workflow["recipes"]]:
+                    path = (repo_root/relative).resolve()
+                    if not path.is_relative_to((repo_root/integration["root"]).resolve()) or not path.is_file():
+                        raise ContractError(f"Integration capability input is outside its owner or missing: {relative}")
+            result.append(dict(owner_kind="integration", owner_id=identity,
+                               profiles=integration.get("workflows", [])))
+    if owner is not None and not result:
+        raise ContractError(f"Unknown capability owner: {owner}")
+    return result
 
 
 def main() -> None:

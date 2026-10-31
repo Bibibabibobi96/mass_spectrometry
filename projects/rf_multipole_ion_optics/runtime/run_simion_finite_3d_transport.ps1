@@ -172,6 +172,7 @@ try{
       '--retention-class',$RetentionClass,'--output',$budgetPreflight)
     if($particleSourceInput){$budgetArguments+=@('--particle-source',$particleSourceInput)}
     $budgetArguments+=@('--run-id',$RunId)
+    if($resolvedRuntimeInput){$budgetArguments+=@('--resolved-runtime-profile',$resolvedRuntimeInput)}
     & $python @budgetArguments
   }finally{Pop-Location}
   if($LASTEXITCODE-ne 0){throw 'SIMION resource-budget preflight failed.'}

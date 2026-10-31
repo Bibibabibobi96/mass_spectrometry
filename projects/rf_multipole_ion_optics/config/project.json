@@ -94,7 +94,8 @@
         "segment_entrance_common_mode",
         "segment_exit_common_mode",
         "segment_output_reference"
-      ]
+      ],
+      "model": "有限三维多极场与轨迹"
     },
     {
       "capability_id": "quadrupole_collision_cooling",
@@ -107,7 +108,8 @@
         "exit_energy",
         "collision_count"
       ],
-      "design_variables": []
+      "design_variables": [],
+      "model": "碰撞冷却（未注册运行入口）"
     },
     {
       "capability_id": "quadrupole_mass_filter_reference",
@@ -127,7 +129,8 @@
         "common_mode_offset",
         "rf_frequency",
         "rf_phase"
-      ]
+      ],
+      "model": "有限长四极杆RF/DC质量过滤"
     },
     {
       "capability_id": "hexapole_ideal_transport",
@@ -141,7 +144,8 @@
         "exit_rms_radius",
         "maximum_radius"
       ],
-      "design_variables": []
+      "design_variables": [],
+      "model": "理想多极场"
     },
     {
       "capability_id": "hexapole_round_rod_l2_transport",
@@ -157,7 +161,8 @@
       ],
       "design_variables": [
         "rod_radius_ratio"
-      ]
+      ],
+      "model": "圆杆有限场"
     },
     {
       "capability_id": "hexapole_finite_3d_transport",
@@ -191,7 +196,8 @@
         "segment_entrance_common_mode",
         "segment_exit_common_mode",
         "segment_output_reference"
-      ]
+      ],
+      "model": "有限三维多极场与轨迹"
     },
     {
       "capability_id": "octupole_ideal_transport",
@@ -205,7 +211,8 @@
         "exit_rms_radius",
         "maximum_radius"
       ],
-      "design_variables": []
+      "design_variables": [],
+      "model": "理想多极场"
     },
     {
       "capability_id": "octupole_round_rod_l2_transport",
@@ -221,7 +228,8 @@
       ],
       "design_variables": [
         "rod_radius_ratio"
-      ]
+      ],
+      "model": "圆杆有限场"
     },
     {
       "capability_id": "octupole_finite_3d_transport",
@@ -255,7 +263,8 @@
         "segment_entrance_common_mode",
         "segment_exit_common_mode",
         "segment_output_reference"
-      ]
+      ],
+      "model": "有限三维多极场与轨迹"
     }
   ],
   "formal_assets": {

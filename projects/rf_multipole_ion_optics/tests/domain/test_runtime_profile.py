@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import copy
 import json
+import subprocess
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -42,14 +44,91 @@ class RuntimeProfileTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "minimum_element_size_mm"):
                 _resolve_solver_profile(path, "fixture", "comsol", "inert")
 
+    def test_comsol_prepare_consumes_resolved_design_without_resolving_live_profiles(self) -> None:
+        runtime = resolve_runtime_profile(REPO_ROOT, PROJECT_ID, "quadrupole_no_acceleration_full_length")
+        for key in runtime["design_profile_resolution"]["paths"]:
+            runtime["design_profile_resolution"]["paths"][key] = "must-not-read-current-default.json"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshot = root/"runtime.json"
+            snapshot.write_text(json.dumps(runtime))
+            script = root/"prepare.ps1"
+            script.write_text(r"""param($Repo,$Entry,$Snapshot,$Root)
+Set-StrictMode -Version Latest;$ErrorActionPreference='Stop'
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+$ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
+$select=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Extent.Text.Contains('Compiled COMSOL runtime identity differs.')},$true)
+$inputs=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Extent.Text.Contains('Compiled COMSOL runtime omits its resolved design input definitions.')},$true)
+$resolvedBlock=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$null-ne$compiledRuntime'-and$n.Extent.Text.Contains('-Value $compiledRuntime.design_profile_resolution.resolved_design')},$true)
+$ResolvedRuntimeProfilePath=$Snapshot;$compiledRuntime=$null
+$frozen=Get-Content $Snapshot -Raw|ConvertFrom-Json -Depth 100
+$ProjectId=$frozen.project_id;$RuntimeProfileId=$frozen.runtime_profile_id;$DesignProfileId=$frozen.design_profile_id
+$profileResolution=Join-Path $Root 'profile.json';$request=Join-Path $Root 'request.json';$variables=Join-Path $Root 'variables.json';$envelope=Join-Path $Root 'envelope.json';$resolved=Join-Path $Root 'resolved.json'
+if($null-eq$select-or$null-eq$inputs-or$null-eq$resolvedBlock){throw 'COMSOL preparation consumer is missing'}
+Invoke-Expression $select.Extent.Text
+$profile=Get-Content $profileResolution -Raw|ConvertFrom-Json -Depth 100
+Invoke-Expression $inputs.Extent.Text
+Invoke-Expression $resolvedBlock.Extent.Text
+'COMSOL_RESOLVED_INPUTS=PASS'
+""", encoding="utf-8")
+            completed = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script), str(REPO_ROOT),
+                str(REPO_ROOT/"projects"/PROJECT_ID/"runtime/run_finite_3d_transport.ps1"), str(snapshot), str(root)],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+            self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
+            self.assertEqual(json.loads((root/"resolved.json").read_text()), runtime["design_profile_resolution"]["resolved_design"])
+            for name, file in (("design_request", "request"), ("design_variables", "variables"), ("optimization_envelope", "envelope")):
+                self.assertEqual(json.loads((root/(file+".json")).read_text()), runtime["design_profile_resolution"]["input_definitions"][name])
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_public_wrappers_pass_one_resolved_runtime_without_reselecting_defaults(self) -> None:
+        runtime = resolve_runtime_profile(REPO_ROOT, PROJECT_ID, "quadrupole_no_acceleration_full_length")
+        runtime["solver_numerics"]["comsol"]["values"]["trajectory"]["maximum_global_time_us"] = 23
+        runtime["solver_numerics"]["simion"]["values"]["trajectory"]["maximum_global_time_us"] = 29
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root/"projects"/PROJECT_ID
+            (project/"runtime").mkdir(parents=True)
+            (project/"workflows/no_collision_transport").mkdir(parents=True)
+            shutil.copyfile(REPO_ROOT/"projects"/PROJECT_ID/"runtime/project_transport_launcher_support.ps1", project/"runtime/project_transport_launcher_support.ps1")
+            snapshot = root/"runtime.json"
+            snapshot.write_text(json.dumps(runtime))
+            stub = r"""param($ProjectId,$RuntimeProfileId,$DesignProfileId,$ParticleSourcePath,$EngineeringBudgetPath,$RunId,
+$RetentionClass,$RetentionReason,$PythonExe,$RfStepsPerPeriod,$MaximumTimeUs,$ResolvedRuntimeProfilePath,
+$EvidenceContractPath,$StopStage,$MeshAutoLevel,$WorkingRegionMaximumElementSizeMm,$ReferenceComsolRunId,
+$CellMmX,$CellMmY,$CellMmZ,$TrajectoryQuality,$CaseSet)
+$ErrorActionPreference='Stop'
+$profile=Get-Content $ResolvedRuntimeProfilePath -Raw|ConvertFrom-Json
+@{id=$profile.runtime_profile_id;time=$MaximumTimeUs;run=$RunId;resolved=$profile.design_profile_resolution.resolved_design.resolved_sha256}|
+ ConvertTo-Json|Set-Content (Join-Path $PSScriptRoot ([IO.Path]::GetFileNameWithoutExtension($PSCommandPath)+'.json'))
+$global:LASTEXITCODE=0
+"""
+            for solver, native, expected in (("comsol", "run_finite_3d_transport", 23), ("simion", "run_simion_finite_3d_transport", 29)):
+                with self.subTest(solver=solver):
+                    wrapper = project/"workflows/no_collision_transport"/("run_"+solver+".ps1")
+                    shutil.copyfile(REPO_ROOT/"projects"/PROJECT_ID/"workflows/no_collision_transport"/wrapper.name, wrapper)
+                    (project/"runtime"/(native+".ps1")).write_text(stub, encoding="utf-8")
+                    result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(wrapper),
+                        "-ResolvedRuntimeProfilePath", str(snapshot), "-RunId", "20261030_123000__sim__simion__resolved-wrapper",
+                        "-PythonExe", str(root/"python-must-not-start.exe")], cwd=root,
+                        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+                    self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+                    actual = json.loads((project/"runtime"/(native+".json")).read_text())
+                    self.assertEqual(actual["id"], runtime["runtime_profile_id"])
+                    self.assertEqual(actual["time"], expected)
+                    self.assertEqual(actual["resolved"], runtime["design_profile_resolution"]["resolved_design"]["resolved_sha256"])
+                    self.assertEqual(actual["run"], "20261030_123000__sim__simion__resolved-wrapper")
+
     def test_execution_binding_projects_each_actual_structure_without_run_authorization(self) -> None:
         for variant in VARIANTS:
             with self.subTest(variant=variant):
                 result = resolve_execution_binding(REPO_ROOT, PROJECT_ID, {
                     "runtime_profile_id": variant + "_no_acceleration_full_length",
                 })
+                frozen = result.pop("resolved_runtime")
+                self.assertEqual(frozen["runtime_profile_id"], variant + "_no_acceleration_full_length")
                 self.assertEqual(result, {"project_id": PROJECT_ID, "structural_variant_id": variant,
-                                          "authorized_run_id": None})
+                                          "authorized_run_id": None,
+                                          "tools": ["comsol", "matlab", "simion", "python"]})
 
     def test_execution_binding_projects_the_campaign_owned_run_identity(self) -> None:
         path = REPO_ROOT / "projects/rf_multipole_ion_optics/config/campaigns/20260731__noacc_vs_segmented_h15_n100.json"

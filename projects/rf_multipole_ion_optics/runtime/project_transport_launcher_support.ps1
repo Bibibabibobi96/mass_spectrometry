@@ -9,7 +9,7 @@ function Invoke-MultipoleProjectFinite3dTransport {
     [string]$Solver,
     [Parameter(Mandatory = $true)]
     [string]$ProjectId,
-    [Parameter(Mandatory = $true, ParameterSetName = 'RuntimeProfile')]
+    [Parameter(ParameterSetName = 'RuntimeProfile')]
     [string]$RuntimeProfileId,
     [Parameter(Mandatory = $true, ParameterSetName = 'CampaignExperiment')]
     [string]$CampaignPath,
@@ -29,7 +29,8 @@ function Invoke-MultipoleProjectFinite3dTransport {
     [string]$SimionExe = '',
     [string]$ContinuationPredecessorManifestPath = '',
     [string]$NativeFieldRunPath = '',
-    [string]$ResultPath = ''
+    [string]$ResultPath = '',
+    [string]$ResolvedRuntimeProfilePath = ''
   )
 
   if ($Solver -ne 'simion' -and ($ContinuationPredecessorManifestPath -or $NativeFieldRunPath)) {
@@ -46,6 +47,9 @@ function Invoke-MultipoleProjectFinite3dTransport {
   )
 
   try {
+    if($ResolvedRuntimeProfilePath){
+      Copy-Item -LiteralPath $ResolvedRuntimeProfilePath -Destination $resolutionPath
+    }else{
     Push-Location $RepoRoot
     try {
       if ($PSCmdlet.ParameterSetName -eq 'CampaignExperiment') {
@@ -65,9 +69,12 @@ function Invoke-MultipoleProjectFinite3dTransport {
       throw "Multipole runtime profile resolution failed for '$ProjectId'."
     }
 
+    }
     $profile = Get-Content -LiteralPath $resolutionPath -Raw -Encoding UTF8 |
       ConvertFrom-Json
+    if([string]$profile.role-ne'multipole_resolved_runtime_profile'-or[string]$profile.project_id-ne$ProjectId){throw 'Compiled runtime identity differs from the requested project.'}
     $resolvedRuntimeProfileId = [string]$profile.runtime_profile_id
+    if($RuntimeProfileId-and$RuntimeProfileId-cne$resolvedRuntimeProfileId){throw 'Compiled runtime selection differs.'}
     if ($PSCmdlet.ParameterSetName -eq 'CampaignExperiment') {
       $authorizedRunId = [string](
         $profile.engineering_budget.inline_contract.pilot_authorization.scope.authorized_run_id
@@ -83,6 +90,11 @@ function Invoke-MultipoleProjectFinite3dTransport {
         throw 'RetentionClass differs from the declared campaign experiment.'
       }
       $RetentionClass = [string]$profile.retention_class
+      if ($RetentionClass -ne 'compact' -and [string]::IsNullOrWhiteSpace($RetentionReason)) {
+        # The campaign explicitly selected this retention class. Preserve its
+        # frozen identity and claim scope as the existing policy's explanation.
+        $RetentionReason = "Declared campaign retention ($RetentionClass): $($profile.campaign.campaign_id) / $($profile.campaign.experiment_id). $($profile.engineering_budget.inline_contract.claim_limit)"
+      }
     }
     $numerics = $profile.solver_numerics.$Solver.values
     $stopStage = [string]$profile.stop_stage
@@ -92,12 +104,14 @@ function Invoke-MultipoleProjectFinite3dTransport {
       DesignProfileId = [string]$profile.design_profile_id
       EngineeringBudgetPath = [string]$profile.engineering_budget.path
       RunId = $RunId
+      ResolvedRuntimeProfilePath = $resolutionPath
       RetentionClass = $RetentionClass
       RetentionReason = $RetentionReason
       PythonExe = $python
       RfStepsPerPeriod = [int]$numerics.trajectory.rf_steps_per_period
       MaximumTimeUs = [double]$numerics.trajectory.maximum_global_time_us
     }
+    if ($ResultPath) {$arguments.ResultPath = $ResultPath}
     if ($profile.particle_source.PSObject.Properties.Name -contains 'release_spec') {
       if ($Solver -ne 'simion') { throw 'Release-spec materialization is currently implemented for SIMION only.' }
     } else {
@@ -138,7 +152,6 @@ function Invoke-MultipoleProjectFinite3dTransport {
         $arguments.ContinuationPredecessorManifestPath = $ContinuationPredecessorManifestPath
       }
       if ($NativeFieldRunPath) {$arguments.NativeFieldRunPath = $NativeFieldRunPath}
-      if ($ResultPath) {$arguments.ResultPath = $ResultPath}
       if ($SimionExe) {
         $arguments.SimionExe = $SimionExe
       }

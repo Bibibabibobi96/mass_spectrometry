@@ -400,3 +400,8 @@ L1/L2 传输将身份输入冻结到本次 run；圆杆 L2 在冻结后核对场
 原 CLI 的 `-ResumeFinalization -ResultPath <稳定小Result>` 仅继续公共 owner 收尾，不重新求场或飞行。该模式只允许恢复参数及 Python/RunId；科学参数不能被静默忽略。native/GUI 的实际 completion receipt 进入公共聚合，继承的同 token 去重，writer 未知仍保留保护。
 
 确定性四极杆和有限三维 solver 使用同一项目终态分类器。全局时间窗结束且晚出生粒子尚未获得完整运输时长时记 `unknown`，无终止原因不等于 electrode loss；原接受面和几何拒绝事实不变。canonical 状态及 metrics 分开报告 accepted/lost/timeout/unknown，原母群分母、ID、出生/终态时钟及命中率保持不变。软件接线、原生求解、GUI验收与科学资格分别报告。
+
+## 机器能力与解析输入
+
+正常 wrapper、预算和 COMSOL prepare 共同消费本次 resolved runtime 与 input_definitions；授权及源身份仍在原边界校验。
+能力查询与执行编译见[公共合同](../../../common/contracts/README.md#执行dry-run)；READY 仅描述声明条件。

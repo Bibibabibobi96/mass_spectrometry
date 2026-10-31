@@ -411,3 +411,8 @@ OA→MR 和 prepared joint 共用 MR `Protect-MrtofContinuationEvidence`：沿�
 含40独立电极、6个C0参考面及装配概览；5 μm交换精度不是场或制造精度，第三方消费未验收。
 [Pulsar英文交接包](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261016_140921__build__python__pulsar-trajectory-handoff/summary.json)
 与待用户发送的邮件保持原发布身份。
+
+## 机器能力与解析输入
+
+原 native candidate 入口通过 execution profile 声明；binding 从本次 release 读取物种，不为无 variant 项目虚造极数。
+能力查询与执行编译见[公共合同](../../../common/contracts/README.md#执行dry-run)；READY 仅描述声明条件。

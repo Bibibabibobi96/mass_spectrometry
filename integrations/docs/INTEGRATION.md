@@ -343,3 +343,8 @@ MR的`load-workbench`与batch Fly共用碰撞PA预载并保持不可Refine状态
 IP→MR 的 FullJoint 在求场前验证设计 manifest 绑定的来源 receipt、粒子状态、时钟与共同脉冲。
 仅已知 v1 zero-birth 到严格验证的 v2 common-pulse 分析升级受支持；其他 Fly 依赖仍保持冻结。
 预检通过只表示输入合同成立，不表示已求场或通过科学资格。
+
+## 机器能力发现
+
+现有 integration registry 声明 recipe、workflow 和模拟路径，公共编译器直接派生查询视图，
+不把装配注册为器件项目。实际源起点、状态重启和场耦合仍由所选 recipe 与原 workflow 报告。

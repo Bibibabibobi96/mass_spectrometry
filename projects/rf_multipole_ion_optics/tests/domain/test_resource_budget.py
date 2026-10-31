@@ -128,6 +128,26 @@ class AnalysisBudgetTests(unittest.TestCase):
 
 
 class ResourceBudgetTests(unittest.TestCase):
+    def test_frozen_runtime_budget_does_not_resolve_defaults_and_keeps_authorization(self) -> None:
+        runtime = resolve_runtime_profile(REPO_ROOT, PROJECT_ID, "octupole_no_acceleration_full_length")
+        runtime = json.loads(json.dumps(runtime))
+        runtime["engineering_budget"]["inline_contract"]["pilot_authorization"]["authorized"] = True
+        options = dict(repo_root=REPO_ROOT, budget_path=Path(runtime["engineering_budget"]["path"]),
+            project_id=PROJECT_ID, solver="simion", runtime_profile_id=runtime["runtime_profile_id"],
+            design_profile_id=runtime["design_profile_id"], particle_source_path=Path(runtime["particle_source"]["path"]),
+            retention_class="compact", resolved_runtime=runtime)
+        with mock.patch("projects.rf_multipole_ion_optics.runtime.resource_budget._load", side_effect=lambda _: runtime["engineering_budget"]["inline_contract"]), \
+             mock.patch("projects.rf_multipole_ion_optics.runtime.resource_budget.resolve_runtime_profile", side_effect=AssertionError("re-resolved defaults")), \
+             mock.patch("projects.rf_multipole_ion_optics.runtime.resource_budget.resolve_runtime_selection", side_effect=AssertionError("re-resolved campaign")):
+            result = validate_pilot_budget(**options)
+            self.assertEqual(result["solver_numerics"], runtime["solver_numerics"]["simion"]["values"])
+            runtime["engineering_budget"]["inline_contract"]["pilot_authorization"]["authorized"] = False
+            with self.assertRaisesRegex(ValueError, "not authorized"):
+                validate_pilot_budget(**options)
+            with self.assertRaisesRegex(ValueError, "runtime identity"):
+                validate_pilot_budget(**dict(options, design_profile_id="other"))
+
+
     def test_release_budget_uses_authorized_declaration_without_sampling(self) -> None:
         runtime = resolve_runtime_profile(REPO_ROOT, PROJECT_ID, "octupole_no_acceleration_full_length")
         budget = json.loads(Path(runtime["engineering_budget"]["path"]).read_text(encoding="utf-8-sig"))

@@ -6,6 +6,7 @@ import argparse
 import json
 from pathlib import Path
 from typing import Any
+from projects.rf_multipole_ion_optics.core.compile_design_request import resolved_design_sha256
 
 from projects.rf_multipole_ion_optics.runtime.runtime_profile import (
     resolve_runtime_profile,
@@ -216,21 +217,47 @@ def validate_pilot_budget(
     particle_source_path: Path | None = None,
     retention_class: str,
     run_id: str | None = None,
+    resolved_runtime: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Resolve the runtime profile and validate the exact authorized pilot."""
 
-    budget_source = _load(budget_path.resolve())
-    if budget_source.get("role") == "multipole_transport_experiment_campaign":
-        runtime = resolve_runtime_selection(
-            repo_root.resolve(),
-            project_id,
-            campaign_path=budget_path.resolve(),
-            experiment_id=runtime_profile_id,
-        )
+    if resolved_runtime is not None:
+        runtime = resolved_runtime
+        if (runtime.get("role") != "multipole_resolved_runtime_profile"
+                or runtime.get("project_id") != project_id
+                or runtime.get("runtime_profile_id") != runtime_profile_id
+                or runtime.get("design_profile_id") != design_profile_id):
+            raise ValueError("resolved runtime identity differs from the budget request")
+        design = runtime["design_profile_resolution"]["resolved_design"]
+        if design.get("resolved_sha256") != resolved_design_sha256(design):
+            raise ValueError("resolved runtime contains a stale logical design identity")
         budget = runtime["engineering_budget"]["inline_contract"]
+        authority = _load(budget_path.resolve())
+        if authority.get("role") == "multipole_engineering_budget_contract":
+            if authority != budget:
+                raise ValueError("frozen engineering-budget definition differs from its authority")
+        elif authority.get("role") == "multipole_transport_experiment_campaign":
+            rows = [row for row in authority["experiments"] if row["experiment_id"] == runtime_profile_id]
+            if len(rows) != 1:
+                raise ValueError("frozen campaign budget experiment is not unique")
+            authorization = rows[0]["resource_authorization"]
+            if (budget["pilot_authorization"]["authorized"] != authorization["authorized"]
+                    or budget["pilot_authorization"]["limits"] != authorization["limits"]
+                    or budget["full_matrix_authorization"] != authorization["full_matrix_authorization"]):
+                raise ValueError("frozen campaign budget differs from its authorization")
+        else:
+            raise ValueError("resolved runtime budget authority is unsupported")
     else:
-        runtime = resolve_runtime_profile(repo_root.resolve(), project_id, runtime_profile_id)
-        budget = budget_source
+        budget_source = _load(budget_path.resolve())
+        if budget_source.get("role") == "multipole_transport_experiment_campaign":
+            runtime = resolve_runtime_selection(
+                repo_root.resolve(), project_id, campaign_path=budget_path.resolve(),
+                experiment_id=runtime_profile_id,
+            )
+            budget = runtime["engineering_budget"]["inline_contract"]
+        else:
+            runtime = resolve_runtime_profile(repo_root.resolve(), project_id, runtime_profile_id)
+            budget = budget_source
     stop_stage = runtime.get("stop_stage")
     if stop_stage not in {"transport", "mesh_build", "field_solve"}:
         raise ValueError("resolved runtime profile stop stage is missing or unsupported")
@@ -330,6 +357,7 @@ def main() -> int:
     parser.add_argument("--retention-class", required=True)
     parser.add_argument("--run-id")
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--resolved-runtime-profile", type=Path)
     args = parser.parse_args()
     result = validate_pilot_budget(
         repo_root=args.repo_root,
@@ -341,6 +369,7 @@ def main() -> int:
         particle_source_path=args.particle_source,
         retention_class=args.retention_class,
         run_id=args.run_id,
+        resolved_runtime=(_load(args.resolved_runtime_profile) if args.resolved_runtime_profile else None),
     )
     args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(f"MULTIPOLE_RESOURCE_BUDGET=PASS PROJECT={args.project_id} SOLVER={args.solver}")

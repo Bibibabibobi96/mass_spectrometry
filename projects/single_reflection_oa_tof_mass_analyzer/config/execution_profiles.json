@@ -7,89 +7,200 @@
       "profile_id": "ideal_source_comparison",
       "capability_id": "single_reflection_mass_analysis",
       "mode": "ideal_source_comparison",
-      "evidence_levels": ["static"],
-      "supported_objectives": ["mass_resolving_power"],
-      "supported_operating_points": [{"mass": {"value": 100, "unit": "Da"}, "charge_state": 1}],
+      "supported_objectives": [
+        "mass_resolving_power"
+      ],
+      "supported_operating_points": [
+        {
+          "mass": {
+            "value": 100,
+            "unit": "Da"
+          },
+          "charge_state": 1
+        }
+      ],
       "supported_design_variables": [],
       "supported_constraints": [],
-      "deliverable_outputs": ["simulation_results", "validation_report"],
-      "required_bindings": ["particle_source_seed"],
-      "steps": [{
-        "step_id": "ideal_source_comparison",
-        "kind": "analyze",
-        "shell": "python",
-        "entrypoint": "workflows/ideal_source_comparison/run_comparison.py",
-        "run_id_template": null,
-        "arguments": ["--config", "projects/single_reflection_oa_tof_mass_analyzer/config/experiments/ideal_source_comparison.json", "--seed", "{particle_source_seed}", "--run-id", "{run_id}"]
-      }],
+      "deliverable_outputs": [
+        "simulation_results",
+        "validation_report"
+      ],
+      "required_bindings": [
+        "particle_source_seed"
+      ],
+      "steps": [
+        {
+          "step_id": "ideal_source_comparison",
+          "kind": "analyze",
+          "shell": "python",
+          "entrypoint": "workflows/ideal_source_comparison/run_comparison.py",
+          "run_id_template": null,
+          "arguments": [
+            "--config",
+            "projects/single_reflection_oa_tof_mass_analyzer/config/experiments/ideal_source_comparison.json",
+            "--seed",
+            "{particle_source_seed}",
+            "--run-id",
+            "{run_id}"
+          ]
+        }
+      ],
       "limitations": [
         "Exact axial ideal fields and synthetic sources only; no commercial solver or Formal qualification",
         "Residual scan recomputes mirror voltages at fixed accelerator fields and geometry; width scan compares the declared same-outer two-zone control and three-zone anchor, not global optima",
         "Science is owned by config/experiments/ideal_source_comparison.json; numerical peak settings by config/analysis_contract.json; seed and run identity are explicit run bindings"
-      ]
+      ],
+      "binding_types": {
+        "particle_source_seed": "integer"
+      },
+      "purpose": "source_comparison",
+      "action": "analyze",
+      "tools": [
+        "python"
+      ],
+      "model": "理想场源尺寸与时间响应对照",
+      "scientific_status": "not_evaluated",
+      "qualification_support": [
+        "none"
+      ],
+      "fixed_inputs": {
+        "experiment": "config/experiments/ideal_source_comparison.json",
+        "analysis_contract": "config/analysis_contract.json"
+      }
     },
     {
       "profile_id": "mass_spectrum_candidate",
       "capability_id": "single_reflection_mass_analysis",
       "mode": "mass_spectrum",
-      "evidence_levels": ["candidate"],
-      "supported_objectives": ["tof_centroid", "transmission_fraction", "detector_landing"],
+      "supported_objectives": [
+        "tof_centroid",
+        "transmission_fraction",
+        "detector_landing"
+      ],
       "supported_operating_points": [
-        {"mass": {"value": 10, "unit": "Da"}, "charge_state": 1},
-        {"mass": {"value": 100, "unit": "Da"}, "charge_state": 1},
-        {"mass": {"value": 500, "unit": "Da"}, "charge_state": 1},
-        {"mass": {"value": 1000, "unit": "Da"}, "charge_state": 1},
-        {"mass": {"value": 2000, "unit": "Da"}, "charge_state": 1}
+        {
+          "mass": {
+            "value": 10,
+            "unit": "Da"
+          },
+          "charge_state": 1
+        },
+        {
+          "mass": {
+            "value": 100,
+            "unit": "Da"
+          },
+          "charge_state": 1
+        },
+        {
+          "mass": {
+            "value": 500,
+            "unit": "Da"
+          },
+          "charge_state": 1
+        },
+        {
+          "mass": {
+            "value": 1000,
+            "unit": "Da"
+          },
+          "charge_state": 1
+        },
+        {
+          "mass": {
+            "value": 2000,
+            "unit": "Da"
+          },
+          "charge_state": 1
+        }
       ],
       "supported_design_variables": [],
       "supported_constraints": [],
-      "deliverable_outputs": ["simulation_results", "comsol_model", "validation_report"],
+      "deliverable_outputs": [
+        "simulation_results",
+        "validation_report"
+      ],
       "required_bindings": [],
       "steps": [
-        {
-          "step_id": "static_gate",
-          "kind": "gate",
-          "shell": "powershell",
-          "entrypoint": "verify_project.ps1",
-          "run_id_template": null,
-          "arguments": ["-Level", "Static", "-PythonExe", "{python_exe}"]
-        },
         {
           "step_id": "mass_spectrum_run",
           "kind": "run",
           "shell": "powershell",
           "entrypoint": "workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1",
           "run_id_template": "{timestamp}__sim__cross__mass-spectrum__five-mass",
-          "arguments": ["-RunId", "{mass_spectrum_run_id}"]
+          "arguments": [
+            "-RunId",
+            "{mass_spectrum_run_id}"
+          ]
         }
       ],
       "limitations": [
         "Uses the five fixed species and current geometry declared by config/modes/mass_spectrum.json",
         "Static candidate compilation and consumer preparation exist, but this runner does not yet execute their candidate COMSOL, SIMION, or CAD plan",
-        "Does not produce a new SIMION package or CAD assembly"
+        "Does not produce a new SIMION package or CAD assembly",
+        "Existing Formal COMSOL/SIMION models are consumed, not newly delivered by this spectrum run."
+      ],
+      "binding_types": {},
+      "fixed_inputs": {
+        "mass_spectrum": "config/modes/mass_spectrum.json",
+        "resolved_geometry": "config/resolved_geometry.json",
+        "formal_assets": "config/formal_assets.json",
+        "formal_validation": "config/formal_validation.json"
+      },
+      "purpose": "mass_spectrum",
+      "action": "run",
+      "tools": [
+        "comsol",
+        "matlab",
+        "simion",
+        "python"
+      ],
+      "model": "既有单反射场五质量谱候选",
+      "scientific_status": "not_evaluated",
+      "qualification_support": [
+        "none",
+        "candidate"
       ]
     },
     {
       "profile_id": "formal_current_design_validation",
       "capability_id": "single_reflection_mass_analysis",
       "mode": "formal",
-      "evidence_levels": ["formal"],
-      "supported_objectives": ["mass_resolving_power", "transmission_fraction", "tof_centroid", "detector_landing", "field_comparison", "trajectory_comparison"],
+      "supported_objectives": [
+        "mass_resolving_power",
+        "transmission_fraction",
+        "tof_centroid",
+        "detector_landing",
+        "field_comparison",
+        "trajectory_comparison"
+      ],
       "supported_operating_points": [
-        {"mass": {"value": 524, "unit": "Da"}, "charge_state": 1}
+        {
+          "mass": {
+            "value": 524,
+            "unit": "Da"
+          },
+          "charge_state": 1
+        }
       ],
       "supported_design_variables": [],
       "supported_constraints": [],
-      "deliverable_outputs": ["simulation_results", "comsol_model", "simion_model", "cad", "validation_report"],
+      "deliverable_outputs": [
+        "simulation_results",
+        "validation_report"
+      ],
       "required_bindings": [],
       "steps": [
         {
-          "step_id": "formal_gate",
-          "kind": "gate",
+          "step_id": "formal_asset_verification",
+          "kind": "analyze",
           "shell": "powershell",
-          "entrypoint": "verify_project.ps1",
+          "entrypoint": "workflows/formal_reference/run_formal_validation.ps1",
           "run_id_template": null,
-          "arguments": ["-Level", "Formal", "-PythonExe", "{python_exe}"]
+          "arguments": [
+            "-Phase",
+            "Verify"
+          ]
         },
         {
           "step_id": "formal_cross_solver_diagnostics_run",
@@ -97,28 +208,73 @@
           "shell": "powershell",
           "entrypoint": "workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1",
           "run_id_template": "{timestamp}__analysis__cross__formal-diagnostics",
-          "arguments": ["-RunId", "{run_id}"]
+          "arguments": [
+            "-RunId",
+            "{run_id}"
+          ]
         }
       ],
       "limitations": [
         "Validates and packages the current approved 524 Da formal design only",
         "Does not synthesize a new geometry from optimization variables",
-        "The diagnostic step reads frozen assets without solving, particle retracing, design changes, promotion, or a new equivalence claim"
-      ]
+        "The diagnostic step reads frozen assets without solving, particle retracing, design changes, promotion, or a new equivalence claim",
+        "Verifies and diagnoses existing Formal assets; does not produce new COMSOL, SIMION or CAD assets."
+      ],
+      "binding_types": {},
+      "purpose": "existing_asset_validation",
+      "action": "validate",
+      "tools": [
+        "comsol",
+        "matlab",
+        "simion",
+        "python"
+      ],
+      "model": "既有Formal单反射资产验证与诊断",
+      "scientific_status": "not_evaluated",
+      "qualification_support": [
+        "none",
+        "formal"
+      ],
+      "fixed_inputs": {
+        "baseline": "config/baseline.json",
+        "resolved_geometry": "config/resolved_geometry.json",
+        "formal_assets": "config/formal_assets.json",
+        "formal_validation": "config/formal_validation.json",
+        "simion_stable_entry": "config/simion_stable_entry.json",
+        "formal_solver_numerics": "config/formal_solver_numerics.json",
+        "mode": "config/modes/formal.json"
+      }
     },
     {
       "profile_id": "validated_structural_candidate",
       "capability_id": "single_reflection_mass_analysis",
       "mode": "design_candidate",
-      "evidence_levels": ["candidate"],
-      "supported_objectives": ["transmission_fraction"],
-      "supported_operating_points": [
-        {"mass": {"value": 524, "unit": "Da"}, "charge_state": 1}
+      "supported_objectives": [
+        "transmission_fraction"
       ],
-      "supported_design_variables": ["reflectron_midgrid_voltage"],
+      "supported_operating_points": [
+        {
+          "mass": {
+            "value": 524,
+            "unit": "Da"
+          },
+          "charge_state": 1
+        }
+      ],
+      "supported_design_variables": [
+        "reflectron_midgrid_voltage"
+      ],
       "supported_constraints": [],
-      "deliverable_outputs": ["simulation_results", "comsol_model", "simion_model", "cad", "validation_report"],
-      "required_bindings": ["particle_source_seed"],
+      "deliverable_outputs": [
+        "simulation_results",
+        "comsol_model",
+        "simion_model",
+        "cad",
+        "validation_report"
+      ],
+      "required_bindings": [
+        "particle_source_seed"
+      ],
       "steps": [
         {
           "step_id": "candidate_workflow",
@@ -127,9 +283,12 @@
           "entrypoint": "workflows/design_candidate/run_candidate.py",
           "run_id_template": null,
           "arguments": [
-            "--request", "{request_path}",
-            "--run-id", "{run_id}",
-            "--particle-source-seed", "{particle_source_seed}"
+            "--request",
+            "{request_path}",
+            "--run-id",
+            "{run_id}",
+            "--particle-source-seed",
+            "{particle_source_seed}"
           ]
         }
       ],
@@ -137,7 +296,39 @@
         "Validated for zero-change reproduction and reflectron_midgrid_voltage changes at 524 Da with the N=100 structural gate",
         "Compiles and freezes the approved request under the design plan run_id; particle_source_seed is the only required runtime binding",
         "Does not evaluate resolving power, optimize variables, promote formal assets, or authorize performance claims"
-      ]
+      ],
+      "binding_types": {
+        "particle_source_seed": "integer"
+      },
+      "purpose": "structural_candidate",
+      "action": "run",
+      "tools": [
+        "comsol",
+        "matlab",
+        "simion",
+        "solidworks",
+        "python"
+      ],
+      "model": "单反射结构候选完整跨工具链",
+      "scientific_status": "not_evaluated",
+      "qualification_support": [
+        "none",
+        "candidate"
+      ],
+      "fixed_inputs": {
+        "baseline": "config/baseline.json",
+        "formal_solver_numerics": "config/formal_solver_numerics.json",
+        "candidate_runtime": "config/candidate_runtime.json",
+        "design_variables": "config/design_variables.json",
+        "optimization_envelope": "config/optimization_envelope.json",
+        "mode": "config/modes/formal.json"
+      },
+      "runtime_binding": {
+        "entrypoint": "analysis/execution_binding.py",
+        "required_bindings": [
+          "particle_source_seed"
+        ]
+      }
     }
   ]
 }

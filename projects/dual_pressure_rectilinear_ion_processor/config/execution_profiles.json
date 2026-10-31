@@ -7,9 +7,6 @@
       "profile_id": "native_functional",
       "capability_id": "native_electrode_functional_transport",
       "mode": "native_electrode_functional",
-      "evidence_levels": [
-        "plan"
-      ],
       "supported_objectives": [
         "capture_fraction",
         "extraction_fraction"
@@ -34,17 +31,6 @@
       "required_bindings": [],
       "steps": [
         {
-          "step_id": "static_gate",
-          "kind": "gate",
-          "shell": "powershell",
-          "entrypoint": "verify_project.ps1",
-          "run_id_template": null,
-          "arguments": [
-            "-PythonExe",
-            "{python_exe}"
-          ]
-        },
-        {
           "step_id": "native_run",
           "kind": "run",
           "shell": "powershell",
@@ -54,7 +40,9 @@
             "-RunId",
             "{native_run_id}",
             "-SourceProfile",
-            "functional"
+            "functional",
+            "-ConfigurationDirectory",
+            "{resolved_configuration_directory}"
           ]
         }
       ],
@@ -63,6 +51,30 @@
         "Only the canonical 524 Da/+1 functional source and project configuration are registered; custom configuration, exploration, upstream admission and GUI replay remain project workflows.",
         "Prototype engineering execution only: no Static, Candidate or Formal scientific qualification is granted, and measured acceptance may fail.",
         "Retention and resource declarations are owned by config/runtime_profiles.json; live worker scheduling remains repository-owned."
+      ],
+      "binding_types": {},
+      "fixed_inputs": {
+        "baseline": "config/baseline.json",
+        "numerics": "config/numerics.json",
+        "source": "config/source.json",
+        "acceptance": "config/acceptance.json",
+        "native_operating_point": "config/native_operating_point.json",
+        "diagnostics": "config/diagnostics.json",
+        "field_diagnostics": "config/field_diagnostics.json",
+        "coordinate_transform": "config/coordinate_transform.json",
+        "geometry_sources": "config/geometry_sources.json",
+        "source_parameter_sources": "config/source_parameter_sources.json"
+      },
+      "purpose": "functional_transport",
+      "action": "run",
+      "tools": [
+        "simion",
+        "python"
+      ],
+      "model": "双压力区矩形RF电极与碰撞离子输运",
+      "scientific_status": "not_evaluated",
+      "qualification_support": [
+        "none"
       ]
     }
   ]

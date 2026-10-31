@@ -51,3 +51,8 @@ oa-TOF上游接口。具体数值不在本文复制，避免与机器合同形�
 `runs/<run_id>/`。重命名前的旧试验按原manifest身份只读保存在该根的
 `archive/20260801_130001__migration-snapshot__repo__electron-impact-ion-source/legacy-project-root/`；
 候选模型留在其来源run，正式目录只有通过上述门禁后才能在新根建立。
+
+## 机器能力与解析输入
+
+现有仅 Static 的 profile 明确为 software_check，不表示存在 COMSOL 模型或物理链。
+能力查询与执行编译见[公共合同](../../../common/contracts/README.md#执行dry-run)；READY 仅描述声明条件。
