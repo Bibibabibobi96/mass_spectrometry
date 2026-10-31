@@ -1,5 +1,6 @@
 classdef RfParticleRecordReductionTest < matlab.unittest.TestCase
  properties (TestParameter)
+  apiFault=struct('shape','shape','overlap','overlap','gap','gap','identity','identity');
   activeCase=struct('partialPosition','d2','partialVelocity','d5', ...
    'missingNativeId','d1','contradictoryLifecycle','lifecycle');
   gapCase=struct('withinWindow',[0;1;NaN;3;4;5], ...
@@ -27,13 +28,44 @@ classdef RfParticleRecordReductionTest < matlab.unittest.TestCase
     'times=varargin{find(strcmp(varargin,''t''))+1};[found,rows]=ismember(times,data.time);assert(all(found));\n' ...
     'assert(strcmp(varargin{find(strcmp(varargin,''dataonly''))+1},''on''));\n' ...
     'result=struct;for k=1:7,name=sprintf(''d%%d'',k);result.(name)=data.(name)(rows,:);end\n' ...
-    'if isfield(data,''bad_overlap'')&&rows(1)>1,result.d2(1,1)=999;end\nend\n']));
+    'if isfield(data,''bad_overlap'')&&rows(1)>1,result.d2(1,1)=999;end\n' ...
+    'if isfield(data,''api_fault'')&&rows(1)==512\n' ...
+    'switch data.api_fault,case ''shape'',result.d6(:,end)=[];case ''overlap'',result.d2(1,1)=999;case ''identity'',result.d1(:,2)=result.d1(:,1);end\n' ...
+    'end\nend\n']));
    testCase.applyFixture(matlab.unittest.fixtures.PathFixture(temp.Folder));
    clear mphparticle mphsolinfo
    testCase.addTeardown(@clearReaderFixture);
   end
  end
  methods (Test)
+  function apiBatchingPreservesEveryLogicalCallback(testCase)
+   data=makeN100Inventory;setData(data);
+   [legacy,legacyReceipt]=captureLogicalWindows(NaN);
+   [batched,batchedReceipt]=captureLogicalWindows(100);
+   testCase.verifyEqual(batched,legacy);
+   testCase.verifyEqual(legacyReceipt.windows,28);
+   testCase.verifyEqual(batchedReceipt.windows,28);
+   testCase.verifyEqual(legacyReceipt.mphparticle_calls,28);
+   testCase.verifyEqual(batchedReceipt.mphparticle_calls,14);
+   testCase.verifyEqual(batchedReceipt.api_requested_time_rows,7132);
+   testCase.verifyEqual(batchedReceipt.consumed_time_rows,7119);
+   testCase.verifyEqual(batchedReceipt.maximum_window_bytes,legacyReceipt.maximum_window_bytes);
+   testCase.verifyLessThan(batchedReceipt.maximum_api_window_bytes,3*1024*1024);
+  end
+  function batchedRecordsRetainExplicitEndpointsExtremaAndFirstAbove(testCase)
+   data=makeExpectedInventory;setData(data);ids=17+3*(0:99);
+   [records,receipt]=extract_rf_particle_records([], 'sol','part','cpt',ids,2.5,[0 1000],5,256);
+   verifyExpectedInventoryRecords(testCase,records,ids,data);
+   testCase.verifyEqual(receipt.windows,3);
+   testCase.verifyEqual(receipt.mphparticle_calls,2);
+   testCase.verifyEqual(receipt.consumed_time_rows,600);
+  end
+  function realApiBoundaryFaultPropagates(testCase,apiFault)
+   [data,errorId]=makeApiFaultInventory(apiFault);setData(data);
+   testCase.verifyError(@()extract_rf_particle_records([], 'sol','part','cpt', ...
+    17+3*(0:99),2.5,[0 1000],5,256),errorId);
+   testCase.verifyEqual(getappdata(0,'rf_reducer_unit_calls'),2);
+  end
   function timingReceiptCountsActualCallsAndUniqueRows(testCase)
    setData(makeData((1:6)',(0:5)',ones(6,1)));
    [~,receipt]=extract_rf_particle_records([], 'sol','part','cpt',[17 91],2.5,[0 10],100,3);
@@ -207,8 +239,8 @@ function exerciseConsumerModes(testCase,data,ids)
     elapsed=toc(timer);
     testCase.verifyEqual(receipt.original_time_rows,7119);
     testCase.verifyEqual(receipt.consumed_time_rows,7119);
-    testCase.verifyEqual(receipt.mphparticle_calls,28);
-    testCase.verifyEqual(getappdata(0,'rf_reducer_unit_calls'),28);
+    testCase.verifyEqual(receipt.mphparticle_calls,14);
+    testCase.verifyEqual(getappdata(0,'rf_reducer_unit_calls'),14);
     testCase.verifyEqual(cellfun(@(r)r.particle_id,records),ids);
     for index=1:100
      record=records{index};active=find(isfinite(data.d2(:,101-index)));
@@ -225,4 +257,56 @@ function exerciseConsumerModes(testCase,data,ids)
     fprintf('RF_CONSUMER_BASELINE_JSON=%s\n',jsonencode(struct('mode',modes{modeIndex}, ...
      'api','deterministic_stub_not_comsol','wall_seconds',elapsed,'receipt',receipt)));
    end
+end
+
+function [windows,receipt]=captureLogicalWindows(population)
+windows={};
+receipt=visit_rf_particle_windows([], 'sol','part','cpt',256,@capture,population);
+ function capture(window)
+  windows{end+1}=window;
+ end
+end
+function data=makeExpectedInventory
+count=600;data=makeN100Inventory;
+data.time=(0:count-1)'*1e-8;
+data.d1=repmat(100:-1:1,count,1);
+x=ones(count,1);x([100 300 550])=[10 8 6];
+data.d2=repmat(x,1,100);data.d3=zeros(count,100);
+data.d4=repmat((0:count-1)',1,100);
+data.d5=ones(count,100);data.d6=2*ones(count,100);data.d7=3*ones(count,100);
+end
+function verifyExpectedInventoryRecords(testCase,records,ids,data)
+% Explicit 5th-sample grid, three 256-logical endpoints, plane bracket and maxima.
+expected=unique([(1:5:600)';3;4;100;256;300;512;550;600]);
+for index=1:100
+ record=records{index};testCase.verifyEqual(record.particle_id,ids(index));
+ testCase.verifyEqual(record.solution_index,expected);
+ testCase.verifyEqual(record.time_s,data.time(expected));
+ testCase.verifyEqual(record.position_mm,[data.d2(expected,1),zeros(numel(expected),1),data.d4(expected,1)]);
+ testCase.verifyEqual(record.velocity_m_s,repmat([1 2 3],numel(expected),1));
+ testCase.verifyEqual(max(record.position_mm(:,1)),10);
+ testCase.verifyEqual(record.trajectory_solution_index,unique([(1:5:600)';600]));
+ testCase.verifyTrue(record.terminal_observation.finite_at_solution_end);
+ testCase.verifyEqual(record.terminal_observation.native_termination_cause,'not_observed');
+end
+end
+function [data,errorId]=makeApiFaultInventory(kind)
+data=makeExpectedInventory;
+% Two actual API calls are needed to reach row512; extend the same lawful stream.
+data.time=(0:799)'*1e-8;
+for k=1:7
+ key=sprintf('d%d',k);data.(key)(601:800,:)=repmat(data.(key)(600,:),200,1);
+end
+data.d4=repmat((0:799)',1,100);
+switch kind
+ case 'gap'
+  for k=2:7,key=sprintf('d%d',k);data.(key)(513,1)=NaN;end
+  errorId='rf:ParticleLifecycleGap';
+ case 'shape'
+  data.api_fault=kind;errorId='rf:ParticleShape';
+ case 'overlap'
+  data.api_fault=kind;errorId='rf:ParticleOverlap';
+ case 'identity'
+  data.api_fault=kind;errorId='rf:ParticleIndex';
+end
 end

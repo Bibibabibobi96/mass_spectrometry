@@ -546,3 +546,12 @@ native／GUI峰值RSS分别control3401359360／3705380864B、after3641393152／3
 2026-10-31由原owner经MCP执行既有RfParticleRecordReductionTest的2个新增方法通过（整测试外层7.4082秒，公共GATE已自然释放）。纯夹具沿真实consumer处理100个稀疏ID×7119时刻／28窗、逆序原生列、晚出生和末NaN：native式4面／stride5调用墙钟0.8883秒，stub读取0.0355秒、consumer0.8070秒；GUI式0面／stride1墙钟0.7773秒，stub读取0.0279秒、consumer0.6931秒。小用例同时核对实际调用和unique rows。该单次合成基线只归因MATLAB侧工作，不模拟COMSOL耗时、不与真实24秒相除称提速，也不把未知末态当损失。
 
 consumer不足1秒，当前没有证据支持优先改其循环；未做向量化。测试循环随后仅原样移至本文件local helper，调用顺序、实参和断言保持，未为机械移动重复长套件。实际GUI内部增加仍需既有report内的load／binding／两次extract／MAT保存分项观测；尚未执行这项新原生测量。原N100局部release减少而完整命令变慢的结论、原112402FAIL及科学NOT_EVALUATED保持，第二consumer端到端性能目标未关闭。
+
+
+### 有界API批量与原逻辑窗口分离
+
+RF公共visitor保持原256逻辑窗口。已知N100且原库存不超过7119时刻时，按本轮有界计划一次读取两个逻辑窗口（最多513行含重叠）；真实extractor传入已知母群数，两生产solver及GUI沿同一机制消费。未知母群、其他N／逻辑大小或更长库存仍走原API批量。七个double数组需2,872,800B，逻辑切片另约1,439,200B；不是进程RSS保证，仍受原owner预算与实际usage约束，不扩至N1000／5000。不改源、物理、积分精度或原库存时刻。
+
+逻辑窗口仍28次，端点、每窗口极值、firstAbove、穿面邻接及稀疏采样集合不变；API调用目标28→14，重复请求边界行27→13。另外14个逻辑重叠来自同次API返回切片，不能称独立vendor重读；跨真实API边界仍核对重叠及ID／6D／生命周期。receipt区分逻辑windows、实际mphparticle_calls、消费行数、API请求行数及API最大返回量；原maximum_window_bytes保持逻辑含义。
+
+2026-10-31 原owner经MCP执行完整 RfParticleRecordReductionTest：24项通过，公开MCP调用墙钟11.7402秒，公共GATE已释放；覆盖全部逻辑窗口等价、真实extractor手算端点／极值／firstAbove／完整6D及跨实际API边界错误传播。N100夹具实际API为14次、逻辑窗口28次、unique rows 7119、请求行7132；vendor接口为确定性stub，不是COMSOL性能证据。未运行新COMSOL冷读或完整正常命令，不宣称调用数减少已成为耗时收益，端到端性能目标仍未达。后续先只读同一受保护模型比较API批量，再决定当前HEAD冻结源码的完整公开命令对照，旧503文件树不作最终源码证据。

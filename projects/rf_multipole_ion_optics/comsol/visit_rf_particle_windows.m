@@ -1,4 +1,4 @@
-function receipt=visit_rf_particle_windows(model,solutionTag,datasetTag,physicsIdentifier,windowSamples,consume)
+function receipt=visit_rf_particle_windows(model,solutionTag,datasetTag,physicsIdentifier,windowSamples,consume,expectedParticleCount)
 %VISIT_RF_PARTICLE_WINDOWS Read original solution times in bounded windows.
 % No trajectory is solved here. Consumer keeps one cross-window adjacent state;
 % the first row of later windows overlaps and must not be counted twice.
@@ -9,6 +9,7 @@ arguments
  physicsIdentifier (1,:) char
  windowSamples (1,1) double {mustBeInteger,mustBeGreaterThanOrEqual(windowSamples,2)}
  consume (1,1) function_handle
+ expectedParticleCount (1,1) double = NaN
 end
 assert(~isempty(regexp(physicsIdentifier,'^[A-Za-z][A-Za-z0-9_]*$','once')), ...
  'rf:ParticlePhysicsIdentifier','An explicit actual physics variable identifier is required.');
@@ -19,19 +20,41 @@ assert(~isempty(times)&&all(isfinite(times))&&all(diff(times)>0),'Original solut
 expressions={[physicsIdentifier '.pidx'],'x/1[mm]','y/1[mm]','z/1[mm]', ...
  [physicsIdentifier '.vx/1[m/s]'],[physicsIdentifier '.vy/1[m/s]'],[physicsIdentifier '.vz/1[m/s]']};
 timer=tic;windows=0;maxBytes=0;uniqueRows=0;
-mphparticleSeconds=0;consumeSeconds=0;
+mphparticleSeconds=0;consumeSeconds=0;apiCalls=0;apiRequestedRows=0;maxApiBytes=0;
+% The reviewed N100/7119-row plan doubles API I/O only. Seven double arrays
+% at 513 rows require 2872800 bytes; logical reduction stays exactly 256.
+% Other/unknown populations or longer inventories retain the original bound.
+apiLogicalWindows=1;
+if expectedParticleCount==100&&windowSamples==256&&numel(times)<=7119
+ apiLogicalWindows=2;
+end
+apiFirst=0;apiLast=0;
 for first=1:windowSamples:numel(times)
  last=min(first+windowSamples-1,numel(times));
  overlap=double(first>1);selected=max(1,first-overlap):last;
- apiTimer=tic;
- data=mphparticle(model,'dataset',datasetTag,'expr',expressions,'t',times(selected)','dataonly','on');
- mphparticleSeconds=mphparticleSeconds+toc(apiTimer);
- assert(isstruct(data)&&all(isfield(data,{'d1','d2','d3','d4','d5','d6','d7'})), ...
-  'rf:ParticleShape','Particle expression result lacks the explicit seven arrays.');
+ if first>apiLast
+  apiFirst=selected(1);apiLast=min(first+apiLogicalWindows*windowSamples-1,numel(times));
+  apiSelected=apiFirst:apiLast;apiTimer=tic;
+  data=mphparticle(model,'dataset',datasetTag,'expr',expressions,'t',times(apiSelected)','dataonly','on');
+  mphparticleSeconds=mphparticleSeconds+toc(apiTimer);apiCalls=apiCalls+1;
+  apiRequestedRows=apiRequestedRows+numel(apiSelected);
+  assert(isstruct(data)&&all(isfield(data,{'d1','d2','d3','d4','d5','d6','d7'})), ...
+   'rf:ParticleShape','Particle expression result lacks the explicit seven arrays.');
+  apiShape=size(data.d1);
+  assert(isnumeric(data.d1)&&isreal(data.d1)&&ismatrix(data.d1)&& ...
+   ~isempty(data.d1)&&apiShape(1)==numel(apiSelected), ...
+   'rf:ParticleShape','Particle expression time axis differs from requested original times.');
+  for key={'d2','d3','d4','d5','d6','d7'}
+   assert(isnumeric(data.(key{1}))&&isreal(data.(key{1}))&&ismatrix(data.(key{1}))&& ...
+    isequal(size(data.(key{1})),apiShape),'rf:ParticleShape','Particle expression dimensions differ.');
+  end
+  bytes=whos('data');maxApiBytes=max(maxApiBytes,bytes.bytes);
+ end
+ apiRows=selected-apiFirst+1;
  window=struct('time_s',times(selected),'first_solution_index',selected(1), ...
-  'last_solution_index',selected(end),'overlap_rows',overlap,'particle_index',data.d1, ...
-  'x_mm',data.d2,'y_mm',data.d3,'z_mm',data.d4,'vx_m_s',data.d5, ...
-  'vy_m_s',data.d6,'vz_m_s',data.d7);
+  'last_solution_index',selected(end),'overlap_rows',overlap,'particle_index',data.d1(apiRows,:), ...
+  'x_mm',data.d2(apiRows,:),'y_mm',data.d3(apiRows,:),'z_mm',data.d4(apiRows,:),'vx_m_s',data.d5(apiRows,:), ...
+  'vy_m_s',data.d6(apiRows,:),'vz_m_s',data.d7(apiRows,:));
  shape=size(window.particle_index);
  assert(isnumeric(window.particle_index)&&isreal(window.particle_index)&&ismatrix(window.particle_index)&& ...
   ~isempty(window.particle_index)&&shape(1)==numel(selected), ...
@@ -48,5 +71,7 @@ assert(uniqueRows==numel(times),'Window extraction dropped or repeated original 
 receipt=struct('windows',windows,'original_time_rows',numel(times), ...
  'physics_identifier',physicsIdentifier,'window_samples',windowSamples,'maximum_window_bytes',maxBytes,'extract_seconds',toc(timer), ...
  'mphparticle_seconds',mphparticleSeconds,'consume_seconds',consumeSeconds, ...
- 'mphparticle_calls',windows,'consumed_time_rows',uniqueRows);
+ 'mphparticle_calls',apiCalls,'consumed_time_rows',uniqueRows, ...
+ 'api_requested_time_rows',apiRequestedRows,'maximum_api_window_bytes',maxApiBytes, ...
+ 'api_logical_windows',apiLogicalWindows);
 end

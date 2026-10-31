@@ -27,7 +27,7 @@ for index=1:particleCount
  particles{index}=struct('particle_id',particleIds(index),'solution_index',zeros(0,1),'time_s',zeros(0,1), ...
   'position_mm',zeros(0,3),'velocity_m_s',zeros(0,3),'trajectory_solution_index',zeros(0,1));
 end
-receipt=visit_rf_particle_windows(model,solutionTag,datasetTag,physicsIdentifier,windowSamples,@consume);
+receipt=visit_rf_particle_windows(model,solutionTag,datasetTag,physicsIdentifier,windowSamples,@consume,particleCount);
 assert(finalInventoryIndex==receipt.original_time_rows&&isfinite(finalInventoryTime), ...
  'rf:ParticleInventory','Final original solution inventory was not observed.');
 receipt.solution_end_time_s=finalInventoryTime;
