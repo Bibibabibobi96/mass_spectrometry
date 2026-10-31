@@ -46,21 +46,54 @@ arrival_times = (expected_tof-arrival_half_window):fine_tstep: ...
     (expected_tof+arrival_half_window);
 trajectory_times = linspace(0, Tsim, 2001);
 extract_times = unique([trajectory_times, arrival_times, Tsim]);
-pd_z = mphparticle(model, 'dataset', 'pdset1', ...
-    'expr', {'qx','qy','qz'}, 't', extract_times, 'dataonly', 'on');
-t = pd_z.t;
-z = squeeze(pd_z.d3);
-% This is the original population's coordinate view. Plotting selects columns
-% from it and never changes the release node, source or stored solution.
-x_full = squeeze(pd_z.d1);
-y_full = squeeze(pd_z.d2);
-nP = size(z,2);
-assert(nP==context.particle_count, 'oatof:SavedPopulation', ...
-    'Stored solution population differs from the frozen request.');
+% Fixed bounded I/O policy: at N5000 a 257-row XYZ payload is 30.84 MB.
+% This is not a solver timestep or an automatic process-RAM budget.
+window_samples=256;t=extract_times(:);nP=context.particle_count;
+plot_count=min(nP,50);plot_x=nan(numel(t),plot_count);plot_z=plot_x;
+settings=struct('detector_z',context.detector_z_mm,'freeze_tolerance_mm',1e-3, ...
+ 'approach_window_mm',0.5,'detector_x',context.detector_x_mm,'detector_y',0,'active_radius_mm',context.detector_radius_mm);
+state=oatof_detector_arrival_reducer('init',[],settings,nP);
+t_accel_gate=nan(1,nP);t_refl_entry_gate=nan(1,nP);t_refl_exit_gate=nan(1,nP);
+api_calls=0;maximum_api_payload_bytes=0;api_seconds=0;requested_rows=0;
+for pass=1:2
+ if pass==2,state=oatof_detector_arrival_reducer('begin_observation',state);end
+ for first=1:window_samples:numel(t)
+  last=min(first+window_samples-1,numel(t));selected=max(1,first-1):last;
+  api_timer=tic;
+  data=mphparticle(model,'dataset','pdset1','expr',{'qx','qy','qz'}, ...
+   't',extract_times(selected),'dataonly','on');
+  api_seconds=api_seconds+toc(api_timer);api_calls=api_calls+1;requested_rows=requested_rows+numel(selected);
+  assert(isstruct(data)&&all(isfield(data,{'t','d1','d2','d3'})), ...
+   'oatof:SavedPopulation','Native coordinate fields are incomplete.');
+  assert(isequal(data.t(:),t(selected)),'oatof:SavedTimes','Native query clock differs from the exact frozen vector.');
+  assert(isequal(size(data.d1),[numel(selected) nP])&& ...
+   isequal(size(data.d2),size(data.d1),size(data.d3)), ...
+   'oatof:SavedPopulation','Stored solution population/shape differs from the frozen request.');
+  allocation=whos('data');maximum_api_payload_bytes=max(maximum_api_payload_bytes,allocation.bytes);
+  x=data.d1;y=data.d2;z=data.d3;fresh=(1+double(first>1)):numel(selected);
+  if pass==1
+   state=oatof_detector_arrival_reducer('survey',state,t(selected),x,y,z,selected(1));
+   plot_x(selected(fresh),:)=x(fresh,1:plot_count);plot_z(selected(fresh),:)=z(fresh,1:plot_count);
+   t_accel_gate=firstPredicateTimes(t_accel_gate,z(fresh,:)>=context.accelerator_exit_mm,t(selected(fresh)));
+   t_refl_entry_gate=firstPredicateTimes(t_refl_entry_gate,z(fresh,:)>=context.flight_length_mm,t(selected(fresh)));
+  else
+   state=oatof_detector_arrival_reducer('observe',state,t(selected),x,y,z,selected(1));
+   after_turn=selected(fresh)' >= state.turn_index';
+   t_refl_exit_gate=firstPredicateTimes(t_refl_exit_gate, ...
+    after_turn&z(fresh,:)<=context.flight_length_mm,t(selected(fresh)));
+  end
+  clear data x y z
+ end
+end
+[state,arrivals]=oatof_detector_arrival_reducer('finish',state);
+state_size=whos('state');
+extraction_observation=struct('passes',2,'logical_window_samples',window_samples, ...
+ 'api_calls',api_calls,'api_requested_rows',requested_rows,'original_query_rows',numel(t), ...
+ 'maximum_api_payload_bytes',maximum_api_payload_bytes,'reducer_state_bytes',state_size.bytes, ...
+ 'retained_plot_particles',plot_count,'api_seconds',api_seconds);
+zEnd=state.last_raw_xyz(:,3)';zmax=state.raw_maximum_z';initial_xyz=state.initial_xyz;
 fprintf('[%s] ions released: %d\n', label, nP);
 
-zEnd = z(end,:);
-zmax = max(z,[],1);
 fprintf('[%s] z_max reached: %.2fmm (entrance grid at %gmm, backplate at %gmm)\n', label, max(zmax), context.flight_length_mm, context.flight_length_mm+context.reflectron_length_mm);
 fprintf('[%s] final z extracted for raw trajectory evidence.\n', label);
 
@@ -83,12 +116,7 @@ fprintf('[%s] stage2 penetration_max vs d2_min: diff=%.3fmm (%.2f%% of d2_min)\n
 
 % One extractor owns return-leg selection, crossing interpolation,
 % Wall/Freeze handling and active-radius acceptance for every COMSOL path.
-detector_z_exact = context.detector_z_mm;
-detector_x_exact = context.detector_x_mm;
-detector_radius = context.detector_radius_mm;
-arrivals = oatof_extract_detector_arrivals( ...
-    t(:),x_full,y_full,z,detector_z_exact,1e-3,0.5, ...
-    detector_x_exact,0,detector_radius);
+% Both normal/cold streaming and the array adapter use the unique reducer.
 detTimes = arrivals.time_s.';
 detTimes(~arrivals.hit.') = NaN;
 nDet = sum(arrivals.hit);
@@ -97,23 +125,6 @@ fprintf('[%s] detected on detector plate: %d/%d. Arrival-time metrics are delega
 % fine windows. This catches future mass/voltage/length/source changes that
 % invalidate the one-dimensional reference formulas instead of silently
 % degrading resolution in a coarse output segment.
-L_accel_gate_mm = context.accelerator_exit_mm;
-L_flight_gate_mm = context.flight_length_mm;
-t_accel_gate = nan(1,nP);
-t_refl_entry_gate = nan(1,nP);
-t_refl_exit_gate = nan(1,nP);
-for i = 1:nP
-    zi = z(:,i);
-    accel_idx = find(zi >= L_accel_gate_mm, 1, 'first');
-    refl_entry_idx = find(zi >= L_flight_gate_mm, 1, 'first');
-    [~, turn_idx] = max(zi);
-    refl_exit_rel = find(zi(turn_idx:end) <= L_flight_gate_mm, 1, 'first');
-    if ~isempty(accel_idx), t_accel_gate(i) = t(accel_idx); end
-    if ~isempty(refl_entry_idx), t_refl_entry_gate(i) = t(refl_entry_idx); end
-    if ~isempty(refl_exit_rel)
-        t_refl_exit_gate(i) = t(turn_idx+refl_exit_rel-1);
-    end
-end
 completeEvent = isfinite(t_accel_gate) & isfinite(t_refl_entry_gate) & ...
     isfinite(t_refl_exit_gate) & arrivals.hit.';
 if allow_particle_loss
@@ -164,7 +175,7 @@ fprintf('[TIMING] full-population extraction plus solver-native detector-event c
 
 if ~exist(resultsDir,'dir'), mkdir(resultsDir); end
 handoff = oatof_export_detector_events(resultsDir,label,mass_amu,arrivals, ...
-    x_full(1,:).',y_full(1,:).',z(1,:).');
+    initial_xyz(:,1),initial_xyz(:,2),initial_xyz(:,3));
 result = struct('label', label, 'mass_amu', mass_amu, 'nP', nP, 'zEnd', zEnd, ...
     'nDet', nDet, 'detectorStatus', arrivals.status.', ...
     'detectorRadiusMm', arrivals.radius_mm.', ...
@@ -178,11 +189,12 @@ result = struct('label', label, 'mass_amu', mass_amu, 'nP', nP, 'zEnd', zEnd, ..
     'native_particle_solve_count',context.native_particle_solve_count,'automatic_time_extension_performed',false, ...
     'observation_end_time_s',Tsim, ...
     'unresolved_detector_event_count',sum(~arrivals.plane_event), ...
-    'outside_active_detector_count',sum(arrivals.plane_event&~arrivals.hit));
+    'outside_active_detector_count',sum(arrivals.plane_event&~arrivals.hit), ...
+    'postprocess_extraction',extraction_observation);
 
 % Graphics are a read-only projection of the original scientific population.
 t_replot_start=tic;
-plotView=oatof_particle_plot_view(t(:),x_full,z,50);
+plotView=oatof_particle_plot_view(t(:),plot_x,plot_z,50);
 nP_plot=numel(plotView.particle_indices);t_plot=plotView.time_s;
 x_plot=plotView.x_mm;z_plot=plotView.z_mm;plot_dataset_tag='pdset1';
 t_replot=toc(t_replot_start);
@@ -260,4 +272,9 @@ col_time.set('colorlegend', 'on');
 end
 phases=struct('extraction',t_extract,'plot_view',t_replot, ...
     'matlab_plot',t_matlabplot,'result_nodes',t_resultplots,'plot_count',nP_plot);
+end
+
+function times=firstPredicateTimes(times,predicate,queryTimes)
+[found,index]=max(predicate,[],1);fresh=isnan(times)&found;
+times(fresh)=queryTimes(index(fresh));
 end

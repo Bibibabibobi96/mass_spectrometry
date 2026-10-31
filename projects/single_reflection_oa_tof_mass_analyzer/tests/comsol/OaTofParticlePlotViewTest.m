@@ -1,4 +1,7 @@
 classdef OaTofParticlePlotViewTest < matlab.unittest.TestCase
+ properties (TestParameter)
+  population=struct('n100',100,'n1000',1000,'n5000',5000);
+ end
  methods (TestClassSetup)
   function addProjectPath(testCase)
    root=fileparts(fileparts(fileparts(mfilename('fullpath'))));
@@ -29,6 +32,21 @@ classdef OaTofParticlePlotViewTest < matlab.unittest.TestCase
  end
 
  methods (Test)
+  function sharedPostprocessUsesBoundedWindowsForWholeCohort(testCase,population)
+   [context,folder,mockFolder]=postprocessFixture(testCase);
+   configureLargePopulation(mockFolder,population);context.particle_count=population;
+   [result,phases]=oatof_postprocess_saved_solution(struct('param',[]),context,folder);
+   testCase.verifyEqual(result.nP,population);testCase.verifyEqual(result.nDet,population);
+   testCase.verifyEqual(phases.plot_count,50);
+   testCase.verifyEqual(result.postprocess_extraction.passes,2);
+   testCase.verifyLessThanOrEqual(getappdata(0,'oatof_fixture_max_rows'),257);
+   testCase.verifyEqual(getappdata(0,'oatof_fixture_calls'),result.postprocess_extraction.api_calls);
+   testCase.verifyLessThan(result.postprocess_extraction.maximum_api_payload_bytes, ...
+    24*result.postprocess_extraction.original_query_rows*population);
+   testCase.verifyLessThan(result.postprocess_extraction.reducer_state_bytes,1024*population+65536);
+   events=readtable(result.raw_detector_events_path);
+   testCase.verifyEqual(events.Ion,(1:population)');testCase.verifyTrue(all(events.Hit));
+  end
   function sharedPostprocessUsesWholePopulationWithoutSolver(testCase)
    [context,folder]=postprocessFixture(testCase);
    [result,~]=oatof_postprocess_saved_solution(struct('param',[]),context,folder);
@@ -84,10 +102,17 @@ function [context,folder,mockFolder]=postprocessFixture(testCase)
 folder=tempname;mkdir(folder);
 testCase.addTeardown(@()rmdir(folder,'s'));
 testCase.addTeardown(@()close('all'));
+testCase.addTeardown(@clearBoundedReaderCounters);
 mockFolder=fullfile(folder,'native_read_fixture');mkdir(mockFolder);
 file=fullfile(mockFolder,'mphparticle.m');
 fid=fopen(file,'w');assert(fid>=0);
-fprintf(fid,'function value=mphparticle(varargin)\ndata=load(fullfile(fileparts(mfilename(''fullpath'')),''read_fixture.mat''));value=data.value;\nend\n');fclose(fid);
+fprintf(fid,'%s',sprintf([ ...
+ 'function value=mphparticle(varargin)\n' ...
+ 'data=load(fullfile(fileparts(mfilename(''fullpath'')),''read_fixture.mat''));base=data.value;\n' ...
+ 'times=varargin{find(strcmp(varargin,''t''))+1};times=times(:);value=struct(''t'',times);\n' ...
+ 'calls=getappdata(0,''oatof_fixture_calls'');if isempty(calls),calls=0;end;setappdata(0,''oatof_fixture_calls'',calls+1);\n' ...
+ 'maximum=getappdata(0,''oatof_fixture_max_rows'');if isempty(maximum),maximum=0;end;setappdata(0,''oatof_fixture_max_rows'',max(maximum,numel(times)));\n' ...
+ 'for k=1:3,key=sprintf(''d%%d'',k);v=interp1(base.t,base.(key),times,''linear'',NaN);if isfield(data,''population''),v=repmat(v(:,1),1,data.population);end;value.(key)=v;end\nend\n']));fclose(fid);
 testCase.applyFixture(matlab.unittest.fixtures.PathFixture(mockFolder));
 value=struct('t',[0;.5;1;2;3;4;5;6]*1e-6, ...
  'd1',zeros(8,2),'d2',zeros(8,2),'d3',repmat([0;2;10;14;12;10;0;-2],1,2));
@@ -110,4 +135,15 @@ function writeFixtureText(path,text)
 fid=fopen(path,'w');assert(fid>=0);
 cleanup=onCleanup(@()fclose(fid));fprintf(fid,'%s',text);
 clear cleanup
+end
+
+function configureLargePopulation(folder,population)
+data=load(fullfile(folder,'read_fixture.mat'));value=data.value;
+for k=1:3,key=sprintf('d%d',k);value.(key)=value.(key)(:,1);end
+save(fullfile(folder,'read_fixture.mat'),'value','population');
+end
+function clearBoundedReaderCounters
+for key={'oatof_fixture_calls','oatof_fixture_max_rows'}
+ if isappdata(0,key{1}),rmappdata(0,key{1});end
+end
 end

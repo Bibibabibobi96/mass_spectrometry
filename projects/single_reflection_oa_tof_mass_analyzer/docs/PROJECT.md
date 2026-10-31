@@ -24,7 +24,7 @@ ION 生成入口支持显式 `-PythonExe`，其次使用 `SIMULATION_PYTHON_EXE`
 
 COMSOL普通构建的绘图现只取原始完整解中的最多50列，不修改释放N或为大母群重跑`sol2`；科学事件和统计仍消费原完整母群。相同主题另移除“末点未靠近探测面就按8倍因子从头重解”的隐式策略：末点接近性不是合法检测事件，也不是时域截断或增量继续的充分证据。既有检测接受和事件窗口门保持；未发生检测事件不自动成为物理损失，未获得新的增量延长许可，不同观察时域须显式冻结新请求。
 
-完整原解在提取／绘图前沿现有model.save写入原定MPH路径，之后同一路径更新GUI节点。原CLI已接通早期已保存解/context及充分CSV的后继分析，并沿公共owner恢复收尾；软件接线已有回归。相称的真实保存／冷重开及其后处理失败零重算验收仍待完成，保存调用和软件通过不能替代该原生证据。旧运行和Formal资格不改写。本次沿用与当前五个MATLAB文件逐字相同的2026-10-30 R2025b纯行为证据：68项通过、9.3942932秒（公共路径14、绘图3、检测33、solver政策18），无新增原生求解；其组合不等同当前项目runner完整套件，也不能宣称旧Changed门禁通过或新的整机／精度资格。
+完整原解在提取／绘图前沿现有model.save写入原定MPH路径，之后同一路径更新GUI节点。原CLI已接通早期已保存解/context及充分CSV的后继分析，并沿公共owner恢复收尾；软件接线已有回归。相称的真实保存／冷重开及其后处理失败零重算验收仍待完成，保存调用和软件通过不能替代该原生证据。旧运行和Formal资格不改写。2026-10-30 R2025b旧版纯行为证据为68项通过、9.3942932秒（公共路径14、绘图3、检测33、solver政策18），无新增原生求解；修改后的当前软件范围以本页后续回归为准，不能沿旧文件身份宣称当前完整套件或新的整机／精度资格。
 
 径向紧凑化及结构Candidate的公共owner Result保留在项目scratch的`workflow_results/<run_id>/result.json`；
 原入口的finalization-only恢复使用该Result与run内冻结request，不重飞或改变父运行的科学终态。
@@ -598,9 +598,21 @@ catalog所有模块权重现统一来自同一643轮完整test_durations；原�
 
 跨根保护使用公共 `capacity.source_references`；仅需冷模型时声明 `prepared.native_input_paths`，实际MATLAB输入从公共source execution context唯一投影，持久request/results保持原canonical身份，输出保持child执行表示。项目不另建alias或复制模型；公共源运输的软件接线不等于真实深路径COMSOL冷开已经验收。新字节承诺来自显式父 Candidate runtime 的 `artifact_capacity.evidence_bytes`，既有CPU/内存准入仍适用；这不是新增COMSOL硬时间/RSS帽。失败保原数据身份与unknown有效性，不因后处理异常宣称物理数据无效。
 
-当前实现保留原一次性全母群 `mphparticle` 读取；有界分窗及跨窗相邻状态尚未迁移。模型冷开、源身份与零求解仍需相称原生验收；软件测试不授予精度、完整传输或Formal资格。
+普通与冷后处理现沿同一公共helper对原提取时间向量作两遍有界API读取，保留跨窗相邻状态与完整母群统计，检测分类由同一项目reducer实现。实际COMSOL分窗、模型冷开、源身份与零求解仍需相称原生验收；软件测试不授予精度、完整传输或Formal资格。
 
 冷提取的完整 detector CSV／request 经原全母群检查及公共 stopped-writer／release 验证后，先记入本次 evidence，再进入 Python 分析；分析失败不丢失已完成导出事实。恢复提示引用本失败 child 的 CSV，而非再次冷开原 MPH；须先完成该 child 的公共封存，原 CLI 的 ResumeFinalization 仍只收尾。未知 writer 不给出可重开提示，保留原保护。此接线以明确软件替身的冷边界、真实公共 owner／原 CLI 分析与父只读回归验证，不是 COMSOL 冷开或科学资格证据。
 
 
 2026-10-31 当前公共源路径运输与OA恢复提示整合后，Root在正常权限／独立任务TEMP运行两项实际CLI恢复回归通过：测试64.754秒，公开墙钟68.7278秒，GATE正常释放。覆盖软件替身冷边界后的分析故障→公共failed封存→按提示从本child的CSV新建零原生分析→Resume，以及未知writer提示。此前最终重复轮265.617秒FAIL保留：第二CLI容量已满足，启动调用返回0xC0000005，prepared未启动，随后超时／临时清理失败；该轮不被本次PASS改写。PID33388的退出尚未确认，原运行及公共保护不擅自清理。此为软件恢复证据，不是新的COMSOL求解或科学资格。
+
+
+### COMSOL已解数据的两遍有界读取
+
+正常／冷提取共用后处理沿原exact extract_times向量分成256行API窗，并以同一项目科学reducer两遍处理。首遍保留全母群全局转向点、有效范围／缺口、最终XYZ及128ULP坐标尺度；次遍累计末端suffix、零点后负侧确认的最早穿越及原接近段，最后沿原优先级及8ULP时间界分类。原oatof_extract_detector_arrivals成为同一实现的薄数组adapter，原检测半径、冻结容差、0.5mm接近窗及事件／状态语义不变，未知不推断物理损失。逐ID事件行号仍指向原查询向量。
+
+客户端不再分配M×N的三坐标矩阵或MAT spool；仅保留单API窗、O(N)统计及原始前min(N,50)列XZ绘图，全部粒子仍参与检测、穿透深度和原细窗口门。W256／N5000的257行三坐标数值载荷约30.84MB，不等于进程RSS预算或自动内存优化。两遍约2*ceil(M/256)次API调用，可能增加读取成本；这是有界性改造，不宣称提速。原数据集、源、查询时刻binary64值和精度、求解与接受条件保持，不触发重求或降低采样。
+
+原33项检测事件物理矩阵经薄adapter／唯一reducer通过（MCP外层1.2701544秒）；该首轮尚未覆盖分窗及大N helper。原owner随后以MCP验证完整两类46项（36项检测／10项绘图与真实共享helper，包括N100／1000／5000按请求窗生成），0 Failed／0 Incomplete，外层13.4216991秒；全部母群事件和50列绘图检查通过，公共GATE自然释放。CodeAnalyzer的helper／adapter／两测试无问题，reducer仅未用survey局部t赋值，随后机械删除，不改算法。实际COMSOL保存解冷读及进程RSS仍待相称验收，未据纯夹具授予数值、完整传输或Formal资格。
+
+
+Root补充在实际公共freezer生成的150源闭包中，以冻结comsol目录作为MATLAB当前目录，执行前后确认postprocess／array adapter／reducer三个生产函数均来自冻结树：两类46项PASS，公开MCP墙钟11.8644秒；现有Python冻结依赖薄回归1项PASS1.595秒，GATE均已释放。独立一次性旧HEAD oracle对120个小矩阵／240条轨迹作942次完整result比较（多窗及重叠），全相等、1.6579秒；旧函数仅供scratch对照，不进入生产或建立第二分类器。此为软件语义与冻结接线验收，真实COMSOL API时间窗／RSS仍未验证，也不宣称两遍读取提速。

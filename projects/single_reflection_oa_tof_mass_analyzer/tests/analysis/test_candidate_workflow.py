@@ -400,6 +400,10 @@ def execute_prepared_run(*args):
             records = {item["source_id"]: item for item in closure["sources"]}
             self.assertEqual(len(records), len(RELATIVE_PATHS) + 1)
             self.assertEqual(records[extra]["source_sha256"], sha256(REPO_ROOT / extra))
+            reducer = "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_detector_arrival_reducer.m"
+            reducer_path = Path(frozen_source_path(closure, reducer))
+            self.assertEqual(reducer_path.read_bytes(), (REPO_ROOT / reducer).read_bytes())
+            self.assertEqual(records[reducer]["source_sha256"], sha256(REPO_ROOT / reducer))
             frozen = Path(frozen_source_path(closure, extra))
             self.assertEqual(frozen.read_bytes(), (REPO_ROOT / extra).read_bytes())
             verify_candidate_source_closure(closure)

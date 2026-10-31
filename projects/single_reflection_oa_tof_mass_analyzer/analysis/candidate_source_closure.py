@@ -142,6 +142,7 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_cpt_solver_policy.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_create_result_nodes.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_extract_detector_arrivals.m",
+    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_detector_arrival_reducer.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_export_detector_events.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_parse_field_idealization.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_read_cartesian_release.m",
