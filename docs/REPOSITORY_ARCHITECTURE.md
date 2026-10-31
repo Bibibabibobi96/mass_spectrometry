@@ -91,6 +91,37 @@
 跨软件结论必须先统一输入并验证，再写入PROJECT。导航可以交叉，正文权威不能重复。
 ## 总体目录与项目边界
 
+下图是本轮改造的职责目标视图，箭头表示输入、产物或只读引用的流向，不表示所有组合均已支持。
+当前能力和未完成边界仍查项目PROJECT及[集成状态](../integrations/docs/INTEGRATION.md)。
+
+```mermaid
+flowchart TB
+    Request["研究请求与所选动作"]
+    Project["项目：器件物理模型与接口"]
+    Assembly["集成：装配配方与连接"]
+    Resolved["现有入口：统一解析并冻结输入"]
+    Execute["公共执行与所选工具适配"]
+    Prior["适用的已有资产"]
+    Result["本次产物与只读资产引用"]
+    Analysis["公共状态、损失与峰形诊断"]
+    Decision["项目或集成：科学评价"]
+    Request --> Resolved
+    Project --> Resolved
+    Assembly --> Resolved
+    Resolved --> Execute
+    Execute --> Result
+    Prior -->|适用资产| Execute
+    Prior -->|只读引用| Result
+    Result -->|粒子事件与必要几何| Analysis
+    Resolved -->|分析所需输入| Analysis
+    Result -->|几何与场等证据| Decision
+    Analysis --> Decision
+```
+
+器件提供者从[项目导航](../README.md#项目导航)进入；装配和正常运行从
+[集成入口](../integrations/README.md#模拟路径选择)进入；执行、状态及诊断API从
+[公共机制](../common/README.md)进入。具体连接语义归[连接架构](COMPONENT_CONNECTION_ARCHITECTURE.md)。
+
 ```text
 simulation_repo/
 ├─ README.md          # 人和 Agent 共用入口

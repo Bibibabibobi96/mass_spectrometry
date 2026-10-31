@@ -37,6 +37,9 @@ Mass Spectrometer Design and Simulation Platform
 
 ## 按问题查阅
 
+模拟入口分为[分段接续模拟](integrations/README.md#分段接续模拟)和
+[联合连续模拟](integrations/README.md#联合连续模拟)。选择表、完整命令及实际场范围只在组装入口维护。
+
 | 要解决的问题 | 入口 |
 |---|---|
 | 选择部件、配置实例、组装和联合研究 | [组装入口](integrations/README.md)、[当前集成状态](integrations/docs/INTEGRATION.md) |

@@ -461,6 +461,40 @@ LiveLink、SIMION Lua/GEM、PowerShell及跨软件数据合同。仓库结构、
 
 ### 昂贵阶段复用与中断恢复
 
+下图是科学依赖与最小补算的目标视图，箭头表示数值或数据依赖，不表示调度先后。
+真实耦合单元必须保持完整；独立成员是否可复用由其实际输入及保护证据决定。
+本图以现有外加场、无自洽空间电荷路径为例；反馈或不可分离求解状态不能按器件拆开复用。
+观测若改变步长或终止策略，相应设置也属于推进依赖；不能因简图未画某条边就放行复用。
+
+```mermaid
+flowchart TB
+    FieldInputs["几何、边界电压与网格"]
+    Solver["场生成实现与求解设置"]
+    Fields["场资产：耦合解或适用独立成员"]
+    FlightInputs["源、时钟、驱动与推进设置"]
+    Track["粒子推进状态"]
+    Observation["观测定义与记录设置"]
+    Events["必要科学事件"]
+    Methods["分析方法与参数"]
+    Analysis["诊断与分析结果"]
+    Presentation["呈现设置"]
+    Report["图表与报告"]
+    FieldInputs --> Fields
+    Solver --> Fields
+    Fields --> Track
+    FlightInputs --> Track
+    Track --> Events
+    Observation --> Events
+    Events --> Analysis
+    Methods --> Analysis
+    Analysis --> Report
+    Presentation --> Report
+```
+
+例如仅改呈现设置重做报告；原始事件足够时，改分析方法只重做分析；观测定义改变后，已有事件
+不足才补相应完整飞行单元。执行API见[公共SIMION机制](../common/simion/README.md)，阶段与资产身份
+仍由实际项目提供者和工作流定义，当前迁移限制查各PROJECT及[INTEGRATION](../integrations/docs/INTEGRATION.md)。
+
 - 所有项目及integration的昂贵工作流必须按实际依赖复用仍有效的已完成阶段，只执行缺失、失败或输入已改变的部分。
   飞行、后处理或发布失败不能成为重新构建几何、网格或Refine全部PA的理由；明确研究重新求解差异时另行声明该实验变量。
   场的复用身份由决定该场的物理设计、边界、驱动基、网格、求解器及构建选项确定；改变离子数、释放位置或批次分组本身
