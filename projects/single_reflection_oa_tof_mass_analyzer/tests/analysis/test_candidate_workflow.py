@@ -2421,7 +2421,7 @@ class CandidatePostprocessTests(unittest.TestCase):
         relative = "inputs/code/" + "deep/" * 26 + "actual_native_task.m"
         declared = candidate_native_execution_relative_paths({"sources": []}, code_relative_root=Path("inputs/code"))
         self.assertIn("inputs/native_run_config.json", declared)
-        extra = """    from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow import _native_stage_execution_view, _persist_native_json_paths
+        extra = """    from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow import _native_stage_execution_view, _persist_native_json_paths, _run_command
     import subprocess
     task = root / payload['native_relative']
     task.parent.mkdir(parents=True, exist_ok=True)
@@ -2441,6 +2441,14 @@ class CandidatePostprocessTests(unittest.TestCase):
     assert Path(transport['inputs']['particle_table']).read_bytes() == source.read_bytes()
     assert native_config.read_bytes() == frozen_before
     observed = subprocess.run([sys.executable, '-I', '-B', '-c', 'pass'], cwd=os.environ['MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY'], capture_output=True, text=True, encoding='utf-8', check=True)
+    failed_log = Path(os.environ['MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY']) / 'logs/inert_failed.log'
+    try:
+        _run_command([sys.executable, '-I', '-B', '-c', "print('inert diagnostic');raise SystemExit(17)"], failed_log)
+    except RuntimeError as error:
+        assert 'exit code 17' in str(error)
+        assert str(root / 'logs/inert_failed.log') in str(error) and str(failed_log) not in str(error)
+    else:
+        raise AssertionError('Expected inert child failure was not propagated')
     native_request = root / 'results/inert.analysis_request.json'
     native_request.write_text(json.dumps({'path':argv[1]}), encoding='utf-8')
     _persist_native_json_paths({'run_root':str(root)})
@@ -2455,6 +2463,7 @@ class CandidatePostprocessTests(unittest.TestCase):
                 result, run, _, outcome = fixture.invoke_fixture(root, {"native_relative":relative}, callback_text=callback, expected_execution_relative_paths=[relative, *declared])
             self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr + json.dumps(result) + "\n".join(path.read_text(encoding="utf-8",errors="replace") for path in (run / "logs").glob("*.log")))
             self.assertTrue(result['execution_alias_removed'])
+            self.assertIn('inert diagnostic', (run / 'logs/inert_failed.log').read_text(encoding='utf-8'))
             persisted = load_json(run / 'inputs/native_run_config.json')
             self.assertEqual(persisted['inputs']['particle_table'], str(run / 'inputs/source.ion'))
 

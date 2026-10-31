@@ -144,7 +144,13 @@ def _run_command(command: list[str], log_path: Path, environment: dict[str, str]
             process.wait()
             raise
     if process.returncode != 0:
-        raise RuntimeError(f"command failed with exit code {process.returncode}; log={log_path}")
+        diagnostic_log = str(log_path)
+        persistent = env.get("MASS_SPECTROMETRY_RUN_DIRECTORY")
+        execution = env.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY")
+        if persistent and execution:
+            from common.paths.workspace_paths import project_run_path
+            diagnostic_log = project_run_path(log_path, execution, persistent)
+        raise RuntimeError(f"command failed with exit code {process.returncode}; log={diagnostic_log}")
 
 
 
