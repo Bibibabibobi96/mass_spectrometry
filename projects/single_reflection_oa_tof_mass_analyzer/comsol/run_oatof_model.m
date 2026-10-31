@@ -82,7 +82,8 @@ if strlength(options.OutputModelPath) > 0
         'Normal COMSOL runs may write only under runs or scratch; Formal requires promotion.');
     [~,~,extension] = fileparts(outputPath);
     assert(strcmpi(extension, '.mph'), 'OutputModelPath must end in .mph.');
-    options.OutputModelPath = outputPath;
+    % Canonical spelling is only an authority check; native writes use the
+    % public owner's supplied execution path, including its short alias.
 end
 
 result = oatof_build_model_core( ...

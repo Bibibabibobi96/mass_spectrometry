@@ -129,7 +129,9 @@ def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: 
         request = {"model_path": selection["model_record"]["path"],
                    "context_path": selection["context_record"]["path"],
                    "output_dir": str(output), "parent_run_directory": selection["parent"],
-                   "child_run_directory": str(root)}
+                   "child_run_directory": str(root),
+                   "candidate_contract_path": frozen_source_path(closure,
+                       "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json")}
         source_context = plan.get("source_execution_context")
         if (not isinstance(source_context, dict) or source_context.get("schema_version") != 1
                 or source_context.get("role") != "run_source_execution_context"
@@ -158,6 +160,7 @@ def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: 
                         "request.output_dir="+quote(execution_path(output))+";request.child_run_directory="+quote(str(execution))+";\n"
                         "request.model_path="+quote(native_model)+";request.context_path="+quote(native_context)+";\n"
                         "request.parent_run_directory="+quote(source["execution_directory"])+";\n"
+                        "request.candidate_contract_path="+quote(execution_path(Path(request["candidate_contract_path"])))+";\n"
                         "result=reextract_oatof_saved_solution(request);\n"
                         "assert(result.native_particle_solve_count==0 && result.native_field_solve_count==0 && ~result.parent_model_saved);\n"
                         "fid=fopen("+quote(execution_path(result_path))+",'w');assert(fid>=0);\n"
@@ -172,6 +175,8 @@ def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: 
                                             receipt_path, "comsol_launcher_completion")
         _require_pass_report(report)
         result = load_json(result_path)
+        if result.get("candidate_model_validation") != "passed":
+            raise ValueError("Cold Candidate model did not complete the original read-only scientific checks")
         result["model_path"] = project_run_path(result["model_path"], source["execution_directory"], source["target_directory"])
         if Path(result["model_path"]).resolve() != Path(selection["model_record"]["path"]).resolve():
             raise ValueError("Cold model result does not match its canonical source identity")

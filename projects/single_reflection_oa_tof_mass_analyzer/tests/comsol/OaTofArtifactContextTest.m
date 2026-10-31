@@ -5,7 +5,7 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
     end
     methods (TestMethodSetup)
         function prepare(testCase)
-            clear oatof_paths workspace_paths run_oatof_model oatof_build_model_core
+            clear oatof_paths workspace_paths run_oatof_model oatof_build_model_core oatof_build_saved_particle_solution
             testCase.activeProject=fileparts(fileparts(fileparts(mfilename('fullpath'))));
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(testCase.activeProject));
             fixture=testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
@@ -37,6 +37,21 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
             testCase.verifyError(@() run_oatof_model(ArtifactRoot=artifact,ContractPath=contract, ...
                 OutputModelPath=output,AcceleratorGeometry=struct('invalid',1)), ...
                 'oatof:AcceleratorProjection');
+        end
+        function namedEntryPreservesExecutionOutputSpelling(testCase)
+            [project,artifact,contract]=testCase.snapshot();
+            scratch=fullfile(artifact,'projects','single_reflection_oa_tof_mass_analyzer','scratch','probe');
+            mkdir(fullfile(scratch,'nested'));
+            output=fullfile(scratch,'nested','..','model.mph');
+            writeCoreTransportFixture(fullfile(project,'comsol','oatof_build_model_core.m'));
+            clear oatof_build_model_core
+            rehash
+            testCase.assertEqual(which('oatof_build_model_core'), ...
+                fullfile(project,'comsol','oatof_build_model_core.m'));
+            result=run_oatof_model(ArtifactRoot=artifact,ContractPath=contract,OutputModelPath=output);
+            testCase.verifyEqual(result.execution_output,string(output));
+            testCase.verifyNotEqual(result.execution_output, ...
+                string(java.io.File(char(output)).getCanonicalPath()));
         end
         function namedEntryRejectsFormalFromFrozenSource(testCase)
             [~,artifact,contract]=testCase.snapshot();
@@ -89,7 +104,7 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
     end
     methods (Access=private)
         function [project,artifact,contract]=snapshot(testCase)
-            clear oatof_paths workspace_paths run_oatof_model oatof_build_model_core
+            clear oatof_paths workspace_paths run_oatof_model oatof_build_model_core oatof_build_saved_particle_solution
             repo=fileparts(fileparts(testCase.activeProject));
             snapshotRoot=fullfile(testCase.folder,'source_snapshot');
             project=fullfile(snapshotRoot,'projects','single_reflection_oa_tof_mass_analyzer');
@@ -101,6 +116,9 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
             copyfile(fullfile(testCase.activeProject,'load_oatof_contract.m'),project);
             copyfile(fullfile(testCase.activeProject,'comsol','run_oatof_model.m'),fullfile(project,'comsol'));
             copyfile(fullfile(testCase.activeProject,'comsol','oatof_build_model_core.m'),fullfile(project,'comsol'));
+            copyfile(fullfile(testCase.activeProject,'comsol','oatof_build_saved_particle_solution.m'),fullfile(project,'comsol'));
+            copyfile(fullfile(testCase.activeProject,'comsol','oatof_save_run_model.m'),fullfile(project,'comsol'));
+            copyfile(fullfile(testCase.activeProject,'comsol','oatof_write_saved_particle_context.m'),fullfile(project,'comsol'));
             contract=string(fullfile(testCase.folder,'resolved.json'));
             copyfile(fullfile(testCase.activeProject,'config','resolved_geometry.json'),contract);
             artifact=string(fullfile(testCase.folder,'artifacts'));
@@ -108,4 +126,11 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(project,'comsol')));
         end
     end
+end
+
+function writeCoreTransportFixture(path)
+fid=fopen(path,'w');assert(fid>=0);
+cleanup=onCleanup(@()fclose(fid));
+fprintf(fid,'function result=oatof_build_model_core(varargin)\nresult=struct(''execution_output'',string(varargin{17}));\nend\n');
+clear cleanup
 end

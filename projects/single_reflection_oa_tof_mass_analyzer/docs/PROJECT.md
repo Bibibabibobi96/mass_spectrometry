@@ -638,3 +638,14 @@ Root 验证显式数值编译主题：正式 common/verify.ps1 对完整 test_ca
 执行时去掉 `--dry-run` 并按原入口提供 `--simion-exe`。CLI、runtime 模板检查和纯 prepare 默认运行根统一消费 `common.paths.resolve_workspace_paths`，包括既有 `MASS_SPECTROMETRY_ARTIFACT_ROOT`；显式传入的项目根优先，已冻结 run/Resume 不按今日默认值改根。源码快照位置不再反向决定新输出根；缺登记模板仍明确拒绝，不跨根搜索同名资产。`--postprocess-from` 和 `--resume-finalization` 拒绝新的数值或执行选择，不默默忽略它们。
 
 独立冻结软件回归经公共 GATE 2 CPU／2 GiB：正常 CLI 真实编译、非默认产物根、显式数值字节与 authority 对齐，以及两种分析／收尾选择冲突拒绝，共2项通过2.779秒；补实际 reproduction=false／来源绑定断言后仅受影响正常入口方法复验2.603秒。均未启动商业程序、求场、Fly 或发布正式资产，dry-run成功仅表示该准备范围完成。
+
+
+### Candidate 原生保存与后处理实现边界
+
+完整 COMSOL core 的几何／求场／粒子及早期 raw-save 前缀原样迁入唯一 oatof_build_saved_particle_solution；save 与 context 两个既有局部函数也迁为唯一 helper。normal core 仍实际调用该实现，GeometryOnly／FieldDesignOnly 早返与原保存次序不变；后处理后同路径更新 GUI 的行为仍保留。此拆分不单独证明阶段因果复用已闭合，尤其不能忽略 GUI 尾部的实际科学状态及再次保存。
+
+正常 Candidate task 与已准入的冷提取共用原有的100粒子／全命中、环数、六段时间 token 及 pdset1→sol2只读检查。六token检查同时修复原scalar contains多pattern只需任一匹配的实现缺陷，逐项缺失仍拒绝；物理要求没有放宽。新纯测试由原正式MATLAB测试runner默认发现。命名入口只以canonical OutputModelPath校验允许根，实际写入保留公共owner提供的执行表示。
+
+Root纯MATLAB首轮28项为22PASS／6FAIL（29.484秒）：五项夹具误期望非空assert identifier，另一个时间token用例揭示上述真实缺陷。修后仅重跑validator，12项PASS（外层3.809秒）；前轮ArtifactContext11项与PlotView10项已PASS，distinct覆盖合计33项，不将两轮误称同轮全绿。相对9ba的929行前缀除两个helper调用名外全文相同，原数值／物理及保存顺序保持。尚未执行本实现的真实COMSOL求解／保存冷重开或GUI验收；这些软件证据不授精度、完整Candidate、Formal或整个Goal资格。
+
+整合后原正式 MATLAB 软件测试 runner 实跑82／82 PASS，MCP外层19.523秒，包含新validator默认接线；它是软件runner，不是Formal科学资格。实际冻结闭包回归PASS2.128秒、冷任务运输回归PASS3.643秒；首次第二方法误用类名导致发现错误，修正类名后仅补跑该方法，不计原错误为通过。新core与validator Code Analyzer无问题，搬移builder仅有输出初始化的未用赋值提示。

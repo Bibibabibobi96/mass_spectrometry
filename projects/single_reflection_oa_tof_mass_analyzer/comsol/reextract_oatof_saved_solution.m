@@ -3,11 +3,12 @@ function result=reextract_oatof_saved_solution(request)
 arguments
     request (1,1) struct
 end
-required={'model_path','context_path','output_dir','parent_run_directory','child_run_directory'};
+required={'model_path','context_path','output_dir','parent_run_directory','child_run_directory','candidate_contract_path'};
 assert(all(isfield(request,required)), 'oatof:ColdRequest', ...
     'Cold extraction requires explicit model/context/output paths.');
-assert(isfile(request.model_path) && isfile(request.context_path), ...
+assert(isfile(request.model_path) && isfile(request.context_path) && isfile(request.candidate_contract_path), ...
     'oatof:ColdInput','An admitted saved input is missing.');
+contract=load_oatof_contract(request.candidate_contract_path);
 context=jsondecode(fileread(request.context_path));
 assert(context.schema_version==1 && strcmp(context.role,'oatof_saved_particle_solution'), ...
     'oatof:SavedContext','Saved context identity differs.');
@@ -39,6 +40,8 @@ context.modelPath=char(parent);
 context.native_particle_solve_count=0;
 context.generate_model_plots=false;
 [result,~]=oatof_postprocess_saved_solution(model,context,char(request.output_dir));
+oatof_validate_candidate_solution(model,result,contract);
+result.candidate_model_validation='passed';
 result.parent_model_saved=false;
 result.native_field_solve_count=0;
 result.recovery_scope='saved_solution_postprocessing_only';
