@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: lightweight-${{ github.workflow }}-${{ github.ref }}
+  group: lightweight-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.comparison_base == '' && 'repository' || 'changed' }}
   cancel-in-progress: false
 
 jobs:

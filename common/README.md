@@ -89,10 +89,15 @@ Owner别名回归核对实际unittest模块与catalog所属发现集合（包括
 完整模块集合与三分片数量不变，权重更新不代表实测墙钟改善。
 初始三组各约285秒只是当时的权重估算，不能作为当前耗时或实测提速。父级已完整选择的模块直接传给分片，
 子进程消费已编译请求；仅改指定测试时不展开完整owner。部分root的扩展不冒充完整scope。
-Changed已选的Python模块全部具有实测权重、累计达到300秒且有效并发至少为2时，
+Changed已选的Python模块或声明替换式参数的PowerShell模块全部具有实测权重、累计达到300秒且有效并发至少为2时，
 若现有分片的预计调度时间更短，可直接对该模块集合分片；不扩大为完整owner或重置为Repository命令。
 300秒取自复杂软件反馈参考，只决定排程，不是超时或验收放宽。短／未知成本、单worker及继承资源仍合批；
 子片保留实际依赖环境、导入根、前置阶段和原失败策略，实际墙钟另行测量。
+共享`single_reflection_flight/field_plan.py`按实际单反射、cooled及依赖消费者选择34个集成模块，
+未知、删除或重命名来源仍保守扩大，Owner／Repository保持完整覆盖。
+集成入口使用现有`SelectedTestModules`替换式参数消费选定集合；有同轮中央Ruff时依赖其PASS后分片，
+没有时保留单批与入口自身的一次Ruff，不把subset追加成完整发现。34个模块的权重来自CI41230902882，
+选中集合减少与预计排程收益不代表已经实测达到反馈预算。
 
 显式Python测试命令保留目录声明的发现根作为临时导入路径，并在返回时恢复调用者环境，
 使既有目录级导入与未知子目录的模块枚举同时成立。
@@ -103,6 +108,10 @@ Changed已选的Python模块全部具有实测权重、累计达到300秒且有�
 普通命令自动规划、执行并汇总，`-PlanOnly`用于可选预览。Changed的`-FullScope`保留原Core／Static
 选择，不等于Repository。原两个驱动已移除，活动消费者统一使用此入口。
 `.github/workflows/lightweight-gate.yml`在push运行Changed，手动`workflow_dispatch`默认运行Repository。
+Changed和Repository按实际选择范围分别排队，同范围仍串行且不取消运行中的任务。
+两个job使用[独立GitHub托管VM](https://docs.github.com/en/actions/how-tos/manage-runners/github-hosted-runners/use-github-hosted-runners)，
+其主机库、产物和临时目录互不共享；分组沿[官方concurrency机制](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)，
+不改变每个host的并发预算或平台限额，也不保证立即取得runner。
 手动指定`comparison_base`可在所选代码版本上运行从该提交到当前提交的Changed范围，例如
 `gh workflow run lightweight-gate.yml --ref <任务分支> -f comparison_base=<40位提交SHA>`。
 显式比较基线必须可取得、非零且差异非空；不满足时在规划前拒绝，不静默改为另一范围。

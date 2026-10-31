@@ -297,6 +297,7 @@ if ($FullScope) {
 
 $partitionParents = @{}
 $partialPartitionParents = @{}
+$selectedPowerShellSubsetParents = @{}
 function Test-CompletePartitionOwnerCommand {
     param($Route, $Command, $TestSelection, [string]$RepoRoot)
     if ($null -eq $Route.PSObject.Properties['repository_integration_partition'] -or
@@ -335,18 +336,36 @@ function Test-CompletePartitionOwnerCommand {
     }
     return $true
 }
-function Get-SelectedPartialPythonTestPartitions {
+function Test-SelectedPowerShellSubsetCommand {
+    # Only the existing declared replacement parameter may bypass augmentation.
+    param($Route, $Command, $TestSelection)
+    if ($Command.runner -ne 'powershell' -or $null -eq $TestSelection -or $TestSelection.CompleteOwner -or
+        $null -eq $Route.PSObject.Properties['repository_integration_partition'] -or
+        $null -eq $Route.PSObject.Properties['partition_preflight'] -or [bool]$Route.partition_preflight) { return $false }
+    $replacement = [string]$Route.repository_integration_partition.parameter
+    if ([string]$Route.test_selection.module_parameter -cne $replacement -or
+        $null -eq $Command.parameters.PSObject.Properties[$replacement]) { return $false }
+    return -not ($null -ne $Command.parameters.PSObject.Properties['PreflightOnly'] -and $Command.parameters.PreflightOnly)
+}
+function Get-SelectedPartialTestPartitions {
     # Five minutes is the existing complex-software reference, not a timeout.
     # Selection and complete-owner coverage are unchanged by this cost heuristic.
-    param($Route, $Command, $TestSelection, [string]$RepoRoot, [int]$Concurrency)
+    param($Route, $Command, $TestSelection, [string]$RepoRoot, [int]$Concurrency, [bool]$SharedPreflight = $false)
     if ($Concurrency -lt 2 -or $env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN -or
-        $Command.runner -ne 'python' -or $null -eq $TestSelection -or $TestSelection.CompleteOwner -or
+        $Command.runner -notin @('python','powershell') -or $null -eq $TestSelection -or $TestSelection.CompleteOwner -or
         $null -eq $Route.PSObject.Properties['repository_integration_partition']) { return @() }
-    $arguments = @($Command.arguments)
-    if ($arguments.Count -lt 3 -or $arguments[0] -cne '-m' -or
-        $arguments[1] -notin @('unittest', 'common.gate_unittest')) { return @() }
+    if ($Command.runner -eq 'python') {
+        $arguments = @($Command.arguments)
+        if ($arguments.Count -lt 3 -or $arguments[0] -cne '-m' -or
+            $arguments[1] -notin @('unittest', 'common.gate_unittest')) { return @() }
+        $actualModules = @($arguments | Select-Object -Skip 2)
+    } else {
+        if (-not $SharedPreflight -or -not (Test-SelectedPowerShellSubsetCommand $Route $Command $TestSelection)) { return @() }
+        $replacement = [string]$Route.repository_integration_partition.parameter
+        $actualModules = @($Command.parameters.$replacement)
+    }
     $modules = @($TestSelection.Modules)
-    $actual = @($arguments | Select-Object -Skip 2 | ForEach-Object { $_.Replace('/','.') -replace '\.py$','' })
+    $actual = @($actualModules | ForEach-Object { $_.Replace('/','.') -replace '\.py$','' })
     $expected = @($modules | ForEach-Object { $_.Replace('/','.') -replace '\.py$','' })
     if ($actual.Count -ne $expected.Count -or
         (($actual | Sort-Object -Unique) -join '|') -cne (($expected | Sort-Object -Unique) -join '|')) { return @() }
@@ -425,6 +444,10 @@ foreach ($route in $routes) {
         } elseif ($null -ne $testSelection -and $testSelection.Expanded) {
             $reason = $testSelection.Reason
         }
+        if (-not $FullScope -and -not $ownerScope -and
+            (Test-SelectedPowerShellSubsetCommand $route $command $testSelection)) {
+            $selectedPowerShellSubsetParents[$name] = $true
+        }
         $partitions = @()
         if (($null -eq $testSelection -or -not $testSelection.OnlyTestModules) -and
             (Test-CompletePartitionOwnerCommand -Route $route -Command $command -TestSelection $testSelection -RepoRoot $repoRoot)) {
@@ -438,8 +461,9 @@ foreach ($route in $routes) {
             } else { $route.command }) | ConvertTo-Json -Depth 32 | ConvertFrom-Json -Depth 32
         }
         if (-not $partitions.Count -and -not $FullScope -and -not $ownerScope) {
-            $partitions = @(Get-SelectedPartialPythonTestPartitions -Route $route -Command $command `
-                -TestSelection $testSelection -RepoRoot $repoRoot -Concurrency $MaxConcurrency)
+            $partitions = @(Get-SelectedPartialTestPartitions -Route $route -Command $command `
+                -TestSelection $testSelection -RepoRoot $repoRoot -Concurrency $MaxConcurrency `
+                -SharedPreflight $stageItems['ruff_changed_python'].Run)
             if ($partitions.Count) { $partialPartitionParents[$name] = $true }
         }
         $partialPartitions = $partialPartitionParents.ContainsKey($name)
@@ -452,7 +476,9 @@ foreach ($route in $routes) {
             # This owner's former preflight was only Ruff. The central source
             # check owns that responsibility; its test shards need no process.
             $stageItems[$name].Run = $false
-            $stageItems[$name].Reason = if ($partialPartitions) {'selected_partial_python_tests_partitioned'}
+            $stageItems[$name].Reason = if ($partialPartitions) {
+                if ($command.runner -eq 'python') {'selected_partial_python_tests_partitioned'} else {'selected_partial_powershell_tests_partitioned'}
+            }
                 elseif ($command.runner -eq 'python') {'owner_tests_partitioned_without_parent_process'} else {'tests_partitioned_without_duplicate_ruff_preflight'}
         }
         foreach ($partition in $partitions) {
@@ -462,14 +488,19 @@ foreach ($route in $routes) {
                     arguments=@('-m','unittest')+@($partition.modules);
                     python_path_roots=@($(if ($partialPartitions) {$command.python_path_roots} else {$route.test_selection.roots}))}
             } else {
-                $partCommand = $route.repository_integration_command | ConvertTo-Json -Depth 32 | ConvertFrom-Json -Depth 32
-                $partCommand.parameters.PSObject.Properties.Remove('PreflightOnly')
-                $partCommand.parameters | Add-Member -NotePropertyName 'PreflightValidated' -NotePropertyValue $true
+                $partCommand = $(if ($partialPartitions) {$command} else {$route.repository_integration_command}) |
+                    ConvertTo-Json -Depth 32 | ConvertFrom-Json -Depth 32
+                if (-not $partialPartitions) {
+                    $partCommand.parameters.PSObject.Properties.Remove('PreflightOnly')
+                    $partCommand.parameters | Add-Member -NotePropertyName 'PreflightValidated' -NotePropertyValue $true
+                }
                 $partCommand.parameters | Add-Member -NotePropertyName ([string]$route.repository_integration_partition.parameter) `
-                    -NotePropertyValue @($partition.modules)
+                    -NotePropertyValue @($partition.modules) -Force
             }
             $partCommand = ConvertTo-GateExecutionCommand -Command $partCommand
-            $partReason = if ($partialPartitions) {'selected_partial_python_test_partition'} else {'complete_owner_test_partition'}
+            $partReason = if ($partialPartitions) {
+                if ($command.runner -eq 'python') {'selected_partial_python_test_partition'} else {'selected_partial_powershell_test_partition'}
+            } else {'complete_owner_test_partition'}
             $partProfile = if ($partialPartitions) {$stageItems[$name].DependencyProfile} else {[string]$route.dependency_profile}
             Add-ChangedStageItem $partName $true $partReason $partProfile
             $stageItems[$partName].Command = $partCommand
@@ -588,6 +619,16 @@ $ownerRuffPaths = @($routes | Where-Object {
 if ($ownerRuffPaths.Count) {
     $stageItems['ruff_changed_python'].Run = $true
     $stageItems['ruff_changed_python'].Reason = 'selected_owner_lint_responsibilities'
+}
+# A selected PowerShell subset may share only a genuinely selected central Ruff.
+# Without it, one replacement-wrapper batch retains its own existing preflight.
+if ($stageItems['ruff_changed_python'].Run) {
+    foreach ($item in $stageItems.Values | Where-Object { $_.Run -and $null -ne $_.Command }) {
+        $parent = if ($partitionParents.ContainsKey($item.Name)) {$partitionParents[$item.Name]} else {$item.Name}
+        if (-not $selectedPowerShellSubsetParents.ContainsKey($parent)) { continue }
+        $item.Command.parameters | Add-Member -NotePropertyName PreflightValidated -NotePropertyValue $true -Force
+        $item.RequiresStages = @(@($item.RequiresStages) + @('ruff_changed_python') | Sort-Object -Unique)
+    }
 }
 $stageItems['ruff_changed_python'].Command = @{
     runner = 'python'

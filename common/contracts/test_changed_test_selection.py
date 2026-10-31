@@ -425,6 +425,168 @@ try {
                         self.assertEqual(selected["dependency_profile"], "stdlib")
                         self.assertEqual(selected["requires_stages"], ["partition_prerequisite"])
 
+
+    def selected_powershell_fixture(self, root: Path) -> tuple[str, list[str]]:
+        """Reuse the small Python fixture with the real integration replacement CLI."""
+        _, originals = self.partial_python_partition_fixture(root)
+        tests = root / "integrations/tests"
+        tests.mkdir()
+        for relative in originals + ["common/contracts/test_unselected.py"]:
+            source = root / relative
+            body = source.read_text(encoding="utf-8").replace(
+                "from fixture_import import VALUE", "from integrations.tests.fixture_import import VALUE")
+            body = body.replace("if KEY in ('a','b'):", "if KEY in ('a','b') and os.environ.get('PARTIAL_PARALLEL'):")
+            body = body.replace("self.assertEqual(VALUE, 17)",
+                                "self.assertEqual(VALUE, 17); self.assertEqual(len(list(root.glob('ruff.*'))), 1)")
+            (tests / source.name).write_text(body, encoding="utf-8")
+        shutil.copyfile(root / "common/contracts/fixture_import.py", tests / "fixture_import.py")
+        shutil.copyfile(REPO_ROOT / "integrations/verify_integration.ps1", root / "integrations/verify_integration.ps1")
+        with (root / "common/host_execution_lease.ps1").open("a", encoding="utf-8") as stream:
+            stream.write("function Enter-HostExecutionLease {param($Role,$Stage) @{}}\n"
+                         "function Exit-HostExecutionLease {param($Lease)}\n")
+        (root / "ruff/__main__.py").write_text(
+            "import os,sys\nfrom pathlib import Path\n"
+            "kind='owner' if 'integrations/runtime' in sys.argv else 'root'\n"
+            "(Path(os.environ['PARTIAL_EVENTS'])/('ruff.'+kind)).write_text('ready')\n",
+            encoding="utf-8")
+        leaf = "integrations/runtime/field_plan.py"
+        (root / leaf).parent.mkdir()
+        (root / leaf).write_text("# Known small source for the replacement consumer.\n", encoding="utf-8")
+        modules = ["integrations/tests/test_" + name + ".py" for name in "abcde"]
+        path = root / "common/gate_catalog.json"
+        catalog = json.loads(path.read_text(encoding="utf-8"))
+        current = json.loads((REPO_ROOT / "common/gate_catalog.json").read_text(encoding="utf-8"))
+        route = next(x for x in current["routes"] if x["stage"] == "instrument_assembly_integration")
+        route.pop("runtime_dependencies_path")
+        route["requires_stages"] = ["partition_prerequisite"]
+        route["test_selection"]["module_parameter"] = "SelectedTestModules"
+        route["test_selection"]["dependencies"] = [dict(matches=[dict(exact=leaf, reason="fixture_field_plan")],
+                                                       modules=modules, dependency_profile="stdlib")]
+        route["repository_integration_partition"]["measured_seconds"] = {
+            "test_a": 120, "test_b": 110, "test_c": 100, "test_d": 10, "test_e": 1}
+        catalog["routes"] = [catalog["routes"][0], route]
+        path.write_text(json.dumps(catalog), encoding="utf-8")
+        return leaf, modules
+
+    def check_selected_powershell_dispatch(self, mode: str) -> None:
+        with tempfile.TemporaryDirectory(prefix="powershell_subset_" + mode + "_") as directory:
+            root = Path(directory)
+            leaf, modules = self.selected_powershell_fixture(root)
+            catalog_path = root / "common/gate_catalog.json"
+            catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+            route = catalog["routes"][1]
+            weights = route["repository_integration_partition"]["measured_seconds"]
+            if mode == "unknown":
+                weights.pop("test_e")
+            elif mode == "short":
+                route["repository_integration_partition"]["measured_seconds"] = {k: v / 100 for k, v in weights.items()}
+            elif mode == "no_shared_ruff":
+                leaf = "integrations/runtime/field_plan.json"
+                (root / leaf).write_text("{}", encoding="utf-8")
+                route["test_selection"]["dependencies"][0]["matches"][0]["exact"] = leaf
+            catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+            events = root / "events"
+            events.mkdir()
+            environment = dict(os.environ, PARTIAL_EVENTS=str(events))
+            for key in ("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN", "PARTIAL_PARALLEL", "PARTIAL_FAIL"):
+                environment.pop(key, None)
+            parallel = mode in {"heavy", "failed"}
+            if parallel:
+                environment["PARTIAL_PARALLEL"] = "1"
+            if mode == "failed":
+                environment["PARTIAL_FAIL"] = "1"
+            if mode == "inherited":
+                environment["MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN"] = "fixture_inherited_grant"
+            summary = root / "summary.json"
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-File", str(root / "common/verify.ps1"),
+                 "-PythonExe", sys.executable, "-ChangedPath", leaf, "-MaxConcurrency",
+                 "1" if mode == "serial" else "2", "-SummaryPath", str(summary)], cwd=root,
+                env=environment, capture_output=True, text=True, encoding="utf-8", timeout=60)
+            output = result.stdout + result.stderr
+            self.assertEqual(result.returncode != 0, mode == "failed", output)
+            stages = {x["name"]: x for x in json.loads(summary.read_text(encoding="utf-8"))["stages"]}
+            parent = stages["instrument_assembly_integration"]
+            parts = [x for name, x in stages.items() if name.startswith("instrument_assembly_integration__tests_")]
+            self.assertEqual(len(parts), 4 if parallel else 0, output)
+            executed = parts if parallel else [parent]
+            actual = [m for part in executed for m in part["command"]["parameters"]["SelectedTestModules"]]
+            self.assertCountEqual(actual, [m[:-3].replace("/", ".") for m in modules])
+            self.assertEqual(len(actual), len(set(actual)))
+            for part in executed:
+                self.assertEqual(part["command"]["script"], "integrations/verify_integration.ps1")
+                self.assertNotIn("ChangedTestModules", part["command"]["parameters"])
+                self.assertEqual(part["command"]["parameters"]["PythonExe"], sys.executable)
+                self.assertEqual(part["dependency_profile"], "stdlib")
+                self.assertIn("partition_prerequisite", part["requires_stages"])
+                if mode != "no_shared_ruff":
+                    self.assertTrue(part["command"]["parameters"]["PreflightValidated"])
+                    self.assertIn("ruff_changed_python", part["requires_stages"])
+                    self.assertEqual(stages["ruff_changed_python"]["status"], "PASS")
+                    if part["started_at"]:
+                        self.assertLessEqual(stages["ruff_changed_python"]["finished_at"], part["started_at"])
+                else:
+                    self.assertFalse(part["command"]["parameters"].get("PreflightValidated", False))
+            self.assertEqual(len(list(events.glob("ruff.*"))), 1, output)
+            self.assertTrue((events / ("ruff.owner" if mode == "no_shared_ruff" else "ruff.root")).exists())
+            starts = {p.stem: json.loads(p.read_text()) for p in events.glob("*.start")}
+            done = {p.stem: json.loads(p.read_text()) for p in events.glob("*.done")}
+            self.assertEqual(set(starts), set(done), output)
+            self.assertTrue({"a", "b"}.issubset(starts))
+            timeline = sorted([(v["time"], 1) for v in starts.values()] + [(v["time"], -1) for v in done.values()])
+            active = peak = 0
+            for _, delta in timeline:
+                active += delta
+                peak = max(peak, active)
+            self.assertEqual(peak, 2 if parallel else 1, output)
+            if mode == "failed":
+                self.assertIn("PARTIAL_FAILURE", output)
+                self.assertCountEqual([p["status"] for p in parts], ["FAIL", "PASS", "BLOCKED", "BLOCKED"])
+                self.assertGreater(done["b"]["time"], done["a"]["time"])
+            else:
+                self.assertEqual(set(starts), set("abcde"))
+                self.assertEqual(sum(len(p["test_durations"]) for p in executed), 5)
+
+    def test_selected_powershell_heavy_subset_partitions_and_failure_drain(self) -> None:
+        for mode in ("heavy", "failed"):
+            with self.subTest(mode=mode):
+                self.check_selected_powershell_dispatch(mode)
+
+    def test_selected_powershell_cost_fallbacks_keep_one_real_subset_and_ruff(self) -> None:
+        for mode in ("short", "unknown", "serial", "inherited", "no_shared_ruff"):
+            with self.subTest(mode=mode):
+                self.check_selected_powershell_dispatch(mode)
+
+    def test_selected_powershell_full_owner_and_repository_keep_complete_coverage(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="powershell_complete_plan_") as directory:
+            root = Path(directory)
+            _, modules = self.selected_powershell_fixture(root)
+            script = r"""
+$ErrorActionPreference='Stop'
+foreach($scope in @('Owner','Repository')){
+ $arguments=@{Scope=$scope;PythonExe=__PYTHON__;PlanOnly=$true;MaxConcurrency=2;
+   PlanPath=(Join-Path $PWD ($scope+'.json'))}
+ if($scope-eq'Owner'){$arguments.Owner=@('instrument_assembly')}
+ & common/verify.ps1 @arguments|Out-Null
+}
+""".replace("__PYTHON__", powershell_literal(sys.executable))
+            result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=root,
+                                    capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            for scope in ("Owner", "Repository"):
+                plan = json.loads((root / (scope + ".json")).read_text(encoding="utf-8"))
+                parts = [p for p in plan["stages"] if p["name"].startswith("instrument_assembly_integration__tests_")]
+                self.assertEqual(len(parts), 4)
+                actual = [m for p in parts for m in p["command"]["parameters"]["SelectedTestModules"]]
+                self.assertCountEqual(actual, [m[:-3].replace("/", ".") for m in modules] +
+                                      ["integrations.tests.test_unselected"])
+                self.assertEqual(len(actual), len(set(actual)))
+                for part in parts:
+                    self.assertEqual(part["reason"], "complete_owner_test_partition")
+                    self.assertEqual(part["command"]["script"], "integrations/verify_integration.ps1")
+                    self.assertTrue(part["command"]["parameters"]["PreflightValidated"])
+                    self.assertNotIn("ChangedTestModules", part["command"]["parameters"])
+
     def selections(self, root: Path, cases: list[dict], *, owner_filter: bool = False) -> list[dict]:
         """Evaluate read-only cases in one host; cross-process tests remain separate."""
         with tempfile.TemporaryDirectory(prefix="selection_cases_") as directory:

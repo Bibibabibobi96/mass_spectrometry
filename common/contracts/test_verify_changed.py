@@ -486,7 +486,9 @@ exit 0
         integration = [row for row in request["stages"] if row["name"].startswith("instrument_assembly_integration")]
         self.assertEqual(len(integration), 1)
         command = integration[0]["command"]
-        modules = command.get("parameters", {}).get("ChangedTestModules", command.get("arguments", [])[2:])
+        parameters = command.get("parameters", {})
+        self.assertNotIn("ChangedTestModules", parameters)
+        modules = parameters.get("SelectedTestModules", command.get("arguments", [])[2:])
         modules = [value.removesuffix(".py").replace("/", ".") for value in modules]
         self.assertEqual(modules, ["integrations.tests.test_repository_bindings"])
         self.assertFalse(command.get("parameters", {}).get("PreflightOnly", False))
@@ -615,6 +617,91 @@ exit 0
             selected_stages = set(selected.group(1).split(","))
             self.assertEqual(stages.intersection(selected_stages), {f"rf_multipole_{variant}_static"})
             self.assertIn("rf_multipole_generated_publications", selected_stages)
+
+
+    def test_field_plan_dependency_uses_actual_selected_consumers_without_duplicates(self):
+        source = 'integrations/workflows/single_reflection_flight/field_plan.py'
+        route = next(row for row in self.routes if row['stage'] == 'instrument_assembly_integration')
+        expected = {'.'.join(path.relative_to(REPO_ROOT).with_suffix('').parts)
+                    for path in (REPO_ROOT / 'integrations/tests').glob('test_*.py')
+                    if path.stem.startswith(('test_single_reflection_', 'test_cooled')) or
+                    path.stem in ('test_dependencies', 'test_native_path_consumers', 'test_saved_workbench_replay_policy')}
+        full = {'.'.join(path.relative_to(REPO_ROOT).with_suffix('').parts)
+                for path in (REPO_ROOT / 'integrations/tests').rglob('test_*.py')}
+        cases = [(('-ChangedPath', source), expected)]
+        for name in ('test_multipole_ip_prepare', 'test_oa_mr_execute', 'test_paired_accelerator_static_field_execute'):
+            cases.append((('-ChangedPath', source, 'integrations/tests/' + name + '.py'),
+                          expected | {'integrations.tests.' + name}))
+        cases += [(('-Scope', 'Owner', '-Owner', 'instrument_assembly'), full),
+                  (('-Scope', 'Repository'), full)]
+        for arguments, wanted in cases:
+            with self.subTest(arguments=arguments):
+                if arguments[0] == '-ChangedPath' and len(arguments) == 3:
+                    with tempfile.TemporaryDirectory(prefix='field_plan_mixed_') as directory:
+                        request = Path(directory) / 'plan.json'
+                        quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+                        selected = ','.join(quote(value) for value in arguments[1:])
+                        script = (f"& {quote(CHANGED_GATE)} -PythonExe {quote(sys.executable)} "
+                                  f"-PlanOnly -PlanPath {quote(request)} -ChangedPath @({selected})")
+                        process = subprocess.run([shutil.which('pwsh'), '-NoProfile', '-Command', script],
+                            cwd=REPO_ROOT, capture_output=True, text=True, encoding='utf-8', timeout=40)
+                        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+                        plan = json.loads(request.read_text(encoding='utf-8-sig'))
+                else:
+                    plan, _ = self.plan(*arguments)
+                rows = [row for row in plan['stages']
+                        if row['name'].startswith('instrument_assembly_integration')]
+                modules = []
+                for row in rows:
+                    command = row['command']
+                    self.assertEqual(command['runner'], 'powershell')
+                    parameters = command['parameters']
+                    self.assertNotIn('ChangedTestModules', parameters)
+                    if not parameters.get('PreflightOnly', False):
+                        modules.extend(parameters['SelectedTestModules'])
+                self.assertCountEqual(modules, wanted)
+                self.assertEqual(len(modules), len(set(modules)))
+                self.assertTrue(all(row['dependency_profile'] == route['dependency_profile'] for row in rows))
+
+    def test_field_plan_mapping_keeps_missing_unknown_and_renamed_source_conservative(self):
+        source = 'integrations/workflows/single_reflection_flight/field_plan.py'
+        route = next(row for row in self.routes if row['stage'] == 'instrument_assembly_integration')
+        dependency = next(row for row in route['test_selection']['dependencies']
+                          if any(match.get('exact') == source for match in row['matches']))
+        expected = set(dependency['modules'])
+        with tempfile.TemporaryDirectory(prefix='field_plan_selection_') as directory:
+            root = Path(directory)
+            paths = {path.relative_to(REPO_ROOT).as_posix()
+                     for path in (REPO_ROOT / 'integrations/tests').rglob('test_*.py')}
+            for relative in paths | {source}:
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text('# inert selector input, never executed\n', encoding='utf-8')
+            quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+            script = f"""
+$ErrorActionPreference='Stop'
+. {quote(REPO_ROOT / 'common/gate_catalog_support.ps1')}
+$route=(Get-Content {quote(ROUTE_TABLE)} -Raw|ConvertFrom-Json -Depth 64).routes|Where-Object stage -eq instrument_assembly_integration
+$root={quote(root)};$source={quote(source)}
+$parameters=@{{Route=$route;KnownTestRoots=@('integrations/tests/');RepoRoot=$root}}
+$result=@{{known=@((Get-GateChangedTests @parameters -ChangedPaths @($source)).Modules)}}
+$result.unknown=$null-eq(Get-GateChangedTests @parameters -ChangedPaths @('integrations/workflows/single_reflection_flight/future.py'))
+Remove-Item -LiteralPath (Join-Path $root $source)
+$result.deleted=$null-eq(Get-GateChangedTests @parameters -ChangedPaths @($source))
+$result.renamed=$null-eq(Get-GateChangedTests @parameters -ChangedPaths @($source,'integrations/workflows/single_reflection_flight/renamed.py'))
+$result.full=@((Get-GateChangedTests @parameters -ChangedPaths @($source) -FullScope).Modules)
+$result|ConvertTo-Json -Compress
+"""
+            process = subprocess.run([shutil.which('pwsh'), '-NoProfile', '-Command', script], cwd=root,
+                capture_output=True, text=True, encoding='utf-8', timeout=30)
+            self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+            result = json.loads(process.stdout)
+            self.assertEqual(set(result['known']), expected)
+            # Outside test roots an unknown/deleted authority returns no narrow
+            # selection; the normal planner then retains the complete owner.
+            for name in ('unknown', 'deleted', 'renamed'):
+                self.assertTrue(result[name])
+            self.assertEqual(set(result['full']), paths)
 
     def test_direct_integration_gate_owns_only_its_tests(self) -> None:
         for path in ("integrations/tests/test_dependencies.py",
