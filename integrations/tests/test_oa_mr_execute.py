@@ -42,7 +42,7 @@ if($firstSpec.index-ne3-or$formalBatchIndex-ne3){{throw 'did not observe largest
 $formal=[pscustomobject]@{{process_record=[pscustomobject]@{{completed=$true}};observed_peak_process_tree_working_set_bytes=1073741824;observed_process_cpu_percent=8;observed_background_cpu_percent=2;available_memory_bytes=10737418240;total_physical_memory_bytes=21474836480}}
 & $replan $formal
 $result=Get-Content $runtimeDispatchPlanPath -Raw|ConvertFrom-Json
-if($result.estimation.observed_missing_batch_index-ne3-or$result.limits.maximum_concurrency-ne1-or$result.waves[0].batches[2].count-ne3){{throw 'calibrated fixed partition differs'}}
+if($result.estimation.observed_missing_batch_index-ne3-or$result.limits.maximum_concurrency-ne6-or$result.waves[0].batches[2].count-ne3){{throw 'calibrated fixed partition differs'}}
 '''
             path = root/"fixed.ps1"; path.write_text(script, encoding="utf-8")
             result = subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(path)],cwd=REPO,
@@ -122,7 +122,7 @@ $formal=[pscustomobject]@{{process_record=[pscustomobject]@{{completed=$true}};o
 & $replan $formal
 if($script:calls-ne1-or@($replanState.replayIndexes).Count-ne2-or$replanState.replayIndexes[0]-ne2-or$replanState.replayIndexes[1]-ne3){{throw 'wrong pending batches'}}
 $calibrated=Get-Content $runtimeDispatchPlanPath -Raw|ConvertFrom-Json
-if(-not$calibrated.estimation.recovered_missing_observation_completed-or$calibrated.limits.maximum_concurrency-ne1){{throw 'wrong calibrated identity'}}
+if(-not$calibrated.estimation.recovered_missing_observation_completed-or$calibrated.limits.maximum_concurrency-ne3){{throw 'wrong calibrated identity'}}
 if($calibrated.estimation.observed_peak_bytes-ne1073741824-or$calibrated.estimation.observed_process_cpu_percent-ne8-or$calibrated.estimation.background_cpu_percent-ne2-or$calibrated.host.available_memory_bytes-ne10737418240-or$calibrated.host.total_physical_memory_bytes-ne21474836480){{throw 'actual observation changed'}}
 if(@($calibrated.waves[0].batches).Count-ne3-or$calibrated.waves[0].batches[0].particle_id_max-ne1-or$calibrated.waves[0].batches[1].particle_id_min-ne2){{throw 'fixed intervals changed'}}
 '''

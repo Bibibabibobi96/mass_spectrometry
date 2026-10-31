@@ -57,15 +57,16 @@ if($failure.Exception.Message-ne'ORIGINAL_SOURCE_PIN_FAILURE'-or$released-ne2-or
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
     def test_reopen_records_actual_process_before_native_or_scientific_failure(self):
-        code=r"""param($Source,$Repo,$Run)
+        code=r"""param($Source,$Repo,$Run,$Python)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
 . (Join-Path $Repo 'integrations/runtime/frontend_flight_support.ps1')
 $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
 $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Confirm-InstrumentIobVerification'},$true)
 Invoke-Expression $node.Extent.Text
 New-Item -ItemType Directory -Path (Join-Path $Run logs) -Force|Out-Null
 [IO.File]::WriteAllText((Join-Path $Run 'logs/full_instrument.batch1.assembly.stdout.log'),'SINGLE_REFLECTION_IOB=PASS')
-$RunPackage=@{artifact_run_dir=$Run;run_dir=$Run};$lease=@{token='TEST_ONLY_ACTUAL_PARENT'}
+$RunPackage=[pscustomobject]@{artifact_run_dir=$Run;run_dir=$Run;execution_alias=$null;execution_path_capacity=$null;python=$Python};$lease=@{token='TEST_ONLY_ACTUAL_PARENT'}
 function Write-RunJson {param($Path,$Value,$Depth)}
 function Invoke-ResourceBudgetedProcess {
  param($Limits,$RunDir,$FilePath,$ArgumentList,$WorkingDirectory,$Environment,$UsagePath,$RedirectStandardOutput,$RedirectStandardError)
@@ -85,8 +86,8 @@ function Invoke-ResourceBudgetedProcess {
 foreach($mode in @('marker','nonzero','unknown')){
  $NativeOperations=[Collections.Generic.List[object]]::new();$caught=$null
  $case=[pscustomobject]@{case_id='batch1';iob_builder_arguments=@('INERT_BUILD');iob_verify_arguments=@('INERT_REOPEN_ONLY');working_directory=$Run;iob_path=(Join-Path $Run saved.iob);receipt_path=(Join-Path $Run case.json)}
- try{Confirm-InstrumentIobVerification -Operation after_build -Case $case -BuildResult @{exit_code=0} -Phase full_instrument -RunDirectory $Run -SimionExe 'INERT_NOT_A_SOLVER' -Limits @{} -Python 'unused' -RepoRoot $Repo}catch{$caught=$_}
- if($null-eq$caught-or$NativeOperations.Count-ne1){throw 'Reopen failure dropped its actual writer fact'}
+ try{Confirm-InstrumentIobVerification -Operation after_build -Case $case -BuildResult @{exit_code=0} -Phase full_instrument -RunDirectory $Run -SimionExe 'INERT_NOT_A_SOLVER' -Limits @{} -Python $Python -RepoRoot $Repo}catch{$caught=$_}
+ if($null-eq$caught-or$NativeOperations.Count-ne1){throw "Reopen failure dropped its actual writer fact: $caught"}
  $fact=$NativeOperations[0]
  if($fact.resource_release_id-ne$lease.token-or$fact.observation.process_id-ne701-or$fact.observation.process_started_at_utc_ticks-ne801L){throw 'Reopen changed process or resource identity'}
  if($mode-eq'unknown'){
@@ -96,7 +97,7 @@ foreach($mode in @('marker','nonzero','unknown')){
 """
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);script=root/'reopen.ps1';script.write_text(code,encoding='utf-8',newline='\n')
-            result=subprocess.run([PWSH,'-NoProfile','-File',str(script),str(EXECUTE_SOURCE.with_name('execute.ps1')),str(ROOT),str(root/'run')],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+            result=subprocess.run([PWSH,'-NoProfile','-File',str(script),str(EXECUTE_SOURCE.with_name('execute.ps1')),str(ROOT),str(root/'run'),sys.executable],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
     def test_unconfirmed_host_release_keeps_primary_and_protection(self):

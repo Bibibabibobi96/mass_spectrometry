@@ -268,7 +268,7 @@ $formal=[pscustomobject]@{{process_record=[pscustomobject]@{{completed=$true}};o
 $remaining=& $prepareRemaining $formal
 if($script:calls-ne1-or@($remaining.pending).Count-ne1-or$remaining.pending[0].index-ne3){{throw 'wrong pending batches'}}
 $calibrated=Get-Content $dispatch -Raw|ConvertFrom-Json
-if(-not$calibrated.estimation.recovered_missing_observation_completed-or$calibrated.limits.maximum_concurrency-ne1){{throw 'wrong calibrated identity'}}
+if(-not$calibrated.estimation.recovered_missing_observation_completed-or$calibrated.limits.maximum_concurrency-ne3){{throw 'wrong calibrated identity'}}
 if($calibrated.estimation.observed_peak_bytes-ne1073741824-or$calibrated.estimation.observed_process_cpu_percent-ne8-or$calibrated.estimation.background_cpu_percent-ne2-or$calibrated.host.available_memory_bytes-ne10737418240-or$calibrated.host.total_physical_memory_bytes-ne21474836480){{throw 'actual observation changed'}}
 if(($calibrated.waves[0].batches|ConvertTo-Json -Compress)-cne($initial.batches|ConvertTo-Json -Compress)){{throw 'fixed intervals changed'}}
 '''

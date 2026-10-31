@@ -446,14 +446,20 @@ if($global:MassSpectrometryShortPaCopies.Count-or$global:MassSpectrometryShortPa
         end=source.index('\n  }',start)+len('\n  }')
         with tempfile.TemporaryDirectory() as directory:
             script=Path(directory)/'shared_wall.ps1'
-            script.write_text("""$ErrorActionPreference='Stop'
+            script.write_text("""param($Repo,$Python)
+$ErrorActionPreference='Stop'
 $Limits=[pscustomobject]@{wall_clock_seconds=2}
 $StageElapsed=[Diagnostics.Stopwatch]::StartNew()
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'common/paths/workspace_paths.ps1')
 $run=$log=$PSScriptRoot;$SimionExe='INERT_NOT_VENDOR.exe'
+$Package=[pscustomobject]@{artifact_run_dir=$run;run_dir=$run;execution_alias=$null;execution_path_capacity=$null;python=$Python}
+$fieldNativeContext=Get-RunNativeExecutionContext -Package $Package -Paths @($run) -Tool SIMION
+$NativeOperations=$null
 $wallClockWarningNames=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
 $script:observed=@()
 function Invoke-ResourceBudgetedProcess {
- param($Limits,$RunDir,$UsagePath,$FilePath,$WorkingDirectory,$ArgumentList,$RedirectStandardOutput,$RedirectStandardError)
+ param($Limits,$RunDir,$UsagePath,$FilePath,$WorkingDirectory,$ArgumentList,$Environment,$RedirectStandardOutput,$RedirectStandardError)
  $script:observed+=@($Limits.wall_clock_seconds)
  Start-Sleep -Milliseconds 1100
  return @{exit_code=0;resource_budget_exceeded=$false}
@@ -464,7 +470,7 @@ Invoke-LocalFieldNative -Arguments @('INERT') -Directory $PSScriptRoot -Name 'tw
 Invoke-LocalFieldNative -Arguments @('INERT') -Directory $PSScriptRoot -Name 'expired'
 @{limits=$script:observed;frozen_limit=$Limits.wall_clock_seconds}|ConvertTo-Json -Compress
 """,encoding='utf-8',newline='\n')
-            result=subprocess.run(['pwsh','-NoProfile','-File',str(script)],capture_output=True,text=True,encoding='utf-8',cwd=directory,timeout=15)
+            result=subprocess.run(['pwsh','-NoProfile','-File',str(script),str(ROOT),sys.executable],capture_output=True,text=True,encoding='utf-8',cwd=directory,timeout=15)
         self.assertEqual(result.returncode,0,result.stderr)
         evidence=json.loads(result.stdout.splitlines()[-1])
         self.assertEqual(evidence['frozen_limit'],2)

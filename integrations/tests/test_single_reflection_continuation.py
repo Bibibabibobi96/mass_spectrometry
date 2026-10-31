@@ -690,11 +690,18 @@ class SingleReflectionContinuationTests(unittest.TestCase):
                             for transport in case.get("iob_pa_copies", [])]
                         parent_guard_paths.update(guard["path"] for guard in copy_guards)
                         case["iob_pa_guard_records"] = [*copy.deepcopy(parent_wb["pa_guard_records"]), *copy_guards]
-                        program = Path(case["outputs"]["program"]["path"])
-                        text = program.read_text()
+                        # Relocate the frozen numerical controls, then forward-render
+                        # the native Program using its actual bound transport source.
+                        from integrations.runtime.build_single_flight_program import project_program_paths
+                        numerical = Path(case["outputs"]["numerical_program"]["path"])
+                        text = numerical.read_text(encoding="utf-8")
                         for old, new in changes:
                             text = text.replace(json.dumps(Path(old).as_posix()), json.dumps(Path(new).as_posix()))
-                        program.write_text(text, encoding="utf-8")
+                        numerical.write_text(text, encoding="utf-8", newline="\n")
+                        case["outputs"]["numerical_program"] = file_record(numerical)
+                        projection = Path(case["program_path_projection_record"]["path"]).read_text(encoding="utf-8")
+                        program = Path(case["outputs"]["program"]["path"])
+                        program.write_text(project_program_paths(text, projection), encoding="utf-8", newline="\n")
                         case["outputs"]["program"] = file_record(program)
                         spec = Path(case["outputs"]["build_spec"]["path"])
                         text = spec.read_text()
