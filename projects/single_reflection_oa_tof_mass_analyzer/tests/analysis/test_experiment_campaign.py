@@ -66,6 +66,10 @@ def authorized_campaign_fixture():
         }
         campaign["execution_profile"]["authority"]["sha256"] = sha256(
             PROJECT_ROOT/campaign["execution_profile"]["authority"]["path"])
+        # This newly authorized test campaign binds today's small authorities.
+        # The retired versioned campaign and its historical bindings stay intact.
+        for record in campaign["authorities"].values():
+            record["sha256"] = sha256(PROJECT_ROOT / record["path"])
         campaign_path = root_path / "campaign.json"
         campaign_path.write_text(json.dumps(campaign), encoding="utf-8")
         yield campaign_path, campaign
