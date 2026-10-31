@@ -8,26 +8,28 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 
 from common.contracts.write_run_manifest import file_record
 from common.simion.particle_batching import plan_single_wave_batches
 from integrations.tests import test_single_reflection_runtime as runtime_tests
 from integrations.workflows.single_reflection_flight import runtime
-from integrations.workflows.single_reflection_flight.continuation import prepare_phase_continuation
+from integrations.workflows.single_reflection_flight.continuation import prepare_phase_continuation, _published_case
 from integrations.workflows.single_reflection_flight.collect import collect_log
 
 
 _PUBLIC_FLY = r'''param($Repo,$Python,$OutputDirectory,$frozenExecutionRoot,$FieldReceipt,$workbenchPhase='full_instrument')
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
 . (Join-Path $Repo 'integrations/runtime/frontend_flight_support.ps1')
 . (Join-Path $Repo 'common/resource_budget_support.ps1')
 function Write-RunJson {param($Path,$Value,$Depth=100) ConvertTo-Json -InputObject $Value -Depth $Depth|Set-Content -LiteralPath $Path -Encoding utf8}
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation) & $Operation}
 function Get-HostResourceBudget {param($Role,$Stage) return @{}}
-function Update-HostResourceStage {param($Lease,$Stage,$Budget,$RetainedMemoryBytes) if($Stage-eq'flight'){$script:heavy++};return @{}}
-function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session,$ProtectedPaths,$RemainingCommittedNewBytes) if($ProtectedPaths){$script:protected+=@($ProtectedPaths)};if($PSBoundParameters.ContainsKey('RemainingCommittedNewBytes')){$Session.committed_new_bytes=$RemainingCommittedNewBytes};return @{session=$Session}}
+function Update-HostResourceStage {param($Lease,$Stage,$Budget,$RetainedMemoryBytes) if($Stage-eq'flight'){$script:heavy++};return $Lease}
+function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session,$ProtectedPaths,$SourceReferences,$RemainingCommittedNewBytes) if($ProtectedPaths){$script:protected+=@($ProtectedPaths)};foreach($source in $SourceReferences){$script:protected+=@($source.protected_paths)};if($PSBoundParameters.ContainsKey('RemainingCommittedNewBytes')){$Session.committed_new_bytes=$RemainingCommittedNewBytes};return @{session=$Session}}
 function New-ShortPaCopy {param($Source,$Destination,$ExpectedBytes,$ExpectedSha256,[switch]$GuardDestinationReadOnly)
  New-Item -ItemType Directory -Path (Split-Path -Parent $Destination) -Force|Out-Null
  Copy-Item -LiteralPath $Source -Destination $Destination
@@ -67,19 +69,25 @@ function Invoke-ResourceBudgetedProcesses {
 }
 $frozen=@{execution_root=$Repo};$resultDirectory=Join-Path $OutputDirectory 'results/single_reflection'
 $RepoRoot=$Repo;$configPath=Join-Path $OutputDirectory 'run_config.json';$capacity=@{committed_new_bytes=0}
+$RunPackage=[pscustomobject]@{python=$Python;artifact_run_dir=$OutputDirectory;run_dir=$OutputDirectory;execution_alias=$null;execution_path_capacity=$null;native_path_preparation=@{calls=0;elapsed_seconds=0.0;transport_bytes=0L}}
 $field=@{cache_receipt=$FieldReceipt};$decisionRecord=$null;$Fly=$true;$batchContinuation=$true
 $phaseArguments=@('--phase',$workbenchPhase)
 $runtimeArguments=@('-B','-m','integrations.workflows.single_reflection_flight.runtime','--preparation',
  (Join-Path $resultDirectory 'preparation_receipt.json'),'--run',$OutputDirectory,'--snapshot-root',$frozenExecutionRoot)
-$flightLimits=@{instrument_flight=@{};instrument_default_replay=@{};instrument_pulse_discovery=@{}};$lease=@{};$simion='INERT_NOT_EXECUTABLE'
+$flightLimits=@{instrument_flight=@{};instrument_default_replay=@{};instrument_pulse_discovery=@{}};$lease=@{token='inert-host-lease'};$simion='INERT_NOT_EXECUTABLE'
+$NativeOperations=$null;$PhaseTimings=@{};$currentStage='prepared';$phaseClock=[Diagnostics.Stopwatch]::StartNew()
 $paGuards=[Collections.Generic.List[string]]::new()
 $allWorkbenchExecution=@();$flightExecution=@();$flightCollection=@();$phaseCollection=@();$baselineRecord=$null
 $prefix=if($workbenchPhase-eq'discovery'){'discovery_'}else{''}
 $workbenchReceiptPath=Join-Path $resultDirectory ($prefix+'workbench_preparation.json')
 $workbenchEvidencePath=Join-Path $resultDirectory 'workbench_execution_records.json'
 $nativePhases=if($workbenchPhase-eq'discovery'){@('discovery')}else{@('baseline','default_replay')}
+# This fixture tests Fly wiring; the actual two-root resolver/leases have separate behavior coverage.
+function Get-InstrumentSourceProtectionProjection {param($BorrowedPaths) return @{source_references=@(@{protected_paths=@($BorrowedPaths)})}}
 function Copy-VerifiedRunInput {param($Source,$Destination) Copy-Item -LiteralPath $Source -Destination $Destination}
 $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'integrations/workflows/single_reflection_flight/execute.ps1'),[ref]$null,[ref]$null)
+$timer=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Set-InstrumentStage'},$true)
+. ([scriptblock]::Create($timer.Extent.Text))
 $register=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Register-InstrumentContinuationInputs'},$true)
 . ([scriptblock]::Create($register.Extent.Text))
 $copyFunction=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Initialize-InstrumentIobPaCopies'},$true)
@@ -158,13 +166,14 @@ class SingleReflectionContinuationTests(unittest.TestCase):
         self.addCleanup(self.workbench_fixture.doCleanups)
         self.run = self.workbench_fixture.run
         self.preparation = self.workbench_fixture.preparation
+        self.preparation["default_replay_requested"] = True
         self.flight = self.workbench_fixture.flight
         self.snapshot = self.workbench_fixture.snapshot
         self.field_receipt = self.workbench_fixture.field_receipt
         self.downstream_path = self.workbench_fixture.downstream_path
         request = Path(self.preparation["input_records"]["request"]["path"])
         author = json.loads(request.read_text(encoding="utf-8-sig"))
-        runtime_tests.write_json(request, {**author, "flight": self.flight})
+        runtime_tests.write_json(request, {**author, "flight": self.flight, "verify_saved_workbench_replay": True})
         self.preparation["input_records"]["request"] = file_record(request)
 
     def _current_workbench(self, phase: str = "full_instrument") -> dict:
@@ -240,6 +249,15 @@ class SingleReflectionContinuationTests(unittest.TestCase):
                     destination.write_text(text, encoding="utf-8", newline="\n")
                     case["outputs"][name] = file_record(destination)
                 artifacts.append(destination)
+            # The native producer publishes its saved seeds and batch receipt
+            # as well as Program/particles/IOB. Keep the parent fixture faithful
+            # when the current run's materialized directory is removed.
+            for record in case.get('seed_records', []):
+                target = parent_directory/'iob_seed'/Path(record['path']).name
+                record['path'] = str(target)
+                artifacts.append(target)
+            case['receipt_path'] = str(parent_directory/'workbench.json')
+            artifacts.append(parent_directory/'workbench.json')
             case["working_directory"] = str(parent_directory)
             low, high = case["source_row_range"]
             baseline = parent / "results" / ("discovery" if phase == "discovery" else "baseline") / f"{case['case_id']}.stdout.log"
@@ -276,7 +294,8 @@ class SingleReflectionContinuationTests(unittest.TestCase):
         manifest = {
             "role": "simulation_run_manifest", "run_id": "parent", "status": "interrupted",
             "run_config": file_record(config),
-            "inputs": {"projected_source": self.preparation["outputs"]["projected_source"]},
+            "inputs": {"projected_source": self.preparation["outputs"]["projected_source"],
+                       "iob_builder": file_record(Path(parent_cases[0]["iob_builder_arguments"][3]))},
             "outputs": outputs,
         }
         manifest_path = parent / "run_manifest.json"
@@ -410,6 +429,7 @@ class SingleReflectionContinuationTests(unittest.TestCase):
         runtime_tests.write_json(config, dict(project="instrument_assembly", run_id="run", mode="single_reflection_fly"))
         borrowed = {f"continuation_artifact_baseline_{index}": file_record(Path(artifact["path"]))
             for index, artifact in enumerate(first["continuation"]["plan"]["units"][0]["terminal_outputs"])}
+        borrowed["iob_builder"] = file_record(Path(first["batches"][0]["iob_builder_arguments"][3]))
         manifest = self.run / "run_manifest.json"
         runtime_tests.write_json(manifest, dict(role="simulation_run_manifest", run_id="run", status="failed",
             run_config=file_record(config), inputs=borrowed, outputs=[file_record(receipt), file_record(dispatch), *outputs]))
@@ -432,7 +452,7 @@ class SingleReflectionContinuationTests(unittest.TestCase):
         runtime_tests.write_json(manifest, document)
         shutil.copyfile(manifest, frozen)
         second.preparation["input_records"]["continuation_parent_manifest"] = {**file_record(frozen), "source_path": str(manifest)}
-        with self.assertRaisesRegex(ValueError, "not manifest-bound"):
+        with self.assertRaisesRegex(ValueError, "not (?:uniquely )?manifest-bound"):
             second._materialize_cli("baseline")
 
     def test_unstarted_parent_phase_falls_back_but_unpublished_receipt_rejects(self) -> None:
@@ -462,13 +482,13 @@ class SingleReflectionContinuationTests(unittest.TestCase):
                     self.flight = copy.deepcopy(self.workbench_fixture.flight)
                     request = Path(self.preparation["input_records"]["request"]["path"])
                     author = json.loads(request.read_text())
-                    runtime_tests.write_json(request, {**author, "flight": self.flight})
+                    runtime_tests.write_json(request, {**author, "flight": self.flight, "verify_saved_workbench_replay": True})
                     self.preparation["input_records"]["request"] = file_record(request)
                 if phase == "discovery":
                     self.flight = {**self.flight, "pulse": dict(mode="discover", width_us=.1, candidate_times_us=[42.25, 42.5])}
                     request = Path(self.preparation["input_records"]["request"]["path"])
                     author = json.loads(request.read_text())
-                    runtime_tests.write_json(request, {**author, "flight": self.flight})
+                    runtime_tests.write_json(request, {**author, "flight": self.flight, "verify_saved_workbench_replay": True})
                     self.preparation["input_records"]["request"] = file_record(request)
                 current = self._current_workbench(phase)
                 parent = self._parent(current, missing_iob=missing)
@@ -651,6 +671,97 @@ class SingleReflectionContinuationTests(unittest.TestCase):
         self.assertEqual(sorted(path.suffix for path in frozen.iterdir()), [".json", ".json", ".json"])
         self.assertEqual(source.read_bytes(), before)
         self.assertEqual(result["source_record"], self.preparation["outputs"]["projected_source"])
+
+    def test_unrequested_replay_does_not_block_baseline_reuse_or_touch_parent(self):
+        current = self._current_workbench()
+        parent = self._parent(current)
+        # Remove only replay outputs and their manifest references. Baseline remains complete.
+        replay = parent/"results/default_replay"
+        shutil.rmtree(replay)
+        completion = parent/"results/frontend_batch_completion/default_replay"
+        if completion.exists():
+            shutil.rmtree(completion)
+        manifest_path = parent/"run_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["outputs"] = [row for row in manifest["outputs"] if "default_replay" not in Path(row["path"]).parts]
+        runtime_tests.write_json(manifest_path, manifest)
+        frozen = self.run/"inputs/continuation_parent_manifest.json"
+        shutil.copyfile(manifest_path, frozen)
+        self.preparation["input_records"]["continuation_parent_manifest"] = {**file_record(frozen), "source_path": str(manifest_path)}
+        self.preparation["default_replay_requested"] = False
+        request_path = Path(self.preparation["input_records"]["request"]["path"])
+        author = json.loads(request_path.read_text())
+        author["verify_saved_workbench_replay"] = False
+        runtime_tests.write_json(request_path, author)
+        self.preparation["input_records"]["request"] = file_record(request_path)
+        before = manifest_path.read_bytes()
+        result = prepare_phase_continuation(self.preparation, current, self.run, "baseline")
+        self.assertEqual([unit["action"] for unit in result["plan"]["units"]], ["reuse", "reuse"])
+        self.assertIsNone(prepare_phase_continuation(self.preparation, current, self.run, "default_replay"))
+        self.assertFalse((self.run/"inputs/continuation/default_replay").exists())
+        self.assertEqual(manifest_path.read_bytes(), before)
+
+
+    def test_case_can_inherit_iob_and_publish_replay_under_different_owners(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            key = "batch_0001__rows_000001_000010"
+            ancestor, current = root / "ancestor", root / "current"
+            lexical = root / "retired_iob"
+            replay_alias = root / "retired_replay"
+            controls = ancestor / "simion/full_instrument" / key
+            controls.mkdir(parents=True)
+            spec, iob = controls / "iob_build.lua", controls / "instrument.iob"
+            spec.write_text("frozen lexical IOB controls")
+            iob.write_bytes(b"INERT_IOB")
+            replay = current / "results/single_reflection/default_replay" / (key + ".stdout.log")
+            replay.parent.mkdir(parents=True)
+            replay.write_text("completed replay evidence")
+            frozen = current / "inputs/continuation/baseline/workbench_preparation.json"
+            frozen.parent.mkdir(parents=True)
+            frozen.write_text("{}")
+            case = dict(case_id=key, parent_execution_root=str(lexical), iob_path=str(iob),
+                        outputs=dict(build_spec=file_record(spec), iob=file_record(iob)),
+                        replay_stdout=str(replay_alias / replay.relative_to(current)),
+                        replay_execution=dict(stdout_record=dict(file_record(replay),
+                            path=str(replay_alias / replay.relative_to(current)))),
+                        continuation_pa_guard_source_record=dict(file_record(frozen),
+                            path=str(replay_alias / frozen.relative_to(current))))
+            original = copy.deepcopy(case)
+            records = {path: (row["bytes"], row["sha256"].upper()) for path in (spec, iob, replay, frozen)
+                       for row in (file_record(path),)}
+            resolved = _published_case(case, records)
+            self.assertEqual(resolved["replay_stdout"], str(replay))
+            self.assertEqual(resolved["replay_execution"]["stdout_record"]["path"], str(replay))
+            self.assertEqual(resolved["continuation_pa_guard_source_record"]["path"], str(frozen))
+            self.assertEqual(resolved["iob_path"], str(iob))
+            self.assertEqual(resolved["parent_execution_root"], str(lexical))
+            self.assertEqual(case, original)
+            for change in ("missing", "identity", "ambiguous"):
+                bad = dict(records)
+                if change == "missing":
+                    del bad[replay]
+                elif change == "identity":
+                    bad[replay] = (records[replay][0] + 1, records[replay][1])
+                else:
+                    bad[root / "other" / replay.relative_to(current)] = records[replay]
+                with self.subTest(change=change), self.assertRaisesRegex(ValueError, "manifest-bound"):
+                    _published_case(case, bad)
+
+
+    def test_alias_control_resolution_requires_unique_matching_manifest_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            suffix = Path('simion/full_instrument/batch_0001/iob_build.lua')
+            stale = root/'retired'/suffix
+            durable = root/'producer'/suffix
+            identity = (12, 'A'*64)
+            case = dict(outputs=dict(build_spec=dict(path=str(stale), bytes=12, sha256='A'*64)))
+            for records in ({}, {durable:(13, 'A'*64)},
+                            {durable:identity, root/'other'/suffix:identity}):
+                with self.subTest(records=records), self.assertRaisesRegex(ValueError, 'uniquely manifest-bound'):
+                    _published_case(case, records)
+
 
 
 if __name__ == "__main__":

@@ -57,6 +57,29 @@ RF相位和唯一仪器时钟；换范围不重新投影已记录状态或重新
 
 ## 单反射整机
 
+
+`single_reflection_flight/run.ps1` 在科学准备和原生执行前冻结公共 owner 的小执行请求与 run 外 Result，
+内部 `execute.ps1` 仅准备、执行与绑定证据；retention、manifest、容量与 seal 由原公共收尾负责。
+原入口 `-ResumeFinalization -ResultPath <原result.json>` 不再要求 request／budget，不启动原生程序；
+它只恢复已保存的完成事实，不修造缺失 writer 证明，也不改变父 run 终态。
+
+实际 PID／创建身份／退出事实在 exit 或科学 marker 校验前记录；实际 host release 回执独立保留。
+未知 writer／未确认 host release 保留资产、容量与执行表示； inherited release 保持真实 null，父租约不被释放。
+原科学异常与证据绑定、host、guard、容量及收尾异常分别报告；环境在公共收尾之后恢复。
+显式源及其祖先由已绑定 manifest 投影到原容量 owner，不搜索 latest 或跨根猜来源，不重读 PA。
+
+request 的 `verify_saved_workbench_replay` 只能为布尔，默认 false。解析动作冻结到 preparation、runtime
+及 workbench，未请求时不要求回放预算、不访问回放父证据、不创建回放目录或第二轮 Fly，状态为 `not_requested`；
+显式请求继续执行完整母群与原失败传播。`propagation_scope` 只解释所声明起止，不改变源、场或积分：
+记录状态源保留真实体积重启时刻，连续段从快照开始；包含原出生历史时须报告分段接续。
+`validation_contract` 只冻结预先声明的判据，准备成功不是求场或科学通过。
+
+该迁移复用既有完整批次 planner、公共 owner 及 HEAD 的兼容 frontend API；不包含全局原生路径投影、
+数值 Program／IOB core 的历史再生成或新的场精度资格。111659／121606／192206 等 N100 证据
+仅支持其各自冻结代码、粗网格、实际新飞／复用范围；新候选的正常冻结与惰性原生接线另行验证，
+不凭旧证据声称当前代码已完成商业求解或完整 GUI 验收。
+
+
 [公开owner](../workflows/single_reflection_flight/run.ps1)接收`-Request -ExecutionBudgetPath`，默认执行完整Fly；
 `-FieldDesignOnly`、`-WorkbenchOnly`显式选择有限阶段。内部`execute.ps1`只由owner调用，作者格式见
 [schema 9](../workflows/single_reflection_flight/schema.json)。request引用冻结父plan、逐实例提供者、显式数值域与场来源。

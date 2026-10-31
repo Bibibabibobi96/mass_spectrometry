@@ -350,6 +350,7 @@ def _prepare_context(preparation: dict, field_receipt_path: Path,
     if "entrance_refinement" in fields:
         carriers["entrance_refinement"] = fields["entrance_refinement"]["carrier_off"]
     return dict(run=str(run), snapshot_root=str(snapshot_root), phase=phase, records=records,
+                default_replay_requested=preparation["default_replay_requested"],
         multipoles_by_instance=multipoles_by_instance, oatof=oatof, geometry=geometry, design=design, provenance=provenance,
         flight=flight, source=source, fields=fields, dynamic=dynamic, carriers=carriers, static=static,
         guards=guards, field_receipt_path=str(field_receipt_path),
@@ -447,6 +448,8 @@ def preview_batches(run: Path, phase: str, plan: dict, *, context: dict) -> dict
         cases.append(dict(case_id=name, index=index, count=high-low+1, source_row_range=[low, high],
             expected_particle_ids=[int(row["particle_id"]) for row in source[low-1:high]], preview=preview))
     return dict(schema_version=1, role="single_reflection_workbench_preparation", phase=phase,
+        default_replay_requested=context["default_replay_requested"],
+        saved_default_replay_verification="pending" if context["default_replay_requested"] else "not_requested",
         particle_count=len(source), source_record=context["records"]["projected_source"], source_transform_applied=False,
         clock_epoch_id=context["provenance"]["clock_epoch_id"], flight=context["flight"], batches=cases,
         iob_pa_copies=iob_pa_copies(context),
@@ -485,6 +488,8 @@ def _materialize_case(context: dict, source: list[dict], directory: Path) -> dic
     scientific_guards = [*(record for domain in fields.values() for record in domain.values()), *guards]
     copies = iob_pa_copies(context)
     return dict(schema_version=1, role="single_reflection_workbench_preparation", phase=phase, flight=flight, particle_count=len(source),
+        default_replay_requested=context["default_replay_requested"],
+        saved_default_replay_verification="pending" if context["default_replay_requested"] else "not_requested",
         source_record=records["projected_source"], source_transform_applied=False,
         clock_epoch_id=provenance["clock_epoch_id"], instance_roles={row["role"]: row["instance_index"] for row in rows},
         build_metadata=metadata, inputs=records, downstream_receipt_record=downstream_receipt_record,
@@ -582,6 +587,8 @@ def materialize_batches(run: Path, phase: str, plan: dict, *, context: dict,
     else:
         instance_roles = cases[0]["instance_roles"]
     return dict(schema_version=1, role="single_reflection_workbench_preparation", phase=phase,
+        default_replay_requested=context["default_replay_requested"],
+        saved_default_replay_verification="pending" if context["default_replay_requested"] else "not_requested",
         particle_count=len(source), source_record=context["records"]["projected_source"],
         source_transform_applied=False, clock_epoch_id=context["provenance"]["clock_epoch_id"],
         inputs=context["records"], flight=context["flight"], batches=cases, coverage=coverage,
@@ -596,7 +603,7 @@ def materialize_phase_continuation(preparation: Mapping[str, Any], preview_workb
                                    context: dict, run: Path, phase: str) -> dict[str, Any] | None:
     """Materialize only replay units, retaining parent cases as explicit read-only bindings."""
     from integrations.workflows.single_reflection_flight.continuation import (
-        _read as read_continuation, _published_case, prepare_phase_continuation,
+        _read as read_continuation, _published_case, _parent, prepare_phase_continuation,
     )
     planned = prepare_phase_continuation(preparation, preview_workbench, run, phase)
     if planned is None:
@@ -607,7 +614,8 @@ def materialize_phase_continuation(preparation: Mapping[str, Any], preview_workb
     replay_keys = {unit["key"] for unit in planned["plan"]["units"] if unit["action"] == "replay"}
     replay = materialize_batches(run, preview_workbench["phase"], dispatch, context=context,
                                  materialize_case_ids=replay_keys)
-    parent_cases = {case["case_id"]: _published_case(case) for case in parent_workbench["batches"]}
+    records = _parent(preparation)[2]
+    parent_cases = {case["case_id"]: _published_case(case, records) for case in parent_workbench["batches"]}
     replay_cases = {case["case_id"]: case for case in replay["batches"]}
     cases = []
     for unit in planned["plan"]["units"]:
@@ -663,12 +671,14 @@ def main() -> int:
         design = _read(design_path)
         flight = validate_native_flight(flight, requires_rf=any(
             point["kind"] == "rf_reference" for point in design["working_points"]), allow_discovery=True)
-        print(json.dumps({"flight_validated": True, "requires_discovery": flight["pulse"]["mode"] == "discover"}))
+        print(json.dumps({"flight_validated": True, "requires_discovery": flight["pulse"]["mode"] == "discover", "default_replay_requested": preparation["default_replay_requested"]}))
         return 0
     if args.field_receipt is None or args.downstream_publication is None:
         parser.error("materialization requires field-receipt and downstream-publication")
     publication = _read(args.downstream_publication)
     if args.action == "materialize-continuation":
+        if args.continuation_phase == "default_replay" and not preparation["default_replay_requested"]:
+            raise ValueError("saved-workbench replay was not requested")
         if args.continuation_phase is None:
             parser.error("materialize-continuation requires --continuation-phase")
         from integrations.workflows.single_reflection_flight.continuation import (
@@ -692,7 +702,7 @@ def main() -> int:
             result = _read(args.run / "results/single_reflection/workbench_preparation.json")
             result["replay_continuation"] = planned
             parent_workbench = _read(record_path(planned["frozen_inputs"]["workbench_record"]))
-            parents = {case["case_id"]: _published_case(case) for case in parent_workbench["batches"]}
+            parents = {case["case_id"]: _published_case(case, records) for case in parent_workbench["batches"]}
             for case, unit in zip(result["batches"], planned["plan"]["units"], strict=True):
                 if case["case_id"] != unit["key"]:
                     raise ValueError("default replay case order differs from fixed dispatch")

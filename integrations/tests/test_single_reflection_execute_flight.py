@@ -16,8 +16,15 @@ from integrations.tests.test_support.single_reflection_execute_fixture import Si
 class SingleReflectionExecuteTests(SingleReflectionExecuteFixture):
     def test_full_mother_fly_and_default_replay_public_stage(self):
         self._check_public_cases(('fly','missing_fly_budget','missing_replay_budget','flight_ram_floor',
-            'flight_native','replay_native','flight_controls','flight_native_controls','flight_marker','flight_mismatch'))
+            'flight_native','replay_native','flight_controls','flight_native_controls','flight_marker','flight_mismatch'), lightweight_seeds=True)
 
 
     def test_batch_priority_point_evidence_is_bound_before_any_fly(self):
-        self._check_public_cases(('fly', 'flight_priority_marker'))
+        # The full-mother test below already covers the successful Fly path.
+        self._check_public_cases(('flight_priority_marker',))
+
+
+    def test_normal_fly_omits_replay_but_explicit_action_keeps_it(self):
+        # Same real freezer, contracts, IDs and N=100; only the requested action changes.
+        self._check_public_cases(('fly',), lightweight_seeds=True, verify_replay=None, omit_replay_budget=True)
+        self._check_public_cases(('fly',), lightweight_seeds=True, verify_replay=True)

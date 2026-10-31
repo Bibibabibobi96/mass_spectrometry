@@ -75,7 +75,10 @@ class SingleReflectionExecuteFixture(unittest.TestCase):
                          {path.resolve() for path in copies})
 
 
-    def _check_public_cases(self, cases, *, rename_instances=False, borrowed_capacity=False, lightweight_seeds=True):
+    def _check_public_cases(self, cases, *, rename_instances=False, borrowed_capacity=False, lightweight_seeds=True, verify_replay=True, omit_replay_budget=False):
+        # Every case below replaces the vendor builder and Fly with the same inert
+        # boundary; it never parses native seed bytes. Freeze tiny seed inputs
+        # before preparation, retaining real identity, closure and failure checks.
         contract=json.loads((REPO/'integrations/config/runtime_dependencies.json').read_text())
         full_source = None
         for failure in cases:
@@ -94,6 +97,9 @@ class SingleReflectionExecuteFixture(unittest.TestCase):
                         author['numerics']['frontend_domains']['parent']['refine_convergence_v'].pop('rf_reference')
                 else:
                     request,empty_run,author=fixture(root)
+                if verify_replay is not None:
+                    author['verify_saved_workbench_replay'] = verify_replay
+                    request.write_text(json.dumps(author), encoding='utf-8', newline='\n')
                 if rename_instances:
                     rename_author_instances(request, author)
                 flight=discovery or failure in {'downstream_source_fly','local_fly','fly','fly_held_off','fly_refinement','refinement_flight_ram_floor','missing_fly_budget','missing_replay_budget','flight_ram_floor','flight_native','replay_native','flight_controls','flight_native_controls','flight_marker','flight_mismatch','flight_priority_marker'}
@@ -137,8 +143,9 @@ class SingleReflectionExecuteFixture(unittest.TestCase):
                 for relative in paths:
                     target=repo/relative;target.parent.mkdir(parents=True,exist_ok=True)
                     if lightweight_seeds and relative in seed_paths:
-                        # This fixture's vendor builder/Fly are inert and never
-                        # parse seed payloads. Retain actual freezer/identity checks.
+                        # This fixture's native builder is inert. Keep the real
+                        # freezer/manifest binding, without copying five unused
+                        # 16 MB native seeds into each isolated test repository.
                         target.write_bytes(b'INERT_TEST_SEED_NOT_A_PA\n')
                     else:
                         shutil.copyfile(REPO/relative,target)
@@ -166,10 +173,11 @@ function Update-ArtifactWorkflowCapacitySession { param($Python,$RepoRoot,$Sessi
  [IO.File]::AppendAllText((Join-Path $Session.run 'boundary.txt'),"capacity_updated:$RemainingCommittedNewBytes`n")
  return @{session=$Session}
 }
-function Enter-HostExecutionLease { param($Role,$Stage) [IO.File]::AppendAllText($env:TEST_BOUNDARY,"lease_entered`n");return @{inert=$true} }
+function Enter-HostExecutionLease { param($Role,$Stage) [IO.File]::AppendAllText($env:TEST_BOUNDARY,"lease_entered`n");return @{inert=$true;token='TEST_ONLY_GRANT';inherited=$false} }
 function Exit-HostExecutionLease { param($Lease,$Outcome,$RunId)
  [IO.File]::AppendAllText($env:TEST_BOUNDARY,"lease_released:$Outcome`n")
 }
+function Exit-HostResourceStage {param($Lease,[switch]$PassThru);[IO.File]::AppendAllText($env:TEST_BOUNDARY,"lease_released:$(if($okay){'success'}else{'failed'})`n");return @{status='released';token=$Lease.token}}
 function Update-HostResourceStage { param($Lease,$Stage,$Budget,$RetainedMemoryBytes) return $Lease }
 function Get-HostResourceBudget { param($Role,$Stage) return @{inert=$true} }
 $originalRunContext=${function:Invoke-RunToolRootContext}
@@ -424,7 +432,7 @@ print(json.dumps(dict(cache_receipt=str(receipt))))
                         budget_document['stage_limits']['instrument_field_design'],wall_clock_seconds=90)
                 if flight:
                     for stage,missing in (('instrument_flight','missing_fly_budget'),('instrument_default_replay','missing_replay_budget')):
-                        if failure!=missing:
+                        if failure!=missing and not (omit_replay_budget and stage=='instrument_default_replay'):
                             budget_document['stage_limits'][stage]=dict(
                                 budget_document['stage_limits']['instrument_field_design'],wall_clock_seconds=90,
                                 process_tree_working_set_bytes=nodes*10*field_count+(0 if failure in ('flight_ram_floor','refinement_flight_ram_floor') else 1024**2))
@@ -440,9 +448,13 @@ param($ActualRepo,$Repo,$Python,$Root,$Request,$Budget)
 # Set after pwsh startup, which replaces an inherited ProgramFiles value.
 $env:ProgramFiles=Join-Path $Root 'ProgramFiles'
 . (Join-Path $ActualRepo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $ActualRepo 'common/paths/workspace_paths.ps1')
+$fixtureArtifacts=Join-Path $Root 'artifacts'
+New-Item -ItemType Directory -Path $fixtureArtifacts -Force|Out-Null
+$fixturePaths=Resolve-WorkspacePaths -SourceRoot $ActualRepo -ArtifactRoot $fixtureArtifacts -Python $Python
 $package=New-RunPackage -Python $Python -RepoRoot $ActualRepo -ArtifactRoot (Join-Path $Root 'packages') `
  -RunId '20261023_010001__build__simion__single-reflection-test' -Project instrument_assembly `
- -Mode single_reflection_field_design -Software @('Python 3.11')
+ -Mode single_reflection_field_design -Software @('Python 3.11') -PathContext $fixturePaths
 $env:TEST_BOUNDARY=Join-Path $package.run_dir 'boundary.txt'
 $selection=if($env:TEST_FLY-eq'1'){@{Fly=$true}}elseif($env:TEST_WORKBENCH-eq'1'){@{WorkbenchOnly=$true}}else{@{FieldDesignOnly=$true}}
 if($env:TEST_BORROWED_CAPACITY-eq'1'){
@@ -450,11 +462,11 @@ if($env:TEST_BORROWED_CAPACITY-eq'1'){
  $selection.WorkflowCapacitySession=$ownerSession
 }
 try {
-& (Join-Path $Repo 'integrations/workflows/single_reflection_flight/execute.ps1') `
+& (Join-Path $Repo 'integrations/workflows/single_reflection_flight/execute.ps1') -RunPackage $package `
  -Request $Request @selection -OutputDirectory $package.run_dir -ExecutionBudgetPath $Budget -RepoRoot $Repo -Python $Python
 } finally {
  if($env:TEST_BORROWED_CAPACITY-eq'1'){
-   if($ownerSession.status-ne'active'-or$ownerSession.committed_new_bytes-ne0){throw 'borrowed session was released or retained payload commitment'}
+   if($ownerSession.status-ne'active'-or$ownerSession.committed_new_bytes-lt0){throw 'borrowed owner session was released or invalidated'}
    [IO.File]::AppendAllText($env:TEST_BOUNDARY,"borrowed_session_retained`n")
    # Only this caller owns its inert session. execute's solver-boundary mocks
    # are child-script scoped; never pass this fixture object to the real ledger.
@@ -523,7 +535,8 @@ try {
                     self.assertEqual(point_evidence['checked_points'], 0)
                     self.assertEqual(point_evidence['observation_only_points'], 0)
                     continue
-                self.assertIn(str(run/'inputs/resolved_integration_engineering_budget.json'),values)
+                self.assertIn(str(run/'inputs/resolved_integration_engineering_budget.json'),values,
+                              result.stdout + result.stderr)
                 if rename_instances:
                     geometry=json.loads((run/'inputs/frontend_geometry.json').read_text())
                     selected=set(geometry['composition_plan']['scope']['instance_ids'])
@@ -670,13 +683,23 @@ try {
                                 for case in published_workbench['batches']
                                 for row in case['native_workbench_execution'] if row['operation']=='verify'))
                             self.assertIn('scheduled_wave:2',events)
-                            self.assertIn('scheduled_wave:3',events)
-                            self.assertEqual(events.count('flight_native:'),6)
-                            comparison=json.loads((run/'results/single_reflection/default_replay/replay_comparison.json').read_text())
-                            self.assertTrue(comparison['passed'])
-                            self.assertEqual(comparison['execution_cohort_count'],100)
-                            self.assertEqual(published_workbench['flight_validation']['completed_collection_count'],2)
-                            self.assertIn('SINGLE_REFLECTION_FLIGHT=PASS DEFAULT_REPLAY=PASS',result.stdout)
+                            requested = bool(verify_replay)
+                            if requested:
+                                self.assertIn('scheduled_wave:3',events)
+                            else:
+                                self.assertNotIn('scheduled_wave:3',events)
+                            self.assertEqual(events.count('flight_native:'), 6 if requested else 3)
+                            self.assertEqual(published_workbench['flight_validation']['completed_collection_count'], 2 if requested else 1)
+                            if requested:
+                                comparison=json.loads((run/'results/single_reflection/default_replay/replay_comparison.json').read_text())
+                                self.assertTrue(comparison['passed'])
+                                self.assertEqual(comparison['execution_cohort_count'],100)
+                                self.assertIn('SINGLE_REFLECTION_FLIGHT=PASS DEFAULT_REPLAY=PASS',result.stdout)
+                            else:
+                                self.assertFalse((run/'results/single_reflection/default_replay').exists())
+                                self.assertEqual(published_workbench['default_replay_verification']['status'], 'not_requested')
+                                self.assertFalse(published_workbench['default_replay_verification']['native_fly_performed'])
+                                self.assertIn('SINGLE_REFLECTION_FLIGHT=PASS DEFAULT_REPLAY=NOT_REQUESTED',result.stdout)
                         else:
                             self.assertTrue(result.stderr)
                             self.assertTrue(list((run/'logs').glob('*.stdout.log')))

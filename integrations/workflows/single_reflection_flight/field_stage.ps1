@@ -16,7 +16,8 @@ function Invoke-SingleReflectionFrontendFieldStage {
     [Parameter(Mandatory)]$Limits,
     [Parameter(Mandatory)][long]$ReservedRunPayloadBytes,
     [string]$CacheRoot='',
-    [Diagnostics.Stopwatch]$StageElapsed=$null
+    [Diagnostics.Stopwatch]$StageElapsed=$null,
+    $NativeOperations=$null,[string]$NativeResourceReleaseId='simion'
   )
   foreach($required in @('Invoke-RunToolRootContext','Write-RunJson','Update-ArtifactWorkflowCapacitySession',
     'Invoke-ResourceBudgetedProcess','Update-HostResourceStage','Get-HostResourceBudget',
@@ -51,11 +52,17 @@ function Invoke-SingleReflectionFrontendFieldStage {
       Write-Warning ('RESOURCE_BUDGET_WARNING=wall_clock_seconds STAGE=instrument_field_design ' +
         'MEASURED_SECONDS={0:N3} LIMIT_SECONDS={1}' -f $StageElapsed.Elapsed.TotalSeconds,$Limits.wall_clock_seconds)
     }
+    try{
     $result=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $run `
       -UsagePath (Join-Path $logs ($Name+'.resource_usage.json')) -FilePath $SimionExe `
       -WorkingDirectory $Directory -ArgumentList $Arguments `
       -RedirectStandardOutput (Join-Path $logs ($Name+'.stdout.log')) `
       -RedirectStandardError (Join-Path $logs ($Name+'.stderr.log'))
+      if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId $Name -ProcessRecord $result}
+    }catch{
+      if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId $Name -ExceptionData $_.Exception.Data}
+      throw
+    }
     if($result.resource_budget_exceeded-or$result.exit_code-ne0){throw "Frontend field native stage failed: $Name"}
   }
   $planCode=@'
@@ -115,8 +122,12 @@ print(json.dumps(bind_parent_fields(bundle['domains'][1],json.loads(sys.argv[2])
         $identityPath=if($null-ne$source){[string]$source.identity_path}else{Join-Path $inputs ($prefix+'_cache_identity.json')}
         $key=if($null-ne$source){[string]$source.cache_key}else{[string]$plan.cache_key}
         if($null-eq$source){Write-RunJson -Path $identityPath -Value $plan.identity -Depth 100}
-        $scope=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $CapacitySession.Value -ProtectedCacheKeys @($key)
-        $CapacitySession.Value=$scope.session;$cacheKeys+=@($key)
+        # Explicit source generations remain pinned at their original capacity owner.
+        if($null-eq$source){
+          $scope=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $CapacitySession.Value -ProtectedCacheKeys @($key)
+          $CapacitySession.Value=$scope.session
+        }
+        $cacheKeys+=@($key)
         $keyRoot=Join-Path $CacheRoot $key
         $cacheArgs=@('-m','common.simion.pa_family_cache','--cache-root',$CacheRoot,'--identity',$identityPath,'--filenames',($plan.filenames-join','))
         $transactionArgs=$cacheArgs+@('--action','advance-transaction','--owner',([IO.Path]::GetFileName($run)),'--producer-run-config',(Join-Path $run 'run_config.json'),'--recovery-policy','none','--published-pin-reason','Retain standalone frontend fields required by saved instrument workbenches.')

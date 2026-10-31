@@ -14,6 +14,19 @@
     "numerics"
   ],
   "properties": {
+    "verify_saved_workbench_replay": {
+      "type": "boolean", "default": false,
+      "description": "Explicit saved-workbench replay qualification action. Ordinary scientific flight does not run a second complete-mother Fly; fields, source and baseline propagation are unchanged."
+    },
+    "validation_contract": {
+      "$ref": "#/$defs/record",
+      "description": "Optional predeclared scientific validation definition. Frozen as a small run input for interpretation and later owner analysis; it does not change native fields, source states or Fly controls."
+    },
+    "propagation_scope": {
+      "enum": ["declared_source_to_terminal", "original_birth_to_terminal"],
+      "default": "declared_source_to_terminal",
+      "description": "Reporting extent only. The declared-source range starts at this request's source, including a recorded volume snapshot when selected. Original-birth range also includes a recorded source's upstream propagation/release history. Neither choice changes fields, source states, clocks, native propagation or acceptance."
+    },
     "schema_version": {
       "const": 9
     },

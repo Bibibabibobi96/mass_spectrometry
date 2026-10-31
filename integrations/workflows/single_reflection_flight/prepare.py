@@ -39,6 +39,7 @@ from integrations.workflows.single_reflection_flight.pulse import _capture_bound
 SCHEMA = Path(__file__).with_name("schema.json")
 ROLE = "instrument_assembly_single_reflection_preparation_request"
 FROZEN_NAMES = {
+    "validation_contract": "functional_validation.json",
     "composition_plan": "composition_plan.json",
     "downstream_fields": "downstream_field_source_receipt.json",
     "downstream_fields_manifest": "downstream_field_source_manifest.json",
@@ -247,6 +248,7 @@ def prepare(request_path: Path, run: Path) -> dict:
     if "geometry" not in instances[oatof_id] or any("geometry" in instances[instance_id] for instance_id in multipole_ids):
         raise ValueError("only the selected oaTOF provider requires an explicit accelerator geometry variant")
     selected = {
+        **{key: request[key] for key in ('validation_contract',) if key in request},
         **{key: request["providers"][key] for key in ("frontend_fields", "downstream_fields") if key in request["providers"]},
         **{"instance_design__" + key: value["resolved_design"] for key, value in instances.items()},
         **{key: source[key] for key in (*source_keys, "clock_authority", "instrument_epoch")},
@@ -278,7 +280,7 @@ def prepare(request_path: Path, run: Path) -> dict:
             verify_record("continuation_stopped_receipt", frozen)
             continuation_inputs["continuation_stopped_receipt"] = frozen
             stopped = _read(destination)
-        parent = _read_field_source_manifest(parent_manifest.parent, statuses={"failed", "interrupted", "checkpoint"},
+        parent = _read_field_source_manifest(parent_manifest.parent, statuses={"success", "failed", "interrupted", "checkpoint"},
                                              stopped_receipt=stopped)
         if parent.get("mode") != "single_reflection_fly":
             raise ValueError("continuation parent must be a single-reflection Fly run")
@@ -576,6 +578,7 @@ def prepare(request_path: Path, run: Path) -> dict:
     provenance = dict(
         schema_version=1, role="single_reflection_source_provenance", stage="geometry_preparation_only",
         source_kind=source["kind"], source_instance_id=source["instance_id"],
+        propagation_scope=request.get('propagation_scope', 'declared_source_to_terminal'),
         source_frame_id=source_frame, target_frame_id=transform.to_frame_id,
         transform=(None if source["kind"] == "recorded_pre_pulse_state" else transform.to_contract()),
         particle_count=len(rows),
@@ -608,6 +611,7 @@ def prepare(request_path: Path, run: Path) -> dict:
         schema_version=1,
         role="single_reflection_geometry_preparation",
         stage="geometry_preparation_only",
+        default_replay_requested=request.get("verify_saved_workbench_replay", False),
         particle_count=len(rows),
         input_records=input_records,
         outputs={

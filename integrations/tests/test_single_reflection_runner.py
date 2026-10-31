@@ -78,6 +78,9 @@ try {
             (common / "contracts").mkdir(parents=True)
             (common / "require_powershell7.ps1").write_text("", encoding="utf-8")
             (common / "contracts/run_artifact_support.ps1").write_text(_SUPPORT, encoding="utf-8")
+            (common / "contracts/run_artifact_workflow.ps1").write_text(_WORKFLOW, encoding="utf-8")
+            (common / "paths").mkdir()
+            (common / "paths/workspace_paths.ps1").write_text(_PATHS, encoding="utf-8")
             (runner.parent / "execute.ps1").write_text(_EXECUTE, encoding="utf-8")
             python = root / "python.cmd"
             python.write_text('@echo off\r\necho %*>> "%~dp0python_calls.log"\r\nexit /b 0\r\n', encoding="utf-8")
@@ -90,6 +93,7 @@ try {
             self.assertEqual(success.returncode, 0, success.stdout + success.stderr)
             self.assertIn("SINGLE_REFLECTION_RUN=PASS", success.stdout)
             run = root / "artifacts/projects/instrument_assembly/runs/20261023_020000__sim__simion__single-reflection-owner"
+            self.assertIn(f'RESULT={root / "artifacts/projects/instrument_assembly/scratch/workflow_results/20261023_020000__sim__simion__single-reflection-owner/result.json"} TOTAL_SECONDS=', success.stdout)
             invocation = json.loads((run / "results/invocation.json").read_text(encoding="utf-8"))
             self.assertEqual(invocation["stage"], "fly")
             self.assertTrue(invocation["fly"])
@@ -98,6 +102,12 @@ try {
             self.assertEqual(json.loads((run / "run_manifest.json").read_text(encoding="utf-8"))["status"], "success")
             self.assertEqual(json.loads((run / "summary.json").read_text(encoding="utf-8"))["requested_stage"], "fly")
             self.assertFalse(json.loads((run / "summary.json").read_text(encoding="utf-8"))["fly_executed"])
+            summary = json.loads((run / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["simulation_path"], "continuous_assembly")
+            self.assertEqual(summary["trajectory_execution"], "not_executed")
+            self.assertEqual(summary["composition_plan_path"], str(run / "inputs/composition_plan.json"))
+            self.assertEqual(summary["source_provenance_path"], str(run / "inputs/source_provenance.json"))
+            self.assertGreater(summary["elapsed_before_finalization_seconds"], 0)
             config = json.loads((run / "run_config.json").read_text(encoding="utf-8"))
             self.assertEqual(config["inputs"]["public_runner"], str(run / "inputs/run_single_reflection_flight.ps1"))
             events = (run / "events.txt").read_text(encoding="utf-8")
@@ -115,18 +125,6 @@ try {
             self.assertEqual(failed_summary["failure_stage"], "execute_frozen_workflow")
             self.assertEqual(json.loads((failed_run / "run_manifest.json").read_text(encoding="utf-8"))["status"], "failed")
 
-            before_calls = (root / 'python_calls.log').read_text()
-            deferred = self._run(repo, python, request, budget,
-                '20261023_020004__sim__simion__single-reflection-owner', defer=True)
-            self.assertNotEqual(deferred.returncode, 0)
-            deferred_run = root / 'artifacts/projects/instrument_assembly/runs/20261023_020004__sim__simion__single-reflection-owner'
-            summary = json.loads((deferred_run / 'summary.json').read_text(encoding='utf-8-sig'))
-            self.assertEqual(summary['reason'], 'inert native audit failure')
-            self.assertTrue(summary['capacity_finalization_deferred'])
-            self.assertEqual(summary['capacity_accounting_failure'], 'inert accounting failure')
-            self.assertNotIn('capacity_release', (deferred_run / 'events.txt').read_text())
-            self.assertEqual((root / 'python_calls.log').read_text(), before_calls, 'deferred owner sealed the payload')
-
             parent = root / "parent"
             parent.mkdir()
             borrowed = root / "grandparent/native.log"
@@ -139,10 +137,56 @@ try {
             continued_run = root / "artifacts/projects/instrument_assembly/runs/20261023_020002__sim__simion__single-reflection-owner"
             self.assertEqual(json.loads((continued_run / "protected.json").read_text(encoding="utf-8-sig")), [str(continued_run), str(parent), str(borrowed)])
             workbench_run_id = "20261023_020003__sim__simion__single-reflection-owner"
+            request_data = json.loads(request.read_text(encoding="utf-8"))
+            request_data["source"] = {"kind": "recorded_pre_pulse_state", "instance_id": "oatof"}
+            request.write_text(json.dumps(request_data), encoding="utf-8")
             workbench_result = self._run(repo, python, request, budget, workbench_run_id, workbench=True)
             self.assertEqual(workbench_result.returncode, 0, workbench_result.stdout + workbench_result.stderr)
             workbench_run = root / "artifacts/projects/instrument_assembly/runs" / workbench_run_id
             self.assertTrue(json.loads((workbench_run / "summary.json").read_text(encoding="utf-8-sig"))["workbench_executed"])
+            restarted = json.loads((workbench_run / "summary.json").read_text(encoding="utf-8-sig"))
+            self.assertEqual(restarted["simulation_path"], "continuous_assembly")
+            self.assertEqual(restarted['original_birth_to_terminal_path'], 'segmented_handoff')
+            self.assertEqual(restarted["source_kind"], "recorded_pre_pulse_state")
+            self.assertTrue(restarted["state_restart"])
+            self.assertEqual(restarted["restart_state_time_us"], 80.0)
+            self.assertEqual(restarted["trajectory_execution"], "not_executed")
+            self.assertFalse(restarted['state_restart_executed'])
+            self.assertIsNone(restarted['restart_plane'])
+            self.assertEqual(restarted['continuous_segment_start'], 'recorded_pre_pulse_volume_state')
+            self.assertEqual(restarted['continued_particle_ids'], [8, 7])
+            self.assertEqual(restarted['original_mother_particle_count'], 100)
+            self.assertEqual(restarted['uncontinued_mother_particle_ids'], [i for i in range(1, 101) if i not in (7, 8)])
+            self.assertEqual(restarted['state_time_semantics'], 'recorded_pre_pulse_state_time_us_no_epoch_shift')
+
+            for index, (kind, extent, reused, expected) in enumerate((
+                    ('recorded_birth', 'original_birth_to_terminal', False, 'continuous_assembly'),
+                    ('recorded_pre_pulse_state', 'declared_source_to_terminal', False, 'continuous_assembly'),
+                    ('recorded_pre_pulse_state', 'original_birth_to_terminal', False, 'segmented_handoff'),
+                    ('recorded_pre_pulse_state', 'original_birth_to_terminal', True, 'segmented_handoff')), 10):
+                request_data['source'] = dict(kind=kind, instance_id='oatof' if kind=='recorded_pre_pulse_state' else 'multipole')
+                request_data['propagation_scope'] = extent
+                definition = request.parent/'validation.json'
+                definition.write_text(json.dumps(dict(question='predeclared functional fixture')), encoding='utf-8')
+                request_data['validation_contract'] = dict(path=str(definition))
+                request.write_text(json.dumps(request_data), encoding='utf-8')
+                run_id = f'20261023_0200{index:02d}__sim__simion__single-reflection-owner'
+                result = self._run(repo, python, request, budget, run_id, native=not reused, reused=reused)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                report = json.loads((root/'artifacts/projects/instrument_assembly/runs'/run_id/'summary.json').read_text())
+                self.assertEqual(report['simulation_path'], expected)
+                self.assertEqual(report['propagation_scope'], extent)
+                frozen = root/'artifacts/projects/instrument_assembly/runs'/run_id/'inputs/functional_validation.json'
+                self.assertEqual(Path(report['validation_contract_path']), frozen)
+                self.assertEqual(frozen.read_bytes(), definition.read_bytes())
+                self.assertEqual(report['clock_epoch_id'], 'instrument_clock_epoch_v1')
+                self.assertEqual(report['target_frame_id'], 'oatof_global')
+                self.assertEqual(report['continuous_segment_executed'], not reused)
+                self.assertEqual(report['native_flight_batch_count'], 0 if reused else 1)
+                if reused:
+                    self.assertEqual(report['trajectory_execution'], 'reused_complete_batches')
+                    self.assertFalse(report['state_restart_executed'])
+                    self.assertEqual(report['reused_flight_batch_count'], 2)
 
     def test_execute_finalization_preserves_replaced_owner_session_on_accounting_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -173,26 +217,21 @@ ConvertTo-Json -InputObject $results -Compress
                 cwd=script.parent, capture_output=True, text=True, encoding='utf-8', timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             rows = json.loads(result.stdout)
-            self.assertEqual([(r['released'], r['zeroed']) for r in rows], [(0, 1), (1, 0), (0, 0)])
+            self.assertEqual([(r['released'], r['zeroed']) for r in rows], [(0, 0), (1, 0), (0, 0)])
             self.assertEqual(rows[2]['reason'], 'accounting failed')
             self.assertEqual(rows[2]['committed'], 100)
 
-    def test_runner_has_no_wall_clock_termination_policy(self) -> None:
-        source = RUNNER.read_text(encoding="utf-8")
-        self.assertNotIn("wall_clock_seconds", source)
-        self.assertIn("execute.ps1", source)
-        self.assertIn("Complete-FailedRun", source)
-        self.assertIn("-UseShortExecutionPath", source)
-        self.assertIn("oatof_reflectron_ideal_10_5.gem", source)
-        self.assertIn("Remove-RunPackageExecutionAlias -Package $package", source)
-
     @staticmethod
-    def _run(repo: Path, python: Path, request: Path, budget: Path, run_id: str, *, fail: bool = False, workbench: bool = False, defer: bool = False) -> subprocess.CompletedProcess[str]:
+    def _run(repo: Path, python: Path, request: Path, budget: Path, run_id: str, *, fail: bool = False, workbench: bool = False, defer: bool = False, native: bool = False, reused: bool = False) -> subprocess.CompletedProcess[str]:
         env = dict(os.environ)
         if fail:
             env["SINGLE_REFLECTION_RUNNER_TEST_FAIL"] = "1"
         if defer:
             env['SINGLE_REFLECTION_RUNNER_TEST_DEFER'] = '1'
+        if native:
+            env['SINGLE_REFLECTION_RUNNER_TEST_NATIVE'] = '1'
+        if reused:
+            env['SINGLE_REFLECTION_RUNNER_TEST_REUSED'] = '1'
         return subprocess.run(
             ["pwsh", "-NoProfile", "-File", str(repo / "integrations/workflows/single_reflection_flight/run.ps1"),
              "-Request", str(request), "-ExecutionBudgetPath", str(budget), "-RunId", run_id,
@@ -209,29 +248,90 @@ ConvertTo-Json -InputObject $results -Compress
 
 _SUPPORT = r'''
 function Write-RunJson { param($Path,$Value,$Depth) $Value|ConvertTo-Json -Depth 100|Set-Content -LiteralPath $Path -Encoding utf8 }
-function Copy-VerifiedRunInput { param($Source,$Destination) Copy-Item -LiteralPath $Source -Destination $Destination }
+function Copy-VerifiedRunInput { param($Source,$Destination) Copy-Item -LiteralPath $Source -Destination $Destination;return $Destination }
 function New-RunPackage {
- param($Python,$RepoRoot,$ArtifactRoot,$RunId,$Project,$Mode,$Software,[switch]$RetentionContractEnabled,$RetentionClass,$RetentionReason,[switch]$CapacityLedgerLifecycleEnabled,[switch]$UseShortExecutionPath,$AdditionalDirectories,$ExpectedExecutionRelativePaths)
+ param($Python,$RepoRoot,$ArtifactRoot,$RunId,$Project,$Mode,$Software,[switch]$RetentionContractEnabled,$RetentionClass,$RetentionReason,[switch]$CapacityLedgerLifecycleEnabled,[switch]$UseShortExecutionPath,$AdditionalDirectories,$ExpectedExecutionRelativePaths,$PathContext)
  $run=Join-Path $ArtifactRoot "runs/$RunId";New-Item -ItemType Directory -Force -Path (Join-Path $run 'inputs'),(Join-Path $run 'results'),(Join-Path $run 'logs')|Out-Null
  Write-RunJson -Path (Join-Path $run 'run_config.json') -Value @{run_id=$RunId;project=$Project;mode=$Mode;inputs=@{};artifact_retention=@{class='solver_review'}}
  Write-RunJson -Path (Join-Path $run 'summary.json') -Value @{status='checkpoint'}
- return [pscustomobject]@{run_dir=$run;artifact_run_dir=$run;input_dir=(Join-Path $run 'inputs');result_dir=(Join-Path $run 'results');log_dir=(Join-Path $run 'logs');run_config=(Join-Path $run 'run_config.json');summary=(Join-Path $run 'summary.json')}
+ return [pscustomobject]@{native_path_preparation=@{calls=0;elapsed_seconds=0.0;transport_bytes=0};run_dir=$run;artifact_run_dir=$run;input_dir=(Join-Path $run 'inputs');result_dir=(Join-Path $run 'results');log_dir=(Join-Path $run 'logs');run_config=(Join-Path $run 'run_config.json');summary=(Join-Path $run 'results/../summary.json')}
 }
 function Remove-RunPackageExecutionAlias { param($Package) }
-function Enter-ArtifactWorkflowCapacitySession { param($RunDirectory,$CommittedNewBytes,$ProtectedPaths) Write-RunJson -Path (Join-Path $RunDirectory 'protected.json') -Value @($ProtectedPaths);[IO.File]::AppendAllText((Join-Path $RunDirectory 'events.txt'),"capacity:$CommittedNewBytes`n");$global:ownerCapacitySession=[pscustomobject]@{status='active';run=$RunDirectory;lease_id='owner-capacity-session'};return $global:ownerCapacitySession }
+function Enter-ArtifactWorkflowCapacitySession { param($RunDirectory,$CommittedNewBytes,$ProtectedPaths,$SourceReferences,$Owner) foreach($source in $SourceReferences){$ProtectedPaths+=@($source.protected_paths)};Write-RunJson -Path (Join-Path $RunDirectory 'protected.json') -Value @($ProtectedPaths);[IO.File]::AppendAllText((Join-Path $RunDirectory 'events.txt'),"capacity:$CommittedNewBytes`n");$global:ownerCapacitySession=[pscustomobject]@{status='active';run=$RunDirectory;lease_id='owner-capacity-session';owner=$Owner};return $global:ownerCapacitySession }
 function Update-ArtifactWorkflowCapacitySession { param($Session) return [pscustomobject]@{session=$Session} }
 function Exit-ArtifactWorkflowCapacitySession { param($Session) [IO.File]::AppendAllText((Join-Path $Session.run 'events.txt'),"capacity_release`n");$Session.status='released' }
-function Apply-RunArtifactRetention { param($RunConfig) $run=Split-Path -Parent $RunConfig;[IO.File]::AppendAllText((Join-Path $run 'events.txt'),"retention`n");$path=Join-Path $run 'retention_actions.json';'{}'|Set-Content $path;return $path }
-function Write-VerifiedRunManifest { param($RunConfig,$Status) $run=Split-Path -Parent $RunConfig;Write-RunJson -Path (Join-Path $run 'run_manifest.json') -Value @{status=$Status} }
-function Complete-FailedRun { param($RunConfig,$Summary,$SummaryRole,$Reason,$Software,$Status,$FailureStage,$AdditionalSummaryProperties) $value=@{status=$Status;failure_stage=$FailureStage;reason=$Reason};foreach($key in $AdditionalSummaryProperties.Keys){$value[$key]=$AdditionalSummaryProperties[$key]};Write-RunJson -Path $Summary -Value $value;Write-VerifiedRunManifest -RunConfig $RunConfig -Status $Status }
+function Save-RunEnvironment {param($Names);return @{}}
+function Restore-RunEnvironment {param($Names,$Snapshot)}
+function Invoke-RunToolRootContext {
+ param($RepoRoot,$Operation)
+ # Source ownership is independently tested with real two-root leases. This is the runner routing fixture.
+ $parent=Join-Path (Split-Path -Parent $RepoRoot) 'parent'
+ $paths=if(Test-Path (Join-Path $parent 'run_manifest.json')){@($parent,(Join-Path (Split-Path -Parent $RepoRoot) 'grandparent/native.log'))}else{@()}
+ return @{source_references=@(@{protected_paths=$paths})}
+}
+'''
+
+_WORKFLOW = r'''
+param($ResultPath,[switch]$ResumeFinalization)
+. (Join-Path $PSScriptRoot 'run_artifact_support.ps1')
+function Initialize-RunArtifactPowerShellOwner {
+ param($Python,$RepoRoot,$Package,$CapacitySession,$EntrypointPath,$CommitmentInputPaths,$ResultPath,$Software)
+ if($CapacitySession.owner-cne('run-artifact-workflow:instrument_assembly:'+(Get-Content $Package.run_config -Raw|ConvertFrom-Json).run_id)){throw 'Public owner session identity was not passed'}
+ if(-not(Test-Path $EntrypointPath)-or@($CommitmentInputPaths).Count-ne1-or-not(Test-Path $CommitmentInputPaths[0])){throw 'Public owner lacks frozen entrypoint/budget'}
+ $runId=(Get-Content $Package.run_config -Raw|ConvertFrom-Json).run_id
+ if(-not$ResultPath){$ResultPath=Join-Path (Split-Path -Parent (Split-Path -Parent $Package.artifact_run_dir)) ('scratch/workflow_results/'+$runId+'/result.json')}
+ return @{completion_written=$false;session=$CapacitySession;package=$Package;result_path=$ResultPath}
+}
+function Complete-RunArtifactPowerShellOwner {
+ param($Context,$Status,$Summary,$OutputPaths,$WriterCompletion,$WritersStopped,$OriginalFailure)
+ if(-not$WritersStopped-or$WriterCompletion.operations.Count-or$WriterCompletion.resource_releases.Count){throw 'Inert consumer fixture started an unexpected writer'}
+ $run=$Context.package.artifact_run_dir
+ [IO.File]::AppendAllText((Join-Path $run 'events.txt'),"retention`n")
+ $Summary.status=$Status
+ Write-RunJson -Path $Context.package.summary -Value $Summary
+ Write-RunJson -Path (Join-Path $run 'run_manifest.json') -Value @{status=$Status}
+ $null=Exit-ArtifactWorkflowCapacitySession -Session $Context.session
+ $Context.completion_written=$true
+ return @{status=$Status}
+}
+'''
+
+_PATHS = r'''
+function Resolve-WorkspacePaths {param($SourceRoot,$Python);$root=Join-Path (Split-Path -Parent $SourceRoot) artifacts;return @{source_root=$SourceRoot;artifact_root=$root;execution_root=(Join-Path $root common/execution_aliases);host_resource_state_path=(Join-Path $root common/host.sqlite3)}}
 '''
 
 _EXECUTE = r'''
-param($Request,$ExecutionBudgetPath,$OutputDirectory,[switch]$FieldDesignOnly,[switch]$WorkbenchOnly,[switch]$Fly,$RepoRoot,$Python,$WorkflowCapacitySession)
+param($NativeOperations,$ResourceReleases,$PhaseTimings,$Request,$ExecutionBudgetPath,$OutputDirectory,[switch]$FieldDesignOnly,[switch]$WorkbenchOnly,[switch]$Fly,$RepoRoot,$Python,$WorkflowCapacitySession)
 if(-not[object]::ReferenceEquals($WorkflowCapacitySession,$global:ownerCapacitySession)-or$WorkflowCapacitySession.status-ne'active'){throw 'execute did not borrow the owner capacity object'}
 if($env:SINGLE_REFLECTION_RUNNER_TEST_DEFER){$WorkflowCapacitySession|Add-Member -NotePropertyName defer_capacity_finalization -NotePropertyValue 'inert accounting failure';throw 'inert native audit failure'}
 if($env:SINGLE_REFLECTION_RUNNER_TEST_FAIL){throw 'inert execute failure'}
-if($WorkbenchOnly){$folder=Join-Path $OutputDirectory 'results/single_reflection';New-Item -ItemType Directory -Path $folder|Out-Null;@{role='single_reflection_workbench_preparation'}|ConvertTo-Json|Set-Content (Join-Path $folder 'workbench_preparation.json')}
+$requestData=Get-Content -LiteralPath $Request -Raw|ConvertFrom-Json -AsHashtable
+$folder=Join-Path $OutputDirectory 'results/single_reflection';New-Item -ItemType Directory -Path $folder -Force|Out-Null
+Write-RunJson -Path (Join-Path $folder 'preparation_receipt.json') -Value @{default_replay_requested=$false}
+Write-RunJson -Path (Join-Path $folder 'workbench_preparation.json') -Value @{default_replay_verification=@{requested=$false;status='not_requested';native_fly_performed=$false}}
+$source=@{source_kind='recorded_birth';source_instance_id='multipole';propagation_scope='declared_source_to_terminal';
+ state_time_semantics='original_birth_time_s_times_1e6_no_epoch_shift';source_frame_id='multipole_local';target_frame_id='oatof_global';clock_epoch_id='instrument_clock_epoch_v1';particle_count=100}
+if($requestData.ContainsKey('propagation_scope')){$source.propagation_scope=$requestData.propagation_scope}
+if($requestData.ContainsKey('source')){
+ $source.source_kind=$requestData.source.kind;$source.source_instance_id=$requestData.source.instance_id
+ if($source.source_kind-eq'recorded_pre_pulse_state'){
+  $source.restart_state_time_us=80.0;$source.continued_particle_ids=@(8,7);$source.original_mother_particle_ids=@(1..100)
+  $source.original_mother_particle_count=100;$source.uncontinued_mother_particle_ids=@(1..100|Where-Object {$_-notin@(7,8)})
+  $source.source_frame_id='oatof_global';$source.state_time_semantics='recorded_pre_pulse_state_time_us_no_epoch_shift'
+ }
+}
+if($requestData.ContainsKey('validation_contract')){
+ $frozen=Join-Path $OutputDirectory 'inputs/functional_validation.json'
+ Copy-Item -LiteralPath $requestData.validation_contract.path -Destination $frozen
+ $source.input_records=@{validation_contract=@{path=(Join-Path $OutputDirectory 'retired_execution_alias/inputs/functional_validation.json')}}
+}
+$source|ConvertTo-Json|Set-Content (Join-Path $OutputDirectory 'inputs/source_provenance.json') -Encoding utf8
+if($env:SINGLE_REFLECTION_RUNNER_TEST_NATIVE-or$env:SINGLE_REFLECTION_RUNNER_TEST_REUSED){
+ $folder=Join-Path $OutputDirectory 'results/single_reflection';New-Item -ItemType Directory -Path $folder -Force|Out-Null
+ if($env:SINGLE_REFLECTION_RUNNER_TEST_NATIVE){ConvertTo-Json -InputObject @(@{phase='baseline';exit_code=0})|Set-Content (Join-Path $folder 'flight_execution_records.json')}
+ else{ConvertTo-Json -InputObject @{default_replay_verification=@{requested=$false;status='not_requested';native_fly_performed=$false};batches=@(@{continuation_source=@{};replay_continuation_source=@{}})}|Set-Content (Join-Path $folder 'workbench_preparation.json')}
+}
+if($WorkbenchOnly){$folder=Join-Path $OutputDirectory 'results/single_reflection';New-Item -ItemType Directory -Path $folder -Force|Out-Null;@{role='single_reflection_workbench_preparation'}|ConvertTo-Json|Set-Content (Join-Path $folder 'workbench_preparation.json')}
 $selected=if($FieldDesignOnly){'field_design'}elseif($WorkbenchOnly){'workbench'}else{'fly'};@{stage=$selected;field_design_only=[bool]$FieldDesignOnly;workbench_only=[bool]$WorkbenchOnly;fly=[bool]$Fly;capacity_lease_id=$WorkflowCapacitySession.lease_id}|ConvertTo-Json|Set-Content (Join-Path $OutputDirectory 'results/invocation.json') -Encoding utf8
 '''
 

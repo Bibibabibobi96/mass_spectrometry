@@ -67,3 +67,6 @@ L1／L2、冻结依赖与最终验收见[状态页](docs/INTEGRATION.md#依赖�
 ## 历史追溯
 
 [历史索引](docs/history/README.md)维护冻结阶段证据及旧工作流入口；当前操作和能力继续由本页与集成状态维护。
+
+单反射集成的原入口支持 `-ResumeFinalization -ResultPath <原Result>`，无需科学request或预算；
+默认仅完成正常Fly，保存工作台默认回放须显式请求。范围及失败恢复见[单反射整机](docs/INTEGRATION.md#单反射整机)。

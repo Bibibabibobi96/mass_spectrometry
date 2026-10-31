@@ -368,7 +368,8 @@
             "paired_accelerator_static_field",
             "paired_accelerator_pulse",
             "local_frontend",
-            "cooled_frontend"
+            "cooled_frontend",
+            "single_reflection_flight"
           ]
         },
         {

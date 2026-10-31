@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory)][string]$Request,
+  [pscustomobject]$RunPackage=$null,
   [switch]$PrepareOnly,
   [switch]$FieldDesignOnly,
   [switch]$WorkbenchOnly,
@@ -9,16 +10,18 @@ param(
   [Parameter(Mandatory)][string]$OutputDirectory,
   [string]$Python='',
   [pscustomobject]$WorkflowCapacitySession=$null,
+  $NativeOperations=$null,$ResourceReleases=$null,[Collections.IDictionary]$PhaseTimings=$null,
   [string]$RepoRoot=(Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)))
 )
 # The caller owns the managed run, capacity reservation and terminal publication.
 # FieldDesignOnly builds the declared working fields and downstream provider fields.
 # Fly schedules original frozen source rows over the same complete assembly,
-# then compares fresh-process replay of each saved batch workbench.
+# Saved-workbench fresh-process replay is performed only when explicitly requested.
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 if(([int][bool]$PrepareOnly+[int][bool]$FieldDesignOnly+[int][bool]$WorkbenchOnly+[int][bool]$Fly)-ne1){throw 'Select exactly one PrepareOnly, FieldDesignOnly, WorkbenchOnly or Fly stage.'}
 if((-not$PrepareOnly)-and-not$ExecutionBudgetPath){throw 'Native execution requires ExecutionBudgetPath.'}
+if((-not$PrepareOnly)-and$null-eq$RunPackage){throw 'Native single-reflection stages require the public run owner package; use run.ps1.'}
 $RepoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
 $Request=(Resolve-Path -LiteralPath $Request).Path
 # A managed runner may pass its execution junction here.  Preserve that lexical
@@ -29,7 +32,7 @@ if(-not(Test-Path -LiteralPath $OutputDirectory -PathType Container)){
 }
 $OutputDirectory=[IO.Path]::GetFullPath($OutputDirectory)
 . (Join-Path $RepoRoot 'common/require_powershell7.ps1')
-. (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $RepoRoot 'common/contracts/run_artifact_workflow.ps1')
 . (Join-Path $RepoRoot 'integrations/runtime/dependencies.ps1')
 if(-not$Python){$Python=Join-Path $RepoRoot '.venv/Scripts/python.exe'}
 $Python=(Resolve-Path -LiteralPath $Python).Path
@@ -38,6 +41,7 @@ if(-not(Test-Path -LiteralPath $configPath -PathType Leaf)){
   throw 'Single-reflection output must already be owned by a managed run.'
 }
 $config=Get-Content -LiteralPath $configPath -Raw|ConvertFrom-Json -AsHashtable -Depth 100
+$pathContext=if($null-ne$RunPackage){$RunPackage.path_context}else{$config.paths}
 if($config.project-cne'instrument_assembly'){
   throw 'Single-reflection managed run owner must be instrument_assembly.'
 }
@@ -98,6 +102,7 @@ Write-RunJson -Path $configPath -Depth 100 -Value $config
 $resultDirectory=Join-Path $OutputDirectory 'results/single_reflection'
 New-Item -ItemType Directory -Path $resultDirectory -Force|Out-Null
 Write-RunJson -Path (Join-Path $resultDirectory 'preparation_receipt.json') -Depth 100 -Value $receipt
+$defaultReplayRequested=[bool]$receipt.default_replay_requested
 $sourceProvenance=Get-Content -LiteralPath (Join-Path $OutputDirectory 'inputs/source_provenance.json') -Raw|ConvertFrom-Json -AsHashtable -Depth 100
 $continuationSource=($sourceProvenance.source_kind-eq'recorded_pre_pulse_state')
 $hasFrozenFrontendFields=$receipt.input_records.ContainsKey('frontend_fields')
@@ -111,8 +116,8 @@ if($PrepareOnly){
 . (Join-Path $frozen.execution_root 'integrations/runtime/frontend_flight_support.ps1')
 . (Join-Path $RepoRoot 'common/simion/short_pa_path_support.ps1')
 . (Join-Path $frozen.execution_root 'integrations/workflows/single_reflection_flight/field_stage.ps1')
-$artifacts=Join-Path (Split-Path -Parent $RepoRoot) 'artifacts'
-$lease=$null;$capacity=$WorkflowCapacitySession;$ownsCapacity=($null-eq$WorkflowCapacitySession);$okay=$false;$stageElapsed=$null;$writerUnknown=$false
+$artifacts=[string]$pathContext.artifact_root
+$failure=$null;$lease=$null;$capacity=$WorkflowCapacitySession;$ownsCapacity=($null-eq$WorkflowCapacitySession);$okay=$false;$stageElapsed=$null;$writerUnknown=$false
 $downstreamExecution=@()
 $workbenchExecution=@()
 $allWorkbenchExecution=@()
@@ -165,10 +170,16 @@ function Confirm-InstrumentIobVerification {
       throw "Instrument IOB build completion marker missing: $name"
     }
     $verifyLog=Join-Path $RunDirectory "logs/$Phase.$name.reopen.stdout.log"
+    try{
     $verified=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $RunDirectory -FilePath $SimionExe `
       -ArgumentList ([string[]]$Case.iob_verify_arguments) -WorkingDirectory ([string]$Case.working_directory) `
       -UsagePath (Join-Path $RunDirectory "logs/$Phase.$name.reopen.resource_usage.json") `
       -RedirectStandardOutput $verifyLog -RedirectStandardError (Join-Path $RunDirectory "logs/$Phase.$name.reopen.stderr.log")
+      if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId ([string]$lease.token) -OperationId "$Phase.$name.reopen" -ProcessRecord $verified}
+    }catch{
+      if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId ([string]$lease.token) -OperationId "$Phase.$name.reopen" -ExceptionData $_.Exception.Data}
+      throw
+    }
     $Case.native_workbench_execution+=@(@{operation='verify';argv=@($Case.iob_verify_arguments);exit_code=$verified.exit_code;
       stdout_path=$verifyLog;stderr_path=(Join-Path $RunDirectory "logs/$Phase.$name.reopen.stderr.log");
       usage_path=(Join-Path $RunDirectory "logs/$Phase.$name.reopen.resource_usage.json")})
@@ -256,7 +267,7 @@ $evidenceCode=@'
 import json,sys
 from pathlib import Path
 from common.contracts.write_run_manifest import file_record
-rows=json.loads(sys.argv[1])
+rows=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8-sig"))
 for row in rows:
     for kind in ("stdout","stderr","usage"):
         path=Path(row.pop(kind+"_path"))
@@ -265,9 +276,30 @@ Path(sys.argv[2]).write_text(json.dumps(rows,indent=2)+"\n",encoding="utf-8",new
 '@
 function Write-NativeExecutionEvidence {
   param([object[]]$Records,[string]$Path)
+  # Batch records scale with the actual run; transport only this small-file
+  # path across the Windows process command line, never the JSON payload.
+  $inputPath=$Path+'.input.json'
+  Write-RunJson -Path $inputPath -Value @($Records) -Depth 30
   Invoke-RunToolRootContext -RepoRoot $frozen.execution_root -Operation {
-    & $Python -B -c $evidenceCode (ConvertTo-Json -InputObject @($Records) -Depth 30 -Compress) $Path
+    & $Python -B -c $evidenceCode $inputPath $Path
     if($LASTEXITCODE-ne0){throw 'Native evidence projection failed.'}
+  }
+  Remove-Item -LiteralPath $inputPath
+}
+function Get-InstrumentSourceProtectionProjection {
+  param([string[]]$BorrowedPaths=@())
+  $code=@'
+import json,sys
+from pathlib import Path
+from integrations.workflows.single_reflection_flight.continuation import source_capacity_projection
+value=json.load(sys.stdin)
+print(json.dumps(source_capacity_projection(artifact_root=Path(sys.argv[1]),preparation=value['preparation'],borrowed_paths=value['borrowed_paths'])))
+'@
+  $payload=@{preparation=$receipt;borrowed_paths=@($BorrowedPaths)}
+  Invoke-RunToolRootContext -RepoRoot $frozen.execution_root -Operation {
+    $result=($payload|ConvertTo-Json -Depth 100 -Compress)|& $Python -B -c $code $artifacts
+    if($LASTEXITCODE-ne0){throw 'Single-reflection explicit source protection projection failed.'}
+    return ($result-join"`n")|ConvertFrom-Json -AsHashtable -Depth 100
   }
 }
 function Register-InstrumentContinuationInputs {
@@ -290,18 +322,31 @@ function Register-InstrumentContinuationInputs {
   }
   Write-RunJson -Path $configPath -Value $config -Depth 100
   if($borrowed.Count){
-    $updated=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $capacity -ProtectedPaths @($borrowed|Select-Object -Unique)
+    $projection=Get-InstrumentSourceProtectionProjection -BorrowedPaths @($borrowed|Select-Object -Unique)
+    $updated=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $capacity -SourceReferences @($projection.source_references)
     $script:capacity=$updated.session
   }
 }
 function Write-InstrumentWorkbenchReceipt {
   param([bool]$PhaseOkay)
   if($workbench){
+    $receiptContext=@{execution_run_directory=[string]$RunPackage.run_dir;run_directory=[string]$RunPackage.artifact_run_dir}
+    $persistentWorkbenchEvidence=Convert-WorkflowOwnerPath $receiptContext $workbenchEvidencePath
+    if(-not(Test-WorkflowPathWithin $persistentWorkbenchEvidence $receiptContext.run_directory)){
+      throw 'Workbench execution evidence is outside its owning run.'
+    }
+    $persistentFlightEvidence=$null
+    if($Fly){
+      $persistentFlightEvidence=Convert-WorkflowOwnerPath $receiptContext $flightEvidencePath
+      if(-not(Test-WorkflowPathWithin $persistentFlightEvidence $receiptContext.run_directory)){
+        throw 'Flight execution evidence is outside its owning run.'
+      }
+    }
     $workbench.native_execution_performed=@($workbenchExecution|Where-Object{$null-ne$_.exit_code}).Count-gt0
     $priorityChecks=@($workbenchExecution|Where-Object{$_.operation-eq'verify'-and$_.ContainsKey('native_priority_occupancy_validation')}|ForEach-Object{$_.native_priority_occupancy_validation})
     $expectedPriorityChecks=if($workbench.ContainsKey('batches')){@($workbench.batches).Count}else{1}
     $priorityOkay=$workbenchOkay-and$priorityChecks.Count-eq$expectedPriorityChecks
-    $workbench.native_validation=@{status=$(if($workbenchOkay){'success'}else{'failed'});execution_records_path=$workbenchEvidencePath;
+    $workbench.native_validation=@{status=$(if($workbenchOkay){'success'}else{'failed'});execution_records_path=$persistentWorkbenchEvidence;
       scope='saved_component_slots_grids_provider_poses_declared_priority_order_and_prepared_controls';
       native_priority_occupancy_validation=@{status=$(if($priorityOkay){'success'}elseif($workbench.native_execution_performed-and-not$workbenchOkay){'failed'}else{'pending'});
         scope='declared_native_point_expectations_only__not_dynamic_fields_continuity_or_global_geometry';
@@ -313,10 +358,15 @@ function Write-InstrumentWorkbenchReceipt {
     }
     if($Fly){
       $workbench.native_validation.fly_performed=@($flightExecution|Where-Object{$null-ne$_.exit_code-and$_.phase-in$nativePhases}).Count-gt0
-      $workbench.flight_validation=@{status=$(if($PhaseOkay){'success'}else{'failed'});execution_records_path=$flightEvidencePath;
+      $workbench.flight_validation=@{status=$(if($PhaseOkay){'success'}else{'failed'});execution_records_path=$persistentFlightEvidence;
         completed_collection_count=$phaseCollection.Count;
-        scope=$(if($workbench.phase-eq'discovery'){'complete_mother_population_actual_occupancy_discovery'}elseif($continuationSource){'recorded_pre_pulse_continued_cohort_and_saved_default_replay'}else{'complete_mother_population_and_saved_default_replay'});
+        scope=$(if($workbench.phase-eq'discovery'){'complete_mother_population_actual_occupancy_discovery'}elseif($defaultReplayRequested){if($continuationSource){'recorded_pre_pulse_continued_cohort_and_saved_default_replay'}else{'complete_mother_population_and_saved_default_replay'}}elseif($continuationSource){'recorded_pre_pulse_continued_cohort'}else{'complete_mother_population'});
         }
+      $phaseReplayRequested=($defaultReplayRequested-and$workbench.phase-ne'discovery')
+      $workbench.default_replay_verification=@{requested=$phaseReplayRequested;
+        status=$(if(-not$phaseReplayRequested){'not_requested'}elseif($PhaseOkay){'completed'}else{'failed'});
+        native_fly_performed=(@($flightExecution|Where-Object{$_.phase-eq'default_replay'}).Count-gt0)}
+      $workbench.saved_default_replay_verification=$workbench.default_replay_verification.status
       if($PhaseOkay){
         $workbench.pending_validation=@()
         if(-not$priorityOkay){$workbench.pending_validation+=@('native_priority_occupancy_points')}
@@ -324,6 +374,11 @@ function Write-InstrumentWorkbenchReceipt {
     }
     Write-RunJson -Path $workbenchReceiptPath -Depth 100 -Value $workbench
   }
+}
+$currentStage='engineering_budget';$phaseClock=[Diagnostics.Stopwatch]::StartNew()
+function Set-InstrumentStage([string]$Name){
+  if($null-ne$PhaseTimings){$PhaseTimings[$currentStage]=[double]$phaseClock.Elapsed.TotalSeconds}
+  $script:currentStage=$Name;$phaseClock.Restart()
 }
 try {
   $budget=Initialize-IntegrationStageBudget -ResolvedBudget $ExecutionBudgetPath -InputDir $inputs `
@@ -345,7 +400,8 @@ try {
   }
   if($Fly){
     $flightLimits=@{}
-    $flightStages=@('instrument_flight','instrument_default_replay')
+    $flightStages=@('instrument_flight')
+    if($defaultReplayRequested){$flightStages+=@('instrument_default_replay')}
     if($discoverPulse){$flightStages=@('instrument_pulse_discovery')+$flightStages}
     foreach($stage in $flightStages){
       $flightLimits[$stage]=Get-IntegrationStageBudget -Document $budgetDocument -ExpectedIntegrationId instrument_assembly `
@@ -376,43 +432,28 @@ try {
     }
   }
   $protectedPaths=@($OutputDirectory)
-  foreach($sourceManifest in @('frontend_fields_manifest','downstream_fields_manifest','continuation_parent_manifest')){
-    if($receipt.input_records.ContainsKey($sourceManifest)){
-      $protectedPaths+=Split-Path -Parent ([string]$receipt.input_records[$sourceManifest].source_path)
-    }
-  }
-  if($batchContinuation){
-    $parentManifest=Get-Content -LiteralPath ([string]$receipt.input_records.continuation_parent_manifest.path) -Raw|ConvertFrom-Json -AsHashtable -Depth 100
-    foreach($name in $parentManifest.inputs.Keys){
-      if($name.StartsWith('continuation_artifact_')){$protectedPaths+=[string]$parentManifest.inputs[$name].path}
-    }
-    foreach($record in $parentManifest.outputs){
-      if((Split-Path -Leaf ([string]$record.path))-notin@('workbench_preparation.json','discovery_workbench_preparation.json')){continue}
-      $parentWorkbench=Get-Content -LiteralPath ([string]$record.path) -Raw|ConvertFrom-Json -AsHashtable -Depth 100
-      foreach($case in @($parentWorkbench.batches)){
-        if($case.ContainsKey('continuation_pa_guard_records')){$protectedPaths+=@($case.continuation_pa_guard_records|ForEach-Object{[string]$_.path})}
-      }
-    }
-  }
-  $protectedPaths=@($protectedPaths|Select-Object -Unique)
+  $sourceProtection=Get-InstrumentSourceProtectionProjection
   if($ownsCapacity){
     $capacity=Enter-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -ArtifactRoot $artifacts `
-      -RunDirectory $OutputDirectory -CommittedNewBytes $commitment -ProtectedPaths $protectedPaths
+      -RunDirectory $OutputDirectory -CommittedNewBytes $commitment -ProtectedPaths $protectedPaths -SourceReferences @($sourceProtection.source_references)
   }else{
     $renewal=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $capacity `
-      -RemainingCommittedNewBytes $commitment -ProtectedPaths $protectedPaths
+      -RemainingCommittedNewBytes $commitment -ProtectedPaths $protectedPaths -SourceReferences @($sourceProtection.source_references)
     $capacity=$renewal.session
   }
-  $lease=Enter-HostExecutionLease -Role SIMION -Stage prepare
+  $lease=Enter-HostExecutionLease -StatePath $pathContext.host_resource_state_path -Role SIMION -Stage prepare
   $stageElapsed=[Diagnostics.Stopwatch]::StartNew()
   $simion=(Resolve-Path -LiteralPath (Join-Path $env:ProgramFiles 'SIMION-2020/simion.exe')).Path
+  Set-InstrumentStage 'frontend_fields'
   $field=Invoke-SingleReflectionFrontendFieldStage -Python $Python -RepoRoot $frozen.execution_root `
     -RunDirectory $OutputDirectory -PreparedDirectory $OutputDirectory -SimionExe $simion `
     -HostLease ([ref]$lease) -CapacitySession ([ref]$capacity) -Limits $budget.limits `
     -CacheRoot (Join-Path $artifacts 'common/simion/pa_family_cache') `
-    -StageElapsed $stageElapsed -ReservedRunPayloadBytes ([long]$downstreamPlan.reserved_run_array_payload_bytes)
+    -StageElapsed $stageElapsed -ReservedRunPayloadBytes ([long]$downstreamPlan.reserved_run_array_payload_bytes) `
+    -NativeOperations $NativeOperations -NativeResourceReleaseId ([string]$lease.token)
   Write-InstrumentWallClockWarning
   Write-RunJson -Path (Join-Path $resultDirectory 'field_receipt.json') -Depth 100 -Value $field
+  Set-InstrumentStage 'downstream_fields'
   if($downstreamPlan.ContainsKey('publication')){
     $published=$downstreamPlan.publication
   }else{
@@ -430,6 +471,10 @@ try {
       $native=Invoke-ResourceBudgetedProcess -Limits $budget.limits -RunDir $OutputDirectory -UsagePath $usage `
         -FilePath $simion -WorkingDirectory (Split-Path -Parent $downstreamPlanPath) -ArgumentList @($step.argv) `
         -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId ([string]$lease.token) -OperationId $name -ProcessRecord $native}
+    }catch{
+      if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId ([string]$lease.token) -OperationId $name -ExceptionData $_.Exception.Data}
+      throw
     } finally {
       $downstreamExecution+=@{index=[int]$step.index;argv=@($step.argv);exit_code=$(if($null-ne$native){$native.exit_code}else{$null});stdout_path=$stdout;stderr_path=$stderr;usage_path=$usage}
     }
@@ -452,11 +497,12 @@ try {
   $workbenchPhases=if($WorkbenchOnly-or$Fly){@('full_instrument')}else{@()}
   if($discoverPulse){$workbenchPhases=if($Fly){@('discovery','full_instrument')}else{@('discovery')}}
   foreach($workbenchPhase in $workbenchPhases){
+    Set-InstrumentStage ("workbench_"+$workbenchPhase)
     $workbench=$null;$workbenchOkay=$false;$workbenchExecution=@();$phaseCollection=@();$baselineRecord=$null
     $workbenchPrefix=if($workbenchPhase-eq'discovery'){'discovery_'}else{''}
     $workbenchReceiptPath=Join-Path $resultDirectory "${workbenchPrefix}workbench_preparation.json"
     $workbenchEvidencePath=Join-Path $resultDirectory "${workbenchPrefix}workbench_execution_records.json"
-    $nativePhases=if($workbenchPhase-eq'discovery'){@('discovery')}else{@('baseline','default_replay')}
+    $nativePhases=if($workbenchPhase-eq'discovery'){@('discovery')}elseif($defaultReplayRequested){@('baseline','default_replay')}else{@('baseline')}
     $phaseArguments=@('--phase',$workbenchPhase)
     if($decisionRecord){$phaseArguments+=@('--pulse-decision-record',(ConvertTo-Json -InputObject $decisionRecord -Compress))}
     if($WorkbenchOnly){
@@ -487,8 +533,12 @@ try {
         try {
           Write-InstrumentWallClockWarning -Limits $activeWorkbenchLimits -Elapsed $workbenchElapsed -Stage 'Instrument workbench preparation'
           $native=Invoke-ResourceBudgetedProcess -Limits $activeWorkbenchLimits -RunDir $OutputDirectory -UsagePath $usage `
-            -FilePath $simion -WorkingDirectory (Split-Path -Parent $workbench.iob_path) -ArgumentList $argv `
+            -FilePath $simion -WorkingDirectory (Split-Path -Parent $workbench.iob_path) -ArgumentList @($argv) `
             -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+        if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId ([string]$lease.token) -OperationId ("workbench."+$workbenchPhase+"."+$operation) -ProcessRecord $native}
+        }catch{
+          if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId ([string]$lease.token) -OperationId ("workbench."+$workbenchPhase+"."+$operation) -ExceptionData $_.Exception.Data}
+          throw
         } finally {
           $execution=@{operation=$operation;argv=$argv;exit_code=$(if($null-ne$native){$native.exit_code}else{$null});stdout_path=$stdout;stderr_path=$stderr;usage_path=$usage}
           $workbenchExecution+=@($execution);$allWorkbenchExecution+=@($execution)
@@ -519,6 +569,7 @@ try {
       $workbenchOkay=$true
     }
     if($Fly){
+      Set-InstrumentStage ("flight_"+$workbenchPhase)
       $limits=if($workbenchPhase-eq'discovery'){$flightLimits.instrument_pulse_discovery}else{$flightLimits.instrument_flight}
       $flightElapsed=[Diagnostics.Stopwatch]::StartNew()
       $fullRuntimeInputs=@('--preparation',(Join-Path $resultDirectory 'preparation_receipt.json'),
@@ -560,6 +611,7 @@ try {
         -RepoRoot $frozen.execution_root -Python $Python -RuntimeModule integrations.workflows.single_reflection_flight.runtime `
         -SimionExe $simion -Limits $limits -Phase $workbenchPhase -RuntimeInputArguments $fullRuntimeInputs -Prepared $prepared `
         -WorkbenchReceiptPath $workbenchReceiptPath -IobVerification ${function:Confirm-InstrumentIobVerification} `
+        -NativeOperations $NativeOperations -NativeResourceReleaseId ([string]$lease.token) `
         -OnProcessCompleted {param($record) Write-FrontendBatchCheckpoint -Record $record -Phase $workbenchPhase -RunDirectory $OutputDirectory `
           -RunConfig $configPath -WorkbenchReceiptPath $workbenchReceiptPath -DispatchPlanPath (Join-Path $OutputDirectory "results/$workbenchPhase.dispatch_plan.json") -Python $Python -RepoRoot $RepoRoot} @continuationArguments
       $lease=Update-HostResourceStage -Lease $lease -Stage postprocess -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
@@ -570,6 +622,7 @@ try {
       $workbenchOkay=$true
       Write-RunJson -Path $workbenchReceiptPath -Value $workbench -Depth 100
       foreach($phase in $nativePhases){
+        Set-InstrumentStage ("analyze_or_replay_"+$phase)
         $phaseDirectory=Join-Path $resultDirectory $phase
         New-Item -ItemType Directory -Path $phaseDirectory -ErrorAction Stop|Out-Null
         if($phase-eq'default_replay'){
@@ -593,7 +646,8 @@ try {
                 }
                 $borrowedPa+=[string]$record.path
               }
-              $updated=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $capacity -ProtectedPaths $borrowedPa
+              $projection=Get-InstrumentSourceProtectionProjection -BorrowedPaths $borrowedPa
+              $updated=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $capacity -SourceReferences @($projection.source_references)
               $capacity=$updated.session
             }
             $case.replay_stdout=Join-Path $phaseDirectory ($case.case_id+'.stdout.log')
@@ -607,7 +661,7 @@ try {
           if($specifications.Count){$lease=Update-HostResourceStage -Lease $lease -Stage flight -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0}
           $replay=if($specifications.Count){Invoke-ResourceBudgetedProcesses -DispatchPlanPath (Join-Path $OutputDirectory "results/$workbenchPhase.dispatch_plan.json") `
             -RunDir $OutputDirectory -UsagePath (Join-Path $phaseDirectory resource_usage.json) -ProcessSpecifications $specifications `
-            -OnProcessCompleted {param($record) Write-FrontendBatchCheckpoint -Record $record -Phase 'default_replay' -RunDirectory $OutputDirectory `
+            -OnProcessCompleted {param($record) if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId ([string]$lease.token) -OperationId 'default_replay.fly' -ProcessRecord $record};Write-FrontendBatchCheckpoint -Record $record -Phase 'default_replay' -RunDirectory $OutputDirectory `
               -RunConfig $configPath -WorkbenchReceiptPath $workbenchReceiptPath -DispatchPlanPath (Join-Path $OutputDirectory "results/$workbenchPhase.dispatch_plan.json") -Python $Python -RepoRoot $RepoRoot}}else{@{resource_budget_exceeded=$false;processes=@()}}
           if($replay.resource_budget_exceeded){
             try{throw 'Saved-default replay exceeded the resource budget; writer completion is unconfirmed.'}catch{
@@ -677,7 +731,9 @@ try {
 } catch {
   $failure=$_
   $data=$failure.Exception.Data
+  $data['single_reflection_failure_stage']=$currentStage
   $writerUnknown=([bool]$data['simion_first_batch_writer_unknown']-or[bool]$data['simion_first_batch_drain_error']-or
+    ($data.Contains('observed_process_exit_confirmed')-and-not[bool]$data['observed_process_exit_confirmed'])-or
     ($data.Contains('simion_wave_writer_completion_confirmed')-and-not[bool]$data['simion_wave_writer_completion_confirmed']))
   if($writerUnknown){
     try{Write-RunJson -Path (Join-Path $resultDirectory 'writer_completion_unknown.json') -Value @{
@@ -685,8 +741,9 @@ try {
       drain_error=[string]$data['simion_first_batch_drain_error'];wave_drain_error=[string]$data['simion_wave_drain_error']
     }}catch{$failure.Exception.Data['writer_unknown_result_error']=[string]$_}
   }
-  throw $failure
 } finally {
+  if($null-ne$PhaseTimings){$PhaseTimings[$currentStage]=[double]$phaseClock.Elapsed.TotalSeconds}
+  if($null-ne$NativeOperations-and@($NativeOperations|Where-Object{-not$_.observation.exit_confirmed}).Count){$writerUnknown=$true}
   if(-not$writerUnknown){
   # The caller still owns terminal publication. Bind actual evidence on both
   # success and failure, then release both public sessions even if binding fails.
@@ -755,28 +812,46 @@ try {
       }
     }
     Write-RunJson -Path $configPath -Depth 100 -Value $config
-  } finally {
-    try {
-      foreach($path in $paGuards){$null=Unprotect-ImmutablePaSource -Source $path}
-    } finally {
-      try {
-        if($lease){Exit-HostExecutionLease -Lease $lease -Outcome $(if($okay){'success'}else{'failed'}) -RunId ([string]$config.run_id)}
-      } finally {
-        if($capacity){
-          if($capacity.PSObject.Properties['defer_capacity_finalization']-and$capacity.defer_capacity_finalization){
-            if($null-ne$WorkflowCapacitySession){
-              $WorkflowCapacitySession|Add-Member -NotePropertyName defer_capacity_finalization -NotePropertyValue $capacity.defer_capacity_finalization -Force
-            }
-          }elseif($ownsCapacity){Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $capacity|Out-Null}
-          else{$null=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $capacity -RemainingCommittedNewBytes 0}
-        }
+  }catch{
+    if($failure){$failure.Exception.Data['scientific_evidence_binding_error']=$_}else{$failure=$_}
+  }
+  try{
+    if($lease){
+      $token=[string]$lease.token
+      $released=Exit-HostResourceStage -Lease $lease -PassThru
+      if(-not$lease.inherited-and($null-eq$released-or$released.status-ne'released'-or$released.token-ne$token)){throw 'Single-reflection host release is unconfirmed.'}
+      if($null-ne$ResourceReleases-and$null-ne$NativeOperations-and@($NativeOperations|Where-Object resource_release_id -eq $token).Count){
+        Add-RunArtifactResourceRelease -ResourceReleases $ResourceReleases -ReleaseId $token -Receipt @{host_release=@{inherited=[bool]$lease.inherited;token=$token;result=$released;error=$null}}
+      }
+      $lease=$null
+    }
+  }catch{
+    $writerUnknown=$true
+    if($failure){$failure.Exception.Data['host_release_error']=$_}else{$failure=$_}
+  }
+  if(-not$writerUnknown){
+    try{foreach($path in $paGuards){$null=Unprotect-ImmutablePaSource -Source $path};$paGuards.Clear()}
+    catch{if($failure){$failure.Exception.Data['asset_release_error']=$_}else{$failure=$_}}
+    if($capacity){
+      if($capacity.PSObject.Properties['defer_capacity_finalization']-and$capacity.defer_capacity_finalization){
+        if($null-ne$WorkflowCapacitySession){$WorkflowCapacitySession|Add-Member -NotePropertyName defer_capacity_finalization -NotePropertyValue $capacity.defer_capacity_finalization -Force}
+      }elseif($ownsCapacity){
+        try{$null=Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $capacity}
+        catch{if($failure){$failure.Exception.Data['capacity_release_error']=$_}else{$failure=$_}}
       }
     }
   }
   }
 }
+if($writerUnknown){
+  if(-not$failure){try{throw 'Single-reflection writer or host release is unconfirmed.'}catch{$failure=$_}}
+  $failure.Exception.Data['simion_wave_writer_completion_confirmed']=$false
+}
+if($failure){throw $failure}
+
 if($Fly){
-  Write-Output 'SINGLE_REFLECTION_FLIGHT=PASS DEFAULT_REPLAY=PASS QUALIFICATION=complete_population_and_saved_default_parity_only'
+  if($defaultReplayRequested){Write-Output 'SINGLE_REFLECTION_FLIGHT=PASS DEFAULT_REPLAY=PASS QUALIFICATION=complete_population_and_saved_default_parity_only'}
+  else{Write-Output 'SINGLE_REFLECTION_FLIGHT=PASS DEFAULT_REPLAY=NOT_REQUESTED QUALIFICATION=complete_population_only'}
 }elseif($WorkbenchOnly){
   Write-Output 'SINGLE_REFLECTION_WORKBENCH=PASS FLY_EXECUTED=False QUALIFICATION=saved_workbench_reopen_only'
 }else{

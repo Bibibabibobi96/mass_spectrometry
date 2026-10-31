@@ -7,6 +7,7 @@ batch reuse/replay selection to the shared SIMION planner.
 from __future__ import annotations
 
 import csv
+from copy import deepcopy
 import json
 from pathlib import Path
 import shutil
@@ -98,6 +99,8 @@ def _phase_paths(parent: Path, phase: str) -> tuple[Path, Path, str]:
 
 def recover_provisional_dispatch(preparation: Mapping[str, Any], phase: str) -> dict[str, Any] | None:
     """Reconstruct the original first interval only from bound natural-exit measurements."""
+    if phase == "default_replay" and not preparation["default_replay_requested"]:
+        return None
     from common.simion.resource_scheduler import plan_recovered_formal_followup
 
     parent, _, records, _ = _parent(preparation)
@@ -111,7 +114,7 @@ def recover_provisional_dispatch(preparation: Mapping[str, Any], phase: str) -> 
     cases=workbench.get('batches')
     if not isinstance(cases,list) or len(cases)!=1:
         raise ValueError('provisional workbench requires exactly one formal case')
-    case=_published_case(cases[0])
+    case=_published_case(cases[0], records)
     provisional=parent/'results'/f'{workbench_phase}.provisional_dispatch_plan.json'
     _bound_parent_file(provisional,records,'provisional dispatch')
     receipt=frontend_batch_completion_path(parent,workbench_phase,str(case['case_id']))
@@ -123,6 +126,8 @@ def recover_provisional_dispatch(preparation: Mapping[str, Any], phase: str) -> 
 
 def freeze_phase_inputs(preparation: Mapping[str, Any], run: Path, phase: str) -> dict[str, Any] | None:
     """Freeze the two small, manifest-bound predecessor receipts for ``phase``."""
+    if phase == "default_replay" and not preparation["default_replay_requested"]:
+        return None
     parent, manifest, records, parent_manifest_record = _parent(preparation)
     dispatch, workbench, _ = _phase_paths(parent, phase)
     if dispatch.resolve() not in records and workbench.resolve() not in records:
@@ -142,6 +147,152 @@ def freeze_phase_inputs(preparation: Mapping[str, Any], run: Path, phase: str) -
             "dispatch_record": {**file_record(frozen_dispatch), "source_path": str(dispatch)},
             "workbench_record": {**file_record(frozen_workbench), "source_path": str(workbench)},
             "parent_manifest_run_id": manifest.get("run_id")}
+
+
+def source_capacity_projection(*, artifact_root: Path, request_path: Path | None = None,
+                               preparation: Mapping[str, Any] | None = None,
+                               borrowed_paths: list[str] | None = None) -> dict[str, Any]:
+    """Project explicit source lineage to existing capacity owners, without PA reads.
+
+    This only establishes read protection. Preparation and the continuation
+    planner retain their scientific applicability and actual completion checks.
+    """
+    from common.contracts.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
+
+    target = artifact_root.resolve(strict=True)
+    queue: list[tuple[dict, dict | None]] = []
+    payload_records: list[dict] = []
+    field_sources: list[tuple[str, dict, dict]] = []
+    borrowed = {Path(path).resolve() for path in (borrowed_paths or [])}
+
+    def protected_records(value: Any) -> None:
+        if isinstance(value, Mapping):
+            if isinstance(value.get("path"), str) and "bytes" in value and "sha256" in value:
+                payload_records.append(dict(value))
+            for child in value.values():
+                protected_records(child)
+        elif isinstance(value, list):
+            for child in value:
+                protected_records(child)
+
+    if request_path is not None:
+        request_path = request_path.resolve(strict=True)
+        request = _read(request_path, "source-protection request")
+        continuation = request.get("continuation")
+        if continuation:
+            manifest_record = dict(continuation["predecessor_run_manifest"])
+            manifest_record["path"] = str(record_path(manifest_record, base_dir=request_path.parent))
+            stopped_record = continuation.get("stopped_receipt")
+            if stopped_record is not None:
+                stopped_record = dict(stopped_record, path=str(record_path(stopped_record, base_dir=request_path.parent)))
+            queue.append((manifest_record, stopped_record))
+        for key in ("frontend_fields", "downstream_fields"):
+            source = request.get("providers", {}).get(key)
+            if source is None:
+                continue
+            source = dict(source, path=str(record_path(source, base_dir=request_path.parent)))
+            verify_record("explicit "+key, source)
+            path = Path(source["path"])
+            # These are the existing prepare owner layouts, never PA-path inference.
+            if key == "frontend_fields" and path.parent.name == "inputs":
+                producer = path.parent.parent
+            elif (key == "downstream_fields" and path.name == "downstream_field_preparation.json"
+                  and path.parent.name == "downstream_fields" and path.parent.parent.name == "simion"):
+                producer = path.parents[2]
+            else:
+                raise ValueError("source protection requires the canonical explicit "+key+" receipt")
+            manifest_record = file_record(producer/"run_manifest.json")
+            queue.append((manifest_record, None))
+            field_sources.append((key, source, manifest_record))
+    if preparation is not None:
+        records = preparation["input_records"]
+        for name in ("frontend_fields_manifest", "downstream_fields_manifest", "continuation_parent_manifest"):
+            if name in records:
+                stopped = records.get("continuation_stopped_receipt") if name == "continuation_parent_manifest" else None
+                queue.append((dict(records[name]), stopped))
+        for name in ("frontend_fields", "downstream_fields"):
+            if name in records:
+                verify_record("frozen "+name, dict(records[name]))
+                field_sources.append((name, dict(records[name]), dict(records[name+"_manifest"])))
+
+    references: dict[Path, dict] = {}
+    owners: dict[Path, dict] = {}
+    bound_paths: set[Path] = set()
+    while queue:
+        record, stopped_record = queue.pop()
+        frozen_path = record_path(record)
+        verify_record("source lineage manifest", record)
+        manifest = _read(frozen_path, "source lineage manifest")
+        config_record = manifest.get("run_config", {})
+        if stopped_record is not None and manifest.get("status") == "checkpoint":
+            verify_record("source lineage stopped receipt", dict(stopped_record))
+            config_record = _read(record_path(dict(stopped_record)), "source stopped receipt").get("run_config", {})
+        config_path = record_path(config_record, base_dir=frozen_path.parent)
+        if config_path.name != "run_config.json":
+            raise ValueError("source lineage manifest lacks its exact owner config")
+        canonical = config_path.parent/"run_manifest.json"
+        canonical_record = {**record, "path": str(canonical)}
+        canonical_record.pop("source_path", None)
+        if canonical in references:
+            if _identity(references[canonical]["manifest_record"], "source manifest") != _identity(canonical_record, "source manifest"):
+                raise ValueError("source lineage has conflicting manifest identities")
+            continue
+        owner = resolve_consumed_run_capacity_owner(canonical_record, consumer_artifact_root=target,
+                                                   stopped_receipt_record=stopped_record)
+        reference = dict(manifest_record=canonical_record, protected_paths=[], protected_cache_keys=[])
+        if stopped_record is not None:
+            reference["stopped_receipt_record"] = dict(stopped_record)
+        references[canonical] = reference
+        owners[canonical] = owner
+        records = _manifest_records(manifest)
+        bound_paths.update(records)
+        for name, child in manifest["inputs"].items():
+            if name in ("frontend_fields_manifest", "downstream_fields_manifest", "continuation_parent_manifest"):
+                stopped = manifest["inputs"].get("continuation_stopped_receipt") if name == "continuation_parent_manifest" else None
+                queue.append((dict(child), stopped))
+            if name.startswith("continuation_artifact_"):
+                borrowed.add(record_path(child))
+        for item in manifest["outputs"]:
+            if Path(item["path"]).name not in ("workbench_preparation.json", "discovery_workbench_preparation.json"):
+                continue
+            verify_record("source workbench receipt", item)
+            workbench = _read(record_path(item), "source workbench receipt")
+            for raw in workbench.get("batches", []):
+                case = _published_case(raw, records)
+                protected_records(case.get("continuation_pa_guard_records", []))
+    for kind, record, manifest_record in field_sources:
+        value = _read(record_path(record), kind+" source receipt")
+        if kind == "frontend_fields":
+            for domain in value["domains"]:
+                for row in domain["working_points"]:
+                    info = domain if value["schema_version"] == 2 else row
+                    # Match the existing field-plan projection: generation is
+                    # explicit provenance, never a root inferred from a PA path.
+                    payload_records.append(dict(row, path=str(Path(info["generation_directory"]).resolve()/Path(row["path"]).name), cache_key=info["cache_key"]))
+        else:
+            from integrations.workflows.single_reflection_flight.downstream_fields import load_downstream_fields
+            canonical = Path(manifest_record.get("source_path", manifest_record["path"]))
+            normalized = dict(manifest_record, path=str(canonical), source_path=str(canonical))
+            _, _, guards = load_downstream_fields(record, value["oatof_resolved_record"], normalized)
+            payload_records.extend(guards)
+    if borrowed - bound_paths:
+        raise ValueError("continuation protection artifact is not bound by explicit source lineage")
+    paths = borrowed | {record_path(record) for record in payload_records}
+    for path in sorted(paths):
+        candidates = [canonical for canonical, owner in owners.items()
+                      if path.is_relative_to(Path(owner["artifact_root"]))]
+        roots = {owners[canonical]["artifact_root"] for canonical in candidates}
+        if len(roots) != 1:
+            raise ValueError("source protection path has no unambiguous explicit capacity owner: "+str(path))
+        # Multiple runs on the same physical root share one existing source lease.
+        reference = references[candidates[0]]
+        reference["protected_paths"].append(str(path))
+        for record in payload_records:
+            if record_path(record) == path and "cache_key" in record:
+                if record["cache_key"] not in reference["protected_cache_keys"]:
+                    reference["protected_cache_keys"].append(record["cache_key"])
+    return dict(source_references=list(references.values()))
+
 
 
 def _source_ids(record: Mapping[str, Any]) -> list[int]:
@@ -249,10 +400,26 @@ def _builder_identity(case: Mapping[str, Any], label: str) -> tuple[int, str]:
     return _identity(file_record(Path(arguments[3])), f"{label} builder")
 
 
-def _published_case(case: Mapping[str, Any]) -> dict[str, Any]:
+def _published_case(case: Mapping[str, Any], records: Mapping[Path, tuple[int, str]] | None = None) -> dict[str, Any]:
     """Resolve saved execution aliases through canonical published control records."""
-    result = dict(case)
-    spec = record_path(case["outputs"]["build_spec"])
+    result = deepcopy(case)
+    outputs = result['outputs']
+    if records is not None:
+        for name, record in outputs.items():
+            original = record_path(record)
+            if original.is_file() or records.get(original) == _identity(record, 'parent '+name):
+                continue
+            # Saved batch controls have a fixed simion/phase/case/file layout.
+            # The terminal manifest, not a guessed replacement prefix, binds
+            # both that suffix and the immutable content identity.
+            suffix = original.parts[-4:]
+            matches = [path for path, identity in records.items()
+                       if path.parts[-4:] == suffix and identity == _identity(record, 'parent '+name)]
+            if len(matches) != 1:
+                raise ValueError('single-reflection continuation '+name+' is not uniquely manifest-bound')
+            outputs[name] = dict(record, path=str(matches[0]))
+    result['outputs'] = outputs
+    spec = record_path(outputs["build_spec"])
     # Batch layout is fixed by this adapter. Its canonical control record can
     # belong to an earlier owner explicitly rebound by the direct parent.
     artifact_owner = spec.parents[3]
@@ -262,24 +429,106 @@ def _published_case(case: Mapping[str, Any]) -> dict[str, Any]:
         old_root = old_root.parent
     old_root = Path(case.get("parent_execution_root", old_root))
     result["parent_execution_root"] = str(old_root)
-    for name in ("stdout", "stderr", "replay_stdout", "replay_stderr"):
+    def durable_path(value: str, identity: tuple[int, str] | None = None,
+                     *, allow_unpublished: bool = False) -> str:
+        path = Path(value)
+        if records is not None and path in records:
+            if identity is not None and records[path] != identity:
+                raise ValueError('single-reflection continuation case path identity differs: '+value)
+            return value
+        if path.is_relative_to(old_root):
+            target = artifact_owner / path.relative_to(old_root)
+            if records is not None and target in records:
+                if identity is not None and records[target] != identity:
+                    raise ValueError('single-reflection continuation case path identity differs: '+value)
+                return str(target)
+        if path.exists():
+            return value
+        # A case may inherit its IOB from one owner and publish replay evidence
+        # under another. Only this adapter's fixed layouts may be rebound;
+        # each file still needs a unique terminal-manifest identity.
+        parts = path.parts
+        case_id = str(case.get('case_id', ''))
+        suffix = None
+        if len(parts) >= 4:
+            tail = parts[-4:]
+            if (tail[0] == 'results' and tail[1] == 'single_reflection'
+                    and tail[2] == 'default_replay'
+                    and tail[3] in {case_id+'.stdout.log', case_id+'.stderr.log', 'resource_usage.json'}):
+                suffix = tail
+            elif (identity is not None and tail[0:2] == ('inputs', 'continuation')
+                  and tail[2] in {'baseline', 'default_replay', 'discovery'}
+                  and tail[3] in {'workbench_preparation.json', 'discovery_workbench_preparation.json',
+                                  'full_instrument.dispatch_plan.json', 'discovery.dispatch_plan.json'}):
+                suffix = tail
+        if records is not None and suffix is not None:
+            matches = [candidate for candidate, bound in records.items()
+                       if candidate.parts[-len(suffix):] == suffix and (identity is None or bound == identity)]
+            if len(matches) > 1:
+                raise ValueError('single-reflection continuation case path is not uniquely manifest-bound: '+value)
+            if len(matches) == 1:
+                return str(matches[0])
+            if identity is not None or not allow_unpublished:
+                raise ValueError('single-reflection continuation case path is not uniquely manifest-bound: '+value)
+        if path.is_relative_to(old_root):
+            # An unstarted output or a missing published whole unit remains
+            # unavailable; the planner must replay it rather than claim reuse.
+            return str(artifact_owner / path.relative_to(old_root))
+        if allow_unpublished:
+            return value
+        raise ValueError('single-reflection continuation case path is not uniquely manifest-bound: '+value)
+
+    def transport_records(value: Any) -> None:
+        # Only identity-bearing file records are transported recursively inside
+        # this existing case receipt. Historical command strings remain history.
+        if isinstance(value, dict):
+            if isinstance(value.get('path'), str) and 'bytes' in value and 'sha256' in value:
+                value['path'] = durable_path(value['path'], _identity(value, 'parent case record'))
+            for child in value.values():
+                transport_records(child)
+        elif isinstance(value, list):
+            for child in value:
+                transport_records(child)
+
+    transport_records(result)
+    for name in ('stdout', 'stderr', 'replay_stdout', 'replay_stderr', 'receipt_path'):
         if isinstance(case.get(name), str):
-            path = Path(case[name])
-            if path.is_relative_to(old_root):
-                result[name] = str(artifact_owner / path.relative_to(old_root))
-    if "iob" in case["outputs"]:
-        iob = record_path(case["outputs"]["iob"])
+            # An unstarted replay has no log yet. Its output destination must
+            # retain the same owner-relative layout, not claim published data.
+            result[name] = durable_path(case[name], allow_unpublished=name.startswith('replay_') or name == 'stderr')
+    for item in result.get('iob_pa_copies', []):
+        item['destination'] = durable_path(item['destination'], _identity(item['source_record'], 'IOB PA transport'))
+    if "iob" in outputs:
+        iob = record_path(outputs["iob"])
         result.update(iob_path=str(iob), working_directory=str(iob.parent))
-    arguments = list(case["iob_builder_arguments"])
-    builder = Path(arguments[3])
-    if not builder.is_file() and builder.is_relative_to(old_root):
-        arguments[3] = str(artifact_owner / builder.relative_to(old_root))
-    result["iob_builder_arguments"] = arguments
+    for name in ('iob_builder_arguments', 'iob_verify_arguments'):
+        if name in case:
+            arguments = list(case[name])
+            for index in (3, 4):
+                if len(arguments) > index and isinstance(arguments[index], str):
+                    source_path = Path(arguments[index])
+                    if (index == 3 and records is not None and source_path.resolve() not in records
+                            and source_path.name == "build_iob.lua" and source_path.is_file()):
+                        # A recovered case may retain an ancestor's existing compiler
+                        # address while its direct parent freezes the same source.
+                        # Rebind only this fixed compiler role and exact bytes.
+                        identity = _identity(file_record(source_path), "inherited IOB builder")
+                        matches = [path for path, bound in records.items()
+                                   if path.parts[-4:] == source_path.parts[-4:] and bound == identity]
+                        if len(matches) != 1:
+                            raise ValueError("inherited IOB builder is not uniquely manifest-bound")
+                        arguments[index] = str(matches[0])
+                    else:
+                        arguments[index] = durable_path(arguments[index])
+            result[name] = arguments
+
     return result
 
 
 def prepare_phase_continuation(preparation: Mapping[str, Any], current_workbench: Mapping[str, Any], run: Path, phase: str) -> dict[str, Any] | None:
     """Plan whole-batch reuse/replay directly from current and parent workbenches."""
+    if phase == "default_replay" and not preparation["default_replay_requested"]:
+        return None
     if preparation.get("role") != "single_reflection_geometry_preparation":
         raise ValueError("current single-reflection preparation receipt is required")
     frozen = freeze_phase_inputs(preparation, run, phase)
@@ -295,7 +544,8 @@ def prepare_phase_continuation(preparation: Mapping[str, Any], current_workbench
         recovered_path=run/'inputs'/'continuation'/phase/'recovered_dispatch_plan.json'
         recovered_path.write_text(json.dumps(recovered_dispatch,indent=2)+'\n',encoding='utf-8',newline='\n')
         frozen['dispatch_record']=file_record(recovered_path)
-    parent_workbench["batches"] = [_published_case(case) for case in parent_workbench["batches"]]
+    _, parent_manifest, parent_records, _ = _parent(preparation)
+    parent_workbench["batches"] = [_published_case(case, parent_records) for case in parent_workbench["batches"]]
     if current_workbench.get("role") != "single_reflection_workbench_preparation":
         raise ValueError("current single-reflection workbench receipt is required")
     if current_workbench.get("phase") != expected_workbench_phase or parent_workbench.get("phase") != expected_workbench_phase:
@@ -306,7 +556,6 @@ def prepare_phase_continuation(preparation: Mapping[str, Any], current_workbench
     _same_identity(current_workbench.get("source_record", {}), source_record, "source")
     _same_identity(parent_workbench.get("source_record", {}), source_record, "source")
     source_ids = _source_ids(source_record)
-    _, parent_manifest, parent_records, _ = _parent(preparation)
     legacy_execution = parent / 'results' / 'single_reflection' / 'flight_execution_records.json'
     legacy_rows = []
     if parent_manifest.get('status') == 'success' and legacy_execution.resolve() in parent_records:

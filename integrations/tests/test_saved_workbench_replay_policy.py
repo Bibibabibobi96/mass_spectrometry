@@ -6,11 +6,14 @@ import shutil
 import subprocess
 import sys
 import unittest
+from unittest.mock import patch
 
 from integrations.tests.test_local_frontend_workflow import fixture as local_fixture
 from integrations.tests.test_cooled_frontend import cooled_request_fixture
+from integrations.tests.test_single_reflection_preparation import fixture as single_fixture
 from integrations.workflows.local_frontend.prepare import prepare_local_frontend
 from integrations.workflows.cooled_frontend.prepare import prepare_cooled_frontend
+from integrations.workflows.single_reflection_flight.prepare import prepare
 
 REPO = Path(__file__).resolve().parents[2]
 FRONTEND = REPO/"integrations/runtime/frontend_flight_support.ps1"
@@ -35,7 +38,6 @@ class SavedWorkbenchReplayPolicyTests(unittest.TestCase):
                 prepare_local_frontend(path, None, root)
             self.assertNotEqual(path.read_bytes(), original)
 
-
     def test_cooled_default_and_explicit_actions_do_not_change_member_fields(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -52,6 +54,19 @@ class SavedWorkbenchReplayPolicyTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "must be a boolean"):
                 prepare_cooled_frontend(path, None, REPO, root)
 
+    def test_single_reflection_freezes_the_resolved_action_and_preserves_author_bytes(self):
+        for requested in (None, False, True):
+            with self.subTest(requested=requested), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                path, run, request = single_fixture(root)
+                if requested is not None:
+                    request["verify_saved_workbench_replay"] = requested
+                    path.write_text(json.dumps(request), encoding="utf-8")
+                original = path.read_bytes()
+                result = prepare(path, run)
+                self.assertEqual(result["default_replay_requested"], bool(requested))
+                self.assertEqual((run/"inputs/request.json").read_bytes(), original)
+                self.assertEqual(path.read_bytes(), original)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell unavailable")
     def test_actual_public_replay_boundary_launch_counts_and_explicit_failure(self):
@@ -61,8 +76,6 @@ $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]
 $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-FrontendDefaultReplay'},$true)
 Invoke-Expression $node.Extent.Text
 function Write-RunJson {param($Path,$Value,$Depth)New-Item -ItemType Directory -Path (Split-Path -Parent $Path) -Force|Out-Null;$Value|ConvertTo-Json -Depth 100|Set-Content $Path}
-function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool)@{run_dir=$run;projected_paths=$Paths;environment=@{}}}
-function Project-RunPath {param($Paths,$ArtifactRunDir,$RunDir,$Python)return $Paths}
 function Get-HostResourceBudget {param($Role,$Stage)@{}}
 function Update-HostResourceStage {param($Lease,$Stage,$Budget,$RetainedMemoryBytes)@{stage=$Stage}}
 function Invoke-ResourceBudgetedProcess {param($Limits,$RunDir,$FilePath,$ArgumentList,$WorkingDirectory,$Environment,$UsagePath,$RedirectStandardOutput,$RedirectStandardError)
@@ -103,3 +116,22 @@ foreach($scenario in @('normal','explicit','mismatch','stochastic')){
                 str(FRONTEND), temporary, sys.executable],
                 cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+
+    def test_single_reflection_rejects_truthy_non_boolean_action(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path, run, request = single_fixture(Path(temporary))
+            request["verify_saved_workbench_replay"] = 1
+            path.write_text(json.dumps(request), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "verify_saved_workbench_replay"):
+                prepare(path, run)
+
+    def test_unrequested_continuation_phase_does_not_consume_parent_evidence(self):
+        from integrations.workflows.single_reflection_flight import continuation
+
+        preparation = dict(role="single_reflection_geometry_preparation", default_replay_requested=False)
+        with tempfile.TemporaryDirectory() as temporary, patch.object(continuation, "_parent", side_effect=AssertionError("unrequested source access")):
+            run = Path(temporary)
+            self.assertIsNone(continuation.freeze_phase_inputs(preparation, run, "default_replay"))
+            self.assertIsNone(continuation.recover_provisional_dispatch(preparation, "default_replay"))
+            self.assertIsNone(continuation.prepare_phase_continuation(preparation, {}, run, "default_replay"))
+            self.assertEqual(list(run.iterdir()), [])

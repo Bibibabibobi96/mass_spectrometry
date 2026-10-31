@@ -224,13 +224,24 @@ def rename_author_instances(path, request):
     write_json(path, request)
 
 
+def _field_source_fixture_run(root: Path) -> Path:
+    """Use an explicit source capacity owner, separate from the consuming run."""
+    artifact_root = root / 'source_artifacts'
+    producer = artifact_root / 'projects/instrument_assembly/runs/20261024_094111__sim__simion__full-single-reflection-oatof-n100'
+    (producer / 'inputs').mkdir(parents=True, exist_ok=True)
+    config = producer / 'run_config.json'
+    if not config.exists():
+        write_json(config, dict(schema_version=2, run_id=producer.name, project='instrument_assembly',
+            mode='single_reflection_field_design', capacity_ledger_lifecycle=dict(schema_version=1, enabled=True,
+                artifact_root=str(artifact_root.resolve()), light_evidence_budget_bytes=1024**2)))
+    return producer
+
+
 def frontend_field_source_fixture(root: Path, request_path: Path, request: dict, *, fine: bool = True) -> tuple[Path, Path]:
     """Small publication fixture only; no PA, solver or physical claim."""
-    producer = root / "producer" / "20261024_094111__sim__simion__full-single-reflection-oatof-n100"
+    producer = _field_source_fixture_run(root)
     inputs = producer / "inputs"
-    inputs.mkdir(parents=True)
     config = producer / "run_config.json"
-    write_json(config, dict(schema_version=2,run_id=producer.name,project="instrument_assembly"))
     domains=[]
     records={}
     for name in (["parent","entrance_refinement"] if fine else ["parent"]):
@@ -248,7 +259,7 @@ def frontend_field_source_fixture(root: Path, request_path: Path, request: dict,
         domains=domains,field_bank_record=dict(path=str(root/"never_read_bank.json"),bytes=123,sha256="B"*64)))
     records["stage_receipt"]=file_record(receipt)
     manifest=producer/"run_manifest.json"
-    write_json(manifest,dict(schema_version=2,role="simulation_run_manifest",status="failed",run_id=producer.name,project="instrument_assembly",
+    write_json(manifest,dict(schema_version=2,role="simulation_run_manifest",status="failed",run_id=producer.name,project="instrument_assembly",mode='single_reflection_field_design',
         run_config=file_record(config),inputs=records,outputs=[]))
     request["providers"]["frontend_fields"]=file_record(receipt)
     write_json(request_path,request)
@@ -259,18 +270,15 @@ def downstream_field_source_fixture(root: Path, request_path: Path, request: dic
     """Sealed small I/O fixture; its explicit dummy PA bytes are never native inputs."""
     from integrations.workflows.single_reflection_flight.downstream_fields import plan_downstream_fields
 
-    producer = root / "producer" / "20261024_094111__sim__simion__full-single-reflection-oatof-n100"
-    (producer / "inputs").mkdir(parents=True,exist_ok=True)
+    producer = _field_source_fixture_run(root)
     config=producer/"run_config.json"
-    if not config.exists():
-        write_json(config,dict(schema_version=2,run_id=producer.name,project="instrument_assembly"))
     provider=producer/"inputs/components/oatof/resolved_design.json"
     provider.parent.mkdir(parents=True,exist_ok=True)
     shutil.copyfile(record_path(oatof_record or request['providers']['instances']['oatof']['resolved_design'],base_dir=request_path.parent),provider)
     provider_record=file_record(provider)
     manifest=producer/'run_manifest.json'
     document=json.loads(manifest.read_text()) if manifest.exists() else dict(schema_version=2,
-        role="simulation_run_manifest",status="failed",run_id=producer.name,project="instrument_assembly",
+        role="simulation_run_manifest",status="failed",run_id=producer.name,project="instrument_assembly",mode='single_reflection_field_design',
         run_config=file_record(config),inputs={},outputs=[])
     # Both fixture stages belong to the same construction; seal after staging.
     if manifest.exists(): write_json(manifest,{**document,'status':'checkpoint'})
@@ -477,7 +485,7 @@ class SingleReflectionPreparationTests(unittest.TestCase):
                                  transaction.read_bytes())
 
     def test_continuation_freezes_a_managed_fly_parent_and_requires_published_fields(self):
-        for change in (None, "success", "mode", "config", "fields"):
+        for change in (None, "success", "unpublished", "mode", "config", "fields"):
             with self.subTest(change=change), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 path, run, request = fixture(root)
@@ -490,8 +498,10 @@ class SingleReflectionPreparationTests(unittest.TestCase):
                 manifest = dict(schema_version=2, role="simulation_run_manifest", project=config["project"],
                                 run_id="parent", mode=config["mode"], status="failed",
                                 run_config=file_record(parent / "run_config.json"), inputs={}, outputs=[])
-                if change == "success":
+                if change in ("success", "unpublished"):
                     manifest["status"] = "success"
+                    if change == "unpublished":
+                        write_json(parent / ".run_terminal_publication.json", {})
                 elif change == "mode":
                     manifest["mode"] = config["mode"] = "single_reflection_field_design"
                     write_json(parent / "run_config.json", config)
@@ -503,7 +513,7 @@ class SingleReflectionPreparationTests(unittest.TestCase):
                 write_json(parent / "run_manifest.json", manifest)
                 request["continuation"] = dict(predecessor_run_manifest=file_record(parent / "run_manifest.json"))
                 write_json(path, request)
-                if change is not None:
+                if change not in (None, "success"):
                     with self.assertRaises((AssertionError, ValueError)):
                         prepare(path, run)
                     self.assertFalse((run / "inputs/frontend_geometry.json").exists())
@@ -969,6 +979,35 @@ class SingleReflectionPreparationTests(unittest.TestCase):
                         prepare(path, run)
                     for name in ('frontend.gem', 'projected_source.csv', 'particle_source.csv'):
                         self.assertFalse((run/'inputs'/name).exists())
+
+    def test_propagation_scope_is_frozen_reporting_only_and_rejects_unknown_extent(self):
+        scientific = []
+        for scope in (None, 'declared_source_to_terminal', 'original_birth_to_terminal'):
+            with self.subTest(scope=scope), tempfile.TemporaryDirectory() as directory:
+                path, run, request = fixture(Path(directory))
+                if scope is not None:
+                    request['propagation_scope'] = scope
+                    write_json(path, request)
+                definition = path.parent/'validation.json'
+                write_json(definition, dict(question='predeclared fixture', scope=scope))
+                request['validation_contract'] = file_record(definition)
+                write_json(path, request)
+                prepare(path, run)
+                provenance = json.loads((run/'inputs/source_provenance.json').read_text())
+                frozen = run/'inputs/functional_validation.json'
+                self.assertEqual(frozen.read_bytes(), definition.read_bytes())
+                self.assertEqual(Path(provenance['input_records']['validation_contract']['path']), frozen)
+                self.assertEqual(provenance['propagation_scope'], scope or 'declared_source_to_terminal')
+                scientific.append(tuple((run/'inputs'/name).read_bytes() for name in
+                    ('frontend.gem', 'frontend_field_design.json', 'projected_source.csv', 'instrument_epoch.json')))
+        self.assertEqual(scientific[0], scientific[1])
+        self.assertEqual(scientific[0], scientific[2])
+        with tempfile.TemporaryDirectory() as directory:
+            path, run, request = fixture(Path(directory))
+            request['propagation_scope'] = 'infer_from_script_name'
+            write_json(path, request)
+            with self.assertRaisesRegex(ValueError, 'propagation_scope'):
+                prepare(path, run)
 
     def test_freezes_raw_inputs_once_and_projects_complete_n100_without_clock_shift(self):
         with tempfile.TemporaryDirectory() as directory:

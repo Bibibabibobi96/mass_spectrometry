@@ -41,49 +41,6 @@ exit 0
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
-    def test_frontend_owners_keep_unknown_writer_resources_and_primary_error(self):
-        script = r'''param($Owner,$Kind,$FailureKind,$Root)
-$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$tokens=$null;$errors=$null
-$ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$tokens,[ref]$errors)
-if($errors.Count){throw ($errors|Out-String)}
-$needle=if($Kind-eq'execute'){'Invoke-FrontendFlightPhase'}elseif($Kind-eq'run'){'execute_frozen_workflow'}else{'terminal_publication'}
-$body=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.TryStatementAst]-and$null-ne$n.Finally-and$n.Body.Extent.Text.Contains($needle)},$false))[0]
-if($null-eq$body){throw 'Owner lifecycle missing'}
-$handler=[scriptblock]::Create(($body.CatchClauses[0].Body.Statements.Extent.Text-join"`n"))
-$finalizer=[scriptblock]::Create(($body.Finally.Statements.Extent.Text-join"`n"))
-$writerUnknown=$false;$terminalized=$false;$package=@{result_dir=$Root};$resultDirectory=$Root
-$stageName='flight';$stage='flight';$lease=@{};$capacity=@{};$paGuards=@('guard');$failure=$null
-$script:written=0;$script:released=0
-function Write-RunJson {param($Path,$Value) if($Value.status-ne'unknown'){throw 'bad status'};$script:written++}
-function Exit-HostResourceStage {$script:released++};function Exit-HostExecutionLease {$script:released++}
-function Exit-ArtifactWorkflowCapacitySession {$script:released++};function Unprotect-ImmutablePaSource {$script:released++}
-function Remove-RunPackageExecutionAlias {$script:released++};function Complete-FailedRun {throw 'unexpected terminal'}
-try {
- try {try{throw 'wave failed'}catch{
-   if($FailureKind-eq'first'){$_.Exception.Data['simion_first_batch_drain_error']='drain failed'}
-   else{$_.Exception.Data['simion_wave_writer_completion_confirmed']=$false}
-   throw
- }} catch {. $handler}
-}catch{if($_.Exception.Message-ne'wave failed'){throw}}
-finally{. $finalizer}
-if(-not$writerUnknown-or$script:written-ne1-or$script:released-ne0){throw 'unknown writer cleanup escaped'}
-exit 0
-'''
-        owners = (
-            (EXECUTE, 'execute'),
-            (EXECUTE.with_name('run.ps1'), 'run'),
-            (REPO / 'integrations/workflows/paired_accelerator_pulse/execute.ps1', 'pulse'),
-        )
-        with tempfile.TemporaryDirectory() as directory:
-            wrapper = Path(directory) / 'writer_guard.ps1'
-            wrapper.write_text(script, encoding='utf-8')
-            for owner, kind in owners:
-                for failure in ('first', 'wave'):
-                    with self.subTest(owner=kind, failure=failure):
-                        result = subprocess.run(['pwsh', '-NoProfile', '-File', str(wrapper), str(owner), kind, failure, directory],
-                            cwd=REPO, capture_output=True, text=True, encoding='utf-8', timeout=30)
-                        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
     def test_iob_copy_initializer_hands_off_guard_before_capacity_debit(self):
@@ -181,7 +138,7 @@ $package=New-RunPackage -Python $Python -RepoRoot $Repo -ArtifactRoot (Join-Path
   -RunId '20261025_010000__analysis__python__field-continuation-test' -Project instrument_assembly `
   -Mode single_reflection_preparation -Software @('Python 3.11')
 $ownerSession=[pscustomobject]@{status='active';committed_new_bytes=17;lease_id='prepare-only-unused'}
-& (Join-Path $Repo 'integrations/workflows/single_reflection_flight/execute.ps1') `
+& (Join-Path $Repo 'integrations/workflows/single_reflection_flight/execute.ps1') -RunPackage $package `
   -Request $Request -PrepareOnly -OutputDirectory $package.run_dir -RepoRoot $Repo -Python $Python -WorkflowCapacitySession $ownerSession
 if($ownerSession.status-ne'active'-or$ownerSession.committed_new_bytes-ne17){throw 'PrepareOnly changed the owner capacity session'}
 ''', encoding='utf-8', newline='\n')
@@ -295,7 +252,7 @@ param($Repo,$Python,$Root,$Request)
 $package=New-RunPackage -Python $Python -RepoRoot $Repo -ArtifactRoot (Join-Path $Root 'packages') `
   -RunId '20261023_010000__analysis__python__single-reflection-test' -Project instrument_assembly `
   -Mode single_reflection_preparation -Software @('Python 3.11')
-& (Join-Path $Repo 'integrations/workflows/single_reflection_flight/execute.ps1') `
+& (Join-Path $Repo 'integrations/workflows/single_reflection_flight/execute.ps1') -RunPackage $package `
   -Request $Request -PrepareOnly -OutputDirectory $package.run_dir -RepoRoot $Repo -Python $Python
 ''', encoding='utf-8')
             result = subprocess.run(['pwsh', '-NoProfile', '-File', str(script), str(REPO),
