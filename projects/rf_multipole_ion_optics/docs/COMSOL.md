@@ -9,6 +9,46 @@
 多极杆各轴向实体与事件面只采用
 [实现与运行合同](IMPLEMENTATION.md)的统一术语。
 
+## finite 原 CLI 的收尾恢复
+
+finite 科学配置写入保留 `New-RunPackage` 已建立的容量生命周期元数据；不从当前策略补造或覆盖原包授权。
+`test_comsol_owner_finalization` 在真实配置写入后验证成功和失败收尾，避免只测试完整公共包而漏掉项目重写边界。
+
+新 finite run 在原生启动前调用公共 PowerShell owner，冻结 execution request、实际 capacity session，
+并将小 Result 保存在 run 外。正常成功、源／求场／分析失败统一交给该 owner 处理 retention、manifest、容量和执行别名。
+COMSOL launcher 的 CompletionPath 提供原生 PID／起始时间／退出和真实 host release；
+仅有 resource_usage 的 known 状态不能代替这些事实。未知 writer／release 保留原保护，不发布成功。
+
+沿同一正常无碰撞入口只恢复收尾，不要求 profile、campaign 或源输入：
+
+```powershell
+./projects/rf_multipole_ion_optics/workflows/no_collision_transport/run_comsol.ps1 `
+  -ResumeFinalization -RunId <original-run-id> [-ResultPath <original-result.json>] `
+  [-ArtifactRootPath <artifact-root>] [-PythonExe <python.exe>]
+```
+
+ArtifactRootPath 是公共 artifact 根，不是项目目录；默认 Result 沿该根的项目 scratch/workflow_results 定位。
+恢复只读取原 request／session／completion，零原生启动，不重新解析科学配置或改写输入。
+已完成收尾的原科学失败继续返回失败；收尾完成不等于科学通过。缺少这些事前冻结事实的历史 run 不自动收养，
+不得凭当前默认值补造 request、receipt 或小 Result，也不手工重建已删除的 alias。
+
+### 已解数据重分析与冷提取
+
+同一无碰撞 CLI 创建新的分析 run，预算采用已有工程合同，科学定义来自父 run 的冻结证据：
+
+```powershell
+./projects/rf_multipole_ion_optics/workflows/no_collision_transport/run_comsol.ps1 `
+  -AnalyzeOnly [-ReextractFromModel] -ParentManifestPath <parent/run_manifest.json> `
+  -EngineeringBudgetPath <new-analysis-budget.json> -RunId <new-run-id> `
+  -RetentionClass solver_review -RetentionReason <reason> -PythonExe <python.exe>
+```
+
+省略 ReextractFromModel 只读原 CSV，不调用商业工具；显式指定时才加载原 MPH，调用正常求解后使用的同一分窗导出实现。
+原两组解、保存事实及完整 release 映射必须充分绑定；缺映射不猜测粒子顺序，未知 writer 不启动恢复。
+冷提取不调用求解、不保存父 MPH、不复制或重新哈希原模型；实际进程、预算、路径准备与收尾沿公共 owner。
+提取后的新 CSV 可再次 AnalyzeOnly，后续分析失败不必重新加载模型；发布未完成则使用原 Result 的 ResumeFinalization。
+支持格式、实测时耗及科学限制见[项目状态](PROJECT.md#当前结论)，其他 COMSOL workflow 不自动继承该能力。
+
 ## 活动入口
 
 | 科学问题 | 入口 |

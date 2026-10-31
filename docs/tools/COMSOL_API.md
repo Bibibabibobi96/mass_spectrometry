@@ -426,3 +426,6 @@ pd = mphparticle(model, 'dataset', 'pdset1');
 共享测试目录中的源码覆盖不等于已运行结果；接口事实不自动授予仪器收敛或性能资格。
 
 官方文档证明接口语义，不能替代最小脚本和正式MPH的GUI验收。
+
+
+RF finite 正式已解读取边界为项目 `reextract_finite_3d_transport(request,fid)`：原冻结设计／源／数值投影与实际 source/native-order 映射绑定原两组解，通过 `mphload` 只读加载，再调用正常求解后的同一分窗导出 helper。缺原映射不推断粒子顺序；不存在必要 Particle dataset 时只在内存建立并绑定已解 solution，不调用 Study Compute／runAll，不保存父模型。2026-10-31正常 CLI 的071000→062508冷提取读取43,350,302 B原MPH，七份CSV与原导出逐字节一致，原父manifest不变；这是既有解读取／接口验证，不新增物理、收敛或完整传输资格。后继纯CSV分析及仅收尾恢复不加载模型，精确记录见[RF项目状态](../../projects/rf_multipole_ion_optics/docs/PROJECT.md#当前结论)。

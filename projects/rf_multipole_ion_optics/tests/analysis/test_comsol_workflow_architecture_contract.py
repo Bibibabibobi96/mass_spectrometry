@@ -707,7 +707,9 @@ $results=@(foreach($ready in $readyCases){foreach($case in $cases){
 }})
 ConvertTo-Json -InputObject $results -Compress
 """
-        for name in ("run_finite_3d_transport.ps1", "run_simion_finite_3d_transport.ps1"):
+        # Finite COMSOL uses the public owner; its failure/unknown/CLI cases
+        # are exercised in test_comsol_owner_finalization.py. Keep SIMION here.
+        for name in ("run_simion_finite_3d_transport.ps1",):
             with self.subTest(runner=name), tempfile.TemporaryDirectory(prefix="rf-closure-") as directory:
                 environment = os.environ.copy()
                 environment["RF_TRANSPORT_RUNNER"] = str(PROJECT_ROOT / "runtime" / name)

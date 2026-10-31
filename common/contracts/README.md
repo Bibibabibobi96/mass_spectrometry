@@ -84,6 +84,8 @@ writer与verifier共用保留策略入口，独立消费时仍重新验证完整
 
 ### Python工作流的公共生命周期owner
 
+RF finite COMSOL 的[正常无碰撞入口](../../projects/rf_multipole_ion_optics/workflows/no_collision_transport/run_comsol.ps1)也消费此公共 PowerShell owner：正常计算、受保护CSV新分析与显式已解MPH冷提取共享真实完成／收尾机制，原CLI可仅恢复原Result。项目提供冻结科学上下文、原生／Python完成与科学判断，不将保存文件或执行成功当作科学资格；参数、真实验证及限制见[RF状态](../../projects/rf_multipole_ion_optics/docs/PROJECT.md#当前结论)。
+
 `run_artifact_workflow.ps1 -RequestPath <request> -ResultPath <result>`是项目CLI调用的内部adapter，
 供OA径向压缩、候选设计及现有PowerShell生产owner共用。项目负责纯计划、预算来源、科学状态和源码闭包；公共owner只组合现有
 容量session、`New-RunPackage`、retention、manifest journal和容量收尾，不按科学mode分支，也不在

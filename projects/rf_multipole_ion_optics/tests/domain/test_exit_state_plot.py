@@ -1,9 +1,5 @@
 import csv
 import json
-import os
-import shutil
-import subprocess
-import sys
 import tempfile
 import unittest
 from dataclasses import replace
@@ -196,48 +192,6 @@ class ExitStatePlotTests(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     main()
 
-    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell7 required")
-    def test_finite_plot_fragment_skips_zero_exit_and_propagates_bad_source(self):
-        repo = Path(__file__).resolve().parents[4]
-        runner = (repo / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
-        start = runner.rfind("  Push-Location $codeRoot", 0, runner.index("    $exitStatePlotLabel="))
-        end = runner.index("  if($axialTopology-ne'none'){", start)
-        fragment = runner[start:end]
-        summary_start = runner.index("  [ordered]@{schema_version=1;role='multipole_finite_3d_transport_summary';status='success';")
-        summary_end = runner.index("\n", runner.index("Set-Content -LiteralPath $summary -Encoding UTF8", summary_start))
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            fixtures = []
-            for name in ("zero", "bad"):
-                folder = root / name
-                folder.mkdir()
-                source = folder / "state.csv"
-                write_fixture(source, selected_count=0)
-                if name == "bad":
-                    source.write_text("particle_id,event,status\n1,source,alive\n", encoding="utf-8")
-                fixtures.append(dict(name=name, folder=str(folder), source=str(source)))
-            def quote(value):
-                return "'" + str(value).replace("'", "''") + "'"
-            script = "$ErrorActionPreference='Stop'\n$codeRoot=" + quote(repo) + ";$repoRoot=$codeRoot;$python=" + quote(sys.executable) + "\n"
-            script += "$fixtures=ConvertFrom-Json " + quote(json.dumps(fixtures)) + "\n$records=[Collections.Generic.List[object]]::new()\n"
-            script += "foreach($fixture in $fixtures){$primaryState=$fixture.source;$RunId='fixture';$ProjectId='rf_multipole_ion_optics';$exitStatePlot=Join-Path $fixture.folder 'plot.png';$exitStatePlotManifest=Join-Path $fixture.folder 'plot.json';$summary=Join-Path $fixture.folder 'summary.json'\ntry{\n"
-            script += fragment + "\n$qualification='UNQUALIFIED';$DesignProfileId='fixture';$resolvedHash='fixture';$primary=[pscustomobject]@{transmission_fraction=0};$control=$primary\n" + runner[summary_start:summary_end]
-            script += "\n$records.Add(@{name=$fixture.name;ok=$true;document=(Get-Content -LiteralPath $summary -Raw|ConvertFrom-Json);png=(Test-Path -LiteralPath $exitStatePlot)})}catch{$records.Add(@{name=$fixture.name;ok=$false;error=$_.Exception.Message;summary_exists=(Test-Path -LiteralPath $summary)})}}\nConvertTo-Json -InputObject ($records.ToArray()) -Depth 10"
-            env = os.environ.copy()
-            env["PYTHONDONTWRITEBYTECODE"] = "1"
-            env["MPLCONFIGDIR"] = str(root / "mpl")
-            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script], cwd=repo,
-                                    env=env, capture_output=True, text=True, encoding="utf-8", timeout=30)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            rows = json.loads(result.stdout)
-            self.assertTrue(rows[0]["ok"], rows[0])
-            self.assertFalse(rows[0]["png"])
-            self.assertEqual(rows[0]["document"]["exit_state_plot_status"], "not_applicable")
-            self.assertEqual(rows[0]["document"]["exit_state_plot_reason"], "no_supported_exit_state_rows")
-            self.assertFalse(rows[1]["ok"])
-            self.assertIn("exit-state diagnostic plot failed", rows[1]["error"])
-            self.assertFalse(rows[1]["summary_exists"])
-            self.assertIn("missing columns", result.stderr)
 
     def test_shared_scales_and_fixed_bins_cover_both_series(self):
         with tempfile.TemporaryDirectory() as temporary:

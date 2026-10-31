@@ -12,7 +12,7 @@ classdef RfFiniteParticleTerminalTest < matlab.unittest.TestCase
   function actualPureExportFunctions(testCase)
    root=fileparts(fileparts(fileparts(mfilename('fullpath'))));
    folder=testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
-   materializeActualExportFunctions(fullfile(root,'comsol','solve_finite_3d_transport.m'),folder.Folder);
+   materializeActualExportFunctions(fullfile(root,'comsol','export_finite_3d_particle_outputs.m'),folder.Folder);
    testCase.applyFixture(matlab.unittest.fixtures.PathFixture(folder.Folder));
    testCase.addTeardown(@clearExportFunctions);
   end

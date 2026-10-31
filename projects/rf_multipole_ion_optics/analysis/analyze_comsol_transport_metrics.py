@@ -121,7 +121,25 @@ def _case_metrics(
     }
 
 
-def derive(events: list[dict[str, str]], primary_state: list[dict[str, str]], control_state: list[dict[str, str]], resolved: dict[str, Any], numerics: dict[str, Any]) -> dict[str, Any]:
+def derive(events: list[dict[str, str]], primary_state: list[dict[str, str]], control_state: list[dict[str, str]], resolved: dict[str, Any], numerics: dict[str, Any], *, particle_source: list[dict[str, str]] | None = None, source_metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    source_binding: dict[str, Any] = {"status": "not_verified", "reason": "pure caller did not supply frozen particle source"}
+    if particle_source is not None:
+        mother = [int(row["particle_id"]) for row in particle_source]
+        census = partition_cohort(mother, [(pid, "source") for pid in mother],
+                                  categories=("source",), relative_weights=None)
+        if not mother:
+            raise ValueError("frozen particle source must be nonempty")
+        expected = set(census["mother_particle_ids"])
+        if source_metadata is not None:
+            declared = source_metadata["particle_count"]
+            if isinstance(declared, bool) or not isinstance(declared, int) or declared != len(mother):
+                raise ValueError("actual frozen source mother count differs from its metadata/budget authority")
+        for label, rows in (("primary", primary_state), ("control", control_state)):
+            actual = [int(row["particle_id"]) for row in rows if row["event"] == "source"]
+            if len(actual) != len(mother) or set(actual) != expected:
+                raise ValueError(f"{label} state source IDs differ from frozen particle source")
+        source_binding = {"status": "verified_ids", "mother_particle_ids": census["mother_particle_ids"],
+                          "mother_count": len(mother)}
     topology = resolved["axial_drive"]["topology"]
     geometry = resolved["geometry_mm"]
     observations = transport_observations(resolved)
@@ -147,6 +165,7 @@ def derive(events: list[dict[str, str]], primary_state: list[dict[str, str]], co
         "schema_version": 1,
         "role": "multipole_finite_3d_transport_metrics",
         "metrics_authority": "python_canonical_particle_state_and_events",
+        "source_binding": source_binding,
         "status": "UNQUALIFIED",
         "project_id": resolved["identity"]["project_id"],
         "model_level": "L3",
@@ -177,6 +196,8 @@ def derive(events: list[dict[str, str]], primary_state: list[dict[str, str]], co
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--particle-source", type=Path, required=True)
+    parser.add_argument("--particle-source-metadata", type=Path, required=True)
     parser.add_argument("--events", type=Path, required=True)
     parser.add_argument("--primary-state", type=Path, required=True)
     parser.add_argument("--control-state", type=Path, required=True)
@@ -188,6 +209,8 @@ def main() -> None:
         _rows(args.events), _rows(args.primary_state), _rows(args.control_state),
         json.loads(args.resolved_design.read_text(encoding="utf-8-sig")),
         json.loads(args.numerics.read_text(encoding="utf-8-sig")),
+        particle_source=_rows(args.particle_source),
+        source_metadata=json.loads(args.particle_source_metadata.read_text(encoding="utf-8-sig")),
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")

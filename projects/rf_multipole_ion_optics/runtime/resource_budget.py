@@ -72,6 +72,139 @@ def _particle_count(path: Path) -> int:
         return max(sum(1 for line in stream if line.strip()) - 1, 0)
 
 
+def validate_resource_limits(limits: dict[str, Any], full_matrix: dict[str, Any]) -> None:
+    """Existing pilot numeric/no-retry/no-matrix policy for all consumers."""
+    _require_limit_keys(limits)
+    wall_clock = limits["wall_clock_seconds_by_solver"]
+    if set(wall_clock) != {"comsol", "simion"}:
+        raise ValueError("wall-clock solver keys differ")
+    positive_limits = list(wall_clock.values()) + [
+        limits[name]
+        for name in (
+            "transient_run_directory_bytes",
+            "process_tree_working_set_bytes",
+            "minimum_system_available_memory_bytes",
+            "compact_final_retained_bytes",
+        )
+    ]
+    if "maximum_mesh_cells" in limits:
+        positive_limits.append(limits["maximum_mesh_cells"])
+    if "maximum_pa_grid_points" in limits:
+        positive_limits.append(limits["maximum_pa_grid_points"])
+    if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in positive_limits):
+        raise ValueError("resource limits must be positive integers")
+    if limits["automatic_retry_count"] != 0:
+        raise ValueError("automatic_retry_count must be zero")
+    if (
+        not isinstance(full_matrix, dict)
+        or set(full_matrix) != {"authorized", "reason"}
+        or full_matrix["authorized"] is not False
+        or not isinstance(full_matrix["reason"], str)
+        or not full_matrix["reason"]
+    ):
+        raise ValueError("full matrix must remain unauthorized during pilot")
+
+
+def validate_budget_authorization(budget: dict[str, Any], project_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Read the existing engineering contract without resolving scientific profiles."""
+    _require_keys(
+        budget,
+        {
+            "schema_version",
+            "role",
+            "project_id",
+            "contract_id",
+            "preregistered_before_run",
+            "pilot_authorization",
+            "full_matrix_authorization",
+            "budget_exhaustion_result",
+            "claim_limit",
+        },
+        "engineering-budget contract",
+    )
+    if (
+        budget["schema_version"] != 1
+        or budget["role"] != "multipole_engineering_budget_contract"
+        or budget["project_id"] != project_id
+        or budget["preregistered_before_run"] is not True
+    ):
+        raise ValueError("engineering-budget identity differs")
+    pilot = budget["pilot_authorization"]
+    _require_keys(pilot, {"authorized", "scope", "limits"}, "pilot authorization")
+    if pilot["authorized"] is not True:
+        raise ValueError("multipole commercial solver pilot is not authorized")
+    scope, limits = pilot["scope"], pilot["limits"]
+    _require_scope_keys(scope)
+    allowed_solvers = scope["allowed_solvers"]
+    if (
+        not isinstance(allowed_solvers, list)
+        or not allowed_solvers
+        or len(set(allowed_solvers)) != len(allowed_solvers)
+        or not set(allowed_solvers).issubset({"comsol", "simion"})
+    ):
+        raise ValueError("allowed_solvers must be a nonempty unique supported subset")
+    return scope, limits
+
+
+def validate_analysis_budget(
+    budget: dict[str, Any], *, parent_config: dict[str, Any],
+    parent_budget: dict[str, Any], source_metadata: dict[str, Any],
+    retention_class: str, run_id: str,
+) -> dict[str, Any]:
+    """Authorize only new analysis payload against original frozen science.
+
+    Existing input/output CSVs and native models remain protected references.
+    This function does not resolve profiles, generate a source or authorize a solve.
+    """
+    project = parent_config["project"]
+    scope, limits = validate_budget_authorization(budget, project)
+    parameters = parent_config["parameters"]
+    if parent_budget.get("role") == "multipole_engineering_budget_contract":
+        expected = dict(parent_budget["pilot_authorization"]["scope"])
+    elif parent_budget.get("role") == "multipole_transport_experiment_campaign":
+        rows = [row for row in parent_budget["experiments"]
+                if row["experiment_id"] == parameters["runtime_profile_id"]]
+        if len(rows) != 1:
+            raise ValueError("parent frozen campaign budget is not unique")
+        row = rows[0]
+        simion = row["simion_solver_numerics"]
+        simion_id = simion["profile_id"] if simion["kind"] == "profile" else simion["numerics_id"]
+        expected = dict(project_id=row["project_id"], runtime_profile_id=row["experiment_id"],
+                        stop_stage=row["stop_stage"], design_profile_id=row["design_profile_id"],
+                        particle_source_profile_id=row["particle_source_profile_id"],
+                        particle_count=source_metadata["particle_count"],
+                        solver_numerics_profile_ids=dict(comsol=row["comsol_solver_numerics_profile_id"], simion=simion_id),
+                        allowed_solvers=[row["solver"]], retention_class=row["retention_class"])
+    else:
+        raise ValueError("parent has no supported frozen engineering scope; analysis will not resolve current defaults")
+    if (expected["project_id"] != project or expected["runtime_profile_id"] != parameters["runtime_profile_id"]
+            or expected["design_profile_id"] != parameters["design_profile_id"]
+            or expected["stop_stage"] != "transport" or expected["particle_count"] != source_metadata["particle_count"]):
+        raise ValueError("parent frozen budget scope differs from its science/source authority")
+    count = source_metadata["particle_count"]
+    if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+        raise ValueError("parent frozen mother count must be a positive integer")
+    # These two fields belong to this new execution, not the parent's identity.
+    expected.pop("authorized_run_id", None)
+    expected["retention_class"] = retention_class
+    if "authorized_run_id" in scope:
+        if not isinstance(scope["authorized_run_id"], str) or scope["authorized_run_id"] != run_id:
+            raise ValueError("analysis authorized_run_id differs from its new run")
+        expected["authorized_run_id"] = run_id
+    if "expected_run_parent_resolved_design_sha256" in scope:
+        original = parent_config["provenance"]["parent_resolved_design_sha256"]
+        if scope["expected_run_parent_resolved_design_sha256"] != original:
+            raise ValueError("analysis budget logical design differs from frozen parent")
+        expected["expected_run_parent_resolved_design_sha256"] = original
+    if scope != expected:
+        raise ValueError("analysis budget scope differs from original frozen science")
+    validate_resource_limits(limits, budget["full_matrix_authorization"])
+    return dict(schema_version=1, role="multipole_resolved_resource_budget", project_id=project,
+                runtime_profile_id=scope["runtime_profile_id"], design_profile_id=scope["design_profile_id"],
+                stop_stage="transport", solver="comsol", retention_class=retention_class,
+                limits={**limits, "wall_clock_seconds": limits["wall_clock_seconds_by_solver"]["comsol"]})
+
+
 def validate_pilot_budget(
     *,
     repo_root: Path,
@@ -104,43 +237,8 @@ def validate_pilot_budget(
     expected_budget = Path(runtime["engineering_budget"]["path"]).resolve()
     if budget_path.resolve() != expected_budget:
         raise ValueError("engineering-budget path differs from runtime profile")
-    _require_keys(
-        budget,
-        {
-            "schema_version",
-            "role",
-            "project_id",
-            "contract_id",
-            "preregistered_before_run",
-            "pilot_authorization",
-            "full_matrix_authorization",
-            "budget_exhaustion_result",
-            "claim_limit",
-        },
-        "engineering-budget contract",
-    )
-    if (
-        budget["schema_version"] != 1
-        or budget["role"] != "multipole_engineering_budget_contract"
-        or budget["project_id"] != project_id
-        or budget["preregistered_before_run"] is not True
-    ):
-        raise ValueError("engineering-budget identity differs")
-    pilot = budget["pilot_authorization"]
-    _require_keys(pilot, {"authorized", "scope", "limits"}, "pilot authorization")
-    if pilot["authorized"] is not True:
-        raise ValueError("multipole commercial solver pilot is not authorized")
-    scope, limits = pilot["scope"], pilot["limits"]
-    _require_scope_keys(scope)
-    _require_limit_keys(limits)
+    scope, limits = validate_budget_authorization(budget, project_id)
     allowed_solvers = scope["allowed_solvers"]
-    if (
-        not isinstance(allowed_solvers, list)
-        or not allowed_solvers
-        or len(set(allowed_solvers)) != len(allowed_solvers)
-        or not set(allowed_solvers).issubset({"comsol", "simion"})
-    ):
-        raise ValueError("allowed_solvers must be a nonempty unique supported subset")
     expected_scope = {
         "project_id": project_id,
         "runtime_profile_id": runtime_profile_id,
@@ -198,35 +296,8 @@ def validate_pilot_budget(
             raise ValueError("maximum_mesh_cells requires a COMSOL physical-segment hybrid mesh profile")
     if "maximum_pa_grid_points" in limits and solver != "simion":
         raise ValueError("maximum_pa_grid_points is only valid for SIMION")
+    validate_resource_limits(limits, budget["full_matrix_authorization"])
     wall_clock = limits["wall_clock_seconds_by_solver"]
-    if set(wall_clock) != {"comsol", "simion"}:
-        raise ValueError("wall-clock solver keys differ")
-    positive_limits = list(wall_clock.values()) + [
-        limits[name]
-        for name in (
-            "transient_run_directory_bytes",
-            "process_tree_working_set_bytes",
-            "minimum_system_available_memory_bytes",
-            "compact_final_retained_bytes",
-        )
-    ]
-    if "maximum_mesh_cells" in limits:
-        positive_limits.append(limits["maximum_mesh_cells"])
-    if "maximum_pa_grid_points" in limits:
-        positive_limits.append(limits["maximum_pa_grid_points"])
-    if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in positive_limits):
-        raise ValueError("resource limits must be positive integers")
-    if limits["automatic_retry_count"] != 0:
-        raise ValueError("automatic_retry_count must be zero")
-    full_matrix = budget["full_matrix_authorization"]
-    if (
-        not isinstance(full_matrix, dict)
-        or set(full_matrix) != {"authorized", "reason"}
-        or full_matrix["authorized"] is not False
-        or not isinstance(full_matrix["reason"], str)
-        or not full_matrix["reason"]
-    ):
-        raise ValueError("full matrix must remain unauthorized during pilot")
     return {
         "schema_version": 1,
         "role": "multipole_resolved_resource_budget",

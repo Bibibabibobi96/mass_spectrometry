@@ -7,6 +7,49 @@
 
 ## 当前结论
 
+finite COMSOL 正常无碰撞 CLI 已接公共 PowerShell owner：原生前持久化 run 外小 Result、request 和实际容量会话，
+收尾使用 COMSOL wrapper 真实 PID／起时／退出和 host release receipt。原命令 `-ResumeFinalization -RunId`
+仅恢复原收尾，不重新解析科学输入或启动原生；明确路径及限制见[COMSOL说明](COMSOL.md#finite-原-cli-的收尾恢复)。
+源／求场／分析主错误与收尾错误分别保留；未知 writer／release 不释放保护。旧 run 若缺原始冻结 owner 事实，
+不会用当前默认值补造恢复资格。薄软件回归不等于真实求解、GUI 或科学资格；其他 COMSOL workflow 不由此自动获得恢复能力。
+无碰撞[正常COMSOL入口](../workflows/no_collision_transport/run_comsol.ps1)可用
+`-AnalyzeOnly -ParentManifestPath <原run_manifest.json> -EngineeringBudgetPath <分析自有预算> -PythonExe <正式解释器>`创建新analysis owner。
+父run须有完整manifest绑定events、两组canonical state及冻结design/source/numerics/evidence；
+通过原owner共享reader和SourceReferences保护原CSV，新run执行同一metrics／出口图／证据评价及公共收尾函数。
+准入还绑定原native report、原public prepared entrypoint、comsol_task及其code_inventory。当前完整export记录
+结合冻结producer控制顺序与两case／保存事实；旧同族producer无新增计时时，可由原task整体PASS／MODEL_SAVED
+和原冻结导出顺序推导，不因缺计时自动拒绝。仅writer停止或CSV自洽不代表transport阶段已完成。
+科学输入只取父冻结authority；分析源码按本次冻结，不因后处理修改而重求原场或粒子。
+分析必须显式提供现`multipole_engineering_budget_contract`格式的自有预算，不借用父求解的2GiB承诺。
+科学scope与父冻结授权／实际母群闭合；本次承诺取新预算transient，准入stat核对实际复制源码、小输入、清单
+及新预算提供的结果／收尾余量，原MPH和CSV引用按零新增载荷计。host仅用现COMSOL/postprocess轻资源，不准入求场heavy。
+正式分析显式绑定原particle_source，`source_binding=verified_ids`仅表示两case的原母群ID一致，
+不表示native初态6D、权重或科学资格被独立验证；纯derive旧调用未给源时明确not_verified。
+缺CSV／MPH-only返回`CSV_EXPORTS_INCOMPLETE_REEXTRACTION_REQUIRED`，不静默solve或读取MPH；
+evaluator写出明确FAIL/checks时，保持CLI非零和status=failed，但执行完成、数据有效、科学FAIL分开报告；
+失败阶段scientific_evaluation及具体未达checks保留，恢复动作是查看负结果／显式新研究，不盲修分析或重算。
+显式`-AnalyzeOnly -ReextractFromModel`已接通同一分窗导出、原模型只读保护与公共原生路径／进程owner；
+正常求解也消费同一科学template与导出实现，删除旧内联CSV转换。缺原映射的070000不推断身份；冷提取需要真实模型加载，不能称零商业调用。
+`20261031_062508__analysis__comsol__rf-cold-v9`只读原071000的43,350,302 B已解MPH，公开命令75.878秒，
+加载／提取阶段52.461秒，实际窗口提取4.176秒；观测进程树峰值3,148,632,064 B，无预算告警。
+新增求解0、父模型保存false，7份事件／轨迹／canonical CSV与原输出逐字节相同；父manifest不变，
+原MPH身份复用原记录及保护，仅stat而不重新哈希。科学结果仍UNQUALIFIED，不将8µs入口段改称完整传输或精度资格。
+原CLI收尾恢复3.094秒返回REUSED；其CSV再由`20261031_062819__analysis__python__rf-cold-csv`重分析，
+公开命令22.729秒，完成记录只有两Python进程，零模型加载／求解，冷提取父manifest保持不变。
+这关闭了该已保存解格式的实际冷提取和后继CSV分析边界，不自动覆盖缺映射旧资产、所有故障现场或其他COMSOL workflow。
+真实071000的N=100封存CSV由正常入口新建
+`20261031_054000__analysis__python__rf-finite-v9`，公开命令21.016秒完成，实际分析0.806秒；
+原母群ID核对通过，零出口图明确not_applicable，结果保持UNQUALIFIED，不授予完整传输或科学资格。
+新增载荷预估30325367 B、自有承诺256 MiB，原MPH／CSV新增载荷0，实际completion的operations／resource_releases均为空。
+原父manifest与准入记录一致；原CLI收尾恢复2.843秒返回REUSED，子manifest字节不变。
+此前两次请求分别因retention不匹配和缺保留理由在创建run前拒绝，未新增原生调用。
+随后`20261031_055828__analysis__python__rf-v9-observed`接通现有公共进程observer，公开命令29.598秒完成。
+metrics／出口图两Python阶段分别记录实际PID、起时、退出、显式300秒／2GiB及可用内存预算和usage，
+观测区间1.877／0.975秒，无告警；两个进程的完成事实与实际host release进入公共completion。
+父manifest保持，商业工具调用0，科学结果仍UNQUALIFIED；正常求解后的分析保留原执行资源合同。
+wall／RSS超预算沿既有软告警与物理危险政策处理，不以此强杀健康任务；短进程采样用量不冒充精确峰值测量。
+原入口在分析前明确输出稳定Result路径；新增unknown-exit薄回归通过，未知进程不伪造完成或释放保护。
+
 有限三维 COMSOL producer 读取所选数值合同的显式 `minimum_element_size_mm`：未声明时保持原网格控制，声明时须正有限且不大于 hmax，并限现选区 free-tetrahedral 路径。全局与工作区 Size 使用同一最小尺寸，typed raw 读回保持其他控制；mesh-only 根据冻结 strategy 验证真实完成、质量和分区事实，不把完整网格冒充场或粒子求解。
 
 `plan_rf_exact_birth_releases` 同时由 finite 与 deterministic 两个原生 solver 消费。只合并完全相同出生时刻的粒子，以17位秒文本保存时钟，保留完整6D、ID映射、物种及已有权重；原生顺序读回按原 source 行映回。deterministic 两个正式 wrapper 冻结同一 helper，release gate 的 v2 breadcrumb/result 按实际分组核对每行源与原生属性，仍在粒子 Study 前停止。分组不允许新相位模型或丢失粒子。有限体积源起点仅接受原 preflight metadata 充分绑定的体积状态，平面源原条件保持。

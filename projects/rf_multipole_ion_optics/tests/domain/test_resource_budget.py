@@ -10,7 +10,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from projects.rf_multipole_ion_optics.runtime.resource_budget import validate_pilot_budget
+from projects.rf_multipole_ion_optics.runtime.resource_budget import validate_pilot_budget, validate_analysis_budget, validate_resource_limits
+from projects.rf_multipole_ion_optics.tests.analysis.test_comsol_analysis_recovery import engineering_budget
 from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_runtime_profile
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -64,6 +65,66 @@ exit 0
             f"if($Event-eq'RESOURCE_ADMISSION_PAUSED'-and$Details.REASON-eq'{reason}'){{" + after_pause +
             f"Set-Content -LiteralPath '{release}' -Value 'observed'}}}};")
 
+
+
+class AnalysisBudgetTests(unittest.TestCase):
+    def arguments(self):
+        parent = engineering_budget()
+        config = dict(project=PROJECT_ID, parameters=dict(runtime_profile_id='frozen-runtime', design_profile_id='frozen-design'),
+                      provenance=dict(parent_resolved_design_sha256='A'*64))
+        return dict(parent_config=config, parent_budget=parent, source_metadata=dict(particle_count=1),
+                    retention_class='compact', run_id='20261031_060001__analysis__python__csv-child')
+
+    def test_old_one_particle_source_analysis_uses_only_frozen_scope_without_sampling_or_defaults(self):
+        budget = engineering_budget(retention_class='compact', transient=33554432)
+        with mock.patch('projects.rf_multipole_ion_optics.runtime.resource_budget.resolve_runtime_profile', side_effect=AssertionError('today profile')), \
+             mock.patch('projects.rf_multipole_ion_optics.runtime.resource_budget.resolve_runtime_selection', side_effect=AssertionError('today campaign')), \
+             mock.patch('projects.rf_multipole_ion_optics.runtime.resource_budget._particle_count', side_effect=AssertionError('rescan source')):
+            value = validate_analysis_budget(budget, **self.arguments())
+        self.assertEqual(value['limits']['transient_run_directory_bytes'], 33554432)
+        self.assertEqual(value['limits']['automatic_retry_count'], 0)
+        self.assertEqual(value['retention_class'], 'compact')
+
+    def test_new_analysis_budget_cannot_change_frozen_science(self):
+        for field, value in (('particle_count', 100), ('runtime_profile_id', 'today-default'), ('design_profile_id', 'other'),
+                             ('particle_source_profile_id', 'new-source')):
+            with self.subTest(field=field):
+                budget = engineering_budget(retention_class='compact')
+                budget['pilot_authorization']['scope'][field] = value
+                with self.assertRaisesRegex(ValueError, 'frozen science'):
+                    validate_analysis_budget(budget, **self.arguments())
+
+    def test_analysis_campaign_scope_comes_from_frozen_experiment_not_current_profile(self):
+        for kind in ('profile', 'inline'):
+            with self.subTest(kind=kind):
+                arguments = self.arguments()
+                binding = dict(kind=kind, **({'profile_id': 'frozen-simion'} if kind == 'profile' else {'numerics_id': 'frozen-simion'}))
+                arguments['parent_budget'] = dict(role='multipole_transport_experiment_campaign', experiments=[dict(
+                    experiment_id='frozen-runtime', project_id=PROJECT_ID, stop_stage='transport',
+                    design_profile_id='frozen-design', particle_source_profile_id='frozen-source',
+                    comsol_solver_numerics_profile_id='frozen-comsol', simion_solver_numerics=binding,
+                    solver='comsol', retention_class='solver_review')])
+                with mock.patch('projects.rf_multipole_ion_optics.runtime.resource_budget.resolve_runtime_profile', side_effect=AssertionError('today profile')):
+                    result = validate_analysis_budget(engineering_budget(retention_class='compact'), **arguments)
+                self.assertEqual(result['runtime_profile_id'], 'frozen-runtime')
+
+    def test_shared_numeric_retry_and_matrix_policy_applies_to_normal_and_analysis(self):
+        for fault in ('negative', 'boolean', 'retry', 'matrix'):
+            with self.subTest(fault=fault):
+                budget = engineering_budget(retention_class='compact')
+                limits = budget['pilot_authorization']['limits']
+                if fault == 'negative':
+                    limits['transient_run_directory_bytes'] = -1
+                elif fault == 'boolean':
+                    limits['process_tree_working_set_bytes'] = True
+                elif fault == 'retry':
+                    limits['automatic_retry_count'] = 1
+                else:
+                    budget['full_matrix_authorization']['authorized'] = True
+                with self.assertRaises(ValueError):
+                    validate_resource_limits(limits, budget['full_matrix_authorization'])
+                with self.assertRaises(ValueError):
+                    validate_analysis_budget(budget, **self.arguments())
 
 
 class ResourceBudgetTests(unittest.TestCase):

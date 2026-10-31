@@ -79,7 +79,24 @@ class AnalyzeComsolTransportMetricsTests(unittest.TestCase):
                     derive(events, state, state, resolved, numerics)
 
 
+    def test_frozen_source_binding_preserves_sparse_large_ids_without_float_conversion(self):
+        ids = [9007199254740993, 17]
+        state, events, resolved, numerics = scenario([(pid, "unknown", "time_window_end", "unresolved", "none") for pid in reversed(ids)])
+        result = derive(events, state, state, resolved, numerics,
+                        particle_source=[dict(particle_id=str(pid)) for pid in ids])
+        self.assertEqual(result["source_binding"], dict(status="verified_ids", mother_particle_ids=ids, mother_count=2))
 
+    def test_missing_duplicate_noninteger_or_empty_original_source_is_not_inferred(self):
+        state, events, resolved, numerics = scenario([(17, "unknown", "time_window_end", "unresolved", "none")])
+        for ids in ([17, 91], [17, 17], ["17.5"], []):
+            with self.subTest(ids=ids), self.assertRaises(ValueError):
+                derive(events, state, state, resolved, numerics,
+                       particle_source=[dict(particle_id=str(pid)) for pid in ids])
+        with self.assertRaisesRegex(ValueError, "mother count differs"):
+            derive(events, state, state, resolved, numerics,
+                   particle_source=[dict(particle_id="17")], source_metadata=dict(particle_count=2))
+        legacy = derive(events, state, state, resolved, numerics)
+        self.assertEqual(legacy["source_binding"]["status"], "not_verified")
 
 
 def scenario(terminals):

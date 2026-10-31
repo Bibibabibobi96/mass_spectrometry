@@ -9,7 +9,8 @@ SIMION 正常入口以 `-NativeFieldRunPath` 显式复用原 producer 的 fracti
 场、Fly 与分析依赖分别判断；公共检查点 API 及保留条件见[项目状态](docs/PROJECT.md#当前结论)。
 finite、interface_readiness 与 mass_filter_reference 的三条 SIMION CLI，request／completion 和收尾恢复默认接入公共 PowerShell owner API，
 项目只提供真实退出和 host release 事实；这三条 SIMION CLI 均可用 `-ResumeFinalization -RunId` 恢复收尾。
-COMSOL 已保存解不等于原 CLI 支持后处理恢复；其当前恢复边界见[项目状态](docs/PROJECT.md#当前结论)。
+COMSOL 正常无碰撞入口支持 `-AnalyzeOnly -ParentManifestPath <原封存manifest> -EngineeringBudgetPath <分析自有预算>` 创建仅分析新run，
+复用充分封存CSV且不启动COMSOL；显式增加`-ReextractFromModel`才只读冷重开已解MPH并提取，所需原映射及边界见[项目状态](docs/PROJECT.md#当前结论)。
 两个 COMSOL solver 通过项目共用分窗 API 提取原解；保存、实际原生读取证据和范围见[项目状态](docs/PROJECT.md#当前结论)。
 
 有限三维 COMSOL 的显式网格最小尺寸、完整源的精确出生分组及未知末态语义见[项目状态](docs/PROJECT.md#当前结论)。两正式原生消费者共享同一项目分组器，不做相位近似。
