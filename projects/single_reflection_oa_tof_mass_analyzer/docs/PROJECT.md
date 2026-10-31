@@ -8,6 +8,19 @@ Paper 1 专用研究准备API的归属与退出条件见[分析说明](../analys
 
 ## 当前状态
 
+普通 COMSOL builder 恢复在配置电势节点前创建 `es` Electrostatics，并绑定既有 `sel_vac`；
+不改变真空选择、几何、电压、材料或数值合同。该三行初始化在静态 ON 重构时遗漏，
+`20261031_201923__sim__comsol__candidate-save-fault` 已在几何完成后、网格及求解前真实失败，
+公开命令68.974秒；公共 owner 已发布 failed 终态并完成容量、租约和执行 alias 收尾，未产生已解 MPH。
+修复采用 [COMSOL 6.4 physics API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_general.47.51.html)
+支持的创建与 named selection 方法（2026-10-31核对），与本项目成对静态场提供者一致。
+独立运行 `20261031_204430__sim__comsol__candidate-es-configuration` 经正常 CLI 验证4个真空域、
+30个电势节点及其实际电压（公开77.855秒）；29个电极选择非空，原残余外壁差集为空。
+一次性作者副本在网格前主动停止，公共 owner 保留 failed 终态并安全收尾；检查通过不改写为整次请求成功。
+前三轮配置探针的 Java 数组转换、残余外壁及边界全集相等断言错误均保留为失败证据；
+最终探针遵循官方物理选择过滤语义，仅检查实际边界不越出原命名选择。
+没有网格、求解、已解模型保存或科学资格声明；后续保存／冷恢复验收仍未完成。
+
 MATLAB 原生输出的写入授权现复用公共真实路径身份解析：现有 junction 祖先与未来 MPH 文件名分别处理；
 鉴权不依赖环境声明，执行仍保留原短路径。Formal／外部 junction 继续拒绝；软件路径回归不代表求解或科学资格。
 

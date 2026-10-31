@@ -725,6 +725,9 @@ comp1.selection('selb_outerwall').set(outerwall_ents);
 %% Static ON electrostatics
 % This builds the selected geometry at its declared ON operating point.
 % It is not a finite-width pulse model or a transient-field equivalence claim.
+es = comp1.physics.create('es', 'Electrostatics', 'geom1');
+es.label('Electrostatics: static ON accelerator and ring-stack reflectron');
+es.selection.named('sel_vac');
 DCmap0 = struct('repeller','V_repeller','detector','0','accelshield','0','flighttubewall','0');
 for t = {'repeller','detector','accelshield','flighttubewall'}
     tagb = sprintf('selb_%s', t{1});

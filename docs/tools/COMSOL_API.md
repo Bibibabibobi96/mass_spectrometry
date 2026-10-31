@@ -129,6 +129,12 @@ sel.set(boundaryIds);
 - 每次几何重建后检查选择非空、没有错误实体并覆盖所有预期实体。
 - 未验证前不要猜组件级`Union`/`Difference`选择的`input2`等属性。
 
+物理节点的 `selection.entities()` 会过滤不适用于该物理域或边界条件的实体，可能小于原命名选择；
+回读应分别核对 `selection.named()` 的绑定和实际适用实体，不能强制两份全集相等。
+依据为 COMSOL 6.4 [Selections](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_general.47.11.html)
+（2026-10-31核对）；单反射原生配置探针已观察到此过滤。实体电极仍检查实际绑定非空；
+残余边界差集是否允许为空由项目几何含义决定，不将其一律当作缺失电极或删除原物理检查。
+
 ## 材料
 
 ```matlab
