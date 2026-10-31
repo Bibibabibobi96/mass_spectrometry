@@ -13,6 +13,7 @@ classdef commonArtifactPathsTest < matlab.unittest.TestCase
 
     methods (TestMethodSetup)
         function isolatedWorkspace(testCase)
+            clear workspace_paths common_artifact_paths resolve_path_identity
             testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture( ...
                 'MASS_SPECTROMETRY_ARTIFACT_ROOT', ''));
             temporary = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
@@ -22,6 +23,7 @@ classdef commonArtifactPathsTest < matlab.unittest.TestCase
             mkdir(isolatedPaths);
             copyfile(fullfile(source, 'common_artifact_paths.m'), isolatedPaths);
             copyfile(fullfile(source, 'workspace_paths.m'), isolatedPaths);
+            copyfile(fullfile(source, 'resolve_path_identity.m'), isolatedPaths);
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(isolatedPaths));
             testCase.ProjectRoot = fullfile(testCase.Workspace, 'artifacts', 'projects', 'example');
             mkdir(testCase.ProjectRoot);
@@ -29,6 +31,56 @@ classdef commonArtifactPathsTest < matlab.unittest.TestCase
     end
 
     methods (Test)
+        function futureFileThroughJunctionUsesExistingAncestorIdentity(testCase)
+            testCase.assumeTrue(ispc);
+            [context,alias]=testCase.contextAlias();
+            future=fullfile(alias,'comsol','nested','model.mph');
+            actual=resolve_path_identity(future);
+            testCase.verifyEqual(actual,fullfile(context,'comsol','nested','model.mph'));
+            testCase.verifyFalse(isfolder(fullfile(context,'comsol')));
+        end
+
+        function futureIdentityIsStableAfterFileCreation(testCase)
+            testCase.assumeTrue(ispc);
+            [context,alias]=testCase.contextAlias();
+            future=fullfile(alias,'model.mph');
+            before=resolve_path_identity(future);
+            writeFixtureFile(fullfile(context,'model.mph'),'inert path identity fixture');
+            testCase.verifyEqual(resolve_path_identity(future),before);
+        end
+
+        function aliasedContextPreservesNativeOutputSpelling(testCase)
+            testCase.assumeTrue(ispc);
+            [context,alias]=testCase.contextAlias();
+            result=common_artifact_paths(alias);
+            testCase.verifyEqual(result.artifactRoot,context);
+            testCase.verifyEqual(result.modelsDir,fullfile(alias,'comsol'));
+            testCase.verifyEqual(result.resultsDir,fullfile(alias,'results'));
+            testCase.verifyTrue(isfolder(fullfile(context,'comsol')));
+        end
+
+        function externalJunctionContextIsRejected(testCase)
+            testCase.assumeTrue(ispc);
+            outside=fullfile(testCase.Workspace,'outside');
+            mkdir(outside);
+            link=fullfile(testCase.ProjectRoot,'runs','escape');
+            mkdir(fileparts(link));
+            makeFixtureJunction(link,outside);
+            testCase.addTeardown(@() removeFixtureJunction(link));
+            testCase.verifyError(@() common_artifact_paths(link),'common_artifact_paths:InvalidContext');
+            testCase.verifyFalse(isfolder(fullfile(outside,'comsol')));
+        end
+
+        function artifactRootAliasResolvesSameIdentity(testCase)
+            testCase.assumeTrue(ispc);
+            actualRoot=fullfile(testCase.Workspace,'artifacts');
+            link=fullfile(testCase.Workspace,'root_alias');
+            makeFixtureJunction(link,actualRoot);
+            testCase.addTeardown(@() removeFixtureJunction(link));
+            result=workspace_paths(ArtifactRoot=string(link));
+            testCase.verifyEqual(result.artifactRoot,actualRoot);
+        end
+
         function explicitRootOverridesDeploymentEnvironment(testCase)
             root = fullfile(testCase.Workspace, 'short-payload');
             context = fullfile(root, 'projects', 'example', 'runs', 'explicit');
@@ -98,10 +150,35 @@ classdef commonArtifactPathsTest < matlab.unittest.TestCase
     end
 
     methods (Access = private)
+        function [context,alias]=contextAlias(testCase)
+            context=fullfile(testCase.ProjectRoot,'runs','junction');
+            mkdir(context);
+            alias=fullfile(testCase.Workspace,'execution_alias');
+            makeFixtureJunction(alias,context);
+            testCase.addTeardown(@() removeFixtureJunction(alias));
+        end
+
         function writeManifest(~, context, status)
             file = fopen(fullfile(context, 'run_manifest.json'), 'w');
             closeFile = onCleanup(@() fclose(file)); %#ok<NASGU>
             fprintf(file, '%s', jsonencode(struct('status', status)));
         end
     end
+end
+
+function makeFixtureJunction(link,target)
+script=sprintf('$ErrorActionPreference=''Stop'';New-Item -ItemType Junction -Path ''%s'' -Target ''%s'' | Out-Null', ...
+    strrep(link,char(39),[char(39) char(39)]),strrep(target,char(39),[char(39) char(39)]));
+[status,output]=system(sprintf('pwsh -NoProfile -Command "%s"',script));
+assert(status==0,'fixture:Junction','Could not create fixture junction: %s',output);
+end
+
+function removeFixtureJunction(link)
+java.nio.file.Files.deleteIfExists(java.io.File(link).toPath());
+end
+
+function writeFixtureFile(path,text)
+fid=fopen(path,'w');assert(fid>=0);
+cleanup=onCleanup(@()fclose(fid)); %#ok<NASGU>
+fprintf(fid,'%s',text);
 end

@@ -24,7 +24,7 @@ function paths = workspace_paths(projectName,options)
         root=java.io.File(char(artifactRoot));
         assert(root.isAbsolute(),'workspace:ArtifactRoot', ...
             'ArtifactRoot must be an explicit absolute artifacts root.');
-        paths.artifactRoot=char(root.getCanonicalPath());
+        paths.artifactRoot=resolve_path_identity(artifactRoot);
     end
 
     if strlength(projectName) == 0

@@ -71,11 +71,11 @@ if strlength(options.Label) == 0
 end
 if strlength(options.OutputModelPath) > 0
     paths = oatof_paths(options.ArtifactRoot);
-    outputPath = string(java.io.File(char(options.OutputModelPath)).getCanonicalPath());
+    outputPath = string(resolve_path_identity(options.OutputModelPath));
     allowedRoots = string({paths.runsRoot, paths.scratchRoot});
     allowed = false;
     for root = allowedRoots
-        canonicalRoot = string(java.io.File(char(root)).getCanonicalPath());
+        canonicalRoot = string(resolve_path_identity(root));
         allowed = allowed || startsWith(lower(outputPath), lower(canonicalRoot + filesep));
     end
     assert(allowed, 'oatof:OutputModelPath', ...

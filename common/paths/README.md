@@ -11,6 +11,11 @@
 
 ## 公共运行根与原生执行表示
 
+MATLAB `resolve_path_identity` 仅供身份与写入授权比较：沿 Java `Path.toRealPath` 解析最近存在祖先的真实链接，
+再接回未来文件名；权限错误或无法解析的现有链接不作缺失文件放行。原生 argv/cwd/输出继续保留调用者执行表示，
+不能将鉴权结果替换为原生路径。`common_artifact_paths` 的 `artifactRoot` 是持久身份，`modelsDir/resultsDir` 保留执行路径。
+本机 R2025b／Java 8 已用真实 Windows junction 验证；API 边界见 [Java 8 Path.toRealPath](https://docs.oracle.com/javase/8/docs/api/java/nio/file/Path.html#toRealPath-java.nio.file.LinkOption...-) 与 [MATLAB JavaException](https://www.mathworks.com/help/matlab/ref/matlab.exception.javaexception-class.html)。
+
 Python `resolve_workspace_paths`与PowerShell `Resolve-WorkspacePaths`解析源码根、可写产物根、
 执行根和主机调度器路径；显式参数优先于环境，四字段上下文冻结在新run配置`paths`中。
 `MASS_SPECTROMETRY_ARTIFACT_ROOT`可配置产物根，执行根默认跟随其`common/execution_aliases`；

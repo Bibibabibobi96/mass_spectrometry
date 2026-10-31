@@ -5,7 +5,7 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
     end
     methods (TestMethodSetup)
         function prepare(testCase)
-            clear oatof_paths workspace_paths run_oatof_model oatof_build_model_core oatof_build_saved_particle_solution
+            clear oatof_paths workspace_paths resolve_path_identity run_oatof_model oatof_build_model_core oatof_build_saved_particle_solution
             testCase.activeProject=fileparts(fileparts(fileparts(mfilename('fullpath'))));
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(testCase.activeProject));
             fixture=testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
@@ -13,6 +13,46 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
         end
     end
     methods (Test)
+        function namedEntryAuthorizesFutureAliasButPreservesNativeSpelling(testCase)
+            testCase.assumeTrue(ispc);
+            [project,artifact,contract]=testCase.snapshot();
+            context=fullfile(artifact,'projects','single_reflection_oa_tof_mass_analyzer','runs','alias_case');
+            mkdir(context);
+            alias=fullfile(testCase.folder,'execution_alias');
+            makeFixtureJunction(alias,context);
+            testCase.addTeardown(@() removeFixtureJunction(alias));
+            writeCoreTransportFixture(fullfile(project,'comsol','oatof_build_model_core.m'));
+            clear oatof_build_model_core
+            rehash
+            output=fullfile(alias,'comsol','future','model.mph');
+            result=run_oatof_model(ArtifactRoot=artifact,ContractPath=contract,OutputModelPath=output);
+            testCase.verifyEqual(result.execution_output,string(output));
+            testCase.verifyEqual(resolve_path_identity(output),fullfile(context,'comsol','future','model.mph'));
+            testCase.verifyFalse(isfile(fullfile(context,'comsol','future','model.mph')));
+        end
+        function namedEntryRejectsExternalJunction(testCase)
+            testCase.assumeTrue(ispc);
+            [~,artifact,contract]=testCase.snapshot();
+            outside=fullfile(testCase.folder,'outside');
+            mkdir(outside);
+            alias=fullfile(artifact,'projects','single_reflection_oa_tof_mass_analyzer','runs','escape');
+            mkdir(fileparts(alias));
+            makeFixtureJunction(alias,outside);
+            testCase.addTeardown(@() removeFixtureJunction(alias));
+            testCase.verifyError(@() run_oatof_model(ArtifactRoot=artifact,ContractPath=contract, ...
+                OutputModelPath=fullfile(alias,'future.mph')),'oatof:OutputModelPath');
+        end
+        function namedEntryRejectsFormalJunction(testCase)
+            testCase.assumeTrue(ispc);
+            [~,artifact,contract]=testCase.snapshot();
+            formal=fullfile(artifact,'projects','single_reflection_oa_tof_mass_analyzer','formal','comsol');
+            mkdir(formal);
+            alias=fullfile(testCase.folder,'formal_alias');
+            makeFixtureJunction(alias,formal);
+            testCase.addTeardown(@() removeFixtureJunction(alias));
+            testCase.verifyError(@() run_oatof_model(ArtifactRoot=artifact,ContractPath=contract, ...
+                OutputModelPath=fullfile(alias,'future.mph')),'oatof:OutputModelPath');
+        end
         function ordinaryDefaultPathsAreUnchanged(testCase)
             paths=oatof_paths();
             repo=fileparts(fileparts(testCase.activeProject));
@@ -104,7 +144,7 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
     end
     methods (Access=private)
         function [project,artifact,contract]=snapshot(testCase)
-            clear oatof_paths workspace_paths run_oatof_model oatof_build_model_core oatof_build_saved_particle_solution
+            clear oatof_paths workspace_paths resolve_path_identity run_oatof_model oatof_build_model_core oatof_build_saved_particle_solution
             repo=fileparts(fileparts(testCase.activeProject));
             snapshotRoot=fullfile(testCase.folder,'source_snapshot');
             project=fullfile(snapshotRoot,'projects','single_reflection_oa_tof_mass_analyzer');
@@ -112,6 +152,7 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
             mkdir(fullfile(snapshotRoot,'common','paths'));
             mkdir(fullfile(snapshotRoot,'common','comsol'));
             copyfile(fullfile(repo,'common','paths','workspace_paths.m'),fullfile(snapshotRoot,'common','paths'));
+            copyfile(fullfile(repo,'common','paths','resolve_path_identity.m'),fullfile(snapshotRoot,'common','paths'));
             copyfile(fullfile(testCase.activeProject,'oatof_paths.m'),project);
             copyfile(fullfile(testCase.activeProject,'load_oatof_contract.m'),project);
             copyfile(fullfile(testCase.activeProject,'comsol','run_oatof_model.m'),fullfile(project,'comsol'));
@@ -133,4 +174,15 @@ fid=fopen(path,'w');assert(fid>=0);
 cleanup=onCleanup(@()fclose(fid));
 fprintf(fid,'function result=oatof_build_model_core(varargin)\nresult=struct(''execution_output'',string(varargin{17}));\nend\n');
 clear cleanup
+end
+
+function makeFixtureJunction(link,target)
+script=sprintf('$ErrorActionPreference=''Stop'';New-Item -ItemType Junction -Path ''%s'' -Target ''%s'' | Out-Null', ...
+    strrep(link,char(39),[char(39) char(39)]),strrep(target,char(39),[char(39) char(39)]));
+[status,output]=system(sprintf('pwsh -NoProfile -Command "%s"',script));
+assert(status==0,'fixture:Junction','Could not create fixture junction: %s',output);
+end
+
+function removeFixtureJunction(link)
+java.nio.file.Files.deleteIfExists(java.io.File(link).toPath());
 end

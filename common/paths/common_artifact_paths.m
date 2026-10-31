@@ -9,8 +9,9 @@ function paths = common_artifact_paths(runDir, options)
     end
 
     workspace = workspace_paths(ArtifactRoot=options.ArtifactRoot);
-    projectsRoot = char(java.io.File(fullfile(workspace.artifactRoot, 'projects')).getCanonicalPath());
-    runDir = char(java.io.File(char(runDir)).getCanonicalPath());
+    projectsRoot = resolve_path_identity(fullfile(workspace.artifactRoot, 'projects'));
+    executionRunDir = char(runDir);
+    runDir = resolve_path_identity(runDir);
     prefix = [projectsRoot filesep];
     if ~isfolder(runDir) || ~startsWith(runDir, prefix, 'IgnoreCase', ispc)
         error('common_artifact_paths:InvalidContext', ...
@@ -31,8 +32,8 @@ function paths = common_artifact_paths(runDir, options)
     end
     paths = struct();
     paths.artifactRoot = runDir;
-    paths.modelsDir = fullfile(runDir, 'comsol');
-    paths.resultsDir = fullfile(runDir, 'results');
+    paths.modelsDir = fullfile(executionRunDir, 'comsol');
+    paths.resultsDir = fullfile(executionRunDir, 'results');
     if ~isfolder(paths.modelsDir), mkdir(paths.modelsDir); end
     if ~isfolder(paths.resultsDir), mkdir(paths.resultsDir); end
 end
