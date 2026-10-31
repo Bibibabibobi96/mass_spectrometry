@@ -140,10 +140,17 @@ $assembly = Join-Path $artifacts 'projects/instrument_assembly'
 ```powershell
 $artifacts = Join-Path (Split-Path -Parent (Get-Location).Path) 'artifacts'
 $case = Join-Path $artifacts 'projects/instrument_assembly/scratch/20261030__continuous-assembly-case'
+$replayRequest = Join-Path $case 'request_functional_explicit_replay.json'
+$request = Get-Content -LiteralPath (Join-Path $case 'request_functional.json') -Raw | ConvertFrom-Json -AsHashtable
+$request.verify_saved_workbench_replay = $true
+$request | ConvertTo-Json -Depth 100 | Out-File -LiteralPath $replayRequest -Encoding utf8NoBOM -NoClobber -ErrorAction Stop
 & integrations/workflows/single_reflection_flight/run.ps1 `
-  -Request (Join-Path $case 'request_functional.json') `
+  -Request $replayRequest `
   -ExecutionBudgetPath (Join-Path $case 'execution_budget.json')
 ```
+
+该同目录作者副本仅为重现历史冻结定义的回放判据，不覆盖原request／run／budget；已有同名副本须先核实，命令不会覆盖。
+普通新request仍默认false，不额外Fly。
 
 该请求预先引用`functional_validation.json`，冻结N100功能问题、事件顺序、母群与时钟容差及三态判据，
 并显式引用093627运行已完成发布的前端与下游场；该父run后续IOB审计失败，不改变已完成场的独立来源事实。

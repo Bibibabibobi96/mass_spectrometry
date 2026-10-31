@@ -110,6 +110,26 @@ held-OFF由原科学mode派生场依赖，仅省略恒0脉冲响应；完整carr
 |---|---|---|
 | [110745单实例](../../../artifacts/projects/instrument_assembly/runs/20261025_110745__sim__simion__single-reflection-flight/summary.json) | 六工作场、100终态、默认回放差异为空；0检测，终态均non_detector_splat_instance_5 | 实例编号不证明真实碰撞实体，未到反射器不代表整机物理性能通过 |
 | [134240双实例](../../../artifacts/projects/instrument_assembly/runs/20261026_134240__sim__simion__single-reflection-n2-topology-resume-n100/summary.json) | 100终态、默认回放passed且differences为空；0检测，均non_detector_splat_instance_3；场全部复用且无Refine | 只关闭声明held-OFF功能、母群和回放一致性，不授予分辨率或任意实例数资格 |
+| [111659出生源连续功能恢复](../../../artifacts/projects/instrument_assembly/runs/20261030_111659__sim__simion__continuous-assembly-functional-recovery/summary.json) | 100原ID／唯一出生／唯一终态，36检测、64 instance3 splat、unknown0；35个ID满足预先声明的完整六事件顺序；默认回放differences=[] | 普通N100功能证据，不授予分辨率、效率性能、有限栅耦合或Formal资格 |
+
+本例真实源为多极杆入口的100粒子`recorded_birth`，声明出生至探测观察／实际终态范围内无重新释放。
+实际场为共同MP／OA场及理想接地栅屏蔽的下游分域；2×2×0.1 mm粗网格不证明有限边缘场精度。
+功能问题与三态判据由[冻结定义](../../../artifacts/projects/instrument_assembly/runs/20261030_111659__sim__simion__continuous-assembly-functional-recovery/inputs/functional_validation.json)预先声明。
+105223已完成14批baseline Fly，但后续证据运输失败；111659沿同一正常入口、新身份及显式父manifest复用它们，
+实际新执行14批完整母群默认回放，Refine0、新IOB0。父105223与场producer093627仍保留failed终态。
+[完整母群分析](../../../artifacts/projects/instrument_assembly/runs/20261030_111659__sim__simion__continuous-assembly-functional-recovery/results/single_reflection/baseline/collection.json)
+保留100出生／100原生终态与1097事件；36检测中35个ID具备完整六事件序列，不称全部检测均具备该序列。
+[回放比较](../../../artifacts/projects/instrument_assembly/runs/20261030_111659__sim__simion__continuous-assembly-functional-recovery/results/single_reflection/default_replay/replay_comparison.json)为passed且differences=[]。
+正常命令外层墙钟274.430秒，完成分析、终态与容量封存；summary的268.752秒仅为收尾前区间。
+这些证据满足该预先声明的普通N100功能问题，不授予效率、峰形／分辨率、有限栅耦合或Formal资格。
+
+111659保留当时默认回放的实际事实。当前政策默认false；若新运行继续采用上述冻结定义中“saved-default replay complete”的判据，
+须在新作者request显式设置`verify_saved_workbench_replay: true`，不改写历史request或run。普通baseline执行与回放资格分别报告。
+[121606完整复用](../../../artifacts/projects/instrument_assembly/runs/20261030_121606__sim__simion__continuous-assembly-all-reused/summary.json)
+复用28批baseline／回放，0新Fly，`continuous_segment_executed=false`；它证明复用与重分析，不是又一次新连续Fly。
+[192206仅baseline复用](../../../artifacts/projects/instrument_assembly/runs/20261030_192206__sim__simion__historical-controls-reuse/summary.json)
+沿正常入口复用14批且0新Fly，未请求回放记`not_requested`，不因缺少未请求回放而重飞。
+
 
 N2三批IOB均通过94点核对；原e9／e44世界点查询仍为非电极，但原节点／实例正确且各有4个相邻完整金属cell。
 这是区分离散节点、连续金属和世界点占据的验收，不挪点、不改厚度或期望ID制造通过；零厚理想栅不要求实体体积。
