@@ -753,6 +753,131 @@ def execute_prepared_run(*args):
         self.assertIn(cad_source, cad)
 
 
+    def _entry_preview_inputs(self, root):
+        source = root / "source"
+        source.mkdir()
+        self.candidate_run_inputs(source)
+        artifact = root / "artifacts"
+        project = artifact / "projects" / PROJECT_ROOT.name
+        registration = self.registered_template_run(project)
+        runtime = root / "runtime.json"
+        runtime.write_text(json.dumps({"role": "oa_tof_candidate_runtime",
+            "simion_template_run_id": registration.name}), encoding="utf-8")
+        return source, artifact, project, runtime
+
+    def test_normal_cli_executes_the_same_completed_preview_without_repreparing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, artifact, project, runtime = self._entry_preview_inputs(root)
+            argv = ["run_candidate", "--request", str(source / "design_request.json"),
+                "--run-id", "20261031_201101__test__cross__preview-execute",
+                "--particle-source-seed", "20260720"]
+            with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_ARTIFACT_ROOT": str(artifact)}), \
+                    mock.patch.object(candidate_entry, "RUNTIME_CONFIG", runtime), \
+                    mock.patch.object(sys, "argv", [*argv, "--dry-run"]), \
+                    mock.patch.object(candidate_entry, "run_candidate_workflow") as execute:
+                candidate_entry.main()
+                execute.assert_not_called()
+            paths = list((project / "scratch").glob("*__cross__candidate-plan-*/candidate_workflow_plan.json"))
+            self.assertEqual(len(paths), 1)
+            plan_path = paths[0]
+            plan = load_json(plan_path)
+            original = {p: p.read_bytes() for p in plan_path.parent.rglob("*") if p.is_file()}
+            callbacks = []
+            def execute(plan_argument, executable, **kwargs):
+                self.assertEqual(plan_argument, plan_path)
+                self.assertEqual(executable, str(Path(sys.executable).resolve()))
+                self.assertFalse(Path(plan["run_root"]).exists())
+                callbacks.append(plan_argument)
+                return Path(plan["run_root"]), {"candidate_decision": "candidate_rejected"}
+            with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_ARTIFACT_ROOT": str(artifact)}), \
+                    mock.patch.object(sys, "argv", [*argv, "--simion-exe", sys.executable]), \
+                    mock.patch.object(candidate_entry, "write_candidate", side_effect=AssertionError("must not recompile")), \
+                    mock.patch.object(candidate_entry, "prepare_candidate_run", side_effect=AssertionError("must not reprepare")), \
+                    mock.patch.object(candidate_entry, "validate_candidate_runtime", side_effect=AssertionError("must not reread live defaults")), \
+                    mock.patch.object(candidate_entry, "run_candidate_workflow", side_effect=execute):
+                candidate_entry.main()
+            self.assertEqual(callbacks, [plan_path])
+            self.assertEqual({p: p.read_bytes() for p in original}, original)
+            self.assertFalse(Path(plan["run_root"]).exists())
+
+    def test_completed_preview_rejects_changed_explicit_authorities_without_writing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, _, project, runtime = self._entry_preview_inputs(root)
+            numerics = root / "explicit_numerics.json"
+            numerics.write_bytes((PROJECT_ROOT / "config/formal_solver_numerics.json").read_bytes())
+            campaign = root / "campaign.json"
+            campaign.write_text('{"campaign_id":"fixture_campaign"}', encoding="utf-8")
+            selection = root / "selection.json"
+            run_id = "20261031_201102__test__cross__preview-authority"
+            request = source / "design_request.json"
+            proposal = source / "candidate_proposal.json"
+            selection.write_text(json.dumps({"role": "oatof_campaign_selection", "campaign_id": "fixture_campaign",
+                "campaign_run_id": "20261031_201100__test__cross__campaign", "experiment_id": "fixture",
+                "candidate_run_id": run_id, "particle_source_seed": 20260720,
+                "campaign_sha256": sha256(campaign), "request": {"path": str(request), "sha256": sha256(request)},
+                "proposal": {"path": str(proposal), "sha256": sha256(proposal)}}), encoding="utf-8")
+            arguments = dict(particle_source_seed=20260720, artifact_project_root=project,
+                solver_numerics_contract=numerics, campaign_table=campaign, campaign_selection=selection)
+            with mock.patch.object(candidate_entry, "RUNTIME_CONFIG", runtime):
+                plan_path = candidate_entry.prepare_execution(request, run_id, **arguments)
+            before = {p: p.read_bytes() for p in plan_path.parent.rglob("*") if p.is_file()}
+            originals = {p: p.read_bytes() for p in (request, proposal, numerics, campaign, selection)}
+            for case in ("seed", "numerics", "omitted_numerics", "campaign", "omitted_campaign", "request", "proposal"):
+                changed = dict(arguments)
+                if case == "seed": changed["particle_source_seed"] += 1
+                elif case == "omitted_numerics": changed["solver_numerics_contract"] = None
+                elif case == "omitted_campaign": changed.update(campaign_table=None, campaign_selection=None)
+                elif case in {"numerics", "campaign", "proposal"}:
+                    path = {"numerics": numerics, "campaign": campaign, "proposal": proposal}[case]
+                    path.write_bytes(originals[path] + b" ")
+                else:
+                    request.write_bytes(originals[request] + b" ")
+                    document = load_json(proposal)
+                    document["request"]["sha256"] = sha256(request)
+                    proposal.write_text(json.dumps(document), encoding="utf-8")
+                try:
+                    with self.subTest(case=case), self.assertRaisesRegex(ValueError, "preview.*new run identity"):
+                        candidate_entry.prepare_execution(request, run_id, **changed)
+                finally:
+                    for path, data in originals.items(): path.write_bytes(data)
+                self.assertEqual({p: p.read_bytes() for p in before}, before)
+                self.assertFalse(Path(load_json(plan_path)["run_root"]).exists())
+
+    def test_preview_preserves_frozen_defaults_and_rejects_incomplete_or_existing_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, _, project, runtime = self._entry_preview_inputs(root)
+            request = source / "design_request.json"
+            run_id = "20261031_201103__test__cross__preview-default"
+            with mock.patch.object(candidate_entry, "RUNTIME_CONFIG", runtime):
+                plan_path = candidate_entry.prepare_execution(request, run_id, particle_source_seed=20260720,
+                    artifact_project_root=project)
+            before = plan_path.read_bytes()
+            runtime.write_text("unreadable new live default", encoding="utf-8")
+            with mock.patch.object(candidate_entry, "validate_candidate_runtime", side_effect=AssertionError("live default reinterpreted")):
+                self.assertEqual(candidate_entry.prepare_execution(request, run_id, particle_source_seed=20260720,
+                    artifact_project_root=project), plan_path)
+            run = Path(load_json(plan_path)["run_root"])
+            run.mkdir()
+            marker = run / "existing.txt"
+            marker.write_text("existing target must remain unchanged", encoding="utf-8")
+            with self.assertRaisesRegex(FileExistsError, "candidate run already exists"):
+                candidate_entry.prepare_execution(request, run_id, particle_source_seed=20260720, artifact_project_root=project)
+            self.assertEqual(marker.read_text(), "existing target must remain unchanged")
+            self.assertEqual(plan_path.read_bytes(), before)
+            partial = project / "scratch" / ("20261031_201104__cross__candidate-entry-" + sha256(request)[:8].lower())
+            contracts = partial / "candidate_contracts"
+            contracts.mkdir(parents=True)
+            sentinel = contracts / "partial.json"
+            sentinel.write_text("incomplete", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "incomplete.*new run identity"):
+                candidate_entry.prepare_execution(request, "20261031_201104__test__cross__preview-incomplete",
+                    particle_source_seed=20260720, artifact_project_root=project)
+            self.assertEqual(sentinel.read_text(), "incomplete")
+            self.assertEqual(plan_path.read_bytes(), before)
+
     def test_single_candidate_entry_compiles_one_fixed_plan_without_commercial_tools(self):
         with tempfile.TemporaryDirectory() as root:
             root_path = Path(root)

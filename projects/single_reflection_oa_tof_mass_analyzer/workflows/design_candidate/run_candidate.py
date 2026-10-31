@@ -16,6 +16,7 @@ from common.contracts.machine_contracts import load_json, sha256
 from common.paths.workspace_paths import resolve_workspace_paths
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import write_candidate
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import prepare_candidate_run
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import verify_candidate_source_closure
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow import (
     CandidateWorkflowError,
     CandidateWorkflowInterrupted,
@@ -102,6 +103,108 @@ def _runtime_coverage(request_path: Path, diff_path: Path) -> None:
         raise ValueError("candidate runtime only accepts explicitly proposed variable changes")
 
 
+def _existing_preview(artifact_root: Path, run_id: str, stamp: str) -> Path | None:
+    """Locate only this owner's same-stamp preparation, never a payload/history."""
+    scratch = artifact_root / "scratch"
+    matches = []
+    for folder in sorted(scratch.glob(f"{stamp}__cross__candidate-plan-*")):
+        if folder.resolve().parent != scratch.resolve() or not folder.is_dir():
+            raise ValueError("Candidate preparation escapes its owner scratch root; use a new run identity")
+        path = folder / "candidate_workflow_plan.json"
+        if not path.is_file():
+            raise ValueError(f"Candidate preparation is incomplete: {folder}; use a new run identity")
+        document = load_json(path)
+        if document.get("run_id") == run_id:
+            matches.append(path)
+    if len(matches) > 1:
+        raise ValueError("Candidate run has ambiguous prepared plans; use a new run identity")
+    return matches[0] if matches else None
+
+
+def _verify_preview_inputs(plan: dict[str, Any], plan_path: Path) -> dict[str, Path]:
+    """Reuse the original input records and closure, not current source defaults."""
+    inputs = plan["candidate_inputs"]
+    required = {"design_request.json", "candidate_proposal.json", "candidate_diff.json",
+                "candidate_baseline.json", "candidate_resolved_geometry.json", "candidate_solver_numerics.json",
+                "candidate_runtime.json", "candidate_analysis_contract.json", "candidate_simion_resolved_lua",
+                "candidate_simion_program", "candidate_simion_fly2"}
+    if not isinstance(inputs, dict) or not required <= inputs.keys():
+        raise ValueError("Candidate preparation lacks required frozen inputs; use a new run identity")
+    resolved = {}
+    for name, record in inputs.items():
+        # Prepared plans declare path/SHA, not manifest fileRecords with bytes.
+        # Keep the existing admission check; do not fabricate an expected size.
+        path = Path(record["path"]).resolve(strict=True)
+        if not path.is_relative_to(plan_path.parent / "inputs") or sha256(path) != str(record["sha256"]).upper():
+            raise ValueError(f"Prepared Candidate input changed: {name}; use a new run identity")
+        resolved[name] = path
+    template = load_json(plan_path.parent / "run_config.template.json")
+    if (template.get("run_id") != plan["run_id"] or template.get("role") != "oa_tof_candidate_run_config"
+            or template.get("project") != PROJECT_ROOT.name or template.get("mode") != "design_candidate"
+            or template.get("run_instance") != plan["run_instance"]
+            or template.get("inputs") != {name: record["path"] for name, record in inputs.items()}
+            or template.get("input_sha256") != {name: record["sha256"] for name, record in inputs.items()}
+            or template.get("campaign_binding") != plan.get("campaign_binding")):
+        raise ValueError("Candidate preparation template disagrees with its frozen plan; use a new run identity")
+    closure = plan["execution_source_closure"]
+    if not Path(closure["code_root"]).resolve().is_relative_to(plan_path.parent / "inputs"):
+        raise ValueError("Candidate source closure escapes its prepared inputs")
+    verify_candidate_source_closure(closure)
+    return resolved
+
+
+def _consume_preview(
+    plan_path: Path, request: Path, proposal: Path, run_id: str, artifact_root: Path, *,
+    particle_source_seed: int, solver_numerics_contract: Path | None,
+    campaign_table: Path | None, campaign_selection: Path | None,
+) -> Path:
+    """Validate the supplied invocation against its completed frozen preview."""
+    plan = load_json(plan_path)
+    if (plan.get("schema_version") != 1 or plan.get("role") != "oa_tof_candidate_run_plan"
+            or plan.get("status") != "EXECUTION_READY" or plan.get("run_id") != run_id
+            or Path(plan.get("planning_root", "")).resolve() != plan_path.parent.resolve()
+            or Path(plan.get("run_root", "")).resolve() != artifact_root / "runs" / run_id
+            or [stage["stage_id"] for stage in plan.get("stages", [])] != [
+                "static_inputs", "comsol_candidate", "simion_candidate", "cad_candidate", "structural_acceptance"]):
+        raise ValueError("Candidate preparation is incomplete or has a different identity; use a new run identity")
+    entry = plan.get("entry_request", {})
+    request_sha256 = sha256(request)
+    proposal_sha256 = sha256(proposal)
+    if Path(entry.get("path", "")).resolve() != request or entry.get("sha256", "").upper() != request_sha256:
+        raise ValueError("Candidate preview request differs from this invocation; use a new run identity")
+    if (plan.get("run_instance", {}).get("particle_source_seed") != particle_source_seed
+            or plan["stages"][0].get("arguments", {}).get("Seed") != particle_source_seed):
+        raise ValueError("Candidate preview particle source seed differs; use a new run identity")
+    frozen = _verify_preview_inputs(plan, plan_path)
+    if request_sha256 != plan["candidate_inputs"]["design_request.json"]["sha256"].upper():
+        raise ValueError("Candidate preview frozen request differs; use a new run identity")
+    diff = load_json(frozen["candidate_diff.json"])
+    authority = diff["provenance"]["proposal"]
+    if (Path(authority["path"]).resolve() != proposal or authority["sha256"].upper() != proposal_sha256
+            or proposal_sha256 != plan["candidate_inputs"]["candidate_proposal.json"]["sha256"].upper()):
+        raise ValueError("Candidate preview proposal differs; use a new run identity")
+    selected = diff["provenance"]["solver_numerics"]
+    if selected["sha256"].upper() != plan["candidate_inputs"]["candidate_solver_numerics.json"]["sha256"].upper():
+        raise ValueError("Candidate preview numerics provenance is inconsistent")
+    if solver_numerics_contract is not None:
+        numerics = solver_numerics_contract.resolve(strict=True)
+        if Path(selected["path"]).resolve() != numerics or selected["sha256"].upper() != sha256(numerics):
+            raise ValueError("Candidate preview explicit solver numerics differ; use a new run identity")
+    else:
+        original_default = diff["provenance"]["formal_solver_numerics"]
+        if (Path(selected["path"]).resolve() != Path(original_default["path"]).resolve()
+                or selected["sha256"].upper() != original_default["sha256"].upper()):
+            raise ValueError("Candidate preview selected explicit numerics; repeat that original argument or use a new run identity")
+    has_campaign = plan.get("campaign_binding") is not None
+    if has_campaign != (campaign_table is not None and campaign_selection is not None):
+        raise ValueError("Candidate preview campaign selection differs; use a new run identity")
+    if has_campaign:
+        for name, source in (("experiment_campaign", campaign_table), ("campaign_selection", campaign_selection)):
+            if source is None or sha256(source.resolve(strict=True)) != plan["candidate_inputs"][name]["sha256"].upper():
+                raise ValueError(f"Candidate preview {name} differs; use a new run identity")
+    return plan_path
+
+
 def prepare_execution(
     request_path: Path,
     run_id: str,
@@ -119,14 +222,29 @@ def prepare_execution(
         artifact_project_root
         or Path(resolve_workspace_paths(REPO_ROOT)["artifact_root"]) / "projects" / PROJECT_ROOT.name
     ).resolve()
+    run_root = artifact_root / "runs" / run_id
+    if run_root.exists():
+        raise FileExistsError(f"candidate run already exists; overwrite is forbidden: {run_root}")
+    if (campaign_table is None) != (campaign_selection is None):
+        raise ValueError("campaign table and selection must be supplied together")
     request = request_path.resolve(strict=True)
     proposal = _proposal_for_request(request)
+    try:
+        preview = _existing_preview(artifact_root, run_id, str(identity["stamp"]))
+        if preview is not None:
+            return _consume_preview(preview, request, proposal, run_id, artifact_root,
+                particle_source_seed=particle_source_seed, solver_numerics_contract=solver_numerics_contract,
+                campaign_table=campaign_table, campaign_selection=campaign_selection)
+    except (OSError, KeyError, TypeError, ValueError) as error:
+        raise ValueError(f"Candidate preview cannot be consumed: {error}; use a new run identity for new preparation") from error
     preparation = (
         artifact_root
         / "scratch"
         / f"{identity['stamp']}__cross__candidate-entry-{sha256(request)[:8].lower()}"
     )
     contracts = preparation / "candidate_contracts"
+    if preparation.exists():
+        raise ValueError(f"Candidate entry preparation is incomplete: {preparation}; use a new run identity")
     numeric_arguments = ({"solver_numerics_contract": solver_numerics_contract}
                          if solver_numerics_contract is not None else {})
     baseline, resolved, diff = write_candidate(proposal, contracts, **numeric_arguments)

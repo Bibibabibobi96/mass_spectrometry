@@ -641,6 +641,8 @@ Root 验证显式数值编译主题：正式 common/verify.ps1 对完整 test_ca
 
 执行时去掉 `--dry-run` 并按原入口提供 `--simion-exe`。CLI、runtime 模板检查和纯 prepare 默认运行根统一消费 `common.paths.resolve_workspace_paths`，包括既有 `MASS_SPECTROMETRY_ARTIFACT_ROOT`；显式传入的项目根优先，已冻结 run/Resume 不按今日默认值改根。源码快照位置不再反向决定新输出根；缺登记模板仍明确拒绝，不跨根搜索同名资产。`--postprocess-from` 和 `--resume-finalization` 拒绝新的数值或执行选择，不默默忽略它们。
 
+正常入口的完整 `--dry-run` 预览可用同一 `--run-id` 去掉该开关后执行：入口只在本owner、同runstamp的准备目录中选择唯一完成计划，核对原request／proposal、seed、显式数值与campaign及原冻结记录／源码闭包，不重编或覆盖准备目录。执行消费已冻结默认定义，不重新选择今日baseline、numerics或runtime；原来明确选择的非默认数值须重复提供同一参数。来源变化、准备不完整／不唯一或目标run已存在均早拒，并提示新身份准备；不会自动清理旧计划或启动求解器来补齐。
+
 独立冻结软件回归经公共 GATE 2 CPU／2 GiB：正常 CLI 真实编译、非默认产物根、显式数值字节与 authority 对齐，以及两种分析／收尾选择冲突拒绝，共2项通过2.779秒；补实际 reproduction=false／来源绑定断言后仅受影响正常入口方法复验2.603秒。均未启动商业程序、求场、Fly 或发布正式资产，dry-run成功仅表示该准备范围完成。
 
 
