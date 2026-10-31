@@ -359,13 +359,68 @@ ConvertTo-Json -InputObject $result -Depth 12 -Compress
                 self.assertTrue(all(cases[name]["selected"].values()))
         self.assertFalse(any(cases["docs"]["selected"].values()))
 
+    def test_common_mesh_helpers_select_real_consumers_and_unknown_stays_conservative(self) -> None:
+        script = r"""
+. __SUPPORT__
+$routes=@(Read-GateCatalog -RepoRoot $PWD.Path)
+$roots=@($routes|Where-Object{$null-ne$_.PSObject.Properties['test_selection']}|ForEach-Object{@($_.test_selection.roots)})
+$configure='common/comsol/configure_comsol_mesh.m';$size='common/comsol/add_comsol_size_feature.m'
+$cases=@(@{name='configure';paths=@($configure)},@{name='size';paths=@($size)},
+ @{name='typed';paths=@('common/comsol/read_comsol_mesh_size_controls.m')},
+ @{name='matlab_test';paths=@('common/comsol/tests/ComsolMeshSizeTest.m')},
+ @{name='recorder';paths=@('common/comsol/tests/test_support/MeshSizeRecorder.m')},
+ @{name='unknown';paths=@('common/comsol/unknown_new_helper.m')},
+ @{name='renamed';paths=@($configure,'common/comsol/unknown_new_helper.m')})
+$results=@(foreach($case in $cases){
+ $selected=@{};foreach($name in @('rf_multipole_generated_publications','rf_multipole_domain_tests',
+ 'rf_multipole_quadrupole_static','rf_multipole_hexapole_static','rf_multipole_octupole_static',
+ 'single_reflection_oa_tof_mass_analyzer_static','transverse_helical_filament_wehnelt_electron_gun_static','instrument_assembly_integration')){
+  $route=$routes|Where-Object stage -eq $name;$selected[$name]=[bool](Get-ChangedRouteReason -Route $route -Paths $case.paths)
+ }
+ $quad=$routes|Where-Object stage -eq 'rf_multipole_quadrupole_static'
+ $paths=@(Get-GateOwnerChangedPaths -Route $quad -ChangedPaths $case.paths)
+ $tests=Get-GateChangedTests -Route $quad -ChangedPaths $paths -KnownTestRoots $roots -RepoRoot $PWD.Path
+ @{name=$case.name;selected=$selected;modules=if($null-ne$tests){@($tests.Modules)}else{@()}}
+})
+ConvertTo-Json -InputObject $results -Depth 12 -Compress
+""".replace("__SUPPORT__", powershell_literal(REPO_ROOT / "common/gate_catalog_support.ps1"))
+        outcome = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,
+                                 capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)
+        cases = {item["name"]: item for item in json.loads(outcome.stdout)}
+        expected = sorted(f"{RF}/tests/analysis/{name}.py" for name in (
+            "test_frozen_matlab_closure", "test_comsol_mesh_report"))
+        for name in ("configure", "size", "typed", "matlab_test", "recorder"):
+            with self.subTest(case=name):
+                selected = cases[name]["selected"]
+                self.assertTrue(selected["rf_multipole_quadrupole_static"])
+                for nonconsumer in ("rf_multipole_domain_tests", "rf_multipole_hexapole_static",
+                                    "rf_multipole_octupole_static", "transverse_helical_filament_wehnelt_electron_gun_static"):
+                    self.assertFalse(selected[nonconsumer], (name, nonconsumer))
+                self.assertEqual(selected["single_reflection_oa_tof_mass_analyzer_static"], name == "size")
+                self.assertEqual(selected["instrument_assembly_integration"], name == "size")
+                self.assertEqual(sorted(cases[name]["modules"]), expected)
+        for name in ("unknown", "renamed"):
+            with self.subTest(case=name):
+                selected = cases[name]["selected"]
+                self.assertTrue(all(value for key, value in selected.items() if key != "instrument_assembly_integration"))
+
     def test_mapped_numerics_modules_keep_real_dispatch_failure_propagation(self) -> None:
+        self._assert_mapped_modules_keep_real_dispatch_failure_propagation(
+            ["test_comsol_workflow_architecture_contract", "test_comsol_mass_filter_contract"],
+            "projects/rf_multipole_ion_optics/runtime/comsol_solver_numerics.ps1")
+
+    def test_mesh_modules_keep_real_dispatch_failure_propagation(self) -> None:
+        self._assert_mapped_modules_keep_real_dispatch_failure_propagation(
+            ["test_frozen_matlab_closure", "test_comsol_mesh_report"],
+            "common/comsol/configure_comsol_mesh.m")
+
+    def _assert_mapped_modules_keep_real_dispatch_failure_propagation(self, names, changed_path) -> None:
         with tempfile.TemporaryDirectory(prefix="numerics_route_dispatch_") as directory:
             root = Path(directory)
             common = root / "common"
             common.mkdir()
             shutil.copyfile(REPO_ROOT / "common/gate_unittest.py", common / "gate_unittest.py")
-            names = ["test_comsol_workflow_architecture_contract", "test_comsol_mass_filter_contract"]
             tests = root / RF / "tests/analysis"
             tests.mkdir(parents=True)
             for name in names:
@@ -377,7 +432,7 @@ ConvertTo-Json -InputObject $result -Depth 12 -Compress
 . __SUPPORT__
 $route=((Get-Content __CATALOG__ -Raw|ConvertFrom-Json).routes|Where-Object stage -eq 'rf_multipole_quadrupole_static')
 $selection=Get-GateChangedTests -Route $route -RepoRoot $PWD.Path -KnownTestRoots @($route.test_selection.roots) `
- -ChangedPaths @('projects/rf_multipole_ion_optics/runtime/comsol_solver_numerics.ps1')
+ -ChangedPaths @(__CHANGED_PATH__)
 $modules=@($selection.Modules|ForEach-Object{$_.Substring(0,$_.Length-3).Replace('/','.')})
 $command=ConvertTo-GateExecutionCommand -Command ([pscustomobject]@{runner='python';arguments=@('-m','unittest')+$modules})
 Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYTHON__
@@ -385,6 +440,7 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
             script = script.replace("__SUPPORT__", powershell_literal(REPO_ROOT / "common/gate_catalog_support.ps1"))
             script = script.replace("__CATALOG__", powershell_literal(REPO_ROOT / "common/gate_catalog.json"))
             script = script.replace("__PYTHON__", powershell_literal(sys.executable))
+            script = script.replace("__CHANGED_PATH__", powershell_literal(changed_path))
             for red in (False, True):
                 environment = os.environ.copy()
                 environment.pop("PYTHONPATH", None)
@@ -396,7 +452,7 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
                 with self.subTest(red=red):
                     output = outcome.stdout + outcome.stderr
                     self.assertEqual(outcome.returncode != 0, red, output)
-                    self.assertIn("Ran 2 tests", output)
+                    self.assertIn(f"Ran {len(names)} tests", output)
                     self.assertIn("TEST_DURATION_SECONDS=", output)
                     if red:
                         self.assertIn("TEST_FAILURE_IMMEDIATE=", output)

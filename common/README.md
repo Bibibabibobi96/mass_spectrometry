@@ -43,6 +43,15 @@ Lua／MATLAB／PowerShell的引用亦不会被当作无用；未解析的嵌套�
 
 容量压力回归保留真实解释器与路径解析，仅在测试容量命令边界注入故障；使用私有主机账本和受控观测，不重复真实主机故障矩阵。收尾恢复分别核对入场预算收据与最终零承诺及释放，不能将已更新的 lease 当作入场快照。对应两项旧夹具失败保留于 CI 41142387491（373.131 秒）和 41142659947（302.116 秒）；定向修复通过不代替新提交的整轮 CI。
 
+公共 COMSOL mesh／Size helper 家族的 Changed 路由按真实调用链选择：RF 两个 solver 共用同一机制，
+其准备／冻结接线只运行 mesh-report 与 frozen-MATLAB-closure 两模块；SFI 仍消费 Size helper，
+integration 继续由既有冻结库存选择。typed reader 的当前 SFI legacy 调用不进入显式 hmin 读回分支。
+既有公共 MATLAB `ComsolMeshSizeTest` 的16项行为证据继续负责默认／显式 Size 读写；相关 helper 变化
+仍须相称工具验收，不新设每次运行 smoke。数值合同变化的原完整映射、Owner／Repository及未知新 helper 的保守范围不变。
+在6ae3507b软件树重放同两个 helper 改动，规划15→10阶段、1756→1225个 unittest case（只加载计数，未执行全套）；
+无同轮重复 case，节省来自去掉非消费者宽路由。重放688的全部36路径仅16→15阶段、2033→1986 case，
+其他实际RF生产变化仍触发宽回归；该规划差异不证明历史1333.416秒 CI 或宽范围反馈预算已达标。
+
 四极 COMSOL 数值编译器的 Changed 依赖按实际消费者选择 interface 与 mass-filter 合同测试；其他 runtime 和未知重命名仍保守扩大。普通文档不单独触发声明了测试选择的 owner。2026-10-31 对应提交修复前 CI 实际运行 1109 项、公开门禁墙钟 803.073 秒并失败；精确四路径规划收窄为两个消费者模块，尚不代表新 CI 已通过或性能预算已达标。
 
 `common/gate_catalog.json`是改动路径路由、依赖等级、阶段前置关系和Repository成员身份的唯一机器目录；项目或
