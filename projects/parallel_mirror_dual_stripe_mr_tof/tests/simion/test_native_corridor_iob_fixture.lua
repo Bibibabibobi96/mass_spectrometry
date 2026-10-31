@@ -11,6 +11,7 @@ if mode == 'prepare' then
     local pa = assert(simion.pas:open())
     pa:size(item[2], 11, 11)
     pa.dx_mm, pa.dy_mm, pa.dz_mm = 1, 1, 1
+    if item[1]=='accelerator.pa' then pa.symmetry='3dplanar[x]' end
     pa.potential_type = 'electric'
     pa.refined, pa.refinable = true, false
     pa:save(path(item[1])); pa:close()

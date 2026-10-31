@@ -101,6 +101,51 @@ class ScientificEventIoTests(unittest.TestCase):
             self.assertEqual([float(row['t_us']) for row in rows],[0,1.25,1.25,1.25])
             self.assertEqual(float(rows[0]['x_mm']),0.12345678901234566)
 
+    def test_stopping_callback_does_not_record_an_unaccepted_trial_step(self):
+        import subprocess
+        lua = Path('C:/Program Files/SIMION-2020/lua.exe')
+        if not lua.is_file():
+            self.skipTest('Lua runtime unavailable')
+        source = (ROOT/'projects/parallel_mirror_dual_stripe_mr_tof/simion/mrtof_candidate.lua').read_text(encoding='utf-8')
+        callbacks = source[source.index('function segment.other_actions()'):source.index('function segment.terminate_run()')]
+        setup = r"""
+segment={}
+local events,samples={},{}
+local accelerator_pulse_mode='initial_exit_triggered_single_center'
+local accelerator_pulse_complete,accelerator_safe_exit_observed={},{}
+local selected_instances={[1]=2}
+local solver_birth_times={}
+local full_path_timeout_us=0.02
+local splat_codes,splat_event_emitted,turns,crossings,detector_native_contacts={},{},{},{},{}
+local function accelerator_instance_number() return 3 end
+local function maximum_instance_number() return 4 end
+local function instrument_time_us() return ion_time_of_flight end
+local function event_id() return ion_number end
+local function scientific_particle_id(value) return tostring(value) end
+local function record_scientific(kind,row) row.kind=kind;events[#events+1]=row end
+local function record_trajectory_sample(phase) samples[#samples+1]={phase=phase,t_us=ion_time_of_flight} end
+ion_number=1;ion_instance=2;ion_splat=0;ion_volts=0
+ion_time_of_flight=0.02;ion_px_mm=5.02;ion_py_mm=5;ion_pz_mm=5
+ion_vx_mm=1;ion_vy_mm=0;ion_vz_mm=0
+"""
+        calls = r"""
+segment.other_actions()
+assert(ion_splat==2 and splat_codes[1]==2, 'physical timeout decision changed')
+assert(#events==1 and events[1].kind=='splat' and events[1].t_us==0.02)
+assert(#samples==0, 'unaccepted stopping trial step was recorded')
+-- Native2020 observation: terminate reports the preceding accepted state.
+ion_time_of_flight=0.018;ion_px_mm=5.018
+segment.terminate()
+assert(#samples==1 and samples[1].phase=='terminal' and samples[1].t_us==0.018)
+assert(#events==2 and events[2].kind=='terminal' and events[2].t_us==0.018 and events[2].splat=='2')
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory)/'termination.lua'
+            script.write_text(setup+callbacks+calls, encoding='utf-8')
+            result = subprocess.run([str(lua),str(script)], cwd=script.parent, capture_output=True,
+                                    text=True, encoding='utf-8', timeout=30)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
     def test_structured_merger_preserves_sparse_ids(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

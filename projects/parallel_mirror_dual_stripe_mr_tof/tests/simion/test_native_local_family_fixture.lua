@@ -8,12 +8,18 @@ local function exists(name)
   if h then h:close(); return true end
   return false
 end
+-- Optional physical pitch only for the same explicit tiny native API fixture.
+local pitch=arg[2] and assert(tonumber(arg[2])) or 1
+assert(pitch>0 and pitch<=1, 'tiny fixture pitch must be in (0,1]')
+local mirror=arg[3]
+assert(mirror==nil or mirror=='x', 'tiny fixture mirror must be explicit x or absent')
 local function new_pa()
   local pa = assert(simion.pas:open())
   pa:size(11, 11, 11)
   -- SIMION's default Cartesian symmetry is the required full 3-D mode; the
   -- string "none" is not a valid 2020 Lua symmetry value.
-  pa.dx_mm, pa.dy_mm, pa.dz_mm = 1, 1, 1
+  pa.dx_mm, pa.dy_mm, pa.dz_mm = pitch, pitch, pitch
+  if mirror then pa.symmetry='3dplanar[x]' end
   pa.potential_type = 'electric'
   return pa
 end

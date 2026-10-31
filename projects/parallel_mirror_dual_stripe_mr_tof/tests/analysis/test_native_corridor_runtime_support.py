@@ -236,6 +236,38 @@ try{
   foreach($id in 0..8){
     if((Get-FileHash -LiteralPath (Join-Path $Root ('fixture.pa'+$id)) -Algorithm SHA256).Hash-ne$before[$id]){throw 'Guarded member changed'}
   }
+  # Reuse this same explicit native test owner and tiny family, not a second runner.
+  $accelerator=Join-Path $Root 'tiny_accelerator';New-Item -ItemType Directory -Path $accelerator|Out-Null
+  & $Simion --nogui --noprompt lua (Join-Path $project 'tests/simion/test_native_local_family_fixture.lua') $accelerator 0.2 x
+  if($LASTEXITCODE-ne0){throw 'Tiny accelerator family construction failed'}
+  $python='@@PYTHON@@'
+  $helper=Join-Path $project 'tests/test_support/native_csv_fixture.py'
+  $oldPythonPath=$env:PYTHONPATH;$env:PYTHONPATH=$Repo
+  try{
+  & $python -B $helper prepare --repo $Repo --root $Root
+  if($LASTEXITCODE-ne0){throw 'Complete current program fixture preparation failed'}
+  $currentBuild=@('--nogui','--noprompt','lua',(Join-Path $project 'simion/build_native_corridor_iob.lua'),'--',
+    (Join-Path $Repo 'common/simion/assets/iob_instance_seeds/4_instance_seed.iob'),
+    (Join-Path $Root 'global.pa'),(Join-Path $Root 'fixture.pa0'),(Join-Path $accelerator 'fixture.pa0'),(Join-Path $Root 'detector.pa'),
+    (Join-Path $Root 'current.iob'),(Join-Path $Root 'program_current.lua'),(Join-Path $Root 'source_current.fly2'),
+    (Join-Path $Root 'operating_current.lua'),(Join-Path $Root 'voltage_map_current.lua'),(Join-Path $Root 'priority.lua'),
+    '0','0','0','0','0','0','0','0','0','8','0','0')
+  & $Simion @currentBuild
+  if($LASTEXITCODE-ne0){throw 'Current complete program IOB save failed'}
+  $names=@('MRTOF_FIXTURE_EVENTS','MRTOF_FIXTURE_TRAJECTORY');$saved=@{}
+  foreach($name in $names){$saved[$name]=[Environment]::GetEnvironmentVariable($name)}
+  try{
+    foreach($phase in @('first','cold')){
+      $env:MRTOF_FIXTURE_EVENTS=Join-Path $Root ($phase+'.events.csv')
+      $env:MRTOF_FIXTURE_TRAJECTORY=Join-Path $Root ($phase+'.trajectory.csv')
+      # Each call is a new native process; cold starts from the same persisted IOB.
+      & $Simion --nogui --noprompt lua (Join-Path $project 'simion/run_iob_flight.lua') (Join-Path $Root 'current.iob') 1>(Join-Path $Root ($phase+'.stdout.log')) 2>(Join-Path $Root ($phase+'.stderr.log'))
+      if($LASTEXITCODE-ne0){throw ('Current complete program '+$phase+' Fly failed')}
+    }
+  }finally{foreach($name in $names){[Environment]::SetEnvironmentVariable($name,$saved[$name])}}
+  & $python -B $helper verify --repo $Repo --root $Root
+  if($LASTEXITCODE-ne0){throw 'Complete program CSV or cold replay mismatch'}
+  }finally{$env:PYTHONPATH=$oldPythonPath}
   Write-Output 'GUARDED_NATIVE_FAST_ADJUST=PASS'
 }finally{
   foreach($guard in $guards){$guard.Dispose()}
@@ -246,7 +278,7 @@ try{
         with TemporaryDirectory(prefix='mrtof-guard-fixture-') as temporary:
             root = Path(temporary)
             fixture = root / 'verify.ps1'
-            fixture.write_text(script, encoding='utf-8')
+            fixture.write_text(script.replace('@@PYTHON@@', sys.executable.replace("'", "''")), encoding='utf-8')
             result = subprocess.run(
                 ['C:/Program Files/PowerShell/7/pwsh.exe', '-NoProfile', '-File',
                  str(fixture), str(PROJECT.parents[1]), str(root), os.environ['SIMION_EXE']],
@@ -255,8 +287,30 @@ try{
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotRegex(result.stdout + result.stderr, r'(?m)^error,|Failed saving PA|Aborting PA updates')
         self.assertIn('GUARDED_NATIVE_FAST_ADJUST=PASS', result.stdout)
+        self.assertIn('MRTOF_TINY_COMPLETE_PROGRAM_CSV=PASS', result.stdout)
         self.assertIn('MRTOF_NATIVE_CORRIDOR_IOB_BUILD=PASS', result.stdout)
         self.assertIn('NATIVE_CORRIDOR_IOB_FIXTURE_RELOAD=PASS', result.stdout)
+
+    def test_complete_program_csv_fixture_generation_is_explicit_and_byte_exact(self):
+        import importlib.util
+        helper_path=PROJECT/'tests/test_support/native_csv_fixture.py'
+        spec=importlib.util.spec_from_file_location('native_csv_fixture',helper_path)
+        helper=importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+        with TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            (root/'priority.lua').write_text('return {}',encoding='utf-8')
+            helper.prepare(PROJECT.parents[1],root)
+            self.assertEqual((root/'program_current.lua').read_bytes(),(PROJECT/'simion/mrtof_candidate.lua').read_bytes())
+            records=json.loads((root/'current_source_records.json').read_text(encoding='utf-8'))
+            self.assertEqual(len(records),5)
+            point=(root/'operating_current.lua').read_text(encoding='utf-8')
+            self.assertIn('environment_required=true',point)
+            self.assertIn('full_path_timeout_us=0.02',point)
+            self.assertNotIn('static_field',point)
+            self.assertIn('n = 1',(root/'source_current.fly2').read_text(encoding='utf-8'))
+            with self.assertRaises(FileExistsError):
+                helper.prepare(PROJECT.parents[1],root)
 
     def test_streams_one_guarded_source_and_releases_it_before_next(self) -> None:
         bank = {

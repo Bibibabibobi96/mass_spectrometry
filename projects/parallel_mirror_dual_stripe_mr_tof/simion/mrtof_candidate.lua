@@ -620,7 +620,6 @@ function segment.initialize()
 end
 
 function segment.other_actions()
-  record_trajectory_sample('step')
   if accelerator_pulse_mode == 'fixed_global_time'
       and not accelerator_pulse_complete[ion_number]
       and instrument_time_us() >= accelerator_pulse_off_time_us then
@@ -844,6 +843,10 @@ function segment.other_actions()
     splat_event_emitted[ion_number] = true
     record_scientific('splat', {ion=scientific_particle_id(event_id()), code=string.format('%d',splat_codes[ion_number] or ion_splat), t_us=instrument_time_us(), x_mm=ion_px_mm, y_mm=ion_py_mm, z_mm=ion_pz_mm, turns=string.format('%d',turns[ion_number] or 0), central_crossings=string.format('%d',crossings[ion_number] or 0)})
   end
+  -- A stopping callback can describe an unaccepted trial step (SIMION 2020).
+  -- Terminate supplies the final state; do not sample beyond it.
+  -- Official stop scheduling: https://simion.com/info/trajectory_programming.html
+  if ion_splat == 0 then record_trajectory_sample('step') end
   previous_x[ion_number], previous_y[ion_number], previous_z[ion_number] = ion_px_mm, ion_py_mm, ion_pz_mm
   previous_vx[ion_number], previous_vy[ion_number], previous_vz[ion_number], previous_t[ion_number] = ion_vx_mm, ion_vy_mm, ion_vz_mm, instrument_time_us()
 end
