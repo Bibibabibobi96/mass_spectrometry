@@ -15,6 +15,7 @@ from statistics import fmean
 from typing import Any
 
 from common.contracts.file_identity import file_sha256
+from common.simion.scientific_event_io import iter_csv_rows
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.ion_release.release import validate_materialized_release, validate_release_spec
 from projects.orthogonal_accelerator.analysis.accelerator_time_focus import time_to_fixed_plane_s
@@ -233,15 +234,15 @@ def _ideal_two_zone_contrast(
 
 
 def _events(path: Path) -> dict[int, dict[str, dict[str, float]]]:
-    result: dict[int, dict[str, dict[str, float]]] = {}
     try:
-        with path.open(encoding="utf-8", newline="") as handle:
-            reader = csv.DictReader(handle)
-            if reader.fieldnames != list(_CSV_FIELDS):
-                raise ComponentFocusError("component-focus event CSV header is invalid")
-            rows = list(reader)
-    except OSError as error:
-        raise ComponentFocusError("component-focus event CSV is unreadable") from error
+        rows = iter_csv_rows(path, _CSV_FIELDS, exact_header=_CSV_FIELDS)
+        return _collect_events(rows)
+    except (OSError, ValueError) as error:
+        raise ComponentFocusError(f"component-focus event CSV is unreadable or invalid: {error}") from error
+
+
+def _collect_events(rows) -> dict[int, dict[str, dict[str, float]]]:
+    result: dict[int, dict[str, dict[str, float]]] = {}
     for row in rows:
         if set(row) != set(_CSV_FIELDS) or any(value is None for value in row.values()):
             raise ComponentFocusError("component-focus event CSV row is invalid")
@@ -263,8 +264,6 @@ def _events(path: Path) -> dict[int, dict[str, dict[str, float]]]:
             raise ComponentFocusError(f"duplicate component-focus {kind} event for ion {int(ion_value)}")
         bucket[kind] = fields
     return result
-
-
 
 
 def _recorded_scalar_equal(left: float, right: float) -> bool:

@@ -3,6 +3,7 @@
 -- per-ion first-action state, per-ion terminate finalization, run-end backstop.
 simion.workbench_program()
 local program_path=debug.getinfo(1,'S').source:sub(2)
+local CSV=assert(loadfile(program_path:gsub('%.lua$','.scientific_event_csv.lua')))()
 local point=assert(loadfile(program_path:gsub('%.lua$','.operating_point.lua')),'operating-point companion required')()
 local source_states=assert(loadfile(program_path:gsub('%.lua$','.source_states.lua')),'authoritative source-states companion required')()
 -- SIMION 2020 examples/test_plane/testplanelib.lua, frozen by the flight runner.
@@ -20,7 +21,7 @@ local function state_now()
 end
 local function emit_event(kind,particle,code,state)
  assert(event_file,'component focus event recorder is unavailable')
- event_file:write(string.format('%s,%d,%s,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g\n',kind,particle,code or '',state.t,state.x,state.y,state.z-point.local_exit_z_mm,state.vx,state.vy,state.vz))
+ event_file:write({kind,string.format('%d',particle),code or '',state.t,state.x,state.y,state.z-point.local_exit_z_mm,state.vx,state.vy,state.vz})
  event_file:flush()
 end
 local function emit_authoritative_source(particle)
@@ -72,8 +73,7 @@ function segment.initialize_run()
  previous_state={};terminal_written={};focus_written={};exit_written={}
  exit_plane=TestPlane(0,0,point.local_exit_z_mm,0,0,-1,function() end)
  focus_plane=TestPlane(0,0,point.focus_plane_local_z_mm,0,0,-1,function() end)
- event_file=assert(io.open('component_focus.events.csv','w'),'component focus event CSV cannot be opened')
- event_file:write('kind,ion,code,t_us,x_mm,y_mm,z_mm,vx_mm_us,vy_mm_us,vz_mm_us\n')
+ event_file=CSV.open('component_focus.events.csv',{'kind','ion','code','t_us','x_mm','y_mm','z_mm','vx_mm_us','vy_mm_us','vz_mm_us'},12)
  event_file:flush()
  local pa=simion.wb.instances[1].pa;pa:fast_adjust(point.voltages)
  sim_trajectory_quality=point.trajectory_quality

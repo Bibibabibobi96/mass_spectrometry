@@ -182,3 +182,7 @@ runtime checkpoint复用已经使用，但未发布事务的跨run重入仍未�
 
 execution profile 由纯几何与 release 解析器绑定本次结构、质量和电荷；准备状态不表示 SIMION 运行完成。
 能力查询与执行编译见[公共合同](../../../common/contracts/README.md#执行dry-run)；READY 仅描述声明条件。
+
+## 公共科学CSV接线
+
+组件焦面事件使用公共 scientific_event_csv writer／scientific_event_io 流式 reader；列顺序、12位有效数字、每ID时钟、原母群与原物理门槛保持。飞行入口冻结实际 writer companion 并纳入结果 manifest，项目继续拥有穿面、步长及终止政策。既有两档步长 N100 原生证据验证原事件政策，不能表述为本次 CSV 运输修改已新增原生 Fly 或科学资格。

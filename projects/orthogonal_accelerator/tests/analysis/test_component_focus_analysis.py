@@ -267,6 +267,45 @@ class ComponentFocusAnalysisTests(unittest.TestCase):
         with self.assertRaisesRegex(ComponentFocusError, "specification differs"):
             analyze(self.write_events(), self.receipt, self.campaign)
 
+    def test_actual_runner_freezes_public_csv_writer_companion(self) -> None:
+        import subprocess
+        repo = ROOT.parents[1]
+        def quote(path):
+            return "'" + str(path).replace("'", "''") + "'"
+        script = """$ErrorActionPreference='Stop'
+$repoRoot=REPO
+$solver=DESTINATION
+. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+$source=Join-Path $repoRoot 'projects/orthogonal_accelerator/simion/run_component_focus_flight.ps1'
+$tokens=$null;$errors=$null
+$tree=[System.Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw 'Runner parse failed'}
+$copies=@($tree.FindAll({param($node) $node -is [System.Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq 'Copy-VerifiedRunInput' -and $node.Extent.Text.Contains('common/simion/scientific_event_csv.lua')},$true))
+if($copies.Count -ne 1){throw 'Expected one actual writer freeze command'}
+Invoke-Expression $copies[0].Extent.Text | Out-Null
+""".replace('REPO', quote(repo)).replace('DESTINATION', quote(self.root))
+        completed = subprocess.run(['pwsh', '-NoProfile', '-NonInteractive', '-Command', script],
+                                   cwd=self.root, capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertEqual((self.root / 'component_focus.scientific_event_csv.lua').read_bytes(),
+                         (repo / 'common/simion/scientific_event_csv.lua').read_bytes())
+
+    def test_public_stream_reader_retains_header_contract_and_rejects_bad_rows(self) -> None:
+        from common.simion.scientific_event_io import iter_csv_rows
+        from projects.orthogonal_accelerator.analysis import component_focus_analysis as focus
+        events = self.write_events()
+        with patch.object(focus, "iter_csv_rows", wraps=iter_csv_rows) as reader:
+            result = focus._events(events)
+        reader.assert_called_once_with(events, focus._CSV_FIELDS, exact_header=focus._CSV_FIELDS)
+        self.assertEqual(set(result), set(self.states))
+        header = ",".join(focus._CSV_FIELDS)
+        for content in (header.replace("kind,ion", "ion,kind") + "\n",
+                        header + "\nsource,2\n",
+                        header + '\n"source,2\n'):
+            events.write_text(content, encoding="utf-8")
+            with self.assertRaises(ComponentFocusError):
+                focus._events(events)
+
     def test_runner_binds_small_manifest_identities_without_payload_inventory(self) -> None:
         runner = (ROOT / "simion" / "run_component_focus_flight.ps1").read_text(encoding="utf-8")
         self.assertIn("pa_build_run_manifest_sha256", runner)
