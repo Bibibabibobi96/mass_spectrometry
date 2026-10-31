@@ -122,6 +122,10 @@ launcher 启动后立即登记 PID；等待报告和 Compute 期间复用公共�
 声称临时载荷已归本 run。入口不改用户偏好、许可证或全局配置，不关闭 recovery，也不自行删除目录；
 活动或未知 writer 的保护和退休仍由原 owner 决定。目录冲突或写入准入失败发生在 launcher 启动之前。
 参数传递与惰性进程替身回归不代替真实 COMSOL recovery 路径读回或 GUI Compute 验收。
+2026-10-31实际冷读111112未Compute／save；官方getter返回本run执行alias下的recovery目录，
+useRecovery=false，不能称autosave checkpoint已验。原外命令105.427秒失败于一次性usage参数形状；
+保留原错误后，同run仅收尾6.780秒完成success／complete，零新增native，父记录未改、alias移除。
+临时目录只证明官方argv接线，MATLAB的TEMP不作为COMSOL实际落盘位置的独立读回。
 依据：[COMSOL 6.4 Windows 全局参数](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_running.38.31.html)。
 
 可选`-Limits -RunDir -UsagePath`传入已冻结预算及其受管计量位置；普通耗时、进程树工作集、目录体积和

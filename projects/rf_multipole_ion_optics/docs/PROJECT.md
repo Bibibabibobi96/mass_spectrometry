@@ -469,3 +469,18 @@ pwsh -NoProfile -File projects/rf_multipole_ion_optics/workflows/interface_readi
 GUI Compute前后按相同原ID和完整母群比较所有共有真实存储时刻的active／missing掩码及6D，保原1e-12预算；缺共同有限观测不得静默丢粒子。末态观测、原接受条件及现有classifier的unknown／transmitted等结果逐ID保持，未知缺观测不推为实际损失。GUI_PARITY_JSON沿原report交给正常CLI，进入summary.gui_verification；软件完成、source binding、echo可用性、observed-state parity及scientific_result分别表达，科学仍为NOT_EVALUATED。
 
 该修复不改变源、物理、场、接受面、GUI Study Compute或资源owner，不进入AnalyzeOnly；执行GUI Compute会新增真实求解。原owner用R2025b MCP验证本主题21项纯行为测试，修正MATLAB保留字persistent为persistentRun后21／21通过（0.78996秒）；首轮11 Passed／10 Failed／2 Incomplete的3.6307秒记录保留，其中Incomplete与Failed可重叠。Python薄报告消费测试通过1.064秒。实际COMSOL冷重开／GUI Compute与完整母群对照尚待原owner执行，纯测试不代表GUI或科学资格。
+
+### 保存模型目录冷读与GUI负结果
+
+111112仅冷读090000原48,590,424 B模型：原生任务PASS，load8.742805秒，实际recovery位于新owner执行目录；
+useRecovery=false，不授予autosave／checkpoint资格。原外命令105.426873秒因一次性usage参数形状错误FAIL，
+保留原记录后，同run仅收尾6.779947秒完成success／complete，无新增native；父small记录及MPH stat不变，alias移除。
+
+112402新GUI运行完成std1／std2各一次（6.432828／17.439459秒），100粒子源绑定检查通过，
+随后新增的whole6D对照在1e-12门限失败；外命令139.514924秒FAIL。核对原冻结实现确认1e-12明确只为
+六列源／出生初态运输预算，不能用于积分后全轨迹；这是本轮新增判据的错误扩展，不是已证明的物理失败。
+该run随后仅补公共收尾，failed／complete保持，finalizer6.985504秒；父记录不变，零新增native，
+terminal／capacity／lease与alias清理完成。原生完成、GUI对照未建立、科学NOT_EVALUATED分别记录。
+当轮未在比较前持久化current矩阵，不能从现有文件补出原差值；保全观测后独立分析与准确判据正在整改，
+不得放宽源运输预算或把该失败改写为PASS。两轮原错误、实际收据、usage与仅收尾动作位于
+本项目scratch的comsol_runtime_storage_coldread／gui_saved_observation_run主题目录。

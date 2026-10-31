@@ -440,6 +440,10 @@ RF finite 正式已解读取边界为项目 `reextract_finite_3d_transport(reque
 无 RunDir 的旧连接调用明确 owned=false。替身 argv/退出回归只证明软件接线，真实路径可用
 `ModelUtil.getRecoveryDir(modelTag)` 只读核对；尚未取得原生读回，不声称已验证供应商落盘行为。
 
+111112真实冷读：getRecoveryDir在useRecovery=false时仍建立并返回本owner目录；load8.742805秒、
+getter0.058398秒。usage84.668秒、峰值RSS2,531,082,240 B、run载荷456,427 B，无warning；
+不执行Study／save，不证明autosave checkpoint。tmp仅有argv和目录计量接线，不以TEMP环境冒称native读回。
+
 官方来源（2026-10-31复核）：[Windows命令](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_running.38.31.html)、
 [恢复与卸载](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_environment.18.22.html)、
 [ModelUtil](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/api/com/comsol/model/util/ModelUtil.html)。
