@@ -806,6 +806,18 @@
               "common/contracts/test_python_dependency_contract.py"
             ],
             "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "common/contracts/frozen_inputs.py",
+                "reason": "frozen_input_mechanism_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_frozen_inputs.py"
+            ],
+            "dependency_profile": "stdlib"
           }
         ],
         "scope": "common/contracts/"
@@ -855,7 +867,7 @@
           "test_report_cloc_delta": 11.91139,
           "test_repository_text_bytes": 0.276725,
           "test_rigid_transform": 0.002542,
-          "test_run_artifact_workflow": 230.209365,
+          "test_run_artifact_workflow": 456.741759,
           "test_run_capacity_lifecycle": 17.294455,
           "test_run_terminal_publication": 0.111353,
           "test_shared_artifact_contracts": 0.211835,
@@ -879,6 +891,10 @@
         {
           "prefix": "common/simion/",
           "reason": "common_simion_changed"
+        },
+        {
+          "exact": "common/contracts/frozen_inputs.py",
+          "reason": "frozen_workbench_seed_dependency_changed"
         }
       ],
       "command": {
@@ -896,6 +912,20 @@
       "test_selection": {
         "roots": [
           "common/simion/"
+        ],
+        "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "common/contracts/frozen_inputs.py",
+                "reason": "frozen_workbench_seed_dependency_changed"
+              }
+            ],
+            "modules": [
+              "common/simion/test_workbench_seed.py"
+            ],
+            "dependency_profile": "stdlib"
+          }
         ]
       },
       "owner": "common/simion"

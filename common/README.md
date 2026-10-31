@@ -84,8 +84,10 @@ integration纯Ruff preflight和1个公共合同父进程，再加2个分析批�
 公共合同沿现有分片机制按模块分为三组，覆盖集合保持完整且各模块恰执行一次。
 Owner别名回归核对实际unittest模块与catalog所属发现集合（包括重复数量），
 不以是否存在未分片的阶段名称判断完整覆盖。
-权重来自2026-10-30完整运行的52模块、899测试逐项计时（合计855.085秒），只用于排队；
-三组各约285秒是权重估算，不能作为实测提速。父级已完整选择的模块直接传给分片，
+初始权重来自2026-10-30完整运行的52模块、899测试逐项计时（合计855.085秒），只用于排队；
+`test_run_artifact_workflow`现按 CI 41222139109 的37项实际计时合计456.741759秒更新；
+完整模块集合与三分片数量不变，权重更新不代表实测墙钟改善。
+初始三组各约285秒只是当时的权重估算，不能作为当前耗时或实测提速。父级已完整选择的模块直接传给分片，
 子进程消费已编译请求；仅改指定测试时不展开完整owner。部分root的扩展不冒充完整scope。
 
 显式Python测试命令保留目录声明的发现根作为临时导入路径，并在返回时恢复调用者环境，
@@ -345,3 +347,5 @@ RF 资源预算的两个调度用例改由真实 admission-pause 事件释放短
 其他失败、未知writer与自然排空测试保留；这不是完整模块、Owner或Repository耗时。缺失释放信号、错误接受全部报告、外层非零及坏JSON的变异检查均能使测试失败。
 
 生产leaf可在现catalog的test_selection.dependencies用exact匹配声明受影响模块；已删除leaf和未知来源仍回退完整owner。SFI的SelectedTestModules复用原CLI与实际前置，完整分片按实际模块union判定，不能将替换式subset误当追加式完整范围。Owner／Repository保持全范围；纯测试Changed快路径保持，窄leaf结果不代表完整owner或Repository通过。
+`frozen_inputs.py`的机制测试归公共合同owner，真实`workbench_seed`消费者测试归SIMION owner；
+两者通过同一catalog精确选择，混合SIMION改动时seed模块仍只在其owner执行一次。

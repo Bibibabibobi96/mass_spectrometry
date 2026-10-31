@@ -190,7 +190,8 @@ foreach($case in $cases){{
         self.assertEqual(len(actual), len(set(actual)))
 
     def test_common_contract_dependencies_select_modules_without_retired_routes(self):
-        cases = (("common/contracts/expected_values.py", "common.contracts.test_expected_values"),
+        cases = (("common/contracts/frozen_inputs.py", "common.contracts.test_frozen_inputs"),
+                 ("common/contracts/expected_values.py", "common.contracts.test_expected_values"),
                  ("common/report_cloc_delta.ps1", "common.contracts.test_report_cloc_delta"),
                  ("common/verify.ps1", "common.contracts.test_verify_changed"),
                  ("pyproject.toml", "common.contracts.test_python_dependency_contract"),
@@ -202,6 +203,49 @@ foreach($case in $cases){{
                 modules = [value.removesuffix(".py").replace("/", ".") for value in owner["command"]["arguments"]]
                 self.assertIn(module, modules)
                 self.assertEqual(len(owner["command"]["arguments"]), len(set(owner["command"]["arguments"])))
+
+    def test_frozen_input_dependency_keeps_its_real_seed_consumer_unique(self):
+        request, _ = self.plan("-ChangedPath", "common/contracts/frozen_inputs.py")
+        rows = {row["name"]: row for row in request["stages"]}
+        self.assertEqual(rows["common_contracts"]["command"]["arguments"],
+                         ["-m", "common.gate_unittest", "common/contracts/test_frozen_inputs.py"])
+        self.assertEqual(rows["simion_common"]["command"]["arguments"],
+                         ["-m", "common.gate_unittest", "common/simion/test_workbench_seed.py"])
+
+    def test_frozen_input_mapping_preserves_missing_unknown_and_full_selection(self):
+        with tempfile.TemporaryDirectory(prefix="frozen_leaf_selection_") as directory:
+            root = Path(directory)
+            inputs = root / "common/contracts"
+            inputs.mkdir(parents=True)
+            expected = {"common/contracts/" + name for name in
+                        ("test_frozen_inputs.py", "test_other_contract.py", "test_another_contract.py")}
+            for relative in expected | {"common/contracts/frozen_inputs.py"}:
+                (root / relative).write_text("# selector metadata fixture; never imported\n", encoding="utf-8")
+            literal = lambda value: "'" + str(value).replace("'", "''") + "'"
+            script = f"""
+$ErrorActionPreference='Stop'
+. {literal(REPO_ROOT / 'common/gate_catalog_support.ps1')}
+$route=(Get-Content -LiteralPath {literal(ROUTE_TABLE)} -Raw|ConvertFrom-Json -Depth 32).routes|Where-Object stage -eq common_contracts
+$root={literal(root)};$source='common/contracts/frozen_inputs.py'
+$parameters=@{{Route=$route;KnownTestRoots=@('common/contracts/');RepoRoot=$root}}
+$results=[ordered]@{{known=@((Get-GateChangedTests @parameters -ChangedPaths @($source)).Modules)}}
+$results.unknown=@((Get-GateChangedTests @parameters -ChangedPaths @('common/contracts/future_unknown.py')).Modules)
+Remove-Item -LiteralPath (Join-Path $root $source)
+$results.deleted=@((Get-GateChangedTests @parameters -ChangedPaths @($source)).Modules)
+Set-Content -LiteralPath (Join-Path $root 'common/contracts/renamed_frozen_inputs.py') -Value '# not executed'
+$results.renamed=@((Get-GateChangedTests @parameters -ChangedPaths @($source,'common/contracts/renamed_frozen_inputs.py')).Modules)
+$results.full=@((Get-GateChangedTests @parameters -ChangedPaths @($source) -FullScope).Modules)
+$results|ConvertTo-Json -Compress
+"""
+            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
+                                    cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            records = json.loads(result.stdout)
+            self.assertEqual(records["known"], ["common/contracts/test_frozen_inputs.py"])
+            for case in ("unknown", "deleted", "renamed", "full"):
+                with self.subTest(case=case):
+                    self.assertEqual(set(records[case]), expected)
+                    self.assertEqual(len(records[case]), len(expected))
 
     def routed_stages(self, path: str) -> dict[str, str]:
         selected: dict[str, str] = {}
