@@ -90,6 +90,12 @@ RF finite COMSOL 的[正常无碰撞入口](../../projects/rf_multipole_ion_opti
 供OA径向压缩、候选设计及现有PowerShell生产owner共用。项目负责纯计划、预算来源、科学状态和源码闭包；公共owner只组合现有
 容量session、`New-RunPackage`、retention、manifest journal和容量收尾，不按科学mode分支，也不在
 整段prepared调用外持light主机token。各实际heavy操作继续使用原资源入口。
+公共`test_run_artifact_workflow`保留owner通用故障矩阵；原CLI恢复薄测分别由
+[RF项目](../../projects/rf_multipole_ion_optics/tests/analysis/test_owner_finalization_recovery.py)与
+[IP项目](../../projects/dual_pressure_rectilinear_ion_processor/tests/test_owner_finalization_recovery.py)维护。
+项目Static／Repository按现有发现规则各执行一次；只复用公共fixture，不将其TestCase导出或继承为本模块测试类而重复发现。
+迁移不减少全仓断言或改变生产恢复行为，也不把测试归属调整当作全仓提速证据。
+
 owner从live公共`Resolve-HostResourceStatePath`取得实际控制面路径（保留既有显式覆盖），通过
 `MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH`传给prepared及其冻结worker，避免默认路径随code_root
 漂移。实际路径只记在执行context，不添加到科学输入，也不因此创建或申请第二资源账本。
