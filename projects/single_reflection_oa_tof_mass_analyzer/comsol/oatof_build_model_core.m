@@ -861,10 +861,9 @@ fprintf('[TIMING] field diagnostic queries (mphinterp x18): %.2fs\n', t_diag);
 particle = oatof_configure_particle_model(model,comp1,p,paths,contract,mass_amu,label, ...
     use_fixed_particle_table,fixed_particle_table,n_particles,field_mode, ...
     fine_tstep_ns,drift_tstep_ns,solver_mode,cartesianRelease);
-rel1 = particle.rel1; tstep = particle.tstep;
 Ez_accel_ideal = particle.Ez_accel_ideal; Ez_drift_ideal = particle.Ez_drift_ideal;
 Ez_stage1_ideal = particle.Ez_stage1_ideal; Ez_stage2_ideal = particle.Ez_stage2_ideal;
-Tsim = particle.Tsim; Tsim_full = particle.Tsim_full; timing = particle.timing;
+Tsim = particle.Tsim; timing = particle.timing;
 expected_tof = particle.expected_tof; fine_tstep = particle.fine_tstep;
 fine_end = particle.fine_end; t_cptsetup = particle.t_cptsetup;
 if fieldDesignOnly
@@ -881,43 +880,20 @@ t_cpt = toc(t_cpt_start);
 fprintf('[%s] SUCCESS: oa-TOF ring-stack CPT solved (%s, %.2fs for N=%s particles, Tsim=%.4gus short margin).\n', ...
     label, upper(solver_mode), t_cpt, num2str(n_particles), Tsim*1e6);
 
-% Two-phase completeness check (doc §6.14): confirm all released particles
-% actually reached the detector within the short margin; if not, extend to
-% the full 8x margin and re-solve from scratch. qz is already in
-% geom1.lengthUnit ('mm'), NOT SI meters -- do not rescale (this bit us
-% once during development: rescaling qz by 1e3 on top of an already-mm
-% value caused a false "0/N detected" and an unnecessary retry every time).
-pdset_check = model.result.dataset.create('pdset_check', 'Particle');
-pdset_check.set('solution', 'sol2');
-N_total_check = n_particles;
-% Only the final position is needed here.  Without an explicit `t`,
-% mphparticle returns every stored time step; at sub-nanosecond output
-% spacing that unnecessary payload can exhaust the MATLAB client JVM.
-qzcheck = mphparticle(model, 'dataset', 'pdset_check', 'expr', {'qz'}, ...
-    't', Tsim, 'dataonly', 'on');
-zfinal_check = qzcheck.d1(end,:);
-detector_z_val_mm = mphevaluate(model, 'detector_z', 'mm');
-n_detected_check = sum(abs(zfinal_check - detector_z_val_mm) < 2);
-fprintf('[%s] two-phase check: %d/%d particles reached detector (z=%.4gmm) within short margin.\n', ...
-    label, n_detected_check, N_total_check, detector_z_val_mm);
-if n_detected_check < N_total_check
-    fprintf('[%s] short margin insufficient -- re-solving with resolved fallback factor %.3g (Tsim=%.4gus).\n', ...
-        label,contract.comsol_runtime.fallback_time_factor,Tsim_full*1e6);
-    Tsim = Tsim_full;
-    p.set('cpt_t_end', sprintf('%.12g[s]', Tsim), ...
-        'Extended GUI-visible end time after completeness gate retry');
-    tstep.set('tlist', timing.tlist);
-    t_cpt_retry_start = tic;
-    model.sol('sol2').runAll;
-    t_cpt_retry = toc(t_cpt_retry_start);
-    fprintf('[%s] full-margin retry took an extra %.2fs (total CPT solve time now %.2fs).\n', label, t_cpt_retry, t_cpt + t_cpt_retry);
-    t_cpt = t_cpt + t_cpt_retry;
-end
-
-t_extract_start = tic;
+% A last coordinate near the detector is neither a detector event nor proof
+% that an unresolved particle needs more integration. Never retry this solve
+% from a population-completeness guess; classify the existing event evidence.
 pdset1 = model.result.dataset.create('pdset1', 'Particle');
 pdset1.label(sprintf('Particle dataset: oa-TOF ring-stack %s', label));
 pdset1.set('solution', 'sol2');
+
+% Preserve the full requested population before extraction/export/plot failures.
+% Later GUI-node updates use this same model path, not a second large model.
+t_raw_save_start=tic;
+modelPath=save_run_model(model,output_model_path,paths);
+t_raw_save=toc(t_raw_save_start);
+fprintf('[TIMING] raw solved population persisted before postprocessing: %.2fs\n',t_raw_save);
+t_extract_start=tic;
 
 % COMSOL 6.4 documents that dataonly='on' suppresses the default p/v
 % trajectory payload and that the `t` property limits evaluation to an
@@ -936,12 +912,8 @@ pd_z = mphparticle(model, 'dataset', 'pdset1', ...
     'expr', {'qx','qy','qz'}, 't', extract_times, 'dataonly', 'on');
 t = pd_z.t;
 z = squeeze(pd_z.d3);
-% !!! Per explicit speed-optimization request: also keep x/y here (were
-% previously discarded -- only z was extracted from this same pd_z.p
-% array) so the trajectory-plot section below can reuse this ALREADY-
-% SOLVED data instead of re-running the entire CPT solve a second time
-% just to get x/y. See the trajectory-plot section for why a second
-% solve is still needed when nP is large.
+% This is the original population's coordinate view. Plotting selects columns
+% from it and never changes the release node, source or stored solution.
 x_full = squeeze(pd_z.d1);
 y_full = squeeze(pd_z.d2);
 nP = size(z,2);
@@ -1072,59 +1044,21 @@ result = struct('label', label, 'mass_amu', mass_amu, 'nP', nP, 'zEnd', zEnd, ..
     'analysis_output_dir', handoff.analysis_output_dir, ...
     'penetration_max_mm', penetration_max_mm, ...
     'd2min_mm', reflectron_stage2_min_mm, 'd2_mm', d2_mm, ...
-    'field_idealization', particle.field_idealization);
+    'field_idealization', particle.field_idealization, ...
+    'model_path',modelPath,'raw_solution_persisted',true, ...
+    'native_particle_solve_count',1,'automatic_time_extension_performed',false, ...
+    'observation_end_time_s',Tsim, ...
+    'unresolved_detector_event_count',sum(~arrivals.plane_event), ...
+    'outside_active_detector_count',sum(arrivals.plane_event&~arrivals.hit));
 
-% !!! Speed optimization (per explicit request, "fix A"): the trajectory
-% plot only needs x/y/z for a small subset of particles -- previously
-% this was ALWAYS obtained by changing rel1's N and re-running the ENTIRE
-% CPT time-dependent solve a SECOND time, discarding the first solve's
-% own x/y data (only z was ever extracted from it) purely to get x/y back
-% for a smaller N. Measured cost: this redundant second solve took
-% 137.95s (42.5% of total wall time), MORE than the original N=100 solve
-% itself (126.89s) -- CPT solve cost is dominated by the number of
-% forced tlist output points, not particle count, so a smaller N barely
-% saves anything here while paying the full solve cost again.
-% Fix: when nP is small enough that x_full/y_full/z (already fully
-% extracted above from the FIRST solve's pd_z) comfortably fit in memory,
-% just take the first N_plot columns of that ALREADY-COMPUTED data --
-% zero additional solving, and R/statistics are completely unaffected
-% either way since they only ever used the first solve's data. Only fall
-% back to a genuine second small-N re-solve when nP is large enough that
-% holding the FULL trajectory array for plotting purposes would be a real
-% memory concern (the original justification for this re-solve, per the
-% comment history) -- that threshold is set well above the project's
-% typical N=100-1000 exploratory runs, only kicking in for the large-N
-% (5000-10000) statistical-confirmation runs mentioned throughout this
-% project's docs.
-t_replot_start = tic;
-PLOT_RESOLVE_THRESHOLD = 2000; % particles; above this, re-solve at small N to cap MATLAB memory
-if nP > PLOT_RESOLVE_THRESHOLD
-    % --- Small dedicated re-solve (N_plot particles) for full 3D
-    % trajectories, reusing the same static 'es' field -- keeps memory
-    % bounded when the statistics population itself is large.
-    N_plot = min(50, nP);
-    rel1.set('N', num2str(N_plot));
-    model.sol('sol2').runAll;
-    pdset_plot = model.result.dataset.create('pdset_plot', 'Particle');
-    pdset_plot.label(sprintf('Particle dataset (plot subset, N=%d): %s', N_plot, label));
-    pdset_plot.set('solution', 'sol2');
-    pd_plot = mphparticle(model, 'dataset', 'pdset_plot');
-    t_plot = pd_plot.t;
-    x_plot = squeeze(pd_plot.p(:,:,1)); z_plot = squeeze(pd_plot.p(:,:,3));
-    nP_plot = size(x_plot,2);
-    plot_dataset_tag = 'pdset_plot';
-    fprintf('[%s] trajectory-plot subset solved (nP=%d > threshold=%d): N_plot=%d\n', label, nP, PLOT_RESOLVE_THRESHOLD, nP_plot);
-else
-    % Reuse the FIRST solve's already-extracted x_full/y_full/z directly
-    % -- no second CPT solve, no second mphparticle call.
-    nP_plot = min(50, nP);
-    t_plot = t;
-    x_plot = x_full(:,1:nP_plot); z_plot = z(:,1:nP_plot);
-    plot_dataset_tag = 'pdset1';
-    fprintf('[%s] trajectory-plot subset REUSED from full-population solve (nP=%d <= threshold=%d, no re-solve): N_plot=%d\n', label, nP, PLOT_RESOLVE_THRESHOLD, nP_plot);
-end
-t_replot = toc(t_replot_start);
-fprintf('[TIMING] trajectory-plot data acquisition (re-solve or reuse): %.2fs\n', t_replot);
+% Graphics are a read-only projection of the original scientific population.
+t_replot_start=tic;
+plotView=oatof_particle_plot_view(t(:),x_full,z,50);
+nP_plot=numel(plotView.particle_indices);t_plot=plotView.time_s;
+x_plot=plotView.x_mm;z_plot=plotView.z_mm;plot_dataset_tag='pdset1';
+t_replot=toc(t_replot_start);
+fprintf('[%s] trajectory plot uses original solution columns 1:%d of N=%d; no additional CPT solve.\n',label,nP_plot,nP);
+fprintf('[TIMING] original-solution trajectory view: %.2fs\n',t_replot);
 
 t_matlabplot_start = tic;
 fh = figure('Visible','off');
@@ -1193,17 +1127,13 @@ col_time.set('unit', 's');
 col_time.set('colortable', 'Thermal');
 col_time.set('colorlegend', 'on');
 
-% !!! Reordered (per repeated crash pattern this session): the native
-% 3D trajectory rendering (pg1.run) has repeatedly crashed MATLAB/COMSOL
-% AFTER the CPT solve completed but BEFORE model.save() was reached,
-% losing an otherwise-valid, already-computed result. Model is now saved
-% FIRST (guaranteeing the result survives even if the plot rendering
-% crashes), and the plot is attempted afterward as a best-effort step.
+% Update GUI nodes at the same persisted path. The raw full-population solution
+% was already saved before extraction and MATLAB rendering began.
 modelPath = save_run_model(model,output_model_path,paths);
 result.model_path = modelPath;
 t_save1 = toc(t_save1_start);
 fprintf('[%s] SUCCESS: model saved.\n', label);
-fprintf('[TIMING] first model.save (.mph write): %.2fs\n', t_save1);
+fprintf('[TIMING] existing model GUI-node update (.mph write): %.2fs\n',t_save1);
 t_native_start = tic;
 % pg1.run mutates the stored particle solution to the plot subset in
 % batch mode. Keep the N-statistics solution intact; Desktop renders this
@@ -1217,10 +1147,10 @@ phase_names = {'geometry (params+features+geom1.run)', ...
     'selections+materials+ES physics setup', 'mesh (mesh1.run+mphmeshstats)', ...
     'electrostatics solve (sol1)', 'field diagnostic queries', ...
     'CPT setup (before solve)', sprintf('CPT solve (N=%d, statistics population)', nP), ...
-    'full-population extraction+post-processing', sprintf('trajectory-plot data (N=%d, reuse or re-solve)', nP_plot), ...
+    'full-population extraction+post-processing', sprintf('original-solution plot view (N=%d)',nP_plot), ...
     'MATLAB trajectory figure (PNG)', 'native Result plots (field diagnostics)', ...
-    'first model.save', 'native 3D plot (pg1.run)+re-save'};
-phase_times = [t_geom, t_sel, t_mesh, t_es, t_diag, t_cptsetup, t_cpt, t_extract, t_replot, t_matlabplot, t_resultplots, t_save1, t_native];
+    'raw solution persistence','same-path GUI-node update','native 3D plot (not run)'};
+phase_times = [t_geom, t_sel, t_mesh, t_es, t_diag, t_cptsetup, t_cpt, t_extract, t_replot, t_matlabplot,t_resultplots,t_raw_save,t_save1,t_native];
 for pi_ = 1:numel(phase_names)
     fprintf('  %-45s %8.2fs  (%5.1f%%)\n', phase_names{pi_}, phase_times(pi_), 100*phase_times(pi_)/t_total);
 end

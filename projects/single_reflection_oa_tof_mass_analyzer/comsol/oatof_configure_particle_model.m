@@ -201,25 +201,9 @@ ef1.set('E', {Ex_ideal, Ey_ideal, Ez_ideal});
 % round trip. The much cleaner/stronger field changes the flight-time
 % profile enough that the old margin (already generous for the leaky
 % design) is no longer sufficient.
-% !!! Two-phase adaptive Tsim (doc §6.14): a live in-solver StopCondition
-% ("stop once all particles have reached the detector") was investigated
-% extensively and found to be architecturally blocked -- every
-% particle-aggregation mechanism in COMSOL's Particle Tracing Module
-% (ParticleCounter.Nsel, BoundaryAccumulator's built-in globals, and the
-% module's own built-in cpt.max/min/sum(...) per-particle couplings) only
-% evaluates post-hoc via mphparticle, never live inside StopCondition's
-% own expression evaluator ("Unknown function or operator"/"Undefined
-% variable" every time, confirmed on this exact production model, not a
-% naming issue). The working alternative: solve first with a SHORT,
-% physics-based margin (1.5x estimated round-trip time, not the blanket
-% 8x), then
-% check completeness post-hoc with plain mphparticle; only fall back to
-% the full 8x margin (re-solving from scratch) in the rare case the short
-% one wasn't enough. Verified: R and detection times come out
-% bit-identical whether the short margin succeeds directly or falls back
-% to the full margin (deterministic particle release seed), so this has
-% zero accuracy impact -- it only ever removes wasted tail computation
-% for parameter combinations where the short margin already suffices.
+% The resolved output window is the declared integration horizon. Missing a
+% detector event does not authorize a second solve or establish physical loss.
+% A different horizon requires an explicit new request with matching numerics.
 std2 = model.study.create('std2');
 std2.label(sprintf('Time-dependent: oa-TOF ring-stack %s', label));
 tstep = std2.create('time1', 'Transient');
@@ -232,8 +216,6 @@ timing = configure_oatof_segmented_output( ...
     model, mass_amu, fine_tstep_ns, drift_tstep_ns, contract);
 expected_tof = timing.expected_tof_s;
 runtime = contract.comsol_runtime;
-Tsim_full = expected_tof*runtime.fallback_time_factor + ...
-    runtime.fallback_end_padding_us*1e-6;
 fine_start = timing.t_refl_start_s;
 fine_end = timing.t_detector_end_s;
 Tsim = timing.t_end_s;
@@ -289,7 +271,7 @@ state.cpt = cpt; state.rel1 = rel1; state.tstep = tstep;
 state.Ez_accel_ideal = Ez_accel_ideal; state.Ez_drift_ideal = Ez_drift_ideal;
 state.Ez_stage1_ideal = Ez_stage1_ideal; state.Ez_stage2_ideal = Ez_stage2_ideal;
 state.field_idealization = idealization;
-state.Tsim = Tsim; state.Tsim_full = Tsim_full; state.timing = timing;
+state.Tsim = Tsim; state.timing = timing;
 state.expected_tof = expected_tof; state.fine_tstep = fine_tstep;
 state.fine_end = fine_end; state.t_cptsetup = t_cptsetup;
 end

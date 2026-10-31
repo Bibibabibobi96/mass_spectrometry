@@ -6,7 +6,8 @@ testDir = fileparts(testSupportDir);
 detectorSuite = testsuite(fullfile(testDir, 'OaTofDetectorArrivalTest.m'));
 fieldSuite = testsuite(fullfile(testDir, 'OaTofFieldIdealizationTest.m'));
 solverSuite = testsuite(fullfile(testDir, 'OaTofSolverPolicyTest.m'));
-suite = [detectorSuite(:).', fieldSuite(:).', solverSuite(:).'];
+plotSuite = testsuite(fullfile(testDir,'OaTofParticlePlotViewTest.m'));
+suite = [detectorSuite(:).', fieldSuite(:).', solverSuite(:).',plotSuite(:).'];
 results = run(suite);
 
 fid = fopen(reportPath, 'w');
