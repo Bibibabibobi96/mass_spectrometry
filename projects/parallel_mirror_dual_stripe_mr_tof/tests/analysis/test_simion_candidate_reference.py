@@ -1041,17 +1041,14 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         program = (PROJECT / "simion" / "mrtof_candidate.lua").read_text(encoding="utf-8")
         bunch = (PROJECT / "simion" / "mrtof_candidate.fly2").read_text(encoding="utf-8")
         launcher = (PROJECT / "simion" / "run_iob_flight.lua").read_text(encoding="utf-8")
-        self.assertIn("MRTOF_EVENT detector", program)
-        central_output = program[program.index("MRTOF_EVENT central_plane_directional"):]
-        self.assertIn("z_mm=%.12g", central_output.split("elseif", 1)[0])
-        self.assertIn("event.z_mm", central_output.split("elseif", 1)[0])
+        # Scientific CSV and central-plane coordinates are exercised by the actual
+        # cycle emitter test; stopping/terminal callbacks live in test_scientific_event_io.
         self.assertNotIn("initial-exit-triggered accelerator pulse requires local-refinement", program)
         self.assertIn("local accelerator_instance = accelerator_instance_number()", program)
         self.assertIn("local maximum_instance = maximum_instance_number()", program)
         self.assertNotIn("main_drift_exceeded_target_k", program)
         self.assertNotIn("prism_stage[ion_number] = 'awaiting_return_origin_turn'", program)
         self.assertIn("target_half_oscillation_count", program)
-        self.assertIn("termination_kind=programmatic_topology_rejection", program)
         self.assertIn("physical_collision=0", program)
         self.assertEqual(
             program.count("prism_stage[ion_number] = 'awaiting_return_p2_entry'"),

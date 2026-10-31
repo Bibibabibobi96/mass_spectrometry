@@ -301,27 +301,119 @@ class SimionEventAnalysisTest(unittest.TestCase):
         )
 
     def test_single_particle_program_emits_the_required_topology_events(self):
+        from common.simion.scientific_event_io import iter_csv_rows
+
+        lua = Path("C:/Program Files/SIMION-2020/lua.exe")
+        if not lua.is_file():
+            self.skipTest("Lua runtime unavailable")
         source = PROGRAM.read_text(encoding="utf-8-sig")
-        for token in (
-            "MRTOF_EVENT fast_turn", "MRTOF_EVENT slow_turn", "MRTOF_EVENT slow_coordinate_y0",
-            "MRTOF_EVENT central_plane_directional", "MRTOF_EVENT p1_plane",
-            "MRTOF_EVENT prism_pass", "MRTOF_EVENT pre_injection_mirror_turn",
-            "MRTOF_EVENT p2_low_field_crossing",
-            "MRTOF_EVENT p2_low_field_reference",
-            "MRTOF_EVENT drift_phase_origin", "MRTOF_EVENT drift_phase_return",
-            "MRTOF_EVENT drift_phase_candidate", "MRTOF_EVENT drift_coordinate_return",
-            "MRTOF_EVENT target_k_phase_sample",
-            "MRTOF_EVENT return_p2_entry", "MRTOF_EVENT return_p2_pass",
-            "MRTOF_EVENT return_positive_mirror_turn",
-            "MRTOF_EVENT detector_plane",
-            "MRTOF_EVENT instance_transition",
-            "MRTOF_EVENT accelerator_pulse_off",
-            "MRTOF_EVENT accelerator_reentry",
-            "direction_y=", "direction_z=",
-        ):
-            self.assertIn(token, source)
-        self.assertNotIn("MRTOF_EVENT prism_voltage_switch", source)
-        self.assertIn("active MR-TOF Candidate forbids all P1/P2 voltage switching", source)
+        output = source[source.index("-- The frozen sidecar"):
+                        source.index("-- Official SIMION initialize/other_actions/terminate")]
+        emitter = source[source.index("local function emit_cycle_events"):
+                         source.index("function segment.initialize_run()")]
+        detector_callback = source[source.index("    local detector_contact = detector_contact_sample("):
+                                   source.index("  if ion_splat ~= 0 and not splat_event_emitted")]
+        rejection = source[source.index("    if (not state.sequence_valid or return_sequence_error"):
+                           source.index("    if pvy * ion_vy_mm < 0")]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            events = root / "events.csv"
+            script = root / "events.lua"
+            declaration = "{csv_writer_path=" + json.dumps(
+                (REPOSITORY_ROOT / "common/simion/scientific_event_csv.lua").as_posix()
+            ) + ",events_path=" + json.dumps(events.as_posix()) + "}"
+            setup = "local operating_point={scientific_event_output=" + declaration + "}\n"
+            setup += r"""
+ion_number=7
+local function event_id() return 45 end
+local prism_stage,return_sequence_error={[7]='p2_complete'},{}
+local target_half_oscillation_count=2
+local target_k_emitted,accelerator_safe_exit_observed={},{}
+local y0_crossings,crossings,turns={},{},{}
+local cycle_counters={[7]={state=function() return {accepted_main_turns=2} end}}
+"""
+            calls = r"""
+initialize_scientific_output()
+local function sample(kind, fields)
+  local row={kind=kind,t_us=7.125,x_mm=1,y_mm=2,z_mm=3.125,
+    vx_mm_us=4,vy_mm_us=5,vz_mm_us=6}
+  for key,value in pairs(fields or {}) do row[key]=value end
+  emit_cycle_events({row})
+end
+sample('mirror_turn',{accepted=true,half_cycles=2})
+sample('central_plane',{stage='main_drift',direction=-1})
+sample('slow_coordinate',{direction=1})
+sample('drift_phase_origin')
+sample('drift_phase_candidate',{period_ratio=1,half_cycles=2})
+sample('drift_coordinate_return',{k_before=1,fractional_k=1,
+  phase_crossing_t_us=7,phase_crossing_y_mm=0,phase_time_residual_us=.125,phase_period_us=2})
+sample('drift_phase_return',{period_ratio=1,half_cycles=2,slow_coordinate_residual_mm=0})
+assert(prism_stage[7]=='awaiting_return_p2_entry' and not return_sequence_error[7])
+prism_stage[7]='awaiting_return_positive_mirror'
+sample('mirror_turn',{stage='after_main_drift',side=1})
+assert(prism_stage[7]=='awaiting_static_detector')
+-- A second turn at this point is not a legal static return sequence.
+sample('mirror_turn',{stage='after_main_drift',side=1})
+assert(return_sequence_error[7]=='unexpected_post_return_mirror_turn')
+"""
+            detector_setup = r"""
+local detected,splat_codes,splat_event_emitted,detector_native_contacts={},{},{},{}
+local detector_box={0,0,0,2,4,0}
+local detector_z=3
+local px,py,pz,pvx,pvy,pvz,pt=1,2,4,4,5,-1,8
+local dz=-2
+ion_px_mm=1;ion_py_mm=2;ion_pz_mm=2
+ion_vx_mm=4;ion_vy_mm=5;ion_vz_mm=-1;ion_splat=0;ion_instance=1
+local function instrument_time_us() return 10 end
+local function detector_contact_sample() return nil end
+prism_stage[7]='awaiting_static_detector'
+-- The enclosing before/after branch is represented by this fixture scope.
+if true then
+"""
+            rejected = r"""
+assert(detected[7] and prism_stage[7]=='static_detector_complete' and ion_splat==1)
+ion_splat=0
+local state={sequence_valid=false}
+local function reject_invalid_sequence()
+"""
+            finish = r"""
+end
+reject_invalid_sequence()
+assert(ion_splat==4 and splat_codes[7]==4)
+scientific_events:close()
+"""
+            script.write_text(setup + output + emitter + calls + detector_setup + detector_callback
+                              + rejected + rejection + finish, encoding="utf-8")
+            result = subprocess.run([str(lua), str(script)], cwd=root, capture_output=True,
+                                    text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            rows = list(iter_csv_rows(events, ("kind", "ion", "t_us")))
+            self.assertEqual([row["kind"] for row in rows], [
+                "turn", "fast_turn", "central_plane", "central_plane_directional",
+                "slow_coordinate_y0", "drift_phase_origin", "drift_phase_candidate",
+                "target_k_phase_sample", "drift_coordinate_return", "drift_phase_return",
+                "target_k", "return_positive_mirror_turn",
+                "detector_plane", "detector", "splat", "splat",
+            ])
+            self.assertEqual({row["ion"] for row in rows}, {"45"})
+            central = rows[3]
+            self.assertEqual((central["direction_z"], central["z_mm"], central["t_us"]),
+                             ("-1", "3.125", "7.125"))
+            self.assertEqual((rows[4]["direction_y"], rows[4]["y_mm"]), ("1", "0"))
+            self.assertEqual(rows[8]["phase_time_residual_us"], "0.125")
+            self.assertEqual((rows[13]["direction_z"], rows[13]["z_mm"], rows[13]["t_us"]),
+                             ("-1", "3", "9"))
+            self.assertEqual((rows[-1]["code"], rows[-1]["termination_kind"], rows[-1]["physical_collision"]),
+                             ("4", "programmatic_topology_rejection", "0"))
+            self.assertEqual([central[key] for key in ("x_mm", "y_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")],
+                             ["1", "2", "4", "5", "6"])
+            # A real CSV writer failure must escape the actual producer, not become an empty PASS.
+            events.unlink()
+            events.mkdir()
+            failed = subprocess.run([str(lua), str(script)], cwd=root, capture_output=True,
+                                    text=True, encoding="utf-8", timeout=30)
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertIn("events.csv", failed.stderr)
 
     def test_p2_low_field_reference_event_preserves_phase_space(self):
         events = parse_events(
