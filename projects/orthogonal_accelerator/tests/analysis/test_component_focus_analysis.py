@@ -307,29 +307,76 @@ Invoke-Expression $copies[0].Extent.Text | Out-Null
                 focus._events(events)
 
     def test_runner_binds_small_manifest_identities_without_payload_inventory(self) -> None:
-        runner = (ROOT / "simion" / "run_component_focus_flight.ps1").read_text(encoding="utf-8")
-        self.assertIn("pa_build_run_manifest_sha256", runner)
-        self.assertIn("cache_manifest_sha256", runner)
-        self.assertIn("[Parameter(Mandatory)][string]$RuntimeControllerPath", runner)
-        self.assertIn("$controller=(Resolve-Path -LiteralPath $RuntimeControllerPath).Path", runner)
-        self.assertIn("$expectedRuntimeNames=@(0..$electrodeCount", runner)
-        self.assertIn("Flight refuses a controller inside the published cache generation", runner)
-        self.assertIn("Private runtime family inventory differs from the provider electrode namespace", runner)
-        self.assertNotIn("Get-FileHash (Join-Path $runtimeDirectory", runner)
-        self.assertNotIn("Get-FileHash $controller", runner)
-        self.assertNotIn("Copy-Item -LiteralPath $controller", runner)
-        self.assertIn("component_focus_input.fly2", runner)
-        self.assertIn("fly --trajectory-quality $($c.numerics.trajectory_quality) --particles $fly --programs 1 --retain-trajectories 0 $iob", runner)
-        self.assertIn("$events=Join-Path $solver 'component_focus.events.csv'", runner)
-        self.assertIn("--events $events", runner)
-        self.assertIn("$fly,$sourceStates,$iob,$events", runner)
-        self.assertIn("Published PA span differs from provider plan", runner)
-        self.assertIn("$originX=[double]$p.numerical_domain.iob_origin_mm[0]", runner)
-        self.assertIn("$originY=[double]$p.numerical_domain.iob_origin_mm[1]+[double]$c.operating_point.instance_center_y_mm", runner)
-        self.assertIn("$env:PYTHONPATH=$repoRoot", runner)
-        self.assertIn("$env:PYTHONPATH=$previousPythonPath", runner)
-        self.assertIn("$analysisResult.status-notin@('candidate_complete','candidate_incomplete')", runner)
-        self.assertNotIn("throw 'Component focus acceptance incomplete'", runner)
+        import hashlib
+        import shutil
+        import subprocess
+        import sys
+
+        if not shutil.which("pwsh"):
+            self.skipTest("PowerShell 7 required")
+        repo = ROOT.parents[1]
+        family, generation = self.root / "parent", self.root / "generation"
+        family.mkdir()
+        generation.mkdir()
+        parent_manifest, cache_manifest = family / "run_manifest.json", generation / "cache_manifest.json"
+        parent_manifest.write_text('{"fixture":"small parent identity"}', encoding="utf-8")
+        cache_manifest.write_text('{"fixture":"small cache identity"}', encoding="utf-8")
+        controller = self.root / "private controller.pa0"
+        controller.write_bytes(b"INERT_PRIVATE_PAYLOAD")
+        events = self.write_events().replace(self.root / "events with spaces.csv")
+        harness = self.root / "summary_and_analysis.ps1"
+        harness.write_text(r"""param($Repo,$Root,$Python,$Events,$Receipt,$Campaign)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$source=Join-Path $Repo 'projects/orthogonal_accelerator/simion/run_component_focus_flight.ps1'
+$ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$null,[ref]$null)
+$tables=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.HashtableAst]-and
+ @($n.KeyValuePairs|Where-Object{$_.Item1-is[Management.Automation.Language.StringConstantExpressionAst]-and$_.Item1.Value-eq'pa_build_run_manifest_sha256'}).Count},$true))
+if($tables.Count-ne1){throw 'Expected one component summary identity boundary'}
+$pipeline=$tables[0];while($pipeline-isnot[Management.Automation.Language.PipelineAst]){$pipeline=$pipeline.Parent}
+$analysisCalls=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Invoke-FocusFrozenPython'-and
+ @($n.CommandElements|Where-Object{$_-is[Management.Automation.Language.StringConstantExpressionAst]-and$_.Value-eq'projects.orthogonal_accelerator.analysis.component_focus_analysis'}).Count},$true))
+if($analysisCalls.Count-ne1){throw 'Expected one actual frozen analysis call'}
+$family=Join-Path $Root 'parent';$generation=Join-Path $Root 'generation';$controller=Join-Path $Root 'private controller.pa0'
+$summary=Join-Path $Root 'summary.json';$analysis=Join-Path $Root 'analysis.json'
+$releaseReceipt=$Receipt;$runCampaign=$Campaign
+$focusPython=@{code_root=(Join-Path $Root 'frozen code');origins_path=(Join-Path $Root 'origins.json')}
+$analysisResult=@{status='candidate_incomplete'};$result=@{cache_key='fixture-key';generation_sha256='fixture-generation'}
+$script:hashes=[Collections.Generic.List[string]]::new()
+function Get-FileHash {param($Path,$Algorithm)
+ if($Path-notin@((Join-Path $family 'run_manifest.json'),(Join-Path $generation 'cache_manifest.json'))){throw 'Unexpected payload hash'}
+ $script:hashes.Add($Path)
+ Microsoft.PowerShell.Utility\Get-FileHash -LiteralPath $Path -Algorithm $Algorithm
+}
+function Get-ChildItem {throw 'Unexpected payload inventory'}
+function Invoke-FocusFrozenPython {param($Python,$CodeRoot,$OriginsPath,$Module,[string[]]$Arguments)
+ $script:observed=@{module=$Module;arguments=$Arguments;code_root=$CodeRoot;origins=$OriginsPath;python=$Python}
+}
+# Metadata length remains available, but any direct controller read must fail.
+$guard=[IO.File]::Open($controller,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::None)
+try {Invoke-Expression $pipeline.Extent.Text;Invoke-Expression $analysisCalls[0].Extent.Text}
+finally {$guard.Dispose()}
+@{hashes=@($script:hashes);analysis=$script:observed}|ConvertTo-Json -Depth 20 -Compress
+""", encoding="utf-8")
+        result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(harness), str(repo),
+            str(self.root), sys.executable, str(events), str(self.receipt), str(self.campaign)],
+            cwd=self.root, capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        observed = json.loads(result.stdout)
+        self.assertCountEqual(observed["hashes"], [str(parent_manifest), str(cache_manifest)])
+        summary = json.loads((self.root / "summary.json").read_text(encoding="utf-8-sig"))
+        self.assertEqual(summary["pa_build_run_manifest_sha256"], hashlib.sha256(parent_manifest.read_bytes()).hexdigest().upper())
+        self.assertEqual(summary["cache_manifest_sha256"], hashlib.sha256(cache_manifest.read_bytes()).hexdigest().upper())
+        self.assertEqual(summary["runtime_controller_bytes"], controller.stat().st_size)
+        self.assertEqual(summary["status"], "candidate_incomplete")
+        arguments = observed["analysis"]["arguments"]
+        self.assertEqual(arguments, ["--events", str(events), "--release-receipt", str(self.receipt),
+                                    "--campaign", str(self.campaign), "--output", str(self.root / "analysis.json")])
+        self.assertEqual(observed["analysis"]["code_root"], str(self.root / "frozen code"))
+        self.assertEqual(observed["analysis"]["python"], sys.executable)
+        actual = subprocess.run([sys.executable, "-m", observed["analysis"]["module"], *arguments],
+            cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(actual.returncode, 0, actual.stdout + actual.stderr)
+        self.assertEqual(json.loads((self.root / "analysis.json").read_text())["focus_particle_count"], 3)
 
     def test_iob_builder_has_single_value_argument_helper_and_lua_regression(self) -> None:
         builder = (ROOT / "simion" / "build_component_focus_iob.lua").read_text(encoding="utf-8")

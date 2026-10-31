@@ -28,8 +28,40 @@ class SimionSourceTests(unittest.TestCase):
    self.assertGreaterEqual(state['z_mm']+campaign['simion_projection']['local_exit_z_mm']-origin[2],0.0);self.assertLessEqual(state['z_mm']+campaign['simion_projection']['local_exit_z_mm']-origin[2],span[2])
   with tempfile.TemporaryDirectory() as d:
    root=Path(d);receipt=root/'release_receipt.json';state=root/'release.csv';fly=root/'component_focus_input.fly2';source_states=root/'component_focus.source_states.lua';campaign_path=root/'campaign.json'
-   materialize_release(campaign['release_spec'],state,receipt);campaign_path.write_text(json.dumps(campaign),encoding='utf-8')
-   materialize(receipt,campaign_path,write_provider_plan(root,campaign['simion_projection']['local_exit_z_mm']),fly,source_states)
+   import subprocess, sys, shutil, copy
+   if not shutil.which('pwsh'): self.skipTest('PowerShell 7 required')
+   materialize_release(campaign['release_spec'],state,receipt)
+   projection=root/'resolved projection.json';projection.write_text(json.dumps(campaign['simion_projection']),encoding='utf-8')
+   template=copy.deepcopy(campaign);template['simion_projection']['local_exit_z_mm']=999.0
+   campaign_path.write_text(json.dumps(template),encoding='utf-8')
+   write_provider_plan(root,campaign['simion_projection']['local_exit_z_mm']).replace(root/'component_focus_pa_plan.json')
+   harness=root/'capture_source.ps1'
+   harness.write_text(r"""param($Repo,$Root,$Python)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$source=Join-Path $Repo 'projects/orthogonal_accelerator/simion/run_component_focus_flight.ps1'
+$ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$null,[ref]$null)
+$calls=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Invoke-FocusFrozenPython'-and
+ @($n.CommandElements|Where-Object{$_-is[Management.Automation.Language.StringConstantExpressionAst]-and$_.Value-eq'projects.orthogonal_accelerator.analysis.component_focus_simion_source'}).Count},$true))
+if($calls.Count-ne1){throw 'Expected one actual frozen source call'}
+$inputs=$Root;$releaseReceipt=Join-Path $Root 'release_receipt.json';$runCampaign=Join-Path $Root 'campaign.json'
+$projectionPath=Join-Path $Root 'resolved projection.json';$fly=Join-Path $Root 'component_focus_input.fly2'
+$sourceStates=Join-Path $Root 'component_focus.source_states.lua';$sourceReceipt=Join-Path $Root 'projection_receipt.json'
+$focusPython=@{code_root=(Join-Path $Root 'frozen code');origins_path=(Join-Path $Root 'origins.json')}
+function Invoke-FocusFrozenPython {param($Python,$CodeRoot,$OriginsPath,$Module,[string[]]$Arguments)
+ @{module=$Module;arguments=$Arguments;code_root=$CodeRoot;origins=$OriginsPath;python=$Python}|ConvertTo-Json -Depth 20 -Compress
+}
+Invoke-Expression $calls[0].Extent.Text
+""",encoding='utf-8')
+   repo=project_root.parents[1]
+   selected=subprocess.run([shutil.which('pwsh'),'-NoProfile','-File',str(harness),str(repo),str(root),sys.executable],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+   self.assertEqual(selected.returncode,0,selected.stdout+selected.stderr)
+   call=json.loads(selected.stdout)
+   self.assertEqual(call['module'],'projects.orthogonal_accelerator.analysis.component_focus_simion_source')
+   self.assertEqual(call['arguments'],['--release-receipt',str(receipt),'--campaign',str(campaign_path),'--provider-plan',str(root/'component_focus_pa_plan.json'),'--resolved-projection',str(projection),'--fly2',str(fly),'--source-states',str(source_states),'--receipt',str(root/'projection_receipt.json')])
+   self.assertEqual(call['code_root'],str(root/'frozen code'))
+   actual=subprocess.run([sys.executable,'-m',call['module'],*call['arguments']],cwd=repo,capture_output=True,text=True,encoding='utf-8',timeout=30)
+   self.assertEqual(actual.returncode,0,actual.stdout+actual.stderr)
+   self.assertEqual(json.loads((root/'projection_receipt.json').read_text())['particle_count'],100)
    self.assertEqual(fly.read_text(encoding='ascii').count('standard_beam {'),100)
    self.assertEqual(source_states.read_text(encoding='ascii').count(']={t='),100)
   runner=(project_root/'simion'/'run_component_focus_flight.ps1').read_text(encoding='utf-8')
@@ -44,8 +76,6 @@ class SimionSourceTests(unittest.TestCase):
   self.assertIn("Copy-VerifiedRunInput (Resolve-Path -LiteralPath $ReleaseSpecPath).Path $releaseSpec",runner)
   self.assertIn("$c.release_spec=(Get-Content -Raw $releaseSpec|ConvertFrom-Json)",runner)
   self.assertIn("component_focus_pa_result.json",runner)
-  self.assertIn("--resolved-projection $projectionPath",runner)
-  self.assertIn("--provider-plan (Join-Path $inputs 'component_focus_pa_plan.json')",runner)
   self.assertIn("[Parameter(Mandatory)][string]$RuntimeControllerPath",runner)
   self.assertIn("$expectedRuntimeNames=@(0..$electrodeCount",runner)
   self.assertIn("Flight refuses a controller inside the published cache generation",runner)

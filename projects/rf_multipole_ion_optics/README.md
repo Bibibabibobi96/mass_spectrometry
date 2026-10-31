@@ -5,6 +5,7 @@
 当前研究包括无碰撞RF传输、轴向加速和四极RF+DC质量过滤。碰撞、空间电荷等扩展物理尚无当前资格。
 变体共享机制，分别声明科学输入与证据；项目合并不提升已有结果的资格。
 项目门禁的unittest执行通过公共计时runner记录逐测试耗时并即时输出失败详情；测试范围仍由门禁目录选择。
+冻结分析回归按真实包目录调用公共源码枚举器，并保留显式跨语言资源；隔离副本验证不回退活动源码。
 SIMION 正常入口以 `-NativeFieldRunPath` 显式复用原 producer 的 fractional 场，
 场、Fly 与分析依赖分别判断；公共检查点 API 及保留条件见[项目状态](docs/PROJECT.md#当前结论)。
 finite、interface_readiness 与 mass_filter_reference 的三条 SIMION CLI，request／completion 和收尾恢复默认接入公共 PowerShell owner API，

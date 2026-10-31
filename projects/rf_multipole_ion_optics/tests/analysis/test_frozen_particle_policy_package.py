@@ -11,6 +11,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from common.contracts.frozen_inputs import enumerate_python_sources
+
 from projects.rf_multipole_ion_optics.workflows.interface_readiness.particle_source_policy import (
     generate_interface_bundle,
 )
@@ -104,6 +106,11 @@ class FrozenParticlePolicyPackageTests(unittest.TestCase):
         analysis = source[start:source.index("  $metricDocument=", start)]
         setup = _mass_analysis_setup(runner)
         files = re.findall(r"^\s*'((?:projects|common)[/\\][^']+)'[,]?$", setup, re.MULTILINE)
+        package_roots = [relative for relative in files if (REPO_ROOT / relative).is_dir()]
+        self.assertTrue(package_roots)
+        files = (set(files) - set(package_roots)) | set(
+            enumerate_python_sources(REPO_ROOT, package_roots=package_roots)
+        )
         state_relative = "projects/rf_multipole_ion_optics/analysis/analyze_comsol_particle_state_metrics.py"
         helper_relative = "projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1"
         mode_path = PROJECT_ROOT / "config/modes/quadrupole_mass_filter_reference.json"
