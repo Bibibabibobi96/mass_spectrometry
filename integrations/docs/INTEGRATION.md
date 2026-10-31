@@ -57,6 +57,8 @@ RF相位和唯一仪器时钟；换范围不重新投影已记录状态或重新
 
 ## 单反射整机
 
+公开 `run.ps1` 将本次冻结根上下文投影到执行环境，以持久 run 目录交接科学准备；短执行 alias 仅用于执行，失败收尾后清理并恢复调用者环境。
+
 
 `single_reflection_flight/run.ps1` 在科学准备和原生执行前冻结公共 owner 的小执行请求与 run 外 Result，
 内部 `execute.ps1` 仅准备、执行与绑定证据；retention、manifest、容量与 seal 由原公共收尾负责。

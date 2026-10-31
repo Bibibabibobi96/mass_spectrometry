@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -15,6 +16,89 @@ RUNNER = REPO / "integrations/workflows/single_reflection_flight/run.ps1"
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
 class SingleReflectionRunnerTests(unittest.TestCase):
+    def test_real_owner_projects_frozen_roots_and_restores_environment_on_failure(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="sf-owner-path-") as temporary:
+            root = Path(temporary)
+            repo = root / "source"
+            # Copy executable text only: this owner-boundary test consumes no PA/IOB.
+            for folder in ("common", "integrations", "config"):
+                for source in (REPO / folder).rglob("*"):
+                    relative = source.relative_to(REPO)
+                    if (source.is_file() and source.suffix in (".py", ".ps1", ".json")
+                            and not {"assets", "__pycache__", "history"}.intersection(relative.parts)):
+                        destination = repo / relative
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copyfile(source, destination)
+            policy_path = repo / "common/contracts/artifact_capacity_policy.json"
+            policy = json.loads(policy_path.read_text(encoding="utf-8"))
+            policy["minimum_free_gib"] = 0
+            policy_path.write_text(json.dumps(policy), encoding="utf-8")
+            artifacts = root / ("deep_" + "a" * 75) / ("b" * 75) / "artifacts"
+            artifacts.mkdir(parents=True)
+            subprocess.run([sys.executable, "-I", "-B", "-c",
+                            "import sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);"
+                            "from common.contracts.capacity_ledger import initialize_capacity_ledger;"
+                            "initialize_capacity_ledger(Path(sys.argv[2]),objects=[])",
+                            str(repo), str(artifacts)], check=True, cwd=root, timeout=600)
+            execution = root / "execution"
+            host_state = os.environ.get("MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH", str(root / "host.json"))
+            run_id = "20261031_190000__test__simion__sf-owner-path"
+            run = artifacts / "projects/instrument_assembly/runs" / run_id
+            result_path = root / "owner.result.json"
+            request = root / "request.json"
+            budget = root / "budget.json"
+            request.write_text("{}", encoding="utf-8")
+            budget.write_text('{"peak_bytes":1048576}', encoding="utf-8")
+            execute = repo / "integrations/workflows/single_reflection_flight/execute.ps1"
+            execute.write_text(r'''
+param($RunPackage,$OutputDirectory,$Request,$ExecutionBudgetPath,$RepoRoot,$Python,$WorkflowCapacitySession,$NativeOperations,$ResourceReleases,$PhaseTimings,[switch]$Fly)
+if($OutputDirectory-cne$RunPackage.artifact_run_dir){throw 'output directory is not canonical'}
+if($RunPackage.run_dir-ceq$RunPackage.artifact_run_dir-or-not(Test-Path -LiteralPath $RunPackage.run_dir)){throw 'real execution alias absent'}
+Write-RunJson -Path (Join-Path $OutputDirectory 'results/owner_path_observation.json') -Value @{
+ output=$OutputDirectory;execution=$RunPackage.run_dir;config=$RunPackage.run_config;
+ artifact=$env:MASS_SPECTROMETRY_ARTIFACT_ROOT;execution_root=$env:MASS_SPECTROMETRY_EXECUTION_ROOT;
+ host_state=$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH;run=$env:MASS_SPECTROMETRY_RUN_DIRECTORY;
+ execution_directory=$env:MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY}
+throw 'INERT_EXECUTE_FAILURE_AFTER_REAL_OWNER_PATH_ADMISSION'
+''', encoding="utf-8")
+            script = root / "invoke.ps1"
+            script.write_text(r'''
+param($Repo,$Python,$Request,$Budget,$RunId,$Result)
+$ErrorActionPreference='Stop'
+$names=@('MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH','MASS_SPECTROMETRY_RUN_DIRECTORY','MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY','SIMULATION_PYTHON_EXE')
+$before=@{};foreach($name in $names){$before[$name]=[Environment]::GetEnvironmentVariable($name,'Process')}
+$caught=$null
+try{& (Join-Path $Repo 'integrations/workflows/single_reflection_flight/run.ps1') -RepoRoot $Repo -Python $Python -Request $Request -ExecutionBudgetPath $Budget -RunId $RunId -ResultPath $Result}catch{$caught=$_}
+foreach($name in $names){if([Environment]::GetEnvironmentVariable($name,'Process')-cne$before[$name]){throw "environment leaked: $name"}}
+if(-not$caught-or$caught.Exception.Message-notmatch'INERT_EXECUTE_FAILURE_AFTER_REAL_OWNER_PATH_ADMISSION'){throw "unexpected failure: $caught"}
+'OWNER_PATH_FAILURE_AND_ENV_RESTORE=PASS'
+''', encoding="utf-8")
+            environment = dict(os.environ, MASS_SPECTROMETRY_ARTIFACT_ROOT=str(artifacts),
+                               MASS_SPECTROMETRY_EXECUTION_ROOT=str(execution),
+                               MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=host_state)
+            process = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(repo), sys.executable,
+                                      str(request), str(budget), run_id, str(result_path)],
+                                     cwd=root, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=600)
+            self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+            self.assertIn("OWNER_PATH_FAILURE_AND_ENV_RESTORE=PASS", process.stdout)
+            observation = json.loads((run / "results/owner_path_observation.json").read_text(encoding="utf-8-sig"))
+            self.assertEqual(Path(observation["output"]), run)
+            self.assertEqual(Path(observation["run"]), run)
+            self.assertEqual(Path(observation["artifact"]), artifacts)
+            self.assertEqual(Path(observation["execution_root"]), execution)
+            self.assertEqual(Path(observation["host_state"]), Path(host_state))
+            self.assertEqual(observation["execution_directory"], observation["execution"])
+            self.assertFalse(Path(observation["execution"]).exists())
+            frozen_paths = json.loads((run / "run_config.json").read_text(encoding="utf-8-sig"))["paths"]
+            self.assertEqual(Path(frozen_paths["artifact_root"]), artifacts)
+            self.assertEqual(Path(frozen_paths["execution_root"]), execution)
+            self.assertEqual(Path(frozen_paths["host_resource_state_path"]), Path(host_state))
+            self.assertEqual(json.loads((run / "run_manifest.json").read_text(encoding="utf-8-sig"))["status"], "failed")
+            result = json.loads(result_path.read_text(encoding="utf-8-sig"))
+            self.assertEqual(result["status"], "failed")
+            self.assertTrue(result["writers_confirmed"])
+            self.assertTrue(result["execution_alias_removed"])
+
     def test_persistent_iob_copy_admission_reuse_and_rejection(self) -> None:
         """Exercise the production lazy-copy function with the real public copy API."""
         with tempfile.TemporaryDirectory() as temporary:
@@ -251,6 +335,7 @@ function Write-RunJson { param($Path,$Value,$Depth) $Value|ConvertTo-Json -Depth
 function Copy-VerifiedRunInput { param($Source,$Destination) Copy-Item -LiteralPath $Source -Destination $Destination;return $Destination }
 function New-RunPackage {
  param($Python,$RepoRoot,$ArtifactRoot,$RunId,$Project,$Mode,$Software,[switch]$RetentionContractEnabled,$RetentionClass,$RetentionReason,[switch]$CapacityLedgerLifecycleEnabled,[switch]$UseShortExecutionPath,$AdditionalDirectories,$ExpectedExecutionRelativePaths,$PathContext)
+ if($UseShortExecutionPath){throw 'Public runner forced an execution alias instead of passing declared paths to the shared owner'}
  $run=Join-Path $ArtifactRoot "runs/$RunId";New-Item -ItemType Directory -Force -Path (Join-Path $run 'inputs'),(Join-Path $run 'results'),(Join-Path $run 'logs')|Out-Null
  Write-RunJson -Path (Join-Path $run 'run_config.json') -Value @{run_id=$RunId;project=$Project;mode=$Mode;inputs=@{};artifact_retention=@{class='solver_review'}}
  Write-RunJson -Path (Join-Path $run 'summary.json') -Value @{status='checkpoint'}
@@ -262,6 +347,7 @@ function Update-ArtifactWorkflowCapacitySession { param($Session) return [pscust
 function Exit-ArtifactWorkflowCapacitySession { param($Session) [IO.File]::AppendAllText((Join-Path $Session.run 'events.txt'),"capacity_release`n");$Session.status='released' }
 function Save-RunEnvironment {param($Names);return @{}}
 function Restore-RunEnvironment {param($Names,$Snapshot)}
+function Get-RunNativeExecutionContext {param($Package,$Paths);return @{environment=@{}}}
 function Invoke-RunToolRootContext {
  param($RepoRoot,$Operation)
  # Source ownership is independently tested with real two-root leases. This is the runner routing fixture.

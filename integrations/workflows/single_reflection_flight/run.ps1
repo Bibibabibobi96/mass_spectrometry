@@ -79,6 +79,8 @@ try {
     -ExpectedExecutionRelativePaths @(
       'inputs/runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/simion/reflectron/oatof_reflectron_ideal_10_5.gem'
     )
+ $parentEnvironment=(Get-RunNativeExecutionContext -Package $package -Paths @()).environment
+ foreach($key in $parentEnvironment.Keys){[Environment]::SetEnvironmentVariable([string]$key,[string]$parentEnvironment[$key],'Process')}
   # Preparation initially needs no payload commitment. The delegated native
   # stage renews this same session from its frozen engineering budget.
   $ownerProtectedPaths=@($package.artifact_run_dir)
@@ -113,7 +115,7 @@ print(json.dumps(source_capacity_projection(artifact_root=Path(sys.argv[1]),requ
 
   $stageName='execute_frozen_workflow'
   $executeArguments=@{
-    RunPackage=$package;Request=$Request;ExecutionBudgetPath=$ownerBudget;OutputDirectory=[string]$package.run_dir
+    RunPackage=$package;Request=$Request;ExecutionBudgetPath=$ownerBudget;OutputDirectory=[string]$package.artifact_run_dir
     RepoRoot=$RepoRoot;Python=$Python;WorkflowCapacitySession=$capacity;NativeOperations=$nativeOperations;ResourceReleases=$resourceReleases;PhaseTimings=$phaseTimings
   }
   if($stage-eq'field_design'){$executeArguments.FieldDesignOnly=$true}
