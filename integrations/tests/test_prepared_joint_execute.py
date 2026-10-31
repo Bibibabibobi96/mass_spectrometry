@@ -104,13 +104,24 @@ class PreparedJointAnalysisTests(unittest.TestCase):
         support = {"common/contracts/run_artifact_support.ps1", "common/require_powershell7.ps1", "common/host_execution_lease.ps1"}
         capacity_fixture = r'''
 function Invoke-RunCapacityLifecycleAdapter {return @{light_evidence_budget_exceeded=$false}}
+function Assert-AnalysisFixtureSourceProtection {
+ param($RunDirectory,$ProtectedPaths,$SourceReferences)
+ if(@($ProtectedPaths).Count-ne1-or$ProtectedPaths[0]-ne$RunDirectory){throw 'Target run protection differs'}
+ if(@($SourceReferences).Count-ne1){throw 'Analysis source authority count differs'}
+ $reference=$SourceReferences[0];$record=$reference.manifest_record
+ $source=$env:ANALYSIS_TEST_SOURCE_RUN;$manifest=Join-Path $source 'run_manifest.json'
+ if($record.path-ne$manifest-or-not$record.exists-or$record.bytes-ne(Get-Item $manifest).Length-or$record.sha256-ne(Get-FileHash $manifest -Algorithm SHA256).Hash){throw 'Analysis source manifest binding differs'}
+ if(@($reference.protected_paths).Count-ne1-or$reference.protected_paths[0]-ne$source-or@($reference.protected_cache_keys).Count){throw 'Analysis explicit source protection differs'}
+}
 function Enter-ArtifactWorkflowCapacitySession {
- param($Python,$RepoRoot,$ArtifactRoot,$RunDirectory,$CommittedNewBytes,$ProtectedPaths,$Owner)
- if($CommittedNewBytes-ne1048576-or$ProtectedPaths.Count-ne2){throw 'Analysis capacity/source protection differs'}
- return @{committed_new_bytes=$CommittedNewBytes}
+ param($Python,$RepoRoot,$ArtifactRoot,$RunDirectory,$CommittedNewBytes,$ProtectedPaths,$SourceReferences,$Owner)
+ if($CommittedNewBytes-ne1048576){throw 'Analysis capacity budget differs'}
+ Assert-AnalysisFixtureSourceProtection $RunDirectory $ProtectedPaths $SourceReferences
+ return @{committed_new_bytes=$CommittedNewBytes;run_directory=$RunDirectory;source_references=$SourceReferences}
 }
 function Update-ArtifactWorkflowCapacitySession {
- param($Python,$RepoRoot,$Session,$ProtectedPaths,$RemainingCommittedNewBytes)
+ param($Python,$RepoRoot,$Session,$ProtectedPaths,$SourceReferences,$RemainingCommittedNewBytes)
+ Assert-AnalysisFixtureSourceProtection $Session.run_directory $ProtectedPaths $SourceReferences
  if($env:ANALYSIS_TEST_CAPACITY_FAIL-eq'1'-and$RemainingCommittedNewBytes-eq0){throw 'Explicit inert terminal capacity failure'}
  return @{session=$Session}
 }
@@ -133,13 +144,13 @@ function Exit-HostExecutionLease {
         owner_fixture = r'''
 # Explicit lifecycle boundary fixture; the real adapter and CLI recovery run
 # separately in test_workflow_finalization_recovery.
-function Initialize-RunArtifactPowerShellOwner {param($Package) @{package=$Package;result_path='inert-result'}}
+function Initialize-RunArtifactPowerShellOwner {param($Package,$CapacitySession) @{package=$Package;capacity_session=$CapacitySession;result_path='inert-result'}}
 function Complete-RunArtifactPowerShellOwner {
  param($Context,$Status,$Summary,$OutputPaths,$WritersStopped,$WriterCompletion,$OriginalFailure)
  if(-not$WritersStopped-or$WriterCompletion.operations.Count-or$WriterCompletion.resource_releases.Count){throw 'Analysis fabricated native execution'}
  Write-RunJson -Path $Context.package.summary -Value $Summary
  $null=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $Context.package.run_config
- $null=Update-ArtifactWorkflowCapacitySession -RemainingCommittedNewBytes 0
+ $null=Update-ArtifactWorkflowCapacitySession -Session $Context.capacity_session -ProtectedPaths @($Context.capacity_session.run_directory) -SourceReferences $Context.capacity_session.source_references -RemainingCommittedNewBytes 0
  Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $Context.package.run_config -Status $Status -Software @('Python fixture') -Outputs @($OutputPaths) -DeferCapacityFinalization|Out-Host
  Invoke-ProjectPython -Arguments @('-m','common.contracts.run_capacity_lifecycle','--action','seal-stopped-payload','--run-config',$Context.package.run_config)|Out-Host
  @{status=$Status;stage='complete'}
@@ -197,6 +208,7 @@ if os.environ['ANALYSIS_TEST_SEAL_FAIL']=='1': raise RuntimeError('Explicit iner
                     "-RepoRoot", str(repo), "-PythonExe", sys.executable], cwd=workspace,
                     env={**os.environ, "PYTHONPATH": str(repo), "PYTHONNOUSERSITE": "1", "ProgramFiles": str(workspace / "NO_SIMION"),
                          "ANALYSIS_TEST_HOST_EVENTS": str(workspace / "host_events.txt"),
+                         "ANALYSIS_TEST_SOURCE_RUN": str(source),
                          "ANALYSIS_TEST_FAIL": "1" if scenario == "analysis_failure" else "0",
                           "ANALYSIS_TEST_CAPACITY_FAIL": "1" if scenario == "capacity_failure" else "0",
                          "ANALYSIS_TEST_SEAL_FAIL": "1" if scenario == "seal_failure" else "0"},

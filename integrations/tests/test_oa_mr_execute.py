@@ -58,6 +58,7 @@ if($result.estimation.observed_missing_batch_index-ne3-or$result.limits.maximum_
             local = parent/"logs/native_two_prism_flight__batch01.log"; local.write_text("parent")
             borrowed = ancestor/"batch.log"; borrowed.write_text("ancestor")
             (parent/"run_config.json").write_text("{}")
+            (ancestor/"run_manifest.json").write_text(json.dumps(dict(role="simulation_run_manifest", status="success")))
             manifest = dict(role="simulation_run_manifest", status="failed", inputs={"reused_batch_002_log": {"path":str(borrowed)}},
                             outputs=[{"path":str(local)}])
             (parent/"run_manifest.json").write_text(json.dumps(manifest))
@@ -70,9 +71,29 @@ $runtime=Join-Path $Repo 'projects/parallel_mirror_dual_stripe_mr_tof/simion/nat
 $ast=[Management.Automation.Language.Parser]::ParseFile($runtime,[ref]$null,[ref]$errors)
 $node=$ast.Find({param($a)$a-is[Management.Automation.Language.FunctionDefinitionAst]-and$a.Name-eq'Protect-MrtofContinuationEvidence'},$true)
 Invoke-Expression $node.Extent.Text
-function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session,$ProtectedPaths) if($ProtectedPaths-notcontains$Borrowed){throw 'ancestor was not protected'};$script:admitted=$true;return @{session=$Session}}
-$script:projectionCalls=0;$script:drift=$false
-function pythonFixture {$global:LASTEXITCODE=0;$script:projectionCalls++;@{run_directories=@($Parent,(Split-Path $Borrowed));files=@($Borrowed,(Join-Path $Parent 'logs/native_two_prism_flight__batch01.log'),(Join-Path $Parent 'run_manifest.json'));manifests=@{value=$(if($script:drift-and$script:projectionCalls-eq2){'changed'}else{'fixed'})}}|ConvertTo-Json -Depth 20 -Compress}
+function Update-ArtifactWorkflowCapacitySession {
+ param($Python,$RepoRoot,$Session,$ProtectedPaths,$SourceReferences)
+ if(@($ProtectedPaths).Count-ne0-or@($SourceReferences).Count-ne2){throw 'Explicit manifest authorities were not admitted'}
+ foreach($reference in $SourceReferences){
+  $record=$reference.manifest_record;$authority=Split-Path -Parent $record.path
+  if($authority-notin@($Parent,(Split-Path $Borrowed))-or$reference.protected_paths[0]-ne$authority){throw 'Wrong explicit authority'}
+  if(-not$record.exists-or$record.bytes-ne(Get-Item $record.path).Length-or$record.sha256-ne(Get-FileHash $record.path -Algorithm SHA256).Hash){throw 'Manifest binding changed'}
+  if($authority-eq(Split-Path $Borrowed)-and$reference.protected_paths-notcontains$Borrowed){throw 'Borrowed evidence not protected by its manifest'}
+ }
+ # Admission must precede read locks; this is still writable at this boundary.
+ $writer=[IO.File]::Open($Borrowed,'Open','ReadWrite','ReadWrite');$writer.Dispose()
+ $script:admitted=$true;return @{session=$Session}
+}
+$script:projectionCalls=0;$script:drift=$false;$script:omitAuthority=$false
+function pythonFixture {
+ $global:LASTEXITCODE=0;$script:projectionCalls++
+ $ancestor=Split-Path $Borrowed;$parentManifest=Join-Path $Parent 'run_manifest.json';$ancestorManifest=Join-Path $ancestor 'run_manifest.json'
+ $manifests=@{};$manifests[$parentManifest]=(Get-FileHash $parentManifest -Algorithm SHA256).Hash
+ $manifests[$ancestorManifest]=if($script:drift-and$script:projectionCalls-eq2){'changed'}else{(Get-FileHash $ancestorManifest -Algorithm SHA256).Hash}
+ @{run_directories=$(if($script:omitAuthority){@($Parent)}else{@($Parent,$ancestor)});
+   files=@($Borrowed,(Join-Path $Parent 'logs/native_two_prism_flight__batch01.log'),$parentManifest,$ancestorManifest);
+   manifests=$manifests}|ConvertTo-Json -Depth 20 -Compress
+}
 $guards=[Collections.Generic.List[IO.FileStream]]::new();$script:admitted=$false
 $null=Protect-MrtofContinuationEvidence -Parent $Parent -Session @{status='active'} -Python pythonFixture -RepoRoot $Parent -Guards $guards
 if(-not$script:admitted-or$script:projectionCalls-ne2){throw 'capacity renewal or locked reprojection missing'}
@@ -85,6 +106,11 @@ $guards=[Collections.Generic.List[IO.FileStream]]::new();$script:projectionCalls
 try{Protect-MrtofContinuationEvidence -Parent $Parent -Session @{status='active'} -Python pythonFixture -RepoRoot $Parent -Guards $guards|Out-Null}catch{$caught=$_.Exception.Message-match'projection changed'}
 foreach($stream in $guards){$stream.Dispose()}
 if(-not$caught){throw 'changed projection was accepted'}
+$guards=[Collections.Generic.List[IO.FileStream]]::new();$script:projectionCalls=0;$script:drift=$false;$script:omitAuthority=$true;$script:admitted=$false;$caught=$false
+try{Protect-MrtofContinuationEvidence -Parent $Parent -Session @{status='active'} -Python pythonFixture -RepoRoot $Parent -Guards $guards|Out-Null}catch{$caught=$_.Exception.Message-match'no explicit projected run authority'}
+foreach($stream in $guards){$stream.Dispose()}
+if(-not$caught-or$script:admitted){throw 'Missing explicit authority reached admission'}
+
 ''', encoding="utf-8")
             result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script), str(RUNNER), str(parent), str(borrowed), str(REPO)],
                                     cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
