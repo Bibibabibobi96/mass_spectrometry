@@ -329,20 +329,19 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
                 (root / "common/contracts").mkdir(parents=True)
                 for relative in ("common/host_resource_python.py", "common/contracts/recorded_file_removal.py", "common/contracts/file_identity.py"):
                     shutil.copyfile(Path(request["prepared"]["import_root"]) / relative, root / relative)
+                shutil.copyfile(PROJECT_ROOT / "tests/analysis/test_support/candidate_fixtures.py", root / "fixture_support.py")
                 callback = root / "candidate_fixture.py"
                 callback.write_text("import sys\nfrom pathlib import Path\nsys.path.insert(0," + repr(request["prepared"]["import_root"]) + ")\n" + r'''
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate_workflow as workflow
 original = workflow._execute_candidate_stages
-def fixture(stage, plan, _simion):
-    root = Path(plan['run_root'])
+from fixture_support import CandidateFixtures
+base_fixture = CandidateFixtures.native_fake_executor([])
+
+def fixture(stage, plan, simion):
     if FAIL and stage['stage_id'] == 'simion_candidate':
         raise RuntimeError('deliberate software stage failure')
-    if stage['stage_id'] == 'static_inputs':
-        particle = Path(stage['pending_output']); particle.write_text('fixture particle\n')
-        return {'particle_table': str(particle)}
-    output = root/'results'/('fixture_' + stage['stage_id'] + '.txt')
-    output.write_text('software fixture; no solver result\n')
-    return {'model' if stage['stage_id']=='comsol_candidate' else 'report': str(output)}
+    return base_fixture(stage, plan, simion)
+
 def injected(*args, **kwargs):
     kwargs['stage_executor'] = fixture
     return original(*args, **kwargs)
@@ -1369,19 +1368,7 @@ def execute_prepared_run(*args):
             )
             observed = []
 
-            def fake_executor(stage, plan, _simion):
-                observed.append(stage["stage_id"])
-                if stage["stage_id"] == "static_inputs":
-                    particle = Path(stage["pending_output"])
-                    particle.write_text("particle\n", encoding="utf-8")
-                evidence_path = Path(plan["run_root"]) / "results" / f"{stage['stage_id']}.txt"
-                evidence_path.write_text("STATUS=PASS\n", encoding="utf-8")
-                evidence = {"report": str(evidence_path)}
-                if stage["stage_id"] == "comsol_candidate":
-                    model = Path(plan["run_root"]) / "comsol" / "candidate.mph"
-                    model.write_text("candidate model\n", encoding="utf-8")
-                    evidence["model"] = str(model)
-                return evidence
+            fake_executor = self.native_fake_executor(observed)
 
             run_root, summary = run_candidate_workflow(
                 plan_path, sys.executable, stage_executor=fake_executor
@@ -1405,6 +1392,7 @@ def execute_prepared_run(*args):
                     Path(root), stamp
                 )
 
+                base_executor = self.native_fake_executor([])
                 def fake_executor(stage, plan, _simion):
                     if stage["stage_id"] == stop_stage:
                         if outcome == "interrupted":
@@ -1412,22 +1400,7 @@ def execute_prepared_run(*args):
                         if outcome == "timeout":
                             raise StageTimedOut("test timeout")
                         raise RuntimeError("test failure")
-                    if stage["stage_id"] == "static_inputs":
-                        Path(stage["pending_output"]).write_text(
-                            "particle\n", encoding="utf-8"
-                        )
-                    evidence_path = (
-                        Path(plan["run_root"])
-                        / "results"
-                        / f"{stage['stage_id']}.txt"
-                    )
-                    evidence_path.write_text("STATUS=PASS\n", encoding="utf-8")
-                    evidence = {"report": str(evidence_path)}
-                    if stage["stage_id"] == "comsol_candidate":
-                        model = Path(plan["run_root"]) / "comsol" / "candidate.mph"
-                        model.write_text("candidate model\n", encoding="utf-8")
-                        evidence["model"] = str(model)
-                    return evidence
+                    return base_executor(stage, plan, _simion)
 
                 with self.assertRaises(exception_type) as caught:
                     run_candidate_workflow(
@@ -1737,18 +1710,22 @@ def execute_prepared_run(*args):
                     analysis_dir.mkdir(parents=True, exist_ok=True)
                     (analysis_dir / "analysis_receipt.json").write_text("{}", encoding="utf-8")
 
+            def fake_managed(command, log, actual_plan, receipt, role, environment):
+                fake_run(command, log, environment)
+
             with mock.patch(
                 "projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow._verify_frozen_cad_python",
                 return_value=plan["execution_source_closure"]["runtime"]["python_executable"],
             ), mock.patch(
                 "projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow._run_command",
                 side_effect=fake_run,
-            ), mock.patch.object(candidate_workflow, "append_native_stage_completion",
-                                 wraps=candidate_workflow.append_native_stage_completion) as completion:
+            ), mock.patch.object(candidate_workflow, "_run_managed_stage_command", side_effect=fake_managed) as managed, \
+                    mock.patch.object(candidate_workflow, "_record_candidate_native_completion", return_value=True) as completed:
                 execute_stage(stage, plan, "unused")
-            self.assertEqual(completion.call_count, 2)
-            self.assertEqual([call.kwargs["context_sha256"] for call in completion.call_args_list],
+            self.assertEqual(managed.call_count, 2)
+            self.assertEqual([call.args[2]["context_sha256"] for call in managed.call_args_list],
                              [sha256(plan_path)] * 2)
+            completed.assert_called_once()
 
             code_root = Path(plan["execution_source_closure"]["code_root"])
             self.assertEqual(len(observed), 3)
@@ -2015,9 +1992,12 @@ def execute_prepared_run(*args):
             self.assertEqual(statuses["comsol_candidate"]["execution"], "reused")
             self.assertEqual(statuses["simion_candidate"]["execution"], "reused")
             self.assertEqual(statuses["cad_candidate"]["execution"], "executed")
-            self.assertTrue(
-                (run_root / "inputs" / "stage_reuse_provenance.json").is_file()
-            )
+            config=load_json(run_root / "run_config.json")
+            for stage_id in ("comsol_candidate","simion_candidate"):
+                proof=load_json(Path(config["inputs"]["stage_reuse_"+stage_id+"_provenance"]))
+                self.assertEqual(proof["parent_run_id"],parent.name)
+                self.assertEqual({item["stage_id"] for item in proof["reused_stages"]},{stage_id})
+
 
 
     def test_native_reuse_tamper_fails_before_any_commercial_stage(self):
@@ -2641,7 +2621,8 @@ class CandidatePostprocessTests(unittest.TestCase):
                 commands.append(command)
                 report=Path(command[command.index("-ReportPath")+1])
                 report.write_text("STATUS=PASS\nPYTHON_ANALYSIS_REQUEST="+str(request)+"\n",encoding="utf-8")
-            runtime=SimpleNamespace(_verify_frozen_cad_python=lambda *args:sys.executable,_run_managed_stage_command=observe)
+            runtime=SimpleNamespace(_verify_frozen_cad_python=lambda *args:sys.executable,_run_managed_stage_command=observe,
+                _record_candidate_native_completion=lambda *args:True)
             stage={"environment":{},"report_path":str(run/"logs/build.txt"),"model_path":str(run/"model.mph"),"contract_path":str(PROJECT_ROOT/"config/resolved_geometry.json")}
             with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY":str(execution)}), \
                     mock.patch.object(adapter,"analyze_detector_request",return_value=run/"analysis_receipt.json"):
@@ -2930,7 +2911,7 @@ class CandidatePostprocessTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
             artifact,science,_,_=postprocess_source_fixture(root/"science")
-            foreign_root,foreign,_,_=postprocess_source_fixture(root/"foreign")
+            foreign_root,_,foreign,_=cold_export_failed_child_fixture(root/"foreign")
             source=select_postprocess_parent(science,artifact)
             other=select_postprocess_parent(foreign,foreign_root)
             source["exports"]=other["exports"]
@@ -2958,15 +2939,42 @@ class CandidatePostprocessTests(unittest.TestCase):
             publish_run_manifest(config,"failed",output_paths=[completion])
             record_capacity_object(artifact,path=parent,object_class="light_evidence",bytes_count=sum(
                 path.stat().st_size for path in parent.rglob("*") if path.is_file()),owner=PROJECT_ROOT.name)
-            with self.assertRaisesRegex(ValueError,"CSV exporter is not"):
+            before={str(path):path.read_bytes() for owner in (science,foreign,parent) for path in owner.rglob("*") if path.is_file()}
+            with self.assertRaisesRegex(ValueError,"CSV exporter scientific source binding differs"):
                 select_postprocess_parent(parent,artifact)
+            self.assertEqual(before,{str(path):path.read_bytes() for owner in (science,foreign,parent) for path in owner.rglob("*") if path.is_file()})
 
 
 class CandidateAnalysisReuseTests(CandidateFixtures, unittest.TestCase):
+    def test_legacy_analysis_records_without_authority_reanalyze_bound_csv_only(self):
+        from common.contracts.write_run_manifest import file_record
+        from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import candidate_comsol_stage
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            artifact,plan=self.native_workflow_plan(root,"20261031_130003")
+            parent,summary=run_candidate_workflow(plan,sys.executable,stage_executor=self.native_fake_executor([]))
+            evidence=next(item['evidence'] for item in summary['stages'] if item['stage_id']=='comsol_candidate')
+            # An explicit historical analysis-output view lacks authority. It
+            # does not pretend that today's successful phase omitted a field,
+            # and neither the parent receipt nor its manifest is modified.
+            legacy_outputs={name:file_record(Path(evidence[name])) for name in ('analysis_request','analysis_receipt')}
+            child=root/'analysis-child';(child/'logs').mkdir(parents=True)
+            closure=freeze_candidate_source_closure(child/'inputs/code',artifact,
+                resolved_contract=PROJECT_ROOT/'config/resolved_geometry.json',
+                analysis_contract=PROJECT_ROOT/'config/analysis_contract.json')
+            before={path:path.read_bytes() for path in parent.rglob('*') if path.is_file()}
+            with mock.patch.object(candidate_workflow,'_run_managed_stage_command',side_effect=AssertionError('COMSOL must not start')):
+                actual,execution=candidate_comsol_stage.refresh_reused_comsol_analysis(dict(evidence),legacy_outputs,
+                    child,closure,parent_root=parent,runtime=candidate_workflow)
+            self.assertEqual(execution,'executed')
+            self.assertTrue(Path(actual['analysis_receipt']).is_relative_to(child))
+            self.assertIn('analysis_contract',legacy_outputs)
+            self.assertEqual({path:path.read_bytes() for path in before},before)
+
     def test_normal_reuse_refreshes_only_changed_or_unrecorded_analysis_authority(self):
         from projects.single_reflection_oa_tof_mass_analyzer.analysis import prepare_candidate_run as preparation
         from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import candidate_comsol_stage
-        for case in ("same","changed","missing_parent_authority"):
+        for case in ("same","changed"):
             with self.subTest(case=case),tempfile.TemporaryDirectory() as directory:
                 root=Path(directory)
                 _,plan=self.native_workflow_plan(root,"20261031_130000")
@@ -2975,24 +2983,11 @@ class CandidateAnalysisReuseTests(CandidateFixtures, unittest.TestCase):
                 def producer(stage,runtime,simion):
                     evidence=base(stage,runtime,simion)
                     if stage["stage_id"]=="comsol_candidate":
-                        import csv
                         run=Path(runtime["run_root"])
-                        events=run/"results/events.csv"
-                        with events.open("w",encoding="utf-8",newline="") as stream:
-                            writer=csv.writer(stream)
-                            writer.writerow(["Ion","TofUs","XMm","YMm","Hit"])
-                            writer.writerows((i+1,40+i*.00001,0,0,True) for i in range(100))
-                        request=run/"results/analysis_request.json"
-                        request.write_text(json.dumps({"schema_version":1,"role":"oatof_comsol_detector_events_analysis_request",
-                            "solver":"COMSOL","label":"ReuseFixture","nominal_mass_Da":524,"raw_events_csv":str(events),
-                            "analysis_output_dir":str(run/"results/analysis"),"event_extraction":"solver_native_detector_crossing_or_freeze",
-                            "aggregate_metrics_owner":"python_reference_analysis"}),encoding="utf-8")
+                        request=Path(evidence["analysis_request"])
                         receipt=candidate_comsol_stage.analyze_detector_request(request,runtime["execution_source_closure"],
                             run/"logs/analysis.log",runtime=candidate_workflow)
-                        evidence.update(analysis_request=str(request),analysis_receipt=str(receipt))
-                        if case!="missing_parent_authority":
-                            evidence["analysis_contract"]=frozen_source_path(runtime["execution_source_closure"],
-                                "projects/single_reflection_oa_tof_mass_analyzer/config/analysis_contract.json")
+                        evidence["analysis_receipt"]=str(receipt)
                     return evidence
                 parent,_=run_candidate_workflow(plan,sys.executable,stage_executor=producer)
                 before={path:path.read_bytes() for path in parent.rglob("*") if path.is_file()}

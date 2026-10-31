@@ -205,6 +205,7 @@ class CandidateFixtures:
 
     @staticmethod
     def native_fake_executor(observed, *, fail_stage=None, tamper_closure=False):
+        """Mock scientific stages with complete transport records, not solver evidence."""
         def execute(stage, plan, _simion):
             stage_id = stage["stage_id"]
             observed.append(stage_id)
@@ -216,8 +217,44 @@ class CandidateFixtures:
                 seed = plan["run_instance"]["particle_source_seed"]
                 path.write_text(f"particle:{seed}\n", encoding="utf-8")
                 return {"particle_table": str(path)}
+            if stage_id == "comsol_candidate":
+                import csv
+                from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import frozen_source_path
+                output = run_root / "results"
+                output.mkdir(parents=True, exist_ok=True)
+                evidence = {}
+                for name in ("model", "build_report", "sync_report"):
+                    path = output / ("comsol_candidate_" + name + ".dat")
+                    path.write_text("Opaque software stage fixture; not a COMSOL result\n", encoding="utf-8")
+                    evidence[name] = str(path)
+                events = output / "comsol_detector_events_Fixture.csv"
+                with events.open("w", encoding="utf-8", newline="") as stream:
+                    writer = csv.writer(stream)
+                    writer.writerow(["Ion", "TofUs", "XMm", "YMm", "Hit", "Status", "Event",
+                                     "DetectorRadiusMm", "X0Mm", "Y0Mm", "Z0Mm"])
+                    writer.writerows((index+1, 40+index*.00001, 0, 0, True, "detector_hit", "crossing", 0, 0, 0, 0)
+                                     for index in range(100))
+                request = output / "comsol_detector_events_Fixture.analysis_request.json"
+                analysis = output / "fixture_analysis"
+                analysis.mkdir()
+                request.write_text(json.dumps({"schema_version":1,"role":"oatof_comsol_detector_events_analysis_request",
+                    "solver":"COMSOL","label":"SoftwareFixture","nominal_mass_Da":524,
+                    "raw_events_csv":str(events),"analysis_output_dir":str(analysis),
+                    "event_extraction":"solver_native_detector_crossing_or_freeze",
+                    "aggregate_metrics_owner":"python_reference_analysis"}), encoding="utf-8")
+                metrics = analysis / "metrics.json"
+                metrics.write_text(json.dumps({"software_fixture_only":True}), encoding="utf-8")
+                receipt = analysis / "analysis_receipt.json"
+                receipt.write_text(json.dumps({"schema_version":1,"role":"oatof_comsol_detector_events_analysis_receipt",
+                    "status":"PASS","request":{"path":str(request),"sha256":sha256(request)},
+                    "raw_events":{"path":str(events),"sha256":sha256(events)},
+                    "metrics":{"path":str(metrics),"sha256":sha256(metrics)},
+                    "aggregate_metrics_owner":"python_reference_analysis"}), encoding="utf-8")
+                evidence.update(analysis_request=str(request),analysis_receipt=str(receipt),
+                    analysis_contract=frozen_source_path(plan["execution_source_closure"],
+                        "projects/single_reflection_oa_tof_mass_analyzer/config/analysis_contract.json"))
+                return evidence
             names = {
-                "comsol_candidate": ("model", "build_report", "sync_report"),
                 "simion_candidate": (
                     "iob",
                     "ion_n100",
