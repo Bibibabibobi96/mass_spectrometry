@@ -66,7 +66,7 @@ COMSOL 正常无碰撞入口支持 `-AnalyzeOnly -ParentManifestPath <原封存m
 | 同求解器数值研究 | [比较入口](workflows/same_solver_convergence/run_comparison.ps1) |
 | 已记录四极轨迹的RF相位与横向差异 | [轨迹诊断](analysis/plot_transport_phase_diagnostics.py)；从仓库根用下方唯一模块入口，证据边界见[项目状态](docs/PROJECT.md#已记录轨迹相位诊断) |
 | 跨组件装配、外部光学与整机状态 | [统一集成入口](../../integrations/README.md) |
-| 静态门禁 | [verify_project.ps1](verify_project.ps1) |
+| 项目软件验证 | [公共Owner范围](../../common/verify.ps1)，`-Scope Owner -Owner rf_multipole_ion_optics` |
 
 上述三个 SIMION CLI 均可通过 `-ContinuationPredecessorManifestPath` 显式指定同 workflow 终态前驱，
 以新的 `-RunId` 复用完整批次；科学输入和原分区必须匹配，旧 run 缺少所需证据时不会被当作完整批次。

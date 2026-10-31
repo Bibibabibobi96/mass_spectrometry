@@ -595,3 +595,11 @@ native／GUI峰值RSS：K1 3681587200／3725475840B，K2 3639189504／3782770688
 finite正常入口沿resolved runtime的volume_snapshot_receipt冻结小收据，按已有Copy-VerifiedRunInput身份与原particle_source_preflight --volume-snapshot-receipt运输；config输入及provenance保留原来源和实际冻结身份。缺失／改变／未声明／与family能量override冲突的收据仍拒绝，无volume的原预检路径不变。此为已支持源语义接线，不扩物理域：原注册volume源超出COMSOL默认numerical_domain仍拒绝；有效接线夹具仅复用已有纯provider显式上游域延长设计，不改生产默认或源。
 
 mass_filter_reference正式case数组与manifest Outputs包含每case实际deterministic solver输出release_source_mapping.json，保完整ID／native order／birth／权重／6D母群来源，不新增采样或改变质量扫描物理。薄PowerShell行为回归执行实际case及输出数组，核每case映射唯一且原三种输出保留；原source-preflight实际边界覆盖有效及四种拒绝。只验证软件运输／发布接线，没有新COMSOL求解、GUI或科学资格；完整项目Owner验收另行报告。
+
+## Campaign 与软件验证入口的当前回归
+
+现有 campaign resolver、预算与原 launcher 的软件回归覆盖 COMSOL 请求、双后端逐行选择、授权数值和几何输入、冻结 runtime 运输及漂移拒绝；Status／Diff／DryRun 不启动求解器，未支持的 COMSOL analysis／SIMION 专属策略仍拒绝。测试只在最终求解边界使用惰性入口，不把软件 dispatch 当作场或粒子求解。原 schema／物理接受条件保持。
+
+同轮 Freshness 的 PowerShell 解析可由实际变体软件入口显式复用；独立入口仍做适用前置。回归保留缺前置、坏语法、变体测试失败的非零传播，并在不支持的 Formal 资格请求进入软件检查前拒绝。软件主入口为 `common/verify.ps1 -Scope Owner -Owner rf_multipole_ion_optics`，内部 Core／Static／Freshness 不表示新的科学资格。
+
+2026-10-31，以上三个测试模块在隔离的 `7816f614` 生产源码上经公共 GATE 运行：28 项通过，测试区间 52.753 秒、外层 53.2210032 秒（2 CPU／2 GiB 准入）。范围仅 campaign request、dual-backend campaign 和项目 verify 接线；商业调用为 0，不代表完整 RF Owner／Repository、原生性能或科学资格验收。
