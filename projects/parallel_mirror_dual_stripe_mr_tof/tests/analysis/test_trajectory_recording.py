@@ -1,5 +1,6 @@
 """Opt-in step observation and dense trajectory lifecycle tests; no field solve."""
 from pathlib import Path
+import csv
 import json
 import shutil
 import subprocess
@@ -56,14 +57,19 @@ class TrajectoryRecordingTest(unittest.TestCase):
     def test_fixed_interval_actual_lua_callbacks_keep_clock_identity_and_state(self):
         lua=shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe"
         if not Path(lua).exists() and shutil.which(lua) is None:self.skipTest("plain Lua unavailable")
-        source=(PROJECT/"simion/mrtof_candidate.lua").read_text()
-        function=source[source.index("local trajectory_sample_buckets"):source.index("local static_field_adjust")]
-        script="""local operating_point={trajectory_recording_enabled=true,trajectory_recording_mode='fixed_interval',trajectory_recording_interval_us=.1}
+        source=(PROJECT/"simion/mrtof_candidate.lua").read_text(encoding="utf-8")
+        # Include the real writer, ID encoder and sampling closure together.
+        function=source[source.index("-- The frozen sidecar"):source.index("local static_field_adjust")]
+        with TemporaryDirectory() as temporary:
+            root=Path(temporary);program=root/"callback.lua";trajectory=root/"trajectory.csv"
+            declaration="{csv_writer_path="+json.dumps((PROJECT.parents[1]/"common/simion/scientific_event_csv.lua").as_posix())+",events_path="+json.dumps((root/"events.csv").as_posix())+",trajectory_path="+json.dumps(trajectory.as_posix())+"}"
+            script="""local operating_point={trajectory_recording_enabled=true,trajectory_recording_mode='fixed_interval',trajectory_recording_interval_us=.1}
 local function event_id() return ion_number==1 and 20 or 80 end
 local function instrument_time_us() return 7500+ion_time_of_flight end
 ion_px_mm=1;ion_py_mm=2;ion_pz_mm=3;ion_vx_mm=4;ion_vy_mm=5;ion_vz_mm=6
 ion_time_step=.004;ion_splat=0
-"""+function+"""
+"""+"operating_point.scientific_event_output="+declaration+"\n"+function+"""
+initialize_scientific_output()
 ion_number=1;ion_time_of_flight=.061;record_trajectory_sample('birth')
 for _,t in ipairs({.065,.101,.15,.205}) do ion_time_of_flight=t;record_trajectory_sample('step') end
 ion_time_of_flight=.201;record_trajectory_sample('terminal')
@@ -72,17 +78,20 @@ ion_time_of_flight=.075;record_trajectory_sample('step')
 ion_time_of_flight=.09;record_trajectory_sample('terminal')
 assert(ion_time_step==.004 and ion_time_of_flight==.09 and ion_splat==0)
 assert(ion_px_mm==1 and ion_py_mm==2 and ion_pz_mm==3 and ion_vx_mm==4 and ion_vy_mm==5 and ion_vz_mm==6)
+scientific_events:close();scientific_trajectory:close()
 """
-        with TemporaryDirectory() as temporary:
-            root=Path(temporary);program=root/"callback.lua";program.write_text(script)
+            program.write_text(script,encoding="utf-8")
             result=subprocess.run([lua,str(program)],cwd=PROJECT.parents[1],capture_output=True,text=True,encoding="utf-8",timeout=20)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-            lines=result.stdout.splitlines()
-            self.assertEqual(len(lines),6)
-            self.assertEqual(sum("phase=step" in line for line in lines),2)
-            log=root/"raw.log";log.write_text(result.stdout)
+            self.assertEqual(result.stdout, "")
+            with trajectory.open(encoding="utf-8",newline="") as stream:rows=list(csv.DictReader(stream))
+            self.assertEqual(len(rows),6)
+            self.assertEqual(sum(row["phase"]=="step" for row in rows),2)
+            self.assertEqual({int(row["ion"]) for row in rows},{20,80})
+            self.assertEqual([float(row["t_us"]) for row in rows],[7500.061,7500.101,7500.205,7500.201,7500.071,7500.09])
+            log=root/"raw.log";log.write_text(result.stdout,encoding="utf-8")
             policy={"schema_version":1,"mode":"fixed_interval","interval_us":.1,"retention_class":"solver_review","reason":"fixture","output_budget_bytes":1}
-            receipt=extract_trajectory_samples(log_path=log,output_path=root/"samples.csv",receipt_path=root/"receipt.json",recording_config=policy)
+            receipt=extract_trajectory_samples(log_path=log,output_path=trajectory,receipt_path=root/"receipt.json",recording_config=policy,scientific_event_output={"trajectory_path":str(trajectory)})
             self.assertEqual(receipt["samples_per_particle"],{20:4,80:2})
 
     def test_extract_keeps_actual_states_and_rejects_truncation(self):
@@ -109,28 +118,38 @@ assert(ion_px_mm==1 and ion_py_mm==2 and ion_pz_mm==3 and ion_vx_mm==4 and ion_v
         if not Path(lua).exists() and shutil.which(lua) is None:
             self.skipTest("plain Lua unavailable")
         source = (PROJECT / "simion/mrtof_candidate.lua").read_text(encoding="utf-8")
-        function = source[source.index("local function record_trajectory_sample"):source.index("local static_field_adjust")]
+        function = source[source.index("-- The frozen sidecar"):source.index("local static_field_adjust")]
         for hook in ("record_trajectory_sample('birth', birth_time_us)", "record_trajectory_sample('step')", "record_trajectory_sample('terminal')"):
             self.assertIn(hook, source)
-        script = """local operating_point={}; local printed={}
+        with TemporaryDirectory() as temporary:
+            root=Path(temporary);path=root/"recording.lua";trajectory=root/"trajectory.csv"
+            declaration="{csv_writer_path="+json.dumps((PROJECT.parents[1]/"common/simion/scientific_event_csv.lua").as_posix())+",events_path="+json.dumps((root/"events.csv").as_posix())+",trajectory_path="+json.dumps(trajectory.as_posix())+"}"
+            script = """local operating_point={}
 local function event_id() return 7 end
 local function instrument_time_us() return 12.5 end
-local print=function(line) printed[#printed+1]=line end
 ion_px_mm=1;ion_py_mm=2;ion_pz_mm=3;ion_vx_mm=4;ion_vy_mm=5;ion_vz_mm=6
 ion_time_step=.004;ion_time_of_flight=12.5;ion_splat=0
-""" + function + """
-record_trajectory_sample('birth');assert(#printed==0)
+"""+"operating_point.scientific_event_output="+declaration+"\n"+function+"""
+initialize_scientific_output()
+record_trajectory_sample('birth');assert(scientific_trajectory==nil)
+local absent=io.open(operating_point.scientific_event_output.trajectory_path,'r')
+assert(absent==nil,'default-off recording created a trajectory payload')
+scientific_events:close()
 operating_point.trajectory_recording_enabled=true
+initialize_scientific_output()
 for _,phase in ipairs({'birth','step','terminal'}) do record_trajectory_sample(phase) end
-assert(#printed==3 and printed[2]:find('phase=step'))
 assert(ion_time_step==.004 and ion_time_of_flight==12.5 and ion_splat==0)
 assert(ion_px_mm==1 and ion_py_mm==2 and ion_pz_mm==3 and ion_vx_mm==4 and ion_vy_mm==5 and ion_vz_mm==6)
+scientific_events:close();scientific_trajectory:close()
 """
-        with TemporaryDirectory() as temporary:
-            path = Path(temporary) / "recording.lua"
             path.write_text(script, encoding="utf-8")
             result = subprocess.run([lua, str(path)], cwd=PROJECT.parents[1], capture_output=True, text=True, encoding="utf-8", timeout=20)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stdout, "")
+            with trajectory.open(encoding="utf-8",newline="") as stream:rows=list(csv.DictReader(stream))
+            self.assertEqual([row["phase"] for row in rows],["birth","step","terminal"])
+            self.assertTrue(all(row["ion"]=="7" and float(row["t_us"])==12.5 for row in rows))
+            self.assertTrue(all([float(row[key]) for key in ("x_mm","y_mm","z_mm","vx_mm_us","vy_mm_us","vz_mm_us")]==[1,2,3,4,5,6] for row in rows))
 
     def test_cli_and_runner_use_same_recording_authority(self):
         import sys

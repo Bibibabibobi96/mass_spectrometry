@@ -57,6 +57,7 @@ try{
             self.skipTest('standalone Lua unavailable')
         builder = (PROJECT/'simion/build_native_corridor_iob.lua').read_text()
         copies = builder[builder.index('local function copy(source, target)'):]
+        native_path = builder[builder.index('local native_path='):builder.index('local seed, paths, output')]
         waveform = PROJECT.parents[1]/'common/simion/voltage_waveforms.lua'
         with TemporaryDirectory() as directory:
             root = Path(directory)
@@ -77,7 +78,7 @@ try{
                 preamble = '\n'.join(f'local {key}={json.dumps(value)}' for key,value in context.items())
                 script = root/'copy.lua'
                 script.write_text(preamble+'\nlocal measured_mode='+str(measured).lower()+
-                    '\nlocal operating={static_field=true}\nlocal paths={1,2,3,4}\n'+copies+
+                    '\nlocal offset=0\n'+native_path+'\nlocal operating={static_field=true}\nlocal paths={1,2,3,4}\n'+copies+
                     '\nassert(assert(loadfile(output:gsub("%.iob$", ".voltage_waveforms.lua")))().cap_before_edge(10,3,12)==2)\n')
                 result = subprocess.run([str(lua), str(script)], cwd=target,
                                         capture_output=True, text=True, timeout=20, check=False)

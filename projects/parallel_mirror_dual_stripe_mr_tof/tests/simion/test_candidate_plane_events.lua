@@ -1,6 +1,16 @@
 -- Plain-Lua callback regression, not a native trajectory or timing result.
 local repo=assert(arg[1],'repository root required')
 local directory=repo..'/projects/parallel_mirror_dual_stripe_mr_tof/simion/'
+-- Exercise the production CSV writer; the fixture owns only this temporary file.
+local events_path=os.tmpname()
+local original_open,output_stream=io.open,nil
+io.open=function(path,mode)
+  if path==events_path and mode=='w' then
+    if output_stream and io.type(output_stream)=='file' then output_stream:close() end
+    output_stream=assert(original_open(path,mode)); return output_stream
+  end
+  return original_open(path,mode)
+end
 local original_loadfile,original_print=loadfile,print
 local original_flush,flush_count=io.flush,0
 io.flush=function() flush_count=flush_count+1; return original_flush() end
@@ -11,7 +21,8 @@ local priority={schema_version=1,role='mrtof_native_corridor_iob_priority_contra
   instances={{role='global_fallback',priority_number=1},{role='native_corridor',priority_number=2},
     {role='accelerator',priority_number=3},{role='detector',priority_number=4}},
   corridor_voltage_groups={{2,7},{3,8},{4,9},{5,10},{11,12},{13,14},{16},{17}}}
-local point={mirror_voltages_v={0,-10,20,30,50},stripe_biases_v={-4,6},
+local point={scientific_event_output={csv_writer_path=repo..'/common/simion/scientific_event_csv.lua',
+  events_path=events_path,environment_required=false},mirror_voltages_v={0,-10,20,30,50},stripe_biases_v={-4,6},
   prism_voltages_v={141.3329402510257,0},
   accelerator_voltages_v={40,30,0},accelerator_ring_voltages_v={25,20,15,10,5},
   nonaccelerator_scale=1,detector_box_mm={-2,-3,8,2,3,10},detector_normal_project='+z',
@@ -56,14 +67,39 @@ local function step(z,vz,t,x,y,vy)
   state(z,vz,t,x,y,vy); segment.other_actions()
   assert(flush_count-before<=1,'a turn event group must flush at most once')
 end
-local function events(kind)
-  local found={}
-  for _,line in ipairs(records) do
-    if line:match('^MRTOF_EVENT '..kind..' ') then found[#found+1]=line end
+-- Inspect emitted CSV, without substituting a writer or scientific stdout.
+-- Explicit fixture drains make intermediate callback assertions observable;
+-- the independent io.flush counters below still observe the actual callbacks.
+local function csv_cells(line)
+  local cells,field,quoted={},'',false
+  local index=1
+  while index<=#line do
+    local character=line:sub(index,index)
+    if character=='"' then
+      if quoted and line:sub(index+1,index+1)=='"' then field=field..'"';index=index+1
+      else quoted=not quoted end
+    elseif character==',' and not quoted then cells[#cells+1]=field;field=''
+    else field=field..character end
+    index=index+1
   end
-  return found
+  assert(not quoted,'unterminated fixture CSV field')
+  cells[#cells+1]=field; return cells
 end
-local function value(line,key) return tonumber(assert(line:match(key..'=([^ ]+)'))) end
+local function events(kind)
+  assert(output_stream and io.type(output_stream)=='file','real CSV writer not open')
+  assert(output_stream:flush())
+  local stream=assert(original_open(events_path,'r'))
+  local columns=csv_cells(assert(stream:read('*l')))
+  local found={}
+  for line in stream:lines() do
+    local cells,row=csv_cells(line),{}
+    assert(#cells==#columns,'real CSV row width differs')
+    for index,key in ipairs(columns) do row[key]=cells[index] end
+    if row.kind==kind then found[#found+1]=row end
+  end
+  stream:close(); return found
+end
+local function value(row,key) return tonumber(assert(row[key])) end
 
 -- Provider-derived geometric exit is optional, not an implicit z=0 plane.
 begin(3,-1); step(-1,-1,4)
@@ -72,7 +108,7 @@ point.accelerator_exit_plane_project_z_mm=2
 assert(loadstring(program:gsub('\nadjustable ','\n'),'@virtual/source.lua'))()
 begin(3,-1,1,2,2); step(1,-1,2,3,6,2)
 local exits=events('accelerator_geometric_exit')
-assert(#exits==1 and exits[1]:match('localization=linear_bracket'))
+assert(#exits==1 and exits[1].localization=='linear_bracket')
 assert(value(exits[1],'t_us')==1 and value(exits[1],'x_mm')==2
   and value(exits[1],'y_mm')==4 and value(exits[1],'z_mm')==2
   and value(exits[1],'vy_mm_us')==2 and value(exits[1],'vz_mm_us')==-1)
@@ -159,13 +195,13 @@ for _,case in ipairs({{1.063e-7,-47.7260387338},
     {1.103e-7,-48.8314196835},{1.417e-7,-48.3985661607}}) do
   local hits,terminals=contact_case(case[1],case[2])
   assert(#hits==1 and #terminals==1,table.concat(records,'\n'))
-  assert(hits[1]:match('localization=detector_contact_projection')
-    and hits[1]:find('native_splat=-1',1,true))
+  assert(hits[1].localization=='detector_contact_projection'
+    and hits[1].native_splat=='-1')
   assert(value(hits[1],'z_mm')==97)
   assert(math.abs(value(hits[1],'t_us')-(.001+case[1]/40))<1e-14)
   assert(value(hits[1],'raw_z_mm')==97+case[1])
   assert(value(terminals[1],'z_mm')>97 and value(terminals[1],'t_us')==.001)
-  assert(terminals[1]:find('native_splat=-1',1,true) and ion_splat==1)
+  assert(terminals[1].native_splat=='-1' and ion_splat==1)
 end
 local rejected={
   {1e-7,-48,2}, -- another collision instance
@@ -189,7 +225,7 @@ begin(97.04,-40,0,-48,0); set_return_stage('awaiting_static_detector')
 step(96.96,-40,.002,0,-48,-3)
 local crossing=events('detector')[1]
 assert(crossing and value(crossing,'t_us')==.001 and value(crossing,'z_mm')==97)
-assert(crossing:match('localization=linear_bracket') and not crossing:match('native_splat'))
+assert(crossing.localization=='linear_bracket' and crossing.native_splat=='')
 
 -- Dynamic prism switching is outside the active static Candidate.
 local switched_ok=pcall(function()
@@ -243,6 +279,9 @@ assert(adjustment_begins==6 and adjustment_completions==6,
 assert(flush_count-adjustment_flush_start==10,
   string.format('unexpected Fast Adjust flush count: %d',flush_count-adjustment_flush_start))
 
+segment.terminate_run()
+io.open=original_open
+assert(os.remove(events_path))
 print=original_print
 io.flush=original_flush
 print('CANDIDATE_PLANE_EVENTS=PASS parameterized_turn_phase_K25p5 switch_rejected')

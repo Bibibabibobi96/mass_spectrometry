@@ -1,6 +1,16 @@
 -- Plain Lua regression: native-corridor runtime only; no SIMION process or PA mutation.
 local repo=assert(arg[1],'repository root required')
 local directory=repo..'/projects/parallel_mirror_dual_stripe_mr_tof/simion/'
+-- Exercise the production CSV writer; the fixture owns only this temporary file.
+local events_path=os.tmpname()
+local original_open,output_stream=io.open,nil
+io.open=function(path,mode)
+  if path==events_path and mode=='w' then
+    if output_stream and io.type(output_stream)=='file' then output_stream:close() end
+    output_stream=assert(original_open(path,mode)); return output_stream
+  end
+  return original_open(path,mode)
+end
 local original_loadfile=loadfile
 local map=assert(loadfile(directory..'candidate_voltage_map.lua'))()
 local function test_priority() return {schema_version=1,role='mrtof_native_corridor_iob_priority_contract',
@@ -8,7 +18,8 @@ local function test_priority() return {schema_version=1,role='mrtof_native_corri
     {role='accelerator',priority_number=3},{role='detector',priority_number=4}},
   corridor_voltage_groups={{2,7},{3,8},{4,9},{5,10},{11,12},{13,14},{16},{17}}} end
 local priority=test_priority()
-local point={mirror_voltages_v={0,-10,20,30,50},stripe_biases_v={-4,6},
+local point={scientific_event_output={csv_writer_path=repo..'/common/simion/scientific_event_csv.lua',
+  events_path=events_path,environment_required=false},mirror_voltages_v={0,-10,20,30,50},stripe_biases_v={-4,6},
   prism_voltages_v={141.3329402510257,0}, accelerator_voltages_v={40,30,0},
   accelerator_ring_voltages_v={45,42,39,36,33,30,27,24,21,18,15,12,9,6,3}, nonaccelerator_scale=0.5,
   detector_box_mm={0,0,0,1,1,1},detector_normal_project='+z',
@@ -139,4 +150,7 @@ assert(#calls==count,'static collision arrays must never be Fast Adjusted')
 V_prism_1=V_prism_1+1
 assert(not pcall(segment.fast_adjust),'static field accepted a GUI voltage change')
 assert(#calls==count,'rejected static edit must not change a PA')
+if output_stream and io.type(output_stream)=='file' then output_stream:close() end
+io.open=original_open
+assert(os.remove(events_path))
 print('CANDIDATE_VOLTAGE_MAP=PASS native_corridor_4_roles voltage_mapping fast_adjust accelerator_pulse')

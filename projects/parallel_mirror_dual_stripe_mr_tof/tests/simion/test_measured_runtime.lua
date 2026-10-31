@@ -2,11 +2,38 @@
 local repo,source_directory=assert(arg[1]),assert(arg[2])
 local directory=repo..'/projects/parallel_mirror_dual_stripe_mr_tof/'
 local function read(path) local f=assert(io.open(path,'rb')); local s=f:read('*a');f:close();return s end
+local original_open=io.open
 local fixture=read(directory..'tests/simion/test_candidate_plane_events.lua')
 local prefix=assert(fixture:match('^(.-)loadfile=function%(path%)'))
 -- Reuse the existing geometry and operating point fixture without duplicating it.
 prefix=prefix..'return point'
 local point=assert(loadstring(prefix,'@existing-plane-fixture'))(repo)
+-- The reused fixture prefix has no active writer yet. Own both measured CSVs.
+io.open=original_open
+point.scientific_event_output.events_path=source_directory..'/events.csv'
+point.scientific_event_output.trajectory_path=source_directory..'/trajectory.csv'
+local streams={}
+io.open=function(path,mode)
+  if mode=='w' and (path==point.scientific_event_output.events_path or path==point.scientific_event_output.trajectory_path) then
+    if streams[path] and io.type(streams[path])=='file' then streams[path]:close() end
+    streams[path]=assert(original_open(path,mode));return streams[path]
+  end
+  return original_open(path,mode)
+end
+local parser=assert(fixture:match('(local function csv_cells.-)\nlocal function events'))
+local csv_cells=assert(loadstring(parser..'\nreturn csv_cells','@existing-csv-fixture'))()
+local function csv_rows(path,kind)
+  if streams[path] and io.type(streams[path])=='file' then assert(streams[path]:flush()) end
+  local stream=assert(original_open(path,'r'));local columns=csv_cells(assert(stream:read('*l')))
+  local found={}
+  for line in stream:lines() do
+    local cells,row=csv_cells(line),{};assert(#cells==#columns)
+    for index,key in ipairs(columns) do row[key]=cells[index] end
+    if not kind or row.kind==kind or row.phase==kind then found[#found+1]=row end
+  end
+  stream:close();return found
+end
+
 point.accelerator_provider='dual_pressure_rectilinear_ion_processor'
 point.field_assembly_verified=true
 point.measured_source_matches_workpoint=true
@@ -72,18 +99,13 @@ local function begin()
   assert(engine.ion_px_mm==3 and engine.ion_py_mm==-5 and engine.ion_pz_mm==0)
   assert(engine.ion_vx_mm==0 and engine.ion_vy_mm==1 and engine.ion_vz_mm==-1)
   assert(engine.ion_time_of_flight==0,'initialize must not write the engine clock')
-  local birth
-  for _,line in ipairs(records) do birth=birth or line:match('^MRTOF_TRAJECTORY.-phase=birth t_us=([^ ]+)') end
-  assert(birth)
-  assert(tonumber(birth)==7500.51+.06,'birth must use the canonical source epoch before engine TOB application')
+  local births=csv_rows(point.scientific_event_output.trajectory_path,'birth')
+  assert(#births==1)
+  assert(tonumber(births[1].t_us)==7500.51+.06,'birth must use the canonical source epoch before engine TOB application')
 end
 local function step(z,vz,t,x,y,vy) state(z,vz,t,x,y,vy);engine.segment.other_actions() end
-local function events(kind)
-  local found={};for _,line in ipairs(records) do
-    if line:match('^MRTOF_EVENT '..kind..' ') then found[#found+1]=line end
-  end;return found
-end
-local function value(line,key) return tonumber(assert(line:match(key..'=([^ ]+)'))) end
+local function events(kind) return csv_rows(point.scientific_event_output.events_path,kind) end
+local function value(row,key) return tonumber(assert(row[key])) end
 -- Exercise the complete existing injection, phase-origin and 51-half-cycle path.
 local sequence=assert(fixture:match('%-%- Injection:.-\n(.-)%-%- Real 4 ns detector'))
 local environment=setmetatable({begin=begin,step=step,events=events,value=value,
@@ -91,11 +113,9 @@ local environment=setmetatable({begin=begin,step=step,events=events,value=value,
 -- These helpers are local in the original test; retain the same physical vectors.
 local chunk=assert(loadstring(sequence,'@existing-injection-sequence'))
 setfenv(chunk,environment);chunk()
-for _,line in ipairs(records) do
-  if line:match('^MRTOF_EVENT ') then
-    assert(value(line,'ion')==64,'event ID must retain original non-contiguous ID')
-    if line:match('t_us=') then assert(value(line,'t_us')>=7500.57,'absolute event epoch lost') end
-  end
+for _,row in ipairs(events()) do
+  assert(value(row,'ion')==64,'event ID must retain original non-contiguous ID')
+  if row.t_us~='' then assert(value(row,'t_us')>=7500.57,'absolute event epoch lost') end
 end
 assert(#events('accelerator_safe_exit')==0 and #events('accelerator_launch_vz_zero')==0)
 -- Exercise the existing detector and terminal callback with the completed
@@ -161,5 +181,10 @@ assert(not pcall(compile),'unverified fifth collision projection accepted')
 priority.instances[5]=nil;point.static_field.collision_overlay=nil;simion.wb.instances[5]=nil
 compile();engine.V_prism_1=engine.V_prism_1+1
 assert(not pcall(engine.segment.initialize_run),'changed voltage on frozen full C0 field accepted')
+for path,stream in pairs(streams) do
+  if io.type(stream)=='file' then stream:close() end
+  assert(os.remove(path))
+end
+io.open=original_open
 io.flush=original_flush;print=original_print
 print('MEASURED_RUNTIME=PASS original_ids absolute_clock six_dimensional_initialize phase_K25p5 topology elapsed_timeout provider_guards')
