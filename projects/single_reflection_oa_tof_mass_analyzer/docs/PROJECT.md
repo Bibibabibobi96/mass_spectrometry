@@ -8,6 +8,12 @@ Paper 1 专用研究准备API的归属与退出条件见[分析说明](../analys
 
 ## 当前状态
 
+2026-10-31 执行 profile 的职责字段演进后，既有 `sync_geometry_contract` 同步器现同步活动作者表的
+显式 execution profile 来源绑定；只接受固定 `config/execution_profiles.json`，不手填摘要或跳过身份校验。
+已退役 campaign 的状态、执行授权、科学行与旧 run 冻结副本不变；状态查询可用不表示允许重新执行。
+理想源入口测试按实际 analyze 动作、工具、输入、seed／run 绑定及输出验收，不再读取已退役的验证等级字段。
+这项维护只修复源码／合同 CI，不产生商业求解、科学资格或重新授权。
+
 2026-10-31 已沿既有 `run_theory --refresh-authorities` 刷新活动 three-zone funnel v1／v2 的
 OA geometry 来源绑定，仅更新该来源的 LF 字节数与 SHA；科学字段和对象外文本均保持不变。
 修复前 CI 41149973792（320.267秒）因 geometry authority byte count 漂移失败；当前两相关模块

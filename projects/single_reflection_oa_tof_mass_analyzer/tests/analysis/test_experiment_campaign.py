@@ -163,6 +163,30 @@ class ExperimentCampaignTests(unittest.TestCase):
                     validate_campaign(paths[1])
 
 
+    def test_authority_refresh_uses_current_profile_without_reauthorizing_campaign(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis import sync_geometry_contract as sync
+        before = DEFAULT_CAMPAIGN.read_bytes()
+        original = json.loads(before)
+        rendered = sync.render_authority_document(DEFAULT_CAMPAIGN, sync.render_optimization_envelope())
+        refreshed = json.loads(rendered)
+        self.assertEqual(refreshed["execution_profile"]["authority"]["sha256"],
+                         sha256(PROJECT_ROOT / "config/execution_profiles.json"))
+        self.assertEqual({k: v for k, v in refreshed.items() if k != "execution_profile"},
+                         {k: v for k, v in original.items() if k != "execution_profile"})
+        self.assertEqual(refreshed["execution_profile"]["profile_id"], original["execution_profile"]["profile_id"])
+        self.assertEqual(refreshed["execution_profile"]["capability_id"], original["execution_profile"]["capability_id"])
+        self.assertEqual(refreshed["status"], "retired")
+        self.assertFalse(refreshed["execution_authorized"])
+        self.assertEqual(rendered.encode("utf-8"), before, "checked-in author binding must be current and idempotent")
+        self.assertEqual(DEFAULT_CAMPAIGN.read_bytes(), before)
+        changed = copy.deepcopy(original)
+        changed["execution_profile"]["authority"]["path"] = "config/unexpected_profiles.json"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "campaign.json"
+            path.write_text(json.dumps(changed), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "unexpected execution profile authority path"):
+                sync.render_authority_document(path, sync.render_optimization_envelope())
+
     def test_public_entry_runs_as_repository_module_without_path_injection(self):
         completed = subprocess.run(
             [

@@ -286,6 +286,17 @@ def render_authority_document(path: Path, optimization_envelope: str) -> str:
             f"{label} authority",
             path,
         )
+    execution = document.get("execution_profile")
+    if execution is not None:
+        authority = execution["authority"]
+        expected_path = "config/execution_profiles.json"
+        if authority.get("path") != expected_path:
+            raise ValueError(f"unexpected execution profile authority path in {path}")
+        source = _replace_unique_sha(
+            source, "sha256", authority["sha256"],
+            file_sha256(PROJECT_ROOT / expected_path).upper(),
+            "execution profile authority", path,
+        )
     return source
 
 
