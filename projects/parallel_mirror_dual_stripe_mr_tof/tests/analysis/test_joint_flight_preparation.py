@@ -341,8 +341,13 @@ for i=1,4 do
   instances[i]._debug_update_size=function() end
 end
 local saves,probes,loads=0,0,0
-simion={wb={instances=instances,load=function(self,path) self.filename=path;loads=loads+1 end,
-  save=function() saves=saves+1 end}}
+simion={wb={instances=instances,load=function(self,path)
+  if loads>0 then assert(saves==1 and path==self.saved,'reopen must consume the saved output') end
+  self.filename=path;loads=loads+1
+end,save=function(self,path)
+  assert(loads==1 and saves==0,'save must follow input load and precede output reopen')
+  self.saved=path;saves=saves+1
+end}}
 function simion.wb:find_at() probes=probes+1;return 0,probes+1 end
 local original_dofile=dofile
 dofile=function(path)
