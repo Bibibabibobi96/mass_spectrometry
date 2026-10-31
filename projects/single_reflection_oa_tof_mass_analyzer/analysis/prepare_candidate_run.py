@@ -524,9 +524,11 @@ def prepare_candidate_run(
     planning_root.mkdir(parents=True)
     inputs_dir = planning_root / "inputs"
     inputs_dir.mkdir()
-    source_closure = freeze_candidate_source_closure(inputs_dir / "code", artifact_project_root)
+    source_closure = freeze_candidate_source_closure(inputs_dir / "code", artifact_project_root,
+        resolved_contract=candidate_resolved.resolve(), analysis_contract=PROJECT_ROOT / "config/analysis_contract.json")
     frozen_code_root = Path(source_closure["code_root"])
-    frozen = {}
+    frozen = {"candidate_analysis_contract.json": Path(frozen_source_path(source_closure,
+        "projects/single_reflection_oa_tof_mass_analyzer/config/analysis_contract.json"))}
     for name, source in sources.items():
         target = inputs_dir / name
         shutil.copy2(source, target)
@@ -769,3 +771,294 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def select_postprocess_parent(parent: Path, consumer_artifact_root: Path) -> dict:
+    """Admit only sealed Candidate inputs/exports, never a guessed old model."""
+    from common.contracts.capacity_ledger import load_capacity_ledger
+    from common.contracts.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
+    from common.contracts.verify_run_manifest import record_path, verify_record
+    from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
+    parent = parent.resolve(strict=True)
+    manifest_path = parent / "run_manifest.json"
+    require_completed_terminal_publication(manifest_path)
+    manifest_record = file_record(manifest_path)
+    authority = resolve_consumed_run_capacity_owner(manifest_record, consumer_artifact_root=consumer_artifact_root)
+    manifest = load_json(manifest_path)
+    if manifest.get("project") != PROJECT_ROOT.name or manifest.get("mode") not in {"design_candidate", "candidate_comsol_postprocess"}:
+        raise ValueError("Postprocessing requires an explicit original design_candidate owner")
+    ledger_root = Path(authority["artifact_root"])
+    ledger = load_capacity_ledger(ledger_root)
+    owners = [] if ledger is None else [item for item in ledger["objects"]
+        if item.get("path") == parent.relative_to(ledger_root).as_posix()]
+    if len(owners) != 1 or owners[0].get("status") != "ready":
+        raise ValueError("SOURCE_WRITER_UNCONFIRMED: complete original owner release before postprocessing")
+    records = [*manifest.get("inputs", {}).values(), *manifest.get("outputs", [])]
+    def bound(path: Path, *, payload: bool = False) -> dict:
+        matches = [value for value in records if isinstance(value, dict)
+                   and record_path(value, base_dir=parent) == path]
+        if len(matches) != 1 or matches[0].get("exists") is not True:
+            raise ValueError(f"Saved dependency is not uniquely manifest bound: {path}")
+        record = dict(matches[0], path=str(path))
+        if not path.is_file() or path.stat().st_size != record["bytes"]:
+            raise ValueError(f"Saved dependency is missing or incomplete: {path}")
+        if not payload:
+            verify_record("postprocessing source", record)
+        return record
+    config_record = bound(parent / "run_config.json") if any(record_path(v, base_dir=parent) == parent / "run_config.json" for v in records) else manifest["run_config"]
+    verify_record("parent config", config_record, base_dir=parent)
+    config = load_json(parent / "run_config.json")
+    request_path = Path(config.get("inputs", {}).get("execution_request", ""))
+    if not request_path.is_absolute():
+        raise ValueError("Original frozen public execution request is missing")
+    request_record = bound(request_path.resolve())
+    original_request = load_json(Path(request_record["path"]))
+    package = original_request.get("package", {})
+    if (original_request.get("schema_version") != 1 or original_request.get("role") != "run_artifact_workflow_request"
+            or package.get("run_id") != parent.name or package.get("project") != PROJECT_ROOT.name
+            or package.get("mode") != manifest["mode"]):
+        raise ValueError("Parent is not the actual public-owner Candidate producer")
+    # A ready capacity range alone is not proof the original native writer stopped.
+    completions = [record for record in records if isinstance(record, dict)
+                   and record_path(record, base_dir=parent).name == "execution_completion.json"]
+    if len(completions) != 1:
+        raise ValueError("NATIVE_COMPLETION_MISSING: original public completion is required")
+    verify_record("original completion", completions[0], base_dir=parent)
+    completion = load_json(record_path(completions[0], base_dir=parent))
+    if (completion.get("role") != "run_artifact_workflow_completion" or completion.get("schema_version") != 1
+            or completion.get("run_id") != parent.name or completion.get("project") != PROJECT_ROOT.name
+            or completion.get("status") != manifest["status"]
+            or completion.get("execution_request") != request_record
+            or completion.get("run_config", {}).get("sha256") != manifest["run_config"]["sha256"]):
+        raise ValueError("Public completion and original request/config identity differ")
+    import subprocess
+    validator = REPO_ROOT / "common/contracts/run_artifact_workflow.ps1"
+    command = ". '"+str(validator).replace("'", "''")+"'; $value=Get-Content -Raw -Encoding UTF8 '"+str(record_path(completions[0], base_dir=parent)).replace("'", "''")+"'|ConvertFrom-Json -AsHashtable; Assert-WorkflowWriterCompletion $value.writer_completion"
+    validation = subprocess.run(["pwsh.exe", "-NoProfile", "-NonInteractive", "-Command", command],
+        cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=60)
+    if validation.returncode:
+        raise ValueError("SOURCE_WRITER_UNCONFIRMED: "+validation.stderr.strip())
+    if manifest["mode"] == "candidate_comsol_postprocess":
+        return _select_postprocess_child_exports(parent, manifest_record, manifest, config, completion, bound)
+    from projects.single_reflection_oa_tof_mass_analyzer.analysis.native_stage_completion import append_native_stage_completion
+    native_receipt = parent / "logs/comsol_build_completion.json"
+    native_record = bound(native_receipt)
+    writer = {"operations": [], "resource_releases": []}
+    append_native_stage_completion(writer, native_receipt, role="comsol_launcher_completion", run_id=parent.name)
+    if not writer["operations"] or any(op["observation"].get("exit_confirmed") is not True for op in writer["operations"]):
+        raise ValueError("SOURCE_WRITER_UNCONFIRMED: native completion lacks stopped writers")
+    if completion.get("writer_completion") != writer:
+        # Other native stages may follow; require the build facts as an exact subset.
+        facts = completion.get("writer_completion", {})
+        if any(op not in facts.get("operations", []) for op in writer["operations"]) or any(value not in facts.get("resource_releases", []) for value in writer["resource_releases"]):
+            raise ValueError("Original public completion does not bind native build facts")
+    export_requests = [record for record in records if isinstance(record, dict)
+                       and record_path(record, base_dir=parent).name.endswith(".analysis_request.json")]
+    exports = None
+    if len(export_requests) == 1:
+        request_record = bound(record_path(export_requests[0], base_dir=parent))
+        document = load_json(Path(request_record["path"]))
+        if document.get("role") != "oatof_comsol_detector_events_analysis_request":
+            raise ValueError("Original analysis export identity differs")
+        events_record = bound(Path(document["raw_events_csv"]).resolve())
+        exports = {"request": request_record, "events": events_record}
+    context_record = model_record = None
+    scientific_inputs = {}
+    if exports is None:
+        contexts = [record for record in records if isinstance(record, dict)
+                    and record_path(record, base_dir=parent).name.endswith(".mph.postprocess.json")]
+        if len(contexts) != 1:
+            raise ValueError("SAVED_CONTEXT_MISSING: original saved solution context is required; no implicit solve")
+        context_record = bound(record_path(contexts[0], base_dir=parent))
+        context = load_json(Path(context_record["path"]))
+        import math
+        required = {"solution_tag", "dataset_tag", "solution_times_s", "particle_count", "saved_model_bytes", "timing",
+                    "expected_tof", "fine_tstep", "Tsim", "detector_z_mm", "detector_x_mm", "detector_radius_mm",
+                    "flight_length_mm", "accelerator_exit_mm", "contract_path", "source_path"}
+        if not required <= context.keys() or context.get("solution_tag") != "sol2" or context.get("dataset_tag") != "pdset1":
+            raise ValueError("SAVED_CONTEXT_INCOMPLETE: original solution, times and scientific inputs are required")
+        times = context["solution_times_s"]
+        if not isinstance(times, list) or len(times)<2 or any(type(v) not in (int,float) or not math.isfinite(v) for v in times) or any(b<=a for a,b in zip(times,times[1:])):
+            raise ValueError("SAVED_CONTEXT_INCOMPLETE: original finite increasing solution times are required")
+        if context.get("schema_version") != 1 or context.get("role") != "oatof_saved_particle_solution":
+            raise ValueError("Saved solution context identity differs")
+        model = Path(context_record["path"].removesuffix(".postprocess.json"))
+        model_record = bound(model, payload=True)
+        if context.get("saved_model_bytes") != model_record["bytes"]:
+            raise ValueError("Saved model final save is not confirmed by its context")
+        # Use the existing sealed identity. Do not rehash the protected MPH.
+        from common.contracts.run_capacity_lifecycle import recorded_heavy_identity
+        if recorded_heavy_identity(parent, model, model_record["bytes"]) != model_record["sha256"]:
+            raise ValueError("Saved model lacks its original retained heavy identity")
+        scientific_inputs = {}
+        for name in ("contract_path", "source_path"):
+            path = Path(context.get(name, ""))
+            if not path.is_absolute():
+                raise ValueError(f"Saved {name} lacks an explicit original input")
+            scientific_inputs[name] = bound(path.resolve())
+    else:
+        for name, key in (("contract_path", "candidate_resolved_geometry.json"), ("source_path", "candidate_particle_table")):
+            path = Path(config.get("inputs", {}).get(key, ""))
+            if not path.is_absolute():
+                raise ValueError(f"Exported source lacks frozen {key}")
+            scientific_inputs[name] = bound(path.resolve())
+    runtime_paths = [record for record in records if isinstance(record, dict)
+                     and record_path(record, base_dir=parent).name == "candidate_runtime.json"]
+    if len(runtime_paths) != 1:
+        raise ValueError("Original evidence budget authority is missing")
+    budget_record = bound(record_path(runtime_paths[0], base_dir=parent))
+    budget = validate_artifact_capacity(load_json(Path(budget_record["path"])))
+    return {"manifest_record": manifest_record, "config_record": config_record,
+            "native_record": native_record, "context_record": context_record,
+            "model_record": model_record, "inputs": scientific_inputs, "exports": exports,
+            "budget_record": budget_record, "new_bytes": budget["evidence_bytes"],
+            "source_reference": {"manifest_record": manifest_record},
+            "science_reference": {"manifest_record": manifest_record},
+            "export_source_reference": {"manifest_record": manifest_record},
+            "source_references": [{"manifest_record": manifest_record, "protected_paths": [str(parent)]}],
+            "scope": "comsol_postprocessing_only", "parent": str(parent)}
+
+
+def prepare_postprocess_request(parent: Path, run_id: str) -> dict:
+    """Freeze only an explicit COMSOL postprocessing child, using the public owner."""
+    from common.paths.workspace_paths import resolve_workspace_paths
+    from common.contracts.write_run_manifest import file_record
+    validate_run_id(run_id)
+    paths = resolve_workspace_paths(REPO_ROOT)
+    artifact_root = Path(paths["artifact_root"])
+    selection = select_postprocess_parent(parent, artifact_root)
+    project_root = artifact_root / "projects" / PROJECT_ROOT.name
+    run_root = project_root / "runs" / run_id
+    if run_root.exists():
+        raise FileExistsError(f"New postprocessing run already exists: {run_root}")
+    planning = project_root / "scratch" / f"{run_id}__postprocess-inputs"
+    if planning.exists():
+        raise FileExistsError(f"Postprocessing frozen preparation already exists: {planning}")
+    planning.mkdir(parents=True)
+    closure = freeze_candidate_source_closure(planning / "code", project_root,
+        resolved_contract=Path(selection["inputs"]["contract_path"]["path"]),
+        analysis_contract=PROJECT_ROOT / "config/analysis_contract.json")
+    selection_path = planning / "source_selection.json"
+    selection_path.write_text(json.dumps(selection, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
+    module = "projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow"
+    entrypoint = Path(closure["code_root"]) / (module.replace(".", "/")+".py")
+    prepared = {"module": module, "function": "execute_prepared_run", "import_root": closure["code_root"],
+                "entrypoint": file_record(entrypoint)}
+    if selection["exports"] is None:
+        prepared["native_input_paths"] = [selection["model_record"]["path"], selection["context_record"]["path"]]
+    return {"schema_version": 1, "role": "run_artifact_workflow_request",
+            "repository_root": str(REPO_ROOT), "python_executable": closure["runtime"]["python_executable"],
+            "package": {"project": PROJECT_ROOT.name, "run_id": run_id, "mode": "candidate_comsol_postprocess",
+                        "artifact_project_root": str(project_root), "software": ["COMSOL 6.4", "MATLAB R2025b", "Python 3.11"],
+                        "retention_class": "compact", "retention_reason": ""},
+            "capacity": {"committed_new_bytes": selection["new_bytes"],
+                         "commitment_inputs": [file_record(selection_path), selection["budget_record"]],
+                         "protected_paths": [str(planning)], "protected_cache_keys": [],
+                         "source_references": selection["source_references"]},
+            "prepared": prepared,
+            "payload": {"postprocess_selection": file_record(selection_path), "execution_source_closure": closure}}
+
+
+def _select_postprocess_child_exports(parent: Path, manifest_record: dict, manifest: dict,
+                                       config: dict, completion: dict, bound) -> dict:
+    """Admit only sealed exports with one explicit, flat original science binding."""
+    from common.contracts.verify_run_manifest import record_path, verify_record
+    from common.contracts.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
+    if completion.get("summary", {}).get("source_identity_verified") is not True:
+        raise ValueError("POSTPROCESS_SOURCE_UNVERIFIED: use the explicit original verified source owner")
+    source_path = Path(config.get("inputs", {}).get("postprocess_source_selection", ""))
+    if not source_path.is_absolute():
+        raise ValueError("POSTPROCESS_SOURCE_BINDING_MISSING: original frozen source selection is required")
+    source_record = bound(source_path.resolve())
+    source = load_json(Path(source_record["path"]))
+    science_reference = source.get("science_reference")
+    if not isinstance(science_reference, dict) or set(science_reference) != {"manifest_record"}:
+        raise ValueError("POSTPROCESS_SCIENCE_BINDING_MISSING: one explicit original science owner is required")
+    science_record = science_reference["manifest_record"]
+    science_root = record_path(science_record).parent
+    resolve_consumed_run_capacity_owner(science_record)
+    science = load_json(record_path(science_record))
+    if science.get("project") != PROJECT_ROOT.name or science.get("mode") != "design_candidate":
+        raise ValueError("POSTPROCESS_SCIENCE_BINDING_INVALID: no recursive postprocess-parent discovery is allowed")
+    science_config_record = science["run_config"]
+    verify_record("original science config", science_config_record, base_dir=science_root)
+    science_config = load_json(record_path(science_config_record, base_dir=science_root))
+    if config.get("provenance", {}).get("science_reference") != science_reference:
+        raise ValueError("Postprocess config and frozen science provenance differ")
+    science_records = [*science.get("inputs", {}).values(), *science.get("outputs", [])]
+    def science_input(record: dict) -> dict:
+        actual = record_path(record)
+        matches = [value for value in science_records if record_path(value, base_dir=science_root) == actual]
+        if len(matches) != 1 or any(record.get(key) != matches[0].get(key) for key in ("bytes", "sha256")):
+            raise ValueError("Postprocess scientific input differs from its explicit original manifest")
+        verify_record("postprocess original scientific input", record)
+        return record
+    inputs = {name: science_input(source["inputs"][name]) for name in ("contract_path", "source_path")}
+    if inputs["contract_path"]["path"] != science_config.get("inputs", {}).get("candidate_resolved_geometry.json"):
+        raise ValueError("Original physical contract binding differs")
+    if inputs["source_path"]["path"] != science_config.get("inputs", {}).get("candidate_particle_table"):
+        raise ValueError("Original mother cohort binding differs")
+    budget_record = science_input(source["budget_record"])
+    budget = validate_artifact_capacity(load_json(Path(budget_record["path"])))
+    records = [*manifest.get("inputs", {}).values(), *manifest.get("outputs", [])]
+    native_path = parent / "logs/cold_postprocess_completion.json"
+    native_declared = any(record_path(value, base_dir=parent) == native_path for value in records)
+    if native_declared:
+        native_record = bound(native_path)
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.native_stage_completion import append_native_stage_completion
+        writer = {"operations": [], "resource_releases": []}
+        append_native_stage_completion(writer, native_path, role="comsol_launcher_completion", run_id=parent.name)
+        facts = completion["writer_completion"]
+        if not writer["operations"] or any(value not in facts["operations"] for value in writer["operations"]) or any(
+                value not in facts["resource_releases"] for value in writer["resource_releases"]):
+            raise ValueError("Cold export has no matching actual stopped native completion")
+        requests = [value for value in records if record_path(value, base_dir=parent).name.endswith(".analysis_request.json")]
+        if len(requests) != 1:
+            raise ValueError("POSTPROCESS_EXPORTS_INCOMPLETE: explicit sealed CSV/request required; no implicit cold retry")
+        request_record = bound(record_path(requests[0], base_dir=parent))
+        document = load_json(Path(request_record["path"]))
+        events_record = bound(Path(document["raw_events_csv"]).resolve())
+        export_reference = {"manifest_record": manifest_record}
+    else:
+        # A CSV-only child may reference the original exporter. This is an explicit
+        # flat authority, never a recursive call to normal/cold admission.
+        native_record = None
+        exports = source.get("exports")
+        export_reference = source.get("export_source_reference")
+        if not isinstance(exports, dict) or not isinstance(export_reference, dict):
+            raise ValueError("POSTPROCESS_EXPORTS_INCOMPLETE: no sufficiently frozen event export; no implicit solve")
+        export_manifest_record = export_reference["manifest_record"]
+        resolve_consumed_run_capacity_owner(export_manifest_record)
+        export_root = record_path(export_manifest_record).parent
+        export_manifest = load_json(record_path(export_manifest_record))
+        if export_manifest.get("mode") == "design_candidate":
+            if export_manifest_record != science_reference["manifest_record"]:
+                raise ValueError("CSV exporter is not the explicitly bound original science owner")
+        elif export_manifest.get("mode") == "candidate_comsol_postprocess":
+            export_config = load_json(record_path(export_manifest["run_config"], base_dir=export_root))
+            if export_config.get("provenance", {}).get("science_reference") != science_reference:
+                raise ValueError("CSV exporter scientific source binding differs")
+        else:
+            raise ValueError("CSV exporter is outside the existing Candidate/postprocess domain")
+        export_records = [*export_manifest.get("inputs", {}).values(), *export_manifest.get("outputs", [])]
+        for name in ("events", "request"):
+            record = exports[name]
+            matches = [value for value in export_records if record_path(value, base_dir=export_root) == record_path(record)]
+            if len(matches) != 1 or any(record.get(key) != matches[0].get(key) for key in ("bytes", "sha256")):
+                raise ValueError("Postprocess export differs from its explicit owner manifest")
+            verify_record("postprocess event export", record)
+        request_record,events_record = exports["request"],exports["events"]
+        document = load_json(Path(request_record["path"]))
+    if (document.get("role") != "oatof_comsol_detector_events_analysis_request"
+            or Path(document.get("raw_events_csv", "")).resolve() != Path(events_record["path"]).resolve()):
+        raise ValueError("Postprocess event request and CSV binding differ")
+    references = []
+    for value in ({"manifest_record": manifest_record}, science_reference, export_reference):
+        if not any(item["manifest_record"]["path"] == value["manifest_record"]["path"] for item in references):
+            references.append({**value,"protected_paths":[str(record_path(value["manifest_record"]).parent)]})
+    return {"manifest_record":manifest_record,"config_record":manifest["run_config"],"native_record":native_record,
+            "context_record":None,"model_record":None,"inputs":inputs,
+            "exports":{"request":request_record,"events":events_record},"budget_record":budget_record,
+            "new_bytes":budget["evidence_bytes"],"source_reference":{"manifest_record":manifest_record},
+            "science_reference":science_reference,"export_source_reference":export_reference,
+            "source_references":references,"scope":"comsol_postprocessing_only","parent":str(parent)}

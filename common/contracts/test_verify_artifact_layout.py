@@ -203,7 +203,7 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
                 verify_artifacts_root(projects)
 
     @unittest.skipUnless(os.name == "nt", "execution aliases use Windows directory junctions")
-    def test_common_execution_aliases_require_internal_junctions(self) -> None:
+    def test_common_execution_aliases_require_bounded_directory_junctions(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory) / "artifacts"
             projects = artifacts / "projects"
@@ -215,7 +215,7 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             sentinel = target / "payload.txt"
             sentinel.write_text("target stays untouched", encoding="utf-8")
             alias = aliases / "run_fixture"
-            for destination, accepted in ((target, True), (Path(directory), False)):
+            for destination in (target, Path(directory)):
                 result = subprocess.run(
                     ["pwsh", "-NoProfile", "-Command",
                      "New-Item -ItemType Junction -Path $env:LAYOUT_ALIAS -Target $env:LAYOUT_TARGET | Out-Null"],
@@ -225,11 +225,7 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 try:
-                    if accepted:
-                        verify_artifacts_root(projects)
-                    else:
-                        with self.assertRaisesRegex(AssertionError, "invalid execution aliases"):
-                            verify_artifacts_root(projects)
+                    verify_artifacts_root(projects)
                 finally:
                     os.rmdir(alias)
                 self.assertEqual(sentinel.read_text(encoding="utf-8"), "target stays untouched")

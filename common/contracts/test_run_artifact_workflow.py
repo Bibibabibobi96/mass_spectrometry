@@ -12,7 +12,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
+from common.contracts import capacity_ledger
 from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
 from common.contracts.capacity_protection import load_capacity_protection_leases
 from common.contracts.write_run_manifest import file_record
@@ -46,6 +48,16 @@ def execute_prepared_run(config_path, session_path, request_path, completion_pat
         assert source_protection["committed_new_bytes"] == 0
         assert any(Path(item["artifact_root"]).resolve() == source_root.resolve()
                    and item["status"] == "active" for item in session["source_protection_leases"])
+    if request["prepared"].get("native_input_paths"):
+        context = session["source_execution_context"]
+        assert Path(context["child_run_directory"]).resolve() == root.resolve()
+        for path in request["prepared"]["native_input_paths"]:
+            source = next(row for row in context["sources"] if str(Path(path).resolve()) in row["input_paths"])
+            native = Path(source["execution_directory"]) / Path(path).resolve().relative_to(Path(source["target_directory"]))
+            assert len(str(native)) <= 259 and native.read_bytes() == Path(path).read_bytes()
+        if payload.get("tamper_source_context"):
+            session["source_execution_context"]["sources"][0]["execution_directory"] = "C:/wrong-execution-owner"
+            session_path.write_text(json.dumps(session), encoding="utf-8")
     counter = Path(payload["counter_path"])
     counter.write_text(str(int(counter.read_text()) + 1) if counter.exists() else "1", encoding="utf-8")
     protection = load_capacity_protection_leases(Path(session["artifact_root"]))
@@ -60,6 +72,9 @@ def execute_prepared_run(config_path, session_path, request_path, completion_pat
         "host_resource_state_path": os.environ["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"],
         "source_protected_before_compute": source_protection is not None}), encoding="utf-8")
     outputs, required, preserve = [str(output)], [str(output)], []
+    if payload.get("long_native_fixture"):
+        extra = root / "results" / ("n" * 190) / "model.json"
+        extra.parent.mkdir(); extra.write_text("{}", encoding="utf-8"); outputs.append(str(extra))
     if payload.get("disposable"):
         for name in ("first.pa0", "second.pa0"):
             path = root / "results" / name
@@ -197,7 +212,7 @@ Write-Output 'RECEIPTS=PASS'
     def invoke_fixture(self, root: Path, payload: dict, *, retention: str = "compact", host_state: str | None = None,
                        observation_failure: bool = False, failure_stage: str | None = None, project: str = PROJECT,
                        callback_text: str | None = None, source_references=None,
-                       capacity_trace: Path | None = None) -> tuple[dict, Path, Path, subprocess.CompletedProcess[str]]:
+                       capacity_trace: Path | None = None, native_input_paths=None) -> tuple[dict, Path, Path, subprocess.CompletedProcess[str]]:
         artifacts = root / "artifacts"
         artifacts.mkdir()
         initialize_capacity_ledger(artifacts, objects=[])
@@ -224,6 +239,8 @@ Write-Output 'RECEIPTS=PASS'
         }
         if source_references is not None:
             request["capacity"]["source_references"] = source_references
+        if native_input_paths is not None:
+            request["prepared"]["native_input_paths"] = native_input_paths
         request_path, result_path = root / "request.json", root / "result.json"
         request_path.write_text(json.dumps(request), encoding="utf-8")
         # Only disk/host admission is isolated: capacity lease CRUD, package,
@@ -232,7 +249,9 @@ Write-Output 'RECEIPTS=PASS'
                        "[Environment]::SetEnvironmentVariable('MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH',[NullString]::Value,'Process')")
         sampler = "function Get-ManagedSolverProcessSample { throw 'fixture initial observation unavailable' }" if observation_failure else ""
         hooks = ""
-        if failure_stage == "retention_before":
+        if failure_stage == "source_alias_cleanup":
+            hooks = "function Remove-RunSourceExecutionContext { throw 'fixture source alias cleanup failure' }"
+        elif failure_stage == "retention_before":
             hooks = "function Apply-RunArtifactRetention { throw 'fixture before retention' }"
         elif failure_stage == "retention_pending":
             # Run the real retention CLI, failing only its first progress write
@@ -314,6 +333,243 @@ try{{$null=Invoke-RunArtifactWorkflow -RequestPath '{run / 'inputs/execution_req
 catch{{Write-Output $_.Exception.Message;exit 7}}
 """)
         return json.loads((root / "result.json").read_text(encoding="utf-8-sig")), outcome
+
+    def _native_source_fixture(self, root: Path, *, deep: bool):
+        producer = root / (('source_' + 'x' * 180) if deep else 'source')
+        producer.mkdir()
+        _, run, artifacts, process = self.invoke_fixture(producer, {})
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        model = run / 'results/science.json'  # Tiny inert input, not an MPH/solve.
+        self.assertEqual(len(str(model)) > 259, deep)
+        reference = {'manifest_record': file_record(run / 'run_manifest.json'), 'protected_paths': [str(run)]}
+        before = {path: path.read_bytes() for path in run.rglob('*') if path.is_file()}
+        return run, artifacts, model, reference, before
+
+    def _remove_test_source_aliases(self, root: Path, context: dict) -> None:
+        # Test callbacks have actually exited; synthetic unknown-writer evidence
+        # must not leave test-only junctions outside TemporaryDirectory cleanup.
+        path = root / 'test_alias_cleanup.json'
+        path.write_text(json.dumps(context), encoding='utf-8')
+        process = self.run_ps(root, f""". '{OWNER}'
+$context=Get-Content -Raw '{path}'|ConvertFrom-Json
+foreach($source in $context.sources){{if($source.execution_alias){{
+ Remove-RunExecutionAlias -ExecutionAlias $source.execution_alias -TargetDirectory $source.target_directory
+}}}}
+""")
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+
+    def test_python_native_source_context_short_inputs_need_no_alias(self) -> None:
+        with tempfile.TemporaryDirectory(prefix='native-source-short-') as directory:
+            root = Path(directory)
+            with unittest.mock.patch.dict(os.environ, {'MASS_SPECTROMETRY_EXECUTION_ROOT': str(root / 'execution')}):
+                parent, source_root, model, reference, before = self._native_source_fixture(root, deep=False)
+                consumer = root / 'consumer'; consumer.mkdir()
+                result, run, _, process = self.invoke_fixture(consumer,
+                    {'source_artifact_root': str(source_root), 'source_run_directory': str(parent)},
+                    source_references=[reference], native_input_paths=[str(model)])
+                self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+                context = result['source_execution_context']
+                self.assertTrue(result['source_execution_aliases_removed'])
+                self.assertGreaterEqual(result['native_path_preparation']['calls'], 2)
+                self.assertGreater(result['native_path_preparation']['elapsed_seconds'], 0)
+                self.assertEqual(result['native_path_preparation']['transport_bytes'], 0)
+                self.assertTrue(all(row['execution_alias'] is None and row['execution_directory'] == row['target_directory']
+                                    for row in context['sources']))
+                self.assertEqual(before, {path: path.read_bytes() for path in before})
+                self.assertFalse(load_capacity_protection_leases(source_root)['protected_paths'])
+
+    def test_python_native_source_context_recovers_cleanup_with_expired_leases_and_no_new_process(self) -> None:
+        with tempfile.TemporaryDirectory(prefix='native-source-recovery-') as directory:
+            root = Path(directory)
+            with unittest.mock.patch.dict(os.environ, {'MASS_SPECTROMETRY_EXECUTION_ROOT': str(root / 'execution')}):
+                parent, source_root, model, reference, before = self._native_source_fixture(root, deep=True)
+                consumer = root / 'consumer'; consumer.mkdir()
+                result, run, artifacts, process = self.invoke_fixture(consumer,
+                    {'source_artifact_root': str(source_root), 'source_run_directory': str(parent)},
+                    source_references=[reference], native_input_paths=[str(model)], failure_stage='source_alias_cleanup')
+                self.assertNotEqual(process.returncode, 0, process.stdout + process.stderr)
+                self.assertTrue(result['writers_confirmed'])
+                self.assertEqual(result['resume_action'], 'resume_finalization')
+                context = result['source_execution_context']
+                aliases = [Path(row['execution_alias']) for row in context['sources']]
+                self.assertTrue(aliases and all(path.is_dir() for path in aliases))
+                session = json.loads((run / 'logs/capacity_session.json').read_text(encoding='utf-8-sig'))
+                for artifact, lease_id in [(artifacts, session['lease_id']),
+                        (source_root, session['source_protection_leases'][0]['lease_id'])]:
+                    path = artifact / 'common/capacity_protection_leases' / f'{lease_id}.json'
+                    value = json.loads(path.read_text(encoding='utf-8-sig'))
+                    value['expires_at_utc'] = '2001-01-01T00:00:00Z'
+                    path.write_text(json.dumps(value), encoding='utf-8')
+                recovered, process = self.resume_fixture(consumer, run)
+                self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+                self.assertTrue(recovered['source_execution_aliases_removed'] and recovered['terminal_published'])
+                self.assertEqual(recovered['source_execution_context'], context)
+                self.assertEqual(recovered['recovery_session']['source_execution_context'], context)
+                self.assertTrue(all(not path.exists() for path in aliases))
+                self.assertEqual((consumer / 'callback_count.txt').read_text(), '1')
+                again, process = self.resume_fixture(consumer, run)
+                self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+                self.assertTrue(again['terminal_published'])
+                self.assertEqual((consumer / 'callback_count.txt').read_text(), '1')
+                self.assertEqual(before, {path: path.read_bytes() for path in before})
+
+    def test_python_native_source_unknown_writer_and_callback_tamper_keep_original_alias(self) -> None:
+        for scenario in ('unknown', 'tamper'):
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory(prefix='native-source-hold-') as directory:
+                root = Path(directory)
+                with unittest.mock.patch.dict(os.environ, {'MASS_SPECTROMETRY_EXECUTION_ROOT': str(root / 'execution')}):
+                    parent, source_root, model, reference, before = self._native_source_fixture(root, deep=True)
+                    consumer = root / 'consumer'; consumer.mkdir()
+                    payload = {'source_artifact_root': str(source_root), 'source_run_directory': str(parent)}
+                    if scenario == 'unknown':
+                        payload['writers'] = released_writer()
+                        payload['writers']['operations'][0]['observation']['exit_confirmed'] = False
+                    else:
+                        payload['tamper_source_context'] = True
+                    result, run, _, process = self.invoke_fixture(consumer, payload,
+                        source_references=[reference], native_input_paths=[str(model)])
+                    self.assertNotEqual(process.returncode, 0, process.stdout + process.stderr)
+                    context = result['source_execution_context']
+                    try:
+                        self.assertFalse(result['writers_confirmed'] or result['lease_released'])
+                        self.assertTrue(all(Path(row['execution_alias']).is_dir() for row in context['sources']))
+                        self.assertTrue(load_capacity_protection_leases(source_root)['protected_paths'])
+                        self.assertEqual(before, {path: path.read_bytes() for path in before})
+                    finally:
+                        self._remove_test_source_aliases(root, context)
+
+    def test_source_context_cannot_clean_another_child_alias_of_the_same_parent(self) -> None:
+        with tempfile.TemporaryDirectory(prefix='native-source-ownership-') as directory:
+            root = Path(directory)
+            with unittest.mock.patch.dict(os.environ, {'MASS_SPECTROMETRY_EXECUTION_ROOT': str(root / 'execution')}):
+                parent, source_root, model, reference, before = self._native_source_fixture(root, deep=True)
+                children = []
+                for name in ('first', 'second'):
+                    consumer = root / name; consumer.mkdir()
+                    result, run, _, process = self.invoke_fixture(consumer,
+                        {'source_artifact_root': str(source_root), 'source_run_directory': str(parent)},
+                        source_references=[reference], native_input_paths=[str(model)], failure_stage='source_alias_cleanup')
+                    self.assertNotEqual(process.returncode, 0, process.stdout + process.stderr)
+                    self.assertTrue(result['writers_confirmed'])
+                    children.append((consumer, run, result))
+                first, second = children
+                alias1 = Path(first[2]['source_execution_context']['sources'][0]['execution_alias'])
+                alias2 = Path(second[2]['source_execution_context']['sources'][0]['execution_alias'])
+                self.assertNotEqual(alias1, alias2)
+                original = {first[0] / 'result.json': (first[0] / 'result.json').read_bytes(),
+                            first[1] / 'logs/capacity_session.json': (first[1] / 'logs/capacity_session.json').read_bytes()}
+                try:
+                    # Even coherent tampering of both transport records cannot
+                    # turn the other child's alias into this request's cleanup.
+                    for path in original:
+                        document = json.loads(path.read_text(encoding='utf-8-sig'))
+                        source = document['source_execution_context']['sources'][0]
+                        source['execution_alias'] = str(alias2)
+                        source['execution_directory'] = str(alias2)
+                        path.write_text(json.dumps(document), encoding='utf-8')
+                    failed, process = self.resume_fixture(first[0], first[1])
+                    self.assertNotEqual(process.returncode, 0, process.stdout + process.stderr)
+                    self.assertTrue(alias1.is_dir() and alias2.is_dir())
+                    self.assertIn('frozen owner scope', process.stdout + process.stderr)
+                finally:
+                    for path, content in original.items():
+                        path.write_bytes(content)
+                for consumer, run, result in children:
+                    final, process = self.resume_fixture(consumer, run)
+                    self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+                    self.assertTrue(final['source_execution_aliases_removed'])
+                    self.assertEqual((consumer / 'callback_count.txt').read_text(), '1')
+                self.assertFalse(alias1.exists() or alias2.exists())
+                self.assertEqual(before, {path: path.read_bytes() for path in before})
+
+
+    def test_native_source_partial_alias_preparation_rolls_back_before_callback(self) -> None:
+        with tempfile.TemporaryDirectory(prefix='native-source-rollback-') as directory:
+            root = Path(directory)
+            with unittest.mock.patch.dict(os.environ, {'MASS_SPECTROMETRY_EXECUTION_ROOT': str(root / 'execution')}):
+                parents = []
+                for name in ('a', 'z'):
+                    producer = root / (name + 'x' * 180); producer.mkdir()
+                    payload = {'long_native_fixture': True} if name == 'z' else {}
+                    _, run, artifacts, process = self.invoke_fixture(producer, payload)
+                    self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+                    path = run / 'results' / ('n' * 190) / 'model.json' if name == 'z' else run / 'results/science.json'
+                    parents.append((run, artifacts, path, {'manifest_record': file_record(run / 'run_manifest.json'),
+                        'protected_paths': [str(run)]}, {p: p.read_bytes() for p in run.rglob('*') if p.is_file()}))
+                consumer = root / 'consumer'; consumer.mkdir()
+                result, _, artifacts, process = self.invoke_fixture(consumer, {},
+                    source_references=[row[3] for row in parents], native_input_paths=[str(row[2]) for row in parents])
+                self.assertNotEqual(process.returncode, 0, process.stdout + process.stderr)
+                self.assertIn('EXECUTION_PATH_CAPACITY=FAIL', process.stdout + process.stderr)
+                self.assertTrue(result['source_execution_aliases_removed'] and result['lease_released'])
+                created = result['source_execution_context']['sources']
+                self.assertEqual(len(created), 1)  # First link genuinely created before second budget refusal.
+                self.assertFalse(Path(created[0]['execution_alias']).exists())
+                self.assertFalse((consumer / 'callback_count.txt').exists())
+                self.assertFalse(load_capacity_protection_leases(artifacts)['protected_paths'])
+                for run, source_root, _, _, before in parents:
+                    self.assertFalse(load_capacity_protection_leases(source_root)['protected_paths'])
+                    self.assertEqual(before, {path: path.read_bytes() for path in before})
+
+
+    def test_native_source_default_execution_root_accepts_cross_root_and_resumes_without_new_alias(self) -> None:
+        from common.contracts.execution_aliases import execution_alias_root_is_valid
+        from common.contracts import legacy_capacity_calibration as calibration
+        from common.contracts import reconcile_artifact_capacity as maintenance
+        with tempfile.TemporaryDirectory(prefix='native-source-default-') as directory:
+            root = Path(directory)
+            with unittest.mock.patch.dict(os.environ, {'MASS_SPECTROMETRY_EXECUTION_ROOT': str(root / 'parent_execution')}):
+                parent, source_root, model, reference, before = self._native_source_fixture(root, deep=True)
+            consumer = root / 'consumer'; consumer.mkdir()
+            with unittest.mock.patch.dict(os.environ):
+                os.environ.pop('MASS_SPECTROMETRY_EXECUTION_ROOT', None)
+                result, run, artifacts, process = self.invoke_fixture(consumer,
+                    {'source_artifact_root': str(source_root), 'source_run_directory': str(parent)},
+                    source_references=[reference], native_input_paths=[str(model)], failure_stage='source_alias_cleanup')
+                self.assertNotEqual(process.returncode, 0, process.stdout + process.stderr)
+                context = result['source_execution_context']
+                aliases = artifacts / 'common/execution_aliases'
+                self.assertEqual(Path(context['execution_root']).resolve(), aliases.resolve())
+                source_alias = Path(context['sources'][0]['execution_alias'])
+                self.assertTrue(source_alias.is_dir())
+                self.assertTrue(execution_alias_root_is_valid(artifacts, aliases))
+                capacity_ledger.record_capacity_object(artifacts, path=aliases, object_class='light_evidence',
+                    bytes_count=0, owner='common.run_artifact_support')
+                with unittest.mock.patch.object(Path, 'rglob', side_effect=AssertionError('source payload inventoried')):
+                    measured, pending = calibration._execution_alias_root(artifacts, aliases, '2026-11-01')
+                    self.assertIsNone(pending); self.assertEqual(measured['bytes'], 0)
+                    self.assertEqual(maintenance._reconcile_execution_alias_root(artifacts),
+                                     {'corrected_count': 0, 'released_bytes': 0})
+                recovered, process = self.resume_fixture(consumer, run)
+                self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+                self.assertTrue(recovered['source_execution_aliases_removed'] and recovered['terminal_published'])
+                self.assertEqual(recovered['source_execution_context'], context)
+                self.assertFalse(source_alias.exists())
+                self.assertEqual((consumer / 'callback_count.txt').read_text(), '1')
+                self.assertEqual(before, {path: path.read_bytes() for path in before})
+
+
+    def test_python_native_source_inputs_reject_unbound_relative_and_nonpython_declarations(self) -> None:
+        with tempfile.TemporaryDirectory(prefix='native-source-invalid-') as directory:
+            root = Path(directory)
+            unbound = root / 'unbound.json'; unbound.write_text('{}', encoding='utf-8')
+            for name, paths in (('type', {}), ('relative', ['source/model.mph']), ('unbound', [str(unbound)])):
+                with self.subTest(scenario=name):
+                    fixture = root / name; fixture.mkdir()
+                    result, run, artifacts, process = self.invoke_fixture(fixture, {}, native_input_paths=paths)
+                    self.assertNotEqual(process.returncode, 0, process.stdout + process.stderr)
+                    self.assertFalse((fixture / 'callback_count.txt').exists())
+                    self.assertFalse(load_capacity_protection_leases(artifacts)['protected_paths'])
+            request_path = root / 'unbound/request.json'
+            request = json.loads(request_path.read_text(encoding='utf-8'))
+            request['prepared'] = {'owner_kind': 'powershell', 'entrypoint': request['prepared']['entrypoint'], 'native_input_paths': []}
+            request_path.write_text(json.dumps(request), encoding='utf-8')
+            process = self.run_ps(root, f""". '{OWNER}'
+try{{Invoke-RunArtifactWorkflow -RequestPath '{request_path}' -ResultPath '{root / 'ps_result.json'}'|Out-Null;throw 'PowerShell native input unexpectedly accepted'}}
+catch{{if($_.Exception.Message-notmatch'only for Python prepared'){{throw}}}}
+""")
+            self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+
 
     def test_python_owner_protects_cross_root_source_before_compute_and_reacquires_on_resume(self) -> None:
         with tempfile.TemporaryDirectory(prefix="workflow-source-reference-") as directory:

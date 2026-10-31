@@ -134,6 +134,8 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_grid_geometry.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_mesh.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_model_core.m",
+    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_postprocess_saved_solution.m",
+    "projects/single_reflection_oa_tof_mass_analyzer/comsol/reextract_oatof_saved_solution.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_particle_plot_view.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_reflectron_geometry.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_configure_particle_model.m",
@@ -213,6 +215,8 @@ def freeze_candidate_source_closure(
     python_executable: Path | None = None,
     *,
     extra_source_ids: tuple[str, ...] = (),
+    resolved_contract: Path | None = None,
+    analysis_contract: Path | None = None,
 ) -> dict[str, Any]:
     """Copy the declared closure and return its immutable execution record."""
     code_root = code_root.resolve()
@@ -236,6 +240,15 @@ def freeze_candidate_source_closure(
         if normalized not in declarations:
             declarations.append(normalized)
 
+    analysis_resources = {}
+    if (resolved_contract is None) != (analysis_contract is None):
+        raise ValueError("Candidate detector analysis requires both explicit physical and analysis contracts")
+    if resolved_contract is not None:
+        analysis_resources = {
+            "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json": resolved_contract.resolve(strict=True),
+            "projects/single_reflection_oa_tof_mass_analyzer/config/analysis_contract.json": analysis_contract.resolve(strict=True),
+        }
+        declarations.extend(analysis_resources)
     records: list[dict[str, Any]] = []
     seen: set[str] = set()
     for declared in declarations:
@@ -243,7 +256,7 @@ def freeze_candidate_source_closure(
         if source_id in seen:
             raise ValueError(f"duplicate candidate source id: {source_id}")
         seen.add(source_id)
-        source = _source_path(source_id)
+        source = analysis_resources.get(source_id) or _source_path(source_id)
         source_digest = sha256(source)
         payload = source.read_bytes()
         if sha256(source) != source_digest:

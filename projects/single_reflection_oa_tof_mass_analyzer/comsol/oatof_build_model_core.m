@@ -893,135 +893,41 @@ t_raw_save_start=tic;
 modelPath=save_run_model(model,output_model_path,paths);
 t_raw_save=toc(t_raw_save_start);
 fprintf('[TIMING] raw solved population persisted before postprocessing: %.2fs\n',t_raw_save);
-t_extract_start=tic;
-
-% COMSOL 6.4 documents that dataonly='on' suppresses the default p/v
-% trajectory payload and that the `t` property limits evaluation to an
-% explicit time vector.  Both are required here: requesting every stored
-% time at sub-nanosecond spacing can exhaust the client JVM even for N=100.
-% Keep a sparse whole-flight trace for penetration/plot diagnostics and the
-% exact fine output spacing in a generous window around the expected return.
-% The latter preserves detector-crossing interpolation while omitting
-% output points irrelevant to detector arrival.
-arrival_half_window = 200e-9;
-arrival_times = (expected_tof-arrival_half_window):fine_tstep: ...
-    (expected_tof+arrival_half_window);
-trajectory_times = linspace(0, Tsim, 2001);
-extract_times = unique([trajectory_times, arrival_times, Tsim]);
-pd_z = mphparticle(model, 'dataset', 'pdset1', ...
-    'expr', {'qx','qy','qz'}, 't', extract_times, 'dataonly', 'on');
-t = pd_z.t;
-z = squeeze(pd_z.d3);
-% This is the original population's coordinate view. Plotting selects columns
-% from it and never changes the release node, source or stored solution.
-x_full = squeeze(pd_z.d1);
-y_full = squeeze(pd_z.d2);
-nP = size(z,2);
-fprintf('[%s] ions released: %d\n', label, nP);
-
-zEnd = z(end,:);
-zmax = max(z,[],1);
-fprintf('[%s] z_max reached: %.2fmm (entrance grid at %gmm, backplate at %gmm)\n', label, max(zmax), p.evaluate('L_flight','mm'), p.evaluate('L_flight','mm')+p.evaluate('L_refl','mm'));
-fprintf('[%s] final z extracted for raw trajectory evidence.\n', label);
-
-% --- Verify the deepest ACTUAL penetration INTO STAGE 2 ONLY (over all
-% nP simulated ions) matches the corrected THEORETICAL d2_min=(U0-U1)/E2
-% (doc §7.51 -- the depth at which the ion's remaining axial KE after
-% stage1, q(U0-U1), reaches exactly zero under field E2). Stage2 begins
-% at the mid-grid, z=L_flight+d1_mm (NOT at the entrance grid), so the
-% comparison must subtract d1_mm from the total penetration depth first.
-L_flight_mm_pen = p.evaluate('L_flight','mm');
-penetration_total_mm = zmax - L_flight_mm_pen; % per-ion depth past the entrance grid (stage1+stage2)
-penetration_stage2_mm = penetration_total_mm - d1_mm; % per-ion depth past the MID grid (stage2 only)
-penetration_max_mm = max(penetration_total_mm);
-penetration_stage2_max_mm = max(penetration_stage2_mm);
-fprintf('[%s] reflectron penetration: total max=%.3fmm, stage2-only max=%.3fmm, over %d ions (theory d2_min=(U0-U1)/E2=%.3fmm, adaptive d2=%.3fmm [+%.0f%% margin])\n', ...
-    label, penetration_max_mm, penetration_stage2_max_mm, nP, reflectron_stage2_min_mm, d2_mm, d2_margin_fraction*100);
-fprintf('[%s] stage2 penetration_max vs d2_min: diff=%.3fmm (%.2f%% of d2_min)\n', ...
-    label, penetration_stage2_max_mm-reflectron_stage2_min_mm, ...
-    100*(penetration_stage2_max_mm-reflectron_stage2_min_mm)/reflectron_stage2_min_mm);
-
-% One extractor owns return-leg selection, crossing interpolation,
-% Wall/Freeze handling and active-radius acceptance for every COMSOL path.
-detector_z_exact = p.evaluate('detector_z','mm');
-detector_x_exact = p.evaluate('detector_x','mm');
-detector_radius = p.evaluate('detector_radius','mm');
-arrivals = oatof_extract_detector_arrivals( ...
-    t(:),x_full,y_full,z,detector_z_exact,1e-3,0.5, ...
-    detector_x_exact,0,detector_radius);
-detTimes = arrivals.time_s.';
-detTimes(~arrivals.hit.') = NaN;
-nDet = sum(arrivals.hit);
-fprintf('[%s] detected on detector plate: %d/%d. Arrival-time metrics are delegated to Python.\n', label, nDet, nP);
-% Parameter-link gate: actual events must remain safely inside the predicted
-% fine windows. This catches future mass/voltage/length/source changes that
-% invalidate the one-dimensional reference formulas instead of silently
-% degrading resolution in a coarse output segment.
-L_accel_gate_mm = p.evaluate('z_accel_grid2', 'mm');
-L_flight_gate_mm = p.evaluate('L_flight', 'mm');
-t_accel_gate = nan(1,nP);
-t_refl_entry_gate = nan(1,nP);
-t_refl_exit_gate = nan(1,nP);
-for i = 1:nP
-    zi = z(:,i);
-    accel_idx = find(zi >= L_accel_gate_mm, 1, 'first');
-    refl_entry_idx = find(zi >= L_flight_gate_mm, 1, 'first');
-    [~, turn_idx] = max(zi);
-    refl_exit_rel = find(zi(turn_idx:end) <= L_flight_gate_mm, 1, 'first');
-    if ~isempty(accel_idx), t_accel_gate(i) = t(accel_idx); end
-    if ~isempty(refl_entry_idx), t_refl_entry_gate(i) = t(refl_entry_idx); end
-    if ~isempty(refl_exit_rel)
-        t_refl_exit_gate(i) = t(turn_idx+refl_exit_rel-1);
-    end
-end
-completeEvent = isfinite(t_accel_gate) & isfinite(t_refl_entry_gate) & ...
-    isfinite(t_refl_exit_gate) & arrivals.hit.';
-if allow_particle_loss
-    assert(nDet >= 2 && sum(completeEvent) == nDet, ...
-        ['Every detector hit must have accelerator and reflectron events; ' ...
-         'at least two detector hits are required.']);
-else
-    assert(all(completeEvent) && nDet == nP, ...
-        'Event-window gate could not identify every accelerator/reflectron/detector event.');
-end
-t_accel_complete = t_accel_gate(completeEvent);
-t_refl_entry_complete = t_refl_entry_gate(completeEvent);
-t_refl_exit_complete = t_refl_exit_gate(completeEvent);
-det_complete = detTimes(completeEvent);
-assert(max(t_accel_complete) < timing.t_accel_end_s-0.1e-6, ...
-    'Accelerator exit is too close to/outside the fine-window end.');
-assert(min(t_refl_entry_complete) > timing.t_refl_start_s+0.25e-6, ...
-    'Reflectron entry is too close to/outside the fine-window start.');
-assert(max(t_refl_exit_complete) < timing.t_refl_end_s-0.25e-6, ...
-    'Reflectron return exit is too close to/outside the fine-window end.');
-assert(min(det_complete) > timing.t_detector_start_s+0.1e-6 && ...
-    max(det_complete) < timing.t_detector_end_s-0.1e-6, ...
-    'Detector arrivals are too close to/outside the fine detector window.');
-fprintf(['[%s] event-window gate PASS: accel exit <=%.4fus; reflectron ' ...
-    'entry %.4f-%.4fus, exit %.4f-%.4fus; detector %.4f-%.4fus; complete=%d/%d.\n'], ...
-    label, max(t_accel_complete)*1e6, min(t_refl_entry_complete)*1e6, ...
-    max(t_refl_entry_complete)*1e6, min(t_refl_exit_complete)*1e6, ...
-    max(t_refl_exit_complete)*1e6, min(det_complete)*1e6, max(det_complete)*1e6, ...
-    sum(completeEvent), nP);
-% !!! Safety check for the "fix B" adaptive fine_end window (per explicit
-% speed-optimization request): if any detected ion's arrival landed close
-% to fine_end, its recorded timestamp may have snapped to the COARSE
-% (500ns) post-window grid instead of the fine 1ns grid, silently adding
-% quantization noise to that ion's timing precision. Warn loudly rather
-% than let a future scan (different d1/mass/margin) silently lose
-% precision on its slowest ions.
-if nDet > 0
-    latest_det = max(detTimes, [], 'omitnan');
-    margin_to_fine_end = fine_end - latest_det;
-    if margin_to_fine_end < 2e-6
-        fprintf('[%s] !!! WARNING: latest detection (%.3fus) is within %.3fus of fine_end (%.3fus) -- the adaptive tlist fine window may be too tight for this parameter combination, some ions'' timing precision may be degraded. Consider raising the 2.5x margin factor on fine_end.\n', ...
-            label, latest_det*1e6, margin_to_fine_end*1e6, fine_end*1e6);
-    end
-end
-
-t_extract = toc(t_extract_start);
-fprintf('[TIMING] full-population extraction plus solver-native detector-event classification: %.2fs\n', nP, t_extract);
-
+context=struct('schema_version',1,'role','oatof_saved_particle_solution', ...
+    'solution_tag','sol2','dataset_tag','pdset1','particle_count',n_particles, ...
+    'generate_model_plots',true,'native_particle_solve_count',1,'field_idealization',particle.field_idealization);
+context.label=label;
+context.mass_amu=mass_amu;
+context.expected_tof=expected_tof;
+context.fine_tstep=fine_tstep;
+context.Tsim=Tsim;
+context.d1_mm=d1_mm;
+context.reflectron_stage2_min_mm=reflectron_stage2_min_mm;
+context.d2_mm=d2_mm;
+context.d2_margin_fraction=d2_margin_fraction;
+context.allow_particle_loss=allow_particle_loss;
+context.timing=timing;
+context.fine_end=fine_end;
+context.Ez_accel_ideal=Ez_accel_ideal;
+context.Ez_drift_ideal=Ez_drift_ideal;
+context.Ez_stage1_ideal=Ez_stage1_ideal;
+context.Ez_stage2_ideal=Ez_stage2_ideal;
+context.field_mode=field_mode;
+context.reflectron_backplate_voltage_v=reflectron_backplate_voltage_v;
+context.modelPath=modelPath;
+context.flight_length_mm=p.evaluate('L_flight','mm');
+context.reflectron_length_mm=p.evaluate('L_refl','mm');
+context.detector_z_mm=p.evaluate('detector_z','mm');
+context.detector_x_mm=p.evaluate('detector_x','mm');
+context.detector_radius_mm=p.evaluate('detector_radius','mm');
+context.accelerator_exit_mm=p.evaluate('z_accel_grid2','mm');
+context.contract_path=char(contract_path);
+context.source_path=char(fixed_particle_table);
+solutionInfo=mphsolinfo(model,'soltag','sol2');
+context.solution_times_s=solutionInfo.solvals;
+modelFile=dir(modelPath);
+context.saved_model_bytes=modelFile.bytes;
+write_saved_particle_context(modelPath,context);
 resultsDir = getenv('OATOF_RESULTS_DIR');
 if isempty(resultsDir)
     if strcmpi(strtrim(label), 'Final')
@@ -1033,104 +939,21 @@ if isempty(resultsDir)
         error('OATOF_RESULTS_DIR or OutputModelPath is required for non-formal runs.');
     end
 end
-if ~exist(resultsDir,'dir'), mkdir(resultsDir); end
-handoff = oatof_export_detector_events(resultsDir,label,mass_amu,arrivals, ...
-    x_full(1,:).',y_full(1,:).',z(1,:).');
-result = struct('label', label, 'mass_amu', mass_amu, 'nP', nP, 'zEnd', zEnd, ...
-    'nDet', nDet, 'detectorStatus', arrivals.status.', ...
-    'detectorRadiusMm', arrivals.radius_mm.', ...
-    'raw_detector_events_path', handoff.events_path, ...
-    'analysis_request_path', handoff.request_path, ...
-    'analysis_output_dir', handoff.analysis_output_dir, ...
-    'penetration_max_mm', penetration_max_mm, ...
-    'd2min_mm', reflectron_stage2_min_mm, 'd2_mm', d2_mm, ...
-    'field_idealization', particle.field_idealization, ...
-    'model_path',modelPath,'raw_solution_persisted',true, ...
-    'native_particle_solve_count',1,'automatic_time_extension_performed',false, ...
-    'observation_end_time_s',Tsim, ...
-    'unresolved_detector_event_count',sum(~arrivals.plane_event), ...
-    'outside_active_detector_count',sum(arrivals.plane_event&~arrivals.hit));
+[result,postprocessPhases]=oatof_postprocess_saved_solution(model,context,resultsDir);
+result.saved_solution_context_path=[char(modelPath) '.postprocess.json'];
+t_extract=postprocessPhases.extraction;
+t_replot=postprocessPhases.plot_view;
+t_matlabplot=postprocessPhases.matlab_plot;
+t_resultplots=postprocessPhases.result_nodes;
+nP_plot=postprocessPhases.plot_count;nP=result.nP;
 
-% Graphics are a read-only projection of the original scientific population.
-t_replot_start=tic;
-plotView=oatof_particle_plot_view(t(:),x_full,z,50);
-nP_plot=numel(plotView.particle_indices);t_plot=plotView.time_s;
-x_plot=plotView.x_mm;z_plot=plotView.z_mm;plot_dataset_tag='pdset1';
-t_replot=toc(t_replot_start);
-fprintf('[%s] trajectory plot uses original solution columns 1:%d of N=%d; no additional CPT solve.\n',label,nP_plot,nP);
-fprintf('[TIMING] original-solution trajectory view: %.2fs\n',t_replot);
-
-t_matlabplot_start = tic;
-fh = figure('Visible','off');
-subplot(1,2,1);
-hold on;
-for i = 1:nP_plot
-    plot(x_plot(:,i), z_plot(:,i), '-');
-end
-xlabel('x [mm]'); ylabel('z [mm]'); grid on;
-title(sprintf('ion trajectory (N=%d subset): x vs z', nP_plot));
-subplot(1,2,2);
-hold on;
-for i = 1:nP_plot
-    plot(t_plot*1e6, z_plot(:,i), '-');
-end
-xlabel('t [\mus]'); ylabel('z [mm]'); grid on;
-title('z position vs time');
-
-% !!! Title now includes N (statistical sample size, nP -- NOT the N_plot=50
-% trajectory-rendering subset) and field_mode, per doc convention (always
-% show sample size so a reader can't mistake an N=100 result for N=1000,
-% see the statistical-sample-size warning in COMSOL_调试方法论.md. Also dropped the hardcoded
-% "V_mirror=4551.15V" that was stale (V_mirror is now computed dynamically
-% per d1_mm/d2_margin_frac and no longer a fixed literal) in favor of the
-% actual computed value.
-sgtitle({sprintf('oa-TOF two-stage ring-stack reflectron: %s (N=%d, field_mode=%s)', label, nP, field_mode), ...
-    sprintf('%gamu +1 ion, baseline source when selected, d1=%gmm, V_mirror=%.2fV; peak metrics exported to Python', ...
-    mass_amu, d1_mm, reflectron_backplate_voltage_v)}, 'Interpreter','none');
-print(fh, fullfile(resultsDir, sprintf('ms_oaTOF_ringstack_reflectron_%s.png', strrep(label,' ','_'))), '-dpng', '-r150');
-fprintf('[%s] SUCCESS: trajectory plot saved; peak visualization is generated by Python analysis.\n', label);
-t_matlabplot = toc(t_matlabplot_start);
-fprintf('[TIMING] MATLAB trajectory figure (PNG): %.2fs\n', t_matlabplot);
-
-% !!! Native in-model field diagnostics are deliberately limited to FIVE
-% plots: (1) signed-log full-domain Ez, (2) signed-log full-domain
-% real-ideal Ez, (3) log residual |E| in the nominally field-free drift,
-% (4) real-ideal Ez versus z at five radii, and (5) real-ideal Ez versus
-% radius at five ion-accessible z positions inside the reflectron. The
-% apparent-mass spectrum remains a separate result plot. All are wrapped
-% in try/catch because visualization is not required for the core solve.
-% !!! CutPlane dataset API validated empirically against a live COMSOL
-% session before use here (a throwaway test model, not guessed from
-% memory): 'quickplane'/'quicky' are the correct property names for a
-% CutPlane DATASET -- 'quickynumber' (used by the Slice PLOT FEATURE
-% inside a 3D scene, which is a different thing) errors with "Unknown
-% property" on a CutPlane dataset. One shared y=0 CutPlane dataset feeds
-% all three heatmaps below (same physical cross-section, equivalent to an r-z
-% profile for this axisymmetric-like ring-stack since x=r for x>0 and the
-% mirror x<0 side reflects the same profile) -- only the Surface plot's
-% expr differs between the two.
-t_resultplots = oatof_create_result_nodes(model,p,label,Ez_accel_ideal,Ez_drift_ideal, ...
-    Ez_stage1_ideal,Ez_stage2_ideal);
-
-t_save1_start = tic;
-pg1 = model.result.create('pg_traj', 'PlotGroup3D');
-pg1.label(sprintf('oa-TOF (ring-stack): %s trajectory', label));
-pg1.set('data', plot_dataset_tag);
-pg1.set('titletype', 'manual');
-pg1.set('title', sprintf('Orthogonal accelerator + ring-stack reflectron: %gamu +1 ion', mass_amu));
-trj1 = pg1.create('trj1', 'ParticleTrajectories');
-trj1.label('oa-TOF ion trajectory (ring-stack reflectron)');
-col_time = trj1.create('col_time', 'Color');
-col_time.set('expr', 't');
-col_time.set('descr', 'Time');
-col_time.set('unit', 's');
-col_time.set('colortable', 'Thermal');
-col_time.set('colorlegend', 'on');
-
+t_save1_start=tic;
 % Update GUI nodes at the same persisted path. The raw full-population solution
 % was already saved before extraction and MATLAB rendering began.
 modelPath = save_run_model(model,output_model_path,paths);
 result.model_path = modelPath;
+modelFile=dir(modelPath);context.saved_model_bytes=modelFile.bytes;
+write_saved_particle_context(modelPath,context);
 t_save1 = toc(t_save1_start);
 fprintf('[%s] SUCCESS: model saved.\n', label);
 fprintf('[TIMING] existing model GUI-node update (.mph write): %.2fs\n',t_save1);
@@ -1205,4 +1028,15 @@ assert(abs(g.repeller_front_z_mm-contract.geometry_mm.accelerator_repeller_z)<=1
     abs(g.grid1_z_mm-contract.geometry_mm.accelerator_grid1_z)<=1e-10 && ...
     abs(g.grid2_z_mm-contract.geometry_mm.accelerator_grid2_z)<=1e-10, ...
     'oatof:AcceleratorProjection','Geometry projection belongs to another resolved instrument.');
+end
+
+function write_saved_particle_context(modelPath,context)
+contextPath=[char(modelPath) '.postprocess.json'];
+contextTemp=[contextPath '.tmp'];
+fid=fopen(contextTemp,'w');
+assert(fid>=0,'oatof:SavedContextWrite','Cannot persist saved solution context.');
+cleanup=onCleanup(@() fclose(fid));
+fprintf(fid,'%s\n',jsonencode(context));
+clear cleanup
+movefile(contextTemp,contextPath,'f');
 end

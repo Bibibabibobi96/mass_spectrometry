@@ -871,7 +871,8 @@ function New-RunExecutionAlias {
     [Parameter(Mandatory)][string]$TargetDirectory,
     [string[]]$AdditionalDirectories=@(),
     [string[]]$ExpectedExecutionRelativePaths=@(),
-    [string]$ExecutionRoot=''
+    [string]$ExecutionRoot='',
+    [string]$AliasName=''
   )
   $target=[IO.Path]::GetFullPath($TargetDirectory)
   if(-not(Test-Path -LiteralPath $target -PathType Container)){
@@ -888,7 +889,14 @@ function New-RunExecutionAlias {
     }
   }
   $executionRootPath=[IO.Path]::GetFullPath($ExecutionRoot)
-  $alias=Join-Path $executionRootPath ('run_'+[guid]::NewGuid().ToString('N'))
+  if($AliasName-and$AliasName-notmatch'^source_[a-f0-9]{64}_[1-9][0-9]*$'){throw 'Explicit source alias name must bind its request identity and ordinal.'}
+  $alias=Join-Path $executionRootPath $(if($AliasName){$AliasName}else{'run_'+[guid]::NewGuid().ToString('N')})
+  if(Test-Path -LiteralPath $alias){
+    $existing=Get-Item -LiteralPath $alias -Force
+    if($existing.LinkType-ne'Junction'-or
+       [IO.Path]::GetFullPath([string]@($existing.Target)[0])-ine$target){throw 'Existing execution alias target or owner differs.'}
+    throw 'Same-owner execution alias already exists; retain it and return to its original owner context.'
+  }
   $pathCapacity=Get-RunPackagePathCapacity -RunDirectory $alias `
     -AdditionalDirectories $AdditionalDirectories `
     -ExpectedExecutionRelativePaths $ExpectedExecutionRelativePaths
@@ -923,6 +931,137 @@ function Remove-RunExecutionAlias {
   }
   [IO.Directory]::Delete($alias)
 }
+
+function Resolve-RunSourceExecutionInputs {
+  param([string]$Python,[string]$RepoRoot,$Session,[object[]]$SourceReferences,
+    [string[]]$NativeInputPaths,[switch]$RequireProtection)
+  $resolver=@'
+import json,sys
+from pathlib import Path
+from common.contracts.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
+from common.contracts.verify_run_manifest import record_path
+from common.contracts.capacity_protection import load_capacity_protection_leases,path_is_protected
+session,refs,paths,require=json.loads(sys.argv[1]),json.loads(sys.argv[2]),json.loads(sys.argv[3]),sys.argv[4]=='True'
+sources={}
+for ref in refs:
+    source=resolve_consumed_run_capacity_owner(ref['manifest_record'],consumer_artifact_root=Path(session['artifact_root']),stopped_receipt_record=ref.get('stopped_receipt_record'))
+    run=Path(source['run_directory']);root=Path(source['artifact_root'])
+    manifest=json.loads(record_path(ref['manifest_record']).read_text(encoding='utf-8-sig'))
+    records=[*manifest.get('inputs',{}).values(),*manifest.get('outputs',[])]
+    bound={record_path(row,base_dir=run) for row in records}
+    if require:
+        candidates=([session] if root==Path(session['artifact_root']).resolve() else
+                    [row for row in session.get('source_protection_leases',[]) if Path(row['artifact_root']).resolve()==root and row['status']=='active'])
+        if len(candidates)!=1 or session['status']!='active': raise ValueError('native source requires its admitted protection owner')
+        lease_id=candidates[0]['lease_id']
+        active=[row for row in load_capacity_protection_leases(root)['audit'] if row['lease_id']==lease_id and row['status']=='active' and row['owner']==session['owner']]
+        if len(active)!=1: raise ValueError('native source protection is not active')
+        lease=json.loads(Path(active[0]['path']).read_text(encoding='utf-8-sig'))
+        if not path_is_protected(run,[root/item for item in lease['protected_paths']]): raise ValueError('native source run is not protected by this owner')
+    key=str(run)
+    if key in sources: sources[key]['bound'].update(bound)
+    else: sources[key]={'target_directory':key,'bound':bound,'input_paths':[]}
+for raw in paths:
+    path=Path(raw)
+    if not path.is_absolute() or (require and not path.is_file()): raise ValueError('native source input must be an existing absolute file')
+    path=path.resolve()
+    matches=[row for row in sources.values() if path.is_relative_to(Path(row['target_directory'])) and path in row['bound']]
+    if len(matches)!=1: raise ValueError('native source input is not uniquely bound by an admitted producer manifest')
+    matches[0]['input_paths'].append(str(path))
+rows=[{'target_directory':row['target_directory'],'input_paths':row['input_paths']} for row in sources.values() if row['input_paths']]
+print(json.dumps(sorted(rows,key=lambda row:row['target_directory'])))
+'@
+  $output=@(Invoke-RunCapacityCommand -Python $Python -RepoRoot $RepoRoot -Arguments @('-B','-c',$resolver,
+    ($Session|ConvertTo-Json -Depth 64 -Compress),(ConvertTo-Json -InputObject @($SourceReferences) -Depth 64 -Compress),
+    (ConvertTo-Json -InputObject @($NativeInputPaths) -Compress),([string][bool]$RequireProtection)) -FailureLabel 'Native source authority verification failed')
+  return @(ConvertFrom-Json -InputObject ($output-join"`n"))
+}
+
+function New-RunSourceExecutionContext {
+  <# Explicit frozen Python-prepared inputs only; source authority stays canonical. #>
+  param([string]$Python,[string]$RepoRoot,[pscustomobject]$Package,$Session,
+    [object[]]$SourceReferences,[string[]]$NativeInputPaths,[string]$RequestSha256)
+  $watch=[Diagnostics.Stopwatch]::StartNew()
+  try{
+  if($RequestSha256-notmatch'^[a-fA-F0-9]{64}$'){throw 'Native source context requires its original request identity.'}
+  $sources=@(Resolve-RunSourceExecutionInputs -Python $Python -RepoRoot $RepoRoot -Session $Session `
+    -SourceReferences $SourceReferences -NativeInputPaths $NativeInputPaths -RequireProtection)
+  $executionRoot=[IO.Path]::GetFullPath([string]$Package.path_context.execution_root)
+  $context=[ordered]@{schema_version=1;role='run_source_execution_context';
+    child_run_directory=[string]$Package.artifact_run_dir;execution_root=$executionRoot;request_sha256=$RequestSha256.ToUpperInvariant();sources=@()}
+  try{
+    foreach($source in $sources){
+      $target=[string]$source.target_directory
+      $relative=@($source.input_paths|ForEach-Object{[IO.Path]::GetRelativePath($target,[string]$_)})
+      $capacity=Get-RunPackagePathCapacity -RunDirectory $target -ExpectedExecutionRelativePaths $relative
+      $row=[ordered]@{target_directory=$target;execution_directory=$target;input_paths=@($source.input_paths);execution_alias=$null}
+      if(-not$capacity.legacy_windows_compatible){
+        $alias=New-RunExecutionAlias -TargetDirectory $target -ExecutionRoot $executionRoot -ExpectedExecutionRelativePaths $relative `
+          -AliasName ('source_'+$RequestSha256.ToLowerInvariant()+'_'+($context.sources.Count+1))
+        $row.execution_directory=[string]$alias.execution_alias;$row.execution_alias=[string]$alias.execution_alias
+      }
+      $context.sources+=@($row)
+    }
+    return $context
+  }catch{
+    $failure=$_
+    $failure.Exception.Data['source_execution_context']=$context
+    # No process has started: roll back only these exact newly-created links.
+    $removed=$true
+    foreach($row in $context.sources){if($null-ne$row.execution_alias){
+      try{Remove-RunExecutionAlias -ExecutionAlias $row.execution_alias -TargetDirectory $row.target_directory}
+      catch{$removed=$false;$failure.Exception.Data['source_alias_cleanup_error']=$_.Exception.Message}
+    }}
+    $failure.Exception.Data['source_execution_aliases_rolled_back']=$removed
+    throw $failure
+  }
+  }finally{
+    $watch.Stop()
+    if($null-eq$Package.PSObject.Properties['native_path_preparation']){
+      $Package|Add-Member -NotePropertyName native_path_preparation -NotePropertyValue @{calls=0;elapsed_seconds=0.0;transport_bytes=0L}
+    }
+    $Package.native_path_preparation.calls++
+    $Package.native_path_preparation.elapsed_seconds+=$watch.Elapsed.TotalSeconds
+  }
+}
+
+function Remove-RunSourceExecutionContext {
+  <# Called only after writer completion, or before any prepared process starts. #>
+  param([string]$Python,[string]$RepoRoot,$Session,[object[]]$SourceReferences,[string[]]$NativeInputPaths,
+    [string]$RunDirectory,[string]$ExecutionRoot,[string]$RequestSha256,$Context)
+  if($RequestSha256-notmatch'^[a-fA-F0-9]{64}$'-or$Context.request_sha256-ine$RequestSha256-or
+     $Context.schema_version-ne1-or$Context.role-cne'run_source_execution_context'-or
+     [IO.Path]::GetFullPath([string]$Context.child_run_directory)-ine[IO.Path]::GetFullPath($RunDirectory)-or
+     [IO.Path]::GetFullPath([string]$Context.execution_root)-ine[IO.Path]::GetFullPath($ExecutionRoot)){
+    throw 'Native source context owner or frozen execution root differs.'
+  }
+  $expected=@(Resolve-RunSourceExecutionInputs -Python $Python -RepoRoot $RepoRoot -Session $Session `
+    -SourceReferences $SourceReferences -NativeInputPaths $NativeInputPaths)
+  if(@($Context.sources).Count-ne$expected.Count){throw 'Native source context declarations differ.'}
+  $ordinal=0
+  foreach($row in $Context.sources){
+    $ordinal++
+    $matched=@($expected|Where-Object target_directory -IEQ ([string]$row.target_directory))
+    if($matched.Count-ne1-or$expected[$ordinal-1].target_directory-ine$row.target_directory-or(@($matched[0].input_paths)-join"`n")-cne(@($row.input_paths)-join"`n")){
+      throw 'Native source context input or target differs.'
+    }
+    if($null-eq$row.execution_alias){
+      if($row.execution_directory-ine$row.target_directory){throw 'Native source context unowned execution path differs.'}
+    }else{
+      $alias=[IO.Path]::GetFullPath([string]$row.execution_alias)
+      if($alias-ine$row.execution_directory-or
+         [IO.Path]::GetFullPath((Split-Path -Parent $alias))-ine[IO.Path]::GetFullPath($ExecutionRoot)-or
+         [IO.Path]::GetFileName($alias)-cne('source_'+$RequestSha256.ToLowerInvariant()+'_'+$ordinal)){
+        throw 'Native source alias is outside its frozen owner scope.'
+      }
+    }
+  }
+  # Validate every record before touching any alias.
+  foreach($row in $Context.sources){if($null-ne$row.execution_alias){
+    Remove-RunExecutionAlias -ExecutionAlias $row.execution_alias -TargetDirectory $row.target_directory
+  }}
+}
+
 
 function Get-RunNativeExecutionContext {
   <# Inspect only the actual native plan; keep persistent identity canonical. #>

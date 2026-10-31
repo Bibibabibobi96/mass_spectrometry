@@ -508,6 +508,7 @@ function Invoke-RunArtifactWorkflow {
   $maximumRunBytes=$null;$python=$null;$repo=$null;$powershellOwner=$false;$completion=$null
   $inheritedCapacity=$false;$inheritedAlreadyReady=$false;$requiresParentOwner=$false
   $capacityAccountingDeferred=$false;$capacityAccountingDeferredReason=$null
+  $sourceExecutionContext=$null;$nativeInputPaths=@()
   try{
     $requestFile=(Resolve-Path -LiteralPath $RequestPath).Path
     $requestHash=(Get-FileHash -LiteralPath $requestFile -Algorithm SHA256).Hash
@@ -522,9 +523,23 @@ function Invoke-RunArtifactWorkflow {
     $powershellOwner=$request.prepared-is[Collections.IDictionary]-and$request.prepared.Contains('owner_kind')-and
       $request.prepared.owner_kind-ceq'powershell'
     if($powershellOwner){
+      if($request.prepared.Contains('native_input_paths')){throw 'Native source input transport is supported only for Python prepared calls.'}
       Assert-WorkflowFields $request.prepared @('owner_kind','entrypoint') 'PowerShell owner'
       if(-not$ResumeFinalization){throw 'PowerShell owner finalization requires its existing run.'}
-    }else{Assert-WorkflowFields $request.prepared @('module','function','import_root','entrypoint') 'Prepared call'}
+    }else{
+      $preparedFields=@('module','function','import_root','entrypoint')
+      if($request.prepared.Contains('native_input_paths')){$preparedFields+='native_input_paths'}
+      Assert-WorkflowFields $request.prepared $preparedFields 'Prepared call'
+    }
+    if($request.prepared.Contains('native_input_paths')){
+      if($powershellOwner){throw 'Native source input transport is supported only for Python prepared calls.'}
+      if($request.prepared.native_input_paths-isnot[array]){throw 'Prepared native_input_paths must be an array.'}
+      foreach($path in $request.prepared.native_input_paths){
+        if($path-isnot[string]-or-not[IO.Path]::IsPathFullyQualified($path)){throw 'Prepared native input must be an absolute file path.'}
+      }
+      $nativeInputPaths=@($request.prepared.native_input_paths)
+      if(@($nativeInputPaths|Select-Object -Unique).Count-ne$nativeInputPaths.Count){throw 'Prepared native input declarations are duplicated.'}
+    }
     if($request.capacity.Contains('ownership')){
       if(-not$powershellOwner-or$request.capacity.ownership-notin@('owned','inherited')-or
          $request.capacity.session_owner-isnot[string]-or[string]::IsNullOrWhiteSpace($request.capacity.session_owner)){
@@ -614,6 +629,16 @@ function Invoke-RunArtifactWorkflow {
           $result.execution_request_sha256=$requestHash
         }
       }
+      if($nativeInputPaths.Count){
+        if(-not(Test-Path -LiteralPath $ResultPath -PathType Leaf)-or-not$prior.Contains('source_execution_context')-or
+           $prior.execution_request_sha256-ine$requestHash){throw 'Workflow source execution context requires its original Result.'}
+        $sourceExecutionContext=$prior.source_execution_context
+        $originalSession=Get-Content -LiteralPath $sessionPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+        if(-not$originalSession.Contains('source_execution_context')-or
+           ($originalSession.source_execution_context|ConvertTo-Json -Depth 64 -Compress)-cne
+           ($sourceExecutionContext|ConvertTo-Json -Depth 64 -Compress)){throw 'Workflow source execution context differs from its owner record.'}
+        $result.source_execution_context=$sourceExecutionContext;$result.execution_request_sha256=$requestHash
+      }
       $completionPath=Join-Path $runRoot 'results/execution_completion.json'
       $waitPath=Join-Path $runRoot 'logs/prepared_wait.json'
       if($powershellOwner){
@@ -641,6 +666,13 @@ function Invoke-RunArtifactWorkflow {
     $null=Write-VerifiedRunManifest -Python $python -RepoRoot $repo -RunConfig $package.run_config `
       -Status checkpoint -Software $request.package.software -Outputs @($package.summary)
     $sessionPath=Join-Path $runRoot 'logs/capacity_session.json'
+    if($nativeInputPaths.Count){
+      $sourceExecutionContext=New-RunSourceExecutionContext -Python $python -RepoRoot $repo -Package $package -Session $session `
+        -SourceReferences $sourceReferences -NativeInputPaths $nativeInputPaths -RequestSha256 $requestHash
+      $session|Add-Member -NotePropertyName source_execution_context -NotePropertyValue $sourceExecutionContext
+      $result.source_execution_context=$sourceExecutionContext;$result.execution_request_sha256=$requestHash
+      Write-RunJson -Path $ResultPath -Value $result -Depth 64 -Atomic
+    }
     Write-RunJson -Path $sessionPath -Value $session -Depth 64
     $completionPath=Join-Path $runRoot 'results/execution_completion.json'
     $waitPath=Join-Path $runRoot 'logs/prepared_wait.json'
@@ -781,12 +813,24 @@ function Invoke-RunArtifactWorkflow {
        $finalConfig.capacity_ledger_lifecycle.light_evidence_budget_bytes-le0){throw 'Workflow public lifecycle identity differs.'}
     $expectedReason=if($request.package.retention_class-eq'compact'){$null}else{$request.package.retention_reason}
     if($finalConfig.artifact_retention.reason-cne$expectedReason){throw 'Workflow frozen retention reason differs.'}
+    if($null-ne$sourceExecutionContext){
+      $recordedSession=Get-Content -LiteralPath $sessionPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+      if(-not$recordedSession.Contains('source_execution_context')-or
+         ($recordedSession.source_execution_context|ConvertTo-Json -Depth 64 -Compress)-cne
+         ($sourceExecutionContext|ConvertTo-Json -Depth 64 -Compress)){throw 'Prepared callback changed the public source execution context.'}
+    }
     $writersConfirmed=$true
     if($null-ne$capacityAccountingDeferredReason){
       $capacityAccountingDeferred=$true
       Set-WorkflowStage capacity_accounting
       $result.capacity_accounting_deferred_reason=$capacityAccountingDeferredReason
       throw ('Capacity accounting is deferred; return to the original capacity/cache accounting owner: '+$capacityAccountingDeferredReason)
+    }
+    if($null-ne$sourceExecutionContext){
+      Set-WorkflowStage source_execution_alias_cleanup
+      Remove-RunSourceExecutionContext -Python $python -RepoRoot $repo -Session $session -SourceReferences $sourceReferences `
+        -NativeInputPaths $nativeInputPaths -RunDirectory $runRoot -ExecutionRoot $pathContext.execution_root -RequestSha256 $requestHash -Context $sourceExecutionContext
+      $result.source_execution_aliases_removed=$true
     }
     if($completion.Contains('execution_alias')){
       $alias=$completion.execution_alias
@@ -849,6 +893,7 @@ function Invoke-RunArtifactWorkflow {
         $session=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repo -ArtifactRoot $artifactRoot `
           -RunDirectory $runRoot -CommittedNewBytes $metadataBudget -ProtectedPaths $request.capacity.protected_paths `
           -ProtectedCacheKeys $request.capacity.protected_cache_keys -SourceReferences $sourceReferences -Owner $expectedOwner
+        if($null-ne$sourceExecutionContext){$session|Add-Member -NotePropertyName source_execution_context -NotePropertyValue $sourceExecutionContext -Force}
         $result.recovery_session=$session
         $result.execution_request_sha256=$requestHash
         $result.recovery_maximum_run_bytes=$maximumRunBytes
@@ -929,6 +974,12 @@ function Invoke-RunArtifactWorkflow {
     }
   }catch{
     $failure=$_
+    if($null-eq$sourceExecutionContext-and$_.Exception.Data.Contains('source_execution_context')){
+      $result.source_execution_context=$_.Exception.Data['source_execution_context'];$result.execution_request_sha256=$requestHash
+      if($_.Exception.Data.Contains('source_execution_aliases_rolled_back')-and$_.Exception.Data['source_execution_aliases_rolled_back']){
+        $result.source_execution_aliases_removed=$true
+      }else{$sourceExecutionContext=$_.Exception.Data['source_execution_context']}
+    }
     if($null-eq$result.exception-and$_.Exception.Data.Contains('prepared_exception')){
       $result.exception=$_.Exception.Data['prepared_exception']
     }
@@ -938,6 +989,13 @@ function Invoke-RunArtifactWorkflow {
     # No writer was launched before package/preparation setup failed. Once a
     # writer starts, unknown completion must retain the existing protection.
     if($null-ne$session-and-not$preparedStarted-and-not$capacityAccountingDeferred){
+      if($null-ne$sourceExecutionContext){
+        try{
+          Remove-RunSourceExecutionContext -Python $python -RepoRoot $repo -Session $session -SourceReferences $sourceReferences `
+            -NativeInputPaths $nativeInputPaths -RunDirectory $runRoot -ExecutionRoot $pathContext.execution_root -RequestSha256 $requestHash -Context $sourceExecutionContext
+          $result.source_execution_aliases_removed=$true
+        }catch{$result.secondary_errors+=@("Source execution alias cleanup failed: "+$_.Exception.Message)}
+      }
       try{$null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repo -Session $session;$result.lease_released=$true}
       catch{$result.secondary_errors+=@("Capacity lease cleanup failed: $($_.Exception.Message)")}
     }
@@ -950,6 +1008,8 @@ function Invoke-RunArtifactWorkflow {
   if($null-ne$completion-and$completion.Contains('summary')-and$completion.summary-is[Collections.IDictionary]-and
      $completion.summary.Contains('native_path_preparation')){
     $result.native_path_preparation=$completion.summary.native_path_preparation
+  }elseif($null-ne$package-and$null-ne$package.PSObject.Properties['native_path_preparation']){
+    $result.native_path_preparation=$package.native_path_preparation
   }
   if($powershellOwner){
     $summaryFields=if($null-ne$completion-and$completion.Contains('summary')-and$completion.summary-is[Collections.IDictionary]){$completion.summary}else{@{}}

@@ -121,6 +121,47 @@ class MaintenanceTargetCliTest(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "reconcile_artifact_capacity"):
                         apply({"execution_mode": mode})
 
+    @unittest.skipUnless(os.name == 'nt', 'directory junction metadata uses Windows')
+    def test_alias_maintenance_keeps_external_dangling_without_counting_foreign_payload(self) -> None:
+        from common.contracts import legacy_capacity_calibration as calibration
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace = Path(temporary); root = workspace / 'artifacts'; root.mkdir()
+            aliases = root / 'common/execution_aliases'; aliases.mkdir(parents=True)
+            inside = root / 'missing_internal'; inside.mkdir()
+            foreign = workspace / 'foreign'; foreign.mkdir()
+            dead_foreign = workspace / 'missing_foreign'; dead_foreign.mkdir()
+            sentinel = foreign / 'untouched.bin'; sentinel.write_bytes(b'foreign payload not inventoried')
+            command = """$ErrorActionPreference='Stop'
+New-Item -ItemType Junction -Path (Join-Path $env:ALIAS_ROOT 'internal') -Target $env:INTERNAL_TARGET|Out-Null
+New-Item -ItemType Junction -Path (Join-Path $env:ALIAS_ROOT 'foreign') -Target $env:FOREIGN_TARGET|Out-Null
+New-Item -ItemType Junction -Path (Join-Path $env:ALIAS_ROOT 'external_dangling') -Target $env:FOREIGN_DEAD_TARGET|Out-Null
+"""
+            result = subprocess.run(['pwsh', '-NoProfile', '-Command', command], cwd=workspace,
+                env={**os.environ, 'ALIAS_ROOT': str(aliases), 'INTERNAL_TARGET': str(inside),
+                     'FOREIGN_TARGET': str(foreign), 'FOREIGN_DEAD_TARGET': str(dead_foreign)},
+                capture_output=True, text=True, encoding='utf-8', timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            try:
+                inside.rmdir(); dead_foreign.rmdir()
+                _initialize_fixture_ledger(root, objects=[{'path': 'common/execution_aliases', 'class': 'light_evidence',
+                    'bytes': 123, 'status': 'ready', 'pin': False, 'owner': 'common.run_artifact_support'}])
+                with patch.object(Path, 'rglob', side_effect=AssertionError('foreign tree inventoried')), \
+                        patch.object(calibration, '_candidate', side_effect=AssertionError('generic alias counter used')):
+                    measured, pending = calibration._execution_alias_root(root, aliases, '2026-11-01')
+                    self.assertIsNone(pending); self.assertEqual(measured['bytes'], 0)
+                    outcome = normal_capacity._reconcile_execution_alias_root(root)
+                self.assertEqual(outcome, {'corrected_count': 2, 'released_bytes': 123})
+                self.assertFalse(os.path.lexists(aliases / 'internal'))
+                self.assertTrue(os.path.lexists(aliases / 'external_dangling'))
+                self.assertTrue((aliases / 'foreign').is_dir())
+                self.assertEqual(sentinel.read_bytes(), b'foreign payload not inventoried')
+                self.assertEqual(capacity_ledger.load_capacity_ledger(root)['resident_bytes'], 0)
+            finally:
+                for name in ('internal', 'foreign', 'external_dangling'):
+                    if os.path.lexists(aliases / name):
+                        os.rmdir(aliases / name)
+
+
     def test_maintenance_reconciles_execution_alias_root_without_scanning_targets(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

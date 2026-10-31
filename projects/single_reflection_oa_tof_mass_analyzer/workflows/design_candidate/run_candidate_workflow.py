@@ -119,7 +119,7 @@ def _run_command(command: list[str], log_path: Path, environment: dict[str, str]
     with log_path.open("w", encoding="utf-8", newline="\n") as log:
         process = subprocess.Popen(
             command,
-            cwd=REPO_ROOT,
+            cwd=Path(env.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY", str(REPO_ROOT))),
             env=env,
             stdout=log,
             stderr=subprocess.STDOUT,
@@ -1102,12 +1102,21 @@ def _execute_candidate_stages(
             _verify_frozen_run_inputs(run_root)
             if current_stage in reuse_set:
                 evidence = reused[current_stage]
+                analysis_execution = None
+                if current_stage == "comsol_candidate" and "analysis_request" in evidence:
+                    from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_comsol_stage import refresh_reused_comsol_analysis
+                    evidence, analysis_execution = refresh_reused_comsol_analysis(
+                        evidence, reused_records[current_stage], run_root, runtime_plan["execution_source_closure"],
+                        parent_root=Path(reuse_parent), runtime=sys.modules[__name__])
+                    reused[current_stage] = evidence
                 results.append(
                     {
                         "stage_id": current_stage,
                         "status": "success",
                         "execution": "reused",
                         "reused_from_run_id": Path(reuse_parent).name,
+                        "analysis_execution": analysis_execution,
+                        "native_execution": "reused",
                         "evidence": evidence,
                     }
                 )
@@ -1349,6 +1358,10 @@ def execute_prepared_run(
 ) -> None:
     """Execute the admitted root; the public owner alone publishes its terminal state."""
     run_config_path = Path(run_config_path).resolve(strict=True)
+    request_document = load_json(Path(execution_request_path))
+    if request_document["package"]["mode"] == "candidate_comsol_postprocess":
+        return execute_prepared_postprocess(Path(run_config_path), Path(capacity_session_path),
+                                            Path(execution_request_path), Path(completion_path))
     run_root = run_config_path.parent
     execution_request_path = Path(execution_request_path).resolve(strict=True)
     request = load_json(execution_request_path)
@@ -1434,7 +1447,7 @@ def resume_candidate_finalization(run_root: Path, owner_result: Path | None = No
     package = request["package"]
     expected = Path(package["artifact_project_root"]).resolve() / "runs" / package["run_id"]
     if (package["project"] != "single_reflection_oa_tof_mass_analyzer"
-            or package["mode"] != "design_candidate" or expected != run_root):
+            or package["mode"] not in {"design_candidate", "candidate_comsol_postprocess"} or expected != run_root):
         raise ValueError("finalization request is not this candidate run")
     result_path = (Path(owner_result).resolve(strict=True) if owner_result else
                    run_root.parent.parent / "scratch" / "workflow_results" / run_root.name / "result.json")
@@ -1473,6 +1486,11 @@ def run_candidate_workflow(
         if pa_handoff_output.exists() or pa_handoff_output.is_relative_to(run_root.parent):
             raise ValueError("PA handoff output must be a new path outside the candidate runs directory")
         request["package"]["retention_reason"] += " Explicit PA producer handoff retains the actual public owner Result."
+    return _invoke_candidate_owner_request(request, pa_handoff_output)
+
+
+def _invoke_candidate_owner_request(request: dict, pa_handoff_output: Path | None = None) -> tuple[Path, dict]:
+    run_root = Path(request["package"]["artifact_project_root"]) / "runs" / request["package"]["run_id"]
     with tempfile.TemporaryDirectory(prefix="oatof_candidate_owner_") as directory:
         request_path = Path(directory) / "request.json"
         result_path = (pa_handoff_output if pa_handoff_output is not None else
@@ -1499,3 +1517,89 @@ def run_candidate_workflow(
         if summary["status"] != "success" or failure is not None:
             raise CandidateWorkflowError(str(result.get("exception") or failure), run_root) from failure
         return run_root, summary
+
+
+def run_candidate_postprocess(parent: Path, run_id: str) -> tuple[Path, dict]:
+    """Original Candidate CLI's explicit new-child postprocessing action."""
+    from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import prepare_postprocess_request
+    return _invoke_candidate_owner_request(prepare_postprocess_request(parent, run_id))
+
+
+def execute_prepared_postprocess(config_path: Path, session_path: Path, request_path: Path, completion_path: Path) -> None:
+    """Use the initialized public package; publish only actual small child outputs."""
+    import shutil
+    from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_run_lifecycle import _rewrite_paths
+    from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
+    from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_comsol_stage import execute_saved_postprocess
+    root = config_path.resolve().parent
+    request = load_json(request_path)
+    initial = load_json(config_path)
+    payload = request["payload"]
+    verify_record("frozen postprocess selection", payload["postprocess_selection"])
+    selected = load_json(Path(payload["postprocess_selection"]["path"]))
+    session = load_json(session_path)
+    source_paths = [path for lease in session.get("source_protection_leases", [])
+                    if lease.get("status") == "active" for path in lease.get("protected_paths", [])]
+    if str(root) not in session["protected_paths"] or selected["parent"] not in [*session["protected_paths"], *source_paths]:
+        raise ValueError("Postprocessing source and child must be protected by the admitted public session")
+    closure = payload["execution_source_closure"]
+    verify_candidate_source_closure(closure)
+    source_code = Path(closure["code_root"])
+    child_code = root / "inputs/code"
+    shutil.copytree(source_code, child_code)
+    closure = _rewrite_paths(closure, source_code, child_code)
+    verify_candidate_source_closure(closure)
+    selected_path = root / "inputs/postprocess_source_selection.json"
+    write_json_atomic(selected_path, selected)
+    config = dict(initial)
+    config["inputs"] = dict(initial["inputs"], postprocess_source_selection=str(selected_path))
+    config["execution_source_closure"] = closure
+    config["provenance"] = {"source_reference": selected["source_reference"], "science_reference": selected["science_reference"], "model_record": selected["model_record"]}
+    config["parameters"] = dict(initial.get("parameters", {}), scope="comsol_postprocessing_only")
+    write_json_atomic(config_path, config)
+    writer = {"operations": [], "resource_releases": []}
+    failure = None
+    evidence = {}
+    source_verified = False
+    start = time.monotonic()
+    try:
+        refreshed = select_postprocess_parent(Path(selected["parent"]), Path(session["artifact_root"]))
+        if refreshed != selected:
+            raise ValueError("Protected parent evidence changed after admission")
+        source_verified = True
+        evidence = execute_saved_postprocess(selected, root, closure,
+            {"run_id": root.name, "context_sha256": sha256(request_path).lower(), "writer_completion": writer,
+             "source_execution_context": session.get("source_execution_context"), "postprocess_evidence": evidence},
+            runtime=sys.modules[__name__])
+    except BaseException as error:
+        failure = {"type": type(error).__name__, "message": str(error), "notes": list(getattr(error, "__notes__", []))}
+    status = "failed" if failure else "success"
+    recovery_parent = root if evidence.get("detector_exports_ready") is True else Path(selected["parent"])
+    recovery_action = (f'"{sys.executable}" -m projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate '
+                       f'--postprocess-from "{recovery_parent}" --run-id <NEW_RUN_ID>') if failure else "none"
+    if evidence.get("writer_completion_unconfirmed"):
+        recovery_action = "inspect_original_writer_completion; retain current protections"
+    summary = {"schema_version": 1, "role": "oa_tof_candidate_postprocess_summary", "run_id": root.name,
+        "status": status, "execution_status": status, "data_validity": "unknown" if failure else "valid",
+        "source_identity_verified": source_verified,
+        "scientific_result": "not_evaluated_whole_candidate", "scope": "comsol_postprocessing_only",
+        "candidate_decision": "not_evaluated_postprocess_scope", "promotion_authorized": False,
+        "performance_claim_allowed": False, "parent_model_saved": False,
+        "native_field_solve_count": 0, "native_particle_solve_count": 0,
+        "failure_stage": "postprocessing" if failure else None,
+        "failure_reason": failure["message"] if failure else None,
+        "recovery_action": recovery_action,
+        "recovery_requires_terminal_publication": bool(failure and evidence.get("detector_exports_ready")),
+        "resume_finalization_command": (f'"{sys.executable}" -m projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate '
+                                        f'--resume-finalization "{root}"'),
+        "evidence": evidence, "elapsed_seconds": time.monotonic()-start}
+    outputs = sorted(str(path) for path in root.rglob("*") if path.is_file()
+                     and not path.is_relative_to(root / "inputs") and path.name not in {"run_config.json", "run_manifest.json"})
+    write_json_atomic(completion_path, {"schema_version": 1, "role": "run_artifact_workflow_completion",
+        "run_id": root.name, "project": PROJECT_ROOT.name,
+        "execution_request": file_record(request_path), "run_config": file_record(config_path),
+        "status": status, "summary": summary, "output_paths": outputs,
+        "required_output_paths": [evidence["analysis_receipt"]] if evidence.get("analysis_receipt") else [],
+        "retention_preserve_paths": [], "manifest_extra_fields": {"lifecycle_state": "terminal", "promotion_authorized": False,
+            "postprocess_source_reference": selected["source_reference"], "scope": "comsol_postprocessing_only"},
+        "writer_completion": writer, "exception": failure})

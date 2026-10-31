@@ -2070,5 +2070,499 @@ def execute_prepared_run(*args):
 
 
 
+
+def postprocess_source_fixture(directory, *, unknown=False):
+    """Producer-shaped small records; no vendor process or model is fabricated."""
+    import csv
+    from common.contracts.capacity_ledger import record_capacity_object
+    from common.contracts.write_run_manifest import publish_run_manifest
+    from projects.single_reflection_oa_tof_mass_analyzer.analysis.native_stage_completion import append_native_stage_completion
+    artifact = directory / "artifacts"
+    parent = artifact / "projects" / PROJECT_ROOT.name / "runs/20261031_121000__sim__comsol__postprocess-parent"
+    for name in ("inputs", "results", "logs"):
+        (parent / name).mkdir(parents=True)
+    physical = parent / "inputs/candidate_resolved_geometry.json"
+    physical.write_bytes((PROJECT_ROOT / "config/resolved_geometry.json").read_bytes())
+    source = parent / "inputs/source.ion"
+    source.write_text("\n".join("0,524,1,0,0,0,0,0,1,1,1" for _ in range(100))+"\n", encoding="utf-8")
+    budget = parent / "inputs/candidate_runtime.json"
+    budget.write_bytes((PROJECT_ROOT / "config/candidate_runtime.json").read_bytes())
+    events = parent / "results/comsol_detector_events_Fixture.csv"
+    with events.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(["Ion","TofUs","XMm","YMm","Hit","Status","Event","DetectorRadiusMm","X0Mm","Y0Mm","Z0Mm"])
+        for index in range(100):
+            writer.writerow([index+1,40+index*.00001,0,0,True,"detector_hit","crossing",0,0,0,0])
+    analysis = parent / "results/comsol_detector_events_Fixture.analysis_request.json"
+    analysis.write_text(json.dumps({"schema_version":1,"role":"oatof_comsol_detector_events_analysis_request",
+        "solver":"COMSOL","label":"Fixture","nominal_mass_Da":524,"raw_events_csv":str(events),
+        "analysis_output_dir":str(parent / "results/analysis"),"event_extraction":"solver_native_detector_crossing_or_freeze",
+        "aggregate_metrics_owner":"python_reference_analysis"}), encoding="utf-8")
+    native = parent / "logs/comsol_build_completion.json"
+    native.write_text(json.dumps({"schema_version":1,"role":"comsol_launcher_completion","run_id":parent.name,
+        "operations":[{"operation_id":"launcher-attempt-1","observation":{"exit_confirmed":not unknown,"returncode":0}}],
+        "host_release":{"inherited":False,"token":"fixture-released","result":{"status":"released","token":"fixture-released"},"error":None}}), encoding="utf-8")
+    writer = {"operations":[],"resource_releases":[]}
+    append_native_stage_completion(writer,native,role="comsol_launcher_completion",run_id=parent.name)
+    completion = parent / "results/execution_completion.json"
+    completion.write_text(json.dumps({"writer_completion":writer}), encoding="utf-8")
+    config = {"schema_version":2,"run_id":parent.name,"project":PROJECT_ROOT.name,"mode":"design_candidate",
+        "project_root":str(PROJECT_ROOT),"inputs":{"candidate_resolved_geometry.json":str(physical),
+        "candidate_particle_table":str(source),"candidate_runtime.json":str(budget)},
+        "artifact_retention":{"policy_version":1,"class":"compact","reason":None},
+        "capacity_ledger_lifecycle":{"schema_version":1,"enabled":True,"artifact_root":str(artifact),
+                                     "light_evidence_budget_bytes":67108864}}
+    config_path = parent / "run_config.json"
+    from common.contracts.write_run_manifest import file_record
+    request_path = parent / "inputs/execution_request.json"
+    request_path.write_text(json.dumps({"schema_version":1,"role":"run_artifact_workflow_request",
+        "package":{"project":PROJECT_ROOT.name,"run_id":parent.name,"mode":"design_candidate"}}),encoding="utf-8")
+    config["inputs"]["execution_request"] = str(request_path)
+    config_path.write_text(json.dumps(config),encoding="utf-8")
+    completion.write_text(json.dumps({"schema_version":1,"role":"run_artifact_workflow_completion",
+        "project":PROJECT_ROOT.name,"run_id":parent.name,"status":"failed","writer_completion":writer,
+        "execution_request":file_record(request_path),"run_config":file_record(config_path)}),encoding="utf-8")
+    outputs = [events,analysis,native,completion]
+    publish_run_manifest(config_path,"failed",output_paths=outputs)
+    initialize_capacity_ledger(artifact,objects=[])
+    record_capacity_object(artifact,path=parent,object_class="light_evidence",bytes_count=sum(
+        path.stat().st_size for path in parent.rglob("*") if path.is_file()),owner=PROJECT_ROOT.name)
+    return artifact,parent,config_path,outputs
+
+
+def postprocess_public_entry(root, artifact):
+    author=root/"author"
+    for path in REPO_ROOT.rglob("*"):
+        if path.is_file() and "__pycache__" not in path.parts and path.suffix in {".py",".ps1",".json",".m",".lua",".gem",".fly2",".md"}:
+            target=author/path.relative_to(REPO_ROOT)
+            target.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copyfile(path,target)
+    policy=author/"common/contracts/artifact_capacity_policy.json"
+    document=load_json(policy)
+    document["minimum_free_gib"]=0
+    policy.write_text(json.dumps(document),encoding="utf-8")
+    # Real public lifecycle remains intact; this vendor boundary must never execute.
+    (author/"common/comsol/run_comsol_r2025b.ps1").write_text("throw 'COMSOL_MUST_NOT_START'",encoding="utf-8")
+    env=os.environ.copy()
+    env.update(SIMULATION_PYTHON_EXE=sys.executable,MASS_SPECTROMETRY_ARTIFACT_ROOT=str(artifact),
+               MASS_SPECTROMETRY_EXECUTION_ROOT=str(root/"native"))
+    bootstrap="import sys;sys.path.insert(0,sys.argv[1]);sys.argv=sys.argv[2:];from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate import main;main()"
+    def invoke(arguments):
+        return subprocess.run([sys.executable,"-I","-B","-c",bootstrap,str(author),"run_candidate.py",*arguments],
+            cwd=author,env=env,capture_output=True,text=True,encoding="utf-8",timeout=240)
+    return invoke
+
+
+def cold_export_failed_child_fixture(directory, *, unknown=False, wrong_source=False):
+    """Small stopped-cold-export producer fixture; this executes no solver."""
+    from common.contracts.capacity_ledger import record_capacity_object
+    from common.contracts.write_run_manifest import file_record, publish_run_manifest
+    from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
+    from projects.single_reflection_oa_tof_mass_analyzer.analysis.native_stage_completion import append_native_stage_completion
+    artifact,science,_,_=postprocess_source_fixture(directory)
+    source=select_postprocess_parent(science,artifact)
+    if wrong_source:
+        source["inputs"]["source_path"]=source["budget_record"]
+    child=artifact/"projects"/PROJECT_ROOT.name/"runs/20261031_123000__analysis__comsol__cold-export-failed"
+    for name in ("inputs","logs","results"):
+        (child/name).mkdir(parents=True)
+    source_path=child/"inputs/postprocess_source_selection.json"
+    source_path.write_text(json.dumps(source),encoding="utf-8")
+    request=child/"inputs/execution_request.json"
+    request.write_text(json.dumps({"schema_version":1,"role":"run_artifact_workflow_request",
+        "package":{"project":PROJECT_ROOT.name,"run_id":child.name,"mode":"candidate_comsol_postprocess"}}),encoding="utf-8")
+    config={"schema_version":2,"project":PROJECT_ROOT.name,"run_id":child.name,"mode":"candidate_comsol_postprocess",
+        "project_root":str(PROJECT_ROOT),"inputs":{"execution_request":str(request),"postprocess_source_selection":str(source_path)},
+        "provenance":{"science_reference":source["science_reference"]},
+        "artifact_retention":{"policy_version":1,"class":"compact","reason":None},
+        "capacity_ledger_lifecycle":{"schema_version":1,"enabled":True,"artifact_root":str(artifact),"light_evidence_budget_bytes":67108864}}
+    config_path=child/"run_config.json"
+    config_path.write_text(json.dumps(config),encoding="utf-8")
+    events=child/"results/comsol_detector_events_Fixture.csv"
+    events.write_bytes(Path(source["exports"]["events"]["path"]).read_bytes())
+    analysis=child/"results/comsol_detector_events_Fixture.analysis_request.json"
+    document=load_json(Path(source["exports"]["request"]["path"]))
+    document.update(raw_events_csv=str(events),analysis_output_dir=str(child/"results/analysis"))
+    analysis.write_text(json.dumps(document),encoding="utf-8")
+    native=child/"logs/cold_postprocess_completion.json"
+    receipt=load_json(science/"logs/comsol_build_completion.json")
+    receipt["run_id"]=child.name
+    receipt["operations"][0]["observation"]["exit_confirmed"]=not unknown
+    native.write_text(json.dumps(receipt),encoding="utf-8")
+    writer={"operations":[],"resource_releases":[]}
+    append_native_stage_completion(writer,native,role="comsol_launcher_completion",run_id=child.name)
+    completion=child/"results/execution_completion.json"
+    completion.write_text(json.dumps({"schema_version":1,"role":"run_artifact_workflow_completion",
+        "project":PROJECT_ROOT.name,"run_id":child.name,"status":"failed","execution_request":file_record(request),
+        "run_config":file_record(config_path),"writer_completion":writer,
+        "summary":{"status":"failed","scope":"comsol_postprocessing_only","source_identity_verified":True},
+        "exception":{"type":"RuntimeError","message":"ANALYSIS_FAILED_AFTER_EXPORT"}}),encoding="utf-8")
+    publish_run_manifest(config_path,"failed",output_paths=[events,analysis,native,completion])
+    record_capacity_object(artifact,path=child,object_class="light_evidence",bytes_count=sum(
+        path.stat().st_size for path in child.rglob("*") if path.is_file()),owner=PROJECT_ROOT.name)
+    return artifact,science,child,events
+
+
+class CandidatePostprocessTests(unittest.TestCase):
+    def test_original_cli_postprocess_is_explicit_and_rejects_new_science(self):
+        argv = ["run_candidate.py","--postprocess-from","parent","--run-id","new"]
+        for extra in (["--request","request.json"],["--particle-source-seed","0"],["--reuse-parent","other"],
+                      ["--resume-finalization","old"],["--simion-exe","simion.exe"],["--dry-run"]):
+            with self.subTest(extra=extra), mock.patch.object(sys,"argv",argv+extra), \
+                    mock.patch.object(candidate_entry,"prepare_execution") as prepare:
+                with self.assertRaises(SystemExit):
+                    candidate_entry.main()
+                prepare.assert_not_called()
+        with mock.patch.object(sys,"argv",argv), mock.patch.object(candidate_workflow,"run_candidate_postprocess",
+                return_value=(Path("child"),{"scope":"comsol_postprocessing_only"})) as execute, \
+                mock.patch.object(candidate_entry,"prepare_execution") as prepare:
+            candidate_entry.main()
+        execute.assert_called_once_with(Path("parent"),"new")
+        prepare.assert_not_called()
+
+    def test_sealed_exports_need_no_model_and_unknown_writer_is_rejected(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
+        with tempfile.TemporaryDirectory() as directory:
+            artifact,parent,config,outputs=postprocess_source_fixture(Path(directory))
+            selected=select_postprocess_parent(parent,artifact)
+            self.assertIsNone(selected["model_record"])
+            self.assertIsNone(selected["context_record"])
+            self.assertEqual(selected["exports"]["events"]["path"],str(outputs[0]))
+            self.assertFalse(list(parent.rglob("*.mph")))
+            artifact,parent,_,_=postprocess_source_fixture(Path(directory)/"unknown",unknown=True)
+            with self.assertRaisesRegex(ValueError,"SOURCE_WRITER_UNCONFIRMED"):
+                select_postprocess_parent(parent,artifact)
+
+    def test_declared_missing_csv_is_not_silently_replaced_by_cold_solve(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
+        with tempfile.TemporaryDirectory() as directory:
+            artifact,parent,_,outputs=postprocess_source_fixture(Path(directory))
+            outputs[0].unlink()
+            with self.assertRaisesRegex(ValueError,"missing or incomplete"):
+                select_postprocess_parent(parent,artifact)
+
+    def test_frozen_only_analyzer_consumes_small_export_and_parent_is_unchanged(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
+        from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_comsol_stage import execute_saved_postprocess
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            artifact,parent,_,_=postprocess_source_fixture(root)
+            before={str(path.relative_to(parent)):path.read_bytes() for path in parent.rglob("*") if path.is_file()}
+            selected=select_postprocess_parent(parent,artifact)
+            frozen=freeze_candidate_source_closure(root/"code",artifact/"projects"/PROJECT_ROOT.name,
+                resolved_contract=Path(selected["inputs"]["contract_path"]["path"]),
+                analysis_contract=PROJECT_ROOT/"config/analysis_contract.json")
+            child=root/"child"
+            (child/"inputs").mkdir(parents=True)
+            (child/"logs").mkdir()
+            with mock.patch.object(candidate_workflow,"_run_managed_stage_command",side_effect=AssertionError("native must not start")):
+                result=execute_saved_postprocess(selected,child,frozen,{},runtime=candidate_workflow)
+            self.assertEqual(result["native_launch_count"],0)
+            self.assertFalse(result["parent_model_saved"])
+            self.assertTrue(Path(result["analysis_receipt"]).is_file())
+            self.assertEqual(before,{str(path.relative_to(parent)):path.read_bytes() for path in parent.rglob("*") if path.is_file()})
+
+    def test_original_cli_child_and_finalization_resume_use_public_owner_zero_native(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            artifact,parent,_,_=postprocess_source_fixture(root)
+            before={str(path.relative_to(parent)):path.read_bytes() for path in parent.rglob("*") if path.is_file()}
+            invoke=postprocess_public_entry(root,artifact)
+            child_id="20261031_122000__analysis__python__candidate-postprocess"
+            first=invoke(["--postprocess-from",str(parent),"--run-id",child_id])
+            self.assertEqual(first.returncode,0,first.stdout+first.stderr)
+            child=artifact/"projects"/PROJECT_ROOT.name/"runs"/child_id
+            summary=load_json(child/"summary.json")
+            self.assertEqual(summary["scope"],"comsol_postprocessing_only")
+            self.assertEqual(summary["evidence"]["native_launch_count"],0)
+            self.assertEqual(summary["native_particle_solve_count"],0)
+            self.assertFalse(list(child.rglob("*.mph")))
+            completion=(child/"results/execution_completion.json").read_bytes()
+            resumed=invoke(["--resume-finalization",str(child)])
+            self.assertEqual(resumed.returncode,0,resumed.stdout+resumed.stderr)
+            self.assertEqual(completion,(child/"results/execution_completion.json").read_bytes())
+            self.assertEqual(before,{str(path.relative_to(parent)):path.read_bytes() for path in parent.rglob("*") if path.is_file()})
+
+    def test_postprocess_failure_preserves_source_identity_and_reports_original_recovery_cli(self):
+        from common.contracts.write_run_manifest import file_record
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
+        from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import candidate_comsol_stage
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            artifact,parent,_,_=postprocess_source_fixture(root)
+            selected=select_postprocess_parent(parent,artifact)
+            closure=freeze_candidate_source_closure(root/"code",artifact/"projects"/PROJECT_ROOT.name,
+                resolved_contract=Path(selected["inputs"]["contract_path"]["path"]),
+                analysis_contract=PROJECT_ROOT/"config/analysis_contract.json")
+            child=root/"child"
+            (child/"inputs").mkdir(parents=True)
+            (child/"logs").mkdir()
+            selection_path=root/"selection.json"
+            selection_path.write_text(json.dumps(selected),encoding="utf-8")
+            request=child/"inputs/execution_request.json"
+            request.write_text(json.dumps({"payload":{"postprocess_selection":file_record(selection_path),
+                "execution_source_closure":closure}}),encoding="utf-8")
+            config=child/"run_config.json"
+            config.write_text(json.dumps({"schema_version":2,"inputs":{"execution_request":str(request)},
+                "parameters":{},"paths":{"sentinel":"preserved"}}),encoding="utf-8")
+            session=root/"session.json"
+            session.write_text(json.dumps({"protected_paths":[str(child),str(parent)],"artifact_root":str(artifact)}),encoding="utf-8")
+            completion=child/"results/execution_completion.json"
+            (child/"results").mkdir()
+            with mock.patch.object(candidate_comsol_stage,"execute_saved_postprocess",side_effect=RuntimeError("PLOT_FAILURE_SENTINEL")):
+                candidate_workflow.execute_prepared_postprocess(config,session,request,completion)
+            actual=load_json(completion)
+            self.assertEqual(actual["status"],"failed")
+            self.assertEqual(actual["summary"]["data_validity"],"unknown")
+            self.assertTrue(actual["summary"]["source_identity_verified"])
+            self.assertEqual(actual["exception"]["message"],"PLOT_FAILURE_SENTINEL")
+            self.assertIn("--postprocess-from",actual["summary"]["recovery_action"])
+            self.assertIn("--resume-finalization",actual["summary"]["resume_finalization_command"])
+            self.assertEqual(load_json(config)["paths"],{"sentinel":"preserved"})
+            self.assertFalse(actual["summary"]["recovery_requires_terminal_publication"])
+            self.assertIn(str(parent),actual["summary"]["recovery_action"])
+            # Only the consumer's unknown-writer hint is checked here; the
+            # stopped/release fault matrix remains at the public validator.
+            unknown=child.parent/"unknown-child"
+            (unknown/"inputs").mkdir(parents=True)
+            (unknown/"logs").mkdir()
+            (unknown/"results").mkdir()
+            unknown_config=unknown/"run_config.json"
+            unknown_request=unknown/"inputs/execution_request.json"
+            unknown_request.write_bytes(request.read_bytes())
+            unknown_config.write_text(json.dumps({"schema_version":2,"inputs":{"execution_request":str(unknown_request)},
+                "parameters":{},"paths":{"sentinel":"preserved"}}),encoding="utf-8")
+            unknown_session=unknown/"session.json"
+            unknown_session.write_text(json.dumps({"protected_paths":[str(unknown),str(parent)],"artifact_root":str(artifact)}),encoding="utf-8")
+            def unknown_export(_selection,_root,_closure,plan,*,runtime):
+                plan["postprocess_evidence"]["writer_completion_unconfirmed"]=True
+                raise RuntimeError("POSTPROCESS_EXPORT_WRITER_UNCONFIRMED")
+            unknown_completion=unknown/"results/execution_completion.json"
+            with mock.patch.object(candidate_comsol_stage,"execute_saved_postprocess",side_effect=unknown_export):
+                candidate_workflow.execute_prepared_postprocess(unknown_config,unknown_session,unknown_request,unknown_completion)
+            blocked=load_json(unknown_completion)
+            self.assertEqual(blocked["summary"]["recovery_action"],"inspect_original_writer_completion; retain current protections")
+            self.assertFalse(blocked["summary"]["recovery_requires_terminal_publication"])
+            self.assertEqual(blocked["required_output_paths"],[])
+
+    def test_cold_dispatch_projects_actual_task_but_keeps_frozen_request_canonical(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_comsol_stage import execute_saved_postprocess
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            child=root/"child"
+            (child/"inputs").mkdir(parents=True)
+            (child/"logs").mkdir()
+            frozen=freeze_candidate_source_closure(child/"inputs/code",root/"artifacts",
+                resolved_contract=PROJECT_ROOT/"config/resolved_geometry.json",
+                analysis_contract=PROJECT_ROOT/"config/analysis_contract.json")
+            selection={"exports":None,"model_record":{"path":str(root/"parent/model.mph")},
+                "context_record":{"path":str(root/"parent/model.mph.postprocess.json")},"parent":str(root/"parent")}
+            observed=[]
+            def stop(command,log,plan,receipt,role):
+                observed.append(command)
+                raise RuntimeError("STOP_AT_NATIVE_BOUNDARY")
+            execution=root/"execution"
+            execution.mkdir()
+            source_execution=root/"source_execution"
+            source_execution.mkdir()
+            plan={"context_sha256":"a"*64,"source_execution_context":{
+                "schema_version":1,"role":"run_source_execution_context","request_sha256":"a"*64,
+                "child_run_directory":str(child),"execution_root":str(root),"sources":[{
+                    "target_directory":selection["parent"],"execution_directory":str(source_execution),
+                    "execution_alias":str(source_execution),"input_paths":[selection["model_record"]["path"],selection["context_record"]["path"]]}]}}
+            with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY":str(execution)}), \
+                    mock.patch.object(candidate_workflow,"_run_managed_stage_command",side_effect=stop):
+                with self.assertRaisesRegex(RuntimeError,"STOP_AT_NATIVE_BOUNDARY"):
+                    execute_saved_postprocess(selection,child,frozen,plan,runtime=candidate_workflow)
+            command=observed[0]
+            self.assertEqual(command[command.index("-TaskScript")+1],str(execution/"inputs/cold_postprocess.m"))
+            self.assertEqual(command[command.index("-StartupAttempts")+1],"1")
+            request=load_json(child/"inputs/cold_request.json")
+            self.assertEqual(request["output_dir"],str(child/"results"))
+            self.assertEqual(request["child_run_directory"],str(child))
+            self.assertEqual(request["model_path"],selection["model_record"]["path"])
+            task=(child/"inputs/cold_postprocess.m").read_text(encoding="utf-8")
+            self.assertIn(str(source_execution/"model.mph"),task)
+            self.assertIn(str(source_execution/"model.mph.postprocess.json"),task)
+            self.assertFalse((child/"results/cold_postprocess_result.json").exists())
+
+    def test_failed_cold_export_child_reanalyzes_via_original_cli_without_model_or_comsol(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            artifact,science,parent,_=cold_export_failed_child_fixture(root)
+            before={str(path):path.read_bytes() for folder in (science,parent) for path in folder.rglob("*") if path.is_file()}
+            selected=select_postprocess_parent(parent,artifact)
+            self.assertIsNone(selected["model_record"])
+            self.assertEqual(len(selected["source_references"]),2)
+            invoke=postprocess_public_entry(root,artifact)
+            author_stage=root/"author/projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_comsol_stage.py"
+            author_stage.write_text(author_stage.read_text(encoding="utf-8")+"\n# Explicit software-only cold-export/analysis-failure consumer fixture.\n_fixture_original_saved_postprocess = execute_saved_postprocess\n\ndef execute_saved_postprocess(selection, root, closure, plan, *, runtime):\n    if root.name != '20261031_123500__analysis__comsol__cold-analysis-failure':\n        return _fixture_original_saved_postprocess(selection, root, closure, plan, runtime=runtime)\n    import json, subprocess, sys\n    from types import SimpleNamespace\n    from projects.single_reflection_oa_tof_mass_analyzer.analysis.native_stage_completion import append_native_stage_completion\n    fake_model = Path(selection['parent'])/'inert_fixture_not_a_model.mph'\n    fake_context = Path(selection['parent'])/'inert_fixture_not_a_model.mph.postprocess.json'\n    cold = dict(selection, exports=None, model_record={'path':str(fake_model)}, context_record={'path':str(fake_context)})\n    plan['source_execution_context'] = {\n        'schema_version':1,'role':'run_source_execution_context','request_sha256':plan['context_sha256'],\n        'child_run_directory':str(root),'sources':[{'target_directory':selection['parent'],\n        'execution_directory':selection['parent'],'input_paths':[str(fake_model),str(fake_context)]}]}\n    def software_export(command, log, selected_plan, receipt_path, role):\n        # The process below is actual Python, never MATLAB/COMSOL. Its tiny data\n        # and closed release shape are explicit native-boundary fixture facts.\n        observed = subprocess.run([sys.executable,'-I','-B','-c','pass'],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=60)\n        assert observed.returncode == 0\n        receipt={'schema_version':1,'role':role,'run_id':root.name,\n            'fixture':'SOFTWARE_ONLY_NOT_A_COMSOL_RUN',\n            'operations':[{'operation_id':'inert-software-export','observation':{'exit_confirmed':True,'returncode':observed.returncode}}],\n            'host_release':{'inherited':False,'token':'fixture-closed-release',\n            'result':{'status':'released','token':'fixture-closed-release'},'error':None}}\n        receipt_path.write_text(json.dumps(receipt),encoding='utf-8')\n        append_native_stage_completion(selected_plan['writer_completion'],receipt_path,role=role,run_id=root.name)\n        events=root/'results/comsol_detector_events_Fixture.csv'\n        events.write_bytes(Path(selection['exports']['events']['path']).read_bytes())\n        request=root/'results/comsol_detector_events_Fixture.analysis_request.json'\n        document=json.loads(Path(selection['exports']['request']['path']).read_text(encoding='utf-8'))\n        document.update(raw_events_csv=str(events),analysis_output_dir=str(root/'results/detector_analysis'))\n        request.write_text(json.dumps(document),encoding='utf-8')\n        result={'model_path':str(fake_model),'raw_detector_events_path':str(events),\n            'analysis_request_path':str(request),'analysis_output_dir':document['analysis_output_dir']}\n        (root/'results/cold_postprocess_result.json').write_text(json.dumps(result),encoding='utf-8')\n        (root/'logs/cold_postprocess.txt').write_text('STATUS=PASS\\n',encoding='utf-8')\n        (root/'logs/inert_cold_boundary.txt').write_text('one software-only invocation\\n',encoding='utf-8')\n    def fail_analysis(*args, **kwargs):\n        raise RuntimeError('ANALYSIS_AFTER_COMPLETED_COLD_EXPORT')\n    original_analyzer=globals()['analyze_detector_request']\n    globals()['analyze_detector_request']=fail_analysis\n    try:\n        return _fixture_original_saved_postprocess(cold,root,closure,plan,\n            runtime=SimpleNamespace(_run_command=runtime._run_command,_run_managed_stage_command=software_export))\n    finally:\n        globals()['analyze_detector_request']=original_analyzer\n",encoding="utf-8")
+            failed_id="20261031_123500__analysis__comsol__cold-analysis-failure"
+            failed=invoke(["--postprocess-from",str(parent),"--run-id",failed_id])
+            self.assertNotEqual(failed.returncode,0)
+            failed_child=artifact/"projects"/PROJECT_ROOT.name/"runs"/failed_id
+            failed_summary=load_json(failed_child/"summary.json")
+            self.assertEqual(failed_summary["status"],"failed")
+            self.assertIn("ANALYSIS_AFTER_COMPLETED_COLD_EXPORT",failed_summary["failure_reason"])
+            self.assertTrue(failed_summary["evidence"]["detector_exports_ready"])
+            self.assertTrue(failed_summary["recovery_requires_terminal_publication"])
+            self.assertIn('--postprocess-from "'+str(failed_child)+'"',failed_summary["recovery_action"])
+            self.assertTrue((failed_child/"logs/inert_cold_boundary.txt").is_file())
+            self.assertEqual(load_json(failed_child/"run_manifest.json")["status"],"failed")
+            failed_bytes={str(path):path.read_bytes() for path in failed_child.rglob("*") if path.is_file()}
+            select_postprocess_parent(failed_child,artifact)
+            run_id="20261031_124000__analysis__python__postprocess-retry"
+            first=invoke(["--postprocess-from",str(failed_child),"--run-id",run_id])
+            self.assertEqual(first.returncode,0,first.stdout+first.stderr)
+            child=artifact/"projects"/PROJECT_ROOT.name/"runs"/run_id
+            summary=load_json(child/"summary.json")
+            self.assertEqual(summary["evidence"]["native_launch_count"],0)
+            self.assertEqual(summary["native_particle_solve_count"],0)
+            completion=(child/"results/execution_completion.json").read_bytes()
+            resumed=invoke(["--resume-finalization",str(child)])
+            self.assertEqual(resumed.returncode,0,resumed.stdout+resumed.stderr)
+            self.assertEqual(completion,(child/"results/execution_completion.json").read_bytes())
+            self.assertEqual(before,{str(path):path.read_bytes() for folder in (science,parent) for path in folder.rglob("*") if path.is_file()})
+            self.assertFalse(list(root.rglob("*.mph")))
+            self.assertEqual(failed_bytes,{str(path):path.read_bytes() for path in failed_child.rglob("*") if path.is_file()})
+            self.assertFalse((child/"logs/inert_cold_boundary.txt").exists())
+            again=select_postprocess_parent(child,artifact)
+            self.assertEqual(len(again["source_references"]),3)
+            self.assertEqual(again["science_reference"],selected["science_reference"])
+            self.assertEqual(again["export_source_reference"]["manifest_record"]["path"],str(failed_child/"run_manifest.json"))
+
+    def test_postprocess_export_parent_rejects_missing_unknown_and_tampered_exports(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
+        for case in ("missing","unknown","tampered","wrong_source"):
+            with self.subTest(case=case),tempfile.TemporaryDirectory() as directory:
+                artifact,_,parent,events=cold_export_failed_child_fixture(Path(directory),unknown=case=="unknown",wrong_source=case=="wrong_source")
+                if case=="missing":
+                    events.unlink()
+                elif case=="tampered":
+                    content=events.read_text(encoding="utf-8")
+                    events.write_text(content.replace("detector_hit","detector_bad",1),encoding="utf-8",newline="")
+                with self.assertRaises((ValueError,AssertionError)):
+                    select_postprocess_parent(parent,artifact)
+
+    def test_public_request_declares_native_files_only_for_cold_scope(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis import prepare_candidate_run as preparation
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            artifact,parent,_,_=postprocess_source_fixture(root)
+            selected=preparation.select_postprocess_parent(parent,artifact)
+            with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_ARTIFACT_ROOT":str(artifact),
+                                            "MASS_SPECTROMETRY_EXECUTION_ROOT":str(root/"execution")}):
+                csv_request=preparation.prepare_postprocess_request(parent,"20261031_132000__analysis__python__prepared-csv")
+                self.assertNotIn("native_input_paths",csv_request["prepared"])
+                cold=dict(selected,exports=None,model_record={"path":str(parent/"model.mph")},
+                          context_record={"path":str(parent/"model.mph.postprocess.json")})
+                # This tests request transport only. The real selector/owner,
+                # not this mocked scientific selection, owns admission.
+                with mock.patch.object(preparation,"select_postprocess_parent",return_value=cold):
+                    cold_request=preparation.prepare_postprocess_request(parent,"20261031_133000__analysis__comsol__prepared-cold")
+                self.assertEqual(cold_request["prepared"]["native_input_paths"],
+                    [cold["model_record"]["path"],cold["context_record"]["path"]])
+                self.assertEqual(cold_request["capacity"]["source_references"],selected["source_references"])
+
+    def test_flat_exporter_cannot_substitute_another_science_owner(self):
+        from common.contracts.capacity_ledger import record_capacity_object
+        from common.contracts.write_run_manifest import file_record,publish_run_manifest
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            artifact,science,_,_=postprocess_source_fixture(root/"science")
+            foreign_root,foreign,_,_=postprocess_source_fixture(root/"foreign")
+            source=select_postprocess_parent(science,artifact)
+            other=select_postprocess_parent(foreign,foreign_root)
+            source["exports"]=other["exports"]
+            source["export_source_reference"]=other["export_source_reference"]
+            parent=artifact/"projects"/PROJECT_ROOT.name/"runs/20261031_134000__analysis__python__wrong-exporter"
+            (parent/"inputs").mkdir(parents=True)
+            (parent/"results").mkdir()
+            selection=parent/"inputs/postprocess_source_selection.json"
+            selection.write_text(json.dumps(source),encoding="utf-8")
+            request=parent/"inputs/execution_request.json"
+            request.write_text(json.dumps({"schema_version":1,"role":"run_artifact_workflow_request",
+                "package":{"project":PROJECT_ROOT.name,"run_id":parent.name,"mode":"candidate_comsol_postprocess"}}),encoding="utf-8")
+            config=parent/"run_config.json"
+            config.write_text(json.dumps({"schema_version":2,"project":PROJECT_ROOT.name,"run_id":parent.name,
+                "mode":"candidate_comsol_postprocess","project_root":str(PROJECT_ROOT),
+                "inputs":{"execution_request":str(request),"postprocess_source_selection":str(selection)},
+                "provenance":{"science_reference":source["science_reference"]},
+                "artifact_retention":{"policy_version":1,"class":"compact","reason":None},
+                "capacity_ledger_lifecycle":{"schema_version":1,"enabled":True,"artifact_root":str(artifact),"light_evidence_budget_bytes":67108864}}),encoding="utf-8")
+            completion=parent/"results/execution_completion.json"
+            completion.write_text(json.dumps({"schema_version":1,"role":"run_artifact_workflow_completion",
+                "project":PROJECT_ROOT.name,"run_id":parent.name,"status":"failed","execution_request":file_record(request),
+                "run_config":file_record(config),"writer_completion":{"operations":[],"resource_releases":[]},
+                "summary":{"source_identity_verified":True}}),encoding="utf-8")
+            publish_run_manifest(config,"failed",output_paths=[completion])
+            record_capacity_object(artifact,path=parent,object_class="light_evidence",bytes_count=sum(
+                path.stat().st_size for path in parent.rglob("*") if path.is_file()),owner=PROJECT_ROOT.name)
+            with self.assertRaisesRegex(ValueError,"CSV exporter is not"):
+                select_postprocess_parent(parent,artifact)
+
+
+class CandidateAnalysisReuseTests(CandidateFixtures, unittest.TestCase):
+    def test_normal_reuse_refreshes_only_changed_or_unrecorded_analysis_authority(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis import prepare_candidate_run as preparation
+        from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import candidate_comsol_stage
+        for case in ("same","changed","missing_parent_authority"):
+            with self.subTest(case=case),tempfile.TemporaryDirectory() as directory:
+                root=Path(directory)
+                _,plan=self.native_workflow_plan(root,"20261031_130000")
+                observed=[]
+                base=self.native_fake_executor(observed)
+                def producer(stage,runtime,simion):
+                    evidence=base(stage,runtime,simion)
+                    if stage["stage_id"]=="comsol_candidate":
+                        import csv
+                        run=Path(runtime["run_root"])
+                        events=run/"results/events.csv"
+                        with events.open("w",encoding="utf-8",newline="") as stream:
+                            writer=csv.writer(stream)
+                            writer.writerow(["Ion","TofUs","XMm","YMm","Hit"])
+                            writer.writerows((i+1,40+i*.00001,0,0,True) for i in range(100))
+                        request=run/"results/analysis_request.json"
+                        request.write_text(json.dumps({"schema_version":1,"role":"oatof_comsol_detector_events_analysis_request",
+                            "solver":"COMSOL","label":"ReuseFixture","nominal_mass_Da":524,"raw_events_csv":str(events),
+                            "analysis_output_dir":str(run/"results/analysis"),"event_extraction":"solver_native_detector_crossing_or_freeze",
+                            "aggregate_metrics_owner":"python_reference_analysis"}),encoding="utf-8")
+                        receipt=candidate_comsol_stage.analyze_detector_request(request,runtime["execution_source_closure"],
+                            run/"logs/analysis.log",runtime=candidate_workflow)
+                        evidence.update(analysis_request=str(request),analysis_receipt=str(receipt))
+                        if case!="missing_parent_authority":
+                            evidence["analysis_contract"]=frozen_source_path(runtime["execution_source_closure"],
+                                "projects/single_reflection_oa_tof_mass_analyzer/config/analysis_contract.json")
+                    return evidence
+                parent,_=run_candidate_workflow(plan,sys.executable,stage_executor=producer)
+                before={path:path.read_bytes() for path in parent.rglob("*") if path.is_file()}
+                original_freeze=preparation.freeze_candidate_source_closure
+                analysis=root/"explicit_analysis.json"
+                document=load_json(PROJECT_ROOT/"config/analysis_contract.json")
+                document["kde"]["bandwidth_multiplier"]=1.2
+                analysis.write_text(json.dumps(document),encoding="utf-8")
+                def freeze(*args,**kwargs):
+                    if case=="changed":
+                        kwargs["analysis_contract"]=analysis
+                    return original_freeze(*args,**kwargs)
+                with mock.patch.object(preparation,"freeze_candidate_source_closure",side_effect=freeze):
+                    _,child_plan=self.native_workflow_plan(root,"20261031_131000")
+                child_observed=[]
+                with mock.patch.object(candidate_workflow,"_run_managed_stage_command",side_effect=AssertionError("COMSOL must not start")), \
+                        mock.patch.object(candidate_comsol_stage,"analyze_detector_request",wraps=candidate_comsol_stage.analyze_detector_request) as analyze:
+                    child,summary=run_candidate_workflow(child_plan,sys.executable,
+                        stage_executor=self.native_fake_executor(child_observed),reuse_parent=parent,reuse_through="cad_candidate")
+                stage=next(item for item in summary["stages"] if item["stage_id"]=="comsol_candidate")
+                self.assertEqual(child_observed,["static_inputs","structural_acceptance"])
+                self.assertEqual(stage["native_execution"],"reused")
+                self.assertEqual(stage["analysis_execution"],"reused" if case=="same" else "executed")
+                self.assertEqual(analyze.call_count,0 if case=="same" else 1)
+                self.assertEqual({path:path.read_bytes() for path in before},before)
+                if case!="same":
+                    self.assertTrue(Path(stage["evidence"]["analysis_receipt"]).is_relative_to(child))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -651,7 +651,7 @@ def _reconcile_execution_alias_root(root: Path) -> dict[str, int]:
     if not alias_root.exists():
         return {"corrected_count": 0, "released_bytes": 0}
     if not execution_alias_root_is_valid(root, alias_root):
-        raise RuntimeError("execution alias root is not a bounded internal junction set")
+        raise RuntimeError("execution alias root is not a bounded directory junction set")
     ledger = capacity_ledger.load_capacity_ledger(root)
     if ledger is None:
         raise RuntimeError("capacity ledger is missing or invalid")
@@ -668,10 +668,13 @@ def _reconcile_execution_alias_root(root: Path) -> dict[str, int]:
         raise RuntimeError("execution alias root has an unexpected ledger identity")
     stale_count = 0
     for alias in alias_root.iterdir():
-        # A dangling junction is an administrative residue, not a target tree:
-        # remove the junction itself only after the root validator has proved
-        # that its recorded target remains inside artifacts.
-        if not alias.exists():
+        # Structure is not deletion authority. Preserve foreign dangling links
+        # for their actual owner; only the prior internal-residue rule applies.
+        try:
+            internal_target = alias.resolve(strict=False).is_relative_to(root.resolve())
+        except (OSError, RuntimeError, ValueError):
+            internal_target = False
+        if internal_target and not alias.exists():
             alias.rmdir()
             stale_count += 1
     previous_bytes = int(recorded["bytes"])
