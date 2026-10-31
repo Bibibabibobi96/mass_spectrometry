@@ -229,5 +229,102 @@ ConvertTo-Json -InputObject @($preflightArguments) -Compress
             self.assertFalse(output.parent.exists())
 
 
+    def source_receipt_boundary(self, mode):
+        PROJECT = REPO / "projects/rf_multipole_ion_optics"
+        resolved = resolve_runtime_profile(
+            REPO,
+            "rf_multipole_ion_optics",
+            "octupole_no_acceleration_full_length_volume_snapshot_n100",
+        )
+        receipt = self.root / "receipt.json"
+        receipt.write_bytes(
+            Path(
+                resolved["particle_source"]["volume_snapshot_receipt"]["path"]
+            ).read_bytes()
+        )
+        resolved["particle_source"]["volume_snapshot_receipt"]["path"] = str(receipt)
+        if mode == "tampered":
+            receipt.write_text(
+                receipt.read_text(encoding="utf-8") + " ", encoding="utf-8"
+            )
+        if mode == "missing":
+            receipt.unlink()
+        if mode == "undeclared":
+            resolved["particle_source"].pop("volume_snapshot_receipt")
+        snapshot = self.root / "resolved_runtime.json"
+        snapshot.write_text(json.dumps(resolved), encoding="utf-8")
+        design = self.root / "resolved_design.json"
+        # Reuse the existing explicit upstream-domain fixture. The registered
+        # unchanged default remains rejected by its existing separate test.
+        selected = resolve_design_profile(REPO, "rf_multipole_ion_optics", resolved["design_profile_id"])
+        request = json.loads(Path(selected["paths"]["design_request"]).read_text(encoding="utf-8"))
+        request["geometry_mm"]["numerical_domain"]["z_min_mm"] = -3.0
+        request = apply_typed_operating_mode(
+            request,
+            json.loads(Path(selected["paths"]["operating_mode_registry"]).read_text(encoding="utf-8")),
+            selected["profile"]["mode_id"],
+        )
+        fixture_design = compile_design_request(
+            request, expected_identity=resolved["design_profile_resolution"]["resolved_design"]["identity"]
+        )
+        design.write_text(
+            json.dumps(fixture_design),
+            encoding="utf-8",
+        )
+
+        def quote(value):
+            return "'" + str(value).replace("'", "''") + "'"
+
+        script = self.root / "source_prepare.ps1"
+        body = "\n$ErrorActionPreference='Stop';Set-StrictMode -Version Latest\n$repoRoot=@@REPO@@;$runner=@@RUNNER@@;$testRoot=@@ROOT@@\n. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')\n$inputDir=Join-Path $testRoot 'inputs';New-Item -ItemType Directory -Path $inputDir -Force|Out-Null\n$compiledRuntime=Get-Content -LiteralPath @@IR@@ -Raw -Encoding UTF8|ConvertFrom-Json -Depth 100\n$particleSourceInput=@@SOURCE@@;$sourceFamilyInput=$null;$OperatingPointId='fixture'\nif(@@CONFLICT@@){$sourceFamilyInput=Join-Path $testRoot 'family.json';'{}'|Set-Content -LiteralPath $sourceFamilyInput -Encoding utf8}\n$codeRoot=$repoRoot;$resolved=@@DESIGN@@;$python=@@PYTHON@@\n$tokens=$null;$errors=$null;$ast=[System.Management.Automation.Language.Parser]::ParseFile($runner,[ref]$tokens,[ref]$errors)\nif($errors.Count){throw 'production runner parse failed'}\n$start=@($ast.FindAll({param($node)$node-is[System.Management.Automation.Language.AssignmentStatementAst]-and$node.Left-is[System.Management.Automation.Language.VariableExpressionAst]-and$node.Left.VariablePath.UserPath-eq'particleSource'},$true))[0].Extent.StartOffset\n$end=@($ast.FindAll({param($node)$node-is[System.Management.Automation.Language.AssignmentStatementAst]-and$node.Left-is[System.Management.Automation.Language.VariableExpressionAst]-and$node.Left.VariablePath.UserPath-eq'sourceMeta'},$true))[0].Extent.EndOffset\n$source=Get-Content -LiteralPath $runner -Raw -Encoding UTF8\nInvoke-Expression $source.Substring($start,$end-$start)\nif(-not$sourceMeta.source_volume_snapshot){throw 'actual preflight missed snapshot semantics'}\nif(-not$volumeSnapshotReceipt-or-not(Test-Path -LiteralPath $volumeSnapshotReceipt)){throw 'frozen receipt absent'}\nif([string]$volumeReceiptIdentity.sha256-ne[string]$compiledRuntime.particle_source.volume_snapshot_receipt.sha256){throw 'receipt identity differs'}\nWrite-Output 'ACTUAL_COMSOL_SOURCE_PREPARE=PASS SNAPSHOT=true'\n"
+        replacements = {
+            "REPO": quote(REPO),
+            "RUNNER": quote(PROJECT / "runtime/run_finite_3d_transport.ps1"),
+            "ROOT": quote(self.root),
+            "IR": quote(snapshot),
+            "SOURCE": quote(resolved["particle_source"]["path"]),
+            "DESIGN": quote(design),
+            "CONFLICT": "$true" if mode == "conflict" else "$false",
+            "PYTHON": quote(sys.executable),
+        }
+        for key, value in replacements.items():
+            body = body.replace("@@" + key + "@@", value)
+        script.write_text(body, encoding="utf-8")
+        return subprocess.run(
+            ["pwsh", "-NoProfile", "-File", str(script)],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            encoding="utf-8",
+        )
+
+    def test_actual_comsol_source_prepare_freezes_and_consumes_receipt(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            self.root = Path(temporary)
+            execution = self.source_receipt_boundary("valid")
+        self.assertEqual(execution.returncode, 0, execution.stdout + execution.stderr)
+        self.assertIn("ACTUAL_COMSOL_SOURCE_PREPARE=PASS", execution.stdout)
+
+    def test_actual_comsol_source_prepare_rejects_missing_changed_or_conflicting_receipt(
+        self,
+    ):
+        for mode in ("missing", "tampered", "undeclared", "conflict"):
+            with self.subTest(mode=mode):
+                with tempfile.TemporaryDirectory() as temporary:
+                    self.root = Path(temporary)
+                    execution = self.source_receipt_boundary(mode)
+                self.assertNotEqual(
+                    execution.returncode, 0, execution.stdout + execution.stderr
+                )
+                expected = {
+                    "missing": "Run input is missing",
+                    "tampered": "Resolved COMSOL volume receipt differs from its frozen identity",
+                    "undeclared": "source plane differs from resolved design",
+                    "conflict": "volume-source receipt cannot be combined with an energy override",
+                }
+                self.assertIn(expected[mode], execution.stdout + execution.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

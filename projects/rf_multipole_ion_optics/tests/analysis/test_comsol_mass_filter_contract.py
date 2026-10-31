@@ -19,6 +19,49 @@ PROJECT_ROOT = Path(__file__).parents[2]
 
 
 class ComsolMassFilterContractTests(unittest.TestCase):
+    def test_case_mapping_reaches_actual_manifest_output_array(self) -> None:
+        import subprocess
+
+        runner = PROJECT_ROOT / "workflows/mass_filter_reference/run_comsol.ps1"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            script = root / "case_outputs.ps1"
+            script.write_text(
+                r"""param([string]$Runner,[string]$Root)
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+$tokens=$null;$errors=$null
+$ast=[System.Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw 'Actual runner parse failed.'}
+$assign=@($ast.FindAll({param($n)$n-is[System.Management.Automation.Language.AssignmentStatementAst]-and$n.Left-is[System.Management.Automation.Language.VariableExpressionAst]-and$n.Left.VariablePath.UserPath-eq'cases'-and$n.Operator-eq'PlusEquals'},$true))
+$loop=@($ast.FindAll({param($n)$n-is[System.Management.Automation.Language.ForEachStatementAst]-and$n.Variable.VariablePath.UserPath-eq'case'-and$n.Condition.Extent.Text-eq'$cases'-and@($n.Body.FindAll({param($x)$x-is[System.Management.Automation.Language.AssignmentStatementAst]-and$x.Left.Extent.Text-eq'$outputs'},$true)).Count-eq1},$true))
+if($assign.Count-ne1-or$loop.Count-ne1){throw 'Actual case/output boundaries are ambiguous.'}
+$cases=@()
+foreach($mass in @(96.0,101.5)){
+ $caseResultDir=Join-Path $Root ('mass_'+$mass);$null=New-Item -ItemType Directory $caseResultDir
+ $caseConfigPath=Join-Path $Root ('case_'+$mass+'.json')
+ Invoke-Expression $assign[0].Extent.Text
+}
+$outputs=@();Invoke-Expression $loop[0].Extent.Text
+foreach($case in $cases){
+ if(-not$case.Contains('release_source_mapping')){throw 'Actual case omits release mapping.'}
+ if(@($outputs|Where-Object{$_-eq$case.release_source_mapping}).Count-ne1){throw 'Mapping is absent or duplicated in actual manifest output array.'}
+ if($case.release_source_mapping-ne(Join-Path (Split-Path $case.particle_state) 'release_source_mapping.json')){throw 'Mapping bound to another case.'}
+}
+if($outputs.Count-ne8){throw 'Existing three outputs and mapping must remain for both cases.'}
+@{cases=$cases;outputs=$outputs}|ConvertTo-Json -Depth 8
+""",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-File", str(script), "-Runner", str(runner), "-Root", str(root)],
+                cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            document = json.loads(result.stdout)
+            self.assertEqual(len(document["cases"]), 2)
+            self.assertEqual(len(document["outputs"]), 8)
+
     def test_paired_case_tables_preserve_source_and_change_only_mass(self) -> None:
         source = PROJECT_ROOT / "variants" / "quadrupole" / "config" / "particles" / "official_fixed_100.ion"
         source_rows = list(csv.reader(source.read_text(encoding="utf-8").splitlines()))

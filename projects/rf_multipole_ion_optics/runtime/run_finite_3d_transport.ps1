@@ -1075,6 +1075,14 @@ $comsolRunFailure=$null
   $axialTopology=[string]$design.axial_drive.topology
   $particleSource=Join-Path $inputDir 'particle_source.csv'
   Copy-Item -LiteralPath $particleSourceInput -Destination $particleSource
+  $volumeSnapshotReceipt=$null;$volumeReceiptIdentity=$null
+  if($null-ne$compiledRuntime-and$compiledRuntime.particle_source.PSObject.Properties.Name-contains'volume_snapshot_receipt'){
+    $volumeBinding=$compiledRuntime.particle_source.volume_snapshot_receipt
+    if($null-eq$volumeBinding-or-not($volumeBinding.PSObject.Properties.Name-contains'path')-or-not($volumeBinding.PSObject.Properties.Name-contains'sha256')){throw 'Resolved COMSOL volume receipt binding is invalid.'}
+    $volumeSnapshotReceipt=Join-Path $inputDir 'particle_source_volume_snapshot_receipt.json'
+    Copy-VerifiedRunInput -Source ([string]$volumeBinding.path) -Destination $volumeSnapshotReceipt -VerifiedIdentity ([ref]$volumeReceiptIdentity)|Out-Null
+    if([string]$volumeReceiptIdentity.sha256-ne[string]$volumeBinding.sha256){throw 'Resolved COMSOL volume receipt differs from its frozen identity.'}
+  }
   $sourceFamily=$null;$sourceFamilySha=$null
   if($sourceFamilyInput){
     $sourceFamily=Join-Path $inputDir 'particle_source_family.json'
@@ -1092,6 +1100,7 @@ $comsolRunFailure=$null
         '--operating-point',$OperatingPointId,
         '--expected-source-family-sha256',$sourceFamilySha)
     }
+    if($volumeSnapshotReceipt){$preflightArguments+=@('--volume-snapshot-receipt',$volumeSnapshotReceipt)}
     & $python @preflightArguments
     if($LASTEXITCODE-ne 0){throw 'Canonical particle source preflight failed.'}
   }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
@@ -1148,14 +1157,14 @@ $comsolRunFailure=$null
     artifact_retention=[ordered]@{policy_version=1;class=$RetentionClass;
       reason=$(if($RetentionClass-eq'compact'){$null}else{$RetentionReason})};
     provenance=[ordered]@{parent_resolved_design_sha256=$resolvedHash;particle_source_sha256=$sourceMeta.source_sha256;
-      source_family_sha256=$sourceFamilySha;operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null});
+      source_family_sha256=$sourceFamilySha;volume_snapshot_receipt_origin=$(if($volumeSnapshotReceipt){$volumeBinding}else{$null});volume_snapshot_receipt_sha256=$(if($volumeReceiptIdentity){[string]$volumeReceiptIdentity.sha256}else{$null});operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null});
       particle_source_operating_point_binding=$sourceMeta.operating_point_binding};
     inputs=[ordered]@{project_registry=$registry;project_descriptor=$descriptor;design_profiles=$profiles;
       engineering_budget=$engineeringBudget;
       design_profile_resolution=$profileResolution;design_request=$request;design_variables=$variables;
       optimization_envelope=$envelope;operating_mode_registry=$modeRegistry;
       multipole_resolved_design=$resolved;particle_source=$particleSource;
-      particle_source_metadata=$sourceMetadata;particle_source_family=$sourceFamily;
+      particle_source_metadata=$sourceMetadata;particle_source_family=$sourceFamily;particle_source_volume_snapshot_receipt=$volumeSnapshotReceipt;
       solver_numerics=$numerics;finite_extraction_science=$extractionScience;code_inventory=$codeInventory;
       evidence_contract=$evidence;stationary_field_sampling_plan=$fieldSamplingPlan;
       stationary_field_sample_points=$fieldSamplePoints;comsol_task=$task};

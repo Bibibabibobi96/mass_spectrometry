@@ -589,3 +589,9 @@ RF软件CI的4baad4d1运行41184422189真实失败，公开墙钟1603.5464秒；
 native／GUI峰值RSS：K1 3681587200／3725475840B，K2 3639189504／3782770688B；目录峰值K1 195159584／195159674B、K2 194969186／194969276B，无预算warning。两臂路径准备2次、transport_bytes0，耗时.2418773／.2214781秒；四实际launcher PID25080／12308／29048／31520均exit0并hostreleased。Result success／complete，terminal／capacity／lease／writers／alias五事实全true、secondary_errors为空。父8份小输入与冻结前像仍字节相同；来源读／冻结由公共共享消费guard与FileShare.Read保护，不读取／hash／复制父MPH或大载荷。
 
 保留此前release局部收益但完整315.788→334.220秒负结果；本次K2正常链结果与此前coldAPI局部实测分别报告，不能据一个成功配对关闭任意规模或另一solver消费者的性能资格。小读数见scratch/rf-feedback-hotspot/agent4/api_batch_full_cli_589d/measurement.json及原两run小证据；无新商业执行由本次比较触发。
+
+### COMSOL源收据与质量扫描来源映射的正式消费
+
+finite正常入口沿resolved runtime的volume_snapshot_receipt冻结小收据，按已有Copy-VerifiedRunInput身份与原particle_source_preflight --volume-snapshot-receipt运输；config输入及provenance保留原来源和实际冻结身份。缺失／改变／未声明／与family能量override冲突的收据仍拒绝，无volume的原预检路径不变。此为已支持源语义接线，不扩物理域：原注册volume源超出COMSOL默认numerical_domain仍拒绝；有效接线夹具仅复用已有纯provider显式上游域延长设计，不改生产默认或源。
+
+mass_filter_reference正式case数组与manifest Outputs包含每case实际deterministic solver输出release_source_mapping.json，保完整ID／native order／birth／权重／6D母群来源，不新增采样或改变质量扫描物理。薄PowerShell行为回归执行实际case及输出数组，核每case映射唯一且原三种输出保留；原source-preflight实际边界覆盖有效及四种拒绝。只验证软件运输／发布接线，没有新COMSOL求解、GUI或科学资格；完整项目Owner验收另行报告。

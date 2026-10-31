@@ -179,7 +179,7 @@ try {
       }
     }
     Write-RunJson -Value $caseConfig -Path $caseConfigPath
-    $cases+=,[ordered]@{mass_Th=$mass;run_config=$caseConfigPath;solver_summary=(Join-Path $caseResultDir 'solver_summary.json');raw_metadata=(Join-Path $caseResultDir 'solver_raw_metadata.json');particle_state=(Join-Path $caseResultDir 'particle_state.csv')}
+    $cases+=,[ordered]@{mass_Th=$mass;run_config=$caseConfigPath;solver_summary=(Join-Path $caseResultDir 'solver_summary.json');raw_metadata=(Join-Path $caseResultDir 'solver_raw_metadata.json');particle_state=(Join-Path $caseResultDir 'particle_state.csv');release_source_mapping=(Join-Path $caseResultDir 'release_source_mapping.json')}
   }
   Write-RunJson -Value ([ordered]@{schema_version=1;role='rf_quadrupole_comsol_mass_filter_scan_execution';cases=$cases}) -Path $scanConfig
   $runConfiguration=[ordered]@{
@@ -249,7 +249,7 @@ try {
     claim_limit=$metricDocument.claim_limit
   })
   $outputs=@($report,$response,$metrics,$package.summary)
-  foreach($case in $cases){$outputs+=@($case.raw_metadata,$case.solver_summary,$case.particle_state)}
+  foreach($case in $cases){$outputs+=@($case.raw_metadata,$case.solver_summary,$case.particle_state,$case.release_source_mapping)}
   $centerToken=('{0:g}' -f $centerMass).Replace('.','p')
   $centerModel=Join-Path $runDir "comsol\mass_$centerToken`_Th\rf_multipole_ion_optics__model.mph"
   if(Test-Path -LiteralPath $centerModel -PathType Leaf){$outputs+=$centerModel}
