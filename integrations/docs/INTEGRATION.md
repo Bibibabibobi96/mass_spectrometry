@@ -415,3 +415,24 @@ b18源码尚未包含该部分。本次从当前同一core前向还原无路径t
 这同步已取得原生审计的源码，不新增场或Fly，不把诊断变化当成场／轨迹科学identity。
 既有理想0V栅与粗网格适用范围保持；软件负例覆盖缺失声明、非电极、非零势／非有限场、
 坐标二进制roundoff与真实越界，不能扩称有限边缘场或Formal资格。
+
+### 前端原生路径与科学身份
+
+shared frontend IOB、Fly与回放在实际调用前消费Package最新native context，paired pulse／local／cooled／
+single_reflection同步接线。local和cooled的拓扑校验也运输实际PA与report环境路径，持久config／receipt仍用canonical位置。
+cooled和single_reflection取消强制短alias，正常纯准备可以先完成，首次实际原生计划再按长度准备；
+paired pulse在MATLAB／COMSOL前段迁移前保留early alias，不以此提交宣称所有路径均已自动化。
+生成Program的numeric controls与冻结路径实现分别保留并前向验证；旧IOB builder由当前同一core前向lower
+作完整文本对照，不能删历史代码片段或补今天默认值来宣布兼容。物理／源／ID／驱动变化仍须拒绝对应复用。
+软件深根与普通子进程／惰性Lua回归不代表新求场、Fly、GUI或任意旧资产重开资格。
+
+纯准备的冻结Python cwd本身若超过Windows进程目录边界，仍需后续Python owner运输；本主题不以SIMION argv投影声称关闭此限制。
+
+局部裸导引basis现在由同一冻结`frontend_field_plan`给出固定原生命令序列和科学依赖，
+现PowerShell只投影计划中的已知文件角色并执行；实际gem2pa、默认Refine与逐mode导出顺序不变。
+源、场、驱动和网格变化仍按实际依赖失效；纯宿主路径、日志或完成事实运输不再改变basis key。
+完整PS/Python和验收来源仍另存`local_frontend_field_source_provenance.json`，不是删除来源记录。
+20261022三个旧local run目前缺完整冻结producer；唯一仍有field receipt的165815所指generation亦缺失，
+因此本次不转换旧key或声称历史资产自动兼容；缺资产时最小恢复范围是该local basis重新构造与验收，
+不是重新采样源或无条件重飞。本主题仅软件接线验证，没有新Refine、场精度或科学资格结论。
+verifier与response-set contract仍作为现publication资格约束保守入key；本次不宣称任意验收方法变化也零Refine。

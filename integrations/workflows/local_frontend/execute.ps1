@@ -77,7 +77,7 @@ function Invoke-LocalWorkflowPython {
 
 function Invoke-LocalFlightPhase {
  param([ValidateSet('discovery','extraction')][string]$Phase,[double]$PulseTime,[string]$SharedTimesPath)
- return Invoke-FrontendFlightPhase -RunDirectory $script:run -ProjectRunsRoot (Join-Path $projectArtifacts 'runs') `
+ return Invoke-FrontendFlightPhase -Package $package -RunDirectory $script:run -ProjectRunsRoot (Join-Path $projectArtifacts 'runs') `
   -RepoRoot $script:pythonRoot -Python $Python -RuntimeModule ($workflowModule+'.runtime') `
   -SimionExe $simion -Limits $budget.limits -Phase $Phase -PulseTimeUs $PulseTime -SharedTimesPath $SharedTimesPath `
   -NativeOperations $nativeOperations -NativeResourceReleaseId ([string]$lease.token)
@@ -220,7 +220,13 @@ value={'role':'local_frontend_physical_disk_forecast','grid_node_count':nodes,'f
  $topology.PaPath=[string]$field.field_paths[0]
  $topology.ReportPath=Join-Path $package.result_dir 'compiled_aperture_topology.json'
  $topology.VerifierPath=Join-Path $script:pythonRoot 'common/simion/verify_aperture_topology.lua'
- $topology.InvokeVerifier={param($VerifierPath) try{$record=Invoke-ResourceBudgetedProcess -Limits $budget.limits -RunDir $script:run -FilePath $simion -WorkingDirectory $script:run -ArgumentList @('--nogui','--noprompt','lua',$VerifierPath) -UsagePath (Join-Path $package.log_dir 'aperture_topology.resource_usage.json') -RedirectStandardOutput (Join-Path $package.log_dir 'aperture_topology.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'aperture_topology.stderr.log')
+ $topology.InvokeVerifier={param($VerifierPath)
+  $nativePaths=@($script:run,$VerifierPath,$env:SIMION_APERTURE_PA_PATH,$env:SIMION_APERTURE_REPORT_PATH)
+  $nativeContext=Get-RunNativeExecutionContext -Package $package -Paths $nativePaths -Tool SIMION
+  $nativeEnvironment=@{};foreach($key in $nativeContext.environment.Keys){$nativeEnvironment[$key]=$nativeContext.environment[$key]}
+  $nativeEnvironment.SIMION_APERTURE_PA_PATH=$nativeContext.projected_paths[2]
+  $nativeEnvironment.SIMION_APERTURE_REPORT_PATH=$nativeContext.projected_paths[3]
+  try{$record=Invoke-ResourceBudgetedProcess -Limits $budget.limits -RunDir $script:run -FilePath $simion -WorkingDirectory $nativeContext.projected_paths[0] -ArgumentList @('--nogui','--noprompt','lua',$nativeContext.projected_paths[1]) -Environment $nativeEnvironment -UsagePath (Join-Path $package.log_dir 'aperture_topology.resource_usage.json') -RedirectStandardOutput (Join-Path $package.log_dir 'aperture_topology.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'aperture_topology.stderr.log')
   Add-FrontendNativeOperation -NativeOperations $nativeOperations -NativeResourceReleaseId ([string]$lease.token) -OperationId aperture_topology -ProcessRecord $record
   return $record
  }catch{Add-FrontendNativeOperation -NativeOperations $nativeOperations -NativeResourceReleaseId ([string]$lease.token) -OperationId aperture_topology -ExceptionData $_.Exception.Data;throw}}
@@ -278,7 +284,7 @@ print(json.dumps({'count':len(times)}))
  Set-LocalStage 'automatic_complete_population_diagnostics'
  $extractionResult=Invoke-LocalRecordedAnalysis -Materialized $extraction -Phase extraction -Times $extractionTimes -PulseTime $actualPulseTime
  Set-LocalStage 'saved_workbench_verification'
- $defaultReplay=Invoke-FrontendDefaultReplay -Materialized $extraction -HostLease ([ref]$lease) -RunDirectory $script:run `
+ $defaultReplay=Invoke-FrontendDefaultReplay -Package $package -Materialized $extraction -HostLease ([ref]$lease) -RunDirectory $script:run `
   -RepoRoot $script:pythonRoot -Python $Python -SimionExe $simion -Limits $budget.limits `
   -NativeOperations $nativeOperations -NativeResourceReleaseId ([string]$lease.token)
  $scientificSummary=@{native_path_preparation=$package.native_path_preparation;schema_version=1;role='rf_oatof_local_frontend_summary';status='success';mother_count=[int]$source.particle_count;discovery=$discoveryResult;extraction=$extractionResult;recommended_pulse_time_us=[double]$selected.selected_time_us;actual_pulse_time_us=$actualPulseTime;pulse_decision=(Join-Path $package.input_dir 'pulse_decision.json');default_load_iob=$extraction.default_load_iob;default_replay=$defaultReplay;gui_executed=$false;full_analyzer_flight_executed=$false;qualification='local_functional_evidence_only__no_MR_acceptance_or_resolution_claim'}

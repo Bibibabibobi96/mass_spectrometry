@@ -91,7 +91,14 @@ def build_field_plan(p: Path, exe: Path, runtime: Path) -> dict:
     assert v['gem']==identity['gem'],'prepared GEM identity differs'
     assert (p/'frontend.pa+').read_bytes()==render_pa_plus_solution_model(m).encode(),'PA+ differs from declared mode model'
     identity['simion_identity']={'release':'SIMION 2020','executable_bytes':exe.stat().st_size,'executable_sha256':file_sha256(exe)}
-    identity['builder_identity']={name:file_sha256(path) for name,path in {
+    path=lambda role: {'path_role':role}
+    operations = [
+      dict(kind='gem2pa',name='local_field_gem2pa',arguments=['--nogui','--noprompt','gem2pa',path('gem'),path('template')]),
+      dict(kind='verify_raw',name='local_field_raw_physical_ids',arguments=['--nogui','--noprompt','lua',path('verifier'),path('verification_spec'),path('raw_report'),'raw',path('template')]),
+      dict(kind='refine_defaults',name='local_field_refine_declared_modes',arguments=['--nogui','--noprompt','lua',path('initializer'),path('template')])]
+    operations += [dict(kind='export',name=f'local_field_export_{mode}',mode_id=mode,
+        arguments=['--nogui','--noprompt','lua',path('exporter'),path(f'basis_{mode}'),path(f'response_{mode}')]) for mode in m['mode_ids']]
+    sources={name:file_sha256(path) for name,path in {
      'initializer':runtime/'initialize_fast_adjust_pa_basis.lua',
      'exporter':runtime.parents[1]/'common/simion/export_standalone_pa.lua',
      'pa_plus':p/'frontend.pa+',
@@ -99,13 +106,15 @@ def build_field_plan(p: Path, exe: Path, runtime: Path) -> dict:
      'field_plan':runtime/'frontend_field_plan.py',
      'response_set_contract':runtime.parents[1]/'common/simion/standalone_pa_response_set.py',
      'verifier':runtime/'verify_local_frontend_fields.lua'}.items()}
+    identity['builder_identity']={name:sources[name] for name in ('initializer','exporter','pa_plus','verifier','response_set_contract')}
+    identity['builder_identity']['basis_operations']=[op for op in operations if op['kind']!='verify_raw']
     assert identity['basis_namespace']==m and identity['mesh']==f['cell_mm_xyz'] and identity['grid_phase']==f['instance_origin_mm']
     ids=m['mode_ids'];names=[f'frontend.response_{i}.pa' for i in ids]+['standalone_response_set.json','standalone_mode_normalization.tsv']
     recipe={'schema_version':2,'source_location':'build_scratch','receipt_name':'standalone_response_set.json','exporter_path':str(runtime.parents[1]/'common/simion/export_standalone_pa.lua'),
      'exports':[{'response_id':i,'source_name':f'frontend.pa{i}','standalone_name':f'frontend.response_{i}.pa'} for i in ids]}
     pitch=f['cell_mm_xyz']
     samples,physical = _bare_samples(f,m)
-    return {'identity':identity,'cache_key':canonical_pa_family_cache_key(identity),'mode_ids':ids,'model_id':m['model_id'],'mode_count':m['mode_count'],'filenames':names,'recipe':recipe,
+    return {'identity':identity,'source_provenance':sources,'basis_operations':operations,'cache_key':canonical_pa_family_cache_key(identity),'mode_ids':ids,'model_id':m['model_id'],'mode_count':m['mode_count'],'filenames':names,'recipe':recipe,
      'grid':[f['dimensions'][k] for k in ('nx','ny','nz')]+[pitch[a] for a in 'xyz'],'samples':samples,'physical_samples':physical}
 
 

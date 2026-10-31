@@ -105,10 +105,13 @@ function Confirm-PulseIobVerification {
     throw 'Pulse IOB build completion marker missing.'
   }
   $reopenLog=Join-Path $RunDirectory "logs/$Phase.$name.reopen.stdout.log"
+  $reopenPaths=@([string]$Case.working_directory,[string]$Case.iob_path)+@($Case.reopen_arguments|Where-Object{[IO.Path]::IsPathFullyQualified([string]$_)})
+  $reopenContext=Get-RunNativeExecutionContext -Package $package -Paths $reopenPaths -Tool SIMION
+  $reopenProjected=Project-RunPath -Paths (@([string]$Case.working_directory)+[string[]]$Case.reopen_arguments) -ArtifactRunDir $package.artifact_run_dir -RunDir $reopenContext.run_dir -Python $Python
   $script:writersStopped=$false
   try{
   $checked=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $RunDirectory -FilePath $SimionExe `
-    -ArgumentList ([string[]]$Case.reopen_arguments) -WorkingDirectory $Case.working_directory `
+    -ArgumentList ([string[]]$reopenProjected[1..($reopenProjected.Count-1)]) -WorkingDirectory $reopenProjected[0] -Environment $reopenContext.environment `
     -UsagePath (Join-Path $RunDirectory "logs/$Phase.$name.reopen.usage.json") `
     -RedirectStandardOutput $reopenLog -RedirectStandardError (Join-Path $RunDirectory "logs/$Phase.$name.reopen.stderr.log")
     Add-FrontendNativeOperation -NativeOperations $nativeOperations -NativeResourceReleaseId ([string]$lease.token) -OperationId "$Phase.$name.reopen" -ProcessRecord $checked
@@ -293,7 +296,7 @@ try{
           }
         }
         Set-PairedStage 'simion_flight'
-        $workbench=Invoke-FrontendFlightPhase -RunDirectory $package.artifact_run_dir -ProjectRunsRoot (Split-Path -Parent $package.artifact_run_dir) `
+        $workbench=Invoke-FrontendFlightPhase -Package $package -RunDirectory $package.artifact_run_dir -ProjectRunsRoot (Split-Path -Parent $package.artifact_run_dir) `
           -RepoRoot $frozen.execution_root -Python $Python -RuntimeModule integrations.workflows.paired_accelerator_pulse.runtime `
           -SimionExe $SimionExe -Limits ([pscustomobject]$budget.limits) -Phase pulse -RuntimeInputArguments $runtimeInputs -WorkbenchReceiptPath $workbenchPath `
           -IobVerification ${function:Confirm-PulseIobVerification} -NativeOperations $nativeOperations -NativeResourceReleaseId ([string]$lease.token) `
@@ -333,7 +336,7 @@ try{
           $case|Add-Member -NotePropertyName default_replay_stderr -NotePropertyValue (Join-Path $package.artifact_run_dir ('logs/'+$case.case_id+'.replay.stderr.log')) -Force
           $replayCase=$case|ConvertTo-Json -Depth 100|ConvertFrom-Json -AsHashtable -Depth 100
           $replayCase.stdout=$case.default_replay_stdout;$replayCase.stderr=$case.default_replay_stderr
-          New-FrontendFlightSpecification -Case ([pscustomobject]$replayCase) -SimionExe $SimionExe
+          New-FrontendFlightSpecification -Package $package -Case ([pscustomobject]$replayCase) -SimionExe $SimionExe
         })
         Write-RunJson -Path $workbenchPath -Value $workbench -Depth 100
         if($specifications.Count){$lease=Update-HostResourceStage -Lease $lease -Stage flight -Budget $budget.host_budgets.simion_flight -RetainedMemoryBytes 0}

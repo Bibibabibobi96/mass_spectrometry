@@ -20,6 +20,11 @@ class FrontendFlightContinuationTests(unittest.TestCase):
         script = r'''param($Support,$Root)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 . $Support
+
+# Native path transport is covered by test_native_path_consumers; this matrix owns continuation/drain.
+function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool) @{run_dir=$Root;projected_paths=@($Paths);environment=@{}}}
+function Project-RunPath {param($Paths,$ArtifactRunDir,$RunDir,$Python) return $Paths}
+function Invoke-RunToolRootContext {param($RepoRoot,$Operation,$Environment) &$Operation}
 . (Join-Path (Get-Location) 'common/resource_budget_support.ps1')
 New-Item -ItemType Directory (Join-Path $Root results),(Join-Path $Root logs) -Force|Out-Null
 function New-Case($index){[pscustomobject]@{index=$index;case_id="batch_$index";count=1;expected_particle_ids=@($index);source_row_range=@($index,$index);simion_particle_id_offset=0;merge_offset=0;working_directory=$Root;environment=@{};stdout=(Join-Path $Root "$index.log");stderr=(Join-Path $Root "$index.err");fly_arguments=@('fly');iob_builder_arguments=@('build',[string]$index);iob_path=(Join-Path $Root "$index.iob")}}
@@ -48,7 +53,7 @@ function Invoke-ResourceBudgetedProcesses {param($DispatchPlanPath,$RunDir,$Usag
  return @{resource_budget_exceeded=$false;processes=@(@{id=42;exit_code=0})}
 }
 try{
- Invoke-FrontendFlightPhase -RunDirectory $Root -ProjectRunsRoot $Root -RepoRoot $Root -Python unused -RuntimeModule fixture -SimionExe unused -Limits @{} -Phase extraction -Prepared @{dispatch_request_path='unused'} -IobVerification {param($Operation) if($Operation-eq'after_first_fly'){$script:verified++}}
+ Invoke-FrontendFlightPhase -Package ([pscustomobject]@{artifact_run_dir=$Root;python="unused"}) -RunDirectory $Root -ProjectRunsRoot $Root -RepoRoot $Root -Python unused -RuntimeModule fixture -SimionExe unused -Limits @{} -Phase extraction -Prepared @{dispatch_request_path='unused'} -IobVerification {param($Operation) if($Operation-eq'after_first_fly'){$script:verified++}}
  throw 'preparation failure suppressed'
 }catch{
  if($_.Exception.Message-ne'IOB builder completion unknown'){throw}
@@ -73,13 +78,18 @@ exit 0
         script=r'''param($Support,$Root)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 . $Support
+
+# Native path transport is covered by test_native_path_consumers; this matrix owns continuation/drain.
+function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool) @{run_dir=$Root;projected_paths=@($Paths);environment=@{}}}
+function Project-RunPath {param($Paths,$ArtifactRunDir,$RunDir,$Python) return $Paths}
+function Invoke-RunToolRootContext {param($RepoRoot,$Operation,$Environment) &$Operation}
 . (Join-Path (Get-Location) 'common/resource_budget_support.ps1')
 New-Item -ItemType Directory (Join-Path $Root results),(Join-Path $Root inputs) -Force|Out-Null
 $dispatch=Join-Path $Root 'inputs/dispatch.json'
 @{estimation=@{kind='formal_first_batch_observation';recovered_missing_observation=$true}}|ConvertTo-Json -Depth 20|Set-Content $dispatch
 $continuation=Join-Path $Root 'inputs/continuation.json'
 @{units=@(@{key='one';action='reuse'},@{key='two';action='replay'},@{key='three';action='replay'})}|ConvertTo-Json -Depth 20|Set-Content $continuation
-function New-Case($index,$name){[pscustomobject]@{index=$index;case_id=$name;count=1;expected_particle_ids=@($index);source_row_range=@($index,$index);simion_particle_id_offset=0;merge_offset=0;working_directory=$Root;environment=@{};stdout=(Join-Path $Root "$name.log");stderr=(Join-Path $Root "$name.err");fly_arguments=@('fly')}}
+function New-Case($index,$name){[pscustomobject]@{index=$index;case_id=$name;count=1;expected_particle_ids=@($index);source_row_range=@($index,$index);simion_particle_id_offset=0;merge_offset=0;iob_path=(Join-Path $Root 'inert.iob');working_directory=$Root;environment=@{};stdout=(Join-Path $Root "$name.log");stderr=(Join-Path $Root "$name.err");fly_arguments=@('fly')}}
 $initial=[pscustomobject]@{coverage='complete_population';pending_particle_ids=@();batches=@((New-Case 1 'one'),(New-Case 2 'two'),(New-Case 3 'three'));gui_case=$null}
 $script:built=@();$script:started=@();$script:joined=@()
 function Invoke-FrontendIobBuild {param($Case,$Phase,$RunDirectory,$SimionExe,$Limits,$Python,$RepoRoot) $script:built+=@($Case.case_id)}
@@ -97,7 +107,7 @@ function Invoke-ResourceBudgetedProcesses {param($DispatchPlanPath,$RunDir,$Usag
  return @{resource_budget_exceeded=$false;processes=@(@{name='two';exit_code=0},@{name='three';exit_code=0})}
 }
 function Complete-ResourceUsage {param($RunDir,$UsagePath)}
-$result=Invoke-FrontendFlightPhase -RunDirectory $Root -ProjectRunsRoot $Root -RepoRoot $Root -Python unused -RuntimeModule fixture -SimionExe unused -Limits @{} -Phase extraction -Prepared @{dispatch_request_path='unused'} -FixedDispatchPlanPath $dispatch -ContinuationPlanPath $continuation -ContinuationWorkbench $initial -WorkbenchReceiptPath (Join-Path $Root 'results/workbench.json')
+$result=Invoke-FrontendFlightPhase -Package ([pscustomobject]@{artifact_run_dir=$Root;python="unused"}) -RunDirectory $Root -ProjectRunsRoot $Root -RepoRoot $Root -Python unused -RuntimeModule fixture -SimionExe unused -Limits @{} -Phase extraction -Prepared @{dispatch_request_path='unused'} -FixedDispatchPlanPath $dispatch -ContinuationPlanPath $continuation -ContinuationWorkbench $initial -WorkbenchReceiptPath (Join-Path $Root 'results/workbench.json')
 if(($script:built-join',')-ne'two,three'-or($script:started-join',')-ne'two'-or($script:joined-join',')-ne'two'){throw 'completed prefix was rebuilt or re-emitted'}
 if(@($result.reused_batches).Count-ne1-or$result.reused_batches[0].case_id-ne'one'){throw 'reused prefix missing'}
 exit 0
@@ -112,11 +122,16 @@ exit 0
         script=r'''param($Support,$Root)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 . $Support
+
+# Native path transport is covered by test_native_path_consumers; this matrix owns continuation/drain.
+function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool) @{run_dir=$Root;projected_paths=@($Paths);environment=@{}}}
+function Project-RunPath {param($Paths,$ArtifactRunDir,$RunDir,$Python) return $Paths}
+function Invoke-RunToolRootContext {param($RepoRoot,$Operation,$Environment) &$Operation}
 New-Item -ItemType Directory (Join-Path $Root results),(Join-Path $Root logs) -Force|Out-Null
 function Write-RunJson {param($Path,$Value,$Depth) $Value|ConvertTo-Json -Depth $Depth|Set-Content $Path}
 function Invoke-FrontendRuntimePython {param($Python,$RepoRoot,$RunDirectory,$Name,$Arguments,[switch]$Json)
  if($Name-like '*.dispatch-plan'){@{estimation=@{kind='formal_first_batch_observation'}}|ConvertTo-Json|Set-Content (Join-Path $Root 'results/extraction.dispatch_plan.json')}
- if($Name-like '*.materialize-initial'){return [pscustomobject]@{batches=@([pscustomobject]@{index=1;case_id='batch';count=1;expected_particle_ids=@(1);source_row_range=@(1,1);simion_particle_id_offset=0;merge_offset=0;working_directory=$Root;environment=@{};stdout=(Join-Path $Root stdout);stderr=(Join-Path $Root stderr);fly_arguments=@('fly')})}}
+ if($Name-like '*.materialize-initial'){return [pscustomobject]@{batches=@([pscustomobject]@{index=1;case_id='batch';count=1;expected_particle_ids=@(1);source_row_range=@(1,1);simion_particle_id_offset=0;merge_offset=0;iob_path=(Join-Path $Root 'inert.iob');working_directory=$Root;environment=@{};stdout=(Join-Path $Root stdout);stderr=(Join-Path $Root stderr);fly_arguments=@('fly')})}}
 }
 function Invoke-FrontendIobBuild {param($Case,$Phase,$RunDirectory,$SimionExe,$Limits,$Python,$RepoRoot) $Case|Add-Member -NotePropertyName iob_built -NotePropertyValue $true}
 function Invoke-SimionBatchPhase {param($DispatchPlanPath,$RunDir,$UsagePath,$FirstSpecification,$Replan,$PrepareRemaining,$AfterDrain,$OnProcessCompleted)
@@ -124,7 +139,7 @@ function Invoke-SimionBatchPhase {param($DispatchPlanPath,$RunDir,$UsagePath,$Fi
  if(-not$workbench.batches[0].iob_built-or-not(Test-Path (Join-Path $Root 'results/extraction.provisional_dispatch_plan.json'))){throw 'first evidence missing before launch'}
  throw 'stop before native launch'
 }
-try{Invoke-FrontendFlightPhase -RunDirectory $Root -ProjectRunsRoot $Root -RepoRoot $Root -Python unused -RuntimeModule fixture -SimionExe unused -Limits @{} -Phase extraction -Prepared @{dispatch_request_path='unused'} -WorkbenchReceiptPath (Join-Path $Root 'results/workbench.json')}
+try{Invoke-FrontendFlightPhase -Package ([pscustomobject]@{artifact_run_dir=$Root;python="unused"}) -RunDirectory $Root -ProjectRunsRoot $Root -RepoRoot $Root -Python unused -RuntimeModule fixture -SimionExe unused -Limits @{} -Phase extraction -Prepared @{dispatch_request_path='unused'} -WorkbenchReceiptPath (Join-Path $Root 'results/workbench.json')}
 catch{if($_.Exception.Message-ne'stop before native launch'){throw}}
 exit 0
 '''
@@ -140,6 +155,11 @@ exit 0
         script = r'''param($Support,$Root)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 . $Support
+
+# Native path transport is covered by test_native_path_consumers; this matrix owns continuation/drain.
+function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool) @{run_dir=$Root;projected_paths=@($Paths);environment=@{}}}
+function Project-RunPath {param($Paths,$ArtifactRunDir,$RunDir,$Python) return $Paths}
+function Invoke-RunToolRootContext {param($RepoRoot,$Operation,$Environment) &$Operation}
 function Write-RunJson {param($Path,$Value,$Depth=30,[switch]$Atomic) if(-not$Atomic){throw 'fact must be atomic'};$Value|ConvertTo-Json -Depth $Depth|Set-Content -LiteralPath $Path}
 function Write-VerifiedRunManifest {throw 'must not re-read manifest inputs per batch'}
 $controls=@('program','particles','build_spec','iob');$outputs=@{}
@@ -185,6 +205,11 @@ exit 0
         script = r"""param($Support)
 $ErrorActionPreference='Stop'
 . $Support
+
+# Native path transport is covered by test_native_path_consumers; this matrix owns continuation/drain.
+function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool) @{run_dir=$Root;projected_paths=@($Paths);environment=@{}}}
+function Project-RunPath {param($Paths,$ArtifactRunDir,$RunDir,$Python) return $Paths}
+function Invoke-RunToolRootContext {param($RepoRoot,$Operation,$Environment) &$Operation}
 . (Join-Path (Get-Location) 'common/resource_budget_support.ps1')
 $root=Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory (Join-Path $root inputs),(Join-Path $root results),(Join-Path $root logs) -Force|Out-Null
@@ -218,7 +243,7 @@ try{
   function Write-RunJson {param($Path,$Value,$Depth) ConvertTo-Json -InputObject $Value -Depth $Depth|Set-Content -LiteralPath $Path}
   $workbenchPath=Join-Path $root "results/$scenario.workbench.json"
   try{
-   $result=Invoke-FrontendFlightPhase -RunDirectory $root -ProjectRunsRoot $root -RepoRoot $root -Python $PSHOME -RuntimeModule fixture -SimionExe 'inert-simion.exe' -Limits @{} -Phase extraction -Prepared @{dispatch_request_path='unused'} -FixedDispatchPlanPath $dispatch -ContinuationPlanPath $continuation -ContinuationWorkbench $merged -WorkbenchReceiptPath $workbenchPath
+   $result=Invoke-FrontendFlightPhase -Package ([pscustomobject]@{artifact_run_dir=$Root;python="unused"}) -RunDirectory $root -ProjectRunsRoot $root -RepoRoot $root -Python $PSHOME -RuntimeModule fixture -SimionExe 'inert-simion.exe' -Limits @{} -Phase extraction -Prepared @{dispatch_request_path='unused'} -FixedDispatchPlanPath $dispatch -ContinuationPlanPath $continuation -ContinuationWorkbench $merged -WorkbenchReceiptPath $workbenchPath
    if($scenario-in@('worker_failure','budget_exceeded')){throw 'worker failure was suppressed'}
   }catch{
    $expectedError=if($scenario-eq'worker_failure'){'inert worker failure'}else{'batch flight failed'}

@@ -685,6 +685,9 @@ param($Repo,$Python,$Run,$Cache,$Recovery,$PreparedResume,$FineChange,$BudgetFai
 $ErrorActionPreference='Stop'
 . (Join-Path $Repo 'common/simion/short_pa_path_support.ps1')
 . (Join-Path $Repo 'integrations/workflows/single_reflection_flight/field_stage.ps1')
+# This fixture owns field transactions; actual path transport has its own narrow behavior case.
+function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool) @{run_dir=$Run;projected_paths=@($Paths);environment=@{}}}
+function Project-RunPath {param($Paths,$ArtifactRunDir,$RunDir,$Python) return $Paths}
 $script:native=@();$script:stages=@();$script:scopes=@();$script:injectedFailure=$false;$script:handoffSeen=0;$script:stageAccounting=0
 $WarningPreference='SilentlyContinue'
 function Invoke-RunToolRootContext {
@@ -808,7 +811,7 @@ $requiredReserve=if($BudgetFailure-eq'2'){[long]0}else{[long](100GB)}
 if($BudgetFailure-eq'1'){
  $capacity.committed_new_bytes=100GB
  try{
-   $null=Invoke-SingleReflectionFrontendFieldStage -Python $Python -RepoRoot $Repo -RunDirectory $Run -PreparedDirectory $Run -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache
+   $null=Invoke-SingleReflectionFrontendFieldStage -Package ([pscustomobject]@{artifact_run_dir=$Run;python=$Python}) -Python $Python -RepoRoot $Repo -RunDirectory $Run -PreparedDirectory $Run -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache
    throw 'expected admission rejection'
  }catch{
    $expected=if($BudgetFailure-eq'2'){'*below all required private fields*'}else{'*INERT public capacity admission rejected*'}
@@ -821,7 +824,7 @@ if($BudgetFailure-eq'1'){
 
 if($PreparedAuditFailure-eq'1'){
  try {
-  $null=Invoke-SingleReflectionFrontendFieldStage -Python $Python -RepoRoot $Repo -RunDirectory $Run -PreparedDirectory $Run -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache
+  $null=Invoke-SingleReflectionFrontendFieldStage -Package ([pscustomobject]@{artifact_run_dir=$Run;python=$Python}) -Python $Python -RepoRoot $Repo -RunDirectory $Run -PreparedDirectory $Run -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache
   throw 'expected prepared audit rejection'
  } catch {
   if($_.Exception.Message-notlike'*native stage failed: parent_carrier_off_audit'){throw}
@@ -832,7 +835,7 @@ if($PreparedAuditFailure-eq'1'){
 }
 if($Recovery-eq'1'){
  try{
-   $null=Invoke-SingleReflectionFrontendFieldStage -Python $Python -RepoRoot $Repo -RunDirectory $Run -PreparedDirectory $Run -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache -StageElapsed $elapsed
+   $null=Invoke-SingleReflectionFrontendFieldStage -Package ([pscustomobject]@{artifact_run_dir=$Run;python=$Python}) -Python $Python -RepoRoot $Repo -RunDirectory $Run -PreparedDirectory $Run -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache -StageElapsed $elapsed
  }catch{
    $expectedExport=if($LastMemberOnly-eq'1'){'*export_frontend.pulse_delta.pa*'}else{'*export_frontend*.rf_reference.pa*'}
    if($_.Exception.Message-notlike$expectedExport){throw}
@@ -854,7 +857,7 @@ if($PrivateDamage-eq'1'){
  [IO.File]::SetAttributes($damaged,[IO.FileAttributes]::ReadOnly)
  $before=$script:native.Count
  try{
-   $null=Invoke-SingleReflectionFrontendFieldStage -Python $Python -RepoRoot $Repo -RunDirectory $Run -PreparedDirectory $Run -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache
+   $null=Invoke-SingleReflectionFrontendFieldStage -Package ([pscustomobject]@{artifact_run_dir=$Run;python=$Python}) -Python $Python -RepoRoot $Repo -RunDirectory $Run -PreparedDirectory $Run -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache
    throw 'expected private parent rejection'
  }catch{
    if($_.Exception.Message-notmatch'length|identity|differs|corrupt'){throw}
@@ -865,7 +868,7 @@ if($PrivateDamage-eq'1'){
 }
 if($ProducerHandoff-eq'2'){
  try{
-   $null=Invoke-SingleReflectionFrontendFieldStage -Python $Python -RepoRoot $Repo -RunDirectory $Run -PreparedDirectory $Run -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache -StageElapsed $elapsed
+   $null=Invoke-SingleReflectionFrontendFieldStage -Package ([pscustomobject]@{artifact_run_dir=$Run;python=$Python}) -Python $Python -RepoRoot $Repo -RunDirectory $Run -PreparedDirectory $Run -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache -StageElapsed $elapsed
    throw 'expected handoff rejection'
  }catch{
    if($_.Exception.Message-notlike'*Frontend field Python stage failed: parent_pulse_delta_begin*'){throw}
@@ -875,7 +878,7 @@ if($ProducerHandoff-eq'2'){
  [pscustomobject]@{handoff_conflict_retained=$true;empty_domain_exists=(Test-Path -LiteralPath (Join-Path $Run 'simion/frontend_working_fields/parent_audit_geometry'))}|ConvertTo-Json
  exit 0
 }
-$one=Invoke-SingleReflectionFrontendFieldStage -Python $Python -RepoRoot $Repo -RunDirectory $Run -PreparedDirectory $Run -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache -StageElapsed $elapsed
+$one=Invoke-SingleReflectionFrontendFieldStage -Package ([pscustomobject]@{artifact_run_dir=$Run;python=$Python}) -Python $Python -RepoRoot $Repo -RunDirectory $Run -PreparedDirectory $Run -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache -StageElapsed $elapsed
 $firstCount=$script:native.Count
 $secondRun=Join-Path (Split-Path $Run) 'hit'
 New-Item -ItemType Directory -Path (Join-Path $secondRun 'inputs'),(Join-Path $secondRun 'logs')|Out-Null
@@ -969,7 +972,7 @@ if($FineChange-eq'1'){
 if($FineChange-eq'1'-or$LegacyPartial-eq'1'-or$PreparedResume-eq'1'){$capacity.committed_new_bytes=1TB}
 $commitmentBefore=$capacity.committed_new_bytes
 $copiesBeforeSecond=$global:MassSpectrometryShortPaCopies.Count
-$two=Invoke-SingleReflectionFrontendFieldStage -Python $Python -RepoRoot $Repo -RunDirectory $secondRun -PreparedDirectory $secondPrepared -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache
+$two=Invoke-SingleReflectionFrontendFieldStage -Package ([pscustomobject]@{artifact_run_dir=$Run;python=$Python}) -Python $Python -RepoRoot $Repo -RunDirectory $secondRun -PreparedDirectory $secondPrepared -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache
 $copiesAfterSecond=$global:MassSpectrometryShortPaCopies.Count
 $sourceMissingRejected=$false
 if($FrozenSource-eq'1'-and$LegacyPartial-ne'1'-and$AuditRefresh-ne'1'){
@@ -978,7 +981,7 @@ if($FrozenSource-eq'1'-and$LegacyPartial-ne'1'-and$AuditRefresh-ne'1'){
  Move-Item -LiteralPath $manifestPath -Destination $hiddenManifest
  try{
   try{
-   $null=Invoke-SingleReflectionFrontendFieldStage -Python $Python -RepoRoot $Repo -RunDirectory $secondRun -PreparedDirectory $secondPrepared -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache
+   $null=Invoke-SingleReflectionFrontendFieldStage -Package ([pscustomobject]@{artifact_run_dir=$Run;python=$Python}) -Python $Python -RepoRoot $Repo -RunDirectory $secondRun -PreparedDirectory $secondPrepared -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache
    throw 'missing explicit generation was accepted'
   }catch{
    if($_.Exception.Message-notmatch'Python stage failed: frontend_working_(source_generation|plan)'){throw}

@@ -294,7 +294,6 @@ def source_capacity_projection(*, artifact_root: Path, request_path: Path | None
     return dict(source_references=list(references.values()))
 
 
-
 def _source_ids(record: Mapping[str, Any]) -> list[int]:
     try:
         verify_record("current projected source", dict(record))
@@ -374,6 +373,8 @@ def _normalized_build_text(text: str, run_root: Path, lexical_root: Path,
                 _same_identity(copy["source_record"], guard, "IOB PA transport source")
                 destination = Path(copy["destination"])
                 candidates.extend([destination, destination.resolve()])
+                if destination.is_relative_to(root):
+                    candidates.append(lexical_root / destination.relative_to(root))
         if path.is_relative_to(root):
             candidates.append(lexical_root / path.relative_to(root))
         for candidate in candidates:
@@ -527,10 +528,10 @@ def _published_case(case: Mapping[str, Any], records: Mapping[Path, tuple[int, s
 
 def prepare_phase_continuation(preparation: Mapping[str, Any], current_workbench: Mapping[str, Any], run: Path, phase: str) -> dict[str, Any] | None:
     """Plan whole-batch reuse/replay directly from current and parent workbenches."""
-    if phase == "default_replay" and not preparation["default_replay_requested"]:
-        return None
     if preparation.get("role") != "single_reflection_geometry_preparation":
         raise ValueError("current single-reflection preparation receipt is required")
+    if phase == "default_replay" and not preparation["default_replay_requested"]:
+        return None
     frozen = freeze_phase_inputs(preparation, run, phase)
     if frozen is None:
         return None
@@ -599,28 +600,94 @@ def prepare_phase_continuation(preparation: Mapping[str, Any], current_workbench
         for name in ("program", "particles", "build_spec"):
             if not isinstance(parent_outputs.get(name), Mapping) or (current_outputs is not None and not isinstance(current_outputs.get(name), Mapping)):
                 raise ValueError("single-reflection continuation workbench controls are missing")
+        parent_native = _verified_text(parent_outputs["program"], "parent Program")
+        parent_numeric_record = parent_outputs.get("numerical_program")
+        if isinstance(parent_numeric_record, Mapping):
+            _bound_parent_file(record_path(parent_numeric_record), parent_records, "numerical Program")
+            parent_numeric = _verified_text(parent_numeric_record, "parent numerical Program")
+            from integrations.runtime.build_single_flight_program import project_program_paths
+            projection_record = parent_case.get("program_path_projection_record")
+            if not isinstance(projection_record, Mapping):
+                raise ValueError("single-reflection numerical Program lacks its frozen path projection")
+            _bound_parent_file(record_path(projection_record), parent_records, "Program path projection")
+            parent_projection = _verified_text(projection_record, "Program path projection")
+            current_projection_record = (preview.get("program_path_projection_record") if preview is not None
+                                         else current_case.get("program_path_projection_record"))
+            if (not isinstance(current_projection_record, Mapping)
+                    or parent_projection != _verified_text(current_projection_record, "current Program path projection")):
+                raise ValueError("single-reflection continuation Program path projection differs from current transport")
+            expected_native = project_program_paths(parent_numeric, parent_projection)
+            if expected_native != parent_native:
+                raise ValueError("single-reflection continuation Program differs from its numerical controls")
+        else:
+            # The only derived legacy form is an exact current compiler output:
+            # either its native rendering or its pre-projection numerical rendering.
+            # Never remove helper text/comments from a historical Program.
+            parent_numeric = parent_native
+        parent_guards = parent_case.get("continuation_pa_guard_records", parent_case.get("iob_pa_guard_records", parent_workbench["pa_guard_records"]))
         if preview is not None:
-            if (_normalized_program_text(_verified_text(parent_outputs["program"], "parent Program"),
-                    parent_case.get("continuation_pa_guard_records", parent_case.get("iob_pa_guard_records", parent_workbench["pa_guard_records"])))
-                    != _normalized_program_text(str(preview.get("program", "")), current_workbench["pa_guard_records"])):
-                raise ValueError("single-reflection continuation Program differs")
+            current_native = str(preview.get("program", ""))
+            current_numeric = str(preview.get("numerical_program", current_native))
+        else:
+            current_native = _verified_text(current_outputs["program"], "current Program")
+            numeric_record = current_outputs.get("numerical_program")
+            current_numeric = _verified_text(numeric_record, "current numerical Program") if isinstance(numeric_record, Mapping) else current_native
+        if ((preview is not None and "numerical_program" in preview)
+                or (preview is None and isinstance(current_outputs.get("numerical_program"), Mapping))):
+            from integrations.runtime.build_single_flight_program import project_program_paths
+            projection_record = (preview.get("program_path_projection_record") if preview is not None
+                                 else current_case.get("program_path_projection_record"))
+            if not isinstance(projection_record, Mapping):
+                raise ValueError("current numerical Program lacks its frozen path projection")
+            expected_native = project_program_paths(current_numeric, _verified_text(projection_record, "current Program path projection"))
+            if expected_native != current_native:
+                raise ValueError("single-reflection continuation Program differs from its numerical controls")
+        accepted_programs = [current_numeric]
+        if parent_numeric_record is None:
+            accepted_programs.append(current_native)
+        if not any(_normalized_program_text(parent_numeric, parent_guards) ==
+                   _normalized_program_text(candidate, current_workbench["pa_guard_records"])
+                   for candidate in accepted_programs):
+            raise ValueError("single-reflection continuation Program differs")
+        if preview is not None:
             if _verified_text(parent_outputs["particles"], "parent particles") != preview.get("particles"):
                 raise ValueError("single-reflection continuation particles differs")
             current_build = _normalized_build_text(str(preview.get("build_spec", "")), run, run.absolute(), current_workbench["pa_guard_records"], current_workbench.get("iob_pa_copies", []))
         else:
-            _same_identity(current_outputs["program"], parent_outputs["program"], "Program")
             _same_identity(current_outputs["particles"], parent_outputs["particles"], "particles")
             current_build = _normalized_build_text(_verified_text(current_outputs["build_spec"], "current build specification"), run, run.absolute(), current_workbench["pa_guard_records"], current_workbench.get("iob_pa_copies", []))
         parent_build = _normalized_build_text(_verified_text(parent_outputs["build_spec"], "parent build specification"),
             record_path(parent_outputs["build_spec"]).parents[3], Path(parent_case["parent_execution_root"]), parent_workbench["pa_guard_records"], parent_case.get("iob_pa_copies", []))
         if current_build != parent_build:
             raise ValueError("single-reflection continuation build specification differs")
-        if preview is not None:
-            current_builder = _identity(file_record(Path(str(preview.get("builder_path", "")))), "current builder")
+        current_core_record = (file_record(Path(str(preview.get("builder_core_path", ""))))
+                               if preview is not None else current_case.get("iob_builder_core_record"))
+        parent_core_record = parent_case.get("iob_builder_core_record")
+        if isinstance(current_core_record, Mapping):
+            current_core = _verified_text(current_core_record, "current IOB core")
+            if isinstance(parent_core_record, Mapping):
+                _bound_parent_file(record_path(parent_core_record), parent_records, "IOB core")
+                if current_core != _verified_text(parent_core_record, "parent IOB core"):
+                    raise ValueError("single-reflection continuation IOB builder differs")
+                current_wrapper = (Path(str(preview.get("builder_path", ""))) if preview is not None
+                                   else Path(current_case["iob_builder_arguments"][3]))
+                known_wrapper = _verified_text(file_record(current_wrapper), "current IOB transport wrapper")
+                for argument_key in ("iob_builder_arguments", "iob_verify_arguments"):
+                    parent_wrapper = Path(parent_case[argument_key][3])
+                    _bound_parent_file(parent_wrapper, parent_records, "IOB transport wrapper")
+                    if _verified_text(file_record(parent_wrapper), "parent IOB transport wrapper") != known_wrapper:
+                        raise ValueError("single-reflection continuation IOB transport wrapper differs")
+            else:
+                from integrations.workflows.single_reflection_flight.runtime import render_legacy_iob_builder
+                parent_builder_path = Path(parent_case["iob_builder_arguments"][3])
+                _bound_parent_file(parent_builder_path, parent_records, "legacy IOB builder")
+                if render_legacy_iob_builder(current_core) != _verified_text(file_record(parent_builder_path), "parent IOB builder"):
+                    raise ValueError("single-reflection continuation IOB builder differs")
         else:
-            current_builder = _builder_identity(current_case, "current")
-        if current_builder != _builder_identity(parent_case, "parent"):
-            raise ValueError("single-reflection continuation IOB builder differs")
+            current_builder = (_identity(file_record(Path(str(preview.get("builder_path", "")))), "current builder")
+                               if preview is not None else _builder_identity(current_case, "current"))
+            if current_builder != _builder_identity(parent_case, "parent"):
+                raise ValueError("single-reflection continuation IOB builder differs")
         current_seeds = (preview.get("seed_records") if preview is not None else current_case.get("seed_records"))
         parent_seeds = parent_case.get("seed_records")
         if (not isinstance(current_seeds, list) or not isinstance(parent_seeds, list)
@@ -637,7 +704,14 @@ def prepare_phase_continuation(preparation: Mapping[str, Any], current_workbench
                 raise OSError("parent native stdout is absent")
             read_native_evidence(stdout, {pid: {"particle_id": pid} for pid in source_ids[low - 1:high]}, dict(current_workbench["flight"]))
             if complete:
-                paths = [stdout, *(record_path(parent_outputs[name]) for name in ("program", "particles", "build_spec", "iob"))]
+                control_names = ["program", "particles", "build_spec", "iob"]
+                if parent_numeric_record is not None:
+                    control_names.append("numerical_program")
+                paths = [stdout, *(record_path(parent_outputs[name]) for name in control_names)]
+                if parent_numeric_record is not None:
+                    paths.append(record_path(parent_case["program_path_projection_record"]))
+                if isinstance(parent_core_record, Mapping):
+                    paths.extend((record_path(parent_core_record), Path(parent_case["iob_builder_arguments"][3])))
         except (KeyError, OSError, UnicodeError, ValueError):
             complete, paths = False, []
         if complete:
@@ -668,7 +742,8 @@ def prepare_phase_continuation(preparation: Mapping[str, Any], current_workbench
                 else:
                     complete, paths = False, []
         units.append(WholeUnitReplayUnit(key, tuple(path.resolve() for path in paths) if complete else (Path("results/missing.log"),), complete))
-        completion.append({"key": key, "source_row_range": [low, high], "is_complete": complete})
+        completion.append({"key": key, "source_row_range": [low, high], "is_complete": complete,
+                           "program_comparison": "manifest_bound_numerical_controls" if parent_numeric_record is not None else "exact_compiler_derived_legacy_controls"})
         if complete:
             reusable_cases.append({"key": key, "source_row_range": [low, high], "parent_case_id": parent_case.get("case_id"), "parent_iob_record": parent_outputs["iob"]})
     plan = build_whole_unit_replay_plan(predecessor_run_dir=parent, output_dir=run / "inputs" / "continuation" / phase, units=units)

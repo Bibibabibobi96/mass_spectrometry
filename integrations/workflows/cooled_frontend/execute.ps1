@@ -414,8 +414,13 @@ function Invoke-CooledCompiledAperture {
   ReportPath=(Join-Path $Package.result_dir 'compiled_aperture_topology.json');
   VerifierPath=(Join-Path $RepoRoot 'common/simion/verify_aperture_topology.lua')}
  $parameters.InvokeVerifier={param($VerifierPath)
-  try{$record=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $Package.artifact_run_dir -FilePath $SimionExe -WorkingDirectory $Package.artifact_run_dir `
-   -ArgumentList @('--nogui','--noprompt','lua',$VerifierPath) -UsagePath (Join-Path $Package.log_dir 'aperture_topology.resource_usage.json') `
+  $nativePaths=@([string]$Package.artifact_run_dir,$VerifierPath,$env:SIMION_APERTURE_PA_PATH,$env:SIMION_APERTURE_REPORT_PATH)
+  $nativeContext=Get-RunNativeExecutionContext -Package $Package -Paths $nativePaths -Tool SIMION
+  $nativeEnvironment=@{};foreach($key in $nativeContext.environment.Keys){$nativeEnvironment[$key]=$nativeContext.environment[$key]}
+  $nativeEnvironment.SIMION_APERTURE_PA_PATH=$nativeContext.projected_paths[2]
+  $nativeEnvironment.SIMION_APERTURE_REPORT_PATH=$nativeContext.projected_paths[3]
+  try{$record=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $Package.artifact_run_dir -FilePath $SimionExe -WorkingDirectory $nativeContext.projected_paths[0] `
+   -ArgumentList @('--nogui','--noprompt','lua',$nativeContext.projected_paths[1]) -Environment $nativeEnvironment -UsagePath (Join-Path $Package.log_dir 'aperture_topology.resource_usage.json') `
    -RedirectStandardOutput (Join-Path $Package.log_dir 'aperture_topology.stdout.log') -RedirectStandardError (Join-Path $Package.log_dir 'aperture_topology.stderr.log')
    if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId aperture_topology -ProcessRecord $record}
    return $record
@@ -533,7 +538,7 @@ try{
  $package=New-RunPackage -Python $Python -RepoRoot $RepoRoot -ArtifactRoot $project -RunId $runId -Project $integration `
   -Mode $(if($meshCheckRequest){'cooled_frontend_local_static_mesh_check'}elseif($FieldDesignOnly){'cooled_frontend_field_design'}elseif($ReferenceCalibrationOnly){'cooled_frontend_reference_calibration'}else{'cooled_frontend_population'}) -Software @('SIMION 2020','Python 3.11','PowerShell 7') -RetentionContractEnabled `
   -RetentionClass solver_review -RetentionReason $retentionReason `
-  -CapacityLedgerLifecycleEnabled -PathContext $pathContext -UseShortExecutionPath -AdditionalDirectories @('simion')
+  -CapacityLedgerLifecycleEnabled -PathContext $pathContext -AdditionalDirectories @('simion')
  $parentEnvironment=(Get-RunNativeExecutionContext -Package $package -Paths @()).environment
  foreach($key in $parentEnvironment.Keys){[Environment]::SetEnvironmentVariable([string]$key,[string]$parentEnvironment[$key],'Process')}
  Copy-VerifiedRunInput -Source $PSCommandPath -Destination (Join-Path $package.input_dir 'execute_cooled_frontend.ps1')|Out-Null
@@ -640,7 +645,7 @@ profile=dict(schema_version=1,role='cooled_frontend_local_mesh_profile' if mesh 
  $lease=Update-HostResourceStage -Lease $lease -Stage flight -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
  Set-CooledStage 'complete_mother_population_flight'
  $populationFlightAttempted=$true
- $materialized=Invoke-FrontendFlightPhase -RunDirectory $package.artifact_run_dir -ProjectRunsRoot (Join-Path $project 'runs') `
+ $materialized=Invoke-FrontendFlightPhase -Package $package -RunDirectory $package.artifact_run_dir -ProjectRunsRoot (Join-Path $project 'runs') `
   -RepoRoot $frozenRoot -Python $Python -RuntimeModule ($module+'.runtime') -SimionExe $simion -Limits $budget.limits `
   -Phase extraction -PulseTimeUs ([double]$state.actual_pulse_time_us) -SharedTimesPath ([string]$state.shared_times_path) `
   -NativeOperations $nativeOperations -NativeResourceReleaseId ([string]$lease.token)
@@ -649,7 +654,7 @@ profile=dict(schema_version=1,role='cooled_frontend_local_mesh_profile' if mesh 
  $analysis=Invoke-CooledPopulationAnalysis -Package $package -RepoRoot $frozenRoot -Python $Python -Module ($module+'.analyze') `
   -Materialized $materialized -Times ([string]$state.shared_times_path) -PulseTimeUs ([double]$state.actual_pulse_time_us)
  Set-CooledStage 'saved_workbench_validation'
- $replay=Invoke-FrontendDefaultReplay -Materialized $materialized -HostLease ([ref]$lease) -RunDirectory $package.artifact_run_dir `
+ $replay=Invoke-FrontendDefaultReplay -Package $package -Materialized $materialized -HostLease ([ref]$lease) -RunDirectory $package.artifact_run_dir `
   -RepoRoot $frozenRoot -Python $Python -SimionExe $simion -Limits $budget.limits `
   -NativeOperations $nativeOperations -NativeResourceReleaseId ([string]$lease.token)
  $scientificSummary=@{native_path_preparation=$package.native_path_preparation;schema_version=1;role=$summaryRole;status='success';

@@ -225,7 +225,7 @@ try{
 
 function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool) @{run_dir=$Root;projected_paths=@($Paths);environment=@{}}}
 function Project-RunPath {param($Paths,$ArtifactRunDir,$RunDir,$Python) return $Paths}
- $result=Invoke-FrontendDefaultReplay -Materialized $materialized -HostLease ([ref]$lease) -RunDirectory $Root -RepoRoot $Repo -Python $Python -SimionExe NOT_NATIVE -Limits @{}
+ $result=Invoke-FrontendDefaultReplay -Package ([pscustomobject]@{artifact_run_dir=$Root;python="unused"}) -Materialized $materialized -HostLease ([ref]$lease) -RunDirectory $Root -RepoRoot $Repo -Python $Python -SimionExe NOT_NATIVE -Limits @{}
  if($Scenario-eq'saved_controls'){
   if($result.scope-ne'saved_controls_only'-or$result.native_fly_performed-or-not$result.controls_verified){throw 'controls check mislabeled'}
  }elseif($Scenario-ne'pass'-or-not$result.passed){throw 'unexpected parity acceptance'}

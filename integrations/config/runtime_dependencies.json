@@ -1384,6 +1384,16 @@
             "accelerator_interface",
             "oa_mr"
           ]
+        },
+        {
+          "id": "common_paths_native_run_path_lua",
+          "source_repo_path": "common/paths/native_run_path.lua",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight",
+            "paired_accelerator_pulse"
+          ]
         }
       ]
     },
@@ -1969,6 +1979,13 @@
           "source_repo_path": "integrations/analysis/compare_paired_accelerator_pulse.py",
           "consumers": [
             "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "assembly_integrations_workflows_single_reflection_flight_build_iob_lua_core",
+          "source_repo_path": "integrations/workflows/single_reflection_flight/build_iob_core.lua",
+          "consumers": [
+            "single_reflection_flight"
           ]
         }
       ]

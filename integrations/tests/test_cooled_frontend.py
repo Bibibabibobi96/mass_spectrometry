@@ -591,8 +591,9 @@ print('INERT_PA_API_BOUNDARY=PASS '..scenario)
             request_path, request = cooled_request_fixture(workspace)
             renamed_cooled_parent(request)
             request_path.write_text(json.dumps(request), encoding="utf-8")
-            output = workspace/"managed"
-            output.mkdir()
+            padding=max(1,190-len(str(workspace/"managed"/"prepared"))-1)
+            output = workspace/"managed"/("d"*padding)/"prepared"
+            output.mkdir(parents=True)
             config = output/"run_config.json"
             config.write_text(json.dumps(dict(project="wrong_owner", run_id="20261022_120000__build__python__cooled-fixture")))
             command = ["pwsh", "-NoProfile", "-File", str(REPO/"integrations/workflows/cooled_frontend/execute.ps1"),
@@ -645,6 +646,32 @@ $null=Freeze-ConsumerDependencies -RepoRoot $Repo -ContractPath $inventory -Inpu
                 cwd=snapshot, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=30)
             self.assertEqual(smoke.returncode,0,smoke.stdout+smoke.stderr)
             self.assertIn("FROZEN_MEMBER_AND_SEED=PASS",smoke.stdout)
+
+            # Real frozen pure prepare completed before the first native-plan declaration.
+            late = r"""param($Repo,$Python,$Run,$ExecutionRoot)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+$package=[pscustomobject]@{artifact_run_dir=$Run;run_dir=$Run;execution_alias=$null;execution_path_capacity=$null;python=$Python;path_context=[pscustomobject]@{execution_root=$ExecutionRoot;artifact_root=(Split-Path -Parent $Run);host_resource_state_path=(Join-Path $ExecutionRoot host.sqlite3)}}
+$before=[IO.File]::ReadAllText((Join-Path $Run run_config.json))
+if($null-ne$package.execution_alias){throw 'pure prepare created a native alias'}
+$builder=Join-Path $Run 'inputs/runtime_snapshot/common/simion/build_dirichlet_patch_operating_pa.lua'
+if(-not(Test-Path -LiteralPath $builder)-or$builder.Length-le259){throw 'actual frozen native builder must require projection'}
+$paths=@($Run,(Join-Path $Run 'inputs/frontend.gem'),$builder)
+try{
+ $context=Get-RunNativeExecutionContext -Package $package -Paths $paths -Tool SIMION
+ if($null-eq$package.execution_alias-or$context.environment.MASS_SPECTROMETRY_RUN_DIRECTORY-ne$Run-or$context.projected_paths[0]-eq$Run){throw 'first native plan failed to project prepared paths'}
+ foreach($path in $context.projected_paths){if($path.Length-gt259){throw 'prepared native path still too long'}}
+ if([IO.File]::ReadAllText((Join-Path $Run run_config.json))-cne$before){throw 'native representation rewrote frozen config'}
+ Remove-RunPackageExecutionAlias -Package $package
+ if(-not(Test-Path -LiteralPath (Join-Path $Run inputs/frontend.gem))){throw 'prepared input lost after alias cleanup'}
+ 'FROZEN_PREPARE_LATE_NATIVE_CONTEXT=PASS'
+}finally{Remove-RunPackageExecutionAlias -Package $package}
+"""
+            late_script=workspace/'late.ps1'
+            late_script.write_text(late,encoding='utf-8')
+            projected=subprocess.run(['pwsh','-NoProfile','-File',str(late_script),str(REPO),sys.executable,str(output),str(workspace/'x')],cwd=workspace,capture_output=True,text=True,encoding='utf-8',timeout=45)
+            self.assertEqual(projected.returncode,0,projected.stdout+projected.stderr)
+            self.assertIn('FROZEN_PREPARE_LATE_NATIVE_CONTEXT=PASS',projected.stdout)
 
     def test_existing_bare_default_geometry_bytes_unchanged(self):
         guide, connection, component = canonical_frontend_fixture()

@@ -6,6 +6,7 @@ function Invoke-SingleReflectionFrontendFieldStage {
      immutable standalone members; raw families stay in owner scratch. #>
   [CmdletBinding()]
   param(
+    [Parameter(Mandatory)]$Package,
     [Parameter(Mandatory)][string]$Python,
     [Parameter(Mandatory)][string]$RepoRoot,
     [Parameter(Mandatory)][string]$RunDirectory,
@@ -46,16 +47,19 @@ function Invoke-SingleReflectionFrontendFieldStage {
     }
     if((Get-Item -LiteralPath $stdout).Length){return Get-Content -LiteralPath $stdout -Raw|ConvertFrom-Json -Depth 100}
   }
+  $fieldNativeContext=$null
   function Invoke-FrontendFieldNative {
     param([string[]]$Arguments,[string]$Directory,[string]$Name)
     if($null -ne $StageElapsed -and $StageElapsed.Elapsed.TotalSeconds -gt [double]$Limits.wall_clock_seconds -and $wallClockWarningNames.Add('wall_clock_seconds')){
       Write-Warning ('RESOURCE_BUDGET_WARNING=wall_clock_seconds STAGE=instrument_field_design ' +
         'MEASURED_SECONDS={0:N3} LIMIT_SECONDS={1}' -f $StageElapsed.Elapsed.TotalSeconds,$Limits.wall_clock_seconds)
     }
+    if($null-eq$fieldNativeContext){throw 'Native frontend member paths must be prepared from its actual plan.'}
+    $projected=Project-RunPath -Paths (@($Directory)+$Arguments) -ArtifactRunDir $Package.artifact_run_dir -RunDir $fieldNativeContext.run_dir -Python $Python
     try{
     $result=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $run `
       -UsagePath (Join-Path $logs ($Name+'.resource_usage.json')) -FilePath $SimionExe `
-      -WorkingDirectory $Directory -ArgumentList $Arguments `
+      -WorkingDirectory $projected[0] -ArgumentList @($projected|Select-Object -Skip 1) -Environment $fieldNativeContext.environment `
       -RedirectStandardOutput (Join-Path $logs ($Name+'.stdout.log')) `
       -RedirectStandardError (Join-Path $logs ($Name+'.stderr.log'))
       if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId $Name -ProcessRecord $result}
@@ -172,6 +176,15 @@ print(json.dumps(reusable_audit(json.loads(Path(sys.argv[1]).read_text(encoding=
           if($null-ne$reuse){$audit=[string]$reuse.path}
         }
         if($null-eq$audit){
+          $nativePaths=@($domainScratch,$raw,(Join-Path $domainScratch 'frontend.gem'),$builder,$exporter,$verifier,
+            (Join-Path $inputs ($prefix+'_audit.tsv')),(Join-Path $logs ($prefix+'_fields_audit.json')))
+          if($null-ne$transaction-and$transaction.action_required-ne'complete'){
+            $nativePaths+=@([string]$transaction.scratch_directory,[string]$transaction.build_directory,
+              (Join-Path $transaction.scratch_directory 'working.pa0'),(Join-Path $transaction.scratch_directory ([string]$point.filename)),
+              (Join-Path $transaction.build_directory ([string]$point.filename)))
+          }elseif($null-ne$generation){$nativePaths+=@(Join-Path $generation ([string]$point.filename))}
+          if($domainName-eq'entrance_refinement'){$nativePaths+=@([string]$parentFields[[string]$member.member_id].record.path)}
+          $fieldNativeContext=Get-RunNativeExecutionContext -Package $Package -Paths $nativePaths -Tool SIMION
           New-Item -ItemType Directory -Path $domainScratch -Force|Out-Null
           if(-not(Test-Path -LiteralPath $raw)){
             [long]$rawCommitment=$ReservedRunPayloadBytes+[long]$plan.grid[0]*[long]$plan.grid[1]*[long]$plan.grid[2]*8

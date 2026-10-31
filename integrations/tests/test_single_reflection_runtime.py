@@ -101,7 +101,8 @@ class WorkbenchMaterializationTests(unittest.TestCase):
         self.downstream_path = self.producer / "field_receipt.json"
         write_json(self.downstream_path, self.downstream)
         self.snapshot = self.root / "snapshot"
-        for name in [*_SOURCES.values(), "integrations/workflows/single_reflection_flight/build_iob.lua"]:
+        for name in [*_SOURCES.values(), "integrations/workflows/single_reflection_flight/build_iob.lua",
+                     "integrations/workflows/single_reflection_flight/build_iob_core.lua", "common/paths/native_run_path.lua"]:
             target = self.snapshot / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / name, target)
@@ -860,7 +861,7 @@ class FourSlotIobTests(unittest.TestCase):
         self.program.write_bytes(b"EXACT_PREPARED_PROGRAM\n")
         self.particles.write_bytes(b"EXACT_PROJECTED_PARTICLES\n")
 
-    def invoke(self, mode="success"):
+    def invoke(self, mode="success", *, execution_root=None):
         responses = [dict(domain="parent" if row["role"] == "accelerator" else row["role"],
                           kind=kind, path=(self.root / (row["role"] + "." + kind + ".pa")).as_posix(), grid=row["grid"])
                      for row in self.rows if row["role"] in {"accelerator", "entrance_refinement"}
@@ -923,6 +924,14 @@ class FourSlotIobTests(unittest.TestCase):
         mock = self.root / "mock.lua"
         mock.write_text("""local spec=dofile(arg[1])
 local builder,mode=arg[2],arg[3]
+local projected=arg[4]~=nil
+local canonical_paths={}
+if projected then
+ local native_path=assert(loadfile(arg[4]))()
+ spec.seed_iob=native_path(spec.seed_iob);spec.output_iob=native_path(spec.output_iob)
+ for index,row in ipairs(spec.instances) do canonical_paths[index]=row.path;row.path=native_path(row.path) end
+ for _,row in ipairs(spec.response_fields) do row.path=native_path(row.path) end
+end
 local calls=0
 simion={wb={instances={}},pas={}}
 local reference_closed=false
@@ -1005,7 +1014,7 @@ function simion.command(command)
   end
   simion.wb.instances[index]={pa=pa,_debug_update_size=function() end}
   if verifying then
-   pa.path=row.path;pa.filename=row.path:match('[^/]+$')
+   pa.path=projected and canonical_paths[index] or row.path;pa.filename=row.path:match('[^/]+$')
    if mode=='verify_dot_path' then
     pa.path=row.path:gsub('/([^/]+)$','/extra/.././%1')
    end
@@ -1081,8 +1090,39 @@ arg={arg[1],mode:match('^verify') and 'verify' or nil}
 dofile(builder)
 if mode:match('^verify') then assert(reference_closed,'temporary path reference was not closed') end
 """, encoding="utf-8", newline="\n")
-        return subprocess.run([str(LUA), str(mock), str(spec_path), str(BUILDER), mode],
+        arguments = [str(LUA), str(mock), str(spec_path), str(BUILDER), mode]
+        environment = None
+        if execution_root is not None:
+            arguments.append(str(BUILDER.parents[3] / "common/paths/native_run_path.lua"))
+            environment = dict(os.environ, MASS_SPECTROMETRY_RUN_DIRECTORY=str(self.root),
+                MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=str(execution_root))
+        return subprocess.run(arguments, env=environment,
                               cwd=self.root, capture_output=True, text=True, timeout=20)
+
+    @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows execution junction required")
+    def test_wrapper_projects_declared_paths_and_core_reopens_canonical_saved_paths(self):
+        alias = self.root.parent / (self.root.name + "_execution")
+        script = "& { param($Alias,$Target) New-Item -ItemType Junction -Path $Alias -Target $Target | Out-Null }"
+        created = subprocess.run(["pwsh", "-NoProfile", "-Command", script, str(alias), str(self.root)],
+            cwd=self.root, capture_output=True, text=True, timeout=20)
+        self.assertEqual(created.returncode, 0, created.stdout + created.stderr)
+        self.addCleanup(alias.rmdir)
+        external = (self.root.parent / "external_standalone.pa").as_posix()
+        self.rows[1]["path"] = external
+        built = self.invoke(execution_root=alias)
+        self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+        self.output.unlink()  # Inert fixture IOB only; verify must never save one.
+        reopened = self.invoke("verify_success", execution_root=alias)
+        self.assertEqual(reopened.returncode, 0, reopened.stdout + reopened.stderr)
+        self.assertIn("SINGLE_REFLECTION_IOB_REOPEN=PASS", reopened.stdout)
+        self.assertFalse(self.output.exists())
+        frozen_spec = (self.root / "build_spec.lua").read_text()
+        self.assertNotIn(alias.name, frozen_spec)
+        self.assertIn(external, frozen_spec)
+        self.assertEqual(self.program.read_bytes(), b"EXACT_PREPARED_PROGRAM\n")
+        self.assertEqual(self.particles.read_bytes(), b"EXACT_PROJECTED_PARTICLES\n")
+
+
     def test_four_physical_slots_keep_provider_pose_and_prepared_companions(self):
         result = self.invoke()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

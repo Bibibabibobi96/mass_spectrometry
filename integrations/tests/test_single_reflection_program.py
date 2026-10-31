@@ -8,6 +8,7 @@ import re
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from integrations.runtime.build_single_flight_program import (
     build_successor_program, _upstream_rod_drive, validate_native_flight,
@@ -95,6 +96,28 @@ class SingleReflectionProgramTests(unittest.TestCase):
         providers = {instances[0]: self.upstream} if instances else {}
         return build_successor_program(providers,self.design,self.oatof,**kwargs)
 
+    def test_numerical_controls_ignore_path_projection_but_keep_physical_changes(self):
+        numeric = self.build(native_path_projection=False)
+        native = self.build()
+        helper = ROOT/'common/paths/native_run_path.lua'
+        original_read = Path.read_text
+
+        def changed_transport(path, *args, **kwargs):
+            text = original_read(path, *args, **kwargs)
+            return text + '\n-- transport-only development fixture\n' if path == helper else text
+
+        with patch.object(Path, 'read_text', changed_transport):
+            self.assertNotEqual(self.build(), native)
+            self.assertEqual(self.build(native_path_projection=False), numeric)
+        self.assertNotEqual(native, numeric)
+        unit = copy.deepcopy(self.dynamic)
+        unit['dynamic_roles'][0]['pulse_delta_scale'] = 1.
+        self.assertEqual(self.build(standalone_dynamic_field_bank=unit, native_path_projection=False), numeric)
+        unit['dynamic_roles'][0]['pulse_delta_scale'] = 2.
+        self.assertNotEqual(self.build(standalone_dynamic_field_bank=unit, native_path_projection=False), numeric)
+        changed = dict(self.sources, frontend_hook_source=self.sources['frontend_hook_source']+'\n-- changed callback implementation\n')
+        self.assertNotEqual(self.build(native_path_projection=False, **changed), numeric)
+
     def test_native_requires_complete_finite_explicit_source_velocity(self):
         for velocities in (None, [], [[1.,2.,3.]], [[1.,2.],[3.,4.,5.]],
                            [[float('nan'),0.,0.],[0.,0.,0.]], [[True,0.,0.],[0.,0.,0.]],
@@ -176,7 +199,6 @@ print('INJECTED_PUBLIC_EDGE_CAP=PASS')
         for path in (*paths['accelerator_main']['rf_differential_pa_paths'], paths['accelerator_main']['pulse_delta_pa_path']):
             self.assertIn(json.dumps(path), program)
         self.assertNotIn('response_directory', program)
-        self.assertIn('simion.pas:open(path)', program)
         self.assertIn("standalone dynamic field carrier path differs", program)
         self.assertIn("label..' symmetry differs from carrier'", program)
         invalid = [{}, {'other': paths['accelerator_main']}, {'accelerator_main': 'relative'},
@@ -527,7 +549,10 @@ function simion.pas:open(path)
  function pa:field_vc() return 1,2,3 end
  return pa
 end
-os.getenv=function() error('local native Program consulted a legacy environment') end
+os.getenv=function(key)
+ if key=='MASS_SPECTROMETRY_RUN_DIRECTORY' or key=='MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY' then return nil end
+ error('local native Program consulted a legacy scientific environment: '..key)
+end
 dofile(arg[1]);segment.load();segment.initialize_run();assert(opens==1)
 ion_number=2;ion_instance=3;ion_time_of_flight=0;ion_splat=0
 ion_px_mm=3.5;ion_py_mm=1.25;ion_pz_mm=-340

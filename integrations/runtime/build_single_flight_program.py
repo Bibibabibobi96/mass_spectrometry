@@ -483,8 +483,31 @@ def _bind_standalone_dynamic_field_paths(
             row["pulse_delta_pa_path"] = absolute_path(selected["pulse_delta_pa_path"], row["pulse_delta_pa_basename"])
 
 
-def _standalone_dynamic_field_lua(specs: list[dict[str, Any]]) -> str:
+def project_program_paths(numerical_program: str, native_path_source: str) -> str:
+    """Forward-render only the compiler's declared standalone path lookups.
+
+    The input is a numerical Program emitted by this compiler, never historical
+    native text with guessed sections removed. Parent transport source is read
+    only through its existing frozen file record when validating a saved Program.
+    """
+    marker = "local function single_flight_exact_basename(value,label)"
+    lookups = ("path", "spec.pulse_delta_pa_path")
+    if numerical_program.count(marker) != 1 or "local single_flight_native_run_path=" in numerical_program:
+        raise ValueError("numerical Program lacks the unique compiler path boundary")
+    for expression in lookups:
+        original = "simion.pas:open(" + expression + ")"
+        if numerical_program.count(original) != 1:
+            raise ValueError("numerical Program standalone path lookup differs")
+        numerical_program = numerical_program.replace(original, "simion.pas:open(single_flight_native_run_path(" + expression + "))")
+    prelude = "local single_flight_native_run_path=(function()\n" + native_path_source + "\nend)()\n"
+    return numerical_program.replace(marker, prelude + marker, 1)
+
+
+def _standalone_dynamic_field_lua(specs: list[dict[str, Any]], *, native_path_projection: bool = True, native_path_source: str | None = None) -> str:
     """Share exact sidecar validation and RF/pulse field composition glue."""
+    if native_path_projection:
+        source = native_path_source if native_path_source is not None else (Path(__file__).resolve().parents[2]/"common/paths/native_run_path.lua").read_text(encoding="utf-8-sig")
+        return project_program_paths(_standalone_dynamic_field_lua(specs, native_path_projection=False), source)
     # Unit scaling uses the original arithmetic, with no redundant multiply.
     # Both execution and numerical controls are rendered by this same template.
     unit_pulse = all(row.get("pulse_delta_scale", 1.) == 1. for row in specs)
@@ -844,6 +867,8 @@ def build_successor_program(
     standalone_dynamic_field_paths: dict[str, dict[str, Any]],
     downstream_static_fields: dict[str, Any],
     build_metadata: dict[str, Any] | None = None,
+    native_path_projection: bool = True,
+    native_path_source: str | None = None,
 ) -> str:
     """Assemble native full-flight callbacks from frozen source and field contracts."""
     from integrations.runtime.single_flight_frontend import frontend_electrode_maps
@@ -1065,7 +1090,7 @@ def build_successor_program(
       end
 """)
     overlay_specs_lua = _lua_value(overlay_specs)
-    standalone_dynamic_field_lua = _standalone_dynamic_field_lua(standalone_dynamic_specs)
+    standalone_dynamic_field_lua = _standalone_dynamic_field_lua(standalone_dynamic_specs, native_path_projection=native_path_projection, native_path_source=native_path_source)
     active_field_instance_indices_lua = _lua_value(active_field_instance_indices)
     pre_pulse_scope_instance_indices_lua = _lua_value(pre_pulse_scope_instance_indices)
     time_origin_table = "{" + ",".join(

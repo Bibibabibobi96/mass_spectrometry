@@ -40,12 +40,12 @@ def _write(path: Path, text: str) -> None:
 
 
 _IOB_TASK = r'''-- One-slot OA container preparation/reopen only; no PA save or adjustment.
-local s=dofile(assert(arg[1]));local mode=assert(arg[2])
+local s=dofile(native_path(assert(arg[1])));local mode=assert(arg[2])
 assert(s.schema_version==1 and s.role=='paired_accelerator_pulse_iob_build','invalid OA IOB spec')
 assert(mode=='build' or mode=='verify','unsupported OA IOB task')
 local originals={}
 for _,path in ipairs({s.program,s.fly2}) do
- local f=assert(io.open(path,'rb'));originals[path]=f:read('*a');f:close()
+ local f=assert(io.open(native_path(path),'rb'));originals[path]=f:read('*a');f:close()
 end
 -- Numerical quality belongs to the frozen workbench Program callbacks. A
 -- command-script global is neither the Program context nor a saved IOB fact.
@@ -57,30 +57,30 @@ assert(program:find('function callbacks.load() sim_trajectory_quality=cfg.trajec
  program:find('segment.initialize_run=callbacks.initialize_run',1,true),
  'frozen OA Program must apply quality on load and initialize_run')
 if mode=='build' then
- simion.command('"'..s.seed_iob..'"')
+ simion.command('"'..native_path(s.seed_iob)..'"')
  assert(#simion.wb.instances==1,'one-slot public seed required')
  local item=simion.wb.instances[1]
- item.pa.filename=s.field_pa;item.pa:load();item:_debug_update_size()
+ item.pa.filename=native_path(s.field_pa);item.pa:load();item:_debug_update_size()
  item.x,item.y,item.z=s.origin.x,s.origin.y,s.origin.z
  item.az,item.el,item.rt,item.scale=0,0,0,1
- simion.wb:load_particles(s.fly2)
- local ok,err=pcall(function() simion.wb:save(s.iob) end)
- for path,data in pairs(originals) do local f=assert(io.open(path,'wb'));f:write(data);f:close() end
+ simion.wb:load_particles(native_path(s.fly2))
+ local ok,err=pcall(function() simion.wb:save(native_path(s.iob)) end)
+ for path,data in pairs(originals) do local f=assert(io.open(native_path(path),'wb'));f:write(data);f:close() end
  assert(ok,err)
 else
- simion.command('"'..s.iob..'"')
+ simion.command('"'..native_path(s.iob)..'"')
 end
 assert(#simion.wb.instances==1,'saved OA workbench instance count differs')
 local item=simion.wb.instances[1]
 local function key(path) return path:gsub('\\','/'):lower() end
-assert(key(item.pa.path)==key(s.field_pa),'saved OA field path differs')
+assert(key(native_path(item.pa.path))==key(native_path(s.field_pa)),'saved OA field path differs')
 for _,name in ipairs({'nx','ny','nz','dx_mm','dy_mm','dz_mm'}) do
  assert(item.pa[name]==s.grid[name],'saved OA grid differs: '..name)
 end
 assert(item.x==s.origin.x and item.y==s.origin.y and item.z==s.origin.z and
  item.az==0 and item.el==0 and item.rt==0 and item.scale==1,'saved OA pose differs')
 for path,data in pairs(originals) do
- local f=assert(io.open(path,'rb'));local actual=f:read('*a');f:close()
+ local f=assert(io.open(native_path(path),'rb'));local actual=f:read('*a');f:close()
  assert(actual==data,'IOB task altered prepared companion: '..path)
 end
 print('PAIRED_ACCELERATOR_PULSE_IOB_'..mode:upper()..'=PASS INSTANCES=1 FLY=False')
@@ -217,7 +217,8 @@ def materialize_simion_batches(
                     grid=shape,origin=grid["instance_origin_mm"],trajectory_quality=quality,seed_iob=seed_iob.resolve().as_posix(),
                     program=paths["paired_pulse.lua"].as_posix(),fly2=paths["paired_pulse.fly2"].as_posix(),iob=paths["paired_pulse.iob"].as_posix())
         _write(paths["build_spec.lua"],"return "+lua_value(spec)+"\n")
-        _write(paths["build_iob.lua"],_IOB_TASK)
+        native_path_source = (code_root/"common/paths/native_run_path.lua").read_text(encoding="utf-8-sig")
+        _write(paths["build_iob.lua"], "local native_path=(function()\n"+native_path_source+"\nend)()\n"+_IOB_TASK)
         tasks.append(dict(batch_index=index,particle_ids=ids,particle_count=len(ids),
                           paths={key:str(value) for key,value in paths.items()},
                           original_mother_particle_ids=plan["original_mother_particle_ids"],

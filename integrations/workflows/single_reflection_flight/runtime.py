@@ -368,6 +368,8 @@ def iob_pa_copies(context: dict) -> list[dict]:
     return copies
 
 
+
+
 def interface_field_probes(geometry: dict, oatof: dict) -> list[dict]:
     """Declare bounded checks at the provider's grounded ideal-grid interfaces.
 
@@ -408,7 +410,28 @@ def interface_field_probes(geometry: dict, oatof: dict) -> list[dict]:
 
 
 
-def compile_case_controls(context: dict, source: list[dict]) -> tuple[str, dict, list[dict]]:
+def render_legacy_iob_builder(core: str) -> str:
+    """Forward-render this core under the known pre-projection CLI/address ABI.
+
+    Only current source is lowered; the historical builder is compared whole.
+    An unknown envelope or additional locator primitive fails closed.
+    """
+    header = "".join(core.splitlines(keepends=True)[:4])
+    prefix = header + "return function(spec,mode,native_path)\n"
+    suffix = "end\n"
+    if not core.startswith(prefix) or not core.endswith(suffix):
+        raise ValueError("current IOB core ABI envelope differs")
+    body = core[len(prefix):-len(suffix)]
+    primitive = "    path_reference.path=native_path(path)\n"
+    if body.count(primitive) != 1 or body.count("native_path(") != 1:
+        raise ValueError("current IOB core path locator primitive differs")
+    body = body.replace(primitive, "    path_reference.path=path\n")
+    cli = ("local spec=dofile(assert(arg[1], 'frozen IOB build specification is required'))\n"
+           "local mode=arg[2] or 'build'\n")
+    return header + cli + body
+
+
+def compile_case_controls(context: dict, source: list[dict], *, native_path_projection: bool = True) -> tuple[str, dict, list[dict]]:
     """Compile actual Program and instance controls without staging native assets."""
     snapshot_root = Path(context["snapshot_root"])
     ids = [int(row["particle_id"]) for row in source]
@@ -425,13 +448,18 @@ def compile_case_controls(context: dict, source: list[dict]) -> tuple[str, dict,
                if row.get('pulse_delta_pa_basename') else {}))
             for row in context["dynamic"]["dynamic_roles"]},
         downstream_static_fields=context["static"],
-        build_metadata=metadata, **{key: (snapshot_root / name).read_text(encoding="utf-8-sig") for key, name in _SOURCES.items()})
+        build_metadata=metadata, native_path_projection=native_path_projection,
+        native_path_source=(snapshot_root/"common/paths/native_run_path.lua").read_text(encoding="utf-8-sig") if native_path_projection else None,
+        **{key: (snapshot_root / name).read_text(encoding="utf-8-sig") for key, name in _SOURCES.items()})
     return program, metadata, _instance_rows(context["geometry"], metadata, context["carriers"])
 
 
 def preview_case_controls(context: dict, source: list[dict], directory: Path) -> dict:
     """Return the exact small controls needed to plan reuse, without IOB staging."""
     program, metadata, rows = compile_case_controls(context, source)
+    numerical_program, numerical_metadata, numerical_rows = compile_case_controls(context, source, native_path_projection=False)
+    if numerical_metadata != metadata or numerical_rows != rows:
+        raise ValueError("native path projection changed scientific workbench controls")
     run = Path(context["run"]).resolve()
     rows = [dict(row) for row in rows]
     for row in rows:
@@ -466,7 +494,7 @@ def preview_case_controls(context: dict, source: list[dict], directory: Path) ->
     interfaces = interface_field_probes(context['geometry'], context['oatof'])
     checked = sum(any(key in row for key in ("expected_instance", "expected_electrode", "expected_node_electrode"))
                   for row in probes)
-    return dict(program=program, particles=render_restart_fly2(source), build_metadata=metadata, instance_rows=rows,
+    return dict(program=program, numerical_program=numerical_program, particles=render_restart_fly2(source), build_metadata=metadata, instance_rows=rows,
         native_priority_occupancy_expected_counts=dict(checked_points=checked, observation_only_points=len(probes) - checked),
         build_spec="return " + _lua_value(dict(schema_version=1, role="single_reflection_iob_build", instances=rows,
             response_fields=response_fields,
@@ -474,6 +502,9 @@ def preview_case_controls(context: dict, source: list[dict], directory: Path) ->
             native_priority_occupancy_probes=probes,
             seed_iob=(seed / seed_names[0]).as_posix(), output_iob=iob.as_posix())) + "\n",
         builder_path=str(Path(context["snapshot_root"]) / "integrations/workflows/single_reflection_flight/build_iob.lua"),
+        builder_core_path=str(Path(context["snapshot_root"])/"integrations/workflows/single_reflection_flight/build_iob_core.lua"),
+        program_path_projection_record=context.setdefault("_program_path_projection_record",
+            file_record(Path(context["snapshot_root"])/"common/paths/native_run_path.lua")),
         seed_paths=[str(path) for path in seed_paths], seed_records=seed_records)
 
 
@@ -524,25 +555,29 @@ def _materialize_case(context: dict, source: list[dict], directory: Path) -> dic
         shutil.copyfile(seed_root / name, seed / name)
     iob = directory / "instrument.iob"
     iob.with_suffix(".lua").write_text(program, encoding="utf-8", newline="\n")
+    numerical_path = directory / "numerical_program.lua"
+    numerical_path.write_text(preview["numerical_program"], encoding="utf-8", newline="\n")
     iob.with_suffix(".fly2").write_text(render_restart_fly2(source), encoding="utf-8", newline="\n")
     spec_path = directory / "iob_build.lua"
     spec_path.write_text(preview["build_spec"], encoding="utf-8", newline="\n")
     scientific_guards = [*(record for domain in fields.values() for record in domain.values()), *guards]
     copies = iob_pa_copies(context)
-    return dict(schema_version=1, role="single_reflection_workbench_preparation", phase=phase, flight=flight, particle_count=len(source),
+    return dict(schema_version=1, role="single_reflection_workbench_preparation", phase=phase,
         default_replay_requested=context["default_replay_requested"],
-        saved_default_replay_verification="pending" if context["default_replay_requested"] else "not_requested",
+        saved_default_replay_verification="pending" if context["default_replay_requested"] else "not_requested", flight=flight, particle_count=len(source),
         source_record=records["projected_source"], source_transform_applied=False,
         clock_epoch_id=provenance["clock_epoch_id"], instance_roles={row["role"]: row["instance_index"] for row in rows},
         build_metadata=metadata, inputs=records, downstream_receipt_record=downstream_receipt_record,
         native_priority_occupancy_expected_counts=preview["native_priority_occupancy_expected_counts"],
+        program_path_projection_record=preview["program_path_projection_record"],
+        iob_builder_core_record=file_record(Path(preview["builder_core_path"])),
         iob_pa_copies=copies,
         iob_pa_guard_records=[*scientific_guards,
             *({**copy["source_record"], "path": copy["destination"]} for copy in copies)],
         field_receipt_record=file_record(field_receipt_path), pa_guard_records=[*(record for domain in fields.values() for record in domain.values()), *guards],
         iob_path=str(iob), iob_builder_arguments=["--nogui", "--noprompt", "lua", str(builder), str(spec_path)],
         iob_verify_arguments=["--nogui", "--noprompt", "lua", str(builder), str(spec_path), "verify"],
-        outputs={"program": file_record(iob.with_suffix(".lua")), "particles": file_record(iob.with_suffix(".fly2")),
+        outputs={"program": file_record(iob.with_suffix(".lua")), "numerical_program": file_record(numerical_path), "particles": file_record(iob.with_suffix(".fly2")),
                  "build_spec": file_record(spec_path)}, seed_records=[file_record(seed / name) for name in seed_names],
         native_execution_performed=False, fly_ready=False,
         pending_validation=["native_IOB_reopen", "native_priority_occupancy_points", "real_full_population_flight_validation"])

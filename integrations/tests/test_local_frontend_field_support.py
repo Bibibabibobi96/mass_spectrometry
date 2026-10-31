@@ -71,6 +71,103 @@ class LocalFrontendFieldSupportTests(unittest.TestCase):
             exec(compile(source[1], str(SUPPORT) + ':' + name, 'exec'), {})
         return json.loads(output.getvalue())
 
+    def test_basis_identity_tracks_native_plan_not_host_transport(self):
+        from integrations.runtime.frontend_field_plan import build_field_plan
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);prepared=root/'prepared';prepared.mkdir();self.prepare(prepared)
+            runtime=root/'snapshot/integrations/runtime';runtime.mkdir(parents=True)
+            for name in ('initialize_fast_adjust_pa_basis.lua','local_frontend_field_support.ps1','frontend_field_plan.py','verify_local_frontend_fields.lua'):
+                shutil.copyfile(RUNTIME/name,runtime/name)
+            common=runtime.parents[1]/'common/simion';common.mkdir(parents=True)
+            for name in ('export_standalone_pa.lua','standalone_pa_response_set.py'):
+                shutil.copyfile(ROOT/'common/simion'/name,common/name)
+            before=build_field_plan(prepared,Path(sys.executable),runtime)
+            for path in (runtime/'local_frontend_field_support.ps1',runtime/'frontend_field_plan.py'):
+                path.write_text(path.read_text()+'\n# inert provenance change\n')
+            after=build_field_plan(prepared,Path(sys.executable),runtime)
+            self.assertEqual(before['cache_key'],after['cache_key'])
+            self.assertNotEqual(before['source_provenance'],after['source_provenance'])
+            verifier=runtime/'verify_local_frontend_fields.lua'
+            verifier.write_text(verifier.read_text()+'\n-- changed publication validation\n')
+            self.assertNotEqual(after['cache_key'],build_field_plan(prepared,Path(sys.executable),runtime)['cache_key'])
+            shutil.copyfile(RUNTIME/'verify_local_frontend_fields.lua',verifier)
+            initializer=runtime/'initialize_fast_adjust_pa_basis.lua'
+            initializer.write_text(initializer.read_text()+'\n-- changed native implementation\n')
+            self.assertNotEqual(before['cache_key'],build_field_plan(prepared,Path(sys.executable),runtime)['cache_key'])
+            shutil.copyfile(RUNTIME/'initialize_fast_adjust_pa_basis.lua',initializer)
+            altered=json.loads(json.dumps(before['identity']))
+            altered['builder_identity']['basis_operations'][0]['arguments'].append('--different-native-setting')
+            from common.simion.pa_family_cache import canonical_pa_family_cache_key
+            self.assertNotEqual(before['cache_key'],canonical_pa_family_cache_key(altered))
+            physical=prepared/'cache_physical_inputs.json';document=json.loads(physical.read_text())
+            document['geometry']['changed_physical_boundary']=True;physical.write_text(json.dumps(document))
+            self.assertNotEqual(after['cache_key'],build_field_plan(prepared,Path(sys.executable),runtime)['cache_key'])
+
+    def test_export_failure_retains_successful_refine_fact_and_original_error(self):
+        from integrations.runtime.frontend_field_plan import build_field_plan
+        source=SUPPORT.read_text(encoding='utf-8')
+        start=source.index('        $refineFact=[ref]$refinePerformed')
+        end=source.index('        foreach($name in $plan.filenames)',start)
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);self.prepare(root)
+            plan_path=root/'plan.json';plan_path.write_text(json.dumps(build_field_plan(root,Path(sys.executable),RUNTIME)))
+            script=root/'failure.ps1'
+            script.write_text(r"""param($Support,$PlanPath,$Scratch)
+. $Support
+$plan=Get-Content -LiteralPath $PlanPath -Raw|ConvertFrom-Json
+$scratch=$Scratch;$spec='SPEC';$log=$Scratch
+$frozenTools=@{'verify_local_frontend_fields.lua'='VERIFY';'initialize_fast_adjust_pa_basis.lua'='INITIALIZE';'export_standalone_pa.lua'='EXPORT'}
+$refinePerformed=$false;$published=$false;$caught=$null
+$script:primary=[InvalidOperationException]::new('EXPORT_PRIMARY')
+function Invoke-LocalFieldNative {
+ param($Arguments,$Directory,$Name)
+ if($Name-like'local_field_export_*'){throw $script:primary}
+}
+try{
+"""+source[start:end]+r"""
+ $published=$true
+}catch{$caught=$_}
+@{refined=$refinePerformed;published=$published;message=$caught.Exception.Message;same_exception=[object]::ReferenceEquals($caught.Exception,$script:primary)}|ConvertTo-Json -Compress
+""",encoding='utf-8',newline='\n')
+            result=subprocess.run(['pwsh','-NoProfile','-File',str(script),str(SUPPORT),str(plan_path),str(root)],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+            self.assertEqual(result.returncode,0,result.stderr)
+            facts=json.loads(result.stdout)
+            self.assertTrue(facts['refined'])
+            self.assertFalse(facts['published'])
+            self.assertTrue(facts['same_exception'])
+            self.assertEqual(facts['message'],'EXPORT_PRIMARY')
+
+    def test_actual_powershell_consumes_frozen_basis_operations_for_both_models(self):
+        from integrations.runtime.frontend_field_plan import build_field_plan
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);script=root/'probe.ps1'
+            script.write_text(r"""param($Support,$PlanPath,$Scratch)
+. $Support
+$plan=Get-Content -LiteralPath $PlanPath -Raw|ConvertFrom-Json
+$script:calls=[Collections.Generic.List[object]]::new()
+$tools=@{'verify_local_frontend_fields.lua'='VERIFY';'initialize_fast_adjust_pa_basis.lua'='INITIALIZE';'export_standalone_pa.lua'='EXPORT'}
+Invoke-LocalFrontendBasisOperations -Plan $plan -Scratch $Scratch -VerificationSpec 'SPEC' -LogDirectory $Scratch -Tools $tools -InvokeNative {
+ param($Arguments,$Directory,$Name)
+ $script:calls.Add(@{arguments=@($Arguments);directory=$Directory;name=$Name})
+}
+ConvertTo-Json -InputObject @($script:calls) -Depth 20 -Compress
+""",encoding='utf-8',newline='\n')
+            for three_zone in (False,True):
+                prepared=root/str(three_zone);prepared.mkdir();self.prepare(prepared,three_zone=three_zone)
+                plan=build_field_plan(prepared,Path(sys.executable),RUNTIME);plan_path=root/'plan.json';plan_path.write_text(json.dumps(plan))
+                result=subprocess.run(['pwsh','-NoProfile','-File',str(script),str(SUPPORT),str(plan_path),str(prepared)],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+                self.assertEqual(result.returncode,0,result.stderr)
+                calls=json.loads(result.stdout);self.assertEqual(len(calls),3+plan['mode_count'])
+                self.assertEqual([row['name'] for row in calls],[op['name'] for op in plan['basis_operations']])
+                self.assertEqual(calls[0]['arguments'],['--nogui','--noprompt','gem2pa',str(prepared/'frontend.gem'),str(prepared/'frontend.pa#')])
+                self.assertEqual(calls[2]['arguments'],['--nogui','--noprompt','lua','INITIALIZE',str(prepared/'frontend.pa#')])
+                for mode,call in zip(plan['mode_ids'],calls[3:]):
+                    self.assertEqual(call['arguments'],['--nogui','--noprompt','lua','EXPORT',str(prepared/f'frontend.pa{mode}'),str(prepared/f'frontend.response_{mode}.pa')])
+                plan['basis_operations'][0]['kind']='unknown';plan_path.write_text(json.dumps(plan))
+                rejected=subprocess.run(['pwsh','-NoProfile','-File',str(script),str(SUPPORT),str(plan_path),str(prepared)],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+                self.assertNotEqual(rejected.returncode,0)
+                self.assertIn('Unsupported local basis operation',rejected.stderr)
+
     def test_real_five_mode_plan_uses_public_identity_and_all_rod_samples(self):
         with tempfile.TemporaryDirectory() as directory:
             p = Path(directory)
@@ -385,7 +482,7 @@ Invoke-LocalFieldNative -Arguments @('INERT') -Directory $PSScriptRoot -Name 'ex
             result = subprocess.run([pwsh, '-NoProfile', '-File', str(script), str(SUPPORT)], capture_output=True, text=True, encoding='utf-8', check=False, cwd=ROOT, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
         text = SUPPORT.read_text()
-        self.assertEqual(text.count("-Name 'local_field_refine_declared_modes'"), 1)
+        self.assertIn("Invoke-LocalFrontendBasisOperations -Plan $plan", text)
         self.assertNotIn("@('--nogui','--noprompt','fly'", text)
         self.assertIn('common.simion.pa_family_cache', text)
         self.assertIn('--response-receipt', text)
@@ -421,7 +518,7 @@ function Invoke-HostResourceTransaction {param($Request,$StatePath)$script:ledge
 . (Join-Path $Snapshot 'integrations/runtime/local_frontend_field_support.ps1')
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation)throw 'STOP_BEFORE_PYTHON_AND_NATIVE'}
 $lease=[pscustomobject]@{state_path=$before};$capacity=[pscustomobject]@{status='active'}
-try{Invoke-LocalFrontendFieldStage -Python $Python -RepoRoot $Snapshot -RunDirectory $Run -PreparedDirectory $Run -SimionExe 'NOT_STARTED.exe' -HostLease ([ref]$lease) -CapacitySession ([ref]$capacity) -Limits @{};throw 'boundary not reached'}catch{if($_.Exception.Message-ne'STOP_BEFORE_PYTHON_AND_NATIVE'){throw}}
+try{Invoke-LocalFrontendFieldStage -Package @{} -Python $Python -RepoRoot $Snapshot -RunDirectory $Run -PreparedDirectory $Run -SimionExe 'NOT_STARTED.exe' -HostLease ([ref]$lease) -CapacitySession ([ref]$capacity) -Limits @{};throw 'boundary not reached'}catch{if($_.Exception.Message-ne'STOP_BEFORE_PYTHON_AND_NATIVE'){throw}}
 if($script:HostResourceStatePath-ne$before-or(Get-Command Get-HostResourceBudget).ScriptBlock.File-ne$source){throw 'live public host context was replaced'}
 if((Get-Command New-ShortPaCopy).ScriptBlock.File-ne$shortSource){throw 'live public PA input context was replaced'}
 if($script:ledgerCalls-ne0){throw 'read-only preflight attempted a host ledger transaction'}
@@ -463,7 +560,7 @@ function Invoke-RunToolRootContext {
  param($RepoRoot,$Operation)
  # These are explicit inert Python transport responses, not PA/solver results.
  if($Name-eq'local_field_plan'){
-  [IO.File]::WriteAllText($stdout,'{"recipe":{"exporter_path":""},"identity":{},"cache_key":"fixture","filenames":[],"mode_ids":[1]}')
+  [IO.File]::WriteAllText($stdout,'{"recipe":{"exporter_path":""},"identity":{},"source_provenance":{},"basis_operations":[],"cache_key":"fixture","filenames":[],"mode_ids":[1]}')
  }elseif($Name-eq'local_field_cache_probe'){
   [IO.File]::WriteAllText($stdout,(@{disposition='hit';generation_directory=$env:TEST_RUN}|ConvertTo-Json -Compress))
  }elseif($Name-eq'local_field_select'){throw $script:primary}
@@ -471,7 +568,7 @@ function Invoke-RunToolRootContext {
 }
 $lease=@{token='inert'};$capacity=@{committed_new_bytes=0};$caught=$null
 try{
- Invoke-LocalFrontendFieldStage -Python 'NOT_STARTED' -RepoRoot $env:TEST_REPO -RunDirectory $env:TEST_RUN `
+ Invoke-LocalFrontendFieldStage -Package @{} -Python 'NOT_STARTED' -RepoRoot $env:TEST_REPO -RunDirectory $env:TEST_RUN `
   -PreparedDirectory $env:TEST_RUN -SimionExe 'NOT_STARTED' -HostLease ([ref]$lease) -CapacitySession ([ref]$capacity) -Limits @{}|Out-Null
 }catch{$caught=$_}
 @{message=$caught.Exception.Message;same_exception=[object]::ReferenceEquals($caught.Exception,$script:primary);

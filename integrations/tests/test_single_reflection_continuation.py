@@ -103,6 +103,177 @@ Write-RunJson -Path (Join-Path $resultDirectory 'inert_copy_count.json') -Value 
 
 
 class SingleReflectionContinuationTests(unittest.TestCase):
+    def _rebind_changed_parent_controls(self, parent, workbench):
+        """Fixture-only republish: mutations remain fully manifest-bound."""
+        workbench_path=parent/'results/single_reflection/workbench_preparation.json'
+        runtime_tests.write_json(workbench_path,workbench)
+        manifest_path=parent/'run_manifest.json'
+        manifest=json.loads(manifest_path.read_text(encoding='utf-8'))
+        case=workbench['batches'][0]
+        manifest['inputs']['iob_builder']=file_record(Path(case['iob_builder_arguments'][3]))
+        manifest['inputs']['program_path_projection']=case['program_path_projection_record']
+        changed={str(workbench_path):file_record(workbench_path)}
+        changed.update({row['outputs']['program']['path']:row['outputs']['program'] for row in workbench['batches']})
+        manifest['outputs']=[changed.get(row['path'],row) for row in manifest['outputs']]
+        runtime_tests.write_json(manifest_path,manifest)
+        frozen=self.run/'inputs/continuation_parent_manifest.json'
+        shutil.copyfile(manifest_path,frozen)
+        self.preparation['input_records']['continuation_parent_manifest']={**file_record(frozen),'source_path':str(manifest_path)}
+
+    def test_bound_parent_wrapper_cannot_change_controls_behind_unchanged_core(self):
+        current=self._current_workbench()
+        parent=self._parent(current)
+        workbench_path=parent/'results/single_reflection/workbench_preparation.json'
+        workbench=json.loads(workbench_path.read_text(encoding='utf-8'))
+        wrapper=parent/'inputs/changed_wrapper.lua'
+        wrapper.parent.mkdir(exist_ok=True)
+        original=Path(workbench['batches'][0]['iob_builder_arguments'][3]).read_text(encoding='utf-8')
+        wrapper.write_text(original.replace("local mode=arg[2] or 'build'", "spec.instances[1].placement.x_mm=123\nlocal mode=arg[2] or 'build'"),encoding='utf-8',newline='\n')
+        self.assertNotEqual(wrapper.read_text(encoding='utf-8'),original)
+        for case in workbench['batches']:
+            case['iob_builder_arguments'][3]=str(wrapper)
+            case['iob_verify_arguments'][3]=str(wrapper)
+        self._rebind_changed_parent_controls(parent,workbench)
+        with self.assertRaisesRegex(ValueError,'IOB transport wrapper differs'):
+            prepare_phase_continuation(self.preparation,current,self.run,'baseline')
+
+    def test_bound_parent_projection_cannot_self_authenticate_physical_side_effect(self):
+        from integrations.runtime.build_single_flight_program import project_program_paths
+        current=self._current_workbench()
+        parent=self._parent(current)
+        workbench_path=parent/'results/single_reflection/workbench_preparation.json'
+        workbench=json.loads(workbench_path.read_text(encoding='utf-8'))
+        projection=parent/'inputs/changed_native_path.lua'
+        projection.parent.mkdir(exist_ok=True)
+        original=Path(workbench['batches'][0]['program_path_projection_record']['path']).read_text(encoding='utf-8')
+        changed='simion.wb.instances[1].x=simion.wb.instances[1].x+1\n'+original
+        projection.write_text(changed,encoding='utf-8',newline='\n')
+        for case in workbench['batches']:
+            case['program_path_projection_record']=file_record(projection)
+            numerical=Path(case['outputs']['numerical_program']['path']).read_text(encoding='utf-8')
+            program=Path(case['outputs']['program']['path'])
+            program.write_text(project_program_paths(numerical,changed),encoding='utf-8',newline='\n')
+            case['outputs']['program']=file_record(program)
+        self._rebind_changed_parent_controls(parent,workbench)
+        with self.assertRaisesRegex(ValueError,'Program path projection differs from current transport'):
+            prepare_phase_continuation(self.preparation,current,self.run,'baseline')
+
+    def test_current_native_program_must_match_numerical_controls_in_both_paths(self):
+        current = self._current_workbench()
+        self._parent(current)
+        context = runtime._prepare_context(self.preparation,self.field_receipt,file_record(self.downstream_path),self.run,
+            snapshot_root=self.snapshot,flight=self.flight)
+        preview = runtime.preview_batches(self.run,'full_instrument',plan_single_wave_batches(100,2),context=context)
+        program = Path(current['batches'][0]['outputs']['program']['path'])
+        program.write_text(program.read_text(encoding='utf-8')+'\nion_vx_mm=123\n',encoding='utf-8',newline='\n')
+        current['batches'][0]['outputs']['program'] = file_record(program)
+        preview['batches'][0]['preview']['program'] += '\nion_vx_mm=123\n'
+        for controls in (current,preview):
+            with self.assertRaisesRegex(ValueError,'Program differs from its numerical controls'):
+                prepare_phase_continuation(self.preparation,controls,self.run,'baseline')
+            shutil.rmtree(self.run/'inputs/continuation')
+
+
+    def test_existing_ancestor_builder_rebinds_only_identical_direct_parent_source(self):
+        current = self._current_workbench()
+        parent = self._parent(current)
+        source = Path(current['batches'][0]['iob_builder_arguments'][3])
+        bound = parent/'inputs/runtime_snapshot/integrations/workflows/single_reflection_flight/build_iob.lua'
+        bound.parent.mkdir(parents=True)
+        shutil.copyfile(source,bound)
+        manifest_path = parent/'run_manifest.json'
+        manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+        manifest['inputs']['iob_builder'] = file_record(bound)
+        runtime_tests.write_json(manifest_path,manifest)
+        frozen = self.run/'inputs/continuation_parent_manifest.json'
+        shutil.copyfile(manifest_path,frozen)
+        self.preparation['input_records']['continuation_parent_manifest'] = {**file_record(frozen),'source_path':str(manifest_path)}
+        result = self._materialize_cli('baseline')
+        self.assertTrue(all(unit['action']=='reuse' for unit in result['continuation']['plan']['units']))
+        self.assertTrue(all(case['iob_builder_arguments'][3]==str(bound) for case in result['batches']))
+        shutil.rmtree(self.run/'inputs/continuation')
+        bound.write_text(bound.read_text(encoding='utf-8')+'\nreturn false\n',encoding='utf-8',newline='\n')
+        manifest['inputs']['iob_builder'] = file_record(bound)
+        runtime_tests.write_json(manifest_path,manifest)
+        shutil.copyfile(manifest_path,frozen)
+        self.preparation['input_records']['continuation_parent_manifest'] = {**file_record(frozen),'source_path':str(manifest_path)}
+        with self.assertRaisesRegex(ValueError,'inherited IOB builder is not uniquely manifest-bound'):
+            prepare_phase_continuation(self.preparation,current,self.run,'baseline')
+
+
+    def test_native_program_cannot_claim_unchanged_numerical_controls(self):
+        current = self._current_workbench()
+        parent = self._parent(current)
+        workbench_path = parent/'results/single_reflection/workbench_preparation.json'
+        workbench = json.loads(workbench_path.read_text(encoding='utf-8'))
+        case = workbench['batches'][0]
+        program = Path(case['outputs']['program']['path'])
+        program.write_text(program.read_text(encoding='utf-8')+'\nion_vx_mm=123\n',encoding='utf-8',newline='\n')
+        case['outputs']['program'] = file_record(program)
+        runtime_tests.write_json(workbench_path,workbench)
+        manifest_path = parent/'run_manifest.json'
+        manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+        changed = {str(program): file_record(program),str(workbench_path): file_record(workbench_path)}
+        manifest['outputs'] = [changed.get(row['path'],row) for row in manifest['outputs']]
+        runtime_tests.write_json(manifest_path,manifest)
+        frozen = self.run/'inputs/continuation_parent_manifest.json'
+        shutil.copyfile(manifest_path,frozen)
+        self.preparation['input_records']['continuation_parent_manifest'] = {**file_record(frozen),'source_path':str(manifest_path)}
+        with self.assertRaisesRegex(ValueError,'Program differs from its numerical controls'):
+            prepare_phase_continuation(self.preparation,current,self.run,'baseline')
+
+
+    def test_pre_projection_program_requires_exact_compiler_output_in_both_paths(self):
+        current = self._current_workbench()
+        parent = self._parent(current)
+        path = parent/'results/single_reflection/workbench_preparation.json'
+        workbench = json.loads(path.read_text(encoding='utf-8'))
+        legacy_builder = parent/'inputs/runtime_snapshot/integrations/workflows/single_reflection_flight/build_iob.lua'
+        legacy_builder.parent.mkdir(parents=True)
+        core = Path(workbench['batches'][0]['iob_builder_core_record']['path']).read_text(encoding='utf-8')
+        legacy_builder.write_text(runtime.render_legacy_iob_builder(core),encoding='utf-8',newline='\n')
+        for case in workbench['batches']:
+            numeric = case['outputs'].pop('numerical_program')
+            case.pop('iob_builder_core_record')
+            case['iob_builder_arguments'][3] = str(legacy_builder)
+            case['iob_verify_arguments'][3] = str(legacy_builder)
+            program = Path(case['outputs']['program']['path'])
+            program.write_bytes(Path(numeric['path']).read_bytes())
+            case['outputs']['program'] = file_record(program)
+        runtime_tests.write_json(path, workbench)
+        manifest_path = parent/'run_manifest.json'
+        manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+        manifest['inputs']['legacy_iob_builder'] = file_record(legacy_builder)
+        replaced = {str(path): file_record(path)}
+        replaced.update({case['outputs']['program']['path']: case['outputs']['program'] for case in workbench['batches']})
+        manifest['outputs'] = [replaced.get(row['path'], row) for row in manifest['outputs']]
+        runtime_tests.write_json(manifest_path, manifest)
+        frozen = self.run/'inputs/continuation_parent_manifest.json'
+        shutil.copyfile(manifest_path, frozen)
+        self.preparation['input_records']['continuation_parent_manifest'] = {**file_record(frozen), 'source_path': str(manifest_path)}
+        parent_bytes = manifest_path.read_bytes()
+        context = runtime._prepare_context(self.preparation,self.field_receipt,file_record(self.downstream_path),self.run,
+            snapshot_root=self.snapshot,flight=self.flight)
+        preview = runtime.preview_batches(self.run,'full_instrument',plan_single_wave_batches(100,2),context=context)
+        for controls in (current, preview):
+            result = prepare_phase_continuation(self.preparation, controls, self.run, 'baseline')
+            self.assertTrue(all(unit['action']=='reuse' for unit in result['plan']['units']))
+            self.assertTrue(all(row['program_comparison']=='exact_compiler_derived_legacy_controls' for row in result['completion']))
+            shutil.rmtree(self.run/'inputs/continuation')
+        self.assertEqual(manifest_path.read_bytes(),parent_bytes)
+        changed_core = self.run/'inputs/changed_iob_core.lua'
+        changed_core.write_text(core.replace('assert(count==4 or count==5', 'assert(count==4 or count==6'),encoding='utf-8',newline='\n')
+        original_core = preview['batches'][0]['preview']['builder_core_path']
+        preview['batches'][0]['preview']['builder_core_path'] = str(changed_core)
+        with self.assertRaisesRegex(ValueError,'IOB builder differs'):
+            prepare_phase_continuation(self.preparation,preview,self.run,'baseline')
+        shutil.rmtree(self.run/'inputs/continuation')
+        preview['batches'][0]['preview']['builder_core_path'] = original_core
+        preview['batches'][0]['preview']['numerical_program'] += '\nactual_physical_control_change=1\n'
+        with self.assertRaisesRegex(ValueError, 'Program differs'):
+            prepare_phase_continuation(self.preparation,preview,self.run,'baseline')
+
+
     def test_provisional_formal_completion_reuses_first_interval(self) -> None:
         from common.simion.resource_scheduler import plan_simion_dispatch
         initial=plan_simion_dispatch(dict(solver='SIMION',field_kind='electrostatic',particle_count=100,
@@ -295,6 +466,8 @@ class SingleReflectionContinuationTests(unittest.TestCase):
             "role": "simulation_run_manifest", "run_id": "parent", "status": "interrupted",
             "run_config": file_record(config),
             "inputs": {"projected_source": self.preparation["outputs"]["projected_source"],
+                       "program_path_projection": parent_cases[0]["program_path_projection_record"],
+                       "iob_builder_core": parent_cases[0]["iob_builder_core_record"],
                        "iob_builder": file_record(Path(parent_cases[0]["iob_builder_arguments"][3]))},
             "outputs": outputs,
         }
@@ -380,11 +553,13 @@ class SingleReflectionContinuationTests(unittest.TestCase):
             builder.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(original_builder, builder)
             case["iob_builder_arguments"][3] = str(alias / builder.relative_to(parent))
+            case["iob_verify_arguments"][3] = case["iob_builder_arguments"][3]
             for key in ("stdout", "replay_stdout"):
                 case[key] = str(alias / Path(case[key]).relative_to(parent))
         runtime_tests.write_json(path, workbench)
         manifest_path = parent / "run_manifest.json"
         manifest = json.loads(manifest_path.read_text())
+        manifest["inputs"]["iob_builder"] = file_record(builder)
         manifest["outputs"] = [record for record in manifest["outputs"] if Path(record["path"]) != path]
         manifest["outputs"].append(file_record(path))
         runtime_tests.write_json(manifest_path, manifest)

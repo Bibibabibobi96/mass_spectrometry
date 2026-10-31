@@ -75,7 +75,7 @@ try {
     -ArtifactRoot (Join-Path $artifacts "projects/$project") -RunId $RunId -Project $project `
     -Mode ("single_reflection_{0}" -f $stage) -Software @('SIMION 2020','Python 3.11','PowerShell 7') `
     -RetentionContractEnabled -RetentionClass solver_review -RetentionReason $retentionReason -CapacityLedgerLifecycleEnabled -PathContext $pathContext `
-    -UseShortExecutionPath -AdditionalDirectories @('simion') `
+    -AdditionalDirectories @('simion') `
     -ExpectedExecutionRelativePaths @(
       'inputs/runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/simion/reflectron/oatof_reflectron_ideal_10_5.gem'
     )

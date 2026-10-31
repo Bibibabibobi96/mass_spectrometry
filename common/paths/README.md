@@ -37,3 +37,16 @@ MATLAB 纯路径行为回归位于 `tests/commonArtifactPathsTest.m`，从仓库
 `assertSuccess(runtests('common/paths/tests/commonArtifactPathsTest.m'))`；启动方式遵循
 [操作指南](../../docs/OPERATIONS.md#工具链与执行入口)。测试复制两份实际路径函数到 `TemporaryFolderFixture` 隔离工作区，覆盖
 合法 run/scratch、非法/缺失目录和发布状态；不调用 COMSOL，不写真实项目产物，fixture 自动清理。
+
+## 前端原生计划的实际消费者
+
+公共frontend flight／IOB／显式回放消费同一Package并在实际原生边界取得最新context，
+paired pulse、local、cooled与single_reflection调用同步迁移；field/helper与拓扑验证把cwd、argv和
+显式PA/report环境定位一并投影。Program中的standalone查找使用同一冻结Lua运输实现，
+IOB wrapper只投影声明路径，原物理core保留；路径文本不独立定义科学复用身份。
+local与cooled、single_reflection不再强制每run建alias；后两者必要已声明路径仍可提前触发条件准备。
+paired pulse目前为前段MATLAB／COMSOL保留原early alias，IP／prepared_joint和公共Python／COMSOL运输另有迁移边界，
+本条不声明它们已经完成。外部深PA／cache仍需原owner的明确短路径／私有副本边界，
+不得把跨owner路径改到当前run。相关深根／实际普通子进程与LuaIOB测试是软件接线；原生冷开另看已取得的小SIMION证据。
+
+纯准备的冻结Python cwd本身若超过Windows进程目录边界，仍需后续Python owner运输；本主题不以SIMION argv投影声称关闭此限制。

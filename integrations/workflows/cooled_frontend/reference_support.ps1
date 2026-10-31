@@ -25,7 +25,7 @@ function Invoke-CooledReferenceCalibration {
   $trialPath=Join-Path $Package.input_dir 'reference_observed_trials.json'
   $verifiedTrial=$null
   $HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage flight -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
-  $null=Invoke-FrontendFlightPhase -RunDirectory $Package.artifact_run_dir -ProjectRunsRoot $ProjectRunsRoot `
+  $null=Invoke-FrontendFlightPhase -Package $Package -RunDirectory $Package.artifact_run_dir -ProjectRunsRoot $ProjectRunsRoot `
    -RepoRoot $RepoRoot -Python $Python -RuntimeModule $module -SimionExe $SimionExe -Limits $Limits `
    -Phase held_off -SharedTimesPath ([string]$metadata.shared_times_path) `
    -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId
@@ -54,7 +54,7 @@ print(json.dumps(propose_common_pulse(trials,target_y_mm=metadata['target_y_mm']
     $pulse=[double]$proposal.proposal_time_us
    }
    $HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage flight -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
-   $null=Invoke-FrontendFlightPhase -RunDirectory $Package.artifact_run_dir -ProjectRunsRoot $ProjectRunsRoot `
+   $null=Invoke-FrontendFlightPhase -Package $Package -RunDirectory $Package.artifact_run_dir -ProjectRunsRoot $ProjectRunsRoot `
     -RepoRoot $RepoRoot -Python $Python -RuntimeModule $module -SimionExe $SimionExe -Limits $Limits `
     -Phase $phase -PulseTimeUs $pulse -SharedTimesPath ([string]$metadata.shared_times_path) `
     -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId

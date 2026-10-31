@@ -75,11 +75,40 @@ function Invoke-LocalFrontendFieldCompositions {
     temporary_directory=$directory;temporary_copies_removed=(-not(Test-Path -LiteralPath $directory))}
 }
 
+function Invoke-LocalFrontendBasisOperations {
+  # Fixed local basis plan only; the existing stage owns native execution/lifecycle.
+  param([Parameter(Mandatory)]$Plan,[Parameter(Mandatory)][string]$Scratch,
+    [Parameter(Mandatory)][string]$VerificationSpec,[Parameter(Mandatory)][string]$LogDirectory,
+    [Parameter(Mandatory)]$Tools,[Parameter(Mandatory)][scriptblock]$InvokeNative)
+  $paths=@{gem=(Join-Path $Scratch 'frontend.gem');template=(Join-Path $Scratch 'frontend.pa#');
+    verifier=$Tools['verify_local_frontend_fields.lua'];initializer=$Tools['initialize_fast_adjust_pa_basis.lua'];
+    exporter=$Tools['export_standalone_pa.lua'];verification_spec=$VerificationSpec;raw_report=(Join-Path $LogDirectory 'local_frontend_raw_ids.tsv')}
+  foreach($id in $Plan.mode_ids){$paths["basis_$id"]=Join-Path $Scratch "frontend.pa$id";$paths["response_$id"]=Join-Path $Scratch "frontend.response_$id.pa"}
+  foreach($operation in $Plan.basis_operations){
+    if($operation.kind-notin@('gem2pa','verify_raw','refine_defaults','export')){throw "Unsupported local basis operation: $($operation.kind)"}
+    if($operation.kind-eq'export'-and[int]$operation.mode_id-notin$Plan.mode_ids){throw 'Basis export mode is absent from the frozen plan.'}
+    $arguments=@(foreach($argument in $operation.arguments){
+      if($argument-is[string]){$argument}
+      else{
+        $role=[string]$argument.path_role
+        if(-not$paths.ContainsKey($role)){throw "Unknown local basis path role: $role"}
+        [string]$paths[$role]
+      }
+    })
+    & $InvokeNative $arguments $Scratch ([string]$operation.name)
+    if($operation.kind-eq'refine_defaults'){
+      $allowed=@(0)+@($Plan.mode_ids|ForEach-Object{[int]$_})
+      foreach($member in Get-ChildItem -LiteralPath $Scratch -File){if($member.Name-match'^frontend\.pa(\d+)$'-and[int]$Matches[1]-notin$allowed){throw 'Refine unexpectedly produced physical-basis members instead of the declared model modes.'}}
+    }
+  }
+}
+
 function Invoke-LocalFrontendFieldStage {
   <# Internal stage of family_source_closure. The caller owns the run, capacity
      session, solver discovery and terminal publication. No Fly or IOB here. #>
   [CmdletBinding()]
   param(
+    [Parameter(Mandatory)]$Package,
     [Parameter(Mandatory)][string]$Python,
     [Parameter(Mandatory)][string]$RepoRoot,
     [Parameter(Mandatory)][string]$RunDirectory,
@@ -89,7 +118,8 @@ function Invoke-LocalFrontendFieldStage {
     [Parameter(Mandatory)][ref]$CapacitySession,
     [Parameter(Mandatory)]$Limits,
     [string]$CacheRoot='',
-    [Diagnostics.Stopwatch]$StageElapsed=$null
+    [Diagnostics.Stopwatch]$StageElapsed=$null,
+    $NativeOperations=$null,[string]$NativeResourceReleaseId='simion'
   )
   # The orchestration owner imports the live public helpers before loading
   # this frozen stage. Reloading host helpers from a run snapshot would derive
@@ -129,11 +159,19 @@ function Invoke-LocalFrontendFieldStage {
       Write-Warning ('RESOURCE_BUDGET_WARNING=wall_clock_seconds STAGE=instrument_field_design ' +
         'MEASURED_SECONDS={0:N3} LIMIT_SECONDS={1}' -f $StageElapsed.Elapsed.TotalSeconds,$Limits.wall_clock_seconds)
     }
+    if($null-eq$fieldNativeContext){throw 'Native field paths must be prepared from the actual field plan before execution.'}
+    $projected=Project-RunPath -Paths (@($Directory)+$Arguments) -ArtifactRunDir $Package.artifact_run_dir -RunDir $fieldNativeContext.run_dir -Python $Python
+    try{
     $result=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $run `
       -UsagePath (Join-Path $log ($Name+'.resource_usage.json')) -FilePath $SimionExe `
-      -WorkingDirectory $Directory -ArgumentList $Arguments `
+      -WorkingDirectory $projected[0] -ArgumentList @($projected|Select-Object -Skip 1) -Environment $fieldNativeContext.environment `
       -RedirectStandardOutput (Join-Path $log ($Name+'.stdout.log')) `
       -RedirectStandardError (Join-Path $log ($Name+'.stderr.log'))
+      if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId $Name -ProcessRecord $result}
+    }catch{
+      if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId $Name -ExceptionData $_.Exception.Data}
+      throw
+    }
     if($result.resource_budget_exceeded-or$result.exit_code-ne0){throw "Local field native stage failed: $Name"}
   }
   $planCode=@'
@@ -147,6 +185,8 @@ print(json.dumps(build_field_plan(*map(Path,sys.argv[1:4]))))
   $identityPath=Join-Path $inputsDir 'local_frontend_pa_cache_identity.json'
   $recipePath=Join-Path $inputsDir 'local_frontend_response_recipe.json'
   Write-RunJson -Path $identityPath -Value $plan.identity -Depth 80
+  $provenancePath=Join-Path $inputsDir 'local_frontend_field_source_provenance.json'
+  Write-RunJson -Path $provenancePath -Value @{source_provenance=$plan.source_provenance;basis_operations=$plan.basis_operations} -Depth 20
   Write-RunJson -Path $recipePath -Value $plan.recipe -Depth 20
   $scope=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $CapacitySession.Value -ProtectedCacheKeys @([string]$plan.cache_key)
   $CapacitySession.Value=$scope.session
@@ -154,6 +194,7 @@ print(json.dumps(build_field_plan(*map(Path,sys.argv[1:4]))))
   $probe=Invoke-LocalFieldPython -Arguments ($cacheArgs+@('--action','probe')) -Name 'local_field_cache_probe'
   $published=$false;$refinePerformed=$false
   $HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage pa_refine -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
+  $fieldNativeContext=$null
   $stageFailure=$null
   try {
     if($probe.disposition-eq'hit'){$generation=[string]$probe.generation_directory}
@@ -161,8 +202,13 @@ print(json.dumps(build_field_plan(*map(Path,sys.argv[1:4]))))
     else {
       $transactionArgs=$cacheArgs+@('--action','advance-transaction','--owner',([IO.Path]::GetFileName($run)), '--producer-run-config',(Join-Path $run 'run_config.json'),'--recovery-policy','none','--response-receipt',$recipePath)
       $transaction=Invoke-LocalFieldPython -Arguments $transactionArgs -Name 'local_field_transaction_begin'
-      if($transaction.action_required-eq'build'){
         $scratch=[string]$transaction.scratch_directory;$payload=[string]$transaction.build_directory
+        $nativePaths=@($scratch,$payload,$output,$prepared)+@($frozenTools.Values)+@(
+          (Join-Path $scratch 'frontend.gem'),(Join-Path $scratch 'frontend.pa#'),(Join-Path $scratch 'frontend.pa0'),
+          (Join-Path $inputsDir 'local_frontend_response_verification.tsv'))
+        foreach($id in $plan.mode_ids){$nativePaths+=@((Join-Path $scratch "frontend.pa$id"),(Join-Path $payload "frontend.response_$id.pa"))}
+        $fieldNativeContext=Get-RunNativeExecutionContext -Package $Package -Paths $nativePaths
+      if($transaction.action_required-eq'build'){
         # Only private owner scratch is writable by SIMION; published native
         # members are never reopened, even after a cache hit.
         Copy-Item -LiteralPath (Join-Path $prepared 'frontend.gem') -Destination (Join-Path $scratch 'frontend.gem') -Force
@@ -176,14 +222,11 @@ print(json.dumps(build_field_plan(*map(Path,sys.argv[1:4]))))
         foreach($body in $plan.physical_samples){$lines.Add(('physical'+"`t"+$body.label+"`t"+$body.electrode_id+"`t"+$body.kind+"`t"+($body.gu-join"`t")))}
         foreach($sample in $plan.samples){$lines.Add(('sample'+"`t"+($sample-join"`t")))}
         [IO.File]::WriteAllText($spec,($lines-join"`n")+"`n",[Text.UTF8Encoding]::new($false))
-        Invoke-LocalFieldNative -Arguments @('--nogui','--noprompt','gem2pa',(Join-Path $scratch 'frontend.gem'),(Join-Path $scratch 'frontend.pa#')) -Directory $scratch -Name 'local_field_gem2pa'
-        Invoke-LocalFieldNative -Arguments @('--nogui','--noprompt','lua',$frozenTools['verify_local_frontend_fields.lua'],$spec,(Join-Path $log 'local_frontend_raw_ids.tsv'),'raw',(Join-Path $scratch 'frontend.pa#')) -Directory $scratch -Name 'local_field_raw_physical_ids'
-        Invoke-LocalFieldNative -Arguments @('--nogui','--noprompt','lua',$frozenTools['initialize_fast_adjust_pa_basis.lua'],(Join-Path $scratch 'frontend.pa#')) -Directory $scratch -Name 'local_field_refine_declared_modes'
-        $refinePerformed=$true
-        $allowed=@(0)+@($plan.mode_ids|ForEach-Object{[int]$_})
-        foreach($member in Get-ChildItem -LiteralPath $scratch -File){if($member.Name-match'^frontend\.pa(\d+)$'-and[int]$Matches[1]-notin$allowed){throw 'Refine unexpectedly produced physical-basis members instead of the declared model modes.'}}
-        foreach($id in $plan.mode_ids){
-          Invoke-LocalFieldNative -Arguments @('--nogui','--noprompt','lua',$frozenTools['export_standalone_pa.lua'],(Join-Path $scratch "frontend.pa$id"),(Join-Path $scratch "frontend.response_$id.pa")) -Directory $scratch -Name "local_field_export_$id"
+        $refineFact=[ref]$refinePerformed
+        Invoke-LocalFrontendBasisOperations -Plan $plan -Scratch $scratch -VerificationSpec $spec -LogDirectory $log -Tools $frozenTools -InvokeNative {
+          param($Arguments,$Directory,$Name)
+          Invoke-LocalFieldNative -Arguments $Arguments -Directory $Directory -Name $Name
+          if($Name-eq'local_field_refine_declared_modes'){$refineFact.Value=$true}
         }
         foreach($name in $plan.filenames){if($name-in@('standalone_response_set.json','standalone_mode_normalization.tsv')){continue};$source=Join-Path $scratch $name;if(-not(Test-Path -LiteralPath $source)){throw "Missing solved family member: $name"};Move-Item -LiteralPath $source -Destination (Join-Path $payload $name)}
         $verificationOutput=Join-Path $log 'local_frontend_response_samples.tsv'
@@ -230,6 +273,7 @@ bank={'schema_version':STANDALONE_DYNAMIC_FIELD_BANK_SCHEMA_VERSION,'role':STAND
 print(json.dumps({'compositions':jobs,'mode_states_v':states,'field_bank':bank,'response_normalization':normalization}))
 '@
     $composition=Invoke-LocalFieldPython -Arguments @('-c',$composeCode,$prepared,$selection,$output,(Join-Path $generation 'standalone_mode_normalization.tsv')) -Name 'local_field_composition_plan'
+    $fieldNativeContext=Get-RunNativeExecutionContext -Package $Package -Paths (@($output)+@($frozenTools['compose_standalone_pa.lua'])+@($composition.compositions|ForEach-Object{[string]$_.output}))
     $isolation=Invoke-LocalFrontendFieldCompositions -SelectionPath $selection -Compositions $composition.compositions `
       -ComposerPath $frozenTools['compose_standalone_pa.lua'] -OutputDirectory $output -InvokeNative {
         param($Arguments,$Directory,$Name)
@@ -247,7 +291,7 @@ print(json.dumps({'compositions':jobs,'mode_states_v':states,'field_bank':bank,'
       Write-Warning ('RESOURCE_BUDGET_WARNING=wall_clock_seconds STAGE=instrument_field_design ' +
         'MEASURED_SECONDS={0:N3} LIMIT_SECONDS={1}' -f $StageElapsed.Elapsed.TotalSeconds,$Limits.wall_clock_seconds)
     }
-    Write-RunJson -Path $receipt -Depth 20 -Value @{schema_version=1;role='rf_oatof_local_frontend_field_stage';status='success';cache_key=$plan.cache_key;generation_directory=$generation;selection_path=$selection;field_bank_path=$bank;field_bank_record=@{path=$bank;bytes=(Get-Item -LiteralPath $bank).Length;sha256=(Get-FileHash -LiteralPath $bank -Algorithm SHA256).Hash};working_points=$records;cache_identity_record=@{path=$identityPath;bytes=(Get-Item -LiteralPath $identityPath).Length;sha256=(Get-FileHash -LiteralPath $identityPath -Algorithm SHA256).Hash};refine_performed=$refinePerformed;refine_policy='official_defaults';mode_count=$plan.mode_count;model_id=$plan.model_id;response_normalization=$composition.response_normalization;published_native_members_opened=$false;response_copies=$isolation.response_copies;input_isolation=$isolation;fly_performed=$false;validation_scope='native_reopen_grid_and_declared_basis_samples_only__not_field_convergence';aperture_topology_gate='required_before_fly_by_caller'}
+    Write-RunJson -Path $receipt -Depth 20 -Value @{schema_version=1;role='rf_oatof_local_frontend_field_stage';status='success';cache_key=$plan.cache_key;generation_directory=$generation;selection_path=$selection;field_bank_path=$bank;field_bank_record=@{path=$bank;bytes=(Get-Item -LiteralPath $bank).Length;sha256=(Get-FileHash -LiteralPath $bank -Algorithm SHA256).Hash};working_points=$records;source_provenance_record=@{path=$provenancePath;bytes=(Get-Item -LiteralPath $provenancePath).Length;sha256=(Get-FileHash -LiteralPath $provenancePath -Algorithm SHA256).Hash};cache_identity_record=@{path=$identityPath;bytes=(Get-Item -LiteralPath $identityPath).Length;sha256=(Get-FileHash -LiteralPath $identityPath -Algorithm SHA256).Hash};refine_performed=$refinePerformed;refine_policy='official_defaults';mode_count=$plan.mode_count;model_id=$plan.model_id;response_normalization=$composition.response_normalization;published_native_members_opened=$false;response_copies=$isolation.response_copies;input_isolation=$isolation;fly_performed=$false;validation_scope='native_reopen_grid_and_declared_basis_samples_only__not_field_convergence';aperture_topology_gate='required_before_fly_by_caller'}
     return [pscustomobject]@{field_paths=$paths;field_bank=$bank;cache_receipt=$receipt;cache_key=$plan.cache_key;generation_directory=$generation;selection=$selection}
   } catch {
     $stageFailure=$_

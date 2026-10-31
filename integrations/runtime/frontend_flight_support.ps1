@@ -1,5 +1,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
+. (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'common/paths/workspace_paths.ps1')
 
 function Add-FrontendNativeOperation {
   <# Transport the public process owner's facts before scientific callbacks. #>
@@ -54,19 +55,25 @@ function Invoke-FrontendRuntimePython {
 
 function New-FrontendFlightSpecification {
   [CmdletBinding()]
-  param([Parameter(Mandatory)]$Case,[Parameter(Mandatory)][string]$SimionExe)
+  param([Parameter(Mandatory)]$Case,[Parameter(Mandatory)][string]$SimionExe,
+    [Parameter(Mandatory)]$Package)
   if([int]$Case.count-lt1-or[int]$Case.simion_particle_id_offset-ne0-or[int]$Case.merge_offset-ne0){
     throw 'Frontend case must retain original particle IDs without rebasing.'
   }
   $range=if(($Case-is[Collections.IDictionary]-and$Case.Contains('source_row_range'))-or
       $Case.PSObject.Properties.Name-contains'source_row_range'){@($Case.source_row_range)}
     else{@($Case.expected_particle_ids[0],$Case.expected_particle_ids[-1])}
+  $paths=@([string]$Case.working_directory,[string]$Case.iob_path)+@($Case.fly_arguments|Where-Object{[IO.Path]::IsPathFullyQualified([string]$_)})
+  $execution=Get-RunNativeExecutionContext -Package $Package -Paths $paths -Tool SIMION
+  $arguments=Project-RunPath -Paths ([string[]]$Case.fly_arguments) -ArtifactRunDir $Package.artifact_run_dir -RunDir $execution.run_dir -Python $Package.python
+  $environment=$Case.environment|ConvertTo-Json -Compress|ConvertFrom-Json -AsHashtable
+  foreach($key in $execution.environment.Keys){$environment[$key]=$execution.environment[$key]}
   return [pscustomobject]@{
     name=[string]$Case.case_id
     scheduler_batch=[pscustomobject]@{index=[int]$Case.index;count=[int]$Case.count;particle_id_min=[int]$range[0];particle_id_max=[int]$range[-1]}
-    file_path=$SimionExe;working_directory=[string]$Case.working_directory
-    environment=$Case.environment|ConvertTo-Json -Compress|ConvertFrom-Json -AsHashtable
-    stdout=[string]$Case.stdout;stderr=[string]$Case.stderr;argument_list=[string[]]$Case.fly_arguments
+    file_path=$SimionExe;working_directory=[string]$execution.projected_paths[0]
+    environment=$environment
+    stdout=[string]$Case.stdout;stderr=[string]$Case.stderr;argument_list=[string[]]$arguments
   }
 }
 
@@ -119,16 +126,27 @@ function Invoke-FrontendIobBuild {
   [CmdletBinding()]
   param(
     $NativeOperations=$null,[string]$NativeResourceReleaseId='simion',
+    [Parameter(Mandatory)]$Package,
     [Parameter(Mandatory)]$Case,[Parameter(Mandatory)][string]$Phase,
     [Parameter(Mandatory)][string]$RunDirectory,
     [Parameter(Mandatory)][string]$SimionExe,[Parameter(Mandatory)]$Limits,
     [string]$Python='', [string]$RepoRoot='', [scriptblock]$IobVerification=$null
   )
   $name=[string]$Case.case_id
+  $paths=@([string]$Case.working_directory,[string]$Case.iob_path)+@($Case.iob_builder_arguments|Where-Object{[IO.Path]::IsPathFullyQualified([string]$_)})
+  foreach($key in @('program_path','particle_input')){
+    if(($Case-is[Collections.IDictionary]-and$Case.Contains($key))-or$Case.PSObject.Properties.Name-contains$key){$paths+=@([string]$Case.$key)}
+  }
+  foreach($key in @('control_records','seed_records','iob_pa_guard_records')){
+    if(($Case-is[Collections.IDictionary]-and$Case.Contains($key))-or$Case.PSObject.Properties.Name-contains$key){$paths+=@($Case.$key|ForEach-Object{[string]$_.path})}
+  }
+  if(($Case-is[Collections.IDictionary]-and$Case.Contains('seed_placeholder_record'))-or$Case.PSObject.Properties.Name-contains'seed_placeholder_record'){$paths+=@([string]$Case.seed_placeholder_record.path)}
+  $execution=Get-RunNativeExecutionContext -Package $Package -Paths $paths -Tool SIMION
+  $arguments=Project-RunPath -Paths ([string[]]$Case.iob_builder_arguments) -ArtifactRunDir $Package.artifact_run_dir -RunDir $execution.run_dir -Python $Package.python
   $nativeReturned=$false
   try {
   $result=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $RunDirectory -FilePath $SimionExe `
-    -ArgumentList ([string[]]$Case.iob_builder_arguments) -WorkingDirectory ([string]$Case.working_directory) `
+    -ArgumentList ([string[]]$arguments) -WorkingDirectory ([string]$execution.projected_paths[0]) -Environment $execution.environment `
     -UsagePath (Join-Path $RunDirectory "logs/$Phase.$name.assembly.resource_usage.json") `
     -RedirectStandardOutput (Join-Path $RunDirectory "logs/$Phase.$name.assembly.stdout.log") `
     -RedirectStandardError (Join-Path $RunDirectory "logs/$Phase.$name.assembly.stderr.log")
@@ -138,8 +156,10 @@ function Invoke-FrontendIobBuild {
     throw "Frontend IOB assembly failed: $Phase/$name"
   }
   if($IobVerification){
-    & $IobVerification -Operation after_build -Case $Case -BuildResult $result -Phase $Phase -RunDirectory $RunDirectory `
-      -SimionExe $SimionExe -Limits $Limits -Python $Python -RepoRoot $RepoRoot
+    Invoke-RunToolRootContext -RepoRoot $RepoRoot -Environment $execution.environment -Operation {
+      & $IobVerification -Operation after_build -Case $Case -BuildResult $result -Phase $Phase -RunDirectory $RunDirectory `
+        -SimionExe $SimionExe -Limits $Limits -Python $Python -RepoRoot $RepoRoot
+    }
   }
   } catch {
     if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId ($Phase+'.iob.'+$name) -ExceptionData $_.Exception.Data}
@@ -161,6 +181,7 @@ function Invoke-FrontendFlightPhase {
   [CmdletBinding()]
   param(
     $NativeOperations=$null,[string]$NativeResourceReleaseId='simion',
+    [Parameter(Mandatory)]$Package,
     [Parameter(Mandatory)][string]$RunDirectory,
     [Parameter(Mandatory)][string]$ProjectRunsRoot,
     [Parameter(Mandatory)][string]$RepoRoot,[Parameter(Mandatory)][string]$Python,
@@ -179,7 +200,7 @@ function Invoke-FrontendFlightPhase {
     [scriptblock]$OnProcessCompleted=$null
   )
   $context=@{Python=$Python;RepoRoot=$RepoRoot;RunDirectory=$RunDirectory}
-  $native=@{NativeOperations=$NativeOperations;NativeResourceReleaseId=$NativeResourceReleaseId;RunDirectory=$RunDirectory;SimionExe=$SimionExe;Limits=$Limits;Phase=$Phase;Python=$Python;RepoRoot=$RepoRoot}
+  $native=@{NativeOperations=$NativeOperations;NativeResourceReleaseId=$NativeResourceReleaseId;Package=$Package;RunDirectory=$RunDirectory;SimionExe=$SimionExe;Limits=$Limits;Phase=$Phase;Python=$Python;RepoRoot=$RepoRoot}
   if($IobVerification){$native.IobVerification=$IobVerification}
   $phaseArgs=@('--run',$RunDirectory,'--phase',$Phase)+$RuntimeInputArguments
   if($SharedTimesPath){$phaseArgs+=@('--shared-times-json',$SharedTimesPath)}
@@ -233,7 +254,7 @@ function Invoke-FrontendFlightPhase {
       if($firstBatchCompleted){$adaptive+='--first-batch-completed'}
       Invoke-FrontendRuntimePython @context -Name "$Phase.dispatch-followup" -Arguments $adaptive
     }
-    $firstSpecification=New-FrontendFlightSpecification -Case $first -SimionExe $SimionExe
+    $firstSpecification=New-FrontendFlightSpecification -Package $Package -Case $first -SimionExe $SimionExe
   }
   if($recovery-and$plan.PSObject.Properties['estimation']-and$plan.estimation.PSObject.Properties['recovered_missing_observation']-and
       [bool]$plan.estimation.recovered_missing_observation){
@@ -245,7 +266,7 @@ function Invoke-FrontendFlightPhase {
       $first=$missing[0];$formalIndex=[int]$first.index
       $null=Invoke-FrontendIobBuild @native -Case $first
       if($WorkbenchReceiptPath){Write-RunJson -Path $WorkbenchReceiptPath -Value $initial -Depth 100}
-      $firstSpecification=New-FrontendFlightSpecification -Case $first -SimionExe $SimionExe
+      $firstSpecification=New-FrontendFlightSpecification -Package $Package -Case $first -SimionExe $SimionExe
       $replan={param($formal)
         $arguments=@('-m','common.simion.resource_scheduler','--recovered-missing-plan',$dispatch,'--output',$dispatch,
           '--observed-formal-peak-bytes',[string]$formal.observed_peak_process_tree_working_set_bytes,
@@ -290,7 +311,7 @@ function Invoke-FrontendFlightPhase {
       if($WorkbenchReceiptPath){Write-RunJson -Path $WorkbenchReceiptPath -Value $materialized -Depth 100}
     }
     if((-not$recovery)-and$null-ne$materialized.gui_case){$null=Invoke-FrontendIobBuild @native -Case $materialized.gui_case}
-    $specifications=@($pending|ForEach-Object{New-FrontendFlightSpecification -Case $_ -SimionExe $SimionExe})
+    $specifications=@($pending|ForEach-Object{New-FrontendFlightSpecification -Package $Package -Case $_ -SimionExe $SimionExe})
     [pscustomobject]@{pending=$specifications;materialized=$materialized}
   }
   # Capture the caller's callback and function implementation before the public
@@ -333,6 +354,7 @@ function Invoke-FrontendFlightPhase {
 function Invoke-FrontendDefaultReplay {
  [CmdletBinding()]
  param(
+  [Parameter(Mandatory)]$Package,
   [Parameter(Mandatory)]$Materialized,[Parameter(Mandatory)][ref]$HostLease,
   [Parameter(Mandatory)][string]$RunDirectory,[Parameter(Mandatory)][string]$RepoRoot,
   [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$SimionExe,
@@ -375,13 +397,17 @@ from integrations.workflows.local_frontend.replay import prepare_default_replay
 print(json.dumps(prepare_default_replay(Path(sys.argv[1]),json.loads(Path(sys.argv[2]).read_text())),allow_nan=False))
 '@
  $spec=Invoke-FrontendRuntimePython -Python $Python -RepoRoot $RepoRoot -RunDirectory $RunDirectory -Name default_replay_prepare -Arguments @('-c',$prepare,$RunDirectory,$casePath) -Json
+ $execution=Get-RunNativeExecutionContext -Package $Package -Paths (@([string]$spec.working_directory,[string]$Materialized.gui_case.iob_path)+@($spec.control_records|ForEach-Object{[string]$_.path})) -Tool SIMION
+ $arguments=Project-RunPath -Paths ([string[]]$spec.argument_list) -ArtifactRunDir $Package.artifact_run_dir -RunDir $execution.run_dir -Python $Package.python
+ $environment=$spec.environment|ConvertTo-Json -Compress|ConvertFrom-Json -AsHashtable
+ foreach($key in $execution.environment.Keys){$environment[$key]=$execution.environment[$key]}
  $HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage flight -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
  # A new process consumes the saved IOB defaults. No Program, Q, particles,
  # retention, preload Lua, or other flight setting is supplied on the CLI.
  try{
  $result=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $RunDirectory -FilePath $SimionExe `
-  -ArgumentList ([string[]]$spec.argument_list) -WorkingDirectory ([string]$spec.working_directory) `
-  -Environment ($spec.environment|ConvertTo-Json -Compress|ConvertFrom-Json -AsHashtable) `
+  -ArgumentList ([string[]]$arguments) -WorkingDirectory ([string]$execution.projected_paths[0]) `
+  -Environment $environment `
   -UsagePath ([string]$spec.usage_path) -RedirectStandardOutput ([string]$spec.stdout) -RedirectStandardError ([string]$spec.stderr)
   if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId 'default_replay.fly' -ProcessRecord $result}
  }catch{

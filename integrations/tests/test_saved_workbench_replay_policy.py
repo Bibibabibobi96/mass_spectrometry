@@ -75,6 +75,9 @@ $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
 $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-FrontendDefaultReplay'},$true)
 Invoke-Expression $node.Extent.Text
+# This case owns replay action selection; real path transport is covered separately.
+function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool) @{run_dir=$Package.artifact_run_dir;projected_paths=@($Paths);environment=@{}}}
+function Project-RunPath {param($Paths,$ArtifactRunDir,$RunDir,$Python) return $Paths}
 function Write-RunJson {param($Path,$Value,$Depth)New-Item -ItemType Directory -Path (Split-Path -Parent $Path) -Force|Out-Null;$Value|ConvertTo-Json -Depth 100|Set-Content $Path}
 function Get-HostResourceBudget {param($Role,$Stage)@{}}
 function Update-HostResourceStage {param($Lease,$Stage,$Budget,$RetainedMemoryBytes)@{stage=$Stage}}
@@ -97,7 +100,7 @@ foreach($scenario in @('normal','explicit','mismatch','stochastic')){
  $materialized=@{receipt_path=(Join-Path $run materialization.json);gui_case=$case;batches=@(@{stdout=(Join-Path $run baseline.log)});default_replay_policy=$policy}
  $package=[pscustomobject]@{artifact_run_dir=$run;python=$Python};$lease=@{}
  $caughtFailure=$null
- try{$result=Invoke-FrontendDefaultReplay -Materialized $materialized -HostLease ([ref]$lease) -RunDirectory $run -RepoRoot $Repo -Python $Python -SimionExe INERT -Limits @{}}catch{$caughtFailure=$_}
+ try{$result=Invoke-FrontendDefaultReplay -Package $package -Materialized $materialized -HostLease ([ref]$lease) -RunDirectory $run -RepoRoot $Repo -Python $Python -SimionExe INERT -Limits @{}}catch{$caughtFailure=$_}
  if($scenario-eq'mismatch'){
   if($null-eq$caughtFailure-or$caughtFailure.Exception.Message-notlike'*differs from scheduled mother evidence*'){throw 'explicit failure did not propagate'}
  }elseif($caughtFailure){throw $caughtFailure}

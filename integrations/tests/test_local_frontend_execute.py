@@ -259,7 +259,7 @@ try{
 
 function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool) @{run_dir=$Root;projected_paths=@($Paths);environment=@{}}}
 function Project-RunPath {param($Paths,$ArtifactRunDir,$RunDir,$Python) return $Paths}
- try{$result=Invoke-FrontendFlightPhase -RunDirectory $root -ProjectRunsRoot $root -RepoRoot $root -Python fixture -RuntimeModule fixture -SimionExe $simion -Limits @{} -Phase discovery -PulseTimeUs 12 -SharedTimesPath 'times.json' -IobVerification $verification}catch{$caught=$_}
+ try{$result=Invoke-FrontendFlightPhase -Package ([pscustomobject]@{artifact_run_dir=$Root;python="unused"}) -RunDirectory $root -ProjectRunsRoot $root -RepoRoot $root -Python fixture -RuntimeModule fixture -SimionExe $simion -Limits @{} -Phase discovery -PulseTimeUs 12 -SharedTimesPath 'times.json' -IobVerification $verification}catch{$caught=$_}
  if($scenario-like'*_failure'){
   if($null-eq$caught-or$caught.Exception.Message-ne'planned preparation failure'){throw "original preparation failure lost: $caught"}
   if(($script:events-join',')-notlike'*,drain_case_1,controls_after'){throw ($script:events-join',')}
@@ -313,10 +313,10 @@ try{
 
 function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool) @{run_dir=$Root;projected_paths=@($Paths);environment=@{}}}
 function Project-RunPath {param($Paths,$ArtifactRunDir,$RunDir,$Python) return $Paths}
- $result=Invoke-FrontendDefaultReplay -Materialized $materialized -HostLease ([ref]$lease) -RunDirectory $root -RepoRoot $root -Python unused -SimionExe $simion -Limits @{}
+ $result=Invoke-FrontendDefaultReplay -Package ([pscustomobject]@{artifact_run_dir=$Root;python="unused"}) -Materialized $materialized -HostLease ([ref]$lease) -RunDirectory $root -RepoRoot $root -Python unused -SimionExe $simion -Limits @{}
  if(-not$result.passed-or$script:calls-ne1-or$lease.stage-ne'postprocess'){throw 'fresh process or public stage transition missing'}
  $script:pass=$false
- try{Invoke-FrontendDefaultReplay -Materialized $materialized -HostLease ([ref]$lease) -RunDirectory $root -RepoRoot $root -Python unused -SimionExe $simion -Limits @{};throw 'mismatch accepted'}catch{if($_.Exception.Message-notlike'*differs from scheduled mother evidence*'){throw}}
+ try{Invoke-FrontendDefaultReplay -Package ([pscustomobject]@{artifact_run_dir=$Root;python="unused"}) -Materialized $materialized -HostLease ([ref]$lease) -RunDirectory $root -RepoRoot $root -Python unused -SimionExe $simion -Limits @{};throw 'mismatch accepted'}catch{if($_.Exception.Message-notlike'*differs from scheduled mother evidence*'){throw}}
  'DEFAULT_REPLAY=PASS'
 }finally{Remove-Item -LiteralPath $root -Recurse -Force}
 """

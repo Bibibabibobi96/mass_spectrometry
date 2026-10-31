@@ -170,9 +170,10 @@ function Confirm-InstrumentIobVerification {
       throw "Instrument IOB build completion marker missing: $name"
     }
     $verifyLog=Join-Path $RunDirectory "logs/$Phase.$name.reopen.stdout.log"
+    $verificationContext=Get-RunNativeExecutionContext -Package $RunPackage -Paths (@([string]$Case.working_directory,[string]$Case.iob_path)+@($Case.iob_verify_arguments|Where-Object{[IO.Path]::IsPathFullyQualified([string]$_)})) -Tool SIMION
     try{
     $verified=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $RunDirectory -FilePath $SimionExe `
-      -ArgumentList ([string[]]$Case.iob_verify_arguments) -WorkingDirectory ([string]$Case.working_directory) `
+      -ArgumentList (Project-RunPath -Paths ([string[]]$Case.iob_verify_arguments) -ArtifactRunDir $RunPackage.artifact_run_dir -RunDir $verificationContext.run_dir -Python $Python) -WorkingDirectory $verificationContext.projected_paths[0] -Environment $verificationContext.environment `
       -UsagePath (Join-Path $RunDirectory "logs/$Phase.$name.reopen.resource_usage.json") `
       -RedirectStandardOutput $verifyLog -RedirectStandardError (Join-Path $RunDirectory "logs/$Phase.$name.reopen.stderr.log")
       if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId ([string]$lease.token) -OperationId "$Phase.$name.reopen" -ProcessRecord $verified}
@@ -441,11 +442,17 @@ try {
       -RemainingCommittedNewBytes $commitment -ProtectedPaths $protectedPaths -SourceReferences @($sourceProtection.source_references)
     $capacity=$renewal.session
   }
+  $downstreamNativeContext=$null
+  if(-not$downstreamPlan.ContainsKey('publication')){
+    $nativePaths=@(Split-Path -Parent $downstreamPlanPath)
+    foreach($step in $downstreamPlan.steps){$nativePaths+=@($step.argv|Where-Object{[IO.Path]::IsPathFullyQualified([string]$_)})}
+    $downstreamNativeContext=Get-RunNativeExecutionContext -Package $RunPackage -Paths $nativePaths -Tool SIMION
+  }
   $lease=Enter-HostExecutionLease -StatePath $pathContext.host_resource_state_path -Role SIMION -Stage prepare
   $stageElapsed=[Diagnostics.Stopwatch]::StartNew()
   $simion=(Resolve-Path -LiteralPath (Join-Path $env:ProgramFiles 'SIMION-2020/simion.exe')).Path
   Set-InstrumentStage 'frontend_fields'
-  $field=Invoke-SingleReflectionFrontendFieldStage -Python $Python -RepoRoot $frozen.execution_root `
+  $field=Invoke-SingleReflectionFrontendFieldStage -Package $RunPackage -Python $Python -RepoRoot $frozen.execution_root `
     -RunDirectory $OutputDirectory -PreparedDirectory $OutputDirectory -SimionExe $simion `
     -HostLease ([ref]$lease) -CapacitySession ([ref]$capacity) -Limits $budget.limits `
     -CacheRoot (Join-Path $artifacts 'common/simion/pa_family_cache') `
@@ -469,7 +476,7 @@ try {
     $native=$null
     try {
       $native=Invoke-ResourceBudgetedProcess -Limits $budget.limits -RunDir $OutputDirectory -UsagePath $usage `
-        -FilePath $simion -WorkingDirectory (Split-Path -Parent $downstreamPlanPath) -ArgumentList @($step.argv) `
+        -FilePath $simion -WorkingDirectory $downstreamNativeContext.projected_paths[0] -ArgumentList (Project-RunPath -Paths ([string[]]$step.argv) -ArtifactRunDir $RunPackage.artifact_run_dir -RunDir $downstreamNativeContext.run_dir -Python $Python) -Environment $downstreamNativeContext.environment `
         -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId ([string]$lease.token) -OperationId $name -ProcessRecord $native}
     }catch{
@@ -524,6 +531,8 @@ try {
         }
       }
       $lease=Update-HostResourceStage -Lease $lease -Stage prepare -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
+      $nativePaths=@((Split-Path -Parent $workbench.iob_path),[string]$workbench.iob_path)+@($workbench.iob_builder_arguments|Where-Object{[IO.Path]::IsPathFullyQualified([string]$_)})+@($workbench.iob_verify_arguments|Where-Object{[IO.Path]::IsPathFullyQualified([string]$_)})
+      $workbenchNativeContext=Get-RunNativeExecutionContext -Package $RunPackage -Paths $nativePaths -Tool SIMION
       foreach($operation in @('build','verify')){
         $argv=if($operation-eq'build'){@($workbench.iob_builder_arguments)}else{@($workbench.iob_verify_arguments)}
         $stdout=Join-Path $OutputDirectory "logs/${workbenchPrefix}workbench_$operation.stdout.log"
@@ -533,7 +542,7 @@ try {
         try {
           Write-InstrumentWallClockWarning -Limits $activeWorkbenchLimits -Elapsed $workbenchElapsed -Stage 'Instrument workbench preparation'
           $native=Invoke-ResourceBudgetedProcess -Limits $activeWorkbenchLimits -RunDir $OutputDirectory -UsagePath $usage `
-            -FilePath $simion -WorkingDirectory (Split-Path -Parent $workbench.iob_path) -ArgumentList @($argv) `
+            -FilePath $simion -WorkingDirectory $workbenchNativeContext.projected_paths[0] -ArgumentList (Project-RunPath -Paths ([string[]]$argv) -ArtifactRunDir $RunPackage.artifact_run_dir -RunDir $workbenchNativeContext.run_dir -Python $Python) -Environment $workbenchNativeContext.environment `
             -RedirectStandardOutput $stdout -RedirectStandardError $stderr
         if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId ([string]$lease.token) -OperationId ("workbench."+$workbenchPhase+"."+$operation) -ProcessRecord $native}
         }catch{
@@ -607,7 +616,7 @@ try {
         }
         $lease=Update-HostResourceStage -Lease $lease -Stage flight -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
       }
-      $materialized=Invoke-FrontendFlightPhase -RunDirectory $OutputDirectory -ProjectRunsRoot (Split-Path -Parent $OutputDirectory) `
+      $materialized=Invoke-FrontendFlightPhase -Package $RunPackage -RunDirectory $OutputDirectory -ProjectRunsRoot (Split-Path -Parent $OutputDirectory) `
         -RepoRoot $frozen.execution_root -Python $Python -RuntimeModule integrations.workflows.single_reflection_flight.runtime `
         -SimionExe $simion -Limits $limits -Phase $workbenchPhase -RuntimeInputArguments $fullRuntimeInputs -Prepared $prepared `
         -WorkbenchReceiptPath $workbenchReceiptPath -IobVerification ${function:Confirm-InstrumentIobVerification} `
@@ -654,7 +663,7 @@ try {
             $case.replay_stderr=Join-Path $phaseDirectory ($case.case_id+'.stderr.log')
             $replayCase=@{};foreach($key in $case.Keys){$replayCase[$key]=$case[$key]}
             $replayCase.stdout=$case.replay_stdout;$replayCase.stderr=$case.replay_stderr
-            New-FrontendFlightSpecification -Case $replayCase -SimionExe $simion
+            New-FrontendFlightSpecification -Package $RunPackage -Case $replayCase -SimionExe $simion
           })
           Write-RunJson -Path $workbenchReceiptPath -Value $workbench -Depth 100
           # Baseline post-check is the replay pre-check; only log destinations changed.
