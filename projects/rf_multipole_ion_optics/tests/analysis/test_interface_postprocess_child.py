@@ -69,7 +69,7 @@ foreach($script:expectStopped in @($false,$true)){
             root = Path(directory)
             command = r"""
 $ErrorActionPreference='Stop'
-$python=PYTHON;$repo=REPO
+$python=PYTHON;$repo=REPO;$repoRoot=$repo
 . (Join-Path $repo 'common/contracts/run_artifact_support.ps1')
 . (Join-Path $repo 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1')
 $t=$null;$e=$null;$ast=[Management.Automation.Language.Parser]::ParseFile(ENTRY,[ref]$t,[ref]$e)

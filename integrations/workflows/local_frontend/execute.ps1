@@ -189,7 +189,7 @@ value={'role':'local_frontend_physical_disk_forecast','grid_node_count':nodes,'f
  Write-RunJson -Path (Join-Path $package.input_dir 'native_discovery.json') -Value @{path=$simion;bytes=(Get-Item -LiteralPath $simion).Length;sha256=(Get-FileHash -LiteralPath $simion -Algorithm SHA256).Hash;file_version=(Get-Item -LiteralPath $simion).VersionInfo.FileVersion}
  Set-LocalStage 'freeze_executable_source_closure'
  $dependencyPath=Join-Path $RepoRoot 'integrations/config/runtime_dependencies.json'
- $frozen=Freeze-ConsumerDependencies -RepoRoot $RepoRoot -ContractPath $dependencyPath -InputDir $package.input_dir -OwnerId $integration -ConsumerId local_frontend
+ $frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $RepoRoot -ContractPath $dependencyPath -InputDir $package.input_dir -OwnerId $integration -ConsumerId local_frontend
  $script:pythonRoot=[string]$frozen.execution_root
  . (Join-Path $script:pythonRoot ($sharedRuntime+'/local_frontend_field_support.ps1'))
  . (Join-Path $script:pythonRoot ($sharedRuntime+'/frontend_flight_support.ps1'))

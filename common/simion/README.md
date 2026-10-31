@@ -585,6 +585,8 @@ PA family 的可恢复发布／复用由[`pa_family_cache.py`](pa_family_cache.p
 
 首批正式观测启动后，准备或调度重规划失败时，`Invoke-ObservedPreparationFailureDrain`将已启动记录交还
 公共进程执行器等待收尾，再执行可选的控制验证并抛出原异常；收尾或验证次错附于原异常的Data并以警告报告。
+drain只确认其实际接管的记录；若准备回调另外启动的IOB writer退出未知，首Fly排空成功仍不确认整体停写，
+也不执行依赖整体停写的验证或解除输入保护。原准备错误与drain次错分别保留。
 前端、prepared joint和OA→MR经统一批次协调器共用此失败路径；RF和IP的迁移应以各自实际接线为准。
 批次wave中的后续准备或checkpoint失败停止派发新任务，公共进程owner继续等待已启动的健康worker，
 为其调用原checkpoint回调，并保留原始异常和收尾次错；未确认停写时调用方不得发布终态或释放保护。
@@ -635,7 +637,7 @@ Windows能力依据（2026-08-26查阅）：Microsoft `MEMORYSTATUSEX/GlobalMemo
 ## 共用工作台种子与独立场成员
 
 `workbench_seed.freeze_workbench_seed(run, repo)`只冻结官方一实例seed与必需placeholder的小配套对；
-同run再次消费核对已有副本，不能复制或替代科学PA family。local context与cooled的实际复用context共同调用，
+同run再次消费核对已有副本，不能复制或替代科学PA family。local／cooled的实际context及IP准备共同调用，
 原local私有seed复制实现已删除。源资源的用途见[官方种子](assets/iob_instance_seeds/README.md)。
 独立Laplace身份继续由integration的`single_reflection_flight.field_plan.laplace_member_identity`提供；
 单反射domain与cooled七成员共用该投影，缓存事务仍归本目录，物理operator／边界条件由原owner校验。

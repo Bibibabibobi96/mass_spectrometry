@@ -126,30 +126,27 @@ try {
     Copy-VerifiedRunInput -Source ([IO.Path]::GetFullPath($SolverNumericsContractPath)) `
         -Destination $frozenNumericalContract | Out-Null
     $analysisModule = 'projects.rf_multipole_ion_optics.workflows.mass_filter_reference.evaluate_simion'
-    $analysisFiles = @(
-        'projects\rf_multipole_ion_optics\workflows\__init__.py',
-        'projects\rf_multipole_ion_optics\workflows\mass_filter_reference\__init__.py',
-        'projects\rf_multipole_ion_optics\workflows\mass_filter_reference\evaluate_simion.py',
-        'projects\rf_multipole_ion_optics\core\__init__.py',
-        'projects\rf_multipole_ion_optics\core\mass_response.py',
-        'projects\rf_multipole_ion_optics\core\paired_mass_scan.py',
-        'common\contracts\file_identity.py',
-        'common\analysis\peak_metrics.py',
-        'projects\rf_multipole_ion_optics\workflows\mass_filter_reference\theory.py',
-        'projects\rf_multipole_ion_optics\core\family_contract.py',
-        'projects\rf_multipole_ion_optics\config\contracts\family_contract.json',
-        'projects\rf_multipole_ion_optics\workflows\mass_filter_reference\render_simion_source.py',
-        'projects\rf_multipole_ion_optics\runtime\simion_particle_source.py',
-        'projects\rf_multipole_ion_optics\runtime\particle_source_preflight.py',
-        'projects\rf_multipole_ion_optics\core\interface_geometry.py',
-        'common\contracts\particle_physics.py','common\contracts\particle_count_policy.py',
-        'common\contracts\particle_count_policy.json','common\simion\__init__.py','common\simion\particle_source.py'
-    )
+    $analysisFiles = Get-FrozenPythonPackageRelativePaths -SourceRoot $repoRoot -Python $python `
+        -PythonPackages @(
+            'common/contracts',
+            'common/analysis',
+            'projects/rf_multipole_ion_optics/analysis',
+            'projects/rf_multipole_ion_optics/core',
+            'projects/rf_multipole_ion_optics/runtime',
+            'common/simion',
+            'projects/rf_multipole_ion_optics/workflows/mass_filter_reference'
+        ) `
+        -RelativePaths @(
+            'projects\rf_multipole_ion_optics\config\contracts\family_contract.json',
+            'common\contracts\particle_count_policy.json'
+        )
     $frozenAnalysisPackage = New-FrozenPythonPackage `
         -SourceRoot $repoRoot -CodeRoot (Join-Path $inputDir 'analysis_runtime') `
         -RelativePaths $analysisFiles
-    $analysisRequiredModules = @($analysisFiles | Where-Object { $_.EndsWith('.py') } |
-        ForEach-Object { $_ -replace '[/\\]__init__\.py$', '' -replace '\.py$', '' -replace '[/\\]', '.' })
+    $analysisRequiredModules = @($analysisModule,
+      'projects.rf_multipole_ion_optics.core.mass_response',
+      'projects.rf_multipole_ion_optics.core.paired_mass_scan',
+      'common.contracts.file_identity','common.analysis.peak_metrics')
     $analysisDistributions = @('matplotlib','numpy','scipy')
     $frozenAnalysisEnvironment = Invoke-IsolatedFrozenPythonModule `
         -Python $python -Package $frozenAnalysisPackage -Module $analysisModule `

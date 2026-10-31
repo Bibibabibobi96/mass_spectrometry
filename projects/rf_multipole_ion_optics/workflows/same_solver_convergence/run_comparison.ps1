@@ -46,20 +46,19 @@ try {
     $refinedManifest = Join-Path $refinedRun 'run_manifest.json'
 
     $runtimeRoot = Join-Path $inputDir 'runtime'
-    $runtimeFiles = @(
-        'projects\rf_multipole_ion_optics\workflows\__init__.py',
-        'projects\rf_multipole_ion_optics\workflows\same_solver_convergence\__init__.py',
-        'projects\rf_multipole_ion_optics\workflows\same_solver_convergence\evaluate.py',
-        'projects\rf_multipole_ion_optics\analysis\particle_state_comparison_core.py',
-        'projects\rf_multipole_ion_optics\analysis\validate_paired_particle_source_binding.py',
-        'projects\rf_multipole_ion_optics\analysis\paired_particle_source_bundle.py',
-        'common\contracts\particle_state.py',
-        'common\contracts\particle_physics.py',
-        'common\contracts\particle_count_policy.py',
-        'common\contracts\particle_count_policy.json',
-        'projects\rf_multipole_ion_optics\core\__init__.py',
-        'projects\rf_multipole_ion_optics\runtime\particle_source_preflight.py'
-    )
+    $runtimeFiles = Get-FrozenPythonPackageRelativePaths -SourceRoot $repoRoot -Python $python `
+        -PythonPackages @(
+            'common/contracts',
+            'common/analysis',
+            'common/ion_release',
+            'projects/rf_multipole_ion_optics/analysis',
+            'projects/rf_multipole_ion_optics/core',
+            'projects/rf_multipole_ion_optics/runtime',
+            'projects/rf_multipole_ion_optics/workflows/same_solver_convergence'
+        ) `
+        -RelativePaths @(
+            'common\contracts\particle_count_policy.json'
+        )
     $frozenPythonSupport = Copy-VerifiedRunInput `
         -Source (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') `
         -Destination (Join-Path $inputDir 'frozen_python_package.ps1')

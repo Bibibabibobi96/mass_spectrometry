@@ -137,6 +137,7 @@ function Copy-FrozenDependency {
     frozen_path = $destination
     snapshot_path = $destination
     sha256 = $identity.sha256
+    bytes = [long]$identity.bytes
   }
 }
 
@@ -199,13 +200,14 @@ function Freeze-ConsumerDependencies {
     [Parameter(Mandatory)][string]$ContractPath,
     [Parameter(Mandatory)][string]$InputDir,
     [Parameter(Mandatory)][string]$OwnerId,
-    [Parameter(Mandatory)][string]$ConsumerId
+    [Parameter(Mandatory)][string]$ConsumerId,
+    [Parameter(Mandatory)][string]$Python
   )
   $contract = Get-Content -LiteralPath $ContractPath -Raw -Encoding UTF8 | ConvertFrom-Json -Depth 100
   if (@(Compare-Object @('schema_version','role','owner_id','consumer_ids','providers') @($contract.PSObject.Properties.Name)).Count -ne 0 -or
-      $contract.schema_version -ne 2 -or $contract.role -cne 'integration_runtime_dependencies' -or
+      $contract.schema_version -ne 3 -or $contract.role -cne 'integration_runtime_dependencies' -or
       $contract.owner_id -cne $OwnerId) {
-    throw 'Integration runtime dependency contract identity or fields differ from schema 2.'
+    throw 'Integration runtime dependency contract identity or fields differ from schema 3.'
   }
   $consumers = @($contract.consumer_ids)
   if (-not $consumers.Count -or @($consumers | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -or
@@ -222,8 +224,9 @@ function Freeze-ConsumerDependencies {
   $sources = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
   $providers = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
   $selected = [Collections.Generic.List[object]]::new()
+  $packageGroups = [Collections.Generic.List[object]]::new()
   foreach ($group in $contract.providers) {
-    if (@(Compare-Object @('provider_scope','provider_project','files') @($group.PSObject.Properties.Name)).Count -ne 0) {
+    if (@(Compare-Object @('provider_scope','provider_project','files','python_packages','python_modules') @($group.PSObject.Properties.Name)).Count -ne 0) {
       throw 'Dependency provider group fields differ.'
     }
     $scope = [string]$group.provider_scope
@@ -241,7 +244,30 @@ function Freeze-ConsumerDependencies {
     if (-not (Test-DependencyPathWithin -Path $providerRoot -Root $repo)) {
       throw "Dependency provider root escapes the repository: $provider"
     }
-    if (-not @($group.files).Count) { throw "Dependency provider has no files: $provider" }
+    if (-not (@($group.files).Count + @($group.python_packages).Count + @($group.python_modules).Count)) {
+      throw "Dependency provider has no source declarations: $provider"
+    }
+    foreach ($selection in @($group.python_packages) + @($group.python_modules)) {
+      if (@(Compare-Object @('source_repo_path','consumers') @($selection.PSObject.Properties.Name)).Count -ne 0) {
+        throw "Python source selection fields differ for provider: $provider"
+      }
+      $selectionPath = [string]$selection.source_repo_path
+      if ([string]::IsNullOrWhiteSpace($selectionPath) -or $selectionPath.Contains('\') -or
+          [IO.Path]::IsPathRooted($selectionPath) -or $selectionPath -match '(^|/)\.\.?(/|$)' -or
+          -not (Test-DependencyPathWithin -Path (Join-Path $repo $selectionPath) -Root $providerRoot)) {
+        throw "Python source selection must stay within its declared provider: $selectionPath"
+      }
+      $selectionConsumers = @($selection.consumers)
+      if (-not $selectionConsumers.Count -or @($selectionConsumers | Select-Object -Unique).Count -ne $selectionConsumers.Count -or
+          @($selectionConsumers | Where-Object { $consumers -cnotcontains $_ }).Count) {
+        throw "Python source selection declares invalid consumers: $provider"
+      }
+    }
+    $packageGroups.Add([ordered]@{
+      provider_scope=$scope; provider_project=$provider; provider_repo_path=$providerRelative
+      python_packages=@($group.python_packages | Where-Object { @($_.consumers) -ccontains $ConsumerId })
+      python_modules=@($group.python_modules | Where-Object { @($_.consumers) -ccontains $ConsumerId })
+    })
     foreach ($file in $group.files) {
       if (@(Compare-Object @('id','source_repo_path','consumers') @($file.PSObject.Properties.Name)).Count -ne 0) {
         throw "Dependency file fields differ for provider: $provider"
@@ -253,6 +279,9 @@ function Freeze-ConsumerDependencies {
       }
       if ([string]::IsNullOrWhiteSpace($relative) -or [IO.Path]::IsPathRooted($relative) -or $relative -match '(^|/)\.\.(/|$)') {
         throw "Dependency $id source path is empty, absolute or escapes its provider."
+      }
+      if ([IO.Path]::GetExtension($relative) -ieq '.py') {
+        throw "Python source must use a package or module declaration: $relative"
       }
       $source = [IO.Path]::GetFullPath((Join-Path $repo $relative))
       if (-not (Test-DependencyPathWithin -Path $source -Root $providerRoot)) {
@@ -276,6 +305,57 @@ function Freeze-ConsumerDependencies {
       })
     }
   }
+  # Enumeration is one interpreter call; verified copying keeps its existing owner.
+  $enumerator = @'
+import json, pathlib, sys
+sys.path.insert(0, sys.argv[1])
+from common.contracts.frozen_inputs import enumerate_python_sources
+request = json.load(sys.stdin)
+records = []
+for group in request["providers"]:
+    packages, modules = group["python_packages"], group["python_modules"]
+    if not packages and not modules:
+        continue
+    paths = enumerate_python_sources(pathlib.Path(request["source_root"]),
+        package_roots=[row["source_repo_path"] for row in packages],
+        module_paths=[row["source_repo_path"] for row in modules],
+        provider_root=group["provider_repo_path"])
+    for path in paths:
+        consumers = set()
+        source = pathlib.PurePosixPath(path)
+        for row in packages + modules:
+            selected = pathlib.PurePosixPath(row["source_repo_path"])
+            if (source == selected or selected in source.parents
+                    or (source.name == "__init__.py" and source.parent in (selected, *selected.parents))):
+                consumers.update(row["consumers"])
+        if not consumers:
+            raise ValueError(f"Python source has no declaring consumer: {path}")
+        records.append({**{key: group[key] for key in
+            ("provider_scope", "provider_project", "provider_repo_path")},
+            "id": "python:" + path, "source_repo_path": path, "consumers": sorted(consumers)})
+print(json.dumps(records, ensure_ascii=False))
+'@
+  $enumerationRequest = @{source_root=$repo; providers=@($packageGroups.ToArray())} | ConvertTo-Json -Depth 30 -Compress
+  $priorEncoding = $OutputEncoding
+  $PSNativeCommandUseErrorActionPreference = $false
+  try {
+    $OutputEncoding = [Text.UTF8Encoding]::new($false)
+    $enumeratedJson = @($enumerationRequest | & $Python -X utf8 -I -B -c $enumerator $repo 2>&1)
+    if ($LASTEXITCODE -ne 0) { throw "Python package enumeration failed: $($enumeratedJson -join [Environment]::NewLine)" }
+  } finally { $OutputEncoding = $priorEncoding }
+  $enumerated = @((($enumeratedJson | ForEach-Object { [string]$_ }) -join "`n") | ConvertFrom-Json -Depth 30)
+  foreach ($dependency in $enumerated) {
+    $relative = [string]$dependency.source_repo_path
+    $id = [string]$dependency.id
+    $source = [IO.Path]::GetFullPath((Join-Path $repo $relative))
+    if (-not $ids.Add($id) -or -not $sources.Add($source)) { throw "Duplicate derived Python source: $relative" }
+    if (@($dependency.consumers) -cnotcontains $ConsumerId) { continue }
+    $selected.Add([pscustomobject]@{
+      id=$id; provider_scope=$dependency.provider_scope; provider_project=$dependency.provider_project
+      provider_repo_path=$dependency.provider_repo_path; source_repo_path=$relative
+      frozen_filename=('runtime_snapshot/' + $relative); run_input_name=$id; consumers=@($dependency.consumers)
+    })
+  }
   if (-not $selected.Count) { throw "Runtime dependency consumer has no declared files: $ConsumerId" }
   $ResolvedDependencies = [pscustomobject]@{ consumer_ids=@($ConsumerId); dependencies=@($selected.ToArray()) }
   $publication = Publish-DependencyInventory -RepoRoot $RepoRoot -ContractPath $ContractPath `
@@ -288,5 +368,7 @@ function Freeze-ConsumerDependencies {
     code_inventory_path = $publication.code_inventory_path
     dependency_contract_path = $publication.dependency_contract_path
     identities = $identities
+    source_count = $identities.Count
+    source_bytes = [long](($identities | Measure-Object -Property bytes -Sum).Sum)
   }
 }

@@ -205,19 +205,18 @@ try {
         -Source (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') `
         -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
     $runtimeRoot = Join-Path $inputDir 'runtime'
-    $runtimeFiles = @(
-        'projects\rf_multipole_ion_optics\workflows\__init__.py',
-        'projects\rf_multipole_ion_optics\workflows\mass_filter_reference\__init__.py',
-        'projects\rf_multipole_ion_optics\workflows\mass_filter_reference\evaluate_comparison.py',
-        'projects\rf_multipole_ion_optics\workflows\mass_filter_reference\theory.py',
-        'projects\rf_multipole_ion_optics\core\__init__.py',
-        'projects\rf_multipole_ion_optics\core\family_contract.py',
-        'projects\rf_multipole_ion_optics\core\mass_response.py',
-        'projects\rf_multipole_ion_optics\core\paired_mass_scan.py',
-        'common\contracts\file_identity.py',
-        'common\analysis\peak_metrics.py',
-        'projects\rf_multipole_ion_optics\config\contracts\family_contract.json'
-    )
+    $runtimeFiles = Get-FrozenPythonPackageRelativePaths -SourceRoot $repoRoot -Python $python `
+        -PythonPackages @(
+            'common/contracts',
+            'common/analysis',
+            'projects/rf_multipole_ion_optics/analysis',
+            'projects/rf_multipole_ion_optics/core',
+            'projects/rf_multipole_ion_optics/runtime',
+            'projects/rf_multipole_ion_optics/workflows/mass_filter_reference'
+        ) `
+        -RelativePaths @(
+            'projects\rf_multipole_ion_optics\config\contracts\family_contract.json'
+        )
     $frozenPythonPackage = New-FrozenPythonPackage `
         -SourceRoot $repoRoot -CodeRoot $runtimeRoot `
         -RelativePaths $runtimeFiles

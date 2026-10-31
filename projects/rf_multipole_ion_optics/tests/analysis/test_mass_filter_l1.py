@@ -248,6 +248,12 @@ class MassFilterL1Tests(unittest.TestCase):
             self.assertEqual(actual["status"], "PASS")
             self.assertEqual(actual["sampled_response_analysis"], MODULE.evaluate_response(rows, derived, self.mode)["sampled_response_analysis"])
             self.assertTrue((results / "mass-response__passband.png").is_file())
+            files = package["package"]["files"]
+            self.assertEqual(len({entry["relative_path"] for entry in files}), len(files))
+            self.assertEqual(
+                {entry["path"] for entry in files},
+                {str(path.resolve()) for path in (inputs / "analysis_code").rglob("*") if path.is_file()},
+            )
             peak = origins["common.analysis.peak_metrics"]
             original = peak.read_bytes()
             peak.write_bytes(original + b"\n# changed frozen source\n")
@@ -257,7 +263,7 @@ class MassFilterL1Tests(unittest.TestCase):
             peak.unlink()
             with self.assertRaisesRegex(RuntimeError, "missing"):
                 MODULE._invoke_analysis_stage(request, prepare_only=False)
-            self.assertEqual(len(package["package"]["files"]), 11)
+
 
     def test_finite_length_screen_transmits_tuned_and_rejects_outer_masses(self) -> None:
         particles = MODULE._l1_particles_from_release(self.source, 64, 20260722)

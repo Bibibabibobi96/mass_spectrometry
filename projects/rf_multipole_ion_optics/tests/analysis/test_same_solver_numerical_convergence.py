@@ -735,6 +735,7 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
         self,
         *,
         solver: str,
+        frozen_package: bool = False,
         baseline_steps: int,
         refined_steps: int,
         baseline_handoffs: set[int] | None = None,
@@ -787,8 +788,7 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
         )
         output = root / "comparison.json"
         census = root / "particle_census.csv"
-        result = subprocess.run(
-            [
+        command = [
                 sys.executable,
                 "-m",
                 "projects.rf_multipole_ion_optics.workflows."
@@ -809,7 +809,34 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
                 str(output),
                 "--census-output",
                 str(census),
-            ],
+            ]
+        if frozen_package:
+            arguments_path = root / "analysis_arguments.json"
+            arguments_path.write_text(json.dumps(command[3:]), encoding="utf-8")
+            literal = lambda value: "'" + str(value).replace("'", "''") + "'"
+            script = f"""
+$ErrorActionPreference='Stop'
+$repoRoot={literal(REPO_ROOT)};$python={literal(sys.executable)}
+. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1')
+$t=$null;$e=$null
+$entry=Join-Path $repoRoot 'projects/rf_multipole_ion_optics/workflows/same_solver_convergence/run_comparison.ps1'
+$ast=[Management.Automation.Language.Parser]::ParseFile($entry,[ref]$t,[ref]$e)
+if($e.Count){{throw 'Actual comparison runner did not parse'}}
+$selection=$ast.Find({{param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$runtimeFiles'}},$true)
+Invoke-Expression $selection.Extent.Text
+$package=New-FrozenPythonPackage -SourceRoot $repoRoot -CodeRoot {literal(root / 'frozen')} -RelativePaths $runtimeFiles
+$arguments=@(Get-Content -Raw -LiteralPath {literal(arguments_path)}|ConvertFrom-Json)
+$execution=Invoke-IsolatedFrozenPythonModule -Python $python -Package $package `
+ -Module 'projects.rf_multipole_ion_optics.workflows.same_solver_convergence.evaluate' `
+ -Arguments $arguments -DistributionNames @('numpy') `
+ -RequiredModuleNames @('projects.rf_multipole_ion_optics.analysis.particle_state_comparison_core') `
+ -ForbiddenRoots @($repoRoot)
+if(-not$execution.module_invoked){{throw 'Actual frozen evaluator did not run'}}
+"""
+            command = ['pwsh', '-NoProfile', '-NonInteractive', '-Command', script]
+        result = subprocess.run(
+            command,
             cwd=REPO_ROOT,
             timeout=120,
             capture_output=True,
@@ -821,6 +848,7 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
     def test_registered_simion_40_to_80_passes(self) -> None:
         result, output, census = self.run_case(
             solver="SIMION",
+            frozen_package=True,
             baseline_steps=40,
             refined_steps=80,
         )

@@ -75,6 +75,8 @@ IP 保留生产场消费 guard 接线，不再复制不调用项目入口的公�
 来源缺少充分冻结owner证据时早拒，不按目录猜测、不用当前环境补造；这些消费保护不等于资产迁移或永久保留。
 同一已知根内的合法旧run仍可凭绑定的manifest/config和精确项目run位置受原租约保护，
 不要求为它补写历史容量配置；该兼容边界不能用于推断另一产物根。
+`Package.native_path_preparation`累计公共准备的calls、elapsed_seconds和transport_bytes，未调用时为零；
+公共PowerShell owner将同一计量放入现有摘要。当前路径投影/junction本身不搬载荷；seed与PA复制沿原记录另计。
 Windows实现采用官方[LockFileEx](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-lockfileex)
 的共享字节锁，与Python现有独占锁互操作；允许锁EOF之外，空文件的初始化仅在writer取得独占后执行。
 2026-10-30已在Windows 10.0.19045核对两独立读者与Python发布者，包含空lock文件首次创建。
@@ -103,6 +105,9 @@ owner从live公共`Resolve-HostResourceStatePath`取得实际控制面路径（�
 漂移。实际路径只记在执行context，不添加到科学输入，也不因此创建或申请第二资源账本。
 
 公共Python prepared owner在实际启动前调用既有`Get-RunNativeExecutionContext`，将本run的argv、日志及cwd投影到执行表示；冻结`import_root`仍以持久路径进入`PYTHONPATH`，并继续核对实际模块与原entrypoint身份，不从cwd回退导入。CPython长文件路径能力与Windows进程cwd限制分别处理；只有实际run路径需要时才建alias。completion保留公共owner实际alias事实，writer确认后沿原收尾删除；ResumeFinalization不重启prepared worker或重建alias。实际准备的calls／elapsed_seconds／transport_bytes写入既有summary.native_path_preparation及小Result同字段，恢复直接读取原统计，不把源码导入计作载荷搬运。
+新run沿`common/paths`解析并在run配置`paths`冻结源码、产物、执行根及主机库；prepared进程接收
+相同部署根与本run规范目录，原生调用再按实际计划选择执行表示。`ResumeFinalization`读取原配置，
+不因当前环境改变根。没有冻结上下文的历史run沿原有恢复边界处理，不回写父记录。
 
 请求为schema 1、role `run_artifact_workflow_request`，固定包含`repository_root`、`python_executable`、
 `package`、`capacity`、`prepared`和不透明科学`payload`。`package`声明project/run_id/mode、
@@ -124,7 +129,18 @@ Package、CapacitySession、冻结EntrypointPath（可复用EntrypointRecord）�
 `prepared={owner_kind:'powershell',entrypoint:<record>}`复用同一completion合同；
 `Complete-RunArtifactPowerShellOwner`接收Status、Summary、OutputPaths、RequiredOutputPaths、实际WriterCompletion、
 显式WritersStopped及OriginalFailure，先持久保存现有wait/completion，再进入同一finalization-only机制。
+可选`ResourceUsagePaths`为`@{path=<实际usage文件>;case_name=<本次case>}`记录数组，不是路径字符串。
+`RequiredOutputPaths`只列实际必需文件；`RetentionPreservePaths`仍限现有已完成SIMION TRACE保留边界，
+MPH／MAT等原生解按原retention class与角色保留，不能借此参数绕过保留政策。
 实际native operation保留PID、创建时间、已知退出码和原host释放／继承收据；没有native的复用／分析路径保持空operations和releases。
+直接PowerShell释放返回的`PSCustomObject`由`Add-RunArtifactResourceRelease`按全部实际属性运输为字典；
+不删未知字段、不改token，最终合同仍拒绝多余或不匹配的事务事实。
+继承的PowerShell阶段保留`Exit-HostResourceStage`实际返回的`null`，不补造acquired事务；
+收尾在冻结的同一主机库中再次核对父grant，child不释放父token。非继承阶段仍须有绑定token的实际released结果。
+公共owner保留Package引用，提交completion时读取最新执行表示；已登记alias作为completion中的临时清理定位，
+仅在writer确认停止、完成证据有效且容量核算未延后时，核对冻结执行根与规范run目标后移除junction。
+恢复重复清理幂等；该定位不是科学输入或持久载荷依赖，不扫描历史alias，也不递归删除目标。
+COMSOL公共launcher操作附实际PID及创建ticks，writer终态与资源释放各自核验，不能用pool释放替代本地进程退出。
 未知写者只更新run外Result并拒绝发布；Context的completion_written/finalized供正常异常收尾复用，不重复发行completion。
 未知完成的Result保留调用方已有阶段、数据／科学结论和恢复动作，原始`exception`与`secondary_errors`分别记录。
 例如native已退出但host release未确认时报告`host_release_unconfirmed`／`inspect_host_release`，保留原保护；
@@ -136,12 +152,6 @@ PowerShell request的capacity可显式携带`ownership`（owned/inherited）和�
 `capacity_finalized=false`及`parent_capacity_owner_finalize`。父owner仍活动时可重放child收尾；
 父保护已失效而尚无ready封存事实时返回原父owner处理，不猜测新授权。父owner已沿原机制封存为ready后，
 重复恢复只核对既有终态和账本；父session及父终态不被child改写。
-
-直接PowerShell资源释放用`Add-RunArtifactResourceRelease`运输实际收据；直接
-`Exit-HostResourceStage -PassThru`返回的`PSCustomObject`按全部属性转换为字典，不丢弃未知字段来制造通过。
-同一继承父grant的实际释放返回`null`，保留该值；公共收尾在原主机库再次核对父grant，child不释放父token。
-同父token的多个阶段可复用同一份真实null收据；重复owned收据、冲突token、额外字段或未确认释放仍拒绝。
-COMSOL公共launcher操作附实际PID及创建ticks，writer终态与资源释放各自核验，不能用pool释放替代本地进程退出。
 
 owner只创建一个容量session，冻结请求为`inputs/execution_request.json`并绑定初始checkpoint输入，
 将session运输快照写入`logs/capacity_session.json`。项目prepared固定接收四个路径：
@@ -155,7 +165,9 @@ completion为schema 1、role `run_artifact_workflow_completion`，包含run_id/p
 retention_preserve_paths、manifest_extra_fields、writer_completion与原exception。项目不自行发布终态。
 `writer_completion.operations`只列实际启动的写操作，每项有唯一operation_id、真实
 `observation {exit_confirmed, returncode}`和resource_release_id；resource_releases以唯一release_id
-绑定实际公共资源owner的完整completion_receipt。一个pool release可以供多个操作引用。Python bridge
+绑定实际公共资源owner的完整completion_receipt。一个pool release可以供多个操作引用。
+`Add-RunArtifactResourceRelease`由paired static/pulse与local/cooled实际消费；同一继承父token的多阶段只共享一份真实null收据，
+保留每次operation；冲突收据、非继承重复释放仍拒绝，不放宽最终完成验证。Python bridge
 事实与直接PS owner字段按其真实来源保留，不能为直接PS补造bridge字段。unknown、Python bridge继承、重复身份、
 冲突或未闭合引用均拒绝封存；单独exit0、任意writers_stopped布尔值或全pool释放不替代局部写进程证明。
 
@@ -233,6 +245,14 @@ LF，从而使Windows工作树与干净checkout得到同一身份。调用者仍
 以源文件的原始字节记录核验副本，返回目的文件record及`source_path`；缺源、目的已存在或副本身份不符均失败。
 每次只读取一次源身份和一次目的身份；调用方负责输入选择、目的目录与命名。IP和MR准备入口直接消费此API，
 沿原有源码闭包冻结公共模块；PA／MPH等求解器载荷继续使用各自owner机制。
+
+`frozen_inputs.enumerate_python_sources(source_root, package_roots=..., module_paths=..., provider_root=...)`
+将显式声明的包目录或独立模块展开为排序的仓库相对 POSIX `.py` 路径；只枚举，不导入、复制或哈希。
+已有父包初始化文件随包交付，namespace 包不补造初始化文件；测试、历史、生成物与原生载荷目录不进入交付。
+缺失、空包、重叠声明及越过来源／provider 的链接失败关闭。动态 JSON、Lua、MATLAB 等资源继续显式声明。
+集成依赖 schema 3 使用 `python_packages`／`python_modules`，沿原复制 owner 发布同一扁平 inventory；
+全局校验声明路径和提供者归属，只展开当前消费者的包，不要求未消费的包存在。
+代码交付范围与场、Fly、Analysis 的科学复用依赖分别表达，包中无关模块变化不自动使已有场失效。
 
 manifest writer 与 verifier 分别只在本次调用内复用重复文件的 `(bytes, SHA)`；复用键绑定解析后的实际路径、
 真实读取函数、大小与修改时间，普通读取和大 PA 无缓冲读取不能混用。每条声明仍独立检查路径、字节数、
@@ -726,6 +746,7 @@ manifest。旧manifest若记录绝对路径，只有仍位于原路径且全部�
 事件，`handoff`记录跨组件交接事件，`terminal`记录求解器终止、撞壁、超时等最终分类。公共事件
 角色不定义任何器件表面；具体技术域必须在本域机器合同和README中定义事件绑定的物理对象。多极杆
 绑定只按[多极杆术语](../../projects/rf_multipole_ion_optics/docs/IMPLEMENTATION.md#统一术语)解释。
+组件内部终态允许 `unknown`：末窗或最后有限轨迹不足以证明原生损失时，保留观测原因，不默认成电极损失。`time_window_end`、`ended_without_loss_evidence`、`terminal_cause_unresolved` 描述证据边界；具体几何接受条件仍归项目，未知粒子保留在原母群分母。
 `component_particle_state.py`及
 [`schemas/component_particle_state.schema.json`](schemas/component_particle_state.schema.json)
 定义跨组件转移使用的version 1 canonical状态：每个粒子一行，严格按Schema中的
@@ -827,28 +848,44 @@ OA的二区／三区和RF的四／六／八极使用同一选择语义；极数�
 
 ## 执行dry-run
 
-各项目在`config/execution_profiles.json`中声明现有入口实际支持的工况、目标指标、变量、约束、产物和命令链。
-该文件使用统一`project_execution_profiles`合同，供公共编译器发现已有入口；资源预算和项目运行配置由
-项目的runtime配置持有，不冒充公开执行能力。具体profile的物种、输入、目标与资格限制仍查项目入口和合同。
-执行编译器只生成命令预览，没有执行开关：
+唯一发现与执行编译入口为`common.contracts.compile_execution_plan`。能力视图从现有项目描述符、
+生成注册表与`integrations/registry.json`派生，不另存能力注册表；项目拥有器件，integration拥有装配workflow。
 
 ```powershell
-.\.venv\Scripts\python.exe -m common.contracts.compile_execution_plan <design_plan.json>
+.\.venv\Scripts\python.exe -m common.contracts.compile_execution_plan --list-capabilities
+.\.venv\Scripts\python.exe -m common.contracts.compile_execution_plan --list-capabilities --owner instrument_assembly
+.\.venv\Scripts\python.exe -m common.contracts.compile_execution_plan <design_plan.json> `
+  --bind key=value --output <compiled.json>
+.\.venv\Scripts\python.exe -m common.contracts.compile_execution_plan --execute-plan <compiled.json>
 ```
 
-结果为`EXECUTION_READY`、`AWAITING_APPROVAL`、`NEEDS_RUNTIME_INPUTS`或`NEEDS_IMPLEMENTATION`。
-`EXECUTION_READY`只表示需求已批准且现有入口能够消费声明字段并评价所请求的目标指标；它不表示
-求解已经运行或指标已经满足。只完成结构构建的runner不得把分辨率等未评价目标列为支持。
-需要显式粒子表、RF幅值等运行绑定的profile使用`--bind key=value`提供预览值。编译器会验证入口文件、
-生成受命名合同约束的子run ID，并保留项目profile的限制说明，但不会创建artifact运行目录。
-需要项目解析的profile通过可选`runtime_binding`声明项目内Python `entrypoint`及其`required_bindings`子集。
-入口固定实现`resolve_execution_binding(repo_root, project_id, bindings)`，只接收声明的selector，返回且仅返回
-`project_id`、`structural_variant_id`、`authorized_run_id`；最后一项为合法run ID或`None`。公共编译器校验
-声明路径、selector归属、回包字段和类型、项目身份及能力的唯一结构归属，仅注入已校验的运行身份。
-项目解析器拥有科学输入、注册选择和运行身份的来源解释；公共层不读取项目私有预算结构。
-缺少selector时保留缺失输入的预览；selector齐全但其他输入缺失时仍验证该选择。未知、空值、跨结构选择、
-调用者覆盖受保护上下文以及完整绑定后未展开的命令占位符均被拒绝。无声明的profile沿用原有直接绑定。
-预览中的`authorized_run_id`只记录项目解析出的运行身份；商业执行授权仍由项目runner与预算合同验证。
+普通项目调用加`--execute`可在同一解析之后执行；省略时仅预览。集成使用同一入口，明确
+`--owner instrument_assembly --workflow <已登记workflow> --run-id <新run_id>`和查询结果要求的bindings；
+例如`single_reflection_flight`要求`request`与`execution_budget_path`。完整科学实例从
+[集成入口](../../integrations/README.md#模拟路径选择)进入，不把装配伪装为器件项目。
+
+profile明确实际purpose、action、tools、model、资格支持和输出。`--purpose`、`--qualification`
+只能选择该入口真实支持的用途与局部资格；历史candidate/formal请求保留原资格意图，不静默降级。
+`EXECUTION_READY`仅表示声明准备条件满足，不代表原生已执行、指标已评价或科学PASS。
+`AWAITING_APPROVAL`、`NEEDS_RUNTIME_INPUTS`、`NEEDS_IMPLEMENTATION`及`NEEDS_SOURCE_FREEZE`
+分别保留待批准、缺实际输入、缺能力和缺源冻结事实；具体原因及下一动作见blockers与来源记录。
+
+解析后的resolved定义随计划运输，prepare/fly/analyze消费同一定义或窄投影。保存计划执行拒绝
+重新指定bindings、用途或资格；实际小输入来源在执行期间持续防写，来源漂移拒绝。
+大粒子源优先复用已有manifest或bundle记录，不为预览另读大载荷；裸源缺内容权威时不能把保存计划
+当作已冻结输入。同命令`--execute`可委派原owner唯一prepare建立真实来源，`--execute-plan`则须先有
+相应冻结证据。原runner继续拥有资源、物理支持域、真实求解、分析与发布，不新增通用工作流引擎。
+
+项目`runtime_binding`指定纯解析入口与真实selector，固定实现
+`resolve_execution_binding(repo_root, project_id, bindings, *, request_path=None)`。
+必需回包为`project_id`、`structural_variant_id`、`authorized_run_id`；无结构变体时variant为null。
+可选`resolved_runtime`、`operating_points`、`input_paths`、`preparation_required`、`missing_inputs`
+表达实际解析结果、科学条件与输入来源。公共层验证身份、所选能力的结构归属及运行身份；项目解释
+物种、几何、工作点与必要sidecar。接口查询不调用GEM渲染或商业求解器。
+
+Python owner执行使用编译计划记录的`python_executable`（编译器当前`sys.executable`），不依赖仓库`.venv`或执行时的环境默认值。旧计划缺少该字段或解释器已不可用时，需用预期解释器重新编译；不静默换解释器。
+
+项目runtime resolver可用现有`tools`字段返回本次已解析动作的工具集合，编译器只接受profile声明集合内的非空、唯一工具列表，并在preview显示实际选择。未解析或未提供该投影时，显示profile支持集合；支持多个后端不表示一次请求必启动全部后端。后端选择与依赖仍归实际项目入口，不由公共编译器猜测。
 
 ## 正式结果与来源运行
 
@@ -911,14 +948,12 @@ local_frontend与cooled_frontend原入口接入同一PowerShell owner及`-Resume
 
 Python prepared请求可在既有`capacity`内提供可选`source_references`数组，元素沿容量SourceReferences原格式绑定父manifest及必要路径/缓存。原公共owner在prepared启动前、以及既有收尾恢复重新准入时，均将同一冻结数组交给已有源保护机制；跨根源只申请零新增字节的保护，不复制原载荷。缺省空数组保持旧请求语义；缺少来源authority立即拒绝，本次来源运输仅取冻结request，不从回调回写session推导，续约与释放仍归原容量owner。
 
-
 ### Python prepared 的显式原生源输入
 
 Python prepared请求可选提供`prepared.native_input_paths`绝对文件路径数组；缺省不改变旧请求，PowerShell owner尚不接受该声明。它只声明本次运输需求，不授予科学适用性：每个文件必须由`capacity.source_references`的原producer manifest明确绑定，且本次同owner的源保护已经准入并实际有效。
 公共owner在prepared启动前沿现`New-RunExecutionAlias`原语为过长来源建立必要的只读执行表示，不复制原载荷。`capacity_session.source_execution_context.sources`运输`target_directory`／`execution_directory`成对映射及声明的`input_paths`；项目只在实际原生调用处投影，长期输入、输出与科学身份保持canonical。短输入不建alias，CSV-only不声明此字段，不创建无用表示。
 源junction位于冻结execution_root，名称复用原request的已算SHA和source序号；所需相对后缀仍在创建前检查完整路径预算。同名已有junction不覆盖，返回原owner处理。owner的原始context同时保留在run外Result；callback回写Session不能替换清理authority。writer未知时保留链接与保护；已确认停止后正常／Resume沿原manifest和请求身份校验目标及所有权并幂等清理。自身容量lease重建保留原context，Resume不重建alias或重启prepared。
 此API不建立任意外部路径映射，不替代项目对MPH内容、原生停止和完整科学输入的验证。alias根的结构校验只检查直接目录junction及明确绝对target，允许跨根但不授予消费、写入或删除authority；其行政范围固定计0字节，不遍历target。维护仅延续原内部dangling清理规则，外部dangling留给真实owner。
-
 
 计时检查复用既有 retention 失败与同 run 恢复场景；prepared 异常的 checkpoint、容量账本及保护断言
 由原始异常用例统一验证，身份矩阵保留不同的 writer／请求／生命周期风险，避免相同故障重复准备。

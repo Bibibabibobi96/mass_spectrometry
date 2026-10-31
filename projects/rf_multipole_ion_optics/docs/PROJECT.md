@@ -614,3 +614,14 @@ mass_filter_reference正式case数组与manifest Outputs包含每case实际deter
 实际tmp／recovery均owned于新run，峰RSS3,097,391,104B、run峰6,909,739B，在4GiB／128MiB及minAvailable8GiB预算内，无warning。launcher实际退出0、host released，终态／容量／租约／writer确认完成，无附加错误；父记录不变。执行根已是持久根，未虚构不存在的alias_removed字段；路径准备0.110秒、搬运0字节，临时native request在writer停止后删除。对照在既有终态共享guard下各读一次小CSV，无新MPH／MAT／大raw读取、hash或复制。
 
 本轮finite与deterministic的N100目标均在运行前明定，并非事后降低：原finite源分组正常命令157.443→102.883秒，deterministic正常K1／K2命令266.623→239.734秒；早期deferred-update正常整命令315.788→334.220秒的负结果仍保留。本次补齐最终finite读取接线，不外推较大N、全尺度精度或Formal资格，也不新增N1000研究门槛。
+
+### 2026-11-01 Python 包交付闭包
+
+interface、mass-filter、same-solver 的7个 workflow 入口及发布新鲜度消费者改用公共
+`enumerate_python_sources` 从声明的小包／模块派生 Python 交付闭包，删除原逐文件 Python 清单。
+既有路径预检与复制消费同一选择，MATLAB／JSON 等动态资源仍显式声明；必需导入检查保持实际入口及科学依赖，
+交付包不扩大 Fly 科学身份或物理域。最大闭包约2.30MB，未提高资源预算。
+隔离软件回归分轮验证实际源生成、状态／响应／比较分析及缺失、篡改、污染路径与非零传播；
+same-solver 的真实执行发现并补齐原清单遗漏的 `ion_release` 包。中文来源路径的 stdin JSON 编码失败已复现，
+最小修正为显式 UTF-8 运输与 Python UTF-8 模式，实际中文 junction 回归通过1.020秒，调用者编码设置恢复。
+这些结果不代表完整 Owner／Repository 验收，也不包含新的商业求解或科学资格。

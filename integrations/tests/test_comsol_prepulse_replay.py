@@ -278,14 +278,14 @@ class ComsolPrePulseReplayTests(unittest.TestCase):
             frozen_inputs = root / "frozen_inputs"
             freeze_script = root / "freeze.ps1"
             freeze_script.write_text(
-                """param($Repo,$Destination)
+                """param($Repo,$Destination,$Python)
 . (Join-Path $Repo 'integrations/runtime/dependencies.ps1')
-$null=Freeze-ConsumerDependencies -RepoRoot $Repo -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId paired_accelerator_pulse
+$null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId paired_accelerator_pulse
 """,
                 encoding="utf-8",
             )
             frozen = subprocess.run(
-                [pwsh, "-NoProfile", "-File", str(freeze_script), str(REPO), str(frozen_inputs)],
+                [pwsh, "-NoProfile", "-File", str(freeze_script), str(REPO), str(frozen_inputs), sys.executable],
                 cwd=root,
                 capture_output=True,
                 text=True,

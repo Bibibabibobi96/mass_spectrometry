@@ -42,7 +42,7 @@ try{
     -Owner "instrument-assembly-multipole-ip:$RunId"
   $stage='freeze_inputs'
   $dependencyPath=Join-Path $repoRoot 'integrations/config/runtime_dependencies.json'
-  $frozen=Freeze-ConsumerDependencies -RepoRoot $repoRoot -ContractPath $dependencyPath -InputDir $package.input_dir -OwnerId instrument_assembly -ConsumerId multipole_ip
+  $frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $repoRoot -ContractPath $dependencyPath -InputDir $package.input_dir -OwnerId instrument_assembly -ConsumerId multipole_ip
   $frozenRequest=Join-Path $package.input_dir 'multipole_ip_request.json'
   # The shared request parser resolved transport paths before freezing.
   Write-RunJson -Path $frozenRequest -Depth 100 -Value $requestDocument

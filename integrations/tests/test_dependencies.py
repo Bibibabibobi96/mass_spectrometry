@@ -26,7 +26,7 @@ class DependencyTests(unittest.TestCase):
     def test_accelerator_interface_imports_ip_validator_from_frozen_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             inputs = Path(directory) / "inputs"
-            freeze = f". '{DEPENDENCIES}'; $null=Freeze-ConsumerDependencies -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId accelerator_interface"
+            freeze = f". '{DEPENDENCIES}'; $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId accelerator_interface"
             result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", freeze],
                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=120)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -58,11 +58,85 @@ with tempfile.TemporaryDirectory() as request_directory:
                 capture_output=True, text=True, encoding="utf-8", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_manifest_writer_consumers_freeze_its_process_lock_dependency(self) -> None:
-        entries = {item["source_repo_path"]: set(item["consumers"])
-                   for group in load(INVENTORY)["providers"] for item in group["files"]}
-        self.assertLessEqual(entries["common/contracts/write_run_manifest.py"],
-                             entries["common/contracts/capacity_protection.py"])
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
+    def test_expanded_package_report_module_preserves_frozen_fly_reuse(self) -> None:
+        from integrations.tests.test_single_reflection_continuation import SingleReflectionContinuationTests
+        from integrations.workflows.single_reflection_flight.continuation import prepare_phase_continuation
+
+        fixture = SingleReflectionContinuationTests("run")
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            author = root / "author"
+            # The isolated author is the actual provider closure, not a stub
+            # enumerator or an import fallback to the checkout.
+            from common.contracts.frozen_inputs import enumerate_python_sources
+            contract = load(INVENTORY)
+            paths = {row["source_repo_path"] for group in contract["providers"] for row in group["files"]}
+            for group in contract["providers"]:
+                if group["python_packages"] or group["python_modules"]:
+                    paths.update(enumerate_python_sources(REPO_ROOT,
+                        package_roots=[row["source_repo_path"] for row in group["python_packages"]],
+                        module_paths=[row["source_repo_path"] for row in group["python_modules"]]))
+            paths.update({"integrations/registry.json", "integrations/config/runtime_dependencies.json",
+                          "integrations/runtime/dependencies.ps1"})
+            for relative in paths:
+                destination = author / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                if relative.endswith(".pa0") and "iob_seed_placeholder_" in relative:
+                    destination.write_bytes(b"INERT_TEST_SEED_NOT_A_PA\n")
+                else:
+                    shutil.copyfile(REPO_ROOT / relative, destination)
+
+            def freeze(name):
+                output = root / name
+                script = f". '{DEPENDENCIES}'; $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{author}' -ContractPath '{author / 'integrations/config/runtime_dependencies.json'}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId single_reflection_flight"
+                result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
+                    cwd=author, capture_output=True, text=True, encoding="utf-8", timeout=120)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                return output / "runtime_snapshot"
+
+            fixture.snapshot = freeze("first")
+            current = fixture._current_workbench()
+            parent = fixture._parent(current)
+            parent_before = {path.relative_to(parent): path.read_bytes()
+                             for path in parent.rglob("*") if path.is_file()}
+            report = author / "integrations/workflows/single_reflection_flight/package_report_only.py"
+            report.write_text("TITLE = 'shipment provenance only'\n", encoding="utf-8")
+            fixture.snapshot = freeze("report")
+            inventory = load(root / "report/code_inventory.json")["dependencies"]
+            self.assertIn("python:" + report.relative_to(author).as_posix(), {row["id"] for row in inventory})
+            # Rebuild only small inert preparation records, never a native IOB.
+            shutil.rmtree(fixture.run / "simion/full_instrument")
+            current = fixture._current_workbench()
+            result = prepare_phase_continuation(fixture.preparation, current, fixture.run, "baseline")
+            self.assertEqual([row["action"] for row in result["plan"]["units"]], ["reuse", "reuse"])
+            self.assertEqual({path.relative_to(parent): path.read_bytes()
+                              for path in parent.rglob("*") if path.is_file()}, parent_before)
+            shutil.rmtree(fixture.run / "inputs/continuation")
+            # An actual numerical Program source change is still a dependency.
+            generator = fixture.snapshot / "integrations/runtime/single_flight_pulse_hook.lua"
+            self.assertTrue(generator.is_file())
+            generator.write_text(generator.read_text() + "\n-- changed numerical Program implementation\n", encoding="utf-8")
+            shutil.rmtree(fixture.run / "simion/full_instrument")
+            current = fixture._current_workbench()
+            with self.assertRaisesRegex(ValueError, "Program"):
+                prepare_phase_continuation(fixture.preparation, current, fixture.run, "baseline")
+            self.assertEqual({path.relative_to(parent): path.read_bytes()
+                              for path in parent.rglob("*") if path.is_file()}, parent_before)
+
+    def test_shared_single_reflection_fixture_expands_packages_without_large_seeds(self) -> None:
+        from integrations.tests.test_support.single_reflection_execute_fixture import SingleReflectionExecuteFixture
+        fixture = SingleReflectionExecuteFixture("run")
+        with tempfile.TemporaryDirectory() as directory:
+            author = fixture._prepare_source_template(Path(directory), load(INVENTORY), lightweight_seeds=True)
+            self.assertTrue((author / "integrations/workflows/single_reflection_flight/prepare.py").is_file())
+            self.assertTrue((author / "common/contracts/frozen_inputs.py").is_file())
+            self.assertTrue((author / "projects/orthogonal_accelerator/analysis/sectioned_geometry.py").is_file())
+            seeds = list((author / "common/simion/assets/iob_instance_seeds").glob("iob_seed_placeholder_*.pa0"))
+            self.assertEqual(len(seeds), 5)
+            self.assertTrue(all(path.read_bytes() == b"INERT_TEST_SEED_NOT_A_PA\n" for path in seeds))
 
     def test_joint_finalization_owners_freeze_the_existing_public_adapter(self) -> None:
         entries = {item["source_repo_path"]: set(item["consumers"])
@@ -78,7 +152,7 @@ with tempfile.TemporaryDirectory() as request_directory:
     def test_prepared_joint_loads_shared_mr_continuation_guard_from_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             inputs = Path(directory)/"inputs"
-            freeze = f". '{DEPENDENCIES}'; $null=Freeze-ConsumerDependencies -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId prepared_joint"
+            freeze = f". '{DEPENDENCIES}'; $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId prepared_joint"
             result = subprocess.run([shutil.which("pwsh"),"-NoProfile","-Command",freeze],cwd=REPO_ROOT,
                                     capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=120)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
@@ -122,7 +196,7 @@ with tempfile.TemporaryDirectory() as request_directory:
             inputs = Path(directory) / "inputs"
             script = f"""
 . '{DEPENDENCIES}'
-$null=Freeze-ConsumerDependencies -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId prepared_joint
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId prepared_joint
 """
             freeze = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=120)
@@ -152,7 +226,7 @@ solver_review_retirement._assert_runtime_retirement_unprotected(root/'absent_art
             detached = inputs / "runtime_snapshot"
             script = f"""
 . '{DEPENDENCIES}'
-$null=Freeze-ConsumerDependencies -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId prepared_joint
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId prepared_joint
 """
             result = subprocess.run(
                 [shutil.which("pwsh"), "-NoProfile", "-Command", script], cwd=REPO_ROOT,
@@ -193,20 +267,19 @@ Copy-FrozenDependency -RepoRoot '{detached}' -InputDir '{destination}' -Dependen
             "common/contracts/schemas/component_geometry_interface.schema.json",
             "common/contracts/schemas/composition_plan.schema.json",
         )
-        selected = {item["source_repo_path"] for group in load(INVENTORY)["providers"]
-                    for item in group["files"] if "prepared_joint" in item["consumers"]}
-        self.assertTrue(set(required) <= selected)
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             parent = output / "parent.json"
             shutil.copyfile(INTEGRATION_ROOT / "config/recipes/multipole_ip_mr_y_minus55_plan.json", parent)
             freeze = f"""
 . '{DEPENDENCIES}'
-$null=Freeze-ConsumerDependencies -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId prepared_joint
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId prepared_joint
 """
             frozen = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", freeze],
                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=120)
             self.assertEqual(frozen.returncode, 0, frozen.stdout + frozen.stderr)
+            selected = {row["source_repo_path"] for row in load(output / "code_inventory.json")["dependencies"]}
+            self.assertTrue(set(required) <= selected)
             snapshot = output / "runtime_snapshot"
             environment = dict(os.environ)
             environment.pop("PYTHONPATH", None)
@@ -227,7 +300,7 @@ print('FROZEN_PREPARED_JOINT_ASSEMBLY_SCOPE=PASS')
 """
             command = [sys.executable, "-B", "-s", "-c", statement, str(parent)]
             complete = subprocess.run(command, cwd=snapshot, env=environment,
-                capture_output=True, text=True, encoding="utf-8", timeout=60)
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertEqual(complete.returncode, 0, complete.stdout + complete.stderr)
             self.assertIn("FROZEN_PREPARED_JOINT_ASSEMBLY_SCOPE=PASS", complete.stdout)
             for relative in required:
@@ -237,7 +310,7 @@ print('FROZEN_PREPARED_JOINT_ASSEMBLY_SCOPE=PASS')
                     resource.unlink()
                     try:
                         refused = subprocess.run(command, cwd=snapshot, env=environment,
-                            capture_output=True, text=True, encoding="utf-8", timeout=60)
+                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
                         self.assertNotEqual(refused.returncode, 0, refused.stdout + refused.stderr)
                         self.assertNotIn("FROZEN_PREPARED_JOINT_ASSEMBLY_SCOPE=PASS", refused.stdout)
                         self.assertIn(Path(relative).stem.split('.')[0], refused.stderr)
@@ -246,19 +319,25 @@ print('FROZEN_PREPARED_JOINT_ASSEMBLY_SCOPE=PASS')
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
     def test_native_completion_provider_imports_in_each_frozen_consumer(self) -> None:
-        consumers = next(item["consumers"] for group in load(INVENTORY)["providers"]
-                         for item in group["files"]
-                         if item["source_repo_path"] == "common/contracts/artifact_retention.py")
+        consumers = load(INVENTORY)["consumer_ids"]
         for consumer in consumers:
             with self.subTest(consumer=consumer), tempfile.TemporaryDirectory() as directory:
                 output = Path(directory)
                 script = f"""
 . '{DEPENDENCIES}'
-$null=Freeze-ConsumerDependencies -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId {consumer}
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId {consumer}
 """
                 frozen = subprocess.run(['pwsh', '-NoProfile', '-Command', script], cwd=REPO_ROOT,
                     capture_output=True, text=True, encoding='utf-8', timeout=120)
                 self.assertEqual(frozen.returncode, 0, frozen.stdout + frozen.stderr)
+                selected = load(output / "code_inventory.json")["dependencies"]
+                paths = {row["source_repo_path"] for row in selected}
+                self.assertIn("common/contracts/write_run_manifest.py", paths)
+                self.assertIn("common/contracts/capacity_protection.py", paths)
+                self.assertIn("common/contracts/artifact_retention.py", paths)
+                self.assertEqual(len({row["id"] for row in selected}), len(selected))
+                self.assertTrue(all(row["id"] == "python:" + row["source_repo_path"]
+                                    for row in selected if row["source_repo_path"].endswith(".py")))
                 snapshot = output / 'runtime_snapshot'
                 environment = dict(os.environ, PYTHONNOUSERSITE="1")
                 environment.pop('PYTHONPATH', None)
@@ -317,7 +396,7 @@ assert Path(capacity_protection.__file__).is_relative_to(Path.cwd())
         environment = dict(os.environ, PYTHONNOUSERSITE="1")
         environment.pop("PYTHONPATH", None)
         completed = subprocess.run(command, cwd=snapshot if module else snapshot.parent,
-            env=environment, capture_output=True, text=True, encoding="utf-8", timeout=60)
+            env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
         receipt = run / "retention_actions.json"
         if adapter_present:
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
@@ -346,11 +425,14 @@ assert Path(capacity_protection.__file__).is_relative_to(Path.cwd())
                 encoding="utf-8")
             freeze = f"""
 . '{DEPENDENCIES}'
-$null=Freeze-ConsumerDependencies -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{run / 'inputs'}' -OwnerId instrument_assembly -ConsumerId single_reflection_flight
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{run / 'inputs'}' -OwnerId instrument_assembly -ConsumerId single_reflection_flight
 """
             frozen = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", freeze],
-                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=60)
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertEqual(frozen.returncode, 0, frozen.stdout + frozen.stderr)
+            selected = load(run / "inputs/code_inventory.json")["dependencies"]
+            self.assertIn("common/contracts/reconcile_artifact_capacity.py",
+                          {row["source_repo_path"] for row in selected})
             snapshot = run / "inputs/runtime_snapshot"
             environment = dict(os.environ)
             environment.pop("PYTHONPATH", None)
@@ -410,7 +492,7 @@ assert all(Path(step['argv'][3]).is_relative_to(Path.cwd()) for step in result['
 print(json.dumps(dict(status='FROZEN_DOWNSTREAM_PLAN_PASS',native_executed=False)))
 """
             planned = subprocess.run([sys.executable, "-B", "-s", "-c", statement, str(request), str(run)],
-                cwd=snapshot, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=60)
+                cwd=snapshot, env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertEqual(planned.returncode, 0, planned.stdout + planned.stderr)
             self.assertEqual(json.loads(planned.stdout)["status"], "FROZEN_DOWNSTREAM_PLAN_PASS")
             # Remove a non-Python provider resource. A new detached process
@@ -422,65 +504,9 @@ print(json.dumps(dict(status='FROZEN_DOWNSTREAM_PLAN_PASS',native_executed=False
                 "from integrations.workflows.single_reflection_flight.downstream_fields import plan_downstream_fields; "
                 "plan_downstream_fields(json.loads(Path(sys.argv[1]).read_text()),Path(sys.argv[2]),snapshot_root=Path.cwd())",
                 str(run / "preparation_for_dependency_test.json"), str(run)],
-                cwd=snapshot, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=60)
+                cwd=snapshot, env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertNotEqual(refused.returncode, 0)
             self.assertIn("frozen downstream provider resources are incomplete", refused.stderr)
-
-    def test_single_reflection_capacity_command_declares_python_import_closure(self) -> None:
-        paths = {row["source_repo_path"] for group in load(INVENTORY)["providers"]
-                 for row in group["files"] if "single_reflection_flight" in row["consumers"]}
-        pending = ["common/contracts/reconcile_artifact_capacity.py"]
-        visited = set()
-        while pending:
-            relative = pending.pop()
-            if relative in visited:
-                continue
-            visited.add(relative)
-            self.assertIn(relative, paths, f"unregistered capacity command import: {relative}")
-            tree = ast.parse((REPO_ROOT / relative).read_text(encoding="utf-8-sig"))
-            for node in ast.walk(tree):
-                names = []
-                if isinstance(node, ast.ImportFrom) and node.module:
-                    names = [node.module, *[node.module + "." + item.name for item in node.names]]
-                elif isinstance(node, ast.Import):
-                    names = [item.name for item in node.names]
-                for name in names:
-                    imported = name.replace(".", "/") + ".py"
-                    if name.split(".")[0] in {"common", "projects", "integrations"} and (REPO_ROOT / imported).is_file():
-                        pending.append(imported)
-
-    def test_local_consumer_declares_complete_python_import_closure(self) -> None:
-        dependencies = [item for group in load(INVENTORY)["providers"] for item in group["files"]]
-        required_ip = {"projects/dual_pressure_rectilinear_ion_processor/analysis/"+name+".py"
-                       for name in ("guide_interface", "native_geometry", "electrode_contours", "convex_geometry")}
-        prefix = "integrations"
-        selected = [r for r in dependencies if "local_frontend" in r["consumers"]]
-        paths = {r["source_repo_path"] for r in selected}
-        self.assertTrue(required_ip <= paths)
-        self.assertNotIn("oatof_analyzer_component", {r["id"] for r in selected})
-        for relative in sorted(paths):
-            if not relative.endswith(".py"):
-                continue
-            tree = ast.parse((REPO_ROOT / relative).read_text(encoding="utf-8-sig"))
-            for node in ast.walk(tree):
-                names = []
-                if isinstance(node, ast.ImportFrom) and node.module:
-                    # The shared figure imports the conditioner adapter only
-                    # for a cooled contract; require that exact guard before
-                    # excluding it from the bare-guide consumer's closure.
-                    if node.module == "integrations.workflows.cooled_frontend.plot_geometry":
-                        self.assertEqual(relative, prefix.replace(".", "/") + "/analysis/plot_single_flight_spatial_six_panel.py")
-                        self.assertTrue(any(isinstance(branch, ast.If)
-                                            and ast.unparse(branch.test) == "conditioner is not None"
-                                            and node in branch.body for branch in ast.walk(tree)))
-                        continue
-                    names = [node.module, *[node.module+"."+a.name for a in node.names]]
-                elif isinstance(node, ast.Import):
-                    names = [a.name for a in node.names]
-                for name in names:
-                    imported = name.replace(".", "/")+".py"
-                    if name.split(".")[0] in {"common", "projects", "integrations"} and (REPO_ROOT/imported).is_file():
-                        self.assertIn(imported, paths, f"unregistered local_frontend import: {relative} -> {imported}")
 
     def test_cooled_prepare_imports_shared_assembly_from_declared_snapshot(self) -> None:
         # Exercise the actual freeze and the runtime-only reference imports;
@@ -492,10 +518,10 @@ print(json.dumps(dict(status='FROZEN_DOWNSTREAM_PLAN_PASS',native_executed=False
             output = Path(directory)
             freeze = f"""
 . '{DEPENDENCIES}'
-$null=Freeze-ConsumerDependencies -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId cooled_frontend
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId cooled_frontend
 """
             result = subprocess.run([pwsh, "-NoProfile", "-Command", freeze], cwd=REPO_ROOT,
-                                    capture_output=True, text=True, encoding="utf-8", timeout=60)
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             snapshot = output / "runtime_snapshot"
             environment = dict(os.environ)
@@ -534,6 +560,17 @@ if(-not(Get-Command Invoke-FrontendFlightPhase)){{throw 'Frozen reference flight
                 cwd=snapshot, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("--run", result.stdout)
+            from integrations.tests.test_cooled_frontend import cooled_request_fixture
+            request_path, _ = cooled_request_fixture(Path(directory) / "scientific-input")
+            command = [sys.executable, "-B", "-s", "-m", "integrations.workflows.cooled_frontend.prepare",
+                       "--request", str(request_path), "--repo-root", str(snapshot),
+                       "--workspace-root", str(Path(directory) / "scientific-input"), "--output-directory", str(Path(directory) / "prepared"),
+                       "--run-id", "20261101_000000__build__python__frozen-cooled"]
+            prepared = subprocess.run(command, cwd=snapshot, env=environment,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+            self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
+            self.assertEqual(json.loads(prepared.stdout)["particle_count"], 100)
+            self.assertTrue((Path(directory) / "prepared/inputs/frontend_contract.json").is_file())
             # Missing snapshot modules must fail instead of falling back to the
             # checkout from which this test was launched.
             (snapshot / "integrations/workflows/cooled_frontend/reference.py").unlink()
@@ -552,13 +589,19 @@ if(-not(Get-Command Invoke-FrontendFlightPhase)){{throw 'Frozen reference flight
             output = Path(directory)
             script = f"""
 . '{DEPENDENCIES}'
-$f=Freeze-ConsumerDependencies -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId local_frontend
+$f=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId local_frontend
 if(@($f.identities).Count-lt1){{throw 'empty selected closure'}}
 Write-Output $f.execution_root
 """
             result = subprocess.run([pwsh, "-NoProfile", "-Command", script], cwd=REPO_ROOT,
                                     capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+            selected = load(output / "code_inventory.json")["dependencies"]
+            paths = {row["source_repo_path"] for row in selected}
+            required_ip = {"projects/dual_pressure_rectilinear_ion_processor/analysis/" + name + ".py"
+                           for name in ("guide_interface", "native_geometry", "electrode_contours", "convex_geometry")}
+            self.assertTrue(required_ip <= paths)
+            self.assertNotIn("oatof_analyzer_component", {row["id"] for row in selected})
             snapshot = output/"runtime_snapshot"
             detached_script = """
 . './integrations/runtime/dependencies.ps1'
@@ -597,7 +640,7 @@ print('LOCAL_SNAPSHOT_CROSSING=PASS')
 """
             crossing_command = [sys.executable, "-B", "-s", "-c", crossing_statement]
             crossed = subprocess.run(crossing_command, cwd=snapshot, env=env,
-                                     capture_output=True, text=True, encoding="utf-8", timeout=60)
+                                     capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertEqual(crossed.returncode, 0, crossed.stdout+crossed.stderr)
             self.assertIn("LOCAL_SNAPSHOT_CROSSING=PASS", crossed.stdout)
             kernel = snapshot/"common/analysis/plane_crossings.py"
@@ -605,7 +648,7 @@ print('LOCAL_SNAPSHOT_CROSSING=PASS')
             kernel.unlink()
             try:
                 absent = subprocess.run(crossing_command, cwd=snapshot, env=env,
-                                        capture_output=True, text=True, encoding="utf-8", timeout=60)
+                                        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
                 self.assertNotEqual(absent.returncode, 0)
                 self.assertIn("plane_crossings", absent.stderr)
             finally:
@@ -631,7 +674,7 @@ print('LOCAL_SNAPSHOT_CROSSING=PASS')
             request_path, request = fixture(fixture_root)
             freeze = f"""
 . '{DEPENDENCIES}'
-$null=Freeze-ConsumerDependencies -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{workspace / 'frozen'}' -OwnerId instrument_assembly -ConsumerId local_frontend
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{workspace / 'frozen'}' -OwnerId instrument_assembly -ConsumerId local_frontend
 """
             frozen = subprocess.run([pwsh, "-NoProfile", "-Command", freeze], cwd=REPO_ROOT,
                                     capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
@@ -767,6 +810,13 @@ try {{
                 {"integration_id": "legacy", "root": "integrations/legacy"},
             ]}
             (root / "integrations/registry.json").write_text(json.dumps(registry), encoding="utf-8")
+            for path in (REPO_ROOT / "common").rglob("*"):
+                if (path.is_file() and path.suffix in {".py", ".ps1", ".json"}
+                        and not any(part in {"assets", "__pycache__", "history", "vendor"}
+                                    for part in path.relative_to(REPO_ROOT).parts)):
+                    target = root / path.relative_to(REPO_ROOT)
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(path, target)
             groups = []
             for number, (scope, owner, provider) in enumerate((
                 ("integration", "instrument_assembly", "integrations"),
@@ -774,20 +824,39 @@ try {{
                 ("project", "device", "projects/device"),
                 ("repository_common", "common", "common"),
             )):
-                source = f"{provider}/provider{number}.py"
+                source = f"{provider}/provider{number}.txt"
                 path = root / source
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(f"VALUE = {number}\n", encoding="utf-8")
                 groups.append(dict(provider_scope=scope, provider_project=owner,
-                    files=[dict(id=f"provider{number}", source_repo_path=source, consumers=["local_frontend"])]))
+                    files=[dict(id=f"provider{number}", source_repo_path=source, consumers=["local_frontend"])],
+                    python_packages=[], python_modules=[]))
             contract = root / "integrations/config/dependencies.json"
-            contract.write_text(json.dumps(dict(schema_version=2, role="integration_runtime_dependencies",
+            contract.write_text(json.dumps(dict(schema_version=3, role="integration_runtime_dependencies",
                 owner_id="instrument_assembly", consumer_ids=["local_frontend"], providers=groups)), encoding="utf-8")
+            package = root / "projects/device/pkg"
+            package.mkdir(parents=True)
+            (package / "entry.py").write_text(
+                "from .added_helper import VALUE\n"
+                "def prepare(destination):\n"
+                "    destination.write_text(str(VALUE), encoding='utf-8')\n", encoding="utf-8")
+            groups[2]["python_packages"].append(dict(
+                source_repo_path="projects/device/pkg", consumers=["local_frontend"]))
+            groups[2]["python_packages"].append(dict(
+                source_repo_path="projects/device/unrequested", consumers=["not_requested"]))
+            author = load(contract)
+            author["providers"] = groups
+            author["consumer_ids"].append("not_requested")
+            contract.write_text(json.dumps(author), encoding="utf-8")
+            declared = contract.read_bytes()
+            # A new importable module needs no hand-maintained file row.
+            (package / "added_helper.py").write_text("VALUE = 42\n", encoding="utf-8")
+            self.assertEqual(contract.read_bytes(), declared)
             output = Path(directory) / "inputs"
             script = f"""
 . '{DEPENDENCIES}'
-$f=Freeze-ConsumerDependencies -RepoRoot '{root}' -ContractPath '{contract}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId local_frontend
-if(@($f.identities).Count-ne4){{throw 'provider count differs'}}
+$f=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{root}' -ContractPath '{contract}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId local_frontend
+if(@($f.identities).Count-ne6){{throw 'provider count differs'}}
 $inventory=Get-Content $f.code_inventory_path -Raw|ConvertFrom-Json
 if($inventory.owner_id-ne'instrument_assembly' -or $inventory.PSObject.Properties.Name-contains'consumer_project'){{throw 'owner identity differs'}}
 foreach($entry in $inventory.dependencies){{
@@ -797,11 +866,11 @@ if((Get-Content $f.dependency_contract_path -Raw)-cne(Get-Content '{contract}' -
 $valid=Get-Content '{contract}' -Raw
 $cases=@(
   @{{change={{param($d) $d.owner_id='legacy'}};message='*identity*'}},
-  @{{change={{param($d) $d.schema_version=1}};message='*schema 2*'}},
+  @{{change={{param($d) $d.schema_version=1}};message='*schema 3*'}},
   @{{change={{param($d) $d.providers[0].provider_project='unknown'}};message='*registered exactly once*'}},
-  @{{change={{param($d) $d.providers[0].files[0].source_repo_path='common/provider3.py'}};message='*escapes provider*'}},
-  @{{change={{param($d) $d.providers[0].files[0].source_repo_path='integrations/../common/provider3.py'}};message='*escapes its provider*'}},
-  @{{change={{param($d) $d.providers[0].files[0].source_repo_path='integrations/missing.py'}};message='*is missing*'}},
+  @{{change={{param($d) $d.providers[0].files[0].source_repo_path='common/provider3.txt'}};message='*escapes provider*'}},
+  @{{change={{param($d) $d.providers[0].files[0].source_repo_path='integrations/../common/provider3.txt'}};message='*escapes its provider*'}},
+  @{{change={{param($d) $d.providers[0].files[0].source_repo_path='integrations/missing.txt'}};message='*is missing*'}},
   @{{change={{param($d) $d.providers[1].files[0].id=$d.providers[0].files[0].id}};message='*duplicate dependency id*'}},
   @{{change={{param($d) $d.providers[0].files+=@($d.providers[0].files[0]|ConvertTo-Json|ConvertFrom-Json);$d.providers[0].files[1].id='other'}};message='*Duplicate dependency source*'}},
   @{{change={{param($d) $d.providers[0].files[0].consumers=@('unknown')}};message='*invalid consumers*'}},
@@ -813,13 +882,13 @@ foreach($case in $cases){{
  & $case.change $bad
  $bad|ConvertTo-Json -Depth 30|Set-Content '{contract}'
  $destination='{output}-invalid'+$index
- try{{Freeze-ConsumerDependencies -RepoRoot '{root}' -ContractPath '{contract}' -InputDir $destination -OwnerId instrument_assembly -ConsumerId local_frontend;throw 'invalid author accepted'}}
+ try{{Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{root}' -ContractPath '{contract}' -InputDir $destination -OwnerId instrument_assembly -ConsumerId local_frontend;throw 'invalid author accepted'}}
  catch{{if($_.Exception.Message-notlike$case.message){{throw}}}}
  if(Test-Path $destination){{throw 'Invalid author copied files before rejection'}}
  $index++
 }}
 $valid|Set-Content '{contract}'
-try{{Freeze-ConsumerDependencies -RepoRoot '{root}' -ContractPath '{contract}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId local_frontend;throw 'existing destination accepted'}}
+try{{Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{root}' -ContractPath '{contract}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId local_frontend;throw 'existing destination accepted'}}
 catch{{if($_.Exception.Message-notlike'*already exists*'){{throw}}}}
 Write-Output 'BOUNDARIES=PASS'
 """
@@ -830,6 +899,18 @@ Write-Output 'BOUNDARIES=PASS'
                 for row in group["files"]:
                     self.assertEqual((output / "runtime_snapshot" / row["source_repo_path"]).read_bytes(),
                                      (root / row["source_repo_path"]).read_bytes())
+            inventory = load(output / "code_inventory.json")
+            python_rows = [row for row in inventory["dependencies"] if row["source_repo_path"].endswith(".py")]
+            self.assertEqual({row["id"] for row in python_rows},
+                {"python:projects/device/pkg/entry.py", "python:projects/device/pkg/added_helper.py"})
+            root.rename(root.with_name("author-unavailable"))
+            plan = Path(directory) / "detached-plan.txt"
+            code = "import sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);from projects.device.pkg.entry import prepare;prepare(Path(sys.argv[2]))"
+            completed = subprocess.run([sys.executable, "-I", "-B", "-c", code,
+                str(output / "runtime_snapshot"), str(plan)], cwd=output,
+                capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertEqual(plan.read_text(), "42")
 
 
 if __name__ == "__main__":

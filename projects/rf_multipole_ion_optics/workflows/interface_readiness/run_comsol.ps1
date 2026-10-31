@@ -68,28 +68,19 @@ foreach($stage in @('prepare','solver','postprocess')){$ResourceBudgets[$stage]=
 $ResourceBudgets.solver.memory_bytes=[long]$Limits.process_tree_working_set_bytes
 . (Join-Path $projectRoot 'runtime\comsol_solver_numerics.ps1')
 . (Join-Path $projectRoot 'runtime\frozen_python_package.ps1')
-$frozenPythonRelativePaths = @(
-    'projects\rf_multipole_ion_optics\workflows\__init__.py',
-    'projects\rf_multipole_ion_optics\workflows\interface_readiness\__init__.py',
-    'projects\rf_multipole_ion_optics\workflows\interface_readiness\generate_particle_table.py',
-    'projects\rf_multipole_ion_optics\workflows\interface_readiness\particle_source_policy.py',
-    'projects\rf_multipole_ion_optics\analysis\paired_particle_source_bundle.py',
-    'projects\rf_multipole_ion_optics\analysis\analyze_comsol_particle_state_metrics.py',
-    'projects\rf_multipole_ion_optics\analysis\validate_release_construction_gate.py',
-    'common\contracts\particle_physics.py',
-    'common\contracts\particle_state.py',
-    'common\contracts\particle_count_policy.py',
-    'common\contracts\particle_count_policy.json',
-    'common\contracts\file_identity.py',
-    'common\ion_release\__init__.py',
-    'common\ion_release\cylinder.py',
-    'common\ion_release\mt19937_disk_cone_rf_phase.py',
-    'common\ion_release\numpy_box_cone.py',
-    'common\ion_release\numpy_ion11_box.py',
-    'projects\rf_multipole_ion_optics\core\__init__.py',
-    'projects\rf_multipole_ion_optics\core\interface_geometry.py',
-    'projects\rf_multipole_ion_optics\runtime\particle_source_preflight.py'
-)
+$frozenPythonRelativePaths = Get-FrozenPythonPackageRelativePaths -SourceRoot $repoRoot -Python $python `
+    -PythonPackages @(
+        'common/contracts',
+        'common/analysis',
+        'projects/rf_multipole_ion_optics/analysis',
+        'projects/rf_multipole_ion_optics/core',
+        'projects/rf_multipole_ion_optics/runtime',
+        'common/ion_release',
+        'projects/rf_multipole_ion_optics/workflows/interface_readiness'
+    ) `
+    -RelativePaths @(
+        'common\contracts\particle_count_policy.json'
+    )
 $executionCapacityPaths = @('inputs/frozen_python_package.ps1') +
     (Get-FrozenPythonPackageExecutionPaths -RelativePaths $frozenPythonRelativePaths)
 

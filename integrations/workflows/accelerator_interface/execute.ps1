@@ -429,7 +429,7 @@ try{
   Write-RunJson -Path $startup -Depth 14 -Value $capacitySession
   $stage='freeze_executable_dependencies'
   $dependencyPath=Join-Path $repoRoot 'integrations/config/runtime_dependencies.json'
-  $frozen=Freeze-ConsumerDependencies -RepoRoot $repoRoot -ContractPath $dependencyPath -InputDir $package.input_dir -OwnerId $projectId -ConsumerId accelerator_interface
+  $frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $repoRoot -ContractPath $dependencyPath -InputDir $package.input_dir -OwnerId $projectId -ConsumerId accelerator_interface
   $script:pythonRoot=[string]$frozen.execution_root
   $configuration=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
   $configuration.inputs=[ordered]@{code_inventory=$frozen.code_inventory_path;dependency_contract=$frozen.dependency_contract_path}

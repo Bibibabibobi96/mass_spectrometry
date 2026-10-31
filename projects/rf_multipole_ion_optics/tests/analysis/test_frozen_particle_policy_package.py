@@ -188,38 +188,87 @@ try {{ . $analysisBlock }} catch {{ $missing=$_.Exception.Message }}
             self.assertEqual(result["metrics"]["sampled_response_analysis"]["interpolated_main_peak_fwhm_Th"], 1.75)
 
     def test_both_runners_use_the_isolated_frozen_package_contract(self) -> None:
-        forbidden_live_path = (
-            '$env:PYTHONPATH = "$frozenCodeRoot'
-            '$([IO.Path]::PathSeparator)$repoRoot"'
-        )
-        for runner in (COMSOL_RUNNER, SIMION_RUNNER):
-            source = runner.read_text(encoding="utf-8")
-            with self.subTest(runner=runner.name):
-                self.assertIn("runtime\\frozen_python_package.ps1", source)
-                self.assertIn("New-FrozenPythonPackage", source)
-                self.assertIn("Invoke-IsolatedFrozenPythonModule", source)
-                self.assertIn("-ForbiddenRoots @($repoRoot,$projectRoot)", source)
-                self.assertIn("-RequiredModuleNames @(", source)
-                self.assertIn("frozen_python_code_", source)
-                self.assertIn("frozen_python_package_support", source)
-                self.assertIn("frozen_python", source)
-                self.assertNotIn(forbidden_live_path, source)
-                freeze_index = source.index("$frozenBundleMetadata")
-                invoke_index = source.index(
-                    "$frozenPythonExecution = Invoke-IsolatedFrozenPythonModule"
+        """Generate real source bundles from both actual runner package declarations."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = f"""
+$ErrorActionPreference='Stop'
+$repoRoot={_ps(REPO_ROOT)};$python={_ps(sys.executable)}
+. {_ps(SUPPORT)}
+. {_ps(HELPER)}
+$results=@()
+"""
+            for index, runner in enumerate((COMSOL_RUNNER, SIMION_RUNNER)):
+                script += f"""
+$t=$null;$e=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile({_ps(runner)},[ref]$t,[ref]$e)
+if($e.Count){{throw 'Actual runner did not parse'}}
+$declaration=$ast.Find({{param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$frozenPythonRelativePaths'}},$true)
+Invoke-Expression $declaration.Extent.Text
+$paths=Get-FrozenPythonPackageExecutionPaths -RelativePaths $frozenPythonRelativePaths
+$package=New-FrozenPythonPackage -SourceRoot $repoRoot -CodeRoot {_ps(root / str(index))} -RelativePaths $frozenPythonRelativePaths
+$execution=Invoke-IsolatedFrozenPythonModule -Python $python -Package $package `
+ -Module 'projects.rf_multipole_ion_optics.workflows.interface_readiness.generate_particle_table' `
+ -Arguments @('--source-family',{_ps(SOURCE_FAMILY)},'--distribution',{_ps(DISTRIBUTION)},
+ '--resolved-design',{_ps(RESOLVED)},'--particle-count','4','--bundle-output-dir',{_ps(root / ('bundle-' + str(index)))}) `
+ -DistributionNames @('numpy') `
+ -RequiredModuleNames @('projects.rf_multipole_ion_optics.workflows.interface_readiness.particle_source_policy') `
+ -ForbiddenRoots @($repoRoot)
+$results+=@{{files=@($package.files.relative_path);paths=$paths;executed=$execution.module_invoked;
+ bundle=(Get-Content -Raw -LiteralPath {_ps(root / ('bundle-' + str(index)) / 'paired_particle_bundle.json')}|ConvertFrom-Json)}}
+"""
+            script += '$results|ConvertTo-Json -Depth 8 -Compress'
+            completed = subprocess.run(
+                ['pwsh', '-NoProfile', '-NonInteractive', '-Command', script],
+                cwd=root, capture_output=True, text=True, encoding='utf-8',
+                errors='replace', timeout=120,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            results = json.loads(completed.stdout[completed.stdout.index('[{'):])
+            self.assertEqual(results[0]['bundle']['sample_family_sha256'], results[1]['bundle']['sample_family_sha256'])
+            for result in results:
+                files = result['files']
+                self.assertTrue(result['executed'])
+                self.assertEqual(result['paths'], ['inputs/code/' + path for path in files])
+                self.assertIn('projects/rf_multipole_ion_optics/analysis/paired_particle_source_bundle.py', files)
+                self.assertNotIn('projects/rf_multipole_ion_optics/analysis/__init__.py', files)
+                self.assertFalse(any('/tests/' in path or Path(path).name.startswith('test_') for path in files))
+
+    def test_package_selector_uses_utf8_for_unicode_source_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            junction = root / "源码根"
+            created = subprocess.run(
+                ['cmd', '/d', '/c', 'mklink', '/J', str(junction), str(REPO_ROOT)],
+                cwd=root, capture_output=True, text=True, errors='replace', timeout=20,
+            )
+            self.assertEqual(created.returncode, 0, created.stdout + created.stderr)
+            try:
+                self.assertEqual(junction.resolve(), REPO_ROOT.resolve())
+                script = f"""
+$ErrorActionPreference='Stop'
+. {_ps(HELPER)}
+$OutputEncoding=[Text.ASCIIEncoding]::new()
+$before=$OutputEncoding
+$one=Get-FrozenPythonPackageRelativePaths -SourceRoot {_ps(junction)} `
+ -Python {_ps(sys.executable)} -PythonPackages @('common/contracts')
+$two=Get-FrozenPythonPackageRelativePaths -SourceRoot {_ps(REPO_ROOT)} `
+ -Python {_ps(sys.executable)} -PythonPackages @('common/contracts')
+@{{one=@($one);two=@($two);restored=[object]::ReferenceEquals($before,$OutputEncoding)}}|ConvertTo-Json -Compress
+"""
+                completed = subprocess.run(
+                    ['pwsh', '-NoProfile', '-NonInteractive', '-Command', script],
+                    cwd=root, capture_output=True, text=True, encoding='utf-8',
+                    errors='replace', timeout=30,
                 )
-                self.assertLess(freeze_index, invoke_index)
-                invocation = source[invoke_index : source.index(
-                    "$frozenParticlePolicy", invoke_index
-                )]
-                self.assertIn(
-                    "'--validate-bundle',$frozenBundleMetadata",
-                    invocation,
-                )
-                self.assertNotIn("$liveBundleMetadata", invocation)
-                self.assertNotIn("$bundleMetadataInput", invocation)
-                for relative_path in RELATIVE_PATHS:
-                    self.assertIn(f"'{relative_path}'", source)
+                self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+                result = json.loads(completed.stdout)
+                self.assertEqual(result['one'], result['two'])
+                self.assertIn('common/contracts/file_identity.py', result['one'])
+                self.assertTrue(result['restored'])
+            finally:
+                # Remove only this verified directory junction, never its source target.
+                os.rmdir(junction)
 
     def test_runtime_helper_is_policy_neutral(self) -> None:
         source = HELPER.read_text(encoding="utf-8").lower()
@@ -231,21 +280,6 @@ try {{ . $analysisBlock }} catch {{ $missing=$_.Exception.Message }}
             "1000",
         ):
             self.assertNotIn(forbidden, source)
-
-    def test_comsol_runner_freezes_analysis_namespace_modules_without_init(
-        self,
-    ) -> None:
-        source = COMSOL_RUNNER.read_text(encoding="utf-8")
-        self.assertFalse((PROJECT_ROOT / "analysis" / "__init__.py").exists())
-        self.assertNotIn(
-            r"projects\rf_multipole_ion_optics\analysis\__init__.py",
-            source,
-        )
-        for relative_path in (
-            RELATIVE_PATHS[4],
-            GATE_VALIDATOR_RELATIVE_PATH,
-        ):
-            self.assertIn(f"'{relative_path}'", source)
 
     def test_frozen_closure_runs_without_live_pythonpath_and_is_fail_closed(
         self,
@@ -611,7 +645,7 @@ $result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath {_ps(result_path)}
                     if runner_name != "compare_responses.ps1":
                         frozen_python = {Path(entry["path"]).resolve() for entry in record["package"]["files"]
                                          if entry["relative_path"].endswith(".py")}
-                        self.assertEqual(set(origins.values()), frozen_python)
+                        self.assertLessEqual(set(origins.values()), frozen_python)
                     self.assertTrue(all(origin.is_relative_to(code_root) for origin in origins.values()))
                     self.assertEqual(record["execution"]["python_path"], str(code_root))
                     self.assertTrue(record["execution"]["module_invoked"])

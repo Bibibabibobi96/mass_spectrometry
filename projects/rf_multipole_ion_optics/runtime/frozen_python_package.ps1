@@ -9,13 +9,61 @@ function Get-FrozenPythonPackageExecutionPaths {
     })
 }
 
+function Get-FrozenPythonPackageRelativePaths {
+    <# Expand Python groups through the common pure selector once before copying. #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$SourceRoot,
+        [Parameter(Mandatory)][string]$Python,
+        [string[]]$PythonPackages = @(),
+        [string[]]$PythonModules = @(),
+        [string[]]$RelativePaths = @()
+    )
+    $selection = @()
+    if ($PythonPackages.Count -or $PythonModules.Count) {
+        $request = @{source_root=[IO.Path]::GetFullPath($SourceRoot);
+            package_roots=@($PythonPackages);module_paths=@($PythonModules)}
+        $enumerate = @'
+import json, pathlib, sys
+request = json.load(sys.stdin)
+root = pathlib.Path(request["source_root"]).resolve()
+sys.path.insert(0, str(root))
+from common.contracts import frozen_inputs
+if pathlib.Path(frozen_inputs.__file__).resolve() != root / "common/contracts/frozen_inputs.py":
+    raise RuntimeError("Frozen Python source selector escaped the selected source root")
+print(json.dumps(frozen_inputs.enumerate_python_sources(
+    root, package_roots=request["package_roots"], module_paths=request["module_paths"])))
+'@
+        $savedOutputEncoding = $OutputEncoding
+        try {
+            $OutputEncoding = [Text.UTF8Encoding]::new($false)
+            $text = ($request | ConvertTo-Json -Depth 8 -Compress) |
+                & $Python -X utf8 -I -B -c $enumerate | Out-String
+            $selectionExitCode = $LASTEXITCODE
+        } finally {
+            $OutputEncoding = $savedOutputEncoding
+        }
+        if ($selectionExitCode -ne 0) {throw 'Frozen Python package/module selection failed.'}
+        $selection = @($text | ConvertFrom-Json)
+    }
+    return @($selection) + @($RelativePaths)
+}
+
 function New-FrozenPythonPackage {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$SourceRoot,
         [Parameter(Mandatory)][string]$CodeRoot,
-        [Parameter(Mandatory)][string[]]$RelativePaths
+        [string[]]$RelativePaths = @(),
+        [string[]]$PythonPackages = @(),
+        [string[]]$PythonModules = @(),
+        [string]$Python = ''
     )
+    if ($PythonPackages.Count -or $PythonModules.Count) {
+        if (-not $Python) {throw 'Python package/module selection requires the selected Python executable.'}
+        $RelativePaths = Get-FrozenPythonPackageRelativePaths -SourceRoot $SourceRoot -Python $Python `
+            -PythonPackages $PythonPackages -PythonModules $PythonModules -RelativePaths $RelativePaths
+    }
     $resolvedSourceRoot = [IO.Path]::GetFullPath($SourceRoot)
     $resolvedCodeRoot = [IO.Path]::GetFullPath($CodeRoot)
     $seen = [Collections.Generic.HashSet[string]]::new(
@@ -282,32 +330,15 @@ function New-RfPublishedDesignFreshnessPackage {
         [Parameter(Mandatory)][string]$SnapshotRoot,
         [Parameter(Mandatory)][ValidateSet('interface','mass_filter')][string]$Profile
     )
-    $sourceFiles = @(
-        'common/contracts/artifact_identity_archive.py',
-        'common/contracts/artifact_naming.py',
-        'common/contracts/build_project_registry.py',
-        'common/contracts/file_identity.py',
-        'common/contracts/machine_contracts.py',
-        'common/contracts/particle_count_policy.py',
-        'common/contracts/particle_physics.py',
-        'common/ion_release/__init__.py',
-        'common/ion_release/continuous_axial_volume.py',
-        'common/ion_release/cylinder.py',
-        'common/ion_release/mt19937_disk_cone_rf_phase.py',
-        'common/ion_release/release.py',
-        'projects/rf_multipole_ion_optics/analysis/resolve_contract.py',
-        'projects/rf_multipole_ion_optics/core/__init__.py',
-        'projects/rf_multipole_ion_optics/core/axial_acceleration.py',
-        'projects/rf_multipole_ion_optics/core/compile_design_request.py',
-        'projects/rf_multipole_ion_optics/core/connector_geometry.py',
-        'projects/rf_multipole_ion_optics/core/family_contract.py',
-        'projects/rf_multipole_ion_optics/core/interface_geometry.py',
-        'projects/rf_multipole_ion_optics/core/round_rod_geometry.py',
-        'projects/rf_multipole_ion_optics/runtime/design_profile.py',
-        'projects/rf_multipole_ion_optics/runtime/particle_source_preflight.py',
-        'projects/rf_multipole_ion_optics/runtime/runtime_profile.py',
-        'projects/rf_multipole_ion_optics/runtime/simion_numerics.py'
-    )
+    $sourceFiles = Get-FrozenPythonPackageRelativePaths -SourceRoot $SourceRoot -Python $Python `
+        -PythonPackages @(
+            'common/contracts',
+            'common/analysis',
+            'projects/rf_multipole_ion_optics/analysis',
+            'projects/rf_multipole_ion_optics/core',
+            'projects/rf_multipole_ion_optics/runtime',
+            'common/ion_release'
+        )
     # Ask the frozen original PROFILES authority; do not maintain another profile map.
     $sourcePackage = New-FrozenPythonPackage -SourceRoot $SourceRoot `
         -CodeRoot $SnapshotRoot -RelativePaths $sourceFiles

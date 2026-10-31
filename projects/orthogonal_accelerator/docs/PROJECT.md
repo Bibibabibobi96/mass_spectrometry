@@ -185,4 +185,20 @@ execution profile 由纯几何与 release 解析器绑定本次结构、质量�
 
 ## 公共科学CSV接线
 
-组件焦面事件使用公共 scientific_event_csv writer／scientific_event_io 流式 reader；列顺序、12位有效数字、每ID时钟、原母群与原物理门槛保持。飞行入口冻结实际 writer companion 并纳入结果 manifest，项目继续拥有穿面、步长及终止政策。既有两档步长 N100 原生证据验证原事件政策，不能表述为本次 CSV 运输修改已新增原生 Fly 或科学资格。
+组件焦面事件使用公共 scientific_event_csv writer／scientific_event_io 流式 reader；列顺序、12位有效数字、每ID时钟、原母群与原物理门槛保持。飞行入口冻结实际 writer companion 并纳入结果 manifest，项目继续拥有穿面、步长及终止政策。
+
+正常入口 `20261031_235000__sim__simion__oa-focus-csv-wiring` 复用既有私有 Fast Adjust 场，
+实际执行1次 IOB 构建、1次 Fly（3.10秒）、0 Refine，公开墙钟12.771秒。
+400行事件的 source／exit／focus／terminal 各100个原ID，同面 exit／focus 的时刻与6D一致；
+分析得到100个有效配对。原母群1000中的另900个未模拟，不计为损失。
+该记录验证 CSV 运输，不授予空间／时间收敛或整机科学资格；当时 Python 仍从活动源码执行。
+
+### 冻结 Python 真实执行
+
+2026-11-01，飞行入口改由公共 `enumerate_python_sources` 展开4个小包及显式几何 JSON，
+删除两个未被执行的单文件存档；实际源生成、SIMION 源投影和分析均从同一冻结目录运行，
+不回退活动仓库。冻结输入逐文件登记到原 run 配置，实际模块来源写入 `results/python_execution.json`。
+不依赖场的导入与几何资源读取在两个原生命令前完成。
+两项隔离测试通过7.238秒，覆盖封存 N100 CSV 的真实准备／分析等价、manifest 绑定及缺代码／资源拒绝；
+中文源码路径和 ASCII 调用方编码的受影响正例补验通过3.608秒，编码设置恢复。
+这些软件补验未新增 Fly／Refine；原物理、容量与进程归属政策保持。

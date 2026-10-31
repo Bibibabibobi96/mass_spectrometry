@@ -160,7 +160,7 @@ try{
     -ResultPath $ResultPath -EntrypointPath $ownerEntrypoint `
     -CommitmentInputPaths $commitmentInputs -Software $software
   $ResultPath=$ownerContext.result_path
-  $frozen=Freeze-ConsumerDependencies -RepoRoot $RepoRoot -ContractPath (Join-Path $RepoRoot 'integrations/config/runtime_dependencies.json') `
+  $frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $RepoRoot -ContractPath (Join-Path $RepoRoot 'integrations/config/runtime_dependencies.json') `
     -InputDir $package.input_dir -OwnerId $project -ConsumerId $consumer
   $config=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable -Depth 100
   $config.inputs.code_inventory=Convert-WorkflowOwnerPath $ownerContext $frozen.code_inventory_path

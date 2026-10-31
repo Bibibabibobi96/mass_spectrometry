@@ -587,9 +587,13 @@ exit 0
     def test_direct_integration_gate_routes_its_declared_frozen_dependencies(self) -> None:
         inventory = json.loads((REPO_ROOT / "integrations/config/runtime_dependencies.json").read_text(encoding="utf-8"))
         for group in inventory["providers"]:
-            for dependency in group["files"]:
-                with self.subTest(dependency=dependency["id"]):
+            for dependency in group["files"] + group["python_modules"]:
+                with self.subTest(dependency=dependency["source_repo_path"]):
                     self.assertIn("instrument_assembly_integration", self.routed_stages(dependency["source_repo_path"]))
+            for package in group["python_packages"]:
+                for suffix in ("new_module.py", "nested/deleted_module.py"):
+                    with self.subTest(package=package["source_repo_path"], suffix=suffix):
+                        self.assertIn("instrument_assembly_integration", self.routed_stages(package["source_repo_path"] + "/" + suffix))
 
     def test_runtime_dependency_paths_select_the_real_integration_plan(self) -> None:
         # These newly consumed geometry/export paths previously escaped L1 routing.
@@ -620,62 +624,6 @@ exit 0
             cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=30,
         )
 
-    def test_runtime_inventory_changes_route_without_editing_the_catalog(self) -> None:
-        # Copy only the real plan/parser boundary; no gate stage or solver executes.
-        with tempfile.TemporaryDirectory(prefix="gate_inventory_") as directory:
-            repo = Path(directory)
-            (repo / "common").mkdir()
-            (repo / "projects").mkdir()
-            (repo / "integrations/config").mkdir(parents=True)
-            for name in ("verify.ps1", "gate_catalog_support.ps1", "parallel_gate_support.ps1",
-                         "host_execution_lease.ps1", "require_powershell7.ps1"):
-                shutil.copyfile(REPO_ROOT / "common" / name, repo / "common" / name)
-            gate = repo / "integrations/verify_integration.ps1"
-            gate.write_text("throw 'PlanOnly must not execute stages'\n", encoding="utf-8")
-            inventory_path = "integrations/config/runtime_dependencies.json"
-            route = dict(stage="instrument_assembly_integration", dependency_profile="locked",
-                         repository_integration_group="regression",
-                         matches=[dict(prefix="integrations/", reason="integration_changed")],
-                         runtime_dependencies_path=inventory_path,
-                         command=dict(runner="powershell", script="integrations/verify_integration.ps1"))
-            (repo / "common/gate_catalog.json").write_text(json.dumps(dict(
-                schema_version=2, role="repository_gate_catalog", routes=[route])), encoding="utf-8")
-            inventory = dict(schema_version=2, role="integration_runtime_dependencies", providers=[
-                dict(files=[dict(source_repo_path="common/first_dependency.py")])])
-            target = repo / inventory_path
-            first = repo / "common/first_dependency.py"
-            added = repo / "common/added_dependency.py"
-            first.write_text("", encoding="utf-8")
-            added.write_text("", encoding="utf-8")
-            target.write_text(json.dumps(inventory), encoding="utf-8")
-            result = self._runtime_dependency_plan(repo, "common/added_dependency.py")
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            selected = re.search(r"SELECTED_STAGES=([^\s]+)", result.stdout)
-            self.assertIsNotNone(selected, result.stdout)
-            self.assertNotIn("instrument_assembly_integration", selected[1].split(","))
-            inventory["providers"][0]["files"].append(dict(source_repo_path="common/added_dependency.py"))
-            target.write_text(json.dumps(inventory), encoding="utf-8")
-            result = self._runtime_dependency_plan(repo, "common/added_dependency.py")
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("instrument_assembly_integration", re.search(
-                r"SELECTED_STAGES=([^\s]+)", result.stdout)[1].split(","))
-            for case in ("missing_inventory", "unknown_schema", "unknown_role", "missing_source"):
-                with self.subTest(case=case):
-                    changed = json.loads(json.dumps(inventory))
-                    if case == "missing_inventory":
-                        target.unlink()
-                    else:
-                        if case == "unknown_schema":
-                            changed["schema_version"] = 999
-                        elif case == "unknown_role":
-                            changed["role"] = "unknown_inventory"
-                        else:
-                            changed["providers"][0]["files"][0]["source_repo_path"] = "common/missing.py"
-                        target.write_text(json.dumps(changed), encoding="utf-8")
-                    result = self._runtime_dependency_plan(repo, "common/added_dependency.py")
-                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-                    self.assertIn("dependency", result.stderr)
-                    self.assertNotIn("SELECTED_STAGES=", result.stdout)
 
     def test_direct_integration_test_plan_selects_its_own_gate(self) -> None:
         pwsh = shutil.which("pwsh")
@@ -1339,6 +1287,95 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
 
+
+
+class RuntimeInventoryRouteTests(unittest.TestCase):
+    """Exercise the actual selector on a small declared author inventory."""
+
+    def test_runtime_inventory_changes_route_without_editing_the_catalog(self) -> None:
+        # Copy only the real plan/parser boundary; no gate stage or solver executes.
+        with tempfile.TemporaryDirectory(prefix="gate_inventory_") as directory:
+            repo = Path(directory)
+            (repo / "common").mkdir()
+            (repo / "projects").mkdir()
+            (repo / "integrations/config").mkdir(parents=True)
+            for name in ("verify.ps1", "gate_catalog_support.ps1", "parallel_gate_support.ps1",
+                         "host_execution_lease.ps1", "require_powershell7.ps1"):
+                shutil.copyfile(REPO_ROOT / "common" / name, repo / "common" / name)
+            gate = repo / "integrations/verify_integration.ps1"
+            gate.write_text("throw 'PlanOnly must not execute stages'\n", encoding="utf-8")
+            inventory_path = "integrations/config/runtime_dependencies.json"
+            route = dict(stage="instrument_assembly_integration", dependency_profile="locked",
+                         repository_integration_group="regression",
+                         matches=[dict(prefix="integrations/", reason="integration_changed")],
+                         runtime_dependencies_path=inventory_path,
+                         command=dict(runner="powershell", script="integrations/verify_integration.ps1"))
+            (repo / "common/gate_catalog.json").write_text(json.dumps(dict(
+                schema_version=2, role="repository_gate_catalog", routes=[route])), encoding="utf-8")
+            inventory = dict(schema_version=3, role="integration_runtime_dependencies", providers=[
+                dict(files=[dict(source_repo_path="common/first_dependency.json")],
+                     python_packages=[], python_modules=[])])
+            target = repo / inventory_path
+            first = repo / "common/first_dependency.json"
+            added = repo / "common/added_dependency.json"
+            first.write_text("", encoding="utf-8")
+            added.write_text("", encoding="utf-8")
+            target.write_text(json.dumps(inventory), encoding="utf-8")
+            result = ChangedGateContractTests._runtime_dependency_plan(repo, "common/added_dependency.json")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            selected = re.search(r"SELECTED_STAGES=([^\s]+)", result.stdout)
+            self.assertIsNotNone(selected, result.stdout)
+            self.assertNotIn("instrument_assembly_integration", selected[1].split(","))
+            inventory["providers"][0]["files"].append(dict(source_repo_path="common/added_dependency.json"))
+            target.write_text(json.dumps(inventory), encoding="utf-8")
+            result = ChangedGateContractTests._runtime_dependency_plan(repo, "common/added_dependency.json")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("instrument_assembly_integration", re.search(
+                r"SELECTED_STAGES=([^\s]+)", result.stdout)[1].split(","))
+            (repo / "common/pkg").mkdir()
+            entry = repo / "common/pkg/deleted_module.py"
+            entry.write_text("", encoding="utf-8")
+            (repo / "common/standalone.py").write_text("", encoding="utf-8")
+            inventory["providers"][0]["python_packages"] = [dict(source_repo_path="common/pkg")]
+            inventory["providers"][0]["python_modules"] = [dict(source_repo_path="common/standalone.py")]
+            target.write_text(json.dumps(inventory), encoding="utf-8")
+            entry.unlink()
+            # These paths need no source-tree scan: newly added/deleted modules
+            # and namespace initializers retain impact routing by author declaration.
+            for changed_path, expected in (
+                ("common/pkg/new_module.py", True),
+                ("common/pkg/deleted_module.py", True),
+                ("common/__init__.py", True),
+                ("common/standalone.py", True),
+                ("common/standalone_extra.py", False),
+                ("common/pkg/notes.md", False),
+                ("common/pkg/assets/not_code.py", False),
+                ("common/pkg/tests/test_entry.py", False),
+                ("common/pkg_neighbor/module.py", False),
+            ):
+                with self.subTest(changed_path=changed_path):
+                    result = ChangedGateContractTests._runtime_dependency_plan(repo, changed_path)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    stages = re.search(r"SELECTED_STAGES=([^\s]+)", result.stdout)
+                    self.assertIsNotNone(stages, result.stdout)
+                    self.assertEqual("instrument_assembly_integration" in stages[1].split(","), expected)
+            for case in ("missing_inventory", "unknown_schema", "unknown_role", "missing_source"):
+                with self.subTest(case=case):
+                    changed = json.loads(json.dumps(inventory))
+                    if case == "missing_inventory":
+                        target.unlink()
+                    else:
+                        if case == "unknown_schema":
+                            changed["schema_version"] = 999
+                        elif case == "unknown_role":
+                            changed["role"] = "unknown_inventory"
+                        else:
+                            changed["providers"][0]["files"][0]["source_repo_path"] = "common/missing.json"
+                        target.write_text(json.dumps(changed), encoding="utf-8")
+                    result = ChangedGateContractTests._runtime_dependency_plan(repo, "common/added_dependency.json")
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("dependency", result.stderr)
+                    self.assertNotIn("SELECTED_STAGES=", result.stdout)
 
 
 if __name__ == "__main__":

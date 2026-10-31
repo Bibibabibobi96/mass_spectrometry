@@ -248,24 +248,23 @@ def _prepare_analysis_request(inputs: Path, results: Path) -> tuple[Path, dict[s
         destination.parent.mkdir(parents=True, exist_ok=True)
         record = freeze_file(REPOSITORY_ROOT / relative, destination)
         frozen_inputs["analysis_support_" + Path(relative).stem] = record["path"]
-    relative_paths = [
-        prefix + "workflows/__init__.py",
-        prefix + "workflows/mass_filter_reference/__init__.py",
-        prefix + "workflows/mass_filter_reference/run_finite_length.py",
-        prefix + "workflows/mass_filter_reference/theory.py",
-        prefix + "core/__init__.py", prefix + "core/family_contract.py",
-        prefix + "core/mass_response.py", prefix + "core/paired_mass_scan.py",
-        prefix + "config/contracts/family_contract.json",
-        "common/analysis/peak_metrics.py", "common/contracts/file_identity.py",
+    python_packages = [
+        "common/contracts", "common/analysis",
+        prefix + "core", prefix + "workflows/mass_filter_reference",
     ]
+    relative_paths = [prefix + "config/contracts/family_contract.json"]
     request = {
         "schema_version": 1, "role": "rf_mass_filter_l1_frozen_analysis_request",
         "source_root": str(REPOSITORY_ROOT), "code_root": str(inputs / "analysis_code"),
         "artifact_support": frozen_inputs["analysis_support_run_artifact_support"],
         "package_support": frozen_inputs["analysis_support_frozen_python_package"],
         "python": sys.executable, "relative_paths": relative_paths,
-        "required_modules": [path[:-3].replace("/", ".") for path in relative_paths
-                             if path.endswith(".py") and not path.endswith("/__init__.py")],
+        "python_packages": python_packages,
+        "required_modules": [
+            "common.analysis.peak_metrics",
+            "projects.rf_multipole_ion_optics.core.mass_response",
+            "projects.rf_multipole_ion_optics.workflows.mass_filter_reference.run_finite_length",
+        ],
         "module": "projects.rf_multipole_ion_optics.workflows.mass_filter_reference.run_finite_length",
         "arguments": [
             "--analyze-response", str(inputs / "mass_response_for_analysis.csv"),
@@ -295,7 +294,8 @@ $request = Get-Content -LiteralPath $env:RF_MASS_RESPONSE_REQUEST -Raw | Convert
 . $request.package_support
 if ($env:RF_MASS_RESPONSE_PREPARE -eq '1') {
     $package = New-FrozenPythonPackage -SourceRoot $request.source_root `
-        -CodeRoot $request.code_root -RelativePaths $request.relative_paths
+        -CodeRoot $request.code_root -RelativePaths $request.relative_paths `
+        -Python $request.python -PythonPackages $request.python_packages
     $environment = Invoke-IsolatedFrozenPythonModule -Python $request.python `
         -Package $package -Module $request.module -Arguments @('--help') `
         -DistributionNames @('numpy','scipy','matplotlib') `

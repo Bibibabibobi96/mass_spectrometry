@@ -271,7 +271,7 @@ class AcceleratorGeometryTests(unittest.TestCase):
         command = f"""
 . '{repo / 'integrations/runtime/dependencies.ps1'}'
 $path='{repo / 'integrations/config/runtime_dependencies.json'}'
-$null=Freeze-ConsumerDependencies -RepoRoot '{repo}' -ContractPath $path -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{repo}' -ContractPath $path -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
 """
         frozen = subprocess.run([pwsh, "-NoProfile", "-Command", command], cwd=repo,
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)

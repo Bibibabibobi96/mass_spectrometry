@@ -67,17 +67,15 @@ try {
       -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
   . $frozenPythonSupport
   $analysisModule = 'projects.rf_multipole_ion_optics.workflows.mass_filter_reference.evaluate_comsol'
-  $analysisFiles = @(
-      'projects\rf_multipole_ion_optics\workflows\__init__.py',
-      'projects\rf_multipole_ion_optics\workflows\mass_filter_reference\__init__.py',
-      'projects\rf_multipole_ion_optics\workflows\mass_filter_reference\evaluate_comsol.py',
-      'projects\rf_multipole_ion_optics\analysis\analyze_comsol_particle_state_metrics.py',
-      'projects\rf_multipole_ion_optics\core\__init__.py',
-      'projects\rf_multipole_ion_optics\core\mass_response.py',
-      'projects\rf_multipole_ion_optics\core\paired_mass_scan.py',
-      'common\contracts\file_identity.py',
-      'common\analysis\peak_metrics.py'
-  )
+  $analysisFiles = Get-FrozenPythonPackageRelativePaths -SourceRoot $repoRoot -Python $python `
+      -PythonPackages @(
+          'common/contracts',
+          'common/analysis',
+          'projects/rf_multipole_ion_optics/analysis',
+          'projects/rf_multipole_ion_optics/core',
+          'projects/rf_multipole_ion_optics/runtime',
+          'projects/rf_multipole_ion_optics/workflows/mass_filter_reference'
+      )
   $frozenMatlabRelativePaths=@(
       'common/comsol/create_multipole_round_rods.m',
       'common/comsol/configure_comsol_mesh.m',
@@ -94,8 +92,10 @@ try {
   $frozenAnalysisPackage = New-FrozenPythonPackage `
       -SourceRoot $repoRoot -CodeRoot (Join-Path $inputDir 'analysis_runtime') `
       -RelativePaths @($analysisFiles+$frozenMatlabRelativePaths)
-  $analysisRequiredModules = @($analysisFiles | Where-Object { $_.EndsWith('.py') } |
-      ForEach-Object { $_ -replace '[/\\]__init__\.py$', '' -replace '\.py$', '' -replace '[/\\]', '.' })
+  $analysisRequiredModules = @($analysisModule,
+      'projects.rf_multipole_ion_optics.core.mass_response',
+      'projects.rf_multipole_ion_optics.core.paired_mass_scan',
+      'common.contracts.file_identity','common.analysis.peak_metrics')
   $analysisDistributions = @('matplotlib','numpy','scipy')
   $frozenAnalysisEnvironment = Invoke-IsolatedFrozenPythonModule `
       -Python $python -Package $frozenAnalysisPackage -Module $analysisModule `

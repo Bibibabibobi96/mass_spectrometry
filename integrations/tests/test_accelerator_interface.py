@@ -43,6 +43,14 @@ def _copy_path_consumer_repository(target):
     contract = json.loads((REPO / "integrations/config/runtime_dependencies.json").read_text(encoding="utf-8"))
     paths = {row["source_repo_path"] for group in contract["providers"] for row in group["files"]
              if "multipole_ip" in row["consumers"]}
+    from common.contracts.frozen_inputs import enumerate_python_sources
+    for group in contract["providers"]:
+        packages = [row["source_repo_path"] for row in group["python_packages"]
+                    if "multipole_ip" in row["consumers"]]
+        modules = [row["source_repo_path"] for row in group["python_modules"]
+                   if "multipole_ip" in row["consumers"]]
+        if packages or modules:
+            paths.update(enumerate_python_sources(REPO, package_roots=packages, module_paths=modules))
     paths.update({"integrations/config/runtime_dependencies.json", "integrations/registry.json",
                   "integrations/runtime/dependencies.ps1"})
     for relative in paths:
@@ -1126,7 +1134,7 @@ if($LASTEXITCODE-ne0){throw 'actual preparation command did not disable bytecode
         self.assertIsNotNone(pwsh)
         command = f"""
 . '{REPO / 'integrations/runtime/dependencies.ps1'}'
-$null=Freeze-ConsumerDependencies -RepoRoot '{REPO}' -ContractPath '{REPO / 'integrations/config/runtime_dependencies.json'}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' -ContractPath '{REPO / 'integrations/config/runtime_dependencies.json'}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
 """
         frozen = subprocess.run([pwsh, "-NoProfile", "-Command", command], cwd=REPO,
             capture_output=True, encoding="utf-8", errors="replace", timeout=120)
@@ -1206,7 +1214,7 @@ print("DETACHED_IP_MR_COMPLETE_SOURCE=PASS")
             command = f"""
 . '{REPO / 'integrations/runtime/dependencies.ps1'}'
 $path='{REPO / 'integrations/config/runtime_dependencies.json'}'
-$null=Freeze-ConsumerDependencies -RepoRoot '{REPO}' -ContractPath $path -InputDir '{run / 'inputs'}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' -ContractPath $path -InputDir '{run / 'inputs'}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
 """
             completed = subprocess.run([pwsh, "-NoProfile", "-Command", command], cwd=REPO,
                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)

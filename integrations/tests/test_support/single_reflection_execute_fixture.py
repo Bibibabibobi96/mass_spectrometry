@@ -80,6 +80,14 @@ class SingleReflectionExecuteFixture(unittest.TestCase):
         repo=directory/'repo'
         paths={row['source_repo_path'] for group in contract['providers'] for row in group['files']
                if 'single_reflection_flight' in row['consumers']}
+        from common.contracts.frozen_inputs import enumerate_python_sources
+        for group in contract['providers']:
+            packages = [row['source_repo_path'] for row in group['python_packages']
+                        if 'single_reflection_flight' in row['consumers']]
+            modules = [row['source_repo_path'] for row in group['python_modules']
+                       if 'single_reflection_flight' in row['consumers']]
+            if packages or modules:
+                paths.update(enumerate_python_sources(REPO, package_roots=packages, module_paths=modules))
         paths.update({'integrations/config/runtime_dependencies.json','integrations/registry.json',
                       'integrations/runtime/dependencies.ps1','common/contracts/artifact_naming.py'})
         seed_names = {f'iob_seed_placeholder_{number:02d}.pa0' for number in range(1, 6)}

@@ -204,30 +204,55 @@ function Read-GateCatalog {
             }
             $inventory = Get-Content -Raw -LiteralPath $inventoryPath |
                 ConvertFrom-Json -Depth 32
-            if ($inventory.schema_version -ne 2 -or
+            if ($inventory.schema_version -ne 3 -or
                 $inventory.role -ne 'integration_runtime_dependencies' -or
                 @($inventory.providers).Count -eq 0) {
                 throw "Unsupported gate runtime dependency inventory: $inventoryPath"
             }
-            $dependencyPaths = @(
-                [string]$route.runtime_dependencies_path
-                foreach ($provider in $inventory.providers) {
-                    if (@($provider.files).Count -eq 0) {
-                        throw "Gate runtime dependency provider has no files: $inventoryPath"
+            $dependencyPaths = [Collections.Generic.List[string]]::new()
+            $dependencyPaths.Add([string]$route.runtime_dependencies_path)
+            $packageMatches = [Collections.Generic.List[object]]::new()
+            foreach ($provider in $inventory.providers) {
+                if (-not (@($provider.files).Count + @($provider.python_packages).Count + @($provider.python_modules).Count)) {
+                    throw "Gate runtime dependency provider has no declarations: $inventoryPath"
+                }
+                foreach ($file in @($provider.files) + @($provider.python_modules)) {
+                    $sourcePath = [string]$file.source_repo_path
+                    if (-not $sourcePath -or [IO.Path]::IsPathRooted($sourcePath) -or
+                        $sourcePath -match '(^|/)\.\.?(/|$)' -or
+                        -not (Test-Path -LiteralPath (Join-Path $RepoRoot $sourcePath) -PathType Leaf)) {
+                        throw "Gate runtime dependency source missing or invalid: $sourcePath"
                     }
-                    foreach ($file in $provider.files) {
-                        $sourcePath = [string]$file.source_repo_path
-                        if (-not $sourcePath -or -not (Test-Path -LiteralPath (
-                                    Join-Path $RepoRoot $sourcePath
-                                ) -PathType Leaf)) {
-                            throw "Gate runtime dependency source missing: $sourcePath"
-                        }
-                        $sourcePath
+                    $dependencyPaths.Add($sourcePath)
+                }
+                foreach ($package in $provider.python_packages) {
+                    $sourcePath = [string]$package.source_repo_path
+                    if (-not $sourcePath -or [IO.Path]::IsPathRooted($sourcePath) -or
+                        $sourcePath -match '(^|/)\.\.?(/|$)' -or
+                        -not (Test-Path -LiteralPath (Join-Path $RepoRoot $sourcePath) -PathType Container)) {
+                        throw "Gate runtime dependency package missing or invalid: $sourcePath"
+                    }
+                    # Match added/deleted production modules without enumerating a
+                    # package. Data/docs and excluded delivery trees do not widen routing.
+                    $packageMatches.Add([pscustomobject]@{
+                        regex = '^' + [regex]::Escape($sourcePath.TrimEnd('/') + '/') +
+                            '(?!(?:[^/]+/)*(?:tests|test_support|testing_support|history|generated|__pycache__|assets|artifacts|vendor|third_party|third-party|\.git|\.venv)/)' +
+                            '(?!(?:[^/]+/)*test_[^/]*\.py$)(?!.*_test\.py$).+\.py$'
+                        reason = 'declared_runtime_dependency_changed'
+                    })
+                }
+                # Parent initializers affect package/namespace import semantics,
+                # including when the changed initializer was added or deleted.
+                foreach ($selection in @($provider.python_packages) + @($provider.python_modules)) {
+                    $parent = [IO.Path]::GetDirectoryName([string]$selection.source_repo_path)
+                    while ($parent) {
+                        $dependencyPaths.Add(($parent.Replace('\','/') + '/__init__.py'))
+                        $parent = [IO.Path]::GetDirectoryName($parent)
                     }
                 }
-            ) | Sort-Object -Unique
-            $route.matches = @($route.matches) + @(
-                foreach ($sourcePath in $dependencyPaths) {
+            }
+            $route.matches = @($route.matches) + @($packageMatches.ToArray()) + @(
+                foreach ($sourcePath in $dependencyPaths | Sort-Object -Unique) {
                     [pscustomobject]@{
                         exact = $sourcePath
                         reason = 'declared_runtime_dependency_changed'

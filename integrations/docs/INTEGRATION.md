@@ -373,9 +373,14 @@ MR的`load-workbench`与batch Fly共用碰撞PA预载并保持不可Refine状态
 ## 依赖冻结与门禁
 
 [运行依赖清单](../config/runtime_dependencies.json)与[冻结器](../runtime/dependencies.ps1)按明确owner／consumer复制实际来源。
-OA的`sectioned_geometry`是assembly interface、bare-three-zone adapter和single-flight frontend共同使用的纯几何依赖；
-清单按这三个现有提供者的实际consumer并集冻结，OA→MR和单反射快照均可脱离活动仓库准备。
-清单仅冻结实际消费源码；finite-interval独立设计编译器仍归OA理论API，local／cooled未调用，不再重复携带。
+schema 3 按提供者声明 `python_packages`／`python_modules`，由公共
+[`enumerate_python_sources`](../../common/contracts/frozen_inputs.py)派生 Python 交付闭包；
+Lua、MATLAB、JSON 等动态资源继续由 `files` 显式声明。9 个工作流传入其已解析的 Python，
+一次展开后仍发布既有扁平 inventory，Python 条目的 ID 为 `python:<source_repo_path>`。
+只要求当前 consumer 声明的代码与资源存在，未消费包不扩大本次冻结范围；声明本身仍校验提供者和路径边界。
+包内新增模块不再要求逐文件维护清单；已有父包初始化文件随包交付，历史 run 的冻结清单不改写。
+较宽的源码交付不替代场、Fly、Analysis 的实际科学依赖投影，不能据此让未受影响结果失效。
+OA 纯几何仍归项目提供者，OA→MR 和单反射等消费者从同一冻结闭包执行准备，不回退活动仓库。
 普通小输入的复制与身份校验统一调用`Copy-VerifiedRunInput`，直接使用其已核验SHA生成来源收据；
 集成适配器继续验证提供者边界、显式清单与目标不存在，公共复制失败的实测摘要保留在依赖错误中。
 冻结清单已包含PowerShell公共复制入口及直接导入，`prepared_joint`快照可脱离活动仓库继续冻结输入。

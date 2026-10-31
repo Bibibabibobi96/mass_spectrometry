@@ -52,7 +52,7 @@ $module='integrations.workflows.cooled_frontend'
 function Freeze-CooledRuntime {
  param([Parameter(Mandatory)][string]$InputDir)
  $dependencyPath=Join-Path $RepoRoot 'integrations/config/runtime_dependencies.json'
- return Freeze-ConsumerDependencies -RepoRoot $RepoRoot -ContractPath $dependencyPath -InputDir $InputDir -OwnerId $integration -ConsumerId cooled_frontend
+ return Freeze-ConsumerDependencies -Python $Python -RepoRoot $RepoRoot -ContractPath $dependencyPath -InputDir $InputDir -OwnerId $integration -ConsumerId cooled_frontend
 }
 
 function Invoke-CooledNative {

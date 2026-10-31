@@ -101,6 +101,15 @@ class PreparedJointAnalysisTests(unittest.TestCase):
         inventory = json.loads((REPO / "integrations/config/runtime_dependencies.json").read_text())
         records = [item for group in inventory["providers"] for item in group["files"]
                    if "prepared_joint" in item["consumers"]]
+        from common.contracts.frozen_inputs import enumerate_python_sources
+        for group in inventory["providers"]:
+            packages = [row["source_repo_path"] for row in group["python_packages"]
+                        if "prepared_joint" in row["consumers"]]
+            modules = [row["source_repo_path"] for row in group["python_modules"]
+                       if "prepared_joint" in row["consumers"]]
+            if packages or modules:
+                records.extend({"source_repo_path": path} for path in enumerate_python_sources(
+                    REPO, package_roots=packages, module_paths=modules))
         support = {"common/contracts/run_artifact_support.ps1", "common/require_powershell7.ps1", "common/host_execution_lease.ps1"}
         capacity_fixture = r'''
 function Invoke-RunCapacityLifecycleAdapter {return @{light_evidence_budget_exceeded=$false}}
@@ -411,8 +420,8 @@ $repoRoot=$TestRoot;$workspaceRoot=$TestRoot;$projectId='instrument_assembly'
 New-Item -ItemType Directory -Path (Join-Path $repoRoot 'integrations/config')|Out-Null
 @{schema_version=2;role='integration_runtime_dependencies';owner_id='instrument_assembly';consumer_ids=@('prepared_joint');providers=@()}|ConvertTo-Json -Depth 5|Set-Content (Join-Path $repoRoot 'integrations/config/runtime_dependencies.json')
 function Freeze-ConsumerDependencies {
- param($RepoRoot,$ContractPath,$InputDir,$OwnerId,$ConsumerId)
- if($OwnerId-ne'instrument_assembly'-or$ConsumerId-ne'prepared_joint'){throw 'Wrong freeze owner/consumer'}
+ param($RepoRoot,$ContractPath,$InputDir,$OwnerId,$ConsumerId,$Python)
+ if($Python-ne'mock'-or$OwnerId-ne'instrument_assembly'-or$ConsumerId-ne'prepared_joint'){throw 'Wrong freeze owner/consumer'}
  $inventory=Join-Path $InputDir 'code_inventory.json';'{}'|Set-Content $inventory
  return @{execution_root=$Repository;code_inventory_path=$inventory;dependency_contract_path=$ContractPath;identities=@()}
 }
@@ -669,7 +678,7 @@ foreach($kind in @('Prepared','Legacy')){
         freeze = f"""
 . '{REPO / 'integrations/runtime/dependencies.ps1'}'
 $path='{REPO / 'integrations/config/runtime_dependencies.json'}'
-$null=Freeze-ConsumerDependencies -RepoRoot '{REPO}' -ContractPath $path -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId prepared_joint
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' -ContractPath $path -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId prepared_joint
 """
         completed = subprocess.run([pwsh, "-NoProfile", "-Command", freeze], cwd=REPO,
                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)

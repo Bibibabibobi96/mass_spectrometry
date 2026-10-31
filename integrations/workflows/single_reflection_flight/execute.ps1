@@ -58,7 +58,7 @@ $inputs=Join-Path $OutputDirectory 'inputs'
 if(-not(Test-Path -LiteralPath $inputs -PathType Container)){
   throw 'Managed run inputs directory is missing.'
 }
-$frozen=Freeze-ConsumerDependencies -RepoRoot $RepoRoot `
+$frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $RepoRoot `
   -ContractPath (Join-Path $RepoRoot 'integrations/config/runtime_dependencies.json') `
   -InputDir $inputs -OwnerId instrument_assembly -ConsumerId single_reflection_flight
 $frozenExecutionRoot=Join-Path $OutputDirectory 'inputs/runtime_snapshot'

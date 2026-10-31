@@ -10,7 +10,7 @@
 |---|---|
 | 排查软件验证选了哪些阶段、失败退出或日志 | [门禁编排](#门禁编排)、[唯一目录](gate_catalog.json)、[并行调用器](parallel_gate_support.ps1) |
 | 排查资源等待、进程归属、阶段切换和释放 | [主机资源实现](#主机资源实现)、[PowerShell入口](host_execution_lease.ps1)、[调度器](host_resource_scheduler.py) |
-| 创建run、冻结输入、发布manifest或维护容量 | [机器合同与生命周期API](contracts/README.md) |
+| 创建run、冻结输入、发布manifest、保护来源或恢复收尾 | [机器合同与生命周期API](contracts/README.md#python工作流的公共生命周期owner)；小Result保存在run外，原CLI的ResumeFinalization只恢复收尾 |
 | 发现项目、校验设计请求与预览执行计划 | [项目发现与规划](contracts/README.md#项目发现) |
 | 连接组件、解析完整配方与局部范围 | [公共连接合同](integration/README.md) |
 | 构造母群、释放与粒子身份 | [离子释放](ion_release/README.md) |
@@ -18,7 +18,7 @@
 | 维护COMSOL启动器与共享小模型 | [COMSOL实现](comsol/README.md) |
 | 维护SIMION执行、PA缓存、批次与恢复 | [SIMION实现](simion/README.md)；批次协调使用 `Invoke-SimionBatchPhase`，科学物化和接受条件由调用方提供 |
 | 维护STEP导入、SolidWorks生成和引用检查 | [SolidWorks桥接](solidworks/README.md) |
-| 定位源码与artifact路径 | [路径机制](paths/README.md) |
+| 定位源码、产物、执行表示与主机库 | [路径机制](paths/README.md#公共运行根与原生执行表示)；身份使用持久位置，原生参数使用本次执行表示 |
 
 只进入本次涉及的实现边界。文档结构与链接由`verify_documentation.ps1`和`documentation_links.py`检查；
 跨语言实现规则由`verify_development_standards.py`检查；受管文本字节由`verify_repository_text_bytes.py`检查。

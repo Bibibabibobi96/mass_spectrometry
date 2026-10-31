@@ -389,7 +389,7 @@ foreach($completed in @($true,$false)){
     def test_real_frozen_closure_prepares_without_checkout_imports(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);run,author=self.prepared(root)
-            command=f". '{ROOT}/integrations/runtime/dependencies.ps1'; $null=Freeze-ConsumerDependencies -RepoRoot '{ROOT}' -ContractPath '{ROOT}/integrations/config/runtime_dependencies.json' -InputDir '{run}/inputs' -OwnerId instrument_assembly -ConsumerId paired_accelerator_static_field"
+            command=f". '{ROOT}/integrations/runtime/dependencies.ps1'; $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{ROOT}' -ContractPath '{ROOT}/integrations/config/runtime_dependencies.json' -InputDir '{run}/inputs' -OwnerId instrument_assembly -ConsumerId paired_accelerator_static_field"
             result=subprocess.run(['pwsh','-NoProfile','-Command',command],cwd=ROOT,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=60)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             snapshot=run/'inputs/runtime_snapshot'

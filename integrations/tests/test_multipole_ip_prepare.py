@@ -446,7 +446,7 @@ class MultipoleIPPreparationTests(unittest.TestCase):
         inventory = REPO / "integrations/config/runtime_dependencies.json"
         script = f"""
 . '{REPO / 'integrations/runtime/dependencies.ps1'}'
-$null=Freeze-ConsumerDependencies -RepoRoot '{REPO}' -ContractPath '{inventory}' -InputDir '{self.run / 'inputs'}' -OwnerId instrument_assembly -ConsumerId multipole_ip
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' -ContractPath '{inventory}' -InputDir '{self.run / 'inputs'}' -OwnerId instrument_assembly -ConsumerId multipole_ip
 """
         frozen = subprocess.run([pwsh, "-NoProfile", "-Command", script], cwd=REPO,
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
