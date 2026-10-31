@@ -66,6 +66,20 @@ classdef OaTofParticlePlotViewTest < matlab.unittest.TestCase
     'oatof:SavedPopulation');
    testCase.verifyFalse(isfile(fullfile(folder,'comsol_detector_events_Fixture.csv')));
   end
+  function scientificWindowFailureKeepsFullRawMotherAndCounts(testCase)
+   [context,folder,mockFolder]=postprocessFixture(testCase);
+   data=load(fullfile(mockFolder,'read_fixture.mat'));value=data.value;
+   value.d3(:,2)=0;save(fullfile(mockFolder,'read_fixture.mat'),'value');
+   failure=captureScientificFailure(@()oatof_postprocess_saved_solution(struct('param',[]),context,folder));
+   testCase.assertNotEmpty(failure);
+   testCase.verifySubstring(failure.message,'Event-window gate could not identify every');
+   testCase.verifySubstring(failure.message,'nP=2 nDet=1 complete=1 accel=1 refl_entry=1 refl_exit=1 detector=1');
+   rows=readtable(fullfile(folder,'comsol_detector_events_Fixture.csv'));
+   testCase.verifyEqual(rows.Ion,[1;2]);
+   testCase.verifyEqual(logical(rows.Hit),[true;false]);
+   request=jsondecode(fileread(fullfile(folder,'comsol_detector_events_Fixture.analysis_request.json')));
+   testCase.verifyEqual(request.raw_events_csv,fullfile(folder,'comsol_detector_events_Fixture.csv'));
+  end
   function coldAdapterKeepsExecutionOutputSpellingThroughRealHelper(testCase)
    request=coldReadFixture(testCase,[0;.5;1;2;3;4;5;6]*1e-6,[1 1]);
    result=reextract_oatof_saved_solution(request);
@@ -102,6 +116,15 @@ classdef OaTofParticlePlotViewTest < matlab.unittest.TestCase
   end
  end
 
+end
+
+function failure=captureScientificFailure(action)
+failure=[];
+try
+ action();
+catch error
+ failure=error;
+end
 end
 
 function [context,folder,mockFolder]=postprocessFixture(testCase)

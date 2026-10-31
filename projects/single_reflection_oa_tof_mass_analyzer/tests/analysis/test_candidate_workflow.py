@@ -2362,14 +2362,22 @@ def postprocess_public_entry(root, artifact):
     return invoke
 
 
-def cold_export_failed_child_fixture(directory, *, unknown=False, wrong_source=False, normal_phase=False):
+def cold_export_failed_child_fixture(directory, *, unknown=False, wrong_source=False, normal_phase=False, resolved_alias=False, science_alias_conflict=False):
     """Small stopped-cold-export producer fixture; this executes no solver."""
     from common.contracts.capacity_ledger import record_capacity_object
     from common.contracts.write_run_manifest import file_record, publish_run_manifest
     from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
     from projects.single_reflection_oa_tof_mass_analyzer.analysis.native_stage_completion import append_native_stage_completion
-    artifact,science,_,_=postprocess_source_fixture(directory,retain_model=normal_phase)
+    artifact,science,_,_=postprocess_source_fixture(directory,retain_model=normal_phase,resolved_alias=resolved_alias)
     source=select_postprocess_parent(science,artifact)
+    if science_alias_conflict:
+        path=science/"run_manifest.json";manifest=load_json(path)
+        manifest["inputs"]["simion_candidate_input_001"]["sha256"]="0"*64
+        path.write_text(json.dumps(manifest),encoding="utf-8")
+        record=file_record(path)
+        source["manifest_record"]=record
+        for key in ("source_reference","science_reference","export_source_reference"):
+            source[key]={"manifest_record":record}
     if wrong_source:
         source["inputs"]["source_path"]=source["budget_record"]
     child=artifact/"projects"/PROJECT_ROOT.name/"runs/20261031_123000__analysis__comsol__cold-export-failed"
@@ -2431,6 +2439,69 @@ def cold_export_failed_child_fixture(directory, *, unknown=False, wrong_source=F
 
 
 class CandidatePostprocessTests(unittest.TestCase):
+    def test_stopped_scientific_gate_failure_preserves_complete_raw_exports(self):
+        from types import SimpleNamespace
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.native_stage_completion import append_native_stage_completion
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
+        from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import candidate_comsol_stage
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            artifact,parent,_,_=postprocess_source_fixture(root/"source",cold=True)
+            selected=select_postprocess_parent(parent,artifact)
+            closure=freeze_candidate_source_closure(root/"code",artifact/"projects"/PROJECT_ROOT.name,
+                resolved_contract=Path(selected["inputs"]["contract_path"]["path"]),
+                analysis_contract=PROJECT_ROOT/"config/analysis_contract.json")
+            child=root/"child"
+            for name in ("inputs","logs","results"):
+                (child/name).mkdir(parents=True,exist_ok=True)
+            plan={"run_id":child.name,"run_root":str(child),"context_sha256":"software-fixture",
+                "writer_completion":{"operations":[],"resource_releases":[]},"postprocess_evidence":{},
+                "source_execution_context":{"schema_version":1,"role":"run_source_execution_context",
+                    "child_run_directory":str(child),"request_sha256":"software-fixture",
+                    "sources":[{"target_directory":str(parent),"execution_directory":str(parent),
+                        "input_paths":[selected["model_record"]["path"],selected["context_record"]["path"]]}]}}
+            before={str(path):path.read_bytes() for path in parent.rglob("*") if path.is_file()}
+            def stopped_export(command,log,actual_plan,receipt,role):
+                import csv
+                events=child/"results/comsol_detector_events_Fixture.csv"
+                with events.open("w",encoding="utf-8",newline="") as stream:
+                    writer=csv.writer(stream)
+                    writer.writerow(["Ion","TofUs","XMm","YMm","Hit","Status","Event","DetectorRadiusMm","X0Mm","Y0Mm","Z0Mm"])
+                    writer.writerows([index+1,40+index*.001,0,0,index!=99,"detector_hit" if index!=99 else "unresolved","crossing" if index!=99 else "no_plane_event",0,0,0,0] for index in range(100))
+                request=child/"results/comsol_detector_events_Fixture.analysis_request.json"
+                request.write_text(json.dumps({"schema_version":1,"role":"oatof_comsol_detector_events_analysis_request",
+                    "solver":"COMSOL","label":"Fixture","nominal_mass_Da":524,"raw_events_csv":str(events),
+                    "analysis_output_dir":str(child/"results/analysis"),"event_extraction":"solver_native_detector_crossing_or_freeze",
+                    "aggregate_metrics_owner":"python_reference_analysis"}),encoding="utf-8")
+                observed=load_json(parent/"logs/comsol_build_completion.json")
+                observed["run_id"]=child.name
+                receipt.write_text(json.dumps(observed),encoding="utf-8")
+                append_native_stage_completion(actual_plan["writer_completion"],receipt,role=role,run_id=child.name)
+                raise RuntimeError("EVENT_WINDOW_SENTINEL nP=100 nDet=99 complete=99")
+            with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY":str(child)}), \
+                    mock.patch.object(candidate_comsol_stage,"analyze_detector_request") as analyze:
+                with self.assertRaisesRegex(RuntimeError,"EVENT_WINDOW_SENTINEL"):
+                    candidate_comsol_stage.execute_saved_postprocess(selected,child,closure,plan,
+                        runtime=SimpleNamespace(_run_command=lambda *args:None,_run_managed_stage_command=stopped_export))
+            analyze.assert_not_called()
+            self.assertTrue(plan["postprocess_evidence"]["detector_exports_ready"])
+            self.assertNotIn("writer_completion_unconfirmed",plan["postprocess_evidence"])
+            self.assertTrue(Path(plan["postprocess_evidence"]["raw_events_csv"]).is_file())
+            self.assertEqual(before,{str(path):path.read_bytes() for path in parent.rglob("*") if path.is_file()})
+
+    def test_csv_child_science_aliases_require_original_consensus(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
+        for conflict in (False,True):
+            with self.subTest(conflict=conflict),tempfile.TemporaryDirectory() as directory:
+                artifact,science,child,_=cold_export_failed_child_fixture(Path(directory),resolved_alias=True,science_alias_conflict=conflict)
+                if conflict:
+                    with self.assertRaisesRegex(ValueError,"manifest aliases disagree"):
+                        select_postprocess_parent(child,artifact)
+                else:
+                    selected=select_postprocess_parent(child,artifact)
+                    self.assertIsNotNone(selected["exports"])
+                    self.assertIsNone(selected["model_record"])
+
     def test_cold_prepared_plan_uses_public_native_view_and_prelaunch_failure_has_no_receipt(self):
         from common.contracts.test_run_artifact_workflow import CALLBACK, RunArtifactWorkflowTests
         from common.contracts.write_run_manifest import file_record

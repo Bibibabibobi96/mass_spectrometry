@@ -80,7 +80,7 @@ for pass=1:2
    state=oatof_detector_arrival_reducer('observe',state,t(selected),x,y,z,selected(1));
    after_turn=selected(fresh)' >= state.turn_index';
    t_refl_exit_gate=firstPredicateTimes(t_refl_exit_gate, ...
-    after_turn&z(fresh,:)<=context.flight_length_mm,t(selected(fresh)));
+    after_turn&isfinite(t_refl_entry_gate)&z(fresh,:)<=context.flight_length_mm,t(selected(fresh)));
   end
   clear data x y z
  end
@@ -127,13 +127,22 @@ fprintf('[%s] detected on detector plate: %d/%d. Arrival-time metrics are delega
 % degrading resolution in a coarse output segment.
 completeEvent = isfinite(t_accel_gate) & isfinite(t_refl_entry_gate) & ...
     isfinite(t_refl_exit_gate) & arrivals.hit.';
+% Preserve the complete observed mother before evaluating scientific gates.
+% A rejected event window is not a reason to discard its raw observations.
+if ~exist(resultsDir,'dir'), mkdir(resultsDir); end
+handoff = oatof_export_detector_events(resultsDir,label,mass_amu,arrivals, ...
+    initial_xyz(:,1),initial_xyz(:,2),initial_xyz(:,3));
+eventCounts=sprintf('nP=%d nDet=%d complete=%d accel=%d refl_entry=%d refl_exit=%d detector=%d', ...
+    nP,nDet,sum(completeEvent),sum(isfinite(t_accel_gate)),sum(isfinite(t_refl_entry_gate)), ...
+    sum(isfinite(t_refl_exit_gate)),sum(isfinite(detTimes)));
+fprintf('[%s] event-window observations: %s\n',label,eventCounts);
 if allow_particle_loss
     assert(nDet >= 2 && sum(completeEvent) == nDet, ...
         ['Every detector hit must have accelerator and reflectron events; ' ...
-         'at least two detector hits are required.']);
+         'at least two detector hits are required. %s'],eventCounts);
 else
     assert(all(completeEvent) && nDet == nP, ...
-        'Event-window gate could not identify every accelerator/reflectron/detector event.');
+        'Event-window gate could not identify every accelerator/reflectron/detector event. %s',eventCounts);
 end
 t_accel_complete = t_accel_gate(completeEvent);
 t_refl_entry_complete = t_refl_entry_gate(completeEvent);
@@ -173,9 +182,6 @@ end
 t_extract = toc(t_extract_start);
 fprintf('[TIMING] full-population extraction plus solver-native detector-event classification: %.2fs\n', t_extract);
 
-if ~exist(resultsDir,'dir'), mkdir(resultsDir); end
-handoff = oatof_export_detector_events(resultsDir,label,mass_amu,arrivals, ...
-    initial_xyz(:,1),initial_xyz(:,2),initial_xyz(:,3));
 result = struct('label', label, 'mass_amu', mass_amu, 'nP', nP, 'zEnd', zEnd, ...
     'nDet', nDet, 'detectorStatus', arrivals.status.', ...
     'detectorRadiusMm', arrivals.radius_mm.', ...

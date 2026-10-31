@@ -137,6 +137,52 @@ def analyze_detector_request(request: Path, closure: dict[str, Any], log: Path, 
     return receipt
 
 
+def _record_postprocess_exports(analysis_request: Path | None, root: Path, closure: dict, plan: dict) -> Path:
+    """Retain actual full-mother observations, independently of scientific acceptance."""
+    import csv
+    import json
+    from projects.single_reflection_oa_tof_mass_analyzer.analysis.analyze_comsol_detector_events import _load_request
+    plan.setdefault("postprocess_evidence", {})
+    import subprocess
+    writer_path = root / "logs/postprocess_export_writer.json"
+    writer_path.write_text(json.dumps(plan["writer_completion"]), encoding="utf-8")
+    validator = frozen_source_path(closure, "common/contracts/run_artifact_workflow.ps1")
+    command = ". '"+validator.replace("'", "''")+"'; Assert-WorkflowWriterCompletion (Get-Content -Raw -Encoding UTF8 '"+str(writer_path).replace("'", "''")+"'|ConvertFrom-Json -AsHashtable)"
+    plan["postprocess_evidence"]["writer_completion_unconfirmed"] = True
+    checked = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+        cwd=os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY", str(root)),
+        capture_output=True, text=True, encoding="utf-8", timeout=60)
+    (root / "logs/postprocess_export_writer.log").write_text(checked.stdout+checked.stderr, encoding="utf-8")
+    if checked.returncode:
+        plan["postprocess_evidence"]["writer_completion_unconfirmed"] = True
+        raise RuntimeError("POSTPROCESS_EXPORT_WRITER_UNCONFIRMED: "+checked.stderr.strip())
+    plan["postprocess_evidence"].pop("writer_completion_unconfirmed")
+    if analysis_request is None:
+        requests = list((root / "results").glob("*.analysis_request.json"))
+        if len(requests) != 1:
+            raise ValueError("POSTPROCESS_EXPORTS_INCOMPLETE: one actual own analysis request is required")
+        analysis_request = requests[0]
+    if not analysis_request.resolve().is_relative_to(root.resolve()):
+        raise ValueError("Postprocess export request must belong to this child")
+    document = _load_request(analysis_request)
+    events = Path(document["raw_events_csv"])
+    if not events.is_absolute() or not events.resolve().is_relative_to(root.resolve()):
+        raise ValueError("Postprocess raw observations must belong to this child")
+    with events.open(encoding="utf-8-sig", newline="") as stream:
+        reader = csv.DictReader(stream)
+        required = {"Ion","TofUs","XMm","YMm","Hit","Status","Event","DetectorRadiusMm","X0Mm","Y0Mm","Z0Mm"}
+        if not required <= set(reader.fieldnames or []):
+            raise ValueError("Postprocess raw observation fields are incomplete")
+        rows = list(reader)
+    if len(rows) != 100 or {int(row["Ion"]) for row in rows} != set(range(1,101)):
+        raise ValueError("Postprocess raw observations require the complete original 100 IDs")
+    plan["postprocess_evidence"].update(analysis_request=str(analysis_request),
+        raw_events_csv=str(events), detector_exports_ready=True,
+        native_launch_count=1, native_particle_solve_count=0,
+        native_field_solve_count=0, parent_model_saved=False)
+    return analysis_request
+
+
 def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: dict, *, runtime: Any, analyze: bool = True) -> dict:
     """Postprocess one admitted parent; no parent save or solver dispatch exists."""
     import csv
@@ -209,8 +255,16 @@ def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: 
             ["-TaskScript", execution_path(task), "-ReportPath", execution_path(report), "-RunId", root.name,
              "-RunDir", str(execution),
              "-StartupAttempts", "1", "-CompletionPath", execution_path(receipt_path)])
-        runtime._run_managed_stage_command(command, root / "logs/cold_launcher.log", plan,
-                                            receipt_path, "comsol_launcher_completion")
+        try:
+            runtime._run_managed_stage_command(command, root / "logs/cold_launcher.log", plan,
+                                                receipt_path, "comsol_launcher_completion")
+        except BaseException as error:
+            try:
+                _record_postprocess_exports(None, root, closure, plan)
+            except BaseException as export_error:
+                error.add_note(f"Stopped raw export validation also failed: {export_error}")
+            raise
+        _record_postprocess_exports(None, root, closure, plan)
         _require_pass_report(report)
         result = load_json(result_path)
         if result.get("candidate_model_validation") != "passed":
@@ -235,30 +289,8 @@ def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: 
     # The original normal Candidate contract requires all 100 requested IDs/hits.
     with Path(document["raw_events_csv"]).open(encoding="utf-8-sig", newline="") as stream:
         rows = list(csv.DictReader(stream))
-    if len(rows) != 100 or {int(row["Ion"]) for row in rows} != set(range(1,101)) or any(
-            row["Hit"].lower() not in {"1", "true"} or row["Status"] != "detector_hit" for row in rows):
-        raise ValueError("Candidate detected population differs: requires 100 original IDs and detector_hit classifications")
-    if exports is None and isinstance(plan.get("postprocess_evidence"), dict):
-        # A completed export can survive the following Python analysis failure.
-        # Reuse the public stopped-writer/release validator, not a local guess.
-        import subprocess
-        writer_path = root / "logs/postprocess_export_writer.json"
-        writer_path.write_text(json.dumps(plan["writer_completion"]), encoding="utf-8")
-        validator = frozen_source_path(closure, "common/contracts/run_artifact_workflow.ps1")
-        command = ". '"+validator.replace("'", "''")+"'; Assert-WorkflowWriterCompletion (Get-Content -Raw -Encoding UTF8 '"+str(writer_path).replace("'", "''")+"'|ConvertFrom-Json -AsHashtable)"
-        plan["postprocess_evidence"]["writer_completion_unconfirmed"] = True
-        checked = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-            cwd=os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY", str(root)),
-            capture_output=True, text=True, encoding="utf-8", timeout=60)
-        (root / "logs/postprocess_export_writer.log").write_text(checked.stdout+checked.stderr, encoding="utf-8")
-        if checked.returncode:
-            plan["postprocess_evidence"]["writer_completion_unconfirmed"] = True
-            raise RuntimeError("POSTPROCESS_EXPORT_WRITER_UNCONFIRMED: "+checked.stderr.strip())
-        plan["postprocess_evidence"].pop("writer_completion_unconfirmed")
-        plan["postprocess_evidence"].update(analysis_request=str(analysis_request),
-            raw_events_csv=str(Path(document["raw_events_csv"])), detector_exports_ready=True,
-            native_launch_count=1, native_particle_solve_count=0,
-            native_field_solve_count=0, parent_model_saved=False)
+    if len(rows) != 100 or {int(row["Ion"]) for row in rows} != set(range(1,101)):
+        raise ValueError("Postprocess raw observations require the complete original 100 IDs")
     analysis = analyze_detector_request(analysis_request, closure, root / "logs/detector_analysis.log", runtime=runtime) if analyze else None
     return {"analysis_request": str(analysis_request), "analysis_receipt": str(analysis) if analysis else None,
             "native_launch_count": 0 if exports else 1, "native_particle_solve_count": 0,

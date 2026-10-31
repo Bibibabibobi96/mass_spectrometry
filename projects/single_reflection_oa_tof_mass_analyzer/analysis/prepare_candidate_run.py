@@ -773,6 +773,21 @@ if __name__ == "__main__":
     main()
 
 
+def _manifest_alias_record(records: list[dict], path: Path, *, base_dir: Path) -> dict:
+    """Resolve one content identity only after all canonical aliases agree."""
+    from common.contracts.verify_run_manifest import record_path
+    matches = [value for value in records if record_path(value, base_dir=base_dir) == path]
+    if not matches or any(value.get("exists") is not True for value in matches):
+        raise ValueError(f"Saved dependency is not uniquely manifest bound: {path}")
+    identity = matches[0]
+    if any(value.get("bytes") != identity.get("bytes")
+           or not isinstance(value.get("sha256"), str)
+           or value["sha256"].upper() != str(identity.get("sha256", "")).upper()
+           for value in matches):
+        raise ValueError(f"Saved dependency manifest aliases disagree: {path}")
+    return dict(identity, path=str(path))
+
+
 def select_postprocess_parent(parent: Path, consumer_artifact_root: Path) -> dict:
     """Admit only sealed Candidate inputs/exports, never a guessed old model."""
     from common.contracts.capacity_ledger import load_capacity_ledger
@@ -795,17 +810,7 @@ def select_postprocess_parent(parent: Path, consumer_artifact_root: Path) -> dic
         raise ValueError("SOURCE_WRITER_UNCONFIRMED: complete original owner release before postprocessing")
     records = [*manifest.get("inputs", {}).values(), *manifest.get("outputs", [])]
     def bound(path: Path, *, payload: bool = False) -> dict:
-        matches = [value for value in records if isinstance(value, dict)
-                   and record_path(value, base_dir=parent) == path]
-        if not matches or any(value.get("exists") is not True for value in matches):
-            raise ValueError(f"Saved dependency is not uniquely manifest bound: {path}")
-        identity = matches[0]
-        if any(value.get("bytes") != identity.get("bytes")
-               or not isinstance(value.get("sha256"), str)
-               or value["sha256"].upper() != str(identity.get("sha256", "")).upper()
-               for value in matches):
-            raise ValueError(f"Saved dependency manifest aliases disagree: {path}")
-        record = dict(matches[0], path=str(path))
+        record = _manifest_alias_record(records, path, base_dir=parent)
         if not path.is_file() or path.stat().st_size != record["bytes"]:
             raise ValueError(f"Saved dependency is missing or incomplete: {path}")
         if not payload:
@@ -1053,8 +1058,9 @@ def _select_postprocess_child_exports(parent: Path, manifest_record: dict, manif
     science_records = [*science.get("inputs", {}).values(), *science.get("outputs", [])]
     def science_input(record: dict) -> dict:
         actual = record_path(record)
-        matches = [value for value in science_records if record_path(value, base_dir=science_root) == actual]
-        if len(matches) != 1 or any(record.get(key) != matches[0].get(key) for key in ("bytes", "sha256")):
+        identity = _manifest_alias_record(science_records, actual, base_dir=science_root)
+        if (record.get("exists") is not True or record.get("bytes") != identity["bytes"]
+                or str(record.get("sha256", "")).upper() != identity["sha256"].upper()):
             raise ValueError("Postprocess scientific input differs from its explicit original manifest")
         verify_record("postprocess original scientific input", record)
         return record
@@ -1117,8 +1123,9 @@ def _select_postprocess_child_exports(parent: Path, manifest_record: dict, manif
         export_records = [*export_manifest.get("inputs", {}).values(), *export_manifest.get("outputs", [])]
         for name in ("events", "request"):
             record = exports[name]
-            matches = [value for value in export_records if record_path(value, base_dir=export_root) == record_path(record)]
-            if len(matches) != 1 or any(record.get(key) != matches[0].get(key) for key in ("bytes", "sha256")):
+            identity = _manifest_alias_record(export_records, record_path(record), base_dir=export_root)
+            if (record.get("exists") is not True or record.get("bytes") != identity["bytes"]
+                    or str(record.get("sha256", "")).upper() != identity["sha256"].upper()):
                 raise ValueError("Postprocess export differs from its explicit owner manifest")
             verify_record("postprocess event export", record)
         request_record,events_record = exports["request"],exports["events"]
