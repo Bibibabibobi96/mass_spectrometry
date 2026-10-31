@@ -69,6 +69,10 @@ def execute_prepared_run(config_path, session_path, request_path, completion_pat
     config_path.write_text(json.dumps(config), encoding="utf-8")
     output = root / "results/science.json"
     output.write_text(json.dumps({"capacity_session": session["lease_id"], "worker_process_id": os.getpid(),
+        "artifact_root": os.environ.get("MASS_SPECTROMETRY_ARTIFACT_ROOT"),
+        "execution_root": os.environ.get("MASS_SPECTROMETRY_EXECUTION_ROOT"),
+        "run_directory": os.environ.get("MASS_SPECTROMETRY_RUN_DIRECTORY"),
+        "run_execution_directory": os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY"),
         "host_resource_state_path": os.environ["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"],
         "source_protected_before_compute": source_protection is not None}), encoding="utf-8")
     outputs, required, preserve = [str(output)], [str(output)], []
@@ -373,8 +377,11 @@ catch{{Write-Output $_.Exception.Message;exit 7}}
         return json.loads(result_path.read_text(encoding="utf-8-sig")), run, artifacts, outcome
 
     def resume_fixture(self, root: Path, run: Path, *, fail_publication: bool = False,
-                       additional_hooks: str = "") -> tuple[dict, subprocess.CompletedProcess[str]]:
+                       drift_context: bool = False, additional_hooks: str = "") -> tuple[dict, subprocess.CompletedProcess[str]]:
         hook = "function Publish-WorkflowTerminal { throw 'fixture recovery publication failure' }" if fail_publication else ""
+        drift = """$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH='changed-relative-state'
+$env:MASS_SPECTROMETRY_EXECUTION_ROOT='changed-relative-execution'
+$env:MASS_SPECTROMETRY_ARTIFACT_ROOT='changed-relative-payload'""" if drift_context else ""
         outcome = self.run_ps(root, f""". '{OWNER}'
 function Invoke-ArtifactCapacityGate {{
  param($ArtifactRoot,$CapacityProtectionLeaseId)
@@ -383,6 +390,7 @@ function Invoke-ArtifactCapacityGate {{
 }}
 {hook}
 {additional_hooks}
+{drift}
 try{{$null=Invoke-RunArtifactWorkflow -RequestPath '{run / 'inputs/execution_request.json'}' -ResultPath '{root / 'result.json'}' -ResumeFinalization}}
 catch{{Write-Output $_.Exception.Message;exit 7}}
 """)
@@ -1001,10 +1009,11 @@ if('{external}'-notin@($snapshot.protected_paths)){{throw 'latest source scope w
                     # run. Recovery consumes only the frozen run authorities.
                     (root / "budget.json").write_text("changed live budget", encoding="utf-8")
                     (root / "fixture_callback.py").write_text("raise RuntimeError('must not import again')", encoding="utf-8")
-                result, resumed = self.resume_fixture(root, run)
+                result, resumed = self.resume_fixture(root, run, drift_context=True)
                 self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
                 self._assert_owner_timing(result)
                 self.assertEqual(result["stage"], "complete")
+                self.assertEqual(result["execution_context"], first["execution_context"])
                 self.assertIsNone(result["resume_action"])
                 self.assertNotIn("prepared", result["timing"])
                 self.assertTrue(result["terminal_published"] and result["capacity_finalized"] and result["lease_released"])
@@ -1213,6 +1222,13 @@ if('{external}'-notin@($snapshot.protected_paths)){{throw 'latest source scope w
             expected = json.loads((Path(directory) / "expected_context.json").read_text(encoding="utf-8-sig"))["host_resource_state_path"]
             self.assertEqual(observed, expected)
             self.assertEqual(result["execution_context"]["host_resource_state_path"], expected)
+            config = json.loads((run / "run_config.json").read_text(encoding="utf-8-sig"))
+            science = json.loads((run / "results/science.json").read_text())
+            self.assertEqual(config["paths"], result["execution_context"])
+            self.assertEqual(Path(science["artifact_root"]), artifacts.resolve())
+            self.assertEqual(science["execution_root"], config["paths"]["execution_root"])
+            self.assertEqual(Path(science["run_directory"]), run.resolve())
+            self.assertEqual(science["run_execution_directory"], science["run_directory"])
 
 
     def test_explicit_control_plane_path_reaches_prepared_without_new_database(self) -> None:
