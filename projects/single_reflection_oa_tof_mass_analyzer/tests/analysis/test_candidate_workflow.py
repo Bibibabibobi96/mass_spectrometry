@@ -329,12 +329,28 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
                 (root / "common/contracts").mkdir(parents=True)
                 for relative in ("common/host_resource_python.py", "common/contracts/recorded_file_removal.py", "common/contracts/file_identity.py"):
                     shutil.copyfile(Path(request["prepared"]["import_root"]) / relative, root / relative)
-                shutil.copyfile(PROJECT_ROOT / "tests/analysis/test_support/candidate_fixtures.py", root / "fixture_support.py")
+                helper_relative = Path("projects") / PROJECT_ROOT.name / "tests/analysis/test_support/candidate_fixtures.py"
+                helper = root / "fixture_source" / helper_relative
+                helper.parent.mkdir(parents=True)
+                shutil.copyfile(REPO_ROOT / helper_relative, helper)
                 callback = root / "candidate_fixture.py"
+                runtime_import_root = request["prepared"]["import_root"]
                 callback.write_text("import sys\nfrom pathlib import Path\nsys.path.insert(0," + repr(request["prepared"]["import_root"]) + ")\n" + r'''
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate_workflow as workflow
 original = workflow._execute_candidate_stages
-from fixture_support import CandidateFixtures
+import importlib.util
+helper = Path(__file__).parent/'fixture_source/projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_support/candidate_fixtures.py'
+spec = importlib.util.spec_from_file_location('owner_candidate_fixture_support', helper)
+fixture_support = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(fixture_support)
+assert fixture_support.PROJECT_ROOT == helper.parents[3]
+assert fixture_support.REPO_ROOT == Path(__file__).parent/'fixture_source'
+assert Path(workflow.__file__).resolve().is_relative_to(Path(sys.path[0]).resolve())
+import json
+Path(__file__).with_name('fixture_layout_probe.json').write_text(json.dumps({
+    'helper':str(helper.resolve()),'project_root':str(fixture_support.PROJECT_ROOT),
+    'repository_root':str(fixture_support.REPO_ROOT),'runtime_module':workflow.__file__}), encoding='utf-8')
+CandidateFixtures = fixture_support.CandidateFixtures
 base_fixture = CandidateFixtures.native_fake_executor([])
 
 def fixture(stage, plan, simion):
@@ -363,6 +379,11 @@ def execute_prepared_run(*args):
                                         for path in artifacts.rglob("prepared_stderr.log"))
                 self.assertEqual(process.returncode, 0, process.stdout + process.stderr + diagnostics)
                 result = load_json(result_path)
+                layout = load_json(root / "fixture_layout_probe.json")
+                self.assertEqual(Path(layout["helper"]), helper.resolve())
+                self.assertEqual(Path(layout["project_root"]), helper.resolve().parents[3])
+                self.assertEqual(Path(layout["repository_root"]), root / "fixture_source")
+                self.assertTrue(Path(layout["runtime_module"]).resolve().is_relative_to(Path(runtime_import_root)))
                 self.assertEqual(result["status"], "failed" if failed else "success", result)
                 self.assertTrue(result["terminal_published"] and result["capacity_finalized"] and result["lease_released"])
                 run = Path(load_json(plan_path)["run_root"])
