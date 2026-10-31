@@ -110,7 +110,8 @@ foreach($case in $cases){{
                 self.assertEqual(rows[stage]['command']['runner'], 'powershell')
                 self.assertTrue(rows[stage]['command']['parameters']['PreflightOnly'])
                 shards = [row for name, row in rows.items() if name.startswith(stage + '__tests_')]
-                self.assertEqual(len(shards), 3)
+                route = next(row for row in self.routes if row['stage'] == stage)
+                self.assertEqual(len(shards), route['repository_integration_partition']['count'])
                 actual = [module for row in shards
                           for module in row['command']['parameters']['SelectedTestModules']]
                 self.assertCountEqual(actual, expected)

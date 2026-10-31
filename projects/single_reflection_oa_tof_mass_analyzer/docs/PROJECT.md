@@ -542,7 +542,7 @@ producer返回原生完成receipt和实际Program/ION/IOB绑定；补偿与candi
 
 ### 完整软件验证分片
 
-项目软件验证从公共`common/verify.ps1 -Scope Owner -Owner single_reflection_oa_tof_mass_analyzer`进入。源码／fixture／Owner／Repository范围沿公共GetGateRepositoryTestPartitions使用3个计权分片；原发布新鲜度、几何检查与理论前置执行一次，分片依赖此前置通过，保留实际测试的PS／Lua及公共owner接线责任。原Candidate／Formal物理与发布动作保持，拒绝混入软件分片参数。direct SelectedTestModules默认先跑原前置；内部PreflightValidated只供已完成同轮前置的调度。
+项目软件验证从公共`common/verify.ps1 -Scope Owner -Owner single_reflection_oa_tof_mass_analyzer`进入。源码／fixture／Owner／Repository范围沿公共GetGateRepositoryTestPartitions使用4个计权分片；原发布新鲜度、几何检查与理论前置执行一次，分片依赖此前置通过，保留实际测试的PS／Lua及公共owner接线责任。原Candidate／Formal物理与发布动作保持，拒绝混入软件分片参数。direct SelectedTestModules默认先跑原前置；内部PreflightValidated只供已完成同轮前置的调度。
 
 20261031终态旧完整范围为PASS：公开summary833.605112秒，SFI stage750.056879秒／execution736.4489991秒。69个原analysis模块已计时测试合计727.917333秒；权重来自该轮完整test_durations，不把stage或并行耗时相加。热点candidate_design259.299669、managed_candidate_pa145.080768、radial_compaction_campaign66.727523、compensation_powershell_adapter57.008262秒。分片只是相同职责的调度，尚未实测新完整Owner公墙，不能据规划时间宣称达到5分钟。
 
@@ -573,3 +573,11 @@ producer返回原生完成receipt和实际Program/ION/IOB绑定；补偿与candi
 分析进程的argv文件、cwd、环境和日志沿运行包的`Get-RunNativeExecutionContext`投影；Python支持的持久深源码import root保持原冻结身份，临时alias由公共owner收尾，不复制源码根。公共GATE普通轻量策略负责CPU／内存准入；分析Python进程沿现有observer记录真实PID、启动、退出及host释放。该调度承诺不是新增硬进程内存帽；现有物理危险监测仍适用。小Result默认在项目`scratch/workflow_results/<RunId>/result.json`。收尾中断使用同CLI的`-ResumeFinalization -RunId <analysis-id> [-ResultPath <原Result>]`，只恢复公共owner收尾，不重分析、不启动求解器；显式Result绑定原冻结根，不随今日根改变。分析本身失败则用原充分父记录创建另一个新分析run。主异常、收尾异常和未确认释放分别保留，不把host释放未知当作粒子或科学结论。
 
 产物仍为六项质量谱CSV／metrics／PNG及本run公共summary、manifest、Result；原有candidate边界、`resolution_claim_allowed=false`及未资格化的时钟说明保持，软件成功不授予新的Formal或全链资格。旧host-role矩阵中缺少封存父输入的伪分析case由`test_mass_spectrum_input_admission`实际公开CLI→分析→公共GATE释放和恢复测试替代；普通mass/SIMION角色case保留。
+
+### Candidate测试职责与分片边界
+
+原candidate88个测试按相同class／method名迁至设计20、工作流64、legacy复用4；完整test ID的module前缀相应改变，不伪称旧完整字符串未变。原12个非test helper及inline legacy freezer仅由不继承TestCase的fixture mixin共享，支持模块没有test_方法，消费者不导入／继承任何旧TestCase。保留最新legacy8→2准备优化及所有原断言、故障／母群／源身份行为。公共发现自然枚举3模块，单独软件runner／并发器没有增加。
+
+4片计权沿现catalog和GetGateRepositoryTestPartitions；新3模块权重来自既存643timing对原88case的分组聚合：设计2.165402、workflow280.454321、legacy164.302084秒。该轮早于最新legacy去重复，背景负载不同，权重仅历史调度提示，不称当前精确预测。旧643轮全部已计时测试1219.428485秒，理想4路均分仍约304.857秒，未计前置／启动／准入；拆模块消除446.9秒单模块瓶颈，不单凭规划宣称Owner≤5分钟。现本机16logicalCPU与每GATE2CPU／2GiB原则上可准入4片，但实际可用CPU／内存／互斥与CI环境仍由原公共机制决定；未擅自降低预算或套用跨环境速度。后续仅以安静环境完整Owner真实墙钟验收。
+
+catalog所有模块权重现统一来自同一643轮完整test_durations；原单模块candidate权重替换为88方法的分组总和，未把不同负载的新定向结果混为精确预测。软件迁移证据为88原方法AST／12helper AST一致、unittest真实discovery及全限定module load均88唯一，完整old→newID映射一对一。拆分代表设计1项1.115214秒、工作流及原8类legacy拒绝的3项65.291秒（7.910438／40.598032／16.782589）通过；纯fixture位于已分类test_support。初始隔离闭包缺原声明小文档导致3ERROR，补该原Git文档后通过，候选源码未改。两个现公共consumer薄回归保动态count／完整union／父依赖／纯Changed：partition方法0.981284秒通过，公共Planner在单项目实际route fixture中5.944760秒通过。完整catalog库存检查因隔离树不复制大PA而未在该薄fixture冒通过；原失败日志保留，Root最终完整环境另验。未重跑完整Owner／商业工具，不据此宣称性能目标已达。

@@ -300,7 +300,9 @@ $selection=Get-GateChangedTests -Route $route -RepoRoot $PWD.Path -KnownTestRoot
         expected = {path.relative_to(REPO_ROOT).as_posix()[:-3].replace('/', '.')
                     for path in (REPO_ROOT / prefix).rglob('test_*.py')}
         actual = [module for part in data['partitions'] for module in part['modules']]
-        self.assertEqual(len(data['partitions']), 3)
+        route = next(row for row in json.loads((REPO_ROOT / 'common/gate_catalog.json').read_text(encoding='utf-8'))['routes']
+                     if row['stage'] == 'single_reflection_oa_tof_mass_analyzer_static')
+        self.assertEqual(len(data['partitions']), route['repository_integration_partition']['count'])
         self.assertEqual(set(actual), expected)
         self.assertEqual(len(actual), len(set(actual)))
         self.assertEqual({path[:-3].replace('/', '.') for path in data['selected']}, expected)

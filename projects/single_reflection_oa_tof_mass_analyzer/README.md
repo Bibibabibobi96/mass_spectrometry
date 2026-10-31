@@ -59,7 +59,7 @@
 | 项目软件验证 | [`common/verify.ps1`](../../common/verify.ps1) `-Scope Owner -Owner single_reflection_oa_tof_mass_analyzer` | 一次前置检查及完整测试的计权分片；不代表物理资格 |
 | 既有资格适配 | [`verify_project.ps1`](verify_project.ps1) `-Level Candidate`／`Formal` | 保留原明确请求的原生／发布动作，不是软件验证新等级 |
 
-软件验证通过公共计时runner即时报告失败和逐测试耗时。完整Owner／Repository及源码影响范围保持原freshness与理论前置，并沿公共计权机制执行完整tests范围；单独选定现存测试模块的Changed请求按真实影响执行。详见[项目状态](docs/PROJECT.md#完整软件验证分片)。
+软件验证通过公共计时runner即时报告失败和逐测试耗时。完整Owner／Repository及源码影响范围保持原freshness与理论前置，并沿公共计权机制执行完整tests范围；candidate设计／工作流／旧证据复用按职责拆为独立模块，公共目录计权为4片，预算由现host准入决定实际并发。单独选定现存测试模块的Changed请求按真实影响执行。详见[项目状态](docs/PROJECT.md#完整软件验证分片)。
 
 反射器补偿入口使用原`--resume-from <manifest>`创建后继run，复用同一科学输入的完整批次；
 原始case只读，不改母群、ID或birth时钟。`--resume-finalization --run-id <原run> [--result-path <Result>]`
