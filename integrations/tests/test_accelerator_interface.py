@@ -97,8 +97,7 @@ Assert-MultipoleIpRecoveryRequest -Run $Run -Request $Request
             self.assertIn("unchanged request", changed.stderr)
             self.assertEqual(frozen.read_bytes(), original)
 
-
-    def test_full_joint_finalization_routes_only_to_existing_flight_owner(self):
+    def test_joint_workflow_finalization_routes_only_to_existing_flight_owner(self):
         powershell = shutil.which("pwsh")
         if not powershell:
             self.skipTest("PowerShell 7 required")
@@ -130,13 +129,28 @@ if(-not$caught){throw 'Recovery failure was swallowed'}
 $PSBoundParameters.SimionExe='must-not-start';$caught=$false
 try{Invoke-Expression $body}catch{$caught=$_.Exception.Message-like'*omit scientific*'}
 if(-not$caught-or$script:calls-ne2){throw 'Recovery accepted a new solver option'}
-'FULL_JOINT_FINALIZATION=PASS'
+$PSBoundParameters.Remove('SimionExe');$PSBoundParameters.IonProcessorContinuationPredecessorManifestPath='unrelated-ip';$caught=$false
+try{Invoke-Expression $body}catch{$caught=$_.Exception.Message-like'*omit scientific*'}
+if(-not$caught-or$script:calls-ne2){throw 'Finalization accepted an IP predecessor'}
+$providerBranch=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$FullJoint-and-not$PreparedJointWorkbenchRunPath'},$true)
+$providerBody=$providerBranch.Extent.Text
+$PSBoundParameters.Clear();$AcceleratorProvider='orthogonal_accelerator';$PreparedJointWorkbenchRunPath=''
+# Run in the current scope so the actual dispatch uses the selected provider.
+Invoke-Expression $providerBody
+if($AcceleratorProvider-ne'dual_pressure_rectilinear_ion_processor'){throw 'Segmented chain did not select its unique provider'}
+$PSBoundParameters.AcceleratorProvider='orthogonal_accelerator';$AcceleratorProvider='orthogonal_accelerator';$caught=$false
+try{Invoke-Expression $providerBody}catch{$caught=$_.Exception.Message-like'*supports only*'}
+if(-not$caught){throw 'An explicitly incompatible provider was accepted'}
+$PreparedJointWorkbenchRunPath='ready-downstream';$AcceleratorProvider='orthogonal_accelerator'
+Invoke-Expression $providerBody
+if($AcceleratorProvider-ne'orthogonal_accelerator'){throw 'Prepared-workbench branch changed an unused provider selection'}
+'JOINT_WORKFLOW_FINALIZATION=PASS'
 ''', encoding="utf-8")
             result = subprocess.run([powershell, "-NoProfile", "-File", str(script),
                 str(REPO / "integrations/workflows/accelerator_interface/execute.ps1")],
                 cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("FULL_JOINT_FINALIZATION=PASS", result.stdout)
+            self.assertIn("JOINT_WORKFLOW_FINALIZATION=PASS", result.stdout)
 
     def test_ip_negative_result_requires_complete_published_execution(self):
         powershell = shutil.which("pwsh")
@@ -173,7 +187,7 @@ if($summary.analysis_exit_code-ne2){throw 'wrong status'}
         self.assertNotEqual(bad.returncode, 0)
         self.assertIn("not a verified completed scientific negative", bad.stderr)
 
-    def test_full_joint_uses_measured_mp_source_and_preserves_failure_policy(self):
+    def test_joint_workflow_uses_measured_mp_source_and_preserves_failure_policy(self):
         powershell = shutil.which("pwsh")
         if not powershell:
             self.skipTest("PowerShell 7 required")
@@ -183,15 +197,15 @@ if($summary.analysis_exit_code-ne2){throw 'wrong status'}
             script.write_text(r'''param($Entry,$Root,$Scenario)
 $ErrorActionPreference='Stop'
 $ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
-$definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-FullJoint'},$true)
+$definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-JointWorkflow'},$true)
 Invoke-Expression $definition.Extent.Text
 function New-AcceleratorInterfaceRunId {param($Provider) 'final'}
 function Invoke-JointAnalysisPreflight {param($Design,$Source,$Contract)}
 function Assert-JointFieldRunId {param($Id)}
-function Write-FullJointFailure {param($Stage,$Flight,$Reason,$Elapsed,$OwnerRun)
+function Write-JointWorkflowFailure {param($Stage,$Flight,$Reason,$Elapsed,$OwnerRun)
   $script:failedStage=$Stage;$script:failedOwner=$OwnerRun
 }
-function Write-FullJointFlightResult {param($Workbench,$Flight,$Elapsed)}
+function Write-JointWorkflowFlightResult {param($Workbench,$Flight,$Elapsed)}
 function Get-JointDesignReceipt {param($Run) return @{status='prepared'}}
 function Get-MultipoleIpPreparation {param($Run,$ConfigurationDirectory)
   if($ConfigurationDirectory-ne$Root){throw 'configuration was not forwarded'}
@@ -255,7 +269,7 @@ if($Scenario-in@('resume','resume-failure','changed-request','field-conflict','p
 if($Scenario-eq'field-conflict'){$IonProcessorFieldRunPath='other-field'}
 if($Scenario-eq'prepared-conflict'){$PreparedJointWorkbenchRunPath='ready'}
 if($Scenario-eq'old-design-conflict'){$PreparedInterfaceRunPath='old-source-design'}
-$failed=$false;$message='';try {Invoke-FullJoint} catch {$failed=$true;$message=$_.Exception.Message}
+$failed=$false;$message='';try {Invoke-JointWorkflow} catch {$failed=$true;$message=$_.Exception.Message}
 $expected=if($Scenario-eq'zero'){'source'}elseif($Scenario-in@('field-conflict','prepared-conflict','old-design-conflict')){''}elseif($Scenario-eq'changed-request'){'source_reuse'}elseif($Scenario-eq'resume-failure'){'source_reuse,ip'}elseif($Scenario-eq'resume'){'source_reuse,ip,design,field,binding,flight'}elseif($Scenario-in@('unsafe','no-policy','seal-failure')){'source,ip'}else{'source,ip,design,field,binding,flight'}
 if(($script:calls -join ',')-ne$expected-or$failed-ne($Scenario-in@('unsafe','no-policy','seal-failure','resume-failure','changed-request','field-conflict','prepared-conflict','old-design-conflict'))){throw "unexpected sequence $script:calls failure=$failed error=$message"}
 if($Scenario-eq'resume-failure'){
@@ -317,7 +331,7 @@ if($receipt.exit_count-ne1){throw 'wrong receipt'}
         self.assertNotEqual(result_bad.returncode, 0)
         self.assertIn("receiver configuration", result_bad.stderr)
 
-    def test_full_joint_field_request_reaches_real_provider_without_native_execution(self):
+    def test_joint_workflow_field_request_reaches_real_provider_without_native_execution(self):
         powershell = shutil.which("pwsh")
         if not powershell:
             self.skipTest("PowerShell 7 required")
@@ -363,7 +377,7 @@ if($receipt.exit_count-ne1){throw 'wrong receipt'}
         script.write_text(r'''param($Entry,$Repo,$Root,$Template,$Python)
 $ErrorActionPreference='Stop'
 $ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
-foreach($name in @('Invoke-FullJoint','Write-FullJointFlightResult','Write-FullJointFailure','Get-JointSourceStart','Assert-JointFieldRunId')){
+foreach($name in @('Invoke-JointWorkflow','Write-JointWorkflowFlightResult','Write-JointWorkflowFailure','Get-JointSourceStart','Assert-JointFieldRunId')){
   $definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
   Invoke-Expression $definition.Extent.Text
 }
@@ -396,11 +410,11 @@ $repoRoot=$Repo;$workspaceRoot=$Root;$PreparedInterfaceRunPath=$Root;$JointField
 $AcceleratorProvider='dual_pressure_rectilinear_ion_processor';$IonProcessorRunPath='source';$ReferenceMrRunPath='reference'
 $MatchingRequestPath='';$FieldRequestPath=$Template;$ContractPath='observation';$RunId='';$LuaExe='';$PythonExe='';$SimionExe=''
 $PreparedJointWorkbenchRunPath='';$ContinuationPredecessorManifestPath='';$IonProcessorContinuationPredecessorManifestPath='';$FinalizeJointWorkbench=$false
-Invoke-FullJoint
+Invoke-JointWorkflow
 $before=$script:ownerCalls
 $bad=Get-Content $Template -Raw|ConvertFrom-Json -AsHashtable;$bad.run_id='field-fixture';$bad|ConvertTo-Json -Depth 20|Set-Content $Template
 $rejected=$false
-try{Invoke-FullJoint}catch{$rejected=$true}
+try{Invoke-JointWorkflow}catch{$rejected=$true}
 if(-not$rejected-or$script:ownerCalls-ne$before){throw 'invalid field run_id was not rejected before any owner stage'}
 Write-Output 'REAL_FIELD_PROVIDER=PASS'
 ''', encoding="utf-8")
@@ -432,7 +446,7 @@ Write-Output 'REAL_FIELD_PROVIDER=PASS'
                  patch('projects.dual_pressure_rectilinear_ion_processor.analysis.component_exit.export_component_exit', return_value=zero):
                 self.assertEqual(_resolve_ip_matching(source_run=root, results=root, inputs=root, frozen=frozen), zero)
 
-    def test_full_joint_dispatches_actual_owner_sequence_and_stops_on_failure(self):
+    def test_joint_workflow_dispatches_actual_owner_sequence_and_stops_on_failure(self):
         powershell = shutil.which("pwsh")
         if not powershell:
             self.skipTest("PowerShell 7 required")
@@ -442,9 +456,9 @@ Write-Output 'REAL_FIELD_PROVIDER=PASS'
             script.write_text(r'''param($Entry,$Root,$Fail,$SourceRoot,$Python)
 $ErrorActionPreference='Stop'
 $ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
-$definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-FullJoint'},$true)
+$definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-JointWorkflow'},$true)
 Invoke-Expression $definition.Extent.Text
-foreach($name in @('Write-FullJointFlightResult','Write-FullJointFailure','Get-JointSourceStart')){
+foreach($name in @('Write-JointWorkflowFlightResult','Write-JointWorkflowFailure','Get-JointSourceStart')){
   $definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
   Invoke-Expression $definition.Extent.Text
 }
@@ -484,42 +498,44 @@ function Invoke-JointOwnerStage {
 . (Join-Path $SourceRoot 'common/paths/workspace_paths.ps1')
 $context=Resolve-WorkspacePaths -SourceRoot $SourceRoot -ArtifactRoot (Join-Path $Root 'selected-store') -Python $Python
 $MultipoleIpRequestPath='';$MultipoleIpRunId='';$IonProcessorRunId='';$IonProcessorConfigurationDirectory='';$IonProcessorFieldRunPath='';$ContinueOnIpScientificFailure=$false;$ResultPath=''
-$artifactRoot=[string]$context.artifact_root;$pathEnvironment=@{};$repoRoot=$Root;$AcceleratorProvider='dual_pressure_rectilinear_ion_processor'
+$artifactRoot=[string]$context.artifact_root;$repoRoot=$Root;$AcceleratorProvider='dual_pressure_rectilinear_ion_processor'
 $IonProcessorRunPath='source';$MatchingRequestPath='matching';$ContractPath='observation';$ReferenceMrRunPath='reference'
 $FieldRequestPath=Join-Path $Root 'field.json';$RunId='design';$LuaExe='';$PythonExe='';$SimionExe=''
 $FinalizeJointWorkbench=$false;$PreparedInterfaceRunPath='';$JointFieldRunPath=''
 $PreparedJointWorkbenchRunPath='';$ContinuationPredecessorManifestPath='';$IonProcessorContinuationPredecessorManifestPath=''
 Set-Content $FieldRequestPath '{"run_id":"field","ion_processor_local_grid":{"pitch_mm":[0.05,0.1,0.05]}}'
-try { Invoke-FullJoint } catch { if(-not$Fail){throw} }
+try { Invoke-JointWorkflow } catch { if(-not$Fail){throw} }
 $expected=if($Fail-eq'preflight'){@('design')}elseif($Fail){@('design','field')}else{@('design','field','binding','flight')}
 if(($script:calls -join ',')-ne($expected -join ',')){throw "wrong sequence: $script:calls"}
 if(-not$Fail){
   $script:calls.Clear();$PreparedInterfaceRunPath=Join-Path $artifactRoot 'projects/instrument_assembly/runs/design'
   $JointFieldRunPath=Join-Path $artifactRoot 'projects/parallel_mirror_dual_stripe_mr_tof/runs/field'
   $MatchingRequestPath='';$FieldRequestPath=''
-  Invoke-FullJoint
+  $upstream=@(Invoke-JointWorkflow)
   if(($script:calls -join ',')-ne'binding,flight'){throw "reuse ran extra stages: $script:calls"}
+  if(-not($upstream -match 'STUDY_SCOPE=upstream_source_to_mr_terminal SIMULATION_PATH=segmented_handoff TRAJECTORY_EXECUTION=reused_completed_results_no_new_fly')){throw 'upstream study scope or reused trajectory semantics differ'}
   $script:calls.Clear();$PreparedJointWorkbenchRunPath=Join-Path $artifactRoot 'projects/instrument_assembly/runs/final'
   $PreparedInterfaceRunPath='';$JointFieldRunPath='';$ContinuationPredecessorManifestPath='predecessor'
   $exit=Join-Path $PreparedJointWorkbenchRunPath 'results/ion_processor_exit';$binding=Join-Path $PreparedJointWorkbenchRunPath 'results/joint_workbench'
   New-Item -ItemType Directory -Force $exit,$binding|Out-Null
   Set-Content (Join-Path $exit 'component_exit_receipt.json') '{"inputs":{"inputs/injected_source.json":{}}}'
   Set-Content (Join-Path $binding 'static_field_binding.json') '{"parent":{"grid":{"origin_mm":[0,1,2],"pitch_mm":[1,1,1],"dimensions":[2,2,2]}},"refinement_windows":[]}'
-  $direct=@(Invoke-FullJoint)
+  $direct=@(Invoke-JointWorkflow)
   if(($script:calls -join ',')-ne'flight'){throw "workbench reuse ran extra stages: $script:calls"}
   if(-not($direct -match 'DATA_VALIDITY=recorded_diagnostics_complete SCIENCE=not_qualified SOURCE=upstream_injected_population.*NATIVE_BATCHES=0 REUSED_BATCHES=2')){throw 'execution, source, scientific status or reuse not reported'}
   if(-not($direct -match 'fwhm_us.*0.1')-or-not($direct -match 'origin_mm')){throw 'peak or field scope not reported'}
+  if(-not($direct -match 'STUDY_SCOPE=prepared_source_to_terminal SIMULATION_PATH=continuous_assembly TRAJECTORY_EXECUTION=reused_completed_results_no_new_fly')){throw 'prepared study scope or reused trajectory semantics differ'}
   $failed=Join-Path $Root 'failed';New-Item -ItemType Directory -Force $failed|Out-Null
   Set-Content (Join-Path $failed 'summary.json') '{"status":"failed","failure_stage":"automatic_joint_diagnostics","reason":"real analysis failure"}'
-  $failure=@(Write-FullJointFailure -Stage flight_and_analysis -Flight $failed -Reason generic -Elapsed 1 2>&1)
+  $failure=@(Write-JointWorkflowFailure -Stage flight_and_analysis -Flight $failed -Reason generic -Elapsed 1 2>&1)
   if(-not($failure -match 'STAGE=automatic_joint_diagnostics.*RECOVERY=use_prepared_joint_analysis_without_fly.*real analysis failure')){throw 'failed analysis did not expose actual stage and recovery'}
   $script:calls.Clear();$PreparedJointWorkbenchRunPath='';$PreparedInterfaceRunPath=Join-Path $artifactRoot 'projects/instrument_assembly/runs/design'
   $JointFieldRunPath='';$FieldRequestPath=Join-Path $Root 'field.json'
   Set-Content (Join-Path $PreparedInterfaceRunPath 'results/accelerator_interface_preparation.json') '{"status":"zero_exit","source_exit":{"inputs":{"inputs/injected_source.json":{}},"counts":{"source":3,"not_transferred":3}}}'
-  $zero=@(Invoke-FullJoint)
-  if($script:calls.Count-ne0-or-not($zero -match 'FULL_JOINT=ZERO_EXIT.*SOURCE=upstream_injected_population.*MOTHER=3.*FLY=False')){throw 'zero exit source or stopping differs'}
+  $zero=@(Invoke-JointWorkflow)
+  if($script:calls.Count-ne0-or-not($zero -match 'JOINT_WORKFLOW=ZERO_EXIT.*SOURCE=upstream_injected_population.*MOTHER=3.*FLY=False')){throw 'zero exit source or stopping differs'}
 }
-Write-Output 'FULL_JOINT_DISPATCH=PASS'
+Write-Output 'JOINT_WORKFLOW_DISPATCH=PASS'
 ''', encoding="utf-8")
             for failure in ("", "field", "preflight"):
                 case = root / (failure or "success")
@@ -528,7 +544,7 @@ Write-Output 'FULL_JOINT_DISPATCH=PASS'
                     str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(case), failure, str(REPO), sys.executable],
                     cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertIn("FULL_JOINT_DISPATCH=PASS", result.stdout)
+                self.assertIn("JOINT_WORKFLOW_DISPATCH=PASS", result.stdout)
 
     def test_actual_iob_entry_verifies_live_assets_once_after_guards_and_before_vendor(self):
         powershell = shutil.which("pwsh")
@@ -1207,7 +1223,6 @@ $null=Freeze-ConsumerDependencies -RepoRoot '{REPO}' -ContractPath $path -InputD
             self.assertNotIn("joint_code_inventory", receipt["inputs"])
             self.assertFalse(list(snapshot.rglob("__pycache__")))
 
-
     def test_full_joint_cli_keeps_resolved_roots_scoped_for_actual_child(self):
         if not shutil.which("pwsh"):
             self.skipTest("PowerShell 7 required")
@@ -1265,7 +1280,6 @@ foreach($key in $before.Keys){if([Environment]::GetEnvironmentVariable($key)-cne
                 self.assertTrue((selected / "projects/instrument_assembly/runs/20261031_180000__sim__simion__root-test/summary.json").is_file())
                 self.assertEqual(marker.read_bytes(), original)
             self.assertFalse((repo.parent / "artifacts").exists())
-
 
     def test_multipole_cli_uses_nondefault_root_and_preserves_parent_records(self):
         if not shutil.which("pwsh"):
@@ -1326,7 +1340,6 @@ function Complete-FailedRun {param($Python,$RepoRoot,$RunConfig,$Summary,$Summar
                          [fixture.request["source"]["manifest"], fixture.request["receiver"]["manifest"]])
         self.assertEqual({str(path): path.read_bytes() for base in (fixture.source, fixture.receiver) for path in base.rglob("*") if path.is_file()}, parents)
         self.assertFalse((repo.parent / "artifacts").exists())
-
 
     def test_interface_capacity_transports_explicit_parent_manifest_authority(self):
         if not shutil.which("pwsh"):

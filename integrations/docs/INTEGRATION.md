@@ -203,6 +203,8 @@ composer读取，不代表物理磁盘流量或运行倍速。
 
 ## OA／IP接口准备与绑定
 
+原 `-FullJoint` 入口的内部控制与输出统一称 `JOINT_WORKFLOW`，按上游源至MR终点和prepared源至终点分别报告实际范围；全复用明确为 `reused_completed_results_no_new_fly`。新IP设计分支自动选择唯一适用provider，显式不匹配先拒绝，prepared下游分支不受此默认选择影响。正式Changed验证完整accelerator_interface模块23项PASS（66.088秒，摘要区间91.560秒），含真实provider准备、失败阶段、源／恢复、双路径输出及根上下文接线；未因此新增原生求解或科学资格。
+
 [accelerator_interface入口](../workflows/accelerator_interface/execute.ps1)拥有跨项目准备与绑定；
 OA、IP和MR分别拥有自身设计与科学约束。IP设计必须显式提供schema 3 `-MatchingRequestPath`；
 `-FinalizeJointWorkbench`只消费设计run已冻结的父plan、matching request及实际源／场，不回读活动默认。

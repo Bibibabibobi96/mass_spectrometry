@@ -88,6 +88,8 @@ pre-pulse历史包含接续。结果同时记录体积状态重启时刻与实�
 `monolithic_joint_solve`及实际场receipt表达。一次Fly、多个PA或名称中的joint均不能证明接口场正确。
 `-FullJoint`保留在原owner，按分支说明范围；不把它整体改为单一路径标签。
 
+新IP设计／接续分支省略 `AcceleratorProvider` 时选择现有IP提供者，显式不匹配会提前拒绝；直接prepared-workbench分支不选择提供者。结果中的 `STUDY_SCOPE`、`SIMULATION_PATH` 与 `TRAJECTORY_EXECUTION` 分别说明研究范围、轨迹方式及新Fly／纯复用事实。
+
 ### 分段接续模拟
 
 以下完整例子从已封存IP源接续到MR，复用相匹配的设计、联合场与完整Fly前驱；不会重新创建上游母群。

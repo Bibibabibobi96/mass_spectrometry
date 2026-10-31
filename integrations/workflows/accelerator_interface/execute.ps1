@@ -1,3 +1,17 @@
+<#
+.SYNOPSIS
+Prepare an OA/IP interface, or execute its supported joint workflow branches.
+.DESCRIPTION
+FullJoint selects the IP provider for the IP design/chain branch. A prepared
+workbench goes directly to its downstream owner without selecting a provider.
+MP/IP handoff and downstream-only propagation have different study scopes.
+IonProcessorContinuationPredecessorManifestPath resumes only the IP stage;
+ContinuationPredecessorManifestPath remains the downstream joint-flight parent.
+IP recovery reuses the explicit sealed MultipoleIpRunId preparation and requires
+its unchanged request, a new IP run ID, MatchingRequestPath and FieldRequestPath.
+Sources, automatic stages, complete examples and field limits:
+integrations/README.md (simulation path selection).
+#>
 [CmdletBinding()]
 param(
   [string]$ReferenceMrRunPath='',
@@ -143,7 +157,7 @@ function Get-JointSourceStart {
   if($ExitReceipt.inputs.ContainsKey('inputs/release.csv')){return 'ip_local_release'}
   return 'unknown'
 }
-function Write-FullJointFailure {
+function Write-JointWorkflowFailure {
   param([string]$Stage,[string]$Flight,[string]$Reason,[double]$Elapsed,[string]$OwnerRun='')
   $recovery='inspect_stage_owner_result';$observedRun=if($OwnerRun){$OwnerRun}else{$Flight};$summaryPath=Join-Path $observedRun 'summary.json'
   if(Test-Path -LiteralPath $summaryPath -PathType Leaf){
@@ -156,10 +170,11 @@ function Write-FullJointFailure {
       else{$recovery='inspect_flight_summary_and_use_prepared_joint_owner'}
     }catch{Write-Warning 'Flight summary could not be read; original failure retained.'}
   }
-  Write-Error ("FULL_JOINT=FAILED STAGE={0} DATA_VALIDITY=unknown SCIENCE=unknown FLIGHT={1} RECOVERY={2} TOTAL_SECONDS={3:F3} REASON={4} OWNER_RUN={5}" -f $Stage,$Flight,$recovery,$Elapsed,$Reason,$observedRun) -ErrorAction Continue
+  Write-Error ("JOINT_WORKFLOW=FAILED STAGE={0} DATA_VALIDITY=unknown SCIENCE=unknown FLIGHT={1} RECOVERY={2} TOTAL_SECONDS={3:F3} REASON={4} OWNER_RUN={5}" -f $Stage,$Flight,$recovery,$Elapsed,$Reason,$observedRun) -ErrorAction Continue
 }
-function Write-FullJointFlightResult {
-  param([string]$Workbench,[string]$Flight,[double]$Elapsed)
+function Write-JointWorkflowFlightResult {
+  param([string]$Workbench,[string]$Flight,[double]$Elapsed,
+    [Parameter(Mandatory)][ValidateSet('prepared_source_to_terminal','upstream_source_to_mr_terminal')][string]$StudyScope)
   $summary=Get-Content -LiteralPath (Join-Path $Flight 'summary.json') -Raw|ConvertFrom-Json -AsHashtable
   if($summary.status-ne'success'){throw 'Prepared joint owner did not publish a successful flight summary.'}
   $validity='unknown';$counts='unknown';$peak='unknown';$source='unknown';$scope='unknown'
@@ -181,7 +196,9 @@ function Write-FullJointFlightResult {
       $scope=(@{parent_grid=$binding.parent.grid;windows=$windows}|ConvertTo-Json -Compress -Depth 20)
     }
   }
-  Write-Output ("FULL_JOINT EXECUTION=success DATA_VALIDITY={0} SCIENCE=not_qualified SOURCE={1} HANDOFF=state FIELD_SCOPE={2} COUNTS={3} DETECTOR_PEAK={4} NATIVE_BATCHES={5} REUSED_BATCHES={6} WORKBENCH={7} RESULT={8} DIAGNOSTICS={9} RECOVERY=none TOTAL_SECONDS={10:F3}" -f $validity,$source,$scope,$counts,$peak,$summary.actual_native_batch_count,$summary.reused_batch_count,$Workbench,$Flight,$summary.diagnostics,$Elapsed)
+  $path=if($StudyScope-eq'prepared_source_to_terminal'){'continuous_assembly'}else{'segmented_handoff'}
+  $execution=if([int]$summary.actual_native_batch_count-gt0){'native_batches_executed'}else{'reused_completed_results_no_new_fly'}
+  Write-Output ("JOINT_WORKFLOW EXECUTION=success DATA_VALIDITY={0} SCIENCE=not_qualified SOURCE={1} FIELD_SCOPE={2} COUNTS={3} DETECTOR_PEAK={4} NATIVE_BATCHES={5} REUSED_BATCHES={6} WORKBENCH={7} RESULT={8} DIAGNOSTICS={9} RECOVERY=none TOTAL_SECONDS={10:F3} STUDY_SCOPE={11} SIMULATION_PATH={12} TRAJECTORY_EXECUTION={13} SOURCE_PROVENANCE={14}" -f $validity,$source,$scope,$counts,$peak,$summary.actual_native_batch_count,$summary.reused_batch_count,$Workbench,$Flight,$summary.diagnostics,$Elapsed,$StudyScope,$path,$execution,$exitPath)
 }
 function Invoke-JointAnalysisPreflight {
   param([string]$Design,[string]$Source,[string]$Contract)
@@ -190,7 +207,7 @@ function Invoke-JointAnalysisPreflight {
     if($LASTEXITCODE-ne 0){throw "Joint analysis preflight failed (exit $LASTEXITCODE)."}
   }
 }
-function Invoke-FullJoint {
+function Invoke-JointWorkflow {
   $totalWatch=[Diagnostics.Stopwatch]::StartNew()
   if($PreparedJointWorkbenchRunPath){
     if(-not$ContractPath-or$FinalizeJointWorkbench-or$PreparedInterfaceRunPath-or$JointFieldRunPath-or$MatchingRequestPath-or$FieldRequestPath-or$MultipoleIpRequestPath-or$MultipoleIpRunId-or$IonProcessorRunId-or$IonProcessorConfigurationDirectory-or$IonProcessorFieldRunPath-or$IonProcessorContinuationPredecessorManifestPath-or$ContinueOnIpScientificFailure){
@@ -205,9 +222,9 @@ function Invoke-FullJoint {
     if($ContinuationPredecessorManifestPath){$flight.ContinuationPredecessorManifestPath=$ContinuationPredecessorManifestPath}
     try{
       Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'integrations/workflows/prepared_joint/execute.ps1') -Arguments $flight
-      Write-FullJointFlightResult -Workbench $workbench -Flight $flightRun -Elapsed $totalWatch.Elapsed.TotalSeconds
+      Write-JointWorkflowFlightResult -Workbench $workbench -Flight $flightRun -Elapsed $totalWatch.Elapsed.TotalSeconds -StudyScope prepared_source_to_terminal
     }catch{
-      Write-FullJointFailure -Stage 'flight_and_analysis' -Flight $flightRun -Reason $_.Exception.Message -Elapsed $totalWatch.Elapsed.TotalSeconds
+      Write-JointWorkflowFailure -Stage 'flight_and_analysis' -Flight $flightRun -Reason $_.Exception.Message -Elapsed $totalWatch.Elapsed.TotalSeconds
       throw
     }
     return
@@ -267,7 +284,7 @@ function Invoke-FullJoint {
       }
       $sourceReceipt=Get-MultipoleIpPreparation -Run $sourceRun -ConfigurationDirectory $ipConfiguration
       if([int]$sourceReceipt.exit_count-eq0){
-        Write-Output ("FULL_JOINT=ZERO_EXIT EXECUTION=success DATA_VALIDITY=valid SCIENCE=not_qualified SOURCE_RUN={0} SOURCE_CASE={1} SOURCE_PREPARATION={2} MOTHER={3} TRANSFERRED=0 IP_FLY=False MR_FIELD=False MR_FLY=False RECOVERY=none TOTAL_SECONDS={4:F3}" -f $sourceReceipt.source.run_id,$sourceReceipt.source.case_id,$sourceRun,$sourceReceipt.mother_count,$totalWatch.Elapsed.TotalSeconds)
+        Write-Output ("JOINT_WORKFLOW=ZERO_EXIT EXECUTION=success DATA_VALIDITY=valid SCIENCE=not_qualified SOURCE_RUN={0} SOURCE_CASE={1} SOURCE_PREPARATION={2} MOTHER={3} TRANSFERRED=0 IP_FLY=False MR_FIELD=False MR_FLY=False RECOVERY=none TOTAL_SECONDS={4:F3}" -f $sourceReceipt.source.run_id,$sourceReceipt.source.case_id,$sourceRun,$sourceReceipt.mother_count,$totalWatch.Elapsed.TotalSeconds)
         return
       }
       $stage='ion_processor_flight'
@@ -282,10 +299,10 @@ function Invoke-FullJoint {
         if(-not$ContinueOnIpScientificFailure-or$ipFailure.Exception.Message-cne'Analysis or required diagnostics incomplete; see frozen summary and logs'){throw $ipFailure}
         try {$ipSummary=Assert-CompletedIpScientificFailure -Run $IonProcessorRunPath}
         catch {$ipFailure.Exception.Data['ip_source_verification_error']=$_.Exception.Message;throw $ipFailure}
-        Write-Output "FULL_JOINT_IP_SCIENCE=not_passed IP_RUN=$IonProcessorRunPath ORIGINAL_ERROR=$($ipFailure.Exception.Message)"
+        Write-Output "JOINT_WORKFLOW_IP_SCIENCE=not_passed IP_RUN=$IonProcessorRunPath ORIGINAL_ERROR=$($ipFailure.Exception.Message)"
       }
       $common.IonProcessorRunPath=$IonProcessorRunPath
-      Write-Output "FULL_JOINT_SOURCE RUN=$($sourceReceipt.source.run_id) CASE=$($sourceReceipt.source.case_id) PREPARATION=$sourceRun IP_RUN=$IonProcessorRunPath HANDOFF=state"
+      Write-Output "JOINT_WORKFLOW_SOURCE RUN=$($sourceReceipt.source.run_id) CASE=$($sourceReceipt.source.case_id) PREPARATION=$sourceRun IP_RUN=$IonProcessorRunPath HANDOFF=state"
     }
     $stage='design'
     if(-not$PreparedInterfaceRunPath){Invoke-JointOwnerStage -Script $PSCommandPath -Arguments ($common+@{MatchingRequestPath=$MatchingRequestPath;RunId=$designId})}
@@ -299,7 +316,7 @@ function Invoke-FullJoint {
       $source=Get-JointSourceStart -ExitReceipt $designResult.source_exit
       $producer='unknown'
       if($designResult.source_exit.ContainsKey('producer_result')){$producer=($designResult.source_exit.producer_result|ConvertTo-Json -Compress -Depth 10)}
-      Write-Output ("FULL_JOINT=ZERO_EXIT EXECUTION=success DATA_VALIDITY=valid SCIENCE=not_qualified SOURCE={0} HANDOFF=none PRODUCER_RESULT={1} DESIGN={2} MOTHER={3} TRANSFERRED=0 NOT_TRANSFERRED={4} MR_FIELD=False FLY=False RECOVERY=none TOTAL_SECONDS={5:F3}" -f $source,$producer,$designRun,$counts.source,$counts.not_transferred,$totalWatch.Elapsed.TotalSeconds)
+      Write-Output ("JOINT_WORKFLOW=ZERO_EXIT EXECUTION=success DATA_VALIDITY=valid SCIENCE=not_qualified SOURCE={0} HANDOFF=none PRODUCER_RESULT={1} DESIGN={2} MOTHER={3} TRANSFERRED=0 NOT_TRANSFERRED={4} MR_FIELD=False FLY=False RECOVERY=none TOTAL_SECONDS={5:F3}" -f $source,$producer,$designRun,$counts.source,$counts.not_transferred,$totalWatch.Elapsed.TotalSeconds)
       return
     }
     if($designResult.status-ne'prepared'){throw 'Design receipt is not an interface design preparation.'}
@@ -324,12 +341,12 @@ function Invoke-FullJoint {
     if($PythonExe){$flight.PythonExe=$PythonExe};if($SimionExe){$flight.SimionExe=$SimionExe}
     if($ContinuationPredecessorManifestPath){$flight.ContinuationPredecessorManifestPath=$ContinuationPredecessorManifestPath}
     Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'integrations/workflows/prepared_joint/execute.ps1') -Arguments $flight
-    Write-Output "FULL_JOINT_INPUTS DESIGN=$designRun FIELD=$fieldRun"
-    Write-FullJointFlightResult -Workbench $finalRun -Flight $flightRun -Elapsed $totalWatch.Elapsed.TotalSeconds
+    Write-Output "JOINT_WORKFLOW_INPUTS DESIGN=$designRun FIELD=$fieldRun"
+    Write-JointWorkflowFlightResult -Workbench $finalRun -Flight $flightRun -Elapsed $totalWatch.Elapsed.TotalSeconds -StudyScope upstream_source_to_mr_terminal
   }catch{
-    Write-Output "FULL_JOINT_INPUTS DESIGN=$designRun FIELD=$fieldRun WORKBENCH=$finalRun"
+    Write-Output "JOINT_WORKFLOW_INPUTS DESIGN=$designRun FIELD=$fieldRun WORKBENCH=$finalRun"
     $failedOwner=if($stage-eq'ion_processor_flight'){$IonProcessorRunPath}elseif($stage-eq'multipole_ip_preparation'){$sourceRun}elseif($stage-eq'design'){$designRun}elseif($stage-eq'field'){$fieldRun}elseif($stage-eq'binding'){$finalRun}else{$flightRun}
-    Write-FullJointFailure -Stage $stage -Flight $flightRun -Reason $_.Exception.Message -Elapsed $totalWatch.Elapsed.TotalSeconds -OwnerRun $failedOwner
+    Write-JointWorkflowFailure -Stage $stage -Flight $flightRun -Reason $_.Exception.Message -Elapsed $totalWatch.Elapsed.TotalSeconds -OwnerRun $failedOwner
     throw
   }finally{if($temporary-and(Test-Path -LiteralPath $temporary)){Remove-Item -LiteralPath $temporary}}
 }
@@ -343,8 +360,14 @@ if($ResumeFinalization){
   Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'integrations/workflows/prepared_joint/execute.ps1') -Arguments $recovery
   return
 }
+if($FullJoint-and-not$PreparedJointWorkbenchRunPath){
+  if($PSBoundParameters.ContainsKey('AcceleratorProvider')-and$AcceleratorProvider-ne'dual_pressure_rectilinear_ion_processor'){
+    throw 'FullJoint supports only the dual_pressure_rectilinear_ion_processor provider.'
+  }
+  $AcceleratorProvider='dual_pressure_rectilinear_ion_processor'
+}
 if($ResultPath-and-not$FullJoint){throw 'ResultPath requires FullJoint.'}
-if($FullJoint){Invoke-FullJoint;return}
+if($FullJoint){Invoke-JointWorkflow;return}
 if($FieldRequestPath){throw 'FieldRequestPath requires FullJoint.'}
 if($ContinuationPredecessorManifestPath){throw 'ContinuationPredecessorManifestPath requires FullJoint.'}
 if($PreparedJointWorkbenchRunPath){throw 'PreparedJointWorkbenchRunPath requires FullJoint.'}
