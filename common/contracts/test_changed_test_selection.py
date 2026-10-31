@@ -226,6 +226,205 @@ class ChangedTestSelectionTests(unittest.TestCase):
     def test_changed_scope_partitions_preserve_thin_selection_and_failure_policy(self) -> None:
         self.check_integration_partitions("Changed")
 
+
+    def partial_python_partition_fixture(self, root: Path) -> tuple[str, list[str]]:
+        """Real planner/dispatch with five tiny tests and an unselected failing peer."""
+        common = root / "common"
+        tests = common / "contracts"
+        tests.mkdir(parents=True)
+        (root / "integrations").mkdir()
+        (root / "projects").mkdir()
+        for name in ("verify.ps1", "parallel_gate_support.ps1", "gate_catalog_support.ps1",
+                     "require_powershell7.ps1", "gate_unittest.py"):
+            shutil.copyfile(REPO_ROOT / "common" / name, common / name)
+        (common / "host_execution_lease.ps1").write_text(
+            "function Get-HostResourceBudget {param($Role,$Stage) @{}}\n"
+            "function Enter-HostResourceStage {param($Role,$Stage,$Budget) @{}}\n"
+            "function Exit-HostResourceStage {param($Lease)}\n", encoding="utf-8")
+        (common / "verify_repository_hygiene.ps1").write_text("# Inert global check.\n", encoding="utf-8")
+        (common / "verify_documentation.ps1").write_text(
+            "param($PythonExe,$StructureOnly,[string[]]$ChangedPath)\n", encoding="utf-8")
+        for name in ("verify_repository_text_bytes", "verify_development_standards"):
+            (common / (name + ".py")).write_text("# Inert global check.\n", encoding="utf-8")
+        (root / "ruff").mkdir()
+        (root / "ruff/__init__.py").write_text("", encoding="utf-8")
+        (root / "ruff/__main__.py").write_text("# Inert global lint.\n", encoding="utf-8")
+        leaf = "common/contracts/partition_leaf.py"
+        (root / leaf).write_text("# Explicit fixture dependency.\n", encoding="utf-8")
+        (tests / "fixture_import.py").write_text("VALUE = 17\n", encoding="utf-8")
+        (common / "prerequisite.py").write_text(
+            "import os\nfrom pathlib import Path\n"
+            "(Path(os.environ['PARTIAL_EVENTS'])/'prerequisite').write_text('ready')\n", encoding="utf-8")
+        body = """import json,os,time,unittest
+from pathlib import Path
+from fixture_import import VALUE
+KEY = '__KEY__'
+def event(kind):
+    root=Path(os.environ['PARTIAL_EVENTS'])
+    (root/(KEY+'.'+kind)).write_text(json.dumps({'time':time.perf_counter_ns(),'pid':os.getpid()}))
+class Probe(unittest.TestCase):
+    def test_probe(self):
+        root=Path(os.environ['PARTIAL_EVENTS'])
+        self.assertEqual((root/'prerequisite').read_text(), 'ready')
+        self.assertEqual(VALUE, 17)
+        event('start')
+        try:
+            if KEY in ('a','b'):
+                buddy='b' if KEY=='a' else 'a'
+                deadline=time.monotonic()+5
+                while not (root/(buddy+'.start')).exists() and time.monotonic()<deadline:
+                    time.sleep(.01)
+                self.assertTrue((root/(buddy+'.start')).exists(), 'SECOND_WORKER_NOT_STARTED')
+            time.sleep(1.0 if KEY=='b' and os.environ.get('PARTIAL_FAIL') else .2)
+            self.assertFalse(KEY=='a' and os.environ.get('PARTIAL_FAIL'), 'PARTIAL_FAILURE')
+        finally:
+            event('done')
+"""
+        modules = ["common/contracts/test_" + name + ".py" for name in "abcde"]
+        for name, relative in zip("abcde", modules):
+            (root / relative).write_text(body.replace("__KEY__", name), encoding="utf-8")
+        (tests / "test_unselected.py").write_text(
+            "raise AssertionError('UNSELECTED_OWNER_TEST_MUST_NOT_RUN')\n", encoding="utf-8")
+        catalog = json.loads((REPO_ROOT / "common/gate_catalog.json").read_text(encoding="utf-8"))
+        route = next(x for x in catalog["routes"] if x["stage"] == "common_contracts")
+        route["requires_stages"] = ["partition_prerequisite"]
+        route["test_selection"]["dependencies"] = [dict(matches=[dict(exact=leaf, reason="fixture_leaf")],
+                                                       modules=modules, dependency_profile="stdlib")]
+        route["repository_integration_partition"]["measured_seconds"] = {
+            "test_a": 120, "test_b": 110, "test_c": 100, "test_d": 10, "test_e": 1}
+        prerequisite = dict(stage="partition_prerequisite", dependency_profile="stdlib",
+                            repository_integration_group="fast",
+                            matches=[dict(exact="common/prerequisite.py", reason="fixture_prerequisite")],
+                            command=dict(runner="python", arguments=["common/prerequisite.py"]))
+        catalog["routes"] = [prerequisite, route]
+        (common / "gate_catalog.json").write_text(json.dumps(catalog), encoding="utf-8")
+        return leaf, modules
+
+    def test_heavy_partial_python_dispatch_preserves_union_prerequisite_and_failure_drain(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="heavy_partial_dispatch_") as directory:
+            root = Path(directory)
+            leaf, modules = self.partial_python_partition_fixture(root)
+            for failed in (False, True):
+                with self.subTest(failed=failed):
+                    events = root / ("failed_events" if failed else "success_events")
+                    events.mkdir()
+                    environment = dict(os.environ, PARTIAL_EVENTS=str(events))
+                    environment.pop("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN", None)
+                    environment.pop("PARTIAL_FAIL", None)
+                    if failed:
+                        environment["PARTIAL_FAIL"] = "1"
+                    summary = root / ("failed.json" if failed else "success.json")
+                    result = subprocess.run(
+                        ["pwsh", "-NoProfile", "-File", str(root / "common/verify.ps1"),
+                         "-PythonExe", sys.executable, "-ChangedPath", leaf, "-MaxConcurrency", "2",
+                         "-SummaryPath", str(summary)], cwd=root, env=environment,
+                        capture_output=True, text=True, encoding="utf-8", timeout=60)
+                    output = result.stdout + result.stderr
+                    self.assertEqual(result.returncode != 0, failed, output)
+                    stages = {x["name"]: x for x in json.loads(summary.read_text(encoding="utf-8"))["stages"]}
+                    parent = stages["common_contracts"]
+                    self.assertEqual(parent["status"], "NOT_APPLICABLE", output)
+                    self.assertEqual(parent["selection_reason"], "selected_partial_python_tests_partitioned")
+                    parts = [x for name, x in stages.items() if name.startswith("common_contracts__tests_")]
+                    self.assertEqual(len(parts), 3)
+                    actual = [m for part in parts for m in part["command"]["arguments"][2:]]
+                    self.assertCountEqual(actual, [m[:-3].replace("/", ".") for m in modules])
+                    self.assertEqual(len(actual), len(set(actual)))
+                    for part in parts:
+                        self.assertEqual(part["selection_reason"], "selected_partial_python_test_partition")
+                        self.assertEqual(part["dependency_profile"], "stdlib")
+                        self.assertEqual(part["requires_stages"], ["partition_prerequisite"])
+                        self.assertEqual(part["command"]["python_path_roots"], ["common/contracts/"])
+                    self.assertEqual(stages["partition_prerequisite"]["status"], "PASS", output)
+                    starts = {p.stem: json.loads(p.read_text()) for p in events.glob("*.start")}
+                    done = {p.stem: json.loads(p.read_text()) for p in events.glob("*.done")}
+                    self.assertEqual(set(starts), set(done), output)
+                    self.assertIn("a", starts)
+                    self.assertIn("b", starts)
+                    timeline = sorted([(v["time"], 1) for v in starts.values()] +
+                                      [(v["time"], -1) for v in done.values()])
+                    active = peak = 0
+                    for _, delta in timeline:
+                        active += delta
+                        peak = max(peak, active)
+                    self.assertEqual(peak, 2, output)
+                    if failed:
+                        self.assertIn("PARTIAL_FAILURE", output)
+                        self.assertCountEqual([part["status"] for part in parts], ["FAIL", "PASS", "BLOCKED"])
+                        self.assertGreater(done["b"]["time"], done["a"]["time"])
+                    else:
+                        self.assertEqual(set(starts), set("abcde"))
+                        self.assertEqual(sum(len(p["test_durations"]) for p in parts), 5)
+
+    def test_partial_python_partition_cost_guards_and_complete_owner_remain_distinct(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="partial_partition_plans_") as directory:
+            root = Path(directory)
+            leaf, modules = self.partial_python_partition_fixture(root)
+            weights = {"test_a": 120, "test_b": 110, "test_c": 100, "test_d": 10, "test_e": 1}
+            cases = [dict(name="heavy", weights=weights),
+                     dict(name="short", weights={k: v / 100 for k, v in weights.items()}),
+                     dict(name="unknown", weights={k: v for k, v in weights.items() if k != "test_e"}),
+                     dict(name="serial", weights=weights, concurrency=1),
+                     dict(name="inherited", weights=weights, token="inherited_fixture_grant"),
+                     dict(name="no_benefit", weights={"test_a": 341}, modules=modules[:1]),
+                     dict(name="only_tests", weights=weights, paths=modules),
+                     dict(name="owner", weights=weights, scope="Owner"),
+                     dict(name="repository", weights=weights, scope="Repository")]
+            request = root / "cases.json"
+            request.write_text(json.dumps(cases), encoding="utf-8")
+            script = r"""
+$ErrorActionPreference='Stop'
+$catalog=Get-Content common/gate_catalog.json -Raw|ConvertFrom-Json -AsHashtable
+$originalToken=$env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN
+try {
+ foreach($case in @(Get-Content __CASES__ -Raw|ConvertFrom-Json -AsHashtable)) {
+  $current=$catalog|ConvertTo-Json -Depth 32|ConvertFrom-Json -AsHashtable
+  $route=$current.routes|Where-Object stage -eq common_contracts
+  $route.repository_integration_partition.measured_seconds=$case.weights
+  if($case.ContainsKey('modules')){$route.test_selection.dependencies[0].modules=$case.modules}
+  $current|ConvertTo-Json -Depth 32|Set-Content common/gate_catalog.json -Encoding UTF8
+  $env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN=if($case.ContainsKey('token')){$case.token}else{$null}
+  $arguments=@{PythonExe=__PYTHON__;PlanOnly=$true;PlanPath=(Join-Path $PWD ($case.name+'.json'));
+    MaxConcurrency=$(if($case.ContainsKey('concurrency')){$case.concurrency}else{2})}
+  if($case.ContainsKey('scope')){
+   $arguments.Scope=$case.scope
+   if($case.scope-eq'Owner'){$arguments.Owner=@('common/contracts')}
+  }else{$arguments.ChangedPath=if($case.ContainsKey('paths')){$case.paths}else{@(__LEAF__)}}
+  & common/verify.ps1 @arguments|Out-Null
+ }
+}finally{$env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN=$originalToken}
+"""
+            script = script.replace("__CASES__", powershell_literal(request)).replace(
+                "__PYTHON__", powershell_literal(sys.executable)).replace("__LEAF__", powershell_literal(leaf))
+            result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=root,
+                                    capture_output=True, text=True, encoding="utf-8", timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            for case in cases:
+                with self.subTest(case=case["name"]):
+                    plan = json.loads((root / (case["name"] + ".json")).read_text(encoding="utf-8-sig"))
+                    parts = [s for s in plan["stages"] if s["name"].startswith("common_contracts__tests_")]
+                    is_complete = case["name"] in {"owner", "repository"}
+                    partitioned = case["name"] in {"heavy", "only_tests"} or is_complete
+                    self.assertEqual(len(parts), 3 if partitioned else 0)
+                    stages = {s["name"]: s for s in plan["stages"] + plan["skipped_stages"]}
+                    if partitioned:
+                        actual = [m for part in parts for m in part["command"]["arguments"][2:]]
+                        expected = [m[:-3].replace("/", ".") for m in modules]
+                        if is_complete:
+                            expected.append("common.contracts.test_unselected")
+                        self.assertCountEqual(actual, expected)
+                        expected_reason = "complete_owner_test_partition" if is_complete else "selected_partial_python_test_partition"
+                        self.assertTrue(all(p["reason"] == expected_reason for p in parts))
+                        if not is_complete:
+                            self.assertTrue(all(p["dependency_profile"] == ("locked" if case["name"] == "only_tests" else "stdlib") for p in parts))
+                    else:
+                        selected = stages["common_contracts"]
+                        self.assertTrue(selected["selected"])
+                        expected = case.get("modules", modules)
+                        self.assertEqual(selected["command"]["arguments"][2:], expected)
+                        self.assertEqual(selected["dependency_profile"], "stdlib")
+                        self.assertEqual(selected["requires_stages"], ["partition_prerequisite"])
+
     def selections(self, root: Path, cases: list[dict], *, owner_filter: bool = False) -> list[dict]:
         """Evaluate read-only cases in one host; cross-process tests remain separate."""
         with tempfile.TemporaryDirectory(prefix="selection_cases_") as directory:

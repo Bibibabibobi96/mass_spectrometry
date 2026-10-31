@@ -296,6 +296,7 @@ if ($FullScope) {
 }
 
 $partitionParents = @{}
+$partialPartitionParents = @{}
 function Test-CompletePartitionOwnerCommand {
     param($Route, $Command, $TestSelection, [string]$RepoRoot)
     if ($null -eq $Route.PSObject.Properties['repository_integration_partition'] -or
@@ -333,6 +334,45 @@ function Test-CompletePartitionOwnerCommand {
             (ConvertTo-Json -InputObject $complete.parameters.$parameter -Depth 8 -Compress)) { return $false }
     }
     return $true
+}
+function Get-SelectedPartialPythonTestPartitions {
+    # Five minutes is the existing complex-software reference, not a timeout.
+    # Selection and complete-owner coverage are unchanged by this cost heuristic.
+    param($Route, $Command, $TestSelection, [string]$RepoRoot, [int]$Concurrency)
+    if ($Concurrency -lt 2 -or $env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN -or
+        $Command.runner -ne 'python' -or $null -eq $TestSelection -or $TestSelection.CompleteOwner -or
+        $null -eq $Route.PSObject.Properties['repository_integration_partition']) { return @() }
+    $arguments = @($Command.arguments)
+    if ($arguments.Count -lt 3 -or $arguments[0] -cne '-m' -or
+        $arguments[1] -notin @('unittest', 'common.gate_unittest')) { return @() }
+    $modules = @($TestSelection.Modules)
+    $actual = @($arguments | Select-Object -Skip 2 | ForEach-Object { $_.Replace('/','.') -replace '\.py$','' })
+    $expected = @($modules | ForEach-Object { $_.Replace('/','.') -replace '\.py$','' })
+    if ($actual.Count -ne $expected.Count -or
+        (($actual | Sort-Object -Unique) -join '|') -cne (($expected | Sort-Object -Unique) -join '|')) { return @() }
+    if ($null -eq $Route.repository_integration_partition.PSObject.Properties['measured_seconds']) { return @() }
+    $weights = $Route.repository_integration_partition.measured_seconds
+    $serialSeconds = [double]0
+    foreach ($module in $expected) {
+        $name = ($module -split '\.')[-1]
+        $property = $weights.PSObject.Properties[$name]
+        if ($null -eq $property) { return @() }
+        $seconds = [double]$property.Value
+        if ($seconds -le 0 -or [double]::IsNaN($seconds) -or [double]::IsInfinity($seconds)) { return @() }
+        $serialSeconds += $seconds
+    }
+    if ($serialSeconds -lt 300) { return @() }
+    $parts = @(Get-GateRepositoryTestPartitions -Route $Route -RepoRoot $RepoRoot -Modules $modules)
+    if ($parts.Count -lt 2) { return @() }
+    $workers = @(@(for ($index = 0; $index -lt $Concurrency; $index++) {
+        [pscustomobject]@{ index = $index; seconds = [double]0 }
+    }))
+    foreach ($part in $parts) {
+        $worker = $workers | Sort-Object seconds, index | Select-Object -First 1
+        $worker.seconds += $part.seconds
+    }
+    if (($workers | Measure-Object seconds -Maximum).Maximum -ge $serialSeconds) { return @() }
+    return $parts
 }
 foreach ($route in $routes) {
     $name = [string]$route.stage
@@ -397,6 +437,12 @@ foreach ($route in $routes) {
                 $route.repository_integration_command
             } else { $route.command }) | ConvertTo-Json -Depth 32 | ConvertFrom-Json -Depth 32
         }
+        if (-not $partitions.Count -and -not $FullScope -and -not $ownerScope) {
+            $partitions = @(Get-SelectedPartialPythonTestPartitions -Route $route -Command $command `
+                -TestSelection $testSelection -RepoRoot $repoRoot -Concurrency $MaxConcurrency)
+            if ($partitions.Count) { $partialPartitionParents[$name] = $true }
+        }
+        $partialPartitions = $partialPartitionParents.ContainsKey($name)
         $command = ConvertTo-GateExecutionCommand -Command $command
         Add-ChangedStageItem $name $true $reason `
             $(if ($null -ne $testSelection) { $testSelection.DependencyProfile } else { [string]$route.dependency_profile })
@@ -406,14 +452,15 @@ foreach ($route in $routes) {
             # This owner's former preflight was only Ruff. The central source
             # check owns that responsibility; its test shards need no process.
             $stageItems[$name].Run = $false
-            $stageItems[$name].Reason = if ($command.runner -eq 'python') {'owner_tests_partitioned_without_parent_process'} else {'tests_partitioned_without_duplicate_ruff_preflight'}
+            $stageItems[$name].Reason = if ($partialPartitions) {'selected_partial_python_tests_partitioned'}
+                elseif ($command.runner -eq 'python') {'owner_tests_partitioned_without_parent_process'} else {'tests_partitioned_without_duplicate_ruff_preflight'}
         }
         foreach ($partition in $partitions) {
             $partName = '{0}__tests_{1:D2}' -f $name, ([int]$partition.index + 1)
             if ($command.runner -eq 'python') {
                 $partCommand = [pscustomobject]@{runner='python';
                     arguments=@('-m','unittest')+@($partition.modules);
-                    python_path_roots=@($route.test_selection.roots)}
+                    python_path_roots=@($(if ($partialPartitions) {$command.python_path_roots} else {$route.test_selection.roots}))}
             } else {
                 $partCommand = $route.repository_integration_command | ConvertTo-Json -Depth 32 | ConvertFrom-Json -Depth 32
                 $partCommand.parameters.PSObject.Properties.Remove('PreflightOnly')
@@ -422,8 +469,9 @@ foreach ($route in $routes) {
                     -NotePropertyValue @($partition.modules)
             }
             $partCommand = ConvertTo-GateExecutionCommand -Command $partCommand
-            Add-ChangedStageItem $partName $true 'complete_owner_test_partition' `
-                ([string]$route.dependency_profile)
+            $partReason = if ($partialPartitions) {'selected_partial_python_test_partition'} else {'complete_owner_test_partition'}
+            $partProfile = if ($partialPartitions) {$stageItems[$name].DependencyProfile} else {[string]$route.dependency_profile}
+            Add-ChangedStageItem $partName $true $partReason $partProfile
             $stageItems[$partName].Command = $partCommand
             $partitionParents[$partName] = $name
         }
@@ -437,7 +485,8 @@ $prerequisitesAdded = $true
 while ($prerequisitesAdded) {
     $prerequisitesAdded = $false
     foreach ($route in $routes) {
-        if (-not $stageItems[[string]$route.stage].Run -or
+        if ((-not $stageItems[[string]$route.stage].Run -and
+            -not $partialPartitionParents.ContainsKey([string]$route.stage)) -or
             $null -eq $route.PSObject.Properties['requires_stages']) { continue }
         foreach ($requiredName in @($route.requires_stages)) {
             if ($stageItems[[string]$requiredName].Run) { continue }
@@ -473,7 +522,7 @@ if ($registryConsumers.Count) {
 
 foreach ($route in $routes) {
     $item = $stageItems[[string]$route.stage]
-    if (-not $item.Run) { continue }
+    if (-not $item.Run -and -not $partialPartitionParents.ContainsKey([string]$route.stage)) { continue }
     $requiredStages = if (
         $null -ne $route.PSObject.Properties['requires_stages']
     ) {
@@ -493,7 +542,9 @@ foreach ($route in $routes) {
 }
 foreach ($partName in $partitionParents.Keys) {
     $parent = $partitionParents[$partName]
-    $stageItems[$partName].RequiresStages = $(if ($stageItems[$parent].Run) { @($parent) } else { @() })
+    $stageItems[$partName].RequiresStages = $(if ($stageItems[$parent].Run) { @($parent) }
+        elseif ($partialPartitionParents.ContainsKey($parent)) { @($stageItems[$parent].RequiresStages) }
+        else { @() })
 }
 
 # Logical analysis routes remain independently selected. Execute their short
