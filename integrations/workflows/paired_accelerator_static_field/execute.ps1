@@ -197,6 +197,11 @@ try{
     $update=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $capacity `
       -RemainingCommittedNewBytes ([long]$budget.committed_new_bytes) -ProtectedCacheKeys @($cache.cache_key) -ProtectedPaths $protected
     $capacity=$update.session
+    Set-PairedStage 'prepare_comsol_task'
+    $taskArguments=@($package.run_dir,$frozen.execution_root,$(if($savedModel){$savedModel}else{''}),
+      $(if($savedModel){$comsolSourceStage}else{'solved_saved'}),$(if($completedComsolExports){'false'}else{'true'}))
+    $taskCode='print(json.dumps(materialize_tasks(Path(sys.argv[1]),Path(sys.argv[2]),None,saved_model=Path(sys.argv[3]) if sys.argv[3] else None,saved_model_stage=sys.argv[4],comsol_required=sys.argv[5]=="true",simion_required=False)))'
+    $tasks=Invoke-PairedPython $taskCode $taskArguments
     Register-PairedInputs
     Close-PairedHostStage
     if(-not$completedSimionExports){
@@ -233,12 +238,9 @@ try{
       $member=@($manifest.files|Where-Object name -eq 'paired_static_on.pa')[0]
       $guard=Protect-ImmutablePaSource -Source $pa -ExpectedBytes $member.bytes -ExpectedSha256 $member.sha256
     }
-    $taskArguments=@($package.run_dir,$frozen.execution_root,$pa,$(if($savedModel){$savedModel}else{''}),
-      $(if($savedModel){$comsolSourceStage}else{'solved_saved'}),$(if($completedComsolExports){'false'}else{'true'}))
-    $taskCode='print(json.dumps(materialize_tasks(Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]),saved_model=Path(sys.argv[4]) if sys.argv[4] else None,saved_model_stage=sys.argv[5],comsol_required=sys.argv[6]=="true")))'
-    $tasks=Invoke-PairedPython $taskCode $taskArguments
+    $simionTasks=Invoke-PairedPython 'print(json.dumps(materialize_tasks(Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]),comsol_required=False)))' @($package.run_dir,$frozen.execution_root,$pa)
     $lease=Enter-HostResourceStage -StatePath $pathContext.host_resource_state_path -Role SIMION -Stage prepare -Budget $budget.host_budgets.simion_prepare -RunId $RunId
-    Invoke-PairedNative -Name sample_static_on -Directory $package.run_dir -Arguments @('--nogui','--noprompt','lua',$tasks.lua)
+    Invoke-PairedNative -Name sample_static_on -Directory $package.run_dir -Arguments @('--nogui','--noprompt','lua',$simionTasks.lua)
     Close-PairedHostStage
     $null=Invoke-PairedPython 'validate_samples(read(Path(sys.argv[1])),Path(sys.argv[2]));print("{}")' @((Join-Path $package.input_dir 'bvp/paired_accelerator_static_field_plan.json'),(Join-Path $package.result_dir 'simion_field_samples.csv'))
     if($progress.action_required-eq'verify'){
@@ -249,9 +251,7 @@ try{
       $simionSamples=Join-Path $package.result_dir 'simion_field_samples.csv'
     }else{
       $simionSamples=[string]$completedSimionExports.samples.path
-      if(-not$completedComsolExports){
-        $tasks=Invoke-PairedPython 'print(json.dumps(materialize_tasks(Path(sys.argv[1]),Path(sys.argv[2]),None,saved_model=Path(sys.argv[3]) if sys.argv[3] else None,saved_model_stage=sys.argv[4],simion_required=False)))' @($package.run_dir,$frozen.execution_root,$(if($savedModel){$savedModel}else{''}),$(if($savedModel){$comsolSourceStage}else{'solved_saved'}))
-      }
+
     }
     $comsolSamples=Join-Path $package.run_dir 'comsol/comsol_field_samples.csv'
     if($completedComsolExports){

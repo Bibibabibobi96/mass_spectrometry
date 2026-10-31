@@ -279,7 +279,7 @@ def _simion_field_identity(plan: dict) -> dict:
 
 def materialize_comsol_task(plan_path: Path,output_dir: Path,code_root: Path,saved_particle_model: Path | None=None) -> dict:
     """Generate the canonical backend call; an explicit saved model only exports."""
-    plan_path,output_dir,code_root=plan_path.resolve(),output_dir.resolve(),code_root.resolve()
+    plan_path,output_dir,code_root=plan_path.resolve(strict=True),output_dir.resolve(),code_root.resolve(strict=True)
     output_dir.mkdir(parents=True,exist_ok=True)
     quote=lambda p: "'"+Path(p).as_posix().replace("'","''")+"'"
     folder=code_root/"projects/single_reflection_oa_tof_mass_analyzer/comsol"

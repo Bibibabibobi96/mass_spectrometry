@@ -350,5 +350,82 @@ if(-not$rejected){throw 'Post-fly source mutation was silently rebound'}
             self.assertIn('TEST_ONLY_IOB_CALLBACK=PASS', result.stdout)
 
 
+    def test_particle_task_is_prepared_once_before_fly_and_consumed_without_regeneration(self):
+        """Actual owner factory/argv, with file-inspecting inert vendor boundaries."""
+        script = r'''param($Owner,$Public,$Python,$Root,$Plan)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. (Join-Path $Public 'common/contracts/run_artifact_support.ps1')
+$ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$null,[ref]$null)
+$function=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-PulsePython'},$true)
+Invoke-Expression $function.Extent.Text
+$headerNode=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$header'},$true)
+. ([scriptblock]::Create($headerNode.Extent.Text))
+$actualPython=${function:Invoke-PulsePython}
+function Invoke-PulsePython {param($Code,$Arguments)
+ $value=&$actualPython -Code $Code -Arguments $Arguments
+ if($value.matlab){$script:taskCalls++;$script:taskPath=[string]$value.matlab;$script:taskText=Get-Content $value.matlab -Raw}
+ return $value
+}
+$task=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$tasks'-and$n.Right.Extent.Text.Contains('materialize_comsol_task')},$true)
+$flight=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$workbench'-and$n.Right.Extent.Text.Contains('Invoke-FrontendFlightPhase')},$true)
+$comsol=$ast.Find({param($n)$n-is[Management.Automation.Language.CommandAst]-and@($n.CommandElements|Where-Object{$_-is[Management.Automation.Language.CommandParameterAst]-and$_.ParameterName-eq'TaskScript'}).Count-eq1},$true)
+if($null-eq$task-or$null-eq$flight-or$null-eq$comsol){throw 'Actual task/consumer boundaries missing'}
+$allTasks=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Right.Extent.Text.StartsWith('Invoke-PulsePython')-and$n.Right.Extent.Text.Contains('materialize_comsol_task')},$true))
+if($allTasks.Count-ne1){throw 'Particle task has more than one generation call'}
+$steps=@($task,$flight,$comsol)
+$RepoRoot=Join-Path $Root consumer
+$launcher=Join-Path $RepoRoot 'common/comsol/run_comsol_r2025b.ps1'
+New-Item -ItemType Directory (Split-Path $launcher) -Force|Out-Null
+@'
+param($TaskScript,$ReportPath,$ResourceBudgets,$RunId,$CompletionPath,$Limits,$RunDir,$UsagePath)
+[IO.File]::WriteAllText((Join-Path $RunDir 'results/task_consumed.txt'),$TaskScript)
+'@|Set-Content $launcher -Encoding utf8
+$frozen=@{execution_root=$Public};$budget=@{host_budgets=@{comsol=@{}};limits=@{}};$RunId='TEST_ONLY_TASK_TRANSPORT'
+$runtimeInputs=@();$continuationArguments=@{};$SimionExe='NOT_EXECUTED';$lease=@{token='TEST_ONLY_NO_GRANT'}
+$nativeOperations=[Collections.Generic.List[object]]::new()
+function Confirm-PulseIobVerification {}
+function Invoke-FrontendFlightPhase {
+ param($Package,$RunDirectory,$ProjectRunsRoot,$RepoRoot,$Python,$RuntimeModule,$SimionExe,$Limits,$Phase,$RuntimeInputArguments,$WorkbenchReceiptPath,$IobVerification,$NativeOperations,$NativeResourceReleaseId,$OnProcessCompleted)
+ if(-not$script:taskPath-or-not(Test-Path $script:taskPath)){throw 'Fly entered before particle task preparation'}
+ if((Get-Content $script:taskPath -Raw)-cne$script:taskText){throw 'Early task changed before Fly'}
+ $script:flyCalls++;return @{native_process_records=@()}
+}
+$cases=@()
+foreach($scenario in @('new','saved','missing_plan')){
+ $directory=Join-Path $Root $scenario
+ foreach($name in @('inputs','results','logs','comsol')){New-Item -ItemType Directory (Join-Path $directory $name) -Force|Out-Null}
+ $planPath=Join-Path $directory 'inputs/plan.json'
+ if($scenario-ne'missing_plan'){Copy-Item $Plan $planPath}
+ $savedParticle=if($scenario-eq'saved'){Join-Path $directory 'original saved CPT.mph'}else{''}
+ $package=@{artifact_run_dir=$directory;run_config=(Join-Path $directory 'run_config.json');log_dir=(Join-Path $directory logs)}
+ $workbenchPath=Join-Path $directory 'results/workbench.json';$dispatchPath=Join-Path $directory 'results/dispatch.json'
+ $comsolCompletion=Join-Path $directory 'completion.json';$stage='pure_task'
+ $script:taskCalls=0;$script:flyCalls=0;$script:taskPath='';$script:taskText='';$failed=$false
+ try{foreach($node in $steps|Sort-Object {$_.Extent.StartOffset}){. ([scriptblock]::Create($node.Extent.Text))}}
+ catch{if($scenario-ne'missing_plan'-or$_.Exception.Message-notlike'*FileNotFoundError*'){throw};$failed=$true}
+ if($scenario-eq'missing_plan'){
+  if(-not$failed-or$script:flyCalls-ne0-or$script:taskCalls-ne0){throw 'Missing plan reached native work'}
+ }else{
+  if($script:taskCalls-ne1-or$script:flyCalls-ne1){throw 'Task preparation was skipped/repeated'}
+  if((Get-Content (Join-Path $directory 'results/task_consumed.txt') -Raw)-cne$script:taskPath){throw 'COMSOL consumed a different task'}
+  if((Get-Content $script:taskPath -Raw)-cne$script:taskText){throw 'Task was rewritten after Fly'}
+  if($savedParticle-and-not$script:taskText.Contains($savedParticle.Replace('\','/'))){throw 'Saved CPT source was not transported'}
+ }
+ $cases+=@{scenario=$scenario;task_calls=$script:taskCalls;fly_calls=$script:flyCalls;rejected=$failed}
+}
+$cases|ConvertTo-Json -Compress
+'''
+        from integrations.tests import test_paired_accelerator_pulse_runtime as runtime_tests
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan, _, _ = runtime_tests.fixture(root)
+            wrapper = root / 'early_particle_task.ps1'
+            wrapper.write_text(script, encoding='utf-8')
+            result = subprocess.run(['pwsh', '-NoProfile', '-File', str(wrapper), str(OWNER),
+                str(ROOT), sys.executable, str(root), str(plan)], cwd=ROOT,
+                capture_output=True, text=True, encoding='utf-8', timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -214,6 +214,11 @@ try{
     $update=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $capacity `
       -RemainingCommittedNewBytes ([long]$budget.committed_new_bytes) -ProtectedPaths $protected
     $capacity=$update.session
+    if(-not$reusedParticleExports){
+      Set-PairedStage 'comsol_particle_task'
+      $tasks=Invoke-PulsePython 'print(json.dumps(materialize_comsol_task(Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]),saved_particle_model=Path(sys.argv[4]) if sys.argv[4] else None)))' `
+        @($planPath,(Join-Path $package.artifact_run_dir 'comsol'),$frozen.execution_root,$savedParticle)
+    }
     $workbenchPath=Join-Path $package.result_dir 'pulse_workbench.json'
     $dispatchPath=Join-Path $package.result_dir 'pulse.dispatch_plan.json'
     if($reusedBaseline){
@@ -364,9 +369,6 @@ try{
         $null=Copy-VerifiedRunInput -Source $completed.particle_exports[$name].path -Destination (Join-Path $package.artifact_run_dir "comsol/$filename")
       }
     }else{
-      Set-PairedStage 'comsol_particle_task'
-      $tasks=Invoke-PulsePython 'print(json.dumps(materialize_comsol_task(Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]),saved_particle_model=Path(sys.argv[4]) if sys.argv[4] else None)))' `
-        @($planPath,(Join-Path $package.artifact_run_dir 'comsol'),$frozen.execution_root,$savedParticle)
       Set-PairedStage 'verify_native_model'
       $model=if($savedParticle){$completed.particle_model}else{$plan.model}
       $null=Invoke-PulsePython 'from common.contracts.verify_run_manifest import verify_record; verify_record("native pulse model",json.loads(sys.argv[1]));print("{}")' `

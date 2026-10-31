@@ -348,8 +348,8 @@ foreach($completed in @($true,$false)){
   $assignment=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq$name},$true)
   . ([scriptblock]::Create($assignment.Extent.Text))
  }
- if($taskArguments[5]-ne$(if($completed){'false'}else{'true'})){throw 'MATLAB materialization decision differs'}
- if(-not$taskCode.Contains('comsol_required=sys.argv[6]')){throw 'Factory does not receive the actual decision'}
+ if($taskArguments[4]-ne$(if($completed){'false'}else{'true'})){throw 'MATLAB materialization decision differs'}
+ if(-not$taskCode.Contains('comsol_required=sys.argv[5]')){throw 'Factory does not receive the actual decision'}
  $assignment=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$comsolSamples'},$true)
  . ([scriptblock]::Create($assignment.Extent.Text))
  . ([scriptblock]::Create($branch.Extent.Text))
@@ -879,6 +879,79 @@ dofile('{Path(tasks['lua']).as_posix()}')
         for name in public.names:
             self.assertEqual((Path(published['generation_directory'])/name).read_bytes(),
                              b'inert transaction member; not a qualified PA')
+
+
+    def test_matlab_task_is_prepared_once_before_field_and_reused_by_native_consumer(self):
+        """Execute actual owner statements/factory; native boundaries only inspect files."""
+        script = r'''param($Owner,$Public,$Python,$Run)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. (Join-Path $Public 'common/contracts/run_artifact_support.ps1')
+$ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$null,[ref]$null)
+$function=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-PairedPython'},$true)
+Invoke-Expression $function.Extent.Text
+$headerNode=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$header'},$true)
+. ([scriptblock]::Create($headerNode.Extent.Text))
+$actualPython=${function:Invoke-PairedPython}
+function Invoke-PairedPython {param($Code,$Arguments)
+ $value=&$actualPython -Code $Code -Arguments $Arguments
+ if($value.matlab){$script:matlabCalls++;$script:taskPath=[string]$value.matlab;$script:taskText=Get-Content $value.matlab -Raw}
+ if($value.lua){$script:luaCalls++}
+ return $value
+}
+$statements=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-in@('$taskArguments','$taskCode','$tasks','$simionTasks')},$true))
+$native=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Invoke-PairedNative'},$true))
+$comsol=$ast.Find({param($n)$n-is[Management.Automation.Language.CommandAst]-and@($n.CommandElements|Where-Object{$_-is[Management.Automation.Language.CommandParameterAst]-and$_.ParameterName-eq'TaskScript'}).Count-eq1},$true)
+$steps=@($statements)+@($native[0],$native[-1],$comsol)
+$RepoRoot=Join-Path $Run consumer
+$launcher=Join-Path $RepoRoot 'common/comsol/run_comsol_r2025b.ps1'
+New-Item -ItemType Directory (Split-Path $launcher) -Force|Out-Null
+@'
+param($TaskScript,$ReportPath,$ResourceBudgets,$RunId,$CompletionPath,$Limits,$RunDir,$UsagePath)
+[IO.File]::WriteAllText((Join-Path $RunDir 'results/task_consumed.txt'),$TaskScript)
+'@|Set-Content $launcher -Encoding utf8
+$frozen=@{execution_root=$Public};$budget=@{host_budgets=@{comsol=@{}};limits=@{}};$RunId='TEST_ONLY_TASK_TRANSPORT';$completedComsolExports=$null
+function Invoke-PairedNative {param($Name,$Directory,$Arguments)
+ if(-not$script:taskPath-or-not(Test-Path $script:taskPath)){throw 'Field entered before MATLAB task preparation'}
+ if((Get-Content $script:taskPath -Raw)-cne$script:taskText){throw 'MATLAB task changed before its consumer'}
+ if($Name-eq'sample_static_on'-and-not(Test-Path $Arguments[-1])){throw 'Lua sampler was not generated for the actual PA'}
+ $script:vendorCalls++
+}
+$cases=@()
+foreach($scenario in @('new','saved','bad_stage')){
+ $directory=Join-Path $Run $scenario
+ foreach($name in @('inputs/bvp','results','logs','comsol')){New-Item -ItemType Directory (Join-Path $directory $name) -Force|Out-Null}
+ Copy-Item (Join-Path $Run 'inputs/bvp/paired_accelerator_static_field_plan.json') (Join-Path $directory 'inputs/bvp/paired_accelerator_static_field_plan.json')
+ $package=@{run_dir=$directory;artifact_run_dir=$directory;input_dir=(Join-Path $directory inputs);result_dir=(Join-Path $directory results);log_dir=(Join-Path $directory logs)}
+ $savedModel=if($scenario-ne'new'){Join-Path $directory 'saved model.mph'}else{''}
+ if($savedModel){[IO.File]::WriteAllText($savedModel,'TEST_ONLY_IDENTITY_NOT_NATIVE')}
+ $comsolSourceStage=if($scenario-eq'bad_stage'){'invalid_stage'}else{'prepared_saved'}
+ $stage='pure_task';$short=$directory;$pa=Join-Path $directory 'future.pa';$build=@{origin='0,0,0';voltages='0'}
+ $comsolCompletion=Join-Path $directory 'completion.json'
+ $script:matlabCalls=0;$script:luaCalls=0;$script:vendorCalls=0;$script:taskPath='';$script:taskText='';$failed=$false
+ try{foreach($node in $steps|Sort-Object {$_.Extent.StartOffset}){. ([scriptblock]::Create($node.Extent.Text))}}
+ catch{if($scenario-ne'bad_stage'-or$_.Exception.Message-notlike'*explicit prepared/saved or solved/saved*'){throw};$failed=$true}
+ if($scenario-eq'bad_stage'){
+  if(-not$failed-or$script:vendorCalls-ne0-or$script:matlabCalls-ne0){throw 'Invalid task input reached a vendor boundary'}
+ }else{
+  if($script:matlabCalls-ne1-or$script:luaCalls-ne1-or$script:vendorCalls-ne2){throw 'Task generation was skipped or repeated'}
+  if((Get-Content (Join-Path $directory 'results/task_consumed.txt') -Raw)-cne$script:taskPath){throw 'COMSOL did not consume the early task'}
+  if((Get-Content $script:taskPath -Raw)-cne$script:taskText){throw 'Later Lua materialization rewrote MATLAB'}
+  if($savedModel-and-not$script:taskText.Contains("'prepared_saved'")){throw 'Saved model stage was not transported'}
+ }
+ $cases+=@{scenario=$scenario;matlab_calls=$script:matlabCalls;lua_calls=$script:luaCalls;vendor_calls=$script:vendorCalls;rejected=$failed}
+}
+$cases|ConvertTo-Json -Compress
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run, _ = self.prepared(root)
+            runtime.prepare_run(run)
+            wrapper = root / 'early_task.ps1'
+            wrapper.write_text(script, encoding='utf-8')
+            result = subprocess.run(['pwsh', '-NoProfile', '-File', str(wrapper),
+                str(WORKFLOW / 'execute.ps1'), str(ROOT), sys.executable, str(run)], cwd=ROOT,
+                capture_output=True, text=True, encoding='utf-8', timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__=='__main__':unittest.main()
