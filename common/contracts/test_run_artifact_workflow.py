@@ -37,6 +37,15 @@ def execute_prepared_run(config_path, session_path, request_path, completion_pat
     session = json.loads(session_path.read_text(encoding="utf-8-sig"))
     root = config_path.parent
     payload = request["payload"]
+    source_protection = None
+    if payload.get("source_artifact_root"):
+        source_root = Path(payload["source_artifact_root"])
+        source_run = Path(payload["source_run_directory"]).resolve()
+        source_protection = load_capacity_protection_leases(source_root)
+        assert source_run in source_protection["protected_paths"]
+        assert source_protection["committed_new_bytes"] == 0
+        assert any(Path(item["artifact_root"]).resolve() == source_root.resolve()
+                   and item["status"] == "active" for item in session["source_protection_leases"])
     counter = Path(payload["counter_path"])
     counter.write_text(str(int(counter.read_text()) + 1) if counter.exists() else "1", encoding="utf-8")
     protection = load_capacity_protection_leases(Path(session["artifact_root"]))
@@ -48,7 +57,8 @@ def execute_prepared_run(config_path, session_path, request_path, completion_pat
     config_path.write_text(json.dumps(config), encoding="utf-8")
     output = root / "results/science.json"
     output.write_text(json.dumps({"capacity_session": session["lease_id"], "worker_process_id": os.getpid(),
-        "host_resource_state_path": os.environ["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"]}), encoding="utf-8")
+        "host_resource_state_path": os.environ["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"],
+        "source_protected_before_compute": source_protection is not None}), encoding="utf-8")
     outputs, required, preserve = [str(output)], [str(output)], []
     if payload.get("disposable"):
         for name in ("first.pa0", "second.pa0"):
@@ -186,7 +196,8 @@ Write-Output 'RECEIPTS=PASS'
 
     def invoke_fixture(self, root: Path, payload: dict, *, retention: str = "compact", host_state: str | None = None,
                        observation_failure: bool = False, failure_stage: str | None = None, project: str = PROJECT,
-                       callback_text: str | None = None) -> tuple[dict, Path, Path, subprocess.CompletedProcess[str]]:
+                       callback_text: str | None = None, source_references=None,
+                       capacity_trace: Path | None = None) -> tuple[dict, Path, Path, subprocess.CompletedProcess[str]]:
         artifacts = root / "artifacts"
         artifacts.mkdir()
         initialize_capacity_ledger(artifacts, objects=[])
@@ -211,6 +222,8 @@ Write-Output 'RECEIPTS=PASS'
             "prepared": {"module": "fixture_callback", "function": "execute_prepared_run", "import_root": str(root), "entrypoint": file_record(callback)},
             "payload": dict(payload, counter_path=str(root / "callback_count.txt")),
         }
+        if source_references is not None:
+            request["capacity"]["source_references"] = source_references
         request_path, result_path = root / "request.json", root / "result.json"
         request_path.write_text(json.dumps(request), encoding="utf-8")
         # Only disk/host admission is isolated: capacity lease CRUD, package,
@@ -264,6 +277,16 @@ function Invoke-RunCapacityCommand {
 '''
         elif failure_stage == "release":
             hooks = "function Exit-ArtifactWorkflowCapacitySession { throw 'fixture capacity release failure' }"
+        if capacity_trace is not None:
+            hooks += f"""
+$actualCapacityCommand=${{function:Invoke-RunCapacityCommand}}
+function Invoke-RunCapacityCommand {{
+ param($Python,$RepoRoot,[string[]]$Arguments,$FailureLabel)
+ $output=@(& $actualCapacityCommand @PSBoundParameters)
+ ConvertTo-Json -InputObject @($Arguments) -Compress|Add-Content -LiteralPath '{capacity_trace}' -Encoding utf8
+ return $output
+}}
+"""
         outcome = self.run_ps(root, f""". '{OWNER}'
 {state_setup}
 {sampler}
@@ -276,7 +299,8 @@ catch{{Write-Output $_.Exception.Message;exit 7}}
         self.assertTrue(result_path.is_file(), outcome.stdout + outcome.stderr)
         return json.loads(result_path.read_text(encoding="utf-8-sig")), run, artifacts, outcome
 
-    def resume_fixture(self, root: Path, run: Path, *, fail_publication: bool = False) -> tuple[dict, subprocess.CompletedProcess[str]]:
+    def resume_fixture(self, root: Path, run: Path, *, fail_publication: bool = False,
+                       additional_hooks: str = "") -> tuple[dict, subprocess.CompletedProcess[str]]:
         hook = "function Publish-WorkflowTerminal { throw 'fixture recovery publication failure' }" if fail_publication else ""
         outcome = self.run_ps(root, f""". '{OWNER}'
 function Invoke-ArtifactCapacityGate {{
@@ -285,10 +309,120 @@ function Invoke-ArtifactCapacityGate {{
  return @{{satisfied=$true;fixture_admission=$true;admitted_lease_committed_new_bytes=$lease.committed_new_bytes}}
 }}
 {hook}
+{additional_hooks}
 try{{$null=Invoke-RunArtifactWorkflow -RequestPath '{run / 'inputs/execution_request.json'}' -ResultPath '{root / 'result.json'}' -ResumeFinalization}}
 catch{{Write-Output $_.Exception.Message;exit 7}}
 """)
         return json.loads((root / "result.json").read_text(encoding="utf-8-sig")), outcome
+
+    def test_python_owner_protects_cross_root_source_before_compute_and_reacquires_on_resume(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="workflow-source-reference-") as directory:
+            root = Path(directory)
+            parent_fixture = root / "parent"
+            parent_fixture.mkdir()
+            parent, parent_run, source_root, process = self.invoke_fixture(parent_fixture, {})
+            self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+            parent_bytes = {path: path.read_bytes() for path in parent_run.rglob("*") if path.is_file()}
+            reference = {"manifest_record": file_record(parent_run / "run_manifest.json"),
+                         "protected_paths": [str(parent_run)]}
+            consumer = root / "consumer"
+            consumer.mkdir()
+            first, run, artifacts, process = self.invoke_fixture(consumer,
+                {"source_artifact_root": str(source_root), "source_run_directory": str(parent_run)},
+                source_references=[reference], failure_stage="retention_before")
+            self.assertNotEqual(process.returncode, 0, process.stdout + process.stderr)
+            self.assertEqual(first["resume_action"], "resume_finalization")
+            self.assertTrue(json.loads((run / "results/science.json").read_text())["source_protected_before_compute"])
+            self.assertIn(parent_run.resolve(), load_capacity_protection_leases(source_root)["protected_paths"])
+            session = json.loads((run / "logs/capacity_session.json").read_text(encoding="utf-8-sig"))
+            leases = [(artifacts, session["lease_id"]),
+                      (source_root, session["source_protection_leases"][0]["lease_id"])]
+            for artifact, lease_id in leases:
+                lease = artifact / "common/capacity_protection_leases" / f"{lease_id}.json"
+                value = json.loads(lease.read_text(encoding="utf-8-sig"))
+                value["expires_at_utc"] = "2001-01-01T00:00:00Z"
+                lease.write_text(json.dumps(value), encoding="utf-8")
+            # The original CLI must reacquire the same frozen source references
+            # before any recovery publication, without running the callback.
+            hooks = f"""$originalPublisher=${{function:Publish-WorkflowTerminal}}
+function Publish-WorkflowTerminal {{
+ param($Python,$RepoRoot,$CompletionPath,$SessionPath,$WaitPath,$MaximumRunBytes)
+ & $Python -B -c 'from pathlib import Path;from common.contracts.capacity_protection import load_capacity_protection_leases;import sys;p=load_capacity_protection_leases(Path(sys.argv[1]));assert Path(sys.argv[2]).resolve() in p["protected_paths"];assert p["committed_new_bytes"]==0' '{source_root}' '{parent_run}'
+ if($LASTEXITCODE-ne0){{throw 'Recovery source protection was absent'}}
+ & $originalPublisher @PSBoundParameters
+}}"""
+            recovered, process = self.resume_fixture(consumer, run, additional_hooks=hooks)
+            self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+            self.assertTrue(recovered["terminal_published"] and recovered["capacity_finalized"] and recovered["lease_released"])
+            self.assertNotEqual(recovered["lease_id"], first["lease_id"])
+            self.assertEqual((consumer / "callback_count.txt").read_text(), "1")
+            self.assertEqual(parent_bytes, {path: path.read_bytes() for path in parent_bytes})
+            self.assertFalse(load_capacity_protection_leases(source_root)["protected_paths"])
+            self.assertFalse(load_capacity_protection_leases(artifacts)["protected_paths"])
+            closed = {name: (run / name).read_bytes() for name in ("run_manifest.json", "results/execution_completion.json")}
+            cli = self.run_ps(consumer, f"& '{OWNER}' -RequestPath '{run / 'inputs/execution_request.json'}' -ResultPath '{consumer / 'result.json'}' -ResumeFinalization")
+            self.assertEqual(cli.returncode, 0, cli.stdout + cli.stderr)
+            self.assertEqual((consumer / "callback_count.txt").read_text(), "1")
+            self.assertEqual(closed, {name: (run / name).read_bytes() for name in closed})
+            self.assertEqual(parent_bytes, {path: path.read_bytes() for path in parent_bytes})
+
+    def test_python_owner_rolls_back_partial_cross_root_source_acquisition_before_compute(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="workflow-partial-source-reference-") as directory:
+            root = Path(directory)
+            parents = []
+            for name in ("a_parent", "z_parent"):
+                fixture = root / name
+                fixture.mkdir()
+                result, run, artifacts, process = self.invoke_fixture(fixture, {})
+                self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+                parents.append((run, artifacts, {path: path.read_bytes() for path in run.rglob("*") if path.is_file()}))
+            first_run, first_root, _ = parents[0]
+            second_run, second_root, _ = parents[1]
+            references = [
+                {"manifest_record": file_record(first_run / "run_manifest.json"), "protected_paths": [str(first_run)]},
+                {"manifest_record": file_record(second_run / "run_manifest.json"),
+                 "protected_paths": [str(second_run), str(first_root)]},
+            ]
+            consumer = root / "consumer"
+            consumer.mkdir()
+            trace = root / "capacity_successful_commands.jsonl"
+            result, run, artifacts, process = self.invoke_fixture(consumer, {}, source_references=references,
+                capacity_trace=trace)
+            self.assertNotEqual(process.returncode, 0, process.stdout + process.stderr)
+            self.assertFalse((consumer / "callback_count.txt").exists())
+            self.assertFalse(run.exists())
+            calls = [json.loads(line) for line in trace.read_text(encoding="utf-8-sig").splitlines()]
+            successful = [(call[call.index("--artifact-root") + 1], call) for call in calls if "--artifact-root" in call]
+            self.assertTrue(any(Path(owner).resolve() == first_root.resolve() and "--create-protection-lease" in call
+                                for owner, call in successful))
+            self.assertTrue(any(Path(owner).resolve() == first_root.resolve() and "--delete-protection-lease" in call
+                                for owner, call in successful))
+            for parent_run, source_root, snapshot in parents:
+                self.assertFalse(load_capacity_protection_leases(source_root)["protected_paths"])
+                self.assertEqual(snapshot, {path: path.read_bytes() for path in snapshot})
+            self.assertFalse(load_capacity_protection_leases(artifacts)["protected_paths"])
+
+    def test_python_owner_rejects_malformed_or_missing_source_authority_before_compute(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="workflow-bad-source-reference-") as directory:
+            root = Path(directory)
+            absent = root / "absent/run_manifest.json"
+            absent.parent.mkdir()
+            cases = {
+                "not_array": {},
+                "missing_manifest_record": [{}],
+                "missing_manifest": [{"manifest_record": {"path": str(absent), "exists": True,
+                    "bytes": 0, "sha256": "0" * 64}}],
+            }
+            for name, references in cases.items():
+                with self.subTest(case=name):
+                    fixture = root / name
+                    fixture.mkdir()
+                    result, run, artifacts, process = self.invoke_fixture(fixture, {}, source_references=references)
+                    self.assertNotEqual(process.returncode, 0, process.stdout + process.stderr)
+                    self.assertFalse((fixture / "callback_count.txt").exists())
+                    self.assertFalse(run.exists())
+                    self.assertFalse(load_capacity_protection_leases(artifacts)["protected_paths"])
+                    self.assertIn(result["resume_action"], ("correct_request_and_use_new_run",))
 
     def test_powershell_owner_all_reuse_resumes_after_owner_exits(self) -> None:
         # Exercise the real capacity session and journal with an owner that has

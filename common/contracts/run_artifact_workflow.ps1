@@ -516,6 +516,7 @@ function Invoke-RunArtifactWorkflow {
     if($request.schema_version-ne1-or$request.role-cne'run_artifact_workflow_request'){throw 'Workflow request identity differs.'}
     Assert-WorkflowFields $request.package @('project','run_id','mode','artifact_project_root','software','retention_class','retention_reason') 'Workflow package'
     $capacityFields=@('committed_new_bytes','commitment_inputs','protected_paths','protected_cache_keys')
+    if($request.capacity.Contains('source_references')){$capacityFields+='source_references'}
     if($request.capacity.Contains('ownership')-or$request.capacity.Contains('session_owner')){$capacityFields+=@('ownership','session_owner')}
     Assert-WorkflowFields $request.capacity $capacityFields 'Workflow capacity'
     $powershellOwner=$request.prepared-is[Collections.IDictionary]-and$request.prepared.Contains('owner_kind')-and
@@ -535,6 +536,11 @@ function Invoke-RunArtifactWorkflow {
     if($budget-isnot[long]-and$budget-isnot[int]-or$budget-lt0){throw 'Workflow capacity requires a known nonnegative integer commitment.'}
     foreach($name in @('commitment_inputs','protected_paths','protected_cache_keys')){
       if($request.capacity[$name]-isnot[array]){throw "Workflow capacity $name must be an array."}
+    }
+    $sourceReferences=@()
+    if($request.capacity.Contains('source_references')){
+      if($request.capacity.source_references-isnot[array]){throw 'Workflow capacity source_references must be an array.'}
+      $sourceReferences=$request.capacity.source_references
     }
     if(-not$request.capacity.commitment_inputs.Count){throw 'Workflow capacity requires its budget authority inputs.'}
     if(-not$ResumeFinalization){foreach($record in $request.capacity.commitment_inputs){Assert-WorkflowFileRecord $record}}
@@ -618,7 +624,7 @@ function Invoke-RunArtifactWorkflow {
     Set-WorkflowStage admission
     $session=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repo -ArtifactRoot $artifactRoot `
       -RunDirectory $runRoot -CommittedNewBytes $budget -ProtectedPaths $request.capacity.protected_paths `
-      -ProtectedCacheKeys $request.capacity.protected_cache_keys -Owner ("run-artifact-workflow:{0}:{1}"-f$request.package.project,$request.package.run_id)
+      -ProtectedCacheKeys $request.capacity.protected_cache_keys -SourceReferences $sourceReferences -Owner ("run-artifact-workflow:{0}:{1}"-f$request.package.project,$request.package.run_id)
     Set-WorkflowStage initialize
     $package=New-RunPackage -Python $python -RepoRoot $repo -ArtifactRoot $projectRoot `
       -RunId $request.package.run_id -Project $request.package.project -Mode $request.package.mode `
@@ -842,7 +848,7 @@ function Invoke-RunArtifactWorkflow {
         $maximumRunBytes=[long]$accounting.bytes+$metadataBudget
         $session=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repo -ArtifactRoot $artifactRoot `
           -RunDirectory $runRoot -CommittedNewBytes $metadataBudget -ProtectedPaths $request.capacity.protected_paths `
-          -ProtectedCacheKeys $request.capacity.protected_cache_keys -Owner $expectedOwner
+          -ProtectedCacheKeys $request.capacity.protected_cache_keys -SourceReferences $sourceReferences -Owner $expectedOwner
         $result.recovery_session=$session
         $result.execution_request_sha256=$requestHash
         $result.recovery_maximum_run_bytes=$maximumRunBytes

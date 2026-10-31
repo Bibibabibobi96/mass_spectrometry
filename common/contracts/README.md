@@ -868,3 +868,5 @@ local_frontend与cooled_frontend原入口接入同一PowerShell owner及`-Resume
 消费者验证参数和错误传播，完整收尾故障矩阵继续只在公共owner维护。
 恢复只接受原Result，新增预算、Python或执行范围参数在调用owner前拒绝；
 原failed终态在收尾完成后仍非零退出，并明确区分原科学失败与未完成收尾。
+
+Python prepared请求可在既有`capacity`内提供可选`source_references`数组，元素沿容量SourceReferences原格式绑定父manifest及必要路径/缓存。原公共owner在prepared启动前、以及既有收尾恢复重新准入时，均将同一冻结数组交给已有源保护机制；跨根源只申请零新增字节的保护，不复制原载荷。缺省空数组保持旧请求语义；缺少来源authority立即拒绝，本次来源运输仅取冻结request，不从回调回写session推导，续约与释放仍归原容量owner。
