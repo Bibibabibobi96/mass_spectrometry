@@ -358,24 +358,35 @@ ConvertTo-Json -InputObject $script:calls -Depth 6
             "common/analysis/particle_census.py",
         }
         for runner_name in ("run_finite_3d_transport.ps1", RUNNER.name):
-            source = (RUNNER.parent / runner_name).read_text(encoding="utf-8-sig")
-            capacity_end = source.index("$continuationCapacity=") if "$continuationCapacity=" in source else source.index("$package=New-RunPackage")
-            capacity = source[source.index("$hostRuntimeSourcePaths="):capacity_end]
-            freeze_end = source.index("  $ownerSource=") if runner_name == RUNNER.name else source.index("  $manifestRepoRoot=$codeRoot")
-            freeze = source[source.index("  $codeRoot=Join-Path $inputDir 'code'"):freeze_end]
             with self.subTest(runner=runner_name), tempfile.TemporaryDirectory() as directory:
                 root = _short_windows_path(Path(directory))
                 def quoted(path: Path) -> str:
                     return "'" + str(path).replace("'", "''") + "'"
-                script = (
-                    f"$ErrorActionPreference='Stop'\n$repoRoot={quoted(REPO_ROOT)}\n"
-                    f"$inputDir={quoted(root)}\n"
-                    f". {quoted(REPO_ROOT / 'common/contracts/run_artifact_support.ps1')}\n"
-                    + capacity + "\n" + freeze
-                    + f"\n$executionCapacityPaths | ConvertTo-Json | Set-Content {quoted(root / 'capacity.json')}\n"
-                    + ". (Join-Path $codeRoot 'common/host_execution_lease.ps1')\n"
-                    + "$null = Get-HostResourceBudget -Role GATE -Stage snapshot-probe\n"
-                )
+                entry = RUNNER.parent / runner_name
+                script = r"""$ErrorActionPreference='Stop'
+$repoRoot=@@REPO@@;$inputDir=@@INPUT@@
+. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+$ast=[Management.Automation.Language.Parser]::ParseFile(@@ENTRY@@,[ref]$null,[ref]$null)
+$declarations=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.AssignmentStatementAst]-and
+ $n.Left.Extent.Text-in@('$hostRuntimeSourcePaths','$analysisSourcePaths','$executionCapacityPaths')},$true)|Sort-Object {$_.Extent.StartOffset})
+if($declarations.Count-lt4){throw 'Declared copy/capacity inputs missing'}
+foreach($declaration in $declarations){Invoke-Expression $declaration.Extent.Text}
+if('@@NAME@@'-eq'run_finite_3d_transport.ps1'){
+ $function=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Copy-FiniteComsolRuntime'},$true))
+ if($function.Count-ne1){throw 'Actual shared finite runtime copier missing'}
+ Invoke-Expression $function[0].Extent.Text
+ $call=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Copy-FiniteComsolRuntime'},$true))[-1]
+ $copied=Invoke-Expression $call.Extent.Text;$codeRoot=$copied.code_root
+}else{
+ $begin=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$codeRoot'},$true))[0]
+ $finish=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$ownerSource'},$true))[0]
+ $source=[IO.File]::ReadAllText(@@ENTRY@@)
+ Invoke-Expression $source.Substring($begin.Extent.StartOffset,$finish.Extent.StartOffset-$begin.Extent.StartOffset)
+}
+$executionCapacityPaths|ConvertTo-Json|Set-Content @@CAPACITY@@
+. (Join-Path $codeRoot 'common/host_execution_lease.ps1')
+$null=Get-HostResourceBudget -Role GATE -Stage snapshot-probe
+""".replace('@@REPO@@', quoted(REPO_ROOT)).replace('@@INPUT@@', quoted(root)).replace('@@ENTRY@@', quoted(entry)).replace('@@NAME@@', runner_name).replace('@@CAPACITY@@', quoted(root / 'capacity.json'))
                 completed = subprocess.run(
                     [shutil.which("pwsh"), "-NoProfile", "-Command", script],
                     cwd=root, capture_output=True, text=True, encoding="utf-8",
@@ -430,12 +441,41 @@ print(json.dumps(dict(mother=result["mother_particle_ids"], non_exit=result["non
                 self.assertNotEqual(refused.returncode, 0)
                 self.assertIn("particle_census", refused.stderr)
 
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_frozen_comsol_runner_receives_resolved_python_environment(self) -> None:
-        source = (REPO_ROOT / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1").read_text(encoding="utf-8-sig")
-        self.assertIn("$environmentNames=@('SIMULATION_PYTHON_EXE'", source)
-        self.assertIn("$env:SIMULATION_PYTHON_EXE=$python", source)
-        self.assertLess(source.index("$env:SIMULATION_PYTHON_EXE=$python"), source.index("$solverProcess=Invoke-ResourceBudgetedProcess"))
-        self.assertIn("Restore-RunEnvironment -Names $environmentNames -Snapshot $oldEnvironment", source)
+        entry = REPO_ROOT / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1"
+        script = r"""$ErrorActionPreference='Stop'
+. '@@SUPPORT@@'
+$ast=[Management.Automation.Language.Parser]::ParseFile('@@ENTRY@@',[ref]$null,[ref]$null)
+$assignments=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.AssignmentStatementAst]},$true))
+$names=@($assignments|Where-Object {$_.Left.Extent.Text-eq'$environmentNames'})
+$save=@($assignments|Where-Object {$_.Left.Extent.Text-eq'$oldEnvironment'})
+$sets=@($assignments|Where-Object {$_.Left.Extent.Text-in@('$env:SIMULATION_PYTHON_EXE','$env:PYTHONPATH')-and$_.Right.Extent.Text-in@('$python','$codeRoot')})
+$restore=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Restore-RunEnvironment'},$true))[-1]
+$launch=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Invoke-ResourceBudgetedProcess'},$true))[-1]
+if($names.Count-ne1-or$save.Count-ne1-or$sets.Count-lt2-or$null-eq$restore-or$null-eq$launch){throw 'Actual environment/launch boundary missing'}
+$python='selected-python';$codeRoot='selected-frozen-code';$resolvedBudget=@{limits=@{}};$runDir='.';$resourceUsage='unused';$pwsh='unused';$task='unused';$report='unused';$RunId='fixture';$ownerState=@{launcher_receipt='unused'}
+function Invoke-ResourceBudgetedProcess {
+ param($Limits,$RunDir,$UsagePath,$FilePath,$ArgumentList)
+ if($env:SIMULATION_PYTHON_EXE-cne$python-or$env:PYTHONPATH-cne$codeRoot){throw 'Native child did not inherit selected interpreter/frozen source'}
+ $script:calls++
+ if($fail){throw 'CHILD_ENV_SENTINEL'}
+ return @{}
+}
+foreach($fail in @($false,$true)){
+ $env:SIMULATION_PYTHON_EXE='prior-python';$env:PYTHONPATH='prior-source';$script:calls=0
+ Invoke-Expression $names[0].Extent.Text;Invoke-Expression $save[0].Extent.Text
+ try{
+  foreach($set in $sets){Invoke-Expression $set.Extent.Text}
+  $null=Invoke-Expression $launch.Extent.Text
+ }catch{if($_.Exception.Message-cne'CHILD_ENV_SENTINEL'){throw}}
+ finally{Invoke-Expression $restore.Extent.Text}
+ if($script:calls-ne1-or$env:SIMULATION_PYTHON_EXE-cne'prior-python'-or$env:PYTHONPATH-cne'prior-source'){throw 'Original environment was not restored'}
+}
+""".replace('@@ENTRY@@', str(entry)).replace('@@SUPPORT@@', str(REPO_ROOT / 'common/contracts/run_artifact_support.ps1'))
+        result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
+                                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_runner_freezes_resolved_campaign_selection_before_solver_launch(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
@@ -477,46 +517,29 @@ print(json.dumps(dict(mother=result["mother_particle_ids"], non_exit=result["non
             self.assertIn("$($DesignProfileId.Replace('_','-'))__resolved-l3", source)
             self.assertNotIn("$DesignProfileId__resolved-l3", source)
 
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_shared_host_lease_reports_one_manifest_bound_terminal_outcome(self) -> None:
-        for runner_name, role, successful_manifests in (
-            ("run_simion_finite_3d_transport.ps1", "SIMION", 1),
-            ("run_finite_3d_transport.ps1", "COMSOL", 3),
-        ):
-            source = (RUNNER.parent / runner_name).read_text(encoding="utf-8-sig")
-            self.assertIn(
-                ". (Join-Path $repoRoot 'common\\host_execution_lease.ps1')",
-                source,
-            )
-            self.assertIn(
-                (f"$hostExecutionLease=Enter-HostResourceStage -Role {role} -Stage prepare -RunId $RunId"
-                 if role == "SIMION" else
-                 f"$hostExecutionLease=Enter-HostExecutionLease -Role {role} -Stage prepare -RunId $RunId"),
-                source,
-            )
-            self.assertIn("$hostExecutionOutcome='failed'", source)
-            terminal_outcome = ("$hostExecutionOutcome=$scientificStatus" if role == "SIMION"
-                                else "$hostExecutionOutcome='success'")
-            self.assertEqual(source.count(terminal_outcome), successful_manifests)
-            self.assertIn(
-                "$hostExecutionOutcome=if($resourceBudgetExceeded){'interrupted'}else{'failed'}",
-                source,
-            )
-            self.assertIn(
-                "Exit-HostExecutionLease -Lease $hostExecutionLease -Outcome $hostExecutionOutcome -RunId $RunId",
-                source,
-            )
-            # COMSOL also returns its own light preparation grant before the
-            # child launcher; that boundary carries no terminal outcome.
-            self.assertEqual(source.count("Exit-HostExecutionLease"), 2 if role == "COMSOL" else 1)
-            if role == "COMSOL":
-                self.assertIn("Exit-HostExecutionLease -Lease $hostExecutionLease\n", source)
-            publisher = "Complete-RunArtifactPowerShellOwner -Context $ownerContext -Status $scientificStatus" if role == "SIMION" else "Write-VerifiedRunManifest"
-            self.assertGreaterEqual(source.count(publisher), successful_manifests)
-            self.assertLess(source.rindex(publisher), source.rindex(terminal_outcome))
-            self.assertLess(
-                source.rindex(terminal_outcome),
-                source.rindex("Exit-HostExecutionLease"),
-            )
+        entry = REPO_ROOT / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1"
+        script = r"""$ErrorActionPreference='Stop'
+$ast=[Management.Automation.Language.Parser]::ParseFile('@@ENTRY@@',[ref]$null,[ref]$null)
+$ast.FindAll({param($n) $n-is[Management.Automation.Language.FunctionDefinitionAst]},$true)|ForEach-Object{Invoke-Expression $_.Extent.Text}
+$script:calls=0
+function Complete-RunArtifactPowerShellOwner {
+ param($Context,$Status,$Summary,$OutputPaths,$RequiredOutputPaths,$WriterCompletion,$WritersStopped,$OriginalFailure,$ResourceUsagePaths)
+ $script:calls++
+ if($Context.result_path-cne'fixture-result'-or$Status-cne'success'-or-not$WritersStopped-or$Summary.scientific_result-cne'functional_fail'-or
+    $OutputPaths[0]-cne'actual-output'-or$RequiredOutputPaths[0]-cne'actual-output'-or$WriterCompletion.operations.Count-ne0-or
+    $WriterCompletion.resource_releases.Count-ne0-or$Summary.total_elapsed_seconds-lt0){throw 'Original public terminal arguments changed'}
+ return @{stage='complete'}
+}
+$state=@{native_attempted=$false;host_lease=$null;writer_unknown=$false;usage_path=$null;phase_timings=@{prepare=0.1};timer=[Diagnostics.Stopwatch]::StartNew();finalization_started=$false}
+$context=@{result_path='fixture-result'};$summary=@{scientific_result='functional_fail'}
+$null=Complete-FiniteComsolOwner -Context $context -State $state -RunId fixture -Status success -Summary $summary -Outputs @('actual-output') -Required @('actual-output')
+if($script:calls-ne1-or$state.finalization_started){throw 'Terminal outcome was duplicated or left unfinished'}
+""".replace('@@ENTRY@@', str(entry))
+        result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
+                                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_dispatch_request_does_not_replace_design_manifest_input(self) -> None:

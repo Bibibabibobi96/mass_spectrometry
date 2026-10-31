@@ -74,7 +74,7 @@ $projectArtifactRoot=Join-Path '@@ROOT@@' 'artifacts/projects/rf_multipole_ion_o
 $workspacePaths=@{artifact_root=(Join-Path '@@ROOT@@' 'artifacts');host_resource_state_path=(Join-Path '@@ROOT@@' 'host.sqlite3')}
 $RunId='20261031_030000__test__comsol__inert-bootstrap';$ProjectId='rf_multipole_ion_optics'
 $resolvedBudget=@{limits=@{transient_run_directory_bytes=1048576L}}
-$particleSourceInput='unused-source';$engineeringBudgetInput='unused-budget';$RetentionClass='solver_review';$RetentionReason='inert bootstrap';$executionCapacityPaths=@()
+$particleSourceInput='unused-source';$sourceFamilyInput='unused-family';$engineeringBudgetInput='unused-budget';$RetentionClass='solver_review';$RetentionReason='inert bootstrap';$executionCapacityPaths=@()
 $records=@(foreach($scenario in @('capacity','package','package_cleanup')){
  foreach($callerPresent in @($true,$false)){
   if($callerPresent){$env:SIMULATION_PYTHON_EXE='CALLER_PYTHON'}else{Remove-Item Env:SIMULATION_PYTHON_EXE -ErrorAction SilentlyContinue}
@@ -159,6 +159,10 @@ function Invoke-ResourceBudgetedProcess {
                                        MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root / "host.sqlite3"),
                                        P4_BOUNDARY_PATH=str(boundary))
                     environment.pop("PYTHONPATH", None)
+                    for name in ("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN",
+                                 "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID",
+                                 "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE"):
+                        environment.pop(name, None)
                     outcome = subprocess.run(command, cwd=root, env=environment, capture_output=True,
                                              text=True, encoding="utf-8", errors="replace", timeout=300)
                     self.assertNotEqual(outcome.returncode, 0)

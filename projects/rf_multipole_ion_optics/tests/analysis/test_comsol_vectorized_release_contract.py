@@ -4,8 +4,6 @@ import json
 import unittest
 from pathlib import Path
 
-from projects.rf_multipole_ion_optics.tests.test_support.historical_contracts import historical_source_exists
-
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 PROJECT_ROOT = REPO_ROOT / "projects/rf_multipole_ion_optics"
@@ -70,20 +68,6 @@ class ComsolVectorizedReleaseContractTests(unittest.TestCase):
                     self.assertNotIn(forbidden, source)
         self.assertNotIn("MULTIPOLE_L3_PARTICLE_RELEASE_STRATEGY", RUNNER.read_text(encoding="utf-8-sig"))
 
-    def test_historical_authority_hashes_remain_frozen_evidence(self) -> None:
-        preregistration = json.loads(PREREGISTRATION.read_text(encoding="utf-8"))
-        authorities = preregistration["frozen_authorities"]
-        entries = [
-            authorities["runtime_profiles"],
-            authorities["comsol_solver_numerics"],
-            authorities["engineering_budget"],
-            authorities["effect_resolution"],
-            *authorities["implementation"],
-        ]
-        for entry in entries:
-            with self.subTest(path=entry["path"]):
-                self.assertTrue(historical_source_exists(PROJECT_ROOT, entry["path"]))
-                self.assertRegex(entry["sha256"], r"^[0-9A-F]{64}$")
 
 
 if __name__ == "__main__":

@@ -606,110 +606,74 @@ Assert-RepositoryDispatchLimits -Limits @{duration=7;bytes=[int64]3221225472} -P
                     self.assertFalse((root / "usage.json").exists())
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
-    def test_comsol_parent_hands_owned_prepare_to_child_and_reacquires_postprocess(self) -> None:
-        source = (REPO_ROOT / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
-        start = source.index("    if($hostExecutionLease.inherited){")
-        end = source.index("    if($solverProcess.resource_budget_exceeded)", start)
-        block = source[start:end]
-        facade = REPO_ROOT / "common/host_execution_lease.ps1"
-        for scenario in (
-            "success",
-            "child_failure",
-            "failure_and_postprocess_denied",
-            "inherited_light",
-            "inherited_heavy",
-        ):
-            with self.subTest(scenario=scenario):
-                script = (
-                    f". '{facade}'\n$scenario='{scenario}'\n"
-                    + r"""
-Remove-Item Env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN -ErrorAction SilentlyContinue
-$script:events=@();$script:counter=0
-function Enter-HostExecutionLease {
- param($Role,$Stage,$RunId)
- if($Stage-eq'postprocess'-and$scenario-eq'failure_and_postprocess_denied'){throw 'postprocess-denied'}
- $budget=Get-HostResourceBudget -Role $Role -Stage $Stage
- $script:counter++;$token="fixture-$script:counter"
- $script:events+="enter:$Stage`:$($budget.heavy_stage)"
- $env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN=$token
- return @{token=$token;role=$Role;stage=$Stage;inherited=$false;heavy=$budget.heavy_stage}
+    def test_comsol_parent_hands_owned_prepare_to_child_and_reacquires_postprocess(
+        self,
+    ) -> None:
+        # Exercise the actual scientific dispatch statements and real Exit adapter;
+        # process/transaction boundaries are inert instrumentation, not native facts.
+        runner = (
+            REPO_ROOT
+            / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1"
+        )
+        script = r"""
+$ErrorActionPreference='Stop'
+. '@@FACADE@@'
+$ast=[Management.Automation.Language.Parser]::ParseFile('@@RUNNER@@',[ref]$null,[ref]$null)
+$ast.FindAll({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]},$true)|ForEach-Object{Invoke-Expression $_.Extent.Text}
+$guard=@($ast.FindAll({param($node) $node-is[Management.Automation.Language.IfStatementAst]-and@($node.FindAll({param($command) $command-is[Management.Automation.Language.CommandAst]-and$command.GetCommandName()-eq'Assert-HostResourceHeavyStage'},$true)).Count},$true))[0]
+$budget=@($ast.FindAll({param($node) $node-is[Management.Automation.Language.IfStatementAst]-and$node.Clauses[0].Item1.Extent.Text-eq'$solverProcess.resource_budget_exceeded'},$true))[0]
+$source=[IO.File]::ReadAllText('@@RUNNER@@')
+$dispatch=[scriptblock]::Create($source.Substring($guard.Extent.StartOffset,$budget.Extent.StartOffset-$guard.Extent.StartOffset))
+function Invoke-HostResourceTransaction {param($StatePath,$Request)
+ if($Request.operation-eq'inherit'){if($scenario-eq'inherited_light'){throw 'heavy grant denied'};return [pscustomobject]@{status='acquired';token=$Request.token}}
+ $script:events+='release:'+ $Request.token
+ return [pscustomobject]@{status='released';token=$Request.token}
 }
-function Exit-HostExecutionLease {
- param($Lease)
- if(-not$Lease.inherited){
-   if($env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN-ne$Lease.token){throw 'wrong-token-released'}
-   $script:events+="release:$($Lease.token)"
-   Remove-Item Env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN
- }
+function Enter-HostExecutionLease {param($StatePath,$Role,$Stage,$RunId)
+ $script:events+='enter:'+ $Stage
+ if($scenario-eq'postprocess_denied'){throw 'postprocess-denied'}
+ return @{inherited=$false;token='post';environment_set=$false;completed_work_processes=@();state_path='unused'}
 }
-function Assert-HostResourceHeavyStage {
- param($Lease)
- if(-not$Lease.heavy){throw 'inherited-light-denied'}
+function Get-FiniteComsolWriterCompletion {param($State,$RunId)
+ $script:events+='receipt-check'
+ if($scenario-like'receipt_unknown*'){throw 'receipt-unknown'}
+ return @{operations=@();resource_releases=@()}
 }
-function Invoke-ResourceBudgetedProcess {
- param($Limits,$RunDir,$UsagePath,$FilePath,$ArgumentList)
+function Invoke-ResourceBudgetedProcess {param($Limits,$RunDir,$UsagePath,$FilePath,$ArgumentList)
  if($Limits.wall_clock_seconds-ne30){throw 'resolved-limits-not-forwarded'}
  $script:events+='child-start'
- if($scenario-eq'inherited_heavy'){
-   if($env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN-ne'parent'){throw 'inherited-token-cleared'}
-   return @{resource_budget_exceeded=$false;exit_code=0}
- }
- if($env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN){throw 'parent-token-leaked-to-child'}
- $child=Enter-HostExecutionLease -Role COMSOL -Stage prepare
- try {
-   $budget=Get-HostResourceBudget -Role COMSOL -Stage solver
-   if(-not$budget.heavy_stage){throw 'child-solver-not-heavy'}
-   $script:events+='child-solver-heavy'
-   if($scenario-ne'success'){throw 'child-original-failure'}
-   return @{resource_budget_exceeded=$false;exit_code=0}
- }finally{
-   $budget=Get-HostResourceBudget -Role COMSOL -Stage postprocess
-   if($budget.heavy_stage){throw 'child-postprocess-not-light'}
-   $script:events+='child-terminal'
-   Exit-HostExecutionLease -Lease $child
- }
+ if($scenario-eq'child_failure'){throw 'child-original-failure'}
+ return @{resource_budget_exceeded=$false;exit_code=$(if($scenario-eq'receipt_unknown_native_failure'){1}else{0});root_process_id=1;root_process_started_at_utc_ticks=1L}
 }
-$RunId='fixture';$resolvedBudget=[pscustomobject]@{limits=[pscustomobject]@{wall_clock_seconds=30}};$runDir='.';$resourceUsage='unused'
-$pwsh='unused';$codeRoot='.';$task='unused';$report='unused'
-if($scenario-like'inherited_*'){
- $hostExecutionLease=@{token='parent';role='COMSOL';stage='prepare';inherited=$true;heavy=($scenario-eq'inherited_heavy')}
- $env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN='parent'
-}else{
- $hostExecutionLease=Enter-HostExecutionLease -Role COMSOL -Stage prepare
-}
-$caught=''
-try {
-"""
-                    + block
-                    + r"""
-}catch{$caught=$_.Exception.Message}
-if($scenario-eq'inherited_light'){
- if($caught-ne'inherited-light-denied'-or$script:events.Count){throw 'inherited-light-bypassed'}
- if($env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN-ne'parent'){throw 'parent-token-changed'}
-}elseif($scenario-eq'inherited_heavy'){
- if($caught-or($script:events-join',')-ne'child-start'){throw 'inherited-heavy-released'}
-}else{
- if($scenario-ne'success'-and$caught-ne'child-original-failure'){throw "original-failure-lost:$caught"}
- if($scenario-eq'success'-and$caught){throw $caught}
- $expected='enter:prepare:False,release:fixture-1,child-start,enter:prepare:False,child-solver-heavy,child-terminal,release:fixture-2'
- if($scenario-ne'failure_and_postprocess_denied'){
-   $expected+=',enter:postprocess:False'
-   if($hostExecutionLease.stage-ne'postprocess'){throw 'parent-did-not-reacquire-light'}
- }elseif($null-ne$hostExecutionLease){throw 'invented-postprocess-lease'}
- if(($script:events-join',')-ne$expected){throw "wrong-sequence:$($script:events-join',')"}
- if($null-ne$hostExecutionLease){Exit-HostExecutionLease -Lease $hostExecutionLease}
- if($env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN){throw 'owned-token-remains'}
+$RunId='fixture';$resolvedBudget=@{limits=[pscustomobject]@{wall_clock_seconds=30}};$runDir='.';$resourceUsage='unused';$pwsh='unused';$codeRoot='.';$task='unused';$report='unused';$workspacePaths=@{host_resource_state_path='unused'}
+foreach($scenario in @('success','child_failure','postprocess_denied','receipt_unknown','receipt_unknown_native_failure','inherited_light','inherited_heavy')){
+ $script:events=@()
+ $ownerState=@{host_lease=@{inherited=($scenario-like'inherited_*');heavy=($scenario-eq'inherited_heavy');token='prepare';role='COMSOL';stage='prepare';environment_set=$false;completed_work_processes=@();state_path='unused'};native_attempted=$false;wrapper_observation=$null;launcher_receipt='unused';writer_unknown=$false}
+ $caught='';$failure=$null;try{& $dispatch}catch{$failure=$_;$caught=$_.Exception.Message}
+ $sequence=$script:events-join','
+ switch($scenario){
+ 'success' {if($caught-or$sequence-ne'release:prepare,child-start,receipt-check,enter:postprocess'){throw "success:$caught/$sequence"}}
+ 'child_failure' {if($caught-ne'child-original-failure'-or$sequence-ne'release:prepare,child-start'){throw "primary:$caught/$sequence"}}
+ 'postprocess_denied' {if($caught-ne'postprocess-denied'-or$sequence-ne'release:prepare,child-start,receipt-check,enter:postprocess'){throw "admission:$caught/$sequence"}}
+ 'receipt_unknown' {if($caught-ne'receipt-unknown'-or$sequence-ne'release:prepare,child-start,receipt-check'){throw "unknown:$caught/$sequence"}}
+ 'receipt_unknown_native_failure' {if($caught-notmatch'COMSOL finite 3D multipole transport failed'-or$failure.Exception.Data['writer_completion_error']-ne'receipt-unknown'){throw "primary-receipt:$caught"}}
+ 'inherited_light' {if($caught-notmatch'heavy'-or$sequence){throw "light:$caught/$sequence"}}
+ 'inherited_heavy' {if($caught-or$sequence-ne'child-start,receipt-check'){throw "parent:$caught/$sequence"}}
+ }
 }
 """
-                )
-                completed = subprocess.run(
-                    ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
-                    cwd=REPO_ROOT,
-                    capture_output=True,
-                    timeout=20,
-                    check=False,
-                )
-                self.assertEqual(completed.returncode, 0, repr(completed.stdout) + repr(completed.stderr))
+        script = script.replace(
+            "@@FACADE@@", str(REPO_ROOT / "common/host_execution_lease.ps1")
+        ).replace("@@RUNNER@@", str(runner))
+        completed = subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=30,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
     def test_internal_dispatch_checks_host_permit_before_work(self) -> None:
         """Pending and active workers require permission before touching inputs."""
@@ -2037,80 +2001,33 @@ foreach($fail in @($false,$true)){
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_high_cost_runners_validate_before_creating_run_package(self) -> None:
-        for name in ("run_finite_3d_transport.ps1", "run_simion_finite_3d_transport.ps1"):
-            source = (REPO_ROOT / "projects/rf_multipole_ion_optics/runtime" / name).read_text(encoding="utf-8")
-            self.assertLess(
-                source.index("projects.rf_multipole_ion_optics.runtime.resource_budget"),
-                source.index("New-RunPackage"),
-            )
-            for token in (
-                "[Parameter(Mandatory=$true)][string]$RuntimeProfileId",
-                "[Parameter(Mandatory=$true)][string]$EngineeringBudgetPath",
-                "resource_budget_exceeded",
-            ):
-                self.assertIn(token, source)
-            owner = (REPO_ROOT / "common/contracts/run_artifact_workflow.ps1").read_text(encoding="utf-8-sig")
-            self.assertIn("Complete-ResourceUsage", owner if "simion" in name else source)
-            if "simion" in name:
-                self.assertIn("Complete-RunArtifactPowerShellOwner -Context $ownerContext", source)
-                self.assertIn("-ResourceUsagePaths $resourceItems", source)
-                self.assertIn("-ResourceUsagePaths $failureUsage", source)
-                self.assertIn("path=(Convert-WorkflowOwnerPath $ownerContext $caseResourceUsage[$_])", source)
-                self.assertIn("resource_usage_paths=@($ResourceUsagePaths|ForEach-Object", owner)
-            self.assertIn("-UseShortExecutionPath", source)
-            self.assertIn("Remove-RunPackageExecutionAlias", source)
-        comsol = (REPO_ROOT / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
-        comsol += (REPO_ROOT / "projects/rf_multipole_ion_optics/runtime/finite_3d_transport_preflight.ps1").read_text(encoding="utf-8")
-        self.assertIn("'-StartupAttempts','1'", comsol)
-        self.assertIn(
-            "[ValidateSet('transport','mesh_build','field_solve')][string]$StopStage='transport'",
-            comsol,
-        )
-        self.assertIn("MULTIPOLE_L3_STOP_STAGE", comsol)
-        self.assertIn("UNQUALIFIED_MESH_BUILD_DIAGNOSTIC_ONLY", comsol)
-        self.assertIn("UNQUALIFIED_FIELD_SOLVE_DIAGNOSTIC_ONLY", comsol)
-        self.assertNotIn("$RuntimeProfileId -like '*_mesh_build'", comsol)
-        self.assertIn("Assert-MultipoleFieldSolveReport", comsol)
-        self.assertIn(
-            "'projects/rf_multipole_ion_optics/comsol/configure_comsol_segment_hybrid_mesh.m'",
-            comsol,
-        )
-        self.assertIn(
-            "$resolvedBudget.PSObject.Properties.Name-notcontains'stop_stage'",
-            comsol,
-        )
-        self.assertIn("$StopStage-ne$authorizedStopStage", comsol)
-        self.assertLess(
-            comsol.index("$StopStage-ne$authorizedStopStage"),
-            comsol.index("New-RunPackage"),
-        )
-        self.assertIn(
-            "stationary_linear_solver_backend=$authorizedBackend",
-            comsol,
-        )
-        self.assertIn(
-            "$authorizedBackend-notin@('mumps','pardiso','cg_amg')",
-            comsol,
-        )
-        self.assertIn(
-            "electric_potential_element_order=$authorizedElementOrder",
-            comsol,
-        )
-        self.assertIn("omits the required electric-potential element order", comsol)
-        self.assertIn("MESH_GLOBAL_ELEMENTS", comsol)
-        self.assertIn("maximum_mesh_cells", comsol)
-        self.assertIn("$usage.limit_name='maximum_mesh_cells'", comsol)
-        self.assertIn("MULTIPOLE_L3_MAXIMUM_MESH_CELLS", comsol)
-        self.assertIn("Assert-MultipoleMeshCellBudgetReport", comsol)
-        self.assertIn("Compiled resolved design differs from the authorized run identity", comsol)
-        solver = (REPO_ROOT / "projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m").read_text(encoding="utf-8")
-        budget_gate = solver.index("MULTIPOLE_L3_MAXIMUM_MESH_CELLS")
-        self.assertGreater(budget_gate, solver.index("CHECKPOINT=MESH_COMPLETE"))
-        self.assertLess(budget_gate, solver.index("material = model.material.create"))
-        self.assertNotIn("fflush(", solver)
-        self.assertIn("MESH_LOCAL_SENSITIVE_REGION_PRESENT=1", solver)
-        self.assertIn("MESH_LOCAL_SENSITIVE_SIZE_FEATURE_PRESENT=%d", solver)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            budget, source = root / "invalid_budget.json", root / "source.ion"
+            budget.write_text('{"role":"multipole_engineering_budget_contract"}', encoding="utf-8")
+            source.write_text("fixture input: budget must reject before source preparation", encoding="utf-8")
+            for name in ("run_finite_3d_transport.ps1", "run_simion_finite_3d_transport.ps1"):
+                with self.subTest(runner=name):
+                    entry = REPO_ROOT / "projects/rf_multipole_ion_optics/runtime" / name
+                    metadata = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command",
+                        f"$entry=Get-Command '{entry}';$sets=@($entry.ParameterSets|Where-Object {{$_.Name-notin@('Analyze','Resume')}});foreach($set in $sets){{foreach($name in @('RuntimeProfileId','EngineeringBudgetPath')){{$p=@($set.Parameters|Where-Object Name -eq $name);if($p.Count-ne1-or-not$p[0].IsMandatory){{throw ('Required run binding missing: '+$name)}}}}}};$entry.Parameters.GetEnumerator()|Where-Object {{$_.Key-in@('RuntimeProfileId','EngineeringBudgetPath')}}|ForEach-Object {{$_.Key}}"],
+                        cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=20)
+                    self.assertEqual(metadata.returncode, 0, metadata.stdout + metadata.stderr)
+                    self.assertEqual(set(metadata.stdout.split()), {"RuntimeProfileId", "EngineeringBudgetPath"})
+                    artifacts = root / name.replace(".ps1", "_artifacts")
+                    environment = dict(__import__("os").environ,
+                                       MASS_SPECTROMETRY_ARTIFACT_ROOT=str(artifacts))
+                    result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(entry),
+                        "-PythonExe", sys.executable, "-ProjectId", PROJECT_ID,
+                        "-RuntimeProfileId", "fixture-must-not-resolve", "-DesignProfileId", "fixture",
+                        "-ParticleSourcePath", str(source), "-EngineeringBudgetPath", str(budget)],
+                        cwd=REPO_ROOT, env=environment, capture_output=True, text=True, encoding="utf-8",
+                        errors="replace", timeout=30)
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("resource-budget preflight failed", result.stdout + result.stderr)
+                    self.assertFalse(artifacts.exists(), "Invalid budget created a run package before rejection")
 
     def test_comsol_runner_fails_closed_on_stop_stage_disagreement(self) -> None:
         runner = (REPO_ROOT / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1").read_text(encoding="utf-8")

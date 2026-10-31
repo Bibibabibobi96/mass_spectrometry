@@ -60,7 +60,7 @@ function Invoke-RunCapacityCommand {param($Python,$RepoRoot,$Arguments,$FailureL
                 first = helper.run_ps(root, f""". '{fixtures.OWNER}'
 function Invoke-ArtifactCapacityGate {{return @{{satisfied=$true;fixture_admission=$true}}}}
 $session=Get-Content '{run / 'logs/capacity_session.json'}' -Raw|ConvertFrom-Json
-$package=@{{run_config='{run / 'run_config.json'}';run_dir='{run}';artifact_run_dir='{run}'}}
+$package=@{{native_path_preparation=$null;run_config='{run / 'run_config.json'}';run_dir='{run}';artifact_run_dir='{run}'}}
 $context=Initialize-RunArtifactPowerShellOwner -Python '{sys.executable}' -RepoRoot '{REPO}' -Package $package -CapacitySession $session -EntrypointPath '{entry}' -CommitmentInputPaths @('{budget}')
 {hook}
 try{{

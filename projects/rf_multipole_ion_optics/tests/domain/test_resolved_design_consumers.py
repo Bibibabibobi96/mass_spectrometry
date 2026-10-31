@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import math
+import subprocess
+import shutil
 import unittest
 from pathlib import Path
 
@@ -171,62 +173,26 @@ class ResolvedDesignConsumerContractTest(unittest.TestCase):
         self.assertIn("MULTIPOLE_RESOLVED_DESIGN", solver)
         self.assertIn("multipole_resolved_design_do_not_edit", solver)
 
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_run_config_manifest_parent_hash_is_explicit(self) -> None:
-        for name in (
-            "run_finite_3d_transport.ps1",
-            "run_simion_finite_3d_transport.ps1",
-        ):
-            source = (MULTIPOLE / "runtime" / name).read_text(encoding="utf-8")
-            self.assertIn("[string]$PythonExe", source)
-            self.assertIn("New-RunPackage -Python $python", source)
-            self.assertIn("provenance=[ordered]@{parent_resolved_design_sha256=$resolvedHash", source)
-            if "simion" in name:
-                self.assertIn("Initialize-RunArtifactPowerShellOwner", source)
-                self.assertIn("Complete-RunArtifactPowerShellOwner -Context $ownerContext", source)
-                self.assertIn("-EntrypointRecord @{path=$ownerSource;exists=$true;bytes=[long]$ownerRecord.Length;sha256=$entryScriptHash}", source)
-                self.assertNotIn("Complete-RfWorkflowOwner", source)
-            else:
-                self.assertIn("Write-VerifiedRunManifest", source)
-            self.assertEqual(source.count("Complete-FailedRun"), 1)
-
-        round_rod = (MULTIPOLE / "runtime/run_round_rod_field_screen.ps1").read_text(encoding="utf-8")
-        self.assertIn("status='checkpoint'", round_rod)
-        self.assertLess(round_rod.index("--status checkpoint"), round_rod.index("--status success"))
-        self.assertIn("--status failed", round_rod)
-        comsol = (ROOT / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1").read_text(
-            encoding="utf-8"
-        )
-        for output in (
-            "$primaryState",
-            "$controlState",
-            "$primaryTrajectories",
-            "$controlTrajectories",
-            "$pairedMetrics",
-        ):
-            self.assertIn(output, comsol)
-        self.assertIn("projects.rf_multipole_ion_optics.analysis.analyze_simion_axial_acceleration", comsol)
-        self.assertIn("--metrics $evidenceMetrics", comsol)
-        self.assertIn("projects.rf_multipole_ion_optics.analysis.analyze_comsol_transport_metrics", comsol)
-        matlab = (ROOT / "projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m").read_text(
-            encoding="utf-8"
-        )
-        for forbidden in (
-            "'transmission_fraction'",
-            "'exit_rms_radius_mm'",
-            "'mean_output_energy_eV'",
-            "'output_energy_standard_deviation_eV'",
-            "write_transport_plot",
-        ):
-            self.assertNotIn(forbidden, matlab)
-        matlab = (ROOT / "projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m").read_text(
-            encoding="utf-8"
-        )
-        for evidence_field in (
-            "'accelerated_transmission'",
-            "'mean_energy_gain_eV'",
-            "'absolute_mean_output_energy_error_eV'",
-        ):
-            self.assertNotIn(evidence_field, matlab)
+        for name in ("run_finite_3d_transport.ps1", "run_simion_finite_3d_transport.ps1"):
+            with self.subTest(runner=name):
+                entry = MULTIPOLE / "runtime" / name
+                script = r"""$ErrorActionPreference='Stop'
+$ast=[Management.Automation.Language.Parser]::ParseFile('@@ENTRY@@',[ref]$null,[ref]$null)
+$tables=@($ast.FindAll({param($n)
+ if($n-isnot[Management.Automation.Language.HashtableAst]){return $false}
+ $keys=@($n.KeyValuePairs|ForEach-Object{$_.Item1.SafeGetValue()})
+ return 'parent_resolved_design_sha256'-in$keys-and'particle_source_sha256'-in$keys
+},$true))
+if($tables.Count-ne1){throw 'Unique scientific provenance table missing'}
+$resolvedHash='selected-design';$sourceMeta=@{source_sha256='selected-source';operating_point_binding='selected-point'};$sourceFamilySha='selected-family';$sourceFamily=$null
+$actual=Invoke-Expression $tables[0].Extent.Text
+if($actual.parent_resolved_design_sha256-cne$resolvedHash-or$actual.particle_source_sha256-cne$sourceMeta.source_sha256){throw 'Frozen parent/source identity was not propagated'}
+""".replace('@@ENTRY@@', str(entry))
+                result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
+                                        cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_l3_runners_freeze_optional_source_operating_point_binding(self) -> None:
         for name in (

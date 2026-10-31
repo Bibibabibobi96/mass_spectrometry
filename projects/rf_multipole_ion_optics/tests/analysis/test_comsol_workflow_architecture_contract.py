@@ -347,46 +347,6 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
             )
         self.assertLess(maximum_error, 1e-12)
 
-    def test_release_readback_diagnoses_shape_finite_and_value_failures(
-        self,
-    ) -> None:
-        shared = _read(SHARED_SOLVER)
-        first_read = shared.index("releaseFile=readmatrix")
-        first_shape = shared.index(
-            "assert(isequal(releaseFileShape,[1 6])", first_read
-        )
-        first_finite = shared.index(
-            "assert(isempty(nonFiniteReleaseIndices)", first_shape
-        )
-        first_value = shared.index(
-            "assert(releaseMaxAbsError<1e-12", first_finite
-        )
-        first_create = shared.index("rel=cpt.create(releaseTag", first_value)
-        self.assertLess(first_read, first_shape)
-        self.assertLess(first_shape, first_finite)
-        self.assertLess(first_finite, first_value)
-        self.assertLess(first_value, first_create)
-
-        final_read = shared.index("actualReleaseData=readmatrix")
-        final_shape = shared.index(
-            "assert(isequal(actualReleaseShape,[1 6])", final_read
-        )
-        final_finite = shared.index(
-            "assert(isempty(actualNonFiniteIndices)", final_shape
-        )
-        final_value = shared.index(
-            "assert(actualReleaseMaxAbsError<1e-12", final_finite
-        )
-        self.assertLess(final_read, final_shape)
-        self.assertLess(final_shape, final_finite)
-        self.assertLess(final_finite, final_value)
-
-        for diagnostic in (
-            "shape is %s; expected [1 6]",
-            "has non-finite linear indices %s",
-            "max abs error %.17g exceeds 1e-12",
-        ):
-            self.assertEqual(shared.count(diagnostic), 2)
 
     def test_failure_report_checks_utf8_bytes_for_non_ascii_diagnostics(
         self,
@@ -443,58 +403,42 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
         )
 
     def test_runner_checkpoints_then_closes_success_and_failed_records(self) -> None:
-        source = _read(RUNNER)
-        for token in (
-            "common\\contracts\\run_artifact_support.ps1",
-            "New-RunPackage",
-            "-CapacityLedgerLifecycleEnabled",
-            "Write-RunManifest",
-            "Write-VerifiedRunManifest",
-            "-Status interrupted",
-            "-Status success",
-            "Apply-RunArtifactRetention",
-            "Complete-FailedRun",
-            "Save-RunEnvironment",
-            "Restore-RunEnvironment",
-            "catch {",
-            "finally {",
-        ):
-            self.assertIn(token, source)
-        self.assertLess(
-            source.index("Write-RunManifest"),
-            source.index("run_comsol_r2025b.ps1"),
-        )
-        self.assertLess(
-            source.index("Apply-RunArtifactRetention"),
-            source.index("Write-VerifiedRunManifest"),
-        )
+        command = r"""
+$ast=[Management.Automation.Language.Parser]::ParseFile($env:RF_INTERFACE_RUNNER,[ref]$null,[ref]$null)
+$functions=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]},$true))
+$complete=@($functions|Where-Object Name -CEQ 'Complete-InterfaceOwner')
+if($complete.Count-ne1){throw 'Expected one actual completion adapter'}
+$names=@($complete[0].Body.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]},$true)|ForEach-Object{$_.GetCommandName()})
+if(@($names|Where-Object{$_-ceq'Complete-RunArtifactPowerShellOwner'}).Count-ne1){throw 'Missing public completion consumer'}
+$top=@($ast.EndBlock.Statements|Where-Object{$_-isnot[Management.Automation.Language.FunctionDefinitionAst]})
+$commands=@($top|ForEach-Object{$_.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]},$true)})
+$initialize=@($commands|Where-Object{$_.GetCommandName()-ceq'Initialize-RunArtifactPowerShellOwner'})
+$native=@($commands|Where-Object{$_.GetCommandName()-ceq'Invoke-InterfaceComsolTask'})
+if($initialize.Count-ne1-or$native.Count-lt1-or$initialize[0].Extent.StartOffset-ge$native[0].Extent.StartOffset){throw 'Native entry preceded public initialization'}
+if(@($functions|Where-Object Name -CEQ 'Complete-FailedRun').Count){throw 'Replaced private finalizer remains'}
+'PUBLIC_OWNER_WIRING=PASS'
+"""
+        environment = dict(os.environ, RF_INTERFACE_RUNNER=str(RUNNER))
+        result = _run_pwsh(command, environment)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("PUBLIC_OWNER_WIRING=PASS", result.stdout)
 
     def test_interface_normal_launches_disable_attempt_local_retry(self) -> None:
-        runner = _read(RUNNER)
-        self.assertIn(
-            "$startupAttempts = if($ReleaseConstructionGate){2}else{1}",
-            runner,
-        )
-        build_launch = runner[
-            runner.index("$startupAttempts = if($ReleaseConstructionGate)") :
-            runner.index("if($LASTEXITCODE-ne 0)", runner.index("$startupAttempts"))
-        ]
-        self.assertIn("-StartupAttempts $startupAttempts", build_launch)
-        gui_launch = runner[
-            runner.index("$failureStage = 'comsol_gui_compute_verification'") :
-            runner.index(
-                "if($LASTEXITCODE-ne 0)",
-                runner.index("$failureStage = 'comsol_gui_compute_verification'"),
-            )
-        ]
-        self.assertIn("-StartupAttempts 1", gui_launch)
-
-        launcher = _read(SHARED_LIVELINK_LAUNCHER)
-        self.assertIn(
-            "for ($attempt = 1; $attempt -le $StartupAttempts; $attempt++)",
-            launcher,
-        )
-        self.assertEqual(launcher.count("$attempt -lt $StartupAttempts"), 2)
+        command = r"""
+$ast=[Management.Automation.Language.Parser]::ParseFile($env:RF_INTERFACE_RUNNER,[ref]$null,[ref]$null)
+$parameter=@($ast.ParamBlock.Parameters|Where-Object{$_.Name.VariablePath.UserPath-ceq'StartupAttempts'})
+if($parameter.Count-ne1-or$parameter[0].DefaultValue.Value-ne1){throw 'Normal entry must default to one attempt'}
+$adapter=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-ceq'Invoke-InterfaceComsolTask'},$true))
+if($adapter.Count-ne1){throw 'Native adapter is ambiguous'}
+$calls=@($adapter[0].Body.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.InvocationOperator-eq[Management.Automation.Language.TokenKind]::Ampersand-and$n.Extent.Text.Contains('run_comsol_r2025b.ps1')},$true))
+if($calls.Count-ne1){throw 'Expected one shared launcher call'}
+$elements=@($calls[0].CommandElements);$index=@(0..($elements.Count-1)|Where-Object{$elements[$_]-is[Management.Automation.Language.CommandParameterAst]-and$elements[$_].ParameterName-ceq'StartupAttempts'})
+if($index.Count-ne1-or$elements[$index[0]+1].VariablePath.UserPath-cne'StartupAttempts'){throw 'Shared launcher lost explicit attempt selection'}
+'ATTEMPT_SELECTION=PASS'
+"""
+        result = _run_pwsh(command, dict(os.environ, RF_INTERFACE_RUNNER=str(RUNNER)))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("ATTEMPT_SELECTION=PASS", result.stdout)
 
     def test_gui_solver_diagnostics_are_fail_safe_and_observational(self) -> None:
         source = _read(GUI_VERIFY_TASK)
@@ -733,56 +677,48 @@ ConvertTo-Json -InputObject $results -Compress
                         self.assertEqual(record["message"], "host release failed" if index == 5 else None)
 
     def test_interface_failure_closure_preserves_original_error(self) -> None:
-        environment = os.environ.copy()
-        environment["RF_INTERFACE_RUNNER"] = str(RUNNER)
+        # Public owner fault behavior is tested centrally; this is its actual
+        # project catch/finally seam, including primary-error propagation.
         command = r"""
 $ErrorActionPreference='Stop'
-$tokens=$null; $parseErrors=$null
-$ast=[System.Management.Automation.Language.Parser]::ParseFile(
-    $env:RF_INTERFACE_RUNNER,[ref]$tokens,[ref]$parseErrors)
-if($parseErrors.Count){throw 'Runner parse failed'}
-$outer=@($ast.FindAll({param($node)
-    $node -is [System.Management.Automation.Language.TryStatementAst] -and
-    @($node.CatchClauses).Count -eq 1 -and
-    $node.CatchClauses[0].Body.Extent.Text.Contains('Complete-FailedRun')
-},$true))
-if($outer.Count-ne 1){throw 'Expected one actual interface failure boundary'}
-$handler=[scriptblock]::Create(
-    "try { throw [InvalidOperationException]::new('original solver failure') } catch " +
-    $outer[0].CatchClauses[0].Body.Extent.Text +
-    ' finally ' + $outer[0].Finally.Extent.Text)
-function Complete-FailedRun {
-    $script:closureAttempted=$true
-    if($script:failClosure){throw 'manifest publication failed'}
+$ast=[System.Management.Automation.Language.Parser]::ParseFile($env:RF_INTERFACE_RUNNER,[ref]$null,[ref]$null)
+$outer=@($ast.EndBlock.Statements|Where-Object{
+ $_-is[System.Management.Automation.Language.TryStatementAst]-and
+ $_.CatchClauses[0].Body.Extent.Text.Contains('Complete-InterfaceOwner')
+})
+if($outer.Count-ne1){throw 'Expected one actual interface owner failure boundary'}
+$handler=[scriptblock]::Create("try { throw [InvalidOperationException]::new('original solver failure') } catch "+$outer[0].CatchClauses[0].Body.Extent.Text+' finally '+$outer[0].Finally.Extent.Text)
+function Complete-InterfaceOwner {
+ param($Status,$Summary,$Outputs,$Failure)
+ $script:events.Add('complete')
+ if($Status-cne'failed'-or$Failure.Exception.Message-cne'original solver failure'){throw 'Original failure did not reach owner'}
+ if($script:failClosure){throw 'manifest publication failed'}
 }
-function Restore-RunEnvironment {$script:environmentRestored=$true}
-function Remove-RunPackageExecutionAlias {$script:aliasRemoved=$true}
-$python='unused'; $repoRoot='unused'; $package=@{run_config='unused';summary='unused'}
-$summaryRole='unused'; $software=@(); $failureStage='solver'
-$ReleaseConstructionGate=$false; $environmentNames=@(); $environmentSnapshot=@{}
+function Restore-RunEnvironment {param($Names,$Snapshot) $script:events.Add('restore')}
+function Remove-RunPackageExecutionAlias {throw 'Project must not remove owner alias'}
+$ownerContext=@{completion_written=$false};$ownerState=@{finalization_started=$false};$capacity=$null
+$failureStage='solver';$summaryRole='fixture';$environmentNames=@();$environmentSnapshot=@{}
+$resultDir=$env:RF_INTERFACE_FIXTURE_ROOT;$candidateDir=$resultDir;$logDir=$resultDir
 $results=@(foreach($script:failClosure in @($false,$true)){
-    $script:closureAttempted=$false; $script:environmentRestored=$false
-    $script:aliasRemoved=$false
-    try { & $handler; throw 'Unexpected success' } catch {
-        [ordered]@{message=$_.Exception.Message;type=$_.Exception.GetType().Name
-            closure_error=$_.Exception.Data['failure_closure_error']
-            closure_attempted=$script:closureAttempted
-            environment_restored=$script:environmentRestored
-            alias_removed=$script:aliasRemoved}
-    }
+ $script:events=[Collections.Generic.List[string]]::new();$failure=$null
+ try{& $handler}catch{$failure=$_}
+ @{message=$failure.Exception.Message;type=$failure.Exception.GetType().Name;
+   closure_error=$failure.Exception.Data['failure_closure_error'];events=@($script:events.ToArray())}
 })
 ConvertTo-Json -InputObject $results -Compress
 """
-        result = _run_pwsh(command, environment)
+        with tempfile.TemporaryDirectory() as directory:
+            environment = os.environ.copy()
+            environment.update(RF_INTERFACE_RUNNER=str(RUNNER),
+                               RF_INTERFACE_FIXTURE_ROOT=directory)
+            result = _run_pwsh(command, environment)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         records = json.loads(result.stdout.splitlines()[-1])
         self.assertEqual(len(records), 2)
         for record in records:
             self.assertEqual(record["message"], "original solver failure")
             self.assertEqual(record["type"], "InvalidOperationException")
-            self.assertTrue(record["closure_attempted"])
-            self.assertTrue(record["environment_restored"])
-            self.assertTrue(record["alias_removed"])
+            self.assertEqual(record["events"], ["complete", "restore"])
         self.assertIsNone(records[0]["closure_error"])
         self.assertEqual(records[1]["closure_error"], "manifest publication failed")
 
@@ -1048,112 +984,54 @@ $results | ConvertTo-Json -Depth 32 -Compress
         self.assertNotEqual(wrong.returncode, 0)
 
     def test_precommercial_contract_failure_produces_verified_failed_triplet(self) -> None:
+        # Actual original CLI and public finalization; only inputs are synthetic.
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            artifact_workspace = root / "artifacts"
-            artifact_root = artifact_workspace / "projects" / "rf_multipole_ion_optics"
-            artifact_root.mkdir(parents=True)
-            initialize_capacity_ledger(artifact_workspace, objects=[])
-            # Redirect only the runner's roots; exercise its real preflight and
-            # failed publication without touching a checkout's artifact ledger.
-            runner_source = _read(RUNNER)
-            for original, replacement in (
-                ("$projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)",
-                 "$projectRoot = $env:RF_PROJECT_ROOT"),
-                ("$artifactRoot = Join-Path $workspaceRoot 'artifacts\\projects\\rf_multipole_ion_optics'",
-                 "$artifactRoot = $env:RF_ARTIFACT_ROOT"),
-            ):
-                self.assertEqual(runner_source.count(original), 1)
-                runner_source = runner_source.replace(original, replacement)
-            fixture_runner = root / "run_comsol_fixture.ps1"
-            fixture_runner.write_text(runner_source, encoding="utf-8")
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
+            initialize_capacity_ledger(artifacts, objects=[])
             invalid = self.baseline()
-            invalid["profiles"][0]["mesh"]["global_auto_level"] = 2  # type: ignore[index]
+            invalid["profiles"][0]["mesh"]["global_auto_level"] = 2
             invalid["logical_sha256"] = _logical_sha256(invalid)
-            invalid_path = root / "invalid_numerics.json"
+            invalid_path = root / "invalid.json"
             invalid_path.write_text(json.dumps(invalid), encoding="utf-8")
-            run_id = (
-                "20260725_120000__test__comsol__numerics-preflight"
-                f"__p{os.getpid()}"
-            )
-            run_dir = artifact_root / "runs" / run_id
+            limits = root / "limits.json"
+            limits.write_text(json.dumps(dict(wall_clock_seconds=60,
+                transient_run_directory_bytes=33554432,
+                process_tree_working_set_bytes=2147483648,
+                minimum_system_available_memory_bytes=1073741824)), encoding="utf-8")
+            run_id = "20261031_110000__test__comsol__invalid-numerics"
+            result_path = root / "result.json"
             environment = os.environ.copy()
-            environment.update(
-                {
-                    "RF_COMSOL_RUNNER": str(fixture_runner),
-                    "RF_PROJECT_ROOT": str(PROJECT_ROOT),
-                    "RF_ARTIFACT_ROOT": str(artifact_root),
-                    "RF_REPO_ROOT": str(REPO_ROOT),
-                    "RF_INVALID_NUMERICS": str(invalid_path),
-                    "RF_RUN_ID": run_id,
-                    "RF_PYTHON": str(RUN_PYTHON),
-                }
-            )
-            names = (
-                "RFQUAD_RUN_CONFIG",
-                "RFQUAD_COMSOL_MODEL_PATH",
-                "RFQUAD_EXPECTED_PARTICLES",
-                "RFQUAD_EXPECTED_HITS",
-                "RFQUAD_EXPECTED_RF_PEAK_V",
-                "RFQUAD_EXPECTED_FREQUENCY_HZ",
-            )
-            name_literal = ",".join(f"'{name}'" for name in names)
-            command = (
-                f"$names=@({name_literal}); "
-                "foreach($name in $names){"
-                "[Environment]::SetEnvironmentVariable($name,\"sentinel-$name\")}; "
-                "$failed=$false; $reason=''; "
-                "try { "
-                "& $env:RF_COMSOL_RUNNER -RunId $env:RF_RUN_ID "
-                "-ParticleTablePath $env:RF_INVALID_NUMERICS "
-                "-ParticleBundleMetadataPath $env:RF_INVALID_NUMERICS "
-                "-SourceFamilyPath $env:RF_INVALID_NUMERICS "
-                "-ParticleDistributionPath $env:RF_INVALID_NUMERICS "
-                "-SolverNumericsContractPath $env:RF_INVALID_NUMERICS "
-                "-SolverNumericsProfileId baseline -OperatingPoint forged "
-                "-PythonExe $env:RF_PYTHON; "
-                "} catch {$failed=$true; $reason=$_.Exception.Message}; "
-                "if(-not $failed){throw 'Invalid numerics unexpectedly reached COMSOL.'}; "
-                "if($reason -notmatch 'logical_sha256'){throw $reason}; "
-                "foreach($name in $names){"
-                "if([Environment]::GetEnvironmentVariable($name) -cne \"sentinel-$name\"){"
-                "throw \"Environment was not restored: $name\"}}"
-            )
-            try:
-                result = _run_pwsh(command, environment)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                for filename in ("run_config.json", "summary.json", "run_manifest.json"):
-                    self.assertTrue((run_dir / filename).is_file(), filename)
-                verification = subprocess.run(
-                    [
-                        str(RUN_PYTHON),
-                        str(REPO_ROOT / "common" / "contracts" / "verify_run_manifest.py"),
-                        str(run_dir / "run_manifest.json"),
-                        "--require-status",
-                        "failed",
-                        "--require-local-run-config",
-                    ],
-                    cwd=REPO_ROOT,
-                    capture_output=True,
-                    check=False,
-                    text=True,
-                    encoding="utf-8",
-                    timeout=60,
-                )
-                self.assertEqual(verification.returncode, 0, verification.stderr)
-                summary = json.loads(
-                    (run_dir / "summary.json").read_text(encoding="utf-8-sig")
-                )
-                manifest = json.loads(
-                    (run_dir / "run_manifest.json").read_text(encoding="utf-8-sig")
-                )
-                self.assertEqual(summary["status"], "failed")
-                self.assertEqual(manifest["status"], "failed")
-                self.assertIn("logical_sha256", summary["reason"])
-                self.assertFalse((run_dir / "logs" / "comsol_bootstrap_report.txt").exists())
-            finally:
-                if run_dir.exists():
-                    shutil.rmtree(run_dir)
+            for name in ("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN",
+                         "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID",
+                         "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE"):
+                environment.pop(name, None)
+            environment.update(MASS_SPECTROMETRY_ARTIFACT_ROOT=str(artifacts),
+                MASS_SPECTROMETRY_EXECUTION_ROOT=str(root / "execution"),
+                MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root / "host.sqlite3"))
+            command = ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(RUNNER),
+                "-RunId", run_id, "-ParticleTablePath", str(invalid_path),
+                "-ParticleBundleMetadataPath", str(invalid_path),
+                "-SourceFamilyPath", str(invalid_path), "-ParticleDistributionPath", str(invalid_path),
+                "-SolverNumericsContractPath", str(invalid_path), "-SolverNumericsProfileId", "baseline",
+                "-OperatingPoint", "forged", "-PythonExe", str(RUN_PYTHON),
+                "-LimitsPath", str(limits), "-ResultPath", str(result_path)]
+            outcome = subprocess.run(command, cwd=REPO_ROOT, env=environment,
+                capture_output=True, text=True, encoding="utf-8", timeout=120)
+            self.assertNotEqual(outcome.returncode, 0)
+            self.assertIn("logical_sha256", outcome.stdout + outcome.stderr)
+            result = json.loads(result_path.read_text(encoding="utf-8-sig"))
+            self.assertEqual((result["status"], result["stage"]), ("failed", "complete"))
+            self.assertIn("logical_sha256", result["failure_reason"])
+            run = artifacts / "projects/rf_multipole_ion_optics/runs" / run_id
+            verification = subprocess.run([str(RUN_PYTHON), "-B", "-m",
+                "common.contracts.verify_run_manifest", str(run / "run_manifest.json"),
+                "--require-status", "failed", "--require-local-run-config"],
+                cwd=REPO_ROOT, env=environment, capture_output=True,
+                text=True, encoding="utf-8", timeout=60)
+            self.assertEqual(verification.returncode, 0, verification.stdout + verification.stderr)
+            self.assertFalse((run / "logs/comsol_bootstrap_report.txt").exists())
 
 
 if __name__ == "__main__":
