@@ -307,16 +307,20 @@ function Assert-WorkflowWriterCompletion {
 
 function Invoke-PreparedWorkflowProcess {
   param([string]$Python,[string]$ExecutionRequest,[string]$RunConfig,
-    [string]$SessionPath,[string]$CompletionPath,[string]$WaitPath,[string]$LogRoot,[string]$HostStatePath)
+    [string]$SessionPath,[string]$CompletionPath,[string]$WaitPath,[string]$LogRoot,[string]$HostStatePath,
+    [Parameter(Mandatory)][pscustomobject]$Package)
   # The public handshake owns the actual Python worker handle, including when
   # a venv launcher exits first. It adds no host grant or private process tree.
   $runner=@'
+import os, sys
+# Import only from the validated frozen root, never the execution cwd.
+sys.path[0] = os.environ['PYTHONPATH']
 from common.host_resource_python import await_managed_process_start
 await_managed_process_start()
 import importlib, json, sys
 from pathlib import Path
 from common.contracts.recorded_file_removal import write_json_atomic
-request_path, config, session, completion, wait_path = map(Path, sys.argv[1:])
+request_path, config, session, completion, wait_path = (Path(value).resolve() for value in sys.argv[1:])
 request = json.loads(request_path.read_text(encoding="utf-8-sig"))
 prepared = request["prepared"]
 try:
@@ -333,20 +337,27 @@ except BaseException as error:
 '@
   $request=Get-Content -LiteralPath $ExecutionRequest -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   $config=Get-Content -LiteralPath $RunConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
-  $environment=@{PYTHONPATH=$request.prepared.import_root;PYTHONNOUSERSITE='1';PYTHONDONTWRITEBYTECODE='1';
-    MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=$HostStatePath}
+  # CPython can import the persistent long frozen source; Windows CreateProcess
+  # still needs a compatible cwd. Only this run's actual process paths use the
+  # existing native execution view. No source copy or source-owner alias.
+  $stdout=Join-Path $LogRoot 'prepared_stdout.log';$stderr=Join-Path $LogRoot 'prepared_stderr.log'
+  $native=Get-RunNativeExecutionContext -Package $Package -Tool 'prepared Python worker' `
+    -Paths @($ExecutionRequest,$RunConfig,$SessionPath,$CompletionPath,$WaitPath,$stdout,$stderr,$Package.artifact_run_dir)
+  $environment=@{};foreach($name in $native.environment.Keys){$environment[$name]=$native.environment[$name]}
+  $environment.PYTHONPATH=$request.prepared.import_root;$environment.PYTHONNOUSERSITE='1';$environment.PYTHONDONTWRITEBYTECODE='1'
+  $environment.MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=$HostStatePath
   if($config.Contains('paths')){
     $environment.MASS_SPECTROMETRY_ARTIFACT_ROOT=[string]$config.paths.artifact_root
     $environment.MASS_SPECTROMETRY_EXECUTION_ROOT=[string]$config.paths.execution_root
     $environment.MASS_SPECTROMETRY_RUN_DIRECTORY=[string](Split-Path -Parent $RunConfig)
-    $environment.MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=$environment.MASS_SPECTROMETRY_RUN_DIRECTORY
+    $environment.MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=$native.run_dir
   }
   $receipt=$null;$failure=$null;$childFailure=$null
   try{
     $receipt=Invoke-RepositoryManagedPythonProcess -Python $Python `
-      -ArgumentList @('-B','-c',$runner,$ExecutionRequest,$RunConfig,$SessionPath,$CompletionPath,$WaitPath) `
-      -WorkingDirectory $request.prepared.import_root `
-      -StandardOutputPath (Join-Path $LogRoot 'prepared_stdout.log') -StandardErrorPath (Join-Path $LogRoot 'prepared_stderr.log') `
+      -ArgumentList @('-B','-c',$runner,$native.projected_paths[0],$native.projected_paths[1],$native.projected_paths[2],$native.projected_paths[3],$native.projected_paths[4]) `
+      -WorkingDirectory $native.projected_paths[7] `
+      -StandardOutputPath $native.projected_paths[5] -StandardErrorPath $native.projected_paths[6] `
       -Environment $environment
   }catch{
     $failure=$_
@@ -364,6 +375,16 @@ except BaseException as error:
   if($null-ne$failure){
     if($null-ne$childFailure){$failure.Exception.Data['prepared_exception']=$childFailure}
     throw $failure
+  }
+  if(Test-Path -LiteralPath $CompletionPath -PathType Leaf){
+    $completed=Get-Content -LiteralPath $CompletionPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+    if($completed.summary-isnot[Collections.IDictionary]){throw 'Prepared completion summary must be an object.'}
+    $completed.summary.native_path_preparation=$Package.native_path_preparation
+    if($null-ne$Package.execution_alias){
+      if($completed.Contains('execution_alias')){throw 'Prepared callback cannot supply the public owner execution alias.'}
+      $completed.execution_alias=@{path=[string]$Package.execution_alias;target_directory=[string]$Package.artifact_run_dir}
+    }
+    Write-RunJson -Atomic -Path $CompletionPath -Value $completed -Depth 64
   }
   return [pscustomobject]$wait
 }
@@ -614,7 +635,7 @@ function Invoke-RunArtifactWorkflow {
     $preparedStarted=$true
     $null=Invoke-PreparedWorkflowProcess -Python $python `
       -ExecutionRequest $frozenRequest -RunConfig $package.run_config -SessionPath $sessionPath `
-      -CompletionPath $completionPath -WaitPath $waitPath -LogRoot (Join-Path $runRoot 'logs') -HostStatePath $hostStatePath
+      -CompletionPath $completionPath -WaitPath $waitPath -LogRoot (Join-Path $runRoot 'logs') -HostStatePath $hostStatePath -Package $package
     }
     Set-WorkflowStage completion
     $wait=Get-Content -LiteralPath $waitPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
@@ -648,8 +669,8 @@ function Invoke-RunArtifactWorkflow {
       'manifest_extra_fields','writer_completion','exception')
     if($powershellOwner){
       $completionFields+=@('resource_usage_paths','resource_profile')
-      if($completion.Contains('execution_alias')){$completionFields+='execution_alias'}
     }
+    if($completion.Contains('execution_alias')){$completionFields+='execution_alias'}
     Assert-WorkflowFields $completion $completionFields 'Workflow completion'
     if($null-ne$completion.exception){$result.exception=$completion.exception}
     if($completion.schema_version-ne1-or$completion.role-cne'run_artifact_workflow_completion'-or
@@ -746,7 +767,7 @@ function Invoke-RunArtifactWorkflow {
     $expectedReason=if($request.package.retention_class-eq'compact'){$null}else{$request.package.retention_reason}
     if($finalConfig.artifact_retention.reason-cne$expectedReason){throw 'Workflow frozen retention reason differs.'}
     $writersConfirmed=$true
-    if($powershellOwner-and$completion.Contains('execution_alias')){
+    if($completion.Contains('execution_alias')){
       $alias=$completion.execution_alias
       Assert-WorkflowFields $alias @('path','target_directory') 'Execution alias cleanup'
       if($alias.path-isnot[string]-or$alias.target_directory-isnot[string]-or
@@ -905,6 +926,10 @@ function Invoke-RunArtifactWorkflow {
   $result.writers_confirmed=$writersConfirmed
   Set-WorkflowStage
   $result.elapsed_seconds=$timingBoundary.seconds
+  if($null-ne$completion-and$completion.Contains('summary')-and$completion.summary-is[Collections.IDictionary]-and
+     $completion.summary.Contains('native_path_preparation')){
+    $result.native_path_preparation=$completion.summary.native_path_preparation
+  }
   if($powershellOwner){
     $summaryFields=if($null-ne$completion-and$completion.Contains('summary')-and$completion.summary-is[Collections.IDictionary]){$completion.summary}else{@{}}
     $result.execution_status=if($null-ne$failure){'finalization_failed'}elseif($summaryFields.Contains('execution_status')){$summaryFields.execution_status}else{$result.status}

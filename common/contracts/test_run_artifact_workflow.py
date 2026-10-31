@@ -185,15 +185,16 @@ Write-Output 'RECEIPTS=PASS'
             self.assertIn("RECEIPTS=PASS", outcome.stdout)
 
     def invoke_fixture(self, root: Path, payload: dict, *, retention: str = "compact", host_state: str | None = None,
-                       observation_failure: bool = False, failure_stage: str | None = None, project: str = PROJECT) -> tuple[dict, Path, Path, subprocess.CompletedProcess[str]]:
+                       observation_failure: bool = False, failure_stage: str | None = None, project: str = PROJECT,
+                       callback_text: str | None = None) -> tuple[dict, Path, Path, subprocess.CompletedProcess[str]]:
         artifacts = root / "artifacts"
         artifacts.mkdir()
         initialize_capacity_ledger(artifacts, objects=[])
         callback = root / "fixture_callback.py"
-        callback.write_text(CALLBACK.replace("REPOSITORY", repr(str(REPO))), encoding="utf-8")
+        callback.write_text((CALLBACK if callback_text is None else callback_text).replace("REPOSITORY", repr(str(REPO))), encoding="utf-8")
         # Minimal fixture namespace for the real initial handshake. Production
         # prepared roots already carry this module in their frozen closure.
-        (root / "common/contracts").mkdir(parents=True)
+        (root / "common/contracts").mkdir(parents=True, exist_ok=True)
         for relative in ("common/host_resource_python.py", "common/contracts/recorded_file_removal.py", "common/contracts/file_identity.py"):
             shutil.copyfile(REPO / relative, root / relative)
         budget = root / "budget.json"
@@ -798,11 +799,62 @@ Write-RunJson -Atomic -Path '{run / 'logs/prepared_wait.json'}' -Value @{{schema
                 self.assertEqual({name: (run / name).read_bytes() for name in expected}, terminal_before)
                 if native_before is not None: self.assertEqual(native_log.read_bytes(), native_before)
 
+    def test_deep_frozen_import_uses_run_execution_cwd_and_durable_recovery(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="workflow-deep-python-") as directory:
+            short = Path(directory)
+            root = short
+            while len(str(root)) <= 280:
+                root = root / "frozen_source_segment"
+            root.mkdir(parents=True)
+            copy_started = time.perf_counter()
+            shutil.copytree(REPO / "common", root / "common", ignore=lambda directory, _names:
+                            {"__pycache__"} | ({"assets"} if Path(directory) == REPO / "common/simion" else set()))
+            copied_bytes = sum(path.stat().st_size for path in (root / "common").rglob("*") if path.is_file())
+            print(json.dumps({"fixture": "deep_frozen_python", "copied_bytes": copied_bytes,
+                              "copy_seconds": time.perf_counter() - copy_started}))
+            self.assertFalse((root / "common/simion/assets").exists())
+            (root / "frozen_dependency.py").write_text("VALUE = 'frozen-only'\n", encoding="utf-8")
+            (root / "frozen_resource.txt").write_text("frozen resource", encoding="utf-8")
+            original = CALLBACK
+            frozen = original.replace("sys.path.insert(0, REPOSITORY)", "from frozen_dependency import VALUE")
+            frozen = frozen.replace("    config = json.loads", "    assert VALUE == 'frozen-only'\n    assert Path(__file__).with_name('frozen_resource.txt').read_text() == 'frozen resource'\n    assert Path.cwd() != Path(__file__).parent\n    config = json.loads", 1)
+            execution = short / "execution"
+            old_execution = os.environ.get("MASS_SPECTROMETRY_EXECUTION_ROOT")
+            os.environ["MASS_SPECTROMETRY_EXECUTION_ROOT"] = str(execution)
+            try:
+                result, run, _, output = self.invoke_fixture(root, {}, callback_text=frozen)
+            finally:
+                if old_execution is None:
+                    os.environ.pop("MASS_SPECTROMETRY_EXECUTION_ROOT", None)
+                else:
+                    os.environ["MASS_SPECTROMETRY_EXECUTION_ROOT"] = old_execution
+            self.assertEqual(output.returncode, 0, output.stdout + output.stderr + str(result))
+            self.assertEqual(result["status"], "success")
+            self.assertTrue(result["execution_alias_removed"])
+            completion = json.loads((run / "results/execution_completion.json").read_text(encoding="utf-8-sig"))
+            self.assertFalse(Path(completion["execution_alias"]["path"]).exists())
+            self.assertEqual(Path(completion["run_config"]["path"]), run / "run_config.json")
+            stats = completion["summary"]["native_path_preparation"]
+            self.assertGreater(stats["calls"], 0)
+            self.assertGreaterEqual(stats["elapsed_seconds"], 0)
+            self.assertEqual(stats["transport_bytes"], 0)
+            self.assertEqual(result["native_path_preparation"], stats)
+            self.assertEqual(json.loads((run / "summary.json").read_text(encoding="utf-8-sig"))["native_path_preparation"], stats)
+            self.assertTrue((root / "frozen_resource.txt").is_file())
+            before = (run / "run_manifest.json").read_bytes()
+            resumed, recovery = self.resume_fixture(root, run)
+            self.assertEqual(recovery.returncode, 0, recovery.stdout + recovery.stderr + str(resumed))
+            self.assertEqual(resumed["status"], "success")
+            self.assertEqual((root / "callback_count.txt").read_text(), "1")
+            self.assertEqual(resumed["native_path_preparation"], stats)
+            self.assertEqual((run / "run_manifest.json").read_bytes(), before)
+
     def test_pure_prepared_process_publishes_once_and_releases_one_lease(self) -> None:
         with tempfile.TemporaryDirectory(prefix="workflow-pure-") as directory:
             result, run, artifacts, output = self.invoke_fixture(Path(directory), {})
             self.assertEqual(output.returncode, 0, output.stdout + output.stderr + str(result))
             self.assertEqual(result["status"], "success")
+            self.assertNotIn("execution_alias_removed", result)
             self.assertNotIn("stopped_payload_receipt", result)
             self.assertTrue(result["writers_confirmed"] and result["terminal_published"] and result["lease_released"])
             manifest = json.loads((run / "run_manifest.json").read_text(encoding="utf-8-sig"))
