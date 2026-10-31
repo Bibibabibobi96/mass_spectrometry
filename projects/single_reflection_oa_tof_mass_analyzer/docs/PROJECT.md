@@ -8,6 +8,12 @@ Paper 1 专用研究准备API的归属与退出条件见[分析说明](../analys
 
 ## 当前状态
 
+2026-10-31 已沿既有 `run_theory --refresh-authorities` 刷新活动 three-zone funnel v1／v2 的
+OA geometry 来源绑定，仅更新该来源的 LF 字节数与 SHA；科学字段和对象外文本均保持不变。
+修复前 CI 41149973792（320.267秒）因 geometry authority byte count 漂移失败；当前两相关模块
+18项纯软件回归通过（16.534秒），覆盖原拒绝漂移与刷新幂等。此为活动作者合同的新鲜度维护，
+不改旧 run／receipt，不执行原生求解，也不提升现有科学资格。
+
 ION 生成入口支持显式 `-PythonExe`，其次使用 `SIMULATION_PYTHON_EXE`，否则使用仓库 Python 3.11 环境；所选文件缺失即拒绝。Candidate 冻结源码时仍将该选择绑定为本次唯一解释器，不在后续运行重新选择。受管进程按真实 worker PID、创建身份、握手、退出和输出排空确认归属；系统 Python 的 worker 与 launcher 同 PID 合法，venv 也可能不同，不能用 PID 不等代替归属证据。
 
 径向紧凑化及结构Candidate的公共owner Result保留在项目scratch的`workflow_results/<run_id>/result.json`；
