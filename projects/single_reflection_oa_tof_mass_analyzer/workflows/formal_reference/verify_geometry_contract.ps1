@@ -263,11 +263,7 @@ Assert-Contains $deliveryBuilder 'if (-not $candidateMode)' 'SIMION formal synch
 Assert-Contains $deliveryBuilder '[switch]$DeferRunFinalization' 'SIMION integrated-run finalization deferral'
 Assert-Contains $deliveryBuilder 'if (-not $candidateMode -or -not $DeferRunFinalization)' 'SIMION managed stage-only admission'
 Assert-Contains $deliveryBuilder 'run_finalization_deferred=$true' 'SIMION stage-only summary identity'
-# COMSOL detector source authority: static wiring only, not native geometry evidence.
-Assert-Contains $comsol "p.set('detector_x', sprintf('%.17g[mm]', contract.coordinate_convention.detector_x)" 'COMSOL direct detector x parameter'
-Assert-Contains $comsol "p.set('detector_z', sprintf('%.17g[mm]', geometryMm.detector_z)" 'COMSOL direct detector z parameter'
-Assert-NotContains $comsol "p.set('detector_x', '-x_accel_center'" 'COMSOL retired mirrored detector x'
-Assert-NotContains $comsol "p.set('detector_z', 'z_accel_grid2+accel_focus_drift'" 'COMSOL retired detector/focus substitution'
+# Detector coordinates are covered by pure resolved geometry / MATLAB loader behavior.
 Assert-Contains $comsol 'contract = load_oatof_contract(contract_path);' 'COMSOL resolved-contract loader'
 Assert-Contains $comsol 'options.ContractPath (1,1) string = ""' 'COMSOL candidate contract option'
 Assert-Contains $comsol "contractPath = string(fullfile(projectRoot, 'config', 'resolved_geometry.json'));" 'COMSOL formal resolved-contract default'

@@ -8,6 +8,10 @@ Paper 1 专用研究准备API的归属与退出条件见[分析说明](../analys
 
 ## 当前状态
 
+2026-10-31 原生保存与后处理拆分后，退役只锁 COMSOL core 文件位置/参数赋值字符串的重复检查；
+探测器显式 x/z 与理论焦面的独立性改由真实纯几何投影行为覆盖，MATLAB resolved loader 与命名入口行为
+仍负责非法坐标、派生矛盾及合同消费拒绝。Formal 合同消费/资产身份门禁保留，不将源码布局通过当作原生或科学资格。
+
 2026-10-31 执行 profile 的职责字段演进后，既有 `sync_geometry_contract` 同步器现同步活动作者表的
 显式 execution profile 来源绑定；只接受固定 `config/execution_profiles.json`，不手填摘要或跳过身份校验。
 已退役 campaign 的状态、执行授权、科学行与旧 run 冻结副本不变；状态查询可用不表示允许重新执行。

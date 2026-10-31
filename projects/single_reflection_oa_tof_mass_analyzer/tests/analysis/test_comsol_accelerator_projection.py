@@ -5,6 +5,7 @@ import copy
 from pathlib import Path
 import unittest
 
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import resolve_contract, resolve_physical_geometry
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_geometry import resolve_accelerator_geometry
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_electrical import resolve_accelerator_electrical_design
 from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_accelerator_electrical import three_zone_fixture, two_zone_fixture
@@ -19,6 +20,20 @@ def source(name):
 
 
 class ComsolAcceleratorProjectionTests(unittest.TestCase):
+    def test_explicit_detector_position_does_not_follow_mirror_or_focus(self):
+        resolved = resolve_contract()
+        resolved["coordinate_convention"]["detector_x"] = 69.01362184380704
+        resolved["geometry_mm"]["detector_z"] = 12.5
+        before = copy.deepcopy(resolved)
+        physical = resolve_physical_geometry(resolved)
+        detector = next(item for item in physical["electrodes"] if item["role"] == "detector")
+        self.assertEqual(detector["geometry"]["base_center_mm"],
+                         [69.01362184380704, 0, 12.5 - resolved["geometry_mm"]["detector_thickness"]])
+        self.assertEqual(physical["detector_active_face"]["center_mm"], [69.01362184380704, 0, 12.5])
+        self.assertNotEqual(69.01362184380704, -resolved["coordinate_convention"]["accelerator_axis_x"])
+        self.assertNotEqual(12.5, resolved["geometry_mm"]["accelerator_focus_z"])
+        self.assertEqual(resolved, before)
+
     def test_existing_three_zone_authorities_supply_actual_ring_positions_and_on_voltages(self):
         resolved=three_zone_fixture()
         before=copy.deepcopy(resolved)
@@ -42,19 +57,7 @@ class ComsolAcceleratorProjectionTests(unittest.TestCase):
         adapter=source("comsol/oatof_build_accelerator_geometry.m")
         self.assertIn("if nargin < 3, interfacePort = struct('enabled',false); end",adapter)
         self.assertIn("'z_accel_grid1',k,'accel_stage2_length',acceleratorRingCount+1",adapter)
-        core=source("comsol/oatof_build_model_core.m")
-        self.assertIn("sprintf('V_grid1*(1-%d/%d)', k,ringDesign.accelerator_count+1)",core)
 
-    def test_named_entry_requires_geometry_and_electrical_as_a_pair_before_model_creation(self):
-        entry=source("comsol/run_oatof_model.m")
-        for name in ("AcceleratorGeometry","AcceleratorElectricalDesign","SideOpening"):
-            self.assertIn("options."+name,entry)
-        core=source("comsol/oatof_build_model_core.m")
-        self.assertLess(core.index("assert(hasGeometry==hasElectrical"),core.index("ModelUtil.create("))
-        self.assertIn("assert(~threeZone || hasGeometry",core)
-        self.assertIn("'square_3d'",core)
-        self.assertIn("contract.rings.accelerator_placement.ring_z_mm",core)
-        self.assertIn("validate_accelerator_projection(acceleratorGeometry,acceleratorElectrical,contract)",core)
 
     def test_common_body_uses_explicit_ring_positions_and_mechanical_hole(self):
         self.assertFalse((OA/"build_two_zone_geometry.m").exists())
@@ -83,15 +86,6 @@ class ComsolAcceleratorProjectionTests(unittest.TestCase):
         self.assertIn(".set('intbnd', true)",grids)
         self.assertIn("geometry.([role '_z_mm'])",grids)
 
-    def test_core_consumes_intermediate_selection_and_declared_ring_voltages(self):
-        core=source("comsol/oatof_build_model_core.m")
-        self.assertIn("gridsel=[acceleratorSelections;gridsel(3:end,:)]",core)
-        self.assertIn("gridDC0.intermediate2='V_intermediate2'",core)
-        self.assertIn("gridRoles={'grid1','intermediate2','grid2','entgrid','midgrid','backplate'}",core)
-        self.assertIn("sprintf('%.17g[V]',electrical.rings(k))",core)
-        self.assertIn("potk.set('V0',sprintf('V_accelring_%d',k))",core)
-        self.assertIn("acceleratorDesign.zone2_length_mm",core)
-        self.assertIn("acceleratorDesign.zone3_length_mm",core)
 
     def test_loader_preserves_total_derivation_and_validates_third_plane_and_source_rule(self):
         loader=source("load_oatof_contract.m")
@@ -111,20 +105,7 @@ class ComsolAcceleratorProjectionTests(unittest.TestCase):
         # Existing two-zone expression remains the distinct physical topology.
         self.assertIn("V_grid1/accel_stage2_length",particle)
 
-    def test_field_design_only_returns_before_any_particle_compute(self):
-        core=source("comsol/oatof_build_model_core.m")
-        branch=core.index("if fieldDesignOnly")
-        self.assertLess(core.index("particle = oatof_configure_particle_model"),branch)
-        self.assertLess(branch,core.index("model.sol('sol2').runAll"))
-        self.assertIn("'particle_solve_performed',false",core[branch:])
-        self.assertIn("modelPath=save_run_model(model,output_model_path,paths)",core[branch:])
 
-    def test_physical_detector_coordinates_are_direct_resolved_inputs(self):
-        core=source("comsol/oatof_build_model_core.m")
-        self.assertIn("p.set('detector_z', sprintf('%.17g[mm]', geometryMm.detector_z)",core)
-        self.assertIn("p.set('detector_x', sprintf('%.17g[mm]', contract.coordinate_convention.detector_x)",core)
-        self.assertNotIn("p.set('detector_z', 'z_accel_grid2+accel_focus_drift'",core)
-        self.assertNotIn("p.set('detector_x', '-x_accel_center'",core)
 
 
 if __name__ == "__main__":

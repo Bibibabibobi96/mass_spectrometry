@@ -38,18 +38,6 @@ class LongitudinalPredictionValidationTests(unittest.TestCase):
         self.assertEqual(metrics["centered_rmse_ns"], 0.0)
         self.assertAlmostEqual(metrics["particlewise_correlation"], 1.0)
 
-    def test_stable_comsol_entry_always_passes_a_resolved_contract(self) -> None:
-        entry = (PROJECT_ROOT / "comsol" / "run_oatof_model.m").read_text(encoding="utf-8")
-        builder = (
-            PROJECT_ROOT / "comsol" / "oatof_build_model_core.m"
-        ).read_text(encoding="utf-8")
-        self.assertIn("config', 'resolved_geometry.json", entry)
-        self.assertIn("char(options.OutputModelPath), char(contractPath)", entry)
-        self.assertIn(
-            "assert(~isempty(contract_path)",
-            builder,
-        )
-        self.assertNotIn("Legacy positional scans", builder)
 
 
 if __name__ == "__main__":

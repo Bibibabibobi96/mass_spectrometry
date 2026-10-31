@@ -32,48 +32,9 @@ class FormalReferenceWorkflowLayoutTests(unittest.TestCase):
                 else:
                     self.assertNotEqual(result.returncode, 0)
 
-    def _detector_source_gate(self, comsol: str) -> subprocess.CompletedProcess:
-        """Execute the actual PowerShell source-binding checks, without native tools."""
-        gate = (PROJECT_ROOT / "workflows/formal_reference/verify_geometry_contract.ps1").read_text(encoding="utf-8")
-        helpers = "\n".join(re.findall(r"(?ms)^function Assert-(?:Not)?Contains\([^\n]*\n.*?^\}", gate))
-        start = gate.index("# COMSOL detector source authority:")
-        stop = gate.index("Assert-Contains $comsol 'contract = load_oatof_contract", start)
-        payload = base64.b64encode(comsol.encode("utf-8")).decode("ascii")
-        script = "$ErrorActionPreference='Stop'\n" + helpers + "\n" + (
-            "$comsol=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + payload + "'))\n"
-        ) + gate[start:stop] + "\n'COMSOL_DETECTOR_SOURCE_AUTHORITY=PASS'\n"
-        return subprocess.run(
-            ["pwsh", "-NoProfile", "-Command", "$ErrorActionPreference='Stop'; & ([scriptblock]::Create([Console]::In.ReadToEnd()))"],
-            input=script, cwd=PROJECT_ROOT,
-            capture_output=True, text=True, encoding="utf-8", timeout=30,
-        )
 
-    def test_detector_source_gate_accepts_direct_resolved_authority(self):
-        core = (PROJECT_ROOT / "comsol/oatof_build_model_core.m").read_text(encoding="utf-8")
-        result = self._detector_source_gate(core)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("COMSOL_DETECTOR_SOURCE_AUTHORITY=PASS", result.stdout)
 
-    def test_detector_source_gate_rejects_mirrored_x_and_focus_z_drift(self):
-        core = (PROJECT_ROOT / "comsol/oatof_build_model_core.m").read_text(encoding="utf-8")
-        replacements = (
-            ("sprintf('%.17g[mm]', contract.coordinate_convention.detector_x)", "'-x_accel_center'"),
-            ("sprintf('%.17g[mm]', geometryMm.detector_z)", "'z_accel_grid2+accel_focus_drift'"),
-        )
-        for direct, stale in replacements:
-            with self.subTest(stale=stale):
-                self.assertIn(direct, core)
-                result = self._detector_source_gate(core.replace(direct, stale))
-                self.assertNotEqual(result.returncode, 0)
-                self.assertNotIn("COMSOL_DETECTOR_SOURCE_AUTHORITY=PASS", result.stdout)
 
-    def test_detector_source_gate_rejects_legacy_override_after_direct_assignment(self):
-        core = (PROJECT_ROOT / "comsol/oatof_build_model_core.m").read_text(encoding="utf-8")
-        for override in ("p.set('detector_x', '-x_accel_center');", "p.set('detector_z', 'z_accel_grid2+accel_focus_drift');"):
-            with self.subTest(override=override):
-                result = self._detector_source_gate(core + "\n" + override)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertNotIn("COMSOL_DETECTOR_SOURCE_AUTHORITY=PASS", result.stdout)
 
     def test_single_formal_cli_has_explicit_phases_and_serializes_solvers(self):
         runner = (
