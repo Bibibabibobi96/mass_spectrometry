@@ -58,6 +58,218 @@ class IdealSourceComparisonTests(unittest.TestCase):
         np.testing.assert_allclose(wide.source_x_mm-self.spec.center_x_mm, 2*(large.source_x_mm-self.spec.center_x_mm), atol=1e-15)
         np.testing.assert_array_equal(wide.residual_m_per_s, 2*large.residual_m_per_s)
 
+    def legacy_ideal_parent(self, root):
+        from common.contracts.capacity_ledger import initialize_capacity_ledger
+        from common.contracts.write_run_manifest import publish_run_manifest
+        project = Path(run_comparison.PROJECT_ROOT)
+        config = json.loads((project / "config/experiments/ideal_source_comparison.json").read_text(encoding="utf-8"))
+        config["sampling"] = {"particle_count": 31, "replicate_count": 1}
+        config["residual_scan"]["residual_sigma_m_per_s"] = [1.0, 3.0]
+        config["width_scan"]["residual_sigma_m_per_s"] = [3.0]
+        config["width_scan"]["full_widths_mm"] = [1.0]
+        config["scope"] = "Pure Python legacy projection fixture; no solver or scientific qualification"
+        config_path = root / "experiment.json"
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        artifact_root = root / "artifacts/projects" / project.name
+        artifact_root.mkdir(parents=True)
+        initialize_capacity_ledger(artifact_root.parents[1], objects=[])
+        parent = artifact_root / "runs/20261031_150100__analysis__python__legacy-ideal"
+        (parent / "inputs").mkdir(parents=True)
+        (parent / "results").mkdir()
+        inputs = run_comparison._inputs(config_path)
+        original_entrypoint = Path(__file__).with_name("test_support") / "legacy_ideal_source_producer.py"
+        old_inputs = {name: path for name, path in inputs.items() if name != "numerical_case"}
+        old_inputs["entrypoint"] = original_entrypoint
+        hashes, frozen = {}, {}
+        for name, source in old_inputs.items():
+            destination = parent / "inputs" / (name + source.suffix)
+            destination.write_bytes(source.read_bytes())
+            hashes[name] = file_sha256(destination)
+            frozen[name] = str(destination)
+        identity = run_comparison._digest({"inputs": hashes, "seed": 73, "python": run_comparison.platform.python_version(),
+            "numpy": np.__version__, "scipy": run_comparison.scipy.__version__})
+        config_document = {"schema_version": 2, "run_id": parent.name, "project": project.name, "mode": "ideal_source_comparison",
+            "inputs": frozen, "input_sha256": hashes, "numerical_identity": identity, "run_instance": {"seed": 73, "resume_from": None},
+            "artifact_retention": {"policy_version": 1, "class": "compact", "reason": None}}
+        (parent / "run_config.json").write_text(json.dumps(config_document), encoding="utf-8")
+        cases = run_comparison.build_case_plan(config, 73)
+        points = run_comparison._working_points(config)
+        settings = run_comparison._settings(Path(frozen["analysis_contract"]))
+        for case in cases:
+            document = run_comparison._run_case(case, config, points, settings, parent / "results")
+            document["identity"] = identity
+            document["record_sha256"] = run_comparison._digest(document)
+            (parent / "results" / (case["case_id"] + ".json")).write_text(json.dumps(document), encoding="utf-8")
+        (parent / "summary.json").write_text(json.dumps({"role": "ideal_source_comparison_summary", "status": "success",
+            "completed_cases": len(cases), "planned_cases": len(cases)}), encoding="utf-8")
+        outputs = [path for path in parent.rglob("*") if path.is_file() and path.name != "run_config.json"]
+        publish_run_manifest(parent / "run_config.json", "success", output_paths=outputs)
+        return artifact_root, parent, config_path, cases
+
+    def test_legacy_numeric_csv_is_referenced_through_public_source_owner_without_resampling(self):
+        from common.contracts.capacity_protection import load_capacity_protection_leases
+        import os
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            host_state = (os.environ["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"]
+                          if os.environ.get("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN") else str(root / "host.json"))
+            artifact_root, parent, config_path, cases = self.legacy_ideal_parent(root)
+            before = {path: path.read_bytes() for path in parent.rglob("*") if path.is_file()}
+            command = run_comparison._command
+            expected_context = {}
+            def transported(arguments, **kwargs):
+                if arguments[0] == "git":
+                    return "isolated-source-fixture"
+                if arguments[0] == "pwsh.exe":
+                    for field, variable in (("artifact_root", "MASS_SPECTROMETRY_ARTIFACT_ROOT"),
+                                            ("execution_root", "MASS_SPECTROMETRY_EXECUTION_ROOT"),
+                                            ("host_resource_state_path", "MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH")):
+                        value = expected_context[field].replace("'", "''")
+                        self.assertIn("$env:" + variable + "='" + value + "'", arguments[-1])
+                return command(arguments, **kwargs)
+            analysis = run_comparison._legacy_csv_analysis
+            checked = []
+            def protected_analysis(*args):
+                from common.contracts.write_run_manifest import publish_run_manifest
+                active = load_capacity_protection_leases(artifact_root.parents[1])
+                self.assertIn(parent.resolve(), active["protected_paths"])
+                self.assertEqual(active["committed_new_bytes"], 0)
+                if not checked:
+                    with self.assertRaisesRegex(ValueError, "already published terminal"):
+                        publish_run_manifest(parent / "run_config.json", "failed")
+                    checked.append(True)
+                return analysis(*args)
+            with patch.object(run_comparison, "_legacy_csv_analysis", side_effect=protected_analysis), \
+                    patch.object(run_comparison, "_command", side_effect=transported), \
+                    patch.object(run_comparison, "_run_case", side_effect=AssertionError("old complete cases must not be propagated or resampled")), \
+                    patch.object(run_comparison, "export_comparison_figures"), \
+                    patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH": host_state,
+                                            "MASS_SPECTROMETRY_ARTIFACT_ROOT": str(artifact_root.parents[1])}):
+                expected_context.update(run_comparison.resolve_workspace_paths(run_comparison.REPO_ROOT))
+                child = run_comparison.execute(config_path, seed=73,
+                    run_id="20261031_150200__analysis__python__legacy-projected", resume_from=parent, artifact_root=artifact_root)
+                descendant = run_comparison.execute(config_path, seed=73,
+                    run_id="20261031_150300__analysis__python__legacy-descendant", resume_from=child, artifact_root=artifact_root)
+                self.assertEqual(json.loads((descendant / "summary.json").read_text(encoding="utf-8"))["reused_cases"], len(cases))
+            summary = json.loads((child / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["status"], "success", summary)
+            self.assertEqual(summary["reused_cases"], len(cases))
+            child_config = json.loads((child / "run_config.json").read_text(encoding="utf-8"))
+            self.assertTrue(child_config["source_references"])
+            self.assertEqual(child_config["paths"]["artifact_root"], str(artifact_root.parents[1]))
+            proof = json.loads(Path(child_config["inputs"]["legacy_numerical_projection"]).read_text(encoding="utf-8"))
+            self.assertEqual(proof["execution_context"], child_config["paths"])
+            self.assertEqual(child_config["paths"]["host_resource_state_path"], str(Path(host_state).resolve()))
+            for case in cases:
+                document = json.loads((child / "results" / (case["case_id"] + ".json")).read_text(encoding="utf-8"))
+                self.assertEqual(Path(document["particles"]["path"]).parent, parent / "results")
+                self.assertFalse((child / "results" / Path(document["particles"]["path"]).name).exists())
+                self.assertIn(case["case_id"], child_config["legacy_external_case_inputs"])
+            self.assertEqual(before, {path:path.read_bytes() for path in parent.rglob("*") if path.is_file()})
+            protection = load_capacity_protection_leases(artifact_root.parents[1])
+            self.assertFalse(protection["protected_paths"])
+
+    def test_legacy_reference_rejects_unmanaged_target_before_capacity_or_source_reads(self):
+        import os
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            parent = root / "parent"
+            parent.mkdir()
+            (parent / "run_config.json").write_text('{"inputs":{},"input_sha256":{}}', encoding="utf-8")
+            (parent / "run_manifest.json").write_text('{}', encoding="utf-8")
+            before = {path: path.read_bytes() for path in parent.iterdir()}
+            with patch.dict(os.environ, {"MASS_SPECTROMETRY_ARTIFACT_ROOT": str(root / "selected")}), \
+                    patch.object(run_comparison, "_command") as command:
+                with self.assertRaisesRegex(ValueError, "selected managed project artifact root"):
+                    with run_comparison._legacy_source_protection(parent, root / "arbitrary-target",
+                            "20261031_152000__analysis__python__legacy-unmanaged"):
+                        self.fail("unmanaged target was accepted")
+                command.assert_not_called()
+            self.assertEqual(before, {path: path.read_bytes() for path in parent.iterdir()})
+            self.assertFalse((root / "arbitrary-target").exists())
+
+    def test_legacy_ideal_projection_rejects_unproven_inputs_environment_settings_and_owner(self):
+        from common.contracts.write_run_manifest import build_run_manifest, file_record
+        from common.contracts.capacity_protection import load_capacity_protection_leases
+        import os
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            host_state = (os.environ["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"]
+                          if os.environ.get("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN") else str(root / "host.json"))
+            artifact_root, parent, config_path, cases = self.legacy_ideal_parent(root)
+            originals = {path:path.read_bytes() for path in parent.rglob("*") if path.is_file()}
+            command = run_comparison._command
+            def transported(arguments, **kwargs):
+                return "fixture" if arguments[0] == "git" else command(arguments, **kwargs)
+            with patch.object(run_comparison, "_command", side_effect=transported), \
+                    patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH": host_state,
+                                            "MASS_SPECTROMETRY_ARTIFACT_ROOT": str(artifact_root.parents[1])}):
+                with run_comparison._legacy_source_protection(parent, artifact_root,
+                        "20261031_151000__analysis__python__legacy-proof-checks") as protection:
+                    identities = {name:file_sha256(path) for name,path in run_comparison._inputs(config_path).items()}
+                    for scenario in ("missing_source", "environment", "changed_generator", "unbound_input"):
+                        with self.subTest(scenario=scenario):
+                            original_config = json.loads((parent / "run_config.json").read_text(encoding="utf-8"))
+                            if scenario == "missing_source":
+                                Path(original_config["inputs"]["entrypoint"]).unlink()
+                            elif scenario == "environment":
+                                original_config["numerical_identity"] = "unproven historical environment"
+                                (parent / "run_config.json").write_text(json.dumps(original_config), encoding="utf-8")
+                            elif scenario == "changed_generator":
+                                path = Path(original_config["inputs"]["entrypoint"])
+                                content = path.read_text(encoding="utf-8")
+                                self.assertEqual(content.count('full_width_mm=case["full_width_mm"]'), 1)
+                                path.write_text(content.replace('full_width_mm=case["full_width_mm"]', 'full_width_mm=0.5'), encoding="utf-8")
+                                original_config["input_sha256"]["entrypoint"] = file_sha256(path)
+                                original_config["numerical_identity"] = run_comparison._digest({"inputs":original_config["input_sha256"], "seed":73,
+                                    "python":run_comparison.platform.python_version(), "numpy":np.__version__, "scipy":run_comparison.scipy.__version__})
+                                (parent / "run_config.json").write_text(json.dumps(original_config), encoding="utf-8")
+                            paths = [path for path in parent.rglob("*") if path.is_file() and path.name not in {"run_config.json", "run_manifest.json"}]
+                            if scenario == "missing_source":
+                                # Keep the original binding to expose the missing frozen producer.
+                                manifest = json.loads(originals[parent / "run_manifest.json"])
+                            else:
+                                manifest = build_run_manifest(parent / "run_config.json", "success", output_paths=paths)
+                            if scenario == "unbound_input":
+                                missing = Path(original_config["inputs"]["analysis_contract"])
+                                manifest["inputs"] = {name:record for name,record in manifest["inputs"].items() if Path(record["path"]) != missing}
+                                manifest["outputs"] = [record for record in manifest["outputs"] if Path(record["path"]) != missing]
+                            (parent / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+                            protection["source_reference"]["manifest_record"] = file_record(parent / "run_manifest.json")
+                            before = {path:path.read_bytes() for path in parent.rglob("*") if path.is_file()}
+                            with self.assertRaises((ValueError, AssertionError, OSError)):
+                                run_comparison._legacy_ideal_projection(parent, identities, 73, "ideal_source_comparison", protection)
+                            self.assertEqual(before, {path:path.read_bytes() for path in parent.rglob("*") if path.is_file()})
+                            for path,content in originals.items():
+                                path.write_bytes(content)
+                    document = json.loads((parent / "results" / (cases[0]["case_id"] + ".json")).read_text(encoding="utf-8"))
+                    bad = AnalysisSettings(grid_points=203, bandwidth_multiplier=1.25)
+                    with self.assertRaisesRegex(ValueError, "frozen analysis contract"):
+                        run_comparison._legacy_csv_analysis(parent, document, json.loads(config_path.read_text(encoding="utf-8")), bad)
+                for scenario in ("unfinished_journal", "active_writer", "missing_owner"):
+                    with self.subTest(scenario=scenario):
+                        if scenario == "unfinished_journal":
+                            (parent / ".run_terminal_publication.json").write_text("{}", encoding="utf-8")
+                        elif scenario == "active_writer":
+                            manifest = json.loads(originals[parent / "run_manifest.json"])
+                            manifest.update(status="interrupted", lifecycle_state="provisional")
+                            (parent / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+                        else:
+                            manifest = json.loads(originals[parent / "run_manifest.json"])
+                            config = json.loads(originals[parent / "run_config.json"])
+                            config["project"] = "another-owner"
+                            (parent / "run_config.json").write_text(json.dumps(config), encoding="utf-8")
+                            manifest["run_config"] = file_record(parent / "run_config.json")
+                            (parent / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+                        with self.assertRaises((RuntimeError, ValueError)):
+                            with run_comparison._legacy_source_protection(parent, artifact_root,
+                                    "20261031_151100__analysis__python__legacy-rejected-owner"):
+                                self.fail("unproved parent must be rejected before any CSV is read")
+                        (parent / ".run_terminal_publication.json").unlink(missing_ok=True)
+                        for path,content in originals.items():
+                            path.write_bytes(content)
+            self.assertFalse(load_capacity_protection_leases(artifact_root.parents[1])["protected_paths"])
+
     def test_resume_retains_numeric_cases_after_plot_or_report_change_but_rejects_numeric_change(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -454,9 +454,23 @@ COMSOL／SIMION 阶段失效；编排入口的报告或收尾文字变化可复�
 
 理想源比较将实际 `_settings`、工作点和传播执行移到 `numerical_case.py`；entrypoint 与 plot
 保留来源但不再作为数值等价依赖。三类既有比较 role 从本 run 的冻结 analysis contract 核验并读取一次，将不可变 settings 显式传给 case／worker，后续不回读活动合同。完成 case 经原 checkpoint 与 CSV 身份核验后复用，数值源
-变化仍拒绝；旧 run 缺新窄实现身份明确受阻，不修改原 run 或伪造等价证书。
+变化仍拒绝；旧 run 缺新窄实现身份时仅沿下述充分冻结证据派生，不修改原 run 或伪造等价证书。
 
-现代窄依赖切换是独立软件主题；充分旧证据的新 run 投影仍是必要后续，尚未闭合整个科学复用工作包。
+旧基本 `ideal_source_comparison` 可从原 `--resume-from` 入口派生新的只读引用运行：只接受原冻结源码／完整输入、版本环境 identity、终态及每个 checkpoint／完整母群 CSV 均充分的已知 producer。旧 `_settings()` 曾读取活动路径，故每个复用 case 另用父冻结分析合同从原 CSV 精确重验已有峰形指标，不以今日默认值追认。原 CSV 作为显式绝对 input 与原 owner 的 `SourceReferences` 保存，不复制、不改行、不重采样；当前 case 数值实现身份保持不变，旧源码见证明确不是新执行实现。
+
+读取与后继运行沿现有共享 terminal guard、原 owner 保护租约及释放／续租；后继只回到同一明确原 owner 验证，不递归猜历史格式。缺 source／版本环境／输入／owner、未完成 journal 或未封存 writer 均前置拒绝；CSV 不能重现冻结设置指标时保留原数据并报告重分析所需，不伪称旧科学结果已经确认。引用 session 的旧 CSV 新载荷为零；这不宣称原纯分析 workflow 已新增完整存储预算机制。历史 slope-scan／acceptance-theory 旧格式及未证明字节码不在此转换范围。
+
+现代窄依赖与已知旧格式转换分别保留证据；其他未证明 producer 仍明确拒绝，不据此宣称任意旧结果或整个 Goal 已完成。
+
+### 已知旧 Candidate 阶段的派生复用
+
+当前项目投影只接受原公共 owner 已封存的已知 inline producer：原 manifest 必须绑定完整源码、执行 request、原规划与运行阶段参数／环境、独立成功 receipt、完整输出以及公共 writer completion。新 child 逐阶段证明旧命令构造与当前对应 solver 模块等价，再保留明确标为“原生成实现见证、不是本次执行实现”的旧字节、完整现代 context 和推导来源，沿原公共 strict matcher 复用。缺证据、科学实现／输入漂移或未知 writer 明确阻断；父终态不改写，不通过删键或今日默认值追认。
+
+合法CPython缓存沿现`derive_candidate_source_closure(..., embedded_candidate_plan=True)`消费原manifest绑定的`candidate_workflow_plan.json.execution_source_closure`；容器role／身份必须属于原Candidate run，原root仍用于全部generator、dispatch和receipt证明，干净派生闭包只进入新run证据，不执行历史源码或缓存。普通strict verifier不放宽；无绑定、未知extra或损坏缓存继续拒绝。默认独立closure消费者（补偿）保持原合同。
+
+纯软件回归覆盖 COMSOL 前缀及全部三阶段的派生复用、九项主要负例；未新启动商业工具或授予科学资格。旧 owner 必须仍具有原冻结 dispatch plan 和其来源路径；本格式的派生 child 没有原生成功 receipt，后继须显式选择原真正 stage owner，当前不建立递归兼容层。理想源旧比较的转换另行验证，不能据此宣称整个旧结果复用工作包已关闭。
+
+当前公共GATE下的五方法联合首轮保留FAIL（76.055秒）：两个Candidate实际旧owner／缓存消费者、未受管目标拒绝及默认补偿闭包通过，Ideal正例因夹具保留父token却改选资源DB被正确拒绝。修正夹具保留实际同一hoststate，并显式运输一次解析的artifact／execution／hoststate后，仅该失败正例补验通过（19.693秒）；原父数据与完成事实不改写，未重复已绿方法或新增原生调用。
 
 ### 冻结 Lua 原生路径运输
 
@@ -500,3 +514,5 @@ producer返回原生完成receipt和实际Program/ION/IOB绑定；补偿与candi
 运行和恢复命令见[分析API](../analysis/README.md#反射器电压补偿运行与恢复)。
 
 本次公共路径、异常和跨根Result修订以软件行为验收：首轮44项联合运行保留FAIL（52.841秒），其中未受夹具修订影响的28项通过；修正临时仓库Python绑定及旧路径夹具后，两模块16项补验通过（66.344秒）。释放失败保留对象形式的主异常和独立次错，原CLI按原Result定位冻结根恢复，不重飞。上述20261030原生记录仅支持各自冻结实现，不自动变成本次新源码的原生或科学资格。
+
+旧理想比较的reference-only恢复仅写入公共路径上下文选定的`projects/<本项目>`受管目录；`MASS_SPECTROMETRY_ARTIFACT_ROOT`可选择非默认短根。每个新run冻结本次实际paths，运行内不重读环境默认。此新legacy分支不把任意Python API输出目录自动当容量owner；未受管目标在租约/CSV读取前明确拒绝，普通非legacy API行为不变。跨根来源仍要求公共SourceReferences已有充分冻结capacity-owner证据；无该证据的旧源不按目录猜根。

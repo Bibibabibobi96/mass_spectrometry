@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import ast
+import copy
 import os
 import shutil
 import subprocess
@@ -49,6 +51,88 @@ from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.
     execute_stage,
     run_candidate_workflow,
 )
+
+
+def inline_legacy_candidate_freezer(freeze, *, omit_scientific_source=False):
+    """Materialize the known old inline producer as bound inert fixture evidence."""
+    def frozen(*args, **kwargs):
+        closure = freeze(*args, **kwargs)
+        code = Path(closure["code_root"])
+        directory = code / "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate"
+        source_path = directory / "run_candidate_workflow.py"
+        tree = ast.parse(source_path.read_text(encoding="utf-8"))
+        native_witness = Path(__file__).with_name("test_support") / "legacy_candidate_native_owner.py"
+        old_native = next(node for node in ast.parse(native_witness.read_text(encoding="utf-8")).body
+                          if isinstance(node, ast.FunctionDef) and node.name == "_run_managed_stage_command")
+        def function(parsed, name):
+            return copy.deepcopy(next(n for n in parsed.body if isinstance(n, ast.FunctionDef) and n.name == name))
+        execute = function(tree, "execute_stage")
+        # Exact legacy dispatch prefix; no old Python is imported or executed.
+        prefix = ast.parse('stage_id = stage["stage_id"]\nif stage_id == "simion_candidate" and stage.get("status") == "blocked_requires_explicit_nonformal_template":\n    raise RuntimeError("candidate SIMION stage is blocked until an explicit non-Formal template is frozen")\nclosure = plan.get("execution_source_closure")\nif closure is not None:\n    verify_candidate_source_closure(closure)\nrun_root = Path(plan["run_root"])\nlogs = run_root / "logs"\n').body
+        branches = {n.test.comparators[0].value: n for n in execute.body if isinstance(n, ast.If)
+                    and isinstance(n.test, ast.Compare) and isinstance(n.test.left, ast.Name)
+                    and n.test.left.id == "stage_id" and isinstance(n.test.comparators[0], ast.Constant)}
+        extra = []
+        transport = ast.parse((directory / "candidate_stage_execution.py").read_text(encoding="utf-8"))
+        for name in ("_powershell", "_require_pass_report"):
+            extra.append(function(transport, name))
+        for kind in ("comsol", "simion", "cad"):
+            module = ast.parse((directory / f"candidate_{kind}_stage.py").read_text(encoding="utf-8"))
+            stage = function(module, f"execute_{kind}_stage")
+            if kind == "simion":
+                extra.append(function(module, "_nonformal_template"))
+                start = next(i for i,n in enumerate(stage.body) if isinstance(n, ast.Assign)
+                             and isinstance(n.targets[0], ast.Name) and n.targets[0].id == "template")
+            else:
+                start = next(i for i,n in enumerate(stage.body) if isinstance(n, ast.If)
+                             and ast.unparse(n.test) == "closure is None")
+            if kind == "comsol":
+                extra.append(function(module, "_report_value"))
+            condition = ast.parse(f'if stage_id == "{kind}_candidate":\n    pass').body[0]
+            condition.body = stage.body[start:]
+            branches[kind + "_candidate"] = condition
+        execute.body = prefix + [branches[name] for name in ("static_inputs", "comsol_candidate", "simion_candidate", "cad_candidate", "structural_acceptance")]
+        execute.body.append(ast.parse('raise ValueError(f"unsupported candidate workflow stage: {stage_id}")').body[0])
+        updated = []
+        for node in tree.body:
+            if isinstance(node, ast.FunctionDef):
+                if node.name.startswith("_legacy_") or node.name == "_project_legacy_stage_contexts":
+                    continue
+                if node.name == "execute_stage":
+                    node = execute
+                if node.name == "_run_managed_stage_command":
+                    node = copy.deepcopy(old_native)
+                if node.name == "_execute_candidate_stages":
+                    for nested in ast.walk(node):
+                        for field, value in ast.iter_fields(nested):
+                            if isinstance(value, list):
+                                setattr(nested, field, [item for item in value if not (
+                                    isinstance(item, ast.Assign) and isinstance(item.value, ast.Call)
+                                    and isinstance(item.value.func, ast.Name) and item.value.func.id == "_project_legacy_stage_contexts")])
+            if isinstance(node, ast.ImportFrom) and "candidate_stage_execution" in (node.module or ""):
+                continue
+            if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name) and node.targets[0].id == "STAGE_SOURCE_PREFIXES":
+                prefixes = ast.literal_eval(node.value)
+                for name, values in prefixes.items():
+                    prefixes[name] = tuple(value for value in values if not value.endswith(("candidate_stage_execution.py", f"candidate_{name.split('_')[0]}_stage.py"))) + (
+                        "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_workflow.py",)
+                node.value = ast.parse(repr(prefixes), mode="eval").body
+            updated.append(node)
+        tree.body = updated + extra
+        source_path.write_text(ast.unparse(ast.fix_missing_locations(tree)) + "\n", encoding="utf-8", newline="\n")
+        removed = {"candidate_stage_execution.py", "candidate_comsol_stage.py", "candidate_simion_stage.py", "candidate_cad_stage.py"}
+        kept = []
+        for record in closure["sources"]:
+            path = code / record["source_id"]
+            if path.name in removed or (omit_scientific_source and record["source_id"] == "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_model_core.m"):
+                path.unlink()
+            else:
+                record.update(bytes=path.stat().st_size, sha256=sha256(path))
+                kept.append(record)
+        closure["sources"] = kept
+        verify_candidate_source_closure(closure)
+        return closure
+    return frozen
 
 
 class CandidateDesignTests(unittest.TestCase):
@@ -2252,6 +2336,209 @@ def execute_prepared_run(*args):
                 load_json(run_root / "run_config.json")["inputs"],
             )
             self.assertEqual(verify_project(artifact_root), (2, 0))
+
+    def legacy_inline_parent(self, root, *, omit_scientific_source=False):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis import prepare_candidate_run as preparation
+        freeze = preparation.freeze_candidate_source_closure
+        with mock.patch.object(preparation, "freeze_candidate_source_closure", side_effect=inline_legacy_candidate_freezer(freeze, omit_scientific_source=omit_scientific_source)):
+            _, parent_plan_path = self.native_workflow_plan(root, "20260727_190100")
+        original_plan = load_json(parent_plan_path)
+        execute = self.native_fake_executor([])
+        def parent_executor(stage, plan, executable):
+            evidence = execute(stage, plan, executable)
+            if stage["stage_id"] == "comsol_candidate":
+                for name in ("analysis_request", "analysis_receipt"):
+                    path = Path(plan["run_root"]) / "results" / ("inert_" + name + ".dat")
+                    path.write_text("inert software witness; not solver output\n", encoding="utf-8")
+                    evidence[name] = str(path)
+            if stage["stage_id"] == "structural_acceptance":
+                owner = Path(plan["run_root"])
+                old_code = Path(plan["execution_source_closure"]["code_root"])
+                entrypoint = old_code / "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_workflow.py"
+                request_path = owner / "inputs/execution_request.json"
+                request = {"schema_version": 1, "role": "run_artifact_workflow_request",
+                    "package": {"project": "single_reflection_oa_tof_mass_analyzer", "run_id": owner.name,
+                        "mode": "design_candidate", "artifact_project_root": str(owner.parent.parent)},
+                    "prepared": {"module": "projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow",
+                        "function": "execute_prepared_run", "import_root": str(old_code), "entrypoint": terminal_publication.file_record(entrypoint)},
+                    "payload": {"plan": terminal_publication.file_record(parent_plan_path)}}
+                request_path.write_text(json.dumps(request), encoding="utf-8")
+                plan["context_sha256"] = sha256(request_path).lower()
+                (owner / "candidate_workflow_plan.json").write_text(json.dumps(plan), encoding="utf-8")
+                config_path = owner / "run_config.json"
+                config = load_json(config_path)
+                config.update(schema_version=2, artifact_retention={"policy_version": 1, "class": "solver_review", "reason": "inert legacy projection fixture"})
+                config["inputs"]["execution_request"] = str(request_path)
+                config["input_sha256"]["execution_request"] = sha256(request_path)
+                config_path.write_text(json.dumps(config), encoding="utf-8")
+                # Explicit inert transport facts: software proof fixture, not native scientific evidence.
+                completion = {"schema_version": 1, "role": "run_artifact_workflow_completion", "run_id": owner.name,
+                    "project": "single_reflection_oa_tof_mass_analyzer", "status": "success",
+                    "execution_request": terminal_publication.file_record(request_path),
+                    "run_config": terminal_publication.file_record(config_path),
+                    "summary": {"run_id": owner.name, "status": "success", "stages": [*plan["stage_results_so_far"],
+                        {"stage_id": "structural_acceptance", "status": "success", "execution": "executed", "evidence": evidence}]},
+                    "output_paths": [str(path) for path in owner.rglob("*") if path.is_file()],
+                    "required_output_paths": [value for result in [*plan["stage_results_so_far"], {"evidence": evidence}]
+                        for value in result.get("evidence", {}).values()],
+                    "retention_preserve_paths": [], "manifest_extra_fields": {"lifecycle_state": "terminal", "promotion_authorized": False,
+                        "execution_source_closure": plan["execution_source_closure"]}, "exception": None,
+                    "writer_completion": {"operations": [{"operation_id": name + ".fixture",
+                        "observation": {"exit_confirmed": True, "returncode": 0}, "resource_release_id": name}
+                        for name in ("comsol_build_completion", "comsol_sync_completion", "simion_build_completion", "simion_flight_completion", "cad_completion")],
+                        "resource_releases": [{"release_id": name, "completion_receipt": {"host_release": {
+                            "inherited": False, "token": name, "result": {"status": "released", "token": name}, "error": None}}}
+                            for name in ("comsol_build_completion", "comsol_sync_completion", "simion_build_completion", "simion_flight_completion", "cad_completion")]}}
+                (owner / "results/execution_completion.json").write_text(json.dumps(completion), encoding="utf-8")
+            return evidence
+        old_source = Path(original_plan["execution_source_closure"]["code_root"]) / "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_workflow.py"
+        old_prefixes = ast.literal_eval(next(node.value for node in ast.parse(old_source.read_text(encoding="utf-8")).body
+            if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name) and node.targets[0].id == "STAGE_SOURCE_PREFIXES"))
+        with mock.patch.object(candidate_workflow, "STAGE_SOURCE_PREFIXES", old_prefixes):
+            parent, _ = run_candidate_workflow(parent_plan_path, sys.executable, stage_executor=parent_executor)
+        return parent
+
+    def test_legacy_inline_owner_projects_into_child_without_native_or_parent_changes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            parent = self.legacy_inline_parent(root)
+            before = {p: p.read_bytes() for p in parent.rglob("*") if p.is_file()}
+            _, child_plan = self.native_workflow_plan(root, "20260727_190200")
+            observed = []
+            child, summary = run_candidate_workflow(child_plan, sys.executable, stage_executor=self.native_fake_executor(observed),
+                reuse_parent=parent, reuse_through="comsol_candidate")
+            self.assertEqual(observed, ["static_inputs", "simion_candidate", "cad_candidate", "structural_acceptance"])
+            self.assertEqual(summary["status"], "success")
+            proof = load_json(child / "inputs/stage_contexts/legacy_projection/projection.json")
+            self.assertIn("not executed", proof["source_witness_semantics"])
+            self.assertIn("comsol_candidate", proof["actual_modern_contexts"])
+            self.assertEqual(before, {p: p.read_bytes() for p in before})
+            _, full_plan = self.native_workflow_plan(root, "20260727_190300")
+            observed = []
+            full, full_summary = run_candidate_workflow(full_plan, sys.executable, stage_executor=self.native_fake_executor(observed),
+                reuse_parent=parent, reuse_through="cad_candidate")
+            self.assertEqual(observed, ["static_inputs", "structural_acceptance"])
+            self.assertEqual([stage["stage_id"] for stage in full_summary["stages"] if stage["execution"] == "reused"],
+                ["comsol_candidate", "simion_candidate", "cad_candidate"])
+            self.assertEqual(before, {p: p.read_bytes() for p in before})
+
+    def test_legacy_bound_cache_uses_real_embedded_plan_derivation_and_rejects_damage(self):
+        import py_compile
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            parent = self.legacy_inline_parent(root)
+            old_plan = load_json(parent / "candidate_workflow_plan.json")
+            source = Path(old_plan["execution_source_closure"]["code_root"]) / "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_workflow.py"
+            cache = Path(py_compile.compile(str(source), doraise=True))
+            manifest_path = parent / "run_manifest.json"
+            manifest = load_json(manifest_path)
+            manifest["outputs"].append(terminal_publication.file_record(cache))
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            before = {path: path.read_bytes() for path in parent.rglob("*") if path.is_file()}
+            _, plan = self.native_workflow_plan(root, "20260727_191200")
+            observed = []
+            child, summary = run_candidate_workflow(plan, sys.executable, stage_executor=self.native_fake_executor(observed),
+                reuse_parent=parent, reuse_through="comsol_candidate")
+            self.assertEqual(summary["status"], "success")
+            self.assertNotIn("comsol_candidate", observed)
+            projection = load_json(child / "inputs/stage_contexts/legacy_projection/projection.json")
+            derivation = load_json(Path(projection["source_derivation"]["path"]))
+            self.assertEqual(derivation["derivation"]["parent_closure_field"], "execution_source_closure")
+            self.assertEqual(Path(derivation["derivation"]["parent_closure"]["path"]), parent / "candidate_workflow_plan.json")
+            self.assertEqual(len(derivation["derivation"]["validated_bytecode"]), 1)
+            self.assertFalse(list(Path(derivation["closure"]["code_root"]).rglob("*.pyc")))
+            self.assertEqual(before, {path: path.read_bytes() for path in before})
+            cache.write_bytes(b"bad!" + cache.read_bytes()[4:])
+            manifest["outputs"][-1] = terminal_publication.file_record(cache)
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            damaged = {path: path.read_bytes() for path in parent.rglob("*") if path.is_file()}
+            _, bad_plan = self.native_workflow_plan(root, "20260727_191300")
+            with self.assertRaisesRegex(candidate_workflow.CandidateWorkflowError, "unsupported parent bytecode header"):
+                run_candidate_workflow(bad_plan, sys.executable, stage_executor=self.native_fake_executor([]),
+                    reuse_parent=parent, reuse_through="comsol_candidate")
+            self.assertEqual(damaged, {path: path.read_bytes() for path in damaged})
+
+    def assert_legacy_rejections(self, scenarios):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis import prepare_candidate_run as preparation
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            parent = self.legacy_inline_parent(root, omit_scientific_source=(scenarios == ("missing_scientific_source",)))
+            originals = {p: p.read_bytes() for p in parent.rglob("*") if p.is_file()}
+            freeze = preparation.freeze_candidate_source_closure
+            for index, scenario in enumerate(scenarios):
+                with self.subTest(scenario=scenario):
+                    manifest_path = parent / "run_manifest.json"
+                    manifest = load_json(manifest_path)
+                    def bind(path):
+                        for record in [manifest["run_config"], *manifest.get("inputs", {}).values(), *manifest["outputs"]]:
+                            if Path(record["path"]).resolve() == path:
+                                record.update(terminal_publication.file_record(path))
+                        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+                    if scenario == "missing_request":
+                        path = parent / "run_config.json"
+                        config = load_json(path)
+                        del config["inputs"]["execution_request"]
+                        path.write_text(json.dumps(config), encoding="utf-8")
+                        bind(path)
+                    elif scenario == "unknown_writer":
+                        path = parent / "results/execution_completion.json"
+                        completion = load_json(path)
+                        completion["writer_completion"]["operations"][0]["observation"]["exit_confirmed"] = False
+                        path.write_text(json.dumps(completion), encoding="utf-8")
+                        bind(path)
+                    elif scenario == "unbound_completion":
+                        manifest["outputs"] = [record for record in manifest["outputs"] if Path(record["path"]).name != "execution_completion.json"]
+                        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+                    elif scenario == "pending_journal":
+                        (parent / ".run_terminal_publication.json").write_text("{}", encoding="utf-8")
+                    elif scenario == "request_context":
+                        path = parent / "candidate_workflow_plan.json"
+                        old_plan = load_json(path)
+                        old_plan["context_sha256"] = "0" * 64
+                        path.write_text(json.dumps(old_plan), encoding="utf-8")
+                        bind(path)
+                    elif scenario == "incomplete_stage_outputs":
+                        path = parent / "stage_receipts/comsol_candidate.json"
+                        receipt = load_json(path)
+                        del receipt["outputs"]["analysis_receipt"]
+                        path.write_text(json.dumps(receipt), encoding="utf-8")
+                        bind(path)
+                    elif scenario == "stage_environment":
+                        path = parent / "candidate_workflow_plan.json"
+                        old_plan = load_json(path)
+                        next(item for item in old_plan["stages"] if item["stage_id"] == "comsol_candidate")["environment"]["OATOF_CANDIDATE_CONTRACT_PATH"] = "unbound scientific input"
+                        path.write_text(json.dumps(old_plan), encoding="utf-8")
+                        bind(path)
+                    changed_parent = {p: p.read_bytes() for p in parent.rglob("*") if p.is_file()}
+                    def drifted_freeze(*args, **kwargs):
+                        closure = freeze(*args, **kwargs)
+                        source_id = "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_comsol_stage.py"
+                        path = Path(closure["code_root"]) / source_id
+                        path.write_text(path.read_text(encoding="utf-8").replace("run_candidate_contract_build.m", "changed_science.m"), encoding="utf-8", newline="\n")
+                        record = next(item for item in closure["sources"] if item["source_id"] == source_id)
+                        record.update(bytes=path.stat().st_size, sha256=sha256(path))
+                        return closure
+                    with mock.patch.object(preparation, "freeze_candidate_source_closure", side_effect=drifted_freeze if scenario == "scientific_drift" else freeze):
+                        _, plan = self.native_workflow_plan(root, f"20260727_19{10+index:02d}00")
+                    observed = []
+                    with self.assertRaises(CandidateWorkflowError) as failure:
+                        run_candidate_workflow(plan, sys.executable, stage_executor=self.native_fake_executor(observed),
+                            reuse_parent=parent, reuse_through="comsol_candidate")
+                    self.assertEqual(observed, ["static_inputs"])
+                    self.assertEqual(changed_parent, {p:p.read_bytes() for p in changed_parent})
+                    self.assertNotEqual(str(failure.exception), "")
+                    # Restore only this explicitly synthetic fixture between cases;
+                    # production conversion never writes its parent.
+                    (parent / ".run_terminal_publication.json").unlink(missing_ok=True)
+                    for path, content in originals.items():
+                        path.write_bytes(content)
+
+    def test_legacy_projection_rejects_missing_dispatch_writer_source_and_scientific_drift(self):
+        self.assert_legacy_rejections(("missing_request", "unknown_writer", "unbound_completion", "pending_journal",
+            "stage_environment", "scientific_drift", "request_context", "incomplete_stage_outputs"))
+
+    def test_legacy_projection_rejects_old_freeze_missing_required_scientific_source(self):
+        self.assert_legacy_rejections(("missing_scientific_source",))
 
     def test_orchestration_only_change_reuses_all_stages_but_generator_change_rejects(self):
         from projects.single_reflection_oa_tof_mass_analyzer.analysis import prepare_candidate_run as preparation

@@ -365,13 +365,16 @@ def _same_frozen_code(left: Any, right: Any) -> bool:
 
 
 def derive_candidate_source_closure(
-    parent_manifest_path: Path, parent_closure_path: Path, code_root: Path,
+    parent_manifest_path: Path, parent_closure_path: Path, code_root: Path, *,
+    embedded_candidate_plan: bool = False,
 ) -> dict[str, Any]:
     """Derive read-only parent evidence with authenticated CPython 3.11 caches.
 
     The normal verifier remains strict. No parent code or bytecode is executed;
     only declared sources enter the new evidence root. The caller owns terminal
     consumption guards and publishes the returned closure/derivation in its new run.
+    embedded_candidate_plan selects only the known manifest-bound Candidate
+    runtime-plan field; it does not synthesize a standalone historical closure.
     PEP 552 defines the timestamp header; Python's marshal warning requires the
     existing manifest identity check before decoding any cached code object.
     """
@@ -397,6 +400,15 @@ def derive_candidate_source_closure(
 
     closure_record = bound(parent_closure_path)
     closure = json.loads(parent_closure_path.read_bytes())
+    if type(embedded_candidate_plan) is not bool:
+        raise ValueError("embedded Candidate plan selection must be boolean")
+    if embedded_candidate_plan:
+        if (closure.get("schema_version") != 1 or closure.get("role") != "oa_tof_candidate_run_plan"
+                or closure.get("run_id") != parent.name or manifest.get("project") != PROJECT_ROOT.name
+                or Path(str(closure.get("run_root", ""))).resolve() != parent
+                or not isinstance(closure.get("execution_source_closure"), dict)):
+            raise ValueError("parent source container is not the bound Candidate runtime plan")
+        closure = closure["execution_source_closure"]
     source_root = Path(closure.get("code_root", "")).resolve()
     if parent not in source_root.parents or parent not in parent_closure_path.parents:
         raise ValueError("parent source closure escapes its run")
@@ -462,6 +474,7 @@ def derive_candidate_source_closure(
     return {"closure": derived, "derivation": {
         "schema_version": 1, "role": "oa_tof_parent_source_closure_derivation",
         "parent_manifest": file_record(parent_manifest_path), "parent_closure": closure_record,
+        **({"parent_closure_field": "execution_source_closure"} if embedded_candidate_plan else {}),
         "validated_bytecode": caches, "copied_sources": len(sources),
         "parent_modified": False, "bytecode_executed": False,
     }}
