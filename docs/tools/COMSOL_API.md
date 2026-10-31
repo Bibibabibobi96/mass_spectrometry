@@ -430,6 +430,17 @@ pd = mphparticle(model, 'dataset', 'pdset1');
 
 RF finite 正式已解读取边界为项目 `reextract_finite_3d_transport(request,fid)`：原冻结设计／源／数值投影与实际 source/native-order 映射绑定原两组解，通过 `mphload` 只读加载，再调用正常求解后的同一分窗导出 helper。缺原映射不推断粒子顺序；不存在必要 Particle dataset 时只在内存建立并绑定已解 solution，不调用 Study Compute／runAll，不保存父模型。2026-10-31正常 CLI 的071000→062508冷提取读取43,350,302 B原MPH，七份CSV与原导出逐字节一致，原父manifest不变；这是既有解读取／接口验证，不新增物理、收敛或完整传输资格。后继纯CSV分析及仅收尾恢复不加载模型，精确记录见[RF项目状态](../../projects/rf_multipole_ion_optics/docs/PROJECT.md#当前结论)。
 
+### 重复节点构造的自动更新
+
+COMSOL6.4官方[变量更新说明](https://doc.comsol.com/6.4/doc/com.comsol.help.llmatlab/llmatlab_ug_functionality.7.54.html)
+支持重复修改节点时使用`model.disableUpdates(true)`，在求解及依赖表达式的几何／网格构建前重新启用。
+[Model API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/api/com/comsol/model/Model.html#disableUpdates(boolean))
+的setter返回此前禁用状态。构造作用域要求入口更新已启用，恢复后再确认；异常恢复失败作为原异常的附加原因，不覆盖主因。
+计时包含重新启用时的完整刷新；关闭更新不省略实际`importData()`，不改变源、birth及RF时钟。
+2026-10-31本机6.4的确定性四极N100正常双臂包含求解、保存和GUI Compute，源构造27.730→22.046秒，
+完整公开命令315.788→334.220秒，未取得整流程收益。保持100个不同birth和完整源映射，不保证其它节点或更大规模收益。
+精确来源、逐阶段计时及未授数值资格的边界见[RF项目状态](../../projects/rf_multipole_ion_optics/docs/PROJECT.md#确定性四极n100源构造的现代双臂实测)。
+
 ## 运行内临时与 recovery 目录
 
 公共 `common/comsol/run_comsol_r2025b.ps1` 对显式 RunDir 使用其已投影的执行路径，在运行内创建

@@ -513,3 +513,27 @@ terminal／capacity／lease与alias清理完成。原生完成、GUI对照未建
 saved／computed MAT分别26885573／26885713B，已在比较前写入并按solver_review保留。真实launcher PID20880／start ticks639290170706302411／exit0，非继承host token `2dd4e6cfbf8348e6bbf733524bc4a6b1`实际released。Result为success／complete，terminal、capacity、lease、writer确认和alias移除均成立；12份父小记录（原8角色及原Result、receipt、两completion）前后字节记录一致，原MPH仅stat核对且不变，没有新hash／复制父MPH或读取80MBraw。
 
 [诊断JSON](../../../../artifacts/projects/rf_multipole_ion_optics/runs/20261031_121732__test__comsol__rf-gui-observations/results/gui_verification.json)、[实际launcher收据](../../../../artifacts/projects/rf_multipole_ion_optics/runs/20261031_121732__test__comsol__rf-gui-observations/logs/launcher_completion.json)、[usage](../../../../artifacts/projects/rf_multipole_ion_optics/runs/20261031_121732__test__comsol__rf-gui-observations/logs/resource_usage.json)及本主题run外Result／parent_audit保留。后续可只load两MAT，调用本run冻结的compare_rf_gui_observations作纯诊断而零Compute；本轮未额外执行资产MAT冷读或新方法重分析，不将旧JSON复读称新分析。GUI操作／原接受条件完成不授予精度、完整整机或其他源规模资格，RF源构造性能仍独立待办。
+
+### 确定性四极N100源构造的现代双臂实测
+
+以提交01f0b6ce相同公共owner／GUI／原构造body建立串行control `20261031_124715__test__comsol__rf-release-control`与after `20261031_125649__test__comsol__rf-release-after`，唯一solver差异为release节点构造时disableUpdates作用域；两臂均有相同release_construction_seconds计时，包含after重新启用的完整刷新与getter确认。原scope五项纯MATLAB行为通过（0.56977秒），不替代本次生产对照。原090000旧FAIL的212.96575秒不作现代整命令速度基线。
+
+| 同口径阶段（秒） | control | after | after−control |
+|---|---:|---:|---:|
+| release构造（含after刷新） | 27.7300098 | 22.0462621 | −5.6837477 |
+| prepare | 18.6940057 | 15.6937534 | −3.0002523 |
+| native wrapper／其进程usage区间 | 148.5465987／142.561 | 154.5186324／142.997 | +5.9720337／+0.436 |
+| GUI wrapper／其进程usage区间 | 137.1882623／131.319 | 151.6175104／145.678 | +14.4292481／+14.359 |
+| 公共收尾 | 8.2472370 | 9.3875670 | +1.1403300 |
+| Result累计 | 314.0028799 | 332.6474731 | +18.6445932 |
+| 独立公开pwsh启动至退出外墙 | 315.7878095 | 334.2198387 | +18.4320292 |
+
+**仅本次N100构造段缩短20.4967%，完整正常命令反而增加5.8368%，未取得整流程收益。** 此为一次串行配对，不是统计稳定倍速；表中区间存在包含关系，不能相加。after的solver准入有io_pressure／WAIT_SECONDS=0观测，但没有累计等待秒字段，不能把wrapper与进程usage残差全归为资源等待。实测较大的增加位于GUI wrapper／进程区间；未单独输出load／每Study／extract计时，不能据此进一步猜测其内部热点。两臂原有GUI动作正常执行，未为性能跳过。
+
+四份完整冻结科学JSON（设计、mode、interface、numerics）、compiled科学投影、100个ID／native_order／birth／完整源6D／权重／color、质量／驱动、release_files／complete_cohort映射及每ID terminaloutcomes均相等。保持原100个不同birth、9037元素／auto9／hmin0.2mm／每周期80步及80µs，均N100／H67；原count-hit接受与source binding通过。公共particle_state_comparison_core读取两份小state各396事件，key相同、完整母群无缺／额外ID、categorical差异0；296行存在浮点变化（最大时刻差1.2519763004092965e-10µs、横向y差9.711800252887315e-10mm、vx差3.934019332518801e-7m/s），只作差异诊断。未建立积分误差资格，scientific_result／numerical_equivalence仍NOT_EVALUATED，native精确birth echo仍不可用。
+
+native／GUI峰值RSS分别control3401359360／3705380864B、after3641393152／3443052544B；相应目录峰值control194671413／201388584B、after195333707／202053925B。均success／complete、数据valid，terminal／capacity／lease／writers／alias收尾事实成立。两臂使用同原2GiB新增／16GiB RSS／minAvailable8GiB／1200秒告警与StartupAttempts1；不读hash／复制父MPH、MAT或80MB raw载荷作本次比对。
+
+首次冻结control `20261031_124443__test__comsol__rf-release-control`在包创建／native前2.4579062秒失败，原因是scratch闭包遗漏3个已绑定retired descriptor小JSON；原失败保留，r2只从同提交补足12062B原authority，原身份guard两臂实际PASS后使用新runID。未放宽校验或恢复整个历史。小读数、完整逐字段相等性／state诊断及源码差分位于本项目scratch的`rf-feedback-hotspot/agent4/deterministic_release_updates/delivery_v2/modern_two_arm_01f0_r2/comparison_readout/comparison.json`及相邻source_identity／control_after.diff。
+
+本轮未擅自增加规模或重跑。后续高收益动作可先在现正常阶段增加窄load／solve／persist／extract计时定位GUI主成本；已有充分保存观测允许沿现纯helper分析，不能借性能省去明确请求的GUI动作。源构造规模收益仍待更大既定工作量及整命令收益证据，不以N100局部减少关闭Goal。

@@ -266,6 +266,14 @@ end
 [releaseGroups,nativeOrder]=plan_rf_exact_birth_releases(ions(:,1)*1e-6, ...
  [initialPositionMm initialVelocityMS],(1:size(ions,1))',ions(:,2),ions(:,3),ions(:,10));
 releaseTimeExpressions={releaseGroups.release_time_expression};
+% Defer model dependency updates only for release construction. Re-enabling
+% updates performs the mandatory refresh before gate save or any particle solve.
+releaseConstructionTimer=tic;
+releaseUpdatesBefore=logical(model.disableUpdates());
+assert(~releaseUpdatesBefore,'rf:ReleaseUpdatesState', ...
+    'Release construction requires enabled model updates at entry.');
+model.disableUpdates(true);
+try
     for i=1:numel(releaseGroups)
         releaseData=releaseGroups(i).position_velocity;
         releasePath=fullfile(scratch,sprintf('particle_%03d.txt',i));
@@ -355,10 +363,22 @@ releaseTimeExpressions={releaseGroups.release_time_expression};
                 char(rel.getString('rt')));
         end
     end
+catch releaseConstructionFailure
+    try
+        model.disableUpdates(releaseUpdatesBefore);
+    catch releaseUpdateRestoreFailure
+        releaseConstructionFailure=addCause(releaseConstructionFailure,releaseUpdateRestoreFailure);
+    end
+    rethrow(releaseConstructionFailure)
+end
+model.disableUpdates(releaseUpdatesBefore);
+assert(~logical(model.disableUpdates()),'rf:ReleaseUpdatesState', ...
+    'Model updates must be enabled before save or solve.');
+releaseConstructionSeconds=toc(releaseConstructionTimer);
 if releaseGateEnabled
     result=completeReleaseConstructionGate(model,cpt,ions, ...
         initialPositionMm,initialVelocityMS,releaseGroups,nativeOrder,runConfig, ...
-        executionControl,breadcrumbSequence);
+        executionControl,breadcrumbSequence,releaseConstructionSeconds);
     return
 end
 ef=cpt.create('ef1','ElectricForce',3);
@@ -441,6 +461,7 @@ result=struct('role','rf_quadrupole_comsol_raw_solver_metadata', ...
     'run_label',runLabel,'release_files',{groupFiles},'native_order',nativeOrder,'source_ids',(1:size(ions,1))','release_group_count',numel(releaseGroups), ...
     'source_birth_s',ions(:,1)*1e-6,'source_weights',ions(:,10),'source_color',ions(:,11),'source_initial_position_mm',initialPositionMm,'source_initial_velocity_m_s',initialVelocityMS,'particle_extraction',extraction, ...
     'raw_solution_persisted',saveModel,'postprocess_recovery_supported',false);
+result.release_construction_seconds=releaseConstructionSeconds;
 if collisionPresent
     error('COMSOL no-collision case contains a collision feature.');
 end
@@ -628,7 +649,7 @@ writeTextFileChecked(path,'a',[jsonencode(entry) newline], ...
 end
 
 function result=completeReleaseConstructionGate(model,cpt,ions, ...
-        initialPositionMm,initialVelocityMS,releaseGroups,nativeOrder,runConfig,control,breadcrumbSequence)
+        initialPositionMm,initialVelocityMS,releaseGroups,nativeOrder,runConfig,control,breadcrumbSequence,releaseConstructionSeconds)
 expectedParticles=size(ions,1);groupCount=numel(releaseGroups);
 featureTags=cell(cpt.feature.tags());releaseTags=featureTags(startsWith(featureTags,'rel'));
 expectedTags=arrayfun(@(i)sprintf('rel%03d',i),1:groupCount,'UniformOutput',false);
@@ -654,6 +675,7 @@ model.save(control.model_path);
 releaseFileInventory=arrayfun(@(entry)entry,releaseFiles,'UniformOutput',false);
 result=struct('schema_version',2,'role','rf_release_construction_gate_result','status','success', ...
  'run_id',requireText(runConfig,'run_id'),'particle_table_sha256',sha256File(requireExistingFile(requireStruct(runConfig,'inputs'),'particle_table')), ...
+ 'release_construction_seconds',releaseConstructionSeconds, ...
  'particles',expectedParticles,'release_tag_count',groupCount,'release_file_count',groupCount,'release_files',{releaseFileInventory},'native_order',nativeOrder, ...
  'birth_time_count',expectedParticles,'unique_birth_time_count',numel(unique(ions(:,1))), ...
  'unique_release_time_expression_count',numel(unique({releaseGroups.release_time_expression})), ...
