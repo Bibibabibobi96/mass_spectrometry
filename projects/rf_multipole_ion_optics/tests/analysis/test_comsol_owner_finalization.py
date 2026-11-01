@@ -110,14 +110,35 @@ ConvertTo-Json -InputObject $records -Compress
     def test_normal_public_prepare_and_optional_family_reach_only_inert_native_boundary(self):
         # The entire normal scripts execute; only the actual native process boundary is inert.
         from common.contracts.capacity_ledger import initialize_capacity_ledger
+        from common.contracts.frozen_inputs import enumerate_python_sources
         import hashlib
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "source"
-            for relative in ("common", "config", "projects/rf_multipole_ion_optics"):
-                shutil.copytree(REPO / relative, source / relative,
-                                ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            # Copy original production authors, not already frozen run outputs.
+            # The real public CLI still resolves and freezes its own inputs.
+            areas = ("common", "projects/rf_multipole_ion_optics")
+            selected = set(enumerate_python_sources(REPO, package_roots=areas))
+            excluded = {"tests", "test_support", "testing_support", "docs",
+                        "history", "generated", "__pycache__", "assets"}
+            for area in areas:
+                for path in (REPO / area).rglob("*"):
+                    relative = path.relative_to(REPO)
+                    if (path.is_file() and path.suffix in {".ps1", ".json", ".m", ".lua", ".csv"}
+                            and not path.name.startswith("test_")
+                            and not any(part in excluded for part in relative.parts)):
+                        selected.add(relative.as_posix())
+            selected.add("config/project_registry.json")
+            # Keep the project's explicitly bound retired identities without
+            # copying historical implementations or unrelated scientific assets.
+            descriptor = REPO / "projects/rf_multipole_ion_optics/config/project.json"
+            selected.update(row["path"] for row in json.loads(
+                descriptor.read_text(encoding="utf-8"))["retired_project_descriptors"])
+            for relative in sorted(selected):
+                target = source / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(REPO / relative, target)
             policy = source/"common/contracts/artifact_capacity_policy.json"
             policy_document = json.loads(policy.read_text(encoding="utf-8"))
             # The family arm declares up to 4 GiB total new commitment.

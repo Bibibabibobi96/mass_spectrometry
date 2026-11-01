@@ -624,6 +624,12 @@ mass_filter_reference正式case数组与manifest Outputs包含每case实际deter
 
 ### 2026-11-01 Python 包交付闭包
 
+软件门禁的正常 COMSOL owner 夹具也通过公共源码枚举器选择 production Python 与显式动态资源，
+保留独立 author、registry、三个明确绑定的历史 descriptor、两种 family 分支及真实 CLI 冻结；
+不再把测试和整个项目历史复制进 author。同环境单次仪器化对照为 38.548→33.389 秒，
+复制 887→419 文件、178,179,007→6,653,707 字节；完整原五项测试通过，未启动商业求解器。
+这是夹具准备优化，不是科学求解提速；单次顺序配对未隔离缓存影响，未作为完整 Owner／Repository 验收。
+
 interface、mass-filter、same-solver 的7个 workflow 入口及发布新鲜度消费者改用公共
 `enumerate_python_sources` 从声明的小包／模块派生 Python 交付闭包，删除原逐文件 Python 清单。
 既有路径预检与复制消费同一选择，MATLAB／JSON 等动态资源仍显式声明；必需导入检查保持实际入口及科学依赖，
