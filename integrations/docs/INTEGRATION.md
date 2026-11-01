@@ -189,6 +189,7 @@ COMSOL Freeze可保留停止后的状态，SIMION停止后不再输出后续观�
 
 `PrepareOnly`只写调用方已建立的受管run，不能用任意空目录或改变owner。二区／三区分别消费真实提供者，
 不能把旧八模式整机场当作裸导引场；位置、机械孔与数值carve分别处理，源保持全部原ID和唯一时钟。
+已退役无消费者的旧post-pulse／非bare PA+生成入口及重复拓扑校验转发；实际bare生成器、拓扑校验及旧模型／post-pulse收据渲染支持保持。
 
 三区[165815迁移对照](../../../artifacts/projects/instrument_assembly/runs/20261022_165815__sim__simion__local-bare-guide-oa/summary.json)
 已完成N=100、源与规范事件逐值对照、69出口／31损失及新进程默认回放，差异字段0。

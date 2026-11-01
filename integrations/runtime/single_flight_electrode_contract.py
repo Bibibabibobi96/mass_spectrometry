@@ -189,119 +189,6 @@ def project_pa_plus_mode_voltages(
     return projected
 
 
-def resolve_post_pulse_pa_plus_solution_projection(
-    model: Mapping[str, Any],
-    *,
-    rod_physical_electrode_ids: list[Any],
-    upstream_rod_electrodes: list[Any],
-    source_release_mode: str,
-) -> dict[str, Any]:
-    """Project a full PA+ model to the zero-rod post-pulse solution family.
-
-    This is deliberately a runtime projection, not a new cache model.  The
-    full PA+ family remains the authority for continuous flight.  A restart
-    consumer may omit only modes whose physical electrodes are proved to stay
-    at zero for its whole lifetime.  The upstream contract records the held
-    pre-pulse DC common mode, whereas this restart has no upstream PA or RF
-    kernel at all.  Keep both facts in the receipt: the former proves the
-    physical rod namespace; ``pre_pulse_restart`` is the explicit runtime
-    policy that makes the latter's effective values zero.
-    """
-    if source_release_mode != "pre_pulse_restart":
-        raise ValueError("post-pulse PA+ projection requires a pre-pulse restart")
-    model = require_pa_plus_solution_model(model)
-    modes = model.get("modes")
-    mode_ids = model.get("mode_ids")
-    expected_count = {TWO_ZONE_BARE_PA_PLUS_MODEL_ID: 5, THREE_ZONE_BARE_PA_PLUS_MODEL_ID: 6,
-                      THREE_ZONE_PA_PLUS_MODEL_ID: 8}[model["model_id"]]
-    if (
-        not isinstance(modes, list)
-        or not isinstance(mode_ids, list)
-        or model.get("mode_count") != expected_count
-        or len(modes) != expected_count
-        or len(mode_ids) != expected_count
-    ):
-        raise ValueError("post-pulse PA+ projection modes are invalid")
-    try:
-        rod_ids = {int(value) for value in rod_physical_electrode_ids}
-        dc_by_id = {
-            int(item["electrode_id"]): float(item["potential_V"])
-            for item in upstream_rod_electrodes
-        }
-    except (KeyError, TypeError, ValueError) as error:
-        raise ValueError("post-pulse rod-voltage proof is invalid") from error
-    if not rod_ids or set(dc_by_id) != rod_ids:
-        raise ValueError("post-pulse rod-voltage proof does not cover every rod")
-    effective_dc_by_id = {electrode_id: 0.0 for electrode_id in rod_ids}
-
-    normalized_modes: list[dict[str, Any]] = []
-    rod_mode_ids: list[int] = []
-    for raw_mode in modes:
-        if not isinstance(raw_mode, Mapping):
-            raise ValueError("post-pulse PA+ projection mode is invalid")
-        raw_coefficients = raw_mode.get("physical_electrode_coefficients")
-        if not isinstance(raw_coefficients, Mapping):
-            raise ValueError("post-pulse PA+ projection coefficients are invalid")
-        try:
-            mode_id = int(raw_mode["mode_id"])
-            name = str(raw_mode["name"])
-            coefficients = {
-                int(electrode_id): float(weight)
-                for electrode_id, weight in raw_coefficients.items()
-            }
-        except (KeyError, TypeError, ValueError) as error:
-            raise ValueError("post-pulse PA+ projection mode is invalid") from error
-        if (
-            len(coefficients) != len(raw_coefficients)
-        ):
-            raise ValueError("post-pulse PA+ projection coefficients are invalid")
-        has_rod = any(electrode_id in rod_ids for electrode_id in coefficients)
-        if has_rod:
-            if name not in {"rod_common", "rod_differential"}:
-                raise ValueError("post-pulse PA+ rod mode role is invalid")
-            if set(coefficients) != rod_ids:
-                raise ValueError("post-pulse PA+ rod mode basis is invalid")
-            rod_mode_ids.append(mode_id)
-        normalized_modes.append(dict(raw_mode))
-    if len(rod_mode_ids) != 2:
-        raise ValueError("post-pulse PA+ model does not contain both rod modes")
-    if [int(value) for value in mode_ids] != [
-        int(mode["mode_id"]) for mode in normalized_modes
-    ]:
-        raise ValueError("post-pulse PA+ source mode order is invalid")
-    retained_modes = [
-        mode for mode in normalized_modes
-        if int(mode["mode_id"]) not in rod_mode_ids
-    ]
-    if len(retained_modes) != expected_count - 2:
-        raise ValueError("post-pulse PA+ projection has an invalid non-rod mode count")
-    projected_model = {
-        **dict(model),
-        "mode_ids": [int(mode["mode_id"]) for mode in retained_modes],
-        "mode_count": len(retained_modes),
-        "modes": retained_modes,
-    }
-    return {
-        "schema_version": 1,
-        "role": "rf_oatof_post_pulse_pa_plus_projection",
-        "projection_id": POST_PULSE_FIELD_LOADING_POLICY_ID,
-        "source_release_mode": source_release_mode,
-        "rod_voltage_proof": {
-            "policy_id": "pre_pulse_restart_rf_and_rod_dc_disabled_v1",
-            "physical_electrode_ids": sorted(rod_ids),
-            "upstream_static_voltages_v": {
-                str(key): dc_by_id[key] for key in sorted(dc_by_id)
-            },
-            "effective_post_pulse_voltages_v": {
-                str(key): effective_dc_by_id[key]
-                for key in sorted(effective_dc_by_id)
-            },
-        },
-        "omitted_mode_ids": rod_mode_ids,
-        "projected_pa_plus_solution_model": projected_model,
-    }
-
-
 def _resolve_linear_ring_pa_plus_solution_model(
     electrodes: Mapping[str, Any],
     *,
@@ -476,15 +363,6 @@ def multipole_rod_pieces(upstream: Mapping[str, Any]) -> list[dict]:
             for rod in upstream["geometry_mm"]["rod_array"]["rods"]]
 
 
-def resolve_three_zone_pa_plus_solution_model(
-    electrodes: Mapping[str, Any], *, planes_global_z_mm: Mapping[str, Any], ring_z_mm: list[Any],
-) -> dict[str, Any]:
-    """Preserve the published three-zone model and its solution IDs."""
-    return _resolve_linear_ring_pa_plus_solution_model(
-        electrodes, planes_global_z_mm=planes_global_z_mm, ring_z_mm=ring_z_mm, two_zone_bare=False,
-    )
-
-
 def resolve_two_zone_bare_pa_plus_solution_model(
     electrodes: Mapping[str, Any], *, planes_global_z_mm: Mapping[str, Any], ring_z_mm: list[Any],
     acceleration_direction: int = 1,
@@ -628,8 +506,3 @@ def resolve_frontend_electrode_topology(value: Mapping[str, Any]) -> dict[str, A
         "basis_count": len(basis_ids),
         "maximum_electrode_id": basis_ids[-1],
     }
-
-
-def require_published_frontend_electrodes(value: Mapping[str, Any]) -> None:
-    """Fail closed unless a frontend uses an exact published Program PA basis."""
-    resolve_frontend_electrode_topology(value)
