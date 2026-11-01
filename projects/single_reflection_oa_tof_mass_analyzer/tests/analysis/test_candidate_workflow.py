@@ -3072,7 +3072,7 @@ class CandidatePostprocessTests(unittest.TestCase):
 
 
 class CandidateAnalysisReuseTests(CandidateFixtures, unittest.TestCase):
-    def test_normal_reuse_refreshes_only_changed_or_unrecorded_analysis_authority(self):
+    def test_normal_reuse_reuses_same_authority_and_reanalyzes_changed_authority(self):
         from projects.single_reflection_oa_tof_mass_analyzer.analysis import prepare_candidate_run as preparation
         from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import candidate_comsol_stage
         for case in ("same","changed"):
@@ -3116,10 +3116,6 @@ class CandidateAnalysisReuseTests(CandidateFixtures, unittest.TestCase):
                 self.assertEqual({path:path.read_bytes() for path in before},before)
                 if case!="same":
                     self.assertTrue(Path(stage["evidence"]["analysis_receipt"]).is_relative_to(child))
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
@@ -3552,3 +3548,7 @@ try{& $consumer}catch{$rejected=$true;$reason=$_.Exception.Message}
                         with self.assertRaisesRegex(ValueError,'MODEL_SAVE_COMPLETION_'):
                             select_postprocess_parent(parent,artifact)
                     self.assertEqual(before,{path:path.read_bytes() for path in before})
+
+
+if __name__ == "__main__":
+    unittest.main()

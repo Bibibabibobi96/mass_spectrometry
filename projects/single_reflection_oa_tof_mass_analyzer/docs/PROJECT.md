@@ -507,13 +507,13 @@ COMSOL／SIMION 阶段失效；编排入口的报告或收尾文字变化可复�
 
 ### 已知旧 Candidate 阶段的派生复用
 
-当前项目投影只接受原公共 owner 已封存的已知 inline producer：原 manifest 必须绑定完整源码、执行 request、原规划与运行阶段参数／环境、独立成功 receipt、完整输出以及公共 writer completion。新 child 逐阶段证明旧命令构造与当前对应 solver 模块等价，再保留明确标为“原生成实现见证、不是本次执行实现”的旧字节、完整现代 context 和推导来源，沿原公共 strict matcher 复用。缺证据、科学实现／输入漂移或未知 writer 明确阻断；父终态不改写，不通过删键或今日默认值追认。
+当前 Candidate COMSOL 复用按实际 native／export／analysis／sync owner 的冻结输入、输出和完成证据判断。缺少可比较 phase 事实的旧内联三阶段父任务明确拒绝：当前场生成器要求显式 Electrostatics 初始化，不能用旧命令形状或今日默认值追认科学等价。充分封存的 detector CSV 仍可经原 `--postprocess-from` 创建仅分析的后继，不启动 COMSOL；父终态保持只读。
 
-合法CPython缓存沿现`derive_candidate_source_closure(..., embedded_candidate_plan=True)`消费原manifest绑定的`candidate_workflow_plan.json.execution_source_closure`；容器role／身份必须属于原Candidate run，原root仍用于全部generator、dispatch和receipt证明，干净派生闭包只进入新run证据，不执行历史源码或缓存。普通strict verifier不放宽；无绑定、未知extra或损坏缓存继续拒绝。默认独立closure消费者（补偿）保持原合同。
+`derive_candidate_source_closure(..., embedded_candidate_plan=True)` 的有界容器派生能力仍保留，核对原 manifest 绑定的 `candidate_workflow_plan.json.execution_source_closure`、容器 role／身份、原 run／project／root 与源码证据。当前 Candidate 正式入口没有调用该分支，不能将能力存在表述为已接入旧 native 阶段复用。默认独立 closure 派生仍由反射器补偿入口实际消费；普通 strict verifier 与损坏、无绑定、未知 extra 拒绝保持。
 
-纯软件回归覆盖 COMSOL 前缀及全部三阶段的派生复用、九项主要负例；未新启动商业工具或授予科学资格。旧 owner 必须仍具有原冻结 dispatch plan 和其来源路径；本格式的派生 child 没有原生成功 receipt，后继须显式选择原真正 stage owner，当前不建立递归兼容层。理想源旧比较的转换另行验证，不能据此宣称整个旧结果复用工作包已关闭。
+此前对旧 producer 的三阶段软件转换记录只支持当时实现，不证明当前 Electrostatics 生成器等价，也不授予当前 Candidate／Formal 或任意历史结果的复用资格。未来接入 embedded 容器必须有真实消费者及充分科学依赖证据，本轮不为保留旧测试补造 phase 或修改父记录。
 
-当前公共GATE下的五方法联合首轮保留FAIL（76.055秒）：两个Candidate实际旧owner／缓存消费者、未受管目标拒绝及默认补偿闭包通过，Ideal正例因夹具保留父token却改选资源DB被正确拒绝。修正夹具保留实际同一hoststate，并显式运输一次解析的artifact／execution／hoststate后，仅该失败正例补验通过（19.693秒）；原父数据与完成事实不改写，未重复已绿方法或新增原生调用。
+此前旧实现公共GATE下的五方法联合首轮保留FAIL（76.055秒）：两个Candidate实际旧owner／缓存消费者、未受管目标拒绝及默认补偿闭包通过，Ideal正例因夹具保留父token却改选资源DB被正确拒绝。修正夹具保留实际同一hoststate，并显式运输一次解析的artifact／execution／hoststate后，仅该失败正例补验通过（19.693秒）；原父数据与完成事实不改写，未重复已绿方法或新增原生调用。
 
 ### 冻结 Lua 原生路径运输
 
@@ -624,6 +624,8 @@ Candidate后处理CLI夹具按现有科学资源、提供者实现声明、公�
 产物仍为六项质量谱CSV／metrics／PNG及本run公共summary、manifest、Result；原有candidate边界、`resolution_claim_allowed=false`及未资格化的时钟说明保持，软件成功不授予新的Formal或全链资格。旧host-role矩阵中缺少封存父输入的伪分析case由`test_mass_spectrum_input_admission`实际公开CLI→分析→公共GATE释放和恢复测试替代；普通mass/SIMION角色case保留。
 
 ### Candidate测试职责与分片边界
+
+Candidate 工作流测试的直接执行入口位于全部测试类之后，与模块方式均可发现因果阶段测试；same／changed authority 用例按实际两种行为命名，不声称覆盖缺失 authority。测试集合及生产阶段证据检查保持。
 
 原candidate88个测试按相同class／method名迁至设计20、工作流64、legacy复用4；完整test ID的module前缀相应改变，不伪称旧完整字符串未变。原12个非test helper及inline legacy freezer仅由不继承TestCase的fixture mixin共享，支持模块没有test_方法，消费者不导入／继承任何旧TestCase。保留最新legacy8→2准备优化及所有原断言、故障／母群／源身份行为。公共发现自然枚举3模块，单独软件runner／并发器没有增加。
 
