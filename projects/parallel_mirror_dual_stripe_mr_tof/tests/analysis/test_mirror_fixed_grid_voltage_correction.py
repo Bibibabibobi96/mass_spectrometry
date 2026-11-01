@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import copy
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -62,21 +65,157 @@ class FixedGridVoltageCorrectionTests(unittest.TestCase):
         with self.assertRaisesRegex(CandidateContractError, "authoritative"):
             _source_fixed_grid_gamma_trace({})
 
-    def test_gamma_operator_identity_is_explicit_or_legacy_inferred(self) -> None:
-        self.assertEqual(
-            _source_gamma_operator_id({"fixed_grid_gamma_operator_id": NATIVE_GAMMA_OPERATOR_ID}),
-            NATIVE_GAMMA_OPERATOR_ID,
-        )
-        self.assertEqual(
-            _source_gamma_operator_id({"inputs": {
-                "native_l1_sha256": "A", "native_l1_probe_sha256": "B",
-            }}),
-            NATIVE_GAMMA_OPERATOR_ID,
-        )
-        self.assertEqual(
-            _source_gamma_operator_id({"inputs": {"fixed_l1_sha256": "A"}}),
-            SAMPLED_GAMMA_OPERATOR_ID,
-        )
+    @staticmethod
+    def operator_source(operator: str, *, chord: bool = False) -> dict:
+        if chord:
+            inputs = {
+                "source_correction_sha256": "1" * 64,
+                "base_l1_sha256": "2" * 64,
+                "secant_l1_sha256": "3" * 64,
+                "secant_l1_probe_sha256": "4" * 64 if operator == NATIVE_GAMMA_OPERATOR_ID else None,
+            }
+            status = "secant_proposal_only__independent_fixed_grid_validation_required"
+        else:
+            inputs = {"fixed_l1_sha256": "1" * 64}
+            if operator == NATIVE_GAMMA_OPERATOR_ID:
+                inputs.update(native_l1_sha256="A" * 64, native_l1_probe_sha256="b" * 64)
+            status = "no_local_gamma_bracket__additional_fixed_grid_secant_required"
+        return {"fixed_grid_gamma_operator_id": operator, "status": status, "inputs": inputs}
+
+    def test_gamma_operator_identity_is_explicit_and_matches_producer_shape(self) -> None:
+        for operator in (NATIVE_GAMMA_OPERATOR_ID, SAMPLED_GAMMA_OPERATOR_ID):
+            for status in (
+                "no_local_gamma_bracket__additional_fixed_grid_secant_required",
+                "gamma_root_outside_local_trust_region__additional_fixed_grid_secant_required",
+                "proposal_only__independent_fixed_grid_validation_required",
+            ):
+                source = self.operator_source(operator)
+                source["status"] = status
+                with self.subTest(operator=operator, status=status):
+                    self.assertEqual(_source_gamma_operator_id(source), operator)
+            with self.subTest(operator=operator, chord=True):
+                self.assertEqual(_source_gamma_operator_id(self.operator_source(operator, chord=True)), operator)
+
+    def test_gamma_operator_rejects_missing_partial_conflicting_and_invalid_identity(self) -> None:
+        sampled = self.operator_source(SAMPLED_GAMMA_OPERATOR_ID)
+        native = self.operator_source(NATIVE_GAMMA_OPERATOR_ID)
+        cases = []
+        for value in (None, "unknown", {}, []):
+            source = copy.deepcopy(sampled)
+            source["fixed_grid_gamma_operator_id"] = value
+            cases.append(source)
+        source = copy.deepcopy(sampled)
+        del source["fixed_grid_gamma_operator_id"]
+        cases.extend((source, {"inputs": {}}, {"inputs": {"native_l1_sha256": "A" * 64}}))
+        for key in ("native_l1_sha256", "native_l1_probe_sha256"):
+            source = copy.deepcopy(native)
+            del source["inputs"][key]
+            cases.append(source)
+            for value in (None, "", "A", "g" * 64, 5):
+                source = copy.deepcopy(native)
+                source["inputs"][key] = value
+                cases.append(source)
+            source = copy.deepcopy(sampled)
+            source["inputs"][key] = None
+            cases.append(source)
+        source = copy.deepcopy(native)
+        source["fixed_grid_gamma_operator_id"] = SAMPLED_GAMMA_OPERATOR_ID
+        cases.append(source)
+        for operator, value in ((NATIVE_GAMMA_OPERATOR_ID, None), (SAMPLED_GAMMA_OPERATOR_ID, "A" * 64)):
+            source = self.operator_source(operator, chord=True)
+            source["inputs"]["secant_l1_probe_sha256"] = value
+            cases.append(source)
+        source = self.operator_source(SAMPLED_GAMMA_OPERATOR_ID, chord=True)
+        del source["inputs"]["secant_l1_probe_sha256"]
+        cases.append(source)
+        source = self.operator_source(NATIVE_GAMMA_OPERATOR_ID, chord=True)
+        source["inputs"]["native_l1_sha256"] = "A" * 64
+        cases.append(source)
+        for key in ("source_correction_sha256", "base_l1_sha256", "secant_l1_sha256"):
+            source = self.operator_source(NATIVE_GAMMA_OPERATOR_ID, chord=True)
+            source["inputs"][key] = "not-a-sha256"
+            cases.append(source)
+        source = copy.deepcopy(sampled)
+        source["inputs"]["fixed_l1_sha256"] = None
+        cases.append(source)
+        source = copy.deepcopy(sampled)
+        source["status"] = "unknown"
+        cases.append(source)
+        for index, source in enumerate(cases):
+            with self.subTest(case=index), self.assertRaises(CandidateContractError):
+                _source_gamma_operator_id(source)
+
+    def test_powershell_endpoint_selection_uses_python_classifier_and_propagates_failure(self) -> None:
+        repo = RUNNER.parents[3]
+        self.assertTrue((repo / "common/contracts").is_dir())
+        with tempfile.TemporaryDirectory(prefix="gamma-operator-") as directory:
+            root = Path(directory)
+            results = root / "results"
+            results.mkdir()
+            for name in ("native_transverse_l1.json", "native_transverse_l1_probe_contract.json",
+                         "fixed_operating_field_l1.json"):
+                (results / name).write_text("{}", encoding="utf-8")
+            invalid = self.operator_source(SAMPLED_GAMMA_OPERATOR_ID)
+            del invalid["fixed_grid_gamma_operator_id"]
+            partial = self.operator_source(NATIVE_GAMMA_OPERATOR_ID)
+            del partial["inputs"]["native_l1_probe_sha256"]
+            sources = [self.operator_source(SAMPLED_GAMMA_OPERATOR_ID),
+                       self.operator_source(NATIVE_GAMMA_OPERATOR_ID), invalid, partial]
+            paths = []
+            for index, source in enumerate(sources):
+                run = root / f"source_{index}"
+                path = run / "results/fixed_grid_multifidelity_voltage_correction.json"
+                path.parent.mkdir(parents=True)
+                path.write_text(json.dumps(source), encoding="utf-8")
+                paths.append(str(run))
+            request = root / "request.json"
+            request.write_text(json.dumps(paths), encoding="utf-8")
+            script = root / "select.ps1"
+            script.write_text(r'''param($Runner,$Python,$RequestPath,$Secant)
+$ErrorActionPreference='Stop'
+$tokens=$null;$errors=$null
+$ast=[System.Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw 'Runner parse failed'}
+$functions=@($ast.FindAll({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Resolve-FixedGridSecantL1Inputs'},$true))
+if($functions.Count-ne1){throw 'One actual endpoint selector required'}
+. ([scriptblock]::Create($functions[0].Extent.Text))
+$callers=@($ast.FindAll({param($node) $node -is [System.Management.Automation.Language.IfStatementAst] -and $node.Extent.Text.Contains('$secantInputs = Resolve-FixedGridSecantL1Inputs')},$true))
+if($callers.Count-ne1){throw 'One actual selector-to-argv call site required'}
+$rows=@(foreach($path in (Get-Content -LiteralPath $RequestPath -Raw|ConvertFrom-Json)){
+ $sourceCorrection=$path;$secantFixed=$Secant;$arguments=@('unchanged-prefix')
+ try {
+  . ([scriptblock]::Create($callers[0].Extent.Text))
+  @{ok=$true;arguments=@($arguments)}
+ } catch {@{ok=$false;message=$_.Exception.Message;arguments=@($arguments)}}
+})
+$rows|ConvertTo-Json -Depth 10
+''', encoding="utf-8")
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-File", str(script), str(RUNNER), sys.executable, str(request), str(root)],
+                cwd=repo, capture_output=True, text=True, encoding="utf-8", check=False,
+                timeout=120,  # Four pure classifier imports plus one pwsh startup; no solver.
+
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            rows = json.loads(result.stdout)
+            self.assertEqual(len(rows), 4)
+            for index, filename in ((0, "fixed_operating_field_l1.json"), (1, "native_transverse_l1.json")):
+                self.assertTrue(rows[index]["ok"])
+                arguments = rows[index]["arguments"]
+                self.assertEqual(arguments[0], "unchanged-prefix")
+                self.assertEqual(arguments.count("--secant-l1"), 1)
+                self.assertEqual(Path(arguments[arguments.index("--secant-l1") + 1]), results / filename)
+                self.assertEqual(Path(arguments[arguments.index("--source-correction") + 1]),
+                                 Path(paths[index]) / "results/fixed_grid_multifidelity_voltage_correction.json")
+            self.assertNotIn("--secant-l1-probe", rows[0]["arguments"])
+            native_arguments = rows[1]["arguments"]
+            self.assertEqual(native_arguments.count("--secant-l1-probe"), 1)
+            self.assertEqual(Path(native_arguments[native_arguments.index("--secant-l1-probe") + 1]),
+                             results / "native_transverse_l1_probe_contract.json")
+            for row in rows[2:]:
+                self.assertFalse(row["ok"])
+                self.assertEqual(row["arguments"], ["unchanged-prefix"])
+                self.assertIn("Source gamma operator validation failed before endpoint selection", row["message"])
 
     def test_gamma_operator_classifier_fails_closed_on_mixed_endpoint(self) -> None:
         native = {"role": "mrtof_native_simion_transverse_l1_analysis"}
@@ -87,6 +226,12 @@ class FixedGridVoltageCorrectionTests(unittest.TestCase):
             _l1_gamma_operator_id(native, False)
         with self.assertRaisesRegex(CandidateContractError, "cannot carry a native probe"):
             _l1_gamma_operator_id(sampled, True)
+        for endpoint in ({}, {"role": "unknown"}):
+            for has_probe in (False, True):
+                with self.subTest(endpoint=endpoint, has_probe=has_probe), self.assertRaisesRegex(
+                    CandidateContractError, "role is unsupported",
+                ):
+                    _l1_gamma_operator_id(endpoint, has_probe)
 
     def test_diagnostic_secant_shrinks_to_the_physical_l0_gate(self) -> None:
         voltage, slopes, delta_e, shrink_count = _bounded_physical_gate_secant(

@@ -441,26 +441,66 @@ SAMPLED_GAMMA_OPERATOR_ID = "sampled_fixed_operating_field_l1_mean_directional_t
 
 
 def _source_gamma_operator_id(source: Mapping[str, Any]) -> str:
-    """Return the frozen endpoint operator, with explicit legacy inference."""
+    """Validate the explicit operator against its actual producer input shape."""
 
     value = source.get("fixed_grid_gamma_operator_id")
-    if value is None:
-        inputs = source.get("inputs")
-        if not isinstance(inputs, Mapping):
-            raise CandidateContractError("source correction lacks its gamma operator identity")
-        has_native = bool(inputs.get("native_l1_sha256")) and bool(
-            inputs.get("native_l1_probe_sha256")
+    if not isinstance(value, str) or value not in {NATIVE_GAMMA_OPERATOR_ID, SAMPLED_GAMMA_OPERATOR_ID}:
+        raise CandidateContractError(
+            "source correction requires an explicit supported gamma operator identity; "
+            "supply the original measurement/analysis evidence, not a new field solve"
         )
-        value = NATIVE_GAMMA_OPERATOR_ID if has_native else SAMPLED_GAMMA_OPERATOR_ID
-    if value not in {NATIVE_GAMMA_OPERATOR_ID, SAMPLED_GAMMA_OPERATOR_ID}:
-        raise CandidateContractError("source correction gamma operator identity is unsupported")
+    inputs = source.get("inputs")
+    if not isinstance(inputs, Mapping):
+        raise CandidateContractError("source correction lacks its gamma operator inputs")
+
+    def require_hash(key: str) -> None:
+        digest = inputs.get(key)
+        if not isinstance(digest, str) or len(digest) != 64 or any(
+            char not in "0123456789abcdefABCDEF" for char in digest
+        ):
+            raise CandidateContractError(f"source gamma operator requires a valid {key}")
+
+    native_keys = ("native_l1_sha256", "native_l1_probe_sha256")
+    if source.get("status") == "secant_proposal_only__independent_fixed_grid_validation_required":
+        # Chord producers carry the measured endpoint probe, not the original
+        # one-point native pair. Sampled chord producers explicitly store null.
+        if any(key in inputs for key in native_keys):
+            raise CandidateContractError("source chord gamma operator has one-point native inputs")
+        for key in ("source_correction_sha256", "base_l1_sha256", "secant_l1_sha256"):
+            require_hash(key)
+        probe_key = "secant_l1_probe_sha256"
+        if value == NATIVE_GAMMA_OPERATOR_ID:
+            require_hash(probe_key)
+        elif probe_key not in inputs or inputs[probe_key] is not None:
+            raise CandidateContractError("sampled source chord requires a null native probe")
+    elif source.get("status") in {
+        "no_local_gamma_bracket__additional_fixed_grid_secant_required",
+        "gamma_root_outside_local_trust_region__additional_fixed_grid_secant_required",
+        "proposal_only__independent_fixed_grid_validation_required",
+    }:
+        require_hash("fixed_l1_sha256")
+        if "secant_l1_probe_sha256" in inputs:
+            raise CandidateContractError("one-point source gamma operator has chord probe inputs")
+        if value == NATIVE_GAMMA_OPERATOR_ID:
+            for key in native_keys:
+                require_hash(key)
+        elif any(key in inputs for key in native_keys):
+            raise CandidateContractError("sampled source gamma operator cannot carry native inputs")
+    else:
+        raise CandidateContractError("source correction gamma operator producer shape is unsupported")
     return str(value)
 
 
 def _l1_gamma_operator_id(l1: Mapping[str, Any], has_native_probe: bool) -> str:
     """Classify one measured L1 endpoint without permitting mixed semantics."""
 
-    if l1.get("role") == "mrtof_native_simion_transverse_l1_analysis":
+    role = l1.get("role")
+    if not isinstance(role, str) or role not in {
+        "mrtof_native_simion_transverse_l1_analysis",
+        "mrtof_fixed_operating_field_l1_analysis",
+    }:
+        raise CandidateContractError("L1 endpoint gamma measurement role is unsupported")
+    if role == "mrtof_native_simion_transverse_l1_analysis":
         if not has_native_probe:
             raise CandidateContractError("native L1 endpoint requires its frozen probe")
         return NATIVE_GAMMA_OPERATOR_ID

@@ -126,6 +126,11 @@ LF／CRLF两臂均通过真实handoff→materializer入口，母群字节及身�
 因此保留该独立准备CLI，职责是把受限修正提议物化为待验证点；它不启动求解或授予工作点资格。
 仅在这三条receipt消费路径共同迁移或退役后，才能移除该生产者。
 
+固定网格电压修正要求来源显式声明既有gamma operator，并与实际one-point／chord输入身份一致；
+未知、缺失、部分native或矛盾身份不再默认按sampled解释。PowerShell端点选择消费同一Python校验器，
+合法native／sampled及原权威gamma保留；旧证据不足时须从原冻结测量输入重建修正分析，不自动求场或改父记录。
+现有模块19项回归通过（公开墙钟10.197秒），包含真实PS参数装配及错误传播；未新增原生或科学资格。
+
 原`analysis/cad_pose_contract.py`实际只服务机械坐标回归，没有生产调用或CLI，现迁到
 `tests/test_support/cad_pose_contract.py`，唯一测试导入同步切换；不保留生产转发。
 仅模块说明改为独立测试参考，去除该说明后AST相同，变换计算未改。
