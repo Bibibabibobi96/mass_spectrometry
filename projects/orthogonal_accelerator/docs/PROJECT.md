@@ -193,6 +193,16 @@ execution profile 由纯几何与 release 解析器绑定本次结构、质量�
 分析得到100个有效配对。原母群1000中的另900个未模拟，不计为损失。
 该记录验证 CSV 运输，不授予空间／时间收敛或整机科学资格；当时 Python 仍从活动源码执行。
 
+只读该封存源的N100／400行／38,029 B事件CSV，Python 3.11一次仪表化正式分析CLI得到
+与原分析整个JSON语义相同的结果：CLI主体0.3220005秒，`analyze`累计0.0732142秒，
+含准入／观察／释放的内部驱动11.8784724秒、完整外层pwsh调用13.1354678秒。
+Python进程OS lifetime峰值工作集33,173,504 B包含解释器／import／profile；500 ms进程树
+采样峰值15,687,680 B仅为采样值，不替代OS峰值，也不代表函数独占RSS。
+该次runpy＋cProfile计时含仪表开销，无未仪表化对照或提速结论；原run不改，新增原生调用0，
+母群1000／实际模拟100及未模拟900非损失的口径保持，不增加空间精度或科学资格。
+[测量范围与原始证据](../../../../artifacts/projects/orthogonal_accelerator/scratch/20261101__csv-analysis-cost/agent3/READOUT.md)
+保留实际输入、结果比较、计时与内存收据。
+
 ### 冻结 Python 真实执行
 
 2026-11-01，飞行入口改由公共 `enumerate_python_sources` 展开4个小包及显式几何 JSON，
