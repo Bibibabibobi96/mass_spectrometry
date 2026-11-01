@@ -304,20 +304,51 @@ class Probe(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="heavy_partial_dispatch_") as directory:
             root = Path(directory)
             leaf, modules = self.partial_python_partition_fixture(root)
-            for failed in (False, True):
-                with self.subTest(failed=failed):
-                    events = root / ("failed_events" if failed else "success_events")
+            catalog_path = root / "common/gate_catalog.json"
+            catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+            (root / "common/original_owner.ps1").write_text(
+                "param($PythonExe,[switch]$PreflightOnly,[string[]]$SelectedTestModules)\n"
+                "throw 'Original owner must not execute for a pure Python test subset'\n", encoding="utf-8")
+            cases = [(preflight, failed) for preflight in ("missing", True, False) for failed in (False, True)]
+            for preflight, failed in cases:
+                with self.subTest(partition_preflight=preflight, failed=failed):
+                    current = json.loads(json.dumps(catalog))
+                    route = next(row for row in current["routes"] if row["stage"] == "common_contracts")
+                    if preflight is not False:
+                        # Match a real PS owner whose pure test selection is
+                        # converted to Python; a Python discovery owner itself
+                        # must declare preflight=false to be a valid catalog.
+                        route["command"] = dict(runner="powershell", script="common/original_owner.ps1",
+                                                parameters=dict(PythonExe="{python}"))
+                        route["repository_integration_command"] = dict(
+                            runner="powershell", script="common/original_owner.ps1",
+                            parameters=dict(PythonExe="{python}", PreflightOnly=True))
+                        route["repository_integration_partition"]["parameter"] = "SelectedTestModules"
+                    if preflight == "missing":
+                        route.pop("partition_preflight", None)
+                    else:
+                        route["partition_preflight"] = preflight
+                    catalog_path.write_text(json.dumps(current), encoding="utf-8")
+                    case = f"{preflight}_{'failed' if failed else 'success'}"
+                    events = root / (case + "_events")
                     events.mkdir()
                     environment = dict(os.environ, PARTIAL_EVENTS=str(events))
                     environment.pop("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN", None)
                     environment.pop("PARTIAL_FAIL", None)
                     if failed:
                         environment["PARTIAL_FAIL"] = "1"
-                    summary = root / ("failed.json" if failed else "success.json")
+                    summary = root / (case + ".json")
+                    command = ["pwsh", "-NoProfile", "-File", str(root / "common/verify.ps1"),
+                               "-PythonExe", sys.executable, "-ChangedPath", leaf, "-MaxConcurrency", "2",
+                               "-SummaryPath", str(summary)]
+                    if preflight is not False:
+                        command = ["pwsh", "-NoProfile", "-Command",
+                                   "& " + powershell_literal(root / "common/verify.ps1") +
+                                   " -PythonExe " + powershell_literal(sys.executable) + " -ChangedPath @(" +
+                                   ",".join(map(powershell_literal, modules)) + ") -MaxConcurrency 2 -SummaryPath " +
+                                   powershell_literal(summary)]
                     result = subprocess.run(
-                        ["pwsh", "-NoProfile", "-File", str(root / "common/verify.ps1"),
-                         "-PythonExe", sys.executable, "-ChangedPath", leaf, "-MaxConcurrency", "2",
-                         "-SummaryPath", str(summary)], cwd=root, env=environment,
+                        command, cwd=root, env=environment,
                         capture_output=True, text=True, encoding="utf-8", timeout=60)
                     output = result.stdout + result.stderr
                     self.assertEqual(result.returncode != 0, failed, output)
@@ -332,13 +363,16 @@ class Probe(unittest.TestCase):
                     self.assertEqual(len(actual), len(set(actual)))
                     for part in parts:
                         self.assertEqual(part["selection_reason"], "selected_partial_python_test_partition")
-                        self.assertEqual(part["dependency_profile"], "stdlib")
+                        self.assertEqual(part["dependency_profile"], "stdlib" if preflight is False else "locked")
                         self.assertEqual(part["requires_stages"], ["partition_prerequisite"])
                         self.assertEqual(part["command"]["python_path_roots"], ["common/contracts/"])
                     self.assertEqual(stages["partition_prerequisite"]["status"], "PASS", output)
                     starts = {p.stem: json.loads(p.read_text()) for p in events.glob("*.start")}
                     done = {p.stem: json.loads(p.read_text()) for p in events.glob("*.done")}
                     self.assertEqual(set(starts), set(done), output)
+                    executed = [row["test"] for stage in stages.values() for row in stage["test_durations"]]
+                    self.assertEqual(len(executed), len(set(executed)), output)
+                    self.assertEqual(len(executed), len(starts), output)
                     self.assertIn("a", starts)
                     self.assertIn("b", starts)
                     timeline = sorted([(v["time"], 1) for v in starts.values()] +

@@ -93,6 +93,7 @@ Changed已选的Python模块或声明替换式参数的PowerShell模块全部具
 若现有分片的预计调度时间更短，可直接对该模块集合分片；不扩大为完整owner或重置为Repository命令。
 300秒取自复杂软件反馈参考，只决定排程，不是超时或验收放宽。短／未知成本、单worker及继承资源仍合批；
 子片保留实际依赖环境、导入根、前置阶段和原失败策略，实际墙钟另行测量。
+纯Python部分集合分片后不再执行包含同一集合的父测试命令；原owner的PowerShell前置声明不适用于该已转换命令，仍需的PowerShell前置照常保留。
 共享`single_reflection_flight/field_plan.py`按实际单反射、cooled及依赖消费者选择34个集成模块，
 未知、删除或重命名来源仍保守扩大，Owner／Repository保持完整覆盖。
 集成入口使用现有`SelectedTestModules`替换式参数消费选定集合；有同轮中央Ruff时依赖其PASS后分片，

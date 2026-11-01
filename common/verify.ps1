@@ -471,10 +471,11 @@ foreach ($route in $routes) {
         Add-ChangedStageItem $name $true $reason `
             $(if ($null -ne $testSelection) { $testSelection.DependencyProfile } else { [string]$route.dependency_profile })
         $stageItems[$name].Command = $command
-        if ($partitions.Count -and $null -ne $route.PSObject.Properties['partition_preflight'] -and
-            -not [bool]$route.partition_preflight) {
-            # This owner's former preflight was only Ruff. The central source
-            # check owns that responsibility; its test shards need no process.
+        if ($partitions.Count -and (($partialPartitions -and $command.runner -eq 'python') -or
+            ($null -ne $route.PSObject.Properties['partition_preflight'] -and -not [bool]$route.partition_preflight))) {
+            # A partial Python parent is the selected tests, not the original
+            # PowerShell preflight. Its children execute that set exactly once.
+            # Other owners retire preflight only through their declared policy.
             $stageItems[$name].Run = $false
             $stageItems[$name].Reason = if ($partialPartitions) {
                 if ($command.runner -eq 'python') {'selected_partial_python_tests_partitioned'} else {'selected_partial_powershell_tests_partitioned'}
