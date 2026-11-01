@@ -596,7 +596,9 @@ class CandidateGateParameterContractTests(unittest.TestCase):
                 "MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH",
                 str(REPO_ROOT.parent / "artifacts/common/host_resources.sqlite3"),
             )
-            environment["RF_GATE_FAIL_TEST"] = modules["analysis/test_root.py"] if level == "Core" else (
+            environment["RF_GATE_FAIL_TEST"] = (
+                modules["new_area/test_forwarded.py"] if failure == "test" else modules["analysis/test_root.py"]
+            ) if level == "Core" else (
                 modules["analysis/new_area/test_nested.py"] if failure == "test" else ""
             )
             selected = ([modules["new_area/test_forwarded.py"]] * 2 if changed else [])
@@ -609,39 +611,61 @@ class CandidateGateParameterContractTests(unittest.TestCase):
                 script += " -ChangedTestModules @(" + ",".join(map(quote, selected)) + ")"
             result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=root, env=environment,
                                     capture_output=True, text=True, encoding="utf-8", timeout=180)
-            return {"result": result, "modules": modules,
+            return {"result": result, "modules": modules, "project": project,
                     "commands": [json.loads(line) for line in commands_path.read_text(encoding="utf-8").splitlines()],
                     "executed": events_path.read_text(encoding="utf-8").splitlines() if events_path.exists() else []}
 
     def test_project_gate_core_keeps_physical_contracts_but_not_full_regressions(self) -> None:
-        expected = [
-            "resolve_contract --structural-variant quadrupole --check",
-            "resolve_contract --check", "resolve_contract --profile interface --check",
-            "resolve_contract --profile mass_filter --check", "sync_simion_geometry --check",
-            "generate_official_particle_table --check", "mass_filter_reference.theory --check-mode",
-            "mass_filter_reference.run_finite_length --check-contract", "entry_aperture_l0.py --check",
-        ]
-        for changed in (False, True):
-            with self.subTest(changed=changed):
-                observed = self.invoke_project_gate_fixture("Core", changed=changed)
+        analysis = "projects.rf_multipole_ion_optics.analysis."
+        workflow = "projects.rf_multipole_ion_optics.workflows.mass_filter_reference."
+        for changed, failure in ((False, ""), (True, ""), (True, "test")):
+            with self.subTest(changed=changed, failure=failure):
+                observed = self.invoke_project_gate_fixture("Core", changed=changed, failure=failure)
                 result = observed["result"]
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 commands = observed["commands"]
-                physical = [" ".join(command) for command in commands if command[:2] != ["-m", "common.gate_unittest"]]
-                self.assertEqual(len(physical), len(expected))
-                for command, required in zip(physical, expected):
-                    self.assertIn(required, command)
+                project = observed["project"]
+                config = project / "variants/quadrupole/config"
+                # Check each scientific responsibility and its actual inputs,
+                # rather than locking an aggregate command count or ordering.
+                physical = [command for command in commands if command[:2] != ["-m", "common.gate_unittest"]]
+                self.assertCountEqual(physical, [
+                    ["-m", analysis + "resolve_contract", "--structural-variant", "quadrupole", "--check"],
+                    ["-m", analysis + "resolve_contract", "--check"],
+                    ["-m", analysis + "resolve_contract", "--profile", "mass_filter", "--check"],
+                    ["-m", analysis + "sync_simion_geometry", "--check"],
+                    ["-m", analysis + "generate_official_particle_table", "--check",
+                     str(config / "particles/official_fixed_100.ion"), "--check-canonical",
+                     str(config / "particles/official_fixed_100_canonical.csv"), "--resolved-design",
+                     str(config / "resolved_design_official.json")],
+                    ["-m", workflow + "theory", "--check-mode"],
+                    ["-m", workflow + "run_finite_length", "--check-contract"],
+                    [str(project / "analysis/entry_aperture_l0.py"), "--check"],
+                ])
                 unittest_commands = [command for command in commands if command[:2] == ["-m", "common.gate_unittest"]]
                 selected = [observed["modules"]["new_area/test_forwarded.py"]] if changed else []
                 self.assertEqual(unittest_commands, [["-m", "common.gate_unittest", *selected]] if changed else [])
                 self.assertEqual(observed["executed"], selected)
-                self.assertIn("PROJECT_GATE=PASS", result.stdout)
+                if failure:
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("RF_GATE_TEST_FAILURE", result.stdout + result.stderr)
+                    self.assertNotIn("PROJECT_GATE=PASS", result.stdout)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("PROJECT_GATE=PASS", result.stdout)
 
     def test_project_gate_static_retains_full_analysis_and_powershell_regressions(self) -> None:
         for failure in ("", "test", "syntax"):
             with self.subTest(failure=failure):
                 observed = self.invoke_project_gate_fixture("Static", changed=True, failure=failure)
                 result = observed["result"]
+                variant_publications = [command for command in observed["commands"]
+                                        if command[:2] == ["-m", "projects.rf_multipole_ion_optics.analysis.resolve_contract"]
+                                        and "--structural-variant" in command]
+                self.assertCountEqual(variant_publications, [
+                    ["-m", "projects.rf_multipole_ion_optics.analysis.resolve_contract",
+                     "--structural-variant", variant, "--check"]
+                    for variant in ("quadrupole", "hexapole", "octupole")
+                ])
                 expected = sorted(observed["modules"].values())
                 calls = [command for command in observed["commands"] if command[:2] == ["-m", "common.gate_unittest"]]
                 # Freshness now owns the tree parse before dispatch. A syntax

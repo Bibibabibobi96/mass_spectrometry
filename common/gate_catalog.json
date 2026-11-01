@@ -1834,6 +1834,18 @@
           {
             "matches": [
               {
+                "exact": "projects/rf_multipole_ion_optics/verify_project.ps1",
+                "reason": "rf_gate_actual_consumer_changed"
+              }
+            ],
+            "modules": [
+              "projects/rf_multipole_ion_optics/tests/analysis/test_cross_solver_gate_contract.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
                 "exact": "projects/rf_multipole_ion_optics/runtime/comsol_solver_numerics.ps1",
                 "reason": "quadrupole_comsol_numerics_changed"
               },

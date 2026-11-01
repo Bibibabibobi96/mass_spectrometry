@@ -635,6 +635,9 @@ mass_filter_reference正式case数组与manifest Outputs包含每case实际deter
 official／interface 发布合同，interface profile 及其真实科学入口保留，mass-filter 与结构变体检查不变。
 分片权重来自已完成回归的逐模块实测，预测均衡不等于新的完整命令提速，最终耗时另行验收。
 
+`verify_project.ps1` 的 Changed 依赖包含跨求解器门禁的实际消费者测试，Core 保持并追加该模块。
+该回归按完整输入参数验证发布、源与科学检查及失败传播；去除重复 interface 检查后不再要求旧调用次数。
+
 interface、mass-filter、same-solver 的7个 workflow 入口及发布新鲜度消费者改用公共
 `enumerate_python_sources` 从声明的小包／模块派生 Python 交付闭包，删除原逐文件 Python 清单。
 既有路径预检与复制消费同一选择，MATLAB／JSON 等动态资源仍显式声明；必需导入检查保持实际入口及科学依赖，

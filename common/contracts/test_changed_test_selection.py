@@ -828,6 +828,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
         rf_test = f"{RF}/tests/analysis/test_mass_filter_l1.py"
         cases = [("mr_mixed", [f"{MR}/analysis/unknown_partition_probe.py", mr_test]),
                  ("rf_mixed", [f"{RF}/runtime/unknown_partition_probe.ps1", rf_test]),
+                 ("rf_gate", [f"{RF}/verify_project.ps1"]),
                  ("rf_deleted", [f"{RF}/tests/analysis/test_deleted_partition_probe.py"]),
                  ("rf_shared", [f"{RF}/tests/test_support/partition_probe.py"])]
         with tempfile.TemporaryDirectory(prefix="partition_core_plans_") as directory:
@@ -860,6 +861,8 @@ $results|ConvertTo-Json -Depth 20 -Compress
                 self.assertNotIn('PreflightOnly', parameters)
                 expected = ({mr_test[:-3].replace('/', '.')} if name == 'mr_mixed' else
                             {rf_test[:-3].replace('/', '.')} if name == 'rf_mixed' else expected_rf)
+                if name == 'rf_gate':
+                    expected = {f"{RF}/tests/analysis/test_cross_solver_gate_contract".replace('/', '.')}
                 self.assertCountEqual(parameters['ChangedTestModules'], expected, name)
 
     def test_unknown_fixture_and_deleted_test_execute_the_remaining_owner_tests(self) -> None:
@@ -1002,6 +1005,10 @@ ConvertTo-Json -InputObject $results -Depth 12 -Compress
             ["test_frozen_matlab_closure", "test_comsol_mesh_report"],
             "common/comsol/configure_comsol_mesh.m")
 
+    def test_rf_gate_consumer_mapping_keeps_real_dispatch_failure_propagation(self) -> None:
+        self._assert_mapped_modules_keep_real_dispatch_failure_propagation(
+            ["test_cross_solver_gate_contract"], f"{RF}/verify_project.ps1")
+
     def _assert_mapped_modules_keep_real_dispatch_failure_propagation(self, names, changed_path) -> None:
         with tempfile.TemporaryDirectory(prefix="numerics_route_dispatch_") as directory:
             root = Path(directory)
@@ -1059,8 +1066,10 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
                 with self.subTest(red=red):
                     output = outcome.stdout + outcome.stderr
                     self.assertEqual(outcome.returncode != 0, red, output)
-                    self.assertIn(f"Ran {len(names)} tests", output)
-                    self.assertIn("TEST_DURATION_SECONDS=", output)
+                    self.assertCountEqual(
+                        re.findall(r"TEST_DURATION_SECONDS=\S+ TEST=(\S+)", output),
+                        [f"{RF.replace('/', '.')}.tests.analysis.{name}.Probe.test_boundary" for name in names],
+                    )
                     if red:
                         self.assertIn("TEST_FAILURE_IMMEDIATE=", output)
                         self.assertIn("NUMERICS_ROUTE_RED", output)
