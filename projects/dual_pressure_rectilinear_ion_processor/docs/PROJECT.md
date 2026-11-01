@@ -294,6 +294,11 @@ canonical状态保留原reason：接受为transmitted、明确逃逸／电极损
 原non-exit terminal诊断不证明碰撞原因，未知电极保持unknown。
 软件CSV／冻结／诊断回归不等于新增求场、飞行或科学资格，既有协议timeout及损失解释须按原范围报告。
 
+2026-11-01，三个独立Lua测试夹具补齐实际公共`native_run_path.lua`／`scientific_event_csv.lua`，
+并按真实builder加载顺序核验配套文件；原联合验证的15项夹具FAIL保留。
+三个受影响模块定向28项全部通过，公开墙钟16.168秒，使用实际Lua 5.1.5、0求解器调用；
+原HS1、时钟、单位、随机种子及路径归属断言保持，不改变物理判据或授予新的科学资格。
+
 ### 运行根与冻结原生路径
 
 正式`run_functional.ps1`在启动时解析并冻结公共四根，持久身份使用`artifact_run_dir`；

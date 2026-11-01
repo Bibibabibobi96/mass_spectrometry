@@ -34,6 +34,7 @@ local expected={
   fly2=directory..'processor.fly2',
   iob=directory..'processor.iob',
   config=directory..'frozen_config.lua',
+  native_path=directory..'native_run_path.lua',
 }
 local calls={}
 local virtual_cwd='unrelated_initial_gui_cwd'
@@ -45,7 +46,7 @@ local function check(kind,path)
 end
 -- Catch config lookup against the process CWD as well as post-load paths.
 loadfile=function(path)
-  check('config',path)
+  check(normalize(path)==normalize(expected.native_path) and 'native_path' or 'config',path)
   return original_loadfile(path)
 end
 local instance={pa={}}
@@ -89,7 +90,7 @@ function wb:save(path)
 end
 simion={wb=wb}
 assert(original_loadfile(builder_path))()
-assert(table.concat(calls,',')=='config,seed,pa,fly2,iob','builder operation order/path inventory changed')
+assert(table.concat(calls,',')=='config,native_path,seed,pa,fly2,iob','builder operation order/path inventory changed')
 assert(resized,'builder must update native PA instance dimensions')
 if c.coordinate_transform then
   assert(instance.x==4 and instance.y==-1 and instance.z==13.8,'project instance origin')
@@ -134,6 +135,7 @@ class WorkbenchPathTests(unittest.TestCase):
             (solver / "frozen_config.lua").write_text("return " + lua_literal(config), encoding="utf-8")
             builder = solver / "build_workbench.lua"
             shutil.copyfile(PROJECT / "simion/build_workbench.lua", builder)
+            shutil.copyfile(PROJECT.parents[1] / "common/paths/native_run_path.lua", solver / "native_run_path.lua")
             harness = root / "check_paths.lua"
             harness.write_text(LUA_HARNESS, encoding="utf-8")
             result = subprocess.run([executable, str(harness), str(builder)], cwd=unrelated,

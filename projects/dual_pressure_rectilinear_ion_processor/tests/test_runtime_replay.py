@@ -420,6 +420,8 @@ class RuntimeReplayTests(unittest.TestCase):
                     shutil.copyfile(PROJECT / "simion" / name, folder / name)
             shutil.copyfile(REPOSITORY / "common/simion/rf_drive.lua",
                             folder / "simion_rf_drive.lua")
+            shutil.copyfile(REPOSITORY / "common/simion/scientific_event_csv.lua",
+                            folder / "scientific_event_csv.lua")
             shutil.copyfile(REPOSITORY / "common/simion/voltage_waveforms.lua",
                             folder / "voltage_waveforms.lua")
             (folder / "frozen_config.lua").write_text("return " + lua_literal(config), encoding="utf-8")
