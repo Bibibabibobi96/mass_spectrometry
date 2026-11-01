@@ -124,9 +124,9 @@ function Stop-ComsolAttemptServers {
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
 class LiveLinkResourceStageTests(unittest.TestCase):
-    """Keep real launcher control flow; replace only external effects in a temp tree."""
+    """Run the complete boundary matrix in the hidden mode used by repository gates."""
 
-    creation_flags = 0
+    creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
     def run_scenario(
         self, scenario: str, *, supplied_budget: int = 0, assembly_mode: str | None = None,
@@ -710,11 +710,24 @@ class LiveLinkBootstrapContractTests(unittest.TestCase):
         self.assertGreater(nonzero_exit, source.index("catch reportException", failure_catch))
 
 
-@unittest.skipUnless(os.name == "nt", "CREATE_NO_WINDOW is Windows-specific")
-class HiddenLiveLinkResourceStageTests(LiveLinkResourceStageTests):
-    """Repeat every boundary under the hidden process mode used by repository gates."""
+@unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell 7 is required")
+class VisibleLiveLinkProcessWiringTests(unittest.TestCase):
+    """Check window-mode wiring without repeating the complete scheduling matrix."""
 
-    creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    creation_flags = 0
+    run_scenario = LiveLinkResourceStageTests.run_scenario
+
+    # These scenarios retain actual child exits, UTF-8 on both streams,
+    # PID/creation identity checks and primary/closeout error propagation.
+    test_completion_receipt_records_real_child_exit_and_no_fictitious_launch = (
+        LiveLinkResourceStageTests.test_completion_receipt_records_real_child_exit_and_no_fictitious_launch
+    )
+    test_actual_server_cleanup_requires_owned_ancestry_and_retained_creation = (
+        LiveLinkResourceStageTests.test_actual_server_cleanup_requires_owned_ancestry_and_retained_creation
+    )
+    test_completion_release_error_preserves_original_task_failure = (
+        LiveLinkResourceStageTests.test_completion_release_error_preserves_original_task_failure
+    )
 
 
 if __name__ == "__main__":
