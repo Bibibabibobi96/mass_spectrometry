@@ -52,52 +52,6 @@ function Get-RepositoryAvailableMemoryBytes {
   return [int64][MultipoleMemoryStatus]::AvailableBytes()
 }
 
-function Test-RepositoryDiskCapacity {
-  <#
-    Fail closed before a transient solver run can exhaust its target volume.
-    Callers supply a post-launch free-space floor together with the frozen
-    run-directory budget.  The required free space is their sum, so a solver
-    cannot start at the floor and then consume its way below it.
-  #>
-  [OutputType([pscustomobject])]
-  param(
-    [Parameter(Mandatory)][string]$TargetPath,
-    [Parameter(Mandatory)][int64]$TransientRunDirectoryBytes,
-    [int64]$MinimumFreeBytes = [int64](10GB)
-  )
-  if($TransientRunDirectoryBytes -lt 0){
-    throw 'Transient run-directory bytes must be non-negative.'
-  }
-  if($MinimumFreeBytes -lt 0){
-    throw 'Minimum free bytes must be non-negative.'
-  }
-  if($TransientRunDirectoryBytes -gt ([int64]::MaxValue-$MinimumFreeBytes)){
-    throw 'Transient run-directory bytes exceed the representable disk-capacity limit.'
-  }
-  $resolvedTargetPath=[IO.Path]::GetFullPath($TargetPath)
-  $drive=@(Get-PSDrive -PSProvider FileSystem|Where-Object{
-    $resolvedTargetPath.StartsWith([string]$_.Root,[StringComparison]::OrdinalIgnoreCase)
-  }|Sort-Object {$_.Root.Length} -Descending|Select-Object -First 1)
-  if($drive.Count-ne1){
-    throw "Target path is not on a mounted FileSystem volume: $resolvedTargetPath"
-  }
-  $requiredAvailableBytes=[int64]($TransientRunDirectoryBytes+$MinimumFreeBytes)
-  $freeBytes=[int64]$drive[0].Free
-  $check=[pscustomobject][ordered]@{
-    role='repository_disk_capacity_check'
-    target_path=$resolvedTargetPath
-    volume_root=[string]$drive[0].Root
-    transient_run_directory_bytes=$TransientRunDirectoryBytes
-    system_disk_reserve_bytes=$MinimumFreeBytes
-    minimum_free_bytes=$MinimumFreeBytes
-    required_available_bytes=$requiredAvailableBytes
-    free_bytes=$freeBytes
-    passed=($freeBytes-ge$requiredAvailableBytes)
-  }
-  if(-not $check.passed){throw $check}
-  return $check
-}
-
 function Get-RepositoryProcessSnapshot {
   <# Share whole-host enumeration within one scheduler poll, never across polls.
      Process scalar properties are still read by each family sampler. #>

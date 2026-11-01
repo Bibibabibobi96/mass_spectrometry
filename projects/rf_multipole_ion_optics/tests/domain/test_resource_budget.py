@@ -705,32 +705,6 @@ foreach($scenario in @('success','child_failure','postprocess_denied','receipt_u
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_disk_capacity_check_reports_live_volume_capacity_and_fails_closed(self) -> None:
-        """The public preflight adds transient demand above the requested floor."""
-        support = REPO_ROOT / "common/resource_budget_support.ps1"
-        command = (
-            f". '{support}';{HOST_PERMIT_FIXTURE}"
-            "$pass=Test-RepositoryDiskCapacity -TargetPath $env:TEMP "
-            "-TransientRunDirectoryBytes 0 -MinimumFreeBytes 10GB;"
-            "if($pass.role-ne'repository_disk_capacity_check'-or"
-            "$pass.system_disk_reserve_bytes-ne10GB-or$pass.minimum_free_bytes-ne10GB-or-not$pass.passed-or"
-            "$pass.free_bytes-lt$pass.required_available_bytes){exit 3};"
-            "try{Test-RepositoryDiskCapacity -TargetPath $env:TEMP "
-            "-TransientRunDirectoryBytes ([int64]::MaxValue-10GB) -MinimumFreeBytes 10GB;exit 4}catch{"
-            "$failed=$_.TargetObject;if($failed.role-ne'repository_disk_capacity_check'-or"
-            "$failed.passed-or$failed.free_bytes-ge$failed.required_available_bytes){exit 5}}"
-        )
-        completed = subprocess.run(
-            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-            cwd=REPO_ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=15,
-        )
-        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
     def test_scheduler_lifecycle_event_reports_real_batch_metadata(self) -> None:
         """Public executor events must identify the completed work exactly."""

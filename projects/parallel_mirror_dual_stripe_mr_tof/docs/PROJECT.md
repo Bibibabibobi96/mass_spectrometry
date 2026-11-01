@@ -24,6 +24,9 @@ controller-state夹具的两个配置读取显式使用UTF-8；campaign夹具经
 
 ## 当前决策与完成边界
 
+两Prism分段诊断的阶段B只使用`stage_b_p1_exit_to_p2_low_field_reference`；旧的pre-reflection／Stripe入口别名已退役，
+实际阶段终点、后续镜转折／Stripe传播算法及序列化字段不变。
+
 主设计为对称会聚双镜、五次项偏置Stripe及保留实体的接地线性Stripe。
 MR拥有Prism、镜组、Stripe、检测、系统布局约束与匹配判据；跨项目装配和联合执行由
 [统一集成](../../../integrations/README.md)拥有。独立器件通过不授予MR资格。

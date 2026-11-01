@@ -101,9 +101,6 @@ def physical_memory_bytes() -> tuple[int, int] | None:
     return int(status.available_physical), int(status.total_physical)
 
 
-def available_physical_memory_bytes() -> int | None:
-    observed = physical_memory_bytes()
-    return None if observed is None else observed[0]
 
 
 def _positive_int(value: Any, name: str) -> int:

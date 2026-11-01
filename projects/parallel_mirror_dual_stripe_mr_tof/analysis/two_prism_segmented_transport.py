@@ -376,10 +376,6 @@ class TwoPrismSegmentedVoltagePairDiagnostic:
     positive_mirror_turn_state: ProjectPhaseSpaceState | None = None
     derived_positive_mirror_turn_z_mm: float | None = None
 
-    @property
-    def stage_b_pre_reflection_to_stripe_entrance(self) -> TransportResult:
-        """Deprecated compatibility alias; stage B ends before the positive turn."""
-        return self.stage_b_p1_exit_to_p2_low_field_reference
 
 
 @dataclass(frozen=True)

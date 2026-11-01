@@ -86,6 +86,8 @@ fixture／未知目录的owner发现沿公共目录；Core／Static内部集合�
 
 ## 目录与产物
 
+运行根由[公共路径机制](../../common/paths/README.md)及冻结run上下文提供；旧`rf_quadrupole_paths.m`同级根推导已退役。
+
 根`config/`维护注册表，`config/modes/`集中保存带变体前缀的科学运行模式，变体目录不保存模式副本；
 `variants/<id>/config/`保存专属机械与其他科学输入；
 `workflows/`按科学问题组织；`core/`拥有物理模型，`runtime/`编排运行，`analysis/`分析结果，

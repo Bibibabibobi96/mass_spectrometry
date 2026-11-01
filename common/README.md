@@ -206,6 +206,9 @@ cooled 路径夹具在较短 CI TEMP 下未达到原生长度边界，却要求 
 
 ## 主机资源实现
 
+运行前磁盘准入沿`Enter-ArtifactWorkflowCapacitySession`与现有容量台账执行；旧`Test-RepositoryDiskCapacity`及其专属测试已退役，
+当前最低余量、承诺、来源保护和失败关闭测试保持。
+
 粒子拆批与默认并发遵循[开发标准](../docs/DEVELOPMENT_STANDARDS.md#独立粒子与耦合求解的调度)，
 随机重复运行的验收遵循[验证方法](../docs/science/VALIDATION_METHODS.md#随机碰撞与重复运行)。
 PA等昂贵阶段复用及中断恢复遵循[统一复用与恢复规则](../docs/DEVELOPMENT_STANDARDS.md#昂贵阶段复用与中断恢复)。
