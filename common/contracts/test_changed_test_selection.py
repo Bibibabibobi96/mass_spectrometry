@@ -290,6 +290,7 @@ class Probe(unittest.TestCase):
         route["requires_stages"] = ["partition_prerequisite"]
         route["test_selection"]["dependencies"] = [dict(matches=[dict(exact=leaf, reason="fixture_leaf")],
                                                        modules=modules, dependency_profile="stdlib")]
+        route["repository_integration_partition"]["count"] = 3
         route["repository_integration_partition"]["measured_seconds"] = {
             "test_a": 120, "test_b": 110, "test_c": 100, "test_d": 10, "test_e": 1}
         prerequisite = dict(stage="partition_prerequisite", dependency_profile="stdlib",
@@ -497,6 +498,7 @@ try {
         route["test_selection"]["module_parameter"] = "SelectedTestModules"
         route["test_selection"]["dependencies"] = [dict(matches=[dict(exact=leaf, reason="fixture_field_plan")],
                                                        modules=modules, dependency_profile="stdlib")]
+        route["repository_integration_partition"]["count"] = 4
         route["repository_integration_partition"]["measured_seconds"] = {
             "test_a": 120, "test_b": 110, "test_c": 100, "test_d": 10, "test_e": 1}
         catalog["routes"] = [catalog["routes"][0], route]
@@ -1089,6 +1091,41 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
                 self.assertTrue(all(path.startswith(f"{RF}/tests/{directory}/") for path in modules))
                 self.assertFalse(all_modules.intersection(modules))
                 all_modules.update(modules)
+
+    def test_integration_ip_provider_tests_keep_only_real_fixture_consumers(self) -> None:
+        integration = ["integrations/tests/test_local_frontend_owner_recovery.py",
+                       "integrations/tests/test_single_reflection_owner_recovery.py"]
+        ip = "projects/dual_pressure_rectilinear_ion_processor/"
+        consumers = integration + [
+            RF + "/tests/analysis/test_comsol_owner_finalization.py",
+            RF + "/tests/analysis/test_owner_finalization_recovery.py",
+            RF + "/tests/analysis/test_simion_powershell_owner.py",
+            "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_workflow.py",
+            "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_compensation_powershell_adapter.py",
+            ip + "tests/test_owner_finalization_recovery.py",
+        ]
+        # Missing ordinary test paths are classified without deleting real files.
+        cases = [consumers, consumers + [ip + "tests/test_removed.py"],
+                 consumers + [ip + "tests/nested/test_removed.py"]]
+        shared = ("analysis/cooled_buncher.py", "analysis/unknown_provider.py",
+                  "tests/test_support/unknown_helper.py", "tests/test_support/test_helper.py",
+                  "tests/nested/support/test_helper.py", "tests/__init__.py",
+                  "tests/test_cooled_buncher.py", "tests/test_component_exit.py",
+                  "tests/test_functional.py")
+        cases.extend(consumers + [ip + path] for path in shared)
+        selected = self.selections(REPO_ROOT, [
+            dict(stage="instrument_assembly_integration", paths=paths) for paths in cases
+        ], owner_filter=True)
+        for index, selection in enumerate(selected):
+            with self.subTest(paths=cases[index]):
+                if index < 3:
+                    self.assertIsNotNone(selection)
+                    self.assertCountEqual(selection["Modules"], integration)
+                    self.assertTrue(selection["OnlyTestModules"])
+                    self.assertFalse(selection["CompleteOwner"])
+                    self.assertFalse(selection["Expanded"])
+                else:
+                    self.assertIsNone(selection, "Provider or shared fixture must retain the full owner")
 
     def test_simion_owner_impact_selection_matrix(self) -> None:
         test = "common/simion/test_voltage_waveforms.py"

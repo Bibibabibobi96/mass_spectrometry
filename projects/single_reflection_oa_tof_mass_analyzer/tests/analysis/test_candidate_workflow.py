@@ -2564,7 +2564,7 @@ class CandidatePostprocessTests(unittest.TestCase):
                     self.assertIsNone(selected["model_record"])
 
     def test_cold_prepared_plan_uses_public_native_view_and_prelaunch_failure_has_no_receipt(self):
-        from common.contracts.test_run_artifact_workflow import CALLBACK, RunArtifactWorkflowTests
+        from common.contracts.test_support.run_artifact_workflow import CALLBACK, RunArtifactWorkflowFixture
         from common.contracts.write_run_manifest import file_record
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
         extra = '''    from unittest import mock
@@ -2608,7 +2608,7 @@ class CandidatePostprocessTests(unittest.TestCase):
             selection = root / "selection.json"
             selection.write_text(json.dumps(selected), encoding="utf-8")
             before = {str(path):path.read_bytes() for path in parent.rglob("*") if path.is_file()}
-            fixture = RunArtifactWorkflowTests()
+            fixture = RunArtifactWorkflowFixture()
             (root / "owner").mkdir()
             result, run, _, outcome = fixture.invoke_fixture(root / "owner", {
                 "postprocess_selection":file_record(selection),"execution_source_closure":closure,
@@ -2667,7 +2667,7 @@ class CandidatePostprocessTests(unittest.TestCase):
                 self.assertEqual(before, {str(path): path.read_bytes() for path in parent.rglob("*") if path.is_file()})
 
     def test_native_execution_paths_use_actual_public_owner_and_preserve_identity(self):
-        from common.contracts.test_run_artifact_workflow import CALLBACK, RunArtifactWorkflowTests
+        from common.contracts.test_support.run_artifact_workflow import CALLBACK, RunArtifactWorkflowFixture
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import candidate_native_execution_relative_paths
         relative = "inputs/code/" + "deep/" * 26 + "actual_native_task.m"
         declared = candidate_native_execution_relative_paths({"sources": []}, code_relative_root=Path("inputs/code"))
@@ -2709,7 +2709,7 @@ class CandidatePostprocessTests(unittest.TestCase):
         callback = CALLBACK.replace('    counter = Path(payload["counter_path"])', extra + '    counter = Path(payload["counter_path"])')
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            fixture = RunArtifactWorkflowTests()
+            fixture = RunArtifactWorkflowFixture()
             with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_EXECUTION_ROOT": str(root / "x")}):
                 result, run, _, outcome = fixture.invoke_fixture(root, {"native_relative":relative}, callback_text=callback, expected_execution_relative_paths=[relative, *declared])
             self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr + json.dumps(result) + "\n".join(path.read_text(encoding="utf-8",errors="replace") for path in (run / "logs").glob("*.log")))

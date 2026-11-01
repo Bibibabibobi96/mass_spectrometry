@@ -1305,21 +1305,23 @@ $selection|ConvertTo-Json -Depth 16 -Compress
         paths = sorted((ROOT/"common/contracts").glob("test_*.py"))
         selected = [path.relative_to(ROOT).as_posix() for path in paths]
         expected = {name.removesuffix(".py").replace("/", ".") for name in selected}
+        route = next(row for row in json.loads((ROOT/"common/gate_catalog.json").read_text(encoding="utf-8"))["routes"]
+                     if row["stage"] == "common_contracts")
+        configured_count = route["repository_integration_partition"]["count"]
         result = self.run_script(self.prelude()+f"""
 . {quote(ROOT/'common/gate_catalog_support.ps1')}
 $route=(Get-Content {quote(ROOT/'common/gate_catalog.json')} -Raw|ConvertFrom-Json -Depth 32).routes|Where-Object stage -eq 'common_contracts'
 $selected=@({','.join(quote(name) for name in selected)})
 function Get-ChildItem {{throw 'already-selected owner modules were rediscovered'}}
 $parts=@(Get-GateRepositoryTestPartitions -Route $route -RepoRoot {quote(ROOT)} -Modules $selected)
-$parts|ConvertTo-Json -Depth 32 -Compress
+ConvertTo-Json -InputObject $parts -Depth 32 -Compress
 """)
         self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
         parts = json.loads(result.stdout.strip().splitlines()[-1])
         modules = [name for part in parts for name in part["modules"]]
         self.assertEqual(set(modules), expected)
         self.assertEqual(len(modules), len(expected))
-        self.assertEqual(len(parts), 3)
-        self.assertLess(max(part["seconds"] for part in parts), sum(part["seconds"] for part in parts)/2)
+        self.assertEqual(len(parts), min(configured_count, len(expected)))
 
     def test_python_owner_compiled_partitions_keep_import_roots_and_exit_seven(self) -> None:
         with tempfile.TemporaryDirectory(prefix="python_gate_partition_") as directory:

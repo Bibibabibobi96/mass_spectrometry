@@ -411,6 +411,24 @@ exit 0
         self.assertTrue(downstream <= self.routed_stages(
             prefix + "analysis/component_focus_analysis.py").keys())
 
+    def test_ip_tests_preserve_actual_integration_fixture_consumers(self) -> None:
+        prefix = "projects/dual_pressure_rectilinear_ion_processor/"
+        for relative in ("tests/test_owner_finalization_recovery.py", "tests/test_removed.py",
+                         "tests/analysis/test_unrelated.py", "tests/nested/test_removed.py"):
+            with self.subTest(relative=relative):
+                stages = self.routed_stages(prefix + relative)
+                self.assertIn("dual_pressure_rectilinear_ion_processor_static", stages)
+                self.assertNotIn("instrument_assembly_integration", stages)
+        for relative in ("tests/test_cooled_buncher.py", "tests/test_component_exit.py",
+                         "tests/test_functional.py", "tests/__init__.py",
+                         "tests/test_support/unknown_helper.py", "tests/test_support/test_helper.py",
+                         "tests/nested/support/test_helper.py", "analysis/cooled_buncher.py",
+                         "analysis/unknown_provider.py", "tests/run_future.ps1"):
+            with self.subTest(relative=relative):
+                stages = self.routed_stages(prefix + relative)
+                self.assertIn("dual_pressure_rectilinear_ion_processor_static", stages)
+                self.assertIn("instrument_assembly_integration", stages)
+
     def test_extracted_mechanisms_keep_automatic_regression_routes(self) -> None:
         for implementation, stage, module in (
             ("common/contracts/expected_values.py", "common_contracts",
@@ -1167,6 +1185,42 @@ exit ([int]$env:CI_FIXTURE_EXIT)
             routed,
             {"common_contracts": routed["common_contracts"]},
         )
+
+    def test_shared_workflow_fixture_selects_actual_consumers_and_unknown_stays_conservative(self) -> None:
+        rf = "projects.rf_multipole_ion_optics.tests.analysis."
+        single = "projects.single_reflection_oa_tof_mass_analyzer.tests.analysis."
+        expected = {
+            "instrument_assembly_integration": ["integrations.tests.test_local_frontend_owner_recovery",
+                                                 "integrations.tests.test_single_reflection_owner_recovery"],
+            "rf_multipole_quadrupole_static": [rf + name for name in (
+                "test_comsol_owner_finalization", "test_owner_finalization_recovery", "test_simion_powershell_owner")],
+            "single_reflection_oa_tof_mass_analyzer_static": [single + name for name in (
+                "test_candidate_workflow", "test_compensation_powershell_adapter")],
+        }
+
+        def selected_modules(request, owner):
+            return [module for row in request["stages"] if row["selected"] and
+                    (row["name"] == owner or row["name"].startswith(owner + "__tests_"))
+                    for parameter in ("SelectedTestModules", "ChangedTestModules")
+                    for module in row["command"].get("parameters", {}).get(parameter, [])]
+
+        for filename in ("run_artifact_workflow.py", "__init__.py"):
+            with self.subTest(fixture=filename):
+                request, _ = self.plan("-ChangedPath", "common/contracts/test_support/" + filename)
+                for owner, modules in expected.items():
+                    self.assertCountEqual(selected_modules(request, owner), modules, owner)
+                ip = next(row for row in request["stages"] if row["name"] == "dual_pressure_rectilinear_ion_processor_static")
+                self.assertTrue(ip["selected"])
+                self.assertEqual(ip["command"]["script"],
+                                 "projects/dual_pressure_rectilinear_ion_processor/verify_project.ps1")
+                self.assertFalse({"SelectedTestModules", "ChangedTestModules"} & ip["command"]["parameters"].keys())
+
+        request, _ = self.plan("-ChangedPath", "common/contracts/test_support/unknown_fixture.py")
+        for owner in expected:
+            full, _ = self.plan("-Scope", "Owner", "-Owner", owner)
+            modules = selected_modules(request, owner)
+            self.assertTrue(modules, owner)
+            self.assertCountEqual(modules, selected_modules(full, owner), owner)
 
     def test_multipole_tests_do_not_route_to_runtime_consumers(self) -> None:
         initializer_routes = self.routed_stages("projects/rf_multipole_ion_optics/tests/__init__.py")

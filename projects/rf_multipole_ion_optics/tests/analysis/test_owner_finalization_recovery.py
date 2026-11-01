@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 
-from common.contracts import test_run_artifact_workflow as owner_fixture
+from common.contracts.test_support import run_artifact_workflow as owner_fixture
 from common.contracts.write_run_manifest import file_record
 
 REPO = owner_fixture.REPO
@@ -18,7 +18,7 @@ PWSH = shutil.which("pwsh")
 @unittest.skipUnless(PWSH, "PowerShell 7 required")
 class OwnerFinalizationRecoveryTests(unittest.TestCase):
     def test_rf_original_cli_resumes_existing_owner_completion(self) -> None:
-        helper = owner_fixture.RunArtifactWorkflowTests()
+        helper = owner_fixture.RunArtifactWorkflowFixture()
         with tempfile.TemporaryDirectory(prefix="workflow-rf-cli-") as directory:
             root = Path(directory)
             _, run, _, _ = helper.invoke_fixture(root, {}, failure_stage="retention_before", project="rf_multipole_ion_optics")

@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from common.contracts import test_run_artifact_workflow as owner_fixture
+from common.contracts.test_support import run_artifact_workflow as owner_fixture
 
 ROOT = Path(__file__).resolve().parents[2]
 EXECUTE_SOURCE = ROOT/'integrations/workflows/single_reflection_flight/run.ps1'
@@ -133,7 +133,7 @@ foreach($mode in @('null','error')){
             (facade/'config').mkdir();shutil.copyfile(ROOT/'config/project_registry.json',facade/'config/project_registry.json')
             cli=facade/'integrations/workflows/single_reflection_flight/run.ps1';cli.parent.mkdir(parents=True)
             shutil.copyfile(EXECUTE_SOURCE,cli)
-            helper=owner_fixture.RunArtifactWorkflowTests()
+            helper=owner_fixture.RunArtifactWorkflowFixture()
             case=root/'case';case.mkdir()
             with patch.object(owner_fixture,'REPO',facade),patch.object(owner_fixture,'OWNER',facade/'common/contracts/run_artifact_workflow.ps1'):
                 first,run,_,failed=helper.invoke_fixture(case,{},retention='solver_review',failure_stage='seal',project='instrument_assembly')

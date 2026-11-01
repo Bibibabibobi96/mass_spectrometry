@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 
-from common.contracts import test_run_artifact_workflow as fixtures
+from common.contracts.test_support import run_artifact_workflow as fixtures
 
 REPO = Path(__file__).resolve().parents[4]
 PROJECT = "rf_multipole_ion_optics"
@@ -33,7 +33,7 @@ if(-not$blocked-or$NativeOperations.Count-ne1){throw 'Unknown native exit was re
         self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
 
     def test_original_clis_resume_publication_seal_and_reject_unknown_without_source_arguments(self):
-        helper = fixtures.RunArtifactWorkflowTests()
+        helper = fixtures.RunArtifactWorkflowFixture()
         for workflow, failure in (("interface_readiness", "publication"),
                                   ("mass_filter_reference", "seal"),
                                   ("interface_readiness", "unknown")):

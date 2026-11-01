@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from common.contracts import test_run_artifact_workflow as workflow_fixture
+from common.contracts.test_support import run_artifact_workflow as workflow_fixture
 
 REPO = Path(__file__).resolve().parents[4]
 CLI = REPO / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1"
@@ -23,7 +23,7 @@ PWSH = shutil.which("pwsh")
 @unittest.skipUnless(PWSH, "PowerShell 7 required")
 class ComsolOwnerFinalizationTests(unittest.TestCase):
     def setUp(self):
-        self.fixture = workflow_fixture.RunArtifactWorkflowTests()
+        self.fixture = workflow_fixture.RunArtifactWorkflowFixture()
 
     def test_bootstrap_admission_failures_keep_primary_and_restore_explicit_python(
         self,

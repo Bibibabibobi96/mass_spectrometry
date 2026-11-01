@@ -8,7 +8,7 @@ import sys
 import tempfile
 import unittest
 
-from common.contracts import test_run_artifact_workflow as owner_fixture
+from common.contracts.test_support import run_artifact_workflow as owner_fixture
 from common.contracts.capacity_protection import load_capacity_protection_leases
 
 REPO = owner_fixture.REPO
@@ -19,7 +19,7 @@ PWSH = shutil.which("pwsh")
 @unittest.skipUnless(PWSH, "PowerShell 7 required")
 class OwnerFinalizationRecoveryTests(unittest.TestCase):
     def test_original_cli_replays_after_seal_and_rejects_unknown_writer(self) -> None:
-        helper = owner_fixture.RunArtifactWorkflowTests()
+        helper = owner_fixture.RunArtifactWorkflowFixture()
         project = "dual_pressure_rectilinear_ion_processor"
         cli = REPO / "projects" / project / "simion/run_functional.ps1"
         for failure in ("publication", "seal", "unknown"):

@@ -256,11 +256,11 @@ if(-not$script:validated-or$null-ne$script:lease-or$null-ne$finalizationFailure-
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
 
     def test_original_cli_resumes_actual_public_result_without_reexecuting_prepared_work(self):
-        from common.contracts.test_run_artifact_workflow import RunArtifactWorkflowTests
+        from common.contracts.test_support.run_artifact_workflow import RunArtifactWorkflowFixture
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            fixture = RunArtifactWorkflowTests("runTest")
+            fixture = RunArtifactWorkflowFixture("runTest")
             invoke = fixture.run_ps
             def bind_compensation_mode(fixture_root, script):
                 request_path = fixture_root/"request.json"

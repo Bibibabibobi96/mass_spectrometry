@@ -825,61 +825,65 @@
       "owner": "common/contracts",
       "partition_preflight": false,
       "repository_integration_partition": {
-        "count": 3,
+        "count": 4,
         "default_seconds": 1,
         "measured_seconds": {
-          "test_artifact_identity_archive": 1.962573,
-          "test_artifact_naming": 0.001214,
-          "test_artifact_project": 0.020277,
-          "test_artifact_retention": 4.00854,
-          "test_artifact_retention_safety": 0.131924,
-          "test_canonical_clock_authority": 0.026847,
-          "test_capacity_ledger_handoff": 0.280074,
-          "test_capacity_ledger_v3": 4.685501,
-          "test_capacity_maintenance_orchestration": 2.506232,
-          "test_capacity_reconcile_runtime": 39.742943,
-          "test_changed_test_selection": 162.005448,
-          "test_component_particle_state": 0.975736,
-          "test_design_planner": 0.902713,
-          "test_design_request": 0.042251,
-          "test_development_standards": 11.04541,
-          "test_execution_compiler": 16.113554,
-          "test_expected_values": 0.000577,
-          "test_file_identity": 0.66,
-          "test_formal_asset_manifest": 0.057975,
-          "test_frozen_inputs": 0.034178,
-          "test_gate_unittest": 0.330146,
-          "test_historical_source_scratch_retirement": 0.531417,
-          "test_legacy_capacity_calibration": 2.242148,
-          "test_legacy_owner_disposition": 0.444909,
-          "test_machine_contracts_paths": 0.013427,
-          "test_multipole_project_variants": 5.531772,
-          "test_parallel_gate_support": 147.464765,
-          "test_particle_count_policy": 0.10153,
-          "test_particle_physics": 0.000287,
-          "test_particle_state": 0.021615,
-          "test_project_gate_prevalidation": 12.193041,
-          "test_project_registry": 1.247719,
-          "test_python_dependency_contract": 0.0028,
-          "test_reconcile_artifact_capacity": 4.596928,
-          "test_reconcile_interrupted_compact_runs": 1.207141,
-          "test_recorded_file_removal": 0.065799,
-          "test_report_cloc_delta": 11.91139,
-          "test_repository_text_bytes": 0.276725,
-          "test_rigid_transform": 0.002542,
-          "test_run_artifact_workflow": 456.741759,
-          "test_run_capacity_lifecycle": 17.294455,
-          "test_run_terminal_publication": 0.111353,
-          "test_shared_artifact_contracts": 0.211835,
-          "test_simion_refine_policy": 0.48763,
-          "test_solver_review_retirement": 30.470709,
-          "test_stage_reuse": 1.177197,
-          "test_strict_json": 0.103597,
-          "test_terminal_publication_lock": 3.413858,
-          "test_verify_artifact_layout": 12.367457,
-          "test_verify_changed": 110.495208,
-          "test_verify_run_manifest": 15.331219,
-          "test_write_formal_asset_manifest": 0.021363
+          "test_artifact_identity_archive": 1.691538,
+          "test_artifact_naming": 0.001203,
+          "test_artifact_project": 0.013149,
+          "test_artifact_retention": 3.492038,
+          "test_artifact_retention_safety": 0.118852,
+          "test_canonical_clock_authority": 0.026409,
+          "test_capacity_ledger_handoff": 0.223474,
+          "test_capacity_ledger_v3": 4.083204,
+          "test_capacity_maintenance_orchestration": 2.142224,
+          "test_capacity_reconcile_runtime": 36.043356,
+          "test_changed_test_selection": 251.120957,
+          "test_component_particle_state": 0.763974,
+          "test_cross_root_protection": 8.534771,
+          "test_deferred_capacity_accounting": 3.645064,
+          "test_design_planner": 0.680541,
+          "test_design_request": 0.031743,
+          "test_development_standards": 8.616475,
+          "test_execution_compiler": 20.462489,
+          "test_expected_values": 0.000321,
+          "test_file_identity": 0.636131,
+          "test_formal_asset_manifest": 0.045142,
+          "test_frozen_inputs": 0.182609,
+          "test_gate_unittest": 0.281344,
+          "test_historical_source_scratch_retirement": 0.425814,
+          "test_legacy_capacity_calibration": 1.828276,
+          "test_legacy_owner_disposition": 0.337967,
+          "test_machine_contracts_paths": 0.011033,
+          "test_multipole_project_variants": 5.260087,
+          "test_native_execution_paths": 2.580907,
+          "test_parallel_gate_support": 139.452255,
+          "test_particle_count_policy": 0.08925,
+          "test_particle_physics": 0.000142,
+          "test_particle_state": 0.044543,
+          "test_project_gate_prevalidation": 15.20663,
+          "test_project_registry": 1.170458,
+          "test_python_dependency_contract": 0.001713,
+          "test_reconcile_artifact_capacity": 4.270998,
+          "test_reconcile_interrupted_compact_runs": 1.128517,
+          "test_recorded_file_removal": 0.072654,
+          "test_report_cloc_delta": 10.736846,
+          "test_repository_text_bytes": 0.253435,
+          "test_rigid_transform": 0.002147,
+          "test_run_artifact_workflow": 227.086357,
+          "test_run_artifact_workflow_sources": 177.702262,
+          "test_run_capacity_lifecycle": 15.504897,
+          "test_run_terminal_publication": 0.102523,
+          "test_shared_artifact_contracts": 0.153551,
+          "test_simion_refine_policy": 0.875835,
+          "test_solver_review_retirement": 28.209047,
+          "test_stage_reuse": 2.064456,
+          "test_strict_json": 0.082632,
+          "test_terminal_publication_lock": 4.975067,
+          "test_verify_artifact_layout": 11.711225,
+          "test_verify_changed": 106.423794,
+          "test_verify_run_manifest": 12.027791,
+          "test_write_formal_asset_manifest": 0.01762
         }
       }
     },
@@ -1089,7 +1093,7 @@
           "reason": "accelerator_shared_test_fixture_changed"
         },
         {
-          "prefix": "projects/dual_pressure_rectilinear_ion_processor/",
+          "regex": "^projects/dual_pressure_rectilinear_ion_processor/(?!tests/(?:.*/)?test_[^/]+\\.py$)",
           "reason": "guide_provider_changed"
         },
         {
@@ -1111,6 +1115,22 @@
         {
           "exact": "common/resource_budget_support.ps1",
           "reason": "shared_resource_budget_dependency_changed"
+        },
+        {
+          "exact": "projects/dual_pressure_rectilinear_ion_processor/tests/test_cooled_buncher.py",
+          "reason": "guide_shared_test_fixture_changed"
+        },
+        {
+          "exact": "projects/dual_pressure_rectilinear_ion_processor/tests/test_component_exit.py",
+          "reason": "guide_shared_test_fixture_changed"
+        },
+        {
+          "exact": "projects/dual_pressure_rectilinear_ion_processor/tests/test_functional.py",
+          "reason": "guide_shared_test_fixture_changed"
+        },
+        {
+          "regex": "^projects/dual_pressure_rectilinear_ion_processor/tests/(?:[^/]+/)*(?:test_support|testing_support|support)/",
+          "reason": "guide_shared_test_support_changed"
         }
       ],
       "command": {
@@ -1245,6 +1265,23 @@
               "integrations/tests/test_single_reflection_runner.py",
               "integrations/tests/test_single_reflection_runtime.py",
               "integrations/tests/test_single_reflection_source_protection.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "common/contracts/test_support/run_artifact_workflow.py",
+                "reason": "shared_lifecycle_test_fixture_changed"
+              },
+              {
+                "exact": "common/contracts/test_support/__init__.py",
+                "reason": "shared_lifecycle_test_fixture_changed"
+              }
+            ],
+            "modules": [
+              "integrations/tests/test_local_frontend_owner_recovery.py",
+              "integrations/tests/test_single_reflection_owner_recovery.py"
             ],
             "dependency_profile": "locked"
           }
@@ -1610,6 +1647,23 @@
               "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_three_zone_t5_simion_candidate.py"
             ],
             "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "common/contracts/test_support/run_artifact_workflow.py",
+                "reason": "shared_lifecycle_test_fixture_changed"
+              },
+              {
+                "exact": "common/contracts/test_support/__init__.py",
+                "reason": "shared_lifecycle_test_fixture_changed"
+              }
+            ],
+            "modules": [
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_workflow.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_compensation_powershell_adapter.py"
+            ],
+            "dependency_profile": "locked"
           }
         ]
       },
@@ -1825,7 +1879,8 @@
         ],
         "support_paths": [
           "projects/rf_multipole_ion_optics/tests/test_support/",
-          "projects/rf_multipole_ion_optics/tests/__init__.py"
+          "projects/rf_multipole_ion_optics/tests/__init__.py",
+          "common/contracts/test_support/"
         ],
         "module_parameter": "ChangedTestModules",
         "scope": "projects/rf_multipole_ion_optics/tests/",
@@ -1886,6 +1941,24 @@
             "modules": [
               "projects/rf_multipole_ion_optics/tests/analysis/test_frozen_matlab_closure.py",
               "projects/rf_multipole_ion_optics/tests/analysis/test_comsol_mesh_report.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "common/contracts/test_support/run_artifact_workflow.py",
+                "reason": "shared_lifecycle_test_fixture_changed"
+              },
+              {
+                "exact": "common/contracts/test_support/__init__.py",
+                "reason": "shared_lifecycle_test_fixture_changed"
+              }
+            ],
+            "modules": [
+              "projects/rf_multipole_ion_optics/tests/analysis/test_comsol_owner_finalization.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_owner_finalization_recovery.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_simion_powershell_owner.py"
             ],
             "dependency_profile": "locked"
           }
@@ -2175,6 +2248,14 @@
         {
           "exact": "common/analysis/figure_export.py",
           "reason": "shared_figure_export_changed"
+        },
+        {
+          "exact": "common/contracts/test_support/run_artifact_workflow.py",
+          "reason": "shared_lifecycle_test_fixture_changed"
+        },
+        {
+          "exact": "common/contracts/test_support/__init__.py",
+          "reason": "shared_lifecycle_test_fixture_changed"
         }
       ],
       "command": {
