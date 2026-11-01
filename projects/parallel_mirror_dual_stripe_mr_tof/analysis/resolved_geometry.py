@@ -13,7 +13,6 @@ import json
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
@@ -1477,11 +1476,3 @@ def geometry_receipt(contract: dict[str, Any]) -> dict[str, Any]:
         "mirror_inner_shield_slot_box_mm": resolved["mirror_inner_shield_slot"],
         "stripe_slot_box_mm": resolved["stripe_slot"],
     }
-
-
-def write_geometry_receipt(contract: dict[str, Any], output_path: Path) -> dict[str, Any]:
-    """Write an LF, solver-neutral resolved-geometry receipt for adapters."""
-    receipt = geometry_receipt(contract)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
-    return receipt

@@ -27,6 +27,9 @@ controller-state夹具的两个配置读取显式使用UTF-8；campaign夹具经
 两Prism分段诊断的阶段B只使用`stage_b_p1_exit_to_p2_low_field_reference`；旧的pre-reflection／Stripe入口别名已退役，
 实际阶段终点、后续镜转折／Stripe传播算法及序列化字段不变。
 
+无消费者的`write_geometry_receipt`文件写入包装已退役；中立`geometry_receipt`及物理几何指纹保持，现有指纹回归通过。
+`select_runtime_response_bank`本轮保留：bank来源身份仍绑定整个模块，直接删包装会使未来昂贵缓存失效；未改既有身份规则或历史资产。
+
 主设计为对称会聚双镜、五次项偏置Stripe及保留实体的接地线性Stripe。
 MR拥有Prism、镜组、Stripe、检测、系统布局约束与匹配判据；跨项目装配和联合执行由
 [统一集成](../../../integrations/README.md)拥有。独立器件通过不授予MR资格。
