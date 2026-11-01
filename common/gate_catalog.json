@@ -34,6 +34,14 @@
         {
           "exact": "common/host_execution_lease.ps1",
           "reason": "host_adapter_changed"
+        },
+        {
+          "exact": "common/resource_budget_support.ps1",
+          "reason": "shared_resource_budget_dependency_changed"
+        },
+        {
+          "exact": "common/test_observed_preparation_drain.py",
+          "reason": "observed_preparation_drain_tests_changed"
         }
       ],
       "command": {
@@ -42,7 +50,8 @@
           "-m",
           "unittest",
           "common.test_host_resource_scheduler",
-          "common.test_host_resource_python"
+          "common.test_host_resource_python",
+          "common.test_observed_preparation_drain"
         ]
       },
       "owner": "host_resource_scheduler_tests"
@@ -899,6 +908,10 @@
         {
           "exact": "common/contracts/frozen_inputs.py",
           "reason": "frozen_workbench_seed_dependency_changed"
+        },
+        {
+          "exact": "common/resource_budget_support.ps1",
+          "reason": "managed_process_completion_dependency_changed"
         }
       ],
       "command": {
@@ -927,6 +940,18 @@
             ],
             "modules": [
               "common/simion/test_workbench_seed.py"
+            ],
+            "dependency_profile": "stdlib"
+          },
+          {
+            "matches": [
+              {
+                "exact": "common/resource_budget_support.ps1",
+                "reason": "managed_process_completion_dependency_changed"
+              }
+            ],
+            "modules": [
+              "common/simion/test_managed_process_completion.py"
             ],
             "dependency_profile": "stdlib"
           }

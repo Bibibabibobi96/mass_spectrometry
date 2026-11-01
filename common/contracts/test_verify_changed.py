@@ -212,6 +212,20 @@ foreach($case in $cases){{
         self.assertEqual(rows["simion_common"]["command"]["arguments"],
                          ["-m", "common.gate_unittest", "common/simion/test_workbench_seed.py"])
 
+    def test_resource_sampler_dependencies_keep_completion_and_drain_in_public_scope(self):
+        request, _ = self.plan("-ChangedPath", "common/resource_budget_support.ps1")
+        rows = {row["name"]: row for row in request["stages"]}
+        self.assertIn("host_resource_scheduler_tests", rows)
+        self.assertEqual(rows["simion_common"]["command"]["arguments"],
+                         ["-m", "common.gate_unittest", "common/simion/test_managed_process_completion.py"])
+        drain = "common.test_observed_preparation_drain"
+        self.assertEqual(rows["host_resource_scheduler_tests"]["command"]["arguments"].count(drain), 1)
+        changed_test, _ = self.plan("-ChangedPath", "common/test_observed_preparation_drain.py")
+        self.assertIn("host_resource_scheduler_tests", {row["name"] for row in changed_test["stages"]})
+        repository, _ = self.plan("-Scope", "Repository")
+        self.assertEqual(sum(row["command"].get("arguments", []).count(drain)
+                             for row in repository["stages"]), 1)
+
     def test_frozen_input_mapping_preserves_missing_unknown_and_full_selection(self):
         with tempfile.TemporaryDirectory(prefix="frozen_leaf_selection_") as directory:
             root = Path(directory)
@@ -478,7 +492,8 @@ exit 0
         self.assertEqual(routes[0]["dependency_profile"], "locked")
         self.assertEqual(routes[0]["repository_integration_group"], "fast")
         self.assertEqual(routes[0]["command"]["arguments"],
-                         ["-m", "unittest", "common.test_host_resource_scheduler", "common.test_host_resource_python"])
+                         ["-m", "unittest", "common.test_host_resource_scheduler",
+                          "common.test_host_resource_python", "common.test_observed_preparation_drain"])
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             self.skipTest("PowerShell Core is unavailable")

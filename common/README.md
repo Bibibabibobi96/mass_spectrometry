@@ -361,6 +361,15 @@ PID与创建时间继续识别后代，确认相关进程退出才回收。状�
 复用该轮枚举，各family仍分别复核创建身份、投影可能归属的父链并读取工作集、private、两者最大值及CPU。
 快照不跨轮保存，标量读取也不构成全机同一时刻的原子测量。独立调用省略快照时仍按进程枚举、创建身份
 复核、父关系枚举的原顺序执行；无关进程的未知身份不会扩大为其他family的失败。
+当CIM缺少可执行路径时，`.Path`补偿只查询已归属的活进程，不为无关进程读取MainModule；
+系统console仍须精确匹配Windows映像路径，未知祖先、PID创建身份及全部计量字段保持原语义。
+2026-11-01在同一i9-9900K／16逻辑处理器、PowerShell 7.6.9、2核／2GiB准入下，
+对1／4个family各做三对交替采样，每臂重新枚举329–334个进程并创建新snapshot／Process对象。
+sampler中位数分别为0.261018→0.124298秒、0.792439→0.373825秒；
+含snapshot的中位数分别为0.336703→0.184046秒、0.861682→0.437266秒。
+这是局部采样成本，不含稳定的冷启动或完整门禁收益；原公共故障场景、真实console及READY身份回归保留。
+共享采样脚本变更由现有catalog选中SIMION的managed-completion模块及host资源批次；
+公共`test_observed_preparation_drain`十二项回归随host批次执行一次，不再遗漏于Repository范围。
 受管Python的READY/ACK使用`Test-ManagedProcessLaunchAncestry`证明选定worker到原launcher的父链：
 每步创建身份必须已知，父进程不能晚于子进程，首尾身份精确匹配且链不能成环。
 Windows父PID可能已复用，其他旧分支的未知身份不否定这条已证明的链；

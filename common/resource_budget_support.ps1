@@ -171,17 +171,6 @@ function Get-ManagedSolverProcessSample {
       else{$null=$unknownAncestryProcessIds.Add([int]$process.Id)}
     }
   }
-  # Some Win32_Process rows may omit ExecutablePath even though Get-Process can
-  # resolve it for this user.  The shared classifier still requires an exact
-  # Windows system-image path; a same-name executable never receives the
-  # lifecycle exception.
-  foreach($process in $processes){
-    try{
-      if(Test-HostResourceConsoleProcess -ImagePath ([string]$process.Path)){
-        $null=$systemConsoleHostProcessIds.Add([int]$process.Id)
-      }
-    }catch{}
-  }
   $changed=$true
   while($changed){
     $changed=$false
@@ -201,6 +190,13 @@ function Get-ManagedSolverProcessSample {
     if($byId.ContainsKey([int]$processId)){
       $process=$byId[[int]$processId]
       $active+=[int]$processId
+      # CIM may omit ExecutablePath; compensate only for this owned live row.
+      # Keep the exact system-image classifier and the existing failure handling.
+      try{
+        if(Test-HostResourceConsoleProcess -ImagePath ([string]$process.Path)){
+          $null=$systemConsoleHostProcessIds.Add([int]$processId)
+        }
+      }catch{}
       if($systemConsoleHostProcessIds.Contains([int]$processId)){
         $activeSystemConsoleHostProcessIds+=[int]$processId
       }

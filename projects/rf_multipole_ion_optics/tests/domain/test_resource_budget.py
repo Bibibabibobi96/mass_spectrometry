@@ -812,7 +812,13 @@ $child=New-TestProcess 102 40 20 11 ''
 $console=New-TestProcess 103 5 8 3 (Join-Path $env:SystemRoot 'System32/conhost.exe')
 $unknown=[pscustomobject]@{Id=104;Path=''}
 $unknown|Add-Member ScriptProperty StartTime {throw 'TEST_ONLY inaccessible birth'}
-$script:processes=@($root,$child,$console,$unknown)
+$script:unrelatedPathReads=0
+$unrelated=New-TestProcess 105 0 0 0 ''
+$unrelated|Add-Member ScriptProperty Path {
+ $script:unrelatedPathReads++
+ throw 'TEST_ONLY unrelated image is inaccessible'
+} -Force
+$script:processes=@($root,$child,$console,$unknown,$unrelated)
 function Get-Process {$script:events.Add('process');$script:processes}
 function Get-HostResourceNativeProcessCreationTicks {param($ProcessId);$null}
 function Get-CimInstance {
@@ -865,6 +871,14 @@ foreach($script:scenario in @('cim','fallback','owned_unknown','incomplete','reu
  if(@($newEvents|Where-Object {$_-in@('process','cim','fallback')}).Count){throw 'Shared sample re-enumerated'}
  $results+=@{scenario=$script:scenario;expected_birth_ticks=$birth.Ticks;independent=(Convert-TestPublicProcessSample $independent);shared=(Convert-TestPublicProcessSample $shared)}
 }
+if($script:unrelatedPathReads-ne0){throw 'Sampler queried an unrelated process image'}
+# A same-name image outside Windows must remain ordinary owned work.
+$script:scenario='cim'
+$console.Path=Join-Path ([IO.Path]::GetTempPath()) 'test-only/conhost.exe'
+$ordinary=Get-ManagedSolverProcessSample -RootProcessIds @(101) `
+ -RootProcessStartedAtUtcTicks @{'101'=$birth.Ticks}
+if(@($ordinary.system_console_host_process_ids).Count){throw 'Non-system console image received lifecycle exemption'}
+if(@($ordinary.active_process_ids)-notcontains103){throw 'Ordinary owned child disappeared'}
 $results|ConvertTo-Json -Depth 12 -Compress
 """
         completed = subprocess.run(
