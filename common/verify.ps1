@@ -452,7 +452,8 @@ foreach ($route in $routes) {
         if (($null -eq $testSelection -or -not $testSelection.OnlyTestModules) -and
             (Test-CompletePartitionOwnerCommand -Route $route -Command $command -TestSelection $testSelection -RepoRoot $repoRoot)) {
             $partitionArguments = @{Route=$route;RepoRoot=$repoRoot}
-            if ($command.runner -eq 'python' -and $null -ne $testSelection -and $testSelection.CompleteOwner) {
+            if ($null -ne $testSelection -and ($testSelection.CompleteOwner -or
+                ($command.runner -eq 'powershell' -and ($FullScope -or $ownerScope)))) {
                 $partitionArguments.Modules = @($testSelection.Modules)
             }
             $partitions = @(Get-GateRepositoryTestPartitions @partitionArguments)

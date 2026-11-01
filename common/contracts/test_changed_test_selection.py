@@ -1,4 +1,4 @@
-"""Exercise changed-test discovery and failure propagation through the real L1 gate."""
+"""Exercise owner test selection and failure propagation through public verification."""
 
 from __future__ import annotations
 
@@ -748,18 +748,31 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
                     self.assertCountEqual(selected, [module[:-3].replace("/", ".") for module in case["modules"]])
                     self.assertEqual(len(selected), len(set(selected)))
 
-    def test_sfi_weighted_partitions_cover_actual_scope_without_duplicates(self) -> None:
+    def test_weighted_partitions_cover_each_actual_owner_scope_once(self) -> None:
         script = r"""
 . __SUPPORT__
-$route=(Get-Content -LiteralPath __CATALOG__ -Raw|ConvertFrom-Json).routes|
- Where-Object stage -eq 'single_reflection_oa_tof_mass_analyzer_static'
-$partitions=@(Get-GateRepositoryTestPartitions -Route $route -RepoRoot $PWD.Path)
-$roots=@($route.test_selection.roots)
+$routes=(Get-Content -LiteralPath __CATALOG__ -Raw|ConvertFrom-Json).routes
+$roots=@($routes|ForEach-Object {if($null-ne$_.PSObject.Properties['test_selection']){$_.test_selection.roots}})
+$results=@{}
+foreach($route in @($routes|Where-Object stage -in @('parallel_mirror_dual_stripe_mr_tof_static',
+ 'instrument_assembly_integration','single_reflection_oa_tof_mass_analyzer_static','rf_multipole_quadrupole_static'))){
 $selection=Get-GateChangedTests -Route $route -RepoRoot $PWD.Path -KnownTestRoots $roots -FullScope -ChangedPaths @()
-@{partitions=$partitions;selected=@($selection.Modules);expanded=$selection.Expanded;
+$partitions=@(Get-GateRepositoryTestPartitions -Route $route -RepoRoot $PWD.Path -Modules $selection.Modules)
+$results[$route.stage]=@{partitions=$partitions;selected=@($selection.Modules);expanded=$selection.Expanded;
  only_tests=$selection.OnlyTestModules;preflight=$route.repository_integration_command.parameters.PreflightOnly;
- parent_preserved=($null-eq$route.PSObject.Properties['partition_preflight'] -or $route.partition_preflight)}|
- ConvertTo-Json -Depth 12 -Compress
+ parent_preserved=($null-eq$route.PSObject.Properties['partition_preflight'] -or $route.partition_preflight)}
+}
+$planPath=Join-Path ([IO.Path]::GetTempPath()) (([guid]::NewGuid().ToString('N'))+'.json')
+try{
+ & (Join-Path $PWD.Path 'common/verify.ps1') -Scope Repository -PlanOnly -PlanPath $planPath|Out-Null
+ if($LASTEXITCODE-ne0){throw 'Actual Repository planning failed'}
+ $plan=Get-Content -LiteralPath $planPath -Raw|ConvertFrom-Json
+ foreach($name in @($results.Keys)){
+  $children=@($plan.stages|Where-Object {$_.name.StartsWith($name+'__tests_')})
+  $results[$name].actual_planned_modules=@($children|ForEach-Object {$_.command.parameters.SelectedTestModules})
+ }
+}finally{Remove-Item -LiteralPath $planPath -ErrorAction SilentlyContinue}
+$results|ConvertTo-Json -Depth 12 -Compress
 """
         script = script.replace('__SUPPORT__', powershell_literal(REPO_ROOT / 'common/gate_catalog_support.ps1'))
         script = script.replace('__CATALOG__', powershell_literal(REPO_ROOT / 'common/gate_catalog.json'))
@@ -767,20 +780,87 @@ $selection=Get-GateChangedTests -Route $route -RepoRoot $PWD.Path -KnownTestRoot
                                 capture_output=True, text=True, encoding='utf-8', timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         data = json.loads(result.stdout)
-        prefix = 'projects/single_reflection_oa_tof_mass_analyzer/tests'
-        expected = {path.relative_to(REPO_ROOT).as_posix()[:-3].replace('/', '.')
-                    for path in (REPO_ROOT / prefix).rglob('test_*.py')}
-        actual = [module for part in data['partitions'] for module in part['modules']]
-        route = next(row for row in json.loads((REPO_ROOT / 'common/gate_catalog.json').read_text(encoding='utf-8'))['routes']
-                     if row['stage'] == 'single_reflection_oa_tof_mass_analyzer_static')
-        self.assertEqual(len(data['partitions']), route['repository_integration_partition']['count'])
-        self.assertEqual(set(actual), expected)
-        self.assertEqual(len(actual), len(set(actual)))
-        self.assertEqual({path[:-3].replace('/', '.') for path in data['selected']}, expected)
-        self.assertTrue(data['expanded'])
-        self.assertFalse(data['only_tests'])
-        self.assertTrue(data['preflight'])
-        self.assertTrue(data['parent_preserved'])
+        routes = json.loads((REPO_ROOT / 'common/gate_catalog.json').read_text(encoding='utf-8'))['routes']
+        known_roots = {root for row in routes for root in row.get('test_selection', {}).get('roots', [])}
+        for name, selected in data.items():
+            with self.subTest(owner=name):
+                route = next(row for row in routes if row['stage'] == name)
+                owned_roots = set(route['test_selection']['roots'])
+                expected = {path.relative_to(REPO_ROOT).as_posix()[:-3].replace('/', '.')
+                            for path in (REPO_ROOT / route['test_selection']['scope']).rglob('test_*.py')
+                            if not any(path.relative_to(REPO_ROOT).as_posix().startswith(root)
+                                       for root in known_roots - owned_roots)}
+                actual = [module for part in selected['partitions'] for module in part['modules']]
+                self.assertEqual(len(selected['partitions']), route['repository_integration_partition']['count'])
+                self.assertEqual(set(actual), expected)
+                self.assertEqual(len(actual), len(set(actual)))
+                self.assertCountEqual(selected['actual_planned_modules'], actual)
+                self.assertEqual({path[:-3].replace('/', '.') for path in selected['selected']}, expected)
+                self.assertTrue(selected['expanded'])
+                self.assertFalse(selected['only_tests'])
+                self.assertTrue(selected['preflight'])
+                self.assertEqual(selected['parent_preserved'], name != 'instrument_assembly_integration')
+
+    def test_partition_weights_are_owner_local_and_unknown_modules_keep_default(self) -> None:
+        script = r"""
+. __SUPPORT__
+$results=@{}
+foreach($owner in @('first','second')){
+ $weight=if($owner-eq'first'){100}else{10}
+ $route=[pscustomobject]@{stage=$owner;test_selection=[pscustomobject]@{scope='unused/'};
+  repository_integration_partition=[pscustomobject]@{count=2;default_seconds=7;
+   measured_seconds=[pscustomobject]@{test_same_name=$weight}}}
+ $results[$owner]=@(Get-GateRepositoryTestPartitions -Route $route -RepoRoot $PWD.Path `
+  -Modules @("$owner/tests/test_same_name.py","$owner/tests/new_area/test_unknown.py"))
+}
+$results|ConvertTo-Json -Depth 8 -Compress
+""".replace('__SUPPORT__', powershell_literal(REPO_ROOT / 'common/gate_catalog_support.ps1'))
+        result = subprocess.run(['pwsh', '-NoProfile', '-Command', script], cwd=REPO_ROOT,
+                                capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for owner, groups in json.loads(result.stdout).items():
+            self.assertCountEqual([module for group in groups for module in group['modules']],
+                                  [f'{owner}.tests.test_same_name', f'{owner}.tests.new_area.test_unknown'])
+            self.assertCountEqual([group['seconds'] for group in groups], [100 if owner == 'first' else 10, 7])
+
+    def test_changed_mixed_deleted_and_shared_inputs_preserve_original_core_contract(self) -> None:
+        mr_test = f"{MR}/tests/analysis/test_mirror_fixed_grid_voltage_correction.py"
+        rf_test = f"{RF}/tests/analysis/test_mass_filter_l1.py"
+        cases = [("mr_mixed", [f"{MR}/analysis/unknown_partition_probe.py", mr_test]),
+                 ("rf_mixed", [f"{RF}/runtime/unknown_partition_probe.ps1", rf_test]),
+                 ("rf_deleted", [f"{RF}/tests/analysis/test_deleted_partition_probe.py"]),
+                 ("rf_shared", [f"{RF}/tests/test_support/partition_probe.py"])]
+        with tempfile.TemporaryDirectory(prefix="partition_core_plans_") as directory:
+            root = Path(directory)
+            probes = root / "probes.json"
+            probes.write_text(json.dumps(cases), encoding="utf-8")
+            script = r"""
+$results=@{}
+foreach($probe in (Get-Content __PROBES__ -Raw|ConvertFrom-Json)){
+ $plan=Join-Path __OUTPUT__ ($probe[0]+'.json')
+ & __GATE__ -PlanOnly -ChangedPath @($probe[1]) -PlanPath $plan|Out-Null
+ if($LASTEXITCODE-ne0){throw 'Changed planning failed'}
+ $results[$probe[0]]=(Get-Content $plan -Raw|ConvertFrom-Json).stages
+}
+$results|ConvertTo-Json -Depth 20 -Compress
+""".replace('__PROBES__', powershell_literal(probes)).replace('__OUTPUT__', powershell_literal(root))
+            script = script.replace('__GATE__', powershell_literal(REPO_ROOT / 'common/verify.ps1'))
+            result = subprocess.run(['pwsh', '-NoProfile', '-Command', script], cwd=REPO_ROOT,
+                                    capture_output=True, text=True, encoding='utf-8', timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            expected_rf = {path.relative_to(REPO_ROOT).with_suffix('').as_posix().replace('/', '.')
+                           for path in (REPO_ROOT / RF / 'tests/analysis').rglob('test_*.py')}
+            for name, stages in json.loads(result.stdout).items():
+                owner = 'parallel_mirror_dual_stripe_mr_tof_static' if name == 'mr_mixed' else 'rf_multipole_quadrupole_static'
+                selected = [stage for stage in stages if stage['name'].startswith(owner) and stage['selected']]
+                self.assertEqual(len(selected), 1, name)
+                parameters = selected[0]['command']['parameters']
+                self.assertEqual(parameters['Level'], 'Core', name)
+                self.assertNotIn('SelectedTestModules', parameters)
+                self.assertNotIn('PreflightOnly', parameters)
+                expected = ({mr_test[:-3].replace('/', '.')} if name == 'mr_mixed' else
+                            {rf_test[:-3].replace('/', '.')} if name == 'rf_mixed' else expected_rf)
+                self.assertCountEqual(parameters['ChangedTestModules'], expected, name)
 
     def test_unknown_fixture_and_deleted_test_execute_the_remaining_owner_tests(self) -> None:
         with tempfile.TemporaryDirectory(prefix="changed_owner_discovery_") as directory:

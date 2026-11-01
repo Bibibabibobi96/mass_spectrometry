@@ -4,7 +4,10 @@ param(
   [string]$PythonExe = '',
   [switch]$FreshnessPrevalidated,
   [switch]$PowerShellSyntaxPrevalidated,
-  [string[]]$ChangedTestModules = @()
+  [string[]]$ChangedTestModules = @(),
+  [string[]]$SelectedTestModules = @(),
+  [switch]$PreflightOnly,
+  [switch]$PreflightValidated
 )
 
 Set-StrictMode -Version Latest
@@ -14,6 +17,12 @@ $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $selectedVariants = if ($StructuralVariant -eq 'All') { @('quadrupole','hexapole','octupole') } else { @($StructuralVariant) }
 if ($Level -eq 'Formal') {
   throw "FORMAL_UNQUALIFIED STRUCTURAL_VARIANT=$($selectedVariants -join ','): current-owner qualification and applicable GUI/CAD closure are required separately for each selected structure; frozen historical qualifications retain their recorded identity."
+}
+if (($PreflightOnly -and $SelectedTestModules.Count) -or
+    (($PreflightOnly -or $SelectedTestModules.Count) -and $Level -ne 'Static') -or
+    (($PreflightOnly -or $SelectedTestModules.Count) -and $ChangedTestModules.Count) -or
+    ($PreflightValidated -and -not $SelectedTestModules.Count)) {
+  throw 'Static preflight and selected test modules are mutually exclusive with other modes.'
 }
 
 $hostExecutionLease = $null
@@ -32,7 +41,7 @@ if ($PowerShellSyntaxPrevalidated -and -not $FreshnessPrevalidated) {
   throw 'PowerShellSyntaxPrevalidated requires FreshnessPrevalidated from the same completed prerequisite.'
 }
 
-if (-not $FreshnessPrevalidated) {
+if (-not ($FreshnessPrevalidated -or $PreflightValidated)) {
   Push-Location $repoRoot
   try {
     foreach ($variant in $selectedVariants) {
@@ -42,8 +51,6 @@ if (-not $FreshnessPrevalidated) {
     if ('quadrupole' -in $selectedVariants) {
     & $python -m projects.rf_multipole_ion_optics.analysis.resolve_contract --check
     if ($LASTEXITCODE -ne 0) { throw 'Resolved-contract gate failed.' }
-    & $python -m projects.rf_multipole_ion_optics.analysis.resolve_contract --profile interface --check
-    if ($LASTEXITCODE -ne 0) { throw 'Interface-readiness contract gate failed.' }
     & $python -m projects.rf_multipole_ion_optics.analysis.resolve_contract --profile mass_filter --check
     if ($LASTEXITCODE -ne 0) { throw 'Mass-filter resolved contract gate failed.' }
     & $python -m projects.rf_multipole_ion_optics.analysis.sync_simion_geometry --check
@@ -59,7 +66,7 @@ if (-not $FreshnessPrevalidated) {
   "MULTIPOLE_FRESHNESS=PREVALIDATED STRUCTURAL_VARIANT=$StructuralVariant"
 }
 if ($Level -ne 'Core') {
-  if ($PowerShellSyntaxPrevalidated) {
+  if ($PowerShellSyntaxPrevalidated -or $PreflightValidated) {
     'MULTIPOLE_POWERSHELL_SYNTAX=PREVALIDATED'
   } else {
     $parseErrors = @()
@@ -79,7 +86,7 @@ if ($Level -eq 'Freshness') {
   "PROJECT_GATE=PASS PROJECT=rf_multipole_ion_optics LEVEL=$Level STRUCTURAL_VARIANT=$StructuralVariant"
   return
 }
-if ('quadrupole' -in $selectedVariants) {
+if ('quadrupole' -in $selectedVariants -and -not $PreflightValidated) {
 Push-Location $repoRoot
 try {
   & $python -m `
@@ -96,6 +103,32 @@ try {
 if ($LASTEXITCODE -ne 0) { throw 'Quadrupole mass-filter L1 contract gate failed.' }
 & $python (Join-Path $projectRoot 'analysis\entry_aperture_l0.py') --check
 if ($LASTEXITCODE -ne 0) { throw 'Entry-aperture L0 reference gate failed.' }
+}
+if ($PreflightOnly) {
+  'MULTIPOLE_STATIC_PREFLIGHT=PASS PYTHON_TESTS=DEFERRED'
+  return
+}
+if ($SelectedTestModules.Count) {
+  $testModules = @($SelectedTestModules | Sort-Object -Unique)
+  $testRoots = @($selectedVariants | ForEach-Object {
+    $folder = if ($_ -eq 'quadrupole') {'analysis'} else {$_}
+    "projects.rf_multipole_ion_optics.tests.$folder."
+  })
+  if ($testModules.Count -ne $SelectedTestModules.Count -or @($testModules | Where-Object {
+    $module = $_
+    $knownVariant = @($testRoots | Where-Object {$module.StartsWith($_, [StringComparison]::Ordinal)}).Count -eq 1
+    # The quadrupole owner also consumes newly discovered, unregistered test
+    # roots. Registered domain/other-variant owners retain their own suites.
+    $unknownRoot = 'quadrupole' -in $selectedVariants -and
+      $module -notmatch '^projects\.rf_multipole_ion_optics\.tests\.(analysis|domain|hexapole|octupole)\.'
+    $module -notmatch '^projects\.rf_multipole_ion_optics\.tests\.[A-Za-z0-9_.]+$' -or
+      -not ($knownVariant -or $unknownRoot)
+  }).Count) { throw 'RF test partition has duplicate or foreign variant modules.' }
+  Push-Location $repoRoot
+  try { & $python -m common.gate_unittest @testModules } finally { Pop-Location }
+  if ($LASTEXITCODE -ne 0) { throw "Python variant test partition failed: $StructuralVariant" }
+  "MULTIPOLE_TEST_PARTITION=PASS PREFLIGHT_PREVALIDATED=$([bool]$PreflightValidated) FULL_PROJECT_GATE=False"
+  return
 }
 # Core is the no-solver, active-design contract gate.  It deliberately stops
 # before the repository-wide RF analysis suite and PowerShell tree parse; those

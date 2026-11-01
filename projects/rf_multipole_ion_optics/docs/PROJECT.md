@@ -630,6 +630,11 @@ mass_filter_reference正式case数组与manifest Outputs包含每case实际deter
 复制 887→419 文件、178,179,007→6,653,707 字节；完整原五项测试通过，未启动商业求解器。
 这是夹具准备优化，不是科学求解提速；单次顺序配对未隔离缓存影响，未作为完整 Owner／Repository 验收。
 
+软件完整范围可由既有验证器先执行一次四极前置，再以 `SelectedTestModules` 执行互不重叠的模块分片；
+原 `ChangedTestModules` 仍是追加选择，不用于冒充分片替换。门禁只检查一次路径与编译结果相同的
+official／interface 发布合同，interface profile 及其真实科学入口保留，mass-filter 与结构变体检查不变。
+分片权重来自已完成回归的逐模块实测，预测均衡不等于新的完整命令提速，最终耗时另行验收。
+
 interface、mass-filter、same-solver 的7个 workflow 入口及发布新鲜度消费者改用公共
 `enumerate_python_sources` 从声明的小包／模块派生 Python 交付闭包，删除原逐文件 Python 清单。
 既有路径预检与复制消费同一选择，MATLAB／JSON 等动态资源仍显式声明；必需导入检查保持实际入口及科学依赖，
