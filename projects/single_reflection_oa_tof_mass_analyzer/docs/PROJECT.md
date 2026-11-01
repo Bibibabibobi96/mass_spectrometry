@@ -627,6 +627,9 @@ Candidate后处理CLI夹具按现有科学资源、提供者实现声明、公�
 
 Candidate 工作流测试的直接执行入口位于全部测试类之后，与模块方式均可发现因果阶段测试；same／changed authority 用例按实际两种行为命名，不声称覆盖缺失 authority。测试集合及生产阶段证据检查保持。
 
+same／changed authority 两案共用一次只读 producer，分别冻结独立 child；保留真实分析0／1调用、零原生调用、各自run／manifest／复用来源proof及父全文件集合和字节不变。直接engine夹具不产生公共owner的小Result或容量row，现有公开CLI／owner回归另保留。三种solver文本篡改及modified／extra两案各组只prepare一次，每案finally恢复原字节／删除extra，仍拒绝原错误且不产生run或materialized staging；完整99方法及五种拒绝场景保持。
+同环境三方法单轮对照45.711→30.684秒，完整pwsh调用50.3916507→34.9877647秒；最终方法逆序及两单案另通过，证明共享准备不依赖顺序。首轮新增断言误把public-owner Result要求加到直接engine而失败的记录保留，修正未放宽生产合同。详细原始计时、覆盖与已排除的CLOC重叠观测见[成本记录](../../../../artifacts/projects/instrument_assembly/scratch/20261101__gate-cost-closeout/agent3/READOUT.md)；这是有界软件夹具去重复，不代表完整Owner／Repository预算达成或新增科学资格。
+
 原candidate88个测试按相同class／method名迁至设计20、工作流64、legacy复用4；完整test ID的module前缀相应改变，不伪称旧完整字符串未变。原12个非test helper及inline legacy freezer仅由不继承TestCase的fixture mixin共享，支持模块没有test_方法，消费者不导入／继承任何旧TestCase。保留最新legacy8→2准备优化及所有原断言、故障／母群／源身份行为。公共发现自然枚举3模块，单独软件runner／并发器没有增加。
 
 4片计权沿现catalog和GetGateRepositoryTestPartitions；新3模块权重来自既存643timing对原88case的分组聚合：设计2.165402、workflow280.454321、legacy164.302084秒。该轮早于最新legacy去重复，背景负载不同，权重仅历史调度提示，不称当前精确预测。旧643轮全部已计时测试1219.428485秒，理想4路均分仍约304.857秒，未计前置／启动／准入；拆模块消除446.9秒单模块瓶颈，不单凭规划宣称Owner≤5分钟。现本机16logicalCPU与每GATE2CPU／2GiB原则上可准入4片，但实际可用CPU／内存／互斥与CI环境仍由原公共机制决定；未擅自降低预算或套用跨环境速度。后续仅以安静环境完整Owner真实墙钟验收。

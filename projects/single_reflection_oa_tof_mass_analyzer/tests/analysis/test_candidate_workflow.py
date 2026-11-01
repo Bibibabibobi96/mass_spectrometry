@@ -1304,58 +1304,64 @@ def execute_prepared_run(*args):
 
 
     def test_prepared_solver_text_cannot_change_before_atomic_run_start(self):
-        for index, name in enumerate(("oatof_resolved.lua", "oatof_ideal_grounded.lua", "oatof_ideal_grounded.fly2")):
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as root:
-                root_path = Path(root)
-                artifact_root = root_path / "artifacts" / "projects" / "single_reflection_oa_tof_mass_analyzer"
-                source = root_path / "source"
-                source.mkdir()
-                inputs = self.candidate_run_inputs(source)
-                plan = prepare_candidate_run(
-                    *inputs, f"20260720_13000{index + 4}__build__cross__design-candidate__text-tamper",
-                    artifact_root, particle_source_seed=20260713,
-                )
-                planning_root = Path(plan["planning_root"])
-                program = planning_root / "inputs" / "prepared_consumers" / "simion" / name
-                program.write_text(program.read_text(encoding="utf-8") + "-- changed\n", encoding="utf-8")
-                with self.assertRaisesRegex(ValueError, "changed before run start"):
-                    start_candidate_run(planning_root / "candidate_workflow_plan.json")
-                self.assertFalse(Path(plan["run_root"]).exists())
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            artifact_root = root_path / "artifacts" / "projects" / "single_reflection_oa_tof_mass_analyzer"
+            source = root_path / "source"
+            source.mkdir()
+            plan = prepare_candidate_run(
+                *self.candidate_run_inputs(source),
+                "20260720_130004__build__cross__design-candidate__text-tamper",
+                artifact_root, particle_source_seed=20260713,
+            )
+            planning_root = Path(plan["planning_root"])
+            for name in ("oatof_resolved.lua", "oatof_ideal_grounded.lua", "oatof_ideal_grounded.fly2"):
+                with self.subTest(name=name):
+                    program = planning_root / "inputs" / "prepared_consumers" / "simion" / name
+                    original = program.read_bytes()
+                    try:
+                        program.write_bytes(original + b"-- changed\n")
+                        with self.assertRaisesRegex(ValueError, "changed before run start"):
+                            start_candidate_run(planning_root / "candidate_workflow_plan.json")
+                        self.assertFalse(Path(plan["run_root"]).exists())
+                        self.assertFalse((planning_root / "materialized_run").exists())
+                    finally:
+                        program.write_bytes(original)
+                    self.assertEqual(program.read_bytes(), original)
 
 
     def test_frozen_candidate_source_tamper_blocks_start_and_extra_files(self):
-        cases = ("modified", "extra")
-        for index, case in enumerate(cases):
-            with self.subTest(case=case), tempfile.TemporaryDirectory() as root:
-                root_path = Path(root)
-                artifact_root = root_path / "artifacts" / "projects" / "single_reflection_oa_tof_mass_analyzer"
-                source = root_path / "source"
-                source.mkdir()
-                plan = prepare_candidate_run(
-                    *self.candidate_run_inputs(source),
-                    f"20260720_13001{index}__build__cross__design-candidate__source-{case}",
-                    artifact_root,
-                    particle_source_seed=20260713,
-                )
-                planning_root = Path(plan["planning_root"])
-                code_root = Path(plan["execution_source_closure"]["code_root"])
-                if case == "modified":
-                    target = code_root / "common" / "require_powershell7.ps1"
-                    target.write_text(
-                        target.read_text(encoding="utf-8") + "\n# tampered\n",
-                        encoding="utf-8",
-                    )
-                else:
-                    (code_root / "undeclared.py").write_text(
-                        "raise RuntimeError('undeclared')\n", encoding="utf-8"
-                    )
-                with self.assertRaisesRegex(
-                    ValueError, "frozen candidate source changed|missing or extra"
-                ):
-                    start_candidate_run(
-                        planning_root / "candidate_workflow_plan.json"
-                    )
-                self.assertFalse(Path(plan["run_root"]).exists())
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            artifact_root = root_path / "artifacts" / "projects" / "single_reflection_oa_tof_mass_analyzer"
+            source = root_path / "source"
+            source.mkdir()
+            plan = prepare_candidate_run(
+                *self.candidate_run_inputs(source),
+                "20260720_130010__build__cross__design-candidate__source-modified",
+                artifact_root, particle_source_seed=20260713,
+            )
+            planning_root = Path(plan["planning_root"])
+            code_root = Path(plan["execution_source_closure"]["code_root"])
+            target = code_root / "common" / "require_powershell7.ps1"
+            original = target.read_bytes()
+            extra = code_root / "undeclared.py"
+            for case in ("modified", "extra"):
+                with self.subTest(case=case):
+                    try:
+                        if case == "modified":
+                            target.write_bytes(original + b"\n# tampered\n")
+                        else:
+                            extra.write_text("raise RuntimeError('undeclared')\n", encoding="utf-8")
+                        with self.assertRaisesRegex(ValueError, "frozen candidate source changed|missing or extra"):
+                            start_candidate_run(planning_root / "candidate_workflow_plan.json")
+                        self.assertFalse(Path(plan["run_root"]).exists())
+                        self.assertFalse((planning_root / "materialized_run").exists())
+                    finally:
+                        target.write_bytes(original)
+                        extra.unlink(missing_ok=True)
+                    self.assertEqual(target.read_bytes(), original)
+                    self.assertFalse(extra.exists())
 
 
     def test_frozen_candidate_source_tamper_blocks_stage_and_finalize(self):
@@ -3075,47 +3081,71 @@ class CandidateAnalysisReuseTests(CandidateFixtures, unittest.TestCase):
     def test_normal_reuse_reuses_same_authority_and_reanalyzes_changed_authority(self):
         from projects.single_reflection_oa_tof_mass_analyzer.analysis import prepare_candidate_run as preparation
         from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import candidate_comsol_stage
-        for case in ("same","changed"):
-            with self.subTest(case=case),tempfile.TemporaryDirectory() as directory:
-                root=Path(directory)
-                _,plan=self.native_workflow_plan(root,"20261031_130000")
-                observed=[]
-                base=self.native_fake_executor(observed)
-                def producer(stage,runtime,simion):
-                    evidence=base(stage,runtime,simion)
-                    if stage["stage_id"]=="comsol_candidate":
-                        run=Path(runtime["run_root"])
-                        request=Path(evidence["analysis_request"])
-                        receipt=candidate_comsol_stage.analyze_detector_request(request,runtime["execution_source_closure"],
-                            run/"logs/analysis.log",runtime=candidate_workflow)
-                        evidence["analysis_receipt"]=str(receipt)
-                    return evidence
-                parent,_=run_candidate_workflow(plan,sys.executable,stage_executor=producer)
-                before={path:path.read_bytes() for path in parent.rglob("*") if path.is_file()}
-                original_freeze=preparation.freeze_candidate_source_closure
-                analysis=root/"explicit_analysis.json"
-                document=load_json(PROJECT_ROOT/"config/analysis_contract.json")
-                document["kde"]["bandwidth_multiplier"]=1.2
-                analysis.write_text(json.dumps(document),encoding="utf-8")
-                def freeze(*args,**kwargs):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            _,plan=self.native_workflow_plan(root,"20261031_130000")
+            observed=[]
+            base=self.native_fake_executor(observed)
+            def producer(stage,runtime,simion):
+                evidence=base(stage,runtime,simion)
+                if stage["stage_id"]=="comsol_candidate":
+                    run=Path(runtime["run_root"])
+                    request=Path(evidence["analysis_request"])
+                    receipt=candidate_comsol_stage.analyze_detector_request(request,runtime["execution_source_closure"],
+                        run/"logs/analysis.log",runtime=candidate_workflow)
+                    evidence["analysis_receipt"]=str(receipt)
+                return evidence
+            parent,_=run_candidate_workflow(plan,sys.executable,stage_executor=producer)
+            before={path:path.read_bytes() for path in parent.rglob("*") if path.is_file()}
+            ledger_before=load_capacity_ledger(root/"artifacts")
+            authority="projects/single_reflection_oa_tof_mass_analyzer/config/analysis_contract.json"
+            parent_closure=load_json(parent/"candidate_workflow_plan.json")["execution_source_closure"]
+            parent_analysis=Path(frozen_source_path(parent_closure,authority)).read_bytes()
+            original_freeze=preparation.freeze_candidate_source_closure
+            analysis=root/"explicit_analysis.json"
+            document=load_json(PROJECT_ROOT/"config/analysis_contract.json")
+            document["kde"]["bandwidth_multiplier"]=1.2
+            analysis.write_text(json.dumps(document),encoding="utf-8")
+            children=[]
+            for index,case in enumerate(("same","changed")):
+                with self.subTest(case=case):
+                    def freeze(*args,**kwargs):
+                        if case=="changed":
+                            kwargs["analysis_contract"]=analysis
+                        return original_freeze(*args,**kwargs)
+                    with mock.patch.object(preparation,"freeze_candidate_source_closure",side_effect=freeze):
+                        _,child_plan=self.native_workflow_plan(root,f"20261031_13{index+1}000")
+                    child_authority=Path(frozen_source_path(load_json(child_plan)["execution_source_closure"],authority))
+                    self.assertEqual(child_authority.read_bytes(),analysis.read_bytes() if case=="changed" else parent_analysis)
                     if case=="changed":
-                        kwargs["analysis_contract"]=analysis
-                    return original_freeze(*args,**kwargs)
-                with mock.patch.object(preparation,"freeze_candidate_source_closure",side_effect=freeze):
-                    _,child_plan=self.native_workflow_plan(root,"20261031_131000")
-                child_observed=[]
-                with mock.patch.object(candidate_workflow,"_run_managed_stage_command",side_effect=AssertionError("COMSOL must not start")), \
-                        mock.patch.object(candidate_comsol_stage,"analyze_detector_request",wraps=candidate_comsol_stage.analyze_detector_request) as analyze:
-                    child,summary=run_candidate_workflow(child_plan,sys.executable,
-                        stage_executor=self.native_fake_executor(child_observed),reuse_parent=parent,reuse_through="cad_candidate")
-                stage=next(item for item in summary["stages"] if item["stage_id"]=="comsol_candidate")
-                self.assertEqual(child_observed,["static_inputs","structural_acceptance"])
-                self.assertEqual(stage["native_execution"],"reused")
-                self.assertEqual(stage["analysis_execution"],"reused" if case=="same" else "executed")
-                self.assertEqual(analyze.call_count,0 if case=="same" else 1)
-                self.assertEqual({path:path.read_bytes() for path in before},before)
-                if case!="same":
-                    self.assertTrue(Path(stage["evidence"]["analysis_receipt"]).is_relative_to(child))
+                        self.assertNotEqual(child_authority.read_bytes(),parent_analysis)
+                    child_observed=[]
+                    with mock.patch.object(candidate_workflow,"_run_managed_stage_command",side_effect=AssertionError("COMSOL must not start")) as native, \
+                            mock.patch.object(candidate_comsol_stage,"analyze_detector_request",wraps=candidate_comsol_stage.analyze_detector_request) as analyze:
+                        child,summary=run_candidate_workflow(child_plan,sys.executable,
+                            stage_executor=self.native_fake_executor(child_observed),reuse_parent=parent,reuse_through="cad_candidate")
+                    native.assert_not_called()
+                    stage=next(item for item in summary["stages"] if item["stage_id"]=="comsol_candidate")
+                    self.assertEqual(child_observed,["static_inputs","structural_acceptance"])
+                    self.assertEqual(stage["native_execution"],"reused")
+                    self.assertEqual(stage["analysis_execution"],"reused" if case=="same" else "executed")
+                    self.assertEqual(analyze.call_count,0 if case=="same" else 1)
+                    self.assertEqual({path:path.read_bytes() for path in parent.rglob("*") if path.is_file()},before)
+                    self.assertNotIn(child,children)
+                    children.append(child)
+                    self.assertEqual(load_json(child/"run_manifest.json")["run_id"],child.name)
+                    config=load_json(child/"run_config.json")
+                    self.assertEqual(config["run_id"],child.name)
+                    for reused_stage in ("comsol_candidate","simion_candidate","cad_candidate"):
+                        proof=Path(config["inputs"][f"stage_reuse_{reused_stage}_provenance"])
+                        self.assertTrue(proof.is_relative_to(child))
+                        self.assertEqual(load_json(proof)["run_id"],child.name)
+                        self.assertEqual(load_json(proof)["parent_run_id"],parent.name)
+                    # Injected executors exercise the engine, not the public
+                    # owner: they must leave its capacity ledger unchanged.
+                    self.assertEqual(load_capacity_ledger(root/"artifacts"),ledger_before)
+                    if case!="same":
+                        self.assertTrue(Path(stage["evidence"]["analysis_receipt"]).is_relative_to(child))
 
 
 class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
