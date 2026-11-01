@@ -2594,8 +2594,11 @@ exit 0
 
     def test_single_process_limits_preserve_receipts_for_json_and_dictionary_inputs(self) -> None:
         """The real observer accepts existing JSON objects and both map types equally."""
+        # This is a limits-transport test, not a short wall-clock experiment.
+        # Each child must fit within the existing whole-invocation bound.
+        invocation_timeout_seconds = 90
         limits = dict(
-            wall_clock_seconds=10,
+            wall_clock_seconds=invocation_timeout_seconds,
             transient_run_directory_bytes=1,
             transient_run_directory_sample_interval_seconds=1,
             process_tree_working_set_bytes=1024**3,
@@ -2642,7 +2645,7 @@ exit 0
                 encoding="utf-8",
                 errors="replace",
                 # Allow three native child launches and live process sampling on shared CI.
-                timeout=90,
+                timeout=invocation_timeout_seconds,
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             for index in range(3):
