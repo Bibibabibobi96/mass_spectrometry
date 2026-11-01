@@ -16,6 +16,100 @@ PROJECT = Path(__file__).resolve().parents[2]
 
 
 class WorkpointBootstrapTests(unittest.TestCase):
+    def _isolated_fixture_cases(self, script, cases, *, timeout):
+        """Share one host/AST, retaining a private PowerShell script scope per case."""
+        batch_script = r'''
+param($Source,$Fixture)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
+$body=[scriptblock]::Create((Get-Content -LiteralPath $Fixture -Raw))
+$cases=[Console]::In.ReadToEnd()|ConvertFrom-Json -AsHashtable -Depth 100
+foreach($case in $cases){
+ $priorExit=Get-Variable LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+ $hadExit=$null-ne$priorExit
+ $priorExitValue=if($hadExit){$priorExit.Value}else{$null}
+ $module=New-Module -ScriptBlock {}
+ $timer=[Diagnostics.Stopwatch]::StartNew()
+ try{
+  $global:LASTEXITCODE=0
+  $arguments=@($Source,$case.root)+@($case.arguments)+@($ast)
+  & $module {if(Get-Variable fixtureCaseMarker -Scope Script -ErrorAction SilentlyContinue){throw 'Fixture script state leaked'};$script:fixtureCaseMarker=$true}
+  $null=& $module $body @arguments
+  $value=Get-Content -LiteralPath (Join-Path $case.root 'output.json') -Raw|ConvertFrom-Json -AsHashtable -Depth 100
+  [Console]::Out.WriteLine((@{name=$case.name;case_seconds=$timer.Elapsed.TotalSeconds;observation=$value}|ConvertTo-Json -Depth 100 -Compress))
+  [Console]::Out.Flush()
+ }finally{
+  Remove-Module $module
+  if($hadExit){$global:LASTEXITCODE=$priorExitValue}else{Remove-Variable LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue}
+ }
+}
+'''
+        with TemporaryDirectory() as temporary:
+            batch_root = Path(temporary)
+            requests = []
+            for index, (name, arguments, fixture) in enumerate(cases):
+                root = batch_root / str(index)
+                root.mkdir()
+                if fixture is not None:
+                    (root / 'fixture.json').write_text(json.dumps(fixture), encoding='utf-8')
+                requests.append(dict(name=name, root=str(root), arguments=arguments))
+            fixture_path = batch_root / 'case.ps1'
+            fixture_path.write_text(script, encoding='utf-8')
+            batch_path = batch_root / 'batch.ps1'
+            batch_path.write_text(batch_script, encoding='utf-8')
+            stderr_path = batch_root / 'stderr.log'
+            received = []
+            with stderr_path.open('w', encoding='utf-8') as stderr:
+                process = subprocess.Popen(['pwsh', '-NoProfile', '-File', str(batch_path),
+                    str(PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1'), str(fixture_path)],
+                    cwd=PROJECT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr,
+                    text=True, encoding='utf-8', bufsize=1)
+                try:
+                    json.dump(requests, process.stdin)
+                    process.stdin.close()
+                    process.stdin = None
+                    for line in process.stdout:
+                        self.assertLess(len(received), len(requests), 'Unexpected fixture case row.')
+                        row = json.loads(line)
+                        expected = requests[len(received)]['name']
+                        self.assertEqual(row['name'], expected, 'Duplicate or out-of-order fixture case.')
+                        received.append(expected)
+                        print(f"MR_FIXTURE_CASE_SECONDS={row['case_seconds']:.6f} CASE={expected}", flush=True)
+                        yield row['observation']
+                finally:
+                    # Assertion failures stop consumption, while the healthy host drains naturally.
+                    process.communicate(timeout=timeout * max(1, len(requests)))
+                    process.stdout.close()
+                self.assertEqual(process.returncode, 0, stderr_path.read_text(encoding='utf-8'))
+            self.assertEqual(received, [case['name'] for case in requests], 'Missing fixture case row.')
+
+    def test_fixture_batches_isolate_script_and_exit_state_in_both_orders_and_single_cases(self):
+        script = r'''
+param($Source,$Root,$Value,$PreparedAst)
+if(Get-Variable fixtureLeak -Scope Script -ErrorAction SilentlyContinue){throw 'Previous case script state leaked'}
+if($global:LASTEXITCODE-ne0){throw 'Previous case native exit code leaked'}
+$script:fixtureLeak=$Value;$global:LASTEXITCODE=[int]$Value
+@{value=$Value;script_value=$script:fixtureLeak}|ConvertTo-Json|Set-Content (Join-Path $Root 'output.json')
+'''
+        cases = [(str(value), [value], None) for value in (7, 13)]
+        forward = list(self._isolated_fixture_cases(script, cases, timeout=10))
+        reverse = list(self._isolated_fixture_cases(script, list(reversed(cases)), timeout=10))
+        singles = [list(self._isolated_fixture_cases(script, [case], timeout=10))[0] for case in cases]
+        self.assertEqual(forward, [dict(value=value, script_value=value) for value in (7, 13)])
+        self.assertEqual(forward, list(reversed(reverse)))
+        self.assertEqual(forward, singles)
+
+    def test_fixture_batch_preserves_nonzero_host_exit_after_first_row(self):
+        script = r'''
+param($Source,$Root,$Fail,$PreparedAst)
+if($Fail){throw 'fixture host failure'}
+@{completed=$true}|ConvertTo-Json|Set-Content (Join-Path $Root 'output.json')
+'''
+        results = self._isolated_fixture_cases(script, [('first', [False], None), ('failed', [True], None)], timeout=10)
+        self.assertEqual(next(results), dict(completed=True))
+        with self.assertRaisesRegex(AssertionError, 'fixture host failure'):
+            next(results)
+
     def test_restored_stage_axes_keep_original_profile_and_stage_boundaries(self):
         script = r'''
 param($Source,$Python,$RepoRoot)
@@ -1140,12 +1234,11 @@ try{Invoke-Expression $node.Extent.Text}catch{$errorText=$_.Exception.Message}
                         self.assertEqual(value["config"]["inputs"]["previous_controller_contract"], str(root / "old.json"))
                         self.assertEqual(value["config"]["parameters"]["controller_resume_changes"]["preserved_candidate_count"], 5)
 
-    def _restore_saved_checkpoint(self, scenario):
-        """Exercise saved-state restore and normal pending consumption without a solver."""
+    def _restore_saved_checkpoints(self, scenarios):
         script = r'''
-param($Source,$Root,$Scenario,$Repo,$RealPython)
+param($Source,$Root,$Scenario,$Repo,$RealPython,$PreparedAst)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
+$ast=$PreparedAst
 foreach($name in @('Get-ActiveStripeAxisIndices','Get-StagedColumnAxisIndices','Assert-ActiveStripeVoltages','Restore-StagedWorkpointChildren','Complete-StagedTrial','Invoke-StagedWorkpointBootstrap')){
  $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
  Invoke-Expression $node.Extent.Text
@@ -1288,21 +1381,17 @@ try{
 }catch{$errorText=$_.Exception.Message}
 @{failure=$errorText;restored=$restored;bootstrap=$bootstrap;restore_requests=$script:restoreRequests;saves=$script:saves;consumptions=$script:consumptions;flights=$script:flights;future_policies=$script:futurePolicies;old_pending=(Get-Content $pending -Raw -ErrorAction SilentlyContinue)}|ConvertTo-Json -Depth 100|Set-Content (Join-Path $Root 'output.json')
 '''
-        with TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            path = root / "restore.ps1"
-            path.write_text(script, encoding="utf-8")
-            result = subprocess.run([
-                "pwsh", "-NoProfile", "-File", str(path),
-                str(PROJECT / "analysis/run_downstream_workpoint_iteration.ps1"), temporary, scenario, str(PROJECT.parents[1]), sys.executable,
-            ], cwd=PROJECT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            return json.loads((root / "output.json").read_text(encoding="utf-8-sig"))
+        cases = [(scenario, [scenario, str(PROJECT.parents[1]), sys.executable], None) for scenario in scenarios]
+        yield from self._isolated_fixture_cases(script, cases, timeout=30)
+
+    def _restore_saved_checkpoint(self, scenario):
+        return list(self._restore_saved_checkpoints([scenario]))[0]
 
     def test_saved_checkpoint_pending_preserves_debits_and_consumes_success_once(self):
+        results = self._restore_saved_checkpoints(['success', 'failed', 'missing'])
         for status in ("success", "failed", "missing"):
             with self.subTest(status=status):
-                result = self._restore_saved_checkpoint(status)
+                result = next(results)
                 self.assertIsNone(result["failure"])
                 self.assertEqual(result["restored"]["stage_state"]["flight_count"], 2)
                 self.assertEqual(result["restored"]["stage_state"]["candidate_count"], 2)
@@ -1315,29 +1404,34 @@ try{
                 if status == "failed":
                     self.assertEqual(json.loads(result["old_pending"])["status"], "failed")
                     self.assertEqual(result["flights"][0]["ChildRunId"], "new-stage-002")
+        self.assertEqual(list(results), [])
 
     def test_original_restore_can_defer_only_publication_without_skipping_validation(self):
+        results = self._restore_saved_checkpoints(['restore_only', 'deferred_save'])
         for scenario,expected_saves in (('restore_only',1),('deferred_save',0)):
             with self.subTest(scenario=scenario):
-                result=self._restore_saved_checkpoint(scenario)
+                result=next(results)
                 self.assertIsNone(result['failure'])
                 self.assertEqual(result['saves'],expected_saves)
                 self.assertEqual(result['flights'],[])
                 self.assertEqual(result['consumptions'],0)
                 self.assertEqual(result['restored'],result['bootstrap'])
                 self.assertEqual(result['restored']['stage_state']['candidate_count'],2)
+        self.assertEqual(list(results), [])
 
     def test_abandoned_unflown_debit_restores_before_and_after_future_child(self):
+        results = self._restore_saved_checkpoints(['abandoned', 'abandoned_after_child', 'abandoned_tampered', 'abandoned_reset'])
         for scenario,count in (("abandoned",2),("abandoned_after_child",3)):
-            result=self._restore_saved_checkpoint(scenario)
+            result=next(results)
             self.assertIsNone(result["failure"])
             self.assertEqual(result["restored"]["stage_state"]["flight_count"],count)
             self.assertEqual(result["restored"]["stage_state"]["candidate_count"],2)
             self.assertEqual(result["flights"],[])
         for scenario in ("abandoned_tampered","abandoned_reset"):
-            result=self._restore_saved_checkpoint(scenario)
+            result=next(results)
             self.assertIsNotNone(result["failure"])
             self.assertIsNone(result["restored"])
+        self.assertEqual(list(results), [])
 
     def test_saved_checkpoint_policy_is_preserved_and_new_policy_only_controls_future(self):
         result = self._restore_saved_checkpoint("future_policy")
@@ -1366,12 +1460,14 @@ try{
         self.assertEqual((state["flight_count"], state["candidate_count"]), (2, 2))
 
     def test_saved_checkpoint_rejects_changed_identity_reference_budget_and_pending_voltage(self):
+        results = self._restore_saved_checkpoints(['bad_anchor', 'bad_column', 'bad_model', 'bad_budget', 'bad_voltage', 'bad_policy', 'bad_child'])
         for scenario in ("bad_anchor", "bad_column", "bad_model", "bad_budget", "bad_voltage", "bad_policy", "bad_child"):
             with self.subTest(scenario=scenario):
-                result = self._restore_saved_checkpoint(scenario)
+                result = next(results)
                 self.assertIsNotNone(result["failure"])
                 self.assertEqual(result["saves"], 0)
                 self.assertEqual(result["flights"], [])
+        self.assertEqual(list(results), [])
 
     def test_recovered_foreign_anchor_protects_all_live_levels_and_refuses_retirement(self):
         script = r'''
@@ -1579,13 +1675,11 @@ exit 0
                         self.assertEqual(report['receipt']['removed_files'], [
                             {'path': 'field.pa', 'bytes': 999, 'sha256': 'sealed-payload'}])
 
-    def _run_compose_reclamation_fixture(self, *, failure='', foreign=False, tampered=False, resume=False,
-                                         accepted=False, unknown_best=False, restored='', imported=False,
-                                         retired=False, cross_project=False, measured=False, operation='compose',explicit_refine=True):
+    def _run_compose_reclamation_cases(self, options):
         script = r'''
-param($Source,$Root)
+param($Source,$Root,$PreparedAst)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
+$ast=$PreparedAst
 foreach($name in @('New-StagedComposeProviderReference','Assert-StagedComposeProviderReference','Resolve-StagedComposeRetirementOwner','Reclaim-StagedComposeProviders')){
  $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
  Invoke-Expression $node.Extent.Text
@@ -1694,58 +1788,56 @@ try{
 }catch{$errorText=$_.Exception.Message}
 @{events=$script:events;retired=$script:retired;old_status=$old.status;session=$script:capacitySession;error=$errorText;root=$Root;state=$state}|ConvertTo-Json -Depth 30|Set-Content (Join-Path $Root 'output.json')
 '''
-        with TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            (root / 'fixture.json').write_text(json.dumps(dict(failure=failure, foreign=foreign,
-                                                               tampered=tampered, resume=resume,
-                                                               accepted=accepted, unknown_best=unknown_best,
-                                                               restored=restored, imported=imported,
-                                                               retired=retired, cross_project=cross_project,measured=measured,
-                                                               operation=operation,explicit_refine=explicit_refine)), encoding='utf-8')
-            path = root / 'reclamation.ps1'
-            path.write_text(script, encoding='utf-8')
-            result = subprocess.run(['pwsh', '-NoProfile', '-File', str(path),
-                                     str(PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1'), temporary],
-                                    cwd=PROJECT, timeout=40, capture_output=True, text=True,
-                                    encoding='utf-8', errors='replace')
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            return json.loads((root / 'output.json').read_text(encoding='utf-8-sig'))
+        defaults = dict(failure='', foreign=False, tampered=False, resume=False,
+                        accepted=False, unknown_best=False, restored='', imported=False,
+                        retired=False, cross_project=False, measured=False,
+                        operation='compose', explicit_refine=True)
+        cases = [(str(index), [], dict(defaults, **case)) for index, case in enumerate(options)]
+        yield from self._isolated_fixture_cases(script, cases, timeout=40)
+
+    def _run_compose_reclamation_fixture(self, **options):
+        return list(self._run_compose_reclamation_cases([options]))[0]
 
     def test_measured_retirement_requires_light_projection_keeps_gui_and_honors_public_refusal(self):
-        result=self._run_compose_reclamation_fixture(measured=True)
+        results = self._run_compose_reclamation_cases([{'measured': True}, {'measured': True, 'failure': 'dependency'}, {'measured': True, 'failure': 'new_lease'}])
+        result=next(results)
         self.assertIsNone(result['error'])
         self.assertEqual(len(result['retired']),3)
         self.assertTrue(result['retired'][-1].endswith('parent-stage-003-field'))
         self.assertLess(result['events'].index('freeze_light'),result['events'].index('enter_new'))
         for i in (4,5):
             self.assertTrue(any(p.endswith(f'parent-stage-00{i}-field') for p in result['session']['protected_paths']))
-        blocked=self._run_compose_reclamation_fixture(measured=True,failure='dependency')
+        blocked=next(results)
         self.assertIsNone(blocked['error'])
         self.assertEqual(blocked['retired'],[])
         self.assertTrue(blocked['state']['capacity_lifecycle_blocked']['no_private_delete'])
         self.assertFalse(any(e.startswith('apply_') for e in blocked['events']))
-        refused=self._run_compose_reclamation_fixture(measured=True,failure='new_lease')
+        refused=next(results)
         self.assertIsNone(refused['error'])
         self.assertEqual(refused['old_status'],'active')
         self.assertTrue(refused['state']['capacity_lifecycle_blocked']['old_protection_preserved'])
         self.assertFalse(any(e.startswith(('apply_','exit_')) for e in refused['events']))
+        self.assertEqual(list(results), [])
 
     def test_explicit_prepared_refine_lifecycle_is_not_labelled_compose_and_keeps_public_gates(self):
-        direct=self._run_compose_reclamation_fixture(measured=True,operation='refine')
+        results = self._run_compose_reclamation_cases([{'measured': True, 'operation': 'refine'}, {'measured': True, 'operation': 'refine', 'explicit_refine': False}, {'measured': True, 'operation': 'refine', 'failure': 'dependency'}])
+        direct=next(results)
         self.assertIsNone(direct['error'])
         self.assertEqual(len(direct['retired']),3)
         self.assertIn('freeze_light',direct['events'])
-        unselected=self._run_compose_reclamation_fixture(measured=True,operation='refine',explicit_refine=False)
+        unselected=next(results)
         self.assertEqual(unselected['retired'],[])
         self.assertNotIn('enter_new',unselected['events'])
-        refused=self._run_compose_reclamation_fixture(measured=True,operation='refine',failure='dependency')
+        refused=next(results)
         self.assertTrue(refused['state']['capacity_lifecycle_blocked']['no_private_delete'])
         self.assertFalse(any(e.startswith('apply_') for e in refused['events']))
+        self.assertEqual(list(results), [])
 
     def test_staged_compose_reclaims_only_consumed_owned_fields_after_new_protection(self):
+        results = self._run_compose_reclamation_cases([{'resume': False}, {'resume': True}])
         for resume in (False, True):
             with self.subTest(resume=resume):
-                result = self._run_compose_reclamation_fixture(resume=resume)
+                result = next(results)
                 self.assertIsNone(result['error'])
                 self.assertEqual(result['events'][:3], ['checkpoint', 'enter_new', 'exit_old'])
                 self.assertEqual(len(result['retired']), 2)
@@ -1761,6 +1853,7 @@ try{
                 self.assertEqual(result['old_status'], 'released')
                 self.assertEqual(result['events'][3:7], ['plan_parent-stage-001', 'apply_parent-stage-001',
                                                         'verify_parent-stage-001', 'finalize_parent-stage-001'])
+        self.assertEqual(list(results), [])
 
     def test_restored_compose_uses_original_owner_and_keeps_current_pending_gui(self):
         result = self._run_compose_reclamation_fixture(imported=True, resume=True,
@@ -1777,16 +1870,18 @@ try{
         self.assertIn('baseline', result['session']['protected_paths'])
 
     def test_restored_compose_public_retired_receipt_skips_apply_and_bad_authority_rejects(self):
-        result = self._run_compose_reclamation_fixture(imported=True, retired=True, resume=True)
+        results = self._run_compose_reclamation_cases([{'imported': True, 'retired': True, 'resume': True}, {'imported': True, 'cross_project': True}, {'imported': True, 'tampered': True}])
+        result = next(results)
         self.assertIsNone(result['error'])
         self.assertNotIn('apply_old_parent-stage-001', result['events'])
         self.assertEqual(result['events'].count('apply_old_parent-stage-002'), 1)
         for options, message in ((dict(cross_project=True), 'parent authority differs'),
                                  (dict(tampered=True), 'provider reference differs')):
             with self.subTest(options=options):
-                rejected = self._run_compose_reclamation_fixture(imported=True, **options)
+                rejected = next(results)
                 self.assertIn(message, rejected['error'])
                 self.assertEqual(rejected['retired'], [])
+        self.assertEqual(list(results), [])
 
     def test_restored_superseded_anchor_can_retire_before_next_compose(self):
         result = self._run_compose_reclamation_fixture(imported=True, accepted=True)
@@ -1798,9 +1893,10 @@ try{
                         bootstrap.index('while($null-eq$terminal)'))
 
     def test_restored_anchor_protection_rotates_only_after_last_live_consumer(self):
+        results = self._run_compose_reclamation_cases([{'accepted': True, 'restored': 'current'}, {'accepted': True, 'restored': 'pending'}, {'accepted': True, 'restored': 'column'}, {'accepted': True, 'restored': 'best'}, {'accepted': True, 'restored': 'gui'}, {'accepted': True, 'restored': 'unknown'}, {'accepted': True, 'restored': 'obsolete'}, {'accepted': True, 'restored': 'shared'}])
         for use in ('current', 'pending', 'column', 'best', 'gui', 'unknown', 'obsolete', 'shared'):
             with self.subTest(use=use):
-                result = self._run_compose_reclamation_fixture(accepted=True, restored=use)
+                result = next(results)
                 self.assertIsNone(result['error'])
                 keep = result['session']['protected_paths']
                 foreign_kept = any(p.endswith('parent-stage-009-field') for p in keep)
@@ -1813,6 +1909,7 @@ try{
                 self.assertIn('fixed_bank', keep)
                 self.assertIn('baseline', keep)
                 self.assertTrue(any(p.endswith('parent-stage-005-field') for p in keep))
+        self.assertEqual(list(results), [])
 
     def test_restored_anchor_new_lease_refusal_keeps_old_protection(self):
         result = self._run_compose_reclamation_fixture(accepted=True, restored='obsolete', failure='new_lease')
@@ -1822,10 +1919,10 @@ try{
         self.assertEqual(result['retired'], [])
 
     def test_staged_compose_reclaims_superseded_accepted_anchor_but_keeps_live_and_best_fields(self):
+        results = self._run_compose_reclamation_cases([{'accepted': True, 'resume': False, 'unknown_best': False}, {'accepted': True, 'resume': True, 'unknown_best': False}, {'accepted': True, 'resume': False, 'unknown_best': True}])
         for resume, unknown_best in ((False, False), (True, False), (False, True)):
             with self.subTest(resume=resume, unknown_best=unknown_best):
-                result = self._run_compose_reclamation_fixture(accepted=True, resume=resume,
-                                                               unknown_best=unknown_best)
+                result = next(results)
                 self.assertIsNone(result['error'])
                 self.assertEqual(len(result['retired']), 3)
                 self.assertTrue(any(p.endswith('parent-stage-006-field') for p in result['retired']))
@@ -1835,6 +1932,7 @@ try{
                 self.assertIn('fixed_bank', keep)
                 self.assertIn('unrelated_provider', keep)
                 self.assertFalse(any(p.endswith('parent-stage-006-field') for p in keep))
+        self.assertEqual(list(results), [])
 
     def test_superseded_accepted_anchor_public_dependency_refusal_remains_closed(self):
         result = self._run_compose_reclamation_fixture(accepted=True, failure='dependency')
@@ -1844,27 +1942,31 @@ try{
         self.assertEqual(result['session']['status'], 'active')
 
     def test_staged_compose_new_lease_refusal_preserves_old_and_dependency_refusal_never_applies(self):
-        result = self._run_compose_reclamation_fixture(failure='new_lease')
+        results = self._run_compose_reclamation_cases([{'failure': 'new_lease'}, {'failure': 'dependency'}])
+        result = next(results)
         self.assertIn('new lease refused', result['error'])
         self.assertEqual(result['old_status'], 'active')
         self.assertEqual(result['session']['lease_id'], 'old')
         self.assertEqual(result['events'], ['checkpoint', 'enter_new'])
         self.assertEqual(result['retired'], [])
-        result = self._run_compose_reclamation_fixture(failure='dependency')
+        result = next(results)
         self.assertIn('dependency refuses', result['error'])
         self.assertFalse(any(event.startswith('apply_') for event in result['events']))
         self.assertEqual(result['retired'], [])
         self.assertEqual(result['session']['status'], 'active')
+        self.assertEqual(list(results), [])
 
     def test_staged_compose_foreign_and_conflicting_reference_never_retired(self):
-        result = self._run_compose_reclamation_fixture(foreign=True)
+        results = self._run_compose_reclamation_cases([{'foreign': True}, {'tampered': True}])
+        result = next(results)
         self.assertIsNone(result['error'])
         self.assertEqual(len(result['retired']), 1)
         self.assertTrue(result['retired'][0].endswith('parent-stage-002-field'))
-        result = self._run_compose_reclamation_fixture(tampered=True)
+        result = next(results)
         self.assertIn('reference differs', result['error'])
         self.assertEqual(result['events'], ['checkpoint'])
         self.assertEqual(result['old_status'], 'active')
+        self.assertEqual(list(results), [])
 
     def test_terminal_replay_optional_handoff_is_symmetric_and_required_inputs_stay_strict(self):
         script = r"""
