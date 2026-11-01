@@ -24,6 +24,10 @@
 跨语言实现规则由`verify_development_standards.py`检查；受管文本字节由`verify_repository_text_bytes.py`检查。
 这些门禁的统一调度仍由下述目录负责，不在本页维护第二份阶段名单。
 
+文档门禁将Changed路径以任务内UTF-8 JSON数组交给`documentation_links.py --changed-paths-file`，
+检查结束在finally清理单一临时文件，避免宽改动超过Windows命令行长度。该参数与直接CLI的
+重复`--changed-path`互斥，坏清单立即拒绝；仅运输方式改变，活动链接仍全查、历史认证仍只查实际选中范围。
+
 开发标准门禁默认只执行决定PASS／FAIL的硬检查，消费者审计报告`NOT_REQUESTED`，不把未扫描写成零候选。
 显式`--audit-consumers`审计Python顶层私有函数：正式入口模块可达的引用、仅测试可达的引用、
 CLI／回调用途待核实、无静态引用候选；同时传`--show-review`时列出位置、符号及已知消费者模块。

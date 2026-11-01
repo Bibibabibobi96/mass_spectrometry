@@ -346,7 +346,7 @@ def inspect_repository(root: Path, *, audit_history: bool = False, changed_paths
     return {"errors": errors, "diagnostics": diagnostics, "inventory": inventory}
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     """Emit a read-only report; fail only on active broken local links/anchors."""
     import sys
 
@@ -354,11 +354,21 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--audit-history", action="store_true", help="explicit frozen archive/source audit")
-    parser.add_argument("--changed-path", action="append", default=[], help="audit affected historical input; repeat as needed")
+    paths = parser.add_mutually_exclusive_group()
+    paths.add_argument("--changed-path", action="append", default=[], help="audit affected historical input; repeat as needed")
+    paths.add_argument("--changed-paths-file", type=Path, help="UTF-8 JSON array of changed paths; avoids command-line length limits")
     parser.add_argument("--show-review", action="store_true", help="explicit editorial maintenance inventory")
     parser.add_argument("--inventory-json", action="store_true", help="Emit the full inventory to stdout")
-    args = parser.parse_args()
-    report = inspect_repository(args.root, audit_history=args.audit_history, changed_paths=set(args.changed_path), show_review=args.show_review or args.inventory_json)
+    args = parser.parse_args(argv)
+    changed_paths = args.changed_path
+    if args.changed_paths_file is not None:
+        try:
+            changed_paths = json.loads(args.changed_paths_file.read_text(encoding="utf-8-sig"))
+            if not isinstance(changed_paths, list) or any(not isinstance(path, str) or not path.strip() for path in changed_paths):
+                raise ValueError("changed paths file must contain a JSON array of nonempty strings")
+        except (OSError, ValueError) as error:
+            parser.error(str(error))
+    report = inspect_repository(args.root, audit_history=args.audit_history, changed_paths=set(changed_paths), show_review=args.show_review or args.inventory_json)
     if args.inventory_json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:

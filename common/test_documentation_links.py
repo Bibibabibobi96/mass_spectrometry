@@ -1,15 +1,115 @@
 """Focused regressions for documentation navigation and frozen history boundaries."""
 
 from pathlib import Path
+from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 import hashlib
+import io
 import json
 import os
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
-from common.documentation_links import anchors, inspect_repository, is_history, links, migrated_history, table_diagnostics
+from common.documentation_links import anchors, inspect_repository, is_history, links, main, migrated_history, table_diagnostics
+
+
+class DocumentationPathTransportTests(unittest.TestCase):
+    def test_path_file_preserves_unicode_and_the_complete_history_selection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path_file = Path(directory) / 'paths.json'
+            paths = [f'projects/example/{index:04d}_' + 'x' * 90 + '.py' for index in range(500)]
+            paths.append('docs/history/末尾 with spaces.md')
+            report = {'errors': [], 'diagnostics': [], 'inventory': []}
+            with io.TextIOWrapper(io.BytesIO(), encoding='utf-8') as output, redirect_stdout(output):
+                for selected in (paths, [], ['docs/history/one.md']):
+                    with self.subTest(count=len(selected)):
+                        path_file.write_text(json.dumps(selected, ensure_ascii=False), encoding='utf-8-sig')
+                        before = path_file.read_bytes()
+                        with patch('common.documentation_links.inspect_repository', return_value=report) as inspect:
+                            self.assertEqual(main(['--root', directory, '--changed-paths-file', str(path_file)]), 0)
+                        self.assertEqual(inspect.call_args.kwargs['changed_paths'], set(selected))
+                        self.assertFalse(inspect.call_args.kwargs['audit_history'])
+                        self.assertEqual(path_file.read_bytes(), before)
+                with patch('common.documentation_links.inspect_repository', return_value=report) as inspect:
+                    self.assertEqual(main(['--changed-path', 'a.md', '--changed-path', 'b.md']), 0)
+                self.assertEqual(inspect.call_args.kwargs['changed_paths'], {'a.md', 'b.md'})
+
+    def test_invalid_path_files_and_conflicting_inputs_fail_before_inspection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path_file = Path(directory) / 'paths.json'
+            cases = ['{', 'null', '{}', '[1]', '[""]', '["   "]']
+            with io.TextIOWrapper(io.BytesIO(), encoding='utf-8') as output, redirect_stdout(output), redirect_stderr(io.StringIO()):
+                with patch('common.documentation_links.inspect_repository', side_effect=AssertionError('invalid input reached inspection')):
+                    for content in cases:
+                        with self.subTest(content=content):
+                            path_file.write_text(content, encoding='utf-8')
+                            with self.assertRaises(SystemExit) as error:
+                                main(['--changed-paths-file', str(path_file)])
+                            self.assertEqual(error.exception.code, 2)
+                    path_file.unlink()
+                    for arguments in ([ '--changed-paths-file', str(path_file)],
+                                      ['--changed-path', 'README.md', '--changed-paths-file', str(path_file)]):
+                        with self.subTest(arguments=arguments), self.assertRaises(SystemExit) as error:
+                            main(arguments)
+                        self.assertEqual(error.exception.code, 2)
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows process command-line boundary')
+    def test_public_gate_transports_long_selection_and_preserves_failures_and_cleanup(self):
+        with tempfile.TemporaryDirectory(prefix='doc_transport_') as directory:
+            root = Path(directory)
+            common = root / 'common'
+            common.mkdir()
+            for name in ('verify_documentation.ps1', 'documentation_links.py'):
+                shutil.copyfile(Path(__file__).with_name(name), common / name)
+            (root / 'projects').mkdir()
+            (root / 'docs/history').mkdir(parents=True)
+            (root / 'temp').mkdir()
+            (root / 'README.md').write_text('# Entry\n[Docs](docs/README.md)\n[Agents](AGENTS.md)\n', encoding='utf-8')
+            for name in ('AGENTS.md', 'CLAUDE.md'):
+                (root / name).write_text('# Entry\n', encoding='utf-8')
+            authorities = ('REPOSITORY_ARCHITECTURE', 'LIFECYCLE', 'OPERATIONS', 'DEVELOPMENT_STANDARDS',
+                           'PLOTTING_STANDARDS', 'COMPONENT_CONNECTION_ARCHITECTURE', 'VISION', 'ROADMAP')
+            (root / 'docs/README.md').write_text('\n'.join(f'[{name}]({name}.md)' for name in authorities), encoding='utf-8')
+            for name in authorities:
+                (root / f'docs/{name}.md').write_text('[Root](../README.md)\n[Agents](../AGENTS.md)\n', encoding='utf-8')
+            selected = root / 'docs/history/末尾 with spaces.md'
+            selected.write_text('DOC_STATUS: ARCHIVED_READ_ONLY\n', encoding='utf-8')
+            (root / 'docs/history/unrelated.md').write_text('# No archive banner\n', encoding='utf-8')
+            (root / 'docs/AUDITS.md').write_text('history/末尾 with spaces.md\n', encoding='utf-8')
+            subprocess.run(['git', 'init', '--quiet'], cwd=root, check=True, capture_output=True, timeout=30)
+            paths = [f'projects/example/{index:04d}_' + 'x' * 90 + '.py' for index in range(500)]
+            paths.append(selected.relative_to(root).as_posix())
+            self.assertGreater(len(subprocess.list2cmdline([value for path in paths for value in ('--changed-path', path)])), 32767)
+            (root / 'paths.json').write_text(json.dumps(paths, ensure_ascii=False), encoding='utf-8')
+            driver = root / 'driver.ps1'
+            driver.write_text(r'''
+param($PythonExe)
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+$paths=@(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'paths.json') -Raw -Encoding utf8|ConvertFrom-Json)
+$results=@()
+foreach($case in @('valid','selected_history_invalid','active_link_invalid')){
+ if($case-eq'selected_history_invalid'){'invalid'|Set-Content -LiteralPath (Join-Path $PSScriptRoot 'docs/history/末尾 with spaces.md') -Encoding utf8}
+ if($case-eq'active_link_invalid'){
+  'DOC_STATUS: ARCHIVED_READ_ONLY'|Set-Content -LiteralPath (Join-Path $PSScriptRoot 'docs/history/末尾 with spaces.md') -Encoding utf8
+  '[bad](missing.md)'|Add-Content -LiteralPath (Join-Path $PSScriptRoot 'README.md') -Encoding utf8
+ }
+ try{& (Join-Path $PSScriptRoot 'common/verify_documentation.ps1') -StructureOnly -PythonExe $PythonExe -ChangedPath $paths;$ok=$true;$message=''}
+ catch{$ok=$false;$message=$_.Exception.Message}
+ $results+=@{case=$case;ok=$ok;error=$message}
+}
+'DOC_CASE_RESULTS='+($results|ConvertTo-Json -Compress)
+''', encoding='utf-8')
+            result = subprocess.run(['pwsh', '-NoProfile', '-NonInteractive', '-File', str(driver), sys.executable],
+                cwd=root, env={**os.environ, 'TEMP': str(root / 'temp'), 'TMP': str(root / 'temp')},
+                capture_output=True, text=True, encoding='utf-8', timeout=60, check=True)
+            line = next(line for line in result.stdout.splitlines() if line.startswith('DOC_CASE_RESULTS='))
+            observed = json.loads(line.removeprefix('DOC_CASE_RESULTS='))
+            self.assertEqual([row['ok'] for row in observed], [True, False, False], result.stdout + result.stderr)
+            self.assertTrue(all('Documentation gate failed' in row['error'] for row in observed[1:]))
+            self.assertEqual(list((root / 'temp').iterdir()), [])
 
 
 class PowerShellHistoryScopeTests(unittest.TestCase):

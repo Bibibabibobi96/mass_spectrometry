@@ -35,8 +35,18 @@ function Add-DocError {
 
 $linkArguments=@((Join-Path $PSScriptRoot 'documentation_links.py'),'--root',$repoRoot)
 if($AuditHistory){$linkArguments+='--audit-history'}
-foreach($path in $ChangedPath){$linkArguments+=@('--changed-path',$path)}
-& $PythonExe @linkArguments
+$changedPathFile=$null
+try {
+    if($ChangedPath.Count){
+        $changedPathFile=[IO.Path]::GetTempFileName()
+        [IO.File]::WriteAllText($changedPathFile,(ConvertTo-Json -InputObject @($ChangedPath) -Compress),
+            [Text.UTF8Encoding]::new($false))
+        $linkArguments+=@('--changed-paths-file',$changedPathFile)
+    }
+    & $PythonExe @linkArguments
+} finally {
+    if($changedPathFile){Remove-Item -LiteralPath $changedPathFile}
+}
 if($LASTEXITCODE-ne0){Add-DocError 'Markdown links/anchors failed; see per-file diagnostics above'}
 
 $historyFiles = New-Object System.Collections.Generic.List[System.IO.FileInfo]
