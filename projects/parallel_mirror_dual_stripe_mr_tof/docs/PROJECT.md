@@ -12,6 +12,26 @@
 同机单次受控对照外层墙钟39.8168→32.4221秒（约−18.57%），不代表完整MR或Repository提速；
 隔离当前提交的同一方法另通过33.422秒，八场景均保留。本项仅改变软件夹具，不修改生产恢复或物理资格。
 
+工作点批处理夹具现以同一单调期限覆盖stdin写入、首行／下一行等待及收尾，修正旧实现先阻塞读stdout、
+因此无法进入`communicate(timeout=...)`的问题。断言失败后健康夹具仍在原测试预算内自然排空；
+只有明确超时的本次合成进程树才被回收，不给正常原生求解添加强杀时限。真实主异常与清理失败分别保留，
+生成器关闭也不能吞掉清理错误。checkpoint20场景、compose30调用、S-local八场景／40次真实controller请求、
+原恢复行为与科学断言保持；117个原方法均保留，新增四个超时／排空／错误传播回归。
+两个旧实现挂起均由独立20秒watchdog才结束；修复后首行前及一行后测试分别在5.156／10.129秒内完成超时和
+所属根／子进程退出校验（原预算为每例5秒，后一测试有两例），不是科学性能提速。七个定向方法通过。
+超时修复版的Changed实际执行162项，其中旧policy-adoption的`replace`场景因PowerShell子进程CLR访问冲突失败；
+新增超时回归通过，原失败记录保留，不能因后续定向通过追认为整轮通过。
+
+同一测试方法内的policy adoption十一案及prepared checkpoint十三案继续复用上述隔离helper，
+直接PowerShell宿主启动24→2；每案目录、module作用域、`LASTEXITCODE`、真实controller及科学断言保留。
+两消费者显式保留旧仓库根cwd，原有消费者的项目根默认不变。PS仅复用本批真实解析的AST和输出JSON运输，
+不跨测试共享状态；原逐案启动／退出控制由helper的真实宿主退出和stderr检查替代。
+同机同资源单次对照，两方法unittest合计24.841→12.239秒；逆序24案及逐single24案的原断言也全部通过。
+这只是局部测试工作减少，不外推完整MR或Repository性能。本版Changed的162项通过，公开外层413.683秒，
+复杂反馈五分钟目标仍未达；此前CLR崩溃根因未定，最终提交的完整Repository验收仍待取得。
+[测试证据](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/scratch/20261101__runner-fixture-cost/agent5/READOUT.md)
+保留RED、GREEN、原失败和异常优先级记录。本项不改变生产控制器、资源准入或科学资格。
+
 checkpoint恢复20场景及compose回收30调用在各自原测试方法内共享PowerShell宿主与一次生产AST读取，
 50次宿主启动降为20次；每例使用独立动态module脚本作用域、目录、provider与容量状态，并保存／重置／恢复
 全局`LASTEXITCODE`。真实Python controller请求、原始字节身份验证和resume第二次真实reclaim保持。

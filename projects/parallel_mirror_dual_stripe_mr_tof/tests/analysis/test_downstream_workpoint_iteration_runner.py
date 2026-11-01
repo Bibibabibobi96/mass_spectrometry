@@ -3,8 +3,12 @@ from pathlib import Path
 import hashlib
 import json
 import io
+import os
 import re
-from contextlib import redirect_stdout
+from contextlib import contextmanager, redirect_stdout
+from queue import Empty, Queue
+import threading
+import time
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -16,7 +20,93 @@ PROJECT = Path(__file__).resolve().parents[2]
 
 
 class WorkpointBootstrapTests(unittest.TestCase):
-    def _isolated_fixture_cases(self, script, cases, *, timeout):
+    @contextmanager
+    def _fixture_lines(self, process, payload, *, timeout):
+        """Bound only this synthetic fixture; drain healthy output after assertions."""
+        # Entered immediately after Popen; the Windows spawn call itself is excluded.
+        deadline = time.monotonic() + timeout
+        output = Queue()
+        ended = object()
+
+        def read_output():
+            try:
+                # One thread owns both pipe operations. A blocked stdin write is
+                # covered by the same deadline as the first/next stdout line.
+                json.dump(payload, process.stdin)
+                process.stdin.close()
+                for line in process.stdout:
+                    output.put(line)
+            except BaseException as error:
+                output.put(error)
+            finally:
+                output.put(ended)
+
+        def remaining():
+            return max(0, deadline - time.monotonic())
+
+        def lines():
+            while True:
+                try:
+                    item = output.get(timeout=remaining())
+                except Empty:
+                    raise subprocess.TimeoutExpired(process.args, timeout) from None
+                if item is ended:
+                    return
+                if isinstance(item, BaseException):
+                    raise item
+                yield item
+
+        reader = threading.Thread(target=read_output, daemon=True)
+        reader.start()
+        primary = None
+        try:
+            yield lines()
+        except BaseException as error:
+            primary = error
+            raise
+        finally:
+            cleanup = None
+            try:
+                # The reader keeps draining if a caller's assertion stops consumption.
+                reader.join(timeout=remaining())
+                process.wait(timeout=remaining())
+                if reader.is_alive():
+                    raise subprocess.TimeoutExpired(process.args, timeout)
+            except BaseException as error:
+                cleanup = error
+                # Explicitly bounded, solver-free fixtures only. The hanging
+                # fixture root must remain live so /T names this owned tree.
+                if process.poll() is None:
+                    try:
+                        stopped = subprocess.run(
+                            ['taskkill.exe', '/PID', str(process.pid), '/T', '/F'], cwd=PROJECT,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, encoding='utf-8', errors='replace', timeout=5,
+                            check=False)
+                        process.wait(timeout=5)
+                        if stopped.returncode:
+                            cleanup.add_note(f'Fixture tree cleanup returned {stopped.returncode}: {stopped.stdout}')
+                    except BaseException as stop_error:
+                        cleanup.add_note(f'Fixture tree cleanup failed: {stop_error!r}')
+                reader.join(timeout=5)
+                if reader.is_alive():
+                    cleanup.add_note('Fixture reader did not finish; descendant cleanup is unconfirmed.')
+            finally:
+                if not reader.is_alive():
+                    process.stdout.close()
+                    if process.stdin is not None:
+                        process.stdin.close()
+            if cleanup is not None:
+                if primary is not None and not isinstance(primary, GeneratorExit):
+                    primary.add_note(f'Fixture cleanup failure: {cleanup!r}')
+                    for note in getattr(cleanup, '__notes__', ()):
+                        primary.add_note(note)
+                else:
+                    # generator.close() swallows GeneratorExit, including notes.
+                    # A cleanup failure must escape close rather than disappear.
+                    raise cleanup
+
+    def _isolated_fixture_cases(self, script, cases, *, timeout, cwd=None):
         """Share one host/AST, retaining a private PowerShell script scope per case."""
         batch_script = r'''
 param($Source,$Fixture)
@@ -62,13 +152,11 @@ foreach($case in $cases){
             with stderr_path.open('w', encoding='utf-8') as stderr:
                 process = subprocess.Popen(['pwsh', '-NoProfile', '-File', str(batch_path),
                     str(PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1'), str(fixture_path)],
-                    cwd=PROJECT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr,
+                    cwd=PROJECT if cwd is None else cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr,
                     text=True, encoding='utf-8', bufsize=1)
-                try:
-                    json.dump(requests, process.stdin)
-                    process.stdin.close()
-                    process.stdin = None
-                    for line in process.stdout:
+                with self._fixture_lines(process, requests,
+                        timeout=timeout * max(1, len(requests))) as lines:
+                    for line in lines:
                         self.assertLess(len(received), len(requests), 'Unexpected fixture case row.')
                         row = json.loads(line)
                         expected = requests[len(received)]['name']
@@ -76,12 +164,123 @@ foreach($case in $cases){
                         received.append(expected)
                         print(f"MR_FIXTURE_CASE_SECONDS={row['case_seconds']:.6f} CASE={expected}", flush=True)
                         yield row['observation']
-                finally:
-                    # Assertion failures stop consumption, while the healthy host drains naturally.
-                    process.communicate(timeout=timeout * max(1, len(requests)))
-                    process.stdout.close()
                 self.assertEqual(process.returncode, 0, stderr_path.read_text(encoding='utf-8'))
             self.assertEqual(received, [case['name'] for case in requests], 'Missing fixture case row.')
+
+    def test_fixture_cleanup_failure_is_visible_on_close_and_preserves_real_error(self):
+        # A finite in-memory process double covers only exception precedence;
+        # the adjacent hang tests retain real process-tree/liveness behavior.
+        def process_with_failed_wait():
+            process = unittest.mock.Mock()
+            process.args = ['synthetic-fixture']
+            process.stdin = io.StringIO()
+            process.stdout = io.StringIO('first\n')
+            process.wait.side_effect = RuntimeError('fixture cleanup failure')
+            process.poll.return_value = 0
+            return process
+
+        with self.assertRaisesRegex(RuntimeError, 'fixture cleanup failure'):
+            def observations():
+                with self._fixture_lines(process_with_failed_wait(), [], timeout=5) as lines:
+                    yield next(lines)
+            results = observations()
+            self.assertEqual(next(results), 'first\n')
+            results.close()
+
+        original = AssertionError('original fixture error')
+        with self.assertRaisesRegex(AssertionError, 'original fixture error') as observed:
+            with self._fixture_lines(process_with_failed_wait(), [], timeout=5) as lines:
+                self.assertEqual(next(lines), 'first\n')
+                raise original
+        self.assertIs(observed.exception, original)
+        self.assertTrue(any('fixture cleanup failure' in note
+                            for note in getattr(original, '__notes__', ())))
+
+    def _assert_fixture_process_exited(self, identity):
+        # Inspect only the recorded synthetic process, allowing PID reuse without
+        # treating an unrelated replacement as an owned process.
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+        kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        handle = kernel.OpenProcess(0x100000 | 0x1000, False, identity['pid'])
+        if not handle:
+            self.assertEqual(ctypes.get_last_error(), 87, 'Synthetic process exit could not be established.')
+            return
+        try:
+            times = [wintypes.FILETIME() for _ in range(4)]
+            self.assertTrue(kernel.GetProcessTimes(handle, *(ctypes.byref(value) for value in times)))
+            birth = (times[0].dwHighDateTime << 32) | times[0].dwLowDateTime
+            if birth == identity['birth']:
+                self.assertEqual(kernel.WaitForSingleObject(handle, 5000), 0,
+                                 f'Owned synthetic process still alive: {identity}')
+        finally:
+            kernel.CloseHandle(handle)
+
+    def _check_fixture_hang(self, after_first_row):
+        script = r"""
+param($Source,$Root,$Mode,$Evidence,$Python,$PreparedAst)
+if($Mode-eq'row'){
+ @{case='row';value=7}|ConvertTo-Json|Set-Content (Join-Path $Root 'output.json');return
+}
+$child=Start-Process -WindowStyle Hidden -FilePath $Python -ArgumentList @('-c','"import time;time.sleep(90)"') -PassThru
+$self=[Diagnostics.Process]::GetCurrentProcess()
+@{root=@{pid=$PID;birth=$self.StartTime.ToUniversalTime().ToFileTimeUtc()};child=@{pid=$child.Id;birth=$child.StartTime.ToUniversalTime().ToFileTimeUtc()}}|ConvertTo-Json -Depth 5|Set-Content $Evidence
+Start-Sleep -Seconds 90
+"""
+        with TemporaryDirectory() as temporary:
+            evidence = Path(temporary) / 'owned.json'
+            cases = [('hang', ['hang', str(evidence), sys.executable], None)]
+            if after_first_row:
+                cases.insert(0, ('row', ['row', str(evidence), sys.executable], None))
+            started = time.monotonic()
+            results = self._isolated_fixture_cases(script, cases, timeout=5)
+            if after_first_row:
+                self.assertEqual(next(results), dict(case='row', value=7))
+            with self.assertRaises(subprocess.TimeoutExpired):
+                list(results)
+            # Includes the declared5s/case deadline plus bounded cleanup, not a
+            # performance target. An independent RED watchdog is kept outside CI.
+            self.assertLess(time.monotonic() - started, 5 * len(cases) + 20)
+            identities = json.loads(evidence.read_text(encoding='utf-8-sig'))
+            self._assert_fixture_process_exited(identities['root'])
+            self._assert_fixture_process_exited(identities['child'])
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows taskkill and process-identity fixture')
+    def test_fixture_deadline_covers_hang_before_first_row_and_owned_child(self):
+        self._check_fixture_hang(False)
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows taskkill and process-identity fixture')
+    def test_fixture_deadline_covers_hang_after_first_row_and_owned_child(self):
+        self._check_fixture_hang(True)
+
+    def test_fixture_early_assertion_preserves_failure_and_drains_healthy_host(self):
+        script = r"""
+param($Source,$Root,$Mode,$Completed,$PreparedAst)
+if($Mode-eq'last'){
+ Start-Sleep -Milliseconds 100
+ 'natural completion'|Set-Content $Completed
+}
+@{case=$Mode}|ConvertTo-Json|Set-Content (Join-Path $Root 'output.json')
+"""
+        with TemporaryDirectory() as temporary:
+            completed = Path(temporary) / 'completed.txt'
+            cases = [(name, [name, str(completed)], None) for name in ('first', 'last')]
+            results = self._isolated_fixture_cases(script, cases, timeout=10)
+            with patch('subprocess.run', wraps=subprocess.run) as calls:
+                with self.assertRaisesRegex(AssertionError, 'original fixture assertion'):
+                    try:
+                        self.assertEqual(next(results), dict(case='first'))
+                        self.fail('original fixture assertion')
+                    finally:
+                        results.close()
+                self.assertFalse(any(call.args and call.args[0][0] == 'taskkill.exe'
+                                     for call in calls.call_args_list))
+            self.assertEqual(completed.read_text(encoding='utf-8-sig').strip(), 'natural completion')
 
     def test_fixture_batches_isolate_script_and_exit_state_in_both_orders_and_single_cases(self):
         script = r'''
@@ -272,11 +471,10 @@ $modelPath=Join-Path $Root 'iteration_local_s_model.json'
                     sys.executable, str(PROJECT.parents[1])], cwd=PROJECT.parents[1],
                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr,
                     text=True, encoding='utf-8', bufsize=1)
-                try:
-                    json.dump(probes, process.stdin)
-                    process.stdin.close()
-                    process.stdin = None
-                    for line in process.stdout:
+                # Fixture-only cap: historical same-method slow result47.14s,
+                # allowing about5x headroom; no solver is invoked by this batch.
+                with self._fixture_lines(process, probes, timeout=240) as lines:
+                    for line in lines:
                         self.assertLess(len(received), len(expected_cases), 'Unexpected duplicate/extra case row.')
                         row = json.loads(line)
                         name, passed, eligible, round_number, expected, stored, model = expected_cases[len(received)]
@@ -313,10 +511,6 @@ $modelPath=Join-Path $Root 'iteration_local_s_model.json'
                             else:
                                 self.assertEqual(observed['model'], model)
 
-                finally:
-                    # Drain stdout and wait even if parsing/assertions fail. stderr
-                    # has its own file, so a healthy child cannot block on a pipe.
-                    process.communicate()
             self.assertEqual(process.returncode, 0, stderr_path.read_text(encoding='utf-8'))
             self.assertEqual(received, [case[0] for case in expected_cases], 'Missing case rows.')
 
@@ -559,9 +753,9 @@ try{Restore-PreparedOriginalStages -Bootstrap $b -BootstrapPath 'unused' -Config
 
     def test_explicit_repository_policy_adoption_preserves_debits_and_only_clears_current_model(self):
         script=r'''
-param($Source,$Root,$Repo,$RealPython,$Scenario)
+param($Source,$Root,$Repo,$RealPython,$Scenario,$PreparedAst)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
+$ast=$PreparedAst
 $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Restore-PreparedOriginalStages'},$true)
 Invoke-Expression $node.Extent.Text
 $repoRoot=$Repo;$project='parallel_mirror_dual_stripe_mr_tof';$python='mock-python';$RunId='new-parent'
@@ -619,16 +813,16 @@ function Update-StagedAnchorFieldProtection {param($State)}
 $script:validated=$false;$script:saves=@();$b=@{};$failure=$null
 try{Restore-PreparedOriginalStages -Bootstrap $b -BootstrapPath 'not-written' -Configuration $cfg}catch{$failure=$_.Exception.Message}
 $receipt=Join-Path $results 'iteration_prism_policy_adoption.json'
-@{failure=$failure;validated=$validated;bootstrap=$b;config=$cfg;saves=$saves;receipt=$(if(Test-Path $receipt){Get-Content $receipt -Raw|ConvertFrom-Json -AsHashtable}else{$null})}|ConvertTo-Json -Depth 100
+@{failure=$failure;validated=$validated;bootstrap=$b;config=$cfg;saves=$saves;receipt=$(if(Test-Path $receipt){Get-Content $receipt -Raw|ConvertFrom-Json -AsHashtable}else{$null})}|ConvertTo-Json -Depth 100|Set-Content (Join-Path $Root 'output.json')
 '''
-        for scenario in ('adopt','same_existing','pending','stripe','wrong_policy','replace','remove_existing',
-                         'science_changed','restore_failed','receipt_failed','save_failed'):
-            with self.subTest(scenario=scenario),TemporaryDirectory() as directory:
-                root=Path(directory);fixture=root/'adopt.ps1';fixture.write_text(script)
-                result=subprocess.run(['pwsh','-NoProfile','-File',str(fixture),str(PROJECT/'analysis/run_downstream_workpoint_iteration.ps1'),
-                    str(root),str(PROJECT.parents[1]),sys.executable,scenario],cwd=PROJECT.parents[1],capture_output=True,text=True,encoding='utf-8',timeout=35)
-                self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-                observed=json.loads(result.stdout)
+        scenarios = ('adopt','same_existing','pending','stripe','wrong_policy','replace','remove_existing',
+                     'science_changed','restore_failed','receipt_failed','save_failed')
+        cases = [(scenario, [str(PROJECT.parents[1]), sys.executable, scenario], None)
+                 for scenario in scenarios]
+        results = self._isolated_fixture_cases(script, cases, timeout=35, cwd=PROJECT.parents[1])
+        for scenario in scenarios:
+            with self.subTest(scenario=scenario):
+                observed = next(results)
                 if scenario in ('adopt','save_failed'):
                     state=observed['bootstrap']['stage_state']
                     self.assertTrue(observed['validated'])
@@ -650,12 +844,13 @@ $receipt=Join-Path $results 'iteration_prism_policy_adoption.json'
                 else:
                     self.assertIsNotNone(observed['failure'])
                     self.assertEqual(observed['saves'],[])
+        self.assertEqual(list(results), [])
 
     def test_prepared_checkpoint_reuses_original_restore_and_rejects_changed_authority(self):
         script=r'''
-param($Source,$Root,$Scenario,$RealPython)
+param($Source,$Root,$Scenario,$RealPython,$PreparedAst)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
+$ast=$PreparedAst
 $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Restore-PreparedOriginalStages'},$true)
 Invoke-Expression $node.Extent.Text
 $repoRoot=$Root;$project='parallel_mirror_dual_stripe_mr_tof';$python='mock-python';$RunId='new-parent'
@@ -709,16 +904,15 @@ function Update-StagedAnchorFieldProtection {param($State)$script:protected=$tru
 $script:verified=$false;$script:replayed=$false;$script:restored=$false;$script:protected=$false;$failure=$null
 $bootstrap=@{}
 try{Restore-PreparedOriginalStages -Bootstrap $bootstrap -BootstrapPath 'new-bootstrap' -Configuration $cfg}catch{$failure=$_.Exception.Message}
-@{failure=$failure;verified=$verified;replayed=$replayed;restored=$restored;protected=$protected;config=$cfg}|ConvertTo-Json -Depth 20
+@{failure=$failure;verified=$verified;replayed=$replayed;restored=$restored;protected=$protected;config=$cfg}|ConvertTo-Json -Depth 20|Set-Content (Join-Path $Root 'output.json')
 '''
-        for scenario in ('valid','budget_valid','budget_decrease','budget_wrong_field','same_id','prepared_manifest','seed_manifest','trajectory_contract',
-                         'prepared_target_authority','prepared_initial_proposal','p1_response','p2_response','prism_controller_policy'):
-            with self.subTest(scenario=scenario),TemporaryDirectory() as directory:
-                root=Path(directory);fixture=root/'resume.ps1';fixture.write_text(script)
-                result=subprocess.run(['pwsh','-NoProfile','-File',str(fixture),str(PROJECT/'analysis/run_downstream_workpoint_iteration.ps1'),str(root),scenario,sys.executable],
-                    cwd=PROJECT.parents[1],capture_output=True,text=True,encoding='utf-8',timeout=30)
-                self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-                observed=json.loads(result.stdout)
+        scenarios = ('valid','budget_valid','budget_decrease','budget_wrong_field','same_id','prepared_manifest','seed_manifest','trajectory_contract',
+                     'prepared_target_authority','prepared_initial_proposal','p1_response','p2_response','prism_controller_policy')
+        cases = [(scenario, [scenario, sys.executable], None) for scenario in scenarios]
+        results = self._isolated_fixture_cases(script, cases, timeout=30, cwd=PROJECT.parents[1])
+        for scenario in scenarios:
+            with self.subTest(scenario=scenario):
+                observed = next(results)
                 if scenario in ('valid','budget_valid'):
                     self.assertIsNone(observed['failure'])
                     self.assertTrue(all(observed[k] for k in ('verified','replayed','restored','protected')))
@@ -732,6 +926,7 @@ try{Restore-PreparedOriginalStages -Bootstrap $bootstrap -BootstrapPath 'new-boo
                 else:
                     self.assertIsNotNone(observed['failure'])
                     self.assertFalse(observed['restored'])
+        self.assertEqual(list(results), [])
 
     def test_prepared_checkpoint_replay_validates_full_frozen_problem_without_pa_reads(self):
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis import downstream_workpoint_iteration as controller
