@@ -10,7 +10,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from projects.rf_multipole_ion_optics.tests.test_support.capacity_fixture import capacity_fixture_source
+from projects.rf_multipole_ion_optics.tests.test_support.capacity_fixture import (
+    capacity_fixture_source, install_controlled_cpu_snapshot,
+)
 
 from common.contracts.write_run_manifest import file_record
 from common.contracts.capacity_ledger import initialize_capacity_ledger
@@ -169,13 +171,110 @@ class ComsolAnalysisRecoveryTests(unittest.TestCase):
         result = root/'analysis-result.json'
         run_id = '20261031_060001__analysis__python__csv-child'
         source = capacity_fixture_source(REPO, root/'fixture_source')
+        if not reextract:
+            install_controlled_cpu_snapshot(REPO, source)
         wrapper = source/WRAPPER.relative_to(REPO)
-        outcome = subprocess.run(['pwsh', '-NoProfile', '-File', str(wrapper), '-AnalyzeOnly', *(['-ReextractFromModel'] if reextract else []),
-                                  '-ParentManifestPath', str(manifest), '-EngineeringBudgetPath', str(budget_path), '-PythonExe', sys.executable,
-                                  '-RunId', run_id, '-ResultPath', str(result)],
-                                 cwd=root, text=True, encoding='utf-8', capture_output=True, timeout=300, env=private_host_environment())
+        try:
+            outcome = subprocess.run(['pwsh', '-NoProfile', '-File', str(wrapper), '-AnalyzeOnly', *(['-ReextractFromModel'] if reextract else []),
+                                      '-ParentManifestPath', str(manifest), '-EngineeringBudgetPath', str(budget_path), '-PythonExe', sys.executable,
+                                      '-RunId', run_id, '-ResultPath', str(result)],
+                                     cwd=root, text=True, encoding='utf-8', capture_output=True, timeout=300, env=private_host_environment())
+        except subprocess.TimeoutExpired as error:
+            for stream in ("stdout", "stderr"):
+                partial = getattr(error, stream)
+                if isinstance(partial, bytes):
+                    partial = partial.decode("utf-8", errors="replace")
+                print(f"RF_ANALYSIS_TIMEOUT_PARTIAL_{stream.upper()}={partial or ''}", file=sys.stderr, flush=True)
+            raise
         child = root/'artifacts/projects/rf_multipole_ion_optics/runs'/run_id
         return outcome, result, child
+
+    def test_controlled_cpu_fixture_preserves_real_comsol_admission_process_and_release(self):
+        with tempfile.TemporaryDirectory(prefix='rf controlled cpu ') as directory:
+            root = Path(directory)
+            source = capacity_fixture_source(REPO, root/'fixture_source')
+            original = (source/'common/host_execution_lease.ps1').read_bytes()
+            production_before = (REPO/'common/host_execution_lease.ps1').read_bytes()
+            for invalid in (True, False, None, '0', float('nan'), float('inf'), -float('inf'), -1., 101.):
+                with self.subTest(controlled_cpu=invalid):
+                    with self.assertRaisesRegex(ValueError, 'finite number'):
+                        install_controlled_cpu_snapshot(REPO, source, cpu_percent=invalid)
+                    self.assertEqual((source/'common/host_execution_lease.ps1').read_bytes(), original)
+                    self.assertEqual((REPO/'common/host_execution_lease.ps1').read_bytes(), production_before)
+            install_controlled_cpu_snapshot(REPO, source)
+            controlled = (source/'common/host_execution_lease.ps1').read_bytes()
+            self.assertIn(b'cpu_percent = $load\n', original)
+            self.assertNotIn(b'cpu_percent = $load\n', controlled)
+            self.assertEqual((source/'common/host_resource_policy.json').read_bytes(),
+                             (REPO/'common/host_resource_policy.json').read_bytes())
+            with self.assertRaisesRegex(ValueError, 'exact unmodified'):
+                install_controlled_cpu_snapshot(REPO, source)
+            with self.assertRaisesRegex(ValueError, 'repository-external'):
+                install_controlled_cpu_snapshot(REPO, REPO)
+            self.assertEqual((source/'common/host_execution_lease.ps1').read_bytes(), controlled)
+            self.assertEqual((REPO/'common/host_execution_lease.ps1').read_bytes(), production_before)
+            script = root/'controlled-cpu.ps1'
+            script.write_text(r"""
+param($Repo,$Python,$Root)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$env:SIMULATION_PYTHON_EXE=$Python
+$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=Join-Path $Root 'host.sqlite3'
+. (Join-Path $Repo 'common/host_execution_lease.ps1')
+. (Join-Path $Repo 'common/resource_budget_support.ps1')
+# Evaluate the copied entrypoint's actual CPU expression, not a reimplementation.
+$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'common/host_execution_lease.ps1'),[ref]$null,[ref]$null)
+$function=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-ceq'Get-HostResourceSnapshot'},$true)
+$pairs=@($function.FindAll({param($n)$n-is[Management.Automation.Language.HashtableAst]},$true)|ForEach-Object{$_.KeyValuePairs}|Where-Object{$_.Item1.Extent.Text-ceq'cpu_percent'})
+if($pairs.Count-ne1){throw 'Actual controlled CPU field is missing or ambiguous'}
+foreach($load in @($null,[double]::NaN,-1.,101.)){
+ $value=Invoke-Expression $pairs[0].Item2.Extent.Text
+ if($null-eq$load){if($null-ne$value){throw 'Missing real CPU was covered'}}
+ elseif([double]::IsNaN($load)){if(-not[double]::IsNaN($value)){throw 'Nonfinite real CPU was covered'}}
+ elseif($value-ne$load){throw 'Illegal real CPU was covered'}
+}
+Write-Output 'CONTROLLED_CPU_INVALID_REAL_INPUTS_PRESERVED'
+$policy=Get-Content (Join-Path $Repo 'common/host_resource_policy.json') -Raw|ConvertFrom-Json
+if($policy.cpu_admission_percent-ne95){throw 'Production CPU threshold changed'}
+$budget=Get-HostResourceBudget -Role COMSOL -Stage postprocess
+$lease=$null
+try{
+ $script:RFSoftwareFixtureCpuPercent=100
+ $lease=Enter-HostResourceStage -Role COMSOL -Stage postprocess -RunId 'controlled-cpu' -Budget $budget -NoWait -NoEnvironment -WaitTimeoutSeconds 60
+ if($lease.inherited-or$lease.status-cne'waiting'-or$lease.reason-cne'cpu_pressure'){throw 'Controlled high CPU bypassed COMSOL admission'}
+ Write-Output 'CONTROLLED_CPU_RED=cpu_pressure'
+ $snapshot=Get-HostResourceSnapshot
+ $cost=100.*$budget.cpu_cores/$snapshot.logical_processors
+ $script:RFSoftwareFixtureCpuPercent=95.-$cost/2.
+ Write-Output ('CONTROLLED_CPU_HOST LOGICAL_PROCESSORS={0} REQUESTED_CORES={1}'-f$snapshot.logical_processors,$budget.cpu_cores)
+ if(-not[double]::IsFinite($script:RFSoftwareFixtureCpuPercent)-or$script:RFSoftwareFixtureCpuPercent-lt0-or$script:RFSoftwareFixtureCpuPercent-ge95){throw 'No legal controlled headroom input for the actual CPU budget/host'}
+ $lease=Receive-HostResourceStage -Lease $lease
+ if($lease.status-cne'waiting'-or$lease.reason-cne'cpu_headroom'){throw 'COMSOL CPU headroom protection changed'}
+ Write-Output 'CONTROLLED_CPU_RED=cpu_headroom'
+ $token=$lease.token;$script:RFSoftwareFixtureCpuPercent=0
+ $lease=Wait-HostResourceStage -Lease $lease
+ if($lease.status-cne'acquired'-or$lease.token-cne$token){throw 'Low CPU did not acquire the original independent token'}
+ $run=Join-Path $Root 'observed';$null=New-Item -ItemType Directory $run
+ $limits=[pscustomobject]@{wall_clock_seconds=30;process_tree_working_set_bytes=2147483648L;minimum_system_available_memory_bytes=1073741824L;transient_run_directory_bytes=16777216}
+ $observed=Invoke-ResourceBudgetedProcess -Limits $limits -RunDir $run -UsagePath (Join-Path $run 'usage.json') -FilePath $Python -ArgumentList @('-c','"print(123)"') -WorkingDirectory $Repo
+ if($observed.exit_code-ne0-or$observed.root_process_id-le0-or$observed.root_process_started_at_utc_ticks-le0){throw 'Real managed Python process completion missing'}
+ Write-Output ('CONTROLLED_CPU_REAL_PROCESS='+($observed|ConvertTo-Json -Depth 20 -Compress))
+}finally{
+ if($lease){$released=Exit-HostResourceStage -Lease $lease -PassThru;if($released.status-cne'released'-or$released.token-cne$lease.token){throw 'Independent COMSOL release unconfirmed'}}
+}
+$status=Get-HostResourceStatus
+if(@($status.records|Where-Object token -eq $token).Count){throw 'Controlled fixture leaked its token'}
+Write-Output 'CONTROLLED_CPU_GREEN=real_process_and_released'
+""", encoding='utf-8')
+            outcome = subprocess.run(['pwsh', '-NoProfile', '-File', str(script), str(source), sys.executable, str(root)],
+                                     cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=180,
+                                     env=private_host_environment())
+            self.assertEqual(outcome.returncode, 0, outcome.stdout+outcome.stderr)
+            for marker in ('CONTROLLED_CPU_RED=cpu_pressure', 'CONTROLLED_CPU_RED=cpu_headroom',
+                           'CONTROLLED_CPU_REAL_PROCESS=', 'CONTROLLED_CPU_GREEN=real_process_and_released',
+                           'CONTROLLED_CPU_INVALID_REAL_INPUTS_PRESERVED',
+                           'RF_SOFTWARE_FIXTURE_CPU CONTROLLED='):
+                self.assertIn(marker, outcome.stdout)
+            print(outcome.stdout)
 
     def test_public_wrapper_creates_analysis_child_with_real_python_without_comsol(self):
         with tempfile.TemporaryDirectory(prefix='rf analysis spaces ') as directory:
@@ -408,6 +507,7 @@ $source.stage_evidence|ConvertTo-Json -Depth 20 -Compress
                 target = code/relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO/relative, target)
+            install_controlled_cpu_snapshot(REPO, code)
             (run/'inputs').mkdir(parents=True, exist_ok=True)
             (run/'results').mkdir()
             (run/'logs').mkdir()
@@ -488,13 +588,28 @@ Remove-Item Env:RF_INERT_COLD_LAUNCHER_FAIL
 Remove-RunPackageExecutionAlias -Package $package
 @{completion=$completion;state=$state;result=$result;negative_observation=$negativeState.wrapper_observation;removed_alias=$alias;alias_exists=(Test-Path -LiteralPath $alias)}|ConvertTo-Json -Depth 30 -Compress
 """, encoding='utf-8')
-            outcome = subprocess.run(['pwsh', '-NoProfile', '-File', str(script), str(REPO), sys.executable, str(root)],
-                                     capture_output=True, text=True, encoding='utf-8', cwd=root, timeout=300, env=private_host_environment())
+            try:
+                outcome = subprocess.run(['pwsh', '-NoProfile', '-File', str(script), str(REPO), sys.executable, str(root)],
+                                         capture_output=True, text=True, encoding='utf-8', cwd=root, timeout=300, env=private_host_environment())
+            except subprocess.TimeoutExpired as error:
+                for stream in ("stdout", "stderr"):
+                    partial = getattr(error, stream)
+                    if isinstance(partial, bytes):
+                        partial = partial.decode("utf-8", errors="replace")
+                    print(f"RF_COLD_FIXTURE_TIMEOUT_PARTIAL_{stream.upper()}={partial or ''}", file=sys.stderr, flush=True)
+                raise
             self.assertEqual(outcome.returncode, 0, outcome.stdout+outcome.stderr)
             result = json.loads(outcome.stdout.strip().splitlines()[-1])
             observation = result['completion']['operations'][0]['observation']
             self.assertTrue(observation['exit_confirmed'])
             self.assertEqual(observation['returncode'], 0)
+            positive_release = result['completion']['resource_releases'][0]['completion_receipt']['host_release']
+            negative_release = json.loads((run/'logs/comsol_launcher_completion.json').read_text(encoding='utf-8-sig'))['host_release']
+            for release in (positive_release, negative_release):
+                self.assertFalse(release['inherited'])
+                self.assertIsNone(release['error'])
+                self.assertEqual(release['result']['status'], 'released')
+                self.assertEqual(release['result']['token'], release['token'])
             self.assertTrue(result['negative_observation']['exit_confirmed'])
             # PowerShell -EncodedCommand maps its nested script's nonzero exit
             # to wrapper exit 1; assert the actual wrapper plus child sentinel.

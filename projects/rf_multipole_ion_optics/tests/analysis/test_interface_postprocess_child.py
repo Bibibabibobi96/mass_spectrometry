@@ -176,6 +176,9 @@ if(-not$caught){throw 'unknown writer failed to reach retaining owner boundary'}
                 destination = facade / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(repo / relative, destination)
+            from projects.rf_multipole_ion_optics.tests.test_support.capacity_fixture import install_controlled_cpu_snapshot
+
+            install_controlled_cpu_snapshot(repo, facade)
             target = facade / "projects/rf_multipole_ion_optics/workflows/interface_readiness/run_comsol.ps1"
             shutil.copyfile(CLI, target)
             registry = json.loads((repo / "config/project_registry.json").read_text(encoding="utf-8"))
@@ -255,6 +258,7 @@ $budget=(Get-HostResourceBudget -Role COMSOL -Stage postprocess).Clone();$budget
 $lease=Enter-HostResourceStage -StatePath $paths.host_resource_state_path -Role COMSOL -Stage postprocess -RunId $parentId -Budget $budget
 $seen=Invoke-ResourceBudgetedProcess -Limits $limit -RunDir $parent.artifact_run_dir -UsagePath (Join-Path $parent.log_dir 'fixture_usage.json') -FilePath $python -ArgumentList @('-c','"pass"') -WorkingDirectory $repo
 $released=Exit-HostResourceStage -Lease $lease -PassThru
+if($lease.inherited-or$released.status-cne'released'-or$released.token-cne$lease.token){throw 'Original independent COMSOL release changed'}
 $receipt=@{role='comsol_launcher_completion';run_id=$parentId;fixture='not_native_comsol';host_release=@{inherited=[bool]$lease.inherited;token=[string]$lease.token;result=$released;error=$null};operations=@(@{operation_id='synthetic-completed-task';observation=@{exit_confirmed=$true;returncode=[int]$seen.exit_code;process_id=[int]$seen.root_process_id;process_started_at_utc_ticks=[long]$seen.root_process_started_at_utc_ticks}})}
 Write-RunJson -Path (Join-Path $parent.log_dir 'native_completion.json') -Value $receipt -Depth 20
 $stopped=Join-Path ROOT 'stopped.json'
@@ -310,9 +314,17 @@ Write-Output ('ACTUAL_INTERFACE_CHILD='+$out.run_directory)
             for key in list(environment):
                 if key.startswith("MASS_SPECTROMETRY_HOST_"):
                     environment.pop(key)
-            result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-                                    cwd=facade, env=environment, capture_output=True, text=True,
-                                    encoding="utf-8", errors="replace", timeout=180)
+            try:
+                result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                                        cwd=facade, env=environment, capture_output=True, text=True,
+                                        encoding="utf-8", errors="replace", timeout=180)
+            except subprocess.TimeoutExpired as error:
+                for stream in ("stdout", "stderr"):
+                    partial = getattr(error, stream)
+                    if isinstance(partial, bytes):
+                        partial = partial.decode("utf-8", errors="replace")
+                    print(f"RF_INTERFACE_TIMEOUT_PARTIAL_{stream.upper()}={partial or ''}", file=sys.stderr, flush=True)
+                raise
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("ACTUAL_INTERFACE_CHILD=", result.stdout)
             print(result.stdout)
