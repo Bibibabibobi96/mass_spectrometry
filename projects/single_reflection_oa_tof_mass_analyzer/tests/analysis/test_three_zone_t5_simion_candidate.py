@@ -256,6 +256,24 @@ class ThreeZoneT5SimionCandidateTests(unittest.TestCase):
         )
         self.assertEqual(resolved["qualification"], "CANDIDATE_ONLY")
 
+    def _relocated_publication_sources(self):
+        code_root = self.root / "simulation_repo"
+        code_inputs = {
+            "COMPILER_SOURCE": candidate_compiler.COMPILER_SOURCE,
+            "THEORY_CORE_SOURCE": candidate_compiler.THEORY_CORE_SOURCE,
+            "ACCELERATOR_THEORY_SOURCE": candidate_compiler.ACCELERATOR_THEORY_SOURCE,
+            "ACCELERATOR_TWO_ZONE_SOURCE": candidate_compiler.ACCELERATOR_TWO_ZONE_SOURCE,
+            "ACCELERATOR_GEOMETRY_SOURCE": candidate_compiler.ACCELERATOR_GEOMETRY_SOURCE,
+            "EXPERIMENT_CORE_SOURCE": candidate_compiler.EXPERIMENT_CORE_SOURCE,
+        }
+        relocated_code = {}
+        for attribute, source in code_inputs.items():
+            destination = code_root / source.relative_to(REPOSITORY_ROOT)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(source.read_bytes())
+            relocated_code[attribute] = destination
+        return relocated_code
+
     def test_publishes_portable_canonical_artifact_run_atomically(self) -> None:
         run_id = "20260817_170000__build__python__three-zone-t5-candidate"
         run_dir = (
@@ -266,22 +284,8 @@ class ThreeZoneT5SimionCandidateTests(unittest.TestCase):
             / "runs"
             / run_id
         )
-        code_root = self.root / "simulation_repo"
-        code_inputs = {
-            "COMPILER_SOURCE": candidate_compiler.COMPILER_SOURCE,
-            "THEORY_CORE_SOURCE": candidate_compiler.THEORY_CORE_SOURCE,
-            "ACCELERATOR_THEORY_SOURCE": candidate_compiler.ACCELERATOR_THEORY_SOURCE,
-            "ACCELERATOR_TWO_ZONE_SOURCE": candidate_compiler.ACCELERATOR_TWO_ZONE_SOURCE,
-            "ACCELERATOR_GEOMETRY_SOURCE": candidate_compiler.ACCELERATOR_GEOMETRY_SOURCE,
-            "EXPERIMENT_CORE_SOURCE": candidate_compiler.EXPERIMENT_CORE_SOURCE,
-            "OUTPUT_SCHEMA_SOURCE": candidate_compiler.OUTPUT_SCHEMA_SOURCE,
-        }
-        relocated_code = {}
-        for attribute, source in code_inputs.items():
-            destination = code_root / source.relative_to(REPOSITORY_ROOT)
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_bytes(source.read_bytes())
-            relocated_code[attribute] = destination
+        relocated_code = self._relocated_publication_sources()
+        self.assertFalse(candidate_compiler.OUTPUT_SCHEMA_SOURCE.is_relative_to(self.root))
         with mock.patch.multiple(candidate_compiler, **relocated_code):
             summary = publish_t5_simion_candidate(
                 self.campaign_path,
@@ -295,6 +299,8 @@ class ThreeZoneT5SimionCandidateTests(unittest.TestCase):
         self.assertEqual(
             set(path.relative_to(run_dir).as_posix() for path in run_dir.rglob("*")),
             {
+                "inputs", "inputs/schemas",
+                "inputs/schemas/" + candidate_compiler.OUTPUT_SCHEMA_SOURCE.name,
                 "results",
                 "results/three_zone_t5_simion_candidate_resolved.json",
                 "run_config.json",
@@ -327,7 +333,7 @@ class ThreeZoneT5SimionCandidateTests(unittest.TestCase):
             "three_zone_theory_experiment_source": relocated_code[
                 "EXPERIMENT_CORE_SOURCE"
             ],
-            "candidate_output_schema": relocated_code["OUTPUT_SCHEMA_SOURCE"],
+            "candidate_output_schema": run_dir / "inputs/schemas" / candidate_compiler.OUTPUT_SCHEMA_SOURCE.name,
         }
         self.assertEqual(
             set(expected_code_inputs),
@@ -341,6 +347,13 @@ class ThreeZoneT5SimionCandidateTests(unittest.TestCase):
         ]
         self.assertTrue(all(not Path(record["path"]).is_absolute() for record in records))
         self.assertFalse(manifest["formal_eligible"])
+        frozen_schema = expected_code_inputs["candidate_output_schema"]
+        self.assertEqual(frozen_schema.read_bytes(), candidate_compiler.OUTPUT_SCHEMA_SOURCE.read_bytes())
+        self.assertEqual(run_config["inputs"]["candidate_output_schema"],
+                         "inputs/schemas/" + candidate_compiler.OUTPUT_SCHEMA_SOURCE.name)
+        self.assertEqual(manifest["inputs"]["candidate_output_schema"]["bytes"], frozen_schema.stat().st_size)
+        self.assertEqual(manifest["inputs"]["candidate_output_schema"]["path"],
+                         run_config["inputs"]["candidate_output_schema"])
         for name, source in expected_code_inputs.items():
             self.assertEqual(manifest["inputs"][name]["sha256"], file_sha256(source))
         verified = subprocess.run(
@@ -375,6 +388,32 @@ class ThreeZoneT5SimionCandidateTests(unittest.TestCase):
                 run_dir,
                 workspace_root=self.root,
             )
+
+    def test_external_schema_publication_failure_is_atomic_and_sources_stay_bounded(self):
+        run_dir = self.root / "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260817_170000__build__python__three-zone-t5-candidate"
+        sources = self._relocated_publication_sources()
+        schema_bytes = candidate_compiler.OUTPUT_SCHEMA_SOURCE.read_bytes()
+
+        def fail_publication(*, run_dir, run_config, outputs):
+            config = json.loads(run_config.read_text(encoding="utf-8"))
+            schema = run_dir / config["inputs"]["candidate_output_schema"]
+            self.assertEqual(schema.read_bytes(), schema_bytes)
+            raise RuntimeError("injected manifest publication failure")
+
+        with mock.patch.multiple(candidate_compiler, **sources):
+            with mock.patch.object(candidate_compiler, "_publish_manifest", side_effect=fail_publication):
+                with self.assertRaisesRegex(RuntimeError, "injected manifest publication failure"):
+                    publish_t5_simion_candidate(self.campaign_path, self.receipt_path, run_dir,
+                                               workspace_root=self.root)
+        self.assertFalse(run_dir.exists())
+        self.assertEqual(list(run_dir.parent.iterdir()), [])
+        self.assertEqual(candidate_compiler.OUTPUT_SCHEMA_SOURCE.read_bytes(), schema_bytes)
+        sources["COMPILER_SOURCE"] = candidate_compiler.COMPILER_SOURCE
+        with mock.patch.multiple(candidate_compiler, **sources):
+            with self.assertRaisesRegex(ValueError, "candidate_compiler_source must be inside the workspace"):
+                publish_t5_simion_candidate(self.campaign_path, self.receipt_path, run_dir,
+                                           workspace_root=self.root)
+        self.assertEqual(list(run_dir.parent.iterdir()), [])
 
     def test_publish_rejects_noncanonical_or_invalid_run_directory(self) -> None:
         with self.assertRaisesRegex(ValueError, "canonical workspace artifact root"):

@@ -22,6 +22,7 @@ from typing import Any, Mapping, Sequence
 
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.file_identity import file_sha256
+from common.contracts.frozen_inputs import freeze_file
 from common.contracts.machine_contracts import load_json
 from msplatform.contracts.machine_contracts import SCHEMA_DIR
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.paper1_c3_j3_mapping import (
@@ -124,7 +125,6 @@ def publish_c3_j3_candidates(
     code_sources = {
         "publisher_source": Path(__file__).resolve(),
         "mapping_source": REPOSITORY_ROOT / "projects/single_reflection_oa_tof_mass_analyzer/analysis/paper1_c3_j3_mapping.py",
-        "candidate_schema": SCHEMA_DIR / "oatof_three_zone_simion_candidate_resolved.schema.json",
     }
     for label, path in code_sources.items():
         _workspace_relative(path, workspace_root, label=label)
@@ -137,6 +137,11 @@ def publish_c3_j3_candidates(
     staging: Path | None = None
     try:
         staging = Path(tempfile.mkdtemp(prefix=f".{run_dir.name}.pending-", dir=canonical_runs))
+        schema_source = SCHEMA_DIR / "oatof_three_zone_simion_candidate_resolved.schema.json"
+        schema_input = staging / "inputs" / "schemas" / schema_source.name
+        schema_input.parent.mkdir(parents=True)
+        freeze_file(schema_source, schema_input)
+        code_sources["candidate_schema"] = schema_input
         raw_family = compile_c2_j3_physical_control_family(
             campaign_path=campaign_path, c2_result_path=c2_result_path,
             source_id=source_id, candidate_path=base_candidate_path,

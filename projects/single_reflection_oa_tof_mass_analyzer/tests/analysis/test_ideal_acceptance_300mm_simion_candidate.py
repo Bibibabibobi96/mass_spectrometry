@@ -83,6 +83,15 @@ class IdealAcceptanceCandidateTests(unittest.TestCase):
             self.configuration, self.manifest_path, self.selected,
         )
 
+    def publication_code_root(self) -> tuple[Path, Path, Path]:
+        repo = compiler.REPOSITORY_ROOT
+        source = Path(compiler.__file__)
+        code_root = self.workspace / "simulation_repo"
+        copied_source = code_root / source.relative_to(repo)
+        copied_source.parent.mkdir(parents=True, exist_ok=True)
+        copied_source.write_bytes(source.read_bytes())
+        return repo, code_root, copied_source
+
     def test_live_reference_change_does_not_change_frozen_source(self) -> None:
         first = self.compile()
         parent_before = self.manifest_path.read_bytes()
@@ -191,28 +200,30 @@ class IdealAcceptanceCandidateTests(unittest.TestCase):
         self.assertFalse(output.exists())
 
     def test_publication_binds_frozen_reference_and_preserves_parent(self) -> None:
-        repo = compiler.REPOSITORY_ROOT
-        source = Path(compiler.__file__)
-        code_root = self.workspace / "simulation_repo"
-        copied_source = code_root / source.relative_to(repo)
-        schema_relative = Path("src/msplatform/contracts/schemas") / compiler.OUTPUT_SCHEMA
-        for original, destination in ((source, copied_source),
-                                      (repo / schema_relative, code_root / schema_relative)):
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_bytes(original.read_bytes())
+        repo, code_root, copied_source = self.publication_code_root()
+        schema_source = compiler.SCHEMA_DIR / compiler.OUTPUT_SCHEMA
+        self.assertFalse(schema_source.resolve().is_relative_to(self.workspace.resolve()))
         run = (self.workspace / "artifacts/projects" / compiler.PROJECT_ID / "runs"
                / "20261029_080000__build__python__synthetic-300mm-candidate")
         before = {p: p.read_bytes() for p in self.parent.rglob("*") if p.is_file()}
         self.live_reference.unlink()
         with (mock.patch.object(compiler, "__file__", str(copied_source)),
               mock.patch.object(compiler, "REPOSITORY_ROOT", code_root),
-              mock.patch.object(compiler, "SCHEMA_DIR", code_root / schema_relative.parent),
               mock.patch.dict(os.environ, {"PYTHONPATH": str(repo)})):
             summary = compiler.publish_ideal_acceptance_300mm_candidate(
                 self.configuration, self.manifest_path, self.selected, run,
                 workspace_root=self.workspace,
             )
         manifest = json.loads((run / "run_manifest.json").read_text(encoding="utf-8"))
+        config = json.loads((run / "run_config.json").read_text(encoding="utf-8"))
+        schema_relative = f"inputs/schemas/{compiler.OUTPUT_SCHEMA}"
+        self.assertEqual(config["inputs"]["candidate_output_schema"], schema_relative)
+        schema_record = manifest["inputs"]["candidate_output_schema"]
+        self.assertEqual(schema_record["path"], schema_relative)
+        self.assertEqual((run / schema_relative).read_bytes(), schema_source.read_bytes())
+        self.assertEqual(schema_record["bytes"], schema_source.stat().st_size)
+        self.assertEqual(schema_record["sha256"], file_record(schema_source)["sha256"])
+        verify_record("published local schema", schema_record, base_dir=run)
         reference = manifest["inputs"]["ideal_acceptance_reference_source"]
         self.assertEqual(record_path(reference, base_dir=run), self.reference)
         verify_record("published frozen reference", reference, base_dir=run)
@@ -225,6 +236,26 @@ class IdealAcceptanceCandidateTests(unittest.TestCase):
                 workspace_root=self.workspace,
             )
         self.assertEqual(list(run.parent.glob(".*")), [])
+
+    def test_publication_failure_cleans_staging_and_keeps_project_source_local(self) -> None:
+        _, code_root, copied_source = self.publication_code_root()
+        run = (self.workspace / "artifacts/projects" / compiler.PROJECT_ID / "runs"
+               / "20261102_190002__build__python__300mm-publication-failure")
+        before = {path: path.read_bytes() for path in self.parent.rglob("*") if path.is_file()}
+        arguments = dict(workspace_root=self.workspace)
+        with self.assertRaisesRegex(ValueError, "candidate_compiler_source must be inside"):
+            compiler.publish_ideal_acceptance_300mm_candidate(
+                self.configuration, self.manifest_path, self.selected, run, **arguments)
+        self.assertFalse(run.exists())
+        with (mock.patch.object(compiler, "__file__", str(copied_source)),
+              mock.patch.object(compiler, "REPOSITORY_ROOT", code_root),
+              mock.patch.object(compiler, "_publish_manifest", side_effect=RuntimeError("publication fault")),
+              self.assertRaisesRegex(RuntimeError, "publication fault")):
+            compiler.publish_ideal_acceptance_300mm_candidate(
+                self.configuration, self.manifest_path, self.selected, run, **arguments)
+        self.assertFalse(run.exists())
+        self.assertEqual(list(run.parent.glob(".*")), [])
+        self.assertEqual(before, {path: path.read_bytes() for path in before})
 
 
 if __name__ == "__main__":

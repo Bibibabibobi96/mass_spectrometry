@@ -22,6 +22,7 @@ from typing import Any, Mapping, Sequence
 
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.file_identity import file_sha256
+from common.contracts.frozen_inputs import freeze_file
 from msplatform.contracts.machine_contracts import SCHEMA_DIR, load_json, validate_schema
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
     AffineSource,
@@ -527,12 +528,13 @@ def publish_t5_simion_candidate(
         "accelerator_two_zone_theory_source": ACCELERATOR_TWO_ZONE_SOURCE,
         "accelerator_geometry_source": ACCELERATOR_GEOMETRY_SOURCE,
         "three_zone_theory_experiment_source": EXPERIMENT_CORE_SOURCE,
-        "candidate_output_schema": OUTPUT_SCHEMA_SOURCE,
     }
     for name, path in code_inputs.items():
         if not path.is_file():
             raise ValueError(f"T5 Candidate code identity is missing: {name}")
         _workspace_relative(path, workspace_root, label=name)
+    if not OUTPUT_SCHEMA_SOURCE.is_file():
+        raise ValueError("T5 Candidate code identity is missing: candidate_output_schema")
 
     canonical_runs.mkdir(parents=True, exist_ok=True)
     lock_path = canonical_runs / f".{run_dir.name}.publish.lock"
@@ -548,6 +550,12 @@ def publish_t5_simion_candidate(
         staging = Path(
             tempfile.mkdtemp(prefix=f".{run_dir.name}.pending-", dir=canonical_runs)
         )
+        # Package resources may live outside the workspace in a normal install.
+        # Bind their actual immutable bytes inside this publication, not a host path.
+        frozen_schema = staging / "inputs" / "schemas" / OUTPUT_SCHEMA_SOURCE.name
+        frozen_schema.parent.mkdir(parents=True)
+        freeze_file(OUTPUT_SCHEMA_SOURCE, frozen_schema)
+        code_inputs["candidate_output_schema"] = frozen_schema
         candidate_path = staging / "results" / CANDIDATE_NAME
         summary_path = staging / "summary.json"
         run_config_path = staging / "run_config.json"

@@ -25,6 +25,7 @@ from scipy.optimize import root
 
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.file_identity import file_sha256
+from common.contracts.frozen_inputs import freeze_file
 from common.contracts.machine_contracts import load_json, validate_schema
 from msplatform.contracts.machine_contracts import SCHEMA_DIR
 from common.contracts.verify_run_manifest import record_path, verify_record
@@ -560,7 +561,6 @@ def publish_ideal_acceptance_300mm_candidate(
     candidate = _portable_candidate(compiled, workspace_root=workspace_root)
     code_inputs = {
         "candidate_compiler_source": Path(__file__).resolve(),
-        "candidate_output_schema": SCHEMA_DIR / OUTPUT_SCHEMA,
         "ideal_acceptance_configuration": configuration_path,
         "ideal_acceptance_run_manifest": run_manifest_path,
         "ideal_acceptance_selected_result": selected_result_path,
@@ -580,6 +580,10 @@ def publish_ideal_acceptance_300mm_candidate(
     staging: Path | None = None
     try:
         staging = Path(tempfile.mkdtemp(prefix=f".{run_dir.name}.pending-", dir=canonical_runs))
+        schema_input = staging / "inputs" / "schemas" / OUTPUT_SCHEMA
+        schema_input.parent.mkdir(parents=True)
+        freeze_file(SCHEMA_DIR / OUTPUT_SCHEMA, schema_input)
+        code_inputs["candidate_output_schema"] = schema_input
         candidate_path = staging / "results" / CANDIDATE_NAME
         summary_path = staging / "summary.json"
         config_path = staging / "run_config.json"
