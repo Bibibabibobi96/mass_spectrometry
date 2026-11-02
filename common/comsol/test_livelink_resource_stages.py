@@ -472,10 +472,24 @@ try { & $path @arguments } finally {
                 root = Path(directory)
                 launcher = root / "TEST_ONLY_launcher.ps1"
                 facts, release = root / "worker.json", root / "release"
+                temporary = root / "worker.json.tmp"
+                publishing, publish = root / "publishing", root / "publish"
                 launcher.write_text(f"""
 $worker=Start-Process -FilePath (Get-Process -Id $PID).Path -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile','-Command','Start-Sleep -Seconds 30')
-@{{pid=$worker.Id;started=$worker.StartTime.ToUniversalTime().Ticks}}|ConvertTo-Json|Set-Content -LiteralPath '{facts}'
 $deadline=[DateTime]::UtcNow.AddSeconds(20)
+$bytes=[Text.Encoding]::UTF8.GetBytes((@{{pid=$worker.Id;started=$worker.StartTime.ToUniversalTime().Ticks}}|ConvertTo-Json -Compress))
+$stream=[IO.File]::Open('{temporary}',[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read)
+try{{
+ $split=if('{scenario}'-eq'owned'){{[int][Math]::Floor($bytes.Length/2)}}else{{$bytes.Length}}
+ $stream.Write($bytes,0,$split);$stream.Flush()
+ if('{scenario}'-eq'owned'){{
+  # Deterministically hold a partial temporary fact; final is the only ready signal.
+  [IO.File]::WriteAllText('{publishing}','')
+  while(-not(Test-Path -LiteralPath '{publish}')){{if([DateTime]::UtcNow-ge$deadline){{throw 'TEST_ONLY publication release timed out'}};Start-Sleep -Milliseconds 20}}
+  $stream.Write($bytes,$split,$bytes.Length-$split)
+ }}
+}}finally{{$stream.Dispose()}}
+[IO.File]::Move('{temporary}','{facts}')
 while(-not(Test-Path -LiteralPath '{release}')){{if([DateTime]::UtcNow-ge$deadline){{throw 'TEST_ONLY launcher release timed out'}};Start-Sleep -Milliseconds 20}}
 """, encoding="utf-8")
                 script = f"""
@@ -492,6 +506,15 @@ $sibling=Start-Process -FilePath $exe -WindowStyle Hidden -PassThru -ArgumentLis
 $worker=$null
 try{{
  $deadline=[DateTime]::UtcNow.AddSeconds(10)
+ if('{scenario}'-eq'owned'){{
+  while(-not(Test-Path -LiteralPath '{publishing}')){{if([DateTime]::UtcNow-ge$deadline){{throw 'TEST_ONLY partial fact not observed'}};Start-Sleep -Milliseconds 20}}
+  if(Test-Path -LiteralPath '{facts}'){{throw 'Incomplete worker fact was published as ready'}}
+  $partial=Get-Content -LiteralPath '{temporary}' -Raw
+  $rejected=$false;try{{$null=$partial|ConvertFrom-Json -ErrorAction Stop}}catch{{$rejected=$true}}
+  if(-not$rejected){{throw 'TEST_ONLY delayed fact was not actually partial'}}
+  'TEST_ONLY_PARTIAL_FACT_NOT_PUBLISHED'
+  [IO.File]::WriteAllText('{publish}','')
+ }}
  while(-not(Test-Path -LiteralPath '{facts}')){{if([DateTime]::UtcNow-ge$deadline){{throw 'TEST_ONLY worker facts missing'}};Start-Sleep -Milliseconds 20}}
  $workerFact=Get-Content -LiteralPath '{facts}' -Raw|ConvertFrom-Json
  $worker=Get-Process -Id $workerFact.pid
@@ -520,6 +543,9 @@ try{{
                     timeout=30, check=False, creationflags=self.creation_flags)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("TEST_ONLY_SERVER_CLEANUP=PASS", result.stdout)
+                if scenario == "owned":
+                    self.assertIn("TEST_ONLY_PARTIAL_FACT_NOT_PUBLISHED", result.stdout)
+                self.assertFalse(temporary.exists())
 
     def test_owned_jvm_log_moves_raw_bytes_after_success_failure_and_no_report(self) -> None:
         for scenario in ("success", "failure", "no_report"):
