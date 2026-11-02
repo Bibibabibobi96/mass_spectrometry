@@ -77,7 +77,7 @@ $list=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStateme
 Invoke-Expression $list.Extent.Text
 $package=New-FrozenPythonPackage -SourceRoot $repo -CodeRoot (Join-Path ROOT 'frozen') -RelativePaths $frozenPythonRelativePaths
 $function=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-InterfacePostprocessChild'},$true)
-$code=$function.FindAll({param($n)$n-is[Management.Automation.Language.StringConstantExpressionAst]-and$n.Value.StartsWith('import importlib.util,json,pathlib,runpy,sys')},$true)
+$code=$function.FindAll({param($n)$n-is[Management.Automation.Language.StringConstantExpressionAst]-and$n.Value.StartsWith('import importlib,json,pathlib,runpy,sys')},$true)
 if($code.Count-ne1){throw 'actual project analysis Python body missing'}
 @{code=$code[0].Value;root=$package.code_root}|ConvertTo-Json -Compress
 """
@@ -114,13 +114,16 @@ if($code.Count-ne1){throw 'actual project analysis Python body missing'}
             shutil.copyfile(PROJECT / "variants/quadrupole/config/interface_contract.json", contract)
             environment = os.environ.copy()
             environment.update(PYTHONPATH=execution["root"], PYTHONNOUSERSITE="1", PYTHONDONTWRITEBYTECODE="1")
-            result = subprocess.run([sys.executable, "-B", "-c", execution["code"], execution["root"],
+            result = subprocess.run([sys.executable, "-I", "-B", "-c", execution["code"], execution["root"],
                                      str(metadata), str(state), str(root / "metrics.json"), str(ions), str(contract),
                                      "1100000", "0", str(root / "report.json"), str(root / "origins.json")],
                                     cwd=execution["root"], env=environment, capture_output=True, text=True,
                                     encoding="utf-8", errors="replace", timeout=20)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(json.loads((root / "report.json").read_text())["status"], "PASS")
+            origins = json.loads((root / "origins.json").read_text())
+            self.assertTrue(Path(origins['common.contracts.particle_physics']).is_relative_to(
+                Path(execution['root']) / 'src/msplatform'))
             self.assertTrue(all(Path(path).is_relative_to(execution["root"]) for path in
                                 json.loads((root / "origins.json").read_text()).values()))
 
@@ -166,6 +169,13 @@ if(-not$caught){throw 'unknown writer failed to reach retaining owner boundary'}
                         target = facade / file.relative_to(repo)
                         target.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copyfile(file, target)
+            from common.contracts.frozen_inputs import enumerate_python_sources
+
+            for relative in enumerate_python_sources(repo, package_roots=('src/msplatform',),
+                    provider_root='src/msplatform', resource_suffixes=('.schema.json',)):
+                destination = facade / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(repo / relative, destination)
             target = facade / "projects/rf_multipole_ion_optics/workflows/interface_readiness/run_comsol.ps1"
             shutil.copyfile(CLI, target)
             registry = json.loads((repo / "config/project_registry.json").read_text(encoding="utf-8"))

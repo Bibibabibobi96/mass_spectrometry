@@ -9,10 +9,12 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
+from msplatform.contracts.machine_contracts import SCHEMA_DIR
+
 from common.contracts.file_identity import file_sha256
 
 
-SCHEMA_PATH = Path(__file__).with_name("schemas") / "canonical_clock_authority.schema.json"
+SCHEMA_PATH = SCHEMA_DIR / "canonical_clock_authority.schema.json"
 
 
 def validate_clock_authority(contract_path: Path, repository_root: Path) -> dict[str, Any]:

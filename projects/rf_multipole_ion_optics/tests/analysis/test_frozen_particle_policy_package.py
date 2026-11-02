@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.frozen_inputs import enumerate_python_sources
+from common.contracts.frozen_inputs import enumerate_python_sources, python_import_roots
 
 from projects.rf_multipole_ion_optics.workflows.interface_readiness.particle_source_policy import (
     generate_interface_bundle,
@@ -47,7 +47,11 @@ RELATIVE_PATHS = (
     r"projects\rf_multipole_ion_optics\core\interface_geometry.py",
     r"projects\rf_multipole_ion_optics\runtime\particle_source_preflight.py",
 )
+RELATIVE_PATHS += tuple(enumerate_python_sources(
+    REPO_ROOT, package_roots=['src/msplatform'], provider_root='src/msplatform',
+    resource_suffixes=('.schema.json',)))
 REQUIRED_MODULES = (
+    "msplatform",
     "projects.rf_multipole_ion_optics.workflows",
     "projects.rf_multipole_ion_optics.workflows.interface_readiness",
     "projects.rf_multipole_ion_optics.workflows.interface_readiness.generate_particle_table",
@@ -111,6 +115,8 @@ class FrozenParticlePolicyPackageTests(unittest.TestCase):
         files = (set(files) - set(package_roots)) | set(
             enumerate_python_sources(REPO_ROOT, package_roots=package_roots)
         )
+        files.update(enumerate_python_sources(REPO_ROOT, package_roots=['src/msplatform'],
+                                              provider_root='src/msplatform', resource_suffixes=('.schema.json',)))
         state_relative = "projects/rf_multipole_ion_optics/analysis/analyze_comsol_particle_state_metrics.py"
         helper_relative = "projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1"
         mode_path = PROJECT_ROOT / "config/modes/quadrupole_mass_filter_reference.json"
@@ -193,6 +199,36 @@ try {{ . $analysisBlock }} catch {{ $missing=$_.Exception.Message }}
             self.assertEqual(result["source_state"]["hits"], 4)
             self.assertEqual(result["metrics"]["status"], "PASS")
             self.assertEqual(result["metrics"]["sampled_response_analysis"]["interpolated_main_peak_fwhm_Th"], 1.75)
+
+    def test_interface_comsol_worker_imports_actual_frozen_core(self) -> None:
+        """Run the production worker import boundary in isolated Python."""
+        source = COMSOL_RUNNER.read_text(encoding="utf-8")
+        start = source.index("import importlib,json,pathlib,runpy,sys")
+        code = source[start:source.index("raw=json.loads", start)]
+        code += "\nfrom common.contracts.particle_physics import kinetic_energy_ev, AMU_KG, ELEMENTARY_CHARGE_C\n"
+        code += "assert kinetic_energy_ev(1.,1.,0.,0.) == .5*AMU_KG/ELEMENTARY_CHARGE_C\n"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = enumerate_python_sources(REPO_ROOT, package_roots=(
+                'common/contracts', 'projects/rf_multipole_ion_optics/analysis', 'src/msplatform'),
+                resource_suffixes=('.schema.json',))
+            for relative in paths:
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(REPO_ROOT / relative, target)
+            command = [sys.executable, '-I', '-B', '-c', code, str(root), *(['unused'] * 9)]
+            result = subprocess.run(command, cwd=root, capture_output=True, text=True,
+                                    encoding='utf-8', timeout=60, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            origins = json.loads((root / 'unused').read_text(encoding='utf-8'))
+            self.assertTrue(all(Path(path).is_relative_to(root) for path in origins.values()))
+            self.assertTrue(Path(origins['common.contracts.particle_physics']).is_relative_to(root / 'src'))
+            shutil.rmtree(root / 'src')
+            missing = subprocess.run(command, cwd=root, capture_output=True, text=True,
+                                     encoding='utf-8', timeout=60, check=False)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertTrue('analysis escaped frozen source' in missing.stderr or
+                            "No module named 'msplatform'" in missing.stderr, missing.stderr)
 
     def test_both_runners_use_the_isolated_frozen_package_contract(self) -> None:
         """Generate real source bundles from both actual runner package declarations."""
@@ -452,11 +488,11 @@ $result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath {_ps(result_path)}
             )
             package = result["package"]
             execution = result["execution"]
-            self.assertEqual(package["package_roots"], [str(code_root.resolve())])
+            self.assertEqual(package["package_roots"], python_import_roots(code_root))
             self.assertEqual(len(package["files"]), len(frozen_relative_paths))
             self.assertEqual(
                 execution["python_path"],
-                str(code_root.resolve()),
+                os.pathsep.join(python_import_roots(code_root)),
             )
             self.assertTrue(execution["python_no_user_site"])
             self.assertTrue(execution["python_no_bytecode"])
@@ -654,7 +690,7 @@ $result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath {_ps(result_path)}
                                          if entry["relative_path"].endswith(".py")}
                         self.assertLessEqual(set(origins.values()), frozen_python)
                     self.assertTrue(all(origin.is_relative_to(code_root) for origin in origins.values()))
-                    self.assertEqual(record["execution"]["python_path"], str(code_root))
+                    self.assertEqual(record["execution"]["python_path"], os.pathsep.join(python_import_roots(code_root)))
                     self.assertTrue(record["execution"]["module_invoked"])
                     self.assertTrue(record["execution"]["python_no_user_site"])
                     self.assertTrue(record["execution"]["python_no_bytecode"])

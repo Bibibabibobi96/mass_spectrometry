@@ -211,6 +211,23 @@ function Enter-RunTerminalConsumptionGuard {
   }catch{if($null-ne$guard){$guard.Dispose()}else{$stream.Dispose()};throw}
 }
 
+function Get-RunPythonImportRoots {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$RepoRoot)
+  $root=(Resolve-Path -LiteralPath $RepoRoot).Path
+  $src=Join-Path $root 'src'
+  if(-not(Test-Path -LiteralPath $src)){return @($root)}
+  if(-not(Test-Path -LiteralPath $src -PathType Container)){throw 'Python src import root must be a directory.'}
+  $item=Get-Item -LiteralPath $src -Force
+  $target=$item.ResolveLinkTarget($true)
+  if($null-ne$target-and-not$target.FullName.StartsWith(
+      $root.TrimEnd([IO.Path]::DirectorySeparatorChar)+[IO.Path]::DirectorySeparatorChar,
+      [StringComparison]::OrdinalIgnoreCase)){
+    throw 'Python src import root escapes its source tree.'
+  }
+  return @($src,$root)
+}
+
 function Invoke-RunToolRootContext {
   [CmdletBinding()]
   param(
@@ -222,7 +239,7 @@ function Invoke-RunToolRootContext {
   $names=@(@('PYTHONPATH','PYTHONNOUSERSITE','PYTHONDONTWRITEBYTECODE')+@($Environment.Keys)|Sort-Object -Unique)
   $saved=Save-RunEnvironment -Names $names
   try{
-    $env:PYTHONPATH=$root
+    $env:PYTHONPATH=@(Get-RunPythonImportRoots -RepoRoot $root)-join[IO.Path]::PathSeparator
     $env:PYTHONNOUSERSITE='1'
     $env:PYTHONDONTWRITEBYTECODE='1'
     foreach($name in $Environment.Keys){

@@ -438,7 +438,7 @@ finally{{Complete-GateRunSummary -Summary $summary -Failure $failure}}
             root = Path(directory)
             common = root / "common"
             temporary = root / "temporary"
-            for path in (common, temporary, root / "projects", root / "integrations"):
+            for path in (common, temporary, root / "projects", root / "integrations", root / "src"):
                 path.mkdir()
             for name in ("verify.ps1", "parallel_gate_support.ps1",
                          "require_powershell7.ps1"):
@@ -1327,7 +1327,7 @@ ConvertTo-Json -InputObject $parts -Depth 32 -Compress
         with tempfile.TemporaryDirectory(prefix="python_gate_partition_") as directory:
             root=Path(directory); common=root/"common"; modules_root=common/"contracts"
             modules_root.mkdir(parents=True)
-            (root/"temporary").mkdir(); (root/"projects").mkdir(); (root/"integrations").mkdir()
+            (root/"temporary").mkdir(); (root/"projects").mkdir(); (root/"integrations").mkdir(); (root/"src").mkdir()
             for name in ("verify.ps1","parallel_gate_support.ps1","require_powershell7.ps1","gate_unittest.py"):
                 shutil.copyfile(ROOT/"common"/name,common/name)
             (common/"gate_catalog_support.ps1").write_text(

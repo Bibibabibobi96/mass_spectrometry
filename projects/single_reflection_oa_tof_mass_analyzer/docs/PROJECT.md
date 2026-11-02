@@ -8,6 +8,37 @@ Paper 1 专用研究准备API的归属与退出条件见[分析说明](../analys
 
 ## 当前状态
 
+
+### 2026-11-02 V4 科学核心与冻结消费者迁移
+
+Candidate 源码闭包使用公共 `enumerate_python_sources` 显式冻结 `src/msplatform` 的完整生产源码和
+`.schema.json` 资源，替代已迁走的旧 schema 路径；原始科学合同、父 run、历史 receipt 和既有资格不改写。
+COMSOL 普通分析与冷读预检的 Python `-I` 边界消费本次快照的公共 `python_import_roots`，
+业务调用前核对所有已导入科学核心的模块来源。冻结核心缺失时不得由宿主 editable 或安装环境补齐；
+旧快照未依赖新核心时仍使用自己的原实现。
+
+四阶段因果身份中的 analysis 投影同步绑定实际 canonical 峰形与普通文件摘要实现及其包初始化，
+不再仅依赖旧桥文件的摘要；实际峰形实现变化会使 analysis 身份变化，不无依据地改变 native、export 或 sync。
+两个既有 300 mm／C3-J3 publisher 从 canonical 模块相邻资源定位输出 schema，仍沿原发布身份校验与父输入保护。
+其中 300 mm publisher 的私有工作区回归实际复制、绑定迁移后的资源，不依赖当前 checkout 的 schema 填洞。
+
+目标软件行为 distinct 16 项通过：隔离导入、缺失冻结核心拒绝、额外声明与非法输入、真实 Candidate 编译
+4 项 15.033 秒；正常 argv 运输 1 项 2.543 秒；峰形变化的因果身份 1 项 3.937 秒；
+原 CLI postprocess 与实际四阶段后继 2 项 22.730 秒；完整 300 mm publisher 模块 8 项 4.874 秒。
+Ruff、定向开发标准与任务差异检查通过。首轮 3 项中 1 项失败（7.693 秒）的事实保留：
+公共 roots 模块在设置 src 前间接载入宿主核心；将该公共模块的身份依赖延迟至实际复制操作后复验通过，
+未放宽来源校验。C3-J3 publisher 未单独执行实际发布测试。
+这些证据均为软件与纯分析验证；没有新商业求解、模型保存、GUI／CAD、完整 Candidate 或 Formal 资格。
+
+独立 mass-spectrum 重分析的源码清单与实际 PowerShell 启动边界也显式冻结规范核心及 schema，
+以本次快照的公共导入根执行。计算前核对分析器与已加载核心来源，缺失核心时拒绝宿主安装补齐。
+定向真实分析回归通过（16.141 秒），保留父几何、母群 ID 拒绝及父 manifest 原字节保护，
+并实际验证删除冻结核心后失败；未重新飞行或改变原分析口径。
+
+径向紧凑化与反射器补偿两个完整软件模块联合复验 78／78 通过（77.455 秒），包含真实冻结 Python worker、
+公共 owner 恢复和软件原生边界夹具。此前同范围 27 项 ERROR 的失败事实保留；修复共享 schema 定位及
+canonical 源码冻结后重新执行，未将夹具日志中的 Fly／PA PASS 当作商业 SIMION 运行或新物理资格。
+
 正常 COMSOL core 的计时与显示移入实际调用的 `oatof_report_model_timing`，该函数不接收模型；
 原 native builder、后处理、同路径 GUI 保存及 context 更新次序保留，不增加求解或保存。
 完整来源仍冻结新 helper，正式 MATLAB 软件 runner 默认发现其两个行为用例。

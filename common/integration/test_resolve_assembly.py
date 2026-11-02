@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import copy
+import builtins
 import json
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from common.contracts.machine_contracts import ContractError, REPO_ROOT
-from common.integration.resolve_assembly import compile_assembly_layout, derive_assembly_scope
+from msplatform.assembly.resolve_assembly import compile_assembly_layout, derive_assembly_scope
 from common.integration.resolve_connection import resolve_assembly_recipe, verify_composition_plan
 
 
@@ -102,6 +104,28 @@ def direct_fixture() -> tuple[dict, dict]:
 class DirectAssemblyTests(unittest.TestCase):
     def setUp(self) -> None:
         self.recipe, self.components = direct_fixture()
+
+    def test_file_adapter_calls_canonical_layout_without_legacy_bridge(self) -> None:
+        original_import = builtins.__import__
+
+        def checked_import(name, *args, **kwargs):
+            if name == "common.integration.resolve_assembly":
+                raise AssertionError("file adapter must use the canonical layout directly")
+            return original_import(name, *args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            recipe, components = root / "recipe.json", root / "components.json"
+            recipe.write_text(json.dumps(self.recipe), encoding="utf-8")
+            components.write_text(json.dumps(self.components), encoding="utf-8")
+            with patch("builtins.__import__", side_effect=checked_import):
+                plan = resolve_assembly_recipe(recipe, components, root)
+            check = plan["connection_checks"][0]
+            self.assertEqual(check["upstream_center_mm"], [0, -68, 32])
+            self.assertEqual(check["downstream_center_mm"], [0, -67, 32])
+            self.assertEqual(check["gap_mm"], 1)
+            self.assertEqual(set(plan["input_files"]), {"recipe", "components"})
+            self.assertEqual(compile_assembly_layout.__module__, "msplatform.assembly.resolve_assembly")
 
     def test_frozen_parent_scope_uses_embedded_authority_and_rejects_derived_or_changed_parent(self):
         full = compile_assembly_layout(self.recipe, self.components)

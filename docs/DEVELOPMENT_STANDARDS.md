@@ -61,7 +61,8 @@ LiveLink、SIMION Lua/GEM、PowerShell及跨软件数据合同。仓库结构、
 - PowerShell只负责Windows环境、进程编排、路径、run生命周期和门禁，不实现物理公式或统计口径。
 - 分析代码不应长期直接消费供应商私有格式；应由明确的转换边界生成项目canonical合同。一次性排错
   读取私有格式时，脚本名称、输出和文档必须标明诊断范围。
-- 当前项目目录结构保持项目中心组织。未来统一求解器包装器按Roadmap实施；不得提前创建空的
+- 科学知识保持项目所有权；规范科学实现可按[核心边界](REPOSITORY_ARCHITECTURE.md#可安装科学核心与迁移边界)
+  实迁到`src/msplatform/`，不把项目所有权固定为源码物理目录。未来统一求解器包装器按Roadmap实施；不得提前创建空的
   `domain/application/adapters`目录，也不得把未来接口写成当前已具备能力。
 - 跨项目读取源码或配置时必须由消费项目的版本化依赖合同显式声明提供项目、仓库相对路径和冻结
   `run input`身份；运行器不得目录搜索“可用文件”，必须把依赖复制进本次`inputs/`，核对源与副本
@@ -288,7 +289,7 @@ LiveLink、SIMION Lua/GEM、PowerShell及跨软件数据合同。仓库结构、
 
 ### Canonical instrument clock authority
 
-- 每条跨项目事件链必须由`common/contracts/schemas/canonical_clock_authority.schema.json`声明唯一
+- 每条跨项目事件链必须由`src/msplatform/contracts/schemas/canonical_clock_authority.schema.json`声明唯一
   instrument epoch/time权威、显式`us`单位、time basis和权威文件SHA-256；machine contract只声明
   能力与contract identity，experiment只引用冻结birth authority与pulse-schedule身份，integration
   receipt只验证一次映射，不得复制时间值成为第二权威。

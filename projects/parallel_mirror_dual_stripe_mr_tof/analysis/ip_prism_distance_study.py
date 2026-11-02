@@ -15,12 +15,23 @@ import shutil
 import sys
 
 from common.contracts.particle_count_policy import load_particle_count_policy, POLICY_PATH
+from common.contracts.frozen_inputs import enumerate_python_sources
 from common.contracts.write_run_manifest import file_record, publish_run_manifest
 from common.contracts import artifact_retention, run_capacity_lifecycle
 from common.simion import resource_profile, resource_scheduler, particle_batching
 from common.simion.particle_source import render_standard_beams
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import verified_reference
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_local_geometry import prepare_geometry
+
+
+# These routes are still imported by native geometry, OA timing and the IP
+# recorded-source readers used by this study. Retire with those imports by P4.
+FROZEN_SCIENTIFIC_BRIDGE_MODULES = (
+    "common/contracts/particle_physics.py",
+    "common/contracts/rigid_transform.py",
+    "common/integration/resolve_assembly.py",
+    "common/ion_release/release.py",
+)
 
 
 def read_json(path: Path) -> dict:
@@ -118,6 +129,13 @@ def read_source(path: Path, census_path: Path) -> tuple[list, list]:
 
 def freeze_code(repo: Path, inputs: Path) -> None:
     """Freeze the actually imported repository closure and adjacent resources."""
+    repo = repo.resolve(strict=True)
+    selected = set(enumerate_python_sources(
+        repo, package_roots=("src/msplatform",), provider_root="src/msplatform",
+        resource_suffixes=(".schema.json",)))
+    selected.update(enumerate_python_sources(
+        repo, module_paths=FROZEN_SCIENTIFIC_BRIDGE_MODULES))
+    loaded = set()
     for module in tuple(sys.modules.values()):
         value=getattr(module,"__file__",None)
         if not value:
@@ -128,9 +146,15 @@ def freeze_code(repo: Path, inputs: Path) -> None:
         relative=path.relative_to(repo)
         if relative.parts[0] not in {"common","projects"}:
             continue
+        if (path.name.startswith("test_") or path.name.endswith("_test.py")
+                or {"tests", "test_support", "testing_support", "history"}.intersection(relative.parts)):
+            continue
+        loaded.add(relative.as_posix())
+    selected.update(enumerate_python_sources(repo, module_paths=sorted(loaded)))
+    for relative in sorted(selected):
         destination=inputs/"code"/relative
         destination.parent.mkdir(parents=True,exist_ok=True)
-        shutil.copyfile(path,destination)
+        shutil.copyfile(repo/relative,destination)
     for relative in (POLICY_PATH.relative_to(repo),Path("common/host_resource_policy.json"),
                      Path("common/contracts/artifact_retention.json"),Path("common/contracts/artifact_capacity_policy.json")):
         destination=inputs/"code"/relative

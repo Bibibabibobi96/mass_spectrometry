@@ -27,12 +27,17 @@ function Get-FrozenPythonPackageRelativePaths {
 import json, pathlib, sys
 request = json.load(sys.stdin)
 root = pathlib.Path(request["source_root"]).resolve()
-sys.path.insert(0, str(root))
+sys.path[:0] = [str(root / "src"), str(root)] if (root / "src").is_dir() else [str(root)]
 from common.contracts import frozen_inputs
 if pathlib.Path(frozen_inputs.__file__).resolve() != root / "common/contracts/frozen_inputs.py":
     raise RuntimeError("Frozen Python source selector escaped the selected source root")
-print(json.dumps(frozen_inputs.enumerate_python_sources(
-    root, package_roots=request["package_roots"], module_paths=request["module_paths"])))
+paths = frozen_inputs.enumerate_python_sources(
+    root, package_roots=request["package_roots"], module_paths=request["module_paths"])
+if (root / "src/msplatform").is_dir():
+    paths = sorted(set(paths) | set(frozen_inputs.enumerate_python_sources(
+        root, package_roots=["src/msplatform"], provider_root="src/msplatform",
+        resource_suffixes=(".schema.json",))))
+print(json.dumps(paths))
 '@
         $savedOutputEncoding = $OutputEncoding
         try {
@@ -95,7 +100,7 @@ function New-FrozenPythonPackage {
     [pscustomobject]@{
         schema_version = 1
         code_root = $resolvedCodeRoot
-        package_roots = @($resolvedCodeRoot)
+        package_roots = @(Get-RunPythonImportRoots -RepoRoot $resolvedCodeRoot)
         files = $inventory
     }
 }
@@ -165,6 +170,9 @@ function Invoke-IsolatedFrozenPythonModule {
     $packageRoots = @($Package.package_roots | ForEach-Object {
         [IO.Path]::GetFullPath([string]$_)
     })
+    if(@($Package.files | Where-Object {[string]$_.relative_path -like 'src/msplatform/*'}).Count){
+        $RequiredModuleNames=@($RequiredModuleNames)+@('msplatform') | Select-Object -Unique
+    }
     if ($packageRoots.Count -eq 0) {
         throw 'Frozen Python package roots must not be empty.'
     }
@@ -190,9 +198,24 @@ function Invoke-IsolatedFrozenPythonModule {
         $env:PYTHONPATH = $packageRoots -join [IO.Path]::PathSeparator
         $env:PYTHONNOUSERSITE = '1'
         $env:PYTHONDONTWRITEBYTECODE = '1'
-        Push-Location -LiteralPath $packageRoots[0]
+        Push-Location -LiteralPath ([string]$Package.code_root)
         try {
-            $probe = @'
+            $isolate = @'
+import pathlib, sys
+root_count = int(sys.argv[1])
+package_roots = [pathlib.Path(value).resolve() for value in sys.argv[2:2 + root_count]]
+offset = 2 + root_count
+forbidden_count = int(sys.argv[offset])
+forbidden_roots = [pathlib.Path(value).resolve() for value in sys.argv[offset + 1:offset + 1 + forbidden_count]]
+prefix = pathlib.Path(sys.prefix).resolve()
+sys.path = [str(root) for root in package_roots] + [value for value in sys.path
+    if value and (pathlib.Path(value).resolve().is_relative_to(prefix)
+        or not any(pathlib.Path(value).resolve().is_relative_to(root) for root in forbidden_roots))]
+sys.meta_path = [finder for finder in sys.meta_path
+    if not getattr(finder, '__module__', '').startswith('__editable__')]
+sys.argv = [sys.argv[0], *sys.argv[offset + 1 + forbidden_count:]]
+'@
+            $probe = $isolate + "`n" + @'
 import importlib.metadata
 import importlib.util
 import json
@@ -200,14 +223,9 @@ import pathlib
 import site
 import sys
 
-root_count = int(sys.argv[1])
-package_roots = [pathlib.Path(value).resolve() for value in sys.argv[2:2 + root_count]]
-distribution_count_index = 2 + root_count
-distribution_count = int(sys.argv[distribution_count_index])
-distribution_names = sys.argv[
-    distribution_count_index + 1:distribution_count_index + 1 + distribution_count
-]
-module_names = sys.argv[distribution_count_index + 1 + distribution_count:]
+distribution_count = int(sys.argv[1])
+distribution_names = sys.argv[2:2 + distribution_count]
+module_names = sys.argv[2 + distribution_count:]
 distributions = []
 modules = []
 user_site = pathlib.Path(site.getusersitepackages()).resolve()
@@ -248,10 +266,12 @@ print(json.dumps({
     "modules": modules,
 }))
 '@
-            $probeArguments = @([string]$packageRoots.Count) + $packageRoots +
+            $isolationArguments = @([string]$packageRoots.Count) + $packageRoots +
+                @([string]$ForbiddenRoots.Count) + $ForbiddenRoots
+            $probeArguments = $isolationArguments +
                 @([string]$DistributionNames.Count) + $DistributionNames +
                 $RequiredModuleNames
-            $probeText = (& $Python -c $probe @probeArguments | Out-String).Trim()
+            $probeText = (& $Python -I -B -c $probe @probeArguments | Out-String).Trim()
             if ($LASTEXITCODE -ne 0) {
                 throw 'Frozen Python third-party dependency probe failed.'
             }
@@ -285,7 +305,31 @@ print(json.dumps({
             }
             $moduleOutput = ''
             if (-not $ProbeOnly) {
-                $moduleOutput = (& $Python -m $Module @Arguments |
+                $execute = $isolate + "`n" + @'
+import importlib.util, runpy
+module = sys.argv[1]
+spec = importlib.util.find_spec(module)
+if spec is None or spec.origin is None or not any(
+    pathlib.Path(spec.origin).resolve().is_relative_to(root) for root in package_roots
+):
+    raise RuntimeError('entry module escaped frozen roots: ' + module)
+sys.argv = [module, *sys.argv[2:]]
+failure = None
+try:
+    runpy.run_module(module, run_name='__main__', alter_sys=True)
+except BaseException as error:
+    failure = error
+    raise
+finally:
+    for name, loaded in tuple(sys.modules.items()):
+        if name.split('.')[0] in ('common', 'projects', 'msplatform') and getattr(loaded, '__file__', None):
+            if not any(pathlib.Path(loaded.__file__).resolve().is_relative_to(root) for root in package_roots):
+                detail = 'module escaped frozen roots: ' + name
+                if failure is None:
+                    raise RuntimeError(detail)
+                failure.add_note(detail)
+'@
+                $moduleOutput = (& $Python -I -B -c $execute @isolationArguments $Module @Arguments |
                     Out-String).Trim()
                 if ($LASTEXITCODE -ne 0) {
                     $failure = [InvalidOperationException]::new(
@@ -307,7 +351,7 @@ print(json.dumps({
         schema_version = 1
         module = $Module
         module_invoked = -not [bool]$ProbeOnly
-        working_directory = $packageRoots[0]
+        working_directory = [string]$Package.code_root
         package_roots = $packageRoots
         python_path = $packageRoots -join [IO.Path]::PathSeparator
         python_no_user_site = $true
@@ -345,7 +389,7 @@ function New-RfPublishedDesignFreshnessPackage {
     $selectionScript = @'
 import json, pathlib, sys
 root = pathlib.Path(sys.argv[1]).resolve()
-sys.path.insert(0, str(root))
+sys.path[:0] = [str(root / "src"), str(root)] if (root / "src").is_dir() else [str(root)]
 from projects.rf_multipole_ion_optics.analysis import resolve_contract
 assert pathlib.Path(resolve_contract.__file__).resolve().is_relative_to(root)
 profile = resolve_contract.PROFILES[sys.argv[2]]
@@ -357,11 +401,7 @@ print(json.dumps({key: path.relative_to(root).as_posix() for key, path in profil
     $resources = @($selection.PSObject.Properties | ForEach-Object {[string]$_.Value}) + @(
         'projects/rf_multipole_ion_optics/config/contracts/family_contract.json'
     )
-    # Existing schema_registry loads its complete shared metadata set.
-    $resources += @(Get-ChildItem -LiteralPath (Join-Path $SourceRoot 'common/contracts/schemas') `
-        -Filter '*.schema.json' -File | ForEach-Object {
-            [IO.Path]::GetRelativePath($SourceRoot,$_.FullName).Replace('\','/')
-        })
+    # The scientific-core package selection already owns its schema resources.
     $resourcePackage = New-FrozenPythonPackage -SourceRoot $SourceRoot `
         -CodeRoot $SnapshotRoot -RelativePaths @($resources | Sort-Object -Unique)
     $package = $sourcePackage

@@ -272,7 +272,7 @@ def peak_time_metrics(
             result["analysis_metadata"]["status"] = result["status"]
             return result
         raise ValueError("unsupported peak analysis method")
-    from common.analysis.peak_metrics import AnalysisSettings, compute_time_peak_metrics
+    from msplatform.analysis.peak_metrics import AnalysisSettings, compute_time_peak_metrics
 
     if (analysis_contract.get("resolution_definition") != "mean_tof_us/(2*direct_fwhm_tof_us)"
             or analysis_contract.get("time_basis") != "instrument_arrival_us_from_common_zero_birth"

@@ -89,6 +89,8 @@ Complete-FailedRun -Python $Python -RepoRoot $Repo -RunConfig (Join-Path $Root '
             script = root / "check.ps1"
             script.write_text("""param($Repo,$Python,$Root)
 $ErrorActionPreference='Stop'
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
 $codeRoot=$Repo;$manifestRepoRoot=$Repo;$python=$Python;$runConfig='fixture';$name='primary';$resultDir=$Root;$runDir=$Root
 $mechanicalExitEnabled=$false;$RetentionClass='compact';$checkpointOutputs=[Collections.ArrayList]::new()
 $nativeOperations=[Collections.ArrayList]::new()

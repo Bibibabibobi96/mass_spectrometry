@@ -271,8 +271,17 @@ stdout的最终owner总耗时另含发布及资源释放。未知写者保留保
 
 ## 机器能力与解析输入
 
-冻结准备回归在独立 Python 进程中实际准备两代包，移走作者目录后仅从第一代冻结源码和资源准备第二代；
-释放、时钟、Fly2及动态资源保持，缺 runtime 或 placeholder 在物化前拒绝。
+2026-11-02，`functional.prepare`随[科学核心实迁](../../../common/README.md#科学核心发行与旧入口)
+冻结`src/msplatform`生产源码及其本地schema资源，继续绑定所选配置、源、时钟及原生动态资源。
+仍被本项目与公共状态／穿面模块导入的三个旧入口由
+`FROZEN_SCIENTIFIC_BRIDGE_MODULES`显式声明：`particle_physics`、`rigid_transform`及`ion_release.release`；
+它们只路由至canonical实现，随具名消费者迁移直接导入后退出，最迟P4移除。
+两代隔离准备回归实际移走作者目录，再以`-I`仅从第一代冻结代码和资源准备第二代；
+释放CSV、时钟、Fly2等输出保持逐字节一致，缺失runtime或placeholder仍在物化前拒绝。
+两方法通过（10.603秒）；上游admission与电子枪绑定联合45项通过（27.111秒）。
+初轮旧schema路径缺失及后续缺兼容桥的失败保留为迁移诊断，不计通过；
+这只是软件准备与来源隔离验证，没有新Refine、Fly或科学资格。
+
 小 fixture 的 seed 对共80字节、明确为非原生 opaque 数据，只检查复制／绑定，不读取真实大 placeholder，
 不证明 IOB／PA 格式、Refine、Fly 或科学资格。
 共享读者／发布者及 pending journal 完整矩阵归公共 `test_terminal_publication_lock`；

@@ -133,7 +133,9 @@ exit 0
             (worker / 'inputs').mkdir(parents=True)
             (worker / 'results').mkdir()
             environment = dict(os.environ)
-            environment.pop('PYTHONPATH', None)
+            from common.contracts.frozen_inputs import python_import_roots
+
+            environment['PYTHONPATH'] = os.pathsep.join(python_import_roots(frozen))
             extractor = root / 'inline_python_imports.ps1'
             extractor.write_text(r'''param($Owner)
 $tokens=$null;$errors=$null
@@ -158,8 +160,10 @@ ConvertTo-Json -InputObject $strings -Compress -Depth 4
             self.assertIn('from common.simion.pa_family_cache import validate_pa_family_cache_generation', imports)
             imported = subprocess.run([sys.executable, '-B', '-s', '-c', '\n'.join(sorted(imports)) + '\n' +
                 'import sys\nfrom pathlib import Path\n'
+                'import msplatform.contracts.particle_physics as physics\n'
+                'assert Path(physics.__file__).resolve().is_relative_to(Path.cwd().resolve() / "src"), physics.__file__\n'
                 'for name,module in list(sys.modules.items()):\n'
-                ' if name.startswith(("common.","integrations.","projects.")) and getattr(module,"__file__",None):\n'
+                ' if name.startswith(("common.","integrations.","projects.","msplatform")) and getattr(module,"__file__",None):\n'
                 '  assert Path(module.__file__).resolve().is_relative_to(Path.cwd().resolve()), name\n'
                 'print("FROZEN_OWNER_INLINE_IMPORTS=PASS")\n'], cwd=frozen, env=environment,
                 capture_output=True, text=True, encoding='utf-8', timeout=60, check=False)

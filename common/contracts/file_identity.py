@@ -17,13 +17,7 @@ FilePath: TypeAlias = str | PathLike[str]
 HASH_CHUNK_BYTES = 1024 * 1024
 
 
-def file_sha256(path: FilePath) -> str:
-    """Return the uppercase SHA-256 hex digest of a file, read in 1 MiB chunks."""
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as stream:
-        for block in iter(lambda: stream.read(HASH_CHUNK_BYTES), b""):
-            digest.update(block)
-    return digest.hexdigest().upper()
+from msplatform.io.file_identity import file_sha256
 
 
 def _windows_file_api() -> Any:

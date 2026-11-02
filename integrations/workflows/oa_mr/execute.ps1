@@ -56,7 +56,7 @@ function Format-InvariantNumber {
 function Invoke-ProjectPython {
   param([string[]]$Arguments)
   Push-Location -LiteralPath $script:pythonRoot;$saved=$env:PYTHONPATH
-  try{$env:PYTHONPATH=$script:pythonRoot;& $python -B @Arguments;if($LASTEXITCODE-ne 0){throw "Python stage failed: $($Arguments -join ' ')"}}
+  try{$env:PYTHONPATH=@(Get-RunPythonImportRoots -RepoRoot $script:pythonRoot)-join[IO.Path]::PathSeparator;& $python -B @Arguments;if($LASTEXITCODE-ne 0){throw "Python stage failed: $($Arguments -join ' ')"}}
   finally{$env:PYTHONPATH=$saved;Pop-Location}
 }
 function Invoke-SimionStage {

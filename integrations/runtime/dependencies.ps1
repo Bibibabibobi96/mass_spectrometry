@@ -51,6 +51,10 @@ function Assert-DependencyProviderIdentity {
     if ($Provider -ne 'common' -or $normalized -ne 'common') {
       throw "Dependency $DependencyId has an invalid repository-common provider."
     }
+  } elseif ($Scope -eq 'repository_core') {
+    if ($Provider -ne 'msplatform' -or $normalized -ne 'src/msplatform') {
+      throw "Dependency $DependencyId has an invalid scientific-core provider."
+    }
   } elseif ($Scope -eq 'integration') {
     $registeredRoot = Get-DependencyIntegrationRoot -RepoRoot $RepoRoot -OwnerId $Provider
     if ($normalized -ne $registeredRoot) {
@@ -236,6 +240,7 @@ function Freeze-ConsumerDependencies {
     }
     $providerRelative = switch ($scope) {
       'repository_common' { if ($provider -cne 'common') { throw "Invalid repository-common provider: $provider" }; 'common' }
+      'repository_core' { if ($provider -cne 'msplatform') { throw "Invalid scientific-core provider: $provider" }; 'src/msplatform' }
       'project' { "projects/$provider" }
       'integration' { Get-DependencyIntegrationRoot -RepoRoot $repo -OwnerId $provider }
       default { throw "Unsupported dependency provider scope: $scope" }
@@ -248,13 +253,18 @@ function Freeze-ConsumerDependencies {
       throw "Dependency provider has no source declarations: $provider"
     }
     foreach ($selection in @($group.python_packages) + @($group.python_modules)) {
-      if (@(Compare-Object @('source_repo_path','consumers') @($selection.PSObject.Properties.Name)).Count -ne 0) {
+      $fields=@($selection.PSObject.Properties.Name)
+      if (@($fields | Where-Object {$_ -notin @('source_repo_path','consumers','resource_suffixes')}).Count -or
+          @(@('source_repo_path','consumers') | Where-Object {$_ -notin $fields}).Count -or
+          ($fields -contains 'resource_suffixes' -and $group.python_modules -contains $selection)) {
         throw "Python source selection fields differ for provider: $provider"
       }
       $selectionPath = [string]$selection.source_repo_path
+      $selectionAbsolute=[IO.Path]::GetFullPath((Join-Path $repo $selectionPath))
       if ([string]::IsNullOrWhiteSpace($selectionPath) -or $selectionPath.Contains('\') -or
           [IO.Path]::IsPathRooted($selectionPath) -or $selectionPath -match '(^|/)\.\.?(/|$)' -or
-          -not (Test-DependencyPathWithin -Path (Join-Path $repo $selectionPath) -Root $providerRoot)) {
+          (-not $selectionAbsolute.Equals($providerRoot,[StringComparison]::OrdinalIgnoreCase) -and
+           -not (Test-DependencyPathWithin -Path $selectionAbsolute -Root $providerRoot))) {
         throw "Python source selection must stay within its declared provider: $selectionPath"
       }
       $selectionConsumers = @($selection.consumers)
@@ -308,7 +318,8 @@ function Freeze-ConsumerDependencies {
   # Enumeration is one interpreter call; verified copying keeps its existing owner.
   $enumerator = @'
 import json, pathlib, sys
-sys.path.insert(0, sys.argv[1])
+root = pathlib.Path(sys.argv[1]).resolve()
+sys.path[:0] = [str(root / "src"), str(root)] if (root / "src").is_dir() else [str(root)]
 from common.contracts.frozen_inputs import enumerate_python_sources
 request = json.load(sys.stdin)
 records = []
@@ -316,11 +327,16 @@ for group in request["providers"]:
     packages, modules = group["python_packages"], group["python_modules"]
     if not packages and not modules:
         continue
-    paths = enumerate_python_sources(pathlib.Path(request["source_root"]),
+    paths = set(enumerate_python_sources(pathlib.Path(request["source_root"]),
         package_roots=[row["source_repo_path"] for row in packages],
         module_paths=[row["source_repo_path"] for row in modules],
-        provider_root=group["provider_repo_path"])
-    for path in paths:
+        provider_root=group["provider_repo_path"]))
+    for row in packages:
+        if "resource_suffixes" in row:
+            paths.update(enumerate_python_sources(pathlib.Path(request["source_root"]),
+                package_roots=[row["source_repo_path"]], provider_root=group["provider_repo_path"],
+                resource_suffixes=row["resource_suffixes"]))
+    for path in sorted(paths):
         consumers = set()
         source = pathlib.PurePosixPath(path)
         for row in packages + modules:
@@ -332,7 +348,8 @@ for group in request["providers"]:
             raise ValueError(f"Python source has no declaring consumer: {path}")
         records.append({**{key: group[key] for key in
             ("provider_scope", "provider_project", "provider_repo_path")},
-            "id": "python:" + path, "source_repo_path": path, "consumers": sorted(consumers)})
+            "id": ("python:" if path.endswith(".py") else "resource:") + path,
+            "source_repo_path": path, "consumers": sorted(consumers)})
 print(json.dumps(records, ensure_ascii=False))
 '@
   $enumerationRequest = @{source_root=$repo; providers=@($packageGroups.ToArray())} | ConvertTo-Json -Depth 30 -Compress
@@ -365,6 +382,7 @@ print(json.dumps(records, ensure_ascii=False))
   })
   return [pscustomobject]@{
     execution_root = Join-Path $InputDir 'runtime_snapshot'
+    import_roots = @(Get-RunPythonImportRoots -RepoRoot (Join-Path $InputDir 'runtime_snapshot'))
     code_inventory_path = $publication.code_inventory_path
     dependency_contract_path = $publication.dependency_contract_path
     identities = $identities

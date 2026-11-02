@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -432,7 +433,7 @@ class CacheGenerationTests(unittest.TestCase):
             (root / "family.pa0").write_bytes(b"payload")
             completed = subprocess.run(
                 [
-                    "python", "-m", "common.simion.cache_generation",
+                    sys.executable, "-m", "common.simion.cache_generation",
                     "--directory", str(root), "--cache-key", "b" * 64,
                     "--provider-run-id", "run-2",
                 ],
@@ -454,7 +455,7 @@ class CacheGenerationTests(unittest.TestCase):
             )
             completed = subprocess.run(
                 [
-                    "python",
+                    sys.executable,
                     "-m",
                     "common.simion.cache_generation",
                     "--directory",

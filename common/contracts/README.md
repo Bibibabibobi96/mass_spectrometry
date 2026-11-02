@@ -249,13 +249,21 @@ LF，从而使Windows工作树与干净checkout得到同一身份。调用者仍
 每次只读取一次源身份和一次目的身份；调用方负责输入选择、目的目录与命名。IP和MR准备入口直接消费此API，
 沿原有源码闭包冻结公共模块；PA／MPH等求解器载荷继续使用各自owner机制。
 
-`frozen_inputs.enumerate_python_sources(source_root, package_roots=..., module_paths=..., provider_root=...)`
-将显式声明的包目录或独立模块展开为排序的仓库相对 POSIX `.py` 路径；只枚举，不导入、复制或哈希。
-已有父包初始化文件随包交付，namespace 包不补造初始化文件；测试、历史、生成物与原生载荷目录不进入交付。
-缺失、空包、重叠声明及越过来源／provider 的链接失败关闭。动态 JSON、Lua、MATLAB 等资源继续显式声明。
-集成依赖 schema 3 使用 `python_packages`／`python_modules`，沿原复制 owner 发布同一扁平 inventory；
-全局校验声明路径和提供者归属，只展开当前消费者的包，不要求未消费的包存在。
+`frozen_inputs.enumerate_python_sources(source_root, package_roots=..., module_paths=..., provider_root=..., resource_suffixes=())`
+将显式声明的包目录或独立模块展开为排序的仓库相对 POSIX 路径；只枚举，不导入、复制或哈希。
+默认只交付生产 `.py`；已有父包初始化文件随包交付，namespace 包不补造初始化文件。
+调用者可用显式 `resource_suffixes=(".schema.json",)` 同时选择包内所需资源；未声明的后缀不自动进入闭包。
+测试、历史、生成物与原生载荷目录仍排除；缺失、空包、重叠声明及越过来源／provider 的链接失败关闭。
+其他动态 JSON、Lua、MATLAB 等资源继续显式声明。集成提供者和资源声明见
+[集成依赖冻结](../../integrations/docs/INTEGRATION.md#依赖冻结与门禁)。
 代码交付范围与场、Fly、Analysis 的科学复用依赖分别表达，包中无关模块变化不自动使已有场失效。
+
+`frozen_inputs.python_import_roots(source_root)` 返回快照内实际存在的 `src`、再返回快照根；
+历史扁平源码快照没有 `src` 时只返回根。PowerShell 对应入口为
+[`Get-RunPythonImportRoots -RepoRoot`](run_artifact_support.ps1)，调用者按平台路径分隔符组成 `PYTHONPATH`。
+二者不搜索安装环境，`src` 必须是来源树内的目录。prepared owner及RF冻结Python包核对实际已加载模块来源；
+新快照缺少核心时，不能借当前 installed／editable `msplatform` 填洞。旧快照继续消费自己冻结的原实现，
+不回写历史清单或从活动仓库补齐。
 
 manifest writer 与 verifier 分别只在本次调用内复用重复文件的 `(bytes, SHA)`；复用键绑定解析后的实际路径、
 真实读取函数、大小与修改时间，普通读取和大 PA 无缓冲读取不能混用。每条声明仍独立检查路径、字节数、
@@ -751,7 +759,7 @@ manifest。旧manifest若记录绝对路径，只有仍位于原路径且全部�
 绑定只按[多极杆术语](../../projects/rf_multipole_ion_optics/docs/IMPLEMENTATION.md#统一术语)解释。
 组件内部终态允许 `unknown`：末窗或最后有限轨迹不足以证明原生损失时，保留观测原因，不默认成电极损失。`time_window_end`、`ended_without_loss_evidence`、`terminal_cause_unresolved` 描述证据边界；具体几何接受条件仍归项目，未知粒子保留在原母群分母。
 `component_particle_state.py`及
-[`schemas/component_particle_state.schema.json`](schemas/component_particle_state.schema.json)
+[`schemas/component_particle_state.schema.json`](../../src/msplatform/contracts/schemas/component_particle_state.schema.json)
 定义跨组件转移使用的version 1 canonical状态：每个粒子一行，严格按Schema中的
 `x-csv-column-order`保存identity、`species_id`、正的`particle_weight`、组件和事件、frame、clock
 epoch、年龄/出生时刻、谱系、质量/电荷、三维位置/速度、派生质荷比/动能，以及可选的具名相位。

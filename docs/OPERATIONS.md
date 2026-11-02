@@ -197,6 +197,21 @@ Python 3.9至3.12；本机默认Python 3.14和旧Python 3.8均不得作为本仓
 仓库根使用`python -m <module>`运行，禁止由各脚本重复修改`sys.path`。单次反射oa-TOF入口见
 `projects/single_reflection_oa_tof_mass_analyzer/analysis/README.md`。
 
+科学核心采用 `src/msplatform` 的标准可安装布局。开发环境在上述 `.venv` 中执行
+`python -m pip install -e . -c requirements-lock.txt`；此步骤建立正常安装关系，不由业务脚本修改
+`sys.path` 寻找核心。发行验收必须另建 Python 3.11 环境，从 wheel 及 sdist 重建 wheel 安装，
+并在仓库外通过 `python -I` 执行数值计算、核验模块来源和本地 schema 引用；editable 通过不能替代该验收。
+依赖锁定仍使用根声明和锁文件，不建立第二份运行环境清单。
+
+冻结运行不消费宿主当前安装的科学实现。`common.contracts.frozen_inputs.python_import_roots` 与
+PowerShell `Get-RunPythonImportRoots` 只依据本次源码树返回实际 `src` 和根；旧快照没有 `src` 时保持原根。
+缺少本次冻结的模块或资源应失败，不能退回当前 checkout 或 site-packages 补齐。
+源码与 `.schema.json` 由既有冻结编译器按单一 provider 声明展开、校验和绑定。
+
+实现参考（2026-11-02核对）：[PyPA src layout](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/)
+与 [setuptools package discovery](https://setuptools.pypa.io/en/latest/userguide/package_discovery.html)。
+当前构建 backend 为锁定的 setuptools 65.5.0；采用其标准 package-dir、find 与 package-data 能力。
+
 ## Git 规则
 
 仓库根是 `simulation_repo/`，远程公开仓库为

@@ -27,7 +27,24 @@ if($commitment-le0){throw 'Study requires a positive predeclared committed_new_b
 
 function Invoke-StudyPython {
  param([string[]]$Arguments)
- & $python @Arguments|Out-Host
+ $sourceRoot=if($frozenLocation){$frozenCode}else{$repoRoot}
+ $bootstrap=@'
+import importlib, importlib.util, pathlib, runpy, sys
+root = pathlib.Path(sys.argv[1]).resolve()
+arguments = sys.argv[2:]
+if len(arguments) < 2 or arguments[0] != '-m':
+    raise RuntimeError('Study Python requires its declared module entry')
+core = importlib.import_module('msplatform')
+core_file = getattr(core, '__file__', None)
+if not core_file or pathlib.Path(core_file).resolve() != root / 'src/msplatform/__init__.py':
+    raise RuntimeError('Scientific core escaped the selected study source snapshot')
+spec = importlib.util.find_spec(arguments[1])
+if spec is None or spec.origin is None or not pathlib.Path(spec.origin).resolve().is_relative_to(root):
+    raise RuntimeError('Study module escaped the selected source snapshot')
+sys.argv = arguments[1:]
+runpy.run_module(arguments[1], run_name='__main__', alter_sys=True)
+'@
+ & $python -B -c $bootstrap $sourceRoot @Arguments|Out-Host
  if($LASTEXITCODE-ne0){throw "IP/Prism study Python failed: $($Arguments -join ' ')"}
 }
 function New-StudyProcessSpecification {
@@ -103,7 +120,7 @@ function Invoke-StudyDispatchPhase {
 }
 $capacity=$null;$package=$null;$lease=$null;$succeeded=$false;$stage='capacity_startup'
 $existing=@();$savedPythonPath=$env:PYTHONPATH;$frozenLocation=$false
-$env:PYTHONPATH=$repoRoot
+$env:PYTHONPATH=@(Get-RunPythonImportRoots -RepoRoot $repoRoot)-join[IO.Path]::PathSeparator
 Push-Location $repoRoot
 try {
  $protected=@($contract)
@@ -129,7 +146,7 @@ try {
  if(-not(Test-Path -LiteralPath $frozenCode -PathType Container)){throw 'Study preparation did not freeze its Python source closure.'}
  # Current-directory imports otherwise shadow PYTHONPATH, even when the source
  # closure has been frozen. All execution and analysis consume the run closure.
- $env:PYTHONPATH=$frozenCode
+ $env:PYTHONPATH=@(Get-RunPythonImportRoots -RepoRoot $frozenCode)-join[IO.Path]::PathSeparator
  Push-Location $run
  $frozenLocation=$true
  # Unique fields are refined once. Fly-only work items then share their

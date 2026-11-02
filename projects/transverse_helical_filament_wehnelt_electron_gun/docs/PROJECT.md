@@ -60,6 +60,14 @@ build-only入口冻结实际MATLAB、解析器与公共运行依赖；源码闭�
 
 ## 构建准入与软件验证
 
+2026-11-02，build-only入口随[科学核心实迁](../../../common/README.md#科学核心发行与旧入口)
+通过公共源码选择器冻结`src/msplatform`实现及其本地schema，冻结resolver沿公共路径上下文
+消费本次快照的`src`与仓库代码根。行为回归实际执行生产PowerShell冻结片段，逐文件核对
+源码／schema字节，再运行冻结resolver，确认输入集合无新增文件或字节码。
+绑定模块28项与IP上游admission联合45项通过（27.111秒）；加强后的实际冻结片段单项通过（6.216秒）。
+迁移期间缺公共上下文加载及锁旧`Push-Location`字符串的两项失败已修复，原失败事实保留。
+本轮未调用MATLAB、COMSOL或CAD，不改变既有构建资格或新增科学资格。
+
 普通build-only profile及真实runner移除重复整套Static回归。run-local冻结baseline／numerical modes／resolved仍由原resolver核对，summary报告`input_freshness_passed`；输入集合防写、商业构建及证据不合格边界保持。`verify_project.ps1`继续独立验证软件；构建成功不代表求解或Candidate／Formal资格。
 
 普通build-only编译结果固定baseline、numerical_modes、resolved_model及原build-only mode，经`ResolvedInputsPath`交原runner复制，不再选当前默认。profile的action=build且科学结果未评价；本owner测试只验真实描述符／接线，完整注册表新鲜度归公共owner一次检查。该解析接线不改变原输入防写、商业构建、生命周期或既有不合格边界。

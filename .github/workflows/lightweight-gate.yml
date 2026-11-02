@@ -40,6 +40,11 @@ jobs:
           python-version: '3.11'
           cache: pip
           cache-dependency-path: requirements-lock.txt
+      - name: Install repository scientific core
+        shell: pwsh
+        # Install this checkout before planning; stdlib routes need its hash API
+        # without installing the optional locked scientific environment.
+        run: python -m pip install --disable-pip-version-check --no-deps .
       - name: Configure canonical test temporary directory
         shell: pwsh
         run: |
@@ -183,6 +188,11 @@ jobs:
           python-version: '3.11'
           cache: pip
           cache-dependency-path: requirements-lock.txt
+      - name: Install repository scientific core
+        shell: pwsh
+        # Install this checkout before planning; stdlib routes need its hash API
+        # without installing the optional locked scientific environment.
+        run: python -m pip install --disable-pip-version-check --no-deps .
       - name: Configure canonical test temporary directory
         shell: pwsh
         run: |

@@ -79,6 +79,7 @@ function Get-GatePlanSourcePaths {
             $value=[string]$argument
             if($value.StartsWith('-')){continue}
             if($value.Contains('/')-or$value.EndsWith('.py')){$paths+=@($value)}
+            elseif($value-match '^msplatform\.[A-Za-z0-9_.]+$'){$paths+=@('src/'+$value.Replace('.','/')+'.py')}
             elseif($value-match '^(?:common|projects|integrations)\.[A-Za-z0-9_.]+$'){$paths+=@($value.Replace('.','/')+'.py')}
         }
     }
@@ -183,7 +184,8 @@ function Read-GateCatalog {
     foreach ($route in $routes) {
         foreach ($match in @($route.matches)) {
             if ($null -ne $match.PSObject.Properties['regex'] -and
-                ([string]$match.regex).StartsWith('^common/contracts/') -and $ownedContracts.Count) {
+                (([string]$match.regex).StartsWith('^common/contracts/') -or
+                 ([string]$match.regex).StartsWith('^src/msplatform/contracts/')) -and $ownedContracts.Count) {
                 $excluded = ($ownedContracts | ForEach-Object { [regex]::Escape($_) }) -join '|'
                 $match.regex = '^(?!(?:' + $excluded + ')$)' + ([string]$match.regex).Substring(1)
             }
@@ -232,12 +234,19 @@ function Read-GateCatalog {
                         -not (Test-Path -LiteralPath (Join-Path $RepoRoot $sourcePath) -PathType Container)) {
                         throw "Gate runtime dependency package missing or invalid: $sourcePath"
                     }
-                    # Match added/deleted production modules without enumerating a
-                    # package. Data/docs and excluded delivery trees do not widen routing.
+                    # Match declared source/resource changes, including additions
+                    # and removals, with the same delivery exclusions as freezing.
+                    $suffixes = @('\.py')
+                    if ($package.PSObject.Properties['resource_suffixes']) {
+                        $suffixes += @(foreach ($suffix in $package.resource_suffixes) {
+                            [regex]::Escape([string]$suffix)
+                        })
+                    }
+                    $extensionPattern = '(?:' + ($suffixes -join '|') + ')$'
                     $packageMatches.Add([pscustomobject]@{
                         regex = '^' + [regex]::Escape($sourcePath.TrimEnd('/') + '/') +
                             '(?!(?:[^/]+/)*(?:tests|test_support|testing_support|history|generated|__pycache__|assets|artifacts|vendor|third_party|third-party|\.git|\.venv)/)' +
-                            '(?!(?:[^/]+/)*test_[^/]*\.py$)(?!.*_test\.py$).+\.py$'
+                            '(?!(?:[^/]+/)*test_[^/]*\.py$)(?!.*_test\.py$).+' + $extensionPattern
                         reason = 'declared_runtime_dependency_changed'
                     })
                 }

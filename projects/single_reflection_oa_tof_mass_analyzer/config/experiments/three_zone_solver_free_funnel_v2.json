@@ -26,7 +26,7 @@
       "sha256": "9AC9DF480DC0D57499E39F26FE358C437C0D30F103417BB4A02E3B1730A36BDD"
     },
     "peak_metrics": {
-      "path": "common/analysis/peak_metrics.py",
+      "path": "src/msplatform/analysis/peak_metrics.py",
       "bytes": 33791,
       "sha256": "1A5FDA0459A9D9894C9C64BC8218E10818F42310843D2D2C65A952835A340E98"
     },
@@ -51,22 +51,22 @@
       "sha256": "03A52F38D7E412B7EBD08C75BF1B6FA04FB3969F7B66B24579ACDEAAD02FCFF1"
     },
     "three_zone_funnel_schema": {
-      "path": "common/contracts/schemas/oatof_three_zone_solver_free_funnel.schema.json",
+      "path": "src/msplatform/contracts/schemas/oatof_three_zone_solver_free_funnel.schema.json",
       "bytes": 24523,
       "sha256": "6828F3B7581A1A1B7D3378929B023B36D7F0456EB73859CC36FE472EB32FFC18"
     },
     "three_zone_resolved_plan_schema": {
-      "path": "common/contracts/schemas/oatof_three_zone_resolved_plan.schema.json",
+      "path": "src/msplatform/contracts/schemas/oatof_three_zone_resolved_plan.schema.json",
       "bytes": 4174,
       "sha256": "A68FD3D2505483545E40E6F079324ABF48E6FC06EE19AA0BE6D4DA7A92947FFB"
     },
     "three_zone_stage_receipt_schema": {
-      "path": "common/contracts/schemas/oatof_three_zone_stage_receipt.schema.json",
+      "path": "src/msplatform/contracts/schemas/oatof_three_zone_stage_receipt.schema.json",
       "bytes": 2799,
       "sha256": "0710A2A9AA765448B69DE88BEE9C78C93E5907ED625F6A3F68BFA06544CC27E6"
     },
     "three_zone_stage_report_schema": {
-      "path": "common/contracts/schemas/oatof_three_zone_stage_report.schema.json",
+      "path": "src/msplatform/contracts/schemas/oatof_three_zone_stage_report.schema.json",
       "bytes": 1888,
       "sha256": "AB6853788F463D332C3ABA2C3D497D570CD0CB9F4B31E5A97B14BBF934F6693A"
     },

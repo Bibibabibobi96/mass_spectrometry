@@ -186,6 +186,25 @@ function Copy-FiniteComsolRuntime {
   [ordered]@{schema_version=1;role='frozen_code_inventory';files=$inventory}|
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $codeInventory -Encoding UTF8
 
+  # Reuse the frozen-package verifier: neither installed core nor missing resources
+  # may supply a dependency absent from this exact recorded source closure.
+  . (Join-Path $codeRoot 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1')
+  $frozenPackage=[pscustomobject]@{
+    code_root=$resolvedCodeRoot
+    package_roots=@(Get-RunPythonImportRoots -RepoRoot $codeRoot)
+    files=@($inventory|ForEach-Object{[pscustomobject]@{
+      relative_path=$_.path;path=(Join-Path $codeRoot $_.path);sha256=$_.sha256
+    }})
+  }
+  if(-not(Test-Path -LiteralPath (Join-Path $codeRoot 'src/msplatform/__init__.py') -PathType Leaf)){
+    throw 'Canonical scientific core is absent from the new frozen runtime.'
+  }
+  $coreModules=@($inventory|Where-Object{$_.path-like'src/msplatform/*.py'}|ForEach-Object{
+    ([string]$_.path).Substring(4).Replace('/','.').Replace('.__init__.py','').Replace('.py','')
+  })
+  Invoke-IsolatedFrozenPythonModule -Python $python -Package $frozenPackage -Module msplatform `
+    -Arguments @('--help') -RequiredModuleNames $coreModules -ForbiddenRoots @($repoRoot) -ProbeOnly|Out-Null
+
   return @{code_root=$codeRoot;inventory_path=$codeInventory;files=$inventory}
 }
 function Invoke-FiniteComsolAnalysis {
@@ -216,7 +235,7 @@ function Invoke-FiniteComsolAnalysis {
     try{
       $process=Invoke-ResourceBudgetedProcess -Limits $AnalysisLimits -RunDir $ownerContext.run_directory -UsagePath $usage `
         -FilePath $python -ArgumentList $nativeArguments -WorkingDirectory $codeRoot `
-        -Environment @{PYTHONPATH=$codeRoot;PYTHONNOUSERSITE='1';PYTHONDONTWRITEBYTECODE='1';SIMULATION_PYTHON_EXE=$python} `
+        -Environment @{PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator);PYTHONNOUSERSITE='1';PYTHONDONTWRITEBYTECODE='1';SIMULATION_PYTHON_EXE=$python} `
         -RedirectStandardOutput $stdout -RedirectStandardError $stderr
       $observation=@{exit_confirmed=$true;returncode=[int]$process.exit_code;process_id=[int]$process.root_process_id;process_started_at_utc_ticks=[long]$process.root_process_started_at_utc_ticks}
     }catch{
@@ -246,7 +265,7 @@ function Invoke-FiniteComsolAnalysis {
   $exitStatePlotManifest=Join-Path $ResultDir 'exit_state_diagnostics.json'
   Push-Location $codeRoot
   try{
-    $env:PYTHONPATH=$codeRoot
+    $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
     $exit=& $invokePython 'metrics' @('-B','-m','projects.rf_multipole_ion_optics.analysis.analyze_comsol_transport_metrics',
       '--events',$events,'--primary-state',$primaryState,'--control-state',$controlState,'--particle-source',$ParticleSource,
       '--particle-source-metadata',$SourceMetadata,'--resolved-design',$resolved,'--numerics',$numerics,'--output',$metrics)
@@ -256,7 +275,7 @@ function Invoke-FiniteComsolAnalysis {
     throw 'Python COMSOL transport metrics did not create finite_3d_transport_metrics.json.'}
   Push-Location $codeRoot
   try{
-    $env:PYTHONPATH=$codeRoot
+    $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
     $exitStatePlotLabel=$ProjectId.Replace('_',' ')
     $exit=& $invokePython 'exit_plot' @('-B','-m','projects.rf_multipole_ion_optics.analysis.exit_state_plot',
       '--series',"$exitStatePlotLabel=$primaryState=$RunId",'--output',$exitStatePlot,'--manifest',$exitStatePlotManifest,
@@ -276,7 +295,7 @@ function Invoke-FiniteComsolAnalysis {
   if($axialTopology-ne'none'){
   Push-Location $codeRoot
     try{
-      $env:PYTHONPATH=$codeRoot
+      $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
       $exit=& $invokePython 'paired' @('-B','-m','projects.rf_multipole_ion_optics.analysis.analyze_simion_axial_acceleration',
         '--accelerated-state',$primaryState,'--control-state',$controlState,'--resolved-contract',$resolved,'--output',$pairedMetrics)
       if($exit-ne 0){throw 'COMSOL paired axial-drive metrics analysis failed.'}
@@ -291,7 +310,7 @@ function Invoke-FiniteComsolAnalysis {
     }else{$metrics}
     Push-Location $codeRoot
     try{
-      $env:PYTHONPATH=$codeRoot
+      $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
       $evidenceExit=& $invokePython 'evidence' @('-B','-m','projects.rf_multipole_ion_optics.analysis.evaluate_transport_evidence',
         '--metrics',$evidenceMetrics,'--evidence',$evidence,'--project-id',$ProjectId,'--design-profile-id',$DesignProfileId,'--output',$evaluation)
     }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
@@ -699,7 +718,7 @@ function Invoke-FiniteComsolAnalysisChild {
       if($LASTEXITCODE-ne0){throw 'Analysis engineering budget differs from frozen parent authority.'}
     }
     $analysisBudget=($budgetText-join"`n")|ConvertFrom-Json -AsHashtable -Depth 100
-    $analysisAreas=@('common/contracts','common/paths','common/analysis','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis')
+    $analysisAreas=@('src/msplatform','common/contracts','common/paths','common/analysis','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis')
     $analysisAdditional=@()
     if($ReextractFromModel){
       $analysisAreas+=@('common/comsol','projects/rf_multipole_ion_optics/comsol')
@@ -934,7 +953,7 @@ $hostRuntimeSourcePaths=@(
   'common/host_resource_policy.json','common/require_powershell7.ps1','common/resource_budget_support.ps1','common/resource_budget_support.ps1')
 $analysisSourcePaths=@('common/analysis/particle_census.py','common/simion/native_completion.py')
 $executionCapacityPaths=Get-RunPackageCopiedSourcePaths -RepoRoot $repoRoot `
-  -SourceRelativeDirectories @('common/contracts','common/paths','common/comsol','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/comsol','projects/rf_multipole_ion_optics/simion') `
+  -SourceRelativeDirectories @('src/msplatform','common/contracts','common/paths','common/comsol','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/comsol','projects/rf_multipole_ion_optics/simion') `
   -Extensions @('.py','.json','.ps1','.m','.lua')
 $executionCapacityPaths+=@(($hostRuntimeSourcePaths+$analysisSourcePaths)|ForEach-Object{"inputs/code/$_"})
 $entryScriptHash=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash
@@ -971,7 +990,7 @@ $ownerState.host_lease=Enter-HostExecutionLease -StatePath $workspacePaths.host_
 $comsolRunFailure=$null
 
   $copied=Copy-FiniteComsolRuntime -RepoRoot $repoRoot -InputDir $inputDir -SourceAreas @(
-    'common/contracts','common/paths','common/comsol','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/comsol','projects/rf_multipole_ion_optics/simion') -AdditionalPaths @($hostRuntimeSourcePaths+$analysisSourcePaths)
+    'src/msplatform','common/contracts','common/paths','common/comsol','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/comsol','projects/rf_multipole_ion_optics/simion') -AdditionalPaths @($hostRuntimeSourcePaths+$analysisSourcePaths)
   $codeRoot=$copied.code_root;$codeInventory=$copied.inventory_path;$inventory=$copied.files
 
   $profileResolution=Join-Path $inputDir 'design_profile_resolution.json'
@@ -992,7 +1011,7 @@ $comsolRunFailure=$null
   }else{
   Push-Location $codeRoot
   try{
-    $env:PYTHONPATH=$codeRoot
+    $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
     & $python -m projects.rf_multipole_ion_optics.runtime.design_profile --repo-root $repoRoot --project-id $ProjectId `
       --design-profile-id $DesignProfileId --output $profileResolution
     if($LASTEXITCODE-ne 0){throw 'Governed design profile resolution failed.'}
@@ -1034,7 +1053,7 @@ $comsolRunFailure=$null
   }else{
   Push-Location $codeRoot
   try{
-    $env:PYTHONPATH=$codeRoot
+    $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
     $compileArguments=@('-m','projects.rf_multipole_ion_optics.core.compile_design_request',
       '--request',$request,'--design-variables',$variables,
       '--optimization-envelope',$envelope,'--output',$resolved,
@@ -1062,7 +1081,7 @@ $comsolRunFailure=$null
     Copy-Item -LiteralPath $fieldSamplingPlanInput -Destination $fieldSamplingPlan
     Push-Location $codeRoot
     try{
-      $env:PYTHONPATH=$codeRoot
+      $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
       & $python -m projects.rf_multipole_ion_optics.analysis.stationary_field_sampling generate `
         --resolved-design $resolved --sampling-plan $fieldSamplingPlan `
         --output $fieldSamplePoints
@@ -1093,7 +1112,7 @@ $comsolRunFailure=$null
   $sourceMetadata=Join-Path $inputDir 'particle_source_metadata.json'
   Push-Location $codeRoot
   try{
-    $env:PYTHONPATH=$codeRoot
+    $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
     $preflightArguments=@('-m','projects.rf_multipole_ion_optics.runtime.particle_source_preflight',
       '--source',$particleSource,'--resolved-design',$resolved,'--output',$sourceMetadata,'--solver','comsol')
     if($sourceFamily){
@@ -1313,7 +1332,7 @@ $comsolRunFailure=$null
   if($StopStage-eq'field_solve'){
     Push-Location $codeRoot
     try{
-      $env:PYTHONPATH=$codeRoot
+      $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
       & $python -m projects.rf_multipole_ion_optics.analysis.stationary_field_sampling validate `
         --input $fieldSamples --output $fieldSampleValidation
     }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}

@@ -32,6 +32,7 @@ class BuildInputAdmissionTests(unittest.TestCase):
                 fixture = root / "admit.ps1"
                 fixture.write_text(r'''param($Repo,$Python,$Root,$Source,$ExpectFailure)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
 $snapshotRoot=$Repo;$package=@{python=$Python}
 $frozenInputs=@{baseline=(Join-Path $Root 'baseline.json');numerical_modes=(Join-Path $Root 'numerical_modes.json');resolved_contract=(Join-Path $Root 'resolved_model.json')}
 $downstream=0;$caught=$null

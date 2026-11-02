@@ -11,10 +11,16 @@ import sys
 import tempfile
 import unittest
 
+from common.contracts.frozen_inputs import python_import_roots
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 INTEGRATION_ROOT = REPO_ROOT / "integrations"
 INVENTORY = INTEGRATION_ROOT / "config/runtime_dependencies.json"
 DEPENDENCIES = INTEGRATION_ROOT / "runtime/dependencies.ps1"
+
+
+def snapshot_environment(snapshot: Path) -> dict[str, str]:
+    return dict(os.environ, PYTHONPATH=os.pathsep.join(python_import_roots(snapshot)), PYTHONNOUSERSITE="1")
 
 
 def load(path: Path) -> dict:
@@ -22,6 +28,56 @@ def load(path: Path) -> dict:
 
 
 class DependencyTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
+    def test_scientific_core_provider_freezes_src_resources_without_installed_fallback(self) -> None:
+        with tempfile.TemporaryDirectory(prefix='src dependency 工作 ') as directory:
+            root = Path(directory)
+            output = root / 'inputs'
+            script = f"""
+. '{DEPENDENCIES}'
+$f=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId local_frontend
+$f.import_roots|ConvertTo-Json -Compress
+"""
+            result = subprocess.run([shutil.which('pwsh'), '-NoProfile', '-Command', script], cwd=root,
+                                    capture_output=True, text=True, encoding='utf-8', timeout=120)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            snapshot = output / 'runtime_snapshot'
+            roots = json.loads(result.stdout)
+            self.assertEqual(roots, python_import_roots(snapshot))
+            entries = load(output / 'code_inventory.json')['dependencies']
+            resources = [row for row in entries if row['source_repo_path'].endswith('.schema.json')
+                         and row['provider_scope'] == 'repository_core']
+            expected = sorted(path.name for path in (REPO_ROOT / 'src/msplatform/contracts/schemas').glob('*.schema.json'))
+            self.assertEqual(sorted(Path(row['source_repo_path']).name for row in resources), expected)
+            self.assertTrue(all(row['id'] == 'resource:' + row['source_repo_path'] for row in resources))
+            code = '''import json,sys
+from pathlib import Path
+sys.path[:0]=json.loads(sys.argv[1])
+from msplatform.assembly import resolve_assembly
+from msplatform.contracts import machine_contracts
+root=Path(sys.argv[2]).resolve()
+assert Path(resolve_assembly.__file__).resolve().is_relative_to(root/'src')
+assert Path(machine_contracts.__file__).resolve().is_relative_to(root/'src')
+try: machine_contracts.validate_schema({}, 'assembly_recipe.schema.json')
+except machine_contracts.ContractError: pass
+else: raise AssertionError('invalid recipe accepted')
+print('FROZEN_SRC_CORE=PASS')
+'''
+            command = [sys.executable, '-X', 'utf8', '-I', '-B', '-c', code, json.dumps(roots), str(snapshot)]
+            complete = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=30)
+            self.assertEqual(complete.returncode, 0, complete.stdout + complete.stderr)
+            for relative in ('src/msplatform/assembly/resolve_assembly.py',
+                             'src/msplatform/contracts/schemas/assembly_recipe.schema.json'):
+                target = snapshot / relative
+                payload = target.read_bytes()
+                target.unlink()
+                try:
+                    missing = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=30)
+                    self.assertNotEqual(missing.returncode, 0, missing.stdout + missing.stderr)
+                    self.assertNotIn('FROZEN_SRC_CORE=PASS', missing.stdout)
+                finally:
+                    target.write_bytes(payload)
+
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
     def test_accelerator_interface_imports_ip_validator_from_frozen_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -54,7 +110,7 @@ with tempfile.TemporaryDirectory() as request_directory:
         raise AssertionError("frozen request schema must reject missing fields")
 '''
             result = subprocess.run([sys.executable, "-B", "-s", "-c", code], cwd=snapshot,
-                env=dict(os.environ, PYTHONPATH="", PYTHONNOUSERSITE="1"),
+                env=snapshot_environment(snapshot),
                 capture_output=True, text=True, encoding="utf-8", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -79,6 +135,10 @@ with tempfile.TemporaryDirectory() as request_directory:
                     paths.update(enumerate_python_sources(REPO_ROOT,
                         package_roots=[row["source_repo_path"] for row in group["python_packages"]],
                         module_paths=[row["source_repo_path"] for row in group["python_modules"]]))
+                    for row in group["python_packages"]:
+                        if row.get("resource_suffixes"):
+                            paths.update(enumerate_python_sources(REPO_ROOT,
+                                package_roots=[row["source_repo_path"]], resource_suffixes=row["resource_suffixes"]))
             paths.update({"integrations/registry.json", "integrations/config/runtime_dependencies.json",
                           "integrations/runtime/dependencies.ps1"})
             for relative in paths:
@@ -134,6 +194,13 @@ with tempfile.TemporaryDirectory() as request_directory:
             self.assertTrue((author / "integrations/workflows/single_reflection_flight/prepare.py").is_file())
             self.assertTrue((author / "common/contracts/frozen_inputs.py").is_file())
             self.assertTrue((author / "projects/orthogonal_accelerator/analysis/sectioned_geometry.py").is_file())
+            resources = Path('src/msplatform/contracts/schemas')
+            originals = sorted((REPO_ROOT / resources).glob('*.schema.json'))
+            self.assertTrue(originals)
+            self.assertEqual(sorted(path.name for path in (author / resources).glob('*.schema.json')),
+                             [path.name for path in originals])
+            for original in originals:
+                self.assertEqual((author / resources / original.name).read_bytes(), original.read_bytes())
             seeds = list((author / "common/simion/assets/iob_instance_seeds").glob("iob_seed_placeholder_*.pa0"))
             self.assertEqual(len(seeds), 5)
             self.assertTrue(all(path.read_bytes() == b"INERT_TEST_SEED_NOT_A_PA\n" for path in seeds))
@@ -162,7 +229,7 @@ with tempfile.TemporaryDirectory() as request_directory:
             result = subprocess.run([shutil.which("pwsh"),"-NoProfile","-Command",load_runtime],cwd=snapshot,
                                     capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
-            environment = dict(os.environ, PYTHONPATH="", PYTHONNOUSERSITE="1")
+            environment = snapshot_environment(snapshot)
             result = subprocess.run([sys.executable,"-B","-s","-m",
                 "projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_continuation","--help"],
                 cwd=snapshot,env=environment,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=30)
@@ -213,7 +280,7 @@ for module in (capacity_ledger,solver_review_retirement,verify_artifact_layout,a
 solver_review_retirement._assert_runtime_retirement_unprotected(root/'absent_artifacts',root/'absent_artifacts/projects/p/runs/source')
 '''
             probe = subprocess.run([sys.executable, "-B", "-c", code, str(detached)], cwd=detached,
-                env=dict(os.environ, PYTHONPATH=""), capture_output=True, text=True,
+                env=snapshot_environment(detached), capture_output=True, text=True,
                 encoding="utf-8", timeout=30)
             self.assertEqual(probe.returncode, 0, probe.stdout + probe.stderr)
 
@@ -260,12 +327,12 @@ Copy-FrozenDependency -RepoRoot '{detached}' -InputDir '{destination}' -Dependen
     def test_prepared_joint_derives_scope_from_its_complete_frozen_assembly_closure(self) -> None:
         """Run the actual parent compiler detached, including non-Python schemas."""
         required = (
-            "common/integration/resolve_assembly.py",
-            "common/contracts/machine_contracts.py",
-            "common/contracts/rigid_transform.py",
-            "common/contracts/schemas/assembly_recipe.schema.json",
-            "common/contracts/schemas/component_geometry_interface.schema.json",
-            "common/contracts/schemas/composition_plan.schema.json",
+            "src/msplatform/assembly/resolve_assembly.py",
+            "src/msplatform/contracts/machine_contracts.py",
+            "src/msplatform/contracts/rigid_transform.py",
+            "src/msplatform/contracts/schemas/assembly_recipe.schema.json",
+            "src/msplatform/contracts/schemas/component_geometry_interface.schema.json",
+            "src/msplatform/contracts/schemas/composition_plan.schema.json",
         )
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
@@ -282,7 +349,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
             self.assertTrue(set(required) <= selected)
             snapshot = output / "runtime_snapshot"
             environment = dict(os.environ)
-            environment.pop("PYTHONPATH", None)
+            environment["PYTHONPATH"] = os.pathsep.join(python_import_roots(snapshot))
             statement = """
 import json,sys
 from pathlib import Path
@@ -340,7 +407,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
                                     for row in selected if row["source_repo_path"].endswith(".py")))
                 snapshot = output / 'runtime_snapshot'
                 environment = dict(os.environ, PYTHONNOUSERSITE="1")
-                environment.pop('PYTHONPATH', None)
+                environment['PYTHONPATH'] = os.pathsep.join(python_import_roots(snapshot))
                 statement = """
 from pathlib import Path
 from common.simion import native_completion
@@ -394,7 +461,7 @@ assert Path(capacity_protection.__file__).is_relative_to(Path.cwd())
         for path in original_logs:
             command.extend(("--preserve-path", str(path)))
         environment = dict(os.environ, PYTHONNOUSERSITE="1")
-        environment.pop("PYTHONPATH", None)
+        environment["PYTHONPATH"] = os.pathsep.join(python_import_roots(snapshot))
         completed = subprocess.run(command, cwd=snapshot if module else snapshot.parent,
             env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
         receipt = run / "retention_actions.json"
@@ -435,7 +502,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
                           {row["source_repo_path"] for row in selected})
             snapshot = run / "inputs/runtime_snapshot"
             environment = dict(os.environ)
-            environment.pop("PYTHONPATH", None)
+            environment["PYTHONPATH"] = os.pathsep.join(python_import_roots(snapshot))
             artifact_root = Path(directory) / "artifacts"
             protected = artifact_root / "projects/instrument_assembly/runs/test"
             protected.mkdir(parents=True)
@@ -480,7 +547,7 @@ request_value=json.loads(request.read_text())
 provider=next(v for v in request_value['providers']['instances'].values() if 'geometry' not in v)
 enclosure_fixture=json.loads(record_path(provider['resolved_design'],base_dir=request.parent).read_text())
 enclosure_fixture['governance']={key:'A'*64 for key in ('design_variables_sha256','optimization_envelope_sha256','design_request_file_sha256')}
-validate_schema(enclosure_fixture,Path.cwd()/'common/contracts/schemas/multipole_resolved_design.schema.json')
+validate_schema(enclosure_fixture,Path.cwd()/'src/msplatform/contracts/schemas/multipole_resolved_design.schema.json')
 preparation=prepare.prepare(request,run)
 assert 'composition_plan' not in preparation['outputs']
 assert (run/'inputs/composition_plan.json').exists()
@@ -525,7 +592,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             snapshot = output / "runtime_snapshot"
             environment = dict(os.environ)
-            environment.pop("PYTHONPATH", None)
+            environment["PYTHONPATH"] = os.pathsep.join(python_import_roots(snapshot))
             environment["PYTHONNOUSERSITE"] = "1"
             helper = snapshot / "integrations/workflows/cooled_frontend/reference_support.ps1"
             stage = f"""
@@ -614,7 +681,7 @@ Write-Output 'FROZEN_DEPENDENCIES=PASS'
                                       encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(detached.returncode, 0, detached.stdout + detached.stderr)
             env = dict(os.environ)
-            env.pop("PYTHONPATH", None)
+            env["PYTHONPATH"] = os.pathsep.join(python_import_roots(snapshot))
             statement = ("from integrations.workflows.local_frontend "
                          "import prepare,runtime,analyze; from integrations.runtime "
                          "import standalone_pa_family; from common.contracts import run_capacity_lifecycle; "
@@ -681,7 +748,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
             self.assertEqual(frozen.returncode, 0, frozen.stdout+frozen.stderr)
             snapshot = workspace / "frozen/runtime_snapshot"
             environment = dict(os.environ)
-            environment.pop("PYTHONPATH", None)
+            environment["PYTHONPATH"] = os.pathsep.join(python_import_roots(snapshot))
             module = "integrations.workflows.local_frontend.prepare"
             command = [sys.executable, "-B", "-s", "-m", module, "--request", str(request_path),
                        "--workspace-root", str(fixture_root), "--validate-only"]
@@ -737,12 +804,12 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
 
             # Each omitted resource failed in a real frozen run. Fresh processes
             # and -B prevent an already imported module/pyc masking the omission.
-            for relative in ("common/contracts/schemas/simion_rectangular_aperture_discretization.schema.json",
+            for relative in ("src/msplatform/contracts/schemas/simion_rectangular_aperture_discretization.schema.json",
                              "common/contracts/canonical_clock_authority.py",
-                             "common/contracts/schemas/canonical_clock_authority.schema.json",
-                             "common/contracts/schemas/assembly_recipe.schema.json",
-                             "common/contracts/schemas/component_geometry_interface.schema.json",
-                             "common/contracts/schemas/composition_plan.schema.json",
+                             "src/msplatform/contracts/schemas/canonical_clock_authority.schema.json",
+                             "src/msplatform/contracts/schemas/assembly_recipe.schema.json",
+                             "src/msplatform/contracts/schemas/component_geometry_interface.schema.json",
+                             "src/msplatform/contracts/schemas/composition_plan.schema.json",
                              "common/integration/resolve_assembly.py",
                              "projects/orthogonal_accelerator/analysis/assembly_interface.py",
                              "projects/orthogonal_accelerator/analysis/three_zone_ideal_theory.py"):
@@ -817,6 +884,8 @@ try {{
                     target = root / path.relative_to(REPO_ROOT)
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(path, target)
+            shutil.copytree(REPO_ROOT / "src/msplatform", root / "src/msplatform",
+                            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
             groups = []
             for number, (scope, owner, provider) in enumerate((
                 ("integration", "instrument_assembly", "integrations"),

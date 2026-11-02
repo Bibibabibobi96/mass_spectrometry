@@ -32,29 +32,6 @@
           ]
         },
         {
-          "id": "canonical_clock_authority_schema",
-          "source_repo_path": "common/contracts/schemas/canonical_clock_authority.schema.json",
-          "consumers": [
-            "local_frontend",
-            "prepared_joint",
-            "accelerator_interface",
-            "cooled_frontend",
-            "multipole_ip",
-            "single_reflection_flight",
-            "paired_accelerator_pulse"
-          ]
-        },
-        {
-          "id": "common_simion_aperture_discretization_schema",
-          "source_repo_path": "common/contracts/schemas/simion_rectangular_aperture_discretization.schema.json",
-          "consumers": [
-            "local_frontend",
-            "cooled_frontend",
-            "single_reflection_flight",
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
           "id": "common_simion_aperture_topology_support",
           "source_repo_path": "common/simion/aperture_topology_support.ps1",
           "consumers": [
@@ -272,67 +249,6 @@
           ]
         },
         {
-          "id": "common_assembly_recipe_schema",
-          "source_repo_path": "common/contracts/schemas/assembly_recipe.schema.json",
-          "consumers": [
-            "local_frontend",
-            "cooled_frontend",
-            "prepared_joint",
-            "accelerator_interface",
-            "oa_mr",
-            "multipole_ip",
-            "single_reflection_flight",
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
-          "id": "common_component_geometry_interface_schema",
-          "source_repo_path": "common/contracts/schemas/component_geometry_interface.schema.json",
-          "consumers": [
-            "local_frontend",
-            "cooled_frontend",
-            "prepared_joint",
-            "accelerator_interface",
-            "oa_mr",
-            "multipole_ip",
-            "single_reflection_flight",
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
-          "id": "common_composition_plan_schema",
-          "source_repo_path": "common/contracts/schemas/composition_plan.schema.json",
-          "consumers": [
-            "local_frontend",
-            "cooled_frontend",
-            "prepared_joint",
-            "accelerator_interface",
-            "oa_mr",
-            "multipole_ip",
-            "single_reflection_flight",
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
-          "id": "integration_artifact_identity_schema",
-          "source_repo_path": "common/contracts/schemas/integration_artifact_identity.schema.json",
-          "consumers": [
-            "local_frontend",
-            "cooled_frontend"
-          ]
-        },
-        {
-          "id": "prepared_joint_common_contracts_schemas_component_particle_state_schema_json",
-          "source_repo_path": "common/contracts/schemas/component_particle_state.schema.json",
-          "consumers": [
-            "prepared_joint",
-            "accelerator_interface",
-            "multipole_ip",
-            "oa_mr",
-            "cooled_frontend"
-          ]
-        },
-        {
           "id": "accelerator_interface_common_simion_assets_iob_instance_seeds_3_instance_seed_iob",
           "source_repo_path": "common/simion/assets/iob_instance_seeds/3_instance_seed.iob",
           "consumers": [
@@ -390,96 +306,6 @@
           ]
         },
         {
-          "id": "common_simion_batch_continuation_schema",
-          "source_repo_path": "common/contracts/schemas/simion_batch_continuation.schema.json",
-          "consumers": [
-            "prepared_joint",
-            "oa_mr",
-            "accelerator_interface",
-            "cooled_frontend",
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "common_contracts_schemas_multipole_resolved_design_schema_json",
-          "source_repo_path": "common/contracts/schemas/multipole_resolved_design.schema.json",
-          "consumers": [
-            "multipole_ip",
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "common_contracts_schemas_component_port_schema_json",
-          "source_repo_path": "common/contracts/schemas/component_port.schema.json",
-          "consumers": [
-            "multipole_ip"
-          ]
-        },
-        {
-          "id": "common_contracts_schemas_multipole_evidence_evaluation_schema_json",
-          "source_repo_path": "common/contracts/schemas/multipole_evidence_evaluation.schema.json",
-          "consumers": [
-            "multipole_ip"
-          ]
-        },
-        {
-          "id": "common_contracts_schemas_optimization_envelope_schema_json",
-          "source_repo_path": "common/contracts/schemas/optimization_envelope.schema.json",
-          "consumers": [
-            "multipole_ip"
-          ]
-        },
-        {
-          "id": "common_contracts_schemas_design_variable_catalog_schema_json",
-          "source_repo_path": "common/contracts/schemas/design_variable_catalog.schema.json",
-          "consumers": [
-            "multipole_ip"
-          ]
-        },
-        {
-          "id": "common_contracts_schemas_multipole_operating_modes_schema_json",
-          "source_repo_path": "common/contracts/schemas/multipole_operating_modes.schema.json",
-          "consumers": [
-            "multipole_ip"
-          ]
-        },
-        {
-          "id": "common_contracts_schemas_multipole_design_request_schema_json",
-          "source_repo_path": "common/contracts/schemas/multipole_design_request.schema.json",
-          "consumers": [
-            "multipole_ip",
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "common_contracts_schemas_execution_profiles_schema_json",
-          "source_repo_path": "common/contracts/schemas/execution_profiles.schema.json",
-          "consumers": [
-            "multipole_ip"
-          ]
-        },
-        {
-          "id": "common_contracts_schemas_design_profiles_schema_json",
-          "source_repo_path": "common/contracts/schemas/design_profiles.schema.json",
-          "consumers": [
-            "multipole_ip"
-          ]
-        },
-        {
-          "id": "common_contracts_schemas_project_registry_schema_json",
-          "source_repo_path": "common/contracts/schemas/project_registry.schema.json",
-          "consumers": [
-            "multipole_ip"
-          ]
-        },
-        {
-          "id": "common_contracts_schemas_project_schema_json",
-          "source_repo_path": "common/contracts/schemas/project.schema.json",
-          "consumers": [
-            "multipole_ip"
-          ]
-        },
-        {
           "id": "common_comsol_livelink_environment_ps1",
           "source_repo_path": "common/comsol/livelink_environment.ps1",
           "consumers": [
@@ -516,14 +342,6 @@
           "consumers": [
             "paired_accelerator_static_field",
             "paired_accelerator_pulse"
-          ]
-        },
-        {
-          "id": "single_reflection_common_contracts_schemas_resolved_connection_schema_json",
-          "source_repo_path": "common/contracts/schemas/resolved_connection.schema.json",
-          "consumers": [
-            "single_reflection_flight",
-            "paired_accelerator_static_field"
           ]
         },
         {
@@ -1371,6 +1189,31 @@
             "multipole_ip",
             "paired_accelerator_static_field",
             "single_reflection_flight"
+          ]
+        }
+      ],
+      "python_modules": []
+    },
+    {
+      "provider_scope": "repository_core",
+      "provider_project": "msplatform",
+      "files": [],
+      "python_packages": [
+        {
+          "source_repo_path": "src/msplatform",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ],
+          "resource_suffixes": [
+            ".schema.json"
           ]
         }
       ],

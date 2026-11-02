@@ -99,17 +99,8 @@ class PreparedJointAnalysisTests(unittest.TestCase):
         if not pwsh:
             self.skipTest("PowerShell 7 is unavailable")
         inventory = json.loads((REPO / "integrations/config/runtime_dependencies.json").read_text())
-        records = [item for group in inventory["providers"] for item in group["files"]
-                   if "prepared_joint" in item["consumers"]]
-        from common.contracts.frozen_inputs import enumerate_python_sources
-        for group in inventory["providers"]:
-            packages = [row["source_repo_path"] for row in group["python_packages"]
-                        if "prepared_joint" in row["consumers"]]
-            modules = [row["source_repo_path"] for row in group["python_modules"]
-                       if "prepared_joint" in row["consumers"]]
-            if packages or modules:
-                records.extend({"source_repo_path": path} for path in enumerate_python_sources(
-                    REPO, package_roots=packages, module_paths=modules))
+        from integrations.tests.test_support.single_reflection_execute_fixture import declared_dependency_paths
+        records = [{'source_repo_path': path} for path in declared_dependency_paths(REPO, inventory, 'prepared_joint')]
         support = {"common/contracts/run_artifact_support.ps1", "common/require_powershell7.ps1", "common/host_execution_lease.ps1"}
         capacity_fixture = r'''
 function Invoke-RunCapacityLifecycleAdapter {return @{light_evidence_budget_exceeded=$false}}

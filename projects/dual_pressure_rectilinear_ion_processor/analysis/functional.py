@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.frozen_inputs import freeze_file
+from common.contracts.frozen_inputs import enumerate_python_sources, freeze_file
 from common.simion.workbench_seed import freeze_workbench_seed
 from common.contracts.canonical_clock_authority import validate_clock_authority
 from common.contracts.verify_run_manifest import record_path
@@ -39,6 +39,13 @@ from projects.dual_pressure_rectilinear_ion_processor.analysis.coordinates impor
     to_local_position, to_local_vector,
 )
 
+# Explicit legacy import routes used by this package and its shared consumers.
+# Retire with their direct imports by P4; all algorithms remain in msplatform.
+FROZEN_SCIENTIFIC_BRIDGE_MODULES = (
+    "common/contracts/particle_physics.py",
+    "common/contracts/rigid_transform.py",
+    "common/ion_release/release.py",
+)
 PROJECT = "dual_pressure_rectilinear_ion_processor"
 EVENTS = ["source", "hp_enter", "capture", "transfer", "pre_extraction", "extraction_exit", "terminal"]
 
@@ -336,12 +343,14 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     runtime_resources.extend(repo / relative for relative in (
         "common/contracts/artifact_retention.json",
         "common/contracts/particle_count_policy.json", "common/host_resource_policy.json",
-        "common/contracts/schemas/simion_batch_continuation.schema.json",
-        "common/contracts/schemas/canonical_clock_authority.schema.json",
         "common/simion/rf_drive.lua", "common/simion/voltage_waveforms.lua",
         "common/simion/scientific_event_csv.lua", "common/paths/native_run_path.lua",
         "common/simion/assets/iob_instance_seeds/1_instance_seed.iob",
         "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0"))
+    core_sources = [repo / relative for relative in enumerate_python_sources(
+        repo, package_roots=("src/msplatform",), provider_root="src/msplatform",
+        resource_suffixes=(".schema.json",))]
+    runtime_resources.extend(path for path in core_sources if path.suffix != ".py")
     required_resources = [*runtime_resources, *(configuration / name for name in config_files.values()),
         simion_dir / "examples/collision_hs1/collision_hs1.lua"]
     missing = [str(path) for path in required_resources if not path.is_file()]
@@ -470,7 +479,9 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     assert callable(partition_cohort)
     # Freeze the loaded repository source closure after shared source generation.
     # Solver inputs remain independent of an editable working tree.
-    source_paths = set()
+    source_paths = {path for path in core_sources if path.suffix == ".py"}
+    source_paths.update(repo / relative for relative in enumerate_python_sources(
+        repo, module_paths=FROZEN_SCIENTIFIC_BRIDGE_MODULES))
     for module in tuple(sys.modules.values()):
         file=getattr(module,"__file__",None)
         if not file:
@@ -505,13 +516,7 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
         target = inputs / "code" / project.relative_to(repo) / "config" / source.name
         target.parent.mkdir(parents=True, exist_ok=True)
         freeze_file(source, target)
-    frozen_resource_sources = set(runtime_resources)
     if admission is not None:
-        for source in (repo/"common/contracts/schemas").rglob("*"):
-            if source.is_file() and source not in frozen_resource_sources:
-                target = inputs/"code"/source.relative_to(repo)
-                target.parent.mkdir(parents=True, exist_ok=True)
-                freeze_file(source, target)
         schema_target = inputs/"code"/INJECTED_SOURCE_SCHEMA.relative_to(repo)
         schema_target.parent.mkdir(parents=True, exist_ok=True)
         freeze_file(INJECTED_SOURCE_SCHEMA, schema_target)

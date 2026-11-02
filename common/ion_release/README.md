@@ -1,5 +1,25 @@
 # 公共离子释放
 
+离子释放的规范实现与安装 API 已迁至 `msplatform.ion_release`。本目录原 Python 入口仅转发至同一实现；源定义、随机序列、粒子身份、单位与既有格式合同保持。桥的当前消费者与退出条件见[公共入口](../README.md#科学核心发行与旧入口)。
+## 安装后的显式文件调用
+
+安装方式由[操作指南](../../docs/OPERATIONS.md#工具链与执行入口)维护。`release.json` 是调用者提供的有效冻结请求，
+策略、物种、frame、时间和单位沿下文合同；输出路径由调用者显式给出。仓库外可直接执行：
+
+```python
+import json
+from pathlib import Path
+from msplatform.ion_release.release import materialize_release, validate_materialized_release
+
+spec = json.loads(Path("release.json").read_text(encoding="utf-8"))
+materialize_release(spec, Path("states.csv"), Path("receipt.json"))
+receipt = validate_materialized_release(Path("receipt.json"))
+```
+
+接口生成规范状态，不负责项目资格判断或原生求解器输入选择。
+
+
+
 `generate_halton_cylinder_phase_space` 的显式 `kinetic_energy_distribution="gaussian"`
 接受 `kinetic_energy_sigma_ev`（eV），此时 `kinetic_energy_full_width_ev=0`。
 它把既有 base-7 Halton 分位值经标准正态逆CDF转换；不同 sigma 保持相同位置、方向、ID及标准化能量序列，
@@ -13,9 +33,9 @@ canonical `center_first_halton_cylinder_v1` 请求也接受
 不强制有限样本的均值或方差恰好等于参数。首个中心诊断粒子保留请求均值，其余使用原母集Halton分位。
 位置、方向和ID不随能量分布改变，较小粒子表仍是相同母集的精确前缀。
 
-此目录拥有与项目、几何和求解器无关的离子释放采样、canonical CSV 和 receipt 身份。`release.py` 是 canonical
+规范包拥有与项目、几何和求解器无关的离子释放采样、canonical CSV 和 receipt 身份。`msplatform.ion_release.release` 是 canonical
 状态物化的唯一公共入口，使用闭合的 `(geometry.shape, sampling.strategy)` 注册表分派；连续轴向体积源保留其
-既有的闭合 `(source_region_model, method)` key。未知几何、策略或连续源 key 均失败关闭，不使用插件发现或项目回调。需要保留既有求解器表序列的 sampler 在本目录显式具名，返回 solver-neutral 的
+既有的闭合 `(source_region_model, method)` key。未知几何、策略或连续源 key 均失败关闭，不使用插件发现或项目回调。需要保留既有求解器表序列的 sampler 在规范包显式具名，返回 solver-neutral 的
 latent 或 phase-space 值，不绕过 canonical materialization 合同。
 
 需要保留动能和方向、再由项目适配至特定求解器的调用方使用
@@ -28,7 +48,7 @@ latent 或 phase-space 值，不绕过 canonical materialization 合同。
 `generate_center_axis_pair_halton_cylinder_phase_space`。它仅将粒子 2、3 固定为中心状态在指定轴的负、正边界，
 其余粒子继续使用相同 Halton 包络；因此受控坐标对可作诊断，最终统计仍使用完整束团。
 
-`cylinder` 由 [`cylinder.py`](cylinder.py) 实现三种完整圆柱体积策略：
+`cylinder` 由 [`cylinder.py`](../../src/msplatform/ion_release/cylinder.py) 实现三种完整圆柱体积策略：
 
 - `center_first_halton_cylinder_v1`：首粒子精确位于中心，后续粒子覆盖完整圆柱、能量和角度区间。只改变
   `particle_count` 时，较小表是同一母队列的精确前缀，适合 N=100/N=1000。
@@ -42,7 +62,7 @@ latent 或 phase-space 值，不绕过 canonical materialization 合同。
   不重新归一总能量；有限低差异样本不强制均值零或方差恰好等于 `kBT/m`。N=10 是同一母群 N=100 的精确前缀。
   质量和 Boltzmann 常数来自公共 particle physics 权威，温度只作为调用方冻结输入，本层不选择实际装置温度。
 
-[`mt19937_disk_cone_rf_phase.py`](mt19937_disk_cone_rf_phase.py) 注册 `disk` 的
+[`mt19937_disk_cone_rf_phase.py`](../../src/msplatform/ion_release/mt19937_disk_cone_rf_phase.py) 注册 `disk` 的
 `mt19937_uniform_disk_filled_cone_rf_phase_v1` 策略。它保留 RF 多极杆家族源的五次 MT19937 抽样顺序和 CSV
 字节序列；公共层物化和验证 receipt，项目只选择冻结请求。
 
@@ -50,15 +70,15 @@ latent 或 phase-space 值，不绕过 canonical materialization 合同。
 圆盘半径、位置方位、`sqrt(u)` 圆锥半角、速度方位、RF 周期内出生时间的五次取样顺序；它不能替换
 filled-cone 策略，因为两者的角度统计语义不同。
 
-[`dotnet_gaussian_box_ion11.py`](dotnet_gaussian_box_ion11.py) 保留 OA-TOF 历史 ION11
+[`dotnet_gaussian_box_ion11.py`](../../src/msplatform/ion_release/dotnet_gaussian_box_ion11.py) 保留 OA-TOF 历史 ION11
 盒状 Gaussian 源的固定 `.NET Random` 序列兼容实现。它同样是公共采样器；项目只传入源参数，
 不再保有生成算法。
 
-[`numpy_box_cone.py`](numpy_box_cone.py) 提供矩形横向位置、均匀能量、filled-cone
+[`numpy_box_cone.py`](../../src/msplatform/ion_release/numpy_box_cone.py) 提供矩形横向位置、均匀能量、filled-cone
 方向与 RF 相位的确定性 NumPy 释放。它返回不含项目坐标映射的相空间；L1 四极杆
 质量过滤器只将其投影为 SI 积分状态。
 
-[`continuous_axial_volume.py`](continuous_axial_volume.py) 拥有注册的
+[`continuous_axial_volume.py`](../../src/msplatform/ion_release/continuous_axial_volume.py) 拥有注册的
 `ion_source_volume_cylinder_v1` 连续前端源。它保留活动源请求字段和 seeded 随机抽样顺序，因此同一
 请求仍产生相同 canonical CSV；消费者通过 `materialize_release_from_file` 调用注册表，不再导入多极杆
 项目内 sampler。

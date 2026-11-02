@@ -194,6 +194,7 @@ exit 0
                 script.write_text(f"""$ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $codeRoot='{escaped_repo}';$python='{escaped_python}';$manifestRepoRoot=$codeRoot
+. (Join-Path $codeRoot 'common/contracts/run_artifact_support.ps1')
 $tokens=$null;$parseErrors=$null
 $runnerAst=[Management.Automation.Language.Parser]::ParseFile(
  (Join-Path $codeRoot 'projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1'),[ref]$tokens,[ref]$parseErrors)
@@ -352,6 +353,8 @@ ConvertTo-Json -InputObject $script:calls -Depth 6
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell Core is required")
     def test_transport_snapshots_include_host_runtime_dependency_closure(self) -> None:
+        from common.contracts.frozen_inputs import python_import_roots
+
         expected = {
             "common/host_execution_lease.ps1", "common/host_resource_scheduler.py",
             "common/host_resource_policy.json", "common/require_powershell7.ps1",
@@ -364,7 +367,7 @@ ConvertTo-Json -InputObject $script:calls -Depth 6
                     return "'" + str(path).replace("'", "''") + "'"
                 entry = RUNNER.parent / runner_name
                 script = r"""$ErrorActionPreference='Stop'
-$repoRoot=@@REPO@@;$inputDir=@@INPUT@@
+$repoRoot=@@REPO@@;$inputDir=@@INPUT@@;$python=@@PYTHON@@
 . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
 $ast=[Management.Automation.Language.Parser]::ParseFile(@@ENTRY@@,[ref]$null,[ref]$null)
 $declarations=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.AssignmentStatementAst]-and
@@ -386,7 +389,7 @@ if('@@NAME@@'-eq'run_finite_3d_transport.ps1'){
 $executionCapacityPaths|ConvertTo-Json|Set-Content @@CAPACITY@@
 . (Join-Path $codeRoot 'common/host_execution_lease.ps1')
 $null=Get-HostResourceBudget -Role GATE -Stage snapshot-probe
-""".replace('@@REPO@@', quoted(REPO_ROOT)).replace('@@INPUT@@', quoted(root)).replace('@@ENTRY@@', quoted(entry)).replace('@@NAME@@', runner_name).replace('@@CAPACITY@@', quoted(root / 'capacity.json'))
+""".replace('@@PYTHON@@', quoted(Path(sys.executable))).replace('@@REPO@@', quoted(REPO_ROOT)).replace('@@INPUT@@', quoted(root)).replace('@@ENTRY@@', quoted(entry)).replace('@@NAME@@', runner_name).replace('@@CAPACITY@@', quoted(root / 'capacity.json'))
                 completed = subprocess.run(
                     [shutil.which("pwsh"), "-NoProfile", "-Command", script],
                     cwd=root, capture_output=True, text=True, encoding="utf-8",
@@ -396,22 +399,27 @@ $null=Get-HostResourceBudget -Role GATE -Stage snapshot-probe
                 records = json.loads((root / "code_inventory.json").read_text(encoding="utf-8-sig"))["files"]
                 by_path = {record["path"]: record for record in records}
                 capacities = json.loads((root / "capacity.json").read_text(encoding="utf-8-sig"))
-                for relative in expected:
+                core_files = {path.relative_to(REPO_ROOT).as_posix()
+                              for path in (REPO_ROOT / 'src/msplatform').rglob('*')
+                              if path.is_file() and (path.suffix == '.py' or path.name.endswith('.schema.json'))}
+                self.assertEqual(sum(path.endswith('.schema.json') for path in core_files), 38)
+                for relative in expected | core_files:
                     payload = root / "code" / relative
                     self.assertIn("inputs/code/" + relative, capacities)
                     self.assertEqual(payload.read_bytes(), (REPO_ROOT / relative).read_bytes())
                     self.assertEqual(hashlib.sha256(payload.read_bytes()).hexdigest().upper(), by_path[relative]["sha256"])
+                roots_json = json.dumps(python_import_roots(root / "code"))
                 imports = "from common.host_resource_scheduler import load_policy; assert load_policy()"
                 if "simion" in runner_name:
                     imports += "; from common.simion import resource_scheduler; assert resource_scheduler.CPU_ADMISSION_PERCENT > 0"
                 probe = subprocess.run(
-                    [sys.executable, "-I", "-c", f"import sys; sys.path.insert(0, {str(root / 'code')!r}); " + imports],
+                    [sys.executable, "-I", "-c", f"import json,sys; sys.path[:0]=json.loads({roots_json!r}); " + imports],
                     cwd=root, capture_output=True, text=True, timeout=15, check=False,
                 )
                 self.assertEqual(probe.returncode, 0, probe.stderr)
                 census_program = """
 import csv, json, pathlib, sys
-sys.path.insert(0, sys.argv[1])
+sys.path[:0] = json.loads(sys.argv[2])
 from common.analysis import particle_census as c
 from common.contracts.particle_state import PARTICLE_STATE_COLUMNS
 from projects.rf_multipole_ion_optics.core.component_port import validate_exit_observations
@@ -429,13 +437,41 @@ with state.open("w", newline="") as stream:
     writer.writeheader()
     writer.writerows(rows)
 result = validate_exit_observations(state, source, dict(mechanical_exit_z_mm=85., aperture_radius_mm=None))
+core_modules = [module for name, module in tuple(sys.modules.items())
+                if name == 'msplatform' or name.startswith('msplatform.')]
+assert core_modules, 'scientific core was not exercised'
+for module in core_modules:
+    assert pathlib.Path(module.__file__).resolve().is_relative_to(
+        pathlib.Path(sys.argv[1]).resolve() / 'src'), module.__file__
 print(json.dumps(dict(mother=result["mother_particle_ids"], non_exit=result["non_exit_particle_ids"])))
 """
-                command = [sys.executable, "-B", "-I", "-c", census_program, str(root / "code")]
+                command = [sys.executable, "-B", "-I", "-c", census_program, str(root / "code"), roots_json]
                 census_probe = subprocess.run(command, cwd=root, capture_output=True, text=True,
                                               timeout=30, check=False)
                 self.assertEqual(census_probe.returncode, 0, census_probe.stderr)
                 self.assertEqual(json.loads(census_probe.stdout), dict(mother=[7, 31], non_exit=[7, 31]))
+                missing_schema = root / 'code/src/msplatform/contracts/schemas/component_particle_state.schema.json'
+                schema_bytes = missing_schema.read_bytes()
+                missing_schema.unlink()
+                guard_script = r"""
+. @@SUPPORT@@
+. @@HELPER@@
+$codeRoot=@@CODE@@
+$inventory=(Get-Content -Raw @@INVENTORY@@|ConvertFrom-Json).files
+$package=[pscustomobject]@{code_root=$codeRoot;package_roots=@(Get-RunPythonImportRoots -RepoRoot $codeRoot);
+ files=@($inventory|ForEach-Object{[pscustomobject]@{relative_path=$_.path;path=(Join-Path $codeRoot $_.path);sha256=$_.sha256}})}
+Invoke-IsolatedFrozenPythonModule -Python @@PYTHON@@ -Package $package -Module msplatform `
+ -Arguments @('--help') -RequiredModuleNames @('msplatform') -ProbeOnly
+""".replace('@@SUPPORT@@', quoted(root / 'code/common/contracts/run_artifact_support.ps1')).replace(
+                    '@@HELPER@@', quoted(root / 'code/projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1')).replace(
+                    '@@CODE@@', quoted(root / 'code')).replace('@@INVENTORY@@', quoted(root / 'code_inventory.json')).replace(
+                    '@@PYTHON@@', quoted(Path(sys.executable)))
+                refused_core = subprocess.run([shutil.which('pwsh'), '-NoProfile', '-Command', guard_script],
+                                              cwd=root, capture_output=True, text=True, encoding='utf-8',
+                                              errors='replace', timeout=30, check=False)
+                self.assertNotEqual(refused_core.returncode, 0)
+                self.assertIn('component_particle_state.schema.json', refused_core.stderr)
+                missing_schema.write_bytes(schema_bytes)
                 (root / "code/common/analysis/particle_census.py").unlink()
                 refused = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=30, check=False)
                 self.assertNotEqual(refused.returncode, 0)
@@ -444,38 +480,40 @@ print(json.dumps(dict(mother=result["mother_particle_ids"], non_exit=result["non
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_frozen_comsol_runner_receives_resolved_python_environment(self) -> None:
         entry = REPO_ROOT / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1"
-        script = r"""$ErrorActionPreference='Stop'
-. '@@SUPPORT@@'
-$ast=[Management.Automation.Language.Parser]::ParseFile('@@ENTRY@@',[ref]$null,[ref]$null)
-$assignments=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.AssignmentStatementAst]},$true))
-$names=@($assignments|Where-Object {$_.Left.Extent.Text-eq'$environmentNames'})
-$save=@($assignments|Where-Object {$_.Left.Extent.Text-eq'$oldEnvironment'})
-$sets=@($assignments|Where-Object {$_.Left.Extent.Text-in@('$env:SIMULATION_PYTHON_EXE','$env:PYTHONPATH')-and$_.Right.Extent.Text-in@('$python','$codeRoot')})
-$restore=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Restore-RunEnvironment'},$true))[-1]
-$launch=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Invoke-ResourceBudgetedProcess'},$true))[-1]
-if($names.Count-ne1-or$save.Count-ne1-or$sets.Count-lt2-or$null-eq$restore-or$null-eq$launch){throw 'Actual environment/launch boundary missing'}
-$python='selected-python';$codeRoot='selected-frozen-code';$resolvedBudget=@{limits=@{}};$runDir='.';$resourceUsage='unused';$pwsh='unused';$task='unused';$report='unused';$RunId='fixture';$ownerState=@{launcher_receipt='unused'}
-function Invoke-ResourceBudgetedProcess {
- param($Limits,$RunDir,$UsagePath,$FilePath,$ArgumentList)
- if($env:SIMULATION_PYTHON_EXE-cne$python-or$env:PYTHONPATH-cne$codeRoot){throw 'Native child did not inherit selected interpreter/frozen source'}
- $script:calls++
- if($fail){throw 'CHILD_ENV_SENTINEL'}
- return @{}
-}
-foreach($fail in @($false,$true)){
- $env:SIMULATION_PYTHON_EXE='prior-python';$env:PYTHONPATH='prior-source';$script:calls=0
- Invoke-Expression $names[0].Extent.Text;Invoke-Expression $save[0].Extent.Text
- try{
-  foreach($set in $sets){Invoke-Expression $set.Extent.Text}
-  $null=Invoke-Expression $launch.Extent.Text
- }catch{if($_.Exception.Message-cne'CHILD_ENV_SENTINEL'){throw}}
- finally{Invoke-Expression $restore.Extent.Text}
- if($script:calls-ne1-or$env:SIMULATION_PYTHON_EXE-cne'prior-python'-or$env:PYTHONPATH-cne'prior-source'){throw 'Original environment was not restored'}
-}
-""".replace('@@ENTRY@@', str(entry)).replace('@@SUPPORT@@', str(REPO_ROOT / 'common/contracts/run_artifact_support.ps1'))
-        result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
-                                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "src").mkdir()
+            script = r"""$ErrorActionPreference='Stop'
+    . '@@SUPPORT@@'
+    $ast=[Management.Automation.Language.Parser]::ParseFile('@@ENTRY@@',[ref]$null,[ref]$null)
+    $assignments=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.AssignmentStatementAst]},$true))
+    $names=@($assignments|Where-Object {$_.Left.Extent.Text-eq'$environmentNames'})
+    $save=@($assignments|Where-Object {$_.Left.Extent.Text-eq'$oldEnvironment'})
+    $sets=@($assignments|Where-Object {$_.Left.Extent.Text-in@('$env:SIMULATION_PYTHON_EXE','$env:PYTHONPATH')-and($_.Right.Extent.Text-eq'$python'-or$_.Right.Extent.Text.Contains('Get-RunPythonImportRoots'))})
+    $restore=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Restore-RunEnvironment'},$true))[-1]
+    $launch=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Invoke-ResourceBudgetedProcess'},$true))[-1]
+    if($names.Count-ne1-or$save.Count-ne1-or$sets.Count-lt2-or$null-eq$restore-or$null-eq$launch){throw 'Actual environment/launch boundary missing'}
+    $python='selected-python';$codeRoot='@@CODE@@';$expectedPythonPath=(@((Join-Path $codeRoot 'src'),$codeRoot)-join[IO.Path]::PathSeparator);$resolvedBudget=@{limits=@{}};$runDir='.';$resourceUsage='unused';$pwsh='unused';$task='unused';$report='unused';$RunId='fixture';$ownerState=@{launcher_receipt='unused'}
+    function Invoke-ResourceBudgetedProcess {
+     param($Limits,$RunDir,$UsagePath,$FilePath,$ArgumentList)
+     if($env:SIMULATION_PYTHON_EXE-cne$python-or$env:PYTHONPATH-cne$expectedPythonPath){throw 'Native child did not inherit selected interpreter/frozen source'}
+     $script:calls++
+     if($fail){throw 'CHILD_ENV_SENTINEL'}
+     return @{}
+    }
+    foreach($fail in @($false,$true)){
+     $env:SIMULATION_PYTHON_EXE='prior-python';$env:PYTHONPATH='prior-source';$script:calls=0
+     Invoke-Expression $names[0].Extent.Text;Invoke-Expression $save[0].Extent.Text
+     try{
+      foreach($set in $sets){Invoke-Expression $set.Extent.Text}
+      $null=Invoke-Expression $launch.Extent.Text
+     }catch{if($_.Exception.Message-cne'CHILD_ENV_SENTINEL'){throw}}
+     finally{Invoke-Expression $restore.Extent.Text}
+     if($script:calls-ne1-or$env:SIMULATION_PYTHON_EXE-cne'prior-python'-or$env:PYTHONPATH-cne'prior-source'){throw 'Original environment was not restored'}
+    }
+    """.replace('@@CODE@@', str(Path(directory))).replace('@@ENTRY@@', str(entry)).replace('@@SUPPORT@@', str(REPO_ROOT / 'common/contracts/run_artifact_support.ps1'))
+            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
+                                    cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_runner_freezes_resolved_campaign_selection_before_solver_launch(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
@@ -582,6 +620,7 @@ if($script:calls-ne1-or$state.finalization_started){throw 'Terminal outcome was 
             before = {name:(root/name).read_bytes() for name in ("batch.json", "request.json")}
             script = r"""
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. (Join-Path $env:RF_TEST_REPO 'common/contracts/run_artifact_support.ps1')
 $codeRoot=$env:RF_TEST_REPO;$runDir=$env:RF_TEST_ROOT;$logDir=$runDir;$solverDir=$runDir
 $dispatchPlan=Join-Path $runDir 'dispatch.json';$batchPlan=Join-Path $runDir 'batch.json'
 $dispatchRequest=Join-Path $runDir 'request.json';$resourceProfiles=Join-Path $runDir 'profiles.json'

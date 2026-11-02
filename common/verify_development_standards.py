@@ -14,11 +14,8 @@ from pathlib import Path
 
 
 REPO_ROOT = Path.cwd() if __file__ == "<stdin>" else Path(__file__).resolve().parents[1]
-SOURCE_ROOTS = (
-    REPO_ROOT / "common",
-    REPO_ROOT / "projects",
-    REPO_ROOT / "integrations",
-)
+SOURCE_ROOT_NAMES = ("common", "projects", "integrations", "src")
+SOURCE_ROOTS = tuple(REPO_ROOT / name for name in SOURCE_ROOT_NAMES)
 EXCLUDED_PARTS = {"history", "legacy", ".venv", "__pycache__"}
 MATLAB_BUILD_ONLY_MARKER = re.compile(
     r"(?im)^\s*%\s*REPOSITORY_CONTRACT:\s*MATLAB_BUILD_ONLY\s*$"
@@ -65,7 +62,7 @@ def staged_sources(root: Path, paths: set[Path] | None = None) -> dict[Path, str
         if stage != b"0":
             raise ValueError("development standards cannot check an unmerged index")
         path = Path(name.decode("utf-8"))
-        if (path.parts[0] not in {"common", "projects", "integrations"}
+        if (path.parts[0] not in SOURCE_ROOT_NAMES
                 or EXCLUDED_PARTS.intersection(path.parts)
                 or path.suffix not in {".py", ".ps1", ".m"}):
             continue
@@ -113,7 +110,7 @@ def changed_source_scope(root: Path, changed: list[str]) -> tuple[set[Path] | No
             return None, "rules_changed"
         if relative.suffix == ".md":
             continue
-        if (not relative.parts or relative.parts[0] not in {"common", "projects", "integrations"}
+        if (not relative.parts or relative.parts[0] not in SOURCE_ROOT_NAMES
                 or EXCLUDED_PARTS.intersection(relative.parts)
                 or relative.suffix not in {".py", ".ps1", ".m"}):
             continue
@@ -273,6 +270,9 @@ def check_matlab(sources: dict[Path, str] | None = None) -> list[str]:
 
 def _python_module(path: Path, root: Path) -> str:
     parts = list(path.relative_to(root).with_suffix("").parts)
+    # src is an import search root, not part of the installed namespace.
+    if parts[0] == "src":
+        parts = parts[1:]
     return ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
 
 
@@ -413,7 +413,7 @@ def audit_consumers(
     syntax errors already owned by that check and are not parsed again.
     """
     modules, external_names = {}, set()
-    for directory in ("common", "projects", "integrations"):
+    for directory in SOURCE_ROOT_NAMES:
         for path in sorted((root / directory).rglob("*")):
             if not path.is_file() or EXCLUDED_PARTS.intersection(path.relative_to(root).parts):
                 continue

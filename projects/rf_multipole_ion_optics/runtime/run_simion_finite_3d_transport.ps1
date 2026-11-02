@@ -210,7 +210,7 @@ $hostRuntimeSourcePaths=@(
   'common/host_resource_policy.json','common/require_powershell7.ps1','common/resource_budget_support.ps1')
 $analysisSourcePaths=@('common/analysis/particle_census.py')
 $executionCapacityPaths=Get-RunPackageCopiedSourcePaths -RepoRoot $repoRoot `
-  -SourceRelativeDirectories @('common/contracts','common/simion','common/ion_release','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/comsol','projects/rf_multipole_ion_optics/simion') `
+  -SourceRelativeDirectories @('src/msplatform','common/contracts','common/simion','common/ion_release','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/comsol','projects/rf_multipole_ion_optics/simion') `
   -Extensions @('.py','.json','.ps1','.lua')
 $executionCapacityPaths+=@(($hostRuntimeSourcePaths+$analysisSourcePaths)|ForEach-Object{"inputs/code/$_"})
 $continuationCapacity=$null;$continuationGuards=[Collections.ArrayList]::new();$continuationPredecessor=$null;$continuationChain=@()
@@ -285,7 +285,7 @@ catch{$leaseFailure=$_;foreach($stream in $continuationGuards){$stream.Dispose()
 
 try{
   $codeRoot=Join-Path $inputDir 'code'
-  foreach($area in @('common/contracts','common/simion','common/ion_release','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/comsol','projects/rf_multipole_ion_optics/simion')){
+  foreach($area in @('src/msplatform','common/contracts','common/simion','common/ion_release','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/comsol','projects/rf_multipole_ion_optics/simion')){
     $sourceRoot=Join-Path $repoRoot $area;$destinationRoot=Join-Path $codeRoot $area
     Get-ChildItem -LiteralPath $sourceRoot -Recurse -File|Where-Object{
       $_.Extension -in @('.py','.json','.ps1','.lua')
@@ -307,6 +307,25 @@ try{
   })
   [ordered]@{schema_version=1;role='frozen_code_inventory';files=$inventory}|
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $codeInventory -Encoding UTF8
+  # Reuse the frozen-package verifier: neither installed core nor missing resources
+  # may supply a dependency absent from this exact recorded source closure.
+  . (Join-Path $codeRoot 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1')
+  $frozenPackage=[pscustomobject]@{
+    code_root=$resolvedCodeRoot
+    package_roots=@(Get-RunPythonImportRoots -RepoRoot $codeRoot)
+    files=@($inventory|ForEach-Object{[pscustomobject]@{
+      relative_path=$_.path;path=(Join-Path $codeRoot $_.path);sha256=$_.sha256
+    }})
+  }
+  if(-not(Test-Path -LiteralPath (Join-Path $codeRoot 'src/msplatform/__init__.py') -PathType Leaf)){
+    throw 'Canonical scientific core is absent from the new frozen runtime.'
+  }
+  $coreModules=@($inventory|Where-Object{$_.path-like'src/msplatform/*.py'}|ForEach-Object{
+    ([string]$_.path).Substring(4).Replace('/','.').Replace('.__init__.py','').Replace('.py','')
+  })
+  Invoke-IsolatedFrozenPythonModule -Python $python -Package $frozenPackage -Module msplatform `
+    -Arguments @('--help') -RequiredModuleNames $coreModules -ForbiddenRoots @($repoRoot) -ProbeOnly|Out-Null
+
   $ownerSource=Join-Path $physicalRunDir 'inputs/code/projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1'
   $ownerRecord=Get-Item -LiteralPath $ownerSource
   $ownerInventory=@($inventory|Where-Object{$_.path-ceq'projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1'})
@@ -358,7 +377,7 @@ try{
   ){throw 'Frozen campaign authority differs from the resolved runtime-profile snapshot.'}
   Push-Location $codeRoot
   try{
-    $env:PYTHONPATH=$codeRoot
+    $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
     & $python -m projects.rf_multipole_ion_optics.runtime.design_profile --repo-root $repoRoot --project-id $ProjectId `
       --design-profile-id $DesignProfileId --output $profileResolution
     if($LASTEXITCODE-ne 0){throw 'Governed design profile resolution failed.'}
@@ -392,14 +411,14 @@ try{
     $snapshotDesign|ConvertTo-Json -Depth 100|Set-Content -LiteralPath $resolved -Encoding UTF8
     Push-Location $codeRoot
     try{
-      $env:PYTHONPATH=$codeRoot
+      $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
       & $python -m projects.rf_multipole_ion_optics.analysis.verify_resolved_design $resolved
       if($LASTEXITCODE-ne 0){throw 'Resolved runtime-profile design identity is invalid.'}
     }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
   }else{
     Push-Location $codeRoot
     try{
-      $env:PYTHONPATH=$codeRoot
+      $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
       $compileArguments=@('-m','projects.rf_multipole_ion_optics.core.compile_design_request',
         '--request',$request,'--design-variables',$variables,
         '--optimization-envelope',$envelope,'--output',$resolved,
@@ -473,7 +492,7 @@ try{
     $phaseDerivationMetadata=Join-Path $inputDir 'particle_source_phase_derivation.json'
     Push-Location $codeRoot
     try{
-      $env:PYTHONPATH=$codeRoot
+      $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
       $phaseArguments=@('-m','projects.rf_multipole_ion_optics.runtime.phase_matched_particle_source',
         '--source',$phaseAuthoritySource,
         '--baseline-frequency-hz',([string]$phaseBinding.baseline_frequency_Hz),
@@ -516,7 +535,7 @@ try{
   $sourceMetadata=Join-Path $inputDir 'particle_source_metadata.json'
   Push-Location $codeRoot
   try{
-    $env:PYTHONPATH=$codeRoot
+    $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
     $preflightArguments=@('-m','projects.rf_multipole_ion_optics.runtime.particle_source_preflight',
       '--source',$particleSource,'--resolved-design',$resolved,'--output',$sourceMetadata)
     if($sourceFamily){
@@ -553,7 +572,7 @@ try{
   if(-not[string]::IsNullOrWhiteSpace($ReferenceComsolRunId)){
     Push-Location $codeRoot
     try{
-      $env:PYTHONPATH=$codeRoot
+      $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
       $referenceIdValidation=& $python -m common.contracts.artifact_naming run $ReferenceComsolRunId
       if($LASTEXITCODE-ne 0 -or -not($referenceIdValidation-match '^ARTIFACT_ID=PASS ')){
         throw "Invalid ReferenceComsolRunId: $ReferenceComsolRunId"
@@ -597,7 +616,7 @@ try{
   $states=Join-Path $inputDir 'source_states.lua'
   Push-Location $codeRoot
   try{
-    $env:PYTHONPATH=$codeRoot
+    $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
     $batchPlan=Join-Path $inputDir 'simion_execution_batch_plan.json'
     $dispatchPlan=$null
     if($null-ne$automaticDispatch){
@@ -722,7 +741,7 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
 '@
   Push-Location $codeRoot
   try{
-    $env:PYTHONPATH=$codeRoot
+    $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
     $exitObservation=(& $python -B -c $exitPreparationCode $runDir $resolved $DesignProfileId ([string]$resolvedCellMmZ))|ConvertFrom-Json
     if($LASTEXITCODE-ne0){throw 'Multipole mechanical interface/clock preparation failed.'}
   }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
@@ -946,7 +965,7 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
     if($mechanicalExitEnabled){$planArguments+='--mechanical'}
     Push-Location $codeRoot
     try{
-      $env:PYTHONPATH=$codeRoot
+      $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
       $planned=& $python @planArguments
       if($LASTEXITCODE-ne0){throw 'RF continuation planning failed.'}
       $continuation=($planned-join"`n")|ConvertFrom-Json
@@ -1163,7 +1182,7 @@ return config
       foreach($pendingRun in $pendingRuns){$fixedArguments+=@('--replay-batch-index',[string]$pendingRun.batch.index)}
       Push-Location $codeRoot
       try{
-        $env:PYTHONPATH=$codeRoot
+        $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
         & $python @fixedArguments | Out-Host
         if($LASTEXITCODE-ne0){throw 'SIMION fixed continuation resource planning failed.'}
       }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
@@ -1189,7 +1208,7 @@ return config
       }
       Push-Location $codeRoot
       try{
-        $env:PYTHONPATH=$codeRoot
+        $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
         $planningSource=if($continuationPredecessor){@('--recovered-missing-plan',$dispatchPlan)}else{@('--request',$dispatchRequest,'--profiles',$resourceProfiles)}
         $replanArguments=@('-m','common.simion.resource_scheduler')+$planningSource+@('--output',$dispatchPlan,
           '--available-memory-bytes',([string]$formalObservation.available_memory_bytes),
@@ -1288,7 +1307,7 @@ return config
             throw "SIMION $name batch $index lacks the retained trajectory required by $RetentionClass."
           }
           Push-Location $codeRoot
-          try{$env:PYTHONPATH=$codeRoot;& $python @check | Out-Null;if($LASTEXITCODE-ne0){throw "SIMION $name batch $index completion is invalid."}}
+          try{$env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator);& $python @check | Out-Null;if($LASTEXITCODE-ne0){throw "SIMION $name batch $index completion is invalid."}}
           finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
           if($RetentionClass-ne'compact'-and-not$retainedTrajectoryOutputs.Contains([string]$completedBatch.trajectory)){
             [void]$retainedTrajectoryOutputs.Add([string]$completedBatch.trajectory)
@@ -1345,7 +1364,7 @@ return config
       }
       Push-Location $codeRoot
       try{
-        $env:PYTHONPATH=$codeRoot
+        $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
         foreach($merge in @(
           @{output=$caseState;property='state';required=$true},
           @{output=$caseTrajectory;property='trajectory';required=$false},
@@ -1372,7 +1391,7 @@ return config
       }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
       Push-Location $codeRoot
       try{
-        $env:PYTHONPATH=$codeRoot
+        $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
         $summaryMergeArguments=@('-m','common.simion.particle_batching','--merge-summaries',
           '--batch-plan',$batchPlan,'--output',$caseSummary)
         foreach($batchRun in $batchRuns){$summaryMergeArguments+=@('--batch-summary',[string]$batchRun.summary)}
@@ -1386,7 +1405,7 @@ return config
     $stateReport=Join-Path $resultDir "particle_state_contract__$name.json"
     Push-Location $codeRoot
     try{
-      $env:PYTHONPATH=$codeRoot
+      $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
       & $python -m common.contracts.particle_state --state $caseState --particles $particleSource `
         --source-format canonical --frequency-hz $drive.frequency_Hz --phase-rad $drive.phase_rad `
         --rod-exit-mm $geometry.rod_z_max --handoff-mm $handoffPlaneMm `
@@ -1404,7 +1423,7 @@ output.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n',encoding='utf
 '@
       Push-Location $codeRoot
       try{
-        $env:PYTHONPATH=$codeRoot
+        $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
         & $python -B -c $mechanicalValidation $caseMechanical $particleSource `
           (Join-Path $inputDir 'mechanical_exit_observation.json') (Join-Path $resultDir "mechanical_exit_census__$name.json")
         if($LASTEXITCODE-ne0){throw "SIMION $name real mechanical exit/cohort validation failed."}
@@ -1427,7 +1446,7 @@ output.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n',encoding='utf
       $metrics=Join-Path $resultDir 'axial_acceleration_metrics.json'
       Push-Location $codeRoot
       try{
-        $env:PYTHONPATH=$codeRoot
+        $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
         & $python -m projects.rf_multipole_ion_optics.analysis.analyze_simion_axial_acceleration `
           --accelerated-state (Join-Path $resultDir "particle_states__$primaryName.csv") `
           --control-state (Join-Path $resultDir "particle_states__$controlName.csv") `
@@ -1440,7 +1459,7 @@ output.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n',encoding='utf
       $metrics=Join-Path $resultDir 'rf_off_energy_control_metrics.json'
       Push-Location $codeRoot
       try{
-        $env:PYTHONPATH=$codeRoot
+        $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
         & $python -m projects.rf_multipole_ion_optics.analysis.analyze_simion_transport_metrics --metric-kind rf_off_energy_control `
           --project-id $ProjectId --parent-resolved-design-sha256 $resolvedHash --case-set $CaseSet `
           --primary-case-id $primaryName --primary-summary (Join-Path $resultDir "simion_summary__$primaryName.json") `
@@ -1453,7 +1472,7 @@ output.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n',encoding='utf
       $metrics=Join-Path $resultDir 'primary_transport_metrics.json'
       Push-Location $codeRoot
       try{
-        $env:PYTHONPATH=$codeRoot
+        $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
         & $python -m projects.rf_multipole_ion_optics.analysis.analyze_simion_transport_metrics --metric-kind primary `
           --project-id $ProjectId --parent-resolved-design-sha256 $resolvedHash --case-set $CaseSet `
           --primary-case-id $primaryName --primary-summary (Join-Path $resultDir "simion_summary__$primaryName.json") `
@@ -1469,7 +1488,7 @@ output.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n',encoding='utf
       $control=Invoke-TransportCase $controlName 0 0
       Push-Location $codeRoot
       try{
-        $env:PYTHONPATH=$codeRoot
+        $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
         & $python -m projects.rf_multipole_ion_optics.analysis.analyze_simion_transport_metrics --metric-kind base_paired `
           --project-id $ProjectId --parent-resolved-design-sha256 $resolvedHash --case-set $CaseSet `
           --primary-case-id $primaryName --primary-summary (Join-Path $resultDir "simion_summary__$primaryName.json") `
@@ -1480,7 +1499,7 @@ output.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n',encoding='utf
     }else{
       Push-Location $codeRoot
       try{
-        $env:PYTHONPATH=$codeRoot
+        $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
         & $python -m projects.rf_multipole_ion_optics.analysis.analyze_simion_transport_metrics --metric-kind base_primary `
           --project-id $ProjectId --parent-resolved-design-sha256 $resolvedHash --case-set $CaseSet `
           --primary-case-id $primaryName --primary-summary (Join-Path $resultDir "simion_summary__$primaryName.json") --output $metrics
@@ -1497,7 +1516,7 @@ output.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n',encoding='utf
   $primaryState=Join-Path $resultDir "particle_states__$primaryName.csv"
   Push-Location $codeRoot
   try{
-    $env:PYTHONPATH=$codeRoot
+    $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
     $exitStatePlotLabel=$ProjectId.Replace('_',' ')
     & $python -m projects.rf_multipole_ion_optics.analysis.exit_state_plot `
       --series "$exitStatePlotLabel=$primaryState=$RunId" `
@@ -1512,7 +1531,7 @@ output.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n',encoding='utf
   if($evidence){
     Push-Location $codeRoot
     try{
-      $env:PYTHONPATH=$codeRoot
+      $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
       & $python -m projects.rf_multipole_ion_optics.analysis.evaluate_transport_evidence --metrics $metrics --evidence $evidence `
         --project-id $ProjectId --design-profile-id $DesignProfileId --output $evaluation
       $evidenceExit=$LASTEXITCODE
@@ -1532,7 +1551,7 @@ print(json.dumps(result,allow_nan=False))
 '@
     Push-Location $codeRoot
     try{
-      $env:PYTHONPATH=$codeRoot
+      $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
       $validated=& $python -B -c $validateEvaluation $evaluation $ProjectId $DesignProfileId $evidenceExit
       if($LASTEXITCODE-ne0){throw 'SIMION evidence result contract is invalid.'}
       $decision=$validated|ConvertFrom-Json -AsHashtable

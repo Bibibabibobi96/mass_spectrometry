@@ -22,6 +22,8 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
+from msplatform.contracts.machine_contracts import SCHEMA_DIR
+
 try:
     from common.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th
     from common.contracts.rigid_transform import PhaseSpaceState
@@ -31,7 +33,7 @@ except ModuleNotFoundError:
 
 
 SCHEMA_VERSION = 1
-SCHEMA_PATH = Path(__file__).with_name("schemas") / "component_particle_state.schema.json"
+SCHEMA_PATH = SCHEMA_DIR / "component_particle_state.schema.json"
 TIME_TOLERANCE_US = 1e-9
 DERIVED_RELATIVE_TOLERANCE = 1e-9
 DERIVED_ABSOLUTE_TOLERANCE = 1e-12

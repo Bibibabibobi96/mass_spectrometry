@@ -77,6 +77,9 @@ def mass_analysis_fixture(root):
                 if p.is_file() and p.suffix in ('.py', '.ps1', '.json')
                 and not p.name.startswith('test_') and '__pycache__' not in p.parts]
     selected += [REPO / relative for relative in CODE_PATHS]
+    from common.contracts.frozen_inputs import enumerate_python_sources
+    selected += [REPO / relative for relative in enumerate_python_sources(REPO,
+        package_roots=("src/msplatform",), resource_suffixes=(".schema.json",))]
     selected += [PROJECT/'workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1']
     for path in selected:
         target = fixture / path.relative_to(REPO)
@@ -159,13 +162,19 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
             selected = select_source(source, artifacts)
             snapshot = {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()}
             code = root / 'inputs/code'
-            freeze_analysis(REPO, code, selected)
+            inventory = freeze_analysis(REPO, code, selected)
+            self.assertIn('src/msplatform/analysis/peak_metrics.py', {item['path'] for item in inventory['files']})
+            self.assertEqual(sum(item['path'].endswith('.schema.json') for item in inventory['files']), 38)
             selection = root / 'inputs/source_selection.json'
             selection.write_text(json.dumps(selected), encoding='utf-8')
             output = root / 'analysis'
-            launch = ('import sys;sys.path.insert(0,sys.argv[1]);'
+            launch = ('import sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);'
+                      'from common.contracts.frozen_inputs import python_import_roots;'
+                      'sys.path[:0]=python_import_roots(Path(sys.argv[1]));'
                       'from projects.single_reflection_oa_tof_mass_analyzer.analysis.mass_spectrum_reanalysis import run_analysis;'
-                      'from pathlib import Path;run_analysis(Path(sys.argv[2]),Path(sys.argv[1]),Path(sys.argv[3]))')
+                      'import msplatform.analysis.peak_metrics as core;'
+                      'run_analysis(Path(sys.argv[2]),Path(sys.argv[1]),Path(sys.argv[3]));'
+                      'assert Path(core.__file__).resolve().is_relative_to(Path(sys.argv[1])/"src")')
             command = [sys.executable, '-I', '-B', '-c', launch, str(code), str(selection), str(output)]
             result = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=45)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
@@ -182,6 +191,11 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
             bad = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=30)
             self.assertNotEqual(bad.returncode, 0)
             self.assertIn('exceeds the mixed-species mother population', bad.stderr)
+            (code/'src').rename(root/'removed-core')
+            missing = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=30)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertNotIn('exceeds the mixed-species mother population', missing.stderr)
+            self.assertRegex(missing.stderr, 'escaped its frozen source root|No module named')
 
     def test_original_cli_reanalysis_and_resume_use_public_owner_without_formal_or_native(self):
         with tempfile.TemporaryDirectory() as temporary:

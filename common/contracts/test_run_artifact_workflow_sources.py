@@ -20,6 +20,33 @@ from common.contracts.test_support.run_artifact_workflow import CALLBACK, OWNER,
 
 @unittest.skipUnless(PWSH and os.name == "nt", "Windows PowerShell workflow boundary")
 class RunArtifactSourceTests(fixture.RunArtifactWorkflowFixture):
+    def test_prepared_src_import_roots_keep_core_and_resources_frozen(self) -> None:
+        extra = '''    from msplatform.io import file_identity as core_identity
+    from msplatform.contracts import machine_contracts as core_contracts
+    prepared_root = Path(__file__).parent.resolve()
+    assert Path(core_identity.__file__).resolve().is_relative_to(prepared_root / 'src')
+    assert Path(core_contracts.__file__).resolve().is_relative_to(prepared_root / 'src')
+    assert core_identity.file_sha256(Path(__file__))
+    assert core_contracts.schema_registry()
+    if payload.get('missing_core'):
+        (prepared_root / 'src/msplatform/assembly/resolve_assembly.py').unlink()
+    from msplatform.assembly import resolve_assembly
+    assert Path(resolve_assembly.__file__).resolve().is_relative_to(prepared_root / 'src')
+'''
+        needle = '    counter = Path(payload["counter_path"])'
+        callback = CALLBACK.replace(needle, extra + needle)
+        for missing in (False, True):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory(prefix='src 工作 roots ') as directory:
+                root = Path(directory)
+                result, _, _, outcome = self.invoke_fixture(root, {'missing_core': missing}, callback_text=callback)
+                if missing:
+                    self.assertNotEqual(outcome.returncode, 0)
+                    self.assertEqual(result['status'], 'failed')
+                    self.assertIn('resolve_assembly', result['exception']['message'])
+                else:
+                    self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr + str(result))
+                    self.assertEqual(result['status'], 'success')
+
     def test_declared_future_native_paths_select_managed_execution_before_callback(self) -> None:
         with tempfile.TemporaryDirectory(prefix="workflow-native-plan-") as directory:
             root = Path(directory) / ("p" * 24)
@@ -462,6 +489,7 @@ function Publish-WorkflowTerminal {{
             copy_started = time.perf_counter()
             shutil.copytree(REPO / "common", root / "common", ignore=lambda directory, _names:
                             {"__pycache__"} | ({"assets"} if Path(directory) == REPO / "common/simion" else set()))
+            fixture.copy_scientific_core(REPO, root)
             copied_bytes = sum(path.stat().st_size for path in (root / "common").rglob("*") if path.is_file())
             print(json.dumps({"fixture": "deep_frozen_python", "copied_bytes": copied_bytes,
                               "copy_seconds": time.perf_counter() - copy_started}))

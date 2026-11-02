@@ -75,16 +75,36 @@ class FixedHardwareMirrorPointContractTests(unittest.TestCase):
                 target = detached / source.relative_to(REPOSITORY)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, target)
+            # Alias bridges expose canonical __file__, so preserve the still
+            # imported repository entry explicitly rather than infer it from that attribute.
+            bridge = Path("common/contracts/particle_physics.py")
+            target = detached / bridge
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(REPOSITORY / bridge, target)
+            from common.contracts.frozen_inputs import enumerate_python_sources
+
+            for relative in enumerate_python_sources(
+                REPOSITORY, package_roots=("src/msplatform",), provider_root="src/msplatform",
+                resource_suffixes=(".schema.json",),
+            ):
+                target = detached / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(REPOSITORY / relative, target)
             code = r"""
 import importlib
 from pathlib import Path
 import sys
-sys.path.insert(0, sys.argv[1])
+sys.path[:0] = [sys.argv[1], str(Path(sys.argv[1]) / 'src')]
 prefix = 'projects.parallel_mirror_dual_stripe_mr_tof.analysis.'
 for name in ('mirror_exact_k_operating_point', 'dual_stripe_operating_seed'):
     module = importlib.import_module(prefix + name)
     assert Path(module.__file__).is_relative_to(Path(sys.argv[1]))
 assert prefix + 'fixed_grid_mirror_stripe_handoff' not in sys.modules
+core = importlib.import_module('msplatform.contracts.particle_physics')
+assert Path(core.__file__).is_relative_to(Path(sys.argv[1]) / 'src')
+for name, module in tuple(sys.modules.items()):
+    if name == 'msplatform' or name.startswith('msplatform.'):
+        assert Path(module.__file__).is_relative_to(Path(sys.argv[1]) / 'src')
 print('detached exact-K and seed import passed')
 """
             result = subprocess.run(

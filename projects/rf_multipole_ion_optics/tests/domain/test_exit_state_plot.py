@@ -136,6 +136,7 @@ class ExitStatePlotTests(unittest.TestCase):
                 fixtures.append(dict(name=name, folder=str(folder), source=str(source)))
             quote = lambda value: "'" + str(value).replace("'", "''") + "'"
             script = "$ErrorActionPreference='Stop'\n$codeRoot=" + quote(repo) + ";$repoRoot=$codeRoot;$python=" + quote(sys.executable) + "\n"
+            script += ". (Join-Path $codeRoot 'common/contracts/run_artifact_support.ps1')\n"
             script += "$AnalysisLimits=$null\n" + invoke_python + "\n"
             script += "$fixtures=ConvertFrom-Json " + quote(json.dumps(fixtures)) + "\n$records=[Collections.Generic.List[object]]::new()\n"
             script += "foreach($fixture in $fixtures){$primaryState=$fixture.source;$RunId='fixture';$ProjectId='rf_multipole_ion_optics';$exitStatePlot=Join-Path $fixture.folder 'plot.png';$exitStatePlotManifest=Join-Path $fixture.folder 'plot.json';$summary=Join-Path $fixture.folder 'summary.json'\ntry{\n"

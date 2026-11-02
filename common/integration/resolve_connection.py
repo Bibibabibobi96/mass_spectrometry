@@ -10,18 +10,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from common.contracts.machine_contracts import (
+from common.contracts.machine_contracts import REPO_ROOT
+from msplatform.contracts.machine_contracts import (
     ContractError,
-    REPO_ROOT,
     load_json,
     sha256,
     validate_schema,
 )
 from common.contracts.file_identity import (
     canonical_json_sha256 as _canonical_sha256,
-    file_sha256,
     repository_text_sha256,
 )
+from msplatform.io.file_identity import file_sha256
 
 
 def _dot(left: list[float], right: list[float]) -> float:
@@ -597,7 +597,7 @@ def resolve_assembly_recipe(
     *, local_scope_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Load explicit recipe/provider files and bind their content identities."""
-    from common.integration.resolve_assembly import compile_assembly_layout
+    from msplatform.assembly.resolve_assembly import compile_assembly_layout
 
     root = Path(repo_root).resolve()
     sources = {name: _managed_file(root, path) for name, path in (
@@ -619,7 +619,7 @@ def resolve_assembly_recipe(
 
 def _verify_assembly_plan(plan: dict[str, Any], repo_root: str | Path) -> None:
     """Rebuild the layout from frozen inputs and, when present, recheck files."""
-    from common.integration.resolve_assembly import compile_assembly_layout
+    from msplatform.assembly.resolve_assembly import compile_assembly_layout
 
     expected = compile_assembly_layout(
         plan["recipe"], plan["components"], local_scope=plan.get("local_scope"),

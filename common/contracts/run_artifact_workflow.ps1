@@ -314,7 +314,7 @@ function Invoke-PreparedWorkflowProcess {
   $runner=@'
 import os, sys
 # Import only from the validated frozen root, never the execution cwd.
-sys.path[0] = os.environ['PYTHONPATH']
+sys.path[:1] = os.environ['PYTHONPATH'].split(os.pathsep)
 from common.host_resource_python import await_managed_process_start
 await_managed_process_start()
 import importlib, json, sys
@@ -327,6 +327,11 @@ try:
     module = importlib.import_module(prepared["module"])
     if Path(module.__file__).resolve() != Path(prepared["entrypoint"]["path"]).resolve():
         raise ValueError("prepared module identity differs")
+    source_root = Path(prepared["import_root"]).resolve()
+    for name, loaded in tuple(sys.modules.items()):
+        if (name == "msplatform" or name.startswith("msplatform.")) and getattr(loaded, "__file__", None):
+            if not Path(loaded.__file__).resolve().is_relative_to(source_root):
+                raise ValueError("prepared scientific core escaped its frozen source root")
     module.execute_prepared_run(config, session, request_path, completion)
 except BaseException as error:
     failure = {"type": type(error).__name__, "module": type(error).__module__, "message": str(error),
@@ -344,7 +349,8 @@ except BaseException as error:
   $native=Get-RunNativeExecutionContext -Package $Package -Tool 'prepared Python worker' `
     -Paths @($ExecutionRequest,$RunConfig,$SessionPath,$CompletionPath,$WaitPath,$stdout,$stderr,$Package.artifact_run_dir)
   $environment=@{};foreach($name in $native.environment.Keys){$environment[$name]=$native.environment[$name]}
-  $environment.PYTHONPATH=$request.prepared.import_root;$environment.PYTHONNOUSERSITE='1';$environment.PYTHONDONTWRITEBYTECODE='1'
+  $environment.PYTHONPATH=@(Get-RunPythonImportRoots -RepoRoot $request.prepared.import_root)-join[IO.Path]::PathSeparator
+  $environment.PYTHONNOUSERSITE='1';$environment.PYTHONDONTWRITEBYTECODE='1'
   $environment.MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=$HostStatePath
   if($config.Contains('paths')){
     $environment.MASS_SPECTROMETRY_ARTIFACT_ROOT=[string]$config.paths.artifact_root

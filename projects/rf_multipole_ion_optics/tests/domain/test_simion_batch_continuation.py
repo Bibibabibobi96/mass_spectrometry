@@ -80,6 +80,8 @@ exit 0
             script = root/"finite_recovery.ps1"
             script.write_text(r'''param($Repo,$Root,$Python)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
 $errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1'),[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
 $fixed=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$continuationPredecessor-and$pendingRuns.Count-gt0'},$true)

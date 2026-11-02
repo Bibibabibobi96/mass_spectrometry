@@ -17,7 +17,7 @@ root=Path(sys.argv[1]).resolve()
 origins=Path(sys.argv[2])
 module=sys.argv[3]
 arguments=sys.argv[4:]
-sys.path.insert(0,str(root))
+sys.path[:0]=[str(root/'src'),str(root)] if (root/'src').is_dir() else [str(root)]
 entry_origin=None
 try:
     if module:
@@ -27,14 +27,14 @@ try:
         sys.argv=[module,*arguments]
         runpy.run_module(module,run_name="__main__",alter_sys=True)
     else:
-        for name in ("common.ion_release.cylinder","projects.orthogonal_accelerator.analysis.component_focus_simion_source","projects.orthogonal_accelerator.analysis.component_focus_analysis"):
+        for name in ("msplatform.ion_release.cylinder","projects.orthogonal_accelerator.analysis.component_focus_simion_source","projects.orthogonal_accelerator.analysis.component_focus_analysis"):
             importlib.import_module(name)
         campaign=json.loads(Path(arguments[0]).read_text(encoding="utf-8-sig"))
         from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile
         load_geometry_profile(campaign["geometry_profile_id"])
 finally:
     paths={name:str(Path(value.__file__).resolve()) for name,value in sys.modules.items()
-           if name.split('.')[0] in ("common","projects") and getattr(value,"__file__",None)}
+           if name.split('.')[0] in ("common","projects","msplatform") and getattr(value,"__file__",None)}
     if entry_origin is not None:
         paths[module]=str(entry_origin)
     if any(not Path(path).is_relative_to(root) for path in paths.values()):
@@ -60,10 +60,14 @@ function Initialize-FocusFrozenPython {
   $enumerate=@'
 import json,sys
 from pathlib import Path
-sys.path.insert(0,sys.argv[1])
+root=Path(sys.argv[1]).resolve()
+sys.path[:0]=[str(root/'src'),str(root)] if (root/'src').is_dir() else [str(root)]
 from common.contracts.frozen_inputs import enumerate_python_sources
 request=json.load(sys.stdin)
-print(json.dumps(enumerate_python_sources(Path(request["source_root"]),package_roots=request["package_roots"])))
+paths=enumerate_python_sources(Path(request["source_root"]),package_roots=request["package_roots"])
+paths=sorted(set(paths)|set(enumerate_python_sources(root,package_roots=['src/msplatform'],
+    provider_root='src/msplatform',resource_suffixes=('.schema.json',))))
+print(json.dumps(paths))
 '@
   $request=@{source_root=$RepoRoot;package_roots=$groups}|ConvertTo-Json -Depth 10 -Compress
   $savedOutputEncoding=$OutputEncoding
@@ -97,7 +101,7 @@ $result=Get-Content -Raw (Join-Path $family 'results\component_focus_pa_result.j
 $campaign=(Resolve-Path -LiteralPath $CampaignPath).Path;$package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $workspaceRoot 'artifacts\projects\orthogonal_accelerator') -RunId $RunId -Project orthogonal_accelerator -Mode component_focus_flight -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'Independent closed-two-zone component focus flight.' -AdditionalDirectories @('simion') -CapacityLedgerLifecycleEnabled
 $lease=$null;$done=$false;$failureDetail='';try{$lease=Enter-HostExecutionLease -Role SIMION -Stage flight -RunId $RunId;$run=$package.run_dir;$inputs=$package.input_dir;$solver=Join-Path $run 'simion';$results=$package.result_dir;$logs=$package.log_dir
  $campaignTemplate=Join-Path $inputs 'campaign_template.json';$runCampaign=Join-Path $inputs 'campaign.json';Copy-VerifiedRunInput $campaign $campaignTemplate|Out-Null;Copy-VerifiedRunInput $plan (Join-Path $inputs 'component_focus_pa_plan.json')|Out-Null;Copy-VerifiedRunInput (Join-Path $repoRoot 'common/simion/scientific_event_csv.lua') (Join-Path $solver 'component_focus.scientific_event_csv.lua')|Out-Null;Copy-VerifiedRunInput (Join-Path $projectRoot 'simion\component_focus.lua') (Join-Path $solver 'component_focus.lua')|Out-Null;Copy-VerifiedRunInput (Join-Path $projectRoot 'simion\build_component_focus_iob.lua') (Join-Path $solver 'build_component_focus_iob.lua')|Out-Null
- $releaseSpec=Join-Path $inputs 'release_spec.json';$c=Get-Content -Raw $campaignTemplate|ConvertFrom-Json;Copy-VerifiedRunInput (Resolve-Path -LiteralPath $ReleaseSpecPath).Path $releaseSpec|Out-Null;$c.release_spec=(Get-Content -Raw $releaseSpec|ConvertFrom-Json);$c|ConvertTo-Json -Depth 12|Set-Content $runCampaign -Encoding utf8;$p=Get-Content -Raw (Join-Path $inputs 'component_focus_pa_plan.json')|ConvertFrom-Json;$paSpan=@($p.numerical_domain.span_mm);$storedSpan=@($p.numerical_domain.stored_span_mm);if($paSpan.Count-ne3-or$storedSpan.Count-ne3){throw 'Provider PA span metadata is invalid'};for($i=0;$i-lt3;$i++){if([double]$paSpan[$i]-ne[double]$manifest.identity.grid_phase.pa_span_mm[$i]-or[double]$storedSpan[$i]-ne[double]$manifest.identity.grid_phase.stored_span_mm[$i]){throw 'Published PA span differs from provider plan'}};$resolvedProjection=$c.simion_projection.PSObject.Copy();$resolvedProjection.local_pa_span_mm=@($paSpan);$resolvedProjection.local_exit_z_mm=[double]$p.numerical_domain.local_exit_z_mm;$projectionPath=Join-Path $inputs 'resolved_projection.json';$resolvedProjection|ConvertTo-Json -Depth 12|Set-Content $projectionPath -Encoding utf8;$originX=[double]$p.numerical_domain.iob_origin_mm[0];$originY=[double]$p.numerical_domain.iob_origin_mm[1]+[double]$c.operating_point.instance_center_y_mm;$originZ=[double]$p.numerical_domain.iob_origin_mm[2];$focusPython=Initialize-FocusFrozenPython -RepoRoot $repoRoot -RunConfig $package.run_config -Python $python -CampaignPath $runCampaign;$release=Join-Path $inputs 'release.csv';$releaseReceipt=Join-Path $inputs 'release_receipt.json';Invoke-FocusFrozenPython -Python $python -CodeRoot $focusPython.code_root -OriginsPath $focusPython.origins_path -Module common.ion_release.cylinder -Arguments @('--materialize',$releaseSpec,'--state-table',$release,'--receipt',$releaseReceipt);if($LASTEXITCODE-ne0){throw 'Common ion release failed'}
+ $releaseSpec=Join-Path $inputs 'release_spec.json';$c=Get-Content -Raw $campaignTemplate|ConvertFrom-Json;Copy-VerifiedRunInput (Resolve-Path -LiteralPath $ReleaseSpecPath).Path $releaseSpec|Out-Null;$c.release_spec=(Get-Content -Raw $releaseSpec|ConvertFrom-Json);$c|ConvertTo-Json -Depth 12|Set-Content $runCampaign -Encoding utf8;$p=Get-Content -Raw (Join-Path $inputs 'component_focus_pa_plan.json')|ConvertFrom-Json;$paSpan=@($p.numerical_domain.span_mm);$storedSpan=@($p.numerical_domain.stored_span_mm);if($paSpan.Count-ne3-or$storedSpan.Count-ne3){throw 'Provider PA span metadata is invalid'};for($i=0;$i-lt3;$i++){if([double]$paSpan[$i]-ne[double]$manifest.identity.grid_phase.pa_span_mm[$i]-or[double]$storedSpan[$i]-ne[double]$manifest.identity.grid_phase.stored_span_mm[$i]){throw 'Published PA span differs from provider plan'}};$resolvedProjection=$c.simion_projection.PSObject.Copy();$resolvedProjection.local_pa_span_mm=@($paSpan);$resolvedProjection.local_exit_z_mm=[double]$p.numerical_domain.local_exit_z_mm;$projectionPath=Join-Path $inputs 'resolved_projection.json';$resolvedProjection|ConvertTo-Json -Depth 12|Set-Content $projectionPath -Encoding utf8;$originX=[double]$p.numerical_domain.iob_origin_mm[0];$originY=[double]$p.numerical_domain.iob_origin_mm[1]+[double]$c.operating_point.instance_center_y_mm;$originZ=[double]$p.numerical_domain.iob_origin_mm[2];$focusPython=Initialize-FocusFrozenPython -RepoRoot $repoRoot -RunConfig $package.run_config -Python $python -CampaignPath $runCampaign;$release=Join-Path $inputs 'release.csv';$releaseReceipt=Join-Path $inputs 'release_receipt.json';Invoke-FocusFrozenPython -Python $python -CodeRoot $focusPython.code_root -OriginsPath $focusPython.origins_path -Module msplatform.ion_release.cylinder -Arguments @('--materialize',$releaseSpec,'--state-table',$release,'--receipt',$releaseReceipt);if($LASTEXITCODE-ne0){throw 'Common ion release failed'}
  $fly=Join-Path $solver 'component_focus_input.fly2';$sourceStates=Join-Path $solver 'component_focus.source_states.lua';$sourceReceipt=Join-Path $results 'source_projection.json';Invoke-FocusFrozenPython -Python $python -CodeRoot $focusPython.code_root -OriginsPath $focusPython.origins_path -Module projects.orthogonal_accelerator.analysis.component_focus_simion_source -Arguments @('--release-receipt',$releaseReceipt,'--campaign',$runCampaign,'--provider-plan',(Join-Path $inputs 'component_focus_pa_plan.json'),'--resolved-projection',$projectionPath,'--fly2',$fly,'--source-states',$sourceStates,'--receipt',$sourceReceipt);if($LASTEXITCODE-ne0){throw 'SIMION source projection failed'}
  $frozenConfig=Get-Content -LiteralPath $package.run_config -Raw -Encoding utf8|ConvertFrom-Json -AsHashtable;$frozenConfig.inputs['release.csv']=Join-Path (Split-Path -Parent $package.run_config) 'inputs/release.csv';$frozenConfig|ConvertTo-Json -Depth 100|Set-Content -LiteralPath $package.run_config -Encoding utf8
  $testPlaneLibrary=Join-Path (Split-Path -Parent $SimionExe) 'examples\test_plane\testplanelib.lua';if(-not(Test-Path -LiteralPath $testPlaneLibrary -PathType Leaf)){throw 'SIMION official test_plane library is required'};Copy-VerifiedRunInput $testPlaneLibrary (Join-Path $solver 'testplanelib.lua')|Out-Null

@@ -394,10 +394,18 @@ foreach($completed in @($true,$false)){
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             snapshot=run/'inputs/runtime_snapshot'
             shutil.rmtree(author)
-            environment=dict(os.environ);environment.pop('PYTHONPATH',None)
+            from common.contracts.frozen_inputs import python_import_roots
+
+            environment=dict(os.environ)
+            environment['PYTHONPATH']=os.pathsep.join(python_import_roots(snapshot))
             result=subprocess.run([sys.executable,'-B','-s','-c',
                 "from pathlib import Path; from integrations.workflows.paired_accelerator_static_field import runtime; "
                 "assert Path(runtime.__file__).is_relative_to(Path.cwd()); "
+                "import msplatform.contracts.particle_physics as physics; "
+                "assert Path(physics.__file__).resolve().is_relative_to(Path.cwd().resolve() / 'src'), physics.__file__; "
+                "assert all(Path(module.__file__).resolve().is_relative_to(Path.cwd().resolve()) "
+                "for name,module in list(__import__('sys').modules.items()) "
+                "if name.startswith(('common.','integrations.','projects.','msplatform')) and getattr(module,'__file__',None)); "
                 "runtime.prepare_run(Path(__import__('sys').argv[1]));print('FROZEN_PREPARE=PASS')",str(run)],
                 cwd=snapshot,env=environment,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=60)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)

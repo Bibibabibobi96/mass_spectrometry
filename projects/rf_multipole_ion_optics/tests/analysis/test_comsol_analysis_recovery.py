@@ -339,6 +339,8 @@ $source.stage_evidence|ConvertTo-Json -Depth 20 -Compress
             script.write_text(r"""
 param($Repo,$Root)
 $ErrorActionPreference='Stop'
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
 $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1'),[ref]$null,[ref]$null)
 $function=@($ast.FindAll({param($node)$node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-ceq'Invoke-FiniteComsolAnalysis'},$true))
 if($function.Count-ne1){throw 'Actual shared analysis function missing'}

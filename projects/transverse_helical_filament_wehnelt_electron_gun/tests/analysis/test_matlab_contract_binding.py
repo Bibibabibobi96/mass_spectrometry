@@ -11,6 +11,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from common.contracts.frozen_inputs import enumerate_python_sources
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 ACTIVE_SCRIPTS = (
@@ -250,7 +252,6 @@ class MatlabContractBindingTests(unittest.TestCase):
         self,
     ) -> None:
         required = (
-            "Push-Location $snapshotRoot",
             "-m projects.transverse_helical_filament_wehnelt_electron_gun.analysis.resolve_contract",
             "--baseline $frozenInputs.baseline",
             "--modes $frozenInputs.numerical_modes",
@@ -639,6 +640,7 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
             "common/contracts/strict_json.py",
             "common/contracts/build_project_registry.py",
             "common/contracts/machine_contracts.py",
+            "common/contracts/frozen_inputs.py",
             "common/comsol/run_comsol_r2025b.ps1",
             "common/comsol/resolve_comsol_64.ps1",
             "common/comsol/livelink_failure_classification.ps1",
@@ -674,13 +676,32 @@ function Get-HostResourceSnapshot {
   }
 }
 ''')
-            for source in sorted(
-                (REPO_ROOT / "common" / "contracts" / "schemas").glob("*.json")
-            ):
-                freeze(
-                    source,
-                    snapshot / "common" / "contracts" / "schemas" / source.name,
-                )
+            expected_core = enumerate_python_sources(
+                REPO_ROOT, package_roots=("src/msplatform",), provider_root="src/msplatform",
+                resource_suffixes=(".schema.json",),
+            )
+            selection_start = self.build_runner.index("  $selectCoreSources = @'")
+            selection_end = self.build_runner.index(
+                "\nforeach ($entry in $bootstrapIdentity", selection_start
+            )
+            freeze_script = (
+                "$ErrorActionPreference='Stop';Set-StrictMode -Version Latest;"
+                f". '{REPO_ROOT / 'common/contracts/run_artifact_support.ps1'}';"
+                f"$repoRoot='{REPO_ROOT}';$snapshotRoot='{snapshot}';"
+                f"$package=@{{python='{sys.executable}'}};$frozenInputs=@{{}};"
+                + self.build_runner[selection_start:selection_end]
+            )
+            freeze_environment = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+            selected = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", freeze_script],
+                cwd=snapshot, env=freeze_environment, check=False, capture_output=True,
+                text=True, encoding="utf-8", timeout=30,
+            )
+            self.assertEqual(selected.returncode, 0, selected.stdout + selected.stderr)
+            for relative in expected_core:
+                target = snapshot / relative
+                self.assertEqual(target.read_bytes(), (REPO_ROOT / relative).read_bytes())
+                declared.add(target.resolve())
 
             environment = os.environ.copy()
             environment.pop("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN", None)
@@ -761,6 +782,7 @@ function Get-HostResourceSnapshot {
             admission = (
                 "$ErrorActionPreference='Stop';Set-StrictMode -Version Latest;"
                 f"$snapshotRoot='{snapshot}';$package=@{{python='{sys.executable}'}};"
+                f". '{snapshot / 'common/contracts/run_artifact_support.ps1'}';"
                 f"$frozenInputs=@{{baseline='{frozen_project / 'config/baseline.json'}';"
                 f"numerical_modes='{frozen_project / 'config/numerical_modes.json'}';"
                 f"resolved_contract='{frozen_project / 'config/resolved_model.json'}'}};"

@@ -6,6 +6,7 @@ import csv
 import shutil
 import json
 from pathlib import Path
+import subprocess
 import sys
 import struct
 import tempfile
@@ -15,12 +16,75 @@ from unittest.mock import patch
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_distance_study import (
     lua_literal, read_source, validate_contract, validate_contour_contract, validate_replay_contract, prepare_replay_package, analyze_replay_package,
-    prepare, prepare_recorded_analysis, validate_fields, main, _contour_source_tables, _contour_geometry_and_voltage, _freeze_recorded_contour_source, _freeze_completed_field_source,
+    prepare, prepare_recorded_analysis, validate_fields, main, freeze_code, FROZEN_SCIENTIFIC_BRIDGE_MODULES, _contour_source_tables, _contour_geometry_and_voltage, _freeze_recorded_contour_source, _freeze_completed_field_source,
 )
 from common.contracts.write_run_manifest import file_record
 from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_ip_prism_local_geometry import fixture
 
 MODULE = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_distance_study"
+
+
+class FrozenStudySourceTests(unittest.TestCase):
+    def test_real_source_snapshot_and_runner_refuse_installed_core_fallback(self):
+        repo = Path(__file__).resolve().parents[4]
+        runner = repo / "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_ip_prism_distance_study.ps1"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inputs = root / "inputs"
+            inputs.mkdir()
+            with patch.dict(sys.modules, study_source_alias=sys.modules[MODULE],
+                            study_test_alias=sys.modules[__name__]):
+                freeze_code(repo, inputs)
+            code = inputs / "code"
+            for relative in FROZEN_SCIENTIFIC_BRIDGE_MODULES:
+                self.assertEqual((code / relative).read_bytes(), (repo / relative).read_bytes())
+            self.assertFalse(any("tests" in path.relative_to(code).parts for path in code.rglob("*.py")))
+            probe = r'''
+import pathlib, sys
+root = pathlib.Path(sys.argv[1]).resolve()
+sys.path.insert(0, str(root))
+from common.contracts.frozen_inputs import python_import_roots
+sys.path[:0] = python_import_roots(root)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ip_prism_distance_study as study
+from common.contracts.particle_physics import kinetic_energy_ev as legacy_energy
+from msplatform.contracts.particle_physics import kinetic_energy_ev
+assert legacy_energy is kinetic_energy_ev
+assert pathlib.Path(study.__file__).resolve().is_relative_to(root)
+assert study.lua_literal({'vz': -40, 'frame': 'MR'}) == '{["vz"]=-40,["frame"]="MR"}'
+origins = [pathlib.Path(module.__file__).resolve() for name, module in tuple(sys.modules.items())
+           if (name == 'msplatform' or name.startswith('msplatform.')) and getattr(module, '__file__', None)]
+assert origins and all(origin.is_relative_to(root / 'src') for origin in origins), origins
+print('FROZEN_STUDY_SOURCE=PASS')
+'''
+            result = subprocess.run(
+                [sys.executable, "-I", "-B", "-c", probe, str(code)], cwd=root,
+                capture_output=True, text=True, encoding="utf-8", timeout=60, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("FROZEN_STUDY_SOURCE=PASS", result.stdout)
+            script = r'''
+param($Runner,$Code,$Python,$Support)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. $Support
+$ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$null)
+$node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-StudyPython'},$true)
+Invoke-Expression $node.Extent.Text
+$repoRoot=$Code;$frozenCode=$Code;$frozenLocation=$true;$python=$Python
+$env:PYTHONPATH=@(Get-RunPythonImportRoots -RepoRoot $Code)-join[IO.Path]::PathSeparator
+Invoke-StudyPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_distance_study','--help')
+'''
+            script_path = root / "invoke_study.ps1"
+            script_path.write_text(script, encoding="utf-8", newline="\n")
+            command = ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(script_path),
+                       str(runner), str(code), sys.executable,
+                       str(repo / "common/contracts/run_artifact_support.ps1")]
+            admitted = subprocess.run(command, cwd=root, capture_output=True, text=True,
+                                      encoding="utf-8", timeout=60, check=False)
+            self.assertEqual(admitted.returncode, 0, admitted.stdout + admitted.stderr)
+            (code / "src/msplatform/__init__.py").unlink()
+            refused = subprocess.run(command, cwd=root, capture_output=True, text=True,
+                                     encoding="utf-8", timeout=60, check=False)
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertRegex(refused.stderr, "core|msplatform")
 
 
 class DistanceContractTests(unittest.TestCase):

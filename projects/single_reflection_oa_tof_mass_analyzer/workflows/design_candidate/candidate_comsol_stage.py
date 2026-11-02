@@ -6,7 +6,23 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.machine_contracts import load_json
+from common.contracts.frozen_inputs import python_import_roots
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import frozen_source_path, verify_candidate_source_closure
+
+_FROZEN_PYTHON_BOOTSTRAP = """
+import sys
+from pathlib import Path
+source_root = Path(sys.argv[1]).resolve()
+sys.path.insert(0, str(source_root))
+from common.contracts.frozen_inputs import python_import_roots
+sys.path[:0] = python_import_roots(source_root)
+def check_frozen_core():
+    for name, loaded in tuple(sys.modules.items()):
+        if (name == 'msplatform' or name.startswith('msplatform.')) and getattr(loaded, '__file__', None):
+            if not Path(loaded.__file__).resolve().is_relative_to(source_root):
+                raise ValueError('candidate scientific core escaped its frozen source root')
+"""
+
 
 def _report_value(path: Path, key: str) -> str:
     prefix = f"{key}="
@@ -127,10 +143,10 @@ def analyze_detector_request(request: Path, closure: dict[str, Any], log: Path, 
     """Execute the sole existing detector analysis consumer from frozen code."""
     runtime._run_command([
         str(Path(closure["runtime"]["python_executable"]).resolve()), "-I", "-B", "-c",
-        "import sys;sys.path.insert(0,sys.argv[1]);"
+        _FROZEN_PYTHON_BOOTSTRAP +
         "from projects.single_reflection_oa_tof_mass_analyzer.analysis.analyze_comsol_detector_events import main;"
-        "sys.exit(main(['--request',sys.argv[2]]))", str(closure["code_root"]), str(request),
-    ], log, {"PYTHONPATH": str(closure["code_root"]), "PYTHONDONTWRITEBYTECODE": "1"})
+        "check_frozen_core();sys.exit(main(['--request',sys.argv[2]]))", str(closure["code_root"]), str(request),
+    ], log, {"PYTHONPATH": os.pathsep.join(python_import_roots(Path(closure["code_root"]))), "PYTHONDONTWRITEBYTECODE": "1"})
     receipt = Path(load_json(request)["analysis_output_dir"]) / "analysis_receipt.json"
     if not receipt.is_file():
         raise RuntimeError(f"COMSOL detector-event Python analysis receipt is missing: {receipt}")
@@ -193,9 +209,9 @@ def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: 
     output = root / "results"
     output.mkdir(exist_ok=True)
     runtime._run_command([closure["runtime"]["python_executable"], "-I", "-B", "-c",
-        "import sys;sys.path.insert(0,sys.argv[1]);"
+        _FROZEN_PYTHON_BOOTSTRAP +
         "from projects.single_reflection_oa_tof_mass_analyzer.analysis.analyze_comsol_detector_events import analyze_request;"
-        "from projects.single_reflection_oa_tof_mass_analyzer.analysis.reference_analysis_core import load_contract,DEFAULT_CONTRACT;load_contract(DEFAULT_CONTRACT)",
+        "from projects.single_reflection_oa_tof_mass_analyzer.analysis.reference_analysis_core import load_contract,DEFAULT_CONTRACT;check_frozen_core();load_contract(DEFAULT_CONTRACT)",
         str(closure["code_root"])], root / "logs/analysis_import_preflight.log")
     exports = selection["exports"]
     receipt_path = None

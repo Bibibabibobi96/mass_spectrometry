@@ -15,6 +15,7 @@ from common.contracts.capacity_ledger import initialize_capacity_ledger, load_ca
 from common.contracts.capacity_protection import load_capacity_protection_leases
 from common.contracts.verify_artifact_layout import verify_project
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_run_lifecycle import finalize_candidate_run, start_candidate_run
+from common.contracts.frozen_inputs import enumerate_python_sources
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import PYTHON_BOUND_SOURCES, RELATIVE_PATHS, freeze_candidate_source_closure, frozen_source_path, verify_candidate_source_closure
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.prepare_candidate_consumers import prepare
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import _registered_candidate_template, prepare_candidate_run, validate_artifact_capacity, validate_workflow
@@ -324,6 +325,8 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
                 artifacts = artifact_project.parent.parent
                 initialize_capacity_ledger(artifacts, objects=[])
                 request = candidate_workflow._prepare_execution_request(plan_path, sys.executable, None, None)
+                from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
+                copy_scientific_core(Path(request["prepared"]["import_root"]), root)
                 # This explicit software callback has a separate import root;
                 # copy the common handshake bootstrap from the frozen closure.
                 (root / "common/contracts").mkdir(parents=True)
@@ -347,6 +350,8 @@ assert fixture_support.PROJECT_ROOT == helper.parents[3]
 assert fixture_support.REPO_ROOT == Path(__file__).parent/'fixture_source'
 assert Path(workflow.__file__).resolve().is_relative_to(Path(sys.path[0]).resolve())
 import json
+import msplatform.io.file_identity as core_identity
+assert Path(core_identity.__file__).resolve().is_relative_to(Path(__file__).parent/'src')
 Path(__file__).with_name('fixture_layout_probe.json').write_text(json.dumps({
     'helper':str(helper.resolve()),'project_root':str(fixture_support.PROJECT_ROOT),
     'repository_root':str(fixture_support.REPO_ROOT),'runtime_module':workflow.__file__}), encoding='utf-8')
@@ -432,18 +437,29 @@ def execute_prepared_run(*args):
             closure = freeze_candidate_source_closure(root / "code", root / "artifacts")
             report_source = "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_report_model_timing.m"
             self.assertEqual(Path(frozen_source_path(closure, report_source)).read_bytes(), (REPO_ROOT / report_source).read_bytes())
-            result = subprocess.run([
-                sys.executable, "-B", "-c",
+            from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_comsol_stage import _FROZEN_PYTHON_BOOTSTRAP
+            imports = (
                 "from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate_workflow; "
                 "from projects.single_reflection_oa_tof_mass_analyzer.analysis import simion_component_pa_plan; "
                 "from common.contracts import reconcile_artifact_capacity, verify_artifact_layout, capacity_ledger, solver_review_retirement; "
-                "from pathlib import Path; "
                 "solver_review_retirement._assert_runtime_retirement_unprotected(Path.cwd()/'empty-artifacts', Path.cwd()/'empty-artifacts/run'); "
-                "print('FROZEN_IMPORT_PASS')",
-            ], cwd=closure["code_root"], capture_output=True, text=True, check=False, timeout=60,
-                env={key: value for key, value in os.environ.items() if key != "PYTHONPATH"})
+                "from msplatform.analysis import peak_metrics; check_frozen_core(); "
+                "assert Path(peak_metrics.__file__).resolve().is_relative_to(source_root/'src'); "
+                "print('FROZEN_IMPORT_PASS')"
+            )
+            command = [sys.executable, "-I", "-B", "-c", _FROZEN_PYTHON_BOOTSTRAP + imports, closure["code_root"]]
+            result = subprocess.run(command, cwd=root, capture_output=True, text=True,
+                check=False, timeout=60, encoding="utf-8")
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("FROZEN_IMPORT_PASS", result.stdout)
+            # Missing frozen core must not be filled by this interpreter's
+            # editable installation, including when the entire src tree is gone.
+            (Path(closure["code_root"])/"src").rename(root/"removed-src")
+            result = subprocess.run(command, cwd=root, capture_output=True, text=True,
+                check=False, timeout=60, encoding="utf-8")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn("FROZEN_IMPORT_PASS", result.stdout)
+
 
 
     def test_artifact_capacity_requires_explicit_positive_bytes_and_basis(self):
@@ -465,6 +481,29 @@ def execute_prepared_run(*args):
                 validate_artifact_capacity(invalid)
 
 
+    def test_canonical_peak_change_invalidates_only_its_analysis_projection(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import candidate_comsol_source_phases
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            closure = freeze_candidate_source_closure(root/"code", root/"artifacts",
+                resolved_contract=PROJECT_ROOT/"config/resolved_geometry.json",
+                analysis_contract=PROJECT_ROOT/"config/analysis_contract.json")
+            before = candidate_comsol_source_phases(closure)
+            identifier = "src/msplatform/analysis/peak_metrics.py"
+            self.assertIn(identifier, {row["source_id"] for row in before["analysis"]["sources"]})
+            self.assertIn("src/msplatform/io/file_identity.py",
+                {row["source_id"] for row in before["analysis"]["sources"]})
+            path = Path(closure["code_root"])/identifier
+            path.write_bytes(path.read_bytes()+b"\n# changed analysis implementation fixture\n")
+            row = next(item for item in closure["sources"] if item["source_id"] == identifier)
+            row.update(bytes=path.stat().st_size, sha256=sha256(path))
+            verify_candidate_source_closure(closure)
+            after = candidate_comsol_source_phases(closure)
+            self.assertNotEqual(before["analysis"], after["analysis"])
+            for phase in ("native", "export", "sync"):
+                self.assertEqual(before[phase], after[phase])
+
+
     def test_source_closure_explicit_workflow_extras_share_freezing_and_identity(self):
         extra = "common/simion/batch_continuation.py"
         with tempfile.TemporaryDirectory() as directory:
@@ -474,7 +513,8 @@ def execute_prepared_run(*args):
                 extra_source_ids=(extra, extra, RELATIVE_PATHS[0]),
             )
             records = {item["source_id"]: item for item in closure["sources"]}
-            self.assertEqual(len(records), len(RELATIVE_PATHS) + 1)
+            self.assertEqual(len(records), len(RELATIVE_PATHS) + 1 + len(enumerate_python_sources(
+                REPO_ROOT, package_roots=("src/msplatform",), resource_suffixes=(".schema.json",))))
             self.assertEqual(records[extra]["source_sha256"], sha256(REPO_ROOT / extra))
             reducer = "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_detector_arrival_reducer.m"
             reducer_path = Path(frozen_source_path(closure, reducer))
@@ -646,7 +686,8 @@ def execute_prepared_run(*args):
             closure = plan["execution_source_closure"]
             verify_candidate_source_closure(closure)
             source_ids = {item["source_id"] for item in closure["sources"]}
-            self.assertEqual(source_ids, set(RELATIVE_PATHS) | {
+            self.assertEqual(source_ids, set(RELATIVE_PATHS) | set(enumerate_python_sources(
+                REPO_ROOT, package_roots=("src/msplatform",), resource_suffixes=(".schema.json",))) | {
                 "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json",
                 "projects/single_reflection_oa_tof_mass_analyzer/config/analysis_contract.json",
             })
@@ -2373,6 +2414,8 @@ def postprocess_public_entry(root, artifact):
     # The real CLI must perform its own runtime binding. Copy original authors,
     # not the transformed output of freeze_candidate_source_closure.
     selected=set(RELATIVE_PATHS)
+    selected.update(enumerate_python_sources(REPO_ROOT, package_roots=("src/msplatform",),
+        resource_suffixes=(".schema.json",)))
     dependency=load_json(PROJECT_ROOT/"config/accelerator_dependency.json")
     provider_contract=REPO_ROOT/dependency["provider_contract"]
     provider_root=provider_contract.parents[1].relative_to(REPO_ROOT)
@@ -2416,7 +2459,8 @@ def postprocess_public_entry(root, artifact):
     env=os.environ.copy()
     env.update(SIMULATION_PYTHON_EXE=sys.executable,MASS_SPECTROMETRY_ARTIFACT_ROOT=str(artifact),
                MASS_SPECTROMETRY_EXECUTION_ROOT=str(root/"native"))
-    bootstrap="import sys;sys.path.insert(0,sys.argv[1]);sys.argv=sys.argv[2:];from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate import main;main()"
+    from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_comsol_stage import _FROZEN_PYTHON_BOOTSTRAP
+    bootstrap=_FROZEN_PYTHON_BOOTSTRAP + "sys.argv=sys.argv[2:];from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate import main;check_frozen_core();main()"
     def invoke(arguments):
         return subprocess.run([sys.executable,"-I","-B","-c",bootstrap,str(author),"run_candidate.py",*arguments],
             cwd=author,env=env,capture_output=True,text=True,encoding="utf-8",timeout=240)

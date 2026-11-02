@@ -127,6 +127,7 @@ foreach($mode in @('null','error')){
                 if source.is_file() and source.suffix in {'.py','.ps1','.json'} and 'assets' not in source.parts:
                     target=facade/source.relative_to(ROOT);target.parent.mkdir(parents=True,exist_ok=True)
                     shutil.copyfile(source,target)
+            owner_fixture.copy_scientific_core(ROOT, facade)
             policy_path=facade/'common/contracts/artifact_capacity_policy.json'
             policy=json.loads(policy_path.read_text(encoding='utf-8'));policy.update(target_gib=64/1024,minimum_free_gib=0)
             policy_path.write_text(json.dumps(policy),encoding='utf-8')

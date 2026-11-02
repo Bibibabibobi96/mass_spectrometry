@@ -100,6 +100,8 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
             script = root/'finite_fixed.ps1'
             script.write_text(r'''param($Repo,$Root,$Python)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
 $errors=$null;$entry=Join-Path $Repo 'projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile($entry,[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}

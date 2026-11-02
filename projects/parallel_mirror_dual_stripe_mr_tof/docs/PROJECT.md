@@ -52,6 +52,23 @@ controller-state夹具的两个配置读取显式使用UTF-8；campaign夹具经
 不要求CI checkout自带`.venv`。历史prepared-owner单测只在可信Git版本查询边界提供受控小夹具，
 仍验证完整owner字节绑定、来源目录、聚合完成证据、缺失历史及篡改拒绝；生产查询和恢复判据保持。
 
+## 科学核心 P1 接线
+
+`analysis/simion_event_analysis.py` 直接调用 `msplatform.analysis.peak_metrics`；
+回归在拒绝旧峰形桥导入时执行真实 KDE，保持原适配及拒绝行为。
+`config/ion_processor_dependency.json` 的 `state_schema` 指向唯一规范资源
+`src/msplatform/contracts/schemas`，不恢复旧目录资源副本。
+本轮跨 RF、OA、布局适配和 MR 的 78 项行为测试通过（7.326 秒）；
+其后 joint-flight、依赖及路径相关 16 项测试通过（7.465 秒）。
+这些结果验证软件接线与来源，未新增飞行、场求解或科学资格。
+
+IP/Prism 距离研究的 `freeze_code` 显式冻结规范核心与 schema，并保留实际仍调用的
+`particle_physics`、`rigid_transform`、`resolve_assembly`、`release` 四个兼容桥。
+runner 使用公共导入根，并在每次 Python 调用前校验核心及目标模块来自本次快照；
+缺少冻结核心时拒绝宿主安装补齐。上述桥随具名调用迁移退出，最迟 P4 删除。
+MR 距离研究整模块 30 项及 IP 隔离 probe 1 项通过（17.414 秒），包括真实冻结源码、
+核心来源、缺文件拒绝及原 source/clock/velocity 断言；这是软件验收，没有重跑旧局部物理。
+
 ## 当前决策与完成边界
 
 两Prism分段诊断的阶段B只使用`stage_b_p1_exit_to_p2_low_field_reference`；旧的pre-reflection／Stripe入口别名已退役，

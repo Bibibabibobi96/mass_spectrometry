@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from common.contracts.frozen_inputs import enumerate_python_sources, freeze_file
+from common.contracts.frozen_inputs import enumerate_python_sources, freeze_file, python_import_roots
 from common.contracts.write_run_manifest import file_record
 
 
@@ -47,6 +47,69 @@ class FrozenInputTests(unittest.TestCase):
 
 
 class PythonPackageSelectionTests(unittest.TestCase):
+    def test_import_root_bootstrap_does_not_import_scientific_or_lifecycle_packages(self):
+        root = Path(__file__).resolve().parents[2]
+        code = ('import sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);'
+                'from common.contracts.frozen_inputs import python_import_roots;'
+                'assert not any(n=="msplatform" or n.startswith("msplatform.") for n in sys.modules);'
+                'assert "common.contracts.write_run_manifest" not in sys.modules;'
+                'assert python_import_roots(Path(sys.argv[1]))[0]==str(Path(sys.argv[1])/"src")')
+        result = subprocess.run([sys.executable, '-I', '-B', '-c', code, str(root)], cwd=root,
+                                capture_output=True, text=True, check=False, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_src_package_resources_are_explicit_and_imports_stay_in_the_frozen_tree(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            author, frozen = root / 'author', root / 'frozen'
+            files = {'src/msplatform/__init__.py': '',
+                     'src/msplatform/entry.py': 'from pathlib import Path\nVALUE=Path(__file__).with_name("schema.schema.json").read_text()\n',
+                     'src/msplatform/schema.schema.json': '{"fixture":42}',
+                     'src/msplatform/unrequested.json': '{}',
+                     'src/msplatform/tests/forbidden.schema.json': '{}'}
+            for relative, content in files.items():
+                target = author / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding='utf-8')
+            selection = dict(package_roots=['src/msplatform'], provider_root='src/msplatform')
+            plain = enumerate_python_sources(author, **selection)
+            self.assertFalse(any(name.endswith('.json') for name in plain))
+            selected = enumerate_python_sources(author, **selection, resource_suffixes=['.schema.json'])
+            self.assertEqual(set(selected) - set(plain), {'src/msplatform/schema.schema.json'})
+            for relative in selected:
+                destination = frozen / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                freeze_file(author / relative, destination)
+            author.rename(root / 'author-unavailable')
+            roots = python_import_roots(frozen)
+            self.assertEqual(roots, [str(frozen / 'src'), str(frozen)])
+            code = ('import json,pathlib,sys;sys.path[:0]=json.loads(sys.argv[1]);'
+                    'import msplatform.entry as entry;assert entry.VALUE==\'{"fixture":42}\';'
+                    'assert pathlib.Path(entry.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[2]));'
+                    'print("FROZEN_SRC_RESOURCE=PASS")')
+            import json
+            result = subprocess.run([sys.executable, '-I', '-B', '-c', code, json.dumps(roots), str(frozen)],
+                                    cwd=root, capture_output=True, text=True, check=False, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            (frozen / 'src/msplatform/schema.schema.json').unlink()
+            result = subprocess.run([sys.executable, '-I', '-B', '-c', code, json.dumps(roots), str(frozen)],
+                                    cwd=root, capture_output=True, text=True, check=False, timeout=30)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('FileNotFoundError', result.stderr)
+
+    def test_resource_suffixes_reject_unknown_or_ambiguous_requests(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'pkg').mkdir()
+            (root / 'pkg/entry.py').write_text('', encoding='utf-8')
+            for suffixes in ('json', ['json'], ['.'], ['../json'], ['.json', '.json'], [True]):
+                with self.subTest(suffixes=suffixes), self.assertRaises(ValueError):
+                    enumerate_python_sources(root, package_roots=['pkg'], resource_suffixes=suffixes)
+            self.assertEqual(python_import_roots(root), [str(root)])
+            (root / 'src').write_text('not a directory', encoding='utf-8')
+            with self.assertRaises(ValueError):
+                python_import_roots(root)
+
     def test_package_enumerates_new_modules_and_initializers_but_not_payloads(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

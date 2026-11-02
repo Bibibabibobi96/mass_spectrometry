@@ -24,24 +24,146 @@
 跨语言实现规则由`verify_development_standards.py`检查；受管文本字节由`verify_repository_text_bytes.py`检查。
 这些门禁的统一调度仍由下述目录负责，不在本页维护第二份阶段名单。
 
-文档门禁将Changed路径以任务内UTF-8 JSON数组交给`documentation_links.py --changed-paths-file`，
-检查结束在finally清理单一临时文件，避免宽改动超过Windows命令行长度。该参数与直接CLI的
-重复`--changed-path`互斥，坏清单立即拒绝；仅运输方式改变，活动链接仍全查、历史认证仍只查实际选中范围。
+## 科学核心发行与旧入口
 
-开发标准门禁默认只执行决定PASS／FAIL的硬检查，消费者审计报告`NOT_REQUESTED`，不把未扫描写成零候选。
-显式`--audit-consumers`审计Python顶层私有函数：正式入口模块可达的引用、仅测试可达的引用、
-CLI／回调用途待核实、无静态引用候选；同时传`--show-review`时列出位置、符号及已知消费者模块。
-单独`--show-review`只列复杂度提示，不启动消费者审计。
-显式审计复用同次硬检查解析的AST，不保存跨运行身份缓存。提交钩子从Git索引读取检查器及受管源码，
-检查实际暂存内容；工作树中的未暂存修改不能掩盖暂存版本的错误。Changed范围和提交钩子的文件内硬规则只检查明确改动的受管源码；
-只有检查器或规则本身变化才扩大文件局部硬规则扫描；配置、未知路径及源码删除不自动扫描全库。
-Repository、Changed FullScope及显式无参数检查仍执行其声明的完整软件范围。
-`--path <path>`可重复指定；Changed范围用任务内临时路径清单传输，摘要保留实际路径，检查结束即清理该清单。
-显式消费者审计始终全量，不能与局部路径或暂存检查混用。
-审计使用execution profiles与门禁目录中的显式入口、字面`-m`命令及Python导入／符号引用；
-它是包含未执行分支的模块级静态证据，不证明函数实际执行。字符串、装饰器和动态调用保留不确定性，
-Lua／MATLAB／PowerShell的引用亦不会被当作无用；未解析的嵌套或动态入口仍需人工核实。
-无静态引用只产生待复核候选，不能据此自动删除；退役仍须核对真实入口、声明依赖、独立CLI与冻结用途。
+`mass-spectrometry-analysis` 0.2 的实现位于 `src/msplatform/`，使用 Python 3.11 与标准
+setuptools src 布局。正式 API 是 `msplatform.ion_release.release` 的请求校验、生成、物化和读回，
+`msplatform.assembly.resolve_assembly` 的完整布局与局部范围派生，
+`msplatform.analysis.peak_metrics` 的 `AnalysisSettings`、`compute_time_peak_metrics`、`half_height_width`，
+以及 `msplatform.contracts` 的刚体变换、粒子物理和本地 schema 校验。
+普通文件摘要位于 `msplatform.io.file_identity`；原生路径、运行生命周期及求解器执行仍由仓库机制维护。
+参数、单位和资格边界查上述离子释放、连接和分析说明；安装不授予原生或科学资格。
+
+根 `pyproject.toml` 是发行边界的唯一声明：发行完整 `msplatform` 实现和模块相邻的 schema，
+不发行 `common`、项目、运行器、测试或商业载荷。旧科学入口仅单向转发到新实现；冻结快照使用
+自身的源码和资源，不以当前安装补齐旧快照。迁移阶段与退役期限见[路线图](../docs/ROADMAP.md#科学核心与平台边界迁移)。
+
+以下为当前有限生产消费者清单，按Python AST直接导入（包括函数内导入）归类；路径均相对仓库根，
+每行目录前缀与列出的文件名组合为完整路径，不表示整个目录或通配范围。排除测试、历史与测试辅助文件；
+同一文件可能消费多座桥，数量不相加解释为独立消费者。各类责任由对应项目／集成／公共模块所有者承担。
+
+`common.ion_release`（15个生产Python文件）：源策略、生成、物化与读回。
+
+- `integrations/workflows/local_frontend/`：`prepare.py`。
+- `integrations/workflows/single_reflection_flight/`：`prepare.py`。
+- `projects/dual_cone_tandem_quadrupole_ion_interface/simion/`：`prepare.py`。
+- `projects/dual_pressure_rectilinear_ion_processor/analysis/`：`functional.py`、`guide_interface.py`、`upstream_admission.py`。
+- `projects/orthogonal_accelerator/analysis/`：`component_focus_analysis.py`、`component_focus_workflow.py`。
+- `projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`bunch_source_and_schedule.py`、`execution_binding.py`。
+- `projects/rf_multipole_ion_optics/analysis/`：`generate_official_particle_table.py`、`generate_rf_multipole_family_mother_sample.py`、`paired_particle_source_bundle.py`。
+- `projects/rf_multipole_ion_optics/runtime/`：`particle_source_preflight.py`。
+- `projects/rf_multipole_ion_optics/workflows/mass_filter_reference/`：`run_finite_length.py`。
+
+退出条件：上述调用者迁为直接规范API，并保留对应科学、失败与冻结回归后移除桥，最迟P4。
+
+`common.integration.resolve_assembly`（8个生产Python文件）：完整布局编译、局部范围派生。
+
+- `integrations/workflows/accelerator_interface/`：`prepare.py`。
+- `integrations/workflows/cooled_frontend/`：`prepare.py`。
+- `integrations/workflows/local_frontend/`：`prepare.py`。
+- `integrations/workflows/multipole_ip/`：`prepare.py`。
+- `integrations/workflows/paired_accelerator_static_field/`：`prepare.py`。
+- `integrations/workflows/single_reflection_flight/`：`prepare.py`。
+- `projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`native_system_geometry.py`、`prepared_joint_trial.py`。
+
+退出条件：上述调用者迁为直接规范API，并保留对应科学、失败与冻结回归后移除桥，最迟P4。
+
+`common.analysis.peak_metrics`（19个生产Python文件）：峰宽、时间峰、映射及bootstrap分析。
+
+- `projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`measured_component_analysis.py`、`source_z_energy_timing_diagnostic.py`。
+- `projects/rf_multipole_ion_optics/core/`：`mass_response.py`。
+- `projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`analyze_accelerator_grid_phase.py`、`analyze_paper1_gap_working_point.py`、`ideal_acceptance_density.py`、`ideal_source_comparison.py`、`mass_spectrum.py`、`reference_analysis_core.py`、`solver_diagnostics.py`、`three_zone_theory_numeric_execution.py`、`truncation_diagnostics.py`、`verify_axial_ideal_closure.py`。
+- `projects/single_reflection_oa_tof_mass_analyzer/workflows/ideal_source_comparison/`：`acceptance_theory.py`、`numerical_case.py`、`run_comparison.py`、`slope_scan.py`。
+- `projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/`：`analysis.py`。
+- `projects/single_reflection_oa_tof_mass_analyzer/workflows/reflectron_voltage_compensation/`：`run_compensation.py`。
+
+退出条件：上述调用者迁为直接规范API，并保留对应科学、失败与冻结回归后移除桥，最迟P4。
+
+`common.contracts.rigid_transform`（21个生产Python文件）：frame类型、刚体/相对变换、穿面状态。
+
+- `common/analysis/`：`plane_crossings.py`。
+- `common/contracts/`：`component_particle_state.py`。
+- `integrations/runtime/`：`build_single_flight_program.py`、`single_flight_source.py`。
+- `integrations/workflows/cooled_frontend/`：`geometry.py`、`prepare.py`。
+- `integrations/workflows/local_frontend/`：`analyze.py`、`focus.py`、`prepare.py`。
+- `integrations/workflows/multipole_ip/`：`prepare.py`。
+- `integrations/workflows/single_reflection_flight/`：`fields.py`、`geometry.py`、`prepare.py`。
+- `projects/dual_pressure_rectilinear_ion_processor/analysis/`：`cooled_buncher.py`、`coordinates.py`、`guide_interface.py`、`spatial_crossings.py`。
+- `projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`ion_processor_handoff.py`、`joint_flight_preparation.py`、`measured_component_source.py`、`native_system_geometry.py`。
+
+退出条件：上述调用者迁为直接规范API，并保留对应科学、失败与冻结回归后移除桥，最迟P4。
+
+`common.contracts.particle_physics`（49个生产Python文件）：质量/电荷常数、单位、速度与动能。
+
+- `common/contracts/`：`component_particle_state.py`、`particle_state.py`。
+- `integrations/analysis/`：`build_comsol_prepulse_replay.py`。
+- `integrations/runtime/`：`single_flight_source.py`。
+- `integrations/workflows/cooled_frontend/`：`analyze.py`、`field_design.py`、`reference.py`。
+- `integrations/workflows/local_frontend/`：`analyze.py`、`focus.py`。
+- `integrations/workflows/multipole_ip/`：`prepare.py`。
+- `integrations/workflows/paired_accelerator_pulse/`：`prepare.py`。
+- `integrations/workflows/single_reflection_flight/`：`census.py`。
+- `projects/dual_cone_tandem_quadrupole_ion_interface/simion/`：`prepare.py`。
+- `projects/dual_pressure_rectilinear_ion_processor/analysis/`：`batching.py`、`component_exit.py`、`cooled_buncher.py`、`diagnostics.py`、`extraction_force_budget.py`、`extraction_phase_space_comparison.py`、`functional.py`、`post_extraction_diagnostics.py`、`spatial_crossings.py`。
+- `projects/orthogonal_accelerator/analysis/`：`accelerator_time_focus.py`、`component_focus_analysis.py`、`component_focus_workflow.py`。
+- `projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`accelerator_exit_transport_source.py`、`ion_processor_handoff.py`、`ip_prism_distance_study.py`、`ip_prism_field_theory.py`、`ip_prism_local_diagnostics.py`、`joint_flight_preparation.py`、`loss_acceptance_diagnostics.py`、`measured_component_source.py`、`prepared_joint_diagnostics.py`、`prepared_joint_trial.py`、`source_z_energy_timing_diagnostic.py`、`two_prism_segmented_transport.py`、`two_prism_simion_trial.py`。
+- `projects/rf_multipole_ion_optics/analysis/`：`analyze_source_model_comparison.py`、`generate_official_particle_table.py`、`numerical_observables.py`、`paired_particle_source_bundle.py`、`validate_release_construction_gate.py`。
+- `projects/rf_multipole_ion_optics/runtime/`：`particle_source_preflight.py`、`phase_matched_particle_source.py`、`simion_particle_source.py`。
+- `projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`exported_axis_field_integrator.py`、`reflectron_dual_stage_solver.py`。
+- `projects/transverse_helical_filament_wehnelt_electron_gun/analysis/`：`resolve_contract.py`。
+
+退出条件：上述调用者迁为直接规范API，并保留对应科学、失败与冻结回归后移除桥，最迟P4。
+
+`common.contracts.machine_contracts`（43个生产Python文件）：ContractError、JSON/schema校验、普通摘要。
+
+- `common/contracts/`：`compile_execution_plan.py`、`plan_design_request.py`、`validate_design_request.py`。
+- `common/integration/`：`resolve_connection.py`。
+- `common/simion/`：`aperture.py`、`batch_continuation.py`。
+- `integrations/runtime/`：`pulse_selection.py`。
+- `integrations/workflows/cooled_frontend/`：`prepare.py`。
+- `integrations/workflows/local_frontend/`：`prepare.py`。
+- `integrations/workflows/multipole_ip/`：`prepare.py`。
+- `integrations/workflows/single_reflection_flight/`：`prepare.py`。
+- `projects/dual_pressure_rectilinear_ion_processor/analysis/`：`upstream_admission.py`。
+- `projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`execution_binding.py`、`mrtof_batch_continuation.py`。
+- `projects/rf_multipole_ion_optics/analysis/`：`analyze_simion_axial_acceleration.py`、`campaign_analysis.py`、`evaluate_transport_evidence.py`、`resolve_contract.py`。
+- `projects/rf_multipole_ion_optics/core/`：`compile_design_request.py`、`component_port.py`。
+- `projects/rf_multipole_ion_optics/runtime/`：`design_profile.py`、`runtime_profile.py`。
+- `projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_run_lifecycle.py`、`candidate_source_closure.py`、`compile_candidate_design.py`、`execution_binding.py`、`experiment_campaign.py`、`ideal_acceptance_300mm_simion_candidate.py`、`paper1_c3_j3_mapping.py`、`paper1_c3_j3_publish.py`、`paper1_j2_candidate_pool.py`、`prepare_candidate_run.py`、`prepare_formal_promotion.py`、`three_zone_theory_experiment.py`。
+- `projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/`：`candidate_comsol_stage.py`、`candidate_simion_stage.py`、`run_candidate.py`、`run_candidate_workflow.py`。
+- `projects/single_reflection_oa_tof_mass_analyzer/workflows/ideal_source_comparison/`：`acceptance_theory.py`、`numerical_case.py`、`run_comparison.py`、`slope_scan.py`。
+- `projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/`：`run_campaign.py`。
+
+退出条件：上述调用者迁为直接规范API，并保留对应科学、失败与冻结回归后移除桥，最迟P4。
+
+`machine_contracts` 中只有 `common/integration/resolve_connection.py` 对该桥的调用仅取仓库上下文 `REPO_ROOT`；
+`common/contracts/compile_execution_plan.py`、`plan_design_request.py`、`validate_design_request.py`及
+`projects/rf_multipole_ion_optics/core/compile_design_request.py`同时消费仓库根与科学合同。
+科学API转向规范实现后，仓库根仍归仓库边界，不能将 `REPO_ROOT` 搬入可安装核心。
+
+跨语言模块字符串还在以下具名入口出现，分别用于实际导入或冻结后的来源探针；不能仅凭AST清单删除桥：
+
+- `projects/rf_multipole_ion_optics/workflows/interface_readiness/run_comsol.ps1`、`run_simion.ps1`：粒子物理与源模块。
+- `projects/rf_multipole_ion_optics/workflows/same_solver_convergence/run_comparison.ps1`：粒子物理来源探针。
+- `projects/rf_multipole_ion_optics/workflows/mass_filter_reference/compare_responses.ps1`、`run_comsol.ps1`、`run_simion.ps1`：峰形模块来源探针。
+- `projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1`：内嵌Python的schema校验。
+- `projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/generate_comsol_consistent_ions.ps1`：以文件路径调用 `common/ion_release/dotnet_gaussian_box_ion11.py`。
+
+上述入口随各自科学调用和来源探针一起迁移，最迟P4；公共兼容测试保留行为保证后再退出旧桥导入。
+IP与MR的有限桥冻结声明、单反射候选及重分析清单同时交付canonical源码和schema；
+别名桥的动态 `__file__` 指向规范实现，不能代替显式旧入口声明。
+
+从旧 0.1 安装迁移到 0.2 时，将 `common.ion_release.release`、
+`common.integration.resolve_assembly`、`common.analysis.peak_metrics` 的导入分别改为上述规范 API；
+函数参数和版本化科学格式保持，原 `method_id` 与 schema `$id` 不改写。0.2 wheel 不提供旧命名空间，
+仓库中的兼容桥只服务尚未迁移的具名调用者；外部安装调用者需显式更新导入，不能依赖仓库桥。
+
+仓库当前未包含 LICENSE 文件或声明项目开源许可证；本次本机发行不新增许可证授权，也不上传 PyPI。
+第三方依赖由声明与锁文件获取，未把商业求解器或其许可证、模型、原生载荷装入发行包。
+
+当前 V4 P1 正在验收；先前有限 `common.*` wheel 的通过记录属于迁移前基线，不能作为本版本完成证据。
+安装隔离验收由 `common/contracts/test_installed_scientific_core.py` 执行真实 wheel、sdist 重建和仓库外消费。
+运行、安装及冻结依赖规则由[操作指南](../docs/OPERATIONS.md#工具链与执行入口)维护。
 
 ## 门禁编排
 

@@ -63,11 +63,20 @@ class MultipoleStructuralVariantTests(unittest.TestCase):
         self.profiles = load(PROJECT_ROOT / "config/design_profiles.json")["profiles"]
 
     def test_isolated_frozen_resolver_includes_public_and_project_schema_resources(self) -> None:
+        from common.contracts.frozen_inputs import enumerate_python_sources, python_import_roots
+
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             ignore = shutil.ignore_patterns("__pycache__", "test_*.py", "fixtures", "examples")
             for relative in ("common/contracts", f"projects/{PROJECT_ID}/core", f"projects/{PROJECT_ID}/config"):
                 shutil.copytree(REPO_ROOT / relative, root / relative, ignore=ignore)
+            for relative in enumerate_python_sources(
+                REPO_ROOT, package_roots=("src/msplatform",), provider_root="src/msplatform",
+                resource_suffixes=(".schema.json",),
+            ):
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(REPO_ROOT / relative, target)
             runtime = root / "projects" / PROJECT_ID / "runtime"
             runtime.mkdir()
             shutil.copyfile(PROJECT_ROOT / "runtime/design_profile.py", runtime / "design_profile.py")
@@ -77,14 +86,16 @@ class MultipoleStructuralVariantTests(unittest.TestCase):
             (root / "config").mkdir()
             shutil.copyfile(REPO_ROOT / "config/project_registry.json", root / "config/project_registry.json")
             code = (
-                "import sys; from pathlib import Path; sys.path.insert(0,sys.argv[1]); "
+                "import json,sys; from pathlib import Path; sys.path[:0]=json.loads(sys.argv[2]); "
                 "from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile; "
                 "results=[resolve_design_profile(Path(sys.argv[1]),'rf_multipole_ion_optics',v+'_no_acceleration_full_length') "
                 "for v in ('quadrupole','hexapole','octupole')]; "
                 "assert [r['resolved_design']['identity']['electrode_count'] for r in results]==[4,6,8]; "
+                "core=[m for n,m in tuple(sys.modules.items()) if n=='msplatform' or n.startswith('msplatform.')]; "
+                "assert core; assert all(Path(m.__file__).resolve().is_relative_to(Path(sys.argv[1])/'src') for m in core); "
                 "print('FROZEN_DESIGN_PROFILE=PASS STRUCTURES=3')"
             )
-            result = subprocess.run([sys.executable, "-I", "-B", "-c", code, str(root)],
+            result = subprocess.run([sys.executable, "-I", "-B", "-c", code, str(root), json.dumps(python_import_roots(root))],
                                     cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("FROZEN_DESIGN_PROFILE=PASS", result.stdout)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import builtins
 import hashlib
 import json
 import math
@@ -179,9 +180,17 @@ class SimionEventAnalysisTest(unittest.TestCase):
         self.assertIsNone(result["fwhm"])
 
     def test_peak_metrics_match_common_units_and_mean_resolution(self):
-        from common.analysis.peak_metrics import AnalysisSettings, compute_peak_metrics
+        from msplatform.analysis.peak_metrics import AnalysisSettings, compute_peak_metrics
         times = [700.0 + index * .001 for index in range(12)]
-        actual = peak_time_metrics(times, mass_th=524, analysis_contract=PEAK_CONTRACT, cohort_role="formal_volume")
+        original_import = builtins.__import__
+
+        def checked_import(name, *args, **kwargs):
+            if name == "common.analysis.peak_metrics":
+                raise AssertionError("MR analysis must call canonical peak metrics directly")
+            return original_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=checked_import):
+            actual = peak_time_metrics(times, mass_th=524, analysis_contract=PEAK_CONTRACT, cohort_role="formal_volume")
         expected, _ = compute_peak_metrics(times, 524, AnalysisSettings(**PEAK_CONTRACT["settings"]))
         self.assertEqual(actual["fwhm"] * 1000, expected["direct_fwhm_tof_ns"])
         self.assertEqual(actual["time_equivalent_resolution"], expected["time_equivalent_resolution"])
@@ -200,7 +209,7 @@ class SimionEventAnalysisTest(unittest.TestCase):
                 contract = {**copy.deepcopy(PEAK_CONTRACT), "method_id": method}
                 before = copy.deepcopy(contract)
                 with self.subTest(role=role, method=method), patch(
-                    "common.analysis.peak_metrics.compute_time_peak_metrics"
+                    "msplatform.analysis.peak_metrics.compute_time_peak_metrics"
                 ) as compute:
                     result = peak_time_metrics(
                         [700., 701., 702.], mass_th=524,

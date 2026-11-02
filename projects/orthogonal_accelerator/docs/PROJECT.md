@@ -63,6 +63,16 @@
 
 ### 组件工作流与验收
 
+`analysis/component_focus_simion_source.py` 直接调用 `msplatform.ion_release` 的释放校验、
+`msplatform.contracts.particle_physics` 的动能函数及 `msplatform.io.file_identity` 的文件身份函数；
+相邻测试核对实际函数来源。跨 RF、OA、布局适配和 MR 的 78 项行为测试通过（7.326 秒），
+布局及 MR 同时验证拒绝旧桥后仍能执行真实计算；本轮未新增原生求解或科学资格。
+
+源投影的软件回归在 `test_component_focus_simion_source.py` 使用规范 `msplatform.ion_release` 的七粒子受控输入，
+逐行核对原ID、非零出生时间的秒到微秒换算、三维速度的 m/s 到 mm/μs 换算、出口平移、
+真实 FLY2/Lua 文本和来源/输出字节身份；campaign 或 provider 不一致仍拒绝。
+该文件六项测试通过，仅证明软件投影与身份保持，不替代下述 N100 原生组件验收。
+
 `simion/run_component_focus_workflow.ps1`消费窄器件request与公共ion-release spec，先冻结
 profile、campaign和plan，再复用既有PA cache runner与flight runner，发布绑定两个子manifest的父receipt。
 源速度、能量和粒子状态只进入flight，不进入PA几何身份；不复制另一套释放器或响应库。

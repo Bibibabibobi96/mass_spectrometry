@@ -6,10 +6,6 @@ from pathlib import Path
 import shutil
 from typing import Any
 
-from common.contracts.verify_run_manifest import verify_record
-from common.contracts.write_run_manifest import file_record
-
-
 def freeze_file(source: Path, destination: Path) -> dict[str, Any]:
     """Copy a small input and return its destination record plus source_path.
 
@@ -17,6 +13,9 @@ def freeze_file(source: Path, destination: Path) -> dict[str, Any]:
     destinations, missing sources and copies differing from the original raw
     bytes fail; solver-native payloads use their dedicated owner mechanisms.
     """
+    from common.contracts.verify_run_manifest import verify_record
+    from common.contracts.write_run_manifest import file_record
+
     if destination.exists():
         raise FileExistsError(destination)
     before = file_record(source.resolve())
@@ -50,7 +49,8 @@ def _production_python(path: Path) -> bool:
 
 def enumerate_python_sources(source_root: Path, *, package_roots: Sequence[str] = (),
                              module_paths: Sequence[str] = (),
-                             provider_root: str | None = None) -> list[str]:
+                             provider_root: str | None = None,
+                             resource_suffixes: Sequence[str] = ()) -> list[str]:
     """Expand declared Python delivery packages without importing or copying code.
 
     Paths are repository-relative POSIX names. Present parent initializers are
@@ -58,6 +58,7 @@ def enumerate_python_sources(source_root: Path, *, package_roots: Sequence[str] 
     must stay inside source_root and an optional provider_root, including through
     junctions. Overlapping author selections are errors, not silently deduped.
     Test/history/generated/native-asset trees and bytecode never join a package.
+    Named resource suffixes explicitly extend the package's small data closure.
     """
     root = Path(source_root).resolve(strict=True)
     if not root.is_dir():
@@ -65,6 +66,11 @@ def enumerate_python_sources(source_root: Path, *, package_roots: Sequence[str] 
     for values in (package_roots, module_paths):
         if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
             raise ValueError("Python package/module selections must be sequences of paths")
+    if (isinstance(resource_suffixes, (str, bytes)) or not isinstance(resource_suffixes, Sequence)
+            or any(not isinstance(value, str) or not value.startswith('.') or value == '.'
+                   or '/' in value or '\\' in value for value in resource_suffixes)
+            or len(set(resource_suffixes)) != len(resource_suffixes)):
+        raise ValueError("Python resource suffixes must be distinct explicit file suffixes")
     provider = root
     if provider_root is not None:
         provider = (root / _python_source_relative(provider_root, "provider root")).resolve(strict=True)
@@ -125,7 +131,8 @@ def enumerate_python_sources(source_root: Path, *, package_roots: Sequence[str] 
             actual = contained(path)
             if actual.is_dir():
                 count += visit(path)
-            elif actual.is_file() and _production_python(relative):
+            elif actual.is_file() and (_production_python(relative)
+                                       or any(path.name.endswith(suffix) for suffix in resource_suffixes)):
                 include(path)
                 count += 1
         return count
@@ -146,3 +153,22 @@ def enumerate_python_sources(source_root: Path, *, package_roots: Sequence[str] 
     if not selected:
         raise ValueError("Python package/module selection is empty")
     return sorted(path.relative_to(root).as_posix() for path in selected.values())
+
+
+def python_import_roots(source_root: Path) -> list[str]:
+    """Return only this source tree's src and flat import roots, in that order.
+
+    Historical flat snapshots keep their sole original root. A present src
+    directory must be contained in this exact tree, including through junctions;
+    installed packages and the author's current checkout are never substitutes.
+    """
+    root = Path(source_root).resolve(strict=True)
+    if not root.is_dir():
+        raise ValueError("Python source root must be a directory")
+    source = root / 'src'
+    if not source.exists():
+        return [str(root)]
+    actual = source.resolve(strict=True)
+    if not actual.is_dir() or not actual.is_relative_to(root):
+        raise ValueError("Python src import root escapes its source tree or is not a directory")
+    return [str(actual), str(root)]

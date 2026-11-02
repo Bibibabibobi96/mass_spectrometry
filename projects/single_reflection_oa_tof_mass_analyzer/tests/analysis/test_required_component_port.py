@@ -17,7 +17,7 @@ PORT_PATH = (
     / "oatof_accelerator_entry.json"
 )
 STATE_SCHEMA_PATH = (
-    REPO_ROOT / "common" / "contracts" / "schemas" / "component_particle_state.schema.json"
+    REPO_ROOT / "src" / "msplatform" / "contracts" / "schemas" / "component_particle_state.schema.json"
 )
 
 

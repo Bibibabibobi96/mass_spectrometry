@@ -195,7 +195,7 @@ class IdealAcceptanceCandidateTests(unittest.TestCase):
         source = Path(compiler.__file__)
         code_root = self.workspace / "simulation_repo"
         copied_source = code_root / source.relative_to(repo)
-        schema_relative = Path("common/contracts/schemas") / compiler.OUTPUT_SCHEMA
+        schema_relative = Path("src/msplatform/contracts/schemas") / compiler.OUTPUT_SCHEMA
         for original, destination in ((source, copied_source),
                                       (repo / schema_relative, code_root / schema_relative)):
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -206,6 +206,7 @@ class IdealAcceptanceCandidateTests(unittest.TestCase):
         self.live_reference.unlink()
         with (mock.patch.object(compiler, "__file__", str(copied_source)),
               mock.patch.object(compiler, "REPOSITORY_ROOT", code_root),
+              mock.patch.object(compiler, "SCHEMA_DIR", code_root / schema_relative.parent),
               mock.patch.dict(os.environ, {"PYTHONPATH": str(repo)})):
             summary = compiler.publish_ideal_acceptance_300mm_candidate(
                 self.configuration, self.manifest_path, self.selected, run,

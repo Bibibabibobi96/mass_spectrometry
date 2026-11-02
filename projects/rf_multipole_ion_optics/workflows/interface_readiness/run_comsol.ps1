@@ -340,11 +340,14 @@ function Invoke-InterfacePostprocessChild {
         # One existing managed Python process runs the two real module CLIs from
         # the frozen closure. This is not a new process/registry implementation.
         $code=@'
-import importlib.util,json,pathlib,runpy,sys
+import importlib,json,pathlib,runpy,sys
 root=pathlib.Path(sys.argv[1]).resolve()
+sys.path.insert(0,str(root))
+from common.contracts.frozen_inputs import python_import_roots
+sys.path[:0]=python_import_roots(root)
 metadata,state,summary,particles,contract,frequency,phase,report,origins=sys.argv[2:]
 modules=['projects.rf_multipole_ion_optics.analysis.analyze_comsol_particle_state_metrics','common.contracts.particle_state','common.contracts.particle_physics']
-paths={name:str(pathlib.Path(importlib.util.find_spec(name).origin).resolve()) for name in modules}
+paths={name:str(pathlib.Path(importlib.import_module(name).__file__).resolve()) for name in modules}
 if any(not pathlib.Path(path).is_relative_to(root) for path in paths.values()): raise RuntimeError('analysis escaped frozen source')
 pathlib.Path(origins).write_text(json.dumps(paths,indent=2)+'\n',encoding='utf-8')
 from common.contracts.particle_state import ion11_sources
@@ -352,16 +355,20 @@ raw=json.loads(pathlib.Path(metadata).read_text(encoding='utf-8-sig'))
 source_ids=sorted(ion11_sources(pathlib.Path(particles),float(raw['source_axial_offset_mm'])))
 if raw['source_ids'] != source_ids or sorted(raw['native_order']) != source_ids: raise ValueError('native mapping does not close frozen source cohort')
 if any(len(raw[key]) != len(source_ids) for key in ('source_birth_s','source_weights','source_initial_position_mm','source_initial_velocity_m_s')): raise ValueError('native mapping field length differs from source cohort')
+for name,module in tuple(sys.modules.items()):
+    origin=getattr(module,'__file__',None)
+    if name.startswith(('common.','projects.','msplatform')) and origin and not pathlib.Path(origin).resolve().is_relative_to(root):
+        raise RuntimeError('analysis escaped frozen source: '+name)
 sys.argv=['metrics','--raw-metadata',metadata,'--particle-state',state,'--output',summary]
 runpy.run_module(modules[0],run_name='__main__')
 sys.argv=['state','--state',state,'--particles',particles,'--source-format','ion11','--contract',contract,'--axial-offset-mm',str(raw['source_axial_offset_mm']),'--frequency-hz',frequency,'--phase-rad',phase,'--solver','COMSOL','--output',report]
 runpy.run_module(modules[1],run_name='__main__')
 '@
-        $arguments=@('-B','-c',$code,$frozen.code_root,$metadata,$state,$summary,$config.inputs.particle_table,$config.inputs.interface_contract,[string]$design.drive.frequency_Hz,[string]$design.drive.phase_rad,$contract,$origin)
+        $arguments=@('-I','-B','-c',$code,$frozen.code_root,$metadata,$state,$summary,$config.inputs.particle_table,$config.inputs.interface_contract,[string]$design.drive.frequency_Hz,[string]$design.drive.phase_rad,$contract,$origin)
         $quoted=@($arguments|ForEach-Object{'"'+([string]$_).Replace('"','\"')+'"'})
         try{
             $observed=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $package.artifact_run_dir -UsagePath $usage -FilePath $python `
-              -ArgumentList $quoted -WorkingDirectory $frozen.code_root -Environment @{PYTHONPATH=$frozen.code_root;PYTHONNOUSERSITE='1';PYTHONDONTWRITEBYTECODE='1'} `
+              -ArgumentList $quoted -WorkingDirectory $frozen.code_root -Environment @{PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $frozen.code_root)-join[IO.Path]::PathSeparator);PYTHONNOUSERSITE='1';PYTHONDONTWRITEBYTECODE='1'} `
               -RedirectStandardOutput (Join-Path $package.log_dir 'postprocess.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'postprocess.stderr.log')
             if($observed.root_process_id-le0-or$observed.root_process_started_at_utc_ticks-le0){$ownerState.writer_unknown=$true;throw 'Managed analysis process identity is unknown.'}
             $ownerState.analysis_operations=@(@{operation_id='interface-python-postprocess';resource_release_id='postprocess';observation=@{exit_confirmed=$true;returncode=[int]$observed.exit_code;process_id=[int]$observed.root_process_id;process_started_at_utc_ticks=[long]$observed.root_process_started_at_utc_ticks}})

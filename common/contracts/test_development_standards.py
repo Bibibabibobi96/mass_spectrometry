@@ -84,6 +84,24 @@ command = ["pwsh.exe", "-NoProfile", "-File", task]
 
 
 class DevelopmentStandardsCoverageTests(unittest.TestCase):
+    def test_src_sources_fail_full_and_changed_checks(self):
+        self.assertIn(standards.REPO_ROOT / "src", standards.SOURCE_ROOTS)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_root = root / "src"
+            package = source_root / "msplatform"
+            package.mkdir(parents=True)
+            subject = package / "subject.py"
+            subject.write_text("def sample(values=[]):\n    return values\n", encoding="utf-8")
+            with patch.object(standards, "REPO_ROOT", root), patch.object(
+                standards, "SOURCE_ROOTS", (source_root,)
+            ):
+                self.assertEqual(standards.active_files(".py"), [subject])
+                for arguments in ([], ["--path", "src/msplatform/subject.py"]):
+                    with self.subTest(arguments=arguments), redirect_stdout(io.StringIO()) as output:
+                        self.assertEqual(standards.main(arguments), 1)
+                        self.assertIn("mutable default argument", output.getvalue())
+
     def test_default_and_complexity_review_do_not_run_consumer_audit(self):
         for arguments in ([], ["--show-review"]):
             with self.subTest(arguments=arguments), patch.object(
@@ -267,6 +285,26 @@ class StagedDevelopmentStandardsTests(unittest.TestCase):
                 self.assertIn("CONSUMER_AUDIT=NOT_REQUESTED", output)
                 self.assertEqual("mutable default argument" in output, not accepted)
 
+    def test_actual_hook_checks_src_index_after_initial_commit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.prepare(root)
+            first = self.run_hook(root)
+            self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+            subject = root / "src/msplatform/subject.py"
+            subject.parent.mkdir(parents=True)
+            subject.write_text("def sample(values=[]):\n    return values\n", encoding="utf-8", newline="\n")
+            self.assertEqual(self.git(root, "add", "--", "src").returncode, 0)
+            subject.write_text("def sample(values=None):\n    return values\n", encoding="utf-8", newline="\n")
+            self.assertIn("values=[]", standards.staged_sources(root)[subject])
+            rejected = self.run_hook(root)
+            output = rejected.stdout + rejected.stderr
+            self.assertNotEqual(rejected.returncode, 0, output)
+            self.assertIn("DEVELOPMENT_SCOPE=CHANGED", output)
+            self.assertIn("src/msplatform/subject.py", output)
+            self.assertIn("mutable default argument", output)
+
+
     def test_actual_hook_scopes_later_source_and_documentation_commits_to_index(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -389,6 +427,26 @@ class ConsumerAuditTests(unittest.TestCase):
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(source, encoding="utf-8")
+
+    def test_src_namespace_and_relative_imports_reach_installed_module(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write(root, "common/gate_catalog.json", '''{"routes":[
+                {"command":{"runner":"python","arguments":["-m","msplatform.entry"]}}
+            ]}''')
+            self.write(root, "src/msplatform/__init__.py", "")
+            self.write(root, "src/msplatform/entry.py", "from .kernel import _work\n_work()")
+            self.write(root, "src/msplatform/kernel.py", "def _work():\n    return 1")
+            for relative, expected in (("src/msplatform/__init__.py", "msplatform"),
+                                       ("src/msplatform/kernel.py", "msplatform.kernel"),
+                                       ("common/entry.py", "common.entry"),
+                                       ("projects/example/entry.py", "projects.example.entry")):
+                self.assertEqual(standards._python_module(root / relative, root), expected)
+            result = standards.audit_consumers(root)
+            self.assertEqual(len(result), 1)
+            self.assertEqual(result[0]["path"], "src/msplatform/kernel.py")
+            self.assertEqual(result[0]["category"], "formal_reachable")
+            self.assertEqual(result[0]["consumer_modules"], "msplatform.entry")
 
     def test_four_categories_preserve_cli_callbacks_and_test_only_evidence(self):
         with tempfile.TemporaryDirectory() as directory:

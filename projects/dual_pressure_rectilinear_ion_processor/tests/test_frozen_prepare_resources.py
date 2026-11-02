@@ -11,6 +11,8 @@ import sys
 import tempfile
 import unittest
 
+from common.contracts.frozen_inputs import enumerate_python_sources
+
 from projects.dual_pressure_rectilinear_ion_processor.tests.test_functional import (
     HS1_SOURCE_FIXTURE,
 )
@@ -23,13 +25,15 @@ CHILD = r"""
 import json, sys
 from pathlib import Path
 root, run, vendor = map(Path, sys.argv[1:4])
-sys.path.insert(0, str(root))
+sys.path[:0] = [str(root / "src"), str(root)]
+from common.contracts.frozen_inputs import python_import_roots
+assert sys.path[:2] == python_import_roots(root)
 from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import prepare
 run.mkdir(); (run/'inputs').mkdir()
 (run/'run_config.json').write_text('{"schema_version":1}', encoding='utf-8')
 prepare(run, root/'projects/dual_pressure_rectilinear_ion_processor', vendor)
 assert all(not str(getattr(module, '__file__', '')).startswith(sys.argv[4])
-           for name, module in sys.modules.items() if name.split('.')[0] in {'common', 'projects'})
+           for name, module in sys.modules.items() if name.split('.')[0] in {'common', 'projects', 'msplatform'})
 print('FROZEN_PREPARE=PASS')
 """
 
@@ -91,11 +95,17 @@ class FrozenPrepareResourceTests(unittest.TestCase):
             Path("common/simion/assets/iob_instance_seeds/1_instance_seed.iob"),
             Path("common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0"),
             Path("common/contracts/artifact_retention.json"),
-            Path("common/contracts/schemas/canonical_clock_authority.schema.json"),
             Path("common/contracts/particle_count_policy.json"),
             Path("common/host_resource_policy.json"),
-            Path("common/contracts/schemas/simion_batch_continuation.schema.json"),
         ]
+        resources.extend(Path(relative) for relative in enumerate_python_sources(
+            ROOT, package_roots=("src/msplatform",), provider_root="src/msplatform",
+            resource_suffixes=(".schema.json",),
+        ))
+        functional = importlib.import_module(
+            "projects.dual_pressure_rectilinear_ion_processor.analysis.functional")
+        resources.extend(Path(relative) for relative in enumerate_python_sources(
+            ROOT, module_paths=functional.FROZEN_SCIENTIFIC_BRIDGE_MODULES))
         resources.extend(
             (PROJECT_RELATIVE / "config" / name)
             for name in (

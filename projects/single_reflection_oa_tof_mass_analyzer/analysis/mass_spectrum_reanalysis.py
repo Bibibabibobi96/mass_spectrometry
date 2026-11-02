@@ -19,6 +19,7 @@ CODE_PATHS = (
     f"{PREFIX}/analysis/solver_diagnostics.py",
     "common/analysis/peak_metrics.py",
     "common/contracts/file_identity.py",
+    "common/contracts/frozen_inputs.py",
 )
 
 def read_json(path: Path) -> dict:
@@ -119,13 +120,15 @@ def select_source(source: Path, consumer_artifact_root: Path, stopped: Path | No
 
 def freeze_analysis(repo: Path, destination: Path, selection: dict) -> dict:
     """Freeze just the imported analysis files and the parent's physical resource."""
-    from common.contracts.frozen_inputs import freeze_file
+    from common.contracts.frozen_inputs import enumerate_python_sources, freeze_file
     from common.contracts.verify_run_manifest import verify_record
 
     for name, record in selection["inputs"].items():
         verify_record(name, record)
 
     paths = set(CODE_PATHS)
+    paths.update(enumerate_python_sources(repo, package_roots=("src/msplatform",),
+        resource_suffixes=(".schema.json",)))
     for relative in CODE_PATHS:
         for directory in Path(relative).parents:
             if str(directory) != "." and (repo / directory / "__init__.py").is_file():
@@ -146,7 +149,15 @@ def freeze_analysis(repo: Path, destination: Path, selection: dict) -> dict:
 
 def run_analysis(selection_path: Path, code_root: Path, output: Path) -> dict:
     """The sole scientific consumer is the existing mass-spectrum analyzer."""
-    from projects.single_reflection_oa_tof_mass_analyzer.analysis.mass_spectrum import analyze_mass_spectrum
+    import sys
+    from projects.single_reflection_oa_tof_mass_analyzer.analysis import mass_spectrum
+
+    root = code_root.resolve(strict=True)
+    for module in (mass_spectrum, *(loaded for name, loaded in tuple(sys.modules.items())
+            if name == "msplatform" or name.startswith("msplatform."))):
+        if not getattr(module, "__file__", None) or not Path(module.__file__).resolve().is_relative_to(root):
+            raise ValueError("Mass-spectrum analyzer escaped its frozen source root.")
+    analyze_mass_spectrum = mass_spectrum.analyze_mass_spectrum
 
     selection = read_json(selection_path)
     # Referenced CSVs are protected by the owning PS capacity SourceReferences.

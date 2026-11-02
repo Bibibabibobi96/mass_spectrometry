@@ -328,6 +328,7 @@ try {
     strict_json = 'common\contracts\strict_json.py'
     project_registry_builder = 'common\contracts\build_project_registry.py'
     machine_contracts = 'common\contracts\machine_contracts.py'
+    frozen_input_selector = 'common\contracts\frozen_inputs.py'
     comsol_runner = 'common\comsol\run_comsol_r2025b.ps1'
     comsol_launcher_resolver = 'common\comsol\resolve_comsol_64.ps1'
     comsol_failure_classifier = 'common\comsol\livelink_failure_classification.ps1'
@@ -339,11 +340,23 @@ try {
       -Source (Join-Path $repoRoot $entry.Value) `
       -Destination (Join-Path $infrastructureRoot $entry.Value)
   }
-  foreach ($file in Get-ChildItem -LiteralPath (Join-Path $repoRoot 'common\contracts\schemas') `
-      -Filter '*.json' -File | Sort-Object Name) {
-    $key = 'contract_schema_' + ($file.BaseName -replace '[^A-Za-z0-9]+','_')
-    $frozenInputs[$key] = Copy-VerifiedRunInput -Source $file.FullName `
-      -Destination (Join-Path $snapshotRoot ('common\contracts\schemas\' + $file.Name))
+  $selectCoreSources = @'
+import json, pathlib, sys
+from common.contracts.frozen_inputs import enumerate_python_sources
+root = pathlib.Path(sys.argv[1]).resolve()
+print(json.dumps(enumerate_python_sources(
+    root, package_roots=("src/msplatform",), provider_root="src/msplatform",
+    resource_suffixes=(".schema.json",))))
+'@
+  $coreSelection = Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+    & $package.python -B -c $selectCoreSources $repoRoot
+    if ($LASTEXITCODE -ne 0) { throw 'Scientific core source selection failed.' }
+  }
+  foreach ($relative in @($coreSelection | ConvertFrom-Json)) {
+    $key = 'scientific_core_' + ($relative -replace '[^A-Za-z0-9]+','_')
+    $frozenInputs[$key] = Copy-VerifiedRunInput `
+      -Source (Join-Path $repoRoot $relative) `
+      -Destination (Join-Path $snapshotRoot $relative)
   }
 
 foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
@@ -371,20 +384,16 @@ foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
   }
 
   $failureStage = 'input_freshness'
-  Push-Location $snapshotRoot
-  try {
+  Invoke-RunToolRootContext -RepoRoot $snapshotRoot -Operation {
     & $package.python -m projects.transverse_helical_filament_wehnelt_electron_gun.analysis.resolve_contract `
       --baseline $frozenInputs.baseline `
       --modes $frozenInputs.numerical_modes `
       --mode build_only_smoke `
       --evidence-particle-count 1 `
       --check $frozenInputs.resolved_contract
-    $resolverExitCode = $LASTEXITCODE
-  } finally {
-    Pop-Location
-  }
-  if ($resolverExitCode -ne 0) {
-    throw 'Frozen Wehnelt baseline, numerical mode, and resolved contract differ.'
+    if ($LASTEXITCODE -ne 0) {
+      throw 'Frozen Wehnelt baseline, numerical mode, and resolved contract differ.'
+    }
   }
   $failureStage = 'frozen_input_validation'
   Assert-FrozenInputSet -InputDirectory $package.input_dir -Inputs $frozenInputs

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.machine_contracts import sha256
+from common.contracts.frozen_inputs import enumerate_python_sources
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record
 from projects.orthogonal_accelerator.analysis.component_contract import load_accelerator_dependency
@@ -54,7 +55,6 @@ RELATIVE_PATHS = (
     "common/contracts/verify_artifact_layout.py",
     "common/contracts/verify_run_manifest.py",
     "common/contracts/write_run_manifest.py",
-    "common/contracts/schemas/design_variable_catalog.schema.json",
     "common/simion/__init__.py",
     "common/simion/cache_generation.py",
     "common/simion/immutable_pa_parity.py",
@@ -79,7 +79,6 @@ RELATIVE_PATHS = (
     "projects/rf_multipole_ion_optics/core/grounded_shield.py",
     "common/simion/aperture.py",
     "common/contracts/machine_contracts.py",
-    "common/contracts/schemas/simion_rectangular_aperture_discretization.schema.json",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/geometry_contract.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/accelerator_geometry.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/accelerator_electrical.py",
@@ -241,6 +240,8 @@ def freeze_candidate_source_closure(
     ):
         raise ValueError("extra candidate source ids must be a tuple of relative paths")
     declarations = list(RELATIVE_PATHS)
+    declarations.extend(enumerate_python_sources(REPO_ROOT,
+        package_roots=("src/msplatform",), resource_suffixes=(".schema.json",)))
     for source_id in extra_source_ids:
         normalized = source_id.replace("\\", "/")
         _source_path(normalized)
@@ -552,6 +553,9 @@ def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
     analysis_names = tuple(prefix+"analysis/"+name for name in (
         "analyze_comsol_detector_events.py", "reference_analysis.py", "reference_analysis_core.py"))
     analysis_names += tuple(name for name in sources if name.startswith("common/analysis/"))
+    analysis_names += tuple(name for name in sources if (
+        name == "src/msplatform/__init__.py"
+        or name.startswith(("src/msplatform/analysis/", "src/msplatform/io/"))))
     analysis_names += ("common/contracts/file_identity.py",prefix+"config/analysis_contract.json")
     sync_names = (prefix+"comsol/verify_oatof_comsol_sync.m",
                   prefix+"load_oatof_contract.m", prefix+"comsol/oatof_cpt_solver_policy.m")

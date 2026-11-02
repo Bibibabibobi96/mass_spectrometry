@@ -17,8 +17,8 @@
 参数职责与源／时钟语义见[统一装配标准](../docs/COMPONENT_CONNECTION_ARCHITECTURE.md#完整装配粒子源与局部求解范围)，
 波形与同步职责见[驱动标准](../docs/COMPONENT_CONNECTION_ARCHITECTURE.md#电压波形器件驱动与同步)。
 
-配方格式为[assembly_recipe.schema.json](../common/contracts/schemas/assembly_recipe.schema.json)，
-提供者接口为[component_geometry_interface.schema.json](../common/contracts/schemas/component_geometry_interface.schema.json)。
+配方格式为[assembly_recipe.schema.json](../src/msplatform/contracts/schemas/assembly_recipe.schema.json)，
+提供者接口为[component_geometry_interface.schema.json](../src/msplatform/contracts/schemas/component_geometry_interface.schema.json)。
 实例直接声明局部到唯一装配frame的刚体位姿；连接只校验真实端面、法向与间隙，不沿连接反算位姿或补偿偏移。
 
 从仓库根使用公共入口，先替换占位路径：

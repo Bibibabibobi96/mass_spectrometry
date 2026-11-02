@@ -15,10 +15,11 @@ from typing import Any, Sequence
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError, validate_schema
+from msplatform.contracts.machine_contracts import SCHEMA_DIR
 
 
 WHOLE_UNIT_ROLE = "simion_whole_unit_replay_plan"
-SCHEMA_PATH = Path(__file__).parents[1] / "contracts" / "schemas" / "simion_batch_continuation.schema.json"
+SCHEMA_PATH = SCHEMA_DIR / "simion_batch_continuation.schema.json"
 
 
 @dataclass(frozen=True)

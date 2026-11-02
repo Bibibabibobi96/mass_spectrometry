@@ -35,7 +35,7 @@ PYTHON = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
 
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.file_identity import canonical_json_sha256
-from common.contracts.frozen_inputs import freeze_file
+from common.contracts.frozen_inputs import freeze_file, python_import_roots
 from common.contracts.machine_contracts import load_json, sha256
 from common.contracts.particle_count_policy import validate_standard_particle_count
 from common.contracts.recorded_file_removal import write_json_atomic
@@ -93,7 +93,7 @@ EXTRA_SOURCE_IDS = (
     "projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/analysis.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/compile_candidate_design.py",
     "common/contracts/frozen_inputs.py",
-    "common/contracts/schemas/simion_batch_continuation.schema.json",
+    "src/msplatform/contracts/schemas/simion_batch_continuation.schema.json",
     "common/simion/batch_continuation.py",
     "common/simion/native_completion.py",
     "common/simion/resource_profile.py",
@@ -1419,7 +1419,7 @@ def execute_prepared_run(
              str(execution_request_path), str(provisional)],
             cwd=code_root, stdout=run_root / "logs/frozen_execution.log",
             stderr=run_root / "logs/frozen_execution.stderr.log",
-            environment={**os.environ, "PYTHONPATH": str(code_root), "PYTHONDONTWRITEBYTECODE": "1"},
+            environment={**os.environ, "PYTHONPATH": os.pathsep.join(python_import_roots(code_root)), "PYTHONDONTWRITEBYTECODE": "1"},
         )
     except BaseException as error:
         try:

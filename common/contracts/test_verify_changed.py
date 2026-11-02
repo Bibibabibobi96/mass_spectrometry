@@ -189,20 +189,61 @@ foreach($case in $cases){{
         self.assertCountEqual(actual, expected)
         self.assertEqual(len(actual), len(set(actual)))
 
+    def test_repository_lint_includes_installed_source_root(self):
+        request, _ = self.plan("-Scope", "Repository")
+        lint = next(row for row in request["stages"] if row["name"] == "ruff_changed_python")
+        self.assertEqual(lint["command"]["arguments"],
+                         ["-m", "ruff", "check", "common", "projects", "integrations", "src"])
+
+    def test_plan_source_paths_map_installed_namespace_to_src(self):
+        script = '''
+. ./common/gate_catalog_support.ps1
+$items = @(
+    [pscustomobject]@{Run=$true;Command=[pscustomobject]@{
+        runner='python';arguments=@('-m','msplatform.analysis.peak_metrics','common.contracts.file_identity')
+    }},
+    [pscustomobject]@{Run=$false;Command=[pscustomobject]@{
+        runner='python';arguments=@('-m','msplatform.unselected')
+    }}
+)
+$paths = @(Get-GatePlanSourcePaths -Items $items)
+ConvertTo-Json -Compress -InputObject $paths
+'''
+        result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
+                                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        paths = json.loads(result.stdout)
+        self.assertIn("src/msplatform/analysis/peak_metrics.py", paths)
+        self.assertIn("common/contracts/file_identity.py", paths)
+        self.assertNotIn("msplatform/analysis/peak_metrics.py", paths)
+        self.assertNotIn("src/msplatform/unselected.py", paths)
+        self.assertEqual(len(paths), len(set(paths)))
+
     def test_common_contract_dependencies_select_modules_without_retired_routes(self):
         cases = (("common/contracts/frozen_inputs.py", "common.contracts.test_frozen_inputs"),
                  ("common/contracts/expected_values.py", "common.contracts.test_expected_values"),
                  ("common/report_cloc_delta.ps1", "common.contracts.test_report_cloc_delta"),
                  ("common/verify.ps1", "common.contracts.test_verify_changed"),
                  ("pyproject.toml", "common.contracts.test_python_dependency_contract"),
-                 ("common/contracts/schemas/oatof_three_zone_stage_report.schema.json", "common.contracts.test_machine_contracts_paths"))
+                 ("pyproject.toml", "common.contracts.test_installed_scientific_core"),
+                 ("common/ion_release/release.py", "common.contracts.test_installed_scientific_core"),
+                 ("common/ion_release/__init__.py", "common.contracts.test_installed_scientific_core"),
+                 ("common/integration/resolve_assembly.py", "common.contracts.test_installed_scientific_core"),
+                 ("common/integration/__init__.py", "common.contracts.test_installed_scientific_core"),
+                 ("common/analysis/peak_metrics.py", "common.contracts.test_installed_scientific_core"),
+                 ("common/contracts/particle_physics.py", "common.contracts.test_installed_scientific_core"),
+                 ("src/msplatform/contracts/schemas/composition_plan.schema.json", "common.contracts.test_installed_scientific_core"),
+                 ("src/msplatform/contracts/schemas/oatof_three_zone_stage_report.schema.json", "common.contracts.test_machine_contracts_paths"))
         for path, module in cases:
             with self.subTest(path=path):
                 request, _ = self.plan("-ChangedPath", path)
-                owner = next(row for row in request["stages"] if row["name"] == "common_contracts")
-                modules = [value.removesuffix(".py").replace("/", ".") for value in owner["command"]["arguments"]]
+                owners = [row for row in request["stages"]
+                          if row["name"] == "common_contracts" or row["name"].startswith("common_contracts__tests_")]
+                self.assertTrue(owners, "public contract selection is missing")
+                modules = [value.removesuffix(".py").replace("/", ".")
+                           for owner in owners for value in owner["command"]["arguments"][2:]]
                 self.assertIn(module, modules)
-                self.assertEqual(len(owner["command"]["arguments"]), len(set(owner["command"]["arguments"])))
+                self.assertEqual(len(modules), len(set(modules)))
 
     def test_frozen_input_dependency_keeps_its_real_seed_consumer_unique(self):
         request, _ = self.plan("-ChangedPath", "common/contracts/frozen_inputs.py")
@@ -997,14 +1038,15 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
                     self.assertEqual(sidecar["status"], "FAIL" if failed else "PASS")
 
     def test_specialized_schemas_use_owner_and_metadata_without_directory_fanout(self) -> None:
-        stages = self.routed_stages("common/contracts/schemas/oatof_three_zone_stage_report.schema.json")
-        self.assertEqual(set(stages), {"common_contracts", "single_reflection_oa_tof_mass_analyzer_static"})
-        for path in ("common/contracts/schemas/future_unknown.schema.json",
+        stages = self.routed_stages("src/msplatform/contracts/schemas/oatof_three_zone_stage_report.schema.json")
+        self.assertEqual(set(stages), {"common_contracts", "single_reflection_oa_tof_mass_analyzer_static",
+                                      "instrument_assembly_integration"})
+        for path in ("src/msplatform/contracts/schemas/future_unknown.schema.json",
                      "common/contracts/machine_contracts.py", "common/contracts/run_artifact_support.ps1"):
             with self.subTest(path=path):
                 self.assertIn("common_contracts", self.routed_stages(path))
                 self.assertIn("rf_multipole_quadrupole_static", self.routed_stages(path))
-        actual_consumer = self.routed_stages("common/contracts/schemas/multipole_resolved_design.schema.json")
+        actual_consumer = self.routed_stages("src/msplatform/contracts/schemas/multipole_resolved_design.schema.json")
         self.assertIn("instrument_assembly_integration", actual_consumer)
 
 
@@ -1081,6 +1123,28 @@ exit ([int]$env:CI_FIXTURE_EXIT)
                         self.assertIn("CI_NATIVE_FAILURE", stderr)
         self.assertIn("${{ runner.temp }}/changed_gate_command_timing.json", workflow)
         self.assertIn("${{ runner.temp }}/integration_gate_command_timing.json", workflow)
+
+    def test_ci_installs_checkout_core_before_planning_without_scientific_dependencies(self) -> None:
+        workflow = LIGHTWEIGHT_WORKFLOW.read_text(encoding="utf-8")
+        jobs = workflow.split("  changed_scope:\n", 1)[1].split("  repository_integration:\n", 1)
+        self.assertEqual(len(jobs), 2)
+        for job in jobs:
+            with self.subTest(job=job.splitlines()[0]):
+                steps = re.split(r"(?m)^      - name: ", job)[1:]
+                install = [index for index, step in enumerate(steps)
+                           if step.startswith("Install repository scientific core\n")]
+                self.assertEqual(len(install), 1)
+                setup = next(index for index, step in enumerate(steps)
+                             if step.startswith("Set up Python 3.11\n"))
+                planning = next(index for index, step in enumerate(steps) if "-PlanOnly" in step)
+                self.assertLess(setup, install[0])
+                self.assertLess(install[0], planning)
+                step = steps[install[0]]
+                self.assertIn("run: python -m pip install --disable-pip-version-check --no-deps .\n", step)
+                self.assertNotIn("        if:", step, "stdlib planning also requires the checkout package")
+                self.assertNotIn("PYTHONPATH", step)
+                self.assertEqual(sum("-r requirements-lock.txt" in item for item in steps), 1)
+        self.assertIn("if: steps.scope.outputs.dependency_profile == 'locked'", jobs[0])
 
     def test_ci_temp_setup_gives_python_canonical_fixture_paths(self) -> None:
         workflow = LIGHTWEIGHT_WORKFLOW.read_text(encoding="utf-8")
@@ -1351,16 +1415,28 @@ exit ([int]$env:CI_FIXTURE_EXIT)
         command = (
             f"& '{CHANGED_GATE}' -PythonExe '{sys.executable}' -PlanOnly "
             "-ChangedPath @('common/gate_catalog.json',"
-            "'common/contracts/test_verify_changed.py','common/comsol/README.md')"
+            "'common/contracts/test_verify_changed.py','common/comsol/README.md') "
+            f"-InternalRequestPath '{self.summary_path}'"
         )
         result = subprocess.run([pwsh, "-NoProfile", "-Command", command], cwd=REPO_ROOT,
                                 capture_output=True, text=True, encoding="utf-8", timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         selected = re.search(r"SELECTED_STAGES=([^\s]+)", result.stdout)
         self.assertIsNotNone(selected, result.stdout)
+        request = json.loads(Path(self.summary_path).read_text(encoding="utf-8-sig"))
+        contract_rows = [row for row in request["stages"]
+                         if row["selected"] and (row["name"] == "common_contracts"
+                         or row["name"].startswith("common_contracts__tests_"))]
+        self.assertTrue(contract_rows)
         self.assertEqual(set(selected[1].split(",")), {
             "repository_hygiene", "repository_text_bytes", "documentation",
-            "development_standards", "ruff_changed_python", "common_contracts",
+            "development_standards", "ruff_changed_python",
+            *(row["name"] for row in contract_rows),
+        })
+        self.assert_complete_contract_modules(contract_rows, {
+            "common.contracts.test_changed_test_selection",
+            "common.contracts.test_parallel_gate_support", "common.contracts.test_verify_changed",
+            "common.contracts.test_development_standards", "common.contracts.test_gate_unittest",
         })
 
 
@@ -1379,7 +1455,40 @@ exit ([int]$env:CI_FIXTURE_EXIT)
         self.assertEqual(completed.returncode, 0, completed.stderr)
         selected = re.search(r"SELECTED_STAGES=([^\s]+)", completed.stdout)
         self.assertIsNotNone(selected, completed.stdout)
-        self.assertIn("common_contracts", selected.group(1).split(","))
+        request, _ = self.plan("-ChangedPath", "common/contracts/test_changed_test_selection.py")
+        contract_rows = [row for row in request["stages"]
+                         if row["selected"] and (row["name"] == "common_contracts"
+                         or row["name"].startswith("common_contracts__tests_"))]
+        self.assertTrue(contract_rows)
+        self.assertTrue({row["name"] for row in contract_rows} <= set(selected.group(1).split(",")))
+        self.assert_complete_contract_modules(contract_rows, {
+            "common.contracts.test_changed_test_selection",
+            "common.contracts.test_parallel_gate_support", "common.contracts.test_verify_changed",
+            "common.contracts.test_development_standards", "common.contracts.test_gate_unittest",
+        })
+
+    def assert_complete_contract_modules(self, rows, expected):
+        actual = [value.removesuffix(".py").replace("/", ".")
+                  for row in rows for value in row["command"]["arguments"][2:]]
+        self.assertCountEqual(actual, expected)
+        self.assertEqual(len(actual), len(set(actual)))
+
+    def test_declared_core_resources_route_with_delivery_exclusions(self):
+        route = next(row for row in self.routes if row["stage"] == "instrument_assembly_integration")
+        matches = [match for match in route["matches"]
+                   if match["reason"] == "declared_runtime_dependency_changed"
+                   and "regex" in match and "src/msplatform" in match["regex"]]
+        self.assertTrue(matches)
+        for path, expected in (
+            ("src/msplatform/contracts/schemas/declared.schema.json", True),
+            ("src/msplatform/contracts/schemas/undeclared.json", False),
+            ("src/msplatform/tests/declared.schema.json", False),
+            ("src/msplatform/contracts/history/declared.schema.json", False),
+            ("src/msplatform/contracts/__pycache__/declared.schema.json", False),
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(any(re.search(match["regex"], path, re.IGNORECASE)
+                                     for match in matches), expected)
 
     def test_integration_changes_route_only_to_connection_gates(self) -> None:
         routed = self.routed_stages("common/integration/connection_profiles.py")

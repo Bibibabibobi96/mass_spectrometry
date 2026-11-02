@@ -156,6 +156,10 @@
         {
           "exact": "common/analysis/test_peak_metrics.py",
           "reason": "shared_peak_metrics_tests_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/peak_metrics.py",
+          "reason": "shared_peak_metrics_changed"
         }
       ],
       "command": {
@@ -465,32 +469,36 @@
           "reason": "shared_resource_budget_dependency_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_design_request.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_design_request.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_evidence_contract.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_evidence_contract.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_evidence_evaluation.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_evidence_evaluation.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_operating_modes.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_operating_modes.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_paired_metrics.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_paired_metrics.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_resolved_design.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_resolved_design.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_transport_experiment_campaign.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_transport_experiment_campaign.schema.json",
           "reason": "owned_domain_schema_changed"
+        },
+        {
+          "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
+          "reason": "common_contracts_direct_dependency_changed"
         }
       ],
       "command": {
@@ -511,59 +519,63 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json)|common/(?:ion_release/[^/]+\\.py|integration/(?:__init__|resolve_assembly)\\.py|analysis/peak_metrics\\.py|contracts/(?:file_identity|particle_physics|rigid_transform|machine_contracts)\\.py))$",
+          "reason": "installed_scientific_core_changed"
+        },
+        {
           "prefix": "common/contracts/",
           "reason": "common_contracts_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_design_request.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_design_request.schema.json",
           "reason": "specialized_schema_metadata_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_evidence_contract.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_evidence_contract.schema.json",
           "reason": "specialized_schema_metadata_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_evidence_evaluation.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_evidence_evaluation.schema.json",
           "reason": "specialized_schema_metadata_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_operating_modes.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_operating_modes.schema.json",
           "reason": "specialized_schema_metadata_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_paired_metrics.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_paired_metrics.schema.json",
           "reason": "specialized_schema_metadata_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_resolved_design.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_resolved_design.schema.json",
           "reason": "specialized_schema_metadata_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_transport_experiment_campaign.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_transport_experiment_campaign.schema.json",
           "reason": "specialized_schema_metadata_changed"
         },
         {
-          "exact": "common/contracts/schemas/oatof_experiment_campaign.schema.json",
+          "exact": "src/msplatform/contracts/schemas/oatof_experiment_campaign.schema.json",
           "reason": "specialized_schema_metadata_changed"
         },
         {
-          "exact": "common/contracts/schemas/oatof_three_zone_resolved_plan.schema.json",
+          "exact": "src/msplatform/contracts/schemas/oatof_three_zone_resolved_plan.schema.json",
           "reason": "specialized_schema_metadata_changed"
         },
         {
-          "exact": "common/contracts/schemas/oatof_three_zone_simion_candidate_resolved.schema.json",
+          "exact": "src/msplatform/contracts/schemas/oatof_three_zone_simion_candidate_resolved.schema.json",
           "reason": "specialized_schema_metadata_changed"
         },
         {
-          "exact": "common/contracts/schemas/oatof_three_zone_solver_free_funnel.schema.json",
+          "exact": "src/msplatform/contracts/schemas/oatof_three_zone_solver_free_funnel.schema.json",
           "reason": "specialized_schema_metadata_changed"
         },
         {
-          "exact": "common/contracts/schemas/oatof_three_zone_stage_receipt.schema.json",
+          "exact": "src/msplatform/contracts/schemas/oatof_three_zone_stage_receipt.schema.json",
           "reason": "specialized_schema_metadata_changed"
         },
         {
-          "exact": "common/contracts/schemas/oatof_three_zone_stage_report.schema.json",
+          "exact": "src/msplatform/contracts/schemas/oatof_three_zone_stage_report.schema.json",
           "reason": "specialized_schema_metadata_changed"
         },
         {
@@ -633,6 +645,30 @@
         {
           "exact": "requirements-lock.txt",
           "reason": "python_dependency_lock_changed"
+        },
+        {
+          "prefix": "src/msplatform/contracts/",
+          "reason": "common_contracts_changed"
+        },
+        {
+          "exact": "src/msplatform/contracts/expected_values.py",
+          "reason": "expected_values_changed"
+        },
+        {
+          "exact": "src/msplatform/contracts/test_expected_values.py",
+          "reason": "expected_values_tests_changed"
+        },
+        {
+          "exact": "src/msplatform/contracts/test_verify_changed.py",
+          "reason": "changed_scope_contract_tests_changed"
+        },
+        {
+          "exact": "src/msplatform/contracts/test_changed_test_selection.py",
+          "reason": "changed_test_selection_tests_changed"
+        },
+        {
+          "exact": "src/msplatform/contracts/test_report_cloc_delta.py",
+          "reason": "cloc_contract_tests_changed"
         }
       ],
       "command": {
@@ -655,55 +691,55 @@
           {
             "matches": [
               {
-                "exact": "common/contracts/schemas/multipole_design_request.schema.json",
+                "exact": "src/msplatform/contracts/schemas/multipole_design_request.schema.json",
                 "reason": "specialized_schema_metadata_changed"
               },
               {
-                "exact": "common/contracts/schemas/multipole_evidence_contract.schema.json",
+                "exact": "src/msplatform/contracts/schemas/multipole_evidence_contract.schema.json",
                 "reason": "specialized_schema_metadata_changed"
               },
               {
-                "exact": "common/contracts/schemas/multipole_evidence_evaluation.schema.json",
+                "exact": "src/msplatform/contracts/schemas/multipole_evidence_evaluation.schema.json",
                 "reason": "specialized_schema_metadata_changed"
               },
               {
-                "exact": "common/contracts/schemas/multipole_operating_modes.schema.json",
+                "exact": "src/msplatform/contracts/schemas/multipole_operating_modes.schema.json",
                 "reason": "specialized_schema_metadata_changed"
               },
               {
-                "exact": "common/contracts/schemas/multipole_paired_metrics.schema.json",
+                "exact": "src/msplatform/contracts/schemas/multipole_paired_metrics.schema.json",
                 "reason": "specialized_schema_metadata_changed"
               },
               {
-                "exact": "common/contracts/schemas/multipole_resolved_design.schema.json",
+                "exact": "src/msplatform/contracts/schemas/multipole_resolved_design.schema.json",
                 "reason": "specialized_schema_metadata_changed"
               },
               {
-                "exact": "common/contracts/schemas/multipole_transport_experiment_campaign.schema.json",
+                "exact": "src/msplatform/contracts/schemas/multipole_transport_experiment_campaign.schema.json",
                 "reason": "specialized_schema_metadata_changed"
               },
               {
-                "exact": "common/contracts/schemas/oatof_experiment_campaign.schema.json",
+                "exact": "src/msplatform/contracts/schemas/oatof_experiment_campaign.schema.json",
                 "reason": "specialized_schema_metadata_changed"
               },
               {
-                "exact": "common/contracts/schemas/oatof_three_zone_resolved_plan.schema.json",
+                "exact": "src/msplatform/contracts/schemas/oatof_three_zone_resolved_plan.schema.json",
                 "reason": "specialized_schema_metadata_changed"
               },
               {
-                "exact": "common/contracts/schemas/oatof_three_zone_simion_candidate_resolved.schema.json",
+                "exact": "src/msplatform/contracts/schemas/oatof_three_zone_simion_candidate_resolved.schema.json",
                 "reason": "specialized_schema_metadata_changed"
               },
               {
-                "exact": "common/contracts/schemas/oatof_three_zone_solver_free_funnel.schema.json",
+                "exact": "src/msplatform/contracts/schemas/oatof_three_zone_solver_free_funnel.schema.json",
                 "reason": "specialized_schema_metadata_changed"
               },
               {
-                "exact": "common/contracts/schemas/oatof_three_zone_stage_receipt.schema.json",
+                "exact": "src/msplatform/contracts/schemas/oatof_three_zone_stage_receipt.schema.json",
                 "reason": "specialized_schema_metadata_changed"
               },
               {
-                "exact": "common/contracts/schemas/oatof_three_zone_stage_report.schema.json",
+                "exact": "src/msplatform/contracts/schemas/oatof_three_zone_stage_report.schema.json",
                 "reason": "specialized_schema_metadata_changed"
               }
             ],
@@ -720,6 +756,14 @@
               },
               {
                 "exact": "common/contracts/test_expected_values.py",
+                "reason": "expected_values_tests_changed"
+              },
+              {
+                "exact": "src/msplatform/contracts/expected_values.py",
+                "reason": "expected_values_changed"
+              },
+              {
+                "exact": "src/msplatform/contracts/test_expected_values.py",
                 "reason": "expected_values_tests_changed"
               }
             ],
@@ -773,6 +817,14 @@
               {
                 "exact": "common/contracts/test_changed_test_selection.py",
                 "reason": "changed_test_selection_tests_changed"
+              },
+              {
+                "exact": "src/msplatform/contracts/test_verify_changed.py",
+                "reason": "changed_scope_contract_tests_changed"
+              },
+              {
+                "exact": "src/msplatform/contracts/test_changed_test_selection.py",
+                "reason": "changed_test_selection_tests_changed"
               }
             ],
             "modules": [
@@ -793,6 +845,10 @@
               {
                 "exact": "common/contracts/test_report_cloc_delta.py",
                 "reason": "cloc_contract_tests_changed"
+              },
+              {
+                "exact": "src/msplatform/contracts/test_report_cloc_delta.py",
+                "reason": "cloc_contract_tests_changed"
               }
             ],
             "modules": [
@@ -809,10 +865,16 @@
               {
                 "exact": "requirements-lock.txt",
                 "reason": "python_dependency_lock_changed"
+              },
+              {
+                "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json)|common/(?:ion_release/[^/]+\\.py|integration/(?:__init__|resolve_assembly)\\.py|analysis/peak_metrics\\.py|contracts/(?:file_identity|particle_physics|rigid_transform|machine_contracts)\\.py))$",
+                "reason": "installed_scientific_core_changed"
               }
             ],
             "modules": [
-              "common/contracts/test_python_dependency_contract.py"
+              "common/contracts/test_python_dependency_contract.py",
+              "common/contracts/test_installed_scientific_core.py",
+              "common/contracts/test_scientific_core_boundaries.py"
             ],
             "dependency_profile": "locked"
           },
@@ -820,6 +882,10 @@
             "matches": [
               {
                 "exact": "common/contracts/frozen_inputs.py",
+                "reason": "frozen_input_mechanism_changed"
+              },
+              {
+                "exact": "src/msplatform/contracts/frozen_inputs.py",
                 "reason": "frozen_input_mechanism_changed"
               }
             ],
@@ -912,6 +978,10 @@
         {
           "exact": "common/resource_budget_support.ps1",
           "reason": "managed_process_completion_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/contracts/frozen_inputs.py",
+          "reason": "frozen_workbench_seed_dependency_changed"
         }
       ],
       "command": {
@@ -935,6 +1005,10 @@
             "matches": [
               {
                 "exact": "common/contracts/frozen_inputs.py",
+                "reason": "frozen_workbench_seed_dependency_changed"
+              },
+              {
+                "exact": "src/msplatform/contracts/frozen_inputs.py",
                 "reason": "frozen_workbench_seed_dependency_changed"
               }
             ],
@@ -1030,40 +1104,44 @@
           "reason": "common_integration_changed"
         },
         {
-          "exact": "common/contracts/schemas/component_port.schema.json",
+          "exact": "src/msplatform/contracts/schemas/component_port.schema.json",
           "reason": "integration_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/composition_plan.schema.json",
+          "exact": "src/msplatform/contracts/schemas/composition_plan.schema.json",
           "reason": "integration_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/assembly_recipe.schema.json",
+          "exact": "src/msplatform/contracts/schemas/assembly_recipe.schema.json",
           "reason": "integration_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/component_geometry_interface.schema.json",
+          "exact": "src/msplatform/contracts/schemas/component_geometry_interface.schema.json",
           "reason": "integration_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/connection_profile.schema.json",
+          "exact": "src/msplatform/contracts/schemas/connection_profile.schema.json",
           "reason": "integration_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/connection_profile_registry.schema.json",
+          "exact": "src/msplatform/contracts/schemas/connection_profile_registry.schema.json",
           "reason": "integration_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/integration_artifact_identity.schema.json",
+          "exact": "src/msplatform/contracts/schemas/integration_artifact_identity.schema.json",
           "reason": "integration_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/integration_registry.schema.json",
+          "exact": "src/msplatform/contracts/schemas/integration_registry.schema.json",
           "reason": "integration_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/resolved_connection.schema.json",
+          "exact": "src/msplatform/contracts/schemas/resolved_connection.schema.json",
           "reason": "integration_schema_changed"
+        },
+        {
+          "prefix": "src/msplatform/assembly/",
+          "reason": "common_integration_changed"
         }
       ],
       "command": {
@@ -1156,6 +1234,18 @@
         {
           "regex": "^projects/dual_pressure_rectilinear_ion_processor/tests/(?:[^/]+/)*(?:test_support|testing_support|support)/",
           "reason": "guide_shared_test_support_changed"
+        },
+        {
+          "prefix": "src/msplatform/ion_release/",
+          "reason": "source_release_dependency_changed"
+        },
+        {
+          "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
+          "reason": "common_contracts_direct_dependency_changed"
+        },
+        {
+          "prefix": "src/msplatform/assembly/",
+          "reason": "assembly_compiler_changed"
         }
       ],
       "command": {
@@ -1302,6 +1392,14 @@
               {
                 "exact": "common/contracts/test_support/__init__.py",
                 "reason": "shared_lifecycle_test_fixture_changed"
+              },
+              {
+                "exact": "src/msplatform/contracts/test_support/run_artifact_workflow.py",
+                "reason": "shared_lifecycle_test_fixture_changed"
+              },
+              {
+                "exact": "src/msplatform/contracts/test_support/__init__.py",
+                "reason": "shared_lifecycle_test_fixture_changed"
               }
             ],
             "modules": [
@@ -1364,6 +1462,10 @@
         {
           "exact": "projects/parallel_mirror_dual_stripe_mr_tof/config/accelerator_dependency.json",
           "reason": "accelerator_consumer_contract_changed"
+        },
+        {
+          "exact": "src/msplatform/contracts/expected_values.py",
+          "reason": "reference_comparison_dependency_changed"
         }
       ],
       "command": {
@@ -1400,6 +1502,10 @@
         {
           "exact": "common/resource_budget_support.ps1",
           "reason": "shared_resource_budget_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/peak_metrics.py",
+          "reason": "shared_peak_metrics_changed"
         }
       ],
       "command": {
@@ -1614,32 +1720,40 @@
           "reason": "shared_resource_budget_dependency_changed"
         },
         {
-          "exact": "common/contracts/schemas/oatof_experiment_campaign.schema.json",
+          "exact": "src/msplatform/contracts/schemas/oatof_experiment_campaign.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/oatof_three_zone_resolved_plan.schema.json",
+          "exact": "src/msplatform/contracts/schemas/oatof_three_zone_resolved_plan.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/oatof_three_zone_simion_candidate_resolved.schema.json",
+          "exact": "src/msplatform/contracts/schemas/oatof_three_zone_simion_candidate_resolved.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/oatof_three_zone_solver_free_funnel.schema.json",
+          "exact": "src/msplatform/contracts/schemas/oatof_three_zone_solver_free_funnel.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/oatof_three_zone_stage_receipt.schema.json",
+          "exact": "src/msplatform/contracts/schemas/oatof_three_zone_stage_receipt.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/oatof_three_zone_stage_report.schema.json",
+          "exact": "src/msplatform/contracts/schemas/oatof_three_zone_stage_report.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
           "exact": "common/comsol/add_comsol_size_feature.m",
           "reason": "shared_comsol_size_actual_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/peak_metrics.py",
+          "reason": "shared_peak_metrics_changed"
+        },
+        {
+          "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
+          "reason": "common_contracts_direct_dependency_changed"
         }
       ],
       "command": {
@@ -1681,6 +1795,14 @@
               },
               {
                 "exact": "common/contracts/test_support/__init__.py",
+                "reason": "shared_lifecycle_test_fixture_changed"
+              },
+              {
+                "exact": "src/msplatform/contracts/test_support/run_artifact_workflow.py",
+                "reason": "shared_lifecycle_test_fixture_changed"
+              },
+              {
+                "exact": "src/msplatform/contracts/test_support/__init__.py",
                 "reason": "shared_lifecycle_test_fixture_changed"
               }
             ],
@@ -1828,31 +1950,31 @@
           "reason": "shared_response_peak_metrics_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_design_request.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_design_request.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_evidence_contract.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_evidence_contract.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_evidence_evaluation.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_evidence_evaluation.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_operating_modes.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_operating_modes.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_paired_metrics.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_paired_metrics.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_resolved_design.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_resolved_design.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_transport_experiment_campaign.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_transport_experiment_campaign.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
@@ -1874,6 +1996,14 @@
         {
           "exact": "common/comsol/tests/test_support/MeshSizeRecorder.m",
           "reason": "shared_comsol_mesh_consumer_changed"
+        },
+        {
+          "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
+          "reason": "common_contracts_direct_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/peak_metrics.py",
+          "reason": "shared_response_peak_metrics_changed"
         }
       ],
       "command": {
@@ -1978,6 +2108,14 @@
               {
                 "exact": "common/contracts/test_support/__init__.py",
                 "reason": "shared_lifecycle_test_fixture_changed"
+              },
+              {
+                "exact": "src/msplatform/contracts/test_support/run_artifact_workflow.py",
+                "reason": "shared_lifecycle_test_fixture_changed"
+              },
+              {
+                "exact": "src/msplatform/contracts/test_support/__init__.py",
+                "reason": "shared_lifecycle_test_fixture_changed"
               }
             ],
             "modules": [
@@ -2076,32 +2214,36 @@
           "reason": "shared_particle_census_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_design_request.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_design_request.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_evidence_contract.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_evidence_contract.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_evidence_evaluation.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_evidence_evaluation.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_operating_modes.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_operating_modes.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_paired_metrics.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_paired_metrics.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_resolved_design.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_resolved_design.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_transport_experiment_campaign.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_transport_experiment_campaign.schema.json",
           "reason": "owned_domain_schema_changed"
+        },
+        {
+          "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
+          "reason": "common_contracts_direct_dependency_changed"
         }
       ],
       "command": {
@@ -2169,32 +2311,36 @@
           "reason": "shared_particle_census_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_design_request.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_design_request.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_evidence_contract.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_evidence_contract.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_evidence_evaluation.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_evidence_evaluation.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_operating_modes.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_operating_modes.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_paired_metrics.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_paired_metrics.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_resolved_design.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_resolved_design.schema.json",
           "reason": "owned_domain_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/multipole_transport_experiment_campaign.schema.json",
+          "exact": "src/msplatform/contracts/schemas/multipole_transport_experiment_campaign.schema.json",
           "reason": "owned_domain_schema_changed"
+        },
+        {
+          "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
+          "reason": "common_contracts_direct_dependency_changed"
         }
       ],
       "command": {
@@ -2281,6 +2427,22 @@
         {
           "exact": "common/contracts/test_support/__init__.py",
           "reason": "shared_lifecycle_test_fixture_changed"
+        },
+        {
+          "exact": "src/msplatform/ion_release/release.py",
+          "reason": "shared_release_changed"
+        },
+        {
+          "exact": "src/msplatform/ion_release/cylinder.py",
+          "reason": "shared_cylinder_release_changed"
+        },
+        {
+          "exact": "src/msplatform/contracts/test_support/run_artifact_workflow.py",
+          "reason": "shared_lifecycle_test_fixture_changed"
+        },
+        {
+          "exact": "src/msplatform/contracts/test_support/__init__.py",
+          "reason": "shared_lifecycle_test_fixture_changed"
         }
       ],
       "command": {
@@ -2337,6 +2499,10 @@
         {
           "exact": "common/resource_budget_support.ps1",
           "reason": "shared_resource_budget_dependency_changed"
+        },
+        {
+          "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
+          "reason": "common_contracts_direct_dependency_changed"
         }
       ],
       "command": {
@@ -2374,6 +2540,10 @@
         {
           "exact": "common/resource_budget_support.ps1",
           "reason": "shared_resource_budget_dependency_changed"
+        },
+        {
+          "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
+          "reason": "common_contracts_direct_dependency_changed"
         }
       ],
       "command": {
@@ -2402,6 +2572,10 @@
         },
         {
           "regex": "^common/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
+          "reason": "common_contracts_direct_dependency_changed"
+        },
+        {
+          "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
           "reason": "common_contracts_direct_dependency_changed"
         }
       ],

@@ -381,11 +381,17 @@ MR的`load-workbench`与batch Fly共用碰撞PA预载并保持不可Refine状态
 
 [运行依赖清单](../config/runtime_dependencies.json)与[冻结器](../runtime/dependencies.ps1)按明确owner／consumer复制实际来源。
 schema 3 按提供者声明 `python_packages`／`python_modules`，由公共
-[`enumerate_python_sources`](../../common/contracts/frozen_inputs.py)派生 Python 交付闭包；
-Lua、MATLAB、JSON 等动态资源继续由 `files` 显式声明。9 个工作流传入其已解析的 Python，
-一次展开后仍发布既有扁平 inventory，Python 条目的 ID 为 `python:<source_repo_path>`。
+[`enumerate_python_sources`](../../common/contracts/frozen_inputs.py)派生交付闭包，默认只枚举生产Python源码。
+`python_packages` 可显式声明 `resource_suffixes`；`repository_core` 范围的 `msplatform` 提供者以
+`src/msplatform` 为唯一核心来源，并用 `.schema.json` 选择同包的唯一权威schema资源。
+其余 Lua、MATLAB、JSON 等动态资源继续由 `files` 显式声明。9 个工作流传入其已解析的 Python，
+由现有编译器展开作者声明，再沿原复制／身份核验机制发布既有扁平 inventory；Python 条目的 ID 为
+`python:<source_repo_path>`，资源条目为 `resource:<source_repo_path>`。声明文件不手写生成库存的hash。
 只要求当前 consumer 声明的代码与资源存在，未消费包不扩大本次冻结范围；声明本身仍校验提供者和路径边界。
 包内新增模块不再要求逐文件维护清单；已有父包初始化文件随包交付，历史 run 的冻结清单不改写。
+冻结器返回的 `import_roots` 由公共Python根选择器从快照生成，顺序为实际存在的 `src`、快照根；
+PowerShell消费者共用 `Get-RunPythonImportRoots`。没有 `src` 的旧扁平快照保持原根。
+执行时核对已加载核心模块位于本次冻结树内，缺少核心或资源即拒绝，不从 installed／editable 包填补。
 较宽的源码交付不替代场、Fly、Analysis 的实际科学依赖投影，不能据此让未受影响结果失效。
 OA 纯几何仍归项目提供者，OA→MR 和单反射等消费者从同一冻结闭包执行准备，不回退活动仓库。
 普通小输入的复制与身份校验统一调用`Copy-VerifiedRunInput`，直接使用其已核验SHA生成来源收据；

@@ -1,5 +1,7 @@
 # 公共器件连接合同层
 
+纯布局计算的规范 API 已迁至 `msplatform.assembly.resolve_assembly`。本目录 `resolve_assembly` 是单向兼容桥，`resolve_connection` 文件适配器直接调用规范实现；文件身份、工作流与原生执行仍归仓库。迁移期限见[公共入口](../README.md#科学核心发行与旧入口)。
+
 本目录实现[连接架构](../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md)中的求解器中立公共边界。项目拥有provided/required port；
 `integrations/`拥有具体装配和物理工作流；本目录只负责
 解析显式五元组、失败关闭兼容性冲突并冻结`resolved connection + composition plan`。
@@ -44,6 +46,25 @@ v3 plan 保留完整父 `recipe`、`components` 和全部端面 `connection_chec
 消费者按实际范围选择同一父对象，不能生成另一套位姿或把边界说明冒充已实现的场边界条件。
 本解析器不接收粒子源，不按源位置裁剪装配，也不修改源；源与实际范围的匹配由消费工作流负责。
 v2 不再作为活动输入格式；v1 成对连接的实际执行合同保持原职责，冻结历史不修改。
+
+## 安装后的纯布局调用
+
+`recipe.json` 与 `components.json` 分别保存上述有效配方和按实例 ID 组织的真实提供者接口；
+位姿、mm 单位及法向由作者显式提供。安装后可在仓库外直接调用：
+
+```python
+import json
+from pathlib import Path
+from msplatform.assembly.resolve_assembly import compile_assembly_layout, derive_assembly_scope
+
+recipe = json.loads(Path("recipe.json").read_text(encoding="utf-8"))
+components = json.loads(Path("components.json").read_text(encoding="utf-8"))
+parent = compile_assembly_layout(recipe, components)
+# scope 是含 instance_ids、research_scope、boundary_assumptions 的作者声明。
+# local = derive_assembly_scope(parent, local_scope=scope)
+```
+
+计算边界和验证语义由本页上述合同定义；文件冻结/发布仍由仓库文件适配器负责。
 
 ## 执行边界
 

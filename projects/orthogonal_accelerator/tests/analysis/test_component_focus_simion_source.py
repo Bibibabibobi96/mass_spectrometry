@@ -2,7 +2,7 @@ from __future__ import annotations
 import tempfile, unittest
 from pathlib import Path
 import json
-from common.ion_release.release import generate_release_states, materialize_release
+from msplatform.ion_release.release import generate_release_states, materialize_release
 from projects.orthogonal_accelerator.analysis.component_focus_simion_source import materialize
 
 
@@ -10,6 +10,64 @@ def write_provider_plan(root: Path, local_exit_z_mm: float = 6.0) -> Path:
  plan=root/'plan.json';plan.write_text(json.dumps({'role':'orthogonal_accelerator_component_focus_pa_plan','numerical_domain':{'local_exit_z_mm':local_exit_z_mm},'layout':{'gap_1_mm':6.0,'gap_2_mm':30.6}}),encoding='utf-8');return plan
 
 class SimionSourceTests(unittest.TestCase):
+ def test_complete_projection_preserves_release_units_ids_and_bound_identities(self):
+  self.assertEqual(materialize.__globals__['validate_materialized_release'].__module__, 'msplatform.ion_release.release')
+  self.assertEqual(materialize.__globals__['kinetic_energy_ev'].__module__, 'msplatform.contracts.particle_physics')
+  self.assertEqual(materialize.__globals__['file_sha256'].__module__, 'msplatform.io.file_identity')
+  import copy
+  import hashlib
+  import re
+
+  project_root = Path(__file__).resolve().parents[2]
+  campaign = json.loads((project_root / 'config/two_zone_component_focus_campaign.json').read_text(encoding='utf-8'))
+  spec = campaign['release_spec']
+  spec['particle_count'] = 7
+  spec['common_time_of_birth_s'] = 1.25e-6
+  spec['sampling']['angular_full_width_deg'] = 20.0
+  states = generate_release_states(spec)
+  self.assertTrue(any(state['vx_m_s'] and state['vy_m_s'] for state in states))
+  with tempfile.TemporaryDirectory() as directory:
+   root = Path(directory)
+   receipt, table, campaign_path, fly, lua = [root / name for name in ('release.json', 'release.csv', 'campaign.json', 'input.fly2', 'states.lua')]
+   release = materialize_release(spec, table, receipt)
+   campaign_path.write_text(json.dumps(campaign), encoding='utf-8')
+   provider = write_provider_plan(root)
+   result = materialize(receipt, campaign_path, provider, fly, lua)
+   projected = re.findall(r'\[(\d+)\]=\{([^}]+)\}', lua.read_text(encoding='ascii'))
+   beams = re.findall(r'standard_beam \{(.*?)\}', fly.read_text(encoding='ascii'), re.DOTALL)
+   self.assertEqual([int(identifier) for identifier, _ in projected], [state['particle_id'] for state in states])
+   self.assertEqual(len(beams), len(states))
+   for state, (_, fields), beam in zip(states, projected, beams, strict=True):
+    actual = {key: float(value) for key, value in (field.split('=') for field in fields.split(','))}
+    expected = dict(t=state['birth_time_s'] * 1e6, x=state['x_mm'], y=state['y_mm'],
+                    z=state['z_mm'] + 6.0, vx=state['vx_m_s'] * 1e-3,
+                    vy=state['vy_m_s'] * 1e-3, vz=state['vz_m_s'] * 1e-3)
+    # The existing Lua state format intentionally uses 15 significant digits.
+    for key, value in expected.items():
+     self.assertEqual(actual[key], float(format(value, '.15g')))
+    self.assertIn(f"tob = {expected['t']},", beam)
+    self.assertIn(f"position = vector({expected['x']},{expected['y']},{expected['z']}),", beam)
+    self.assertIn(f"direction = vector({state['vx_m_s']},{state['vy_m_s']},{state['vz_m_s']}),", beam)
+    self.assertIn(f"mass = {state['mass_amu']},", beam)
+    self.assertIn(f"charge = {state['charge_state']},", beam)
+   for key, path in (('provider_plan_sha256', provider), ('release_receipt_sha256', receipt),
+                     ('fly2_sha256', fly), ('source_states_sha256', lua)):
+    self.assertEqual(result[key], hashlib.sha256(path.read_bytes()).hexdigest().upper())
+   self.assertEqual(result['release_state_table_sha256'], hashlib.sha256(table.read_bytes()).hexdigest().upper())
+   self.assertEqual(result['release_state_table_sha256'], release['state_table']['sha256'])
+   self.assertEqual(result['provider_source_exit_interval_mm'], [30.6, 36.6])
+   self.assertEqual(result['mapping'], campaign['simion_projection'])
+   self.assertEqual(result['particle_count'], 7)
+   changed = copy.deepcopy(campaign)
+   changed['release_spec']['common_time_of_birth_s'] *= 2
+   campaign_path.write_text(json.dumps(changed), encoding='utf-8')
+   with self.assertRaisesRegex(ValueError, 'common release differs'):
+    materialize(receipt, campaign_path, provider, fly, lua)
+   campaign_path.write_text(json.dumps(campaign), encoding='utf-8')
+   write_provider_plan(root, local_exit_z_mm=7.0)
+   with self.assertRaisesRegex(ValueError, 'provider plan local exit differs'):
+    materialize(receipt, campaign_path, provider, fly, lua)
+
  def test_projects_common_release_into_local_first_gap_frame(self):
   spec={'schema_version':1,'role':'repository_ion_release','frame_id':'orthogonal_accelerator_exit_origin_v1','particle_count':1,'mother_particle_count':1,'common_time_of_birth_s':0.0,'geometry':{'shape':'cylinder','center_mm':[0,0,33.6],'axis':'z','radius_mm':1,'height_mm':1},'species':{'mass_amu':100.,'charge_state':1},'sampling':{'strategy':'center_first_halton_cylinder_v1','kinetic_energy':{'center_ev':.001,'full_width_ev':0},'nominal_direction':[0,0,-1],'angular_full_width_deg':0}}
   campaign={'release_spec':spec,'simion_projection':{'source_frame':'orthogonal_accelerator_exit_origin_v1','workbench_mapping':'identity_xyz_with_local_exit_z_translation_v1','local_pa_span_mm':[64,64,64],'iob_origin_rule':'x_mirror_plane__negative_half_y__local_z_zero_v1','local_exit_z_mm':6,'focus_plane_padding_mm':6,'positive_z_enclosure_padding_mm':6,'semantics':'test'}}

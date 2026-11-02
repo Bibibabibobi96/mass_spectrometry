@@ -635,7 +635,7 @@ if ($stageItems['ruff_changed_python'].Run) {
 $stageItems['ruff_changed_python'].Command = @{
     runner = 'python'
     arguments = @('-m', 'ruff', 'check') + $(if ($FullScope) {
-        @('common', 'projects', 'integrations')
+        @('common', 'projects', 'integrations', 'src')
     } else { @($existingPythonFiles + $ownerRuffPaths | Sort-Object -Unique) })
 }
 foreach ($item in $stageItems.Values) {

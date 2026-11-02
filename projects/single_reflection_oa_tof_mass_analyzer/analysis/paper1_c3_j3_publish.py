@@ -23,6 +23,7 @@ from typing import Any, Mapping, Sequence
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import load_json
+from msplatform.contracts.machine_contracts import SCHEMA_DIR
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.paper1_c3_j3_mapping import (
     compile_c2_j3_physical_control_family,
     compile_c3_j3_variant_candidate,
@@ -123,7 +124,7 @@ def publish_c3_j3_candidates(
     code_sources = {
         "publisher_source": Path(__file__).resolve(),
         "mapping_source": REPOSITORY_ROOT / "projects/single_reflection_oa_tof_mass_analyzer/analysis/paper1_c3_j3_mapping.py",
-        "candidate_schema": REPOSITORY_ROOT / "common/contracts/schemas/oatof_three_zone_simion_candidate_resolved.schema.json",
+        "candidate_schema": SCHEMA_DIR / "oatof_three_zone_simion_candidate_resolved.schema.json",
     }
     for label, path in code_sources.items():
         _workspace_relative(path, workspace_root, label=label)

@@ -18,7 +18,7 @@ REPO = Path(design_provider.__file__).resolve().parents[3]
 PROJECT = Path(runtime.__file__).resolve().parents[1]
 SCHEMA = (
     Path(__file__).resolve().parents[4]
-    / "common/contracts/schemas/multipole_transport_experiment_campaign.schema.json"
+    / "src/msplatform/contracts/schemas/multipole_transport_experiment_campaign.schema.json"
 )
 
 

@@ -24,6 +24,8 @@ class FrozenMatlabClosureTests(unittest.TestCase):
             # Use actual parsed production assignments/command, not a second declaration.
             script.write_text(r'''
 $ErrorActionPreference='Stop'
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+. RUN_CONTEXT
 . SUPPORT
 function Copy-VerifiedRunInput {param($Source,$Destination)
  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Destination)|Out-Null
@@ -68,7 +70,7 @@ $selected=if($name-eq'taskScript'){$taskScript}else{$massScanTask}
 if(-not$selected.StartsWith($package.code_root+[IO.Path]::DirectorySeparatorChar)-or-not(Test-Path -LiteralPath $selected -PathType Leaf)){throw 'native task escaped frozen closure'}
 Assert-FrozenPythonPackage -Package $package
 exit 0
-'''.replace('SUPPORT', ps(support)).replace('ROOT', ps(root)).replace('RUNNER', ps(runner))
+'''.replace('RUN_CONTEXT', ps(REPO / 'common/contracts/run_artifact_support.ps1')).replace('SUPPORT', ps(support)).replace('ROOT', ps(root)).replace('RUNNER', ps(runner))
 .replace('REPO', ps(REPO)).replace('PROJECT', ps(PROJECT)).replace('MISSING_DEPENDENCY', ps(missing_path) if missing_path else '$null')
 .replace('RELEASE_GATE', '$true' if release_gate else '$false').replace('WORKFLOW', ps(workflow)), encoding='utf-8', newline='\n')
             result = subprocess.run(['pwsh','-NoProfile','-File',str(script)], cwd=root,

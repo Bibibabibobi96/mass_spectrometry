@@ -120,6 +120,10 @@ ConvertTo-Json -InputObject $records -Compress
             # The real public CLI still resolves and freezes its own inputs.
             areas = ("common", "projects/rf_multipole_ion_optics")
             selected = set(enumerate_python_sources(REPO, package_roots=areas))
+            selected.update(enumerate_python_sources(
+                REPO, package_roots=("src/msplatform",), provider_root="src/msplatform",
+                resource_suffixes=(".schema.json",),
+            ))
             excluded = {"tests", "test_support", "testing_support", "docs",
                         "history", "generated", "__pycache__", "assets"}
             for area in areas:

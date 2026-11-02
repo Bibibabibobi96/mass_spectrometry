@@ -22,7 +22,7 @@ from typing import Any, Mapping, Sequence
 
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.file_identity import file_sha256
-from common.contracts.machine_contracts import load_json, validate_schema
+from msplatform.contracts.machine_contracts import SCHEMA_DIR, load_json, validate_schema
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
     AffineSource,
     InnerSolution,
@@ -52,9 +52,7 @@ ACCELERATOR_GEOMETRY_SOURCE = REPOSITORY_ROOT / "projects/orthogonal_accelerator
 EXPERIMENT_CORE_SOURCE = Path(__file__).with_name(
     "three_zone_theory_experiment.py"
 ).resolve()
-OUTPUT_SCHEMA_SOURCE = (
-    REPOSITORY_ROOT / "common" / "contracts" / "schemas" / OUTPUT_SCHEMA
-).resolve()
+OUTPUT_SCHEMA_SOURCE = (SCHEMA_DIR / OUTPUT_SCHEMA).resolve()
 SUPPORTED_T5_CONCLUSIONS = frozenset(
     {
         "PRIMARY_CONFIRMATION_PASSED_OVER_BEST_TWO_ZONE",

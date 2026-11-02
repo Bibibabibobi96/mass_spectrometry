@@ -49,6 +49,8 @@ class IdealTransportArrayTest(unittest.TestCase):
                 np.testing.assert_allclose(field_y, expected[:, 1], rtol=1e-14, atol=1e-12)
 
     def test_source_projection_preserves_historical_l1_sequence(self):
+        self.assertEqual(source_particles.__globals__["generate_release_states"].__module__,
+                         "msplatform.ion_release.release")
         particles = source_particles({
             "rf": {"frequency_Hz": 1_100_000.0},
             "particle_source": {

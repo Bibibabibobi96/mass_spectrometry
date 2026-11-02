@@ -1,13 +1,31 @@
 # 公共分析函数
 
+峰形算法的规范实现与安装 API 已迁至 `msplatform.analysis.peak_metrics`；本目录同名模块仅为单向兼容桥。其他仓库分析工具仍按本页导航使用。迁移责任与退役期限见[公共入口](../README.md#科学核心发行与旧入口)。
+
 本目录提供求解器无关的数值函数及已准备结果的图形导出，不读取项目配置或选择科学验收阈值。调用者负责母群、有效事件、
 单位、输入身份及资格；方法依据见[验证方法](../../docs/science/VALIDATION_METHODS.md)，项目结果归PROJECT或INTEGRATION。
+
+## 安装后的时间峰形调用
+
+以下七点是软件示例，输入 TOF 使用 μs，输出时间宽度使用 ns；其共同钟与科学资格仍由调用方证明。
+
+```python
+import numpy as np
+from msplatform.analysis.peak_metrics import AnalysisSettings, compute_time_peak_metrics
+
+times_us = np.array([9.90, 9.95, 9.98, 10.00, 10.02, 10.05, 10.10])
+metrics, density = compute_time_peak_metrics(times_us, AnalysisSettings())
+print(metrics["mean_tof_us"], metrics["std_tof_ns"])
+```
+
+均值约 10 μs、ddof=1 样本标准差约 65.574385243 ns；完整方法、权重和资格字段随 metadata 返回。
+
 
 ## 按问题定位
 
 | 任务 | 模块与入口 | 输入和边界 |
 |---|---|---|
-| TOF直接峰宽、形状与bootstrap比较 | [peak_metrics.py](peak_metrics.py)：`compute_time_peak_metrics`、`compute_peak_metrics`、`compare_peak_shapes`、`bootstrap_resolution_difference` | TOF用μs、质量用Da；至少3个有限、正值且有方差的到达时间；设置由调用方分析合同提供 |
+| TOF直接峰宽、形状与bootstrap比较 | [peak_metrics.py](../../src/msplatform/analysis/peak_metrics.py)：`compute_time_peak_metrics`、`compute_peak_metrics`、`compare_peak_shapes`、`bootstrap_resolution_difference` | TOF用μs、质量用Da；至少3个有限、正值且有方差的到达时间；设置由调用方分析合同提供 |
 | 两份场样本完整配对、RMS差 | [field_comparison.py](field_comparison.py)：`merge_complete_samples`、`normalized_rms_difference_pct` | 键覆盖须一致且唯一；电场用V/m；近零参考的相对差可为null，不能当零误差 |
 | 多变量及二变量总体矩 | [population_moments.py](population_moments.py)：`population_moments`、`population_pair_moments` | 多变量输入为有限二维数组，行是已选择观测、列是变量；可显式传入严格正有限相对权重；ddof=0，不转换单位或筛选粒子；二变量接口仍为无权，常量相关系数为null |
 | 已选择束团的束宽、真角度发射度与零场预测 | [beam_focus_diagnostics.py](beam_focus_diagnostics.py)：`prepare_focus_diagnostics`、`prepare_time_focus_diagnostics`及prepared结果绘图 | 显式全母群ID→正相对权重；观察面及出口群由适配器确定；mm／μs、ddof=0；实际穿面与无场反事实分开 |

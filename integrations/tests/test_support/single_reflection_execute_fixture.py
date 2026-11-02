@@ -21,6 +21,24 @@ REPO = Path(__file__).resolve().parents[3]
 EXECUTE = REPO / 'integrations/workflows/single_reflection_flight/execute.ps1'
 
 
+def declared_dependency_paths(repo, contract, consumer):
+    """Expand the actual test author's explicit source and resource declarations."""
+    from common.contracts.frozen_inputs import enumerate_python_sources
+    paths = {row['source_repo_path'] for group in contract['providers'] for row in group['files']
+             if consumer in row['consumers']}
+    for group in contract['providers']:
+        selections = [row for row in group['python_packages'] if consumer in row['consumers']]
+        modules = [row['source_repo_path'] for row in group['python_modules'] if consumer in row['consumers']]
+        if selections or modules:
+            paths.update(enumerate_python_sources(repo,
+                package_roots=[row['source_repo_path'] for row in selections], module_paths=modules))
+        for selection in selections:
+            if selection.get('resource_suffixes'):
+                paths.update(enumerate_python_sources(repo, package_roots=[selection['source_repo_path']],
+                    resource_suffixes=selection['resource_suffixes']))
+    return paths
+
+
 class SingleReflectionExecuteFixture(unittest.TestCase):
     def _assert_pa_guard_lifecycle(self, run, events, *, local, refinement=False, borrowed_downstream=False):
         """Every actual PA has one guard and release, including saved-IOB carriers.
@@ -78,16 +96,7 @@ class SingleReflectionExecuteFixture(unittest.TestCase):
     def _prepare_source_template(self, directory, contract, *, lightweight_seeds):
         source_started=time.perf_counter()
         repo=directory/'repo'
-        paths={row['source_repo_path'] for group in contract['providers'] for row in group['files']
-               if 'single_reflection_flight' in row['consumers']}
-        from common.contracts.frozen_inputs import enumerate_python_sources
-        for group in contract['providers']:
-            packages = [row['source_repo_path'] for row in group['python_packages']
-                        if 'single_reflection_flight' in row['consumers']]
-            modules = [row['source_repo_path'] for row in group['python_modules']
-                       if 'single_reflection_flight' in row['consumers']]
-            if packages or modules:
-                paths.update(enumerate_python_sources(REPO, package_roots=packages, module_paths=modules))
+        paths=declared_dependency_paths(REPO, contract, 'single_reflection_flight')
         paths.update({'integrations/config/runtime_dependencies.json','integrations/registry.json',
                       'integrations/runtime/dependencies.ps1','common/contracts/artifact_naming.py'})
         seed_names = {f'iob_seed_placeholder_{number:02d}.pa0' for number in range(1, 6)}

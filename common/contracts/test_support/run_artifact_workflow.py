@@ -8,6 +8,7 @@ import subprocess
 import sys
 import unittest
 from common.contracts.capacity_ledger import initialize_capacity_ledger
+from common.contracts.frozen_inputs import enumerate_python_sources
 from common.contracts.write_run_manifest import file_record
 
 
@@ -18,6 +19,15 @@ OWNER = REPO / "common/contracts/run_artifact_workflow.ps1"
 PROJECT = "single_reflection_oa_tof_mass_analyzer"
 
 PWSH = shutil.which("pwsh")
+
+def copy_scientific_core(source_root: Path, destination_root: Path) -> None:
+    """Copy the one declared core and its resources into an isolated test author."""
+    for relative in enumerate_python_sources(source_root, package_roots=['src/msplatform'],
+                                             provider_root='src/msplatform', resource_suffixes=('.schema.json',)):
+        destination = destination_root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source_root / relative, destination)
+
 
 CALLBACK = '''import json, os, sys, time
 from pathlib import Path
@@ -154,6 +164,7 @@ class RunArtifactWorkflowFixture(unittest.TestCase):
         (root / "common/contracts").mkdir(parents=True, exist_ok=True)
         for relative in ("common/host_resource_python.py", "common/contracts/recorded_file_removal.py", "common/contracts/file_identity.py"):
             shutil.copyfile(REPO / relative, root / relative)
+        copy_scientific_core(REPO, root)
         budget = root / "budget.json"
         committed = payload.get("fixture_commitment_bytes", 1048576)
         budget.write_text(json.dumps({"peak_bytes": committed}), encoding="utf-8")

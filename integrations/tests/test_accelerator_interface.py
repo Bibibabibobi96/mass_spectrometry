@@ -41,16 +41,8 @@ def _copy_path_consumer_repository(target):
     shutil.copytree(REPO / "common", target / "common", ignore=shutil.ignore_patterns("assets", "__pycache__"))
     shutil.copytree(REPO / "config", target / "config", ignore=shutil.ignore_patterns("__pycache__"))
     contract = json.loads((REPO / "integrations/config/runtime_dependencies.json").read_text(encoding="utf-8"))
-    paths = {row["source_repo_path"] for group in contract["providers"] for row in group["files"]
-             if "multipole_ip" in row["consumers"]}
-    from common.contracts.frozen_inputs import enumerate_python_sources
-    for group in contract["providers"]:
-        packages = [row["source_repo_path"] for row in group["python_packages"]
-                    if "multipole_ip" in row["consumers"]]
-        modules = [row["source_repo_path"] for row in group["python_modules"]
-                   if "multipole_ip" in row["consumers"]]
-        if packages or modules:
-            paths.update(enumerate_python_sources(REPO, package_roots=packages, module_paths=modules))
+    from integrations.tests.test_support.single_reflection_execute_fixture import declared_dependency_paths
+    paths = declared_dependency_paths(REPO, contract, 'multipole_ip')
     paths.update({"integrations/config/runtime_dependencies.json", "integrations/registry.json",
                   "integrations/runtime/dependencies.ps1"})
     for relative in paths:

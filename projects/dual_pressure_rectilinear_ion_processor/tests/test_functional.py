@@ -22,6 +22,7 @@ from unittest.mock import patch
 
 from common.simion.collision_hs1 import adapt_hs1_for_repeat_fly
 from common.contracts.particle_count_policy import POLICY_PATH
+from common.contracts.frozen_inputs import enumerate_python_sources, python_import_roots
 from common.ion_release.release import generate_release_states
 from projects.dual_pressure_rectilinear_ion_processor.analysis import functional
 
@@ -308,12 +309,18 @@ class FunctionalContractTests(unittest.TestCase):
         policy = repo / "common/contracts" / POLICY_PATH.name
         policy.parent.mkdir(parents=True)
         shutil.copyfile(POLICY_PATH, policy)
-        schema = Path("common/contracts/schemas/simion_batch_continuation.schema.json")
-        (repo / schema).parent.mkdir(parents=True)
-        shutil.copyfile(PROJECT.parents[1] / schema, repo / schema)
+        repository = PROJECT.parents[1]
+        scientific_sources = enumerate_python_sources(
+            repository, package_roots=("src/msplatform",), provider_root="src/msplatform",
+            resource_suffixes=(".schema.json",))
+        scientific_sources.extend(enumerate_python_sources(
+            repository, module_paths=functional.FROZEN_SCIENTIFIC_BRIDGE_MODULES))
+        for relative in scientific_sources:
+            target = repo / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(repository / relative, target)
         shutil.copyfile(PROJECT.parents[1] / "common/host_resource_policy.json", repo / "common/host_resource_policy.json")
-        for relative in ("common/contracts/artifact_retention.json",
-                         "common/contracts/schemas/canonical_clock_authority.schema.json"):
+        for relative in ("common/contracts/artifact_retention.json",):
             target = repo / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(PROJECT.parents[1] / relative, target)
@@ -429,7 +436,10 @@ print(json.dumps(dict(version=prepared['schema_version'], effective=row['effecti
 """
         census_program = """
 import json, pathlib, sys
-sys.path.insert(0, sys.argv[1])
+root = pathlib.Path(sys.argv[1]).resolve()
+sys.path.insert(0, str(root))
+from common.contracts.frozen_inputs import python_import_roots
+sys.path[:0] = python_import_roots(root)
 from common.analysis import particle_census as c
 from projects.dual_pressure_rectilinear_ion_processor.analysis.diagnostics import census
 assert pathlib.Path(c.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
@@ -439,12 +449,20 @@ data = dict(config=dict(baseline=dict(geometry={})), sources={7: row},
             terminals={}, tracks={7: [row]}, times={7: [0.]}, census_weights=None)
 counts, rows = census(data, 1.)
 assert rows[0]["reason"] == "missing_bracket"
+core_origins = [pathlib.Path(module.__file__).resolve()
+                for name, module in tuple(sys.modules.items())
+                if (name == 'msplatform' or name.startswith('msplatform.'))
+                and getattr(module, '__file__', None)]
+assert core_origins and all(origin.is_relative_to(root / 'src') for origin in core_origins), core_origins
 print(json.dumps(dict(unknown=counts["unknown"], alive=counts["alive"],
                      count=counts["source_count"], version=counts["census_schema_version"])))
 """
         crossing_program = """
 import json, pathlib, sys
-sys.path.insert(0, sys.argv[1])
+root = pathlib.Path(sys.argv[1]).resolve()
+sys.path.insert(0, str(root))
+from common.contracts.frozen_inputs import python_import_roots
+sys.path[:0] = python_import_roots(root)
 from common.analysis import plane_crossings as c
 from common.contracts.rigid_transform import PhaseSpaceState, PlaneSurface
 assert pathlib.Path(c.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
@@ -454,6 +472,11 @@ rows = list(c.iter_bounded_plane_crossings(samples, particle_ids=[7],
     planes={'middle': PlaneSurface('f', (0., 0., 1.), (0., 0., -1.))},
     minimum_time_us=10., maximum_gap_us=.5, gap_tolerance_us=1e-12))
 assert len(rows) == 1
+core_origins = [pathlib.Path(module.__file__).resolve()
+                for name, module in tuple(sys.modules.items())
+                if (name == 'msplatform' or name.startswith('msplatform.'))
+                and getattr(module, '__file__', None)]
+assert core_origins and all(origin.is_relative_to(root / 'src') for origin in core_origins), core_origins
 print(json.dumps(dict(alpha=rows[0].interpolation_alpha, lower=rows[0].lower_anchor,
                      upper=rows[0].upper_anchor, version=rows[0].schema_version)))
 """
@@ -471,7 +494,8 @@ print(json.dumps(dict(alpha=rows[0].interpolation_alpha, lower=rows[0].lower_anc
                 helper = code / f'common/analysis/{name}.py'
                 self.assertEqual(helper.read_bytes(),
                                  (PROJECT.parents[1] / f'common/analysis/{name}.py').read_bytes())
-                # -I excludes editable repository/cwd and PYTHONPATH import fallback.
+                # -I excludes cwd/PYTHONPATH, but installed editable hooks can remain.
+                # Core consumers above also verify every loaded core origin in this snapshot.
                 command = [sys.executable, '-B', '-I', '-c', program, str(code), *extra_args]
                 detached = subprocess.run(command, cwd=self.temporary.name, capture_output=True, text=True,
                                           encoding='utf-8', timeout=60, check=True)
@@ -630,7 +654,7 @@ for batch in plan['batches']:
 print('FROZEN_ACTUAL_PREPARE=PASS NATIVE=0 TASKS=2 IOB=INERT_TEST_FIXTURE')
 """
         result=subprocess.run([sys.executable,'-B','-s','-c',code,str(closure),str(detached),str(vendor)],cwd=detached,
-            env={**os.environ,'PYTHONPATH':str(closure),'PYTHONNOUSERSITE':'1'},capture_output=True,text=True,encoding='utf-8',timeout=45)
+            env={**os.environ,'PYTHONPATH':os.pathsep.join(python_import_roots(closure)),'PYTHONNOUSERSITE':'1'},capture_output=True,text=True,encoding='utf-8',timeout=45)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         self.assertIn('FROZEN_ACTUAL_PREPARE=PASS',result.stdout)
         self.assertEqual((self.run/'simion/processor.gem').read_bytes(),(detached/'simion/processor.gem').read_bytes())
@@ -657,7 +681,7 @@ print('FROZEN_ACTUAL_PREPARE=PASS NATIVE=0 TASKS=2 IOB=INERT_TEST_FIXTURE')
                 "completion = batching.require_one_fly_completion(['status,Fly completed. 10 splats, 2.19 seconds']); "
                 "assert completion.splats == 10 and completion.elapsed_seconds == 2.19; "
                 "print('FROZEN_POLICY_PASS')")
-        env = {**os.environ, "PYTHONPATH": str(closure), "PYTHONDONTWRITEBYTECODE": "1"}
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(python_import_roots(closure)), "PYTHONDONTWRITEBYTECODE": "1"}
         result = subprocess.run([sys.executable, "-B", "-c", code], cwd=self.run,
                                 env=env, capture_output=True, text=True, encoding="utf-8",
                                 errors="replace", timeout=30, check=False)
@@ -769,7 +793,7 @@ print('FROZEN_ACTUAL_PREPARE=PASS NATIVE=0 TASKS=2 IOB=INERT_TEST_FIXTURE')
     def test_prepare_exploration_freezes_selected_profile_and_source(self) -> None:
         project, vendor = self.make_prepare_fixture()
         functional.prepare(self.run, project, vendor, source_profile="exploration")
-        schema = Path("common/contracts/schemas/simion_batch_continuation.schema.json")
+        schema = Path("src/msplatform/contracts/schemas/simion_batch_continuation.schema.json")
         self.assertEqual((self.run / "inputs/code" / schema).read_bytes(),
                          (PROJECT.parents[1] / schema).read_bytes())
         resolved = functional.read_json(self.run / "inputs/resolved_model.json")
