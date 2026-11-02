@@ -10,9 +10,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from projects.rf_multipole_ion_optics.tests.test_support.capacity_fixture import (
-    capacity_fixture_source, install_controlled_cpu_snapshot,
-)
+from projects.rf_multipole_ion_optics.tests.test_support.capacity_fixture import capacity_fixture_source
+from common.contracts.test_support.host_cpu import install_controlled_cpu_snapshot
 
 from common.contracts.write_run_manifest import file_record
 from common.contracts.capacity_ledger import initialize_capacity_ledger
@@ -238,19 +237,19 @@ if($policy.cpu_admission_percent-ne95){throw 'Production CPU threshold changed'}
 $budget=Get-HostResourceBudget -Role COMSOL -Stage postprocess
 $lease=$null
 try{
- $script:RFSoftwareFixtureCpuPercent=100
+ $script:SoftwareFixtureCpuPercent=100
  $lease=Enter-HostResourceStage -Role COMSOL -Stage postprocess -RunId 'controlled-cpu' -Budget $budget -NoWait -NoEnvironment -WaitTimeoutSeconds 60
  if($lease.inherited-or$lease.status-cne'waiting'-or$lease.reason-cne'cpu_pressure'){throw 'Controlled high CPU bypassed COMSOL admission'}
  Write-Output 'CONTROLLED_CPU_RED=cpu_pressure'
  $snapshot=Get-HostResourceSnapshot
  $cost=100.*$budget.cpu_cores/$snapshot.logical_processors
- $script:RFSoftwareFixtureCpuPercent=95.-$cost/2.
+ $script:SoftwareFixtureCpuPercent=95.-$cost/2.
  Write-Output ('CONTROLLED_CPU_HOST LOGICAL_PROCESSORS={0} REQUESTED_CORES={1}'-f$snapshot.logical_processors,$budget.cpu_cores)
- if(-not[double]::IsFinite($script:RFSoftwareFixtureCpuPercent)-or$script:RFSoftwareFixtureCpuPercent-lt0-or$script:RFSoftwareFixtureCpuPercent-ge95){throw 'No legal controlled headroom input for the actual CPU budget/host'}
+ if(-not[double]::IsFinite($script:SoftwareFixtureCpuPercent)-or$script:SoftwareFixtureCpuPercent-lt0-or$script:SoftwareFixtureCpuPercent-ge95){throw 'No legal controlled headroom input for the actual CPU budget/host'}
  $lease=Receive-HostResourceStage -Lease $lease
  if($lease.status-cne'waiting'-or$lease.reason-cne'cpu_headroom'){throw 'COMSOL CPU headroom protection changed'}
  Write-Output 'CONTROLLED_CPU_RED=cpu_headroom'
- $token=$lease.token;$script:RFSoftwareFixtureCpuPercent=0
+ $token=$lease.token;$script:SoftwareFixtureCpuPercent=0
  $lease=Wait-HostResourceStage -Lease $lease
  if($lease.status-cne'acquired'-or$lease.token-cne$token){throw 'Low CPU did not acquire the original independent token'}
  $run=Join-Path $Root 'observed';$null=New-Item -ItemType Directory $run
@@ -272,7 +271,7 @@ Write-Output 'CONTROLLED_CPU_GREEN=real_process_and_released'
             for marker in ('CONTROLLED_CPU_RED=cpu_pressure', 'CONTROLLED_CPU_RED=cpu_headroom',
                            'CONTROLLED_CPU_REAL_PROCESS=', 'CONTROLLED_CPU_GREEN=real_process_and_released',
                            'CONTROLLED_CPU_INVALID_REAL_INPUTS_PRESERVED',
-                           'RF_SOFTWARE_FIXTURE_CPU CONTROLLED='):
+                           'SOFTWARE_FIXTURE_CPU CONTROLLED='):
                 self.assertIn(marker, outcome.stdout)
             print(outcome.stdout)
 

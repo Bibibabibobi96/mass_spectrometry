@@ -111,6 +111,7 @@ ConvertTo-Json -InputObject $records -Compress
         # The entire normal scripts execute; only the actual native process boundary is inert.
         from common.contracts.capacity_ledger import initialize_capacity_ledger
         from common.contracts.frozen_inputs import enumerate_python_sources
+        from common.contracts.test_support.host_cpu import install_controlled_cpu_snapshot
         import hashlib
 
         with tempfile.TemporaryDirectory() as directory:
@@ -143,6 +144,7 @@ ConvertTo-Json -InputObject $records -Compress
                 target = source / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO / relative, target)
+            install_controlled_cpu_snapshot(REPO, source)
             policy = source/"common/contracts/artifact_capacity_policy.json"
             policy_document = json.loads(policy.read_text(encoding="utf-8"))
             # The family arm declares up to 4 GiB total new commitment.
@@ -195,9 +197,19 @@ function Invoke-ResourceBudgetedProcess {
                                  "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID",
                                  "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE"):
                         environment.pop(name, None)
-                    outcome = subprocess.run(command, cwd=root, env=environment, capture_output=True,
-                                             text=True, encoding="utf-8", errors="replace", timeout=300)
+                    try:
+                        outcome = subprocess.run(command, cwd=root, env=environment, capture_output=True,
+                                                 text=True, encoding="utf-8", errors="replace", timeout=300)
+                    except subprocess.TimeoutExpired as error:
+                        for stream in ("stdout", "stderr"):
+                            partial = getattr(error, stream)
+                            if isinstance(partial, bytes):
+                                partial = partial.decode("utf-8", errors="replace")
+                            print(f"RF_PREPARE_TIMEOUT_PARTIAL_{stream.upper()}={partial or ''}", file=sys.stderr, flush=True)
+                        raise
                     self.assertNotEqual(outcome.returncode, 0)
+                    self.assertIn("SOFTWARE_FIXTURE_CPU CONTROLLED=0", outcome.stdout)
+                    self.assertIn("HOST_RESOURCE=ACQUIRED ROLE=COMSOL STAGE=prepare", outcome.stdout)
                     self.assertIn("P4_INERT_NATIVE_BOUNDARY_NO_PROCESS_STARTED", outcome.stdout + outcome.stderr)
                     self.assertFalse(json.loads(boundary.read_text(encoding="utf-8-sig"))["native_started"])
                     run = artifacts / "projects/rf_multipole_ion_optics/runs" / run_id

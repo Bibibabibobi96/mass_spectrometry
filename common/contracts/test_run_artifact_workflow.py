@@ -212,8 +212,19 @@ if([Convert]::ToBase64String([IO.File]::ReadAllBytes($leasePath))-cne$leaseBefor
             self.assertFalse((run / "logs/prepared_wait.json").exists())
 
     def test_powershell_inherited_grant_is_rechecked_across_processes(self) -> None:
+        import shutil
+        from common.contracts.test_support.host_cpu import install_controlled_cpu_snapshot
+
         with tempfile.TemporaryDirectory(prefix="workflow-ps-inherited-") as directory:
             root = Path(directory)
+            controlled = root / "controlled-host"
+            host_source = REPO / "common/host_execution_lease.ps1"
+            original_host = host_source.read_bytes()
+            for name in ("host_execution_lease.ps1", "host_resource_scheduler.py", "host_resource_policy.json"):
+                target = controlled / "common" / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(REPO / "common" / name, target)
+            install_controlled_cpu_snapshot(REPO, controlled)
             _, run, _, _ = self.invoke_fixture(root, {}, host_state=str(root / "host.json"), failure_stage="retention_before")
             request_path = run / "inputs/execution_request.json"
             request = json.loads(request_path.read_text(encoding="utf-8-sig"))
@@ -250,6 +261,8 @@ try{{$null=Invoke-RunArtifactWorkflow -RequestPath '{request_path}' -ResultPath 
 """, encoding="utf-8")
             outcome = self.run_ps(root, f""". '{OWNER}'
 $ErrorActionPreference='Stop'
+. '{controlled / 'common/host_execution_lease.ps1'}'
+$env:SIMULATION_PYTHON_EXE='{sys.executable}'
 [Environment]::SetEnvironmentVariable('MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN',[NullString]::Value,'Process')
 $lease=Enter-HostResourceStage -Role SIMION -Stage flight -StatePath '{root / 'host.json'}' -Budget (Get-HostResourceBudget -Role SIMION -Stage flight)
 try{{
@@ -263,6 +276,8 @@ try{{
 if($LASTEXITCODE-ne7){{throw 'expired inherited grant was accepted'}}
 if((Get-FileHash -Algorithm SHA256 '{run / 'run_manifest.json'}').Hash-ne$terminalHash){{throw 'terminal was changed'}}
 """)
+            self.assertEqual(host_source.read_bytes(), original_host)
+            self.assertIn("SOFTWARE_FIXTURE_CPU CONTROLLED=0", outcome.stdout)
             self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)
             self.assertEqual(json.loads((root / "result.json").read_text(encoding="utf-8-sig"))["status"], "failed")
 

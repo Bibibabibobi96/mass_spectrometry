@@ -539,14 +539,35 @@ class RadialCompactionCampaignTests(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform == "win32" and shutil.which("pwsh"), "Windows resource bridge")
     def test_real_pool_bridge_reimport_binds_guard_to_selected_python(self) -> None:
+        from common.contracts.test_support.host_cpu import install_controlled_cpu_snapshot
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis import candidate_source_closure as source_closure
+
         with tempfile.TemporaryDirectory(prefix="radial-pool-reimport-") as directory:
             root = Path(directory)
             artifacts = root / "artifacts"
             run = artifacts / "runs/20261028_120000__test__simion__pool-import"
             code_root = run / "inputs/code"
-            closure = radial.freeze_candidate_source_closure(
-                code_root, artifacts, Path(sys.executable), extra_source_ids=radial.EXTRA_SOURCE_IDS,
-            )
+            host_id = "common/host_execution_lease.ps1"
+            original_resolver = source_closure._source_path
+            host_source = original_resolver(host_id)
+            original_host = host_source.read_bytes()
+            controlled = root / "controlled-author"
+            controlled_host = controlled / host_id
+            controlled_host.parent.mkdir(parents=True)
+            shutil.copyfile(host_source, controlled_host)
+            install_controlled_cpu_snapshot(radial.REPO_ROOT, controlled)
+            # Author the controlled input before the real compiler hashes and binds it.
+            with patch.object(source_closure, "_source_path", side_effect=lambda source_id:
+                              controlled_host if source_id == host_id else original_resolver(source_id)):
+                closure = radial.freeze_candidate_source_closure(
+                    code_root, artifacts, Path(sys.executable), extra_source_ids=radial.EXTRA_SOURCE_IDS,
+                )
+            source_closure.verify_candidate_source_closure(closure)
+            host_record = next(record for record in closure["sources"] if record["source_id"] == host_id)
+            self.assertEqual(host_record["source_sha256"], source_closure.sha256(controlled_host))
+            self.assertEqual(host_record["sha256"], source_closure.sha256(code_root / host_id))
+            self.assertEqual(host_record["transformations"], ["python_runtime_binding"])
+            self.assertEqual(host_source.read_bytes(), original_host)
             case_root = run / "cases/shield260"
             (case_root / "simion").mkdir(parents=True)
             radial._write_json(run / "inputs/closure.json", closure)

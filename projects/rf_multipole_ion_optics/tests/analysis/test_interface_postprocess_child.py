@@ -176,7 +176,7 @@ if(-not$caught){throw 'unknown writer failed to reach retaining owner boundary'}
                 destination = facade / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(repo / relative, destination)
-            from projects.rf_multipole_ion_optics.tests.test_support.capacity_fixture import install_controlled_cpu_snapshot
+            from common.contracts.test_support.host_cpu import install_controlled_cpu_snapshot
 
             install_controlled_cpu_snapshot(repo, facade)
             target = facade / "projects/rf_multipole_ion_optics/workflows/interface_readiness/run_comsol.ps1"
