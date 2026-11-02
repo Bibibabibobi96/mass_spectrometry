@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 
@@ -471,10 +472,39 @@ try {
             body = source.read_text(encoding="utf-8").replace(
                 "from fixture_import import VALUE", "from integrations.tests.fixture_import import VALUE")
             body = body.replace("if KEY in ('a','b'):", "if KEY in ('a','b') and os.environ.get('PARTIAL_PARALLEL'):")
-            body = body.replace("            time.sleep(1.0", "            if os.environ.get('PARTIAL_PARALLEL'): time.sleep(1.0")
+            body = body.replace("class Probe(unittest.TestCase):", """def wait_for_event(name):
+    deadline=float(os.environ['PARTIAL_DISPATCH_DEADLINE'])
+    while not (Path(os.environ['PARTIAL_EVENTS'])/name).exists():
+        if time.monotonic() >= deadline:
+            raise AssertionError('DISPATCH_EVENT_NOT_OBSERVED: '+name)
+        time.sleep(.01)
+class Probe(unittest.TestCase):""")
+            body = body.replace("            time.sleep(1.0 if KEY=='b' and os.environ.get('PARTIAL_FAIL') else .2)", """            if os.environ.get('PARTIAL_FAIL'):
+                late=bool(os.environ.get('PARTIAL_LATE_FAILURE'))
+                if KEY=='a' and late:
+                    wait_for_event('c.start')
+                elif (KEY=='b' and not late) or (KEY=='c' and late):
+                    wait_for_event('parent.observed_failure')
+            elif os.environ.get('PARTIAL_PARALLEL'):
+                time.sleep(.2)""")
             body = body.replace("self.assertEqual(VALUE, 17)",
                                 "self.assertEqual(VALUE, 17); self.assertEqual(len(list(root.glob('ruff.*'))), 1)")
             (tests / source.name).write_text(body, encoding="utf-8")
+        with (root / "common/parallel_gate_support.ps1").open("a", encoding="utf-8") as stream:
+            stream.write(r"""
+$script:FixtureOriginalStageRecorder=${function:Set-GateStageResult}
+function Set-GateStageResult {
+    param($Summary, [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][Collections.IDictionary]$Result)
+    & $script:FixtureOriginalStageRecorder @PSBoundParameters
+    if($env:PARTIAL_FAIL-and$null-ne$Summary-and$Name.StartsWith('instrument_assembly_integration__tests_')-and
+        $Result.Contains('status')-and$Result.status-eq'FAIL'){
+        $observed=@{time=[long]([Diagnostics.Stopwatch]::GetTimestamp()*(1.0e9/[Diagnostics.Stopwatch]::Frequency));pid=$PID;stage=$Name}
+        [IO.File]::WriteAllText((Join-Path $env:PARTIAL_EVENTS 'parent.observed_failure'),
+            ($observed|ConvertTo-Json -Compress),[Text.UTF8Encoding]::new($false))
+    }
+}
+""")
         shutil.copyfile(root / "common/contracts/fixture_import.py", tests / "fixture_import.py")
         shutil.copyfile(REPO_ROOT / "integrations/verify_integration.ps1", root / "integrations/verify_integration.ps1")
         with (root / "common/host_execution_lease.ps1").open("a", encoding="utf-8") as stream:
@@ -525,23 +555,28 @@ try {
             events = root / "events"
             events.mkdir()
             environment = dict(os.environ, PARTIAL_EVENTS=str(events))
-            for key in ("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN", "PARTIAL_PARALLEL", "PARTIAL_FAIL"):
+            for key in ("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN", "PARTIAL_PARALLEL", "PARTIAL_FAIL", "PARTIAL_LATE_FAILURE", "PARTIAL_DISPATCH_DEADLINE"):
                 environment.pop(key, None)
-            parallel = mode in {"heavy", "failed"}
+            parallel = mode in {"heavy", "failed", "late_failure"}
             if parallel:
                 environment["PARTIAL_PARALLEL"] = "1"
-            if mode == "failed":
+            if mode in {"failed", "late_failure"}:
                 environment["PARTIAL_FAIL"] = "1"
+            if mode == "late_failure":
+                environment["PARTIAL_LATE_FAILURE"] = "1"
             if mode == "inherited":
                 environment["MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN"] = "fixture_inherited_grant"
             summary = root / "summary.json"
+            # Keep the existing 60s total subprocess budget; reserve its last 5s
+            # for ordinary child/owner shutdown after a failed event condition.
+            environment["PARTIAL_DISPATCH_DEADLINE"] = str(time.monotonic() + 55)
             result = subprocess.run(
                 ["pwsh", "-NoProfile", "-File", str(root / "common/verify.ps1"),
                  "-PythonExe", sys.executable, "-ChangedPath", leaf, "-MaxConcurrency",
                  "1" if mode == "serial" else "2", "-SummaryPath", str(summary)], cwd=root,
                 env=environment, capture_output=True, text=True, encoding="utf-8", timeout=60)
             output = result.stdout + result.stderr
-            self.assertEqual(result.returncode != 0, mode == "failed", output)
+            self.assertEqual(result.returncode != 0, mode in {"failed", "late_failure"}, output)
             stages = {x["name"]: x for x in json.loads(summary.read_text(encoding="utf-8"))["stages"]}
             parent = stages["instrument_assembly_integration"]
             parts = [x for name, x in stages.items() if name.startswith("instrument_assembly_integration__tests_")]
@@ -578,10 +613,23 @@ try {
                 active += delta
                 peak = max(peak, active)
             self.assertEqual(peak, 2 if parallel else 1, output)
-            if mode == "failed":
+            if mode in {"failed", "late_failure"}:
+                observed = json.loads((events / "parent.observed_failure").read_text(encoding="utf-8"))
+                print("SELECTED_POWERSHELL_DISPATCH_EVIDENCE=" + json.dumps(dict(
+                    mode=mode, source=str(Path(__file__).resolve()), starts=starts, done=done,
+                    observed_failure=observed, statuses=[p["status"] for p in parts])), flush=True)
                 self.assertIn("PARTIAL_FAILURE", output)
-                self.assertCountEqual([p["status"] for p in parts], ["FAIL", "PASS", "BLOCKED", "BLOCKED"])
-                self.assertGreater(done["b"]["time"], done["a"]["time"])
+                self.assertGreater(observed["time"], done["a"]["time"])
+                if mode == "failed":
+                    self.assertCountEqual([p["status"] for p in parts], ["FAIL", "PASS", "BLOCKED", "BLOCKED"])
+                    self.assertEqual(set(starts), {"a", "b"})
+                    self.assertGreater(done["b"]["time"], observed["time"])
+                else:
+                    self.assertCountEqual([p["status"] for p in parts], ["FAIL", "PASS", "PASS", "BLOCKED"])
+                    self.assertEqual(set(starts), {"a", "b", "c"})
+                    self.assertLess(done["b"]["time"], starts["c"]["time"])
+                    self.assertLess(starts["c"]["time"], done["a"]["time"])
+                    self.assertGreater(done["c"]["time"], observed["time"])
             else:
                 self.assertEqual(set(starts), set("abcde"))
                 self.assertEqual(sum(len(p["test_durations"]) for p in executed), 5)
@@ -590,6 +638,9 @@ try {
         for mode in ("heavy", "failed"):
             with self.subTest(mode=mode):
                 self.check_selected_powershell_dispatch(mode)
+
+    def test_selected_powershell_dispatches_ready_work_before_a_late_failure(self) -> None:
+        self.check_selected_powershell_dispatch("late_failure")
 
     def test_selected_powershell_cost_fallbacks_keep_one_real_subset_and_ruff(self) -> None:
         for mode in ("short", "unknown", "serial", "inherited", "no_shared_ruff"):
