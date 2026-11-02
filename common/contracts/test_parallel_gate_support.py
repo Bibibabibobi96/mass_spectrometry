@@ -72,9 +72,9 @@ class ParallelGateSupportTests(unittest.TestCase):
         job=text.split("  changed_scope:\n",1)[1].split("  repository_integration:\n",1)[0]
         steps=re.split(r"(?m)^      - ",job)[1:]
         selected=[step for step in steps if ("        id: scope\n" in step if scope
-                  else "changed_gate_command_timing.json" in step and "        run: |\n" in step)]
+                  else "        run: &gate_command |\n" in step)]
         self.assertEqual(len(selected),1,"actual workflow step is missing or ambiguous")
-        body=selected[0].split("        run: |\n",1)[1]
+        body=selected[0].split("        run: |\n" if scope else "        run: &gate_command |\n",1)[1]
         return "\n".join(line[10:] if line.startswith("          ") else line
                          for line in body.splitlines())+"\n"
 
@@ -86,12 +86,26 @@ class ParallelGateSupportTests(unittest.TestCase):
              "PUBLIC_GATE_EVENT_NAME":event,"PUBLIC_GATE_PUSH_BEFORE":before,
              "PUBLIC_GATE_COMPARISON_BASE":comparison,"PUBLIC_GATE_AFTER":after,
              "PUBLIC_GATE_WORKERS":"4","PUBLIC_GATE_RESOURCE_WAIT_TIMEOUT_SECONDS":"1800",
-             "PUBLIC_GATE_WAIT_ARGUMENT_SUPPORTED":"true","PUBLIC_GATE_WAIT_POLICY":"finite_resource_wait_deadline",
-             "PUBLIC_GATE_ACTUAL_SOURCE_SHA":after,"PUBLIC_GATE_SOURCE_REF":"",
+             "PUBLIC_GATE_ACTUAL_SOURCE_SHA":after,
+             "PUBLIC_GATE_SCOPE_FILE":"changed_scope.json","PUBLIC_GATE_OUTPUT_PREFIX":"changed",
              "PATH":str(Path(sys.executable).parent)+os.pathsep+environment["PATH"]}
         result=subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(script)],cwd=root,env=env,
             capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=60)
         return result,env
+
+    def test_workflow_retires_completed_cross_source_baseline_without_removing_routes(self):
+        workflow=(ROOT/".github/workflows/lightweight-gate.yml").read_text(encoding="utf-8-sig")
+        for retired in ("source_ref", "legacy_wait_unbounded", "PUBLIC_GATE_WAIT_ARGUMENT_SUPPORTED", "PUBLIC_GATE_PYTHON", "5ff18cec"):
+            self.assertNotIn(retired,workflow)
+        self.assertEqual(workflow.count("ref: ${{ github.sha }}"),2)
+        self.assertIn("inputs.owner == ''",workflow)
+        self.assertIn("inputs.comparison_base == '' || inputs.owner != ''",workflow)
+        self.assertIn("owner and comparison_base are mutually exclusive.",workflow)
+        self.assertEqual(workflow.count("$settings.ResourceWaitTimeoutSeconds = [int]$env:PUBLIC_GATE_RESOURCE_WAIT_TIMEOUT_SECONDS"),2)
+        self.assertEqual(workflow.count("run: &gate_command |"),1)
+        self.assertEqual(workflow.count("run: *gate_command"),1)
+        self.assertIn("PUBLIC_GATE_SCOPE_FILE: changed_scope.json",workflow)
+        self.assertIn("PUBLIC_GATE_SCOPE_FILE: integration_scope.json",workflow)
 
     def test_workflow_manual_comparison_matches_push_plan_and_propagates_real_failure(self):
         base,root,environment=self.plan_transport_fixture(git=True)
@@ -125,7 +139,7 @@ class ParallelGateSupportTests(unittest.TestCase):
         timing=json.loads((destination/"changed_gate_command_timing.json").read_text())
         self.assertEqual(timing["exit_code"],executed.returncode)
         self.assertEqual(timing["source_sha"],after)
-        self.assertEqual(timing["requested_source_ref"],"")
+        self.assertNotIn("requested_source_ref",timing)
         self.assertEqual(timing["wait_policy"],"finite_resource_wait_deadline")
         self.assertEqual(json.loads((destination/"changed_gate_summary.json").read_text(encoding="utf-8-sig"))["status"],"FAIL")
         self.assertEqual((base/"catalog_reads").read_text().splitlines(),["read","read"])

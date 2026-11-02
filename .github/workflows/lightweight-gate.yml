@@ -14,11 +14,6 @@ on:
         required: false
         type: string
         default: ''
-      source_ref:
-        description: 'Optional full commit SHA from this repository for an Owner baseline; empty uses workflow source'
-        required: false
-        type: string
-        default: ''
       workers:
         description: 'Worker ceiling: 1..32 or auto; local and CI default to 4'
         required: false
@@ -34,7 +29,6 @@ env:
   PUBLIC_GATE_WORKERS: ${{ inputs.workers || '4' }}
   PUBLIC_GATE_RESOURCE_WAIT_TIMEOUT_SECONDS: ${{ inputs.resource_wait_timeout_seconds || '1800' }}
   PUBLIC_GATE_OWNER: ${{ inputs.owner || '' }}
-  PUBLIC_GATE_SOURCE_REF: ${{ inputs.source_ref || '' }}
   PUBLIC_GATE_COMPARISON_BASE: ${{ inputs.comparison_base || '' }}
 
 permissions:
@@ -46,7 +40,7 @@ concurrency:
 
 jobs:
   changed_scope:
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.comparison_base != '' && inputs.owner == '' && inputs.source_ref == '')
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.comparison_base != '' && inputs.owner == '')
     runs-on: windows-latest
     # The selected software scope may contain integration behavior suites.
     timeout-minutes: 60
@@ -55,43 +49,26 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 2
-          ref: ${{ inputs.source_ref || github.sha }}
+          ref: ${{ github.sha }}
       - name: Normalize LF-governed checkout
         shell: pwsh
         run: |
           git config --local core.autocrlf false
           git reset --hard HEAD
           git checkout-index --force --all
-      - name: Validate source and gate API
+      - name: Validate source and scope
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           if ($env:PUBLIC_GATE_OWNER -and $env:PUBLIC_GATE_COMPARISON_BASE) {
             throw 'owner and comparison_base are mutually exclusive.'
           }
-          $requested = $env:PUBLIC_GATE_SOURCE_REF
-          if ($requested -and (-not $env:PUBLIC_GATE_OWNER -or $requested -notmatch '^[0-9a-fA-F]{40}$')) {
-            throw 'source_ref requires an Owner and a full 40-hex repository commit.'
-          }
           $actual = (& git rev-parse HEAD).Trim()
-          if ($LASTEXITCODE -ne 0 -or ($requested -and $actual -ine $requested)) {
-            throw 'Checked-out source does not match the requested repository commit.'
-          }
-          $gateParameters = (Get-Command .\common\verify.ps1).Parameters
-          $supportsWait = $gateParameters.ContainsKey('ResourceWaitTimeoutSeconds')
-          $waitPolicy = 'finite_resource_wait_deadline'
-          if (-not $supportsWait) {
-            # Reproduce only the named before/after baseline, not a second current policy.
-            if ($requested -ine '5ff18cec0faf86567e7fb1e7ee6a41ccbab8af18') {
-              throw 'Selected source lacks the current wait API and is not the named baseline.'
-            }
-            $waitPolicy = 'legacy_wait_unbounded'
-            Write-Warning 'Named 5ff baseline: legacy_wait_unbounded; no new wait argument is passed.'
+          if ($LASTEXITCODE -ne 0 -or $actual -ine $env:GITHUB_SHA) {
+            throw 'Checked-out source does not match the workflow repository commit.'
           }
           "PUBLIC_GATE_ACTUAL_SOURCE_SHA=$actual" >> $env:GITHUB_ENV
-          "PUBLIC_GATE_WAIT_ARGUMENT_SUPPORTED=$($supportsWait.ToString().ToLowerInvariant())" >> $env:GITHUB_ENV
-          "PUBLIC_GATE_WAIT_POLICY=$waitPolicy" >> $env:GITHUB_ENV
-          Write-Output "PUBLIC_GATE_SOURCE REQUESTED=$requested ACTUAL=$actual WAIT_POLICY=$waitPolicy"
+          Write-Output "PUBLIC_GATE_SOURCE ACTUAL=$actual"
       - name: Set up Python 3.11
         uses: actions/setup-python@v6
         with:
@@ -129,9 +106,8 @@ jobs:
             requested_workers = $env:PUBLIC_GATE_WORKERS
             requested_resource_wait_timeout_seconds = $waitSeconds
             logical_processors = [Environment]::ProcessorCount
-            requested_source_ref = $env:PUBLIC_GATE_SOURCE_REF
             actual_source_sha = $env:PUBLIC_GATE_ACTUAL_SOURCE_SHA
-            wait_policy = $env:PUBLIC_GATE_WAIT_POLICY
+            wait_policy = 'finite_resource_wait_deadline'
             runner_environment = $env:RUNNER_ENVIRONMENT
             runner_os = $env:RUNNER_OS
           }
@@ -188,7 +164,7 @@ jobs:
           $settings = @{
             MaxConcurrency = $(if ($env:PUBLIC_GATE_WORKERS -eq 'auto') { 0 } else { [int]$env:PUBLIC_GATE_WORKERS })
           }
-          if ($env:PUBLIC_GATE_WAIT_ARGUMENT_SUPPORTED -ne 'false') { $settings.ResourceWaitTimeoutSeconds = [int]$env:PUBLIC_GATE_RESOURCE_WAIT_TIMEOUT_SECONDS }
+          $settings.ResourceWaitTimeoutSeconds = [int]$env:PUBLIC_GATE_RESOURCE_WAIT_TIMEOUT_SECONDS
           $plan = if ($scope.full_scope) {
             @(.\common\verify.ps1 -PythonExe $python -FullScope -PlanOnly -PlanPath $planPath @settings)
           } else {
@@ -205,11 +181,13 @@ jobs:
         shell: pwsh
         run: python -m pip install --disable-pip-version-check -r requirements-lock.txt
       - name: Run changed-scope gate
+        env:
+          PUBLIC_GATE_SCOPE_FILE: changed_scope.json
+          PUBLIC_GATE_OUTPUT_PREFIX: changed
         shell: pwsh
-        run: |
+        run: &gate_command |
           $python = (Get-Command python).Source
           $env:PUBLIC_GATE_POWERSHELL = (Get-Process -Id $PID).Path
-          $env:PUBLIC_GATE_PYTHON = $python
           @'
           import ctypes, datetime, hashlib, json, os, platform, subprocess, sys, threading, time
           from ctypes import wintypes
@@ -218,7 +196,6 @@ jobs:
           workers = os.environ.get("PUBLIC_GATE_WORKERS", "4")
           max_concurrency = 0 if workers == "auto" else int(workers)
           wait_seconds = int(os.environ.get("PUBLIC_GATE_RESOURCE_WAIT_TIMEOUT_SECONDS", "1800"))
-          supports_wait = os.environ.get("PUBLIC_GATE_WAIT_ARGUMENT_SUPPORTED", "true") != "false"
           source_sha = os.environ.get("PUBLIC_GATE_ACTUAL_SOURCE_SHA", os.environ.get("GITHUB_SHA"))
 
           # Microsoft API docs checked 2026-11-02:
@@ -286,22 +263,20 @@ jobs:
           inventory["test_module_multiset_sha256"] = hashlib.sha256(json.dumps(
               inventory["test_modules"], separators=(",", ":")).encode("utf-8")).hexdigest()
           (root / "gate_selection_inventory.json").write_text(json.dumps(inventory, indent=2) + "\n", encoding="utf-8")
-          scope = json.loads((root / "changed_scope.json").read_text(encoding="utf-8-sig"))
-          summary_path = root / "changed_gate_summary.json"
-          timing_path = root / "changed_gate_command_timing.json"
-          samples_path = root / "changed_gate_resource_samples.jsonl"
+          scope = json.loads((root / os.environ["PUBLIC_GATE_SCOPE_FILE"]).read_text(encoding="utf-8-sig"))
+          summary_path = root / (os.environ["PUBLIC_GATE_OUTPUT_PREFIX"] + "_gate_summary.json")
+          timing_path = root / (os.environ["PUBLIC_GATE_OUTPUT_PREFIX"] + "_gate_command_timing.json")
+          samples_path = root / (os.environ["PUBLIC_GATE_OUTPUT_PREFIX"] + "_gate_resource_samples.jsonl")
           command = [os.environ["PUBLIC_GATE_POWERSHELL"], "-NoProfile", "-File", "common/verify.ps1",
                      "-PlanPath", str(plan_path), "-MaxConcurrency", str(max_concurrency), "-SummaryPath", str(summary_path)]
-          if supports_wait:
-              command.extend(["-ResourceWaitTimeoutSeconds", str(wait_seconds)])
+          command.extend(["-ResourceWaitTimeoutSeconds", str(wait_seconds)])
           record = {"schema_version": 1, "role": "public_gate_command_timing", "command": command,
                     "scope": scope, "source_sha": source_sha, "workflow_source_sha": os.environ.get("GITHUB_SHA"),
-                    "requested_source_ref": os.environ.get("PUBLIC_GATE_SOURCE_REF", ""),
                     "repository": os.environ.get("GITHUB_REPOSITORY"),
                     "requirements_lock_sha256": hashlib.sha256(Path("requirements-lock.txt").read_bytes()).hexdigest() if Path("requirements-lock.txt").is_file() else None,
                     "requested_workers": workers, "requested_max_concurrency": max_concurrency,
-                    "wait_policy": os.environ.get("PUBLIC_GATE_WAIT_POLICY", "finite_resource_wait_deadline"),
-                    "resource_wait_timeout_seconds": wait_seconds if supports_wait else None,
+                    "wait_policy": "finite_resource_wait_deadline",
+                    "resource_wait_timeout_seconds": wait_seconds,
                     "test_module_multiset_sha256": inventory["test_module_multiset_sha256"],
                     "environment": {"python_executable": sys.executable, "python_version": sys.version,
                                     "platform": platform.platform(), "logical_processors": os.cpu_count(),
@@ -365,7 +340,7 @@ jobs:
             ${{ runner.temp }}/changed_gate_*/**
           if-no-files-found: warn
   repository_integration:
-    if: github.event_name == 'workflow_dispatch' && (inputs.comparison_base == '' || inputs.owner != '' || inputs.source_ref != '')
+    if: github.event_name == 'workflow_dispatch' && (inputs.comparison_base == '' || inputs.owner != '')
     runs-on: windows-latest
     # Collect actual failures and drain active suites; the feedback target is
     # not a process-kill timeout. Retain GitHub's platform job limit.
@@ -374,37 +349,20 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 2
-          ref: ${{ inputs.source_ref || github.sha }}
-      - name: Validate source and gate API
+          ref: ${{ github.sha }}
+      - name: Validate source and scope
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           if ($env:PUBLIC_GATE_OWNER -and $env:PUBLIC_GATE_COMPARISON_BASE) {
             throw 'owner and comparison_base are mutually exclusive.'
           }
-          $requested = $env:PUBLIC_GATE_SOURCE_REF
-          if ($requested -and (-not $env:PUBLIC_GATE_OWNER -or $requested -notmatch '^[0-9a-fA-F]{40}$')) {
-            throw 'source_ref requires an Owner and a full 40-hex repository commit.'
-          }
           $actual = (& git rev-parse HEAD).Trim()
-          if ($LASTEXITCODE -ne 0 -or ($requested -and $actual -ine $requested)) {
-            throw 'Checked-out source does not match the requested repository commit.'
-          }
-          $gateParameters = (Get-Command .\common\verify.ps1).Parameters
-          $supportsWait = $gateParameters.ContainsKey('ResourceWaitTimeoutSeconds')
-          $waitPolicy = 'finite_resource_wait_deadline'
-          if (-not $supportsWait) {
-            # Reproduce only the named before/after baseline, not a second current policy.
-            if ($requested -ine '5ff18cec0faf86567e7fb1e7ee6a41ccbab8af18') {
-              throw 'Selected source lacks the current wait API and is not the named baseline.'
-            }
-            $waitPolicy = 'legacy_wait_unbounded'
-            Write-Warning 'Named 5ff baseline: legacy_wait_unbounded; no new wait argument is passed.'
+          if ($LASTEXITCODE -ne 0 -or $actual -ine $env:GITHUB_SHA) {
+            throw 'Checked-out source does not match the workflow repository commit.'
           }
           "PUBLIC_GATE_ACTUAL_SOURCE_SHA=$actual" >> $env:GITHUB_ENV
-          "PUBLIC_GATE_WAIT_ARGUMENT_SUPPORTED=$($supportsWait.ToString().ToLowerInvariant())" >> $env:GITHUB_ENV
-          "PUBLIC_GATE_WAIT_POLICY=$waitPolicy" >> $env:GITHUB_ENV
-          Write-Output "PUBLIC_GATE_SOURCE REQUESTED=$requested ACTUAL=$actual WAIT_POLICY=$waitPolicy"
+          Write-Output "PUBLIC_GATE_SOURCE ACTUAL=$actual"
       - name: Set up Python 3.11
         uses: actions/setup-python@v6
         with:
@@ -442,9 +400,8 @@ jobs:
             requested_workers = $env:PUBLIC_GATE_WORKERS
             requested_resource_wait_timeout_seconds = $waitSeconds
             logical_processors = [Environment]::ProcessorCount
-            requested_source_ref = $env:PUBLIC_GATE_SOURCE_REF
             actual_source_sha = $env:PUBLIC_GATE_ACTUAL_SOURCE_SHA
-            wait_policy = $env:PUBLIC_GATE_WAIT_POLICY
+            wait_policy = 'finite_resource_wait_deadline'
             runner_environment = $env:RUNNER_ENVIRONMENT
             runner_os = $env:RUNNER_OS
           }
@@ -468,158 +425,18 @@ jobs:
           $settings = @{
             MaxConcurrency = $(if ($env:PUBLIC_GATE_WORKERS -eq 'auto') { 0 } else { [int]$env:PUBLIC_GATE_WORKERS })
           }
-          if ($env:PUBLIC_GATE_WAIT_ARGUMENT_SUPPORTED -ne 'false') { $settings.ResourceWaitTimeoutSeconds = [int]$env:PUBLIC_GATE_RESOURCE_WAIT_TIMEOUT_SECONDS }
+          $settings.ResourceWaitTimeoutSeconds = [int]$env:PUBLIC_GATE_RESOURCE_WAIT_TIMEOUT_SECONDS
           .\common\verify.ps1 @selection -PythonExe $python -PlanOnly -PlanPath (Join-Path $env:RUNNER_TEMP 'software_gate_plan.json') @settings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Install locked Python dependencies
         shell: pwsh
         run: python -m pip install --disable-pip-version-check -r requirements-lock.txt
       - name: Verify repository software scope
+        env:
+          PUBLIC_GATE_SCOPE_FILE: integration_scope.json
+          PUBLIC_GATE_OUTPUT_PREFIX: integration
         shell: pwsh
-        run: |
-          $python = (Get-Command python).Source
-          $env:PUBLIC_GATE_POWERSHELL = (Get-Process -Id $PID).Path
-          $env:PUBLIC_GATE_PYTHON = $python
-          @'
-          import ctypes, datetime, hashlib, json, os, platform, subprocess, sys, threading, time
-          from ctypes import wintypes
-          from pathlib import Path
-          root = Path(os.environ["RUNNER_TEMP"])
-          workers = os.environ.get("PUBLIC_GATE_WORKERS", "4")
-          max_concurrency = 0 if workers == "auto" else int(workers)
-          wait_seconds = int(os.environ.get("PUBLIC_GATE_RESOURCE_WAIT_TIMEOUT_SECONDS", "1800"))
-          supports_wait = os.environ.get("PUBLIC_GATE_WAIT_ARGUMENT_SUPPORTED", "true") != "false"
-          source_sha = os.environ.get("PUBLIC_GATE_ACTUAL_SOURCE_SHA", os.environ.get("GITHUB_SHA"))
-
-          # Microsoft API docs checked 2026-11-02:
-          # https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getsystemtimes
-          # https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-globalmemorystatusex
-          # Official Windows counters: GetSystemTimes includes idle in kernel time;
-          # GlobalMemoryStatusEx reports volatile physical memory, not process attribution.
-          class MemoryStatus(ctypes.Structure):
-              _fields_ = [("length", wintypes.DWORD), ("load", wintypes.DWORD)] + [
-                  (name, ctypes.c_ulonglong) for name in
-                  ("total_phys", "avail_phys", "total_page", "avail_page", "total_virtual", "avail_virtual", "avail_extended")]
-
-          stop_sampling = threading.Event()
-          observer_errors = []
-          def observe_host(path, started):
-              try:
-                  kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-                  kernel32.GetSystemTimes.argtypes = [ctypes.POINTER(wintypes.FILETIME)] * 3
-                  kernel32.GetSystemTimes.restype = wintypes.BOOL
-                  kernel32.GlobalMemoryStatusEx.argtypes = [ctypes.POINTER(MemoryStatus)]
-                  kernel32.GlobalMemoryStatusEx.restype = wintypes.BOOL
-                  previous = None
-                  with path.open("w", encoding="utf-8") as output:
-                      while not stop_sampling.is_set():
-                          sampled = time.perf_counter()
-                          row = {"schema_version": 1, "role": "gate_host_resource_sample", "monotonic_seconds": sampled - started, "logical_processors": os.cpu_count()}
-                          try:
-                              idle, kernel, user = wintypes.FILETIME(), wintypes.FILETIME(), wintypes.FILETIME()
-                              if not kernel32.GetSystemTimes(ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user)):
-                                  raise ctypes.WinError(ctypes.get_last_error())
-                              ticks = lambda value: (value.dwHighDateTime << 32) | value.dwLowDateTime
-                              current = (ticks(idle), ticks(kernel) + ticks(user))
-                              row.update(idle_ticks_100ns=current[0], total_ticks_100ns=current[1], cpu_percent=None)
-                              if previous and current[1] > previous[1]:
-                                  row["cpu_percent"] = 100. * (1. - (current[0] - previous[0]) / (current[1] - previous[1]))
-                              previous = current
-                              memory = MemoryStatus(); memory.length = ctypes.sizeof(memory)
-                              if not kernel32.GlobalMemoryStatusEx(ctypes.byref(memory)):
-                                  raise ctypes.WinError(ctypes.get_last_error())
-                              row.update(total_physical_memory_bytes=memory.total_phys,
-                                         available_physical_memory_bytes=memory.avail_phys, memory_load_percent=memory.load)
-                          except Exception as error:
-                              row["error"] = {"type": type(error).__name__, "message": str(error)}
-                          row["sampling_elapsed_seconds"] = time.perf_counter() - sampled
-                          output.write(json.dumps(row) + "\n"); output.flush()
-                          if stop_sampling.wait(max(0., 2. - (time.perf_counter() - sampled))): break
-              except Exception as error:
-                  observer_errors.append({"type": type(error).__name__, "message": str(error)})
-
-          plan_path = root / "software_gate_plan.json"
-          inventory = {"source_sha": source_sha, "selected_stages": [], "test_modules": []}
-          if plan_path.is_file():
-              plan = json.loads(plan_path.read_text(encoding="utf-8-sig"))
-              inventory["selection"] = plan.get("selection")
-              for stage in plan.get("stages", []):
-                  inventory["selected_stages"].append(stage)
-                  selected = stage.get("command") or {}
-                  arguments = selected.get("arguments", [])
-                  if selected.get("runner") == "python" and arguments[:2] == ["-m", "unittest"]:
-                      inventory["test_modules"].extend(value for value in arguments[2:] if not value.startswith("-"))
-                  inventory["test_modules"].extend((selected.get("parameters") or {}).get("SelectedTestModules", []))
-          else:
-              inventory["error"] = "Plan file is missing; the public gate must reject the same missing plan."
-          inventory["test_modules"].sort()
-          inventory["test_module_multiset_sha256"] = hashlib.sha256(json.dumps(
-              inventory["test_modules"], separators=(",", ":")).encode("utf-8")).hexdigest()
-          (root / "gate_selection_inventory.json").write_text(json.dumps(inventory, indent=2) + "\n", encoding="utf-8")
-          scope_path = root / "integration_scope.json"
-          scope = json.loads(scope_path.read_text(encoding="utf-8-sig")) if scope_path.is_file() else {"scope": "Repository"}
-          summary_path = root / "integration_gate_summary.json"
-          timing_path = root / "integration_gate_command_timing.json"
-          samples_path = root / "integration_gate_resource_samples.jsonl"
-          command = [os.environ["PUBLIC_GATE_POWERSHELL"], "-NoProfile", "-File", "common/verify.ps1",
-                     "-PlanPath", str(plan_path), "-MaxConcurrency", str(max_concurrency), "-SummaryPath", str(summary_path)]
-          if supports_wait:
-              command.extend(["-ResourceWaitTimeoutSeconds", str(wait_seconds)])
-          record = {"schema_version": 1, "role": "public_gate_command_timing", "command": command,
-                    "scope": scope, "source_sha": source_sha, "workflow_source_sha": os.environ.get("GITHUB_SHA"),
-                    "requested_source_ref": os.environ.get("PUBLIC_GATE_SOURCE_REF", ""),
-                    "repository": os.environ.get("GITHUB_REPOSITORY"),
-                    "requirements_lock_sha256": hashlib.sha256(Path("requirements-lock.txt").read_bytes()).hexdigest() if Path("requirements-lock.txt").is_file() else None,
-                    "requested_workers": workers, "requested_max_concurrency": max_concurrency,
-                    "wait_policy": os.environ.get("PUBLIC_GATE_WAIT_POLICY", "finite_resource_wait_deadline"),
-                    "resource_wait_timeout_seconds": wait_seconds if supports_wait else None,
-                    "test_module_multiset_sha256": inventory["test_module_multiset_sha256"],
-                    "environment": {"python_executable": sys.executable, "python_version": sys.version,
-                                    "platform": platform.platform(), "logical_processors": os.cpu_count(),
-                                    "runner_environment": os.environ.get("RUNNER_ENVIRONMENT"),
-                                    "runner_image_os": os.environ.get("ImageOS"), "runner_image_version": os.environ.get("ImageVersion")},
-                    "summary_path": str(summary_path), "resource_samples_path": str(samples_path), "exit_code": None}
-          started = time.perf_counter()
-          observer = threading.Thread(target=observe_host, args=(samples_path, started), daemon=True)
-          observer.start()
-          try:
-              # Inherit stdout/stderr: immediate gate failures must remain live.
-              result = subprocess.run(command, cwd=Path.cwd(), check=False)
-              record["exit_code"] = result.returncode
-          except BaseException as error:
-              record["error"] = {"type": type(error).__name__, "message": str(error)}
-              raise
-          finally:
-              record["elapsed_wall_seconds"] = time.perf_counter() - started
-              stop_sampling.set(); observer.join()
-              record["resource_observer_errors"] = observer_errors
-              if summary_path.is_file():
-                  try:
-                      summary = json.loads(summary_path.read_text(encoding="utf-8-sig"))
-                      stages = summary.get("stages", [])
-                      methods = sorted(row["test"] for stage in stages for row in stage.get("test_durations", []))
-                      record["test_method_multiset_sha256"] = hashlib.sha256(json.dumps(
-                          methods, separators=(",", ":")).encode("utf-8")).hexdigest()
-                      record["timed_test_method_count"] = len(methods)
-                      record["stage_resource_wait_seconds_sum"] = sum(stage.get("resource_wait_seconds") or 0 for stage in stages)
-                      events = []
-                      for stage in stages:
-                          if stage.get("started_at") and stage.get("finished_at"):
-                              parse_time = lambda value: datetime.datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
-                              begin, end = parse_time(stage["started_at"]), parse_time(stage["finished_at"])
-                              if end > begin: events.extend(((begin, 1), (end, -1)))
-                      active = peak = 0
-                      for _, change in sorted(events): active += change; peak = max(peak, active)
-                      # These intervals include admission waits and cleanup; this is not CPU concurrency.
-                      record["active_stage_interval_peak_including_wait_and_cleanup"] = peak
-                      record["timed_test_method_ids"] = methods
-                  except Exception as error:
-                      record["summary_observation_error"] = {"type": type(error).__name__, "message": str(error)}
-              timing_path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
-              print(f"PUBLIC_GATE_COMMAND EXIT_CODE={record['exit_code']} ELAPSED_WALL_SECONDS={record['elapsed_wall_seconds']:.6f} TIMING_PATH={timing_path}", flush=True)
-          sys.exit(result.returncode)
-          '@ | & $python -
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        run: *gate_command
       - name: Upload repository gate evidence
         if: always()
         uses: actions/upload-artifact@v7

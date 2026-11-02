@@ -1076,7 +1076,10 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
     def test_ci_command_wall_clock_preserves_live_output_exit_and_summary(self) -> None:
         workflow = LIGHTWEIGHT_WORKFLOW.read_text(encoding="utf-8")
         programs = re.findall(r"(?ms)^          @'\n(.*?)^          '@ \| & \$python -$", workflow)
-        self.assertEqual(len(programs), 2)
+        self.assertEqual(len(programs), 1)
+        self.assertEqual(workflow.count("run: *gate_command"), 1)
+        projections = re.findall(r"PUBLIC_GATE_SCOPE_FILE: (\S+)\n          PUBLIC_GATE_OUTPUT_PREFIX: (\S+)", workflow)
+        self.assertEqual(projections, [("changed_scope.json", "changed"), ("integration_scope.json", "integration")])
         fixture = r'''param($PlanPath,$MaxConcurrency,$ResourceWaitTimeoutSeconds,$SummaryPath)
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 @{role='ci_gate_fixture';elapsed_seconds=0.005}|ConvertTo-Json|Set-Content -LiteralPath $SummaryPath -Encoding utf8
@@ -1092,14 +1095,20 @@ exit ([int]$env:CI_FIXTURE_EXIT)
             common.mkdir()
             for name in ("verify.ps1",):
                 (common / name).write_text(fixture, encoding="utf-8")
-            for job, full_scope, code in ((0, False, 0), (0, False, 7), (0, True, 0), (1, False, 0), (1, False, 7)):
+            for job, full_scope, code in ((0, False, 0), (0, False, 7), (0, True, 0), (1, False, 0), (1, False, 7), (2, False, 0), (2, False, 7)):
                 with self.subTest(job=job, full_scope=full_scope, code=code):
                     scope = {"full_scope": full_scope, "changed_paths": ["owner/含空格 file.py", "docs/README.md"]}
-                    (root / "changed_scope.json").write_text(json.dumps(scope), encoding="utf-8")
+                    scope_file, prefix = projections[0 if job == 0 else 1]
+                    if job == 1:
+                        scope = {"scope": "Owner", "owner": "fixture_group"}
+                    elif job == 2:
+                        scope = {"scope": "Repository"}
+                    (root / scope_file).write_text(json.dumps(scope), encoding="utf-8")
                     release = root / f"release_{job}_{full_scope}_{code}"
                     environment = dict(os.environ, RUNNER_TEMP=str(root), PUBLIC_GATE_POWERSHELL=shutil.which("pwsh"),
-                        PUBLIC_GATE_PYTHON=sys.executable, CI_FIXTURE_RELEASE=str(release), CI_FIXTURE_EXIT=str(code))
-                    process = subprocess.Popen([sys.executable, "-c", textwrap.dedent(programs[job])], cwd=root,
+                        PUBLIC_GATE_SCOPE_FILE=scope_file, PUBLIC_GATE_OUTPUT_PREFIX=prefix,
+                        CI_FIXTURE_RELEASE=str(release), CI_FIXTURE_EXIT=str(code))
+                    process = subprocess.Popen([sys.executable, "-c", textwrap.dedent(programs[0])], cwd=root,
                         env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8")
                     lines: list[str] = []
                     observed: Queue[str] = Queue()
@@ -1138,11 +1147,28 @@ exit ([int]$env:CI_FIXTURE_EXIT)
                     summary = json.loads(Path(timing["summary_path"]).read_text(encoding="utf-8-sig"))
                     self.assertEqual(summary, {"role": "ci_gate_fixture", "elapsed_seconds": 0.005})
                     arguments = json.loads(next(line.split("=", 1)[1] for line in lines if line.startswith("CI_FIXTURE_ARGUMENTS=")))
-                    if job == 0:
-                        self.assertEqual(timing["scope"], scope)
+                    self.assertEqual(timing["scope"], scope)
                     self.assertEqual(Path(arguments["plan_path"]), root / "software_gate_plan.json")
                     if code:
                         self.assertIn("CI_NATIVE_FAILURE", stderr)
+            for scope_file, prefix in projections:
+                for invalid in ("missing", "malformed"):
+                    with self.subTest(scope_file=scope_file, invalid=invalid):
+                        scope_path = root / scope_file
+                        if invalid == "missing":
+                            scope_path.unlink(missing_ok=True)
+                        else:
+                            scope_path.write_text("{invalid-json", encoding="utf-8")
+                        release = root / "invalid_scope_release"
+                        release.touch()
+                        environment = dict(os.environ, RUNNER_TEMP=str(root), PUBLIC_GATE_POWERSHELL=shutil.which("pwsh"),
+                            PUBLIC_GATE_SCOPE_FILE=scope_file, PUBLIC_GATE_OUTPUT_PREFIX=prefix,
+                            CI_FIXTURE_RELEASE=str(release), CI_FIXTURE_EXIT="0")
+                        rejected = subprocess.run([sys.executable, "-c", textwrap.dedent(programs[0])], cwd=root,
+                            env=environment, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                        self.assertNotEqual(rejected.returncode, 0, rejected.stdout + rejected.stderr)
+                        self.assertNotIn("CI_FIRST_OUTPUT_BEFORE_EXIT", rejected.stdout)
+                        self.assertIn("FileNotFoundError" if invalid == "missing" else "JSONDecodeError", rejected.stderr)
         self.assertIn("${{ runner.temp }}/changed_gate_command_timing.json", workflow)
         self.assertIn("${{ runner.temp }}/integration_gate_command_timing.json", workflow)
 
