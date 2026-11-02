@@ -30,10 +30,17 @@ class CooledFrontendExecuteTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "fixture.ps1"
             path.write_text(code, encoding="utf-8", newline="\n")
-            return subprocess.run(
-                ["pwsh", "-NoProfile", "-File", str(path), *map(str, arguments)],
-                cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=60,
-            )
+            try:
+                return subprocess.run(
+                    ["pwsh", "-NoProfile", "-File", str(path), *map(str, arguments)],
+                    cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=60,
+                )
+            except subprocess.TimeoutExpired as error:
+                for name, captured in (("stdout", error.stdout), ("stderr", error.stderr)):
+                    if captured:
+                        text = captured.decode("utf-8", errors="replace") if isinstance(captured, bytes) else captured
+                        print(f"COOLED_FIXTURE_TIMEOUT_PARTIAL_{name.upper()}\n{text}", file=sys.stderr, flush=True)
+                raise
 
     def test_native_helper_projects_latest_public_context_and_preserves_process_facts(self):
         code = r"""param($ExecutePath,$Repo,$Python,$Root)
@@ -349,13 +356,86 @@ foreach($name in @('Initialize-IntegrationStageBudget','New-RunPackage','Enter-A
         self.assertIn("ACTUAL_IMPORT_CLOSURE=PASS", result.stdout)
 
     def test_ordinary_cache_resumes_only_missing_fields_then_hit_without_native(self):
-        code=r'''param($Source,$Repo,$Python,$Run,$Cache)
+        code=r'''param($Source,$Repo,$Python,$Run,$Cache,$Mode='normal')
 $ErrorActionPreference='Stop'
 $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
 $node=$ast.FindAll({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-CooledOrdinaryFieldBuild'},$true)[0]
 Invoke-Expression $node.Extent.Text
 $env:COOLED_INERT_CACHE=$Cache
+# Test-private interpreter lifetime; every original script/argv still executes.
+$workerCode=@'
+import contextlib, ctypes, io, json, os, sys, threading, traceback
+from ctypes import wintypes
+sys.stdin.reconfigure(encoding='utf-8')
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
+parent=int(sys.argv[1])
+if os.name == 'nt':
+    kernel=ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.OpenProcess.argtypes=[wintypes.DWORD,wintypes.BOOL,wintypes.DWORD]
+    kernel.OpenProcess.restype=wintypes.HANDLE
+    kernel.WaitForSingleObject.argtypes=[wintypes.HANDLE,wintypes.DWORD]
+    kernel.WaitForSingleObject.restype=wintypes.DWORD
+    handle=kernel.OpenProcess(0x00100000,False,parent)
+    if not handle:
+        raise OSError(ctypes.get_last_error(), 'Cannot bind actual parent process handle')
+    def watch_parent():
+        result=kernel.WaitForSingleObject(handle,0xFFFFFFFF)
+        os._exit(91 if result == 0 else 92)
+else:
+    import time
+    def watch_parent():
+        while os.getppid() == parent:
+            time.sleep(0.05)
+        os._exit(91)
+threading.Thread(target=watch_parent,daemon=True).start()
+print(json.dumps({'pid':os.getpid(),'launcher_pid':os.getppid(),'parent_pid':parent,'python':sys.executable,'cwd':os.getcwd()}),flush=True)
+from integrations.workflows.cooled_frontend import runtime as cr
+original_plan=cr.field_cache_plan
+try:
+    for line in sys.stdin:
+        arguments=json.loads(line)['arguments']
+        output,errors=io.StringIO(),io.StringIO()
+        exit_code=0
+        cr.field_cache_plan=original_plan
+        sys.argv=['-c',*arguments[2:]]
+        try:
+            if arguments[0] != '-c':
+                raise ValueError('Expected actual inline Python argv')
+            with contextlib.redirect_stdout(output),contextlib.redirect_stderr(errors):
+                exec(compile(arguments[1],'<cooled-cache-request>','exec'),{'__name__':'__main__'})
+        except SystemExit as error:
+            exit_code=0 if error.code is None else error.code if isinstance(error.code,int) else 1
+            if error.code is not None and not isinstance(error.code,int):
+                print(error.code,file=errors)
+        except BaseException:
+            traceback.print_exc(file=errors)
+            exit_code=1
+        print(json.dumps({'stdout':output.getvalue(),'stderr':errors.getvalue(),'exit_code':exit_code}),flush=True)
+finally:
+    # The OS closes this process-owned handle on exit; do not close a handle
+    # while the independent parent watcher is still waiting on it.
+    sys.stdout.flush()
+'@
+$start=[Diagnostics.ProcessStartInfo]::new()
+$start.FileName=$Python;$start.WorkingDirectory=$Repo;$start.UseShellExecute=$false;$start.CreateNoWindow=$true
+$start.RedirectStandardInput=$true;$start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true
+$start.StandardInputEncoding=[Text.UTF8Encoding]::new($false)
+$start.StandardOutputEncoding=[Text.UTF8Encoding]::new($false)
+$start.StandardErrorEncoding=[Text.UTF8Encoding]::new($false)
+foreach($arg in @('-B','-u','-c',$workerCode,[string]$PID)){$start.ArgumentList.Add($arg)}
+$worker=[Diagnostics.Process]::Start($start)
+$workerErrors=$worker.StandardError.ReadToEndAsync()
+$identity=$worker.StandardOutput.ReadLine()|ConvertFrom-Json
+# Windows venv redirectors can own the interpreter child; bind that real edge.
+if(($identity.pid-ne$worker.Id-and$identity.launcher_pid-ne$worker.Id)-or$identity.parent_pid-ne$PID-or$identity.python-ne$Python-or$identity.cwd-ne$Repo){throw ("Private worker identity mismatch: actual={0} launcher={1} parent={2} python={3} cwd={4}"-f($identity|ConvertTo-Json -Compress),$worker.Id,$PID,$Python,$Repo)}
+$identity|Add-Member -NotePropertyName launch_process_pid -NotePropertyValue $worker.Id
+$actualWorker=[Diagnostics.Process]::GetProcessById([int]$identity.pid)
+$null=$actualWorker.Handle
+[IO.File]::WriteAllText((Join-Path $Run 'worker_identity.json'),($identity|ConvertTo-Json),[Text.UTF8Encoding]::new($false))
+Write-Host ('COOLED_CACHE_WORKER pid={0} parent={1} python={2}'-f$identity.pid,$identity.parent_pid,$identity.python)
+$script:realCalls=0
 $script:refines=0;$script:exports=0;$script:gem=0;$script:verifies=0;$script:interrupt=$true
 function Write-RunJson {param($Path,$Value,$Depth=100)
  [IO.File]::WriteAllText($Path,(ConvertTo-Json -InputObject $Value -Depth $Depth),[Text.UTF8Encoding]::new($false))
@@ -370,9 +450,19 @@ function Invoke-FrontendRuntimePython {
  param($Python,$RepoRoot,$RunDirectory,$Name,$Arguments,[switch]$Json)
  $prefix="import os;from pathlib import Path;from integrations.workflows.cooled_frontend import runtime as cr;original=cr.field_cache_plan;cr.field_cache_plan=lambda run: original(run,cache_root=Path(os.environ['COOLED_INERT_CACHE']));"
  $Arguments[1]=$prefix+"`n"+$Arguments[1]
- $output=&$Python -B @Arguments
- if($LASTEXITCODE-ne0){throw "actual public cache boundary failed: $Name"}
- if($Json){return (($output-join"`n")|ConvertFrom-Json -Depth 100)}
+ $timer=[Diagnostics.Stopwatch]::StartNew()
+ Write-Host ("COOLED_CACHE_CALL START phase={0} name={1} run={2} python={3}"-f$script:cachePhase,$Name,$RunDirectory,$Python)
+ $worker.StandardInput.WriteLine((@{arguments=@($Arguments)}|ConvertTo-Json -Depth 100 -Compress))
+ $worker.StandardInput.Flush()
+ $line=$worker.StandardOutput.ReadLine()
+ if($null-eq$line){throw 'Private Python worker exited before its real response'}
+ $response=$line|ConvertFrom-Json -Depth 100
+ $output=[string]$response.stdout;$callExit=[int]$response.exit_code
+ if($response.stderr){[Console]::Error.Write([string]$response.stderr)}
+ if($script:cachePhase-ne'negative'){$script:realCalls++}
+ Write-Host ("COOLED_CACHE_CALL END phase={0} name={1} elapsed={2:F6} exit={3}"-f$script:cachePhase,$Name,$timer.Elapsed.TotalSeconds,$callExit)
+ if($callExit-ne0){throw "actual public cache boundary failed: $Name"}
+ if($Json){return ($output|ConvertFrom-Json -Depth 100)}
 }
 function Invoke-CooledNative {
  param($Arguments,$Name,$RunDirectory,$SimionExe,$Limits,$WorkingDirectory)
@@ -398,12 +488,34 @@ $package=@{native_path_preparation=@{calls=0;elapsed_seconds=0.;transport_bytes=
 $lease=@{}
 $capacity=@{committed_new_bytes=[long]::MaxValue}
 $call=@{Package=$package;FrozenRepoRoot=$Repo;Python=$Python;RuntimeModule='unused';SimionExe='NOT_NATIVE';Limits=@{};HostLease=[ref]$lease;CapacitySession=[ref]$capacity}
+try{
+ if($Mode-eq'parent_exit'){
+  $active=Join-Path $Run 'worker_active.txt'
+  $worker.StandardInput.WriteLine((@{arguments=@('-c',"from pathlib import Path; import sys,time; Path(sys.argv[1]).write_text('active'); time.sleep(120)",$active)}|ConvertTo-Json -Compress))
+  $worker.StandardInput.Flush()
+  $activeWait=[Diagnostics.Stopwatch]::StartNew()
+  while(-not(Test-Path -LiteralPath $active)){
+   if($activeWait.Elapsed.TotalSeconds-gt10){throw 'Worker did not enter blocking request'}
+   Start-Sleep -Milliseconds 10
+  }
+  [Environment]::Exit(19)
+ }
+ if($Mode-eq'parent_exception'){throw 'PRIVATE_PARENT_EXCEPTION_SENTINEL'}
+ $script:cachePhase='negative'
+ try{Invoke-FrontendRuntimePython -Python $Python -RepoRoot $Repo -RunDirectory $Run -Name negative_exit -Arguments @('-c',"import sys; print('PRIVATE_ERROR_SENTINEL',file=sys.stderr); raise SystemExit(7)") -Json;throw 'nonzero accepted'}
+ catch{if($_.Exception.Message-ne'actual public cache boundary failed: negative_exit'){throw}}
+ try{Invoke-FrontendRuntimePython -Python $Python -RepoRoot $Repo -RunDirectory $Run -Name negative_json -Arguments @('-c',"print('NOT_JSON_SENTINEL')") -Json;throw 'invalid JSON accepted'}
+ catch{if($_.FullyQualifiedErrorId-notlike'*ConvertFromJson*'){throw};Write-Host 'COOLED_CACHE_BAD_JSON_REJECTED'}
+$script:cachePhase='interrupted';$phaseTimer=[Diagnostics.Stopwatch]::StartNew()
 try{Invoke-CooledOrdinaryFieldBuild @call;throw 'interruption missing'}catch{if($_.Exception.Message-ne'inert interruption'){throw}}
+Write-Host ("COOLED_CACHE_PHASE phase=interrupted elapsed={0:F6}"-f$phaseTimer.Elapsed.TotalSeconds)
+$script:cachePhase='resumed';$phaseTimer.Restart()
 $script:interrupt=$false
 $result=Invoke-CooledOrdinaryFieldBuild @call
 if($script:refines-ne8-or$script:exports-ne7-or$script:gem-ne1-or$script:verifies-ne7){throw 'completed members were rebuilt or lost'}
 if($result.working_points.Count-ne7-or$result.retained_native_build_objects.Count-ne0){throw 'published fields were materialized'}
 foreach($record in $result.working_points){if(-not(Get-Item -LiteralPath $record.path).IsReadOnly){throw 'published field is writable'}}
+Write-Host ("COOLED_CACHE_PHASE phase=resumed elapsed={0:F6}"-f$phaseTimer.Elapsed.TotalSeconds)
 $next=$Run+'-next'
 $null=New-Item -ItemType Directory -Path $next
 Copy-Item -LiteralPath (Join-Path $Run inputs) -Destination (Join-Path $next inputs) -Recurse
@@ -411,10 +523,22 @@ $null=New-Item -ItemType Directory -Path (Join-Path $next results),(Join-Path $n
 foreach($name in @('cooled_frontend_field_stage_receipt.json','cooled_field_bank.json')){Remove-Item -LiteralPath (Join-Path $next ('inputs/'+$name))}
 $package=@{native_path_preparation=@{calls=0;elapsed_seconds=0.;transport_bytes=0};run_dir=$next;artifact_run_dir=$next;input_dir=Join-Path $next inputs;result_dir=Join-Path $next results}
 $call.Package=$package
+$script:cachePhase='hit';$phaseTimer.Restart()
 $again=Invoke-CooledOrdinaryFieldBuild @call
+Write-Host ("COOLED_CACHE_PHASE phase=hit elapsed={0:F6}"-f$phaseTimer.Elapsed.TotalSeconds)
 if($script:refines-ne8-or$script:exports-ne7-or$script:gem-ne1-or$script:verifies-ne7){throw 'HIT invoked native work'}
 if($again.field_directory-ne$result.field_directory){throw 'HIT changed exact generation'}
+if($script:realCalls-ne47){throw ('Real argv count changed: '+$script:realCalls)}
 'PUBLIC_COOLED_RESUME_AND_HIT=PASS'
+}finally{
+ $worker.StandardInput.Close()
+ if(-not$worker.WaitForExit(5000)){$worker.Kill($true);$worker.WaitForExit()}
+ if(-not$actualWorker.WaitForExit(5000)){$actualWorker.Kill($true);$actualWorker.WaitForExit()}
+ $workerErrors.GetAwaiter().GetResult()|Write-Host
+ Write-Host ('COOLED_CACHE_WORKER_STOPPED pid={0} worker_os_exit={1} launcher={2} launcher_os_exit={3}'-f$identity.pid,$actualWorker.ExitCode,$worker.Id,$worker.ExitCode)
+ $actualWorker.Dispose()
+ $worker.Dispose()
+}
 '''
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)
@@ -425,8 +549,65 @@ if($again.field_directory-ne$result.field_directory){throw 'HIT changed exact ge
             (run/"inputs/native_discovery.json").write_text(json.dumps(dict(bytes=1,sha256="A"*64,file_version="INERT")))
             try:
                 result=self.ps(code,EXECUTE,REPO,sys.executable,run,root/"cache")
+                print(result.stdout, end="", flush=True)
+                if result.stderr:
+                    print(result.stderr, end="", file=sys.stderr, flush=True)
                 self.assertEqual(result.returncode,0,result.stdout+result.stderr)
                 self.assertIn("PUBLIC_COOLED_RESUME_AND_HIT=PASS",result.stdout)
+                self.assertIn("PRIVATE_ERROR_SENTINEL", result.stderr)
+                self.assertIn("COOLED_CACHE_BAD_JSON_REJECTED", result.stdout)
+                self.assertIn("COOLED_CACHE_WORKER_STOPPED", result.stdout)
+                self.assertIn("worker_os_exit=0", result.stdout)
+                for mode in ("normal", "parent_exception", "parent_exit"):
+                    with self.subTest(worker_lifecycle=mode):
+                        if mode != "normal":
+                            result = self.ps(code, EXECUTE, REPO, sys.executable, run, root / "cache", mode)
+                            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                            if mode == "parent_exception":
+                                self.assertIn("PRIVATE_PARENT_EXCEPTION_SENTINEL", result.stderr)
+                                self.assertIn("COOLED_CACHE_WORKER_STOPPED", result.stdout)
+                                self.assertIn("worker_os_exit=0", result.stdout)
+                            else:
+                                self.assertEqual(result.returncode, 19, result.stdout + result.stderr)
+                                self.assertTrue((run / "worker_active.txt").is_file())
+                        identity = json.loads((run / "worker_identity.json").read_text(encoding="utf-8-sig"))
+                        print(f"COOLED_CACHE_WORKER_LIFECYCLE mode={mode} identity={json.dumps(identity)}", flush=True)
+                        self.assertEqual(Path(identity["python"]).resolve(), Path(sys.executable).resolve())
+                        for process_pid in {identity["pid"], identity["launch_process_pid"]}:
+                            if sys.platform != "win32":
+                                import os
+                                import time
+
+                                deadline = time.monotonic() + 5
+                                while True:
+                                    try:
+                                        os.kill(process_pid, 0)
+                                    except ProcessLookupError:
+                                        break
+                                    self.assertLess(time.monotonic(), deadline, "Private worker remained alive")
+                                    time.sleep(0.05)
+                                print(f"COOLED_CACHE_WORKER_EXIT_CONFIRMED mode={mode} pid={process_pid}", flush=True)
+                                continue
+                            import ctypes
+                            from ctypes import wintypes
+
+                            kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+                            kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+                            kernel.OpenProcess.restype = wintypes.HANDLE
+                            kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+                            kernel.WaitForSingleObject.restype = wintypes.DWORD
+                            kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+                            handle = kernel.OpenProcess(0x00100000, False, process_pid)
+                            if handle:
+                                try:
+                                    self.assertEqual(kernel.WaitForSingleObject(handle, 5000), 0,
+                                                     f"Private worker {process_pid} remained alive after {mode}")
+                                finally:
+                                    kernel.CloseHandle(handle)
+                            else:
+                                self.assertEqual(ctypes.get_last_error(), 87,
+                                                 "Worker exit probe failed for a reason other than absent process")
+                            print(f"COOLED_CACHE_WORKER_EXIT_CONFIRMED mode={mode} pid={process_pid}", flush=True)
             finally:
                 for path in root.rglob("*"):
                     if path.is_file():
