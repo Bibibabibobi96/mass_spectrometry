@@ -40,7 +40,7 @@ def resolve_workspace_paths(
     checkout root. It is never inferred again from the current source snapshot.
     The caller freezes this small projection in its existing run configuration.
     """
-    _absolute(source_root, "source_root")
+    source = _absolute(source_root, "source_root")
     if frozen_context is not None:
         if not isinstance(frozen_context, Mapping) or set(frozen_context) != set(ROOT_FIELDS):
             raise ValueError("frozen workspace context requires exactly four root fields")
@@ -54,7 +54,7 @@ def resolve_workspace_paths(
             result[name] = canonical
         _validate_root_kinds(result)
         return result
-    source = _absolute(source_root, "source_root").resolve()
+    source = source.resolve()
     if not source.is_dir():
         raise ValueError(f"initial source_root must be an existing directory: {source}")
     artifact = _absolute(artifact_root if artifact_root is not None else

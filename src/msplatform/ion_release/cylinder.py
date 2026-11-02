@@ -195,7 +195,7 @@ def validate_cylinder_release_spec(spec: Mapping[str, Any]) -> None:
         raise ValueError("sampling.strategy is unsupported")
 
 
-def _position(center: Sequence[float], axis: int, radius: float, height: float, radial: float, azimuth: float, axial: float) -> tuple[float, float, float]:
+def _position(center: Sequence[float], axis: int, height: float, radial: float, azimuth: float, axial: float) -> tuple[float, float, float]:
     result = list(center)
     transverse = [index for index in range(3) if index != axis]
     result[transverse[0]] += radial * math.cos(azimuth)
@@ -563,7 +563,7 @@ def generate_cylinder_release_states(spec: Mapping[str, Any]) -> list[dict[str, 
         for offset in range(count):
             radial = radius * math.sqrt(rng.random())
             azimuth = 2.0 * math.pi * rng.random()
-            position = _position(center, axis, radius, height, radial, azimuth, rng.random() - 0.5)
+            position = _position(center, axis, height, radial, azimuth, rng.random() - 0.5)
             # Draw transverse components first, then the positive axial
             # component. This keeps the seeded Gaussian sequence stable for
             # a z-axis source while avoiding an unused axial draw.
