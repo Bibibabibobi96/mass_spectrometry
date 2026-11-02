@@ -85,6 +85,9 @@ class ParallelGateSupportTests(unittest.TestCase):
         env={**environment,"RUNNER_TEMP":str(destination),"GITHUB_OUTPUT":str(destination/"outputs"),
              "PUBLIC_GATE_EVENT_NAME":event,"PUBLIC_GATE_PUSH_BEFORE":before,
              "PUBLIC_GATE_COMPARISON_BASE":comparison,"PUBLIC_GATE_AFTER":after,
+             "PUBLIC_GATE_WORKERS":"4","PUBLIC_GATE_RESOURCE_WAIT_TIMEOUT_SECONDS":"1800",
+             "PUBLIC_GATE_WAIT_ARGUMENT_SUPPORTED":"true","PUBLIC_GATE_WAIT_POLICY":"finite_resource_wait_deadline",
+             "PUBLIC_GATE_ACTUAL_SOURCE_SHA":after,"PUBLIC_GATE_SOURCE_REF":"",
              "PATH":str(Path(sys.executable).parent)+os.pathsep+environment["PATH"]}
         result=subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(script)],cwd=root,env=env,
             capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=60)
@@ -104,6 +107,8 @@ class ParallelGateSupportTests(unittest.TestCase):
                 after=after,comparison=before if event=="workflow_dispatch" else "")
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             plans.append(json.loads((destination/"software_gate_plan.json").read_text(encoding="utf-8-sig")))
+            self.assertEqual(plans[-1]["resource_context"]["requested_workers"], 4)
+            self.assertEqual(plans[-1]["resource_context"]["wait_timeout_seconds"], 1800)
             self.assertEqual(json.loads((destination/"changed_scope.json").read_text(encoding="utf-8-sig")),
                              {"full_scope":False,"changed_paths":["fixture.policy"]})
             self.assertIn("dependency_profile=stdlib",(destination/"outputs").read_text(encoding="utf-8-sig"))
@@ -119,6 +124,9 @@ class ParallelGateSupportTests(unittest.TestCase):
         self.assertNotEqual(executed.returncode,0,executed.stdout+executed.stderr)
         timing=json.loads((destination/"changed_gate_command_timing.json").read_text())
         self.assertEqual(timing["exit_code"],executed.returncode)
+        self.assertEqual(timing["source_sha"],after)
+        self.assertEqual(timing["requested_source_ref"],"")
+        self.assertEqual(timing["wait_policy"],"finite_resource_wait_deadline")
         self.assertEqual(json.loads((destination/"changed_gate_summary.json").read_text(encoding="utf-8-sig"))["status"],"FAIL")
         self.assertEqual((base/"catalog_reads").read_text().splitlines(),["read","read"])
 
@@ -190,6 +198,26 @@ class ParallelGateSupportTests(unittest.TestCase):
                 self.assertEqual((base/"catalog_reads").read_text().splitlines(),["read"])
                 self.assertEqual((base/"events").read_text().splitlines(),["a","b"] if scope=="Repository" else ["a"])
                 self.assertIn("GATE_FIRST_FAILURE",result.stdout+result.stderr)
+
+    def test_plan_resource_context_overrides_fail_before_admission(self):
+        base,root,environment=self.plan_transport_fixture()
+        plan=base/"plan.json"
+        prepared=self.invoke_plan_fixture(root,environment,"-PythonExe",sys.executable,
+            "-PlanOnly","-PlanPath",plan,"-ChangedPath","fixture.policy")
+        self.assertEqual(prepared.returncode,0,prepared.stdout+prepared.stderr)
+        for parameter, value in (("MaxConcurrency", "2"), ("ResourceWaitTimeoutSeconds", "1")):
+            with self.subTest(parameter=parameter):
+                summary=base/(parameter+".json")
+                result=subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(root/"common/verify.ps1"),
+                    "-PlanPath",str(plan),"-"+parameter,value,"-SummaryPath",str(summary)],
+                    cwd=root,env=environment,capture_output=True,text=True,encoding="utf-8",timeout=60)
+                self.assertNotEqual(result.returncode,0,result.stdout+result.stderr)
+                self.assertIn("PlanPath execution cannot change resource context: "+parameter,
+                    result.stdout+result.stderr)
+                self.assertFalse(summary.exists())
+                self.assertFalse((base/"admissions").exists())
+                self.assertFalse((base/"events").exists())
+        self.assertEqual((base/"catalog_reads").read_text().splitlines(),["read"])
 
     def test_plan_checkout_facts_ignore_installation_but_reject_changed_inputs_and_head(self):
         base,root,environment=self.plan_transport_fixture(git=True)
@@ -1397,10 +1425,12 @@ function Read-GateCatalog {param($RepoRoot)
             env.pop("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN",None)
             plan=root/"plan.json"
             prepared=subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(common/"verify.ps1"),
-                "-Scope","Repository","-PlanOnly","-PlanPath",str(plan),"-PythonExe",sys.executable],
+                "-Scope","Repository","-PlanOnly","-PlanPath",str(plan),"-PythonExe",sys.executable,"-MaxConcurrency","3"],
                 cwd=root,env=env,capture_output=True,text=True,encoding="utf-8",timeout=30)
             self.assertEqual(prepared.returncode,0,prepared.stdout+prepared.stderr)
             document=json.loads(plan.read_text(encoding="utf-8"))
+            self.assertEqual(document["resource_context"]["requested_workers"], 3)
+            self.assertEqual(document["resource_context"]["resolved_workers"], 3)
             children=[row for row in document["stages"] if row["name"].startswith("common_contracts__tests_")]
             selected=[name for row in children for name in row["command"]["arguments"][2:]]
             self.assertCountEqual(selected,["common.contracts.test_"+name for name in "abc"])
@@ -1415,6 +1445,7 @@ function Read-GateCatalog {param($RepoRoot)
                     result=subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(common/"verify.ps1"),
                         "-PlanPath",str(plan),"-MaxConcurrency","3","-SummaryPath",str(summary)],
                         cwd=root,env=child_env,capture_output=True,text=True,encoding="utf-8",timeout=60)
+                    self.assertTrue(summary.exists(), result.stdout+result.stderr)
                     records=json.loads(summary.read_text(encoding="utf-8"))
                     parts=[row for row in records["stages"] if row["name"].startswith("common_contracts__tests_")]
                     self.assertEqual(result.returncode==0,not failed,result.stdout+result.stderr)
@@ -1476,9 +1507,12 @@ if($SelectedTestModules -contains 'projects.fixture.tests.test_b'){throw 'SHARD_
             env["PARTITION_COUNT"]=str(root/"partition_count.txt")
             plan=root/"executable_plan.json"
             prepared=subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(common/"verify.ps1"),
-                "-Scope","Repository","-PlanOnly","-PlanPath",str(plan),"-PythonExe",sys.executable],
+                "-Scope","Repository","-PlanOnly","-PlanPath",str(plan),"-PythonExe",sys.executable,"-MaxConcurrency","3"],
                 cwd=root,env=env,capture_output=True,text=True,encoding="utf-8",timeout=30)
             self.assertEqual(prepared.returncode,0,prepared.stdout+prepared.stderr)
+            context=json.loads(plan.read_text(encoding="utf-8"))["resource_context"]
+            self.assertEqual(context["requested_workers"], 3)
+            self.assertEqual(context["resolved_workers"], 3)
             result = subprocess.run(
                 [shutil.which("pwsh"), "-NoProfile", "-File", str(common / "verify.ps1"), "-PlanPath", str(plan),
                  "-PythonExe", sys.executable, "-MaxConcurrency", "3", "-SummaryPath", str(summary)],
