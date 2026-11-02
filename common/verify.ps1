@@ -16,7 +16,8 @@ param(
     [switch]$FullScope,
     [switch]$PlanOnly,
     [string]$SummaryPath = '',
-    [ValidateRange(0, 32)][int]$MaxConcurrency = 0,
+    [ValidateScript({ [string]$_ -eq 'auto' -or ([string]$_ -match '^\d+$' -and [int]$_ -le 32) })][string]$MaxConcurrency = '4',
+    [ValidateRange(1,86400)][int]$ResourceWaitTimeoutSeconds = 1800,
     [string]$InternalStage = '',
     [Alias('PlanPath')][string]$InternalRequestPath = '',
     [string]$InternalLogPath = ''
@@ -28,6 +29,7 @@ $consumePlan = $InternalRequestPath -and -not $PlanOnly -and -not $InternalStage
 if($consumePlan-and@(@('Scope','Owner','ChangedPath','FullScope')|Where-Object{$PSBoundParameters.ContainsKey($_)}).Count){
     throw 'PlanPath execution cannot override the frozen selection.'
 }
+$MaxConcurrency=if($MaxConcurrency-eq'auto'){0}else{[int]$MaxConcurrency}
 $repositoryScope = $Scope -eq 'Repository'
 $ownerScope = $Scope -eq 'Owner'
 if ($ownerScope -and -not $Owner.Count) { throw 'Owner scope requires at least one explicit Owner.' }
@@ -44,6 +46,7 @@ if ($repositoryScope -or $ownerScope) {
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'host_execution_lease.ps1')
+$script:GateResourceWaitTimeoutSeconds=$ResourceWaitTimeoutSeconds
 if ($InternalStage) {
     $passed = Invoke-ResolvedGateStage -RepoRoot $repoRoot -Stage $InternalStage `
         -RequestPath $InternalRequestPath -LogPath $InternalLogPath
@@ -58,6 +61,16 @@ if($consumePlan){
         throw 'PlanPath execution cannot change the selected Python runtime.'
     }
     $PythonExe=[string]$resolvedPlan.python_exe
+    if($resolvedPlan.ContainsKey('resource_context')){
+        $context=$resolvedPlan.resource_context
+        foreach($entry in @(@('ResourceWaitTimeoutSeconds','wait_timeout_seconds'),@('MaxConcurrency','requested_workers'))){
+            if($PSBoundParameters.ContainsKey($entry[0])-and[string](Get-Variable $entry[0] -ValueOnly)-cne[string]$context[$entry[1]]){
+                throw "PlanPath execution cannot change resource context: $($entry[0])"
+            }
+            Set-Variable -Name $entry[0] -Value $context[$entry[1]]
+        }
+        $script:GateResourceWaitTimeoutSeconds=$ResourceWaitTimeoutSeconds
+    }
 }
 
 if (-not $PythonExe) {
@@ -77,7 +90,9 @@ $gateFailure = $null
 try {
 $env:SIMULATION_PYTHON_EXE = $PythonExe
 $concurrencyMode = if ($MaxConcurrency -eq 0) { 'auto' } else { 'explicit' }
+$requestedConcurrency=$MaxConcurrency
 $MaxConcurrency = Resolve-GateConcurrency -Requested $MaxConcurrency
+$resourceContext=@{wait_timeout_seconds=$ResourceWaitTimeoutSeconds;requested_workers=[int]$requestedConcurrency;resolved_workers=[int]$MaxConcurrency;logical_processors=[Environment]::ProcessorCount;runner_environment=[string]$env:RUNNER_ENVIRONMENT}
 
 function ConvertTo-RepositoryPath {
     param([Parameter(Mandatory)][string]$Path)
@@ -159,7 +174,8 @@ function Invoke-ChangedStageGroup {
         -MaxConcurrency $MaxConcurrency -GateScriptPath $PSCommandPath `
         -PythonExe $PythonExe `
         -ChildBaseArguments @(
-            '-MaxConcurrency', [string]$MaxConcurrency
+            '-MaxConcurrency', [string]$MaxConcurrency,
+            '-ResourceWaitTimeoutSeconds', [string]$ResourceWaitTimeoutSeconds
         ) `
         -TempNamePrefix $(if ($repositoryScope) { 'repository_integration_gate_' } else { 'changed_gate_' }) `
         -FailureMessage 'Changed-files gate stages failed' `
@@ -689,7 +705,7 @@ Write-Output "CHANGED_GATE_INPUT_SOURCE=$changedPathSource"
 Write-Output "SOFTWARE_GATE_SCOPE=$Scope FULL_CHANGED_SCOPE=$([bool]($FullScope -and -not $repositoryScope))"
 Write-Output "CHANGED_GATE_INPUTS=COUNT=$($changedPaths.Count) PATHS=$($changedPaths -join ',')"
 Write-Output (
-    "GATE_CONCURRENCY=$MaxConcurrency MODE=$concurrencyMode " +
+    "GATE_CONCURRENCY=$MaxConcurrency MODE=$concurrencyMode RESOURCE_WAIT_TIMEOUT_SECONDS=$ResourceWaitTimeoutSeconds " +
     "LOGICAL_PROCESSORS=$([Environment]::ProcessorCount)"
 )
 
@@ -714,6 +730,7 @@ if ($PlanOnly) {
         $selection=@{scope=$Scope;owner=@($Owner);full_scope=[bool]$FullScope;changed_paths=@($changedPaths);
             input_source=$changedPathSource;documentation_only=[bool]$isDocumentationOnly;execution_order=@($executionOrder);dependency_profile=$dependencyProfile}
         $request=New-ResolvedGateStageRequest -Items @($stageItems.Values) -PythonExe $PythonExe -Selection $selection
+        $request.resource_context=$resourceContext
         $request.source_paths=@(Get-GatePlanSourcePaths -Items @($stageItems.Values) -ChangedPaths $changedPaths)
         $request.checkout=Get-GatePlanCheckoutState -RepoRoot $repoRoot -Paths $request.source_paths -IgnorePaths @($InternalRequestPath,$SummaryPath)
         $planPath=[IO.Path]::GetFullPath($InternalRequestPath)
@@ -743,6 +760,7 @@ $summaryItems = if ($isDocumentationOnly) {
 } else { @($stageItems.Values) }
 $gateSummary = New-GateRunSummary -Items @($summaryItems) -GateName 'software_verification' `
     -PythonExe $PythonExe -RepoRoot $repoRoot -SummaryPath $SummaryPath
+$gateSummary.Document.resource_context=$resourceContext
 $gateSummary.Document.scope=$Scope;$gateSummary.Document.owner=@($Owner)
 $gateSummary.Document.full_changed_scope=[bool]($FullScope-and-not$repositoryScope)
 $gateSummary.Document.planned_request=$(if($consumePlan){[IO.Path]::GetFullPath($InternalRequestPath)}else{$null})

@@ -43,6 +43,17 @@ function Get-HostResourceBudget {
   return $budget
 }
 
+function Test-HostResourceWaitDeadline {
+  param([Diagnostics.Stopwatch]$Timer,[double]$TimeoutSeconds=0,[string]$Reason='resource_admission')
+  if($null-ne$Timer-and$TimeoutSeconds-gt0-and$Timer.Elapsed.TotalSeconds-ge$TimeoutSeconds){
+    $failure=[TimeoutException]::new("Host resource wait deadline exceeded: reason=$Reason wait_seconds=$($Timer.Elapsed.TotalSeconds) timeout_seconds=$TimeoutSeconds")
+    $failure.Data['resource_wait_reason']=$Reason
+    $failure.Data['resource_wait_seconds']=$Timer.Elapsed.TotalSeconds
+    $failure.Data['resource_wait_timeout_seconds']=$TimeoutSeconds
+    throw $failure
+  }
+}
+
 function Test-HostResourceConsoleProcess {
   <# Only the protected Windows image is console infrastructure, not a name match. #>
   param([AllowNull()][string]$ImagePath)
@@ -172,7 +183,15 @@ namespace MassSpectrometry {
 
 function Get-HostResourceSnapshot {
   <# Fresh OS observations; a missing snapshot blocks admission, never releases leases. #>
-  param([string]$TargetPath = '')
+  param([string]$TargetPath = '',[Diagnostics.Stopwatch]$WaitTimer=$null,[double]$WaitTimeoutSeconds=0)
+  $observeCim={param([string]$ClassName)
+    Test-HostResourceWaitDeadline -Timer $WaitTimer -TimeoutSeconds $WaitTimeoutSeconds -Reason telemetry_collection
+    $options=@{ErrorAction='Stop'}
+    if($null-ne$WaitTimer-and$WaitTimeoutSeconds-gt0){
+      $options.OperationTimeoutSec=[int][Math]::Max(1,[Math]::Min(30,[Math]::Ceiling($WaitTimeoutSeconds-$WaitTimer.Elapsed.TotalSeconds)))
+    }
+    Get-CimInstance $ClassName @options
+  }
   if(-not$TargetPath){
     $TargetPath=if($env:MASS_SPECTROMETRY_RUN_DIRECTORY){$env:MASS_SPECTROMETRY_RUN_DIRECTORY}
       elseif($env:MASS_SPECTROMETRY_ARTIFACT_ROOT){$env:MASS_SPECTROMETRY_ARTIFACT_ROOT}
@@ -180,12 +199,12 @@ function Get-HostResourceSnapshot {
   }
   if(-not[IO.Path]::IsPathFullyQualified($TargetPath)){throw 'Host I/O observation target must be absolute.'}
   try {
-    $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
-    $cpu = @(Get-CimInstance Win32_Processor -ErrorAction Stop)
+    $os = & $observeCim Win32_OperatingSystem
+    $cpu = @(& $observeCim Win32_Processor)
     $load = ($cpu | Measure-Object LoadPercentage -Average).Average
     $unknownProcessIds = [Collections.Generic.List[int]]::new()
     $definitelyExitedProcessIds = [Collections.Generic.List[int]]::new()
-    $processes = @(foreach ($process in Get-CimInstance Win32_Process -ErrorAction Stop) {
+    $processes = @(foreach ($process in & $observeCim Win32_Process) {
       if ($null -eq $process.CreationDate) {
         # CIM can deny CreationDate for a live process. A native limited query
         # still identifies it without treating an unreadable PID as dead.
@@ -220,6 +239,7 @@ function Get-HostResourceSnapshot {
     $totalMemoryBytes = [int64]$os.TotalVisibleMemorySize * 1KB
     $availableMemoryBytes = [int64]$os.FreePhysicalMemory * 1KB
   } catch {
+    Test-HostResourceWaitDeadline -Timer $WaitTimer -TimeoutSeconds $WaitTimeoutSeconds -Reason telemetry_collection
     # Sandboxed child processes can be denied WMI/CIM while retaining ordinary
     # process and performance-counter access.  Use independent Win32/.NET
     # telemetry here; failure of either source still closes admission.
@@ -276,7 +296,7 @@ function Get-HostResourceSnapshot {
   # queued request is normal bulk I/O, not proof that the disk is saturated.
   $ioPressure = $true
   try {
-    $disks = @(Get-CimInstance Win32_PerfFormattedData_PerfDisk_PhysicalDisk -ErrorAction Stop |
+    $disks = @(& $observeCim Win32_PerfFormattedData_PerfDisk_PhysicalDisk |
       Where-Object Name -ne '_Total')
     $ioPressure = Get-HostResourceIoPressure -Disks $disks -TargetPath $TargetPath
   } catch {
@@ -307,7 +327,8 @@ function Get-HostResourceSnapshot {
 
 function Invoke-HostResourceTransaction {
   [CmdletBinding()]
-  param([Parameter(Mandatory)][hashtable]$Request, [Parameter(Mandatory)][string]$StatePath)
+  param([Parameter(Mandatory)][hashtable]$Request, [Parameter(Mandatory)][string]$StatePath,
+    [Diagnostics.Stopwatch]$WaitTimer=$null,[double]$WaitTimeoutSeconds=0)
   $policy = Get-Content -LiteralPath $script:HostResourcePolicyPath -Raw | ConvertFrom-Json
   $backoffMilliseconds = [int]$policy.poll_milliseconds
   $timer = [Diagnostics.Stopwatch]::StartNew()
@@ -320,8 +341,10 @@ function Invoke-HostResourceTransaction {
     throw "Host scheduler requires the repository Python runtime: $python"
   }
   while ($true) {
+    Test-HostResourceWaitDeadline -Timer $WaitTimer -TimeoutSeconds $WaitTimeoutSeconds -Reason snapshot_contention
     $snapshotStarted = [DateTime]::UtcNow.Ticks
-    $snapshot = Get-HostResourceSnapshot
+    $snapshot = if($null-ne$WaitTimer-and$WaitTimeoutSeconds-gt0){Get-HostResourceSnapshot -WaitTimer $WaitTimer -WaitTimeoutSeconds $WaitTimeoutSeconds}else{Get-HostResourceSnapshot}
+    Test-HostResourceWaitDeadline -Timer $WaitTimer -TimeoutSeconds $WaitTimeoutSeconds -Reason telemetry_collection
     $snapshot.observed_at_ticks = $snapshotStarted
     $owner = @($snapshot.processes | Where-Object pid -eq $PID)
     if ($owner.Count -ne 1) { throw 'Cannot establish the current process creation identity.' }
@@ -341,8 +364,13 @@ function Invoke-HostResourceTransaction {
       $errorTask = $process.StandardError.ReadToEndAsync()
       $process.StandardInput.WriteLine((@{request=$Request;snapshot=$snapshot} | ConvertTo-Json -Depth 12 -Compress))
       $process.StandardInput.Close()
-      if (-not $process.WaitForExit(45000)) {
+      $transactionWaitMilliseconds=45000
+      if($null-ne$WaitTimer-and$WaitTimeoutSeconds-gt0){
+        $transactionWaitMilliseconds=[int][Math]::Max(1,[Math]::Min(45000,1000*($WaitTimeoutSeconds-$WaitTimer.Elapsed.TotalSeconds)))
+      }
+      if (-not $process.WaitForExit($transactionWaitMilliseconds)) {
         $process.Kill($true); $process.WaitForExit()
+        Test-HostResourceWaitDeadline -Timer $WaitTimer -TimeoutSeconds $WaitTimeoutSeconds -Reason scheduler_transaction
         throw 'Host scheduler transaction timed out; existing reservations are retained.'
       }
       $output = $outputTask.GetAwaiter().GetResult()
@@ -368,9 +396,12 @@ function Receive-HostResourceStage {
   [CmdletBinding()]
   param([Parameter(Mandatory)]$Lease)
   if ($Lease.inherited) { return $Lease }
-  $record = Invoke-HostResourceTransaction -StatePath $Lease.state_path -Request @{
-    operation='poll';token=$Lease.token
+  $parameters=@{StatePath=$Lease.state_path;Request=@{operation='poll';token=$Lease.token}}
+  if($Lease.status-ne'acquired'-and$Lease.PSObject.Properties['wait_timer']){
+    Test-HostResourceWaitDeadline -Timer $Lease.wait_timer -TimeoutSeconds $Lease.wait_timeout_seconds -Reason $Lease.reason
+    $parameters.WaitTimer=$Lease.wait_timer;$parameters.WaitTimeoutSeconds=$Lease.wait_timeout_seconds
   }
+  $record = Invoke-HostResourceTransaction @parameters
   $Lease.status = [string]$record.status
   $Lease.reason = [string]$record.reason
   return $Lease
@@ -394,7 +425,11 @@ function Wait-HostResourceStage {
   $policy = Get-Content -LiteralPath $script:HostResourcePolicyPath -Raw | ConvertFrom-Json
   $timer = [Diagnostics.Stopwatch]::StartNew()
   $lastReport = -[double]$policy.status_interval_seconds
+  try {
   while ($Lease.status -ne 'acquired') {
+    if($Lease.PSObject.Properties['wait_timer']){
+      Test-HostResourceWaitDeadline -Timer $Lease.wait_timer -TimeoutSeconds $Lease.wait_timeout_seconds -Reason $Lease.reason
+    }
     if ($timer.Elapsed.TotalSeconds - $lastReport -ge $policy.status_interval_seconds) {
       Write-Host "HOST_RESOURCE=WAIT ROLE=$($Lease.role) STAGE=$($Lease.stage) REASON=$($Lease.reason) WAIT_SECONDS=$([int]$timer.Elapsed.TotalSeconds)"
       $lastReport = $timer.Elapsed.TotalSeconds
@@ -402,8 +437,22 @@ function Wait-HostResourceStage {
     Start-Sleep -Milliseconds $policy.poll_milliseconds
     $Lease = Receive-HostResourceStage -Lease $Lease
   }
+  if(-not$Lease.inherited-and$Lease.PSObject.Properties['wait_timer']){
+    Test-HostResourceWaitDeadline -Timer $Lease.wait_timer -TimeoutSeconds $Lease.wait_timeout_seconds -Reason $Lease.reason
+  }
   Write-Host "HOST_RESOURCE=ACQUIRED ROLE=$($Lease.role) STAGE=$($Lease.stage) PID=$PID INHERITED=$($Lease.inherited)"
   return $Lease
+  } catch [TimeoutException] {
+    $failure=$_
+    if(-not$Lease.inherited){
+      try{
+        $cleanupTimer=[Diagnostics.Stopwatch]::StartNew()
+        $released=Invoke-HostResourceTransaction -StatePath $Lease.state_path -WaitTimer $cleanupTimer -WaitTimeoutSeconds 30 -Request @{operation='release';token=$Lease.token}
+        $failure.Exception.Data['resource_wait_cleanup_status']=[string]$released.status
+      }catch{$failure.Exception.Data['resource_wait_cleanup_error']=[string]$_}
+    }
+    throw $failure
+  }
 }
 
 function Enter-HostResourceStage {
@@ -413,8 +462,21 @@ function Enter-HostResourceStage {
     [Parameter(Mandatory)][string]$Stage,
     [Parameter(Mandatory)][hashtable]$Budget,
     [string]$RunId = '', [string]$StatePath = '',
-    [switch]$NoEnvironment, [switch]$NoWait
+    [switch]$NoEnvironment, [switch]$NoWait,
+    [Nullable[int]]$WaitTimeoutSeconds=$null
   )
+  $waitTimer=[Diagnostics.Stopwatch]::StartNew()
+  if($Role-eq'GATE'){
+    if($null-eq$WaitTimeoutSeconds){
+      $policy=Get-Content -LiteralPath $script:HostResourcePolicyPath -Raw|ConvertFrom-Json
+      $WaitTimeoutSeconds=if($policy.PSObject.Properties['gate_resource_wait_timeout_seconds']){
+        if([int]$policy.gate_resource_wait_timeout_seconds-le0){throw 'Configured GATE resource wait timeout must be positive.'}
+        [int]$policy.gate_resource_wait_timeout_seconds
+      }else{0}
+    }
+  }
+  if($null-eq$WaitTimeoutSeconds){$WaitTimeoutSeconds=0}
+  if($WaitTimeoutSeconds-lt0-or($Role-eq'GATE'-and$PSBoundParameters.ContainsKey('WaitTimeoutSeconds')-and$WaitTimeoutSeconds-eq0)){throw 'Explicit GATE resource wait timeout must be positive; other roles must be nonnegative.'}
   $Budget = $Budget.Clone()
   $Budget.heavy_stage = (Get-HostResourceBudget -Role $Role -Stage $Stage).heavy_stage
   $StatePath = Resolve-HostResourceStatePath -StatePath $StatePath
@@ -424,7 +486,9 @@ function Enter-HostResourceStage {
   } else {
     @{operation='request';token=[guid]::NewGuid().ToString('N');role=$Role;stage=$Stage;budget=$Budget;run_id=$RunId}
   }
-  $record = Invoke-HostResourceTransaction -Request $request -StatePath $StatePath
+  $lease=$null
+  try {
+  $record = Invoke-HostResourceTransaction -Request $request -StatePath $StatePath -WaitTimer $waitTimer -WaitTimeoutSeconds $WaitTimeoutSeconds
   $previous = @{}
   foreach ($name in @('MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH',
       'MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID','MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE')) {
@@ -434,9 +498,9 @@ function Enter-HostResourceStage {
     token=[string]$record.token;status=[string]$record.status;reason=[string]$record.reason
     inherited=$inherited;state_path=$StatePath;role=$Role;stage=$Stage;run_id=$RunId
     owner_pid=$PID;previous_environment=$previous;environment_set=(-not $NoEnvironment)
+    wait_timer=$waitTimer;wait_timeout_seconds=[double]$WaitTimeoutSeconds
     registered_work_processes=@{};completed_work_processes=[Collections.Generic.List[object]]::new()
   }
-  try {
     if (-not $NoWait) { $lease = Wait-HostResourceStage -Lease $lease }
     if (-not $NoEnvironment) {
       if ($lease.status -ne 'acquired') { throw 'NoWait requires NoEnvironment until the stage is acquired.' }
@@ -447,8 +511,13 @@ function Enter-HostResourceStage {
     }
     return $lease
   } catch {
-    if (-not $inherited) {
-      $null = Invoke-HostResourceTransaction -StatePath $StatePath -Request @{operation='release';token=$lease.token}
+    if (-not $inherited -and ($null-ne$lease -or $_.Exception -is [TimeoutException]) -and -not$_.Exception.Data.Contains('resource_wait_cleanup_status') -and -not$_.Exception.Data.Contains('resource_wait_cleanup_error')) {
+      $failure=$_
+      try{$cleanupTimer=[Diagnostics.Stopwatch]::StartNew()
+        $released=Invoke-HostResourceTransaction -StatePath $StatePath -WaitTimer $cleanupTimer -WaitTimeoutSeconds 30 -Request @{operation='release';token=$request.token}
+        if($released.status-ne'released'){$failure.Exception.Data['resource_wait_cleanup_status']=[string]$released.status}
+      }catch{$failure.Exception.Data['resource_wait_cleanup_error']=[string]$_}
+      throw $failure
     }
     throw
   }
@@ -466,6 +535,7 @@ function Update-HostResourceStage {
     }
     return $Lease
   }
+  if($Lease.PSObject.Properties['wait_timer']){$Lease.wait_timer=[Diagnostics.Stopwatch]::StartNew()}
   # A completed child can remain visible for one process-snapshot interval.
   # Do not turn that normal hand-off into a failed physics run: refresh until
   # the scheduler sees the terminal child disappear, while retaining the
@@ -473,11 +543,22 @@ function Update-HostResourceStage {
   $deadline = [DateTime]::UtcNow.AddSeconds(30)
   while ($true) {
     try {
-      $record = Invoke-HostResourceTransaction -StatePath $Lease.state_path -Request @{
+      $parameters=@{StatePath=$Lease.state_path;Request=@{
         operation='transition';token=$Lease.token;stage=$Stage;budget=$Budget;retained_memory_bytes=$RetainedMemoryBytes
-      }
+      }}
+      if($Lease.PSObject.Properties['wait_timer']){$parameters.WaitTimer=$Lease.wait_timer;$parameters.WaitTimeoutSeconds=$Lease.wait_timeout_seconds}
+      $record=Invoke-HostResourceTransaction @parameters
       break
     } catch {
+      if($_.Exception-is[TimeoutException]){
+        $failure=$_
+        try{
+          $cleanupTimer=[Diagnostics.Stopwatch]::StartNew()
+          $released=Invoke-HostResourceTransaction -StatePath $Lease.state_path -WaitTimer $cleanupTimer -WaitTimeoutSeconds 30 -Request @{operation='release';token=$Lease.token}
+          $failure.Exception.Data['resource_wait_cleanup_status']=[string]$released.status
+        }catch{$failure.Exception.Data['resource_wait_cleanup_error']=[string]$_}
+        throw $failure
+      }
       if ($_.Exception.Message -notmatch 'live descendants still own this stage' -or [DateTime]::UtcNow -ge $deadline) {
         throw
       }

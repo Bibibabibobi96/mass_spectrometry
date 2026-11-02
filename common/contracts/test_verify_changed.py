@@ -1077,7 +1077,7 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
         workflow = LIGHTWEIGHT_WORKFLOW.read_text(encoding="utf-8")
         programs = re.findall(r"(?ms)^          @'\n(.*?)^          '@ \| & \$python -$", workflow)
         self.assertEqual(len(programs), 2)
-        fixture = r'''param($PlanPath,$MaxConcurrency,$SummaryPath)
+        fixture = r'''param($PlanPath,$MaxConcurrency,$ResourceWaitTimeoutSeconds,$SummaryPath)
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 @{role='ci_gate_fixture';elapsed_seconds=0.005}|ConvertTo-Json|Set-Content -LiteralPath $SummaryPath -Encoding utf8
 Write-Output ('CI_FIXTURE_ARGUMENTS='+(@{plan_path=$PlanPath}|ConvertTo-Json -Compress))

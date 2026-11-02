@@ -432,6 +432,31 @@ finally{{Complete-GateRunSummary -Summary $summary -Failure $failure}}
                                    ('resource_wait_seconds', 'execution_seconds', 'cleanup_seconds')))
             self.assertIsNone(row['process_elapsed_seconds'], 'inline stage has no child process timer')
 
+    def test_admission_timeout_records_reason_without_running_action(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            summary = Path(directory) / "summary.json"
+            self.run_script(self.prelude() + f"""
+$script:GateResourceWaitTimeoutSeconds=17
+function Enter-HostResourceStage {{param($Stage,$Role,$Budget,$WaitTimeoutSeconds)
+  if($WaitTimeoutSeconds-ne17){{throw 'configured deadline was not passed'}}
+  $failure=[TimeoutException]::new('fixture admission deadline')
+  $failure.Data['resource_wait_reason']='memory_pressure'
+  throw $failure
+}}
+$items=@([pscustomobject]@{{Name='blocked';Run=$true;Reason='fixture'}})
+$summary=New-GateRunSummary -Items $items -GateName fixture -PythonExe {quote(sys.executable)} -RepoRoot {quote(ROOT)} -SummaryPath {quote(summary)}
+$failure=$null
+try{{Invoke-RecordedGateStage -Name blocked -Reason fixture -Summary $summary -Action {{throw 'ACTION_MUST_NOT_RUN'}}}}
+catch{{$failure=$_;if($_.Exception.Message-ne'fixture admission deadline'){{throw}}}}
+finally{{Complete-GateRunSummary -Summary $summary -Failure $failure}}
+if($script:released-ne0){{throw 'unacquired lease was released'}}
+""")
+            row = json.loads(summary.read_text(encoding="utf-8"))["stages"][0]
+            self.assertEqual(row["status"], "FAIL")
+            self.assertEqual(row["resource_wait_reason"], "memory_pressure")
+            self.assertIsNone(row["execution_seconds"])
+            self.assertIsNone(row["cleanup_seconds"])
+
     def test_real_integration_file_entry_records_parallel_stages_in_script_scope(self) -> None:
         """Invoke the real root as a script, not as the global -Command prelude."""
         with tempfile.TemporaryDirectory(prefix="parallel_gate_root_") as directory:
@@ -884,16 +909,23 @@ if ($script:performed -ne 1) {{ throw 'nested action did not execute once' }}
     def test_plan_only_does_not_create_resource_ledger(self) -> None:
         with tempfile.TemporaryDirectory(prefix="parallel_gate_plan_") as directory:
             ledger = Path(directory) / "isolated.sqlite3"
-            completed = self.run_script(f"""
+            for value, expected in ((None, 4), ("auto", None), ("0", None), ("2", 2)):
+                with self.subTest(workers=value):
+                    request = Path(directory) / "request.json"
+                    argument = "" if value is None else f"-MaxConcurrency {value}"
+                    completed = self.run_script(f"""
 $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = {quote(ledger)}
 $env:SIMULATION_PYTHON_EXE = 'prior-runtime'
-& {quote(ROOT / 'common/verify.ps1')} -PythonExe {quote(sys._base_executable)} `
-    -ChangedPath README.md -PlanOnly
+& {quote(ROOT / 'common/verify.ps1')} -PythonExe {quote(sys.executable)} `
+    -ChangedPath README.md -PlanOnly -PlanPath {quote(request)} {argument}
 if ($LASTEXITCODE -ne 0) {{ throw 'plan failed' }}
 if ($env:SIMULATION_PYTHON_EXE -ne 'prior-runtime') {{ throw 'runtime environment leaked' }}
 """)
-            self.assertIn("CHANGED_GATE_PLAN=PASS", completed.stdout)
-            self.assertFalse(ledger.exists(), "read-only planning acquired resources")
+                    self.assertIn("CHANGED_GATE_PLAN=PASS", completed.stdout)
+                    context = json.loads(request.read_text(encoding="utf-8-sig"))["resource_context"]
+                    self.assertEqual(context["wait_timeout_seconds"], 1800)
+                    self.assertEqual(context["resolved_workers"], expected or min(8, context["logical_processors"]))
+                    self.assertFalse(ledger.exists(), "read-only planning acquired resources")
 
     def test_unplanned_internal_stage_is_rejected_before_resource_admission(self) -> None:
         with tempfile.TemporaryDirectory(prefix="parallel_gate_runtime_") as directory:

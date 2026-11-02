@@ -43,6 +43,7 @@
 |---|---|
 | COMSOL路线、网格、原生追踪、API或故障定位 | [COMSOL按任务指南](tools/COMSOL_GUIDE.md)，再选择[API](tools/COMSOL_API.md)或[排错](tools/COMSOL_DEBUGGING.md) |
 | SIMION长PA、场与程序经验 | [SIMION参考](tools/SIMION_REFERENCE.md) |
+| GitHub软件验证、可配置worker与完整Owner对照 | [软件验证与科学证据](OPERATIONS.md#软件验证与科学证据)；实际选择与失败证据由同一公共门禁保存 |
 | 某项目的模型树、操作步骤和软件验证 | 对应项目README中的COMSOL／SIMION／CAD入口，不在公共指南复制项目参数 |
 | 跨组件执行及联合证据 | [组装入口](../integrations/README.md) → 对应工作流和[集成状态](../integrations/docs/INTEGRATION.md) |
 | 官方API或物理接口原始语义 | [供应商资料](references/software/README.md)，限定软件版本和相关章节 |

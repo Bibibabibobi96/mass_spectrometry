@@ -2,6 +2,7 @@
   "schema_version": 1,
   "policy_id": "host-stage-admission",
   "cpu_admission_percent": 95.0,
+  "gate_resource_wait_timeout_seconds": 1800,
   "memory_admission_reserve_bytes": 1073741824,
   "memory_critical_reserve_bytes": 536870912,
   "memory_critical_seconds": 15,

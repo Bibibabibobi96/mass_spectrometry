@@ -219,6 +219,7 @@ def _reason(candidate: dict[str, Any], records: list[dict[str, Any]], snapshot: 
     active = [r for r in records if r is not candidate and r["status"] == "acquired"]
     parked = [r for r in records if r is not candidate and r["status"] != "acquired" and _reserved(r)]
     budget = candidate["budget"]
+    cpu_observation_only = candidate["role"] == "GATE" and not _is_heavy(budget)
     if _is_heavy(budget) and any(_is_heavy(r["budget"]) for r in active):
         return "heavy_stage_active"
     exclusive = set(budget["exclusive_resources"])
@@ -226,13 +227,13 @@ def _reason(candidate: dict[str, Any], records: list[dict[str, Any]], snapshot: 
         return "exclusive_resource_in_use"
     if snapshot.get("cpu_percent") is None or snapshot.get("available_memory_bytes") is None:
         return "telemetry_unavailable"
-    if snapshot["cpu_percent"] >= policy["cpu_admission_percent"]:
+    if not cpu_observation_only and snapshot["cpu_percent"] >= policy["cpu_admission_percent"]:
         return "cpu_pressure"
-    if not _is_heavy(budget) and snapshot["cpu_percent"] + 100 * budget["cpu_cores"] / snapshot["logical_processors"] > policy["cpu_admission_percent"]:
+    if not cpu_observation_only and not _is_heavy(budget) and snapshot["cpu_percent"] + 100 * budget["cpu_cores"] / snapshot["logical_processors"] > policy["cpu_admission_percent"]:
         return "cpu_headroom"
     if snapshot["available_memory_bytes"] < policy["memory_admission_reserve_bytes"]:
         return "memory_pressure"
-    if sum(r["budget"]["cpu_cores"] for r in active) + budget["cpu_cores"] > snapshot["logical_processors"]:
+    if not cpu_observation_only and sum(r["budget"]["cpu_cores"] for r in active) + budget["cpu_cores"] > snapshot["logical_processors"]:
         return "cpu_budget_full"
     if policy["io_slots"] > 0 and sum(r["budget"]["io_slots"] for r in active) + budget["io_slots"] > policy["io_slots"]:
         return "io_budget_full"
@@ -252,10 +253,13 @@ def _reason(candidate: dict[str, Any], records: list[dict[str, Any]], snapshot: 
 
 def _admit(records: list[dict[str, Any]], snapshot: dict[str, Any], policy: dict[str, Any]) -> None:
     blocked: list[dict[str, Any]] = []
-    barred_classes: set[bool] = set()
+    barred: list[dict[str, Any]] = []
     for record in sorted((r for r in records if r["status"] == "waiting"), key=lambda r: r["sequence"]):
         heavy = _is_heavy(record["budget"])
-        if heavy in barred_classes:
+        cpu_observation_only = record["role"] == "GATE" and not heavy
+        if any(_is_heavy(older["budget"]) == heavy and not (
+            cpu_observation_only and older["reason"] in {"cpu_pressure", "cpu_headroom", "cpu_budget_full"}
+        ) for older in barred):
             record["reason"] = "same_class_queue_barrier"
             continue
         reason = _reason(record, records, snapshot, policy)
@@ -263,15 +267,17 @@ def _admit(records: list[dict[str, Any]], snapshot: dict[str, Any], policy: dict
             record["reason"] = reason
             blocked.append(record)
             if record["bypasses"] >= policy["maximum_queue_bypasses"]:
-                barred_classes.add(heavy)
+                barred.append(record)
             continue
         record["status"] = "acquired"
         record["reason"] = ""
+        record["cpu_percent_at_admission"] = snapshot["cpu_percent"]
+        record["logical_processors_at_admission"] = snapshot["logical_processors"]
         for older in blocked:
             if _is_heavy(older["budget"]) == heavy:
                 older["bypasses"] += 1
-                if older["bypasses"] >= policy["maximum_queue_bypasses"]:
-                    barred_classes.add(heavy)
+                if older["bypasses"] == policy["maximum_queue_bypasses"]:
+                    barred.append(older)
 
 
 def _release_stale_snapshot(state: dict[str, Any], request: dict[str, Any], snapshot: dict[str, Any],
@@ -323,13 +329,13 @@ def transact(path: Path, request: dict[str, Any], snapshot: dict[str, Any], poli
         return result
 
 
-def _validate_capacity(budget: dict[str, Any], snapshot: dict[str, Any], policy: dict[str, Any]) -> dict[str, Any]:
+def _validate_capacity(budget: dict[str, Any], snapshot: dict[str, Any], policy: dict[str, Any], *, cpu_observation_only: bool = False) -> dict[str, Any]:
     budget = validate_budget(budget)
-    if budget["cpu_cores"] > snapshot["logical_processors"] or (
+    if (not cpu_observation_only and budget["cpu_cores"] > snapshot["logical_processors"]) or (
         policy["io_slots"] > 0 and budget["io_slots"] > policy["io_slots"]
     ):
         raise ValueError("request exceeds configured host CPU or I/O capacity")
-    if not _is_heavy(budget) and 100 * budget["cpu_cores"] / snapshot["logical_processors"] > policy["cpu_admission_percent"]:
+    if not cpu_observation_only and not _is_heavy(budget) and 100 * budget["cpu_cores"] / snapshot["logical_processors"] > policy["cpu_admission_percent"]:
         raise ValueError("light request exceeds the CPU admission ceiling even on an idle host")
     if budget["memory_bytes"] > snapshot["total_memory_bytes"] - policy["memory_admission_reserve_bytes"]:
         raise ValueError("request exceeds host memory capacity")
@@ -374,7 +380,8 @@ def _apply(state: dict[str, Any], request: dict[str, Any], snapshot: dict[str, A
         if record is None:
             if not _same_process(owner, processes.get(int(owner["pid"]), {"pid": 0, "started": ""})):
                 raise ValueError("request owner creation identity is not live")
-            budget = _validate_capacity(request["budget"], snapshot, policy)
+            budget = _validate_capacity(request["budget"], snapshot, policy,
+                cpu_observation_only=request["role"] == "GATE" and not _is_heavy(request["budget"]))
             state["sequence"] += 1
             record = {"token": token or uuid.uuid4().hex, "owner": owner, "processes": [owner], "work_roots": [],
                       "role": request["role"], "run_id": request.get("run_id", ""), "stage": request["stage"],
@@ -404,7 +411,8 @@ def _apply(state: dict[str, Any], request: dict[str, Any], snapshot: dict[str, A
         if retained > snapshot["total_memory_bytes"] - policy["memory_admission_reserve_bytes"]:
             raise ValueError("declared retained memory exceeds host capacity")
         record["retained_bytes"] = max(retained, record["resident_bytes"])
-        record["budget"] = _validate_capacity(request["budget"], snapshot, policy)
+        record["budget"] = _validate_capacity(request["budget"], snapshot, policy,
+            cpu_observation_only=record["role"] == "GATE" and not _is_heavy(request["budget"]))
         state["sequence"] += 1
         record.update(stage=request["stage"], sequence=state["sequence"], status="waiting", bypasses=0)
     elif operation == "register":

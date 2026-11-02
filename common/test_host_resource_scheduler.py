@@ -64,6 +64,113 @@ function Get-TestSnapshot {{
         self.assertEqual(process.returncode, 0, output + errors)
         return output
 
+    def test_wait_policy_rejects_nonpositive_and_preserves_missing_field_history(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="host_wait_policy_") as directory:
+            state = Path(directory) / "state.sqlite3"
+            policy = Path(directory) / "policy.json"
+            script = self.prelude(state) + f"""
+$policy=Get-Content -LiteralPath $script:HostResourcePolicyPath -Raw|ConvertFrom-Json -AsHashtable
+$script:HostResourcePolicyPath={_ps_quote(policy)}
+$script:transactions=0
+function Invoke-HostResourceTransaction {{param($Request,$StatePath,$WaitTimer,$WaitTimeoutSeconds)
+  $script:transactions+=1
+  $script:observedTimeout=$WaitTimeoutSeconds
+  return [pscustomobject]@{{token=$Request.token;status='acquired';reason='';owner=@{{pid=$PID}}}}
+}}
+foreach($invalid in @(0,-1)){{
+  $policy.gate_resource_wait_timeout_seconds=$invalid
+  $policy|ConvertTo-Json -Depth 12|Set-Content -LiteralPath $script:HostResourcePolicyPath -Encoding utf8
+  try{{
+    $null=Enter-HostResourceStage -Role GATE -Stage invalid -Budget @{{}} -NoWait -NoEnvironment
+    throw 'nonpositive configured deadline was accepted'
+  }}catch{{if($_.Exception.Message-ne'Configured GATE resource wait timeout must be positive.'){{throw}}}}
+}}
+if($script:transactions-ne0){{throw 'invalid policy reached scheduler'}}
+$policy.gate_resource_wait_timeout_seconds=17
+$policy|ConvertTo-Json -Depth 12|Set-Content -LiteralPath $script:HostResourcePolicyPath -Encoding utf8
+$lease=Enter-HostResourceStage -Role GATE -Stage valid -Budget @{{}} -NoWait -NoEnvironment
+if($script:observedTimeout-ne17-or$lease.wait_timeout_seconds-ne17){{throw 'valid deadline did not propagate'}}
+$policy.Remove('gate_resource_wait_timeout_seconds')
+$policy|ConvertTo-Json -Depth 12|Set-Content -LiteralPath $script:HostResourcePolicyPath -Encoding utf8
+$lease=Enter-HostResourceStage -Role GATE -Stage historical -Budget @{{}} -NoWait -NoEnvironment
+if($script:observedTimeout-ne0-or$lease.wait_timeout_seconds-ne0){{throw 'historical missing-field semantics changed'}}
+Write-Output 'WAIT_POLICY=PASS'
+"""
+            output = self.finish(self.launch(script))
+            self.assertIn("WAIT_POLICY=PASS", output)
+
+    def test_wait_deadline_cancels_only_its_queue_and_preserves_active_lease(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="host_wait_deadline_") as directory:
+            state = Path(directory) / "state.sqlite3"
+            script = self.prelude(state) + """
+function Get-HostResourceSnapshot { return Get-TestSnapshot }
+$held=Enter-HostResourceStage -Role GATE -Stage held -Budget (Get-HostResourceBudget -Profile measured-small-check) -NoEnvironment
+function Get-HostResourceSnapshot { $snapshot=Get-TestSnapshot; $snapshot.available_memory_bytes=100; return $snapshot }
+try {
+  $null=Enter-HostResourceStage -Role GATE -Stage blocked -Budget (Get-HostResourceBudget -Profile measured-small-check) -NoEnvironment -WaitTimeoutSeconds 2
+  throw 'deadline did not fail closed'
+} catch [TimeoutException] {
+  if(-not$_.Exception.Data['resource_wait_reason']){throw 'missing wait reason'}
+  if($_.Exception.Data['resource_wait_seconds']-lt2){throw 'deadline fired early'}
+  Write-Output 'DEADLINE_CANCELLED'
+}
+function Get-HostResourceSnapshot { return Get-TestSnapshot }
+$status=Invoke-HostResourceTransaction -StatePath $held.state_path -Request @{operation='status'}
+if(@($status.records).Count-ne1-or$status.records[0].token-ne$held.token-or$status.records[0].status-ne'acquired'){
+  throw 'deadline changed another active reservation or retained its waiting request'
+}
+Exit-HostResourceStage -Lease $held
+"""
+            output = self.finish(self.launch(script))
+            self.assertIn("DEADLINE_CANCELLED", output)
+            self.assertIn("STATUS=released", output)
+
+    def test_inherited_wait_deadline_never_releases_parent(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="host_inherited_deadline_") as directory:
+            state = Path(directory) / "state.sqlite3"
+            script = self.prelude(state) + """
+function Get-HostResourceSnapshot { return Get-TestSnapshot }
+$held=Enter-HostResourceStage -Role GATE -Stage held -Budget (Get-HostResourceBudget -Profile measured-small-check) -NoEnvironment
+$env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN=$held.token
+function Get-HostResourceSnapshot { Start-Sleep -Milliseconds 1100; return Get-TestSnapshot }
+try {
+  $null=Enter-HostResourceStage -Role GATE -Stage inherited -Budget (Get-HostResourceBudget -Profile measured-small-check) -NoEnvironment -WaitTimeoutSeconds 1
+  throw 'inherited deadline did not fail closed'
+} catch [TimeoutException] { Write-Output 'INHERITED_DEADLINE' }
+Remove-Item Env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN
+function Get-HostResourceSnapshot { return Get-TestSnapshot }
+$status=Invoke-HostResourceTransaction -StatePath $held.state_path -Request @{operation='status'}
+if(@($status.records).Count-ne1-or$status.records[0].token-ne$held.token-or$status.records[0].status-ne'acquired'){
+  throw 'inherited deadline changed parent reservation'
+}
+Exit-HostResourceStage -Lease $held
+"""
+            output = self.finish(self.launch(script))
+            self.assertIn("INHERITED_DEADLINE", output)
+            self.assertIn("STATUS=released", output)
+
+    def test_transition_has_fresh_wait_deadline_and_cancels_its_queue(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="host_transition_deadline_") as directory:
+            state = Path(directory) / "state.sqlite3"
+            script = self.prelude(state) + """
+function Get-HostResourceSnapshot { return Get-TestSnapshot }
+$budget=Get-HostResourceBudget -Profile measured-small-check
+$lease=Enter-HostResourceStage -Role GATE -Stage initial -Budget $budget -NoEnvironment -WaitTimeoutSeconds 2
+Start-Sleep -Milliseconds 2100
+$lease=Update-HostResourceStage -Lease $lease -Stage next -Budget $budget -RetainedMemoryBytes 0
+if($lease.status-ne'acquired'){throw 'completed execution consumed transition admission deadline'}
+function Get-HostResourceSnapshot { $snapshot=Get-TestSnapshot; $snapshot.available_memory_bytes=100; return $snapshot }
+try {
+  $null=Update-HostResourceStage -Lease $lease -Stage blocked -Budget $budget -RetainedMemoryBytes 0
+  throw 'transition deadline did not fail closed'
+} catch [TimeoutException] { Write-Output 'TRANSITION_DEADLINE' }
+function Get-HostResourceSnapshot { return Get-TestSnapshot }
+$status=Invoke-HostResourceTransaction -StatePath $lease.state_path -Request @{operation='status'}
+if(@($status.records).Count-ne0){throw 'transition retained its expired waiting reservation'}
+"""
+            output = self.finish(self.launch(script))
+            self.assertIn("TRANSITION_DEADLINE", output)
+
     def test_more_than_three_stale_snapshots_resample_then_succeed(self) -> None:
         with tempfile.TemporaryDirectory(prefix="host_contention_retry_") as directory:
             state = Path(directory) / "state.sqlite3"
@@ -177,8 +284,8 @@ class HostResourceSchedulerTests(unittest.TestCase):
                 continue
         self.fail("fresh observations did not make progress")
 
-    def acquire(self, pid: int, resources: dict | None = None) -> dict:
-        return self.call("request", pid, token=str(pid), role="GATE", stage="test", budget=resources or budget())
+    def acquire(self, pid: int, resources: dict | None = None, *, role: str = "SIMION") -> dict:
+        return self.call("request", pid, token=str(pid), role=role, stage="test", budget=resources or budget())
 
     def test_known_heavy_allows_light_but_excludes_another_heavy(self) -> None:
         heavy = self.policy["profiles"]["heavy-compute"]
@@ -228,21 +335,63 @@ class HostResourceSchedulerTests(unittest.TestCase):
     def test_light_can_fill_heavy_headroom_but_cannot_exceed_live_pressure(self) -> None:
         self.policy["cpu_admission_percent"] = load_policy()["cpu_admission_percent"]
         with self.assertRaisesRegex(ValueError, "idle host"):
-            self.acquire(4, budget(cpu=4))
+            self.acquire(4, budget(cpu=4), role="SIMION")
         self.acquire(1, self.policy["profiles"]["heavy-compute"])
         self.snapshot["cpu_percent"] = 75
-        self.assertEqual(self.acquire(2)["reason"], "cpu_headroom")
+        self.assertEqual(self.acquire(2, role="SIMION")["reason"], "cpu_headroom")
         self.snapshot["cpu_percent"] = 65
         self.assertEqual(self.call("poll", 2, token="2")["status"], "acquired")
         self.snapshot["available_memory_bytes"] = GIB
-        self.assertEqual(self.acquire(3)["reason"], "memory_budget_full")
+        self.assertEqual(self.acquire(3, role="SIMION")["reason"], "memory_budget_full")
 
     def test_concurrent_requests_never_oversell_cpu(self) -> None:
         with ThreadPoolExecutor(max_workers=12) as executor:
-            results = list(executor.map(self.acquire, range(1, 13)))
+            results = list(executor.map(lambda pid: self.acquire(pid, role="SIMION"), range(1, 13)))
         self.assertEqual(sum(r["status"] == "acquired" for r in results), 4)
         records = self.call("status")["records"]
         self.assertEqual(sum(r["budget"]["cpu_cores"] for r in records if r["status"] == "acquired"), 4)
+
+    def test_ordinary_gate_records_cpu_without_cpu_admission_limits(self) -> None:
+        self.snapshot["logical_processors"] = 1
+        self.snapshot["cpu_percent"] = 100
+        for pid in (1, 2, 3):
+            result = self.acquire(pid, budget(cpu=2), role="GATE")
+            self.assertEqual(result["status"], "acquired")
+            self.assertEqual(result["cpu_percent_at_admission"], 100)
+            self.assertEqual(result["logical_processors_at_admission"], 1)
+        self.assertEqual(self.acquire(4, role="SIMION")["reason"], "cpu_pressure")
+        self.snapshot["available_memory_bytes"] = 100
+        self.assertEqual(self.acquire(5, role="GATE")["reason"], "memory_pressure")
+
+    def test_ordinary_gate_keeps_memory_exclusive_and_heavy_constraints(self) -> None:
+        self.snapshot["cpu_percent"] = 100
+        self.assertEqual(self.acquire(1, budget(memory=8*GIB, exclusive=["fixture"]), role="GATE")["status"], "acquired")
+        self.assertEqual(self.acquire(2, budget(memory=8*GIB), role="GATE")["reason"], "memory_budget_full")
+        self.assertEqual(self.acquire(3, budget(exclusive=["fixture"]), role="GATE")["reason"], "exclusive_resource_in_use")
+        heavy = self.policy["profiles"]["heavy-compute"]
+        self.assertEqual(self.acquire(4, heavy, role="GATE")["reason"], "cpu_pressure")
+        self.snapshot["cpu_percent"] = -1
+        with self.assertRaisesRegex(ValueError, "telemetry"):
+            self.acquire(5, role="GATE")
+
+    def test_gate_ignores_only_cpu_queue_barrier_and_preserves_commercial_fairness(self) -> None:
+        self.policy["maximum_queue_bypasses"] = 1
+        self.snapshot["cpu_percent"] = 100
+        self.assertEqual(self.acquire(1)["reason"], "cpu_pressure")
+        self.assertEqual(self.acquire(2, role="GATE")["status"], "acquired")
+        self.assertEqual(self.acquire(3, role="GATE")["status"], "acquired")
+        self.assertEqual(self.acquire(4)["reason"], "same_class_queue_barrier")
+
+    def test_gate_still_obeys_memory_and_exclusive_queue_barriers(self) -> None:
+        self.policy["maximum_queue_bypasses"] = 1
+        self.assertEqual(self.acquire(1, budget(memory=8*GIB, exclusive=["held"]))["status"], "acquired")
+        self.assertEqual(self.acquire(2, budget(memory=8*GIB))["reason"], "memory_budget_full")
+        self.assertEqual(self.acquire(3, budget(memory=GIB), role="GATE")["status"], "acquired")
+        self.assertEqual(self.acquire(4, budget(memory=GIB), role="GATE")["reason"], "same_class_queue_barrier")
+        self.call("release", 2, token="2")
+        self.assertEqual(self.acquire(5, budget(exclusive=["held"]))["reason"], "exclusive_resource_in_use")
+        self.assertEqual(self.acquire(6, role="GATE")["status"], "acquired")
+        self.assertEqual(self.acquire(7, role="GATE")["reason"], "same_class_queue_barrier")
 
     def test_io_and_named_resource_are_global(self) -> None:
         self.policy["io_slots"] = 1
@@ -282,8 +431,8 @@ class HostResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(self.call("poll", 2, token="2")["status"], "acquired")
 
     def test_stage_growth_requeues_and_retains_memory(self) -> None:
-        self.acquire(1, budget(cpu=1, memory=4*GIB))
-        self.acquire(2, budget(cpu=3))
+        self.acquire(1, budget(cpu=1, memory=4*GIB), role="SIMION")
+        self.acquire(2, budget(cpu=3), role="SIMION")
         self.snapshot["processes"][0]["memory_bytes"] = 3*GIB
         result = self.call("transition", token="1", stage="solve", budget=budget(cpu=4, memory=8*GIB), retained_memory_bytes=GIB)
         self.assertEqual(result["status"], "waiting")
@@ -299,28 +448,28 @@ class HostResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(self.acquire(3, budget(memory=GIB))["status"], "acquired")
 
     def test_pressure_closes_admission_without_killing_or_releasing(self) -> None:
-        self.acquire(1)
+        self.acquire(1, role="SIMION")
         self.snapshot["cpu_percent"] = 100
-        self.assertEqual(self.acquire(2)["reason"], "cpu_pressure")
+        self.assertEqual(self.acquire(2, role="SIMION")["reason"], "cpu_pressure")
         self.assertEqual(self.call("poll", token="1")["status"], "acquired")
         self.snapshot["cpu_percent"] = 10
         self.snapshot["available_memory_bytes"] = 100
         self.assertEqual(self.call("poll", 2, token="2")["reason"], "memory_pressure")
 
     def test_crashed_owner_with_live_child_keeps_reservation(self) -> None:
-        self.acquire(1, budget(cpu=4))
+        self.acquire(1, budget(cpu=4), role="SIMION")
         self.snapshot["processes"].append(dict(pid=99, parent_pid=1, started="0000000000000000002", memory_bytes=2*GIB))
         self.call("register", token="1", process_id=99)
         self.snapshot["processes"] = [p for p in self.snapshot["processes"] if p["pid"] != 1]
-        self.assertEqual(self.acquire(2)["reason"], "cpu_budget_full")
+        self.assertEqual(self.acquire(2, role="SIMION")["reason"], "cpu_budget_full")
         self.snapshot["processes"] = [p for p in self.snapshot["processes"] if p["pid"] != 99]
         self.assertEqual(self.call("poll", 2, token="2")["status"], "acquired")
 
     def test_child_discovered_after_parent_exit_from_creation_order(self) -> None:
-        self.acquire(1, budget(cpu=4))
+        self.acquire(1, budget(cpu=4), role="SIMION")
         self.snapshot["processes"] = [p for p in self.snapshot["processes"] if p["pid"] != 1]
         self.snapshot["processes"].append(dict(pid=99, parent_pid=1, started="0000000000000000002", memory_bytes=2*GIB))
-        self.assertEqual(self.acquire(2)["status"], "waiting")
+        self.assertEqual(self.acquire(2, role="SIMION")["status"], "waiting")
 
     def test_recycled_pid_does_not_keep_dead_owner(self) -> None:
         self.acquire(1, budget(cpu=4))

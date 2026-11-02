@@ -43,7 +43,7 @@ function New-GateRunSummary {
             status = $(if ($item.Run) { 'PENDING' } else { 'NOT_APPLICABLE' })
             reason_code = $(if ($item.Run) { 'NOT_STARTED' } else { 'NOT_SELECTED' })
             started_at = $null; finished_at = $null; elapsed_seconds = $null
-            queue_seconds = $null; resource_wait_seconds = $null
+            queue_seconds = $null; resource_wait_seconds = $null; resource_wait_reason = $null
             execution_seconds = $null; cleanup_seconds = $null
             launch_seconds = $null; process_elapsed_seconds = $null
             exit_code = $null; child_exit_code = $null; log_path = $null; log_retained = $false
@@ -187,7 +187,15 @@ function Invoke-ResourceBudgetedGateAction {
     )
     $budget = Get-HostResourceBudget -Stage $Name -Role GATE
     $waitTimer = [Diagnostics.Stopwatch]::StartNew()
-    try { $lease = Enter-HostResourceStage -Role GATE -Stage $Name -Budget $budget }
+    $admission=@{Role='GATE';Stage=$Name;Budget=$budget}
+    if(Get-Variable -Name GateResourceWaitTimeoutSeconds -Scope Script -ErrorAction SilentlyContinue){$admission.WaitTimeoutSeconds=$script:GateResourceWaitTimeoutSeconds}
+    try { $lease = Enter-HostResourceStage @admission }
+    catch {
+        if($null-ne$Timings-and$_.Exception.Data.Contains('resource_wait_reason')){
+            $Timings.resource_wait_reason=[string]$_.Exception.Data['resource_wait_reason']
+        }
+        throw
+    }
     finally {
         if ($null -ne $Timings) { $Timings.resource_wait_seconds = $waitTimer.Elapsed.TotalSeconds }
     }

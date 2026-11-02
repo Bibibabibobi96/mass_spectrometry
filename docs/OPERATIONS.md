@@ -66,6 +66,12 @@ CI 同分支运行沿现有 concurrency group 串行，新推送不取消已启�
 该行为采用 [GitHub concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)；
 取消或未完成的旧轮不计为通过，最终源码仍须取得相应范围的完整结果。
 
+普通软件门禁本机与CI统一默认4个worker；可用`-MaxConcurrency 2`、`8`或`auto`覆盖（0兼容auto，
+auto为`min(8, logical_processors)`）。普通非重型GATE记录CPU但不因高CPU或固定声明核数阻挡；
+内存、I/O、独占资源、依赖和嵌套串行仍生效，商业求解及重型GATE的原CPU准入规则不变。
+`-ResourceWaitTimeoutSeconds`默认1800，限定准入等待而非测试运行时间；超时取消自身等待并报告原因，
+不释放父token或杀健康owner。参数和观测范围详见[门禁编排](../common/README.md#门禁编排)。
+
 参考环境预算：owner/窄范围1–3分钟，较复杂≤5分钟，宽改动≤10分钟，完整软件范围争取15分钟。
 超预算须定位主要重复与必要成本，不靠漏测、改名或隐藏开销达标；它不是原生求解的强杀超时。
 
