@@ -203,8 +203,11 @@ Python 3.9至3.12；本机默认Python 3.14和旧Python 3.8均不得作为本仓
 仓库根使用`python -m <module>`运行，禁止由各脚本重复修改`sys.path`。单次反射oa-TOF入口见
 `projects/single_reflection_oa_tof_mass_analyzer/analysis/README.md`。
 
-科学核心采用 `src/msplatform` 的标准可安装布局。开发环境在上述 `.venv` 中执行
-`python -m pip install -e . -c requirements-lock.txt`；此步骤建立正常安装关系，不由业务脚本修改
+科学核心采用 `src/msplatform` 的标准可安装布局。开发环境在上述 `.venv` 中先执行
+`python -m pip install -r requirements-lock.txt`，再执行
+`python -m pip install -e . -c requirements-lock.txt`。`-c`只约束被安装依赖的版本，
+不会安装锁文件中的全部开发与工作流工具；完整软件验证需要前一步的完整环境。
+editable步骤建立正常安装关系，不由业务脚本修改
 `sys.path` 寻找核心。发行验收必须另建 Python 3.11 环境，从 wheel 及 sdist 重建 wheel 安装，
 并在仓库外通过 `python -I` 执行数值计算、核验模块来源和本地 schema 引用；editable 通过不能替代该验收。
 依赖锁定仍使用根声明和锁文件，不建立第二份运行环境清单。
