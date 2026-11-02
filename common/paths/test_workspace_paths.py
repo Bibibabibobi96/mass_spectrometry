@@ -15,6 +15,39 @@ PWSH = shutil.which("pwsh")
 
 
 class WorkspacePathsTests(unittest.TestCase):
+    def test_json_bridge_uses_utf8_for_both_pipe_directions(self):
+        bridge = Path(__file__).with_name("workspace_paths.py")
+        environment = dict(os.environ, PYTHONUTF8="0", PYTHONIOENCODING="cp1252")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "中文路径"
+            root.mkdir()
+            arguments = dict(source_root=str(root), artifact_root=str(root / "产物"),
+                             execution_root=str(root / "执行"), host_resource_state_path=str(root / "主机.sqlite3"))
+            canonical, alias = root / "运行", root / "别名"
+            requests = (
+                ({"operation": "resolve", "arguments": arguments}, resolve_workspace_paths(**arguments)),
+                ({"operation": "project", "arguments": dict(paths=[str(canonical / "粒子.ion")],
+                    artifact_run_dir=str(canonical), run_dir=str(alias))}, [str(alias / "粒子.ion")]),
+            )
+            for request, expected in requests:
+                # Escaped input isolates stdout; literal UTF-8 also verifies stdin decoding.
+                for escaped in (True, False):
+                    with self.subTest(operation=request["operation"], escaped=escaped):
+                        result = subprocess.run(
+                            [sys.executable, "-B", str(bridge)],
+                            input=json.dumps(request, ensure_ascii=escaped).encode("utf-8"),
+                            cwd=root, env=environment, capture_output=True, timeout=30,
+                        )
+                        self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", errors="replace"))
+                        self.assertEqual(json.loads(result.stdout.decode("utf-8")), expected)
+            rejected = {"operation": "resolve", "arguments": {"source_root": str(root / "不存在")}}
+            result = subprocess.run(
+                [sys.executable, "-B", str(bridge)], input=json.dumps(rejected).encode("utf-8"),
+                cwd=root, env=environment, capture_output=True, timeout=30,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(str(root / "不存在"), result.stderr.decode("utf-8"))
+
     def test_default_and_payload_override_keep_the_host_identity(self):
         with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, {}, clear=True):
             root = Path(temporary)
@@ -72,7 +105,8 @@ class WorkspacePathsTests(unittest.TestCase):
     def test_powershell_bridge_batches_projection_and_preserves_failure(self):
         bridge = Path(__file__).with_name("workspace_paths.ps1")
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary) / "中文路径"
+            root.mkdir()
             script = root / "probe.ps1"
             script.write_text(r"""
 . $args[0]
@@ -92,8 +126,9 @@ if($one-ne(Join-Path $alias 'two.pa0')){throw 'single projection differs'}
 try{Resolve-WorkspacePaths -SourceRoot relative -Python $python;throw 'missing rejection'}catch{if($_-notmatch'absolute path'){throw}}
 $frozen|ConvertTo-Json -Compress
 """, encoding="utf-8", newline="\n")
-            result = subprocess.run([PWSH, "-NoProfile", "-File", str(script), str(bridge), sys.executable, temporary],
-                                    cwd=root, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
+            result = subprocess.run([PWSH, "-NoProfile", "-File", str(script), str(bridge), sys.executable, str(root)],
+                                    cwd=root, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                    env=dict(os.environ, PYTHONUTF8="0", PYTHONIOENCODING="cp1252"))
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(json.loads(result.stdout)["artifact_root"], str(root / "payload"))
 

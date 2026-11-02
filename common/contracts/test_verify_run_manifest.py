@@ -181,7 +181,8 @@ Write-RunJson -Value @{logs=@('single');count=1} -Path (Join-Path $Output 'objec
 
     def test_cli_keeps_output_compatibility_and_appends_utf8_json_list(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory) / "中文发布根"
+            root.mkdir()
             config = self.config(root)
             files = [root / "first.txt", root / "空间 output.txt"]
             for path in files:
@@ -196,8 +197,10 @@ Write-RunJson -Value @{logs=@('single');count=1} -Path (Join-Path $Output 'objec
                          "--status", "success", "--output", str(files[0]), "--output-list-json", source],
                         input=listing.read_text(encoding="utf-8") if source == "-" else None,
                         cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=20,
+                        env=dict(os.environ, PYTHONUTF8="0", PYTHONIOENCODING="cp1252"),
                     )
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn(f"RUN_MANIFEST=PASS PATH={root / 'run_manifest.json'}", result.stdout)
                     manifest = json.loads((root / "run_manifest.json").read_text(encoding="utf-8"))
                     self.assertEqual([row["path"] for row in manifest["outputs"]], [str(p.resolve()) for p in files])
 

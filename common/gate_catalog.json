@@ -145,6 +145,25 @@
       "owner": "common/analysis"
     },
     {
+      "stage": "workspace_paths_tests",
+      "dependency_profile": "stdlib",
+      "repository_integration_group": "fast",
+      "matches": [
+        {
+          "prefix": "common/paths/",
+          "reason": "workspace_paths_changed"
+        }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": ["-m", "unittest", "discover", "-s", "common/paths", "-p", "test_*.py"]
+      },
+      "test_selection": {
+        "roots": ["common/paths/"]
+      },
+      "owner": "common/paths"
+    },
+    {
       "stage": "peak_metrics_tests",
       "dependency_profile": "locked",
       "repository_integration_group": "regression",
@@ -519,6 +538,14 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "exact": "common/paths/workspace_paths.py",
+          "reason": "workspace_path_transport_changed"
+        },
+        {
+          "exact": "common/paths/workspace_paths.ps1",
+          "reason": "workspace_path_transport_changed"
+        },
+        {
           "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json)|common/(?:ion_release/[^/]+\\.py|integration/(?:__init__|resolve_assembly)\\.py|analysis/peak_metrics\\.py|contracts/(?:file_identity|particle_physics|rigid_transform|machine_contracts)\\.py))$",
           "reason": "installed_scientific_core_changed"
         },
@@ -688,6 +715,22 @@
           "common/contracts/"
         ],
         "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "common/paths/workspace_paths.py",
+                "reason": "workspace_path_transport_changed"
+              },
+              {
+                "exact": "common/paths/workspace_paths.ps1",
+                "reason": "workspace_path_transport_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_run_artifact_workflow_sources.py"
+            ],
+            "dependency_profile": "locked"
+          },
           {
             "matches": [
               {

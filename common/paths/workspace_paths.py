@@ -108,6 +108,9 @@ def project_native_run_path(path: str | os.PathLike[str]) -> str:
 
 def _stdin_request() -> None:
     """Private PowerShell bridge; structured operations never execute commands."""
+    # Match the caller's UTF-8 pipes, including diagnostics, regardless of locale.
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8")
     request = json.load(sys.stdin)
     if request.get("operation") == "resolve":
         result = resolve_workspace_paths(**request["arguments"])

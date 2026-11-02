@@ -380,6 +380,9 @@ def publish_run_manifest(
 
 
 def main() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-config", required=True, type=Path)
     parser.add_argument("--manifest", type=Path)

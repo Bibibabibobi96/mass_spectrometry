@@ -48,6 +48,7 @@
 `Write-RunManifest`通过UTF-8标准输入向`write_run_manifest.py --output-list-json -`传递输出路径，
 避免大量文件路径超过Windows进程命令行长度；列表严格为字符串数组，不再落盘临时运输文件。
 原Python入口的重复`--output`仍可使用，两种输入共同进入同一manifest校验和身份计算。
+该CLI的状态输出与错误诊断也显式使用UTF-8，不因非UTF-8系统locale丢失中文发布路径。
 保留原生载荷的owner可对`Write-VerifiedRunManifest`／`Complete-FailedRun`显式使用
 `-DeferCapacityFinalization`：仍验证保留合同并原子发布manifest，随后由owner释放其保护租约、调用公共
 `seal-stopped-payload`完成容量交接。此选项只延后容量收尾，不跳过输入、输出或终态验证；普通小证据入口

@@ -17,6 +17,8 @@ Python `resolve_workspace_paths`与PowerShell `Resolve-WorkspacePaths`在启动�
 也可用既有`MASS_SPECTROMETRY_EXECUTION_ROOT`指定。主机库沿既有
 `MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH`保持原身份，不随产物根或源码快照位置新建调度器。
 四字段上下文交现有run配置冻结；后续消费完整冻结上下文，不重新解释当前环境默认。
+PowerShell与Python路径桥的JSON管道及Python诊断显式使用UTF-8；输入、输出不随系统locale或
+`PYTHONIOENCODING`改变，中文路径在解析、冻结根和执行路径投影中保持原值。
 `Remove-RunPackageExecutionAlias`成功移除junction后，将Package恢复为持久run位置并清除旧执行表示；
 `Get-RunNativeExecutionContext`也处理从冻结记录恢复、但登记alias已不存在的Package，依据本次明确的
 持久路径和冻结执行根重新准备。它不迁移载荷、不搜索其他根，也不修改旧manifest。

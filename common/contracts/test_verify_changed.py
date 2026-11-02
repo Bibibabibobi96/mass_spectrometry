@@ -219,6 +219,28 @@ ConvertTo-Json -Compress -InputObject $paths
         self.assertNotIn("src/msplatform/unselected.py", paths)
         self.assertEqual(len(paths), len(set(paths)))
 
+    def test_workspace_paths_owner_and_sources_keep_protocol_and_workflow_coverage(self):
+        module = "common.contracts.test_run_artifact_workflow_sources"
+        for path in ("common/paths/workspace_paths.py", "common/paths/workspace_paths.ps1"):
+            with self.subTest(path=path):
+                request, _ = self.plan("-ChangedPath", path)
+                selected = [row for row in request["stages"] if row["selected"]]
+                self.assertIn("workspace_paths_tests", {row["name"] for row in selected})
+                modules = [value.removesuffix(".py").replace("/", ".")
+                           for row in selected if row["name"].startswith("common_contracts")
+                           for value in row["command"]["arguments"][2:]]
+                self.assertIn(module, modules)
+                self.assertEqual(modules.count(module), 1)
+        request, _ = self.plan("-Scope", "Owner", "-Owner", "common/paths")
+        owner = next(row for row in request["stages"] if row["name"] == "workspace_paths_tests")
+        actual = {value.removesuffix(".py").replace("/", ".") for value in owner["command"]["arguments"][2:]}
+        expected = {".".join(path.relative_to(REPO_ROOT).with_suffix("").parts)
+                    for path in (REPO_ROOT / "common/paths").glob("test_*.py")}
+        self.assertEqual(actual, expected)
+        request, _ = self.plan("-ChangedPath", "common/paths/test_workspace_paths.py")
+        owner = next(row for row in request["stages"] if row["name"] == "workspace_paths_tests")
+        self.assertEqual(owner["command"]["arguments"][2:], ["common/paths/test_workspace_paths.py"])
+
     def test_common_contract_dependencies_select_modules_without_retired_routes(self):
         cases = (("common/contracts/frozen_inputs.py", "common.contracts.test_frozen_inputs"),
                  ("common/contracts/expected_values.py", "common.contracts.test_expected_values"),
