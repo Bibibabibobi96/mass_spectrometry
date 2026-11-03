@@ -132,9 +132,15 @@ with tempfile.TemporaryDirectory() as request_directory:
             paths = {row["source_repo_path"] for group in contract["providers"] for row in group["files"]}
             for group in contract["providers"]:
                 if group["python_packages"] or group["python_modules"]:
+                    package_roots = [row["source_repo_path"] for row in group["python_packages"]]
+                    # Consumer-specific declarations may name a singleton that
+                    # another consumer obtains through the whole package.
+                    # The union author closure copies that module only once.
+                    module_paths = [row["source_repo_path"] for row in group["python_modules"]
+                                    if not any(Path(row["source_repo_path"]).is_relative_to(package)
+                                               for package in package_roots)]
                     paths.update(enumerate_python_sources(REPO_ROOT,
-                        package_roots=[row["source_repo_path"] for row in group["python_packages"]],
-                        module_paths=[row["source_repo_path"] for row in group["python_modules"]]))
+                        package_roots=package_roots, module_paths=module_paths))
                     for row in group["python_packages"]:
                         if row.get("resource_suffixes"):
                             paths.update(enumerate_python_sources(REPO_ROOT,
@@ -158,6 +164,9 @@ with tempfile.TemporaryDirectory() as request_directory:
                 return output / "runtime_snapshot"
 
             fixture.snapshot = freeze("first")
+            event_module = "projects/rf_multipole_ion_optics/analysis/rf_event_table_validation.py"
+            self.assertEqual(sum(row["source_repo_path"] == event_module
+                                 for row in load(root / "first/code_inventory.json")["dependencies"]), 1)
             current = fixture._current_workbench()
             parent = fixture._parent(current)
             parent_before = {path.relative_to(parent): path.read_bytes()
