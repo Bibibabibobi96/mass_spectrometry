@@ -33,6 +33,11 @@ metadata明确首个全局峰、最近半高交点及线性插值，质量轴仍
 默认single结果3、SIMION recording、comparison、compensation、radial、ideal-source及其余具名分析
 仍由各workflow在P3/P4迁移明确writer/reader，最迟P4退出旧活动桥；本切片不宣称所有峰消费者已迁。
 
+活动三区理论campaign v1/v2只通过既有`render_campaign_authorities`刷新六项源码身份，
+科学数值、阶段、资格与阈值保持；旧run和冻结输入不回写，缺失、过期或篡改来源仍拒绝。
+质量谱树外重分析的冻结检查按实际科学核心schema完整集合及逐文件字节/SHA验证，
+不以固定schema数量替代闭包；原母群/几何、坏ID与缺失核心拒绝保持。
+
 ### P2 R0：受控测试超时现场
 
 原Changed运行41531065614的partial夹具30秒超时仍保留，历史根因未复现。

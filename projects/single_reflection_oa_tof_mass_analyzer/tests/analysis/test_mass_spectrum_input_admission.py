@@ -1,5 +1,6 @@
 """Thin normal/resume geometry admission; does not grant Formal access."""
 from pathlib import Path
+import hashlib
 import json
 import csv
 import os
@@ -164,7 +165,21 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
             code = root / 'inputs/code'
             inventory = freeze_analysis(REPO, code, selected)
             self.assertIn('src/msplatform/analysis/peak_metrics.py', {item['path'] for item in inventory['files']})
-            self.assertEqual(sum(item['path'].endswith('.schema.json') for item in inventory['files']), 38)
+            schemas = {path.relative_to(REPO).as_posix(): path
+                       for path in (REPO/'src/msplatform').rglob('*.schema.json')}
+            frozen = {item['path']: item for item in inventory['files']
+                      if item['path'].endswith('.schema.json')}
+            self.assertTrue(schemas)
+            self.assertEqual(set(frozen), set(schemas))
+            self.assertEqual(len(frozen), sum(item['path'].endswith('.schema.json')
+                                             for item in inventory['files']))
+            for relative, path in schemas.items():
+                with self.subTest(schema=relative):
+                    original_bytes = path.read_bytes()
+                    self.assertEqual((code/relative).read_bytes(), original_bytes)
+                    self.assertEqual((code/relative).stat().st_size, len(original_bytes))
+                    self.assertEqual(frozen[relative]['sha256'].upper(),
+                                     hashlib.sha256(original_bytes).hexdigest().upper())
             selection = root / 'inputs/source_selection.json'
             selection.write_text(json.dumps(selected), encoding='utf-8')
             output = root / 'analysis'
