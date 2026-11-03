@@ -306,6 +306,36 @@ class Probe(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="heavy_partial_dispatch_") as directory:
             root = Path(directory)
             leaf, modules = self.partial_python_partition_fixture(root)
+            # Hold b until the real parent records failure, rather than assuming
+            # its relative sleep exceeds a's process/receipt completion delay.
+            for relative in modules:
+                path = root / relative
+                body = path.read_text(encoding="utf-8").replace(
+                    "            time.sleep(1.0 if KEY=='b' and os.environ.get('PARTIAL_FAIL') else .2)",
+                    """            if KEY=='b' and os.environ.get('PARTIAL_FAIL'):
+                deadline=float(os.environ['PARTIAL_DISPATCH_DEADLINE'])
+                while not (root/'parent.observed_failure').exists():
+                    if time.monotonic() >= deadline:
+                        raise AssertionError('PARENT_FAILURE_NOT_OBSERVED')
+                    time.sleep(.01)
+            else:
+                time.sleep(.2)""")
+                path.write_text(body, encoding="utf-8")
+            with (root / "common/parallel_gate_support.ps1").open("a", encoding="utf-8") as stream:
+                stream.write(r"""
+$script:FixtureOriginalStageRecorder=${function:Set-GateStageResult}
+function Set-GateStageResult {
+    param($Summary, [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][Collections.IDictionary]$Result)
+    & $script:FixtureOriginalStageRecorder @PSBoundParameters
+    if($env:PARTIAL_FAIL-and$null-ne$Summary-and$Name.StartsWith('common_contracts__tests_')-and
+        $Result.Contains('status')-and$Result.status-eq'FAIL'){
+        $observed=@{time=[long]([Diagnostics.Stopwatch]::GetTimestamp()*(1.0e9/[Diagnostics.Stopwatch]::Frequency));pid=$PID;stage=$Name}
+        [IO.File]::WriteAllText((Join-Path $env:PARTIAL_EVENTS 'parent.observed_failure'),
+            ($observed|ConvertTo-Json -Compress),[Text.UTF8Encoding]::new($false))
+    }
+}
+""")
             catalog_path = root / "common/gate_catalog.json"
             catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
             (root / "common/original_owner.ps1").write_text(
@@ -334,7 +364,8 @@ class Probe(unittest.TestCase):
                     case = f"{preflight}_{'failed' if failed else 'success'}"
                     events = root / (case + "_events")
                     events.mkdir()
-                    environment = dict(os.environ, PARTIAL_EVENTS=str(events))
+                    environment = dict(os.environ, PARTIAL_EVENTS=str(events),
+                                       PARTIAL_DISPATCH_DEADLINE=str(time.monotonic() + 45))
                     environment.pop("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN", None)
                     environment.pop("PARTIAL_FAIL", None)
                     if failed:
@@ -388,6 +419,10 @@ class Probe(unittest.TestCase):
                         self.assertIn("PARTIAL_FAILURE", output)
                         self.assertCountEqual([part["status"] for part in parts], ["FAIL", "PASS", "BLOCKED"])
                         self.assertGreater(done["b"]["time"], done["a"]["time"])
+                        observed = json.loads((events / "parent.observed_failure").read_text())
+                        self.assertLess(done["a"]["time"], observed["time"])
+                        self.assertLess(observed["time"], done["b"]["time"])
+                        self.assertNotIn("c", starts, output)
                     else:
                         self.assertEqual(set(starts), set("abcde"))
                         self.assertEqual(sum(len(p["test_durations"]) for p in parts), 5)

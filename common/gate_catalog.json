@@ -1420,8 +1420,10 @@
               "integrations/tests/test_single_reflection_preparation.py",
               "integrations/tests/test_single_reflection_program.py",
               "integrations/tests/test_single_reflection_pulse.py",
+              "integrations/tests/test_single_reflection_request_versions.py",
               "integrations/tests/test_single_reflection_runner.py",
               "integrations/tests/test_single_reflection_runtime.py",
+              "integrations/tests/test_single_reflection_scientific_freeze.py",
               "integrations/tests/test_single_reflection_source_protection.py"
             ],
             "dependency_profile": "locked"

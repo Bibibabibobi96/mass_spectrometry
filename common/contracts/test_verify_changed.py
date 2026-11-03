@@ -1082,7 +1082,7 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
         self.assertEqual(projections, [("changed_scope.json", "changed"), ("integration_scope.json", "integration")])
         fixture = r'''param($PlanPath,$MaxConcurrency,$ResourceWaitTimeoutSeconds,$SummaryPath)
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
-@{role='ci_gate_fixture';elapsed_seconds=0.005}|ConvertTo-Json|Set-Content -LiteralPath $SummaryPath -Encoding utf8
+@{role='ci_gate_fixture';elapsed_seconds=0.005;stages=@()}|ConvertTo-Json|Set-Content -LiteralPath $SummaryPath -Encoding utf8
 Write-Output ('CI_FIXTURE_ARGUMENTS='+(@{plan_path=$PlanPath}|ConvertTo-Json -Compress))
 Write-Output 'CI_FIRST_OUTPUT_BEFORE_EXIT'
 while(-not(Test-Path -LiteralPath $env:CI_FIXTURE_RELEASE)){Start-Sleep -Milliseconds 10}
@@ -1095,6 +1095,9 @@ exit ([int]$env:CI_FIXTURE_EXIT)
             common.mkdir()
             for name in ("verify.ps1",):
                 (common / name).write_text(fixture, encoding="utf-8")
+            # The real CI wrapper imports its pure report provider before scope
+            # validation; keep that dependency in this detached software fixture.
+            shutil.copyfile(REPO_ROOT / "common/gate_outcome_report.py", common / "gate_outcome_report.py")
             for job, full_scope, code in ((0, False, 0), (0, False, 7), (0, True, 0), (1, False, 0), (1, False, 7), (2, False, 0), (2, False, 7)):
                 with self.subTest(job=job, full_scope=full_scope, code=code):
                     scope = {"full_scope": full_scope, "changed_paths": ["owner/含空格 file.py", "docs/README.md"]}
@@ -1145,7 +1148,10 @@ exit ([int]$env:CI_FIXTURE_EXIT)
                     self.assertGreater(timing["elapsed_wall_seconds"], 0.005)
                     self.assertEqual(timing["environment"]["python_executable"], sys.executable)
                     summary = json.loads(Path(timing["summary_path"]).read_text(encoding="utf-8-sig"))
-                    self.assertEqual(summary, {"role": "ci_gate_fixture", "elapsed_seconds": 0.005})
+                    self.assertEqual(summary, {"role": "ci_gate_fixture", "elapsed_seconds": 0.005, "stages": []})
+                    outcomes = json.loads((root / f"{prefix}_gate_test_outcomes.json").read_text())
+                    self.assertEqual(outcomes["role"], "gate_outcome_report")
+                    self.assertEqual(outcomes["executions"], [])
                     arguments = json.loads(next(line.split("=", 1)[1] for line in lines if line.startswith("CI_FIXTURE_ARGUMENTS=")))
                     self.assertEqual(timing["scope"], scope)
                     self.assertEqual(Path(arguments["plan_path"]), root / "software_gate_plan.json")
