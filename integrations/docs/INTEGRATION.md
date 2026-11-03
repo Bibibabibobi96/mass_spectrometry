@@ -1,7 +1,7 @@
 # 统一装配实施状态
 
 返回[集成入口](../README.md)。本页维护当前入口、有效证据、限制与开放动作，组件自身资格归各PROJECT。
-状态截至2026-10-30；原始输入和终态仍以各run的manifest为准。早期阶段见
+状态截至2026-11-03；原始输入和终态仍以各run的manifest为准。早期阶段见
 [迁移证据](history/20261026__assembly-migration-execution-evidence.md)，后续重试和门禁过程可从
 [收口前固定版本](https://github.com/Bibibabibobi96/mass_spectrometry/blob/09d7dec5a6802f47df791a3239ed75e5b73321fd/integrations/docs/INTEGRATION.md)追溯；不复制另一套全文快照。
 
@@ -16,7 +16,7 @@ local／cooled的既有request3仍显式消费component1／plan3，MP/IP旧协�
 本次真实三区输入的完整oaTOF component3保留42个科学组及四成员共地，前端场域由提供者独立发布25组，
 组数仍由各冻结提供者的实际环数和结构派生，不是接口固定上限；
 不裁掉下游部件以满足绑定覆盖。binding2的显式子范围须匹配调用方从冻结提供者得到的预期，不能由记录自批。
-提供者与后端的软件切片不代表request10已有完整Refine/Fly、数值或GUI资格。
+request10现已有下述真实Refine/Fly与显式保存回放证据；数值覆盖和GUI资格仍分别判断。
 
 SFI原高4 mm侧口可在SIMION真实实体间保持不接触，但不满足独立OA组件的strict first-gap能力合同。
 两者不是同一资格：底层sectioned电极投影复用唯一构造逻辑，原高层严格检查保持，
@@ -27,6 +27,25 @@ request10的实际准备、GEM、工作场设计、Program及缓存接线已有�
 真实冷冻结另覆盖新10、旧9及删新backend／component3资源的四个冷执行场景，15.951秒通过；
 原缺失RF事件模块的FAIL保留，库存已补精确单模块，不借作者树或宿主安装补齐。
 这些结果不覆盖真实Fly动态场读数、GUI或最终整轮软件验收。
+
+本批真实三区RF→OA→单反射链的两种编号分别由
+`20261103_135900__sim__simion__phase02-v6-map-a`与
+`20261103_140100__sim__simion__phase02-v6-map-b`运行封存；两者保留相同N100出生源、
+几何、驱动和仪器钟，仅反序RF的8个native标签。各有14批实际Fly及14批显式保存工作台回放，
+原功能合同15项通过：100个原ID均有真实终态，36个探测、64个其他终态，无timeout或unknown，
+35个ID具有完整六事件顺序；不把全部探测粒子说成具有该完整顺序。
+按事前严格相等目标，已记录源、事件、状态、TOF与所捕获场值的37组比较、85231次数值比较无差异。
+两轮公开owner墙钟分别2692.745与2967.095秒；场准备占主要成本，不是普通软件门禁性能基线。
+
+实际应用场观测在两轮baseline／replay中各捕获12条查询，已捕获操作数的独立舍入核对一致；
+原锚定批次在pulse_end窗口前离开前端域，两结束窗口均没有合格记录，原覆盖判据保持
+`INCONCLUSIVE / coverage_incomplete`。静态审计未持久化逐点actual值，不能据此宣称全场严格相等、
+libm精度、收敛或Formal资格。GUI捕获与点击环境失败，未完成实际工作台GUI验收；
+任务GUI实例已正常关闭并释放只读保护及租约，不能把这一步写成GUI通过。
+
+同map另一次公开`FieldDesignOnly`验证沿用三份已封存PA身份，Refine／Fly／native启动均为0，
+N100输入保持且传播数为0。公开墙钟338.988秒，超过预置envelope的300秒整run预期；
+复用功能通过不表示该墙钟目标达标。该结果及两轮飞行均以各run manifest／completion为原始证据。
 
 单反射场执行的软件回归保留15个真实 CLI 场景，包括母群、资源、原生失败、场与工作台保护。
 缺预算阶段的通用负例归现有 `test_engineering_budget`，移除两次重复完整准备，不新增源码布局抽取器。
