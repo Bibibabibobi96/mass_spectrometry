@@ -78,6 +78,7 @@ $frozenPythonRelativePaths = Get-FrozenPythonPackageRelativePaths -SourceRoot $r
         'common/ion_release',
         'projects/rf_multipole_ion_optics/workflows/interface_readiness'
     ) `
+    -PythonModules @('projects/rf_multipole_ion_optics/simion/ion11_source_adapter.py') `
     -RelativePaths @(
         'common\contracts\particle_count_policy.json'
     )
@@ -346,13 +347,13 @@ sys.path.insert(0,str(root))
 from common.contracts.frozen_inputs import python_import_roots
 sys.path[:0]=python_import_roots(root)
 metadata,state,summary,particles,contract,frequency,phase,report,origins=sys.argv[2:]
-modules=['projects.rf_multipole_ion_optics.analysis.analyze_comsol_particle_state_metrics','common.contracts.particle_state','common.contracts.particle_physics']
+modules=['projects.rf_multipole_ion_optics.analysis.analyze_comsol_particle_state_metrics','projects.rf_multipole_ion_optics.analysis.rf_event_table_validation','projects.rf_multipole_ion_optics.simion.ion11_source_adapter','msplatform.contracts.particle_physics']
 paths={name:str(pathlib.Path(importlib.import_module(name).__file__).resolve()) for name in modules}
 if any(not pathlib.Path(path).is_relative_to(root) for path in paths.values()): raise RuntimeError('analysis escaped frozen source')
 pathlib.Path(origins).write_text(json.dumps(paths,indent=2)+'\n',encoding='utf-8')
-from common.contracts.particle_state import ion11_sources
+from projects.rf_multipole_ion_optics.simion.ion11_source_adapter import read_ion11_source_states
 raw=json.loads(pathlib.Path(metadata).read_text(encoding='utf-8-sig'))
-source_ids=sorted(ion11_sources(pathlib.Path(particles),float(raw['source_axial_offset_mm'])))
+source_ids=sorted(read_ion11_source_states(pathlib.Path(particles),float(raw['source_axial_offset_mm'])))
 if raw['source_ids'] != source_ids or sorted(raw['native_order']) != source_ids: raise ValueError('native mapping does not close frozen source cohort')
 if any(len(raw[key]) != len(source_ids) for key in ('source_birth_s','source_weights','source_initial_position_mm','source_initial_velocity_m_s')): raise ValueError('native mapping field length differs from source cohort')
 for name,module in tuple(sys.modules.items()):
@@ -951,11 +952,11 @@ try {
 
     $failureStage = 'particle_state_contract'
     $stateContractExecution=Invoke-IsolatedFrozenPythonModule -Python $python -Package $frozenPythonPackage `
-        -Module 'common.contracts.particle_state' `
+        -Module 'projects.rf_multipole_ion_optics.analysis.rf_event_table_validation' `
         -Arguments @('--state',$particleStatePath,'--particles',$particleTable,'--source-format','ion11',
             '--contract',$frozenInterface,'--axial-offset-mm','0','--frequency-hz',([string]$resolved.drive.frequency_Hz),
             '--phase-rad',([string]$resolved.drive.phase_rad),'--solver','COMSOL','--output',$stateContractReport) `
-        -RequiredModuleNames @('common.contracts.particle_state','common.contracts.particle_physics') -ForbiddenRoots @($repoRoot)
+        -RequiredModuleNames @('projects.rf_multipole_ion_optics.analysis.rf_event_table_validation','projects.rf_multipole_ion_optics.simion.ion11_source_adapter','msplatform.contracts.particle_physics') -ForbiddenRoots @($repoRoot)
     $runConfig.frozen_python.particle_state_contract=$stateContractExecution
     Write-RunJson -Value $runConfig -Path $package.run_config
 

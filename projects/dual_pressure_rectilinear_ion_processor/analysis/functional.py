@@ -24,7 +24,7 @@ from common.contracts.canonical_clock_authority import validate_clock_authority
 from common.contracts.verify_run_manifest import record_path
 from common.contracts.particle_count_policy import validate_positive_particle_count, validate_standard_particle_count
 from common.contracts.particle_physics import kinetic_energy_ev
-from common.contracts.particle_state import PARTICLE_STATE_COLUMNS, ENUMS, validate_particle_state
+from projects.rf_multipole_ion_optics.analysis.rf_event_table_validation import PARTICLE_STATE_COLUMNS, ENUMS, validate_rf_event_table
 from common.ion_release.release import generate_release_states, materialize_release_from_file, validate_release_spec
 from common.simion.collision_hs1 import adapt_hs1_for_repeat_fly
 from common.simion.particle_source import project_direct_velocity, render_standard_beams, render_source_states
@@ -632,7 +632,7 @@ def analyze(run: Path) -> dict[str, Any]:
             ("time_us", "elapsed_time_us", "axial_z_mm", "transverse_x_mm", "transverse_y_mm",
              "velocity_axial_m_s", "velocity_x_m_s", "velocity_y_m_s", "kinetic_energy_eV"),
             (arrival, arrival-source["birth_time_s"]*1e6, *position, *velocity, kinetic_energy_ev(source["mass_amu"], vx, vy, vz))))
-    validation = validate_particle_state(output,expected,b["electric"]["rf_frequency_hz"],b["clock"]["rf_phase_rad"],enums={**ENUMS,"event":EVENTS,"terminal_reason":[*ENUMS["terminal_reason"],"downstream_domain_exit"]})
+    validation = validate_rf_event_table(output,expected,b["electric"]["rf_frequency_hz"],b["clock"]["rf_phase_rad"],enums={**ENUMS,"event":EVENTS,"terminal_reason":[*ENUMS["terminal_reason"],"downstream_domain_exit"]})
     grouped={event:[r for r in rows if r["event"]==event] for event in EVENTS}
     metrics = {}
     for event, group in grouped.items():

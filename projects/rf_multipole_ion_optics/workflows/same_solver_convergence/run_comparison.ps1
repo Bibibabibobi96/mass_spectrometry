@@ -56,7 +56,8 @@ try {
             'projects/rf_multipole_ion_optics/runtime',
             'projects/rf_multipole_ion_optics/workflows/same_solver_convergence'
         ) `
-        -RelativePaths @(
+        -PythonModules @('projects/rf_multipole_ion_optics/simion/ion11_source_adapter.py') `
+    -RelativePaths @(
             'common\contracts\particle_count_policy.json'
         )
     $frozenPythonSupport = Copy-VerifiedRunInput `
@@ -227,7 +228,8 @@ try {
             'projects.rf_multipole_ion_optics.analysis.particle_state_comparison_core',
             'projects.rf_multipole_ion_optics.analysis.validate_paired_particle_source_binding',
             'projects.rf_multipole_ion_optics.analysis.paired_particle_source_bundle',
-            'common.contracts.particle_state',
+            'projects.rf_multipole_ion_optics.analysis.rf_event_table_validation',
+            'projects.rf_multipole_ion_optics.simion.ion11_source_adapter',
             'common.contracts.particle_physics',
             'common.contracts.particle_count_policy',
             'projects.rf_multipole_ion_optics.core',
@@ -274,7 +276,8 @@ try {
             'projects.rf_multipole_ion_optics.analysis.particle_state_comparison_core',
             'projects.rf_multipole_ion_optics.analysis.validate_paired_particle_source_binding',
             'projects.rf_multipole_ion_optics.analysis.paired_particle_source_bundle',
-            'common.contracts.particle_state',
+            'projects.rf_multipole_ion_optics.analysis.rf_event_table_validation',
+            'projects.rf_multipole_ion_optics.simion.ion11_source_adapter',
             'common.contracts.particle_physics',
             'common.contracts.particle_count_policy',
             'projects.rf_multipole_ion_optics.core',

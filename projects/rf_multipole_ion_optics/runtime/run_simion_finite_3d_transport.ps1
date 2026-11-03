@@ -1406,7 +1406,7 @@ return config
     Push-Location $codeRoot
     try{
       $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
-      & $python -m common.contracts.particle_state --state $caseState --particles $particleSource `
+      & $python -m projects.rf_multipole_ion_optics.analysis.rf_event_table_validation --state $caseState --particles $particleSource `
         --source-format canonical --frequency-hz $drive.frequency_Hz --phase-rad $drive.phase_rad `
         --rod-exit-mm $geometry.rod_z_max --handoff-mm $handoffPlaneMm `
         --solver 'SIMION 2020' --output $stateReport|Out-Null

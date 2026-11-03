@@ -195,7 +195,7 @@ if($outputs.Count-ne8){throw 'Existing three outputs and mapping must remain for
             self.assertNotIn("resolve_family_operating_contract", runner)
             self.assertNotIn("family_operating_contract", runner)
         self.assertIn("'--source-format','ion11'", "".join(transport_runner.split()))
-        self.assertIn("common.contracts.particle_state", transport_runner)
+        self.assertIn("projects.rf_multipole_ion_optics.analysis.rf_event_table_validation", transport_runner)
 
     def test_mass_filter_functional_pass_does_not_claim_formal_eligibility(self) -> None:
         runner = (

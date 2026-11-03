@@ -61,6 +61,7 @@ $frozenPythonRelativePaths = Get-FrozenPythonPackageRelativePaths -SourceRoot $r
         'common/simion',
         'projects/rf_multipole_ion_optics/workflows/interface_readiness'
     ) `
+    -PythonModules @('projects/rf_multipole_ion_optics/simion/ion11_source_adapter.py') `
     -RelativePaths @(
         'common\contracts\particle_count_policy.json'
     )
@@ -646,7 +647,7 @@ if ($summary.particles -ne $expectedParticles -or $summary.collision_model -ne '
 $dataValidity='valid_raw_outputs'
 $physicalDecision = if ($summary.transmission -ge $minimumTransmission) { 'PASS' } else { 'FAIL' }
 Push-Location $repoRoot
-try { & $python -m common.contracts.particle_state `
+try { & $python -m projects.rf_multipole_ion_optics.analysis.rf_event_table_validation `
     --state $particleStateCsv --particles $particlePath `
     --source-format canonical --contract $frozenInterface `
     --axial-offset-mm 0.0 --frequency-hz $FrequencyHz `
