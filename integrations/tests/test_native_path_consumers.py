@@ -461,3 +461,7 @@ try{
             result=subprocess.run(['pwsh','-NoProfile','-File',str(script),str(REPO),sys.executable,str(root)],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=45)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             self.assertIn('LOCAL_TOPOLOGY_PATH_CONTEXT=PASS',result.stdout)
+
+
+if __name__ == "__main__":
+    unittest.main()

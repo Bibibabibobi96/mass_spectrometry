@@ -9,19 +9,18 @@ import sys
 import tempfile
 import time
 import warnings
-
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.native_stage_completion import append_native_stage_completion
 from pathlib import Path
 from contextlib import ExitStack
 from typing import Any, Callable
 
-from common.contracts.particle_count_policy import validate_standard_particle_count
 
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.native_stage_completion import append_native_stage_completion
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 from common.contracts.machine_contracts import load_json, sha256
 from common.contracts.file_identity import FileIdentityGuard, guarded_file_identity
+from common.contracts.particle_count_policy import validate_standard_particle_count
 from common.contracts.recorded_file_removal import write_json_atomic
 from common.contracts.verify_run_manifest import verify_record
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
@@ -40,7 +39,6 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.simion_component_p
 
 
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_stage_execution import execute_candidate_stage, _powershell
-
 
 StageExecutor = Callable[[dict[str, Any], dict[str, Any], str], dict[str, Any]]
 # A long candidate stage is evidence to inspect, never proof that a healthy

@@ -79,7 +79,6 @@ class DirectFieldPlanTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, 'uniquely identity-bound'):
                         _bound_source_audit(changed, stale)
 
-
     def test_instance_rename_and_reorder_preserve_full_and_local_native_plans(self):
         for local in (False, True):
             with self.subTest(local=local), tempfile.TemporaryDirectory() as directory:
@@ -727,9 +726,10 @@ param($Repo,$Python,$Run,$Cache,$Recovery,$PreparedResume,$FineChange,$BudgetFai
 $ErrorActionPreference='Stop'
 . (Join-Path $Repo 'common/simion/short_pa_path_support.ps1')
 . (Join-Path $Repo 'integrations/workflows/single_reflection_flight/field_stage.ps1')
-# This fixture owns field transactions; actual path transport has its own narrow behavior case.
+# This fixture owns field transactions; real transport is covered separately.
 function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool) @{run_dir=$Run;projected_paths=@($Paths);environment=@{}}}
 function Project-RunPath {param($Paths,$ArtifactRunDir,$RunDir,$Python) return $Paths}
+
 $script:native=@();$script:stages=@();$script:scopes=@();$script:injectedFailure=$false;$script:handoffSeen=0;$script:stageAccounting=0
 $WarningPreference='SilentlyContinue'
 function Invoke-RunToolRootContext {

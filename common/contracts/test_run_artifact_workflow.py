@@ -407,8 +407,8 @@ if('{external}'-notin@($snapshot.protected_paths)){{throw 'latest source scope w
                     self.assertNotEqual(result["lease_id"], old_id)
                     self.assertEqual(result["recovery_session"]["committed_new_bytes"], 0)
                     budget = json.loads((REPO / "common/contracts/artifact_capacity_policy.json").read_text())["light_evidence_budget_bytes"]
-                    # Admission is an immutable historical receipt; session.lease
-                    # follows the actual renewal through zero and release.
+                    # Admission retains its original receipt; the live lease
+                    # representation follows renewal through the final zero.
                     session = result["recovery_session"]
                     self.assertEqual(session["startup_gate"]["admitted_lease_committed_new_bytes"], budget)
                     self.assertEqual(session["lease"]["committed_new_bytes"], 0)

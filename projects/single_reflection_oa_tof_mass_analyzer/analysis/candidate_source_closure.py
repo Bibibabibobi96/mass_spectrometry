@@ -8,8 +8,8 @@ import io
 import json
 import marshal
 import struct
-import types
 import sys
+import types
 from pathlib import Path
 from typing import Any
 
