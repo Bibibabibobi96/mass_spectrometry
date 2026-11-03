@@ -92,8 +92,9 @@ backend binding记录v2仅消费component3和新字段，旧binding1显式消费
 域投影独立取得`electrode_group_scope`并作为keyword传入；binding2记录必须逐值匹配该预期范围，
 每实例为非空唯一组列表且为完整接口的子集。记录不得自行授权缩小范围，binding1不接受该字段。
 完整接口及下游组继续保留；共同电气组可在不同场域投影不同真实成员，成员归属仍由提供者确定。
-SIMION原生整数/容量与同域槽位检查仍由后端负责。现实际RF/OA执行消费者切换和
-新资源的普通安装/冻结/原生验收尚未完成，纯API软件小例不代替真实链证据。
+SIMION原生整数/容量与同域槽位检查仍由后端负责。实际RF/OA消费者切换、新资源普通安装／冻结
+及两种编号的N100原生功能已有相应证据；当前覆盖、GUI限制与整轮软件状态只查
+[集成状态](../../integrations/docs/INTEGRATION.md#当前边界)，纯API小例不代替该真实链证据。
 
 port 是项目物理合同的发布视图，不是第二权威。每个port必须通过`authority.source_contract`和
 `source_sha256`锁定仓库内来源，并用`bindings`逐项声明port JSON Pointer与source JSON Pointer；
