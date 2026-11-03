@@ -4,6 +4,9 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 
+# Supported PA# adjustable namespace (SIMION 8.1 default, not a physics limit).
+# https://simion.com/info/max_electrodes.html, checked 2026-11-03.
+# Older/differently compiled tool capacities are not implied by this adapter.
 SIMION_MAX_ADJUSTABLE_ELECTRODE_ID = 1000
 
 
@@ -21,10 +24,10 @@ def build_simion_electrode_map(
 
     if topology != build_electrode_topology(resolved):
         raise ValueError("electrode topology differs from the resolved provider")
-    keys = [row["scientific_id"] for row in topology]
+    keys = [row["electrode_group_id"] for row in topology]
     default = {}
     for row in topology:
-        key, source = row["scientific_id"], row["voltage_source"]
+        key, source = row["electrode_group_id"], row["voltage_source"]
         if source["kind"] == "rf_drive":
             if resolved["segmentation"]["segmented_rod_array"] is None:
                 native = source["rf_group"]

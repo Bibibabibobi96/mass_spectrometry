@@ -402,7 +402,10 @@ $null=Get-HostResourceBudget -Role GATE -Stage snapshot-probe
                 core_files = {path.relative_to(REPO_ROOT).as_posix()
                               for path in (REPO_ROOT / 'src/msplatform').rglob('*')
                               if path.is_file() and (path.suffix == '.py' or path.name.endswith('.schema.json'))}
-                self.assertEqual(sum(path.endswith('.schema.json') for path in core_files), 38)
+                expected_schemas = {path for path in core_files if path.endswith('.schema.json')}
+                frozen_schemas = {path for path in by_path
+                                  if path.startswith('src/msplatform/') and path.endswith('.schema.json')}
+                self.assertEqual(frozen_schemas, expected_schemas)
                 for relative in expected | core_files:
                     payload = root / "code" / relative
                     self.assertIn("inputs/code/" + relative, capacities)

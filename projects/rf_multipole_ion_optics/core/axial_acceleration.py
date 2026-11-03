@@ -15,8 +15,10 @@ from typing import Any
 
 
 MODEL_ID = "multipole.segmented_rod_common_mode_staircase.v2"
-SIMION_MAX_ADJUSTABLE_ELECTRODE_ID = 1000
-MAX_SEGMENT_COUNT = (SIMION_MAX_ADJUSTABLE_ELECTRODE_ID - 2) // 2
+# Frozen legacy protocol limits; these exports do not describe backend capability.
+LEGACY_V2_MAX_SEGMENT_COUNT = 499
+MAX_SEGMENT_COUNT = LEGACY_V2_MAX_SEGMENT_COUNT
+NEUTRAL_MODEL_ID = "multipole.segmented_rod_common_mode_staircase.v3"
 
 
 class AxialAccelerationError(ValueError):
@@ -30,7 +32,7 @@ def _finite(mapping: dict[str, Any], key: str) -> float:
     return float(value)
 
 
-def _resolve_uniform(segmentation: dict[str, Any], rod_length_mm: float) -> list[dict[str, float]]:
+def _resolve_uniform(segmentation: dict[str, Any], rod_length_mm: float, *, legacy: bool) -> list[dict[str, float]]:
     expected = {
         "strategy",
         "segment_count",
@@ -43,9 +45,9 @@ def _resolve_uniform(segmentation: dict[str, Any], rod_length_mm: float) -> list
     segment_count = segmentation.get("segment_count")
     if not isinstance(segment_count, int) or isinstance(segment_count, bool) or segment_count < 2:
         raise AxialAccelerationError("segment_count must be an integer of at least two")
-    if segment_count > MAX_SEGMENT_COUNT:
+    if legacy and segment_count > LEGACY_V2_MAX_SEGMENT_COUNT:
         raise AxialAccelerationError(
-            f"segment_count exceeds the shared SIMION-safe limit of {MAX_SEGMENT_COUNT}"
+            f"segment_count exceeds the legacy v2 SIMION-safe limit of {LEGACY_V2_MAX_SEGMENT_COUNT}"
         )
     gap = _finite(segmentation, "intersegment_gap_mm")
     entrance_v = _finite(segmentation, "entrance_common_mode_V")
@@ -65,15 +67,15 @@ def _resolve_uniform(segmentation: dict[str, Any], rod_length_mm: float) -> list
     ]
 
 
-def _resolve_explicit(segmentation: dict[str, Any]) -> list[dict[str, float]]:
+def _resolve_explicit(segmentation: dict[str, Any], *, legacy: bool) -> list[dict[str, float]]:
     if set(segmentation) != {"strategy", "segments"}:
         raise AxialAccelerationError("explicit segmentation fields differ")
     source_segments = segmentation.get("segments")
     if not isinstance(source_segments, list) or len(source_segments) < 2:
         raise AxialAccelerationError("explicit segments must contain at least two entries")
-    if len(source_segments) > MAX_SEGMENT_COUNT:
+    if legacy and len(source_segments) > LEGACY_V2_MAX_SEGMENT_COUNT:
         raise AxialAccelerationError(
-            f"explicit segment count exceeds the shared SIMION-safe limit of {MAX_SEGMENT_COUNT}"
+            f"explicit segment count exceeds the legacy v2 SIMION-safe limit of {LEGACY_V2_MAX_SEGMENT_COUNT}"
         )
     segments = []
     for index, source in enumerate(source_segments):
@@ -118,9 +120,10 @@ def resolve_axial_acceleration(
             f"axial acceleration fields differ: missing={sorted(expected_keys-set(contract))}, "
             f"unknown={sorted(set(contract)-expected_keys)}"
         )
-    if contract.get("schema_version") != 2 or contract.get("role") != "multipole_axial_acceleration_contract":
+    version = contract.get("schema_version")
+    if type(version) is not int or version not in (2, 3) or contract.get("role") != "multipole_axial_acceleration_contract":
         raise AxialAccelerationError("axial acceleration schema or role differs")
-    if contract.get("model_id") != MODEL_ID:
+    if contract.get("model_id") != (MODEL_ID if version == 2 else NEUTRAL_MODEL_ID):
         raise AxialAccelerationError("unsupported axial acceleration model_id")
     z_min = float(rod_z_min_mm)
     z_max = float(rod_z_max_mm)
@@ -138,9 +141,9 @@ def resolve_axial_acceleration(
         raise AxialAccelerationError("segmentation must be an object")
     strategy = segmentation.get("strategy")
     if strategy == "uniform":
-        source_segments = _resolve_uniform(segmentation, z_max - z_min)
+        source_segments = _resolve_uniform(segmentation, z_max - z_min, legacy=version == 2)
     elif strategy == "explicit":
-        source_segments = _resolve_explicit(segmentation)
+        source_segments = _resolve_explicit(segmentation, legacy=version == 2)
     else:
         raise AxialAccelerationError("segmentation strategy must be uniform or explicit")
     output_v = _finite(contract, "output_reference_V")
@@ -207,6 +210,9 @@ def segment_rod_array(array: dict[str, Any], resolved: dict[str, Any]) -> dict[s
     segments = resolved.get("derived", {}).get("segments")
     if not isinstance(rods, list) or not rods or not isinstance(segments, list) or not segments:
         raise AxialAccelerationError("rod array or resolved axial segments are missing")
+    version = resolved.get("schema_version")
+    if type(version) is not int or version not in (2, 3) or resolved.get("model_id") != (MODEL_ID if version == 2 else NEUTRAL_MODEL_ID):
+        raise AxialAccelerationError("segment array requires an explicit supported axial contract version")
     expanded = []
     for segment in segments:
         for rod in rods:
@@ -216,10 +222,11 @@ def segment_rod_array(array: dict[str, Any], resolved: dict[str, Any]) -> dict[s
             item["common_mode_V"] = float(segment["common_mode_V"])
             item["z_min_mm"] = float(segment["z_min_mm"])
             item["z_max_mm"] = float(segment["z_max_mm"])
-            item["electrode_id"] = 2 * (item["segment_id"] - 1) + int(item["electrode_group"])
+            if version == 2:
+                item["electrode_id"] = 2 * (item["segment_id"] - 1) + int(item["electrode_group"])
             expanded.append(item)
     return {
-        "schema_version": 1,
+        "schema_version": 1 if version == 2 else 2,
         "role": "multipole_segmented_round_rod_array",
         "segment_count": len(segments),
         "electrode_count_per_segment": len(rods),

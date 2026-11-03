@@ -20,6 +20,7 @@ from common.contracts.machine_contracts import (
 )
 from projects.rf_multipole_ion_optics.core.axial_acceleration import (
     MODEL_ID,
+    NEUTRAL_MODEL_ID,
     AxialAccelerationError,
     resolve_axial_acceleration,
     segment_rod_array,
@@ -44,6 +45,40 @@ RESOLVED_SCHEMA = "multipole_resolved_design.schema.json"
 OPERATING_MODE_SCHEMA = "multipole_operating_modes.schema.json"
 OPERATING_MODE_SOURCE_PREFIX = "operating_mode_registry__"
 GEOMETRY_EQUALITY_ABS_TOL_MM = 1e-12
+
+
+def _version_schema(document: Mapping[str, Any], *, resolved: bool) -> str:
+    version = document.get("schema_version")
+    if type(version) is not int or version not in (3, 4):
+        raise MultipoleDesignCompileError("unsupported multipole contract schema_version")
+    stem = "multipole_resolved_design" if resolved else "multipole_design_request"
+    return stem + ("_v4" if version == 4 else "") + ".schema.json"
+
+
+def validate_design_request(document: Mapping[str, Any]) -> None:
+    """Validate an explicitly versioned author contract, without compiling it."""
+    validate_schema(dict(document), _version_schema(document, resolved=False))
+
+
+def validate_resolved_design_contract(document: Mapping[str, Any]) -> None:
+    """Validate version combinations only; provenance recompilation is separate."""
+    validate_schema(dict(document), _version_schema(document, resolved=True))
+    version = document["schema_version"]
+    segmentation = document["segmentation"]
+    axial, array = segmentation["axial_acceleration"], segmentation["segmented_rod_array"]
+    if segmentation["strategy"] == "off":
+        if axial is not None or array is not None:
+            raise MultipoleDesignCompileError("continuous topology cannot contain segmented contracts")
+        return
+    if (not isinstance(axial, dict) or not isinstance(array, dict)
+            or type(axial.get("schema_version")) is not int
+            or axial["schema_version"] != (2 if version == 3 else 3)
+            or axial.get("model_id") != (MODEL_ID if version == 3 else NEUTRAL_MODEL_ID)
+            or type(array.get("schema_version")) is not int
+            or array["schema_version"] != (1 if version == 3 else 2)):
+        raise MultipoleDesignCompileError("mixed multipole resolved/axial/segment contract versions")
+    if version == 4 and any("electrode_id" in member for member in array["electrodes"]):
+        raise MultipoleDesignCompileError("neutral segment contract cannot contain native electrode_id")
 
 
 class MultipoleDesignCompileError(ContractError):
@@ -326,10 +361,10 @@ def _resolve_segmentation(
             "segmented acceleration output reference must equal the final rod segment"
         )
     axial_contract = {
-        "schema_version": 2,
+        "schema_version": 2 if request["schema_version"] == 3 else 3,
         "role": "multipole_axial_acceleration_contract",
         "project_id": identity["project_id"],
-        "model_id": MODEL_ID,
+        "model_id": MODEL_ID if request["schema_version"] == 3 else NEUTRAL_MODEL_ID,
         "segmentation": source_segmentation,
         # The segmented-rod helper ends at the final rod segment.  The request-level
         # output_reference_V is the actual downstream terminal and may differ for a
@@ -496,7 +531,7 @@ def compile_design_request(
     """Validate and compile one request against an immutable project identity."""
     request_document = copy.deepcopy(dict(request))
     try:
-        validate_schema(request_document, REQUEST_SCHEMA)
+        validate_design_request(request_document)
     except ContractError as error:
         raise MultipoleDesignCompileError(str(error)) from error
     _ensure_finite_numbers(request_document)
@@ -565,9 +600,9 @@ def compile_design_request(
         raise MultipoleDesignCompileError(str(error)) from error
 
     resolved: dict[str, Any] = {
-        "schema_version": 3,
+        "schema_version": request_document["schema_version"],
         "role": "multipole_resolved_design_do_not_edit",
-        "compiler": {"name": COMPILER_NAME, "version": COMPILER_VERSION},
+        "compiler": {"name": COMPILER_NAME, "version": request_document["schema_version"]},
         "governance": None,
         "request": {
             "request_id": request_document["request_id"],
@@ -604,7 +639,7 @@ def compile_design_request(
         resolved["geometry_mm"].update(numerical_domain=domain, observations=observations, enclosure_layout=layout)
     resolved["resolved_sha256"] = resolved_design_sha256(resolved)
     try:
-        validate_schema(resolved, RESOLVED_SCHEMA)
+        validate_resolved_design_contract(resolved)
     except ContractError as error:
         raise MultipoleDesignCompileError(
             f"compiler produced an invalid resolved design: {error}"
@@ -675,7 +710,7 @@ def apply_typed_operating_mode(
     request = copy.deepcopy(dict(base_request))
     registry = copy.deepcopy(dict(mode_registry))
     try:
-        validate_schema(request, REQUEST_SCHEMA)
+        validate_design_request(request)
         validate_schema(registry, OPERATING_MODE_SCHEMA)
     except ContractError as error:
         raise MultipoleDesignCompileError(str(error)) from error
@@ -736,7 +771,7 @@ def apply_typed_operating_mode(
             "typed operating mode cannot map the static-electrode role"
         )
     try:
-        validate_schema(request, REQUEST_SCHEMA)
+        validate_design_request(request)
     except ContractError as error:
         raise MultipoleDesignCompileError(str(error)) from error
     return request
@@ -842,7 +877,7 @@ def compile_governed_design_request_file(
         "design_request_file_sha256": source_sha256(request_path),
     }
     resolved["resolved_sha256"] = resolved_design_sha256(resolved)
-    validate_schema(resolved, RESOLVED_SCHEMA)
+    validate_resolved_design_contract(resolved)
     return resolved
 
 
@@ -857,7 +892,7 @@ def validate_resolved_design(
     """Recompile a resolved design's original request and require exact equality."""
     document = copy.deepcopy(dict(resolved))
     try:
-        validate_schema(document, RESOLVED_SCHEMA)
+        validate_resolved_design_contract(document)
     except ContractError as error:
         raise MultipoleDesignCompileError(str(error)) from error
     _ensure_finite_numbers(document)

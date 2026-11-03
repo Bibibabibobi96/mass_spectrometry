@@ -24,6 +24,7 @@ from common.integration.resolve_assembly import derive_assembly_scope
 from projects.rf_multipole_ion_optics.core.component_port import (
     build_assembly_interface, validate_exit_observations, load_transport_producer_result,
 )
+from projects.rf_multipole_ion_optics.simion.assembly_interface import build_legacy_assembly_interface
 from projects.dual_pressure_rectilinear_ion_processor.analysis.assembly_interface import resolve_assembly_interface
 from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection
 from projects.dual_pressure_rectilinear_ion_processor.analysis.upstream_admission import FATE_COLUMNS
@@ -166,7 +167,11 @@ def prepare(request_path: Path, run: Path) -> dict[str, Any]:
     if resolved["identity"]["project_id"] != request["source"]["project_id"]:
         raise ValueError("multipole resolved project differs from selected producer")
     interface = _read(paths["mechanical_exit_interface"])
-    expected = build_assembly_interface(resolved, geometry_profile_id=interface["geometry_profile_id"])
+    if interface["schema_version"] in (1, 2):
+        expected = build_legacy_assembly_interface(resolved,
+            geometry_profile_id=interface["geometry_profile_id"], schema_version=interface["schema_version"])
+    else:
+        expected = build_assembly_interface(resolved, geometry_profile_id=interface["geometry_profile_id"])
     if interface != expected:
         raise ValueError("mechanical exit interface differs from its real resolved geometry")
     observation = _read(paths["mechanical_exit_observation"])

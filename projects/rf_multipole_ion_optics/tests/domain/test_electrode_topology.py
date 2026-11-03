@@ -25,16 +25,16 @@ class ElectrodeTopologyTests(unittest.TestCase):
             return original(name, *args, **kwargs)
         with patch("builtins.__import__", side_effect=guarded):
             groups = build_electrode_topology(source)
-        self.assertEqual([g["scientific_id"] for g in groups], ["rod_group_1", "rod_group_2"])
+        self.assertEqual([g["electrode_group_id"] for g in groups], ["rod_group_1", "rod_group_2"])
         self.assertEqual(groups[0]["member_refs"], ["/geometry_mm/rod_array/rods/0", "/geometry_mm/rod_array/rods/2"])
         self.assertEqual(groups[1]["member_refs"], ["/geometry_mm/rod_array/rods/1", "/geometry_mm/rod_array/rods/3"])
-        self.assertTrue(all(set(g) == {"scientific_id", "roles", "member_refs", "voltage_source"} for g in groups))
+        self.assertTrue(all(set(g) == {"electrode_group_id", "roles", "member_refs", "voltage_source"} for g in groups))
         self.assertEqual(source, before)
 
     def test_segments_use_declared_identity_not_embedded_native_number(self):
         source = resolved_design(segmented=True)
         groups = build_electrode_topology(source)
-        self.assertEqual([g["scientific_id"] for g in groups], [
+        self.assertEqual([g["electrode_group_id"] for g in groups], [
             "segment_0001_rf_group_1", "segment_0001_rf_group_2", "segment_0002_rf_group_1", "segment_0002_rf_group_2"])
         for member in source["segmentation"]["segmented_rod_array"]["electrodes"]:
             member["electrode_id"] = "not a scientific identity"
@@ -49,7 +49,7 @@ class ElectrodeTopologyTests(unittest.TestCase):
         source = resolved_design(shell(dict(entrance=cap, exit=cap)), segmented=True)
         groups = build_electrode_topology(source)
         ground = groups[-1]
-        self.assertEqual(ground["scientific_id"], "grounded_shell")
+        self.assertEqual(ground["electrode_group_id"], "grounded_shell")
         self.assertEqual(ground["member_refs"], [f"/geometry_mm/enclosure_layout/bodies/{i}" for i in range(3)])
         self.assertEqual(ground["roles"], [b["role"] for b in source["geometry_mm"]["enclosure_layout"]["bodies"]])
         self.assertEqual(build_simion_electrode_map(source, groups)["grounded_shell"], 5)
@@ -60,10 +60,10 @@ class ElectrodeTopologyTests(unittest.TestCase):
     def test_explicit_permutation_changes_only_backend_map(self):
         source = resolved_design(shell(), segmented=True)
         topology = build_electrode_topology(source)
-        requested = dict(zip((r["scientific_id"] for r in topology), [23, 17, 31, 29, 37], strict=True))
+        requested = dict(zip((r["electrode_group_id"] for r in topology), [23, 17, 31, 29, 37], strict=True))
         self.assertEqual(build_simion_electrode_map(source, topology, requested_native_ids=requested), requested)
         old = physical_electrode_view(source)
-        legacy_map = {row["native_electrode_id"]: requested[group["scientific_id"]]
+        legacy_map = {row["native_electrode_id"]: requested[group["electrode_group_id"]]
                       for row, group in zip(old, topology, strict=True)}
         body = render_physical_gem(source, .2, electrode_ids=legacy_map)
         for value in requested.values():
@@ -130,6 +130,11 @@ class ElectrodeTopologyTests(unittest.TestCase):
         topology[0]["member_refs"].pop()
         with self.assertRaisesRegex(ValueError, "differs"):
             build_simion_electrode_map(source, topology)
+        for alias in ("segment_0001_rf_group_1", "conflicting_old_group"):
+            topology = build_electrode_topology(source)
+            topology[0]['scientific_id'] = alias
+            with self.subTest(old_alias=alias), self.assertRaisesRegex(ValueError, "differs"):
+                build_simion_electrode_map(source, topology)
 
     def test_actual_compiler_providers_preserve_complete_member_coverage(self):
         for variant in ("quadrupole", "hexapole", "octupole"):

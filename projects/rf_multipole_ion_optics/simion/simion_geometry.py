@@ -6,10 +6,10 @@ import argparse
 import json
 import math
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from projects.rf_multipole_ion_optics.core.connector_geometry import CONNECTOR_SHAPES
-from projects.rf_multipole_ion_optics.core.axial_acceleration import SIMION_MAX_ADJUSTABLE_ELECTRODE_ID
+from projects.rf_multipole_ion_optics.simion.electrode_mapping import SIMION_MAX_ADJUSTABLE_ELECTRODE_ID
 from projects.rf_multipole_ion_optics.runtime.simion_numerics import normalize_cell_mm_xyz
 
 
@@ -114,14 +114,14 @@ def physical_electrode_view(resolved: dict[str, Any]) -> list[dict[str, Any]]:
                    for ref in row["member_refs"]}
             if len(ids) != 1:
                 raise ValueError("legacy physical group has conflicting native electrode IDs")
-            requested[row["scientific_id"]] = ids.pop()
-        if any(row["scientific_id"] == "grounded_shell" for row in topology):
+            requested[row["electrode_group_id"]] = ids.pop()
+        if any(row["electrode_group_id"] == "grounded_shell" for row in topology):
             requested["grounded_shell"] = max(requested.values()) + 1
     mapping = build_simion_electrode_map(resolved, topology, requested_native_ids=requested)
     result = []
     for row in topology:
-        native = mapping[row["scientific_id"]]
-        scientific = row["scientific_id"]
+        native = mapping[row["electrode_group_id"]]
+        scientific = row["electrode_group_id"]
         if segmented is not None and row["voltage_source"]["kind"] == "rf_drive":
             scientific = f"rod_group_{native}"
         result.append(dict(native_electrode_id=native, scientific_id=scientific,
@@ -311,6 +311,8 @@ def _validate_render_format(indent: Any, significant_digits: Any) -> tuple[str, 
 
 
 def _segmented_rod_primitives(segmented: dict[str, Any]) -> list[dict[str, Any]]:
+    if "schema_version" in segmented and (type(segmented["schema_version"]) is not int or segmented["schema_version"] != 1):
+        raise ValueError("unsupported segmented rod schema: requires explicit backend compilation")
     segment_count = segmented.get("segment_count")
     electrodes = segmented.get("electrodes", [])
     if not isinstance(segment_count, int) or isinstance(segment_count, bool) or segment_count < 2:
@@ -377,13 +379,72 @@ def render_gem(
 def render_physical_gem(
     resolved: dict[str, Any], cell_mm_xyz: dict[str, float] | float,
     *, electrode_ids: dict[int, int] | None = None,
+    electrode_group_native_ids: Mapping[str, int] | None = None,
 ) -> str:
     """Project frozen provider bodies in their native local millimetre frame.
 
     The numerical domain and observation planes add no physical electrode.
     Assembly placement belongs to the consumer and is applied once.
     """
+    if electrode_group_native_ids is not None:
+        if electrode_ids is not None:
+            raise ValueError("electrode_ids and electrode_group_native_ids are mutually exclusive")
+        return _render_scientific_body(resolved, cell_mm_xyz, electrode_group_native_ids)
     return _render_native_gem(resolved, cell_mm_xyz, standalone=False, electrode_ids=electrode_ids)
+
+
+def _render_enclosure_body(bodies: list[dict[str, Any]], ground_id: int, dz: float) -> list[str]:
+    """Render the existing annuli and end-face cut policy for both map forms."""
+    lines = []
+    for body in bodies:
+        lo, hi = float(body["z_min_mm"]), float(body["z_max_mm"])
+        inner, outer = float(body["inner_radius_mm"]), float(body["outer_radius_mm"])
+        # The cut overruns only the ring end faces; no metal surface moves.
+        lines.extend([
+            f"  ; enclosure_role={body['role']}",
+            f"  e({ground_id}) {{ fill {{",
+            f"    within {{ cylinder(0,0,{hi:.12g},{outer:.12g},,{hi-lo:.12g}) }}",
+            f"    notin_inside {{ cylinder(0,0,{hi+dz:.12g},{inner:.12g},,{hi-lo+2*dz:.12g}) }}",
+            "  } }",
+        ])
+    return lines
+
+
+def _render_scientific_body(
+    resolved: dict[str, Any], cell_mm_xyz: dict[str, float] | float,
+    electrode_group_native_ids: Mapping[str, int],
+) -> str:
+    """Read real members from the provider and reuse the native shape emitters."""
+    from projects.rf_multipole_ion_optics.core.electrode_topology import build_electrode_topology
+    from projects.rf_multipole_ion_optics.simion.electrode_mapping import build_simion_electrode_map
+
+    cell = normalize_cell_mm_xyz(cell_mm_xyz)
+    topology = build_electrode_topology(resolved)
+    mapping = build_simion_electrode_map(resolved, topology, requested_native_ids=electrode_group_native_ids)
+    lines = []
+    for group in topology:
+        members = []
+        for pointer in group["member_refs"]:
+            member = resolved
+            for token in pointer.split("/")[1:]:
+                member = member[int(token)] if isinstance(member, list) else member[token]
+            members.append(member)
+        native = mapping[group["electrode_group_id"]]
+        if group["electrode_group_id"] == "grounded_shell":
+            lines.extend(_render_enclosure_body(members, native, cell["z"]))
+        else:
+            for rod in members:
+                for key in ("center_x_mm", "center_y_mm", "z_min_mm", "z_max_mm"):
+                    _finite_real(rod[key], key)
+                if rod["z_max_mm"] <= rod["z_min_mm"]:
+                    raise ValueError("physical rod length must be positive")
+                if "radius_mm" in rod and _finite_real(rod["radius_mm"], "radius_mm") <= 0:
+                    raise ValueError("physical rod radius must be positive")
+                if "radius_mm" in rod and any(key in rod for key in (
+                        "semi_major_axis_mm", "semi_minor_axis_mm", "major_axis_angle_rad")):
+                    raise ValueError("physical rod mixes round and ellipse fields")
+                lines.append(_render_continuous_rod_gem(rod, indent="  ", electrode_id=native))
+    return "\n".join(lines) + "\n"
 
 
 def _render_native_gem(
@@ -441,17 +502,7 @@ def _render_native_gem(
     if grounds:
         native_id = grounds[0]["native_electrode_id"]
         ground_id = electrode_ids[native_id] if electrode_ids is not None else native_id
-        for body in geometry["enclosure_layout"]["bodies"]:
-            lo, hi = float(body["z_min_mm"]), float(body["z_max_mm"])
-            inner, outer = float(body["inner_radius_mm"]), float(body["outer_radius_mm"])
-            # The cut overruns only the ring end faces; no metal surface moves.
-            lines.extend([
-                f"  ; enclosure_role={body['role']}",
-                f"  e({ground_id}) {{ fill {{",
-                f"    within {{ cylinder(0,0,{hi:.12g},{outer:.12g},,{hi-lo:.12g}) }}",
-                f"    notin_inside {{ cylinder(0,0,{hi+dz:.12g},{inner:.12g},,{hi-lo+2*dz:.12g}) }}",
-                "  } }",
-            ])
+        lines.extend(_render_enclosure_body(geometry["enclosure_layout"]["bodies"], ground_id, dz))
     if standalone:
         lines.append("}")
     return "\n".join(lines) + "\n"

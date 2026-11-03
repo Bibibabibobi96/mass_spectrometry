@@ -12,6 +12,7 @@ from common.contracts.machine_contracts import ContractError, validate_schema
 from projects.rf_multipole_ion_optics.core.compile_design_request import (
     apply_typed_operating_mode,
     compile_governed_design_request_file,
+    validate_design_request,
 )
 from projects.rf_multipole_ion_optics.core.family_contract import load_family_contract
 
@@ -97,7 +98,7 @@ def resolve_design_profile(
         if repository_text_sha256(path) != profile["sha256"][label]:
             raise ContractError(f"design profile hash is stale: {label}")
     request = json.loads(paths["design_request"].read_text(encoding="utf-8-sig"))
-    validate_schema(request, "multipole_design_request.schema.json")
+    validate_design_request(request)
     validate_schema(json.loads(paths["design_variables"].read_text(encoding="utf-8-sig")), "design_variable_catalog.schema.json")
     validate_schema(json.loads(paths["optimization_envelope"].read_text(encoding="utf-8-sig")), "optimization_envelope.schema.json")
     options = profile["project_options"]

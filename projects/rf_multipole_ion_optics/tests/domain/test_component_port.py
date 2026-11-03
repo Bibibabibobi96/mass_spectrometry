@@ -15,6 +15,7 @@ from projects.rf_multipole_ion_optics.core.component_port import (
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request
 from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
 from projects.rf_multipole_ion_optics.simion.simion_geometry import physical_electrode_view
+from projects.rf_multipole_ion_optics.simion.assembly_interface import build_legacy_assembly_interface
 
 
 class MultipoleComponentPortTests(unittest.TestCase):
@@ -39,11 +40,17 @@ class MultipoleComponentPortTests(unittest.TestCase):
             self.assertEqual(port["ports"]["mechanical_exit"]["center_mm"], [0.0, 0.0, 89.0 if shell else 85.0])
             self.assertEqual(
                 port["component_electrodes"],
-                [
-                    dict(component_electrode_id=x["native_electrode_id"], role=x["scientific_id"])
-                    for x in physical_electrode_view(resolved)
-                ],
+                [dict(electrode_group_id="rod_group_1", role="rod"),
+                 dict(electrode_group_id="rod_group_2", role="rod")]
+                + ([dict(electrode_group_id="grounded_shell", role="shell")] if shell else []),
             )
+            self.assertEqual(port["schema_version"], 3)
+            legacy = build_legacy_assembly_interface(resolved, geometry_profile_id="current")
+            self.assertEqual(legacy["ports"], port["ports"])
+            self.assertEqual(legacy["schema_version"], 1)
+            self.assertEqual(legacy["component_electrodes"], [
+                dict(component_electrode_id=row["native_electrode_id"], role=row["scientific_id"])
+                for row in physical_electrode_view(resolved)])
             self.assertEqual(
                 port["ports"]["mechanical_exit"]["cross_section"]["shape"], "circle" if shell else "open_rod_envelope"
             )

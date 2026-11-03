@@ -46,7 +46,7 @@ def build_electrode_topology(resolved: Mapping[str, Any]) -> tuple[dict[str, Any
             group = rod["electrode_group"]
             key = f"rod_group_{group}"
             if key not in groups:
-                groups[key] = dict(scientific_id=key, roles=["rod"], member_refs=[], voltage_source=dict(
+                groups[key] = dict(electrode_group_id=key, roles=["rod"], member_refs=[], voltage_source=dict(
                     kind="rf_drive", rf_group=group, common_mode_pointer="/drive/common_mode_offset_V",
                     dc_amplitude_pointer="/drive/dc_amplitude_V_per_group"))
             groups[key]["member_refs"].append(f"/geometry_mm/rod_array/rods/{index}")
@@ -79,7 +79,7 @@ def build_electrode_topology(resolved: Mapping[str, Any]) -> tuple[dict[str, Any
             voltages[segment] = voltage
             key = f"segment_{segment:04d}_rf_group_{group}"
             if key not in groups:
-                groups[key] = dict(scientific_id=key, roles=["rod"], member_refs=[], voltage_source=dict(
+                groups[key] = dict(electrode_group_id=key, roles=["rod"], member_refs=[], voltage_source=dict(
                     kind="rf_drive", rf_group=group,
                     common_mode_pointer=f"/segmentation/segmented_rod_array/electrodes/{index}/common_mode_V",
                     dc_amplitude_pointer="/drive/dc_amplitude_V_per_group"))
@@ -96,7 +96,7 @@ def build_electrode_topology(resolved: Mapping[str, Any]) -> tuple[dict[str, Any
         expected_roles = {"shell"} | {side + "_endcap" for side in geometry["enclosure"].get("endcaps", {})}
         if len(set(roles)) != len(roles) or set(roles) != expected_roles:
             raise ValueError("enclosure body roles are incomplete or duplicated")
-        groups["grounded_shell"] = dict(scientific_id="grounded_shell", roles=roles,
+        groups["grounded_shell"] = dict(electrode_group_id="grounded_shell", roles=roles,
             member_refs=[f"/geometry_mm/enclosure_layout/bodies/{index}" for index in range(len(bodies))],
             voltage_source=dict(kind="static", pointer="/static_electrodes_V/ground_V"))
     elif geometry["enclosure"]["model"] != "bare" or static != {"role": "bare_multipole_static_electrodes"}:
