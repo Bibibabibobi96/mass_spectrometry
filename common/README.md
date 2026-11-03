@@ -163,6 +163,29 @@ IP与MR的有限桥冻结声明、单反射候选及重分析清单同时交付c
 函数参数和版本化科学格式保持，原 `method_id` 与 schema `$id` 不改写。0.2 wheel 不提供旧命名空间，
 仓库中的兼容桥只服务尚未迁移的具名调用者；外部安装调用者需显式更新导入，不能依赖仓库桥。
 
+### 粒子旧入口与退出范围
+
+`common.analysis.particle_census`单向转接`msplatform.analysis.particle_census`；剩余活动调用为：
+
+- `projects/parallel_mirror_dual_stripe_mr_tof/analysis/`的`ion_processor_handoff.py`、`measured_component_analysis.py`、`measured_component_source.py`。
+- `integrations/workflows/local_frontend/analyze.py`。
+
+`common.contracts.component_particle_state`单向转接`msplatform.contracts.particle_state`；剩余活动调用为：
+
+- `projects/dual_pressure_rectilinear_ion_processor/analysis/extraction_phase_space_comparison.py`。
+- `projects/parallel_mirror_dual_stripe_mr_tof/analysis/`的`downstream_workpoint_iteration.py`、`ion_processor_handoff.py`、`measured_component_analysis.py`、`measured_component_source.py`、`prepared_joint_trial.py`。
+- `integrations/workflows/accelerator_interface/prepare.py`、`integrations/workflows/multipole_ip/prepare.py`。
+
+`common.contracts.particle_state`仍是RF事件表／ION11旧协议入口，规范所有者为RF
+`analysis/rf_event_table_validation.py`及`simion/ion11_source_adapter.py`，不可错接中立状态。
+当前未发现活动生产Python直调；RF/IP交接fixture及公共旧CLI行为测试仍消费它。
+上述三桥只服务具名调用、旧CLI／测试协议及冻结库存，不拥有第二套算法。
+RF的`runtime/run_simion_finite_3d_transport.ps1`及`runtime/run_finite_3d_transport.ps1`仍显式冻结census旧桥；
+integration的`runtime_dependencies.json`公共provider整包声明间接携带三桥，不等于直接算法调用。
+最迟P4由各活动消费者所有者迁移上述调用和测试／CLI边界，同步清理旧源码声明及库存；
+保留真实冻结来源／缺依赖拒绝及原CSV、ID、单位、共同钟、权重／母群、失败语义回归后移除旧桥。
+历史冻结快照不追改；本清单不声称未知外部消费者不存在。
+
 仓库当前未包含 LICENSE 文件或声明项目开源许可证；本次本机发行不新增许可证授权，也不上传 PyPI。
 第三方依赖由声明与锁文件获取，未把商业求解器或其许可证、模型、原生载荷装入发行包。
 
@@ -174,7 +197,8 @@ P2的0.3.0工作树候选已完成该真实方法（106.321秒，无skip）：�
 setuptools65.5.0/wheel0.38.4与已核对离线依赖；原wheel和sdist重建wheel分别普通安装到树外consumer。
 两轮实际模块来源均为consumer的site-packages，44个schema及378处引用本地闭合；
 真实RF/OA组件3、plan5、binding2、母群、中立状态及严格峰入口均有实际计算断言。
-这是该候选的软件安装证据，不代表当前任务分支已提交这些改动或整机原生链已验收。
+这是该候选的软件安装证据；后继已提交，当前跨项目验收状态统一查[路线图](../docs/ROADMAP.md#科学核心与平台边界迁移)，
+不以安装方法通过代替整机原生与工程出口。
 运行、安装及冻结依赖规则由[操作指南](../docs/OPERATIONS.md#工具链与执行入口)维护。
 
 ## 门禁编排
