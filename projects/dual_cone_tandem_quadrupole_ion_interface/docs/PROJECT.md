@@ -143,6 +143,11 @@ COMSOL 气流成功只证明上游场计算完成，不证明离子传输。SIMI
 公共profile删除未消费的虚假binding，固定`geometry_baseline`、`resolved_geometry`、`gas_flow_science`和`comsol_solver_numerics`四项。编译结果保存同一小JSON定义，经`ResolvedInputsPath`交原runner冻结；缺baseline的旧bundle要求重新编译，不用当前默认补造旧resolved来源。
 prepare在同一snapshot运行原`resolve_geometry --baseline ... --check ...`，实际模块与NumPy沿正式环境记录来源；输入／派生物失配在商业调用前失败。气流成功不代表离子传输或新资格。
 
+纯准备的[树外冻结回归](../tests/test_simion_layer.py)通过公共源码枚举与冻结入口声明八个实际RF模块，
+包含原生映射及其科学拓扑依赖，逐文件核对字节与SHA。隔离解释器`-I`下核对真实模块来源，
+缺少映射模块时明确拒绝，不借作者路径补洞；两种准备模式保持原输入与无PA生成边界。
+这只证明软件源码闭包，不解除上述SIMION原生运行阻断，也不新增轨迹或物理资格。
+
 ## 机器能力与解析输入
 
 gas-flow profile 的 baseline 与 resolved geometry 传入原 runner；prepare 冻结原 resolver 和输入并核对新鲜度，失配在下游原生调用前失败。

@@ -232,15 +232,21 @@ class GasPreparationTests(unittest.TestCase):
                     ignore=lambda folder, names: [name for name in names
                         if name == "__pycache__" or ((Path(folder)/name).is_file()
                             and Path(name).suffix not in {".py", ".json", ".lua"})])
-            for relative in (
+            from common.contracts.frozen_inputs import enumerate_python_sources, freeze_file
+
+            rf_modules = tuple("projects/rf_multipole_ion_optics/" + relative for relative in (
                 "core/round_rod_geometry.py", "core/connector_geometry.py",
                 "core/interface_geometry.py", "core/axial_acceleration.py",
+                "core/electrode_topology.py", "simion/electrode_mapping.py",
                 "simion/simion_geometry.py", "runtime/simion_numerics.py",
-            ):
-                source = Path("projects/rf_multipole_ion_optics") / relative
+            ))
+            for relative in enumerate_python_sources(repo, module_paths=rf_modules):
+                source = Path(relative)
                 target = snapshot / source
                 target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(repo / source, target)
+                frozen = freeze_file(repo / source, target)
+                self.assertEqual(frozen['sha256'], file_sha256(target))
+                self.assertEqual(target.read_bytes(), (repo / source).read_bytes())
             code = r"""
 from pathlib import Path
 from common.contracts import frozen_inputs
@@ -248,6 +254,10 @@ from projects.dual_cone_tandem_quadrupole_ion_interface.simion import prepare as
 from projects.dual_cone_tandem_quadrupole_ion_interface.analysis.export_uniform_rear_gas_runtime import export_uniform_runtime
 assert Path(p.__file__).resolve().is_relative_to(Path.cwd())
 assert Path(frozen_inputs.__file__).resolve().is_relative_to(Path.cwd())
+import sys
+for name, module in tuple(sys.modules.items()):
+    if name.startswith('projects.rf_multipole_ion_optics') and getattr(module, '__file__', None):
+        assert Path(module.__file__).resolve().is_relative_to(Path.cwd()), (name, module.__file__)
 c0 = p.prepare(Path('c0'), mode='c0_gem_smoke')
 export_uniform_runtime(Path('field.lua').resolve(), Path('manifest.json').resolve())
 sds = Path('sds'); sds.mkdir()
@@ -263,11 +273,27 @@ assert gas['inputs']['cylindrical_ion_source_receipt']['identity']['particle_cou
 assert not list(Path.cwd().rglob('*.pa*'))
 print('DETACHED_DUAL_CONE_PREPARE=PASS MODES=2')
 """
-            result = subprocess.run([sys.executable, "-B", "-c", code], cwd=snapshot,
-                env={**os.environ, "PYTHONPATH": str(snapshot)}, capture_output=True, text=True,
+            # -I ignores inherited author/PYTHONPATH entries; only this selected
+            # frozen root is added for project and shared-runtime sources.
+            code = "import sys; sys.path.insert(0, sys.argv[1]);\n" + code
+            command = [sys.executable, "-I", "-B", "-c", code, str(snapshot)]
+            result = subprocess.run(command, cwd=snapshot,
+                env={**os.environ, "PYTHONPATH": str(repo)}, capture_output=True, text=True,
                 encoding="utf-8", errors="replace", timeout=30, check=False)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("DETACHED_DUAL_CONE_PREPARE=PASS MODES=2", result.stdout)
+            adapter = snapshot/'projects/rf_multipole_ion_optics/simion/electrode_mapping.py'
+            adapter_bytes = adapter.read_bytes()
+            adapter.unlink()
+            try:
+                missing = subprocess.run(command, cwd=snapshot,
+                    env={**os.environ, "PYTHONPATH": str(repo)}, capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", timeout=30, check=False)
+                self.assertNotEqual(missing.returncode, 0)
+                self.assertIn("No module named 'projects.rf_multipole_ion_optics.simion.electrode_mapping'",
+                              missing.stderr)
+            finally:
+                adapter.write_bytes(adapter_bytes)
 
     def test_gas_assisted_mode_fails_before_creating_output_without_field(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
