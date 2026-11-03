@@ -192,6 +192,7 @@ jobs:
           import ctypes, datetime, hashlib, json, os, platform, subprocess, sys, threading, time
           from ctypes import wintypes
           from pathlib import Path
+          from common.gate_outcome_report import summary_to_report
           root = Path(os.environ["RUNNER_TEMP"])
           workers = os.environ.get("PUBLIC_GATE_WORKERS", "4")
           max_concurrency = 0 if workers == "auto" else int(workers)
@@ -301,6 +302,13 @@ jobs:
                   try:
                       summary = json.loads(summary_path.read_text(encoding="utf-8-sig"))
                       stages = summary.get("stages", [])
+                      outcome_path = root / (os.environ.get("PUBLIC_GATE_OUTPUT_PREFIX", "changed") + "_gate_test_outcomes.json")
+                      outcome_report = summary_to_report(summary, metadata={
+                          "source_sha": source_sha, "workflow_source_sha": os.environ.get("GITHUB_SHA"),
+                          "environment": record["environment"], "scope": scope,
+                          "requirements_lock_sha256": record["requirements_lock_sha256"]})
+                      outcome_path.write_text(json.dumps(outcome_report, indent=2) + "\n", encoding="utf-8")
+                      record["test_outcome_report_path"] = str(outcome_path)
                       methods = sorted(row["test"] for stage in stages for row in stage.get("test_durations", []))
                       record["test_method_multiset_sha256"] = hashlib.sha256(json.dumps(
                           methods, separators=(",", ":")).encode("utf-8")).hexdigest()
@@ -319,9 +327,13 @@ jobs:
                       record["timed_test_method_ids"] = methods
                   except Exception as error:
                       record["summary_observation_error"] = {"type": type(error).__name__, "message": str(error)}
+                      record["evidence_exit_code"] = 1
+              else:
+                  record["summary_observation_error"] = {"type": "MissingSummary", "message": str(summary_path)}
+                  record["evidence_exit_code"] = 1
               timing_path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
               print(f"PUBLIC_GATE_COMMAND EXIT_CODE={record['exit_code']} ELAPSED_WALL_SECONDS={record['elapsed_wall_seconds']:.6f} TIMING_PATH={timing_path}", flush=True)
-          sys.exit(result.returncode)
+          sys.exit(result.returncode or record.get("evidence_exit_code", 0))
           '@ | & $python -
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload changed-scope gate evidence
@@ -336,6 +348,7 @@ jobs:
             ${{ runner.temp }}/gate_selection_inventory.json
             ${{ runner.temp }}/changed_gate_summary.json
             ${{ runner.temp }}/changed_gate_command_timing.json
+            ${{ runner.temp }}/changed_gate_test_outcomes.json
             ${{ runner.temp }}/changed_gate_resource_samples.jsonl
             ${{ runner.temp }}/changed_gate_*/**
           if-no-files-found: warn
@@ -449,6 +462,7 @@ jobs:
             ${{ runner.temp }}/gate_selection_inventory.json
             ${{ runner.temp }}/integration_gate_summary.json
             ${{ runner.temp }}/integration_gate_command_timing.json
+            ${{ runner.temp }}/integration_gate_test_outcomes.json
             ${{ runner.temp }}/integration_gate_resource_samples.jsonl
             ${{ runner.temp }}/repository_integration_gate_*/**
           if-no-files-found: warn

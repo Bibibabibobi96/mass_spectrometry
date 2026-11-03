@@ -28,13 +28,109 @@ def quote(value: str | Path) -> str:
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell Core is required")
 class ParallelGateSupportTests(unittest.TestCase):
+    def test_single_inline_stage_preserves_real_outcomes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            summary = Path(directory) / "summary.json"
+            self.run_script(self.prelude() + f'''
+$items=@([pscustomobject]@{{Name='inline_probe';Run=$true;Reason='fixture';RequiresStages=@()}})
+$summary=New-GateRunSummary -Items $items -GateName fixture -PythonExe {quote(sys.executable)} -RepoRoot {quote(ROOT)} -SummaryPath {quote(summary)}
+$failure=$null
+try{{Invoke-IndependentGateStageGroup -Items $items -MaxConcurrency 1 -Summary $summary -GateScriptPath {quote(SUPPORT)} -PythonExe {quote(sys.executable)} -ChildBaseArguments @() -TempNamePrefix gate_inline_probe_ -FailureMessage failed -InvokeSkipStage {{throw 'unexpected skip'}} -InvokeInlineStage {{
+ Invoke-RecordedGateStage -Name inline_probe -Reason fixture -Summary $summary -Action {{
+  & {quote(sys.executable)} -m common.gate_unittest common.contracts.test_gate_outcome_report
+  if($LASTEXITCODE){{throw 'real unittest failed'}}
+ }}
+}}}}catch{{$failure=$_;throw}}finally{{Complete-GateRunSummary -Summary $summary -Failure $failure}}
+''')
+            stage = json.loads(summary.read_text(encoding="utf-8-sig"))["stages"][0]
+            self.assertEqual(stage["status"], "PASS")
+            self.assertEqual(stage["test_outcome_invocations"][-1]["tests_run"], 7)
+            self.assertEqual(len(stage["test_outcomes"]), 7)
+            self.assertTrue(all(row["outcome"] == "success" for row in stage["test_outcomes"]))
+
+    def test_real_unittest_outcomes_survive_successful_group_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "test_probe.py").write_text(
+                "import unittest\nclass Probe(unittest.TestCase):\n"
+                " def test_ok(self): pass\n"
+                " @unittest.skip('explicit missing fixture')\n"
+                " def test_skip(self): pass\n", encoding="utf-8")
+            child = root / "child.ps1"
+            child.write_text(f'''
+param($InternalStage,$InternalLogPath)
+$env:PYTHONPATH={quote(ROOT)}
+Set-Location -LiteralPath {quote(root)}
+& {quote(sys.executable)} -m common.gate_unittest test_probe *> $InternalLogPath
+exit $LASTEXITCODE
+''', encoding="utf-8")
+            summary = root / "summary.json"
+            self.run_script(self.prelude() + f'''
+$env:TEMP={quote(root)};$env:TMP={quote(root)}
+$items=@('outcome_probe','second_probe')|ForEach-Object{{[pscustomobject]@{{Name=$_;Run=$true;Reason='fixture';RequiresStages=@()}}}}
+$summary=New-GateRunSummary -Items $items -GateName fixture -PythonExe {quote(sys.executable)} -RepoRoot {quote(ROOT)} -SummaryPath {quote(summary)}
+$failure=$null
+try{{Invoke-IndependentGateStageGroup -Items $items -MaxConcurrency 2 -Summary $summary -GateScriptPath {quote(child)} -PythonExe {quote(sys.executable)} -ChildBaseArguments @() -TempNamePrefix gate_outcome_probe_ -FailureMessage failed -InvokeSkipStage {{throw 'unexpected skip'}} -InvokeInlineStage {{throw 'unexpected fallback'}}}}
+catch{{$failure=$_;throw}}finally{{Complete-GateRunSummary -Summary $summary -Failure $failure}}
+''')
+            stage = json.loads(summary.read_text(encoding="utf-8-sig"))["stages"][0]
+            self.assertEqual(stage["status"], "PASS")
+            self.assertEqual([row["outcome"] for row in stage["test_outcomes"]], ["success", "skip"])
+            self.assertEqual(stage["test_outcomes"][1]["reason"], "explicit missing fixture")
+            self.assertTrue(all(row["identity_status"] == "known" for row in stage["test_outcomes"]))
+            self.assertEqual(stage["test_outcome_invocations"][-1]["record_count"], 2)
+            self.assertFalse(Path(stage["log_path"]).exists())
+
+    def test_outcome_transport_preserves_entities_and_rejects_incomplete_receipts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            rows = [dict(schema_version=1, invocation_id="one", seq=index,
+                         test_key=f"projects/{owner}/test_same.py::Probe.test_x",
+                         entity_kind="test", outcome="skip", reason="no fixture")
+                    for index, owner in enumerate(("a", "b"), 1)]
+            receipts = [dict(schema_version=1, invocation_id="one", event="started"),
+                        dict(schema_version=1, invocation_id="one", event="completed",
+                             completed=True, record_count=2, tests_run=2,
+                             status="success", outcome_counts={"skip": 2})]
+            lines = ["TEST_OUTCOME_INVOCATION_JSON=" + json.dumps(receipts[0])]
+            lines += ["TEST_OUTCOME_JSON=" + json.dumps(row) for row in rows]
+            lines += ["TEST_OUTCOME_INVOCATION_JSON=" + json.dumps(receipts[1])]
+            (root / "valid.log").write_text("\n".join(lines), encoding="utf-8")
+            (root / "truncated.log").write_text("\n".join(lines[:-1]), encoding="utf-8")
+            (root / "bad.log").write_text("TEST_OUTCOME_JSON={broken", encoding="utf-8")
+            for field, value in (("tests_run", 3), ("event", "unknown"), ("outcome_counts", {"skip": 1})):
+                damaged = dict(receipts[1], **{field: value})
+                (root / (field + ".log")).write_text("\n".join([
+                    *lines[:-1], "TEST_OUTCOME_INVOCATION_JSON=" + json.dumps(damaged)]), encoding="utf-8")
+            output = root / "result.json"
+            self.run_script(self.prelude() + f'''
+$result=Read-GateTestOutcomeEvidence -LogPath {quote(root / 'valid.log')} -Stage actual_owner
+$command=@{{runner='python';arguments=@('-m','common.gate_unittest','test_probe')}}
+if(-not(Test-GateItemUnittestCommand -Item @{{Command=$command}})){{throw 'hash command lost'}}
+if(-not(Test-GateItemUnittestCommand -Item ([pscustomobject]@{{Command=$command}}))){{throw 'object command lost'}}
+$rejected=@()
+foreach($path in @({quote(root / 'truncated.log')},{quote(root / 'bad.log')},{quote(root / 'tests_run.log')},{quote(root / 'event.log')},{quote(root / 'outcome_counts.log')})){{
+ try{{Read-GateTestOutcomeEvidence -LogPath $path -Stage actual_owner;throw 'accepted bad evidence'}}
+ catch{{if($_.Exception.Message-eq'accepted bad evidence'){{throw}};$rejected+=$path}}
+}}
+try{{Read-GateTestOutcomeEvidence -Lines @() -Stage actual_owner -RequireInvocation;throw 'accepted missing invocation'}}
+catch{{if($_.Exception.Message-eq'accepted missing invocation'){{throw}};$rejected+='missing_invocation'}}
+@{{evidence=$result;rejected=$rejected}}|ConvertTo-Json -Depth 16|Set-Content -LiteralPath {quote(output)} -Encoding utf8
+''')
+            result = json.loads(output.read_text(encoding="utf-8-sig"))
+            self.assertEqual(len(result["rejected"]), 6)
+            actual = result["evidence"]["outcomes"]
+            self.assertEqual([row["test_key"] for row in actual], [row["test_key"] for row in rows])
+            self.assertEqual([row["reason"] for row in actual], ["no fixture"] * 2)
+            self.assertTrue(all(row["stage"] == "actual_owner" for row in actual))
+
     def plan_transport_fixture(self, *, git=False):
         temporary=tempfile.TemporaryDirectory(prefix="resolved_software_plan_")
         self.addCleanup(temporary.cleanup)
         base=Path(temporary.name);root=base/"checkout";common=root/"common"
         for path in (common,root/"projects",root/"integrations"):
             path.mkdir(parents=True)
-        for name in ("verify.ps1","gate_catalog_support.ps1","parallel_gate_support.ps1","require_powershell7.ps1"):
+        for name in ("verify.ps1","gate_catalog_support.ps1","parallel_gate_support.ps1","require_powershell7.ps1","gate_outcome_report.py"):
             shutil.copyfile(ROOT/"common"/name,common/name)
         with (common/"gate_catalog_support.ps1").open("a",encoding="utf-8",newline="\n") as stream:
             stream.write("\n$script:originalCatalogReader=${function:Read-GateCatalog}\nfunction Read-GateCatalog {param($RepoRoot);Add-Content -LiteralPath $env:PLAN_READ_COUNT -Value 'read';& $script:originalCatalogReader -RepoRoot $RepoRoot}\n")
@@ -129,6 +225,7 @@ class ParallelGateSupportTests(unittest.TestCase):
         self.assertEqual(plans[0]["selection"],plans[1]["selection"])
         self.assertEqual(plans[0]["stages"],plans[1]["stages"])
         self.assertEqual((base/"catalog_reads").read_text().splitlines(),["read","read"])
+
         self.assertFalse((base/"admissions").exists())
         env["PLAN_FAIL"]="7"
         script=destination/"execute.ps1"
@@ -143,6 +240,24 @@ class ParallelGateSupportTests(unittest.TestCase):
         self.assertEqual(timing["wait_policy"],"finite_resource_wait_deadline")
         self.assertEqual(json.loads((destination/"changed_gate_summary.json").read_text(encoding="utf-8-sig"))["status"],"FAIL")
         self.assertEqual((base/"catalog_reads").read_text().splitlines(),["read","read"])
+
+        # Execute a healthy gate, then make only the outcome artifact unwritable.
+        # The real shared CI command must reject missing evidence independently.
+        destination = base / "evidence_failure"
+        planned, evidence_env = self.invoke_workflow_scope(
+            root, environment, destination, event="push", before=before, after=after)
+        self.assertEqual(planned.returncode, 0, planned.stdout + planned.stderr)
+        (destination / "changed_gate_test_outcomes.json").mkdir()
+        script = destination / "execute.ps1"
+        script.write_text(self.workflow_step_script(), encoding="utf-8", newline="\n")
+        evidence_failed = subprocess.run(
+            [shutil.which("pwsh"), "-NoProfile", "-File", str(script)], cwd=root, env=evidence_env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+        self.assertNotEqual(evidence_failed.returncode, 0)
+        timing = json.loads((destination / "changed_gate_command_timing.json").read_text())
+        self.assertEqual(timing["exit_code"], 0, "execution succeeded; only evidence failed")
+        self.assertEqual(timing["evidence_exit_code"], 1)
+        self.assertIn("summary_observation_error", timing)
 
     def test_workflow_explicit_bad_or_unavailable_base_fails_before_planning(self):
         base,root,environment=self.plan_transport_fixture(git=True)

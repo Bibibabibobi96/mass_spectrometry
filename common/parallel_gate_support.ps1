@@ -1,6 +1,91 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Read-GateTestOutcomeEvidence {
+    <# Preserve actual unittest outcomes before successful stage logs are removed.
+       Invocation receipts distinguish empty suites from missing/truncated evidence. #>
+    param([Parameter(Mandatory,ParameterSetName='File')][string]$LogPath,
+        [Parameter(Mandatory,ParameterSetName='Lines')][AllowEmptyCollection()][string[]]$Lines,
+        [Parameter(Mandatory)][string]$Stage, [switch]$RequireInvocation)
+    $rows = [Collections.Generic.List[object]]::new()
+    $receipts = [Collections.Generic.List[object]]::new()
+    $inputLines = if ($PSCmdlet.ParameterSetName -eq 'File') {
+        [IO.File]::ReadLines($LogPath, [Text.Encoding]::UTF8)
+    } else { $Lines }
+    foreach ($line in $inputLines) {
+        $prefix = if ($line.StartsWith('TEST_OUTCOME_JSON=')) { 'TEST_OUTCOME_JSON=' }
+            elseif ($line.StartsWith('TEST_OUTCOME_INVOCATION_JSON=')) { 'TEST_OUTCOME_INVOCATION_JSON=' }
+            else { continue }
+        $entry = $line.Substring($prefix.Length) | ConvertFrom-Json -AsHashtable -Depth 32 -ErrorAction Stop
+        if ($entry.schema_version -ne 1 -or -not $entry.invocation_id) {
+            throw "Invalid unittest evidence identity in stage $Stage"
+        }
+        $entry.stage = $Stage
+        if ($prefix -eq 'TEST_OUTCOME_JSON=') {
+            if ($entry.outcome -notin @('success','failure','error','skip','expected_failure','unexpected_success','not_completed')) {
+                throw "Unknown unittest outcome in stage $Stage`: $($entry.outcome)"
+            }
+            if ($entry.entity_kind -notin @('test','subtest','fixture','loader')) {
+                throw "Unknown unittest entity in stage $Stage"
+            }
+            $rows.Add($entry)
+        } else {
+            if ($entry.event -notin @('started','completed')) { throw "Unknown unittest receipt event in stage $Stage" }
+            $receipts.Add($entry)
+        }
+    }
+    $identities = @(@($receipts | ForEach-Object { $_.invocation_id }) +
+        @($rows | ForEach-Object { $_.invocation_id }) | Select-Object -Unique)
+    if ($RequireInvocation -and $identities.Count -eq 0) {
+        throw "Missing expected unittest invocation evidence in stage $Stage"
+    }
+    foreach ($identity in $identities) {
+        $started = @($receipts | Where-Object { $_.invocation_id -eq $identity -and $_.event -eq 'started' })
+        $completed = @($receipts | Where-Object { $_.invocation_id -eq $identity -and $_.event -eq 'completed' })
+        $actual = @($rows | Where-Object { $_.invocation_id -eq $identity })
+        if ($started.Count -ne 1 -or $completed.Count -ne 1 -or
+            -not $completed[0].completed -or $completed[0].record_count -ne $actual.Count -or
+            $completed[0].status -notin @('success','failure')) {
+            throw "Incomplete unittest evidence for invocation $identity in stage $Stage"
+        }
+        $counts = $completed[0].outcome_counts
+        $testCount = @($actual | Where-Object { $_.entity_kind -in @('test','loader') }).Count
+        if ($completed[0].tests_run -isnot [ValueType] -or $completed[0].tests_run -ne $testCount) {
+            throw "Unittest tests_run mismatch for invocation $identity in stage $Stage"
+        }
+        if ($counts -isnot [Collections.IDictionary]) {
+            throw "Missing unittest outcome counts for invocation $identity in stage $Stage"
+        }
+        $observedCounts = @{}
+        foreach ($row in $actual) {
+            if (-not $observedCounts.ContainsKey($row.outcome)) { $observedCounts[$row.outcome] = 0 }
+            $observedCounts[$row.outcome]++
+        }
+        foreach ($key in @(@($counts.Keys) + @($observedCounts.Keys) | Select-Object -Unique)) {
+            if (-not $counts.Contains($key) -or -not $observedCounts.ContainsKey($key) -or
+                $counts[$key] -ne $observedCounts[$key]) {
+                throw "Unittest outcome count mismatch for invocation $identity in stage $Stage"
+            }
+        }
+        for ($index = 0; $index -lt $actual.Count; $index++) {
+            if ($actual[$index].seq -ne ($index + 1)) {
+                throw "Invalid unittest evidence sequence for invocation $identity in stage $Stage"
+            }
+        }
+    }
+    return @{ outcomes = @($rows); invocations = @($receipts) }
+}
+
+function Test-GateItemUnittestCommand {
+    param([Parameter(Mandatory)]$Item)
+    if ($null -eq $Item.PSObject.Properties['Command'] -and
+        -not ($Item -is [Collections.IDictionary] -and $Item.Contains('Command'))) { return $false }
+    $command = $Item.Command
+    if ($null -eq $command -or $command.runner -ne 'python') { return $false }
+    $arguments = @($command.arguments)
+    return $arguments.Count -ge 2 -and $arguments[0] -eq '-m' -and $arguments[1] -eq 'common.gate_unittest'
+}
+
 function Write-GateRunSummary {
     param([Parameter(Mandatory)]$Summary)
     $temporary = $Summary.Path + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
@@ -48,6 +133,7 @@ function New-GateRunSummary {
             launch_seconds = $null; process_elapsed_seconds = $null
             exit_code = $null; child_exit_code = $null; log_path = $null; log_retained = $false
             error = $null; test_durations = @()
+            test_outcomes = @(); test_outcome_invocations = @(); test_evidence_error = $null
         }
         foreach ($field in @('DependencyProfile', 'Command', 'RequiresStages')) {
             if ($null -ne $item.PSObject.Properties[$field] -or
@@ -364,7 +450,37 @@ function Invoke-IndependentGateStageGroup {
                     throw "$FailureMessage`: $($item.Name)=blocked"
                 }
                 Set-GateStageResult -Summary $Summary -Name $item.Name -Result @{queue_seconds=$queueTimer.Elapsed.TotalSeconds}
-                & $InvokeInlineStage $item
+                $signals = [Collections.Generic.List[string]]::new()
+                $inlineFailure = $null
+                try {
+                    & $InvokeInlineStage $item | ForEach-Object {
+                        $line = [string]$_
+                        if ($line.StartsWith('TEST_OUTCOME_JSON=') -or
+                            $line.StartsWith('TEST_OUTCOME_INVOCATION_JSON=')) { $signals.Add($line) }
+                        else { Write-Output $_ }
+                    }
+                } catch { $inlineFailure = $_; throw }
+                finally {
+                    try {
+                        $evidence = Read-GateTestOutcomeEvidence -Lines @($signals) -Stage $item.Name `
+                            -RequireInvocation:(Test-GateItemUnittestCommand -Item $item)
+                        Set-GateStageResult -Summary $Summary -Name $item.Name -Result @{
+                            test_outcomes = @($evidence.outcomes)
+                            test_outcome_invocations = @($evidence.invocations)
+                        }
+                    } catch {
+                        Set-GateStageResult -Summary $Summary -Name $item.Name -Result @{
+                            test_evidence_error = $_.Exception.Message
+                        }
+                        if ($null -ne $inlineFailure) { Write-Warning "Outcome evidence failure after stage failure: $_" }
+                        else {
+                            Set-GateStageResult -Summary $Summary -Name $item.Name -Result @{
+                                status='FAIL'; reason_code='TEST_EVIDENCE_INVALID'; exit_code=1; error=$_.Exception.Message
+                            }
+                            throw
+                        }
+                    }
+                }
             }
             else { & $InvokeSkipStage $item }
         }
@@ -491,6 +607,21 @@ function Invoke-IndependentGateStageGroup {
                             }
                         })
                         if ($testDurations.Count -gt 0) { $result.test_durations = $testDurations }
+                        try {
+                            $evidence = Read-GateTestOutcomeEvidence -LogPath $record.LogPath -Stage $recordName `
+                                -RequireInvocation:(Test-GateItemUnittestCommand -Item $itemsByName[$recordName])
+                            $result.test_outcomes = @($evidence.outcomes)
+                            $result.test_outcome_invocations = @($evidence.invocations)
+                        } catch {
+                            # Evidence failure cannot turn an existing execution failure into PASS.
+                            $result.test_evidence_error = $_.Exception.Message
+                            if ($result.status -eq 'PASS') {
+                                $result.status = 'FAIL'
+                                $result.reason_code = 'TEST_EVIDENCE_INVALID'
+                                $result.exit_code = 1
+                                $result.error = $_.Exception.Message
+                            }
+                        }
                     }
                     $record.Result = $result
                     $states[$recordName] = $result.status
@@ -665,7 +796,9 @@ function Invoke-IndependentGateStageGroup {
                         if ($record.LiveFailureShown -and $_.Contains('TEST_FAILURE_IMMEDIATE=')) {
                             $skipLiveTrace = $true
                         }
-                        if (-not $skipLiveTrace -and -not $_.Contains('TEST_DURATION_SECONDS=')) { Write-Output $_ }
+                        if (-not $skipLiveTrace -and -not $_.Contains('TEST_DURATION_SECONDS=') -and
+                            -not $_.StartsWith('TEST_OUTCOME_JSON=') -and
+                            -not $_.StartsWith('TEST_OUTCOME_INVOCATION_JSON=')) { Write-Output $_ }
                         if ($skipLiveTrace -and $_.Contains('TEST_FAILURE_IMMEDIATE_END')) {
                             $skipLiveTrace = $false
                         }

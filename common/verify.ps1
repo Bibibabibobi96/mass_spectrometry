@@ -764,6 +764,11 @@ $gateSummary.Document.resource_context=$resourceContext
 $gateSummary.Document.scope=$Scope;$gateSummary.Document.owner=@($Owner)
 $gateSummary.Document.full_changed_scope=[bool]($FullScope-and-not$repositoryScope)
 $gateSummary.Document.planned_request=$(if($consumePlan){[IO.Path]::GetFullPath($InternalRequestPath)}else{$null})
+$gateSummary.Document.checkout = if ($consumePlan) { $resolvedPlan.checkout } else {
+    Get-GatePlanCheckoutState -RepoRoot $repoRoot `
+        -Paths @(Get-GatePlanSourcePaths -Items @($stageItems.Values) -ChangedPaths $changedPaths) `
+        -IgnorePaths @($SummaryPath)
+}
 Write-GateRunSummary -Summary $gateSummary
 foreach ($name in @('repository_hygiene', 'repository_text_bytes')) {
     if (-not $stageItems[$name].Run) { continue }

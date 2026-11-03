@@ -282,7 +282,19 @@ FullScope均失败关闭为`locked`。本机与CI的普通软件门禁并发默�
 这是门禁组内的并发上限；实际内存、I/O、独占资源和前置依赖仍独立限制准入。普通非重型GATE的CPU
 压力和声明核数只作观测，不以95%阈值或累计核数阻挡；SIMION、COMSOL和重型GATE保持原CPU限制。并行阶段即时报告进程启动与完成，启动行的`LOG_PATH`
 指向执行中逐行刷新、可直接读取的阶段日志；完成后仍按稳定顺序回放完整日志，不在内存缓存整个阶段。
-unittest 测试完成时报告耗时，首个异常发生时增量回显 traceback；其他已启动阶段自然收尾。摘要在阶段完成时保存已观测的逐测试耗时，非 unittest 阶段没有该数据。成功组清理临时目录；失败组保留阶段日志、请求JSON和`group_failure.log`，输出
+unittest 测试完成时报告耗时，首个异常发生时增量回显 traceback；其他已启动阶段自然收尾。
+`common.gate_unittest`按实际结果回调输出逐实体outcome与独立invocation起止收据；
+源码相对路径及类/方法组成`test_key`，stage、随机invocation和源码SHA分别作为执行与版本元数据，
+不以短模块ID去重。fixture/loader、subtest、skip原因和未完成分别保留；record_count含子实体，
+不能当作unittest的tests_run。旧duration信号继续可读，但没有outcome的历史记录保持unknown。
+并行组在日志清理前解析，单阶段inline沿同一解析器汇总；不完整收据或无效信号作为证据错误暴露，
+不覆盖已有执行失败。显式`--outcomes-path`可另发布该次调用的独立JSON，子进程不继承该路径。
+`python -m common.gate_outcome_report report --summary <摘要> --output <新报告>`生成只读对账输入，
+`compare --left <报告> --right <报告> --output <新对账>`保留重复尝试，分别报告outcome、
+版本/skip理由、单端执行和stage未执行差异；不调度测试，也不把旧unknown补成PASS。
+CI两种范围上传独立的`*_gate_test_outcomes.json`，与原摘要、精确source/workflow身份及环境绑定。
+摘要在阶段完成时保存已观测的逐测试耗时和结果；非unittest阶段不凭空产生测试结果。
+成功组清理临时目录；失败组保留阶段日志、请求JSON和`group_failure.log`，输出
 `GATE_DIAGNOSTICS=RETAINED`及精确清理命令。串行fallback也写入同一阶段日志，不能只有控制台错误。
 复核完成后沿[操作指南](../docs/OPERATIONS.md#软件验证与科学证据)清理，不按年龄自动删除失败证据。
 改动选择器回归中的八个mini场景在同一PowerShell host内调用真实PlanOnly与InternalStage委托，
