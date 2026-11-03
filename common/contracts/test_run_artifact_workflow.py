@@ -239,15 +239,27 @@ if([Convert]::ToBase64String([IO.File]::ReadAllBytes($leasePath))-cne$leaseBefor
             completion["resource_profile"] = None
             completion_path.write_text(json.dumps(completion), encoding="utf-8")
             (root / "result.json").unlink()
+            diagnostics = Path(os.environ.get("WORKFLOW_INHERITED_DIAGNOSTICS_ROOT",
+                                              str(Path(tempfile.gettempdir()) / "workflow_inherited_diagnostics")))
+            timeline = f"""function Write-FixtureEvent([string]$Name) {{
+  $event=@{{event=$Name;utc=[DateTime]::UtcNow.ToString('o');timestamp=[Diagnostics.Stopwatch]::GetTimestamp();pid=$PID;start_utc_ticks=(Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks}}
+  Add-Content -LiteralPath '{root / 'timeline.jsonl'}' -Value ($event|ConvertTo-Json -Compress) -Encoding utf8
+}}
+"""
             child = root / "inherited_child.ps1"
-            child.write_text(f""". '{OWNER}'
+            child.write_text(f"""{timeline}
+Write-FixtureEvent 'child-entry'
+. '{OWNER}'
 $ErrorActionPreference='Stop'
 function Invoke-ArtifactCapacityGate {{ return @{{satisfied=$true;fixture_admission=$true}} }}
 if($args[0]-eq'first'){{
   $proc=Start-Process -FilePath '{sys.executable}' -ArgumentList @('-c','pass') -PassThru
   $ticks=$proc.StartTime.ToUniversalTime().Ticks;$proc.WaitForExit()
+  Write-FixtureEvent 'child-before-inherit'
   $grant=Invoke-HostResourceTransaction -Request @{{operation='inherit';token=$env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN}} -StatePath $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH
+  Write-FixtureEvent 'child-after-inherit'
   $childLease=Enter-HostResourceStage -Role SIMION -Stage flight -Budget (Get-HostResourceBudget -Role SIMION -Stage flight)
+  Write-FixtureEvent 'child-after-stage-enter'
   $actualExit=Exit-HostResourceStage -Lease $childLease -PassThru
   if($null-ne$actualExit){{throw 'Inherited Exit unexpectedly returned a transaction'}}
   $completion=Get-Content -Raw '{completion_path}'|ConvertFrom-Json -AsHashtable
@@ -257,25 +269,40 @@ if($args[0]-eq'first'){{
   Write-RunJson -Atomic -Path '{run / 'logs/prepared_wait.json'}' -Value @{{schema_version=1;role='run_artifact_powershell_owner_wait';owner_pid=$PID;owner_start_utc_ticks=(Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks;native_writers_confirmed=$true;exception=$null;observation_error=$null}}
   function Publish-WorkflowTerminal {{ throw 'fixture publication failure' }}
 }}
-try{{$null=Invoke-RunArtifactWorkflow -RequestPath '{request_path}' -ResultPath '{root / 'result.json'}' -ResumeFinalization}}catch{{Write-Output $_.Exception.Message;exit 7}}
+Write-FixtureEvent ('child-before-workflow-'+$args[0])
+try{{$null=Invoke-RunArtifactWorkflow -RequestPath '{request_path}' -ResultPath '{root / 'result.json'}' -ResumeFinalization}}catch{{Write-FixtureEvent ('child-workflow-error-'+$args[0]);Write-Output $_.Exception.Message;exit 7}}
+Write-FixtureEvent ('child-after-workflow-'+$args[0])
 """, encoding="utf-8")
-            outcome = self.run_ps(root, f""". '{OWNER}'
+            outcome = self.run_ps(root, f"""{timeline}
+Write-FixtureEvent 'parent-entry'
+. '{OWNER}'
 $ErrorActionPreference='Stop'
 . '{controlled / 'common/host_execution_lease.ps1'}'
 $env:SIMULATION_PYTHON_EXE='{sys.executable}'
 [Environment]::SetEnvironmentVariable('MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN',[NullString]::Value,'Process')
+Write-FixtureEvent 'parent-before-admission'
 $lease=Enter-HostResourceStage -Role SIMION -Stage flight -StatePath '{root / 'host.json'}' -Budget (Get-HostResourceBudget -Role SIMION -Stage flight)
+Write-FixtureEvent 'parent-after-admission'
 try{{
+ Write-FixtureEvent 'parent-before-first'
  & '{PWSH}' -NoProfile -File '{child}' first
+ Write-FixtureEvent 'parent-after-first'
  if($LASTEXITCODE-ne7){{throw 'initial publication did not fail'}}
+ Write-FixtureEvent 'parent-before-resume'
  & '{PWSH}' -NoProfile -File '{child}' resume
+ Write-FixtureEvent 'parent-after-resume'
  if($LASTEXITCODE-ne0){{throw 'inherited recovery failed'}}
  $terminalHash=(Get-FileHash -Algorithm SHA256 '{run / 'run_manifest.json'}').Hash
-}}finally{{Exit-HostResourceStage -Lease $lease}}
+}}finally{{Write-FixtureEvent 'parent-before-release';Exit-HostResourceStage -Lease $lease;Write-FixtureEvent 'parent-after-release'}}
+Write-FixtureEvent 'parent-before-expired'
 & '{PWSH}' -NoProfile -File '{child}' resume
+Write-FixtureEvent 'parent-after-expired'
 if($LASTEXITCODE-ne7){{throw 'expired inherited grant was accepted'}}
 if((Get-FileHash -Algorithm SHA256 '{run / 'run_manifest.json'}').Hash-ne$terminalHash){{throw 'terminal was changed'}}
-""")
+""", owned_diagnostics=diagnostics,
+                evidence_paths=(child, root / "host.json", request_path, completion_path,
+                                run / "logs/prepared_wait.json", run / "run_manifest.json",
+                                root / "result.json", controlled / "common/host_execution_lease.ps1"))
             self.assertEqual(host_source.read_bytes(), original_host)
             self.assertIn("SOFTWARE_FIXTURE_CPU CONTROLLED=0", outcome.stdout)
             self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)

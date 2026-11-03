@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from projects.single_reflection_oa_tof_mass_analyzer.tests.test_support import fixture_process
+from common.contracts.test_support import fixture_process
 
 ROOT = Path(__file__).resolve().parents[4]
 RELATIVE = Path("projects/single_reflection_oa_tof_mass_analyzer/workflows/reflectron_voltage_compensation")

@@ -69,14 +69,15 @@ def _save_evidence(destination: Path, root: Path, metadata: dict, stdout: bytes,
 
 
 def run_fixture_process(command: list[str], *, root: Path, environment: dict[str, str],
-                        mode: str, timeout: float = 30, diagnostics_root: Path | None = None
+                        mode: str, timeout: float = 30, diagnostics_root: Path | None = None,
+                        cwd: Path | None = None
                         ) -> subprocess.CompletedProcess[str]:
     """Keep raw timeout bytes, then stop only this gated fixture's owned tree."""
     evidence_root = diagnostics_root or Path(tempfile.gettempdir()) / "oatof_fixture_diagnostics"
     evidence_root.mkdir(parents=True, exist_ok=True)
     destination = Path(tempfile.mkdtemp(prefix=f"compensation-{mode}-", dir=evidence_root))
     started = time.monotonic()
-    metadata = dict(schema_version=1, mode=mode, argv=command, cwd=str(root), timeout_seconds=timeout,
+    metadata = dict(schema_version=1, mode=mode, argv=command, cwd=str(cwd or root), timeout_seconds=timeout,
                     selected_python=environment.get("FIXTURE_PYTHON"), monotonic_begin=started,
                     secondary_errors=[])
     sources = [Path(__file__)]
@@ -100,7 +101,7 @@ def run_fixture_process(command: list[str], *, root: Path, environment: dict[str
             limits = win32job.QueryInformationJobObject(job, win32job.JobObjectExtendedLimitInformation)
             limits["BasicLimitInformation"]["LimitFlags"] = win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
             win32job.SetInformationJobObject(job, win32job.JobObjectExtendedLimitInformation, limits)
-        process = subprocess.Popen(command, cwd=root, env=environment, stdin=subprocess.PIPE,
+        process = subprocess.Popen(command, cwd=cwd or root, env=environment, stdin=subprocess.PIPE,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                    start_new_session=os.name != "nt")
         metadata["root_pid"] = process.pid

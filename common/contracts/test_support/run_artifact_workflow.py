@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -144,11 +145,47 @@ class RunArtifactWorkflowFixture(unittest.TestCase):
         self.assertTrue(all(value >= 0 for value in result["timing"].values()))
         self.assertAlmostEqual(sum(result["timing"].values()), result["elapsed_seconds"], places=2)
 
-    def run_ps(self, root: Path, script: str) -> subprocess.CompletedProcess[str]:
+    def run_ps(self, root: Path, script: str, *, owned_diagnostics: Path | None = None,
+               evidence_paths: tuple[Path, ...] = ()) -> subprocess.CompletedProcess[str]:
         path = root / "invoke.ps1"
+        if owned_diagnostics is not None:
+            script = "if([Console]::In.ReadLine()-cne'fixture-owned-start'){throw 'Fixture ownership ACK missing'}\n" + script
         path.write_text(script, encoding="utf-8")
-        return subprocess.run([PWSH, "-NoProfile", "-File", str(path)], cwd=REPO,
-                              capture_output=True, text=True, encoding="utf-8", timeout=90)
+        command = [PWSH, "-NoProfile", "-File", str(path)]
+        if owned_diagnostics is None:
+            return subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=90)
+        from common.contracts.test_support.fixture_process import run_fixture_process
+
+        outcome = None
+        primary = None
+        try:
+            outcome = run_fixture_process(command, root=root, cwd=REPO,
+                                          environment=dict(os.environ, FIXTURE_PYTHON=sys.executable,
+                                                           FIXTURE_TEST_METHOD=self.id(), FIXTURE_TEST_SOURCE=__file__),
+                                          mode="inherited-grant", timeout=90, diagnostics_root=owned_diagnostics)
+            return outcome
+        except BaseException as error:
+            primary = error
+            raise
+        finally:
+            # Preserve named small records before TemporaryDirectory removes the fixture.
+            evidence = getattr(primary if primary is not None else outcome, "fixture_diagnostics", None)
+            if evidence is not None:
+                try:
+                    destination = Path(evidence) / "inputs-and-state"
+                    for source in (path, *evidence_paths):
+                        relative = source.relative_to(root)
+                        if source.is_file():
+                            if source.stat().st_size > 1024 * 1024:
+                                raise ValueError("Fixture diagnostic input exceeds 1 MiB")
+                            target = destination / relative
+                            target.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copyfile(source, target)
+                    print(f"FIXTURE_EVIDENCE mode=inherited-grant path={evidence}", flush=True)
+                except BaseException as diagnostic_error:
+                    if primary is None:
+                        raise
+                    primary.add_note(f"input_preservation: {diagnostic_error!r}")
 
     def invoke_fixture(self, root: Path, payload: dict, *, retention: str = "compact", host_state: str | None = None,
                        observation_failure: bool = False, failure_stage: str | None = None, project: str = PROJECT,
