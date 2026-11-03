@@ -131,10 +131,11 @@ function Invoke-ChangedGateStage {
     param(
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][string]$Reason,
-        [Parameter(Mandatory)][scriptblock]$Action
+        [Parameter(Mandatory)][scriptblock]$Action,
+        [string]$ResourceRole='GATE', [string]$ResourceStage=''
     )
     $changedStageAction = $Action
-    Invoke-RecordedGateStage -Name $Name -Reason $Reason -Summary $gateSummary -Action {
+    Invoke-RecordedGateStage -Name $Name -Reason $Reason -Summary $gateSummary -ResourceRole $ResourceRole -ResourceStage $ResourceStage -Action {
         & $changedStageAction
         if ($LASTEXITCODE -ne 0) { throw "Changed-files gate stage failed: $Name" }
     }
@@ -151,13 +152,16 @@ function Add-ChangedStageItem {
         [Parameter(Mandatory)][bool]$Run,
         [Parameter(Mandatory)][string]$Reason,
         [Parameter(Mandatory)][ValidateSet('stdlib', 'locked')]
-        [string]$DependencyProfile
+        [string]$DependencyProfile,
+        [string]$ResourceRole='GATE', [string]$ResourceStage=''
     )
     $stageItems[$Name] = [pscustomobject]@{
         Name = $Name
         Run = $Run
         Reason = $Reason
         DependencyProfile = $DependencyProfile
+        ResourceRole = $ResourceRole
+        ResourceStage = $(if($ResourceStage){$ResourceStage}else{$Name})
         Action = $null
         Command = $null
         RequiresStages = @()
@@ -183,7 +187,7 @@ function Invoke-ChangedStageGroup {
         -InternalRequestParameter '-InternalRequestPath' `
         -InvokeInlineStage {
             param($item)
-            Invoke-ChangedGateStage $item.Name $item.Reason $item.Action
+            Invoke-ChangedGateStage $item.Name $item.Reason $item.Action -ResourceRole $item.ResourceRole -ResourceStage $item.ResourceStage
         } `
         -InvokeSkipStage {
             param($item)
@@ -207,6 +211,8 @@ if($consumePlan){
         Add-ChangedStageItem -Name $record.name -Run ([bool]$record.selected) -Reason $record.reason -DependencyProfile $record.dependency_profile
         $stageItems[$record.name].Command=$record.command
         $stageItems[$record.name].RequiresStages=@($record.requires_stages)
+        $resource=Get-GateResourceDeclaration -Name $record.name -Metadata $record
+        $stageItems[$record.name].ResourceRole=$resource.role;$stageItems[$record.name].ResourceStage=$resource.stage
     }
     foreach($item in $stageItems.Values|Where-Object Run){
         foreach($required in $item.RequiresStages){
@@ -488,6 +494,8 @@ foreach ($route in $routes) {
         Add-ChangedStageItem $name $true $reason `
             $(if ($null -ne $testSelection) { $testSelection.DependencyProfile } else { [string]$route.dependency_profile })
         $stageItems[$name].Command = $command
+        $resource=Get-GateResourceDeclaration -Name $name -Metadata $route
+        $stageItems[$name].ResourceRole=$resource.role;$stageItems[$name].ResourceStage=$resource.stage
         if ($partitions.Count -and (($partialPartitions -and $command.runner -eq 'python') -or
             ($null -ne $route.PSObject.Properties['partition_preflight'] -and -not [bool]$route.partition_preflight))) {
             # A partial Python parent is the selected tests, not the original
@@ -522,6 +530,8 @@ foreach ($route in $routes) {
             $partProfile = if ($partialPartitions) {$stageItems[$name].DependencyProfile} else {[string]$route.dependency_profile}
             Add-ChangedStageItem $partName $true $partReason $partProfile
             $stageItems[$partName].Command = $partCommand
+            $partitionResource=Get-GateResourceDeclaration -Name $partName -Metadata $route
+            $stageItems[$partName].ResourceRole=$partitionResource.role;$stageItems[$partName].ResourceStage=$partitionResource.stage
             $partitionParents[$partName] = $name
         }
     } else {

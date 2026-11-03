@@ -28,6 +28,95 @@ def quote(value: str | Path) -> str:
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell Core is required")
 class ParallelGateSupportTests(unittest.TestCase):
+    def test_declared_native_resource_metadata_and_neighbor_isolation(self):
+        script = self.prelude() + """
+function Assert-HostResourceHeavyStage { param($Lease) $script:heavy += 1 }
+$script:heavy=0
+$resource=Get-GateResourceDeclaration -Name ordinary
+if($resource.role-ne'GATE'-or$resource.stage-ne'ordinary'){throw 'default changed'}
+foreach($bad in @(@{resource_role=''},@{resource_stage=''},@{resource_role='COMSOL'},
+                  @{resource_role='SIMION';resource_stage='missing'})){
+ $rejected=$false
+ try { Get-GateResourceDeclaration -Name fixture -Metadata $bad|Out-Null } catch { $rejected=$true }
+ if(-not$rejected){throw 'invalid resource declaration accepted'}
+}
+$before=[Environment]::GetEnvironmentVariable('SIMION_SOLVER_TEST_AUTHORIZED','Process')
+Invoke-ResourceBudgetedGateAction -Name native -ResourceRole SIMION -ResourceStage pa_refine -Action {
+ if([Environment]::GetEnvironmentVariable('SIMION_SOLVER_TEST_AUTHORIZED','Process')-ne$before){throw 'native opt-in leaked'}
+}
+Invoke-ResourceBudgetedGateAction -Name ordinary -Action {
+ if([Environment]::GetEnvironmentVariable('SIMION_SOLVER_TEST_AUTHORIZED','Process')-ne$before){throw 'neighbor opt-in leaked'}
+}
+if($script:heavy-ne1-or$script:acquired-ne2-or$script:released-ne2){throw 'admission/release changed'}
+Write-Output 'NATIVE_RESOURCE_METADATA=PASS'
+"""
+        self.assertIn('NATIVE_RESOURCE_METADATA=PASS', self.run_script(script).stdout)
+
+    def test_native_resource_saved_request_worker_transport(self):
+        with tempfile.TemporaryDirectory(prefix='gate_native_request_') as directory:
+            request = Path(directory) / 'request.json'
+            script = self.prelude() + f"""
+. {quote(ROOT / 'common/gate_catalog_support.ps1')}
+$item=@{{Name='native';Reason='contract';Run=$true;DependencyProfile='stdlib';RequiresStages=@();
+ ResourceRole='SIMION';ResourceStage='pa_refine';Command=@{{runner='python';arguments=@('-c','pass')}}}}
+$request=New-ResolvedGateStageRequest -Items @($item) -PythonExe {quote(sys.executable)}
+$request|ConvertTo-Json -Depth 32|Set-Content -LiteralPath {quote(request)} -Encoding utf8
+$loaded=Get-Content -LiteralPath {quote(request)} -Raw|ConvertFrom-Json
+if($loaded.stages[0].resource_role-ne'SIMION'-or$loaded.stages[0].resource_stage-ne'pa_refine'){{throw 'saved declaration lost'}}
+function Invoke-LoggedGateStage {{param($Name,$LogPath,$Action) & $Action}}
+function Invoke-RecordedGateStage {{param($Name,$Reason,$ResourceRole,$ResourceStage,$Action)
+ if($ResourceRole-ne'SIMION'-or$ResourceStage-ne'pa_refine'){{throw 'worker declaration lost'}}
+ Write-Output 'NATIVE_WORKER_TRANSPORT=PASS'
+}}
+Invoke-ResolvedGateStage -RepoRoot {quote(ROOT)} -Stage native -RequestPath {quote(request)} -LogPath {quote(Path(directory) / 'worker.log')}
+"""
+            self.assertIn('NATIVE_WORKER_TRANSPORT=PASS', self.run_script(script).stdout)
+
+    def test_native_fixture_checkpoint_and_timeout_primary_evidence(self):
+        from unittest.mock import Mock, patch
+        from common.simion import test_dirichlet_patch_basis as fixture
+        with tempfile.TemporaryDirectory(prefix='dirichlet_diagnostic_negative_') as directory:
+            root = Path(directory)
+            observed, identity = fixture._instrument_builder(root)
+            self.assertTrue(identity['restored_bytes_equal'])
+            self.assertEqual(identity['anchor_counts'], [1, 1, 2, 1, 1, 1])
+            self.assertIn(b'io.stdout:flush()', observed.read_bytes())
+            with patch.dict(os.environ, {}, clear=True), patch.object(fixture, 'ensure_heavy_entry') as grant:
+                with self.assertRaisesRegex(RuntimeError, 'declared public SIMION/pa_refine'):
+                    fixture.DirichletPatchBasisTest.setUpClass()
+                grant.assert_not_called()
+            (root / 'donor.pa').write_bytes(b'INERT_NOT_NATIVE_PA')
+            result = fixture.run_native_fixture([sys.executable, '-c', "print('PURE_CHILD')"], root=root)
+            self.assertIn('PURE_CHILD', result.stdout)
+            process = Mock(returncode=9)
+            process.poll.return_value = 9
+            process.kill.side_effect = OSError('KILL_SECONDARY')
+            process.communicate.side_effect = OSError('DRAIN_SECONDARY')
+            primary = subprocess.TimeoutExpired(['owned-fixture'], 120, output=b'PARTIAL')
+            fixture._stop_timed_out_child(process, primary, {'secondary_errors': []})
+            self.assertIn('KILL_SECONDARY', str(primary.__notes__))
+            self.assertIn('DRAIN_SECONDARY', str(primary.__notes__))
+            with patch.object(fixture, '_save_native_evidence', side_effect=OSError('SAVE_SECONDARY')):
+                with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                    fixture.run_native_fixture([sys.executable, '-u', '-c',
+                        "import time; print('BEFORE_TIMEOUT', flush=True); time.sleep(10)"],
+                        root=root, timeout=0.8)
+            self.assertIn(b'BEFORE_TIMEOUT', caught.exception.output)
+            self.assertIn('SAVE_SECONDARY', str(caught.exception.__notes__))
+            process = Mock(pid=123, returncode=0)
+            process.stdout.close.side_effect = OSError('CLOSE_SECONDARY')
+            process.poll.return_value = 0
+            primary = subprocess.TimeoutExpired(['owned-fixture'], 120, output=b'RAW_PARTIAL')
+            process.communicate.side_effect = [primary, (b'RAW_PARTIAL', b'')]
+            with patch.object(fixture.subprocess, 'Popen', return_value=process), \
+                    patch.object(fixture.fixture_process, '_creation_filetime', return_value=123), \
+                    patch.object(fixture, '_save_native_evidence') as save:
+                with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                    fixture.run_native_fixture(['owned-fixture'], root=root)
+            self.assertIs(caught.exception, primary)
+            self.assertIn('CLOSE_SECONDARY', str(primary.__notes__))
+            save.assert_called_once()
+
     def test_single_inline_stage_preserves_real_outcomes(self):
         with tempfile.TemporaryDirectory() as directory:
             summary = Path(directory) / "summary.json"

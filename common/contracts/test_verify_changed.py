@@ -23,6 +23,33 @@ LIGHTWEIGHT_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "lightweight-gate.y
 
 
 class ChangedGateContractTests(unittest.TestCase):
+    def test_dirichlet_native_selection_has_one_public_simion_owner(self):
+        module = 'common/simion/test_dirichlet_patch_basis.py'
+        for arguments in (('-Scope', 'Repository'),
+                          ('-Scope', 'Owner', '-Owner', 'common/simion'),
+                          ('-ChangedPath', module),
+                          ('-ChangedPath', 'common/resource_budget_support.ps1'),
+                          ('-ChangedPath', 'common/host_resource_scheduler.py')):
+            with self.subTest(arguments=arguments):
+                plan, _ = self.plan(*arguments)
+                native = [row for row in plan['stages'] if row['name'] == 'simion_dirichlet_native']
+                self.assertEqual(len(native), 1)
+                self.assertEqual(native[0]['resource_role'], 'SIMION')
+                self.assertEqual(native[0]['resource_stage'], 'pa_refine')
+                self.assertEqual(native[0]['command']['arguments'], ['-m', 'common.gate_unittest', module])
+                occurrences = sum(module in row.get('command', {}).get('arguments', [])
+                                  for row in plan['stages']
+                                  if row.get('command', {}).get('arguments', [])[:2]
+                                  == ['-m', 'common.gate_unittest'])
+                self.assertEqual(occurrences, 1)
+                for row in plan['stages']:
+                    if row['resource_role'] == 'GATE':
+                        self.assertEqual(row['resource_stage'], row['name'])
+                    if row['name'].startswith('simion_common'):
+                        self.assertNotIn(module, row['command'].get('arguments', []))
+                        self.assertNotIn('common.simion.test_dirichlet_patch_basis',
+                                         row['command'].get('arguments', []))
+
     def setUp(self) -> None:
         summary_directory = tempfile.TemporaryDirectory(prefix="changed_gate_summary_test_")
         self.addCleanup(summary_directory.cleanup)

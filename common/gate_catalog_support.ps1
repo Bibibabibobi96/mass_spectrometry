@@ -10,6 +10,8 @@ function New-ResolvedGateStageRequest {
         $item=$_
         $record=@{name=$item.Name;reason=$item.Reason;command=$item.Command;order=$index;
             dependency_profile=$item.DependencyProfile;requires_stages=@($item.RequiresStages|Where-Object{$_});selected=[bool]$item.Run}
+        $resource=Get-GateResourceDeclaration -Name $item.Name -Metadata $item
+        $record.resource_role=$resource.role;$record.resource_stage=$resource.stage
         $index++
         $record
     })
@@ -118,13 +120,14 @@ function Invoke-ResolvedGateStage {
     }
     $planned = $selected[0]
     if($null-ne$planned.PSObject.Properties['selected']-and-not$planned.selected){throw 'Internal stage was not selected.'}
+    $resource=Get-GateResourceDeclaration -Name $Stage -Metadata $planned
     $python = [string]$request.python_exe
     Test-GateCatalogCommand -Command $planned.command -Stage $Stage -RepoRoot $RepoRoot
     $priorRuntime = [Environment]::GetEnvironmentVariable('SIMULATION_PYTHON_EXE', 'Process')
     try {
         $env:SIMULATION_PYTHON_EXE = $python
         return Invoke-LoggedGateStage -Name $Stage -LogPath $LogPath -Action {
-            Invoke-RecordedGateStage -Name $Stage -Reason $planned.reason -Action {
+            Invoke-RecordedGateStage -Name $Stage -Reason $planned.reason -ResourceRole $resource.role -ResourceStage $resource.stage -Action {
                 Invoke-GateCatalogCommand -Command $planned.command -RepoRoot $RepoRoot -PythonExe $python
             }
         }
@@ -155,6 +158,7 @@ function Test-GateCatalogCommand {
 
 function Read-GateCatalog {
     param([Parameter(Mandatory)][string]$RepoRoot)
+    if(-not(Get-Command Get-GateResourceDeclaration -ErrorAction SilentlyContinue)){. (Join-Path $PSScriptRoot 'parallel_gate_support.ps1')}
     $catalogPath = Join-Path $PSScriptRoot 'gate_catalog.json'
     if (-not (Test-Path -LiteralPath $catalogPath -PathType Leaf)) {
         throw "Repository gate catalog missing: $catalogPath"
@@ -191,6 +195,7 @@ function Read-GateCatalog {
             }
         }
         $stage = [string]$route.stage
+        $null=Get-GateResourceDeclaration -Name $stage -Metadata $route
         if ([string]$route.dependency_profile -notin @('stdlib', 'locked')) {
             throw "Gate catalog dependency profile is invalid: $stage"
         }
@@ -295,6 +300,13 @@ function Read-GateCatalog {
                     -not ([string]$root).EndsWith('/') -or
                     -not (Test-Path -LiteralPath (Join-Path $RepoRoot $root) -PathType Container)) {
                     throw "Invalid gate test discovery root: $stage -> $root"
+                }
+            }
+        }
+        if($null-ne$route.PSObject.Properties['test_selection']-and$null-ne$route.test_selection.PSObject.Properties['exclude_modules']){
+            foreach($excluded in @($route.test_selection.exclude_modules)){
+                if([IO.Path]::IsPathRooted($excluded)-or$excluded-match'(^|/)\.\.(/|$)'-or$excluded-notmatch'/test_[^/]+\.py$'){
+                    throw 'Gate excluded module must be an exact repository test path.'
                 }
             }
         }
@@ -499,8 +511,9 @@ function Get-GateChangedTests {
             }
         )
     }
+    $excluded=@(if($null-ne$selection.PSObject.Properties['exclude_modules']){$selection.exclude_modules})
     return [pscustomobject]@{
-        Modules = @($modules + $mappedModules | Sort-Object -Unique)
+        Modules = @($modules + $mappedModules | Where-Object {$_-notin$excluded} | Sort-Object -Unique)
         Expanded = $expanded -or $mappedModules.Count -gt 0
         # Expanded can cover only a project's selected roots. Equality with
         # the sole declared scope proves that every scope member was included.

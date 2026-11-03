@@ -1,6 +1,32 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Get-GateResourceDeclaration {
+    <# Catalog/item/plan metadata selects an existing public admission profile. #>
+    param([Parameter(Mandatory)][string]$Name, $Metadata=$null)
+    $values=@{role='GATE';stage=$Name}
+    foreach($field in @(@('role','ResourceRole','resource_role'),@('stage','ResourceStage','resource_stage'))){
+        foreach($key in @($field[1],$field[2])){
+            if($null-ne$Metadata-and(($Metadata-is[Collections.IDictionary]-and$Metadata.Contains($key))-or
+                $null-ne$Metadata.PSObject.Properties[$key])){
+                if([string]::IsNullOrWhiteSpace([string]$Metadata.$key)){throw 'Explicit gate resource role/stage cannot be empty.'}
+                $values[$field[0]]=[string]$Metadata.$key
+                break
+            }
+        }
+    }
+    if($values.role-notin@('GATE','SIMION')){
+        throw 'Invalid gate resource role/stage.'
+    }
+    if($values.role-ne'GATE'){
+        $policy=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'host_resource_policy.json') -Raw|ConvertFrom-Json
+        if($null-eq$policy.stages.PSObject.Properties[($values.role+'/'+$values.stage)]){
+            throw 'Gate native resource stage must be explicitly registered.'
+        }
+    }
+    return $values
+}
+
 function Read-GateTestOutcomeEvidence {
     <# Preserve actual unittest outcomes before successful stage logs are removed.
        Invocation receipts distinguish empty suites from missing/truncated evidence. #>
@@ -123,6 +149,7 @@ function New-GateRunSummary {
             selected = [bool]$item.Run
             selection_reason = [string]$item.Reason
             dependency_profile = $null
+            resource_role = 'GATE'; resource_stage = [string]$item.Name
             command = $null
             requires_stages = @()
             status = $(if ($item.Run) { 'PENDING' } else { 'NOT_APPLICABLE' })
@@ -135,10 +162,10 @@ function New-GateRunSummary {
             error = $null; test_durations = @()
             test_outcomes = @(); test_outcome_invocations = @(); test_evidence_error = $null
         }
-        foreach ($field in @('DependencyProfile', 'Command', 'RequiresStages')) {
+        foreach ($field in @('DependencyProfile', 'Command', 'RequiresStages', 'ResourceRole', 'ResourceStage')) {
             if ($null -ne $item.PSObject.Properties[$field] -or
                 ($item -is [Collections.IDictionary] -and $item.Contains($field))) {
-                $key = @{ DependencyProfile='dependency_profile'; Command='command'; RequiresStages='requires_stages' }[$field]
+                $key = @{ DependencyProfile='dependency_profile'; Command='command'; RequiresStages='requires_stages'; ResourceRole='resource_role'; ResourceStage='resource_stage' }[$field]
                 if ($field -eq 'RequiresStages') {
                     $record[$key] = @($item.$field | Where-Object { $null -ne $_ })
                 } else { $record[$key] = $item.$field }
@@ -209,7 +236,8 @@ function Invoke-RecordedGateStage {
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][string]$Reason,
         [Parameter(Mandatory)][Alias('Action')][scriptblock]$Operation,
-        $Summary
+        $Summary,
+        [string]$ResourceRole='GATE', [string]$ResourceStage=''
     )
     $timer = [Diagnostics.Stopwatch]::StartNew()
     $result = [ordered]@{
@@ -222,7 +250,7 @@ function Invoke-RecordedGateStage {
     Set-GateStageResult -Summary $Summary -Name $Name -Result $result
     Write-Output "GATE_STAGE=RUN NAME=$Name REASON=$Reason"
     try {
-        Invoke-ResourceBudgetedGateAction -Name $Name -Action $Operation -Timings $timings
+        Invoke-ResourceBudgetedGateAction -Name $Name -Action $Operation -Timings $timings -ResourceRole $ResourceRole -ResourceStage $ResourceStage
         $result.status = 'PASS'; $result.reason_code = 'COMPLETED'; $result.exit_code = 0
     } catch {
         $stageFailure = $_
@@ -269,11 +297,13 @@ function Invoke-ResourceBudgetedGateAction {
     param(
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][Alias('Action')][scriptblock]$Operation,
-        [hashtable]$Timings
+        [hashtable]$Timings,
+        [string]$ResourceRole='GATE', [string]$ResourceStage=''
     )
-    $budget = Get-HostResourceBudget -Stage $Name -Role GATE
+    $resource=Get-GateResourceDeclaration -Name $Name -Metadata @{ResourceRole=$ResourceRole;ResourceStage=$(if($ResourceStage){$ResourceStage}else{$Name})}
+    $budget = Get-HostResourceBudget -Stage $resource.stage -Role $resource.role
     $waitTimer = [Diagnostics.Stopwatch]::StartNew()
-    $admission=@{Role='GATE';Stage=$Name;Budget=$budget}
+    $admission=@{Role=$resource.role;Stage=$resource.stage;Budget=$budget}
     if(Get-Variable -Name GateResourceWaitTimeoutSeconds -Scope Script -ErrorAction SilentlyContinue){$admission.WaitTimeoutSeconds=$script:GateResourceWaitTimeoutSeconds}
     try { $lease = Enter-HostResourceStage @admission }
     catch {
@@ -290,6 +320,7 @@ function Invoke-ResourceBudgetedGateAction {
     $originalOutputEncoding = [Console]::OutputEncoding
     $operationFailure = $null
     try {
+        if($resource.role-ne'GATE'){Assert-HostResourceHeavyStage -Lease $lease}
         # Child PowerShell processes inherit this code page through Python.
         [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
         # Ruff's registered one-core budget must also bound its native workers.

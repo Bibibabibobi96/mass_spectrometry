@@ -7,6 +7,22 @@
 本页维护仓库 API、调用约束与验证范围；软件表示和兼容边界见[SIMION 参考](../../docs/tools/SIMION_REFERENCE.md)，
 主机许可与门禁接线见[公共机制](../README.md)。项目操作和科学资格由项目 README／PROJECT 路由。
 
+## Dirichlet 微型原生回归
+
+[`test_dirichlet_patch_basis.py`](test_dirichlet_patch_basis.py)的原六项测试由统一门禁的
+`simion_dirichlet_native` 单项承担，使用公开 `SIMION/pa_refine` 重型许可；Owner `common/simion`、
+Repository 与相关 Changed 选择保留相同六项，普通软件组不重复执行。无 SIMION 时保持原明确 skip，
+有软件时须核验同一公开重型许可，不以普通 GATE 或邻项 opt-in 环境变量代替授权。
+原 donor 电压、边界、mirror、显式停止与无效输入断言及 120 秒进程 deadline 不变。
+测试在自身临时目录复制原 builder，仅插入 flush checkpoint；去掉这些观测行必须恢复原字节。
+输出、原／实际 argv、原／副本 SHA 和不超过 64 KiB 的 fixture PA/GEM 保存在系统临时目录的
+`oatof_fixture_diagnostics/dirichlet-*`，供同轮失败工件保全。原生产 builder 不增加诊断分支。
+超时仍只处理本次直接子进程，清理和保存次错不能覆盖主异常；退出未知时保留现场和 owner 等待。
+此修复不更改 Refine 公式、默认精度或把历史偶发超时宣称为已证明根因。
+本机经上述公共重型许可执行原六项后，两项成功、四项在原120秒截止超时：
+一项最后到达首次 `target:save`，另三项最后到达 `target:open`，不能统称Refine超时。
+四个子进程均确认退出并保留小现场；该负结果仍阻止完整软件验收，资源接线修复不抵消它。
+
 ## 按任务导航
 
 | 任务 | 入口 |

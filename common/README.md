@@ -459,6 +459,15 @@ CPU准入限制适用于商业角色与重型GATE，普通软件GATE仍记录真
 原因形成的屏障仍生效，商业角色的原公平性不变。
 
 软件验证按实际阶段申请预算，已持有父token的嵌套组在父预算内串行，不能重复申请或增加嵌套并发。
+
+门禁目录的 `resource_role` / `resource_stage` 将同一公开检查的资源职责传到保存计划、inline 与 worker；
+缺字段仍为 `GATE` / 原阶段名，显式空值或未知角色拒绝。当前具名原生职责只有
+`simion_dirichlet_native`：原 Dirichlet 模块的六项微型原生测试单独申请 `SIMION/pa_refine`，
+在 Owner `common/simion`、Repository 与相关 Changed 范围恰好执行一次；普通 SIMION 软件组排除该模块。
+此分离不为相邻 opt-in 原生测试设置授权环境变量，不改变普通 GATE 并发及嵌套规则。
+微型测试的原 120 秒 deadline、科学输入与 Refine 默认保持；失败保留临时 builder 的逐字节还原证明、
+阶段 checkpoint、受限原始输出及小输入。诊断修复与正确重型准入不等于已裁决历史偶发挂起的根因。
+
 COMSOL公共入口已支持准备、求解和后处理边界，具体调用见
 [COMSOL主机资源阶段](comsol/README.md#主机资源阶段)。本次服务器完全退出后的`COMSOL/postprocess`
 显式使用普通轻任务策略；`COMSOL/solver`列为重任务，准备和未分类阶段默认轻任务。入口调用

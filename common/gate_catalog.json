@@ -1011,7 +1011,7 @@
       "repository_integration_group": "regression",
       "matches": [
         {
-          "prefix": "common/simion/",
+          "regex": "^common/simion/(?!(?:test_dirichlet_patch_basis\\.py|test_dirichlet_patch_basis_fixture\\.lua|build_dirichlet_patch_basis\\.lua)$)",
           "reason": "common_simion_changed"
         },
         {
@@ -1072,6 +1072,63 @@
             ],
             "dependency_profile": "stdlib"
           }
+        ],
+        "exclude_modules": [
+          "common/simion/test_dirichlet_patch_basis.py"
+        ]
+      },
+      "owner": "common/simion"
+    },
+    {
+      "stage": "simion_dirichlet_native",
+      "dependency_profile": "locked",
+      "repository_integration_group": "regression",
+      "resource_role": "SIMION",
+      "resource_stage": "pa_refine",
+      "matches": [
+        {
+          "exact": "common/simion/test_dirichlet_patch_basis.py",
+          "reason": "dirichlet_native_contract_changed"
+        },
+        {
+          "exact": "common/simion/test_dirichlet_patch_basis_fixture.lua",
+          "reason": "dirichlet_native_contract_changed"
+        },
+        {
+          "exact": "common/simion/build_dirichlet_patch_basis.lua",
+          "reason": "dirichlet_native_contract_changed"
+        },
+        {
+          "exact": "common/resource_budget_support.ps1",
+          "reason": "dirichlet_native_resource_dependency_changed"
+        },
+        {
+          "exact": "common/host_execution_lease.ps1",
+          "reason": "dirichlet_native_resource_dependency_changed"
+        },
+        {
+          "exact": "common/host_resource_scheduler.py",
+          "reason": "dirichlet_native_resource_dependency_changed"
+        },
+        {
+          "exact": "common/host_resource_policy.json",
+          "reason": "dirichlet_native_resource_dependency_changed"
+        },
+        {
+          "exact": "common/host_resource_python.py",
+          "reason": "dirichlet_native_resource_dependency_changed"
+        },
+        {
+          "exact": "common/host_resource_python.ps1",
+          "reason": "dirichlet_native_resource_dependency_changed"
+        }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": [
+          "-m",
+          "unittest",
+          "common/simion/test_dirichlet_patch_basis.py"
         ]
       },
       "owner": "common/simion"
