@@ -27,6 +27,14 @@ analysis-only/reextract 也沿同一库存校验，Python 观测使用公共导�
 
 ## 当前结论
 
+P2科学电极组由`core.electrode_topology.build_electrode_topology`唯一产生，引用真实rod、
+segment及壳/端盖成员和resolved驱动；分段科学ID取segment/group而不从native整数派生。
+`simion.electrode_mapping`负责SIMION本地编号与容量；旧physical_electrode_view只单向组合，
+保留旧表实际标签、原合法集合和具名消费者行为，不能把该兼容视图作为新科学身份权威。
+连续/分段/共地完整性、原标签内部置换及实际GEM/电压投影回归通过。
+超容量小元数据可验证中立组与后端拒绝的区别，但公开科学请求/axial合同的499限制尚未版本化迁移，
+不宣称真实500段设计已通过公开编译或新RF→OA链、原生场与轨迹已验收。
+
 资源限制类型运输夹具沿用既有90秒总调用边界，避免非目标10秒阈值影响JSON／字典比较；生产观测与告警政策不变。
 三项既有回归通过（公开墙钟34.810秒），保留严格receipt／告警断言及健康进程越限不杀行为；原联合轮FAIL仍保留。
 

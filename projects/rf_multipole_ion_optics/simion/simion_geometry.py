@@ -90,153 +90,43 @@ def segmented_rod_electrode_ids(segmented: dict[str, Any]) -> list[int]:
 
 
 def physical_electrode_view(resolved: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return rods and the optional single grounded enclosure namespace.
+    """Legacy native-key view, composed from the unique scientific topology.
 
-    This is the narrow common view for the native renderer and ordinary-field
-    consumers.  ``native_electrode_id`` is the GEM/SIMION namespace; the
-    separate ``scientific_id`` names the physical electrical group.  Voltage
-    sources point back into the resolved provider rather than copying any
-    drive value into a second authority.
+    Existing consumers retain their old segmented rod_group_<native> labels.
+    New provider interfaces must consume the neutral topology directly instead.
     """
-    if resolved.get("role") != "multipole_resolved_design_do_not_edit":
-        raise ValueError("physical electrode view requires a multipole resolved design")
-    enclosure = resolved["geometry_mm"]["enclosure"]
-    if enclosure["model"] not in {
-        "bare", "cylindrical_grounded_shell",
-    }:
-        raise ValueError("physical electrode view requires a bare or grounded-shell multipole")
-
-    rows: dict[int, dict[str, Any]] = {}
-
-    def add(
-        native_electrode_id: int,
-        scientific_id: str,
-        role: str,
-        voltage_source: dict[str, Any],
-        *,
-        static_voltage_v: float | None = None,
-    ) -> None:
-        if (
-            isinstance(native_electrode_id, bool)
-            or not isinstance(native_electrode_id, int)
-            or not 1 <= native_electrode_id <= SIMION_MAX_ADJUSTABLE_ELECTRODE_ID
-        ):
-            raise ValueError("physical electrode native ID is outside the SIMION namespace")
-        if voltage_source["kind"] == "static" and (
-            isinstance(static_voltage_v, bool)
-            or not isinstance(static_voltage_v, (int, float))
-            or not math.isfinite(static_voltage_v)
-        ):
-            raise ValueError("physical electrode static potential must be finite")
-        row = rows.get(native_electrode_id)
-        if row is None:
-            rows[native_electrode_id] = {
-                "native_electrode_id": native_electrode_id,
-                "scientific_id": scientific_id,
-                "roles": [role],
-                "voltage_source": voltage_source,
-                "_static_voltage_v": static_voltage_v,
-            }
-            return
-        if row["scientific_id"] != scientific_id:
-            raise ValueError("physical electrode ID merges incompatible scientific groups")
-        if row["voltage_source"]["kind"] != voltage_source["kind"]:
-            raise ValueError("physical electrode ID merges RF and static groups")
-        if row["voltage_source"]["kind"] == "rf_drive":
-            if row["voltage_source"] != voltage_source:
-                raise ValueError("physical rod electrode has conflicting resolved drive source")
-        elif row["_static_voltage_v"] != static_voltage_v:
-            raise ValueError("physical static electrode has conflicting resolved potentials")
-        if role not in row["roles"]:
-            row["roles"].append(role)
+    from projects.rf_multipole_ion_optics.core.electrode_topology import build_electrode_topology
+    from projects.rf_multipole_ion_optics.simion.electrode_mapping import build_simion_electrode_map
 
     segmented = resolved["segmentation"]["segmented_rod_array"]
-    if segmented is None:
-        rods = resolved["geometry_mm"]["rod_array"]["rods"]
-        groups = sorted({int(rod["electrode_group"]) for rod in rods})
-        if not groups or any(group not in {1, 2} for group in groups):
-            raise ValueError("continuous rod group is outside the resolved RF groups")
-        for group in groups:
-            add(
-                group,
-                f"rod_group_{group}",
-                "rod",
-                {
-                    "kind": "rf_drive",
-                    "rf_group": group,
-                    "common_mode_pointer": "/drive/common_mode_offset_V",
-                    "dc_amplitude_pointer": "/drive/dc_amplitude_V_per_group",
-                },
-            )
-    else:
-        primitives = _segmented_rod_primitives(segmented)
-        grouped_sources: dict[int, list[tuple[int, dict[str, Any]]]] = {}
-        for index, source in enumerate(segmented["electrodes"]):
-            grouped_sources.setdefault(int(source["electrode_id"]), []).append((index, source))
-        expected_group_counts = {
-            group: sum(1 for rod in resolved["geometry_mm"]["rod_array"]["rods"]
-                       if int(rod["electrode_group"]) == group)
-            for group in (1, 2)
-        }
-        validate_full_table = all(
-            "segment_id" in source for source in segmented["electrodes"]
-        )
-        for native_electrode_id in sorted({int(item["electrode_id"]) for item in primitives}):
-            entries = grouped_sources[native_electrode_id]
-            position, source = entries[0]
-            rf_group = source.get("electrode_group")
-            if rf_group not in {1, 2}:
-                raise ValueError("segmented rod electrode must declare one resolved RF group")
-            common_mode = source.get("common_mode_V")
-            if (
-                isinstance(common_mode, bool)
-                or not isinstance(common_mode, (int, float))
-                or not math.isfinite(common_mode)
-            ):
-                raise ValueError("segmented rod electrode must declare finite common-mode voltage")
-            if any(
-                other.get("electrode_group") != rf_group
-                or other.get("common_mode_V") != common_mode
-                for _, other in entries[1:]
-            ):
-                raise ValueError("segmented rod electrode has conflicting resolved drive source")
-            if validate_full_table and len(entries) != expected_group_counts[rf_group]:
-                raise ValueError("segmented rod physical table is missing or duplicates a rod group")
-            add(
-                native_electrode_id,
-                f"rod_group_{native_electrode_id}",
-                "rod",
-                {
-                    "kind": "rf_drive",
-                    "rf_group": rf_group,
-                    "common_mode_pointer": (
-                        f"/segmentation/segmented_rod_array/electrodes/{position}"
-                        "/common_mode_V"
-                    ),
-                    "dc_amplitude_pointer": "/drive/dc_amplitude_V_per_group",
-                },
-            )
-
-    layout = resolved["geometry_mm"]["enclosure_layout"]
-    static = resolved["static_electrodes_V"]
-    if layout["bodies"]:
-        ground_electrode = max(rows) + 1
-        if static["role"] != "grounded_shell_static_electrodes" or static["ground_V"] != 0:
-            raise ValueError("the enclosure and its optional endcaps must share ground")
-        for body in layout["bodies"]:
-            add(
-                ground_electrode, "grounded_shell", body["role"],
-                {"kind": "static", "pointer": "/static_electrodes_V/ground_V"},
-                static_voltage_v=static["ground_V"],
-            )
-    elif static != {"role": "bare_multipole_static_electrodes"}:
-        raise ValueError("a bare multipole cannot declare enclosure voltages")
-    view = []
-    for native_electrode_id in sorted(rows):
-        row = rows[native_electrode_id]
-        row.pop("_static_voltage_v")
-        view.append(row)
-    return view
+    if segmented is not None:
+        # This compatibility entry still consumes the old native table. Its
+        # geometry/namespace validation is not part of neutral identity.
+        _segmented_rod_primitives(segmented)
+    topology = build_electrode_topology(resolved)
+    requested = None
+    if segmented is not None:
+        requested = {}
+        for row in topology:
+            if row["voltage_source"]["kind"] != "rf_drive":
+                continue
+            ids = {segmented["electrodes"][int(ref.rsplit("/", 1)[1])]["electrode_id"]
+                   for ref in row["member_refs"]}
+            if len(ids) != 1:
+                raise ValueError("legacy physical group has conflicting native electrode IDs")
+            requested[row["scientific_id"]] = ids.pop()
+        if any(row["scientific_id"] == "grounded_shell" for row in topology):
+            requested["grounded_shell"] = max(requested.values()) + 1
+    mapping = build_simion_electrode_map(resolved, topology, requested_native_ids=requested)
+    result = []
+    for row in topology:
+        native = mapping[row["scientific_id"]]
+        scientific = row["scientific_id"]
+        if segmented is not None and row["voltage_source"]["kind"] == "rf_drive":
+            scientific = f"rod_group_{native}"
+        result.append(dict(native_electrode_id=native, scientific_id=scientific,
+                           roles=list(row["roles"]), voltage_source=dict(row["voltage_source"])))
+    return sorted(result, key=lambda row: row["native_electrode_id"])
 
 
 def _render_local_segmented_rod_array_gem(
