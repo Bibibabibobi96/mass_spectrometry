@@ -40,8 +40,12 @@ request10的实际准备、GEM、工作场设计、Program及缓存接线已有�
 实际应用场观测在两轮baseline／replay中各捕获12条查询，已捕获操作数的独立舍入核对一致；
 原锚定批次在pulse_end窗口前离开前端域，两结束窗口均没有合格记录，原覆盖判据保持
 `INCONCLUSIVE / coverage_incomplete`。静态审计未持久化逐点actual值，不能据此宣称全场严格相等、
-libm精度、收敛或Formal资格。GUI捕获与点击环境失败，未完成实际工作台GUI验收；
-任务GUI实例已正常关闭并释放只读保护及租约，不能把这一步写成GUI通过。
+libm精度、收敛或Formal资格。
+截图恢复后，A／B各用独立SIMION进程打开原首批保存IOB，实际检查四个PA实例及姿态／网格、
+检测面实体、Program电压与脉冲变量、十组原FLY2粒子定义和关联Program的GUI可见性。
+两进程均自然退出0，各十项原文件保护及gui_review许可已释放；未Fly、Refine或保存原文件。
+该检查只证明这两个原工作台可在GUI检查，不授予动态场、数值收敛或Formal资格。
+此前截图失败记录保留；当前软件完整验收状态仍从[路线图](../../docs/ROADMAP.md)引用。
 
 同map另一次公开`FieldDesignOnly`验证沿用三份已封存PA身份，Refine／Fly／native启动均为0，
 N100输入保持且传播数为0。公开墙钟338.988秒，超过预置envelope的300秒整run预期；
