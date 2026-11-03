@@ -440,7 +440,7 @@ root = pathlib.Path(sys.argv[1]).resolve()
 sys.path.insert(0, str(root))
 from common.contracts.frozen_inputs import python_import_roots
 sys.path[:0] = python_import_roots(root)
-from common.analysis import particle_census as c
+from msplatform.analysis import particle_census as c
 from projects.dual_pressure_rectilinear_ion_processor.analysis.diagnostics import census
 assert pathlib.Path(c.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
 row = dict(t_us=0., kinetic_energy_ev=0., x_mm=0., y_mm=0., z_mm=0.,
@@ -491,9 +491,10 @@ print(json.dumps(dict(alpha=rows[0].interpolation_alpha, lower=rows[0].lower_anc
         )
         for name, program, expected, extra_args in cases:
             with self.subTest(module=name):
-                helper = code / f'common/analysis/{name}.py'
-                self.assertEqual(helper.read_bytes(),
-                                 (PROJECT.parents[1] / f'common/analysis/{name}.py').read_bytes())
+                relative = (f'src/msplatform/analysis/{name}.py' if name == 'particle_census'
+                            else f'common/analysis/{name}.py')
+                helper = code / relative
+                self.assertEqual(helper.read_bytes(), (PROJECT.parents[1] / relative).read_bytes())
                 # -I excludes cwd/PYTHONPATH, but installed editable hooks can remain.
                 # Core consumers above also verify every loaded core origin in this snapshot.
                 command = [sys.executable, '-B', '-I', '-c', program, str(code), *extra_args]

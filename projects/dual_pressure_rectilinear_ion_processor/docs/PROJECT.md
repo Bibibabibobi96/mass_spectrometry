@@ -39,6 +39,11 @@ MP→IP准备RunId、未变请求和接收配置。复用前核验原准备包�
 
 上游注入的冻结准备按已声明资源集合去重，同一canonical clock schema只冻结一次，已有目标仍由公共freeze_file严格拒绝。保护接线夹具使用正式公共路径上下文和本次解释器，并保留成功、非零退出、已确认异常及未知writer的原停止事实与主／收尾错误断言；纯软件opaque seed不证明原生资产有效性。
 
+当前上游接收、组件出口与prepare冻结直接消费规范`msplatform.analysis.particle_census`，
+中立CSV读取／写入使用`msplatform.contracts.particle_state`，不靠common别名的模块路径补冻结依赖。
+生成包在作者目录移走后仍以自己的完整core与动态资源再次prepare；缺资源与删除core helper保持拒绝，
+原稀疏ID、权重、母群、出生／到达钟及源字节不变。此为软件闭包，不新增原生飞行或科学资格。
+
 ## 当前输入权威
 
 | 内容 | 唯一入口 |

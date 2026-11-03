@@ -13,9 +13,9 @@ from pathlib import Path
 import shutil
 from typing import Any
 
-from common.analysis.particle_census import partition_cohort
+from msplatform.analysis.particle_census import partition_cohort
 from common.contracts.canonical_clock_authority import validate_clock_authority
-from common.contracts.component_particle_state import load_component_particle_state_csv
+from msplatform.contracts.particle_state import load_component_particle_state_csv
 from common.contracts.machine_contracts import validate_schema
 from common.contracts.verify_run_manifest import record_path, verified_successful_run_reference, verify_record
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication

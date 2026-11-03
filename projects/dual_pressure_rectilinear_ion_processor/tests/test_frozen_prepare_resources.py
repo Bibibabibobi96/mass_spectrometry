@@ -52,7 +52,7 @@ class FrozenPrepareResourceTests(unittest.TestCase):
             "common.analysis.beam_focus_diagnostics",
             "common.analysis.figure_export",
             "common.analysis.plane_crossings",
-            "common.analysis.particle_census",
+            "msplatform.analysis.particle_census",
         ):
             importlib.import_module(name)
         author = root / "author"
