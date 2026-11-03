@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Mapping
+from typing import Any, Mapping, Iterable
 
 from projects.rf_multipole_ion_optics.simion.simion_geometry import physical_electrode_view
 
@@ -40,11 +40,31 @@ def physical_multipole_voltages(resolved: dict, mapping: dict[int, int]) -> tupl
     if set(mapping) != expected:
         raise ValueError(f'physical electrode binding differs from provider-native groups: '
                          f'missing={sorted(expected - set(mapping))}, extra={sorted(set(mapping) - expected)}')
+    return _multipole_voltage_rows(resolved, ((mapping[row['native_electrode_id']], row['voltage_source']) for row in view))
+
+
+def scientific_multipole_voltages(
+    resolved: dict, mapping: dict[str, int],
+) -> tuple[dict[int, float], dict[int, int]]:
+    """Resolve scientific RF groups through an explicitly validated SIMION map.
+
+    Carrier common/DC values and polarity still come from the original provider
+    pointers. This does not compile frequency, phase or pulse-time policy.
+    """
+    from projects.rf_multipole_ion_optics.core.electrode_topology import build_electrode_topology
+    from projects.rf_multipole_ion_optics.simion.electrode_mapping import build_simion_electrode_map
+
+    topology = build_electrode_topology(resolved)
+    validated = build_simion_electrode_map(resolved, topology, requested_native_ids=mapping)
+    return _multipole_voltage_rows(resolved, ((validated[row['electrode_group_id']], row['voltage_source']) for row in topology))
+
+
+def _multipole_voltage_rows(
+    resolved: dict, rows: Iterable[tuple[int, dict]],
+) -> tuple[dict[int, float], dict[int, int]]:
+    """Apply the one existing common/DC/polarity calculation in its original order."""
     carrier, groups = {}, {}
-    for row in view:
-        native = row['native_electrode_id']
-        source = row['voltage_source']
-        solver = mapping[native]
+    for solver, source in rows:
         if source['kind'] == 'static':
             carrier[solver] = _physical_voltage_value(resolved, source['pointer'])
         elif source['kind'] == 'rf_drive':
@@ -56,6 +76,30 @@ def physical_multipole_voltages(resolved: dict, mapping: dict[int, int]) -> tupl
         else:
             raise ValueError('physical electrode voltage source kind is unsupported')
     return carrier, groups
+
+
+def scientific_multipole_rod_pieces(resolved: dict) -> list[dict]:
+    """Read actual provider members with scientific identity, without native IDs.
+
+    Returned dictionaries are independent of the input. No geometry or drive
+    formula is evaluated, and enclosure members are not misreported as rods.
+    """
+    from projects.rf_multipole_ion_optics.core.electrode_topology import build_electrode_topology
+
+    pieces = []
+    for group in build_electrode_topology(resolved):
+        if group['voltage_source']['kind'] != 'rf_drive':
+            continue
+        for pointer in group['member_refs']:
+            member = resolved
+            for token in pointer.split('/')[1:]:
+                member = member[int(token)] if isinstance(member, list) else member[token]
+            piece = dict(member)
+            piece.pop('electrode_id', None)
+            piece.update(electrode_group_id=group['electrode_group_id'], segment_id=member.get('segment_id', 1),
+                         parent_rod_id=member.get('parent_rod_id', member.get('rod_id')))
+            pieces.append(piece)
+    return pieces
 
 
 def require_pa_plus_solution_model(

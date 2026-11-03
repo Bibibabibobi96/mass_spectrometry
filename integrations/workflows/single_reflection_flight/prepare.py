@@ -37,6 +37,7 @@ from integrations.workflows.single_reflection_flight.fields import prepare_field
 from integrations.workflows.single_reflection_flight.pulse import _capture_bounds
 
 SCHEMA = Path(__file__).with_name("schema.json")
+SCHEMA_V10 = Path(__file__).with_name("schema_v10.json")
 ROLE = "instrument_assembly_single_reflection_preparation_request"
 FROZEN_NAMES = {
     "validation_contract": "functional_validation.json",
@@ -69,6 +70,26 @@ OUTPUT_NAMES = (
     "frontend_field_design.json",
 )
 GEM_NAMES = {"parent": "frontend.gem", "entrance_refinement": "frontend_entrance_refinement.gem"}
+
+
+def validate_preparation_request(request: dict) -> int:
+    """Validate the declared request version without converting or changing it.
+
+    Version9 retains its original schema; version10 uses canonical group IDs
+    and SIMION integer targets. Provider group/domain coverage and the actual
+    supported native chain are checked later against frozen provider inputs.
+    """
+    if not isinstance(request, dict) or type(request.get("schema_version")) is not int:
+        raise ValueError("preparation request requires an explicit integer schema_version")
+    version = request["schema_version"]
+    if version not in (9, 10):
+        raise ValueError("unsupported preparation request schema_version")
+    validate_schema(request, SCHEMA if version == 9 else SCHEMA_V10)
+    if version == 10 and any(type(target) is not int
+            for provider in request["providers"]["instances"].values()
+            for target in provider["electrode_bindings"].values()):
+        raise ValueError("version10 native electrode targets must be strict integers")
+    return version
 
 
 def _read(path: Path) -> dict:
@@ -226,7 +247,7 @@ def prepare(request_path: Path, run: Path) -> dict:
         raise ValueError("preparation request already exists")
     shutil.copyfile(request_path, frozen_request)
     request = _read(frozen_request)
-    validate_schema(request, SCHEMA)
+    request_version = validate_preparation_request(request)
     source = request["source"]
     source_keys = (
         ("particle_source", "metadata") if source["kind"] == "recorded_birth"
@@ -240,6 +261,9 @@ def prepare(request_path: Path, run: Path) -> dict:
     shutil.copyfile(record_path(request["composition_plan"], base_dir=request_path.parent), parent_path)
     verify_record("composition_plan", {**request["composition_plan"], "path": str(parent_path)})
     parent = _read(parent_path)
+    allowed_plans = (5,) if request_version == 10 else (3, 4)
+    if type(parent.get("schema_version")) is not int or parent["schema_version"] not in allowed_plans:
+        raise ValueError(f"request{request_version} requires composition plan version {allowed_plans}")
     plan = derive_assembly_scope(parent, local_scope=request.get("local_scope"))
     multipole_ids, oatof_id = native_frontend_instances(plan)
     instances = request["providers"]["instances"]
@@ -396,10 +420,15 @@ def prepare(request_path: Path, run: Path) -> dict:
     if isinstance(epoch, bool) or not isinstance(epoch, (int, float)) or not math.isfinite(epoch):
         raise ValueError("canonical instrument epoch must be finite")
     variant = instances[oatof_id]["geometry"]["accelerator_variant"]
+    provider_binding_inputs = ({"provider_inputs": {
+        instance_id: {**selected["instance_design__" + instance_id],
+                      "path": str(paths["instance_design__" + instance_id]), "exists": True}
+        for instance_id in instances}} if request_version == 10 else {})
     gems, geometry = compile_frontend_geometry(multipoles, oatof, composition_plan=plan,
         numerical_domains=request["numerics"]["frontend_domains"],
         accelerator_variant=variant,
-        electrode_bindings={key: value["electrode_bindings"] for key, value in instances.items()})
+        electrode_bindings={key: value["electrode_bindings"] for key, value in instances.items()},
+        **provider_binding_inputs)
     plan = geometry["composition_plan"]
     if (
         source["instance_id"] not in plan["scope"]["instance_ids"]

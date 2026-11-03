@@ -14,6 +14,7 @@ from integrations.workflows.single_reflection_flight.fields import prepare_field
 from projects.rf_multipole_ion_optics.simion.simion_geometry import physical_electrode_view
 from integrations.runtime.single_flight_frontend import native_frontend_instances
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture, multi_inputs, multipole_source as chained_source, quadrupole_source
+from integrations.tests.test_single_reflection_geometry import scientific_inputs, source_fixture
 from common.contracts.verify_run_manifest import record_path
 from common.contracts.rigid_transform import FramedPosition, RigidTransform, relative_transform
 
@@ -24,6 +25,67 @@ def multipole_source(project):
 
 
 class SingleReflectionFieldsTests(unittest.TestCase):
+    def test_plan5_actual_fields_preserve_native_tables_samples_and_relabel_physics(self):
+        from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
+        oatof = candidate_300mm_fixture()
+        # Deliberately asymmetric endpoints distinguish first/second/exit grids.
+        for old, semantic, value in (('grid1','intermediate1',1701.), ('intermediate2','intermediate2',1203.), ('grid2','exit',7.)):
+            oatof['electrodes_V'][old] = value
+            oatof['accelerator_topology']['potentials_v'][semantic] = value
+        controls = dict(variant_id='three_zone_square', pulse_voltage_policy_id=POLICY,
+            boundary_policy='native_zero_neumann', frontend_domains={'parent':{'refine_convergence_v':
+                dict(carrier_off=.1,rf_reference=.2,pulse_delta=.3)}}, rf_reference_voltage_v=10000.)
+        for source in (source_fixture(), chained_source('octupole'), chained_source('octupole', shell=True)):
+            with tempfile.TemporaryDirectory() as directory:
+                original_source = copy.deepcopy(source)
+                kw, old_kw = scientific_inputs({'multipole':source}, oatof, Path(directory))
+                _, geometry = compile_frontend_geometry({'multipole':source}, oatof, **kw)
+                _, old = compile_frontend_geometry({'multipole':source}, oatof, **old_kw)
+                design = prepare_field_design({'multipole':source}, oatof, geometry, **controls)
+                legacy = prepare_field_design({'multipole':source}, oatof, old, **controls)
+                self.assertEqual(design['working_points'], legacy['working_points'])
+                self.assertEqual(design['accelerator_voltage_states'], legacy['accelerator_voltage_states'])
+                self.assertEqual(sorted(design['domains'][0]['physical_samples'], key=lambda row:row['label']),
+                                 sorted(legacy['domains'][0]['physical_samples'], key=lambda row:row['label']))
+                changed = copy.deepcopy(kw)
+                original_ids = [native for mapping in kw['electrode_bindings'].values() for native in mapping.values()]
+                relabel = dict(zip(original_ids, reversed([native+200 for native in original_ids]), strict=True))
+                changed['electrode_bindings'] = {instance:{group:relabel[native] for group,native in mapping.items()}
+                                                for instance,mapping in kw['electrode_bindings'].items()}
+                _, remapped_geometry = compile_frontend_geometry({'multipole':source}, oatof, **changed)
+                remapped = prepare_field_design({'multipole':source}, oatof, remapped_geometry, **controls)
+                for before, after in zip(design['working_points'], remapped['working_points'], strict=True):
+                    self.assertEqual(after['electrode_voltages_v'],
+                        {str(relabel[int(native)]):value for native,value in before['electrode_voltages_v'].items()})
+                self.assertEqual([(row['gu'],relabel[row['electrode_id']]) for row in design['domains'][0]['physical_samples']],
+                                 [(row['gu'],row['electrode_id']) for row in remapped['domains'][0]['physical_samples']])
+                self.assertEqual(source, original_source)
+
+    def test_plan5_two_actual_instances_and_local_scope_keep_complete_group_samples(self):
+        from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
+        sources = dict(a=quadrupole_source(r0=4.,dc=1.,frequency_hz=1e6,phase_rad=.1),
+                       b=chained_source('hexapole', shell=True))
+        oatof = candidate_300mm_fixture()
+        for local in (False, True):
+            with self.subTest(local=local), tempfile.TemporaryDirectory() as directory:
+                options, _ = scientific_inputs(sources, oatof, Path(directory), local=local)
+                selected = {} if local else sources
+                _, geometry = compile_frontend_geometry(selected, oatof, **options)
+                controls = dict(variant_id='three_zone_square',pulse_voltage_policy_id=POLICY,
+                    boundary_policy='native_zero_neumann',frontend_domains={'parent':{'refine_convergence_v':
+                        dict(carrier_off=.1,pulse_delta=.3, **({} if local else dict(rf_reference=.2)))}})
+                if not local: controls['rf_reference_voltage_v'] = 10000.
+                design = prepare_field_design(selected, oatof, geometry, **controls)
+                expected = 25 + sum(len(s['segmentation']['segmented_rod_array']['electrodes'])+
+                                   len(s['geometry_mm']['enclosure_layout']['bodies']) for s in selected.values())
+                self.assertEqual(len(design['domains'][0]['physical_samples']), expected)
+                self.assertEqual([row['kind'] for row in design['working_points']],
+                                 ['carrier_off',*(['rf_reference']*len(selected)),'pulse_delta'])
+                self.assertEqual(geometry['composition_plan']['recipe']['instances'], options['composition_plan']['recipe']['instances'])
+                wrong = copy.deepcopy(geometry)
+                wrong['frontend_field_domain']['members'][0]['member_refs'].pop()
+                with self.assertRaises(ValueError): prepare_field_design(selected, oatof, wrong, **controls)
+
     def test_two_zone_geometry_is_not_claimed_as_a_supported_native_field_driver(self):
         with self.assertRaisesRegex(ValueError,'field/drive execution supports only three_zone_square'):
             prepare_field_design(None,{}, {},variant_id='two_zone_square',pulse_voltage_policy_id=POLICY,

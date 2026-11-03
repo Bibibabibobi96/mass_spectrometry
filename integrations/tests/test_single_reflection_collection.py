@@ -24,6 +24,159 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class SingleReflectionCollectionTests(unittest.TestCase):
+    def observed_fixture(self):
+        from integrations.tests.test_single_reflection_runtime import WorkbenchMaterializationTests
+        from integrations.tests.test_single_reflection_preparation import scientific_preparation_fixture
+        from integrations.tests.test_single_reflection_program import field_observation_spec
+        from integrations.workflows.single_reflection_flight.runtime import _prepare_context,materialize_batches
+        from common.simion.particle_batching import plan_single_wave_batches
+
+        owner = WorkbenchMaterializationTests()
+        owner.setUp()
+        self.addCleanup(owner.doCleanups)
+        folder = owner.root/'observed_collection'
+        folder.mkdir()
+        request_path,owner.run,request = scientific_preparation_fixture(folder,recorded_birth=True)
+        flight = dict(pulse=dict(mode='timed',time_us=10.,width_us=3.),maximum_flight_us=200.,
+                      maximum_step_us=.001,trajectory_quality=17,rf_steps_per_period=80)
+        spec = field_observation_spec(anchor=1,clock='instrument_clock_epoch_v1')
+        validation = request_path.parent/'validation.json'
+        write_json(validation,dict(native_field_observation=spec))
+        request.update(validation_contract=file_record(validation),flight=flight)
+        write_json(request_path,request)
+        owner.preparation = prepare(request_path,owner.run)
+        write_json(owner.run/'run_config.json',dict(project='instrument_assembly'))
+        owner.geometry = json.loads((owner.run/'inputs/frontend_geometry.json').read_text())
+        owner.publish_fields()
+        context = _prepare_context(owner.preparation,owner.field_receipt,file_record(owner.downstream_path),
+                                   owner.run,snapshot_root=owner.snapshot,flight=flight)
+        workbench = materialize_batches(owner.run,'full_instrument',plan_single_wave_batches(100,2),context=context)
+        for case in workbench['batches']:
+            iob = Path(case['outputs']['program']['path']).with_suffix('.iob')
+            iob.write_bytes(b'INERT_IOB_NOT_NATIVE_EVIDENCE')
+            case['outputs']['iob'] = file_record(iob)
+            low,high = case['source_row_range']
+            lines = []
+            for ion,row in enumerate(context['source'][low-1:high],1):
+                pid,t = int(row['particle_id']),float(row['instrument_time_us'])
+                state = ' '.join(f'{axis}_mm={float(row[f"position_{axis}_mm"]):.17g}' for axis in 'xyz')
+                state += ' '+' '.join(f'v{axis}_mm_per_us={float(row[f"velocity_{axis}_m_s"])/1000:.17g}' for axis in 'xyz')
+                xyz = ' '.join(f'{axis}={float(row[f"position_{axis}_mm"]):.17g}' for axis in 'xyz')
+                lines.extend((f'TRACE: source_release ion={ion} particle_id={pid} instrument_time_us={t:.17g} {state}',
+                    f'TRACE: handoff_terminal_raw ion={ion} instance=3 instrument_time_us={t+1:.17g} {state}',
+                    f'TRACE: non_detector_splat ion={ion} instance=3 t={t+1:.17g} {xyz} zmax=0'))
+            lines.append(f'status,Fly completed. {high-low+1} splats')
+            log = owner.run/(case['case_id']+'.log')
+            log.write_text('\n'.join(lines)+'\n',encoding='utf-8')
+            case.update(stdout=str(log),replay_stdout=str(log))
+        metadata = workbench['batches'][0]['build_metadata']['native_field_observation']
+        header = dict(schema_version=1,role='single_reflection_applied_field_observation_header',
+                      specification=spec,context=metadata['context'])
+        fields = metadata['context']['field_records']['parent']
+        rows = []
+        for index,bucket in enumerate(spec['buckets']):
+            for ordinal in range(2):
+                t = (bucket['time_min_us']+bucket['time_max_us'])/2
+                active = 10 <= t < 13
+                row = dict(schema_version=1,role='single_reflection_applied_field_query',basis='efield_adjust_query_only',
+                    record_seq=len(rows)+1,callback_seq=len(rows)+1,bucket_id=bucket['bucket_id'],instrument_time_us=t,
+                    solver_elapsed_us=t-1,particle_id=1,ion_number=1,instance_index=3,domain_id='parent',
+                    world_frame_id='oatof_global',world_position_mm=[1,2,3],grid_spacing_mm=[.3,.25,.1],
+                    instance_scale=1,instance_rotation_deg=[0,0,0],entry_gradient_gu=[10,20,30],
+                    rf_members=[dict(coefficient_used=.5,native_field_gu=[2,-3,5],native_path=fields['rf_reference']['path'])],pulse_active_used=active,
+                    pulse_basis='actual_field_vc_used' if active else 'not_applied_not_queried',pa_gu=[1,2,3],
+                    after_dynamic_gradient_gu=[9,21.5,27.5],region_override=dict(replace_all=False),
+                    after_region_gradient_gu=[9,21.5,27.5],final_gradient_gu=[9,21.5,27.5],actual_rf_phase_rad=.37,
+                    rf_phase_basis='unwrapped_kernel_phase_at',
+                    carrier_native_field_gu=[-10,-20,-30],
+                    carrier_native_path=fields['carrier_off']['path'])
+                if active: row.update(pulse_scale_used=1,pulse_native_field_gu=[7,11,-13],pulse_native_path=fields['pulse_delta']['path'])
+                rows.append(row)
+        summary = dict(schema_version=1,role='single_reflection_applied_field_observation_summary',rows=16,
+                       counts={bucket['bucket_id']:2 for bucket in spec['buckets']},coverage_complete=True,stopped_by='row_cap',deadline_seen=False)
+        return owner,workbench,header,rows,summary
+
+    def test_applied_field_evidence_is_separate_bounded_and_published_without_changing_mother_events(self):
+        owner,workbench,header,rows,summary = self.observed_fixture()
+        path = Path(workbench['batches'][0]['stdout'])
+        native = path.read_text()
+        baseline = collect_log(owner.preparation,workbench,owner.run)
+        self.assertEqual(baseline['native_field_observation']['status'],'INCONCLUSIVE')
+        partial = dict(summary,rows=2,counts={key:(2 if key==rows[0]['bucket_id'] else 0) for key in summary['counts']},
+                       coverage_complete=False,stopped_by='native_end')
+        path.write_text(native+f'TRACE: applied_field_observation_header {json.dumps(header)}\n'+
+            ''.join(f'TRACE: applied_field_observation {json.dumps(row)}\n' for row in rows[:2])+
+            f'TRACE: applied_field_observation_summary {json.dumps(partial)}\n',encoding='utf-8')
+        incomplete = collect_log(owner.preparation,workbench,owner.run)['native_field_observation']
+        self.assertEqual(incomplete['status'],'INCONCLUSIVE')
+        self.assertEqual(len(incomplete['missing_buckets']),7)
+        traces = [f'TRACE: applied_field_observation_header {json.dumps(header)}',
+                  *(f'TRACE: applied_field_observation {json.dumps(row)}' for row in rows),
+                  f'TRACE: applied_field_observation_summary {json.dumps(summary)}']
+        path.write_text(native+'\n'.join(traces)+'\n',encoding='utf-8')
+        result = collect_log(owner.preparation,workbench,owner.run)
+        self.assertEqual(result['native_field_observation']['status'],'RECORDED')
+        self.assertEqual(result['native_field_observation']['missing_buckets'],[])
+        self.assertEqual(result['native_field_observation']['queries'],rows)
+        for key in ('canonical_events','census','native_terminals','native_shared_states'):
+            self.assertEqual(result[key],baseline[key])
+        prep,bench = owner.run/'prep.json',owner.run/'bench.json'
+        write_json(prep,owner.preparation);write_json(bench,workbench)
+        output = owner.run/'results/observed'
+        command = [sys.executable,'-m','integrations.workflows.single_reflection_flight.collect',
+                   '--preparation',str(prep),'--workbench',str(bench),'--run',str(owner.run),'--output',str(output)]
+        completed = subprocess.run(command,cwd=ROOT,capture_output=True,text=True,timeout=60,check=False)
+        self.assertEqual(completed.returncode,0,completed.stdout+completed.stderr)
+        receipt = json.loads(completed.stdout)
+        self.assertEqual(receipt['output_records']['native_field_observation.json'],file_record(output/'native_field_observation.json'))
+        self.assertEqual(json.loads((output/'collection.json').read_text())['native_field_observation_status'],'RECORDED')
+        failed = owner.run/'results/io_failure'
+        failed.mkdir()
+        (failed/'native_field_observation.json').write_text('original protected evidence')
+        command[command.index('--output')+1] = str(failed)
+        rejected = subprocess.run(command,cwd=ROOT,capture_output=True,text=True,timeout=60,check=False)
+        self.assertNotEqual(rejected.returncode,0)
+        self.assertEqual((failed/'native_field_observation.json').read_text(),'original protected evidence')
+
+    def test_applied_field_parser_rejects_unknown_duplicate_unbound_and_overcap_queries(self):
+        owner,workbench,header,rows,summary = self.observed_fixture()
+        path = Path(workbench['batches'][0]['stdout'])
+        native = path.read_text()
+        for change in ('undeclared','wrong_batch','duplicate','version','source','context','window','nonfinite','cap','summary',
+                       'bad_json','duplicate_json_key','bytes'):
+            h,r,s = copy.deepcopy(header),copy.deepcopy(rows),copy.deepcopy(summary)
+            target = path
+            if change == 'version': r[0]['schema_version'] = True
+            elif change == 'source': r[0]['particle_id'] = 101
+            elif change == 'context': h['context']['input_records']['source']['sha256'] = 'a'*64
+            elif change == 'window': r[0]['instrument_time_us'] = 999
+            elif change == 'nonfinite': r[0]['final_gradient_gu'][0] = float('nan')
+            elif change == 'duplicate': r.insert(1,copy.deepcopy(r[0]))
+            elif change == 'cap': r.append(copy.deepcopy(r[-1]))
+            elif change == 'summary': s['counts'][next(iter(s['counts']))] = 1
+            elif change == 'wrong_batch': target = Path(workbench['batches'][1]['stdout'])
+            original = target.read_text()
+            if change == 'undeclared':
+                validation = Path(owner.preparation['input_records']['validation_contract']['path'])
+                validation_bytes = validation.read_bytes()
+                write_json(validation,{})
+                owner.preparation['input_records']['validation_contract'] = file_record(validation)
+            traces = [f'TRACE: applied_field_observation_header {json.dumps(h)}',
+                      *(f'TRACE: applied_field_observation {json.dumps(row)}' for row in r),
+                      f'TRACE: applied_field_observation_summary {json.dumps(s)}']
+            if change == 'bad_json': traces[1] = 'TRACE: applied_field_observation {'
+            elif change == 'duplicate_json_key': traces[1] = traces[1].replace('{','{"schema_version":1,',1)
+            elif change == 'bytes': traces[0] += ' '*(524288+1)
+            target.write_text(original+'\n'.join(traces)+'\n',encoding='utf-8')
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                collect_log(owner.preparation,workbench,owner.run)
+            target.write_text(original,encoding='utf-8')
+            if change == 'undeclared':
+                validation.write_bytes(validation_bytes)
+                owner.preparation['input_records']['validation_contract'] = file_record(validation)
+        path.write_text(native+'TRACE: applied_field_observation_unknown {}\n',encoding='utf-8')
+        with self.assertRaises(ValueError): collect_log(owner.preparation,workbench,owner.run)
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)

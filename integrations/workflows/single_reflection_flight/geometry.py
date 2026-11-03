@@ -11,6 +11,9 @@ from typing import Any
 
 from common.contracts.rigid_transform import FramedPosition, RigidTransform, relative_transform
 from projects.rf_multipole_ion_optics.core.component_port import build_assembly_interface
+from projects.rf_multipole_ion_optics.core.electrode_topology import build_electrode_topology
+from projects.rf_multipole_ion_optics.simion.electrode_mapping import build_simion_electrode_map
+from projects.rf_multipole_ion_optics.simion.assembly_interface import build_legacy_assembly_interface
 from projects.rf_multipole_ion_optics.simion.simion_geometry import render_physical_gem
 from projects.rf_multipole_ion_optics.runtime.simion_numerics import normalize_cell_mm_xyz
 from common.simion.gem_primitives import format_number as _fmt
@@ -20,6 +23,8 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_geomet
     project_side_opening, resolve_accelerator_geometry,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.assembly_interface import resolve_assembly_interface
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.electrode_topology import resolve_frontend_field_domain
+from msplatform.assembly.electrode_binding import validate_electrode_bindings
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import derive_simion_geometry
 
 FRAME = "oatof_global"
@@ -81,10 +86,11 @@ def _require_multipole_domain_contains(box: dict, multipole: dict, translation: 
 
 
 def render_frontend_body(
-    multipoles: list[tuple[dict, tuple, dict[int, int]]], *, accelerator_projection: dict,
+    multipoles: list[tuple[dict, tuple, dict[int | str, int]]], *, accelerator_projection: dict,
     cell_mm_xyz: dict, accelerator_electrodes: dict,
     render_intermediate2_sheet: bool,
     include_multipole: bool = True,
+    scientific_groups: bool = False,
 ) -> str:
     """Render the complete physical body after the assembly pose is validated.
 
@@ -96,7 +102,9 @@ def render_frontend_body(
     native_lines = []
     if include_multipole:
         for multipole_resolved, multipole_translation_mm, multipole_electrode_ids in multipoles:
-            native_body = render_physical_gem(multipole_resolved, native_cells, electrode_ids=multipole_electrode_ids)
+            native_body = render_physical_gem(multipole_resolved, native_cells,
+                **({'electrode_group_native_ids': multipole_electrode_ids} if scientific_groups else
+                   {'electrode_ids': multipole_electrode_ids}))
             native_lines.extend([
                 "  locate(" + ",".join(_fmt(value) for value in multipole_translation_mm) + ",1,90,90,0) {",
                 native_body.rstrip(), "  }",
@@ -198,6 +206,7 @@ def _require_separate_face_conductors(upstream: str, sections: list[tuple], down
 def compile_frontend_geometry(
     multipoles_resolved: dict[str, dict], oatof_resolved: dict, *, composition_plan: dict,
     accelerator_variant: str, numerical_domains: dict, electrode_bindings: dict,
+    provider_inputs: dict | None = None,
 ) -> tuple[dict[str, str], dict[str, Any]]:
     """Compile one directly posed chain of native multipoles and one OA body."""
     if not isinstance(numerical_domains, dict) or not {'parent'} <= numerical_domains.keys() <= {'parent', 'entrance_refinement'}:
@@ -229,15 +238,22 @@ def compile_frontend_geometry(
     parent = domains['parent']
     cells, bounds, origin = parent['cell_mm_xyz'], parent['bounds_mm'], parent['instance_origin_mm']
     plan = composition_plan
+    version = plan.get('schema_version')
+    if type(version) is not int or version not in (3, 4, 5):
+        raise ValueError('unsupported frontend composition plan version')
+    scientific = version == 5
     multipole_ids, downstream_id = native_frontend_instances(plan)
     if not isinstance(multipoles_resolved, dict) or set(multipoles_resolved) != set(multipole_ids):
         raise ValueError('resolved multipole designs must name exactly the selected native multipoles')
     if set(electrode_bindings) != set(plan['scope']['instance_ids']):
         raise ValueError('electrode bindings must name exactly the selected assembly instances')
-    multipole_electrodes = {
-        instance_id: {int(key): value for key, value in electrode_bindings[instance_id].items()}
-        for instance_id in multipole_ids
-    }
+    if scientific:
+        multipole_electrodes = {instance: build_simion_electrode_map(multipoles_resolved[instance],
+            build_electrode_topology(multipoles_resolved[instance]), requested_native_ids=electrode_bindings[instance])
+            for instance in multipole_ids}
+    else:
+        multipole_electrodes = {instance: {int(key): value for key, value in electrode_bindings[instance].items()}
+                               for instance in multipole_ids}
     accelerator_electrodes = electrode_bindings[downstream_id]
     parent_interface = plan['components'][downstream_id]
     port = parent_interface['ports']['side_entry']
@@ -247,12 +263,37 @@ def compile_frontend_geometry(
     side_opening = dict(center_mm=port['center_mm'], width_mm=section['width_mm'], height_mm=section['height_mm'])
     projection = resolve_accelerator_geometry(oatof_resolved, variant_id=accelerator_variant)
     project_side_opening(projection.local_region, side_opening=side_opening, cell_mm_xyz=cells, pa_origin_mm=origin)
-    actual = resolve_assembly_interface(oatof_resolved, projection=projection, geometry_profile_id=parent_interface['geometry_profile_id'])
+    actual = resolve_assembly_interface(oatof_resolved, projection=projection,
+        geometry_profile_id=parent_interface['geometry_profile_id'], schema_version=parent_interface['schema_version'])
     if actual != parent_interface:
         raise ValueError(f'{downstream_id}: resolved provider mechanical interface differs from the parent composition plan')
+    binding_record = None
+    if scientific:
+        from projects.single_reflection_oa_tof_mass_analyzer.simion.electrode_mapping import native_frontend_electrodes
+
+        if not isinstance(provider_inputs, dict) or set(provider_inputs) != set(plan['scope']['instance_ids']):
+            raise ValueError('plan5 requires verified provider input records for every selected instance')
+        domain = resolve_frontend_field_domain(oatof_resolved, projection=projection,
+            geometry_profile_id=parent_interface['geometry_profile_id'])
+        accelerator_electrodes = native_frontend_electrodes(accelerator_electrodes, frontend_domain=domain)
+        scope = {instance: [row['electrode_group_id'] for row in plan['components'][instance]['component_electrodes']]
+                 for instance in multipole_ids}
+        scope[downstream_id] = domain['electrode_group_ids']
+        binding_record = dict(schema_version=2, role='backend_electrode_bindings', backend='simion',
+            field_domain_id=domain['domain_id'], provider_inputs=copy.deepcopy(provider_inputs),
+            electrode_group_scope=scope, bindings=[dict(instance_id=instance, electrode_group_id=group,
+                native_electrode_id=native) for instance, mapping in electrode_bindings.items() for group, native in mapping.items()])
+        validate_electrode_bindings({instance: plan['components'][instance] for instance in plan['scope']['instance_ids']},
+            binding_record, field_domain_id=domain['domain_id'], provider_inputs=provider_inputs, electrode_group_scope=scope)
+    elif provider_inputs is not None:
+        raise ValueError('legacy frontend plans cannot declare canonical provider input bindings')
     for instance_id in multipole_ids:
         expected = plan['components'][instance_id]
-        actual = build_assembly_interface(multipoles_resolved[instance_id], geometry_profile_id=expected['geometry_profile_id'])
+        if expected['schema_version'] == 3:
+            actual = build_assembly_interface(multipoles_resolved[instance_id], geometry_profile_id=expected['geometry_profile_id'])
+        else:
+            actual = build_legacy_assembly_interface(multipoles_resolved[instance_id],
+                geometry_profile_id=expected['geometry_profile_id'], schema_version=expected['schema_version'])
         if actual != expected:
             raise ValueError(f'{instance_id}: resolved provider mechanical interface differs from the parent composition plan')
     edges = plan['recipe']['connections']
@@ -323,6 +364,7 @@ def compile_frontend_geometry(
          for instance_id in multipole_ids],
         accelerator_projection=g, cell_mm_xyz=cells, accelerator_electrodes=accelerator_electrodes,
         render_intermediate2_sheet=three_zone, include_multipole=bool(multipole_ids),
+        scientific_groups=scientific,
     )
     gems = {name: render_frontend_domain(body, dimensions=domain['dimensions'],
             cell_mm_xyz=domain['cell_mm_xyz'], pa_origin_mm=domain['instance_origin_mm'])
@@ -344,7 +386,9 @@ def compile_frontend_geometry(
             downstream.append(dict(instance, frame_id=FRAME,
                 grid_numerics=dict(build['flight_tube' if role == 'flight_tube_shield' else role]),
                 scope='provider_PA_domain_description__not_generated_PA'))
-    bindings = {downstream_id: copy.deepcopy(accelerator_electrodes)}
-    bindings.update({instance_id: dict(multipole_electrodes[instance_id]) for instance_id in multipole_ids})
+    bindings = copy.deepcopy(electrode_bindings) if scientific else {downstream_id: copy.deepcopy(accelerator_electrodes)}
+    if not scientific:
+        bindings.update({instance_id: dict(multipole_electrodes[instance_id]) for instance_id in multipole_ids})
     return gems, dict(composition_plan=plan, native_frame_id=native_frame, accelerator_projection=g, numerical_domains=domains,
-                      electrode_bindings=bindings, downstream_pa_instances=downstream)
+                      electrode_bindings=bindings, downstream_pa_instances=downstream,
+                      **(dict(frontend_field_domain=domain, backend_electrode_bindings=binding_record) if scientific else {}))

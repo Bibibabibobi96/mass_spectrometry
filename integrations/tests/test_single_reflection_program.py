@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
+import math
 from pathlib import Path
 import re
 import subprocess
@@ -18,6 +20,7 @@ from integrations.runtime.build_single_flight_program import (
 )
 from integrations.runtime.single_flight_source import lua_value as _lua_value
 from integrations.tests.test_single_reflection_preparation import fixture, release_fixture, rename_recipe_instances, rename_author_instances
+from integrations.tests.test_single_reflection_preparation import scientific_preparation_fixture
 from integrations.tests.test_single_reflection_fields import multipole_source
 from integrations.workflows.single_reflection_flight.prepare import prepare
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import derive_simion_geometry
@@ -47,7 +50,138 @@ def response_paths(bank, directory):
         for row in bank['dynamic_roles']}
 
 
+def field_observation_spec(*, anchor=11, clock='test-clock', source_instance='multipole'):
+    from integrations.runtime.build_single_flight_program import FIELD_OBSERVATION_BUCKETS
+    windows = ((-5.,-4.,-4.5,None),(-3.,-2.,-2.5,0.),(-1.,0.,-.5,math.pi/2),
+               (1.,2.,1.5,math.pi),(9.,10.,10.,None),(10.,11.,10.,None),
+               (12.,13.,13.,None),(13.,14.,13.,None))
+    return dict(schema_version=1,role='single_reflection_applied_field_observation',
+        source_instance_id=source_instance,domain_id='parent',clock_epoch_id=clock,
+        eligible_batch_anchor_particle_id=anchor,deadline_us=20.,max_rows=16,rows_per_bucket=2,max_output_bytes=1048576,
+        buckets=[dict(bucket_id=name,time_min_us=lo,time_max_us=hi,target_time_us=target,target_rf_phase_rad=phase)
+                 for name,(lo,hi,target,phase) in zip(FIELD_OBSERVATION_BUCKETS,windows,strict=True)])
+
+
 class SingleReflectionProgramTests(unittest.TestCase):
+    def test_default_program_and_metadata_retain_pre_observer_exact_bytes(self):
+        metadata = {}
+        program = self.build(native_path_projection=False,build_metadata=metadata,
+            standalone_dynamic_field_paths={'accelerator_main':dict(rf_differential_pa_paths=['C:/inert/rf.pa'],
+                                                                   pulse_delta_pa_path='C:/inert/delta.pa')})
+        self.assertEqual(hashlib.sha256(program.encode()).hexdigest(),
+                         '93308e19db482b9ba6955c3820320873ac5195e2974978e043d1666e7104b0ec')
+        self.assertEqual(hashlib.sha256((json.dumps(metadata,sort_keys=True,indent=2)+'\n').encode()).hexdigest(),
+                         'dbaf3c73e1670ef3a8e56ebebb3b5e42b861c177f23dc7e342cccefb674162d9')
+
+    @unittest.skipUnless(LUA.is_file(),'plain Lua interpreter unavailable')
+    def test_bounded_field_observer_preserves_actual_callback_math_and_records_final_overrides(self):
+        directory = self.root/'observer'
+        directory.mkdir()
+        path,run,_ = scientific_preparation_fixture(directory,recorded_birth=True)
+        prepare(path,run)
+        self.upstream,self.oatof = read_designs(run)
+        self.geometry = json.loads((run/'inputs/frontend_geometry.json').read_text())
+        self.design = json.loads((run/'inputs/frontend_field_design.json').read_text())
+        observation = dict(specification=field_observation_spec(),evidence_context=dict(
+            phase='full_instrument',clock_epoch_id='test-clock',mother_particle_ids=[11,77],
+            input_records={'fixture':'controlled two-ID software callback, not native evidence'}))
+        tail = r'''
+segment.observation_test_setup=function()
+  local instance=simion.wb.instances[3]
+  local rf={path='C:/inert/rf.pa',field_vc=function() rf_reads=rf_reads+1;return 2,-3,5 end}
+  local pulse={path='C:/inert/delta.pa',field_vc=function() pulse_reads=pulse_reads+1;return 7,11,-13 end}
+  single_flight_standalone_dynamic_by_instance={[3]={role='accelerator_main',
+    rf_differential_pas={rf},pulse_delta_pa=pulse,rf_reference_voltage_v=10000}}
+  single_flight_initialize_rf_drives()
+  single_flight_pulse=single_flight_pulse_component.new{canonical_clock=single_flight_instrument_time_us,
+    voltage_waveforms=single_flight_voltage_waveforms,pulse_time_us=10,pulse_width_us=3,
+    pulse_mode=function() return 1 end}
+  single_flight_analyzer={efield_adjust=function() return {} end}
+  single_flight_region_field={apply=function()
+    if test_override then return {replace_all=true,dvoltsy_gu=5} end
+  end}
+  if single_flight_field_observer then single_flight_field_observer.start_run() end
+end
+segment.observation_test_end=function()
+  if single_flight_field_observer then single_flight_field_observer.summary() end
+end
+'''
+        script = self.root/'observe.lua'
+        script.write_text(r'''
+segment={};carrier_reads=0;rf_reads=0;pulse_reads=0
+simion={workbench_program=function() end,early_access=function() end,wb={instances={}}}
+local carrier={path='C:/inert/front.pa',dx_mm=.3,dy_mm=.25,dz_mm=.1,
+ field_vc=function() carrier_reads=carrier_reads+1;return -10,-20,-30 end}
+simion.wb.instances[3]={pa=carrier,scale=1,az=0,el=0,rt=0,
+ wb_to_pa_coords=function(self,x,y,z) return x+1,y+2,z+3 end}
+dofile(arg[1])
+if arg[2]=='io_failure' then
+ io.stdout={write=function() return nil,'FORCED_OBSERVATION_IO' end,flush=function() return true end}
+ local ok,err=pcall(segment.observation_test_setup)
+ assert(not ok and tostring(err):find('FORCED_OBSERVATION_IO',1,true))
+ print('OBSERVER_IO_FAILURE_RETAINED');return
+end
+segment.observation_test_setup()
+ion_instance=3;ion_px_mm=4;ion_py_mm=5;ion_pz_mm=6
+local times=arg[2]=='deadline' and {21,9.5} or
+ {-4.5,-4.25,-2.5,-2.25,-.5,-.25,1.5,1.25,9.5,9.75,10,10.5,12.5,12.75,13,13.5,9.5,21,9.75}
+for index,time in ipairs(times) do
+ ion_number=index%2+1
+ ion_time_of_flight=time-(ion_number==1 and .25 or 2.5)
+ ion_dvoltsx_gu=10;ion_dvoltsy_gu=20;ion_dvoltsz_gu=30
+ test_override=index==16
+ segment.efield_adjust()
+ print(string.format('OBSERVATION_NUMERICS %.17g %.17g %.17g',ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu))
+end
+segment.observation_test_end()
+print('OBSERVATION_READ_COUNTS '..carrier_reads..' '..rf_reads..' '..pulse_reads)
+''',encoding='utf-8',newline='\n')
+        outputs = {}
+        for enabled,mode in ((False,'normal'),(True,'normal'),(True,'deadline'),(True,'io_failure')):
+            program = self.build(native_path_projection=False,**({'field_observation':observation} if enabled else {}))
+            target = self.root/f'observed_{enabled}_{mode}.lua'
+            target.write_text(re.sub(r'\badjustable\s+','',program)+tail,encoding='utf-8',newline='\n')
+            result = subprocess.run([str(LUA),str(script),str(target),mode],cwd=self.root,
+                                    capture_output=True,text=True,timeout=30,check=False)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            outputs[enabled,mode] = result.stdout
+        numeric = lambda text:[line for line in text.splitlines() if line.startswith('OBSERVATION_NUMERICS ')]
+        self.assertEqual(numeric(outputs[False,'normal']),numeric(outputs[True,'normal']))
+        text = outputs[True,'normal']
+        rows = [json.loads(line.split(' ',2)[2]) for line in text.splitlines()
+                if line.startswith('TRACE: applied_field_observation ')]
+        self.assertEqual(len(rows),16)
+        from integrations.workflows.single_reflection_flight.collect import _validate_field_observation_row
+        parser_context = dict(eligible_batch_particle_ids=[11,77],instance_index=3,world_frame_id='oatof_global',
+            rf_sources=[{'instance_id':'multipole'}],field_records={'parent':{
+                'carrier_off':{'path':'C:/inert/front.pa'},'rf_reference':{'path':'C:/inert/rf.pa'},
+                'pulse_delta':{'path':'C:/inert/delta.pa'}}})
+        previous = dict(record_seq=0,callback_seq=0)
+        counts = {bucket['bucket_id']:0 for bucket in observation['specification']['buckets']}
+        for row in rows:
+            _validate_field_observation_row(row,observation['specification'],parser_context,previous,counts)
+        self.assertTrue(all(count==2 for count in counts.values()))
+        self.assertEqual({row['particle_id'] for row in rows},{11,77})
+        self.assertGreater(rows[6]['instrument_time_us'],rows[7]['instrument_time_us'])
+        self.assertEqual(rows[-1]['final_gradient_gu'],[0,5,0])
+        self.assertNotEqual(rows[-1]['after_dynamic_gradient_gu'],rows[-1]['final_gradient_gu'])
+        self.assertEqual(rows[10]['pulse_active_used'],True)
+        self.assertEqual(rows[14]['pulse_active_used'],False)
+        self.assertEqual(rows[0]['pa_gu'],[5,7,9])
+        for row in rows:
+            drive = self.upstream['drive']
+            self.assertEqual(row['rf_phase_basis'],'unwrapped_kernel_phase_at')
+            self.assertEqual(row['actual_rf_phase_rad'],
+                row['instrument_time_us']*(drive['frequency_Hz']*1e-6*2*math.pi)+drive['phase_rad'])
+        self.assertIn('OBSERVATION_READ_COUNTS 16 19 4',text)
+        self.assertIn('OBSERVATION_READ_COUNTS 1 2 0',outputs[True,'deadline'])
+        self.assertIn('OBSERVER_IO_FAILURE_RETAINED',outputs[True,'io_failure'])
+        summaries = [json.loads(line.split(' ',2)[2]) for line in outputs[True,'deadline'].splitlines()
+                     if line.startswith('TRACE: applied_field_observation_summary ')]
+        self.assertEqual(summaries[0]['rows'],1)
+        self.assertTrue(summaries[0]['deadline_seen'])
+        self.assertFalse(summaries[0]['coverage_complete'])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -95,6 +229,70 @@ class SingleReflectionProgramTests(unittest.TestCase):
         instances, _ = native_frontend_instances(kwargs['frontend_geometry']['composition_plan'])
         providers = {instances[0]: self.upstream} if instances else {}
         return build_successor_program(providers,self.design,self.oatof,**kwargs)
+
+    @unittest.skipUnless(LUA.is_file(), 'plain Lua interpreter unavailable')
+    def test_plan5_actual_program_callbacks_keep_rf_clock_and_pulse_with_scientific_maps(self):
+        directory = self.root / 'scientific'
+        directory.mkdir()
+        request, run, _ = scientific_preparation_fixture(directory, recorded_birth=True, permuted=True)
+        prepare(request, run)
+        self.upstream, self.oatof = read_designs(run)
+        self.geometry = json.loads((run/'inputs/frontend_geometry.json').read_text())
+        self.design = json.loads((run/'inputs/frontend_field_design.json').read_text())
+        self.assertEqual(self.geometry['composition_plan']['schema_version'], 5)
+        self.assertTrue(all(isinstance(group, str) and not group.isdecimal()
+                            for mapping in self.geometry['electrode_bindings'].values() for group in mapping))
+        # Execute the existing real generated callback oracle with the new chain,
+        # including RF phase, original IDs/birth clocks and pulse-edge behavior.
+        self.check_plain_lua_callbacks(False)
+
+    @unittest.skipUnless(LUA.is_file(), 'plain Lua interpreter unavailable')
+    def test_plan5_two_and_three_actual_rf_callbacks_keep_independent_provider_drives(self):
+        from integrations.tests.test_single_reflection_geometry import scientific_inputs
+        from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
+        from integrations.workflows.single_reflection_flight.fields import prepare_field_design, POLICY
+
+        original = self.multiple_provider_inputs
+        def current_inputs(count):
+            providers, _, oatof, kwargs, names = original(count)
+            old = kwargs['frontend_geometry']
+            legacy = dict(composition_plan=old['composition_plan'],accelerator_variant='three_zone_square',
+                electrode_bindings=old['electrode_bindings'],numerical_domains={name:dict(cell_mm_xyz=row['cell_mm_xyz'],
+                    pa_bounds_mm=row['bounds_mm']) for name,row in old['numerical_domains'].items()})
+            options, _ = scientific_inputs(providers, oatof, self.root/f'scientific_multi_{count}',legacy_inputs=legacy)
+            _, geometry = compile_frontend_geometry(providers, oatof, **options)
+            design = prepare_field_design(providers,oatof,geometry,variant_id='three_zone_square',
+                pulse_voltage_policy_id=POLICY,boundary_policy='native_zero_neumann',rf_reference_voltage_v=10000.,
+                frontend_domains={'parent':{'refine_convergence_v':dict(carrier_off=.1,rf_reference=.1,pulse_delta=.1)}})
+            kwargs['frontend_geometry'] = geometry
+            return providers,design,oatof,kwargs,names
+        # Reuse the complete existing real-Lua response/phase/edge oracle,
+        # replacing only its author-side geometry/field inputs with plan5.
+        with patch.object(self,'multiple_provider_inputs',side_effect=current_inputs):
+            self.test_two_and_three_independent_rf_programs_weight_real_ordered_responses()
+
+    def test_plan5_fixed_native_map_preserves_complete_program_for_continuous_and_segmented_shells(self):
+        from integrations.tests.test_single_reflection_geometry import scientific_inputs,source_fixture
+        from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
+        from integrations.workflows.single_reflection_flight.fields import prepare_field_design,POLICY
+
+        for source in (source_fixture(), multipole_source('octupole')):
+            with self.subTest(segmented=source['segmentation']['segmented_rod_array'] is not None):
+                options,legacy = scientific_inputs({'multipole':source},self.oatof,self.root/'fixed_program')
+                programs = []
+                for inputs in (legacy,options):
+                    _,self.geometry = compile_frontend_geometry({'multipole':source},self.oatof,**inputs)
+                    self.upstream = source
+                    self.design = prepare_field_design({'multipole':source},self.oatof,self.geometry,
+                        variant_id='three_zone_square',pulse_voltage_policy_id=POLICY,boundary_policy='native_zero_neumann',
+                        rf_reference_voltage_v=10000.,frontend_domains={'parent':{'refine_convergence_v':
+                            dict(carrier_off=.1,rf_reference=.1,pulse_delta=.1)}})
+                    metadata = {}
+                    programs.append(self.build(build_metadata=metadata))
+                    expected = (len(source['geometry_mm']['rod_array']['rods']) if source['segmentation']['segmented_rod_array'] is None
+                                else len(source['segmentation']['segmented_rod_array']['electrodes']))
+                    self.assertEqual(metadata['physical_rod_piece_count'],expected)
+                self.assertEqual(programs[0],programs[1])
 
     def test_numerical_controls_ignore_path_projection_but_keep_physical_changes(self):
         numeric = self.build(native_path_projection=False)

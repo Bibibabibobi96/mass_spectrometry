@@ -196,6 +196,57 @@ def release_fixture(root, *, instance_id="oatof", local=False):
     return path, run, request, spec
 
 
+def scientific_preparation_fixture(root, *, local=False, recorded_birth=False, permuted=False):
+    """Compile real RF/SFI providers into plan5 with explicit frontend group maps.
+
+    Existing source, geometry, numerical and clock fixtures are preserved;
+    only the versioned provider interfaces and native labeling are changed.
+    """
+    from projects.rf_multipole_ion_optics.core.component_port import build_assembly_interface
+    from projects.rf_multipole_ion_optics.core.electrode_topology import build_electrode_topology
+    from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_geometry import project_side_opening, resolve_accelerator_geometry
+    from projects.single_reflection_oa_tof_mass_analyzer.analysis.assembly_interface import resolve_assembly_interface
+    from projects.single_reflection_oa_tof_mass_analyzer.analysis.electrode_topology import resolve_frontend_field_domain
+
+    if recorded_birth:
+        path, run, request = fixture(root)
+    else:
+        path, run, request, _ = release_fixture(root, local=local)
+    author = path.parent
+    source = json.loads((author / "multipole.json").read_text())
+    oatof = json.loads((author / "oatof.json").read_text())
+    parent_path = author / "parent_plan.json"
+    old = json.loads(parent_path.read_text())
+    projection = resolve_accelerator_geometry(oatof, variant_id="three_zone_square")
+    port = old["components"]["oatof"]["ports"]["side_entry"]
+    numerics = request["numerics"]["frontend_domains"]["parent"]
+    project_side_opening(projection.local_region,
+        side_opening=dict(center_mm=port["center_mm"], width_mm=port["cross_section"]["width_mm"],
+                          height_mm=port["cross_section"]["height_mm"]),
+        cell_mm_xyz=numerics["cell_mm_xyz"],
+        pa_origin_mm={axis: numerics["pa_bounds_mm"][axis+"_min"] for axis in "xyz"})
+    interfaces = dict(
+        multipole=build_assembly_interface(source, geometry_profile_id=old["components"]["multipole"]["geometry_profile_id"]),
+        oatof=resolve_assembly_interface(oatof, projection=projection,
+            geometry_profile_id=old["components"]["oatof"]["geometry_profile_id"], schema_version=3),
+    )
+    parent = compile_assembly_layout(old["recipe"], interfaces)
+    write_json(parent_path, parent)
+    request.update(schema_version=10, composition_plan=file_record(parent_path))
+    rf_keys = [row["electrode_group_id"] for row in build_electrode_topology(source)]
+    oa_keys = resolve_frontend_field_domain(oatof, projection=projection,
+        geometry_profile_id=interfaces["oatof"]["geometry_profile_id"])["electrode_group_ids"]
+    maps = dict(multipole=dict(zip(rf_keys, (17 + 7 * i for i in range(len(rf_keys))), strict=True)),
+                oatof=dict(zip(oa_keys, (201 + 11 * i for i in range(len(oa_keys))), strict=True)))
+    if permuted:
+        maps = {instance: dict(zip(binding, reversed(list(binding.values())), strict=True))
+                for instance, binding in maps.items()}
+    for instance, provider in request["providers"]["instances"].items():
+        provider["electrode_bindings"] = maps[instance]
+    write_json(path, request)
+    return path, run, request
+
+
 def rename_recipe_instances(recipe):
     """Rename both test instances and reverse author order without changing physics."""
     names = {"multipole": "guide_a", "oatof": "tof_b"}
@@ -323,6 +374,96 @@ def downstream_field_source_fixture(root: Path, request_path: Path, request: dic
 
 
 class SingleReflectionPreparationTests(unittest.TestCase):
+    def test_scientific_request10_prepares_full_and_local_from_verified_records(self):
+        source_outputs = []
+        for local in (False, True):
+            with self.subTest(local=local), tempfile.TemporaryDirectory() as directory:
+                path, run, request = scientific_preparation_fixture(Path(directory), local=local)
+                originals = {p: p.read_bytes() for p in path.parent.iterdir() if p.is_file()}
+                with (patch('integrations.workflows.single_reflection_flight.prepare.verify_record', wraps=verify_record) as verified,
+                      patch('subprocess.run', side_effect=AssertionError('prepare must not start a native solver'))):
+                    result = prepare(path, run)
+                geometry = json.loads((run/'inputs/frontend_geometry.json').read_text())
+                design = json.loads((run/'inputs/frontend_field_design.json').read_text())
+                binding = geometry['backend_electrode_bindings']
+                self.assertEqual(geometry['composition_plan']['schema_version'], 5)
+                self.assertEqual(set(geometry['composition_plan']['components']), {'multipole', 'oatof'})
+                self.assertEqual(geometry['composition_plan']['scope']['instance_ids'],
+                                 ['oatof'] if local else ['multipole', 'oatof'])
+                self.assertEqual(binding['schema_version'], 2)
+                self.assertEqual(design['schema_version'], 3)
+                self.assertEqual(result['particle_count'], 100)
+                expected_records = {instance: result['input_records']['instance_design__'+instance]
+                                    for instance in request['providers']['instances']}
+                self.assertEqual(binding['provider_inputs'], expected_records)
+                for instance in expected_records:
+                    self.assertEqual(sum(call.args[0] == 'instance_design__'+instance
+                                         for call in verified.call_args_list), 1)
+                for instance, groups in binding['electrode_group_scope'].items():
+                    self.assertEqual(set(groups), set(request['providers']['instances'][instance]['electrode_bindings']))
+                complete_oa = geometry['composition_plan']['components']['oatof']['component_electrodes']
+                self.assertIn('reflectron_backplate', {row['electrode_group_id'] for row in complete_oa})
+                self.assertNotIn('reflectron_backplate', binding['electrode_group_scope']['oatof'])
+                self.assertEqual([p['kind'] for p in design['working_points']],
+                                 ['carrier_off', 'pulse_delta'] if local else ['carrier_off', 'rf_reference', 'pulse_delta'])
+                self.assertFalse(list(run.rglob('*.pa')))
+                self.assertFalse(list(run.rglob('*.iob')))
+                self.assertTrue((run/'inputs/frontend.gem').is_file())
+                self.assertTrue(all(p.read_bytes() == data for p, data in originals.items()))
+                source_outputs.append(tuple((run/'inputs'/name).read_bytes() for name in
+                    ('particle_source.csv', 'projected_source.csv', 'clock_authority.json', 'instrument_epoch.json')))
+        self.assertEqual(source_outputs[0], source_outputs[1])
+
+    def test_scientific_request10_permutation_preserves_source_and_group_voltage_values(self):
+        results = []
+        for permuted in (False, True):
+            with tempfile.TemporaryDirectory() as directory:
+                path, run, request = scientific_preparation_fixture(Path(directory), recorded_birth=True, permuted=permuted)
+                prepare(path, run)
+                design = json.loads((run/'inputs/frontend_field_design.json').read_text())
+                states = []
+                for point in design['working_points']:
+                    states.append({(instance, group): point['electrode_voltages_v'][str(native)]
+                        for instance, provider in request['providers']['instances'].items()
+                        for group, native in provider['electrode_bindings'].items()})
+                rows = list(csv.DictReader(io.StringIO((run/'inputs/projected_source.csv').read_text())))
+                original_rows = list(csv.DictReader(io.StringIO((path.parent/'source.csv').read_text(encoding='utf-8-sig'))))
+                self.assertEqual([int(row['particle_id']) for row in rows], list(range(1, 101)))
+                self.assertEqual([float(row['instrument_time_us']) for row in rows],
+                                 [float(row['birth_time_s']) * 1e6 for row in original_rows])
+                results.append((states, (run/'inputs/projected_source.csv').read_bytes(),
+                                (run/'inputs/frontend.gem').read_bytes()))
+        self.assertEqual(results[0][:2], results[1][:2])
+        self.assertNotEqual(results[0][2], results[1][2])
+
+    def test_scientific_request10_rejects_missing_extra_stale_and_mixed_plan_before_sampling(self):
+        for failure in ('missing', 'extra', 'stale', 'new_request_old_plan', 'old_request_new_plan'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                path, run, request = scientific_preparation_fixture(Path(directory))
+                oa = request['providers']['instances']['oatof']
+                if failure == 'missing':
+                    del oa['electrode_bindings']['accelerator_exit_grid']
+                elif failure == 'extra':
+                    oa['electrode_bindings']['reflectron_backplate'] = 997
+                elif failure == 'stale':
+                    oa['resolved_design']['sha256'] = '0' * 64
+                elif failure == 'old_request_new_plan':
+                    request['schema_version'] = 9
+                else:
+                    old_root = Path(directory)/'legacy'
+                    old_root.mkdir()
+                    _, _, old = fixture(old_root)
+                    request['composition_plan'] = old['composition_plan']
+                    request['composition_plan']['path'] = str(old_root/'author/parent_plan.json')
+                write_json(path, request)
+                with patch('integrations.workflows.single_reflection_flight.prepare.materialize_release',
+                           side_effect=AssertionError('invalid bindings must fail before sampling')) as sample:
+                    with self.assertRaises((ValueError, AssertionError)):
+                        prepare(path, run)
+                sample.assert_not_called()
+                self.assertFalse((run/'inputs/projected_source.csv').exists())
+                self.assertFalse((run/'inputs/frontend.gem').exists())
+
     def test_retired_provider_schema_is_rejected_without_mutating_input(self):
         from projects.rf_multipole_ion_optics.core.component_port import build_assembly_interface
         from integrations.tests.test_single_reflection_geometry import multipole_source

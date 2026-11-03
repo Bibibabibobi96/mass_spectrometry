@@ -13,8 +13,12 @@ from projects.rf_multipole_ion_optics.simion.simion_geometry import physical_ele
 from integrations.runtime.single_flight_electrode_contract import (
     physical_multipole_voltages,
     multipole_rod_pieces,
+    scientific_multipole_voltages,
+    scientific_multipole_rod_pieces,
 )
-from integrations.runtime.single_flight_frontend import frontend_electrode_maps, native_frontend_instances
+from integrations.runtime.single_flight_frontend import (
+    frontend_electrode_maps, native_frontend_instances, frontend_accelerator_operating_voltages,
+)
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_electrical import resolve_accelerator_electrical_design
 
 POLICY = "all_accelerator_electrodes_zero_before_pulse_v1"
@@ -63,24 +67,28 @@ def prepare_field_design(multipoles: dict[str, dict], oatof: dict, geometry: dic
         for label, value in values:
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
                 raise ValueError(f"{domain_id}.{label} must be finite and positive")
-    electrical = resolve_accelerator_electrical_design(oatof, variant_id=variant_id)
+    scientific = geometry['composition_plan']['schema_version'] == 5
     multipole_ids, ids = frontend_electrode_maps(geometry)
-    operating = electrical['operating_voltages_v']
-    on = {ids['accelerator_'+role+'_id']: operating[role]
-          for role in ('repeller','grid1','intermediate2','grid2')}
-    on.update(zip(ids['accelerator_ring_ids'], operating['rings'], strict=True))
-    ground_ids = [ids['grounded_shield_id']]
-    on.update({key: 0. for key in ground_ids})
-    # Ground is a declared model constraint, not an inferred aperture potential.
-    if operating['shield'] != 0:
-        raise ValueError("OA field design requires the provider shield to be grounded")
+    if scientific:
+        on = frontend_accelerator_operating_voltages(oatof, geometry)
+    else:
+        electrical = resolve_accelerator_electrical_design(oatof, variant_id=variant_id, schema_version=1)
+        operating = electrical['operating_voltages_v']
+        on = {ids['accelerator_'+role+'_id']: operating[role]
+              for role in ('repeller','grid1','intermediate2','grid2')}
+        on.update(zip(ids['accelerator_ring_ids'], operating['rings'], strict=True))
+        on[ids['grounded_shield_id']] = 0.
+        # Ground is a declared model constraint, not an inferred aperture potential.
+        if operating['shield'] != 0:
+            raise ValueError("OA field design requires the provider shield to be grounded")
     region = dict(pulse_voltage_policy_id=POLICY,
                   off_voltages_v={key:0. for key in on}, operating_voltages_v=on)
     physical_ids = set(on)
     carrier = {key: 0. for key in physical_ids}
     rf_groups = {}
     for instance_id in multipole_instances:
-        values, groups = physical_multipole_voltages(multipoles[instance_id], multipole_ids[instance_id])
+        voltage_projection = scientific_multipole_voltages if scientific else physical_multipole_voltages
+        values, groups = voltage_projection(multipoles[instance_id], multipole_ids[instance_id])
         if set(values) != set(multipole_ids[instance_id].values()):
             raise ValueError(f'{instance_id}: physical voltage view differs from the provider binding')
         physical_ids.update(values)
@@ -121,7 +129,7 @@ def prepare_field_design(multipoles: dict[str, dict], oatof: dict, geometry: dic
 
 
 def _physical_samples(multipoles: dict[str, dict], geometry: dict, domain: dict,
-                      multipole_ids: dict[str, dict[int, int]], ids: dict, *, entrance: bool) -> list[dict]:
+                      multipole_ids: dict[str, dict[int | str, int]], ids: dict, *, entrance: bool) -> list[dict]:
     """Sample each declared physical group directly from its resolved provider."""
     g = geometry['accelerator_projection']
     origin, pitch, dimensions = domain['instance_origin_mm'], domain['cell_mm_xyz'], domain['dimensions']
@@ -141,24 +149,31 @@ def _physical_samples(multipoles: dict[str, dict], geometry: dict, domain: dict,
         pose = relative_transform(poses[instance_id], poses[downstream_id])
         rotation, translation = pose.rotation, pose.translation_mm
         mapping = multipole_ids[instance_id]
-        view = physical_electrode_view(upstream)
-        if set(mapping) != {row['native_electrode_id'] for row in view}:
+        scientific = plan['schema_version'] == 5
+        if scientific:
+            from projects.rf_multipole_ion_optics.core.electrode_topology import build_electrode_topology
+            view = build_electrode_topology(upstream)
+        else:
+            view = physical_electrode_view(upstream)
+        identity_field = 'electrode_group_id' if scientific else 'native_electrode_id'
+        if set(mapping) != {row[identity_field] for row in view}:
             raise ValueError(f'{instance_id}: physical electrode binding must cover every provider group')
-        rods = multipole_rod_pieces(upstream)
+        rods = scientific_multipole_rod_pieces(upstream) if scientific else multipole_rod_pieces(upstream)
         for rod in rods:
-            electrode = mapping[rod['electrode_id']]
+            electrode = mapping[rod['electrode_group_id'] if scientific else rod['electrode_id']]
             physical.append(dict(label=f'segment_{rod["segment_id"]}_rod_{rod["parent_rod_id"]}_e{electrode}',
                 kind='rod', electrode_id=electrode, segment_id=rod['segment_id'], parent_rod_id=rod['parent_rod_id'],
                 gu=cylinder_sample(rod, rotation, translation, origin, pitch, dimensions)))
         static_rows = [row for row in view if row['voltage_source']['kind'] == 'static']
         for row in static_rows:
-            if row['scientific_id'] != 'grounded_shell':
-                raise ValueError(f'{instance_id}: unsupported provider static electrode {row["scientific_id"]}')
+            if row['electrode_group_id' if scientific else 'scientific_id'] != 'grounded_shell':
+                raise ValueError(f'{instance_id}: unsupported provider static electrode')
+            electrode = mapping[row[identity_field]]
             for body in upstream['geometry_mm']['enclosure_layout']['bodies']:
                 gu, _ = sample_node([(body['inner_radius_mm'] + body['outer_radius_mm']) / 2, 0,
                     (body['z_min_mm'] + body['z_max_mm']) / 2], rotation, translation, origin, pitch, dimensions)
-                physical.append(dict(label=f'{body["role"]}_e{mapping[row["native_electrode_id"]]}', kind='static',
-                                     electrode_id=mapping[row['native_electrode_id']], gu=gu))
+                physical.append(dict(label=f'{body["role"]}_e{electrode}', kind='static',
+                                     electrode_id=electrode, gu=gu))
     x,y = g['axis_x_mm'],g['axis_y_mm']
     width = g['electrode_width_mm']
     for role,z,thickness,w,kind in (

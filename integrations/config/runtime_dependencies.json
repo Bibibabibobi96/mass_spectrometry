@@ -683,6 +683,13 @@
           ]
         },
         {
+          "id": "single_reflection_integrations_workflows_single_reflection_flight_schema_v10_json",
+          "source_repo_path": "integrations/workflows/single_reflection_flight/schema_v10.json",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
           "id": "assembly_integrations_workflows_single_reflection_flight_build_iob_lua",
           "source_repo_path": "integrations/workflows/single_reflection_flight/build_iob.lua",
           "consumers": [
@@ -985,7 +992,14 @@
           ]
         }
       ],
-      "python_modules": []
+      "python_modules": [
+        {
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/electrode_mapping.py",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        }
+      ]
     },
     {
       "provider_scope": "project",
@@ -1192,7 +1206,17 @@
           ]
         }
       ],
-      "python_modules": []
+      "python_modules": [
+        {
+          "source_repo_path": "projects/rf_multipole_ion_optics/analysis/rf_event_table_validation.py",
+          "consumers": [
+            "local_frontend",
+            "multipole_ip",
+            "paired_accelerator_static_field",
+            "single_reflection_flight"
+          ]
+        }
+      ]
     },
     {
       "provider_scope": "repository_core",

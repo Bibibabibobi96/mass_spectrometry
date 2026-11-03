@@ -18,6 +18,8 @@ from unittest.mock import patch
 
 from integrations.runtime.single_flight_source import lua_value as _lua_value
 from integrations.tests.test_single_reflection_preparation import fixture, release_fixture, rename_author_instances
+from integrations.tests.test_single_reflection_preparation import scientific_preparation_fixture
+from integrations.tests.test_single_reflection_program import field_observation_spec
 from integrations.tests.test_single_reflection_geometry import reframe_parent
 from integrations.workflows.single_reflection_flight.prepare import prepare
 from integrations.workflows.single_reflection_flight import downstream_fields, runtime
@@ -46,6 +48,92 @@ def write_json(path, value):
 
 
 class WorkbenchMaterializationTests(unittest.TestCase):
+    def test_field_observation_uses_verified_request10_and_only_the_original_anchor_batch(self):
+        folder = self.root/'observed_runtime'
+        folder.mkdir()
+        path,self.run,request = scientific_preparation_fixture(folder,recorded_birth=True)
+        contract = path.parent/'validation.json'
+        spec = field_observation_spec(anchor=1,clock='instrument_clock_epoch_v1')
+        write_json(contract,dict(native_field_observation=spec))
+        request['validation_contract'] = file_record(contract)
+        write_json(path,request)
+        self.preparation = prepare(path,self.run)
+        write_json(self.run/'run_config.json',dict(project='instrument_assembly'))
+        self.geometry = json.loads((self.run/'inputs/frontend_geometry.json').read_text())
+        self.publish_fields()
+        context = _prepare_context(self.preparation,self.field_receipt,file_record(self.downstream_path),
+                                   self.run,snapshot_root=self.snapshot,flight=self.flight)
+        original_source = copy.deepcopy(context['source'])
+        first,metadata,_ = runtime.compile_case_controls(context,context['source'][:8])
+        second,unobserved,_ = runtime.compile_case_controls(context,context['source'][8:16])
+        self.assertIn('applied_field_observation_header',first)
+        self.assertNotIn('applied_field_observation_header',second)
+        self.assertEqual(metadata['native_field_observation']['context']['eligible_batch_particle_ids'],list(range(1,9)))
+        self.assertEqual(metadata['native_field_observation']['context']['mother_particle_ids'],list(range(1,101)))
+        without = {key:value for key,value in context.items() if key != 'field_observation'}
+        plain,plain_metadata,_ = runtime.compile_case_controls(without,context['source'][8:16])
+        self.assertEqual((second,unobserved),(plain,plain_metadata))
+        self.assertEqual(context['source'],original_source)
+        frozen = Path(self.preparation['input_records']['validation_contract']['path'])
+        baseline = frozen.read_bytes()
+        for change in ('version','extra','anchor','clock','source','domain','cap','nonfinite','edge'):
+            changed = copy.deepcopy(spec)
+            if change == 'version': changed['schema_version'] = True
+            elif change == 'extra': changed['unknown'] = True
+            elif change == 'anchor': changed['eligible_batch_anchor_particle_id'] = 2
+            elif change == 'clock': changed['clock_epoch_id'] = 'other'
+            elif change == 'source': changed['source_instance_id'] = 'unknown'
+            elif change == 'domain': changed['domain_id'] = 'unknown'
+            elif change == 'cap': changed['max_rows'] = 17
+            elif change == 'nonfinite': changed['deadline_us'] = float('inf')
+            else: changed['buckets'][4]['time_max_us'] = 10.1
+            write_json(frozen,dict(native_field_observation=changed))
+            self.preparation['input_records']['validation_contract'] = file_record(frozen)
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                _prepare_context(self.preparation,self.field_receipt,file_record(self.downstream_path),
+                                 self.run,snapshot_root=self.snapshot,flight=self.flight)
+        frozen.write_bytes(baseline)
+        self.preparation['input_records']['validation_contract'] = file_record(frozen)
+        frozen_request = Path(self.preparation['input_records']['request']['path'])
+        original_request = frozen_request.read_bytes()
+        changed_request = json.loads(original_request)
+        changed_request['source']['instance_id'] = 'oatof'
+        write_json(frozen_request,changed_request)
+        self.preparation['input_records']['request'] = file_record(frozen_request)
+        with self.assertRaisesRegex(ValueError,'actual frozen RF particle-source'):
+            _prepare_context(self.preparation,self.field_receipt,file_record(self.downstream_path),
+                             self.run,snapshot_root=self.snapshot,flight=self.flight)
+        frozen_request.write_bytes(original_request)
+        self.preparation['input_records']['request'] = file_record(frozen_request)
+        frozen.write_bytes(baseline+b' ')
+        with self.assertRaises(Exception):
+            _prepare_context(self.preparation,self.field_receipt,file_record(self.downstream_path),
+                             self.run,snapshot_root=self.snapshot,flight=self.flight)
+
+    def test_plan5_request10_materializes_full_and_local_with_existing_member_receipts(self):
+        for local in (False, True):
+            with self.subTest(local=local):
+                folder = self.root/('scientific_local' if local else 'scientific_full')
+                folder.mkdir()
+                request,self.run,_ = scientific_preparation_fixture(folder,local=local,permuted=True)
+                self.preparation = prepare(request,self.run)
+                write_json(self.run/'run_config.json',dict(project='instrument_assembly'))
+                self.geometry = json.loads((self.run/'inputs/frontend_geometry.json').read_text())
+                self.assertEqual(self.geometry['composition_plan']['schema_version'],5)
+                self.publish_fields()
+                self.assertEqual(self.field_stage['schema_version'],3)
+                self.assertTrue(all(row['source_schema_version']==3 for domain in self.field_stage['domains']
+                                    for row in domain['working_points']))
+                flight = {key:value for key,value in self.flight.items() if not local or key!='rf_steps_per_period'}
+                source = (self.run/'inputs/projected_source.csv').read_bytes()
+                result = self.materialize(flight=flight)
+                self.assertEqual(result['particle_count'],100)
+                self.assertEqual(result['instance_roles'],dict(flight_tube=1,reflectron=2,accelerator=3,detector=4))
+                self.assertEqual(len(result['pa_guard_records']),11 if local else 12)
+                self.assertEqual((self.run/'inputs/projected_source.csv').read_bytes(),source)
+                self.assertFalse(result['fly_ready'])
+                self.assertEqual(result['flight'],flight)
+
     def test_reporting_propagation_extent_does_not_change_actual_fly_or_field_controls(self):
         context = _prepare_context(self.preparation, self.field_receipt, file_record(self.downstream_path),
             self.run, snapshot_root=self.snapshot, flight=self.flight)

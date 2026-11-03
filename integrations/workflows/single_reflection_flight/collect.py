@@ -15,7 +15,7 @@ from pathlib import Path
 from common.analysis.particle_events import group_particle_events
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record
-from integrations.runtime.build_single_flight_program import validate_native_flight
+from integrations.runtime.build_single_flight_program import validate_native_flight, validate_native_field_observation
 from integrations.workflows.single_reflection_flight.pulse import resolve_phase_flight, select_discovery_pulse
 from integrations.runtime.single_flight_source import GLOBAL_COLUMNS, binary64_serialization_close as _close
 from integrations.workflows.single_reflection_flight.census import (
@@ -24,6 +24,173 @@ from integrations.workflows.single_reflection_flight.census import (
 
 _X_EVENTS = {'multipole_handoff', 'accelerator_sidewall_inner_forward', 'accelerator_axis_forward'}
 _BRACKET = ('step_start_instrument_time_us', 'step_end_instrument_time_us', 'step_start_x_mm', 'step_end_x_mm')
+
+
+def _observation_json(text: str) -> dict:
+    def unique(pairs):
+        result = {}
+        for key,value in pairs:
+            if key in result: raise ValueError('duplicate applied-field evidence field')
+            result[key] = value
+        return result
+    def invalid(value):
+        raise ValueError('nonfinite applied-field evidence: '+value)
+    result = json.loads(text,object_pairs_hook=unique,parse_constant=invalid)
+    if not isinstance(result,dict): raise ValueError('applied-field evidence must be an object')
+    return result
+
+
+def _field_observation_definition(preparation: dict, source: dict, provenance: dict,
+                                  flight: dict, run: Path) -> tuple[dict, dict] | None:
+    record = preparation['input_records'].get('validation_contract')
+    if record is None: return None
+    document = _read(_verified(record,'field observation validation contract',run))
+    if 'native_field_observation' not in document: return None
+    request = _read(_verified(preparation['input_records']['request'],'field observation request',run))
+    if type(request.get('schema_version')) is not int or request['schema_version'] != 10:
+        raise ValueError('applied-field evidence requires an explicit request10 declaration')
+    geometry = _read(_verified(preparation['outputs']['frontend_geometry'],'observation geometry',run))
+    from integrations.runtime.single_flight_frontend import native_frontend_instances
+    instances,_ = native_frontend_instances(geometry['composition_plan'])
+    spec = validate_native_field_observation(document['native_field_observation'],particle_ids=list(source),
+        source_instances=instances,domain_ids=list(geometry['numerical_domains']),
+        clock_epoch_id=provenance['clock_epoch_id'],flight=flight)
+    if spec['source_instance_id'] != request['source']['instance_id'] or spec['source_instance_id'] != provenance['source_instance_id']:
+        raise ValueError('applied-field evidence source differs from the actual frozen RF particle source')
+    return spec,geometry
+
+
+def _validate_field_observation_row(row: dict, spec: dict, context: dict, previous: dict, counts: dict) -> None:
+    required = {'schema_version','role','basis','record_seq','callback_seq','bucket_id','instrument_time_us',
+        'solver_elapsed_us','particle_id','ion_number','instance_index','domain_id','world_frame_id','world_position_mm',
+        'grid_spacing_mm','instance_scale','instance_rotation_deg','entry_gradient_gu','rf_members','pulse_active_used',
+        'pulse_basis','pa_gu','after_dynamic_gradient_gu','region_override','after_region_gradient_gu','final_gradient_gu',
+        'actual_rf_phase_rad','rf_phase_basis','carrier_native_path','carrier_native_field_gu'}
+    active = row.get('pulse_active_used')
+    if active is True: required.update(('pulse_scale_used','pulse_native_field_gu','pulse_native_path'))
+    if set(row) != required or type(active) is not bool:
+        raise ValueError('applied-field query fields differ')
+    if (type(row['schema_version']) is not int or row['schema_version'] != 1
+            or row['role'] != 'single_reflection_applied_field_query' or row['basis'] != 'efield_adjust_query_only'):
+        raise ValueError('applied-field query version/role/basis differs')
+    if row['rf_phase_basis'] != 'unwrapped_kernel_phase_at':
+        raise ValueError('applied-field RF phase is not the original unwrapped kernel phase')
+    for key in ('record_seq','callback_seq','particle_id','ion_number','instance_index'):
+        if type(row[key]) is not int or row[key] < 1: raise ValueError('invalid applied-field query integer')
+    ids = context['eligible_batch_particle_ids']
+    if (row['record_seq'] != previous['record_seq']+1 or row['callback_seq'] <= previous['callback_seq']
+            or row['ion_number'] > len(ids) or row['particle_id'] != ids[row['ion_number']-1]
+            or row['instance_index'] != context['instance_index'] or row['domain_id'] != spec['domain_id']
+            or row['world_frame_id'] != context['world_frame_id']):
+        raise ValueError('applied-field query sequence/source/domain identity differs')
+    def finite(value): return type(value) in (int,float) and math.isfinite(value)
+    def vector(value): return isinstance(value,list) and len(value)==3 and all(finite(item) for item in value)
+    for key in ('instrument_time_us','solver_elapsed_us','instance_scale','actual_rf_phase_rad'):
+        if not finite(row[key]): raise ValueError('nonfinite applied-field query scalar')
+    for key in ('world_position_mm','grid_spacing_mm','instance_rotation_deg','entry_gradient_gu','pa_gu',
+                'carrier_native_field_gu','after_dynamic_gradient_gu','after_region_gradient_gu','final_gradient_gu'):
+        if not vector(row[key]): raise ValueError('invalid applied-field query vector')
+    if row['instance_scale'] <= 0 or min(row['grid_spacing_mm']) <= 0:
+        raise ValueError('invalid applied-field native spacing/scale')
+    if row['after_region_gradient_gu'] != row['final_gradient_gu']:
+        raise ValueError('applied-field final capture is not after all region overrides')
+    buckets = {item['bucket_id']:item for item in spec['buckets']}
+    bucket = buckets.get(row['bucket_id'])
+    t = row['instrument_time_us']
+    if (bucket is None or not bucket['time_min_us'] <= t < bucket['time_max_us']
+            or t >= spec['deadline_us'] or counts[row['bucket_id']] >= 2):
+        raise ValueError('applied-field query is outside its declared window/cap')
+    members = row['rf_members']
+    if (not isinstance(members,list) or len(members) != len(context['rf_sources'])
+            or any(not isinstance(item,dict) or set(item) != {'coefficient_used','native_field_gu','native_path'}
+                   or not finite(item['coefficient_used']) or not vector(item['native_field_gu']) for item in members)):
+        raise ValueError('applied-field actual RF basis/coefficient coverage differs')
+    records = context['field_records'][spec['domain_id']]
+    def loaded_path(actual,expected):
+        return isinstance(actual,str) and bool(actual) and Path(actual).name.casefold()==Path(expected['path']).name.casefold()
+    rf_records = [value for key,value in sorted(records.items()) if key.startswith('rf_reference')]
+    if (not loaded_path(row['carrier_native_path'],records['carrier_off']) or
+            any(not loaded_path(member['native_path'],record) for member,record in zip(members,rf_records,strict=True))):
+        raise ValueError('applied-field actual loaded native member name differs from its frozen record')
+    if active:
+        if (row['pulse_basis'] != 'actual_field_vc_used' or not finite(row['pulse_scale_used'])
+                or not vector(row['pulse_native_field_gu']) or not loaded_path(row['pulse_native_path'],records['pulse_delta'])):
+            raise ValueError('applied-field pulse evidence differs')
+    elif row['pulse_basis'] != 'not_applied_not_queried':
+        raise ValueError('inactive pulse cannot claim a native query')
+    region = row['region_override']
+    if (not isinstance(region,dict) or not {'replace_all'} <= set(region) <=
+            {'replace_all','dvoltsx_gu','dvoltsy_gu','dvoltsz_gu'} or type(region['replace_all']) is not bool
+            or any(not finite(value) for key,value in region.items() if key != 'replace_all')):
+        raise ValueError('applied-field region override evidence differs')
+    previous.update(record_seq=row['record_seq'],callback_seq=row['callback_seq'])
+    counts[row['bucket_id']] += 1
+
+
+def _collect_field_observations(preparation: dict, workbench: dict, run: Path, source: dict,
+                                provenance: dict, flight: dict, cases: list[dict], logs: list[Path]) -> dict | None:
+    definition = _field_observation_definition(preparation,source,provenance,flight,run)
+    header,summary,rows,observed_bytes = None,None,[],0
+    spec,geometry = definition if definition is not None else (None,None)
+    counts = {} if spec is None else {row['bucket_id']:0 for row in spec['buckets']}
+    previous = dict(record_seq=0,callback_seq=0)
+    for case,log in zip(cases,logs,strict=True):
+        eligible_ids = case.get('expected_particle_ids',list(source))
+        eligible = spec is not None and spec['eligible_batch_anchor_particle_id'] in eligible_ids
+        for line in log.open(encoding='utf-8-sig'):
+            if 'TRACE: applied_field_observation' not in line: continue
+            if not eligible: raise ValueError('undeclared or non-anchor-batch applied-field evidence')
+            observed_bytes += len(line.encode('utf-8'))
+            if observed_bytes > spec['max_output_bytes']//2: raise ValueError('applied-field phase evidence exceeds its byte cap')
+            prefix,payload = line.strip().split(' ',2)[1:]
+            value = _observation_json(payload)
+            if prefix == 'applied_field_observation_header':
+                if header is not None or rows or summary is not None: raise ValueError('duplicate applied-field header')
+                if (set(value) != {'schema_version','role','specification','context'} or value['schema_version'] != 1
+                        or type(value['schema_version']) is not int
+                        or value['role'] != 'single_reflection_applied_field_observation_header' or value['specification'] != spec):
+                    raise ValueError('applied-field header declaration differs')
+                from integrations.workflows.single_reflection_flight.runtime import _field_observation, _frontend_fields
+                from integrations.runtime.single_flight_frontend import native_frontend_instances, instance_design_record
+                receipt = _verified(case['field_receipt_record'],'observation field receipt',run)
+                design = _read(_verified(preparation['outputs']['frontend_field_design'],'observation design',run))
+                fields,_ = _frontend_fields(receipt,design)
+                expected = _field_observation(preparation,list(source.values()),provenance,geometry,fields,flight,workbench['phase'])['evidence_context']
+                instances,_ = native_frontend_instances(geometry['composition_plan'])
+                order = sorted(instances,key=lambda key:tuple(sorted(geometry['electrode_bindings'][key].values())))
+                rf = [dict(instance_id=key,drive=_read(_verified(instance_design_record(preparation,key),'observation RF provider',run))['drive'],
+                           electrode_group_native_ids=geometry['electrode_bindings'][key]) for key in order]
+                expected.update(eligible_batch_particle_ids=eligible_ids,instance_index=3 if spec['domain_id']=='parent' else 5,
+                    world_frame_id=geometry['native_frame_id'],gradient_unit='V/gu_positive_grad_V',
+                    basis_unit='field_vc_native_E_opposite_grad_V',query_semantics='efield_adjust_query_only_not_accepted_particle_state',rf_sources=rf)
+                expected.update(phase_row_cap=16,phase_byte_cap=524288,maximum_recorded_phases=2)
+                if json.dumps(value['context'],sort_keys=True) != json.dumps(expected,sort_keys=True):
+                    raise ValueError('applied-field header differs from verified source/provider/PA context')
+                header = value
+            elif prefix == 'applied_field_observation':
+                if header is None or summary is not None or len(rows) >= 16: raise ValueError('applied-field query order/cap differs')
+                _validate_field_observation_row(value,spec,header['context'],previous,counts)
+                rows.append(value)
+            elif prefix == 'applied_field_observation_summary':
+                if header is None or summary is not None: raise ValueError('duplicate or unbound applied-field summary')
+                if (set(value) != {'schema_version','role','rows','counts','coverage_complete','stopped_by','deadline_seen'}
+                        or type(value['schema_version']) is not int or value['schema_version'] != 1
+                        or value['role'] != 'single_reflection_applied_field_observation_summary'
+                        or type(value['rows']) is not int or value['rows'] != len(rows) or value['counts'] != counts
+                        or any(type(n) is not int for n in value['counts'].values())
+                        or type(value['coverage_complete']) is not bool or value['coverage_complete'] != all(n==2 for n in counts.values())
+                        or type(value['deadline_seen']) is not bool
+                        or value['stopped_by'] not in ('native_end','row_cap')):
+                    raise ValueError('applied-field summary differs from actual query rows')
+                summary = value
+            else: raise ValueError('unknown applied-field trace protocol')
+    if spec is None: return None
+    missing = [key for key,value in counts.items() if value < 2]
+    return dict(schema_version=1,role='single_reflection_applied_field_observation',
+        status='RECORDED' if header is not None and summary is not None and not missing else 'INCONCLUSIVE',
+        coverage_status='complete' if header is not None and summary is not None and not missing else 'coverage_incomplete',
+        missing_buckets=missing,header=header,summary=summary,queries=rows,observed_bytes=observed_bytes,
+        claim='bounded native callback query evidence only; not accepted states, world E, plane potentials or scientific qualification')
 
 
 def _read(path: Path) -> dict:
@@ -137,7 +304,7 @@ def collect_log(preparation: dict, workbench: dict, run: Path, log: Path | None 
     source, flight, controls, provenance = _inputs(preparation, workbench, run)
     cases = workbench.get('batches')
     if cases is None:
-        cases = [dict(expected_particle_ids=list(source), source_row_range=[1,len(source)], stdout=str(log))]
+        cases = [dict(workbench,expected_particle_ids=list(source), source_row_range=[1,len(source)], stdout=str(log))]
     logs, counts, seen = [], [], []
     terminals, locations, pulse_states, shared_states = {}, {}, [], []
     ordered_ids = list(source)
@@ -175,6 +342,7 @@ def collect_log(preparation: dict, workbench: dict, run: Path, log: Path | None 
         if row['instance_id'] != terminals[row['particle_id']]['instance']:
             raise ValueError(f"particle {row['particle_id']}: terminal classification/native instance differ")
     continuation = provenance.get('source_kind') == 'recorded_pre_pulse_state'
+    observation = _collect_field_observations(preparation,workbench,run,source,provenance,flight,cases,logs)
     return dict(schema_version=1, role=('single_reflection_recorded_pre_pulse_continuation_collection'
         if continuation else 'single_reflection_complete_mother_collection'),
         phase=workbench['phase'], **_collection_input_records(preparation), clock_epoch_id=workbench['clock_epoch_id'],
@@ -191,6 +359,7 @@ def collect_log(preparation: dict, workbench: dict, run: Path, log: Path | None 
             uncontinued_mother_particle_ids=provenance['uncontinued_mother_particle_ids'],
             restart_state_time_us=provenance['restart_state_time_us'],
             original_birth_times_us=provenance['original_birth_times_us']) if continuation else None),
+        **({'native_field_observation':observation} if observation is not None else {}),
         claim=('canonical continued-cohort census only; uncontinued mother particles are parent evidence, not losses or terminals'
             if continuation else 'canonical census only; no peak/bootstrap or physical qualification'))
 
@@ -274,6 +443,7 @@ def main() -> int:
     parser.add_argument('--collection-record', type=json.loads)
     args = parser.parse_args()
     preparation, workbench = _read(args.preparation), _read(args.workbench)
+    observation = None
     if args.select_pulse:
         if args.collection_record is None or args.log is not None or args.baseline_record is not None:
             parser.error('pulse selection requires only collection-record, without log or baseline-record')
@@ -284,6 +454,7 @@ def main() -> int:
         if (args.log is None and not workbench.get('batches')) or args.collection_record is not None:
             parser.error('native collection requires log, without collection-record')
         result = collect_log(preparation, workbench, args.run, args.log, replay=args.replay)
+        observation = result.pop('native_field_observation',None)
         name = 'collection.json'
         if args.baseline_record is not None:
             baseline = _read(_verified(args.baseline_record, 'baseline collection', args.run.resolve(strict=True)))
@@ -300,10 +471,18 @@ def main() -> int:
     if not output.is_relative_to(args.run.resolve(strict=True)):
         raise ValueError('collection output must belong to the current run')
     output.mkdir(parents=True, exist_ok=True)
+    observation_records = {}
+    if observation is not None:
+        observation_path = output / ('replay_native_field_observation.json' if args.replay else 'native_field_observation.json')
+        with observation_path.open('x',encoding='utf-8',newline='\n') as stream:
+            stream.write(json.dumps(observation,indent=2,allow_nan=False)+'\n')
+        observation_records[observation_path.name] = file_record(observation_path)
+        result['native_field_observation_record'] = observation_records[observation_path.name]
+        result['native_field_observation_status'] = observation['status']
     target = output / name
     with target.open('x', encoding='utf-8', newline='\n') as stream:
         stream.write(json.dumps(result, indent=2, allow_nan=False) + '\n')
-    print(json.dumps(dict(output_records={name: file_record(target)}, passed=passed)))
+    print(json.dumps(dict(output_records={name: file_record(target),**observation_records}, passed=passed)))
     return 0 if passed else 1
 
 

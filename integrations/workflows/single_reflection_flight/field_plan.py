@@ -19,6 +19,7 @@ from integrations.runtime.build_single_flight_program import (
     STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION,
 )
 from integrations.runtime.single_flight_frontend import frontend_electrode_maps
+from integrations.runtime.single_flight_electrode_contract import multipole_rod_pieces, scientific_multipole_rod_pieces
 
 KINDS = ('carrier_off', 'rf_reference', 'pulse_delta')
 
@@ -269,9 +270,12 @@ def build_field_plan(prepared: Path, executable: Path, repo: Path) -> dict:
     parent_sample_count = len(electrode_ids)
     for multipole_id, binding in multipole_ids.items():
         provider = json.loads((prepared / 'components' / multipole_id / 'resolved_design.json').read_text(encoding='utf-8-sig'))
-        rods = provider['segmentation']['segmented_rod_array']['electrodes']
-        rod_ids = {binding[rod['electrode_id']] for rod in rods}
-        parent_sample_count += len(rods) - len(rod_ids)
+        scientific = geometry['composition_plan']['schema_version'] == 5
+        rods = scientific_multipole_rod_pieces(provider) if scientific else multipole_rod_pieces(provider)
+        key = 'electrode_group_id' if scientific else 'electrode_id'
+        rod_ids = {binding[rod[key]] for rod in rods}
+        bodies = provider['geometry_mm']['enclosure_layout']['bodies']
+        parent_sample_count += len(rods) - len(rod_ids) + max(0, len(bodies) - 1)
     for point in points:
         if set(point) - {'kind', 'working_point_id', 'electrode_voltages_v'} or set(point) < {'kind', 'electrode_voltages_v'}:
             raise ValueError('working point must contain only its physical voltage table and optional repeated-RF member identity')

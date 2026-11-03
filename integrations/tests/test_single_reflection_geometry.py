@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -13,7 +14,8 @@ from projects.rf_multipole_ion_optics.core.compile_design_request import compile
 from projects.rf_multipole_ion_optics.simion.simion_geometry import render_physical_gem, physical_electrode_view
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request
 from common.integration.resolve_assembly import compile_assembly_layout
-from projects.rf_multipole_ion_optics.core.component_port import build_assembly_interface
+# These fixtures exercise the explicitly retained request-v9/native-v1 reader.
+from projects.rf_multipole_ion_optics.simion.assembly_interface import build_legacy_assembly_interface as build_assembly_interface
 from integrations.workflows.single_reflection_flight.geometry import (
     compile_frontend_geometry, render_frontend_body, render_frontend_domain,
 )
@@ -119,7 +121,7 @@ def inputs(source, oatof, *, accelerator_variant="three_zone_square"):
         side_opening=dict(center_mm=[-122.8,0,z],width_mm=1.,height_mm=4.),
         cell_mm_xyz=dict(x=.3,y=.25,z=.1),pa_origin_mm=dict(x=-300.,y=-80.,z=-380.))
     components=dict(multipole=build_assembly_interface(source,geometry_profile_id=None),
-                    oatof=resolve_assembly_interface(oatof,projection=projection,geometry_profile_id=None))
+                    oatof=resolve_assembly_interface(oatof,projection=projection,geometry_profile_id=None,schema_version=1))
     return dict(composition_plan=compile_assembly_layout(recipe,components), accelerator_variant=accelerator_variant,
         numerical_domains=dict(parent=dict(cell_mm_xyz=dict(x=.3,y=.25,z=.1),
         pa_bounds_mm=dict(x_min=-300.,x_max=60.,y_min=-80.,y_max=80.,z_min=-380.,z_max=-30.))),
@@ -181,6 +183,129 @@ def reframe_parent(plan, *, rotation=((1.,0.,0.),(0.,1.,0.),(0.,0.,1.)), transla
     for instance in recipe['instances']:
         instance['transform'] = RigidTransform.from_contract(instance['transform']).then(parent).to_contract()
     return compile_assembly_layout(recipe, plan['components'], local_scope=plan.get('local_scope'))
+
+
+def scientific_inputs(sources, oatof, root, *, local=False, legacy_inputs=None):
+    """Freeze actual provider JSON and upgrade the same explicit legacy poses/maps.
+
+    This author-only test fixture names the independent expected OA roles. Its
+    consumer gets verified file records, never author-module imports or paths.
+    """
+    from common.contracts.write_run_manifest import file_record
+    from projects.rf_multipole_ion_optics.core.component_port import build_assembly_interface as current_interface
+    from projects.rf_multipole_ion_optics.core.electrode_topology import build_electrode_topology
+    from projects.rf_multipole_ion_optics.simion.electrode_mapping import build_simion_electrode_map
+    from projects.single_reflection_oa_tof_mass_analyzer.analysis.electrode_topology import resolve_frontend_field_domain
+    from projects.single_reflection_oa_tof_mass_analyzer.simion.electrode_mapping import native_frontend_electrodes
+
+    names = list(sources)
+    if legacy_inputs is None:
+        legacy = (inputs(sources[names[0]], oatof) if names == ['multipole'] else
+                  multi_inputs(list(sources.values()), oatof, names=names))
+        repeller = oatof['accelerator_topology']['planes_global_z_mm']['repeller']
+        legacy['numerical_domains']['parent']['pa_bounds_mm'].update(z_min=repeller-40., z_max=repeller+310.)
+    else:
+        legacy = copy.deepcopy(legacy_inputs)
+    recipe = legacy['composition_plan']['recipe']
+    projection = resolve_accelerator_geometry(oatof, variant_id='three_zone_square')
+    port = legacy['composition_plan']['components']['oatof']['ports']['side_entry']
+    parent = legacy['numerical_domains']['parent']
+    project_side_opening(projection.local_region, side_opening=dict(center_mm=port['center_mm'],
+        width_mm=port['cross_section']['width_mm'], height_mm=port['cross_section']['height_mm']),
+        cell_mm_xyz=parent['cell_mm_xyz'], pa_origin_mm={a:parent['pa_bounds_mm'][a+'_min'] for a in 'xyz'})
+    domain = resolve_frontend_field_domain(oatof, projection=projection)
+    interfaces = {name: current_interface(source, geometry_profile_id=None) for name, source in sources.items()}
+    interfaces['oatof'] = resolve_assembly_interface(oatof, projection=projection, geometry_profile_id=None, schema_version=3)
+    maps = {}
+    for name, source in sources.items():
+        mapping = build_simion_electrode_map(source, build_electrode_topology(source))
+        maps[name] = {group: legacy['electrode_bindings'][name][native] for group, native in mapping.items()}
+    old = legacy['electrode_bindings']['oatof']
+    maps['oatof'] = dict(common_ground=old['grounded_shield_id'], accelerator_repeller=old['accelerator_repeller_id'],
+        accelerator_intermediate_grid_1=old['accelerator_grid1_id'],
+        accelerator_intermediate_grid_2=old['accelerator_intermediate2_id'], accelerator_exit_grid=old['accelerator_grid2_id'],
+        **{f'accelerator_ring_{index:04d}': native for index, native in enumerate(old['accelerator_ring_ids'], 1)})
+    assert native_frontend_electrodes(maps['oatof'], frontend_domain=domain) == old
+    records = {}
+    for instance, source in {**sources, 'oatof': oatof}.items():
+        path = root / instance / 'resolved_design.json'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(source), encoding='utf-8', newline='\n')
+        records[instance] = file_record(path)
+    declaration = (dict(instance_ids=['oatof'], research_scope='OA and TOF only',
+                        boundary_assumptions='Omit upstream metal and fields') if local else None)
+    plan = compile_assembly_layout(recipe, interfaces, local_scope=declaration)
+    selected = plan['scope']['instance_ids']
+    return dict(composition_plan=plan, accelerator_variant='three_zone_square',
+        numerical_domains=legacy['numerical_domains'], electrode_bindings={key:maps[key] for key in selected},
+        provider_inputs={key:records[key] for key in selected}), legacy
+
+
+class ScientificFrontendGeometryTests(unittest.TestCase):
+    def test_legacy_plan_does_not_load_the_scientific_backend_adapter(self):
+        import builtins
+        from integrations.runtime.single_flight_frontend import frontend_electrode_maps
+
+        source,oatof = source_fixture(),candidate_300mm_fixture()
+        original_import = builtins.__import__
+        def reject_new_backend(name,*args,**kwargs):
+            if name == 'projects.single_reflection_oa_tof_mass_analyzer.simion.electrode_mapping':
+                raise AssertionError('legacy plan loaded the new scientific backend adapter')
+            return original_import(name,*args,**kwargs)
+        with patch('builtins.__import__',side_effect=reject_new_backend):
+            _,geometry = compile_frontend_geometry({'multipole':source},oatof,**inputs(source,oatof))
+            maps,_ = frontend_electrode_maps(geometry)
+            self.assertEqual(maps['multipole'],native_mapping(source))
+            self.assertNotIn('backend_electrode_bindings',geometry)
+
+    def test_plan5_real_groups_keep_legacy_metal_pose_and_complete_domain(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.simion.electrode_mapping import native_frontend_electrodes
+        oatof = candidate_300mm_fixture()
+        for source in (source_fixture(), multipole_source('octupole'), multipole_source('octupole', shell=True)):
+            with self.subTest(segmented=source['segmentation']['segmented_rod_array'] is not None,
+                              shell=source['geometry_mm']['enclosure']['model']), tempfile.TemporaryDirectory() as directory:
+                options, legacy = scientific_inputs({'multipole':source}, oatof, Path(directory))
+                original = copy.deepcopy(options)
+                gems, actual = compile_frontend_geometry({'multipole':source}, oatof, **options)
+                old_gems, old = compile_frontend_geometry({'multipole':source}, oatof, **legacy)
+                self.assertEqual(options, original)
+                self.assertEqual(actual['composition_plan']['schema_version'], 5)
+                self.assertEqual(actual['numerical_domains'], old['numerical_domains'])
+                self.assertEqual(actual['accelerator_projection'], old['accelerator_projection'])
+                self.assertEqual(actual['downstream_pa_instances'], old['downstream_pa_instances'])
+                self.assertEqual(actual['backend_electrode_bindings']['provider_inputs'], options['provider_inputs'])
+                self.assertEqual(actual['backend_electrode_bindings']['schema_version'], 2)
+                self.assertEqual(native_frontend_electrodes(actual['electrode_bindings']['oatof'],
+                    frontend_domain=actual['frontend_field_domain']), old['electrode_bindings']['oatof'])
+                # Same primitives may be emitted in provider group order; no metal is added/lost.
+                self.assertEqual(sorted(gems['parent'].splitlines()), sorted(old_gems['parent'].splitlines()))
+                self.assertNotIn('multipole_electrode_ids', actual)
+                self.assertEqual(len(actual['frontend_field_domain']['electrode_group_ids']), 25)
+                self.assertGreater(len(actual['composition_plan']['components']['oatof']['component_electrodes']), 25)
+
+    def test_plan5_binding_scope_records_aliases_and_capacity_fail_closed(self):
+        from integrations.runtime.single_flight_frontend import frontend_electrode_maps
+        oatof, source = candidate_300mm_fixture(), multipole_source('octupole')
+        with tempfile.TemporaryDirectory() as directory:
+            options, _ = scientific_inputs({'multipole':source}, oatof, Path(directory))
+            for change in ('missing_records', 'extra_records', 'legacy_key', 'missing_group', 'duplicate', 'capacity', 'boolean'):
+                changed = copy.deepcopy(options)
+                if change == 'missing_records': changed.pop('provider_inputs')
+                elif change == 'extra_records': changed['provider_inputs']['other'] = {'sha256':'a'*64}
+                elif change == 'legacy_key': changed['electrode_bindings']['oatof']['accelerator_grid1_id'] = 13
+                elif change == 'missing_group': changed['electrode_bindings']['multipole'].pop(next(iter(changed['electrode_bindings']['multipole'])))
+                elif change == 'duplicate': changed['electrode_bindings']['oatof']['accelerator_repeller'] = 11
+                else: changed['electrode_bindings']['oatof']['accelerator_repeller'] = 1001 if change == 'capacity' else True
+                with self.subTest(change=change), self.assertRaises(ValueError):
+                    compile_frontend_geometry({'multipole':source}, oatof, **changed)
+            _, geometry = compile_frontend_geometry({'multipole':source}, oatof, **options)
+            for change in ('record', 'scope', 'alias', 'unknown'):
+                changed = copy.deepcopy(geometry)
+                if change == 'record': changed['backend_electrode_bindings']['bindings'][0]['native_electrode_id'] = 999
+                elif change == 'scope': changed['backend_electrode_bindings']['electrode_group_scope']['oatof'].pop()
+                elif change == 'alias': changed['accelerator_electrodes'] = {}
+                else: changed['composition_plan']['schema_version'] = 6
+                with self.subTest(change=change), self.assertRaises(ValueError): frontend_electrode_maps(changed)
 
 
 class SingleReflectionGeometryTests(unittest.TestCase):

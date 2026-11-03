@@ -38,6 +38,44 @@ def prepared(root: Path, *, source=None, entrance_refinement=False, local=False)
 
 
 class DirectFieldPlanTests(unittest.TestCase):
+    def test_plan5_real_members_reuse_same_map_and_reject_renumbered_cache_identity(self):
+        from integrations.tests.test_single_reflection_geometry import (
+            scientific_inputs, candidate_300mm_fixture, source_fixture,
+        )
+        from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
+        from integrations.workflows.single_reflection_flight.fields import prepare_field_design, POLICY
+
+        for source in (source_fixture(), multipole_source('octupole')):
+            with tempfile.TemporaryDirectory() as directory:
+                root, oatof = Path(directory), candidate_300mm_fixture()
+                options, _ = scientific_inputs({'multipole':source}, oatof, root/'providers')
+                keys = []
+                for index in range(3):
+                    case = root/str(index)
+                    case.mkdir()
+                    current = copy.deepcopy(options)
+                    if index == 2:
+                        current['electrode_bindings'] = {instance:{group:native+100 for group,native in mapping.items()}
+                            for instance,mapping in current['electrode_bindings'].items()}
+                    gems, geometry = compile_frontend_geometry({'multipole':source}, oatof, **current)
+                    design = prepare_field_design({'multipole':source}, oatof, geometry,variant_id='three_zone_square',
+                        pulse_voltage_policy_id=POLICY,boundary_policy='native_zero_neumann',rf_reference_voltage_v=10000.,
+                        frontend_domains={'parent':{'refine_convergence_v':dict(carrier_off=.1,rf_reference=.2,pulse_delta=.3)}})
+                    for name, gem in gems.items():
+                        path = case/('frontend.gem' if name=='parent' else 'frontend_entrance_refinement.gem')
+                        path.write_text(gem,encoding='utf-8',newline='\n')
+                        next(row for row in design['domains'] if row['domain_id']==name)['gem_sha256'] = file_sha256(path)
+                    (case/'frontend_geometry.json').write_text(json.dumps(geometry),encoding='utf-8')
+                    (case/'frontend_field_design.json').write_text(json.dumps(design),encoding='utf-8')
+                    destination = case/'components/multipole/resolved_design.json'
+                    destination.parent.mkdir(parents=True)
+                    destination.write_text(json.dumps(source),encoding='utf-8')
+                    plan = build_field_plan(case,Path(sys.executable),ROOT)['domains'][0]
+                    self.assertEqual(len(plan['physical_samples']), len(design['domains'][0]['physical_samples']))
+                    keys.append([member['cache_key'] for member in plan['members']])
+                self.assertEqual(keys[0],keys[1])
+                self.assertTrue(all(before != after for before,after in zip(keys[0],keys[2],strict=True)))
+
     def test_retired_alias_audit_uses_unique_manifest_bound_durable_small_record(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

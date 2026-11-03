@@ -18,6 +18,9 @@ from integrations.runtime.single_flight_electrode_contract import (
     TWO_ZONE_BARE_VARIANT,
     project_pa_plus_mode_voltages,
     physical_multipole_voltages,
+    scientific_multipole_voltages,
+    scientific_multipole_rod_pieces,
+    multipole_rod_pieces,
     require_pa_plus_solution_model,
 )
 from integrations.runtime.pure_boundary_validator import (
@@ -28,6 +31,214 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract 
 
 _DIAGNOSTIC_RETURN_PLANE_Z_MM = 20.5
 _SUCCESSOR_DIAGNOSTICS = {"post_pulse_observation_window_us": 90.0, "log_stride": 1000}
+
+FIELD_OBSERVATION_BUCKETS = (
+    'first_callback', 'rf_phase_0_near', 'rf_phase_pi_over_2_near', 'rf_phase_pi_near',
+    'pulse_start_before', 'pulse_start_after', 'pulse_end_before', 'pulse_end_after',
+)
+
+
+def validate_native_field_observation(spec: dict, *, particle_ids: list[int],
+        source_instances: tuple[str, ...], domain_ids: list[str], clock_epoch_id: str,
+        flight: dict) -> dict:
+    """Validate opt-in bounded query evidence, never alter a flight control.
+
+    Time windows are half-open canonical us. Near-phase targets are labels for
+    actual query times, not integrator landing constraints or error tolerances.
+    The sole eligible batch contains the first frozen original source ID.
+    """
+    required = {'schema_version','role','source_instance_id','domain_id','clock_epoch_id',
+                'eligible_batch_anchor_particle_id','deadline_us','max_rows','rows_per_bucket','max_output_bytes','buckets'}
+    if not isinstance(spec, dict) or set(spec) != required:
+        raise ValueError('native field observation fields differ')
+    if (type(spec['schema_version']) is not int or spec['schema_version'] != 1
+            or spec['role'] != 'single_reflection_applied_field_observation'
+            or spec['source_instance_id'] not in source_instances or spec['domain_id'] not in domain_ids
+            or spec['clock_epoch_id'] != clock_epoch_id):
+        raise ValueError('native field observation source/domain/clock/version differs')
+    if (not particle_ids or any(type(pid) is not int or pid < 1 for pid in particle_ids)
+            or len(set(particle_ids)) != len(particle_ids)
+            or type(spec['eligible_batch_anchor_particle_id']) is not int
+            or spec['eligible_batch_anchor_particle_id'] != particle_ids[0]):
+        raise ValueError('native field observation anchor must be the first frozen cohort ID')
+    for key, value in (('max_rows',16),('rows_per_bucket',2),('max_output_bytes',1048576)):
+        if type(spec[key]) is not int or spec[key] != value:
+            raise ValueError('native field observation requires 16 rows / 2 per bucket / 1MiB cap')
+    finite = lambda value: type(value) in (int,float) and math.isfinite(value)
+    if not finite(spec['deadline_us']):
+        raise ValueError('native field observation deadline must be finite')
+    buckets = spec['buckets']
+    if (not isinstance(buckets,list) or len(buckets) != 8 or any(not isinstance(row,dict) for row in buckets)
+            or [row.get('bucket_id') for row in buckets] != list(FIELD_OBSERVATION_BUCKETS)):
+        raise ValueError('native field observation requires its eight ordered buckets')
+    for row in buckets:
+        if (set(row) != {'bucket_id','time_min_us','time_max_us','target_time_us','target_rf_phase_rad'}
+                or any(not finite(row[key]) for key in ('time_min_us','time_max_us','target_time_us'))
+                or not row['time_min_us'] < row['time_max_us'] <= spec['deadline_us']
+                or not row['time_min_us'] <= row['target_time_us'] <= row['time_max_us']
+                or (row['target_rf_phase_rad'] is not None and not finite(row['target_rf_phase_rad']))):
+            raise ValueError('native field observation window/target must be finite and bounded')
+    for index,target in ((1,0.),(2,math.pi/2),(3,math.pi)):
+        if buckets[index]['target_rf_phase_rad'] != target:
+            raise ValueError('native field observation near-phase target differs from its named bucket')
+    if flight['pulse']['mode'] != 'timed':
+        raise ValueError('native field observation requires the actual timed pulse, not a discovery prediction')
+    start = flight['pulse']['time_us']
+    for index, edge in ((4,start),(6,start+flight['pulse']['width_us'])):
+        before,after = buckets[index:index+2]
+        if (before['time_max_us'] != edge or after['time_min_us'] != edge
+                or before['target_time_us'] != edge or after['target_time_us'] != edge):
+            raise ValueError('native field observation pulse windows must straddle the actual half-open edges')
+    return json.loads(json.dumps(spec,allow_nan=False))
+
+
+def _instrument_native_field_observation(program: str, specification: dict, context: dict) -> str:
+    """Insert bounded read-only capture around this module's actual Lua arithmetic."""
+    def insert(original: str, replacement: str) -> None:
+        nonlocal program
+        if program.count(original) != 1:
+            raise ValueError('native field observation template boundary is not unique')
+        program = program.replace(original,replacement,1)
+
+    header = dict(schema_version=1,role='single_reflection_applied_field_observation_header',
+                  specification=specification,context=context)
+    encoded = json.dumps(header,separators=(',',':'),ensure_ascii=True,allow_nan=False)
+    if len(encoded.encode()) > 65536:
+        raise ValueError('native field observation header exceeds its bounded metadata budget')
+    insert('local single_flight_standalone_dynamic_specs=',
+           'local single_flight_field_observer=nil\nlocal single_flight_standalone_dynamic_specs=')
+    insert('local function single_flight_apply_standalone_dynamic_field(instance,time)',
+           'local function single_flight_apply_standalone_dynamic_field(instance,time,observation)')
+    insert('  local ex,ey,ez\n  for index,response in ipairs(spec.rf_differential_pas) do',
+           '  local ex,ey,ez\n  if observation then\n'
+           '    observation.pa_gu={x,y,z}\n'
+           '    observation.carrier_native_path=instance.pa.path\n'
+           '    observation.carrier_native_field_gu={instance.pa:field_vc(x,y,z)}\n'
+           '  end\n  for index,response in ipairs(spec.rf_differential_pas) do')
+    anchor = '  local coefficient=single_flight_rf_drives[index].differential_at(time)/spec.rf_reference_voltage_v\n'
+    insert(anchor,anchor+'  if observation then observation.rf_members[index]={coefficient_used=coefficient,native_field_gu={ex,ey,ez},native_path=response.path} end\n')
+    anchor = "      'pulse-delta standalone field is undefined for '..spec.role)\n"
+    insert(anchor,anchor+'    if observation then observation.pulse_active_used=true; observation.pulse_scale_used=spec.pulse_delta_scale or 1; observation.pulse_native_field_gu={ex,ey,ez}; observation.pulse_native_path=spec.pulse_delta_pa.path; observation.pulse_basis="actual_field_vc_used" end\n')
+    observer = r'''
+local function single_flight_observation_json(value)
+  local kind=type(value)
+  if kind=='nil' then return 'null' end
+  if kind=='boolean' then return value and 'true' or 'false' end
+  if kind=='number' then
+    assert(value==value and value~=math.huge and value~=-math.huge,'nonfinite applied-field evidence')
+    return string.format('%.17g',value)
+  end
+  if kind=='string' then
+    return '"'..value:gsub('[%z\1-\31\\"]',function(c)
+      if c=='"' then return '\\"' end
+      if c=='\\' then return '\\\\' end
+      return string.format('\\u%04x',c:byte())
+    end)..'"'
+  end
+  assert(kind=='table','unsupported applied-field evidence value')
+  local fields={}
+  if #value>0 then
+    for index,item in ipairs(value) do fields[index]=single_flight_observation_json(item) end
+    return '['..table.concat(fields,',')..']'
+  end
+  local keys={};for key in pairs(value) do keys[#keys+1]=key end;table.sort(keys)
+  for _,key in ipairs(keys) do fields[#fields+1]=single_flight_observation_json(key)..':'..single_flight_observation_json(value[key]) end
+  return '{'..table.concat(fields,',')..'}'
+end
+local single_flight_observation_spec=@SPEC@
+local single_flight_observation_counts={}
+local single_flight_observation_rows=0
+local single_flight_observation_callbacks=0
+local single_flight_observation_bytes=0
+local single_flight_observation_stopped=false
+local single_flight_observation_deadline_seen=false
+local function single_flight_observation_write(event,encoded)
+  local line='TRACE: '..event..' '..encoded
+  assert(single_flight_observation_bytes+#line+1<=single_flight_observation_spec.max_output_bytes/2,'applied-field evidence phase byte cap exceeded')
+  local stream=single_flight_trace_stream or io.stdout
+  local ok,err=stream:write(line,'\n');assert(ok,err or 'applied-field evidence write failed')
+  local flushed,reason=stream:flush();assert(flushed,reason or 'applied-field evidence flush failed')
+  single_flight_observation_bytes=single_flight_observation_bytes+#line+1
+end
+single_flight_field_observer={}
+function single_flight_field_observer.start_run()
+  single_flight_observation_rows=0;single_flight_observation_callbacks=0
+  single_flight_observation_bytes=0;single_flight_observation_stopped=false
+  single_flight_observation_deadline_seen=false
+  for _,bucket in ipairs(single_flight_observation_spec.buckets) do single_flight_observation_counts[bucket.bucket_id]=0 end
+  single_flight_observation_write('applied_field_observation_header',@HEADER@)
+end
+function single_flight_field_observer.begin(instance,time)
+  -- Constant checks and scalar window scans precede allocation or extra PA queries.
+  if single_flight_observation_stopped or single_flight_observation_rows>=16 then return nil end
+  if ion_instance~=@DOMAIN_INDEX@ then return nil end
+  if time>=single_flight_observation_spec.deadline_us then single_flight_observation_deadline_seen=true;return nil end
+  single_flight_observation_callbacks=single_flight_observation_callbacks+1
+  local selected=nil
+  for _,bucket in ipairs(single_flight_observation_spec.buckets) do
+    if time>=bucket.time_min_us and time<bucket.time_max_us and single_flight_observation_counts[bucket.bucket_id]<2 then selected=bucket;break end
+  end
+  if not selected then return nil end
+  local pid=single_flight_canonical_particle_id()
+  assert(@ELIGIBLE_IDS@[pid],'unknown applied-field observation source ID')
+  return {schema_version=1,role='single_reflection_applied_field_query',basis='efield_adjust_query_only',
+    record_seq=single_flight_observation_rows+1,callback_seq=single_flight_observation_callbacks,
+    bucket_id=selected.bucket_id,instrument_time_us=time,solver_elapsed_us=ion_time_of_flight,
+    particle_id=pid,ion_number=ion_number,instance_index=ion_instance,domain_id=@DOMAIN_ID@,
+    world_frame_id=@FRAME@,world_position_mm={ion_px_mm,ion_py_mm,ion_pz_mm},
+    grid_spacing_mm={instance.pa.dx_mm,instance.pa.dy_mm,instance.pa.dz_mm},
+    instance_scale=instance.scale,instance_rotation_deg={instance.az,instance.el,instance.rt},
+    entry_gradient_gu={ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu},rf_members={},
+    actual_rf_phase_rad=single_flight_rf_drives[@PHASE_REFERENCE_INDEX@].phase_at(time),
+    rf_phase_basis='unwrapped_kernel_phase_at',
+    pulse_active_used=false,pulse_basis='not_applied_not_queried'}
+end
+function single_flight_field_observer.finish(row,result)
+  if not row then return end
+  row.region_override={replace_all=result and result.replace_all or false}
+  if result then
+    row.region_override.dvoltsx_gu=result.dvoltsx_gu
+    row.region_override.dvoltsy_gu=result.dvoltsy_gu
+    row.region_override.dvoltsz_gu=result.dvoltsz_gu
+  end
+  row.after_region_gradient_gu={ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu}
+  row.final_gradient_gu={ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu}
+  single_flight_observation_write('applied_field_observation',single_flight_observation_json(row))
+  single_flight_observation_rows=single_flight_observation_rows+1
+  single_flight_observation_counts[row.bucket_id]=single_flight_observation_counts[row.bucket_id]+1
+  if single_flight_observation_rows>=16 then single_flight_observation_stopped='row_cap' end
+end
+function single_flight_field_observer.summary()
+  local missing={}
+  for _,bucket in ipairs(single_flight_observation_spec.buckets) do
+    if single_flight_observation_counts[bucket.bucket_id]<2 then missing[#missing+1]=bucket.bucket_id end
+  end
+  single_flight_observation_write('applied_field_observation_summary',single_flight_observation_json({
+    schema_version=1,role='single_reflection_applied_field_observation_summary',rows=single_flight_observation_rows,
+    counts=single_flight_observation_counts,coverage_complete=#missing==0,
+    stopped_by=single_flight_observation_stopped or 'native_end',deadline_seen=single_flight_observation_deadline_seen}))
+end
+'''
+    # Source IDs are keys, not local ion numbers; no observation selects survivors.
+    eligible = '{'+','.join(f'[{pid}]=true' for pid in context['eligible_batch_particle_ids'])+'}'
+    observer = (observer.replace('@SPEC@',_lua_value(specification)).replace('@HEADER@',_lua_value(encoded))
+        .replace('@DOMAIN_INDEX@',str(context['instance_index'])).replace('@ELIGIBLE_IDS@',eligible)
+        .replace('@DOMAIN_ID@',_lua_value(specification['domain_id'])).replace('@FRAME@',_lua_value(context['world_frame_id'])))
+    reference = next(index for index,row in enumerate(context['rf_sources'],1)
+                     if row['instance_id']==specification['source_instance_id'])
+    observer = observer.replace('@PHASE_REFERENCE_INDEX@',str(reference))
+    # ``@ELIGIBLE_IDS@[pid]`` needs parentheses around a Lua table constructor.
+    observer = observer.replace('assert('+eligible+'[pid]', 'assert(('+eligible+')[pid]')
+    insert('local function single_flight_trace_checkpoint',observer+'\nlocal function single_flight_trace_checkpoint')
+    anchor = '  single_flight_reported={}\nend\nfunction segment.efield_adjust()'
+    insert(anchor,'  single_flight_reported={}\n  single_flight_field_observer.start_run()\nend\nfunction segment.efield_adjust()')
+    anchor = '  single_flight_apply_standalone_dynamic_field(instance,time)\n'
+    insert(anchor,'  local field_observation=single_flight_field_observer.begin(instance,time)\n'
+        '  single_flight_apply_standalone_dynamic_field(instance,time,field_observation)\n'
+        '  if field_observation then field_observation.after_dynamic_gradient_gu={ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu} end\n')
+    anchor = '  end\nend\nfunction segment.instance_adjust()'
+    insert(anchor,'  end\n  single_flight_field_observer.finish(field_observation,result)\nend\nfunction segment.instance_adjust()')
+    return program+'\nfunction segment.terminate_run() single_flight_field_observer.summary() end\n'
 
 
 STANDALONE_DYNAMIC_FIELD_BANK_ROLE = (
@@ -657,7 +868,9 @@ def _canonical_bare_runtime_projection(
 
 def _native_field_analyzer_config(multipoles: dict[str, dict], design: dict, geometry: dict, oatof: dict) -> tuple[dict, dict]:
     """Project the actual four-instance field design without legacy geometry."""
-    from integrations.runtime.single_flight_frontend import frontend_electrode_maps, native_frontend_instances
+    from integrations.runtime.single_flight_frontend import (
+        frontend_electrode_maps, native_frontend_instances, frontend_accelerator_operating_voltages,
+    )
 
     plan = geometry["composition_plan"]
     upstream_ids, downstream_id = native_frontend_instances(plan)
@@ -692,20 +905,28 @@ def _native_field_analyzer_config(multipoles: dict[str, dict], design: dict, geo
                 for value in convergence.values()):
             raise ValueError("native working field requires explicit positive Refine convergence")
     parent = geometry["numerical_domains"]["parent"]
-    electrical = resolve_accelerator_electrical_design(oatof, variant_id="three_zone_square")
-    g, voltage = geometry["accelerator_projection"], electrical["operating_voltages_v"]
+    g = geometry["accelerator_projection"]
     multipole_ids, accelerator_ids = frontend_electrode_maps(geometry)
     electrodes = dict(accelerator_ids)
-    if electrical["ring_z_mm"] != g["ring_z_mm"]:
-        raise ValueError("native full flight physical electrical mapping differs")
-    plane_keys = dict(repeller="repeller_front_z_mm",grid1="grid1_z_mm",intermediate2="intermediate2_z_mm",grid2="grid2_z_mm")
-    if any(electrical["planes_z_mm"][role] != g[key] for role,key in plane_keys.items()):
-        raise ValueError("native frontend planes differ from final provider geometry")
+    scientific = plan['schema_version'] == 5
+    if scientific:
+        expected_on = frontend_accelerator_operating_voltages(oatof, geometry)
+        # These are the existing analyzer renderer's names, not scientific IDs.
+        voltage = {role: expected_on[electrodes[f'accelerator_{role}_id']]
+                   for role in ('repeller', 'grid1', 'intermediate2', 'grid2')}
+    else:
+        electrical = resolve_accelerator_electrical_design(oatof, variant_id="three_zone_square", schema_version=1)
+        voltage = electrical['operating_voltages_v']
+        if electrical["ring_z_mm"] != g["ring_z_mm"]:
+            raise ValueError("native full flight physical electrical mapping differs")
+        plane_keys = dict(repeller="repeller_front_z_mm",grid1="grid1_z_mm",intermediate2="intermediate2_z_mm",grid2="grid2_z_mm")
+        if any(electrical["planes_z_mm"][role] != g[key] for role,key in plane_keys.items()):
+            raise ValueError("native frontend planes differ from final provider geometry")
+        expected_on = {electrodes[f"accelerator_{role}_id"]: voltage[role]
+                       for role in ("repeller", "grid1", "intermediate2", "grid2")}
+        expected_on.update(zip(electrodes["accelerator_ring_ids"], voltage["rings"], strict=True))
+        expected_on[electrodes["grounded_shield_id"]] = 0.
     states = design["accelerator_voltage_states"]
-    expected_on = {electrodes[f"accelerator_{role}_id"]: voltage[role]
-                   for role in ("repeller", "grid1", "intermediate2", "grid2")}
-    expected_on.update(zip(electrodes["accelerator_ring_ids"], voltage["rings"], strict=True))
-    expected_on[electrodes["grounded_shield_id"]] = 0.
     if (states.get("pulse_voltage_policy_id") != "all_accelerator_electrodes_zero_before_pulse_v1"
             or {int(k):v for k,v in states["operating_voltages_v"].items()} != expected_on
             or {int(k):v for k,v in states["off_voltages_v"].items()} != {key:0. for key in expected_on}):
@@ -716,7 +937,8 @@ def _native_field_analyzer_config(multipoles: dict[str, dict], design: dict, geo
     carrier = {key: 0. for key in expected_on}
     groups = {}
     for instance_id in upstream_ids:
-        values, groups[instance_id] = physical_multipole_voltages(multipoles[instance_id], multipole_ids[instance_id])
+        voltage_projection = scientific_multipole_voltages if scientific else physical_multipole_voltages
+        values, groups[instance_id] = voltage_projection(multipoles[instance_id], multipole_ids[instance_id])
         carrier.update(values)
     rf_instances = sorted(upstream_ids, key=lambda instance: tuple(sorted(multipole_ids[instance].values())))
     if local_oatof and "rf_reference_voltage_v" in design:
@@ -869,6 +1091,7 @@ def build_successor_program(
     build_metadata: dict[str, Any] | None = None,
     native_path_projection: bool = True,
     native_path_source: str | None = None,
+    field_observation: dict | None = None,
 ) -> str:
     """Assemble native full-flight callbacks from frozen source and field contracts."""
     from integrations.runtime.single_flight_frontend import frontend_electrode_maps
@@ -942,6 +1165,26 @@ def build_successor_program(
         rf_configs.append(dict(waveform=drive["waveform"], frequency_hz=drive["frequency_Hz"],
             phase_rad=drive["phase_rad"], rf_amplitude_v=drive["rf_amplitude_V_zero_to_peak_per_group"],
             rf_scale=1., rf_steps_per_period=rf_steps_per_period))
+    observation_context = None
+    if field_observation is not None:
+        if (set(field_observation) != {'specification','evidence_context'}
+                or frontend_geometry['composition_plan']['schema_version'] != 5):
+            raise ValueError('native field observation requires plan5 and its explicit evidence context')
+        evidence = field_observation['evidence_context']
+        spec = validate_native_field_observation(field_observation['specification'],
+            particle_ids=evidence['mother_particle_ids'],source_instances=tuple(rf_instances),
+            domain_ids=list(frontend_geometry['numerical_domains']),clock_epoch_id=evidence['clock_epoch_id'],flight=flight)
+        if (spec['eligible_batch_anchor_particle_id'] not in particle_ids
+                or not set(particle_ids) <= set(evidence['mother_particle_ids'])):
+            raise ValueError('native field observation belongs only to the unique anchor batch')
+        observation_context = dict(evidence,eligible_batch_particle_ids=particle_ids,
+            instance_index=3 if spec['domain_id']=='parent' else 5,
+            world_frame_id=frontend_geometry['native_frame_id'],
+            gradient_unit='V/gu_positive_grad_V',basis_unit='field_vc_native_E_opposite_grad_V',
+            query_semantics='efield_adjust_query_only_not_accepted_particle_state',
+            phase_row_cap=16,phase_byte_cap=524288,maximum_recorded_phases=2,
+            rf_sources=[dict(instance_id=instance,drive=multipoles_by_instance[instance]['drive'],
+                electrode_group_native_ids=frontend_geometry['electrode_bindings'][instance]) for instance in rf_instances])
     analyzer_config = native_analyzer_config
     analyzer_config["diagnostics"]["post_pulse_observation_window_us"] = False
     analyzer_config["domain_split"] = False
@@ -1019,8 +1262,9 @@ def build_successor_program(
         build_metadata["instance_roles"] = dict(formal_iob_config["instance_roles"])
         build_metadata["physical_frontend_topology_id"] = native_analyzer_config["accelerator_topology_id"]
         build_metadata["provider_placements"] = analyzer_config["provider_placements"]
-        build_metadata["physical_rod_piece_count"] = sum(len(provider["segmentation"]["segmented_rod_array"]["electrodes"])
-                                                         for provider in multipoles_by_instance.values())
+        pieces = (scientific_multipole_rod_pieces if frontend_geometry['composition_plan']['schema_version'] == 5
+                  else multipole_rod_pieces)
+        build_metadata["physical_rod_piece_count"] = sum(len(pieces(provider)) for provider in multipoles_by_instance.values())
         build_metadata["rf_instance_order"] = rf_instances
         build_metadata["runtime_representation"] = STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION
         build_metadata["standalone_dynamic_field_roles"] = [
@@ -1032,6 +1276,8 @@ def build_successor_program(
         build_metadata["downstream_static_runtime_representation"] = downstream_static_fields["runtime_representation"]
         build_metadata["downstream_static_asset_receipt"] = dict(downstream_static_fields["receipt"])
         build_metadata["downstream_static_assets"] = downstream_static_specs
+        if observation_context is not None:
+            build_metadata['native_field_observation'] = dict(specification=spec,context=observation_context)
     analyzer_config_static = dict(analyzer_config)
     analyzer_config_static.pop("diagnostics")
     analyzer_config_lua = _lua_value(analyzer_config_static)[:-1] + (
@@ -1778,6 +2024,8 @@ function segment.terminate()
   end
 end
 """
+    if observation_context is not None:
+        program = _instrument_native_field_observation(program,spec,observation_context)
     if program.count("simion.workbench_program()") != 1:
         raise ValueError("combined single-flight Program must declare one workbench")
     for callback in _SUCCESSOR_CALLBACKS:

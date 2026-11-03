@@ -22,6 +22,7 @@ from common.simion.pa_family_cache import canonical_pa_family_cache_key, canonic
 from common.simion.particle_batching import batch_plan_from_dispatch
 from integrations.runtime.build_single_flight_program import (
     build_successor_program, validate_native_flight,
+    validate_native_field_observation,
     STANDALONE_DYNAMIC_FIELD_BANK_SCHEMA_VERSION, STANDALONE_DYNAMIC_FIELD_BANK_ROLE,
     STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION,
 )
@@ -47,6 +48,33 @@ _SOURCES = {
 
 def _read(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8-sig"))
+
+
+def _field_observation(preparation: dict, source: list[dict], provenance: dict,
+                       geometry: dict, fields: dict, flight: dict, phase: str) -> dict | None:
+    """Load only the opt-in, already frozen validation input; never modify controls."""
+    record = preparation['input_records'].get('validation_contract')
+    if record is None:
+        return None
+    document = _read(_small_record(record,'native field observation validation contract'))
+    if 'native_field_observation' not in document:
+        return None
+    request = _read(_small_record(preparation['input_records']['request'],'native field observation request'))
+    if type(request.get('schema_version')) is not int or request['schema_version'] != 10:
+        raise ValueError('native field observation is an explicit request10 validation capability')
+    instances,_ = native_frontend_instances(geometry['composition_plan'])
+    ids = [int(row['particle_id']) for row in source]
+    spec = validate_native_field_observation(document['native_field_observation'],particle_ids=ids,
+        source_instances=instances,domain_ids=list(geometry['numerical_domains']),
+        clock_epoch_id=provenance['clock_epoch_id'],flight=flight)
+    if spec['source_instance_id'] != request['source']['instance_id'] or spec['source_instance_id'] != provenance['source_instance_id']:
+        raise ValueError('native field observation requires the actual frozen RF particle-source instance')
+    records = dict(validation_contract=record,request=preparation['input_records']['request'],
+        source=preparation['outputs']['projected_source'],geometry=preparation['outputs']['frontend_geometry'],
+        field_design=preparation['outputs']['frontend_field_design'])
+    return dict(specification=spec,evidence_context=dict(phase=phase,clock_epoch_id=provenance['clock_epoch_id'],
+        mother_particle_ids=ids,input_records=records,field_records=fields,
+        provider_inputs=geometry['backend_electrode_bindings']['provider_inputs']))
 
 
 
@@ -349,12 +377,14 @@ def _prepare_context(preparation: dict, field_receipt_path: Path,
     carriers["accelerator"] = fields["parent"]["carrier_off"]
     if "entrance_refinement" in fields:
         carriers["entrance_refinement"] = fields["entrance_refinement"]["carrier_off"]
+    field_observation = _field_observation(preparation,source,provenance,geometry,fields,flight,phase)
     return dict(run=str(run), snapshot_root=str(snapshot_root), phase=phase, records=records,
                 default_replay_requested=preparation["default_replay_requested"],
         multipoles_by_instance=multipoles_by_instance, oatof=oatof, geometry=geometry, design=design, provenance=provenance,
         flight=flight, source=source, fields=fields, dynamic=dynamic, carriers=carriers, static=static,
         guards=guards, field_receipt_path=str(field_receipt_path),
-        downstream_receipt_record=downstream_receipt_record, restart_source=restart_source)
+        downstream_receipt_record=downstream_receipt_record, restart_source=restart_source,
+        **({'field_observation':field_observation} if field_observation is not None else {}))
 
 
 def iob_pa_copies(context: dict) -> list[dict]:
@@ -415,6 +445,9 @@ def compile_case_controls(context: dict, source: list[dict], *, native_path_proj
     snapshot_root = Path(context["snapshot_root"])
     ids = [int(row["particle_id"]) for row in source]
     metadata: dict[str, Any] = {}
+    observation = context.get('field_observation')
+    if observation is not None and observation['specification']['eligible_batch_anchor_particle_id'] not in ids:
+        observation = None
     program = build_successor_program(context["multipoles_by_instance"], context["design"], context["oatof"],
         frontend_geometry=context["geometry"],
         birth_times_us=[float(r["instrument_time_us"]) for r in source], particle_ids=ids,
@@ -428,6 +461,7 @@ def compile_case_controls(context: dict, source: list[dict], *, native_path_proj
             for row in context["dynamic"]["dynamic_roles"]},
         downstream_static_fields=context["static"],
         build_metadata=metadata, native_path_projection=native_path_projection,
+        **({'field_observation':observation} if observation is not None else {}),
         native_path_source=(snapshot_root/"common/paths/native_run_path.lua").read_text(encoding="utf-8-sig") if native_path_projection else None,
         **{key: (snapshot_root / name).read_text(encoding="utf-8-sig") for key, name in _SOURCES.items()})
     return program, metadata, _instance_rows(context["geometry"], metadata, context["carriers"])
