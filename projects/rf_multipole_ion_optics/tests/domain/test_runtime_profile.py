@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import copy
 import json
-import subprocess
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -44,6 +44,7 @@ class RuntimeProfileTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "minimum_element_size_mm"):
                 _resolve_solver_profile(path, "fixture", "comsol", "inert")
 
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_comsol_prepare_consumes_resolved_design_without_resolving_live_profiles(self) -> None:
         runtime = resolve_runtime_profile(REPO_ROOT, PROJECT_ID, "quadrupole_no_acceleration_full_length")
         for key in runtime["design_profile_resolution"]["paths"]:
