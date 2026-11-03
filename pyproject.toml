@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mass-spectrometry-analysis"
-version = "0.2.0"
-description = "Solver-independent analysis tools for the mass spectrometry projects"
+version = "0.3.0"
+description = "Scientific source, assembly, contract and analysis core for mass spectrometry"
 requires-python = ">=3.11,<3.12"
 dependencies = [
   "jsonschema>=4.26,<5",

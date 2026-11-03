@@ -169,24 +169,31 @@ def _write_json_atomically(path: Path, value: dict[str, Any]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--particle-count", type=int, default=100)
-    parser.add_argument("--mass-amu", type=float, default=524)
-    parser.add_argument("--charge", type=int, default=1)
-    parser.add_argument("--energy-mean-ev", type=float, default=5)
-    parser.add_argument("--energy-std-ev", type=float, default=0.4)
-    parser.add_argument("--half-width-mm", type=float, default=0.5)
-    parser.add_argument("--half-width-x-mm", type=float)
-    parser.add_argument("--half-width-y-mm", type=float)
-    parser.add_argument("--half-width-z-mm", type=float)
-    parser.add_argument("--center-x-mm", type=float, default=-48.8)
-    parser.add_argument("--center-y-mm", type=float, default=0.0)
-    parser.add_argument("--center-z-mm", type=float, default=-18.42918680341103)
-    parser.add_argument("--seed", type=int, default=20260713)
-    parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--allow-nonstandard-diagnostic-count", action="store_true")
-    parser.add_argument("--validate-existing", action="store_true")
-    parser.add_argument("--validation-report", type=Path)
+    parser = argparse.ArgumentParser(
+        description="Generate or byte-validate the legacy SIMION ION11 source (11-column ASCII CSV with CRLF).",
+        epilog=("Charge is signed integer charge state z in elementary-charge units, not coulombs; "
+                "mass is amu, not m/z. Energies are kinetic eV, not energy per charge. "
+                "Sampling preserves the historical seeded .NET Framework System.Random-compatible sequence "
+                "and draw order, not a NumPy RNG. Byte validation proves deterministic reproduction, "
+                "not statistical or solver qualification."),
+    )
+    parser.add_argument("--particle-count", type=int, default=100, help="Number of source rows; ordinary legacy standard counts are 100 or 1000.")
+    parser.add_argument("--mass-amu", type=float, default=524, help="Particle mass in amu, not mass-to-charge ratio.")
+    parser.add_argument("--charge", type=int, default=1, help="Signed nonzero integer charge state z in units of elementary charge e; not coulombs.")
+    parser.add_argument("--energy-mean-ev", type=float, default=5, help="Mean of the underlying Gaussian kinetic-energy input in eV; not eV per charge.")
+    parser.add_argument("--energy-std-ev", type=float, default=0.4, help="Underlying Gaussian kinetic-energy standard deviation in eV; positive-energy rejection is unchanged.")
+    parser.add_argument("--half-width-mm", type=float, default=0.5, help="Default Cartesian source-box half-width in mm for each axis.")
+    parser.add_argument("--half-width-x-mm", type=float, help="Explicit x half-width in mm; otherwise use --half-width-mm.")
+    parser.add_argument("--half-width-y-mm", type=float, help="Explicit y half-width in mm; otherwise use --half-width-mm.")
+    parser.add_argument("--half-width-z-mm", type=float, help="Explicit z half-width in mm; otherwise use --half-width-mm.")
+    parser.add_argument("--center-x-mm", type=float, default=-48.8, help="Caller-frame source-box center x in mm.")
+    parser.add_argument("--center-y-mm", type=float, default=0.0, help="Caller-frame source-box center y in mm.")
+    parser.add_argument("--center-z-mm", type=float, default=-18.42918680341103, help="Caller-frame source-box center z in mm.")
+    parser.add_argument("--seed", type=int, default=20260713, help="Integer seed for the historical .NET Framework-compatible sequence; not a NumPy seed stream.")
+    parser.add_argument("--output", type=Path, required=True, help="ION11 source path, generated or checked byte-for-byte in --validate-existing mode.")
+    parser.add_argument("--allow-nonstandard-diagnostic-count", action="store_true", help="Explicitly permit other positive counts for diagnostics; no new qualification.")
+    parser.add_argument("--validate-existing", action="store_true", help="Rebuild from these inputs and byte-check the existing ION11 file instead of writing it.")
+    parser.add_argument("--validation-report", type=Path, help="JSON report path, required only with --validate-existing.")
     args = parser.parse_args()
     if (
         args.particle_count not in (100, 1000)

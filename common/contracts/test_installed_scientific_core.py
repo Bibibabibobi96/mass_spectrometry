@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -23,12 +24,16 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # This runs with -I in a clean installed environment, without repository imports.
 INSTALLED_PROBE = r'''
-import copy, csv, hashlib, importlib, importlib.metadata, json, math, pathlib, shutil, sys
+import copy, csv, hashlib, importlib, importlib.metadata, json, math, pathlib, shutil, sys, sysconfig
 import numpy as np
 from urllib.parse import urljoin
 from msplatform.ion_release.release import generate_release_states, materialize_release, validate_materialized_release
 from msplatform.assembly.resolve_assembly import compile_assembly_layout, derive_assembly_scope
 from msplatform.analysis.peak_metrics import AnalysisSettings, compute_time_peak_metrics, half_height_width
+from msplatform.analysis.peak_metrics import compute_nominal_mass_peak_metrics
+from msplatform.analysis.particle_census import partition_cohort, subset_efficiency
+from msplatform.contracts.particle_state import write_component_particle_state_csv, load_component_particle_state_csv
+from msplatform.assembly.electrode_binding import validate_electrode_bindings, ElectrodeKey
 from msplatform.contracts import machine_contracts
 
 root = pathlib.Path.cwd()
@@ -38,14 +43,18 @@ assert sys.version_info[:2] == (3, 11)
 assert sys.prefix != sys.base_prefix
 assert all(shutil.which(tool) is None for tool in ('pwsh', 'powershell', 'simion', 'comsol', 'matlab'))
 distribution = importlib.metadata.distribution('mass-spectrometry-analysis')
+assert distribution.version == fixture['distribution_version']
 origins = {}
 for name, module in tuple(sys.modules.items()):
     if name.startswith('msplatform.') and getattr(module, '__file__', None):
         origin = pathlib.Path(module.__file__).resolve()
         assert origin.is_relative_to(pathlib.Path(sys.prefix).resolve()), (name, origin)
+        assert origin.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve()), (name, origin)
         origins[name] = str(origin)
 assert {'msplatform.ion_release.release', 'msplatform.assembly.resolve_assembly',
-        'msplatform.analysis.peak_metrics', 'msplatform.contracts.machine_contracts'} <= origins.keys()
+        'msplatform.analysis.peak_metrics', 'msplatform.contracts.machine_contracts',
+        'msplatform.analysis.particle_census', 'msplatform.contracts.particle_state',
+        'msplatform.assembly.electrode_binding'} <= origins.keys()
 
 spec = fixture['source']
 states = generate_release_states(spec)
@@ -94,6 +103,40 @@ assert actual == provider['expected_layout']
 assert actual['connection_checks'][0]['gap_mm'] == 1.
 assert {item['project_id'] for item in provider['components'].values()} == {'rf_multipole_ion_optics'}
 
+real = fixture['rf_oa_layout']
+assert {item['project_id'] for item in real['components'].values()} == {'rf_multipole_ion_optics', 'orthogonal_accelerator'}
+assert all(item['schema_version'] == 3 for item in real['components'].values())
+real_plan = compile_assembly_layout(real['recipe'], real['components'])
+assert real_plan == real['expected_layout'] and real_plan['schema_version'] == 5
+assert real_plan['connection_checks'][0]['gap_mm'] == 1.
+for record in real['provider_inputs'].values():
+    assert hashlib.sha256((root / record['path']).read_bytes()).hexdigest() == record['sha256']
+bindings = dict(schema_version=2, role='backend_electrode_bindings', backend='simion',
+                field_domain_id='installed_real_frontend', provider_inputs=real['provider_inputs'],
+                bindings=[dict(instance_id=instance, electrode_group_id=row['electrode_group_id'], native_electrode_id=i)
+                          for i, (instance, row) in enumerate(((key, row) for key, interface in real['components'].items()
+                                                              for row in interface['component_electrodes']), 1)])
+validate_electrode_bindings(real['components'], bindings, field_domain_id=bindings['field_domain_id'],
+                            provider_inputs=real['provider_inputs'])
+assert ElectrodeKey('oa', 'repeller') != ElectrodeKey('guide', 'repeller')
+missing = copy.deepcopy(bindings); missing['bindings'].pop()
+try: validate_electrode_bindings(real['components'], missing, field_domain_id=bindings['field_domain_id'], provider_inputs=real['provider_inputs'])
+except ValueError: pass
+else: raise AssertionError('incomplete installed binding accepted')
+
+partition = partition_cohort([2,7,19], [(19,'exit'),(2,'unknown'),(7,'exit')],
+                             categories=('exit','unknown'), relative_weights={2:1.,7:2.,19:3.})
+assert partition['mother_particle_ids'] == [2,7,19]
+assert partition['counts'] == {'exit':2,'unknown':1} and partition['weight_sums'] == {'exit':5.,'unknown':1.}
+efficiency = subset_efficiency([2,7,19],[7,19],[2,7,19],relative_weights={2:1.,7:2.,19:3.})
+assert efficiency['count_fraction'] == 2/3 and efficiency['relative_weight_fraction'] == 5/6
+state_row = fixture['neutral_state']
+state_report = write_component_particle_state_csv(root/'neutral-state.csv', [state_row])
+neutral = load_component_particle_state_csv(root/'neutral-state.csv')
+assert state_report == neutral.report and neutral.rows[0]['particle_id'] == 91
+assert neutral.rows[0]['instrument_time_us'] == 12.5 and neutral.rows[0]['state_event'] == 'snapshot'
+assert neutral.rows[0]['phase_rad'] is None
+
 assert local['scope']['kind'] == 'local'
 assert local['scope']['boundary_connection_ids'] == ['guide_to_oa']
 declaration['instance_ids'] = ['guide', 'oa']
@@ -121,6 +164,18 @@ assert metadata['sample_count'] == 7 and metadata['effective_sample_count'] == 7
 assert metadata['scientific_qualification'] == 'not_assessed'
 assert metadata['time_reference']['clock_qualification'] == 'unspecified'
 assert metadata['mass_axis'] is None
+strict, _ = compute_nominal_mass_peak_metrics(times, 100., settings)
+strict_metadata = strict['analysis_metadata']
+assert strict_metadata['schema_version'] == 2
+assert strict_metadata['method_id'] == 'common_gaussian_kde_nominal_mass_v1'
+assert strict_metadata['mass_axis']['absolute_calibration'] is False
+assert strict_metadata['mass_axis']['mapping_method'] == 'nominal_mean_relative_square_v1'
+assert strict_metadata['mass_axis']['nominal_mass_amu'] == 100.
+assert strict_metadata['fwhm_definition']['interpolation'] == 'linear'
+assert strict_metadata['time_reference']['clock_qualification'] == 'unspecified'
+assert strict_metadata['sample_count'] == 7 and strict_metadata['weight_policy'] == 'equal_positive_relative_weights'
+assert strict_metadata['scientific_qualification'] == 'not_assessed'
+assert strict['nominal_mass_resolution_fwhm'] > 0 and 'mass_resolution' not in strict
 try: compute_time_peak_metrics(times, settings, weights=np.arange(1., 8.))
 except ValueError: pass
 else: raise AssertionError('unequal weights accepted')
@@ -128,6 +183,8 @@ else: raise AssertionError('unequal weights accepted')
 schemas = sorted(machine_contracts.SCHEMA_DIR.glob('*.schema.json'))
 assert [path.name for path in schemas] == fixture['schemas']
 registry = machine_contracts.schema_registry()
+schema_ids = [json.loads(path.read_text(encoding='utf-8'))['$id'] for path in schemas]
+assert len(schema_ids) == len(set(schema_ids))
 reference_count = 0
 def check_references(value, base_uri):
     global reference_count
@@ -146,7 +203,11 @@ assert reference_count > 0
 print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=distribution.metadata['Name'],
                      version=distribution.version, module_origins=origins, schema_count=len(schemas),
                      schema_reference_count=reference_count, source_count=len(states),
-                     mean_tof_us=metrics['mean_tof_us'], std_tof_ns=metrics['std_tof_ns'])))
+                     mean_tof_us=metrics['mean_tof_us'], std_tof_ns=metrics['std_tof_ns'],
+                     actual_providers=sorted({item['project_id'] for item in real['components'].values()}),
+                     component_version=3, plan_version=real_plan['schema_version'], binding_version=bindings['schema_version'],
+                     strict_peak_metadata_version=strict_metadata['schema_version'], neutral_state_count=state_report['particles'],
+                     census_weight_fraction=efficiency['relative_weight_fraction'])))
 '''
 
 
@@ -244,6 +305,13 @@ class InstalledScientificCoreTests(unittest.TestCase):
             build_python = str(builder / python_name)
             self.run_command([build_python, '-m', 'pip', 'install', '--no-index', '--find-links', str(wheelhouse),
                               *config['build-system']['requires']], cwd=root, environment=environment)
+            tool_metadata = self.run_command([build_python, '-I', '-c',
+                'import importlib.metadata,json,sys;print(json.dumps(dict(python=sys.executable,'
+                'setuptools=importlib.metadata.version("setuptools"),wheel=importlib.metadata.version("wheel"))))'],
+                cwd=root, environment=environment)
+            self.assertEqual({key: value for key, value in json.loads(tool_metadata).items() if key != 'python'},
+                             {'setuptools': '65.5.0', 'wheel': '0.38.4'})
+            print('INSTALLED_CORE_BUILD_TOOLS=' + tool_metadata.strip())
             output = root / 'distribution'
             output.mkdir()
             hook = ('from setuptools.build_meta import build_wheel,build_sdist;'
@@ -277,10 +345,42 @@ class InstalledScientificCoreTests(unittest.TestCase):
             provider_components = {key: component for key in ('guide', 'oa')}
             provider_layout = dict(recipe=provider_recipe, components=provider_components,
                 expected_layout=compile_assembly_layout(provider_recipe, provider_components))
+            from projects.orthogonal_accelerator.analysis.assembly_interface import resolve_assembly_interface
+            from projects.orthogonal_accelerator.tests.analysis.test_assembly_interface import two_zone_requirements, TWO_ZONE_PROFILE
+            from common.contracts.test_component_particle_state import valid_row
+
+            oa_requirements = two_zone_requirements()
+            oa_component = resolve_assembly_interface(oa_requirements, geometry_profile_id=TWO_ZONE_PROFILE,
+                                                      schema_version=3)
+            real_recipe, _ = direct_fixture()
+            real_recipe['recipe_id'] = 'installed_real_rf_to_oa'
+            real_components = {'guide': component, 'oa': oa_component}
+            exit_z = exit_port['center_mm'][2]
+            side = oa_component['ports']['side_entry']['center_mm']
+            for key, instance in zip(('guide', 'oa'), real_recipe['instances'], strict=True):
+                interface = real_components[key]
+                instance['project_id'] = interface['project_id']
+                instance['transform'].update(from_frame_id=interface['local_frame_id'],
+                    rotation=[[1,0,0],[0,0,1],[0,-1,0]] if key == 'guide' else [[1,0,0],[0,1,0],[0,0,1]],
+                    translation_mm=[0,0,0] if key == 'guide' else [-side[0],exit_z+1-side[1],-side[2]])
+            real_recipe['connections'][0]['upstream']['port_id'] = 'mechanical_exit'
+            real_recipe['connections'][0]['downstream']['port_id'] = 'side_entry'
+            provider_inputs = {}
+            for key, document in (('guide', resolved), ('oa', oa_requirements)):
+                frozen_input = root / f'{key}-provider-input.json'
+                frozen_input.write_text(json.dumps(document), encoding='utf-8')
+                provider_inputs[key] = dict(path=frozen_input.name,
+                    sha256=hashlib.sha256(frozen_input.read_bytes()).hexdigest())
+            rf_oa_layout = dict(recipe=real_recipe, components=real_components, provider_inputs=provider_inputs,
+                                expected_layout=compile_assembly_layout(real_recipe, real_components))
+            neutral_state = valid_row(91)
+            neutral_state.update(state_event='snapshot', phase_reference_id='', phase_rad='')
             fixture = root / 'fixture.json'
             fixture.write_text(json.dumps(dict(repo_root=str(REPO_ROOT), recipe=recipe, components=components,
+                                              distribution_version=config['project']['version'],
                                               source=spec, expected_states=generate_release_states(spec),
-                                              schemas=expected_schemas, provider_layout=provider_layout)), encoding='utf-8')
+                                              schemas=expected_schemas, provider_layout=provider_layout,
+                                              rf_oa_layout=rf_oa_layout, neutral_state=neutral_state)), encoding='utf-8')
             consumer_python = str(consumer / python_name)
             for index, candidate in enumerate((wheel, rebuilt_wheel)):
                 # The rebuilt wheel has identical metadata and production bytes;
