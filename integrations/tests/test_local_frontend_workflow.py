@@ -82,7 +82,7 @@ def fixture(workspace: Path) -> tuple[Path, dict]:
              port["center_mm"][2]-resolved.local_exit_z_mm]
     common_frame = "multipole_cartesian_z_axis_v1"
     guide = RigidTransform(common_frame, "mrtof_global_cartesian", [[0, -1, 0], [0, 0, 1], [-1, 0, 0]], shift)
-    interface = resolve_assembly_interface(component["requirements"], geometry_profile_id=component["geometry_profile_id"])
+    interface = resolve_assembly_interface(component["requirements"], geometry_profile_id=component["geometry_profile_id"], schema_version=1)
     oa_pose = RigidTransform(interface["local_frame_id"], "mrtof_global_cartesian", **component.pop("transform"))
     recipe = dict(schema_version=1, role="assembly_recipe", integration_id="instrument_assembly", recipe_id="local_guide_oa",
                   assembly_frame_id="mrtof_global_cartesian", position_tolerance_mm=1e-9, angular_tolerance_rad=1e-12,
@@ -111,7 +111,7 @@ def write_fixture_plan(workspace, request, recipe=None):
     component = request["accelerator_component"]
     edge = recipe["connections"][0]
     components = {edge["upstream"]["instance_id"]: export_guide_assembly_interface(guide),
-                  edge["downstream"]["instance_id"]: resolve_assembly_interface(component["requirements"], geometry_profile_id=component["geometry_profile_id"])}
+                  edge["downstream"]["instance_id"]: resolve_assembly_interface(component["requirements"], geometry_profile_id=component["geometry_profile_id"], schema_version=1)}
     plan = compile_assembly_layout(recipe, components)
     path.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
     request["composition_plan"] = file_record(path)

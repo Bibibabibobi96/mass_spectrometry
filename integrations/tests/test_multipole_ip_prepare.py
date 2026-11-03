@@ -16,6 +16,7 @@ from common.contracts.particle_state import PARTICLE_STATE_COLUMNS
 from common.contracts.write_run_manifest import file_record
 from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
 from projects.rf_multipole_ion_optics.core.component_port import prepare_exit_observation_inputs, validate_exit_observations
+from projects.rf_multipole_ion_optics.simion.assembly_interface import build_legacy_assembly_interface
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request
 from common.integration.resolve_assembly import compile_assembly_layout, derive_assembly_scope
 from common.contracts.rigid_transform import RigidTransform
@@ -66,6 +67,10 @@ class MultipoleIPPreparationTests(unittest.TestCase):
         resolved = compile_design_request(request, expected_identity=request["identity"])
         write_json(self.source / "inputs/multipole_resolved_design.json", resolved)
         self.observation = prepare_exit_observation_inputs(self.source, resolved, design_profile_id="fixture", cell_z_mm=.3)
+        # This deployed MP/IP fixture publishes component1/plan3. Observation
+        # physics and clocks stay canonical; the named adapter owns old IDs.
+        write_json(self.source / "inputs/mechanical_exit_interface.json",
+                   build_legacy_assembly_interface(resolved, geometry_profile_id="fixture", schema_version=1))
         self.originals = [dict(particle_id=pid, birth_time_s=pid * 1e-7, mass_amu=100., charge_state=1) for pid in (2, 9)]
         write_csv(self.source / "inputs/particle_source.csv", self.originals, list(self.originals[0]))
         def event(pid, kind, time, axial):
@@ -454,7 +459,11 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
         environment = dict(os.environ)
         environment.pop("PYTHONPATH", None)
         statement = (
-            "from pathlib import Path; from integrations.workflows.multipole_ip import prepare; "
+            "import sys; from pathlib import Path; snapshot=Path.cwd().resolve(); "
+            "sys.path.insert(0,str(snapshot)); "
+            "from common.contracts.frozen_inputs import python_import_roots; "
+            "sys.path.pop(0); sys.path[:0]=python_import_roots(snapshot); "
+            "from integrations.workflows.multipole_ip import prepare; "
             "from projects.dual_pressure_rectilinear_ion_processor.analysis.upstream_admission import load_injected_source; "
             "assert Path(prepare.__file__).is_relative_to(Path.cwd()); "
             f"prepare.prepare(Path({str(self.request_path)!r}),Path({str(self.run)!r})); "
@@ -466,8 +475,11 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
             "assert [a['rows'][0]['velocity_'+v+'_m_s'] for v in 'xyz']==[2000.,30.,-20.]; "
             "assert a['producer_result']['source_scientific_status']=='failed'; "
             "assert a['producer_result']['checks']['minimum_primary_transmission'] is False; "
+            "assert all(Path(m.__file__).resolve().is_relative_to(snapshot) "
+            "for name,m in sys.modules.items() if name.split('.')[0] in "
+            "('common','projects','integrations','msplatform') and getattr(m,'__file__',None)); "
             "print('DETACHED_PREPARATION=PASS')")
-        completed = subprocess.run([sys.executable, "-B", "-s", "-c", statement],
+        completed = subprocess.run([sys.executable, "-I", "-B", "-c", statement],
             cwd=self.run / "inputs/runtime_snapshot", env=environment,
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)

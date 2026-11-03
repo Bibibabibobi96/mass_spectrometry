@@ -66,7 +66,7 @@ def cooled_request_fixture(workspace,variant="three_zone"):
         pulse=dict(policy_id="actual_field_reference_exit_centering_v1",target="oa_exit_geometric_center",reference_temperature_policy="provider_gas_temperature"))
     from projects.orthogonal_accelerator.analysis.assembly_interface import resolve_assembly_interface
     native = native_pose(guide, connection["spatial_registration"])
-    oa = resolve_assembly_interface(component["requirements"], geometry_profile_id=component["geometry_profile_id"])
+    oa = resolve_assembly_interface(component["requirements"], geometry_profile_id=component["geometry_profile_id"], schema_version=1)
     oa_pose = RigidTransform(oa["local_frame_id"], "mrtof_global_cartesian", component.pop("transform")["rotation"],
                             [0., 51.5, 34.] if variant == "three_zone" else [0., 51.5, 0.]).to_contract()
     recipe = dict(schema_version=1, role="assembly_recipe", integration_id="instrument_assembly",

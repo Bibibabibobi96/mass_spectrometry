@@ -222,7 +222,7 @@ def prepare_cooled_frontend(request_path: Path, output_directory: Path | None,
         raise ValueError("accelerator placement belongs only to the frozen parent composition plan")
     actual_cooler = export_cooled_buncher_assembly_interface(conditioner, guide)
     actual_accelerator = resolve_assembly_interface(
-        component["requirements"], geometry_profile_id=component["geometry_profile_id"]
+        component["requirements"], geometry_profile_id=component["geometry_profile_id"], schema_version=1
     )
     if plan["components"][upstream_id] != actual_cooler:
         raise ValueError("selected cooler provider interface differs from frozen parent composition plan")

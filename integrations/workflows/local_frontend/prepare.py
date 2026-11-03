@@ -459,7 +459,7 @@ def prepare_local_frontend(request_path: Path, output_directory: Path | None, wo
         raise ValueError("local frontend requires the selected IP guide_exit to OA side_entry joint solve")
     components = {
         upstream_id: export_guide_assembly_interface(guide),
-        downstream_id: resolve_assembly_interface(component["requirements"], geometry_profile_id=component["geometry_profile_id"]),
+        downstream_id: resolve_assembly_interface(component["requirements"], geometry_profile_id=component["geometry_profile_id"], schema_version=1),
     }
     for instance_id, interface in components.items():
         if plan["components"][instance_id] != interface:
