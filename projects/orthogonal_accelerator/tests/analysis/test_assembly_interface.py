@@ -37,10 +37,10 @@ def two_zone_requirements() -> dict:
 
 
 class AssemblyInterfaceTests(unittest.TestCase):
-    def test_two_zone_outer_face_and_component_ids(self) -> None:
+    def test_legacy_two_zone_outer_face_and_component_ids(self) -> None:
         with patch("projects.orthogonal_accelerator.simion.two_zone_candidate.render_closed_two_zone_local_pa",
                    side_effect=AssertionError("interface query must not render GEM")):
-            result = resolve_assembly_interface(two_zone_requirements(), geometry_profile_id=TWO_ZONE_PROFILE)
+            result = resolve_assembly_interface(two_zone_requirements(), geometry_profile_id=TWO_ZONE_PROFILE, schema_version=1)
         self.assertEqual(set(result["ports"]), {"side_entry", "axial_exit"})
         validate_schema(result, "component_geometry_interface.schema.json")
         self.assertEqual(result["local_frame_id"], "orthogonal_accelerator_exit_origin_v1")
@@ -63,7 +63,7 @@ class AssemblyInterfaceTests(unittest.TestCase):
             plan["requirements"], geometry_profile_id=plan["geometry_profile_id"],
         )
         result = resolve_assembly_interface(
-            plan["requirements"], geometry_profile_id=plan["geometry_profile_id"],
+            plan["requirements"], geometry_profile_id=plan["geometry_profile_id"], schema_version=1,
         )
         validate_schema(result, "component_geometry_interface.schema.json")
         self.assertEqual(set(result["ports"]), {"axial_exit"})
@@ -82,8 +82,8 @@ class AssemblyInterfaceTests(unittest.TestCase):
                           for item in result["component_electrodes"][:4]],
                          [(15, "grounded_shield"), (22, "repeller"), (23, "grid1"), (24, "exit_grid")])
 
-    def test_three_zone_outer_face_and_component_ids(self) -> None:
-        result = resolve_assembly_interface(three_zone_requirements_fixture(), geometry_profile_id=None)
+    def test_legacy_three_zone_outer_face_and_component_ids(self) -> None:
+        result = resolve_assembly_interface(three_zone_requirements_fixture(), geometry_profile_id=None, schema_version=1)
         self.assertEqual(set(result["ports"]), {"side_entry"})
         self.assertIsNone(result["geometry_profile_id"])
         self.assertEqual(result["local_frame_id"], "sectioned_accelerator_cartesian")
@@ -99,6 +99,58 @@ class AssemblyInterfaceTests(unittest.TestCase):
                 ["grounded_shield", "repeller", "grid1", "intermediate2", "exit_grid", *["ring"] * 4], 1
             )
         ])
+
+    def test_legacy_v2_publishes_stable_groups_and_unchanged_mechanical_ports(self) -> None:
+        for request, profile, expected in (
+            (two_zone_requirements(), TWO_ZONE_PROFILE,
+             ["grounded_shield", "repeller", "grid1", "exit_grid", *[f"ring_{i:04d}" for i in range(1, 16)]]),
+            (three_zone_requirements_fixture(), None,
+             ["grounded_shield", "repeller", "grid1", "intermediate2", "exit_grid", *[f"ring_{i:04d}" for i in range(1, 5)]]),
+        ):
+            with self.subTest(variant=request["variant_id"]):
+                before = copy.deepcopy(request)
+                legacy = resolve_assembly_interface(request, geometry_profile_id=profile, schema_version=1)
+                current = resolve_assembly_interface(request, geometry_profile_id=profile, schema_version=2)
+                validate_schema(current, "component_geometry_interface_v2.schema.json")
+                self.assertEqual(current["schema_version"], 2)
+                self.assertEqual([row["component_electrode_id"] for row in current["component_electrodes"]], expected)
+                self.assertTrue(all(row["role"] == "ring" for row in current["component_electrodes"] if row["component_electrode_id"].startswith("ring_")))
+                self.assertEqual({key: value for key, value in current.items() if key not in {"schema_version", "component_electrodes"}},
+                                 {key: value for key, value in legacy.items() if key not in {"schema_version", "component_electrodes"}})
+                self.assertEqual(request, before)
+
+    def test_current_v3_has_canonical_groups_without_old_wire_aliases(self) -> None:
+        for request, profile, expected in (
+            (two_zone_requirements(), TWO_ZONE_PROFILE, ["repeller", "intermediate_grid_1", "exit_grid"]),
+            (three_zone_requirements_fixture(), None, ["repeller", "intermediate_grid_1", "intermediate_grid_2", "exit_grid"]),
+        ):
+            with self.subTest(variant=request["variant_id"]):
+                current = resolve_assembly_interface(request, geometry_profile_id=profile)
+                legacy = resolve_assembly_interface(request, geometry_profile_id=profile, schema_version=2)
+                self.assertEqual(current["schema_version"], 3)
+                main = current["component_electrodes"][1:1 + len(expected)]
+                self.assertEqual([row["electrode_group_id"] for row in main], expected)
+                self.assertEqual([row["role"] for row in main], expected)
+                self.assertTrue(all(set(row) == {"electrode_group_id", "role"} for row in current["component_electrodes"]))
+                self.assertEqual(current["ports"], legacy["ports"])
+                self.assertEqual(current["local_frame_id"], legacy["local_frame_id"])
+                self.assertTrue(all(row["role"] == "ring" for row in current["component_electrodes"] if row["electrode_group_id"].startswith("ring_")))
+
+    def test_current_query_does_not_project_a_native_integer_table(self) -> None:
+        module = "projects.orthogonal_accelerator.analysis.assembly_interface"
+        with patch(module + "._two_zone_component_electrodes", side_effect=AssertionError("legacy native table requested")):
+            result = resolve_assembly_interface(two_zone_requirements(), geometry_profile_id=TWO_ZONE_PROFILE)
+        self.assertEqual(result["component_electrodes"][0], {"electrode_group_id": "grounded_shield", "role": "shield"})
+        resolved = resolve_bare_three_zone_component(three_zone_requirements_fixture())
+        del resolved["electrodes"]
+        with patch(module + ".resolve_bare_three_zone_component", return_value=resolved):
+            result = resolve_assembly_interface(three_zone_requirements_fixture(), geometry_profile_id=None)
+        self.assertEqual(result["component_electrodes"][2], {"electrode_group_id": "intermediate_grid_1", "role": "intermediate_grid_1"})
+
+    def test_interface_version_is_explicit_and_rejects_noninteger_or_unknown(self) -> None:
+        for version in (True, False, 0, 4, "3", None, 3.0):
+            with self.subTest(version=version), self.assertRaisesRegex(ValueError, "schema_version"):
+                resolve_assembly_interface(two_zone_requirements(), geometry_profile_id=TWO_ZONE_PROFILE, schema_version=version)
 
     def test_three_zone_offset_axis_moves_the_actual_wall(self) -> None:
         request = three_zone_requirements_fixture()

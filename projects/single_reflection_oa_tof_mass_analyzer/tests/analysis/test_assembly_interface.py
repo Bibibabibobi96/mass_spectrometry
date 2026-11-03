@@ -75,7 +75,7 @@ class AssemblyInterfaceTests(unittest.TestCase):
     def test_300mm_solids_outer_face_and_native_render_use_one_projection(self):
         projection = projected_candidate()
         before = copy.deepcopy(projection)
-        interface = resolve_assembly_interface(candidate_300mm_fixture(), projection=projection, geometry_profile_id=None)
+        interface = resolve_assembly_interface(candidate_300mm_fixture(), projection=projection, geometry_profile_id=None, schema_version=1)
         validate_schema(interface, "component_geometry_interface.schema.json")
         self.assertEqual(interface["variant_id"], "three_zone_square")
         self.assertEqual(interface["local_frame_id"], "oatof_global")
@@ -112,7 +112,7 @@ class AssemblyInterfaceTests(unittest.TestCase):
 
     def test_opening_width_is_explicit_and_shared_with_renderer(self):
         projection = projected_candidate(width=2.5, height=6)
-        port = resolve_assembly_interface(candidate_300mm_fixture(), projection=projection, geometry_profile_id="square_fixture")["ports"]["side_entry"]
+        port = resolve_assembly_interface(candidate_300mm_fixture(), projection=projection, geometry_profile_id="square_fixture", schema_version=1)["ports"]["side_entry"]
         self.assertEqual(port["cross_section"]["width_mm"], 2.5)
         self.assertEqual(port["cross_section"]["height_mm"], 6)
         self.assertEqual(projection.local_region["numerical_port_width_mm"], 2.5)
@@ -142,7 +142,7 @@ class AssemblyInterfaceTests(unittest.TestCase):
     def test_missing_opening_and_false_outer_faces_fail(self):
         projection = resolve_accelerator_geometry(candidate_300mm_fixture(), variant_id="three_zone_square")
         with self.assertRaisesRegex(ValueError, "incomplete"):
-            resolve_assembly_interface(candidate_300mm_fixture(), projection=projection, geometry_profile_id=None)
+            resolve_assembly_interface(candidate_300mm_fixture(), projection=projection, geometry_profile_id=None, schema_version=1)
         with self.assertRaisesRegex(ValueError, "outer wall"):
             project_side_opening(projection.local_region,
                                  side_opening={"center_mm": [-120.8, 0, -340.7], "width_mm": 1, "height_mm": 4},
@@ -157,7 +157,7 @@ class AssemblyInterfaceTests(unittest.TestCase):
                 projection = projected_candidate()
                 mutation(projection.local_region)
                 with self.assertRaisesRegex(ValueError, error):
-                    resolve_assembly_interface(candidate_300mm_fixture(), projection=projection, geometry_profile_id=None)
+                    resolve_assembly_interface(candidate_300mm_fixture(), projection=projection, geometry_profile_id=None, schema_version=1)
 
     def test_cylindrical_renderer_is_preserved_but_has_no_false_planar_interface(self):
         candidate = candidate_300mm_fixture()
@@ -165,7 +165,25 @@ class AssemblyInterfaceTests(unittest.TestCase):
         projection = resolve_accelerator_geometry(candidate, variant_id="three_zone_cylindrical")
         self.assertEqual(projection.local_region["cross_section"], "cylindrical")
         with self.assertRaisesRegex(ValueError, "does not support"):
-            resolve_assembly_interface(candidate_300mm_fixture(), projection=projection, geometry_profile_id=None)
+            resolve_assembly_interface(candidate_300mm_fixture(), projection=projection, geometry_profile_id=None, schema_version=1)
+
+
+    def test_current_component3_keeps_full_groups_and_exact_existing_port(self):
+        resolved, projection = candidate_300mm_fixture(), projected_candidate()
+        old = resolve_assembly_interface(resolved, projection=projection, geometry_profile_id=None, schema_version=1)
+        current = resolve_assembly_interface(resolved, projection=projection, geometry_profile_id=None)
+        validate_schema(current, "component_geometry_interface_v3.schema.json")
+        self.assertEqual(current["ports"], old["ports"])
+        self.assertEqual(current["local_frame_id"], old["local_frame_id"])
+        self.assertEqual(len(old["component_electrodes"]), 45)
+        self.assertEqual(len(current["component_electrodes"]), 42)
+        self.assertTrue(all(set(row) == {"electrode_group_id", "role"} for row in current["component_electrodes"]))
+        ids = {row["electrode_group_id"] for row in current["component_electrodes"]}
+        self.assertTrue({"common_ground", "accelerator_exit_grid", "reflectron_midgrid", "reflectron_backplate"} <= ids)
+        self.assertNotIn("detector", ids)  # Its physical cylinder remains a member of common_ground.
+        for version in (0, 2, 4, True, 3.0):
+            with self.subTest(version=version), self.assertRaisesRegex(ValueError, "schema_version"):
+                resolve_assembly_interface(resolved, projection=projection, geometry_profile_id=None, schema_version=version)
 
 
 if __name__ == "__main__":

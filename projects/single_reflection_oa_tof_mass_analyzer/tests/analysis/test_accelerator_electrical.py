@@ -29,7 +29,7 @@ class AcceleratorElectricalTests(unittest.TestCase):
     def test_two_zone_original_python_plan_golden_and_no_source_authority(self):
         resolved = two_zone_fixture()
         before = copy.deepcopy(resolved)
-        design = resolve_accelerator_electrical_design(resolved,variant_id="two_zone_square")
+        design = resolve_accelerator_electrical_design(resolved,variant_id="two_zone_square", schema_version=1)
         self.assertEqual(resolved,before)
         self.assertEqual(design["frame_id"],"oatof_global")
         self.assertEqual(design["operating_voltages_v"],dict(repeller=2240.,grid1=1760.,grid2=0.,
@@ -39,12 +39,12 @@ class AcceleratorElectricalTests(unittest.TestCase):
         self.assertNotIn("intermediate2",design["operating_voltages_v"])
         self.assertNotIn("off_voltages_v",design)
         resolved["particle_source"] = {"this_source_is_not_a_voltage_authority":float("nan")}
-        self.assertEqual(resolve_accelerator_electrical_design(resolved,variant_id="two_zone_square"),design)
+        self.assertEqual(resolve_accelerator_electrical_design(resolved,variant_id="two_zone_square", schema_version=1),design)
 
     def test_three_zone_300mm_twenty_actual_ring_positions_original_plan_golden(self):
         resolved = three_zone_fixture()
         before = copy.deepcopy(resolved)
-        design=resolve_accelerator_electrical_design(resolved,variant_id="three_zone_square")
+        design=resolve_accelerator_electrical_design(resolved,variant_id="three_zone_square", schema_version=1)
         self.assertEqual(resolved,before)
         self.assertEqual(design["ring_z_mm"],resolved["rings"]["accelerator_placement"]["ring_z_mm"])
         # Captured from the pre-extraction _accelerator_plan on this independent
@@ -73,15 +73,15 @@ class AcceleratorElectricalTests(unittest.TestCase):
                 resolved=three_zone_fixture()
                 resolved["electrodes_V"][field]=value
                 with self.assertRaises(ValueError):
-                    resolve_accelerator_electrical_design(resolved,variant_id="three_zone_square")
+                    resolve_accelerator_electrical_design(resolved,variant_id="three_zone_square", schema_version=1)
         resolved=three_zone_fixture()
         resolved["electrodes_V"].pop("intermediate2")
         with self.assertRaisesRegex(ValueError,"incomplete"):
-            resolve_accelerator_electrical_design(resolved,variant_id="three_zone_square")
+            resolve_accelerator_electrical_design(resolved,variant_id="three_zone_square", schema_version=1)
         with self.assertRaisesRegex(ValueError,"topology conflicts"):
-            resolve_accelerator_electrical_design(two_zone_fixture(),variant_id="three_zone_square")
+            resolve_accelerator_electrical_design(two_zone_fixture(),variant_id="three_zone_square", schema_version=1)
         with self.assertRaisesRegex(ValueError,"unsupported"):
-            resolve_accelerator_electrical_design(two_zone_fixture(),variant_id="unpublished")
+            resolve_accelerator_electrical_design(two_zone_fixture(),variant_id="unpublished", schema_version=1)
 
     def test_invalid_divider_never_extrapolates_or_reorders_rings(self):
         for planes,rings,values in (([0,1],[-.01],[10,0]),([0,1],[1.01],[10,0]),
@@ -91,6 +91,26 @@ class AcceleratorElectricalTests(unittest.TestCase):
                 ([0,1],[.5],[True,0]),([0,1],[.5],[10,float("inf")])):
             with self.subTest(planes=planes,rings=rings,values=values),self.assertRaises(ValueError):
                 linear_ring_electrode_voltages(planes,rings,values)
+
+
+    def test_current_v2_roles_are_exact_source_version_mapping_without_new_divider(self):
+        resolved = three_zone_fixture()
+        old = resolve_accelerator_electrical_design(resolved, variant_id="three_zone_square", schema_version=1)
+        current = resolve_accelerator_electrical_design(resolved, variant_id="three_zone_square")
+        names = {"repeller": "repeller", "grid1": "intermediate_grid_1",
+                 "intermediate2": "intermediate_grid_2", "grid2": "exit_grid"}
+        self.assertEqual(current["schema_version"], 2)
+        self.assertEqual(current["planes_z_mm"], {names[key]: value for key, value in old["planes_z_mm"].items()})
+        self.assertEqual(current["operating_voltages_v"],
+                         {names.get(key, key): value for key, value in old["operating_voltages_v"].items()})
+        self.assertNotEqual(current["operating_voltages_v"]["intermediate_grid_1"],
+                            current["operating_voltages_v"]["intermediate_grid_2"])
+        self.assertEqual(set(current["operating_voltages_v"]),
+                         {"repeller", "intermediate_grid_1", "intermediate_grid_2", "exit_grid", "rings", "shield"})
+        self.assertEqual(current["ring_z_mm"], old["ring_z_mm"])
+        for version in (0, 3, True, 2.0):
+            with self.subTest(version=version), self.assertRaisesRegex(ValueError, "schema_version"):
+                resolve_accelerator_electrical_design(resolved, variant_id="three_zone_square", schema_version=version)
 
 
 if __name__ == "__main__":

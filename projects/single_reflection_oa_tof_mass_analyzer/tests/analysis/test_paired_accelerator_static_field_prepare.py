@@ -49,7 +49,7 @@ class PairedAcceleratorStaticFieldPrepareTests(unittest.TestCase):
         cells = dict(x=.2,y=.2,z=.2)
         origin = {axis:box[f"{axis}_min"] for axis in "xyz"}
         project_side_opening(provider.local_region,side_opening=opening,cell_mm_xyz=cells,pa_origin_mm=origin)
-        interface = resolve_assembly_interface(oatof,projection=provider,geometry_profile_id=None)
+        interface = resolve_assembly_interface(oatof,projection=provider,geometry_profile_id=None,schema_version=1)
         # An explicit inert mechanical peer supplies the parent connection;
         # only the real oaTOF provider is selected for this field comparison.
         peer = copy.deepcopy(interface)

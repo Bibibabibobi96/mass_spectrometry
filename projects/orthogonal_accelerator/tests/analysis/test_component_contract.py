@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import ast
 import json
+import shutil
+import tempfile
 from pathlib import Path
 import unittest
 
 from common.contracts.build_project_registry import validate_descriptor
+from projects.orthogonal_accelerator.analysis.component_contract import load_accelerator_dependency, load_component_contract
 
 
 PROJECT = Path(__file__).resolve().parents[2]
@@ -58,6 +61,68 @@ class ComponentContractTest(unittest.TestCase):
             self.assertEqual(dependency["api_version"], provider["api_version"])
             available = {row["variant_id"] for row in provider["structural_variants"]}
             self.assertTrue(set(dependency["structural_variants"]) <= available)
+
+    def test_current_api3_and_explicit_api2_preserve_distinct_role_meanings(self) -> None:
+        current = load_component_contract(REPO)
+        legacy = load_component_contract(REPO, api_version=2)
+        self.assertEqual(current["api_version"], 3)
+        self.assertEqual(current["provider_contract_path"].name, "component_contract_v3.json")
+        self.assertEqual(legacy["api_version"], 2)
+        self.assertEqual(legacy["provider_contract_path"].name, "component_contract.json")
+        modern = {row["variant_id"]: row["primary_electrode_roles"] for row in current["provider"]["structural_variants"]}
+        old = {row["variant_id"]: row["primary_electrode_roles"] for row in legacy["provider"]["structural_variants"]}
+        self.assertEqual(modern, {"two_zone": ["repeller", "intermediate_grid_1", "exit_grid"],
+                                  "three_zone": ["repeller", "intermediate_grid_1", "intermediate_grid_2", "exit_grid"]})
+        self.assertEqual(old["three_zone"], ["repeller", "grid1", "grid2", "exit_grid"])
+        self.assertEqual(current["provider"]["geometry_profiles"], legacy["provider"]["geometry_profiles"])
+        self.assertEqual(current["provider"]["request_api"], legacy["provider"]["request_api"])
+        self.assertTrue(all(path.is_file() for path in current["implementation_sources"]))
+
+    def _current_dependency_fixture(self, root: Path) -> tuple[Path, Path]:
+        contract = load_component_contract(REPO)
+        provider_path = root / contract["provider_contract_path"].relative_to(REPO)
+        provider_path.parent.mkdir(parents=True)
+        shutil.copyfile(contract["provider_contract_path"], provider_path)
+        for source in contract["implementation_sources"]:
+            target = root / source.relative_to(REPO)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+        dependency = json.loads((REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json").read_text(encoding="utf-8"))
+        dependency.update(api_version=3, provider_contract="projects/orthogonal_accelerator/config/component_contract_v3.json")
+        path = root / "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(dependency), encoding="utf-8")
+        return path, provider_path
+
+    def test_declared_dependency_versions_are_not_inferred_from_role_aliases(self) -> None:
+        for consumer in ("single_reflection_oa_tof_mass_analyzer", "parallel_mirror_dual_stripe_mr_tof"):
+            dependency = REPO / "projects" / consumer / "config/accelerator_dependency.json"
+            result = load_accelerator_dependency(REPO, dependency, consumer_project_id=consumer, required_variant="two_zone")
+            self.assertEqual(result["api_version"], 2)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dependency, _ = self._current_dependency_fixture(root)
+            result = load_accelerator_dependency(root, dependency, consumer_project_id="single_reflection_oa_tof_mass_analyzer", required_variant="three_zone")
+            self.assertEqual(result["api_version"], 3)
+            original = json.loads(dependency.read_text(encoding="utf-8"))
+            for changed in ({**original, "api_version": 99},
+                            {**original, "provider_contract": "projects/orthogonal_accelerator/config/component_contract.json"}):
+                dependency.write_text(json.dumps(changed), encoding="utf-8")
+                with self.subTest(changed=changed), self.assertRaises(ValueError):
+                    load_accelerator_dependency(root, dependency, consumer_project_id="single_reflection_oa_tof_mass_analyzer", required_variant="three_zone")
+
+    def test_current_provider_rejects_old_grid2_alias_and_unknown_versions(self) -> None:
+        for version in (1, 4, True, None, "3", 3.0):
+            with self.subTest(version=version), self.assertRaisesRegex(ValueError, "api_version"):
+                load_component_contract(REPO, api_version=version)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, provider = self._current_dependency_fixture(root)
+            document = json.loads(provider.read_text(encoding="utf-8"))
+            document["structural_variants"][1]["primary_electrode_roles"] = ["repeller", "grid1", "grid2", "exit_grid"]
+            provider.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "topology"):
+                load_component_contract(root)
 
     def test_provider_python_does_not_depend_on_instrument_implementations(self) -> None:
         for folder in ("analysis", "simion"):

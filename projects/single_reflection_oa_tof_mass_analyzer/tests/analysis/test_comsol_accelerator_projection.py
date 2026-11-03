@@ -38,7 +38,7 @@ class ComsolAcceleratorProjectionTests(unittest.TestCase):
         resolved=three_zone_fixture()
         before=copy.deepcopy(resolved)
         geometry=resolve_accelerator_geometry(resolved,variant_id="three_zone_square").local_region
-        electrical=resolve_accelerator_electrical_design(resolved,variant_id="three_zone_square")
+        electrical=resolve_accelerator_electrical_design(resolved,variant_id="three_zone_square", schema_version=1)
         self.assertEqual(resolved,before)
         self.assertEqual(geometry["ring_z_mm"],electrical["ring_z_mm"])
         self.assertEqual(len(geometry["ring_z_mm"]),20)
@@ -50,7 +50,7 @@ class ComsolAcceleratorProjectionTests(unittest.TestCase):
 
     def test_two_zone_scientific_golden_is_unchanged(self):
         resolved=two_zone_fixture()
-        electrical=resolve_accelerator_electrical_design(resolved,variant_id="two_zone_square")
+        electrical=resolve_accelerator_electrical_design(resolved,variant_id="two_zone_square", schema_version=1)
         self.assertEqual(electrical["operating_voltages_v"]["repeller"],2240.)
         self.assertEqual(electrical["operating_voltages_v"]["grid1"],1760.)
         self.assertEqual(electrical["planes_z_mm"]["grid1"],-16.92918680341103)

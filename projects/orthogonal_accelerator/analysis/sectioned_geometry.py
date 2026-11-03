@@ -6,7 +6,7 @@ import math
 from typing import Any
 
 ROLE = "orthogonal_accelerator_bare_three_zone_requirements"
-_GEOMETRY_KEYS = {
+SECTIONED_GEOMETRY_FIELDS = frozenset({
     "cross_section", "axis_x_mm", "axis_y_mm", "shield_center_z_mm",
     "shield_outer_width_mm", "shield_inner_width_mm", "shield_span_z_mm",
     "negative_x_face_mm", "shield_wall_mm", "shield_back_z_mm",
@@ -14,7 +14,7 @@ _GEOMETRY_KEYS = {
     "numerical_port_height_mm", "electrode_width_mm", "bore_width_mm",
     "repeller_front_z_mm", "repeller_thickness_mm", "grid1_z_mm",
     "intermediate2_z_mm", "grid2_z_mm", "ring_count", "ring_thickness_mm", "ring_z_mm",
-}
+})
 
 
 def resolve_bare_three_zone_component(requirements: dict[str, Any]) -> dict[str, Any]:
@@ -24,13 +24,57 @@ def resolve_bare_three_zone_component(requirements: dict[str, Any]) -> dict[str,
             or requirements["role"] != ROLE or requirements["variant_id"] != "three_zone"):
         raise ValueError("explicit bare three-zone geometry requirements required")
     g = copy.deepcopy(requirements["geometry"])
-    if not isinstance(g, dict) or set(g) != _GEOMETRY_KEYS:
+    _validate_sectioned_mechanics(g)
+    planes = _sectioned_planes(g)
+    width, height = g["numerical_port_width_mm"], g["numerical_port_height_mm"]
+    if (abs(g["port_center_y_mm"] - g["axis_y_mm"]) + width/2 >= g["shield_inner_width_mm"]/2
+            or g["port_center_z_mm"] - height/2 <= planes["repeller"]
+            or g["port_center_z_mm"] + height/2 >= planes["grid1"]):
+        raise ValueError("side entry must fit strictly inside the first gap and lateral cavity")
+    return _project_sectioned_mechanics(g)
+
+
+def project_instrument_sectioned_mechanics(source: dict[str, Any]) -> dict[str, Any]:
+    """Project an explicitly identified instrument-owned sectioned body.
+
+    This preserves the instrument's physical side wall opening, including an
+    opening outside the standalone component's stricter first-gap capability.
+    It does not grant that standalone qualification. Body/ring/side-wall checks
+    remain mandatory; no caller can switch off validation.
+    """
+    if (not isinstance(source, dict) or set(source) != {"schema_version", "role", "producer", "frame_id", "geometry"}
+            or type(source["schema_version"]) is not int or source["schema_version"] != 1
+            or source["role"] != "oatof_validated_sectioned_accelerator_geometry"
+            or source["producer"] != "single_reflection_oa_tof_mass_analyzer"
+            or source["frame_id"] != "oatof_global"):
+        raise ValueError("explicit supported instrument sectioned mechanics source required")
+    g = copy.deepcopy(source["geometry"])
+    _validate_sectioned_mechanics(g)
+    width, height = g["numerical_port_width_mm"], g["numerical_port_height_mm"]
+    if (abs(g["port_center_y_mm"] - g["axis_y_mm"]) + width/2 >= g["shield_inner_width_mm"]/2
+            or g["port_center_z_mm"] - height/2 <= g["shield_back_z_mm"] + g["shield_wall_mm"]
+            or g["port_center_z_mm"] + height/2 >= g["grid2_z_mm"]):
+        raise ValueError("instrument side opening crosses the actual wall corner or axial end")
+    result = _project_sectioned_mechanics(g)
+    result.update(role="instrument_sectioned_accelerator_mechanics_projection",
+                  producer=source["producer"], source_role=source["role"], source_schema_version=1,
+                  standalone_component_capability=False)
+    return result
+
+
+def _sectioned_planes(g: dict[str, Any]) -> dict[str, float]:
+    return dict(repeller=g["repeller_front_z_mm"], grid1=g["grid1_z_mm"],
+                intermediate2=g["intermediate2_z_mm"], exit=g["grid2_z_mm"])
+
+
+def _validate_sectioned_mechanics(g: dict[str, Any]) -> None:
+    if not isinstance(g, dict) or set(g) != SECTIONED_GEOMETRY_FIELDS:
         raise ValueError("complete explicit sectioned three-zone geometry required")
     if g["cross_section"] not in {"square", "cylindrical"}:
         raise ValueError("sectioned three-zone cross section must be square or cylindrical")
     if type(g["ring_count"]) is not int or g["ring_count"] < 1:
         raise ValueError("sectioned ring count must be a positive integer")
-    for key in _GEOMETRY_KEYS - {"cross_section", "ring_count", "ring_z_mm"}:
+    for key in SECTIONED_GEOMETRY_FIELDS - {"cross_section", "ring_count", "ring_z_mm"}:
         if isinstance(g[key], bool) or not isinstance(g[key], (int, float)) or not math.isfinite(g[key]):
             raise ValueError("sectioned dimensions must be finite numbers")
     lengths = ("shield_outer_width_mm", "shield_inner_width_mm", "shield_span_z_mm", "shield_wall_mm",
@@ -45,18 +89,12 @@ def resolve_bare_three_zone_component(requirements: dict[str, Any]) -> dict[str,
             or not equal(g["shield_span_z_mm"], g["grid2_z_mm"] - g["shield_back_z_mm"])
             or not equal(g["shield_center_z_mm"], (g["grid2_z_mm"] + g["shield_back_z_mm"])/2)):
         raise ValueError("sectioned shield dimensions or side-face registration disagree")
-    planes = dict(repeller=g["repeller_front_z_mm"], grid1=g["grid1_z_mm"],
-                  intermediate2=g["intermediate2_z_mm"], exit=g["grid2_z_mm"])
+    planes = _sectioned_planes(g)
     if not all(a < b for a, b in zip(list(planes.values()), list(planes.values())[1:])):
         raise ValueError("sectioned three-zone planes must increase along extraction +z")
     if not (g["bore_width_mm"] < g["electrode_width_mm"] < g["shield_inner_width_mm"]
             and g["shield_back_z_mm"] + g["shield_wall_mm"] < planes["repeller"] - g["repeller_thickness_mm"]):
         raise ValueError("sectioned electrodes require real shield and rear clearance")
-    width, height = g["numerical_port_width_mm"], g["numerical_port_height_mm"]
-    if (abs(g["port_center_y_mm"] - g["axis_y_mm"]) + width/2 >= g["shield_inner_width_mm"]/2
-            or g["port_center_z_mm"] - height/2 <= planes["repeller"]
-            or g["port_center_z_mm"] + height/2 >= planes["grid1"]):
-        raise ValueError("side entry must fit strictly inside the first gap and lateral cavity")
     rings = g["ring_z_mm"]
     if (not isinstance(rings, list) or len(rings) != g["ring_count"]
             or any(isinstance(z, bool) or not isinstance(z, (int, float)) or not math.isfinite(z) for z in rings)
@@ -71,6 +109,12 @@ def resolve_bare_three_zone_component(requirements: dict[str, Any]) -> dict[str,
         raise ValueError("sectioned rings overlap")
     if not any(z < planes["intermediate2"] for z in rings) or not any(z > planes["intermediate2"] for z in rings):
         raise ValueError("sectioned rings must represent both downstream zones")
+
+
+def _project_sectioned_mechanics(g: dict[str, Any]) -> dict[str, Any]:
+    planes = _sectioned_planes(g)
+    rings = g["ring_z_mm"]
+    width, height = g["numerical_port_width_mm"], g["numerical_port_height_mm"]
     electrodes = dict(grounded_shield_id=1, accelerator_repeller_id=2,
                       accelerator_grid1_id=3, accelerator_intermediate2_id=4,
                       accelerator_grid2_id=5, accelerator_ring_ids=list(range(6, 6+len(rings))))

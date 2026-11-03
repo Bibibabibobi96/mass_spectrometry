@@ -50,6 +50,7 @@ def linear_ring_electrode_voltages(
 
 def resolve_accelerator_electrical_design(
     oatof_resolved: Mapping[str, Any], *, variant_id: str, geometry_projection: Any = None,
+    schema_version: int = 2,
 ) -> dict[str, Any]:
     """Publish semantic ON voltages and actual provider plane/ring positions.
 
@@ -57,6 +58,8 @@ def resolve_accelerator_electrical_design(
     introduced. Three-zone topology potentials and the resolved electrode table
     must agree; conflicting representations cannot silently choose a winner.
     """
+    if type(schema_version) is not int or schema_version not in (1, 2):
+        raise ValueError("unsupported accelerator electrical schema_version")
     projection = (resolve_accelerator_geometry(oatof_resolved, variant_id=variant_id)
                   if geometry_projection is None else geometry_projection)
     if projection.variant_id != variant_id:
@@ -87,6 +90,12 @@ def resolve_accelerator_electrical_design(
     voltages["rings"] = linear_ring_electrode_voltages(
         [planes[role] for role in divider], rings, [voltages[role] for role in divider])
     voltages["shield"] = shield
-    return dict(schema_version=1, role="oatof_accelerator_electrical_design", variant_id=variant_id,
+    if schema_version == 2:
+        # Explicit v1 source meanings: grid2 is the exit, not the second intermediate grid.
+        names = {"repeller": "repeller", "grid1": "intermediate_grid_1",
+                 "intermediate2": "intermediate_grid_2", "grid2": "exit_grid"}
+        planes = {names[key]: value for key, value in planes.items()}
+        voltages = {names.get(key, key): value for key, value in voltages.items()}
+    return dict(schema_version=schema_version, role="oatof_accelerator_electrical_design", variant_id=variant_id,
                 frame_id="oatof_global", planes_z_mm=planes, ring_z_mm=rings,
                 operating_voltages_v=voltages)

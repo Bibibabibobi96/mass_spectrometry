@@ -86,7 +86,8 @@ def _provider_projection(frontend: dict, oatof: dict, variant: str) -> tuple[Any
         cell_mm_xyz=domain["cell_mm_xyz"], pa_origin_mm=domain["instance_origin_mm"])
     if projection.local_region != frontend["accelerator_projection"]:
         raise ValueError("frontend physical accelerator projection differs from its resolved provider and mechanical side opening")
-    if resolve_assembly_interface(oatof, projection=projection, geometry_profile_id=interface["geometry_profile_id"]) != interface:
+    if resolve_assembly_interface(oatof, projection=projection, geometry_profile_id=interface["geometry_profile_id"],
+                                  schema_version=interface["schema_version"]) != interface:
         raise ValueError("parent oaTOF mechanical interface differs from the actual provider projection")
     return projection, selected, oatof_id, bindings
 
@@ -307,7 +308,7 @@ def prepare(request_path: Path, output_dir: Path, *, source_snapshot_root: Path 
     project_side_opening(projection, side_opening=opening, cell_mm_xyz=pitch,
         pa_origin_mm={axis: box[f"{axis}_min"] for axis in "xyz"})
     _validate_box_covers_provider(box, projection, policy["metal_clearance_mm"])
-    electrical = resolve_accelerator_electrical_design(oatof, variant_id=request["accelerator_variant"])
+    electrical = resolve_accelerator_electrical_design(oatof, variant_id=request["accelerator_variant"], schema_version=1)
     points = _validate_points(request["sample_points"], box=box, geometry=projection, policy=policy)
     gems, compiled = compile_frontend_geometry({}, oatof, composition_plan=scope,
         accelerator_variant=request["accelerator_variant"],

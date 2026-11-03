@@ -7,6 +7,7 @@ accelerator portion of an oaTOF assembly, not another OA instance to assemble.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import copy
 import math
 from typing import Any, Mapping
 
@@ -60,6 +61,93 @@ class ResolvedAcceleratorGeometry:
     variant_id: str
     local_frame_id: str
     local_region: dict[str, Any]
+
+
+def _resolve_side_entry_port(
+    projection: ResolvedAcceleratorGeometry, *, geometry_profile_id: str | None,
+) -> dict[str, Any]:
+    """Validate and publish the existing instrument wall opening once."""
+    if projection.local_frame_id != "oatof_global":
+        raise ValueError("oaTOF side-shield interface requires frame oatof_global")
+    if projection.variant_id not in {"two_zone_square", "three_zone_square"}:
+        raise ValueError(f"oaTOF side-shield planar interface does not support {projection.variant_id}")
+    if geometry_profile_id is not None and (not isinstance(geometry_profile_id, str) or not geometry_profile_id.strip()):
+        raise ValueError("geometry_profile_id must be null or a nonempty string")
+    g = projection.local_region
+    try:
+        aperture = g["accelerator_port_aperture_discretization"]
+        face, wall = float(g["negative_x_face_mm"]), float(g["shield_wall_mm"])
+        y, z = float(g["port_center_y_mm"]), float(g["port_center_z_mm"])
+        width, height = float(aperture["mechanical_width_mm"]), float(aperture["mechanical_height_mm"])
+        outer_face = float(g["axis_x_mm"]) - float(g["shield_outer_width_mm"]) / 2
+        inner_face = float(g["axis_x_mm"]) - float(g["shield_inner_width_mm"]) / 2
+        actual = (face, face + wall, aperture["flange_min_mm"], aperture["flange_max_mm"],
+                  aperture["center_mm"]["x"], aperture["center_mm"]["y"], aperture["center_mm"]["z"])
+        expected = (outer_face, inner_face, face, face + wall, (face + face + wall) / 2, y, z)
+        if g["cross_section"] != "square" or aperture["normal_axis"] != "x" or any(
+            not math.isclose(a, b, rel_tol=0, abs_tol=1e-9) for a, b in zip(actual, expected)
+        ):
+            raise ValueError("oaTOF side-shield aperture does not traverse its actual outer and inner walls")
+        if not all(math.isfinite(value) and value > 0 for value in (wall, width, height)):
+            raise ValueError("oaTOF side-shield aperture dimensions must be finite and positive")
+        # An aperture extending past a corner/end is a different solid topology.
+        if (abs(y - float(g["axis_y_mm"])) + width / 2 >= float(g["shield_inner_width_mm"]) / 2
+                or z - height / 2 <= float(g["shield_back_z_mm"]) + wall
+                or z + height / 2 >= float(g["grid2_z_mm"])):
+            raise ValueError("oaTOF side-shield aperture crosses a wall corner or axial end")
+    except (KeyError, TypeError) as error:
+        raise ValueError(f"oaTOF side-shield rendered projection is incomplete: {error}") from error
+    return {
+            "surface_kind": "aperture_outer_face", "center_mm": [face, y, z],
+            "outward_normal": [-1, 0, 0], "wall_thickness_mm": wall,
+            "cross_section": {"shape": "rectangle", "width_mm": width, "height_mm": height,
+                              "width_axis": [0, 1, 0], "height_axis": [0, 0, 1]},
+        }
+
+
+def resolve_oa_provider(
+    oatof_resolved: Mapping[str, Any], *, projection: ResolvedAcceleratorGeometry,
+    geometry_profile_id: str | None,
+) -> dict[str, Any]:
+    """Compile the actual three-zone square portion with the OA provider.
+
+    The axes are aligned, but their frame labels retain their provider meaning.
+    Mechanical port dimensions come from the aperture's physical inputs, never
+    its mesh carve. This boundary does not support the legacy two-zone model.
+    """
+    from projects.orthogonal_accelerator.analysis.sectioned_geometry import (
+        SECTIONED_GEOMETRY_FIELDS, project_instrument_sectioned_mechanics,
+    )
+    from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_electrical import (
+        resolve_accelerator_electrical_design,
+    )
+
+    if projection.variant_id != "three_zone_square" or projection.local_frame_id != "oatof_global":
+        raise ValueError("OA provider projection supports only three_zone_square in oatof_global")
+    expected = resolve_accelerator_geometry(oatof_resolved, variant_id=projection.variant_id)
+    # The explicit opening is applied after the provider's physical body projection.
+    if any(projection.local_region.get(key) != value for key, value in expected.local_region.items()):
+        raise ValueError("OA provider projection differs from the resolved physical body")
+    try:
+        geometry = {key: copy.deepcopy(projection.local_region[key]) for key in SECTIONED_GEOMETRY_FIELDS}
+        aperture = projection.local_region["accelerator_port_aperture_discretization"]
+        geometry["numerical_port_width_mm"] = aperture["mechanical_width_mm"]
+        geometry["numerical_port_height_mm"] = aperture["mechanical_height_mm"]
+    except (KeyError, TypeError) as error:
+        raise ValueError("OA provider requires an explicit physical side opening") from error
+    # Reuse the instrument's complete existing wall/port guard. Its opening is
+    # not the standalone OA component's stricter first-gap capability.
+    port = _resolve_side_entry_port(projection, geometry_profile_id=geometry_profile_id)
+    source = dict(schema_version=1, role="oatof_validated_sectioned_accelerator_geometry",
+                  producer="single_reflection_oa_tof_mass_analyzer", frame_id="oatof_global", geometry=geometry)
+    mechanical = project_instrument_sectioned_mechanics(source)
+    electrical = resolve_accelerator_electrical_design(
+        oatof_resolved, variant_id=projection.variant_id, geometry_projection=projection, schema_version=2,
+    )
+    return dict(schema_version=1, role="oatof_oa_provider_projection", source=source,
+                mechanical=mechanical, ports={"side_entry": port}, electrical=electrical,
+                frame_transform=dict(from_frame="sectioned_accelerator_cartesian", to_frame="oatof_global",
+                    rotation=[[1, 0, 0], [0, 1, 0], [0, 0, 1]], translation_mm=[0, 0, 0]))
 
 
 def resolve_accelerator_geometry(

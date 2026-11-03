@@ -68,5 +68,52 @@ class BareThreeZoneComponentTests(unittest.TestCase):
             render_bare_three_zone_electrode_body(resolved, cell_mm_xyz=dict(x=.1,y=.2,z=.1), local_electrode_ids={1:9})
 
 
+    def test_instrument_projection_is_explicit_and_does_not_grant_first_gap_capability(self):
+        from projects.orthogonal_accelerator.analysis.sectioned_geometry import project_instrument_sectioned_mechanics
+        from projects.orthogonal_accelerator.analysis.electrode_topology import _mechanical_groups
+
+        request = three_zone_requirements_fixture()
+        request["geometry"]["numerical_port_height_mm"] = 4.0
+        before = copy.deepcopy(request)
+        with self.assertRaisesRegex(ValueError, "first gap"):
+            resolve_bare_three_zone_component(request)
+        source = dict(schema_version=1, role="oatof_validated_sectioned_accelerator_geometry",
+                      producer="single_reflection_oa_tof_mass_analyzer", frame_id="oatof_global",
+                      geometry=request["geometry"])
+        low = project_instrument_sectioned_mechanics(source)
+        self.assertEqual(low["geometry"], request["geometry"])
+        self.assertEqual(low["port"]["height_mm"], 4)
+        self.assertFalse(low["standalone_component_capability"])
+        self.assertEqual(_mechanical_groups(low)[1][3][0], "intermediate_grid_2")
+        self.assertEqual(request, before)
+        for key, value in (("producer", "unknown"), ("schema_version", 2),
+                           ("schema_version", True), ("role", "unknown"), ("frame_id", "unknown")):
+            invalid = copy.deepcopy(source)
+            invalid[key] = value
+            with self.subTest(key=key, value=value), self.assertRaisesRegex(ValueError, "source"):
+                project_instrument_sectioned_mechanics(invalid)
+        for key, value in (("producer", "unknown"), ("source_schema_version", 2),
+                           ("standalone_component_capability", True)):
+            invalid = copy.deepcopy(low)
+            invalid[key] = value
+            with self.subTest(key=key, value=value), self.assertRaisesRegex(ValueError, "source or capability"):
+                _mechanical_groups(invalid)
+
+    def test_shared_mechanical_constructor_keeps_original_standalone_vectors(self):
+        from projects.orthogonal_accelerator.analysis.sectioned_geometry import project_instrument_sectioned_mechanics
+
+        request = three_zone_requirements_fixture()
+        standalone = resolve_bare_three_zone_component(request)
+        projected = project_instrument_sectioned_mechanics(dict(
+            schema_version=1, role="oatof_validated_sectioned_accelerator_geometry",
+            producer="single_reflection_oa_tof_mass_analyzer", frame_id="oatof_global", geometry=request["geometry"],
+        ))
+        for key in standalone:
+            if key != "role":
+                self.assertEqual(projected[key], standalone[key], key)
+        self.assertEqual(standalone["canonical_electrodes"]["repeller"]["solid_box_mm"],
+                         dict(x_min_mm=-15, x_max_mm=15, y_min_mm=-15, y_max_mm=15, z_min_mm=-1, z_max_mm=0))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -20,13 +20,14 @@ def _source_path(root: Path, value: str, label: str) -> Path:
     return target
 
 
-def _load_object(path: Path, fields: set[str], label: str) -> dict[str, Any]:
+def _load_object(path: Path, fields: set[str], label: str, *, api_version: int | None = None) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict) or set(value) != fields:
         raise ValueError(f"{label} has missing or unknown fields")
     if type(value["schema_version"]) is not int or value["schema_version"] != 1:
         raise ValueError(f"{label} schema_version is unsupported")
-    if type(value["api_version"]) is not int or value["api_version"] != 2:
+    if (type(value["api_version"]) is not int or value["api_version"] not in (2, 3)
+            or api_version is not None and value["api_version"] != api_version):
         raise ValueError(f"{label} api_version is unsupported")
     return value
 
@@ -35,10 +36,13 @@ def _provider_variants(provider: dict[str, Any]) -> set[str]:
     variants = provider["structural_variants"]
     if not isinstance(variants, list) or not variants:
         raise ValueError("provider structural_variants must be nonempty")
-    expected_roles = {
+    expected_roles = ({
         "two_zone": ["repeller", "grid1", "exit_grid"],
         "three_zone": ["repeller", "grid1", "grid2", "exit_grid"],
-    }
+    } if provider["api_version"] == 2 else {
+        "two_zone": ["repeller", "intermediate_grid_1", "exit_grid"],
+        "three_zone": ["repeller", "intermediate_grid_1", "intermediate_grid_2", "exit_grid"],
+    })
     names: set[str] = set()
     for row in variants:
         if not isinstance(row, dict) or set(row) != {
@@ -56,39 +60,28 @@ def _provider_variants(provider: dict[str, Any]) -> set[str]:
     return names
 
 
-def load_accelerator_dependency(
-    repository_root: Path, dependency_path: Path, *,
-    consumer_project_id: str, required_variant: str,
-) -> dict[str, Any]:
-    """Validate API identity/topology and return sources for run-local freezing.
+def _provider_path(api_version: int) -> str:
+    if type(api_version) is not int or api_version not in (2, 3):
+        raise ValueError("accelerator api_version must be explicitly 2 or 3")
+    return ("projects/orthogonal_accelerator/config/component_contract.json" if api_version == 2
+            else "projects/orthogonal_accelerator/config/component_contract_v3.json")
 
-    All source paths are resolved inside the supplied repository. This function
-    performs no copying, updates, solver work or qualification. Consumers keep
-    their existing run publication mechanism and freeze these checked inputs.
+
+def load_component_contract(repository_root: Path, *, api_version: int = 3) -> dict[str, Any]:
+    """Read one explicit provider API for freezing; API3 is the current default.
+
+    API2 remains its unchanged old contract. Unknown versions fail, and this
+    reader never copies files or chooses a consumer's variant or qualification.
     """
     root = repository_root.resolve()
-    dependency_path = dependency_path.resolve()
-    if root not in dependency_path.parents:
-        raise ValueError("consumer dependency is outside the repository")
-    dependency = _load_object(dependency_path, {
-        "schema_version", "role", "consumer_project_id", "provider_project_id",
-        "api_version", "provider_contract", "structural_variants", "ownership",
-    }, "consumer dependency")
-    if (dependency["role"] != "accelerator_component_dependency"
-            or dependency["consumer_project_id"] != consumer_project_id
-            or dependency["provider_project_id"] != "orthogonal_accelerator"):
-        raise ValueError("accelerator dependency project/role identity differs")
-    expected_provider = "projects/orthogonal_accelerator/config/component_contract.json"
-    if dependency["provider_contract"] != expected_provider:
-        raise ValueError("accelerator provider contract identity differs")
-    provider_path = _source_path(root, expected_provider, "provider contract")
+    provider_path = _source_path(root, _provider_path(api_version), "provider contract")
     provider = _load_object(provider_path, {
         "schema_version", "role", "project_id", "api_version", "structural_variants",
         "units", "request_api", "geometry_profiles", "coordinate_policy", "qualification_policy", "implementation_modules",
-    }, "accelerator provider")
+    }, "accelerator provider", api_version=api_version)
     if (provider["role"] != "orthogonal_accelerator_component_api"
-            or provider["project_id"] != dependency["provider_project_id"]
-            or provider["api_version"] != dependency["api_version"]):
+            or provider["project_id"] != "orthogonal_accelerator"
+            or provider["api_version"] != api_version):
         raise ValueError("accelerator provider project/role/API identity differs")
     if provider["units"] != {"length": "mm", "voltage": "V", "mass": "Da", "time": "us"}:
         raise ValueError("accelerator provider units differ")
@@ -115,13 +108,7 @@ def load_accelerator_dependency(
     profiles = provider["geometry_profiles"]
     if not isinstance(profiles, dict) or set(profiles) != {"closed_two_zone_compact_mr_axial_r3_gap1_4mm"}:
         raise ValueError("accelerator provider geometry profiles differ")
-    variants = dependency["structural_variants"]
-    if (not isinstance(variants, list) or not variants
-            or any(not isinstance(value, str) for value in variants)
-            or len(set(variants)) != len(variants)
-            or not set(variants) <= _provider_variants(provider)
-            or required_variant not in variants):
-        raise ValueError("consumer does not declare the required accelerator variant")
+    _provider_variants(provider)
     modules = provider["implementation_modules"]
     if not isinstance(modules, list) or not modules or any(not isinstance(value, str) for value in modules):
         raise ValueError("provider implementation_modules must be nonempty paths")
@@ -130,10 +117,44 @@ def load_accelerator_dependency(
     provider_root = provider_path.parents[1]
     sources = tuple(_source_path(provider_root, value, "provider implementation") for value in modules)
     return {
-        "dependency": dependency, "provider": provider,
-        "api_version": provider["api_version"],
-        "dependency_path": dependency_path, "provider_contract_path": provider_path,
-        "dependency_sha256": repository_text_sha256(dependency_path),
+        "provider": provider, "api_version": api_version,
+        "provider_contract_path": provider_path,
         "provider_contract_sha256": repository_text_sha256(provider_path),
         "implementation_sources": sources,
     }
+
+
+def load_accelerator_dependency(
+    repository_root: Path, dependency_path: Path, *,
+    consumer_project_id: str, required_variant: str,
+) -> dict[str, Any]:
+    """Validate an explicitly versioned dependency and its provider for freezing.
+
+    The dependency's API2/API3 declaration selects one fixed provider path; no
+    unknown version, path mismatch or cross-version aliases are guessed.
+    """
+    root = repository_root.resolve()
+    dependency_path = dependency_path.resolve()
+    if root not in dependency_path.parents:
+        raise ValueError("consumer dependency is outside the repository")
+    dependency = _load_object(dependency_path, {
+        "schema_version", "role", "consumer_project_id", "provider_project_id",
+        "api_version", "provider_contract", "structural_variants", "ownership",
+    }, "consumer dependency")
+    if (dependency["role"] != "accelerator_component_dependency"
+            or dependency["consumer_project_id"] != consumer_project_id
+            or dependency["provider_project_id"] != "orthogonal_accelerator"):
+        raise ValueError("accelerator dependency project/role identity differs")
+    api_version = dependency["api_version"]
+    if dependency["provider_contract"] != _provider_path(api_version):
+        raise ValueError("accelerator provider contract path differs from declared api_version")
+    result = load_component_contract(root, api_version=api_version)
+    variants = dependency["structural_variants"]
+    if (not isinstance(variants, list) or not variants
+            or any(not isinstance(value, str) for value in variants)
+            or len(set(variants)) != len(variants)
+            or not set(variants) <= _provider_variants(result["provider"])
+            or required_variant not in variants):
+        raise ValueError("consumer does not declare the required accelerator variant")
+    return {**result, "dependency": dependency, "dependency_path": dependency_path,
+            "dependency_sha256": repository_text_sha256(dependency_path)}

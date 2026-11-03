@@ -48,8 +48,8 @@ def _mechanical_groups(resolved: ClosedTwoZoneGeometry | Mapping[str, Any]) -> t
             ("grounded_shield", ["shield", "rear_cap"], enclosure + ["/local_exit_z_mm", "/aperture_half_x_mm", "/aperture_half_y_mm"]),
             ("repeller", ["repeller"], ["/local_repeller_z_mm", "/repeller_thickness_mm",
                                         "/enclosure/electrode_half_x_mm", "/enclosure/electrode_half_y_mm"]),
-            ("grid1", ["grid_support", "ideal_transparent_sheet"], ["/grid_supports/0"]),
-            ("exit_grid", ["grid_support", "ideal_transparent_sheet"], ["/grid_supports/1"]),
+            ("intermediate_grid_1", ["intermediate_grid_1", "grid_support", "ideal_transparent_sheet"], ["/grid_supports/0"]),
+            ("exit_grid", ["exit_grid", "grid_support", "ideal_transparent_sheet"], ["/grid_supports/1"]),
         ]
         if resolved.side_entry is not None:
             groups[0][2].append("/side_entry/physical_cutout_box_mm")
@@ -57,7 +57,18 @@ def _mechanical_groups(resolved: ClosedTwoZoneGeometry | Mapping[str, Any]) -> t
                        "/enclosure/electrode_half_x_mm", "/enclosure/electrode_half_y_mm",
                        "/aperture_half_x_mm", "/aperture_half_y_mm"])
                       for index in range(len(resolved.rings)))
-    elif isinstance(resolved, Mapping) and resolved.get("role") == "orthogonal_accelerator_sectioned_three_zone_geometry":
+    elif isinstance(resolved, Mapping) and resolved.get("role") in {
+        "orthogonal_accelerator_sectioned_three_zone_geometry", "instrument_sectioned_accelerator_mechanics_projection",
+    }:
+        if type(resolved.get("schema_version")) is not int or resolved["schema_version"] != 1:
+            raise ValueError("three-zone topology requires explicit sectioned geometry schema 1")
+        if resolved["role"] == "instrument_sectioned_accelerator_mechanics_projection" and (
+            resolved.get("producer") != "single_reflection_oa_tof_mass_analyzer"
+            or resolved.get("source_role") != "oatof_validated_sectioned_accelerator_geometry"
+            or type(resolved.get("source_schema_version")) is not int or resolved["source_schema_version"] != 1
+            or resolved.get("standalone_component_capability") is not False
+        ):
+            raise ValueError("unknown instrument mechanics source or capability")
         document = resolved
         geometry = resolved["geometry"]
         rings = resolved["ring_z_mm"]
@@ -72,8 +83,8 @@ def _mechanical_groups(resolved: ClosedTwoZoneGeometry | Mapping[str, Any]) -> t
         groups = [
             ("grounded_shield", ["shield", "rear_cap"], [f"/geometry/{key}" for key in shield]),
             ("repeller", ["repeller"], ["/canonical_electrodes/repeller"]),
-            *[(name, ["ideal_zero_thickness_sheet"], [f"/canonical_electrodes/ideal_sheets/{index}"])
-              for index, name in enumerate(("grid1", "intermediate2", "exit_grid"))],
+            *[(name, [name, "ideal_zero_thickness_sheet"], [f"/canonical_electrodes/ideal_sheets/{index}"])
+              for index, name in enumerate(("intermediate_grid_1", "intermediate_grid_2", "exit_grid"))],
         ]
         groups.extend((f"ring_{index + 1:04d}", ["ring"], [f"/geometry/ring_z_mm/{index}",
                        *[f"/geometry/{key}" for key in ("ring_thickness_mm", "cross_section", "axis_x_mm",
@@ -93,7 +104,7 @@ def build_electrode_topology(
 ) -> tuple[dict[str, Any], ...]:
     """Bind every real OA group to an explicit finite voltage-source reference.
 
-    Sources must cover scientific IDs exactly, each as {'pointer': JSONPointer}
+    Sources must cover electrode-group IDs exactly, each as {'pointer': JSONPointer}
     into source_document. References do not imply a static waveform; the caller
     retains source identity, units (V), clock and freezing in its existing record.
     Repeated pointers are allowed without merging groups. The existing grounded
@@ -115,5 +126,5 @@ def build_electrode_topology(
             raise ValueError(f"voltage source for {name} must reference a finite number in V")
         if name == "grounded_shield" and value != 0:
             raise ValueError("grounded shield source must be 0 V")
-        result.append(dict(scientific_id=name, roles=roles, member_refs=refs, voltage_source=dict(source)))
+        result.append(dict(electrode_group_id=name, roles=roles, member_refs=refs, voltage_source=dict(source)))
     return tuple(result)

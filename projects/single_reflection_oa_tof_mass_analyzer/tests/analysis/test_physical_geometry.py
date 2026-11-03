@@ -15,7 +15,7 @@ import tempfile
 import unittest
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import (
-    PROJECT_ROOT, resolve_contract, resolve_physical_geometry,
+    PROJECT_ROOT, resolve_contract, resolve_electrode_geometry, resolve_physical_geometry,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_contract import lua_value, render_resolved_lua
 
@@ -239,3 +239,51 @@ simion={command=function() error('Fast Adjust must not use a command string') en
                 resolved["geometry_mm"][field] = value
                 with self.assertRaises(ValueError):
                     render_resolved_lua(resolved)
+
+
+class NeutralElectrodeGeometryTests(unittest.TestCase):
+    def test_full_legacy_native_return_matches_pre_extraction_goldens(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_assembly_interface import (
+            candidate_300mm_fixture, projected_candidate,
+        )
+        # SHA over the complete sorted JSON dictionaries captured before extraction;
+        # this includes every original object, ID, voltage, region and marker.
+        expected = {'two_zone': '8523d87cd9647db538d7255ef48a8064d9af1a30e842927806a6475f59968f64', 'two_zone_asymmetric': '0a51a0f9c9d62cbee3778d4637f01716674b79c727b549f7762916e6ef239e50', 'three_zone': '9b0266a0881a9b06883fa913ca3a250e5af6b7bb04532dc020fd34889158022f'}
+        cases = {"two_zone": (resolve_contract(), None),
+                 "two_zone_asymmetric": (nondefault_resolved(), None),
+                 "three_zone": (candidate_300mm_fixture(), projected_candidate())}
+        for name, (resolved, projection) in cases.items():
+            with self.subTest(case=name):
+                actual = resolve_physical_geometry(resolved, accelerator_projection=projection)
+                payload = json.dumps(actual, sort_keys=True, separators=(",", ":")).encode()
+                self.assertEqual(hashlib.sha256(payload).hexdigest(), expected[name])
+
+    def test_neutral_bodies_without_backend_payload_preserve_actual_physics(self):
+        from unittest.mock import patch
+
+        resolved = nondefault_resolved()
+        original = copy.deepcopy(resolved)
+        expected = resolve_electrode_geometry(resolved)
+        for key in list(resolved):
+            if key.startswith("simion") or key in {"solver_numerics", "comsol_runtime"}:
+                del resolved[key]
+        with patch(__name__.rsplit(".tests.", 1)[0] + ".analysis.geometry_contract.resolve_physical_geometry",
+                   side_effect=AssertionError("neutral must not enter native adapter")):
+            self.assertEqual(resolve_electrode_geometry(resolved), expected)
+        bodies = {body["role"]: body for body in expected["electrodes"]}
+        self.assertEqual([bodies[f"reflectron_stage1_ring_{i}"]["operating_voltage_v"] for i in (1, 2)], [500., 1000.])
+        self.assertEqual([bodies[f"reflectron_stage2_ring_{i}"]["operating_voltage_v"] for i in (1, 2, 3)], [1750., 2000., 2250.])
+        self.assertEqual({body["role"] for body in expected["electrodes"] if body["grounded"]},
+                         {"accelerator_side_shield", "flight_tube_shield", "reflectron_entry_grid", "detector"})
+        self.assertNotIn("component_electrode_id", repr(expected))
+        self.assertNotIn("local_electrode_id", repr(expected))
+        self.assertEqual(expected["electrodes"][-1]["geometry"]["primitive"], "cylinder")
+        with self.assertRaises(KeyError):
+            resolve_physical_geometry(resolved)
+        for key, value in original.items():
+            if key in resolved:
+                self.assertEqual(resolved[key], value)
+        invalid = copy.deepcopy(resolved)
+        invalid["geometry_mm"]["ring_thickness"] = 0
+        with self.assertRaises(ValueError):
+            resolve_electrode_geometry(invalid)

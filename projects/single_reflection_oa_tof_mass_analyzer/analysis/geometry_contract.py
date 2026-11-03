@@ -114,15 +114,14 @@ def derive_simion_geometry(
 
 
 
-def resolve_physical_geometry(
+def resolve_electrode_geometry(
     contract: dict[str, Any], *, accelerator_projection: Any = None,
 ) -> dict[str, Any]:
-    """Project the final frozen design into physical objects and native bindings.
+    """Resolve physical electrode bodies and ON potentials without a backend.
 
-    Physical IDs identify provider objects, never PA-local electrode numbers.
-    The continuous instrument enclosure owns both native shield fragments. The
-    real detector cylinder and the SIMION return marker remain separate models.
-    This pure projection changes neither the scientific contract nor any file.
+    Explicit local-frame regions preserve the original arithmetic for the
+    legacy native adapter; they are physical coordinates, not native labels.
+    Numerical detector markers and solver meshes are not required here.
     """
     from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_geometry import resolve_accelerator_geometry
     from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_electrical import resolve_accelerator_electrical_design
@@ -138,7 +137,7 @@ def resolve_physical_geometry(
         accelerator_projection = resolve_accelerator_geometry(contract, variant_id=zones + "_" + cross_section)
     accelerator = accelerator_projection.local_region
     electrical = resolve_accelerator_electrical_design(
-        contract, variant_id=accelerator_projection.variant_id, geometry_projection=accelerator_projection)
+        contract, variant_id=accelerator_projection.variant_id, geometry_projection=accelerator_projection, schema_version=1)
     g, coordinate = contract["geometry_mm"], contract["coordinate_convention"]
     rings, voltage = contract["rings"], contract["electrodes_V"]
     positive = ("flight_tube_r", "flight_tube_wall", "shield_endcap_thickness", "L_reflectron",
@@ -154,18 +153,19 @@ def resolve_physical_geometry(
         raise ValueError("reflectron interface must lie beyond the near cap")
     objects: list[dict[str, Any]] = []
 
-    def electrode(role: str, geometry: dict[str, Any], *, grounded: bool = False) -> int:
-        physical_id = len(objects) + 1
-        objects.append(dict(component_electrode_id=physical_id, role=role,
-            electrical_group_id=1 if grounded else physical_id, geometry=geometry))
-        return physical_id
+    def electrode(role: str, geometry: dict[str, Any], *, volts: float = 0,
+                  grounded: bool = False) -> dict[str, Any]:
+        body = dict(role=role, grounded=grounded, geometry=geometry, operating_voltage_v=volts)
+        objects.append(body)
+        return body
 
-    oa_ids = {"shield": electrode("accelerator_side_shield", {"provider_region": "shield"}, grounded=True)}
+    electrode("accelerator_side_shield", {"provider_region": "shield"}, grounded=True)
     for role in electrical["planes_z_mm"]:
-        oa_ids[role] = electrode("accelerator_" + role, {"provider_region": role})
-    oa_ids["rings"] = [electrode("accelerator_ring_" + str(index),
-        {"provider_region": "ring", "ring_index": index})
-        for index in range(1, len(accelerator["ring_z_mm"]) + 1)]
+        electrode("accelerator_" + role, {"provider_region": role},
+                  volts=electrical["operating_voltages_v"][role])
+    for index, volts in enumerate(electrical["operating_voltages_v"]["rings"], 1):
+        electrode("accelerator_ring_" + str(index),
+                  {"provider_region": "ring", "ring_index": index}, volts=volts)
     outer_radius = g["flight_tube_r"] + g["flight_tube_wall"]
     near = g["shield_outer_z_min"]
     interface = g["L_flight"]
@@ -177,21 +177,17 @@ def resolve_physical_geometry(
         dict(axial_mm=[near + g["shield_endcap_thickness"], bore_end], radius_mm=[g["flight_tube_r"], outer_radius]),
         dict(axial_mm=[bore_end, outer_end], radius_mm=[0, outer_radius]),
     ]
-    shield_id = electrode("flight_tube_shield", dict(primitive="cylindrical_union",
+    shield = electrode("flight_tube_shield", dict(primitive="cylindrical_union",
         axis_xy_mm=list(coordinate["reflectron_axis"]), parts=shield_parts), grounded=True)
-    tube = dict(electrodes=[dict(component_electrode_id=shield_id, local_electrode_id=1,
-        voltage_v=0, regions=[dict(axial_mm=[0, g["shield_endcap_thickness"]], radius_mm=[0, outer_radius]),
-            dict(axial_mm=[g["shield_endcap_thickness"], interface-near], radius_mm=[g["flight_tube_r"], outer_radius])])],
-        axial_span_mm=interface-near, outer_radius_mm=outer_radius)
-    native: list[dict[str, Any]] = []
-
+    shield["flight_tube_local_regions"] = [
+        dict(axial_mm=[0, g["shield_endcap_thickness"]], radius_mm=[0, outer_radius]),
+        dict(axial_mm=[g["shield_endcap_thickness"], interface-near], radius_mm=[g["flight_tube_r"], outer_radius])]
     def reflector_electrode(role: str, z0: float, z1: float, r0: float, r1: float,
                             volts: float, *, grounded: bool = False) -> None:
-        physical_id = electrode(role, dict(primitive="cylindrical_region",
+        body = electrode(role, dict(primitive="cylindrical_region",
             axis_xy_mm=list(coordinate["reflectron_axis"]), axial_mm=[interface+z0, interface+z1],
-            radius_mm=[r0, r1]), grounded=grounded)
-        native.append(dict(component_electrode_id=physical_id, local_electrode_id=len(native)+1,
-            voltage_v=volts, regions=[dict(axial_mm=[z0, z1], radius_mm=[r0, r1])]))
+            radius_mm=[r0, r1]), volts=volts, grounded=grounded)
+        body["reflectron_local_regions"] = [dict(axial_mm=[z0, z1], radius_mm=[r0, r1])]
 
     reflector_electrode("reflectron_entry_grid", 0, 0, 0, g["flight_tube_r"],
         require_grounded_potential(voltage["entgrid"], "oaTOF reflectron entrance grid"), grounded=True)
@@ -213,25 +209,63 @@ def resolve_physical_geometry(
                 0, g["ring_outer_r"], voltage["midgrid"])
     reflector_electrode("reflectron_backplate", g["L_reflectron"], g["L_reflectron"]+g["ring_thickness"],
         0, g["ring_outer_r"], voltage["backplate"])
-    native.append(dict(component_electrode_id=shield_id, local_electrode_id=len(native)+1, voltage_v=0,
-        regions=[dict(axial_mm=[0, local_bore_end], radius_mm=[g["flight_tube_r"], outer_radius]),
-                 dict(axial_mm=[local_bore_end, local_outer_end], radius_mm=[0, outer_radius])]))
-    detector_id = electrode("detector", dict(primitive="cylinder", radius_mm=g["detector_radius"],
+    shield["reflectron_local_regions"] = [
+        dict(axial_mm=[0, local_bore_end], radius_mm=[g["flight_tube_r"], outer_radius]),
+        dict(axial_mm=[local_bore_end, local_outer_end], radius_mm=[0, outer_radius])]
+    electrode("detector", dict(primitive="cylinder", radius_mm=g["detector_radius"],
         base_center_mm=[coordinate["detector_x"], 0, g["detector_z"]-g["detector_thickness"]],
         height_mm=g["detector_thickness"], axis=[0, 0, 1]), grounded=True)
-    marker = dict(contract["simion_detector_marker"])
-    values = [*g.values(), *[item["voltage_v"] for item in native]]
+    values = [*g.values(), *[item["operating_voltage_v"] for item in objects]]
     if any(isinstance(value, (int, float)) and not math.isfinite(value) for value in values):
         raise ValueError("physical geometry and electrode voltages must be finite")
-    return dict(schema_version=1, role="oatof_physical_geometry", local_frame_id="oatof_global",
+    return dict(schema_version=1, role="oatof_electrode_geometry", local_frame_id="oatof_global",
         length_unit="mm", variant_id=accelerator_projection.variant_id,
-        accelerator=dict(geometry=accelerator, physical_electrode_ids=oa_ids,
-            electrical=electrical), electrodes=objects,
-        detector_active_face=dict(component_electrode_id=detector_id,
+        accelerator=dict(geometry=accelerator, electrical=electrical), electrodes=objects,
+        detector_active_face=dict(role="detector",
             center_mm=[coordinate["detector_x"], 0, g["detector_z"]], normal=[0, 0, 1], radius_mm=g["detector_radius"]),
-        simion=dict(flight_tube=tube,
-            reflectron=dict(electrodes=native, axial_span_mm=local_outer_end,
-                outer_radius_mm=outer_radius), detector_marker=marker))
+        local_extents=dict(flight_tube_axial_span_mm=interface-near,
+                          reflectron_axial_span_mm=local_outer_end, outer_radius_mm=outer_radius))
+
+
+def resolve_physical_geometry(
+    contract: dict[str, Any], *, accelerator_projection: Any = None,
+) -> dict[str, Any]:
+    """Keep the explicit legacy physical/native projection and label protocol.
+
+    Physics and potentials come from the one neutral resolver. Only this adapter
+    allocates legacy IDs and requires the numerical SIMION detector marker.
+    """
+    neutral = resolve_electrode_geometry(contract, accelerator_projection=accelerator_projection)
+    bodies = neutral["electrodes"]
+    ids = {body["role"]: index for index, body in enumerate(bodies, 1)}
+    objects = [dict(component_electrode_id=ids[body["role"]], role=body["role"],
+                    electrical_group_id=1 if body["grounded"] else ids[body["role"]],
+                    geometry=body["geometry"]) for body in bodies]
+    oa_ids = {"shield": ids["accelerator_side_shield"]}
+    oa_ids.update({role: ids["accelerator_" + role]
+                   for role in neutral["accelerator"]["electrical"]["planes_z_mm"]})
+    oa_ids["rings"] = [ids["accelerator_ring_" + str(index)]
+                       for index in range(1, len(neutral["accelerator"]["geometry"]["ring_z_mm"]) + 1)]
+    shield = next(body for body in bodies if body["role"] == "flight_tube_shield")
+    def native_row(body: dict[str, Any], label: int, regions: list[dict[str, Any]]) -> dict[str, Any]:
+        return dict(component_electrode_id=ids[body["role"]], local_electrode_id=label,
+                    voltage_v=body["operating_voltage_v"], regions=regions)
+    native = [native_row(body, index, body["reflectron_local_regions"])
+              for index, body in enumerate((body for body in bodies
+                                            if body["role"].startswith("reflectron_")), 1)]
+    native.append(native_row(shield, len(native) + 1, shield["reflectron_local_regions"]))
+    extent = neutral["local_extents"]
+    return dict(schema_version=1, role="oatof_physical_geometry", local_frame_id=neutral["local_frame_id"],
+        length_unit="mm", variant_id=neutral["variant_id"],
+        accelerator=dict(geometry=neutral["accelerator"]["geometry"], physical_electrode_ids=oa_ids,
+                         electrical=neutral["accelerator"]["electrical"]), electrodes=objects,
+        detector_active_face=dict(component_electrode_id=ids["detector"],
+                                  **{key: value for key, value in neutral["detector_active_face"].items() if key != "role"}),
+        simion=dict(flight_tube=dict(electrodes=[native_row(shield, 1, shield["flight_tube_local_regions"])],
+                                    axial_span_mm=extent["flight_tube_axial_span_mm"], outer_radius_mm=extent["outer_radius_mm"]),
+                    reflectron=dict(electrodes=native, axial_span_mm=extent["reflectron_axial_span_mm"],
+                                    outer_radius_mm=extent["outer_radius_mm"]),
+                    detector_marker=dict(contract["simion_detector_marker"])))
 
 
 def resolve_contract(

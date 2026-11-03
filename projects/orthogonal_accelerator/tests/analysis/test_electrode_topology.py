@@ -17,7 +17,7 @@ from projects.orthogonal_accelerator.tests.analysis.test_bare_three_zone_compone
 def two_zone_inputs():
     resolved = resolve_closed_two_zone_geometry(two_zone_requirements(), geometry_profile_id=TWO_ZONE_PROFILE)
     source = json.loads((Path(__file__).resolve().parents[2] / "config/two_zone_component_focus_campaign.json").read_text())
-    names = ["grounded_shield", "repeller", "grid1", "exit_grid", *[f"ring_{i:04d}" for i in range(1, 16)]]
+    names = ["grounded_shield", "repeller", "intermediate_grid_1", "exit_grid", *[f"ring_{i:04d}" for i in range(1, 16)]]
     bindings = {name: {"pointer": f"/operating_point/electrode_voltages_v/{i}"} for i, name in enumerate(names)}
     return resolved, source, bindings
 
@@ -25,10 +25,13 @@ def two_zone_inputs():
 def three_zone_inputs():
     resolved = resolve_bare_three_zone_component(three_zone_requirements_fixture())
     # Explicit small source algorithm fixture, not a published operating point.
-    names = ["grounded_shield", "repeller", "grid1", "intermediate2", "exit_grid",
+    names = ["grounded_shield", "repeller", "intermediate_grid_1", "intermediate_grid_2", "exit_grid",
              "ring_0001", "ring_0002", "ring_0003", "ring_0004"]
-    source = {"fixture_voltages_v": dict(zip(names, [0., 4000., 3000., 2000., 0., 2800., 2400., 1400., 600.]))}
-    bindings = {name: {"pointer": f"/fixture_voltages_v/{name}"} for name in names}
+    # The frozen source's old field names are not rewritten by the new group API.
+    source_names = {"intermediate_grid_1": "grid1", "intermediate_grid_2": "intermediate2"}
+    source = {"fixture_voltages_v": dict(zip((source_names.get(name, name) for name in names),
+                                           [0., 4000., 3000., 2000., 0., 2800., 2400., 1400., 600.]))}
+    bindings = {name: {"pointer": f"/fixture_voltages_v/{source_names.get(name, name)}"} for name in names}
     return resolved, source, bindings
 
 
@@ -38,7 +41,7 @@ class ElectrodeTopologyTests(unittest.TestCase):
         original = copy.deepcopy((resolved, source, bindings))
         topology = build_electrode_topology(resolved, voltage_sources=bindings, source_document=source)
         self.assertEqual(len(topology), 19)
-        self.assertEqual([r["scientific_id"] for r in topology[:4]], ["grounded_shield", "repeller", "grid1", "exit_grid"])
+        self.assertEqual([r["electrode_group_id"] for r in topology[:4]], ["grounded_shield", "repeller", "intermediate_grid_1", "exit_grid"])
         self.assertEqual(topology[0]["roles"], ["shield", "rear_cap"])
         self.assertIn("/enclosure/rear_cap_outer_z_mm", topology[0]["member_refs"])
         self.assertIn("/side_entry/physical_cutout_box_mm", topology[0]["member_refs"])
@@ -46,7 +49,7 @@ class ElectrodeTopologyTests(unittest.TestCase):
         self.assertEqual(topology[2]["member_refs"], ["/grid_supports/0"])
         self.assertEqual(topology[3]["member_refs"], ["/grid_supports/1"])
         for i, row in enumerate(topology[4:]):
-            self.assertEqual(row["scientific_id"], f"ring_{i + 1:04d}")
+            self.assertEqual(row["electrode_group_id"], f"ring_{i + 1:04d}")
             self.assertIn(f"/rings/{i}", row["member_refs"])
             self.assertEqual(row["voltage_source"], {"pointer": f"/operating_point/electrode_voltages_v/{i + 4}"})
         self.assertEqual((resolved, source, bindings), original)
@@ -56,19 +59,19 @@ class ElectrodeTopologyTests(unittest.TestCase):
         resolved, source, bindings = three_zone_inputs()
         topology = build_electrode_topology(resolved, voltage_sources=bindings, source_document=source)
         self.assertEqual(len(topology), 9)
-        self.assertEqual([r["scientific_id"] for r in topology[2:5]], ["grid1", "intermediate2", "exit_grid"])
+        self.assertEqual([r["electrode_group_id"] for r in topology[2:5]], ["intermediate_grid_1", "intermediate_grid_2", "exit_grid"])
         for i, row in enumerate(topology[2:5]):
-            self.assertEqual(row["roles"], ["ideal_zero_thickness_sheet"])
+            self.assertEqual(row["roles"], [["intermediate_grid_1", "intermediate_grid_2", "exit_grid"][i], "ideal_zero_thickness_sheet"])
             self.assertEqual(row["member_refs"], [f"/canonical_electrodes/ideal_sheets/{i}"])
             sheet = resolved["canonical_electrodes"]["ideal_sheets"][i]["sheet_box_mm"]
             self.assertEqual(sheet["z_min_mm"], sheet["z_max_mm"])
         self.assertIn("/geometry/shield_back_z_mm", topology[0]["member_refs"])
         self.assertIn("/geometry/numerical_port_width_mm", topology[0]["member_refs"])
         for i, row in enumerate(topology[5:]):
-            self.assertEqual(row["scientific_id"], f"ring_{i+1:04d}")
+            self.assertEqual(row["electrode_group_id"], f"ring_{i+1:04d}")
             self.assertIn(f"/geometry/ring_z_mm/{i}", row["member_refs"])
             self.assertIn("/geometry/bore_width_mm", row["member_refs"])
-            self.assertEqual(row["voltage_source"], bindings[row["scientific_id"]])
+            self.assertEqual(row["voltage_source"], bindings[row["electrode_group_id"]])
 
     def test_native_number_permutation_never_changes_scientific_groups(self):
         two, source, bindings = two_zone_inputs()
@@ -104,12 +107,38 @@ class ElectrodeTopologyTests(unittest.TestCase):
 
     def test_shared_drive_does_not_merge_groups_and_ground_is_not_native_zero(self):
         resolved, source, bindings = three_zone_inputs()
-        bindings["grid1"] = dict(bindings["repeller"])
+        bindings["intermediate_grid_1"] = dict(bindings["repeller"])
         topology = build_electrode_topology(resolved, voltage_sources=bindings, source_document=source)
         self.assertEqual(len(topology), 9)
         self.assertEqual(topology[1]["voltage_source"], topology[2]["voltage_source"])
         source["fixture_voltages_v"]["grounded_shield"] = 1.
         with self.assertRaisesRegex(ValueError, "grounded shield"):
+            build_electrode_topology(resolved, voltage_sources=bindings, source_document=source)
+
+    def test_roles_track_distinct_legacy_source_values_and_real_geometry_planes(self):
+        resolved, source, bindings = three_zone_inputs()
+        before = copy.deepcopy((resolved, source, bindings))
+        groups = build_electrode_topology(resolved, voltage_sources=bindings, source_document=source)
+        self.assertEqual([row["electrode_group_id"] for row in groups[1:5]],
+                         ["repeller", "intermediate_grid_1", "intermediate_grid_2", "exit_grid"])
+        self.assertEqual([row["roles"][0] for row in groups[1:5]],
+                         ["repeller", "intermediate_grid_1", "intermediate_grid_2", "exit_grid"])
+        self.assertEqual([row["voltage_source"]["pointer"] for row in groups[1:5]],
+                         ["/fixture_voltages_v/repeller", "/fixture_voltages_v/grid1",
+                          "/fixture_voltages_v/intermediate2", "/fixture_voltages_v/exit_grid"])
+        self.assertEqual([source["fixture_voltages_v"][key] for key in ("repeller", "grid1", "intermediate2", "exit_grid")],
+                         [4000., 3000., 2000., 0.])
+        self.assertEqual([resolved["canonical_electrodes"]["ideal_sheets"][i]["grid_z_mm"] for i in range(3)],
+                         [4., 14., 34.])  # independent existing geometry fixture planes, not a role map lookup
+        self.assertTrue(all(set(row) == {"electrode_group_id", "roles", "member_refs", "voltage_source"} for row in groups))
+        self.assertEqual((resolved, source, bindings), before)
+        for old_alias in ("grid1", "grid2", "intermediate2"):
+            broken = copy.deepcopy(bindings)
+            broken[old_alias] = broken.pop("intermediate_grid_1")
+            with self.subTest(alias=old_alias), self.assertRaisesRegex(ValueError, "cover"):
+                build_electrode_topology(resolved, voltage_sources=broken, source_document=source)
+        resolved["schema_version"] = 99
+        with self.assertRaisesRegex(ValueError, "schema 1"):
             build_electrode_topology(resolved, voltage_sources=bindings, source_document=source)
 
     def test_incomplete_mechanical_member_coverage_is_rejected(self):

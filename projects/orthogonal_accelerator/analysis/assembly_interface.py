@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from projects.orthogonal_accelerator.analysis.electrode_topology import _mechanical_groups
 from projects.orthogonal_accelerator.analysis.sectioned_geometry import (
     resolve_bare_three_zone_component,
 )
@@ -45,9 +46,9 @@ def _two_zone_component_electrodes(geometry: Mapping[str, Any]) -> list[dict[str
 
 
 def resolve_assembly_interface(
-    requirements: Mapping[str, Any], *, geometry_profile_id: str | None,
+    requirements: Mapping[str, Any], *, geometry_profile_id: str | None, schema_version: int = 3,
 ) -> dict[str, Any]:
-    """Resolve a schema-1 local mechanical interface from explicit OA inputs.
+    """Resolve current v3 electrode groups, or an explicitly versioned old view.
 
     The profile selects the existing two-zone geometry; for the explicit
     three-zone geometry it may be null when no named profile exists; a label
@@ -60,6 +61,8 @@ def resolve_assembly_interface(
     old PA-coordinate interfaces are not silently relabelled. No files or inputs
     are changed and no solver numerical settings are required.
     """
+    if type(schema_version) is not int or schema_version not in (1, 2, 3):
+        raise ValueError("assembly interface schema_version must be explicitly 1, 2 or 3")
     variant = _validate_assembly_inputs(requirements, geometry_profile_id)
     if variant == "two_zone":
         if geometry_profile_id is None:
@@ -98,12 +101,13 @@ def resolve_assembly_interface(
                     "width_axis": [1, 0, 0], "height_axis": [0, 0, 1],
                 },
             }
-        component_electrodes = _two_zone_component_electrodes({
-            "grounded_enclosure": {"component_electrode_id": 15},
-            "repeller": {"component_electrode_id": 22},
-            "grid_supports": [{"component_electrode_id": item["id"]} for item in resolved.grid_supports],
-            "rings": [{"component_electrode_id": item["id"]} for item in resolved.rings],
-        })
+        if schema_version == 1:
+            component_electrodes = _two_zone_component_electrodes({
+                "grounded_enclosure": {"component_electrode_id": 15},
+                "repeller": {"component_electrode_id": 22},
+                "grid_supports": [{"component_electrode_id": item["id"]} for item in resolved.grid_supports],
+                "rings": [{"component_electrode_id": item["id"]} for item in resolved.rings],
+            })
     elif variant == "three_zone":
         resolved = resolve_bare_three_zone_component(dict(requirements))
         port = resolved["port"]
@@ -118,23 +122,40 @@ def resolve_assembly_interface(
                 "width_axis": [0, 1, 0], "height_axis": [0, 0, 1],
             },
         }}
-        electrodes = resolved["electrodes"]
-        roles = [
-            (electrodes["grounded_shield_id"], "grounded_shield"),
-            (electrodes["accelerator_repeller_id"], "repeller"),
-            (electrodes["accelerator_grid1_id"], "grid1"),
-            (electrodes["accelerator_intermediate2_id"], "intermediate2"),
-            (electrodes["accelerator_grid2_id"], "exit_grid"),
-            *((electrode_id, "ring") for electrode_id in electrodes["accelerator_ring_ids"]),
-        ]
-        component_electrodes = [
-            {"component_electrode_id": electrode_id, "role": role}
-            for electrode_id, role in roles
-        ]
+        if schema_version == 1:
+            electrodes = resolved["electrodes"]
+            roles = [
+                (electrodes["grounded_shield_id"], "grounded_shield"),
+                (electrodes["accelerator_repeller_id"], "repeller"),
+                (electrodes["accelerator_grid1_id"], "grid1"),
+                (electrodes["accelerator_intermediate2_id"], "intermediate2"),
+                (electrodes["accelerator_grid2_id"], "exit_grid"),
+                *((electrode_id, "ring") for electrode_id in electrodes["accelerator_ring_ids"]),
+            ]
+            component_electrodes = [
+                {"component_electrode_id": electrode_id, "role": role}
+                for electrode_id, role in roles
+            ]
     else:
         raise ValueError("assembly interface requires two_zone or three_zone")
+    if schema_version in (2, 3):
+        _, groups = _mechanical_groups(resolved)
+        if schema_version == 3:
+            component_electrodes = [
+                {"electrode_group_id": group_id, "role": roles[0]} for group_id, roles, _ in groups
+            ]
+        else:
+            # Transitional component-v2 used sectioned-schema-1 names, not
+            # component-api-2's distinct grid2 meaning. Preserve that old wire.
+            names = {"intermediate_grid_1": "grid1", "intermediate_grid_2": "intermediate2"}
+            sheet_role = "grid_support" if variant == "two_zone" else "ideal_zero_thickness_sheet"
+            component_electrodes = [
+                {"component_electrode_id": names.get(group_id, group_id),
+                 "role": sheet_role if group_id in {"intermediate_grid_1", "intermediate_grid_2", "exit_grid"} else roles[0]}
+                for group_id, roles, _ in groups
+            ]
     return {
-        "schema_version": 1,
+        "schema_version": schema_version,
         "role": "component_geometry_interface",
         "project_id": "orthogonal_accelerator",
         "variant_id": variant,
