@@ -55,6 +55,12 @@ class DiagnosticsTests(unittest.TestCase):
             writer=csv.DictWriter(stream,fieldnames=columns);writer.writeheader();writer.writerows(rows)
 
     def test_interpolation_limits_and_loss_not_alive(self) -> None:
+        from msplatform.analysis import particle_census
+        from projects.dual_pressure_rectilinear_ion_processor.analysis import diagnostics
+
+        for name in ("partition_cohort", "subset_efficiency", "lifetime_position"):
+            self.assertIs(getattr(diagnostics, name), getattr(particle_census, name))
+            self.assertEqual(getattr(diagnostics, name).__module__, "msplatform.analysis.particle_census")
         data=prepare_data(self.run)
         middle=state_at(data,1,.5)
         self.assertEqual(middle["status"],"alive")
@@ -88,8 +94,15 @@ class DiagnosticsTests(unittest.TestCase):
         return rows
 
     def test_injected_initial_state_means_admission_not_a_new_birth(self) -> None:
+        from msplatform.contracts import particle_state
+        from projects.dual_pressure_rectilinear_ion_processor.analysis import diagnostics
+
+        self.assertIs(diagnostics.load_component_particle_state_csv, particle_state.load_component_particle_state_csv)
+        self.assertEqual(diagnostics.load_component_particle_state_csv.__module__, "msplatform.contracts.particle_state")
         self.inject({1: 1., 2: 1., 3: 1.})
+        frozen_csv = (self.run/"inputs/injected_states.csv").read_bytes()
         data = prepare_data(self.run)
+        self.assertEqual((self.run/"inputs/injected_states.csv").read_bytes(), frozen_csv)
         self.assertEqual(state_at(data, 3, 0)["status"], "not_admitted")
         self.assertEqual(state_at(data, 3, 0)["reason"], "not_yet_entered_IP")
         count, _ = census(data, 0)

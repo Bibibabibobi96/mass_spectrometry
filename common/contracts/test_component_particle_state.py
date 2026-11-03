@@ -1,11 +1,13 @@
 import csv
 import math
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from common.contracts.component_particle_state import (
+from msplatform.contracts.particle_state import (
     SCHEMA_VERSION,
     csv_columns,
     load_schema,
@@ -13,7 +15,7 @@ from common.contracts.component_particle_state import (
     validate_component_particle_state_csv,
     write_component_particle_state_csv,
 )
-from common.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.particle_physics import kinetic_energy_ev
 
 
 def valid_row(particle_id: int = 7) -> dict[str, object]:
@@ -77,6 +79,36 @@ class ComponentParticleStateTests(unittest.TestCase):
         self.assertEqual(report["particles"], 2)
         self.assertEqual(report["frame_ids"], ["instrument_global"])
         self.assertEqual(report["clock_epoch_ids"], ["instrument_clock_epoch.v1"])
+
+    def test_core_source_and_legacy_bridge_share_the_same_transfer_contract(self) -> None:
+        from common.contracts import component_particle_state as bridge
+        from msplatform.contracts import particle_state as core
+        from msplatform.contracts.rigid_transform import PhaseSpaceState
+
+        self.assertIs(bridge, core)
+        self.assertIs(core.PhaseSpaceState, PhaseSpaceState)
+        for name in ("ComponentParticleStateTable", "load_component_particle_state_csv",
+                     "validate_component_particle_state_csv", "write_component_particle_state_csv"):
+            self.assertEqual(getattr(core, name).__module__, "msplatform.contracts.particle_state")
+        row = valid_row(91)
+        row.update(state_event="snapshot", phase_reference_id="", phase_rad="")
+        self.write([row])
+        table = load_component_particle_state_csv(self.path)
+        self.assertEqual(table.rows[0]["particle_id"], 91)
+        self.assertEqual(table.rows[0]["state_event"], "snapshot")
+        self.assertNotIn("terminal", table.report)
+        self.assertIsNone(table.rows[0]["phase_rad"])
+
+    def test_legacy_and_canonical_cli_validate_the_same_actual_csv(self) -> None:
+        self.write([valid_row(91)])
+        root = Path(__file__).resolve().parents[2]
+        outputs = []
+        for module in ("common.contracts.component_particle_state", "msplatform.contracts.particle_state"):
+            result = subprocess.run([sys.executable, "-m", module, "--state", str(self.path)],
+                                    cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            outputs.append(result.stdout)
+        self.assertEqual(outputs, ["COMPONENT_PARTICLE_STATE=PASS SCHEMA_VERSION=1 PARTICLES=1\n"] * 2)
 
     def test_loader_reads_once_returns_typed_rows_and_preserves_order(self) -> None:
         rows = [valid_row(9), valid_row(2)]

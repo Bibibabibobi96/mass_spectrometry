@@ -7,6 +7,11 @@ from projects.rf_multipole_ion_optics.analysis.analyze_comsol_transport_metrics 
 
 class AnalyzeComsolTransportMetricsTests(unittest.TestCase):
     def test_derives_case_metrics_from_canonical_state_and_event_rows(self) -> None:
+        from msplatform.analysis.particle_census import partition_cohort
+        from projects.rf_multipole_ion_optics.analysis import analyze_comsol_transport_metrics
+
+        self.assertIs(analyze_comsol_transport_metrics.partition_cohort, partition_cohort)
+        self.assertEqual(partition_cohort.__module__, "msplatform.analysis.particle_census")
         state = [
             {"particle_id": "1", "event": "source", "status": "alive", "radial_position_mm": "0", "kinetic_energy_eV": "2", "max_rod_radius_mm": "1"},
             {"particle_id": "1", "event": "terminal", "status": "transmitted", "radial_position_mm": "3", "kinetic_energy_eV": "5", "max_rod_radius_mm": "1"},

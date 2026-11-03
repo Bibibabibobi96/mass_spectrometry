@@ -18,10 +18,10 @@ from matplotlib.collections import LineCollection
 from matplotlib.patches import Rectangle
 import numpy as np
 
-from common.analysis.particle_census import (
+from msplatform.analysis.particle_census import (
     CENSUS_SCHEMA_VERSION, lifetime_position, partition_cohort, subset_efficiency,
 )
-from common.contracts.component_particle_state import load_component_particle_state_csv
+from msplatform.contracts.particle_state import load_component_particle_state_csv
 from common.contracts.file_identity import file_sha256
 from common.contracts.particle_physics import kinetic_energy_ev
 from projects.rf_multipole_ion_optics.analysis.exit_state_plot import prepare_visual_style_map
