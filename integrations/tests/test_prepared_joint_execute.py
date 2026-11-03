@@ -98,6 +98,8 @@ class PreparedJointAnalysisTests(unittest.TestCase):
         pwsh = shutil.which("pwsh")
         if not pwsh:
             self.skipTest("PowerShell 7 is unavailable")
+        from common.contracts.test_support.fixture_process import run_fixture_process
+
         inventory = json.loads((REPO / "integrations/config/runtime_dependencies.json").read_text())
         from integrations.tests.test_support.single_reflection_execute_fixture import declared_dependency_paths
         records = [{'source_repo_path': path} for path in declared_dependency_paths(REPO, inventory, 'prepared_joint')]
@@ -203,16 +205,89 @@ if os.environ['ANALYSIS_TEST_SEAL_FAIL']=='1': raise RuntimeError('Explicit iner
                 before = {p: p.read_bytes() for p in source.rglob("*") if p.is_file()}
                 run_id = "20261022_120001__analysis__python__joint-test"
                 run = source.parent / run_id
-                completed = subprocess.run([pwsh, "-NoProfile", "-File", str(repo / "integrations/workflows/prepared_joint/execute.ps1"),
+                # The wrapper cannot start this synthetic workflow or any child
+                # until the public helper assigns it to its owned Job and ACKs.
+                arguments = [str(repo / "integrations/workflows/prepared_joint/execute.ps1"),
                     "-AnalyzeRunPath", str(source), "-ContractPath", str(contract), "-RunId", run_id,
-                    "-RepoRoot", str(repo), "-PythonExe", sys.executable], cwd=workspace,
-                    env={**os.environ, "PYTHONPATH": str(repo), "PYTHONNOUSERSITE": "1", "ProgramFiles": str(workspace / "NO_SIMION"),
-                         "ANALYSIS_TEST_HOST_EVENTS": str(workspace / "host_events.txt"),
-                         "ANALYSIS_TEST_SOURCE_RUN": str(source),
-                         "ANALYSIS_TEST_FAIL": "1" if scenario == "analysis_failure" else "0",
-                          "ANALYSIS_TEST_CAPACITY_FAIL": "1" if scenario == "capacity_failure" else "0",
-                         "ANALYSIS_TEST_SEAL_FAIL": "1" if scenario == "seal_failure" else "0"},
-                    capture_output=True, text=True, encoding="utf-8", timeout=45)
+                    "-RepoRoot", str(repo), "-PythonExe", sys.executable]
+                argvfile = workspace / "fixture-argv.json"
+                argvfile.write_text(json.dumps(arguments), encoding="utf-8")
+                launcher = workspace / "invoke-owned.ps1"
+                launcher.write_text(r'''param([string]$ArgvFile)
+$ErrorActionPreference='Stop'
+$fixtureClock=[Diagnostics.Stopwatch]::StartNew()
+$fixtureTimeline=Join-Path $PSScriptRoot 'timeline.jsonl'
+function Write-AnalysisFixtureEvent {
+ param([string]$Stage)
+ $row=@{stage=$Stage;monotonic_seconds=$fixtureClock.Elapsed.TotalSeconds;pid=$PID}|ConvertTo-Json -Compress
+ [IO.File]::AppendAllText($fixtureTimeline,$row+"`n",[Text.UTF8Encoding]::new($false))
+}
+Write-AnalysisFixtureEvent 'launcher_waiting_for_ownership'
+if([Console]::In.ReadLine()-cne'fixture-owned-start'){throw 'Fixture ownership ACK missing'}
+Write-AnalysisFixtureEvent 'ownership_acknowledged'
+$values=@(Get-Content -LiteralPath $ArgvFile -Raw -Encoding utf8|ConvertFrom-Json)
+$entry=[string]$values[0];$forwardParameters=@{}
+if(($values.Count-1)%2-ne0){throw 'Fixture argv must contain complete named pairs'}
+for($index=1;$index-lt$values.Count;$index+=2){
+ $key=[string]$values[$index]
+ if(-not$key.StartsWith('-')-or$forwardParameters.ContainsKey($key.Substring(1))){throw 'Fixture argv named key differs'}
+ $forwardParameters[$key.Substring(1)]=[string]$values[$index+1]
+}
+Write-AnalysisFixtureEvent 'actual_entry_begin'
+try { & $entry @forwardParameters } finally { Write-AnalysisFixtureEvent 'actual_entry_returned' }
+''', encoding="utf-8")
+                # Observe only named transitions in this temporary workflow copy;
+                # no production file, operation, input or timeout is changed.
+                entry = Path(arguments[0])
+                code = entry.read_text(encoding="utf-8")
+                boundary = code.index("function Invoke-PreparedJointAnalysis {")
+                prefix, analysis = code[:boundary], code[boundary:]
+                probes = {
+                    "$source=(Resolve-Path -LiteralPath $AnalyzeRunPath).Path": "analysis_source_path",
+                    "$recording=(@(Invoke-ProjectPython": "recording_config_begin",
+                    "$package=New-RunPackage": "package_begin",
+                    "$frozen=Freeze-ConsumerDependencies": "freeze_dependencies_begin",
+                    "$script:pythonRoot=[string]$frozen.execution_root": "freeze_dependencies_returned",
+                    "$selection=(@(Invoke-ProjectPython": "source_admission_begin",
+                    "$stage='joint_diagnostics'": "scientific_analysis_begin",
+                    "$ownerResult=Complete-RunArtifactPowerShellOwner": "owner_finalization_begin",
+                    "$analysisLease=Enter-HostExecutionLease": "fixture_host_admission_begin",
+                }
+                for token, label in probes.items():
+                    self.assertEqual(analysis.count(token), 1, token)
+                    analysis = analysis.replace(token, "Write-AnalysisFixtureEvent '" + label + "'\n  " + token, 1)
+                entry.write_text(prefix + analysis, encoding="utf-8")
+                environment = {**os.environ, "PYTHONPATH": str(repo), "PYTHONNOUSERSITE": "1",
+                    "ProgramFiles": str(workspace / "NO_SIMION"),
+                    "ANALYSIS_TEST_HOST_EVENTS": str(workspace / "host_events.txt"),
+                    "ANALYSIS_TEST_SOURCE_RUN": str(source),
+                    "ANALYSIS_TEST_FAIL": "1" if scenario == "analysis_failure" else "0",
+                    "ANALYSIS_TEST_CAPACITY_FAIL": "1" if scenario == "capacity_failure" else "0",
+                    "ANALYSIS_TEST_SEAL_FAIL": "1" if scenario == "seal_failure" else "0",
+                    "FIXTURE_PYTHON": sys.executable, "FIXTURE_TEST_SOURCE": __file__,
+                    "FIXTURE_ADAPTER_SOURCE": str(entry), "FIXTURE_TEST_METHOD": self.id()}
+                completed = primary = None
+                try:
+                    completed = run_fixture_process(
+                        [pwsh, "-NoProfile", "-File", str(launcher), str(argvfile)],
+                        root=workspace, cwd=workspace, environment=environment,
+                        mode="prepared-analysis-" + scenario, timeout=45,
+                    )
+                except BaseException as error:
+                    primary = error
+                    raise
+                finally:
+                    evidence = getattr(primary if primary is not None else completed, "fixture_diagnostics", None)
+                    if evidence is not None:
+                        print("PREPARED_ANALYSIS_FIXTURE_DIAGNOSTICS=" + str(evidence), flush=True)
+                        try:
+                            for record in (argvfile, entry, workspace / "host_events.txt"):
+                                if record.is_file():
+                                    shutil.copyfile(record, Path(evidence) / record.name)
+                        except BaseException as diagnostic_error:
+                            if primary is None:
+                                raise
+                            primary.add_note("PREPARED_ANALYSIS_EXTRA_EVIDENCE_ERROR=" + repr(diagnostic_error))
                 self.assertEqual(completed.returncode == 0, scenario == "success", completed.stdout + completed.stderr)
                 self.assertEqual((workspace / "host_events.txt").read_text().splitlines(),
                                  ["enter:GATE/unclassified", "exit:success" if scenario == "success" else "exit:failed"])
