@@ -503,16 +503,19 @@ $source.stage_evidence|ConvertTo-Json -Depth 20 -Compress
         # One test-owned diagnostic set, not a production resource policy.
         def save_cold_records(destination, root, run):
             records = []
-            remaining = 1048576
+            remaining = 2097152
             selected = [run/'run_config.json', run/'results/saved_extraction_resource_usage.json',
                         run/'logs/saved_extraction.stdout.log', run/'logs/saved_extraction.stderr.log',
                         run/'logs/comsol_launcher_completion.json', run/'logs/comsol_saved_extraction.txt',
                         run/'inputs/saved_extraction_host_budgets.json',
-                        run/'inputs/saved_extraction_binding.json', run/'inputs/saved_extraction_request.json']
+                        run/'inputs/saved_extraction_binding.json', run/'inputs/saved_extraction_request.json',
+                        root/'watchdog.jsonl', root/'watchdog-selfcheck.jsonl', root/'watchdog-source-identity.json',
+                        root/'watchdog-instrumentation.diff', root/'watchdog-observer.ps1',
+                        root/'watchdog-selfcheck-secondary.json', root/'watchdog-secondary.json']
             for index, path in enumerate(selected):
                 entry = dict(path=str(path), exists=path.is_file())
                 if path.is_file():
-                    limit = min(131072, remaining)
+                    limit = min(1048576 if path.name == 'watchdog.jsonl' else 131072, remaining)
                     with path.open('rb') as stream:
                         payload = stream.read(limit)
                     name = f'cold-{index:02d}-{path.name}'
@@ -685,6 +688,93 @@ Remove-RunPackageExecutionAlias -Package $package
                     fixture_process.ACK.decode('ascii').strip()+"'){throw 'FIXTURE_OWNERSHIP_ACK_REQUIRED'}\n"+
                     timeline_ps+"\nWrite-ColdFixtureEvent 'script.acknowledged'")
             script_text = script_text.replace(parameter, gate, 1)
+            # Diagnostic-only copy of the current public function; no liveness policy edits.
+            public_path = REPO/'common/resource_budget_support.ps1'
+            public_text = public_path.read_text(encoding='utf-8-sig')
+            function_start = 'function Invoke-ResourceBudgetedProcess {'
+            if public_text.count(function_start) != 1:
+                raise AssertionError('Current public observer span is not unique')
+            begin = public_text.index(function_start)
+            end = public_text.index('\nfunction ', begin+len(function_start))
+            original_observer = public_text[begin:end]
+            instrumented_observer = original_observer
+            diagnostic_edits = [('    while($managedActive){', '    while($managedActive){\n      Write-WaitDiagnostic sample.begin $process'), ('      $trackedProcessIds=@($sample.tracked_process_ids)', '      Write-WaitDiagnostic sample.end $process $sample\n      $trackedProcessIds=@($sample.tracked_process_ids)'), ('      $managedActive=Test-RepositoryManagedProcessIsActive', '      Write-WaitDiagnostic liveness.begin $process $sample\n      $managedActive=Test-RepositoryManagedProcessIsActive'), ('      $observed=Update-RepositoryProcessObservation', '      Write-WaitDiagnostic liveness.end $process $sample $managedActive\n      Write-WaitDiagnostic update.begin $process $sample $managedActive\n      $observed=Update-RepositoryProcessObservation'), ('      if($observed.physical_danger-and$managedActive){', '      Write-WaitDiagnostic update.end $process $sample $managedActive\n      if($observed.physical_danger-and$managedActive){'), ('\n    $process.WaitForExit();$rootExitConfirmed=$process.HasExited', '\n    Write-WaitDiagnostic wait.begin $process $sample\n    $process.WaitForExit();$rootExitConfirmed=$process.HasExited\n    Write-WaitDiagnostic wait.end $process $sample'), ('    $null=Update-RepositoryProcessObservation -Observation $observation -Sample $sample -Final', '    Write-WaitDiagnostic final_update.begin $process $sample\n    $null=Update-RepositoryProcessObservation -Observation $observation -Sample $sample -Final\n    Write-WaitDiagnostic final_update.end $process $sample'), ('        $process.WaitForExit();$rootExitConfirmed=$process.HasExited', '        Write-WaitDiagnostic finally_wait.begin $process\n        $process.WaitForExit();$rootExitConfirmed=$process.HasExited\n        Write-WaitDiagnostic finally_wait.end $process')]
+            for old, new in diagnostic_edits:
+                if instrumented_observer.count(old) != 1:
+                    raise AssertionError('Current observer checkpoint is not unique: '+old)
+                instrumented_observer = instrumented_observer.replace(old, new, 1)
+            diagnostic_logger = r"""
+function Write-WaitDiagnostic {
+ param([string]$Event,$Process,$Sample=$null,$Active=$null)
+ try {
+  if(-not(Get-Variable -Name WaitDiagnosticCount -Scope Script -ErrorAction SilentlyContinue)){$script:WaitDiagnosticCount=0}
+  if($script:WaitDiagnosticCount-ge4096){return}
+  $row=@{event=$Event;mono=[Diagnostics.Stopwatch]::GetTimestamp();frequency=[Diagnostics.Stopwatch]::Frequency;pid=$PID;active=$Active}
+  if($null-ne$Process){$row.root_pid=$Process.Id;$row.signaled=$Process.WaitForExit(0);$row.has_exited=$Process.HasExited;if($row.signaled){$row.exitcode=$Process.ExitCode}}
+  if($null-ne$Sample){$row.sample_active=@($Sample.active_process_ids);$row.sample_tracked=@($Sample.tracked_process_ids);$row.sample_births=$Sample.tracked_process_started_at_utc_ticks;$row.ancestry_complete=$Sample.ancestry_complete}
+  $line=$row|ConvertTo-Json -Depth 8 -Compress
+  if(-not(Get-Variable -Name WaitDiagnosticBytes -Scope Script -ErrorAction SilentlyContinue)){$script:WaitDiagnosticBytes=0}
+  $bytes=[Text.Encoding]::UTF8.GetByteCount($line)+2
+  if($script:WaitDiagnosticBytes+$bytes-gt1048576){return}
+  $line|Add-Content -LiteralPath $env:RF_WAIT_DIAG_FILE -Encoding utf8
+  $script:WaitDiagnosticCount++;$script:WaitDiagnosticBytes+=$bytes
+ }catch{
+  $diagnosticError=$_.Exception.Message
+  if(-not(Get-Variable -Name WaitDiagnosticSecondary -Scope Script -ErrorAction SilentlyContinue)){$script:WaitDiagnosticSecondary=@()}
+  if($script:WaitDiagnosticSecondary.Count-lt16){
+   if($diagnosticError.Length-gt512){$diagnosticError=$diagnosticError.Substring(0,512)}
+   $expected=(Get-Variable -Name WaitDiagnosticExpectedFailure -Scope Script -ErrorAction SilentlyContinue)-and$script:WaitDiagnosticExpectedFailure
+   $secondary=@{event=$Event;error=$diagnosticError;expected=[bool]$expected}
+   $script:WaitDiagnosticSecondary+=@($secondary)
+   $prefix=$(if($expected){'RF_WATCHDOG_EXPECTED_SECONDARY='}else{'RF_WATCHDOG_DIAGNOSTIC_SECONDARY='})
+   try{[Console]::Error.WriteLine($prefix+($secondary|ConvertTo-Json -Compress))}catch{}
+   try{
+    $name=$(if($expected){'watchdog-selfcheck-secondary.json'}else{'watchdog-secondary.json'})
+    ConvertTo-Json -InputObject @($script:WaitDiagnosticSecondary) -Depth 4|Set-Content -LiteralPath (Join-Path $Root $name) -Encoding utf8
+   }catch{
+    try{[Console]::Error.WriteLine($prefix+'secondary_record_write_failed')}catch{}
+   }
+  }
+ }
+}
+"""
+            observer_file = root/'watchdog-observer.ps1'
+            observer_file.write_text(diagnostic_logger+instrumented_observer, encoding='utf-8')
+            import difflib
+            (root/'watchdog-instrumentation.diff').write_text(''.join(difflib.unified_diff(
+                original_observer.splitlines(True), instrumented_observer.splitlines(True),
+                fromfile='current-public-observer', tofile='private-checkpoints-only')), encoding='utf-8')
+            write(root/'watchdog-source-identity.json', dict(public_source=file_record(public_path),
+                private_observer=file_record(observer_file), original_body_sha256=hashlib.sha256(original_observer.encode()).hexdigest(),
+                instrumentation_diff=file_record(root/'watchdog-instrumentation.diff'),
+                max_rows=4096, max_bytes=1048576, diagnostic_only=True))
+            diagnostic_setup = r"""
+. (Join-Path $Root 'watchdog-observer.ps1')
+$env:RF_WAIT_DIAG_FILE=Join-Path $Root 'watchdog-selfcheck.jsonl'
+Set-StrictMode -Version Latest
+Write-WaitDiagnostic selfcheck.first $null
+foreach($event in @('sample.begin','sample.end','liveness.begin','liveness.end','update.begin','update.end','wait.begin','wait.end','final_update.begin','final_update.end','finally_wait.begin','finally_wait.end')){Write-WaitDiagnostic $event $null}
+$script:WaitDiagnosticCount=4095
+Write-WaitDiagnostic selfcheck.last $null
+Write-WaitDiagnostic selfcheck.capped $null
+$smoke=@(Get-Content -LiteralPath $env:RF_WAIT_DIAG_FILE|ForEach-Object{$_|ConvertFrom-Json})
+if($smoke.Count-ne14-or$smoke[0].event-cne'selfcheck.first'-or$smoke[-1].event-cne'selfcheck.last'){throw 'WATCHDOG_MARKER_SELFCHECK_FAILED'}
+$script:WaitDiagnosticCount=0;$script:WaitDiagnosticBytes=1048576
+Write-WaitDiagnostic selfcheck.byte_cap $null
+if(@(Get-Content -LiteralPath $env:RF_WAIT_DIAG_FILE).Count-ne14){throw 'WATCHDOG_BYTE_CAP_FAILED'}
+$script:WaitDiagnosticBytes=0;$env:RF_WAIT_DIAG_FILE=Join-Path $Root 'missing-directory/diagnostic.jsonl'
+$script:WaitDiagnosticExpectedFailure=$true
+$diagnosticPrimary='primary-preserved';Write-WaitDiagnostic selfcheck.write_failure $null
+if($script:WaitDiagnosticSecondary.Count-ne1-or-not$script:WaitDiagnosticSecondary[0].expected-or$script:WaitDiagnosticSecondary[0].event-cne'selfcheck.write_failure'){throw 'WATCHDOG_EXPECTED_SECONDARY_MISSING'}
+$expectedProof=@(Get-Content -LiteralPath (Join-Path $Root 'watchdog-selfcheck-secondary.json') -Raw|ConvertFrom-Json)
+if($expectedProof.Count-ne1-or-not$expectedProof[0].expected){throw 'WATCHDOG_EXPECTED_SECONDARY_PROOF_MISSING'}
+if($diagnosticPrimary-cne'primary-preserved'){throw 'WATCHDOG_DIAGNOSTIC_MASKED_PRIMARY'}
+$script:WaitDiagnosticCount=0;$script:WaitDiagnosticBytes=0
+$script:WaitDiagnosticSecondary=@();$script:WaitDiagnosticExpectedFailure=$false
+$env:RF_WAIT_DIAG_FILE=Join-Path $Root 'watchdog.jsonl'
+"""
+            script_text = script_text.replace(". (Join-Path $Repo 'common/resource_budget_support.ps1')",
+                ". (Join-Path $Repo 'common/resource_budget_support.ps1')\n"+diagnostic_setup, 1)
             observer_proxy = r"""
 $script:ColdOriginalObserver=${function:Invoke-ResourceBudgetedProcess}
 function Invoke-ResourceBudgetedProcess {
@@ -744,6 +834,20 @@ function Invoke-ResourceBudgetedProcess {
                             outcome.stderr += f'\nRF_COLD_DIAGNOSTIC_SECONDARY={diagnostic_error!r}'
                         print(f'RF_COLD_DIAGNOSTIC_SECONDARY={diagnostic_error!r}', file=sys.stderr, flush=True)
             self.assertEqual(outcome.returncode, 0, outcome.stdout+outcome.stderr)
+            self.assertNotIn('RF_WATCHDOG_DIAGNOSTIC_SECONDARY=', outcome.stderr)
+            self.assertFalse((root/'watchdog-secondary.json').exists())
+            expected_secondary = json.loads((root/'watchdog-selfcheck-secondary.json').read_text(encoding='utf-8-sig'))
+            self.assertEqual(len(expected_secondary), 1)
+            self.assertTrue(expected_secondary[0]['expected'])
+            watchdog = [json.loads(line) for line in (root/'watchdog.jsonl').read_text(encoding='utf-8-sig').splitlines()]
+            self.assertGreater(len(watchdog), 0)
+            self.assertLessEqual(len(watchdog), 4096)
+            self.assertLessEqual((root/'watchdog.jsonl').stat().st_size, 1048576)
+            for boundary in ('sample', 'liveness', 'update', 'wait', 'final_update'):
+                for side in ('begin', 'end'):
+                    self.assertIn(boundary+'.'+side, {row['event'] for row in watchdog})
+            self.assertEqual(sum(row['event'] == 'wait.end' for row in watchdog), 2)
+
             if 'RF_COLD_DIAGNOSTIC_SECONDARY=' in outcome.stderr:
                 raise AssertionError(outcome.stderr)
             result = json.loads(outcome.stdout.strip().splitlines()[-1])
