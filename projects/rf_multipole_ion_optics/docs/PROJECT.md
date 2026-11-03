@@ -148,6 +148,12 @@ package、容量 session、冻结 PS 入口、原生退出和实际 host release
 最大窗口MATLAB结构7357 B仅指该窗口，不包含加载模型或进程内存；进程树峰值2,685,837,312 B，
 原生区间39.348秒，无新增求解，已完成正常封存与释放。这证明真实分窗API接线，不是N100规模性能结论。
 
+### 开发诊断证据边界
+
+源分组、分窗读取和N100局部性能的当前结论以上述及后文具名证据为准；小模型机制验证不授予完整传输、数值、GUI/CAD或Formal资格。
+早期mesh失败、6D冷读修正、节点退役及多行释放探针保留于[开发诊断历史记录](history/20261103__rf-development-diagnostics-review.md)，
+其中旧时点的待办不作为当前执行指令，原失败终态不改写。
+
 下表原生功能结果来自冻结旧几何；当前schema 3裸杆与新壳体不继承这些资格。
 当前具名runtime与活动campaign均未获新裸杆几何的商业执行授权；历史run ID须重新定义并明确授权，旧冻结证据不自动继承。
 
@@ -485,7 +491,6 @@ pwsh -NoProfile -File projects/rf_multipole_ion_optics/workflows/interface_readi
 一次性审计的三次FAIL保留：100510错误要求不存在的Result别名字段；100817与100842漏捕获内嵌Python的REUSED stdout，尽管原CLI均已成功恢复。100913改由独立pwsh进程捕获OS stdout后，审计terminal0／PASS；没有新建run、重复分析或重求场／粒子。原失败审计没有被改写，也不计为生产分析失败。小证据位于本项目scratch的`rf-feedback-hotspot/agent4/interface_analysis_child/root_090000_successor/`，包含首次分析目录及三个followup目录。
 
 本次完成的是已保存native阶段的后处理与原CLI收尾恢复。scientific_result仍为NOT_EVALUATED、gui_verified=false、parent_request_completed=false；未重新执行GUI Compute，原090000整体请求与GUI资格未完成，未提供native精确birth echo或新的科学资格。
-
 
 ### 接口GUI的源绑定与实际存储时刻对照
 

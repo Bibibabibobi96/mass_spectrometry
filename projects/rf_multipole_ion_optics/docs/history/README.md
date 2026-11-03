@@ -7,6 +7,10 @@
 
 [原始路径与 SHA-256 清单](retired_projects/migration_manifest.json)由文档门禁逐项对照 Git 来源与文件字节。
 
+## 项目开发诊断
+
+- [2026-11-03 开发期源分组、冷读与节点机制诊断整理](20261103__rf-development-diagnostics-review.md)：保留原失败、数字及机制资格边界；非新实测。
+
 ## 共有模型的原始研究输入
 
 [原公共多极杆目录](retired_projects/common/multipole)保留迁移前的研究配方、固定母样本及验收／分辨判据。
