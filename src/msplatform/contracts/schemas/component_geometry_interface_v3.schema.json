@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/component_geometry_interface_v3.schema.json",
+  "title": "Provider mechanical interface and scoped electrical boundary groups",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "role",
+    "project_id",
+    "variant_id",
+    "geometry_profile_id",
+    "local_frame_id",
+    "length_unit",
+    "ports",
+    "component_electrodes"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 3
+    },
+    "role": {
+      "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface.schema.json#/properties/role"
+    },
+    "project_id": {
+      "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface.schema.json#/properties/project_id"
+    },
+    "variant_id": {
+      "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface.schema.json#/properties/variant_id"
+    },
+    "geometry_profile_id": {
+      "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface.schema.json#/properties/geometry_profile_id"
+    },
+    "local_frame_id": {
+      "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface.schema.json#/properties/local_frame_id"
+    },
+    "length_unit": {
+      "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface.schema.json#/properties/length_unit"
+    },
+    "ports": {
+      "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface.schema.json#/properties/ports"
+    },
+    "component_electrodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "electrode_group_id",
+          "role"
+        ],
+        "properties": {
+          "electrode_group_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$",
+            "description": "Provider-owned electrical boundary group identity; native relabeling cannot change it. Multiple physical members may share the group."
+          },
+          "role": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$",
+            "description": "Physical classification from the declared provider API/variant, not a second identity."
+          }
+        }
+      }
+    }
+  },
+  "description": "Electrode group identities are dimensionless and unique within this frozen provider design/topology revision. Port positions are mm in local_frame_id; roles classify boundaries and are not unique IDs."
+}

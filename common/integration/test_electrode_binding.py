@@ -24,6 +24,108 @@ def fixture() -> tuple[dict, dict, dict, dict]:
 
 
 class ElectrodeBindingTests(unittest.TestCase):
+    def test_provider_domain_scope_preserves_complete_interface_and_requires_caller_authority(self):
+        _, interfaces, inputs, bindings = fixture()
+        for interface in interfaces.values():
+            interface["schema_version"] = 3
+            interface["component_electrodes"] = [
+                dict(electrode_group_id="repeller", role="repeller"),
+                dict(electrode_group_id="exit_grid", role="exit_grid"),
+                dict(electrode_group_id="reflectron_backplate", role="reflectron_backplate"),
+            ]
+        before = copy.deepcopy(interfaces)
+        scope = {instance: ["repeller", "exit_grid"] for instance in interfaces}
+        bindings.update(schema_version=2, electrode_group_scope=copy.deepcopy(scope))
+        bindings["bindings"] = [dict(instance_id=instance, electrode_group_id=group,
+                                     native_selection="opaque_" + group)
+                                 for instance in interfaces for group in ("repeller", "exit_grid")]
+        validate_electrode_bindings(interfaces, bindings, field_domain_id="parent", provider_inputs=inputs,
+                                    electrode_group_scope=scope)
+        self.assertEqual(interfaces, before)
+        self.assertEqual([row["electrode_group_id"] for row in interfaces["oa"]["component_electrodes"]],
+                         ["repeller", "exit_grid", "reflectron_backplate"])
+        # The serialized record alone cannot approve omitted downstream groups.
+        with self.assertRaisesRegex(ContractError, "record fields"):
+            validate_electrode_bindings(interfaces, bindings, field_domain_id="parent", provider_inputs=inputs)
+        whole = copy.deepcopy(bindings)
+        del whole["electrode_group_scope"]
+        with self.assertRaisesRegex(ContractError, "coverage"):
+            validate_electrode_bindings(interfaces, whole, field_domain_id="parent", provider_inputs=inputs)
+        cases = {}
+        cases["missing_group"] = copy.deepcopy(bindings)
+        cases["missing_group"]["bindings"].pop()
+        cases["extra_downstream"] = copy.deepcopy(bindings)
+        cases["extra_downstream"]["bindings"].append(dict(instance_id="oa", electrode_group_id="reflectron_backplate"))
+        cases["stale_provider"] = copy.deepcopy(bindings)
+        cases["stale_provider"]["provider_inputs"]["oa"]["sha256"] = "B" * 64
+        cases["unapproved_scope"] = copy.deepcopy(bindings)
+        cases["unapproved_scope"]["electrode_group_scope"]["oa"] = ["repeller"]
+        cases["alias"] = copy.deepcopy(bindings)
+        cases["alias"]["bindings"][0]["scientific_id"] = "repeller"
+        cases["unknown_version"] = copy.deepcopy(bindings)
+        cases["unknown_version"]["schema_version"] = 3
+        cases["missing_record_scope"] = whole
+        for name, bad in cases.items():
+            with self.subTest(case=name), self.assertRaises(ContractError):
+                validate_electrode_bindings(interfaces, bad, field_domain_id="parent", provider_inputs=inputs,
+                                            electrode_group_scope=scope)
+
+    def test_scope_rejects_invalid_instance_and_group_selections_and_legacy_version(self):
+        _, interfaces, inputs, legacy = fixture()
+        original = copy.deepcopy(legacy)
+        for interface in interfaces.values():
+            interface["schema_version"] = 3
+            interface["component_electrodes"] = [dict(electrode_group_id="electrode", role="boundary")]
+        original["schema_version"] = 2
+        for row in original["bindings"]:
+            row["electrode_group_id"] = row.pop("scientific_id")
+        valid = {instance: ["electrode"] for instance in interfaces}
+        selections = [None, [], ["electrode", "electrode"], ["unknown"], [True], [1], [""], "electrode"]
+        for selected in selections:
+            bad = copy.deepcopy(valid)
+            bad["oa"] = selected
+            record = dict(original, electrode_group_scope=copy.deepcopy(bad))
+            with self.subTest(selected=selected), self.assertRaises(ContractError):
+                validate_electrode_bindings(interfaces, record, field_domain_id="parent", provider_inputs=inputs,
+                                            electrode_group_scope=bad)
+        for bad in ({"oa": ["electrode"]}, dict(valid, unknown=["electrode"]), []):
+            with self.subTest(scope=bad), self.assertRaises(ContractError):
+                validate_electrode_bindings(interfaces, dict(original, electrode_group_scope=bad),
+                                            field_domain_id="parent", provider_inputs=inputs, electrode_group_scope=bad)
+        _, old_interfaces, _, _ = fixture()
+        for record, supplied in ((legacy, None), (dict(legacy, electrode_group_scope=valid), None),
+                                 (dict(legacy, electrode_group_scope=valid), valid)):
+            if supplied is None and record is legacy:
+                validate_electrode_bindings(old_interfaces, record, field_domain_id="parent", provider_inputs=inputs)
+            else:
+                with self.assertRaises(ContractError):
+                    validate_electrode_bindings(old_interfaces, record, field_domain_id="parent", provider_inputs=inputs,
+                                                electrode_group_scope=supplied)
+
+    def test_current_groups_use_component_three_plan_five_and_binding_two(self):
+        recipe, interfaces, inputs, bindings = fixture()
+        for interface in interfaces.values():
+            interface["schema_version"] = 3
+            interface["component_electrodes"] = [dict(electrode_group_id="electrode", role="boundary")]
+        bindings["schema_version"] = 2
+        for row in bindings["bindings"]:
+            row["electrode_group_id"] = row.pop("scientific_id")
+        validate_electrode_bindings(interfaces, bindings, field_domain_id="parent", provider_inputs=inputs)
+        plan = compile_assembly_layout(recipe, interfaces)
+        self.assertEqual(plan["schema_version"], 5)
+        self.assertEqual(derive_assembly_scope(plan), plan)
+        with self.assertRaises(ContractError):
+            validate_schema(plan, "composition_plan_v4.schema.json")
+        for field in ("scientific_id", "component_electrode_id", "electrical_group_id"):
+            bad = copy.deepcopy(bindings)
+            bad["bindings"][0][field] = "electrode"
+            with self.subTest(field=field), self.assertRaisesRegex(ContractError, "aliases"):
+                validate_electrode_bindings(interfaces, bad, field_domain_id="parent", provider_inputs=inputs)
+        legacy = copy.deepcopy(interfaces)
+        legacy["guide"]["schema_version"] = 2
+        with self.assertRaises(ContractError):
+            compile_assembly_layout(recipe, legacy)
+
     def test_instance_scope_and_opaque_backend_targets(self):
         _, interfaces, inputs, bindings = fixture()
         validate_electrode_bindings(interfaces, bindings, field_domain_id="parent", provider_inputs=inputs)

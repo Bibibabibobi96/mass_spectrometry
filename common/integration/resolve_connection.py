@@ -597,7 +597,7 @@ def resolve_assembly_recipe(
     *, local_scope_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Load explicit recipe/provider files and bind their content identities."""
-    from msplatform.assembly.resolve_assembly import compile_assembly_layout
+    from msplatform.assembly.resolve_assembly import compile_assembly_layout, validate_composition_plan_contract
 
     root = Path(repo_root).resolve()
     sources = {name: _managed_file(root, path) for name, path in (
@@ -613,7 +613,7 @@ def resolve_assembly_recipe(
         name: {"path": source.portable_path, "sha256": _managed_sha256(source)}
         for name, source in sources.items()
     }
-    validate_schema(plan, "composition_plan.schema.json")
+    validate_composition_plan_contract(plan)
     return plan
 
 
@@ -638,9 +638,11 @@ def verify_composition_plan(
     resolved_path: str | Path | None = None,
     repo_root: str | Path = REPO_ROOT,
 ) -> None:
+    from msplatform.assembly.resolve_assembly import validate_composition_plan_contract
+
     plan = load_json(Path(plan_path))
-    validate_schema(plan, "composition_plan.schema.json")
-    if plan["schema_version"] == 3:
+    validate_composition_plan_contract(plan)
+    if plan["schema_version"] in (3, 4, 5):
         _verify_assembly_plan(plan, repo_root)
         return
     if resolved_path is None:

@@ -24,6 +24,35 @@ def _finite(value: Any) -> None:
         raise ContractError("assembly input must contain finite numbers")
 
 
+def validate_component_geometry_interface(interface: dict) -> int:
+    """Validate an explicitly versioned provider interface, without conversion."""
+    if not isinstance(interface, dict) or type(interface.get("schema_version")) is not int:
+        raise ContractError("component interface requires an explicit integer schema version")
+    version = interface["schema_version"]
+    schemas = {1: "component_geometry_interface.schema.json", 2: "component_geometry_interface_v2.schema.json",
+               3: "component_geometry_interface_v3.schema.json"}
+    if version not in schemas:
+        raise ContractError("unsupported component interface version")
+    validate_schema(interface, schemas[version])
+    key = "electrode_group_id" if version == 3 else "component_electrode_id"
+    ids = [row[key] for row in interface["component_electrodes"]]
+    if len(ids) != len(set(ids)):
+        raise ContractError("component physical electrode identities are not unique")
+    return version
+
+
+def validate_composition_plan_contract(plan: dict) -> None:
+    """Select the declared plan resource; do not reinterpret archived versions."""
+    if not isinstance(plan, dict) or type(plan.get("schema_version")) is not int:
+        raise ContractError("composition plan requires an explicit integer schema version")
+    version = plan["schema_version"]
+    if version not in (1, 3, 4, 5):
+        raise ContractError("unsupported composition plan version")
+    schema = {4: "composition_plan_v4.schema.json", 5: "composition_plan_v5.schema.json"}.get(
+        version, "composition_plan.schema.json")
+    validate_schema(plan, schema)
+
+
 def _dot(left: list | tuple, right: list | tuple) -> float:
     return sum(a * b for a, b in zip(left, right, strict=True))
 
@@ -102,26 +131,17 @@ def compile_assembly_layout(
             f"unexpected={sorted(components.keys() - instances.keys())}"
         )
     poses = {}
-    if any(not isinstance(interface, dict) or type(interface.get("schema_version")) is not int
-           for interface in components.values()):
-        raise ContractError("component interface requires an explicit integer schema version")
-    versions = {interface["schema_version"] for interface in components.values()}
-    if len(versions) != 1 or next(iter(versions)) not in (1, 2):
+    versions = {validate_component_geometry_interface(interface) for interface in components.values()}
+    if len(versions) != 1 or next(iter(versions)) not in (1, 2, 3):
         raise ContractError("assembly requires one explicit supported component interface version")
     component_version = next(iter(versions))
-    component_schema = ("component_geometry_interface.schema.json" if component_version == 1
-                        else "component_geometry_interface_v2.schema.json")
     for instance_id, item in instances.items():
         interface = components[instance_id]
-        validate_schema(interface, component_schema)
         if interface["project_id"] != item["project_id"]:
             raise ContractError(
                 f"{instance_id}: recipe project={item['project_id']}, "
                 f"provider project={interface['project_id']}"
             )
-        ids = [electrode["component_electrode_id"] for electrode in interface["component_electrodes"]]
-        if len(ids) != len(set(ids)):
-            raise ContractError("component physical electrode identities are not unique")
         try:
             pose = RigidTransform.from_contract(item["transform"])
         except ValueError as exc:
@@ -159,7 +179,7 @@ def compile_assembly_layout(
         elif included == 1:
             boundary.append(edge["connection_id"])
     plan = {
-        "schema_version": 3 if component_version == 1 else 4,
+        "schema_version": {1: 3, 2: 4, 3: 5}[component_version],
         "role": "integration_composition_plan_do_not_edit",
         "integration_id": recipe["integration_id"],
         "recipe_id": recipe["recipe_id"],
@@ -174,7 +194,7 @@ def compile_assembly_layout(
     }
     if local_scope is not None:
         plan["local_scope"] = copy.deepcopy(local_scope)
-    validate_schema(plan, "composition_plan.schema.json" if component_version == 1 else "composition_plan_v4.schema.json")
+    validate_composition_plan_contract(plan)
     return plan
 
 

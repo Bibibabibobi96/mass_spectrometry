@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/composition_plan_v5.schema.json",
+  "title": "Frozen assembly plan with explicit electrode-group identities",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "role",
+    "integration_id",
+    "recipe_id",
+    "stage",
+    "assembly_frame_id",
+    "recipe",
+    "components",
+    "connection_checks",
+    "scope"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 5
+    },
+    "role": {
+      "$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/role"
+    },
+    "integration_id": {
+      "$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/integration_id"
+    },
+    "recipe_id": {
+      "$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/recipe_id"
+    },
+    "stage": {
+      "$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/stage"
+    },
+    "assembly_frame_id": {
+      "$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/assembly_frame_id"
+    },
+    "recipe": {
+      "$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/recipe"
+    },
+    "components": {
+      "type": "object",
+      "minProperties": 2,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+      },
+      "additionalProperties": {
+        "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface_v3.schema.json"
+      }
+    },
+    "connection_checks": {
+      "$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/connection_checks"
+    },
+    "input_files": {
+      "$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/input_files"
+    },
+    "scope": {
+      "$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/scope"
+    },
+    "local_scope": {
+      "$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/local_scope"
+    }
+  }
+}
