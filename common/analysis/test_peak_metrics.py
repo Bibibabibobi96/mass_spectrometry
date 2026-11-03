@@ -7,7 +7,7 @@ import numpy as np
 
 from common.analysis.peak_metrics import (
     AnalysisSettings, bootstrap_resolution_difference, compare_peak_shapes, half_height_width,
-    compute_peak_metrics, compute_time_peak_metrics,
+    compute_peak_metrics, compute_time_peak_metrics, compute_nominal_mass_peak_metrics,
 )
 
 
@@ -270,3 +270,46 @@ class PeakPairingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StrictNominalMassMetricsTests(unittest.TestCase):
+    def test_strict_protocol_preserves_numerics_and_names_resolution(self) -> None:
+        tof = np.asarray([70.99, 71.0, 71.01, 71.02, 71.03])
+        legacy, old_spectra = compute_peak_metrics(tof, 524.0, include_result_metadata=True)
+        strict, spectra = compute_nominal_mass_peak_metrics(tof, 524.0)
+        self.assertNotIn("mass_resolution", strict)
+        self.assertEqual(strict["nominal_mass_resolution_fwhm"],
+                         524.0 / strict["direct_fwhm_mass_Da"])
+        self.assertEqual(strict["nominal_mass_resolution_fwhm"], legacy["mass_resolution"])
+        # Independent half-height interpolation on the returned sampled curve.
+        x, y = spectra["mass_grid_Da"], spectra["mass_density"]
+        peak = int(np.argmax(y))
+        half = y[peak] / 2
+        left = int(np.flatnonzero(y[:peak] <= half)[-1])
+        right = peak + int(np.flatnonzero(y[peak:] <= half)[0])
+        left_crossing = x[left] + (half - y[left]) * (x[left + 1] - x[left]) / (y[left + 1] - y[left])
+        right_crossing = x[right - 1] + (half - y[right - 1]) * (x[right] - x[right - 1]) / (y[right] - y[right - 1])
+        expected_resolution = 524.0 / float(right_crossing - left_crossing)
+        self.assertEqual(strict["nominal_mass_resolution_fwhm"], expected_resolution)
+        for key, value in legacy.items():
+            if key not in {"analysis_metadata", "mass_resolution"}:
+                self.assertEqual(strict[key], value, key)
+        for key, value in old_spectra.items():
+            np.testing.assert_array_equal(spectra[key], value)
+        old_metadata = legacy["analysis_metadata"]
+        metadata = strict["analysis_metadata"]
+        self.assertEqual(old_metadata["schema_version"], 1)
+        self.assertEqual(metadata["schema_version"], 2)
+        self.assertEqual(metadata["method_id"], old_metadata["method_id"])
+        self.assertEqual(metadata["time_reference"]["clock_qualification"], "unspecified")
+        self.assertFalse(metadata["mass_axis"]["absolute_calibration"])
+        self.assertEqual(metadata["scientific_qualification"], "not_assessed")
+        self.assertEqual(metadata["fwhm_definition"]["interpolation"], "linear")
+        self.assertNotIn("analysis_metadata", compute_peak_metrics(tof, 524.0)[0])
+
+    def test_strict_api_rejects_invalid_mass_and_dimension(self) -> None:
+        for mass in (True, np.bool_(True), float("nan"), float("inf"), -1, 0, "524", 1j):
+            with self.subTest(mass=mass), self.assertRaisesRegex(ValueError, "nominal_mass_Da"):
+                compute_nominal_mass_peak_metrics(np.asarray([1., 2., 3.]), mass)
+        with self.assertRaisesRegex(ValueError, "one-dimensional"):
+            compute_nominal_mass_peak_metrics(np.asarray([[1., 2., 3.]]), 524.)

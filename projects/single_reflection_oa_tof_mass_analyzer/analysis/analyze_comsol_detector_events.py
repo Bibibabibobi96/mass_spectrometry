@@ -54,9 +54,11 @@ def analyze_request(request_path: Path) -> dict[str, Any]:
         output,
         float(request["nominal_mass_Da"]),
         label=str(request["label"]),
+        result_schema_version=4,
     )
     receipt = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "result_schema_version": 4,
         "role": "oatof_comsol_detector_events_analysis_receipt",
         "status": result["status"],
         "request": {"path": str(request_path), "sha256": file_sha256(request_path)},

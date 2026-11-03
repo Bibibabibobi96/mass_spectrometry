@@ -28,11 +28,12 @@ import pandas as pd
 import scipy
 from scipy import stats
 
-from common.analysis.peak_metrics import (
+from msplatform.analysis.peak_metrics import (
     AnalysisSettings,
     bootstrap_resolution_difference,
     compare_peak_shapes,
     compute_detector_metrics,
+    compute_nominal_mass_peak_metrics,
     compute_peak_metrics,
     compute_paired_tof_delta_source_metrics,
     compute_source_mapping_metrics,
@@ -372,7 +373,10 @@ def _plot_single(
     spectra: dict[str, np.ndarray],
     label: str,
     output: Path,
+    *,
+    result_schema_version: int,
 ) -> None:
+    resolution_key = {3: "mass_resolution", 4: "nominal_mass_resolution_fwhm"}[result_schema_version]
     figure, axes = plt.subplots(2, 2, figsize=(12.5, 8.0), constrained_layout=True)
 
     time_axis = axes[0, 0]
@@ -395,7 +399,7 @@ def _plot_single(
     mass_axis.set(
         xlabel="Nominal-relative apparent mass [Da]",
         ylabel="Normalized intensity",
-        title=f"Direct FWHM={metrics['direct_fwhm_mass_Da']:.8g} Da; R={metrics['mass_resolution']:.1f}",
+        title=f"Direct FWHM={metrics['direct_fwhm_mass_Da']:.8g} Da; R={metrics[resolution_key]:.1f}",
     )
     mass_axis.grid(True, alpha=0.3)
 
@@ -696,7 +700,16 @@ def analyze_single(
     contract_path: Path = DEFAULT_CONTRACT,
     column_overrides: dict[str, str] | None = None,
     declared_event: str | None = None,
+    *,
+    result_schema_version: int = 3,
 ) -> dict[str, Any]:
+    """Write protocol 3 (legacy) or 4 (strict nominal-mass) results.
+
+    Protocol 4 requires metadata 2 and the explicit nominal-mass resolution key;
+    readers must select the protocol before consuming metrics.
+    """
+    if type(result_schema_version) is not int or result_schema_version not in (3, 4):
+        raise ValueError("unsupported peak result schema_version")
     contract, settings = load_contract(contract_path)
     frame, import_metadata = read_particle_table(
         input_path,
@@ -705,10 +718,15 @@ def analyze_single(
         column_overrides=column_overrides,
         declared_event=declared_event,
     )
-    metrics, spectra = compute_peak_metrics(
-        frame["tof_us"].to_numpy(), nominal_mass_Da, settings,
-        include_result_metadata=True,
-    )
+    if result_schema_version == 4:
+        metrics, spectra = compute_nominal_mass_peak_metrics(
+            frame["tof_us"].to_numpy(), nominal_mass_Da, settings,
+        )
+    else:
+        metrics, spectra = compute_peak_metrics(
+            frame["tof_us"].to_numpy(), nominal_mass_Da, settings,
+            include_result_metadata=True,
+        )
     if {"detector_x_mm", "detector_y_mm"}.issubset(frame.columns):
         metrics["detector"] = compute_detector_metrics(
             frame["detector_x_mm"].to_numpy(), frame["detector_y_mm"].to_numpy()
@@ -726,7 +744,7 @@ def analyze_single(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     result = {
-        "schema_version": int(contract["schema_version"]),
+        "schema_version": result_schema_version,
         "status": "PASS",
         "label": label or input_path.stem,
         "input": {
@@ -739,6 +757,8 @@ def analyze_single(
         "runtime": runtime_provenance(contract_path),
         "metrics": metrics,
     }
+    if result_schema_version == 4:
+        result["analysis_contract_schema_version"] = int(contract["schema_version"])
     write_json(output_dir / "metrics.json", result)
     frame.to_csv(output_dir / "particles_normalized.csv", index=False)
     pd.DataFrame(
@@ -751,7 +771,10 @@ def analyze_single(
             "mass_intensity_normalized": spectra["mass_density_normalized"],
         }
     ).to_csv(output_dir / "spectra.csv", index=False)
-    _plot_single(frame, metrics, spectra, result["label"], output_dir / "peak_overview.png")
+    _plot_single(
+        frame, metrics, spectra, result["label"], output_dir / "peak_overview.png",
+        result_schema_version=result_schema_version,
+    )
     if source_arrays is not None:
         pd.DataFrame(
             {

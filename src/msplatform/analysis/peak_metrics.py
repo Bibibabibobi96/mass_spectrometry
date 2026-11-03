@@ -344,6 +344,41 @@ def compute_peak_metrics(
     return metrics, spectra
 
 
+
+def compute_nominal_mass_peak_metrics(
+    tof_us: np.ndarray,
+    nominal_mass_Da: float,
+    settings: AnalysisSettings | None = None,
+    *,
+    weights: np.ndarray | None = None,
+) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
+    """Return strict nominal-mass results with mandatory version-2 metadata.
+
+    The numerical implementation and method identity are shared with the legacy
+    API. The mass axis is mean-relative, not an absolute mass calibration.
+    """
+    if (isinstance(nominal_mass_Da, (bool, np.bool_))
+            or not isinstance(nominal_mass_Da, Real)
+            or not np.isfinite(nominal_mass_Da) or nominal_mass_Da <= 0):
+        raise ValueError("nominal_mass_Da must be a finite positive real number")
+    if np.asarray(tof_us).ndim != 1:
+        raise ValueError("tof_us must be one-dimensional")
+    metrics, spectra = compute_peak_metrics(
+        tof_us, nominal_mass_Da, settings, weights=weights,
+        include_result_metadata=True,
+    )
+    metrics["nominal_mass_resolution_fwhm"] = metrics.pop("mass_resolution")
+    metadata = metrics["analysis_metadata"]
+    metadata["schema_version"] = 2
+    metadata["fwhm_definition"] = {
+        "peak_selection": "first_global_kde_maximum",
+        "crossings": "nearest_half_height_crossing_on_each_side",
+        "interpolation": "linear",
+        "resolution": "nominal_mass_Da / direct_fwhm_mass_Da",
+    }
+    return metrics, spectra
+
+
 def compute_detector_metrics(
     detector_x_mm: np.ndarray, detector_y_mm: np.ndarray
 ) -> dict[str, float]:

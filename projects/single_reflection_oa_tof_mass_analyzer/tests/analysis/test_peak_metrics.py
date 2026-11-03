@@ -855,3 +855,45 @@ class SourceMappingAndBootstrapTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PeakResultProtocolTests(unittest.TestCase):
+    def test_unknown_result_version_rejected_before_read_or_write(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for version in (True, 3.0, 2, 5, "4"):
+                with self.subTest(version=version), self.assertRaisesRegex(ValueError, "schema_version"):
+                    analyze_single(root / "absent.csv", root / "output", 524.,
+                                   result_schema_version=version)
+                self.assertFalse((root / "output").exists())
+
+    def test_legacy_default_and_strict_writer_share_spectra_and_input(self) -> None:
+        from msplatform.analysis import peak_metrics as canonical
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis import reference_analysis_core
+
+        self.assertIs(reference_analysis_core.compute_nominal_mass_peak_metrics,
+                      canonical.compute_nominal_mass_peak_metrics)
+        self.assertEqual(reference_analysis_core.compute_nominal_mass_peak_metrics.__module__,
+                         "msplatform.analysis.peak_metrics")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "events.csv"
+            original = b"Ion,TofUs\n3,71.0000\n7,71.0001\n11,71.0002\n"
+            source.write_bytes(original)
+            legacy = analyze_single(source, root / "legacy", 524.)
+            strict = analyze_single(source, root / "strict", 524., result_schema_version=4)
+            self.assertEqual(legacy["schema_version"], 3)
+            self.assertEqual(legacy["metrics"]["analysis_metadata"]["schema_version"], 1)
+            self.assertIn("mass_resolution", legacy["metrics"])
+            self.assertNotIn("nominal_mass_resolution_fwhm", legacy["metrics"])
+            self.assertEqual(strict["schema_version"], 4)
+            self.assertEqual(strict["analysis_contract_schema_version"], 3)
+            self.assertEqual(strict["metrics"]["analysis_metadata"]["schema_version"], 2)
+            self.assertNotIn("mass_resolution", strict["metrics"])
+            self.assertEqual(strict["metrics"]["nominal_mass_resolution_fwhm"],
+                             legacy["metrics"]["mass_resolution"])
+            for name in ("spectra.csv", "particles_normalized.csv"):
+                self.assertEqual((root / "legacy" / name).read_bytes(),
+                                 (root / "strict" / name).read_bytes())
+            self.assertEqual(source.read_bytes(), original)
+            self.assertTrue((root / "strict" / "peak_overview.png").read_bytes().startswith(b"\x89PNG"))
