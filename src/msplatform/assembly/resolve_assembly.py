@@ -102,9 +102,18 @@ def compile_assembly_layout(
             f"unexpected={sorted(components.keys() - instances.keys())}"
         )
     poses = {}
+    if any(not isinstance(interface, dict) or type(interface.get("schema_version")) is not int
+           for interface in components.values()):
+        raise ContractError("component interface requires an explicit integer schema version")
+    versions = {interface["schema_version"] for interface in components.values()}
+    if len(versions) != 1 or next(iter(versions)) not in (1, 2):
+        raise ContractError("assembly requires one explicit supported component interface version")
+    component_version = next(iter(versions))
+    component_schema = ("component_geometry_interface.schema.json" if component_version == 1
+                        else "component_geometry_interface_v2.schema.json")
     for instance_id, item in instances.items():
         interface = components[instance_id]
-        validate_schema(interface, "component_geometry_interface.schema.json")
+        validate_schema(interface, component_schema)
         if interface["project_id"] != item["project_id"]:
             raise ContractError(
                 f"{instance_id}: recipe project={item['project_id']}, "
@@ -150,7 +159,7 @@ def compile_assembly_layout(
         elif included == 1:
             boundary.append(edge["connection_id"])
     plan = {
-        "schema_version": 3,
+        "schema_version": 3 if component_version == 1 else 4,
         "role": "integration_composition_plan_do_not_edit",
         "integration_id": recipe["integration_id"],
         "recipe_id": recipe["recipe_id"],
@@ -165,7 +174,7 @@ def compile_assembly_layout(
     }
     if local_scope is not None:
         plan["local_scope"] = copy.deepcopy(local_scope)
-    validate_schema(plan, "composition_plan.schema.json")
+    validate_schema(plan, "composition_plan.schema.json" if component_version == 1 else "composition_plan_v4.schema.json")
     return plan
 
 

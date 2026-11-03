@@ -8,7 +8,8 @@
 
 已批准的多组件目标见[统一组装规范](../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md#统一组装目标)。
 本目录已增加[多实例配方布局编译](../../integrations/README.md#配方解析)，校验提供者机械接口和直接位姿，
-由同一CLI接受`--recipe`与`--components`并输出composition plan v3。当前仅为`layout_only`，不执行物理工作流；
+纯API按显式component版本1/2分别输出composition plan v3/v4；文件CLI仍消费原具名版本范围。
+当前仅为`layout_only`，不执行物理工作流；
 局部裸导引、冷却前端、多极杆→IP、IP→MR准备及单反射整机已由直属工作流消费完整父plan并派生实际范围；
 各执行器的组件支持集和原生验证边界见[集成状态](../../integrations/docs/INTEGRATION.md)，不由布局编译能力推断。
 
@@ -75,6 +76,15 @@ parent = compile_assembly_layout(recipe, components)
 
 
 ## 身份与兼容性
+
+科学电极版本2使用局部语义字符串ID，版本1整数接口与plan3的旧schema字节保持。
+`msplatform.assembly.resolve_assembly.compile_assembly_layout`拒绝混合或未知版本，
+版本2生成plan4并保持同一完整父配方与局部切边语义；新schema的机械字段引用原本地资源。
+`msplatform.assembly.electrode_binding.validate_electrode_bindings`以
+`ElectrodeKey(instance_id, scientific_id)`校验完整覆盖、重复、域与调用方已有冻结provider记录一致性；
+不打开路径、不造第二哈希，不将后端selection强制解释为整数。
+SIMION原生整数/容量与同域槽位检查仍由后端负责。现实际RF/OA执行消费者切换和
+新资源的普通安装/冻结/原生验收尚未完成，纯API软件小例不代替真实链证据。
 
 port 是项目物理合同的发布视图，不是第二权威。每个port必须通过`authority.source_contract`和
 `source_sha256`锁定仓库内来源，并用`bindings`逐项声明port JSON Pointer与source JSON Pointer；

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/component_geometry_interface_v2.schema.json",
+  "title": "Provider-owned mechanical interface with stable scientific electrode identities",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "role",
+    "project_id",
+    "variant_id",
+    "geometry_profile_id",
+    "local_frame_id",
+    "length_unit",
+    "ports",
+    "component_electrodes"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "role": {
+      "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface.schema.json#/properties/role"
+    },
+    "project_id": {
+      "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface.schema.json#/properties/project_id"
+    },
+    "variant_id": {
+      "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface.schema.json#/properties/variant_id"
+    },
+    "geometry_profile_id": {
+      "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface.schema.json#/properties/geometry_profile_id"
+    },
+    "local_frame_id": {
+      "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface.schema.json#/properties/local_frame_id"
+    },
+    "length_unit": {
+      "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface.schema.json#/properties/length_unit"
+    },
+    "ports": {
+      "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface.schema.json#/properties/ports"
+    },
+    "component_electrodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "component_electrode_id",
+          "role"
+        ],
+        "properties": {
+          "component_electrode_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+          },
+          "role": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+          },
+          "electrical_group_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}
