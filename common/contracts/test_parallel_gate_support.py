@@ -202,6 +202,7 @@ catch{{if($_.Exception.Message-eq'accepted missing invocation'){{throw}};$reject
         self.assertEqual(workflow.count("run: *gate_command"),1)
         self.assertIn("PUBLIC_GATE_SCOPE_FILE: changed_scope.json",workflow)
         self.assertIn("PUBLIC_GATE_SCOPE_FILE: integration_scope.json",workflow)
+        self.assertEqual(workflow.count("${{ runner.temp }}/oatof_fixture_diagnostics/**"), 2)
 
     def test_workflow_manual_comparison_matches_push_plan_and_propagates_real_failure(self):
         base,root,environment=self.plan_transport_fixture(git=True)

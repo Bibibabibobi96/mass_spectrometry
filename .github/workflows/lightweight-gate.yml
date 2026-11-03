@@ -351,6 +351,7 @@ jobs:
             ${{ runner.temp }}/changed_gate_test_outcomes.json
             ${{ runner.temp }}/changed_gate_resource_samples.jsonl
             ${{ runner.temp }}/changed_gate_*/**
+            ${{ runner.temp }}/oatof_fixture_diagnostics/**
           if-no-files-found: warn
   repository_integration:
     if: github.event_name == 'workflow_dispatch' && (inputs.comparison_base == '' || inputs.owner != '')
@@ -465,4 +466,5 @@ jobs:
             ${{ runner.temp }}/integration_gate_test_outcomes.json
             ${{ runner.temp }}/integration_gate_resource_samples.jsonl
             ${{ runner.temp }}/repository_integration_gate_*/**
+            ${{ runner.temp }}/oatof_fixture_diagnostics/**
           if-no-files-found: warn

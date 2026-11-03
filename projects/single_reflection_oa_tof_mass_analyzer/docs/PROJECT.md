@@ -8,6 +8,23 @@ Paper 1 专用研究准备API的归属与退出条件见[分析说明](../analys
 
 ## 当前状态
 
+### P2 R0：受控测试超时现场
+
+原Changed运行41531065614的partial夹具30秒超时仍保留，历史根因未复现。
+测试专用进程边界现保留argv、单调时序、原异常输出（Windows上允许为None）、
+独立drain原字节、events/completion及PID创建身份；不会将后续drain字节填回原异常。
+只对ACK后归入本夹具Job的合成子树实施有界清理，不改变生产求解器策略或原30秒预算。
+该范围采用已安装pywin32的[Windows Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)
+及[AssignProcessToJobObject](https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-assignprocesstojobobject)
+官方进程归属接口（2026-11-03核对）；不允许breakaway，启动归属设置和清理耗时另列。
+
+完整适配器测试模块16 PASS／0 skip，79.061秒；默认4路的四方法有界cohort 4 PASS／0 skip，
+25.887秒。独立负例覆盖真实超时、原错误与次要诊断失败、子树清理和无关进程存活。
+这证明测试边界的取证与清理，不证明旧远端超时根治，也不授予原生、GUI/CAD或Formal资格。
+测试诊断默认存入TEMP下唯一`oatof_fixture_diagnostics/compensation-*`目录；
+CI两种范围均沿现有always工件上传具名诊断目录，不打包整个TEMP。
+全局R0/P2出口及旧证据限制由[路线图](../../../docs/ROADMAP.md#科学核心与平台边界迁移)跟踪。
+
 
 ### 2026-11-02 V4 科学核心与冻结消费者迁移
 

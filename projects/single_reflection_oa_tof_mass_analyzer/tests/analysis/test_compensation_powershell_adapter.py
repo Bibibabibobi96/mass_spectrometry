@@ -11,6 +11,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from projects.single_reflection_oa_tof_mass_analyzer.tests.test_support import fixture_process
 
 ROOT = Path(__file__).resolve().parents[4]
 RELATIVE = Path("projects/single_reflection_oa_tof_mass_analyzer/workflows/reflectron_voltage_compensation")
@@ -18,11 +19,24 @@ ADAPTER = ROOT / RELATIVE / "execute_compensation.ps1"
 
 
 PYTHON_ACTIONS = r'''
-import argparse,hashlib,json,os
+import argparse,hashlib,json,os,sys,time
 from pathlib import Path
 p=argparse.ArgumentParser();p.add_argument('--action');p.add_argument('--run');p.add_argument('--label');p.add_argument('--index');p.add_argument('--process-record');p.add_argument('--dispatch-plan');a,_=p.parse_known_args()
 root=Path(os.environ['FIXTURE_ROOT']); mode=os.environ['FIXTURE_MODE']
+def trace(event):
+    row=dict(event=event,action=a.action,mode=mode,monotonic_ns=time.monotonic_ns(),pid=os.getpid(),
+             parent_pid=os.getppid(),argv=sys.argv,python=sys.executable,cwd=os.getcwd())
+    try:
+        with (root/'timeline.jsonl').open('a',encoding='utf-8') as stream:
+            stream.write(json.dumps(row)+'\n')
+    except OSError as error:
+        print('FIXTURE_DIAGNOSTIC_SECONDARY '+repr(error),file=sys.stderr,flush=True)
+trace('action.begin')
 with (root/'events').open('a', encoding='utf-8') as f:f.write('action:'+a.action+(':'+a.label if a.label else '')+'\n')
+if os.environ.get('FIXTURE_DELAY_ACTION') == a.action:
+    os.write(1,b'R0_STDOUT_RAW\xff\x00'+ '中文'.encode('utf-8'))
+    os.write(2,b'R0_STDERR_RAW\xfe'+ '诊断'.encode('utf-8'))
+    time.sleep(float(os.environ['FIXTURE_DELAY_SECONDS']))
 run=Path(a.run) if a.run else None
 if a.action=='inspect':
     source=root/'source.pa'
@@ -63,15 +77,35 @@ elif a.action=='analyze':
     if mode=='analysis_failure':raise RuntimeError('ANALYSIS_SENTINEL')
     value={'scientific_result':'INCONCLUSIVE'}
 else:raise RuntimeError(a.action)
+trace('action.end')
 print(json.dumps(value))
 '''
 
 
 OWNER_FIXTURE = r'''
 $script:python=$env:FIXTURE_PYTHON
-function Event($Value){Add-Content -LiteralPath (Join-Path $env:FIXTURE_ROOT 'events') -Value $Value}
+function Trace-Fixture($Value){
+ try{
+ $entry=@{event=$Value;mode=$env:FIXTURE_MODE;pid=$PID;started_utc_ticks=(Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks;
+  monotonic_ticks=[Diagnostics.Stopwatch]::GetTimestamp();monotonic_frequency=[Diagnostics.Stopwatch]::Frequency}
+ [IO.File]::AppendAllText((Join-Path $env:FIXTURE_ROOT 'timeline.jsonl'),($entry|ConvertTo-Json -Compress)+"`n",[Text.UTF8Encoding]::new($false))
+ }catch{[Console]::Error.WriteLine('FIXTURE_DIAGNOSTIC_SECONDARY '+$_.Exception.Message)}
+}
+function Event($Value){Add-Content -LiteralPath (Join-Path $env:FIXTURE_ROOT 'events') -Value $Value;Trace-Fixture $Value}
 function Write-RunJson {param($Path,$Value,$Depth=100,[switch]$Atomic);[IO.Directory]::CreateDirectory((Split-Path -Parent $Path))|Out-Null;$Value|ConvertTo-Json -Depth $Depth|Set-Content -LiteralPath $Path -Encoding utf8}
-function Invoke-RunToolRootContext {param($RepoRoot,$Operation);Push-Location $RepoRoot;try{& $Operation}finally{Pop-Location}}
+function Invoke-RunToolRootContext {
+ param($RepoRoot,$Operation)
+ Push-Location $RepoRoot;Trace-Fixture 'python_boundary.begin'
+ if($env:FIXTURE_DELAY_ACTION){
+  # Negative-case witness at the observed root boundary. Native Python action
+  # stdout is buffered by PowerShell's $output assignment until that action ends.
+  [byte[]]$raw=[Text.Encoding]::UTF8.GetBytes('R0_STDOUT_RAW')+[byte[]]@(255,0)+[Text.Encoding]::UTF8.GetBytes('中文')
+  $stream=[Console]::OpenStandardOutput();$stream.Write($raw,0,$raw.Length);$stream.Flush()
+  [byte[]]$raw=[Text.Encoding]::UTF8.GetBytes('R0_STDERR_RAW')+[byte[]]@(254)+[Text.Encoding]::UTF8.GetBytes('诊断')
+  $stream=[Console]::OpenStandardError();$stream.Write($raw,0,$raw.Length);$stream.Flush()
+ }
+ try{& $Operation}finally{Trace-Fixture 'python_boundary.end';Pop-Location}
+}
 function Enter-RunTerminalConsumptionGuard {param($RunDirectory);Event reader;return [IO.MemoryStream]::new()}
 function Enter-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$ArtifactRoot,$RunDirectory,$CommittedNewBytes,$ProtectedPaths,$ProtectedCacheKeys,$Owner);Event capacity;return @{}}
 function Exit-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session);Event capacity_exit}
@@ -344,12 +378,22 @@ if(-not$caught-or$script:writersStopped){throw 'Unknown producer writer was acce
                 text=True, encoding="utf-8", capture_output=True, check=False, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def run_fixture(self, mode: str, *, resume: bool = False) -> tuple[subprocess.CompletedProcess[str], list[str], dict]:
+    def run_fixture(self, mode: str, *, resume: bool = False, timeout: float = 30,
+                    delay_action: str = "", delay_seconds: float = 0,
+                    diagnostics_root: Path | None = None) -> tuple[subprocess.CompletedProcess[str], list[str], dict]:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "repo"
             target = root / RELATIVE
             target.mkdir(parents=True)
             shutil.copyfile(ADAPTER, target / "execute_compensation.ps1")
+            copied = target / "execute_compensation.ps1"
+            source = copied.read_text(encoding="utf-8")
+            marker = ")\nSet-StrictMode -Version Latest"
+            self.assertEqual(source.count(marker), 1)
+            copied.write_text(source.replace(marker, ")\n"
+                "# TEST ONLY: establish owned-process containment before any action.\n"
+                "if([Console]::In.ReadLine()-cne'fixture-owned-start'){throw 'Fixture ownership ACK missing'}\n"
+                "Set-StrictMode -Version Latest", 1), encoding="utf-8", newline="\n")
             (root / "common/paths").mkdir(parents=True)
             for filename in ("workspace_paths.ps1", "workspace_paths.py"):
                 shutil.copyfile(ROOT / "common/paths" / filename, root / "common/paths" / filename)
@@ -379,6 +423,8 @@ foreach($name in @('oatof_ideal_grounded.iob','oatof_ideal_grounded.lua','reflec
 if($env:FIXTURE_MODE-eq'producer_failure'){throw 'PRODUCER_ORIGINAL_SENTINEL'}
 ''', encoding="utf-8")
             env = dict(os.environ, FIXTURE_ROOT=str(root), FIXTURE_MODE=mode, FIXTURE_PYTHON=sys.executable, FIXTURE_PUBLIC_OWNER_SOURCE=str(ROOT/"common/contracts/run_artifact_workflow.ps1"))
+            env.update(FIXTURE_DELAY_ACTION=delay_action, FIXTURE_DELAY_SECONDS=str(delay_seconds))
+            env.update(FIXTURE_TEST_SOURCE=__file__, FIXTURE_ADAPTER_SOURCE=str(ADAPTER), FIXTURE_TEST_METHOD=self.id())
             env.update(MASS_SPECTROMETRY_ARTIFACT_ROOT=str(root / "configured_artifacts"),
                        MASS_SPECTROMETRY_EXECUTION_ROOT=str(root / "execution"),
                        MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root / "host.sqlite3"))
@@ -395,7 +441,12 @@ if($env:FIXTURE_MODE-eq'producer_failure'){throw 'PRODUCER_ORIGINAL_SENTINEL'}
                 command += ["-ResultPath", str(root / "resume-result.json")]
             if mode.startswith("producer"):
                 command += ["-NumericsPath", "explicit-coarse-input"]
-            result = subprocess.run(command, cwd=root, text=True, encoding="utf-8", capture_output=True, env=env, check=False, timeout=30)
+            evidence = diagnostics_root
+            if evidence is None and os.environ.get("OATOF_TEST_DIAGNOSTICS_ROOT"):
+                evidence = Path(os.environ["OATOF_TEST_DIAGNOSTICS_ROOT"])
+            result = fixture_process.run_fixture_process(command, root=root, environment=env, mode=mode,
+                                                         timeout=timeout, diagnostics_root=evidence)
+            print(f"FIXTURE_EVIDENCE mode={mode} path={result.fixture_diagnostics}", flush=True)
             events = (root / "events").read_text(encoding="utf-8").splitlines() if (root / "events").exists() else []
             completion = json.loads((root / "completion.json").read_text(encoding="utf-8-sig")) if (root / "completion.json").exists() else {}
             if (root / "result.json").exists():
@@ -466,6 +517,68 @@ if($env:FIXTURE_MODE-eq'producer_failure'){throw 'PRODUCER_ORIGINAL_SENTINEL'}
                          [f"dispatch:{label}1:{label}" for label in ("baseline", "compensated", "ideal_reflectron")])
         self.assertEqual(len(completed["facts"]["operations"]), 4)
         self.assertEqual(len(completed["facts"]["resource_releases"]), 1)
+
+    @unittest.skipUnless(os.name == "nt", "Windows Job ownership contract")
+    def test_timeout_retains_raw_bytes_events_and_only_stops_its_fixture_tree(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = Path(os.environ.get("OATOF_TEST_DIAGNOSTICS_ROOT", directory))
+            unrelated = subprocess.Popen(["pwsh", "-NoProfile", "-Command", "Start-Sleep -Seconds 60"],
+                                         cwd=evidence, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                    self.run_fixture("partial", timeout=10, delay_action="fit", delay_seconds=60,
+                                     diagnostics_root=evidence)
+                error = caught.exception
+                self.assertEqual(error.timeout, 10)
+                saved = Path(error.fixture_diagnostics)
+                # Windows communicate reader threads publish their buffer at EOF.
+                # Never rewrite the original exception's legitimate None payload.
+                self.assertEqual((saved / "stdout.bin").read_bytes(), error.output or b"")
+                self.assertEqual((saved / "stderr.bin").read_bytes(), error.stderr or b"")
+                self.assertIn(b"R0_STDOUT_RAW\xff\x00" + "中文".encode(), (saved / "drained_stdout.bin").read_bytes())
+                self.assertIn(b"R0_STDERR_RAW\xfe" + "诊断".encode(), (saved / "drained_stderr.bin").read_bytes())
+                metadata = json.loads((saved / "diagnostics.json").read_text())
+                self.assertEqual(metadata["timeout_output_types"], [type(error.output).__name__, type(error.stderr).__name__])
+                self.assertEqual(metadata["primary_error"]["type"], "TimeoutExpired")
+                self.assertGreater(metadata["root_creation_filetime_100ns"], 0)
+                self.assertGreaterEqual(len(metadata["job_processes_at_failure"]), 2)
+                self.assertTrue(all(row["creation_filetime_100ns"] > 0 for row in metadata["job_processes_at_failure"]))
+                self.assertEqual(metadata["remaining_job_processes"], [])
+                self.assertIn("action:fit", (saved / "events").read_text())
+                self.assertIn('"action": "fit"', (saved / "timeline.jsonl").read_text())
+                self.assertNotIn("completion.json", metadata["files"])
+                self.assertIsNone(unrelated.poll(), "Fixture cleanup stopped an unrelated process")
+            finally:
+                unrelated.terminate()
+                unrelated.wait(timeout=5)
+
+    @unittest.skipUnless(os.name == "nt", "Windows Job ownership contract")
+    def test_timeout_diagnostic_failure_does_not_replace_original_timeout(self):
+        captured = {}
+
+        def fail_save(destination, root, metadata, stdout, stderr, drained_stdout, drained_stderr):
+            captured.update(stdout=stdout, stderr=stderr, drained_stdout=drained_stdout, drained_stderr=drained_stderr)
+            raise OSError("DIAGNOSTIC_SECONDARY_SENTINEL")
+
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+                fixture_process, "_save_evidence", side_effect=fail_save):
+            with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                self.run_fixture("partial", timeout=10, delay_action="fit", delay_seconds=60,
+                                 diagnostics_root=Path(os.environ.get("OATOF_TEST_DIAGNOSTICS_ROOT", directory)))
+            error = caught.exception
+            self.assertEqual(error.timeout, 10)
+            self.assertEqual(captured["stdout"], error.output or b"")
+            self.assertEqual(captured["stderr"], error.stderr or b"")
+            self.assertIn(b"R0_STDOUT_RAW\xff", captured["drained_stdout"])
+            self.assertIn(b"R0_STDERR_RAW\xfe", captured["drained_stderr"])
+            self.assertTrue(any("DIAGNOSTIC_SECONDARY_SENTINEL" in note for note in error.fixture_secondary))
+            self.assertEqual(error.fixture_metadata["remaining_job_processes"], [])
+            import base64
+
+            (Path(error.fixture_diagnostics) / "expected-diagnostic-failure.json").write_text(json.dumps(dict(
+                primary=type(error).__name__, metadata=error.fixture_metadata, secondary=error.fixture_secondary,
+                captured_base64={key: base64.b64encode(value or b"").decode("ascii")
+                                 for key, value in captured.items()}), indent=2), encoding="utf-8")
 
     def test_failed_host_release_retains_primary_result_and_never_repeats_release(self):
         result, events, completed = self.run_fixture("release_failure")
