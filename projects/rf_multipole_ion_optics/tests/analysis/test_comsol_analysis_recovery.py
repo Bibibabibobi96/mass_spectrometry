@@ -495,6 +495,82 @@ $source.stage_evidence|ConvertTo-Json -Depth 20 -Compress
     def test_saved_extraction_uses_real_wrapper_observation_and_explicit_context_without_native_solver(self):
         # Only commercial launcher is inert; actual owner function, Python science
         # projection, process observer, host release and writer proof are exercised.
+        import hashlib
+        import sqlite3
+        from contextlib import closing
+        from common.contracts.test_support import fixture_process
+
+        # One test-owned diagnostic set, not a production resource policy.
+        def save_cold_records(destination, root, run):
+            records = []
+            remaining = 1048576
+            selected = [run/'run_config.json', run/'results/saved_extraction_resource_usage.json',
+                        run/'logs/saved_extraction.stdout.log', run/'logs/saved_extraction.stderr.log',
+                        run/'logs/comsol_launcher_completion.json', run/'logs/comsol_saved_extraction.txt',
+                        run/'inputs/saved_extraction_host_budgets.json',
+                        run/'inputs/saved_extraction_binding.json', run/'inputs/saved_extraction_request.json']
+            for index, path in enumerate(selected):
+                entry = dict(path=str(path), exists=path.is_file())
+                if path.is_file():
+                    limit = min(131072, remaining)
+                    with path.open('rb') as stream:
+                        payload = stream.read(limit)
+                    name = f'cold-{index:02d}-{path.name}'
+                    (destination/name).write_bytes(payload)
+                    entry.update(saved=name, original_bytes=path.stat().st_size,
+                                 saved_bytes=len(payload), truncated=path.stat().st_size>len(payload),
+                                 saved_sha256=hashlib.sha256(payload).hexdigest())
+                    remaining -= len(payload)
+                records.append(entry)
+            host = dict(path=str(root/'host.sqlite3'), exists=(root/'host.sqlite3').is_file())
+            if host['exists']:
+                # A bounded read transaction, not a byte-copy of a potentially
+                # active SQLite/WAL pair and not an authoritative cleanup receipt.
+                with closing(sqlite3.connect((root/'host.sqlite3').as_uri()+'?mode=ro', uri=True, timeout=.2)) as db:
+                    tables = db.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchmany(9)
+                    host['tables'] = []
+                    for (table,) in tables[:8]:
+                        rows = db.execute('SELECT * FROM "'+table.replace('"','""')+'" LIMIT 17').fetchall()
+                        host['tables'].append(dict(name=table, rows=rows[:16], truncated=len(rows)>16))
+                    host['table_list_truncated'] = len(tables)>8
+            aliases = []
+            if (root/'e').is_dir():
+                for path in sorted((root/'e').iterdir())[:8]:
+                    aliases.append(dict(path=str(path), exists=path.exists(), target=str(path.resolve())))
+            # Defensive output caps keep malformed diagnostic data visible without
+            # copying PA/MPH, a whole temp tree, or unbounded database state.
+            for name, document, cap in [('cold-records.json', records, 32768),
+                                        ('cold-host-state.json', host, 131072),
+                                        ('cold-alias-state.json', aliases, 32768)]:
+                payload = json.dumps(document, indent=2, default=str).encode('utf-8')
+                if len(payload)>cap:
+                    payload = json.dumps(dict(truncated=True, original_bytes=len(payload),
+                                              reason='diagnostic_output_cap')).encode('utf-8')
+                (destination/name).write_bytes(payload)
+            extra_names = [row['saved'] for row in records if 'saved' in row]
+            extra_names += ['cold-records.json', 'cold-host-state.json', 'cold-alias-state.json']
+            identities = []
+            for name in extra_names:
+                payload = (destination/name).read_bytes()
+                identities.append(dict(path=name, bytes=len(payload),
+                                       sha256=hashlib.sha256(payload).hexdigest()))
+            (destination/'cold-extra-identities.json').write_text(
+                json.dumps(identities, indent=2)+'\n', encoding='utf-8')
+
+        timeline_ps = r"""
+function Write-ColdFixtureEvent {
+ param([string]$Event)
+ $record=@{event=$Event;pid=$PID;monotonic_ticks=[Diagnostics.Stopwatch]::GetTimestamp();
+   monotonic_frequency=[Diagnostics.Stopwatch]::Frequency}
+ try {
+  [IO.File]::AppendAllText($env:RF_COLD_FIXTURE_EVENTS,$Event+"`n",[Text.UTF8Encoding]::new($false))
+  [IO.File]::AppendAllText($env:RF_COLD_FIXTURE_TIMELINE,($record|ConvertTo-Json -Compress)+"`n",[Text.UTF8Encoding]::new($false))
+ } catch {
+  # A secondary event-write failure cannot replace actual wrapper/launcher error.
+  [Console]::Error.WriteLine('RF_COLD_DIAGNOSTIC_SECONDARY='+$_.Exception.Message)
+ }
+}
+"""
         with tempfile.TemporaryDirectory(prefix='cold extraction spaces ') as directory:
             root = Path(directory)
             run = root/('deep-'+'a'*65)/('deep-'+'b'*65)/('deep-'+'c'*65)/'run'
@@ -559,6 +635,22 @@ $release=Exit-HostResourceStage -Lease $lease -PassThru
 @{schema_version=1;role='comsol_launcher_completion';run_id=$RunId;operations=@();host_release=@{inherited=$false;token=$lease.token;result=$release;error=$null}}|ConvertTo-Json -Depth 20|Set-Content -LiteralPath $CompletionPath
 if($env:RF_INERT_COLD_LAUNCHER_FAIL-eq'1'){[Console]::Error.WriteLine('INERT_COLD_LAUNCHER_FAILURE');exit 7}
 """, encoding='utf-8')
+            launcher_text = launcher.read_text(encoding='utf-8')
+            launcher_text = launcher_text.replace("$ErrorActionPreference='Stop'",
+                timeline_ps+"\n$ErrorActionPreference='Stop'\nWrite-ColdFixtureEvent 'launcher.begin'", 1)
+            launcher_text = launcher_text.replace(
+                "$lease=Enter-HostResourceStage -Role COMSOL -Stage postprocess -RunId $RunId -Budget $ResourceBudgets.postprocess",
+                "Write-ColdFixtureEvent 'launcher.lease.begin'\n"
+                "$lease=Enter-HostResourceStage -Role COMSOL -Stage postprocess -RunId $RunId -Budget $ResourceBudgets.postprocess\n"
+                "Write-ColdFixtureEvent 'launcher.lease.end'", 1)
+            launcher_text = launcher_text.replace("$release=Exit-HostResourceStage -Lease $lease -PassThru",
+                "Write-ColdFixtureEvent 'launcher.release.begin'\n"
+                "$release=Exit-HostResourceStage -Lease $lease -PassThru\n"
+                "Write-ColdFixtureEvent 'launcher.release.end'", 1)
+            launcher_text = launcher_text.replace("if($env:RF_INERT_COLD_LAUNCHER_FAIL-eq'1')",
+                "Write-ColdFixtureEvent 'launcher.completion.saved'\n"
+                "if($env:RF_INERT_COLD_LAUNCHER_FAIL-eq'1')", 1)
+            launcher.write_text(launcher_text, encoding='utf-8')
             script = root/'exercise-cold.ps1'
             script.write_text(r"""
 param($Repo,$Python,$Root)
@@ -587,17 +679,73 @@ Remove-Item Env:RF_INERT_COLD_LAUNCHER_FAIL
 Remove-RunPackageExecutionAlias -Package $package
 @{completion=$completion;state=$state;result=$result;negative_observation=$negativeState.wrapper_observation;removed_alias=$alias;alias_exists=(Test-Path -LiteralPath $alias)}|ConvertTo-Json -Depth 30 -Compress
 """, encoding='utf-8')
+            script_text = script.read_text(encoding='utf-8')
+            parameter = 'param($Repo,$Python,$Root)'
+            gate = (parameter+"\nif([Console]::In.ReadLine()-cne'"+
+                    fixture_process.ACK.decode('ascii').strip()+"'){throw 'FIXTURE_OWNERSHIP_ACK_REQUIRED'}\n"+
+                    timeline_ps+"\nWrite-ColdFixtureEvent 'script.acknowledged'")
+            script_text = script_text.replace(parameter, gate, 1)
+            observer_proxy = r"""
+$script:ColdOriginalObserver=${function:Invoke-ResourceBudgetedProcess}
+function Invoke-ResourceBudgetedProcess {
+ param($Limits,$RunDir,$UsagePath,$FilePath,$ArgumentList,$WorkingDirectory,
+       $RedirectStandardOutput,$RedirectStandardError,$Environment)
+ Write-ColdFixtureEvent 'actual_wrapper.begin'
+ try { & $script:ColdOriginalObserver @PSBoundParameters }
+ finally { Write-ColdFixtureEvent 'actual_wrapper.end' }
+}
+"""
+            script_text = script_text.replace("$fixture=Get-Content", observer_proxy+"\n$fixture=Get-Content", 1)
+            script_text = script_text.replace("$result=Invoke-FiniteComsolSavedExtraction",
+                "Write-ColdFixtureEvent 'positive.begin'\n$result=Invoke-FiniteComsolSavedExtraction", 1)
+            script_text = script_text.replace("$completion=Get-FiniteComsolWriterCompletion",
+                "Write-ColdFixtureEvent 'positive.end'\n$completion=Get-FiniteComsolWriterCompletion", 1)
+            script_text = script_text.replace("$caught=$null;try{Invoke-FiniteComsolSavedExtraction",
+                "Write-ColdFixtureEvent 'negative.begin'\n$caught=$null;try{Invoke-FiniteComsolSavedExtraction", 1)
+            script_text = script_text.replace("Remove-Item Env:RF_INERT_COLD_LAUNCHER_FAIL",
+                "Write-ColdFixtureEvent 'negative.end'\nRemove-Item Env:RF_INERT_COLD_LAUNCHER_FAIL", 1)
+            script_text = script_text.replace("Remove-RunPackageExecutionAlias -Package $package",
+                "Write-ColdFixtureEvent 'alias.cleanup.begin'\nRemove-RunPackageExecutionAlias -Package $package\n"
+                "Write-ColdFixtureEvent 'alias.cleanup.end'", 1)
+            script.write_text(script_text, encoding='utf-8')
+            environment = private_host_environment()
+            environment.update(FIXTURE_PYTHON=sys.executable, FIXTURE_TEST_SOURCE=__file__,
+                FIXTURE_ADAPTER_SOURCE=str(REPO/'projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1'),
+                FIXTURE_TEST_METHOD=self.id(), RF_COLD_FIXTURE_EVENTS=str(root/'events'),
+                RF_COLD_FIXTURE_TIMELINE=str(root/'timeline.jsonl'))
+            failure = None
+            outcome = None
             try:
-                outcome = subprocess.run(['pwsh', '-NoProfile', '-File', str(script), str(REPO), sys.executable, str(root)],
-                                         capture_output=True, text=True, encoding='utf-8', cwd=root, timeout=300, env=private_host_environment())
-            except subprocess.TimeoutExpired as error:
-                for stream in ("stdout", "stderr"):
-                    partial = getattr(error, stream)
-                    if isinstance(partial, bytes):
-                        partial = partial.decode("utf-8", errors="replace")
-                    print(f"RF_COLD_FIXTURE_TIMEOUT_PARTIAL_{stream.upper()}={partial or ''}", file=sys.stderr, flush=True)
+                try:
+                    outcome = fixture_process.run_fixture_process(
+                        ['pwsh', '-NoProfile', '-File', str(script), str(REPO), sys.executable, str(root)],
+                        root=root, environment=environment, mode='rf-cold-saved-extraction', timeout=300, cwd=root)
+                except subprocess.TimeoutExpired as error:
+                    for stream in ("stdout", "stderr"):
+                        partial = getattr(error, stream)
+                        if isinstance(partial, bytes):
+                            partial = partial.decode("utf-8", errors="replace")
+                        print(f"RF_COLD_FIXTURE_TIMEOUT_PARTIAL_{stream.upper()}={partial or ''}", file=sys.stderr, flush=True)
+                    raise
+            except BaseException as error:
+                failure = error
                 raise
+            finally:
+                destination = getattr(failure if failure is not None else outcome, 'fixture_diagnostics', None)
+                if destination is not None:
+                    try:
+                        save_cold_records(Path(destination), root, run)
+                    except Exception as diagnostic_error:
+                        if failure is None and (outcome is None or outcome.returncode == 0):
+                            raise
+                        if failure is not None:
+                            failure.add_note(f'RF_COLD_DIAGNOSTIC_SECONDARY={diagnostic_error!r}')
+                        else:
+                            outcome.stderr += f'\nRF_COLD_DIAGNOSTIC_SECONDARY={diagnostic_error!r}'
+                        print(f'RF_COLD_DIAGNOSTIC_SECONDARY={diagnostic_error!r}', file=sys.stderr, flush=True)
             self.assertEqual(outcome.returncode, 0, outcome.stdout+outcome.stderr)
+            if 'RF_COLD_DIAGNOSTIC_SECONDARY=' in outcome.stderr:
+                raise AssertionError(outcome.stderr)
             result = json.loads(outcome.stdout.strip().splitlines()[-1])
             observation = result['completion']['operations'][0]['observation']
             self.assertTrue(observation['exit_confirmed'])
