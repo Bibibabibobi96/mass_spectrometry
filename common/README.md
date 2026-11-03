@@ -26,17 +26,24 @@
 
 ## 科学核心发行与旧入口
 
-`mass-spectrometry-analysis` 0.2 的实现位于 `src/msplatform/`，使用 Python 3.11 与标准
+`mass-spectrometry-analysis` 0.3 的实现位于 `src/msplatform/`，使用 Python 3.11 与标准
 setuptools src 布局。正式 API 是 `msplatform.ion_release.release` 的请求校验、生成、物化和读回，
 `msplatform.assembly.resolve_assembly` 的完整布局与局部范围派生，
 `msplatform.analysis.peak_metrics` 的 `AnalysisSettings`、`compute_time_peak_metrics`、`half_height_width`，
 以及 `msplatform.contracts` 的刚体变换、粒子物理和本地 schema 校验。
+0.3新增规范母群计数、中立转移状态、版本化电极绑定及强制方法元数据的名义质量峰入口；
+电极组公开字段使用`electrode_group_id`，component3/plan5/binding2显式升版，旧资源含义保持。
 普通文件摘要位于 `msplatform.io.file_identity`；原生路径、运行生命周期及求解器执行仍由仓库机制维护。
 参数、单位和资格边界查上述离子释放、连接和分析说明；安装不授予原生或科学资格。
 
 根 `pyproject.toml` 是发行边界的唯一声明：发行完整 `msplatform` 实现和模块相邻的 schema，
 不发行 `common`、项目、运行器、测试或商业载荷。旧科学入口仅单向转发到新实现；冻结快照使用
 自身的源码和资源，不以当前安装补齐旧快照。迁移阶段与退役期限见[路线图](../docs/ROADMAP.md#科学核心与平台边界迁移)。
+
+本批保留发行名`mass-spectrometry-analysis`与import名`msplatform`，描述覆盖源、装配、合同和分析核心，
+不宣称仓库运行器或商业后端均可安装。正式对外发行或发行边界重整前，最迟P4发行收口时，
+发行维护者须依据外部索引所有权、锁和metadata消费者、旧wheel、冻结恢复以及同一import包的安装冲突
+决定保留或迁名；本次不指定未经核实可用的新发行名，也不上传包索引。
 
 以下为当前有限生产消费者清单，按Python AST直接导入（包括函数内导入）归类；路径均相对仓库根，
 每行目录前缀与列出的文件名组合为完整路径，不表示整个目录或通配范围。排除测试、历史与测试辅助文件；
@@ -68,21 +75,20 @@ setuptools src 布局。正式 API 是 `msplatform.ion_release.release` 的请�
 
 退出条件：上述调用者迁为直接规范API，并保留对应科学、失败与冻结回归后移除桥，最迟P4。
 
-`common.analysis.peak_metrics`（19个生产Python文件）：峰宽、时间峰、映射及bootstrap分析。
+`common.analysis.peak_metrics`（18个生产Python文件）：峰宽、时间峰、映射及bootstrap分析。
 
 - `projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`measured_component_analysis.py`、`source_z_energy_timing_diagnostic.py`。
 - `projects/rf_multipole_ion_optics/core/`：`mass_response.py`。
-- `projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`analyze_accelerator_grid_phase.py`、`analyze_paper1_gap_working_point.py`、`ideal_acceptance_density.py`、`ideal_source_comparison.py`、`mass_spectrum.py`、`reference_analysis_core.py`、`solver_diagnostics.py`、`three_zone_theory_numeric_execution.py`、`truncation_diagnostics.py`、`verify_axial_ideal_closure.py`。
+- `projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`analyze_accelerator_grid_phase.py`、`analyze_paper1_gap_working_point.py`、`ideal_acceptance_density.py`、`ideal_source_comparison.py`、`mass_spectrum.py`、`solver_diagnostics.py`、`three_zone_theory_numeric_execution.py`、`truncation_diagnostics.py`、`verify_axial_ideal_closure.py`。
 - `projects/single_reflection_oa_tof_mass_analyzer/workflows/ideal_source_comparison/`：`acceptance_theory.py`、`numerical_case.py`、`run_comparison.py`、`slope_scan.py`。
 - `projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/`：`analysis.py`。
 - `projects/single_reflection_oa_tof_mass_analyzer/workflows/reflectron_voltage_compensation/`：`run_compensation.py`。
 
 退出条件：上述调用者迁为直接规范API，并保留对应科学、失败与冻结回归后移除桥，最迟P4。
 
-`common.contracts.rigid_transform`（21个生产Python文件）：frame类型、刚体/相对变换、穿面状态。
+`common.contracts.rigid_transform`（20个生产Python文件）：frame类型、刚体/相对变换、穿面状态。
 
 - `common/analysis/`：`plane_crossings.py`。
-- `common/contracts/`：`component_particle_state.py`。
 - `integrations/runtime/`：`build_single_flight_program.py`、`single_flight_source.py`。
 - `integrations/workflows/cooled_frontend/`：`geometry.py`、`prepare.py`。
 - `integrations/workflows/local_frontend/`：`analyze.py`、`focus.py`、`prepare.py`。
@@ -93,9 +99,8 @@ setuptools src 布局。正式 API 是 `msplatform.ion_release.release` 的请�
 
 退出条件：上述调用者迁为直接规范API，并保留对应科学、失败与冻结回归后移除桥，最迟P4。
 
-`common.contracts.particle_physics`（49个生产Python文件）：质量/电荷常数、单位、速度与动能。
+`common.contracts.particle_physics`（47个生产Python文件）：质量/电荷常数、单位、速度与动能。
 
-- `common/contracts/`：`component_particle_state.py`、`particle_state.py`。
 - `integrations/analysis/`：`build_comsol_prepulse_replay.py`。
 - `integrations/runtime/`：`single_flight_source.py`。
 - `integrations/workflows/cooled_frontend/`：`analyze.py`、`field_design.py`、`reference.py`。
@@ -165,6 +170,11 @@ V4 P1 的科学核心迁移已在声明的有限边界内验收；范围、失�
 [P1 迁移验收记录](../docs/history/20261103__phase01-scientific-core-migration.md)。该结论不授予原生求解器或科学资格，
 不关闭后续平台迁移；具名兼容桥仍按[路线图](../docs/ROADMAP.md#科学核心与平台边界迁移)退出。
 安装隔离验收由 `common/contracts/test_installed_scientific_core.py` 执行真实 wheel、sdist 重建和仓库外消费。
+P2的0.3.0工作树候选已完成该真实方法（106.321秒，无skip）：独立builder使用声明的
+setuptools65.5.0/wheel0.38.4与已核对离线依赖；原wheel和sdist重建wheel分别普通安装到树外consumer。
+两轮实际模块来源均为consumer的site-packages，44个schema及378处引用本地闭合；
+真实RF/OA组件3、plan5、binding2、母群、中立状态及严格峰入口均有实际计算断言。
+这是该候选的软件安装证据，不代表当前任务分支已提交这些改动或整机原生链已验收。
 运行、安装及冻结依赖规则由[操作指南](../docs/OPERATIONS.md#工具链与执行入口)维护。
 
 ## 门禁编排

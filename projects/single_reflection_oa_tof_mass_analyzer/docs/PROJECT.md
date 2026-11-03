@@ -8,6 +8,31 @@ Paper 1 专用研究准备API的归属与退出条件见[分析说明](../analys
 
 ## 当前状态
 
+### P2 V6：理论与峰结果的公共语义
+
+完整科学电极几何及工作电位由`geometry_contract.resolve_electrode_geometry`唯一构造，
+拓扑直接消费该中立结果；不再要求SIMION detector marker或从原生电压表按标签回查。
+`resolve_physical_geometry`仅作为既有物理ID/native标签与marker的显式投影；
+提取前后的两／三区三份完整原生输出严格相等，19项物理／拓扑／映射回归通过。
+共地组保留侧盾、飞行管盾、反射器入口栅和真实检测器四成员；0 V出口仍是独立组，
+数值detector marker不当作机械检测器。新装配消费与真实原生资格另由集成状态维护。
+
+三区理论公开因子改为`time_scale_s_sqrt_v_per_mm`（s·√V/mm），源中心为
+`center_extraction_position_mm`，公开提取坐标为`extraction_position_mm`。
+原点是理想排斥极参考面，朝中间栅和出口为正；机械sectioned局部坐标须减去排斥极的z原点，
+不能将一维理论坐标直接当全仪器x或z。原公式、常量和算序保持；旧版本campaign的`center_x_mm`
+仅在具名reader映射，旧配置、schema及run不改写。实际working_points.json新写入schema2 envelope；
+旧producer通过精确旧writer投影保持完整执行AST检查，其余数学或执行变更仍拒绝。
+独立SI分段运动、负初速、非零原点、单位及历史reader补验通过；不是原生场或轨迹资格。
+
+真实COMSOL检测事件分析现显式发布result4、metadata2及receipt2，直接调用规范
+`msplatform.analysis.peak_metrics.compute_nominal_mass_peak_metrics`；新标量为
+`nominal_mass_resolution_fwhm`。唯一KDE/FWHM数学和method_id保持，原始CSV和科学分析合同3保持。
+metadata明确首个全局峰、最近半高交点及线性插值，质量轴仍未绝对标定；共同钟为unspecified、
+科学资格为not_assessed。实际CLI/JSON/CSV/PNG和hash绑定已定向补验。
+默认single结果3、SIMION recording、comparison、compensation、radial、ideal-source及其余具名分析
+仍由各workflow在P3/P4迁移明确writer/reader，最迟P4退出旧活动桥；本切片不宣称所有峰消费者已迁。
+
 ### P2 R0：受控测试超时现场
 
 原Changed运行41531065614的partial夹具30秒超时仍保留，历史根因未复现。

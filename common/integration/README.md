@@ -8,7 +8,7 @@
 
 已批准的多组件目标见[统一组装规范](../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md#统一组装目标)。
 本目录已增加[多实例配方布局编译](../../integrations/README.md#配方解析)，校验提供者机械接口和直接位姿，
-纯API按显式component版本1/2分别输出composition plan v3/v4；文件CLI仍消费原具名版本范围。
+纯API按显式component版本1/2/3分别输出composition plan v3/v4/v5；文件适配器按声明版本验证。
 当前仅为`layout_only`，不执行物理工作流；
 局部裸导引、冷却前端、多极杆→IP、IP→MR准备及单反射整机已由直属工作流消费完整父plan并派生实际范围；
 各执行器的组件支持集和原生验证边界见[集成状态](../../integrations/docs/INTEGRATION.md)，不由布局编译能力推断。
@@ -77,12 +77,21 @@ parent = compile_assembly_layout(recipe, components)
 
 ## 身份与兼容性
 
-科学电极版本2使用局部语义字符串ID，版本1整数接口与plan3的旧schema字节保持。
+当前component版本3的电极行使用`electrode_group_id`，对应plan5；同一冻结提供者拓扑修订内唯一，
+不承诺拓扑增删后顺序型ID不变。`role`为物理分类，可重复，不能代替身份；机械坐标为接口声明的local frame和mm。
+版本1整数接口/plan3与版本2字符串`component_electrode_id`接口/plan4保持原义和旧schema字节。
+v2/v4已经入Git并被测试消费，未证明不存在外部或冻结消费，因此本次采用新版本，不原地覆盖。
 `msplatform.assembly.resolve_assembly.compile_assembly_layout`拒绝混合或未知版本，
-版本2生成plan4并保持同一完整父配方与局部切边语义；新schema的机械字段引用原本地资源。
+各版本保持同一完整父配方与局部切边语义；新schema的机械字段引用原本地资源。
 `msplatform.assembly.electrode_binding.validate_electrode_bindings`以
-`ElectrodeKey(instance_id, scientific_id)`校验完整覆盖、重复、域与调用方已有冻结provider记录一致性；
+`ElectrodeKey(instance_id, electrode_group_id)`校验完整覆盖、重复、域与调用方已有冻结provider记录一致性；
+backend binding记录v2仅消费component3和新字段，旧binding1显式消费component2及`scientific_id`。
+新格式拒绝旧同义字段，旧接口的非空`electrical_group_id`不自动转成新ID或静默丢弃。
 不打开路径、不造第二哈希，不将后端selection强制解释为整数。
+默认绑定覆盖完整接口的全部组。若某场域只投影完整提供者的一部分，调用方须从冻结提供者的
+域投影独立取得`electrode_group_scope`并作为keyword传入；binding2记录必须逐值匹配该预期范围，
+每实例为非空唯一组列表且为完整接口的子集。记录不得自行授权缩小范围，binding1不接受该字段。
+完整接口及下游组继续保留；共同电气组可在不同场域投影不同真实成员，成员归属仍由提供者确定。
 SIMION原生整数/容量与同域槽位检查仍由后端负责。现实际RF/OA执行消费者切换和
 新资源的普通安装/冻结/原生验收尚未完成，纯API软件小例不代替真实链证据。
 

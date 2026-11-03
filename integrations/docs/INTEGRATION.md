@@ -7,6 +7,24 @@
 
 ## 当前边界
 
+P2 V6单反射科学组链采用request10／component3／plan5／binding2，
+显式绑定提供者科学组到SIMION标签。具名旧request9／plan3及其原schema字节保持，
+按原协议读取，不把历史运行重释为新科学组链；软件接线与实际冻结库存已定向验证。
+本次真实三区输入的完整oaTOF component3保留42个科学组及四成员共地，前端场域由提供者独立发布25组，
+组数仍由各冻结提供者的实际环数和结构派生，不是接口固定上限；
+不裁掉下游部件以满足绑定覆盖。binding2的显式子范围须匹配调用方从冻结提供者得到的预期，不能由记录自批。
+提供者与后端的软件切片不代表request10已有完整Refine/Fly、数值或GUI资格。
+
+SFI原高4 mm侧口可在SIMION真实实体间保持不接触，但不满足独立OA组件的strict first-gap能力合同。
+两者不是同一资格：底层sectioned电极投影复用唯一构造逻辑，原高层严格检查保持，
+新路径不通过缩口或改科学输入制造等价。组件与整机后续验收继续分别记录。
+
+request10的实际准备、GEM、工作场设计、Program及缓存接线已有定向软件证据；
+五模块回归152项通过（256.130秒，无skip），随后仅lazy backend import调整补验3项通过。
+真实冷冻结另覆盖新10、旧9及删新backend／component3资源的四个冷执行场景，15.951秒通过；
+原缺失RF事件模块的FAIL保留，库存已补精确单模块，不借作者树或宿主安装补齐。
+这些结果不覆盖真实Fly动态场读数、GUI或最终整轮软件验收。
+
 单反射场执行的软件回归保留15个真实 CLI 场景，包括母群、资源、原生失败、场与工作台保护。
 缺预算阶段的通用负例归现有 `test_engineering_budget`，移除两次重复完整准备，不新增源码布局抽取器。
 同环境单次顺序对照：原17场景169.963秒／公开170.821秒，现15场景147.186秒／公开148.024秒；
@@ -89,13 +107,22 @@ request 的 `verify_saved_workbench_replay` 只能为布尔，默认 false。解
 
 该迁移复用既有完整批次 planner、公共 owner 及 HEAD 的兼容 frontend API；不包含全局原生路径投影、
 数值 Program／IOB core 的历史再生成或新的场精度资格。111659／121606／192206 等 N100 证据
-仅支持其各自冻结代码、粗网格、实际新飞／复用范围；新候选的正常冻结与惰性原生接线另行验证，
+仅支持其各自冻结代码、粗网格、实际新飞／复用范围；当前代码的隔离冻结已有软件验证，
+新科学组候选的真实原生运行仍待验收，
 不凭旧证据声称当前代码已完成商业求解或完整 GUI 验收。
 
 
 [公开owner](../workflows/single_reflection_flight/run.ps1)接收`-Request -ExecutionBudgetPath`，默认执行完整Fly；
 `-FieldDesignOnly`、`-WorkbenchOnly`显式选择有限阶段。内部`execute.ps1`只由owner调用，作者格式见
-[schema 9](../workflows/single_reflection_flight/schema.json)。request引用冻结父plan、逐实例提供者、显式数值域与场来源。
+[request 10](../workflows/single_reflection_flight/schema_v10.json)。新链引用component3／plan5，
+由提供者独立确定实际前端域，再用binding2绑定该域的完整科学组；不以标签顺序定义组或角色。
+明确旧[request 9](../workflows/single_reflection_flight/schema.json)保留其原plan3／native-view读取分支，
+没有新后端模块时仍可完成旧协议的软件准备。request引用冻结父plan、逐实例提供者、显式数值域与场来源。
+
+可选原生场观测由已绑定`validation_contract`中的`native_field_observation`显式请求；
+规格校验见[`validate_native_field_observation`](../runtime/build_single_flight_program.py)，
+实际冻结与批次选择见[`runtime._field_observation`](../workflows/single_reflection_flight/runtime.py)。
+省略时不插入观测；请求时只记录实际查询，不改变源、场控制或积分步。软件测试不代替真实Fly读数与GUI验收。
 
 普通源和`recorded_pre_pulse_state`共用同一装配；未声明`pulse_decision`时消费全部实际timed pre-state，
 声明时保持原选择、顺序与绑定。完整批恢复显式绑定前驱manifest，不扫描最新run、不重飞已完成批或重复求场。

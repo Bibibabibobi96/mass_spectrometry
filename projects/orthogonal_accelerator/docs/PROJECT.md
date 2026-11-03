@@ -13,7 +13,7 @@
 | 对象 | 唯一入口与边界 |
 |---|---|
 | 公共发现、结构变体与能力 | [project.json](../config/project.json)，二区／三区分别登记，不能隐式代选 |
-| 器件API、变体和具名几何profile | [component_contract.json](../config/component_contract.json) |
+| 器件API、变体和具名几何profile | [component_contract_v3.json](../config/component_contract_v3.json)；旧API2来源保留原合同 |
 | 机械端口与物理电极视图 | [assembly_interface.py](../analysis/assembly_interface.py)，消费同一冻结请求和现有几何编译器 |
 | 组件焦点实验 | [two_zone_component_focus_campaign.json](../config/two_zone_component_focus_campaign.json) |
 | 二区／三区及有符号源理论 | [理论导航](theory/README.md) |
@@ -24,6 +24,16 @@
 消费者负责正规刚体映射，位置含平移、速度只旋转。第一时间焦面、自由飞行观察面和机械检测器分别解释。
 
 ## 当前能力
+
+当前科学电极字段为`electrode_group_id`，主组为repeller、intermediate_grid_1、
+可选intermediate_grid_2、exit_grid；组件接口默认3，显式旧接口1/2保持原义。
+旧component API2/theory的grid2表示第二中间栅，旧sectioned geometry schema1的grid2_z_mm和
+accelerator_grid2_id表示出口，转换按来源/版本选择，不作全局替换。新API3合同与旧API2资源分别保留。
+角色、面、独立电位和旧来源的32项软件回归通过（1.696秒），未新增原生驱动或独立器件资格。
+
+三区理论的时间尺度公开名为`time_scale_s_sqrt_v_per_mm`，数值仍为原系数；
+理论提取位置从排斥极参考面朝出口为正，单位mm。该一维坐标与机械frame的原点映射显式区分；
+机械平移不能进入速度。独立SI分段运动与非零原点等9项理论回归通过（0.108秒）。
 
 P2电极拓扑API为`analysis.electrode_topology.build_electrode_topology`：消费现有二区机械
 resolved或三区领域文档，以稳定角色和环序号发布科学组；member_refs只引用真实几何构成参数。

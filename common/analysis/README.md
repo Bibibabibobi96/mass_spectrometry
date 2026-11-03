@@ -1,6 +1,8 @@
 # 公共分析函数
 
-峰形算法的规范实现与安装 API 已迁至 `msplatform.analysis.peak_metrics`；本目录同名模块仅为单向兼容桥。其他仓库分析工具仍按本页导航使用。迁移责任与退役期限见[公共入口](../README.md#科学核心发行与旧入口)。
+峰形算法与完整母群计数的规范实现和安装 API 分别为 `msplatform.analysis.peak_metrics`、
+`msplatform.analysis.particle_census`；本目录同名模块仅为单向兼容桥。其他仓库分析工具仍按本页导航使用。
+迁移责任与退役期限见[公共入口](../README.md#科学核心发行与旧入口)。
 
 本目录提供求解器无关的数值函数及已准备结果的图形导出，不读取项目配置或选择科学验收阈值。调用者负责母群、有效事件、
 单位、输入身份及资格；方法依据见[验证方法](../../docs/science/VALIDATION_METHODS.md)，项目结果归PROJECT或INTEGRATION。
@@ -33,7 +35,7 @@ print(metrics["mean_tof_us"], metrics["std_tof_ns"])
 | 纵向多项式拟合与残差 | [longitudinal_fit.py](longitudinal_fit.py)：`fit_longitudinal_polynomial` | z用mm、vz用mm/μs；调用方确认有限配对和可辨识阶数；残差sigma为ddof=1，不代表冷却或独立噪声 |
 | 按原粒子ID配对事件字段 | [particle_events.py](particle_events.py)：`group_particle_events`、`iter_particle_event_fields` | 保留母群、事件顺序及数量差异；不生成ID、丢弃未知粒子或选择相等容差 |
 | 批量导出已准备图形 | [figure_export.py](figure_export.py)：`export_figures` | 调用者给定完整stem→figure、formats、dpi与facecolor；整批目的路径预检、独占新建，返回实际导出记录；不计算指标或创建图形 |
-| 完整母群与寿命边界事实 | [particle_census.py](particle_census.py)：`lifetime_position`、`partition_cohort`、`subset_efficiency` | caller显式声明生效／终止时间、容差、分类标签和完整母群权重；保留原ID、分类数和明确分子分母；未知不推断存活，非出口终止不等于撞壁 |
+| 完整母群与寿命边界事实 | [particle_census.py](../../src/msplatform/analysis/particle_census.py)：`lifetime_position`、`partition_cohort`、`subset_efficiency` | caller显式声明生效／终止时间、容差、分类标签和完整母群权重；保留原ID、分类数和明确分子分母；未知不推断存活，非出口终止不等于撞壁 |
 | 从分辨率要求估算时间误差预算 | [tof_error_budget.py](tof_error_budget.py)：`calculate_tof_error_budget`及同名模块CLI | Python API时间用秒；CLI的`--flight-time-us`用μs；只做规划，高斯预算不能代替直接FWHM，见[方法与命令](../../docs/science/TOF_ERROR_BUDGET.md) |
 
 母群选择、单位转换和指标判定必须在调用点显式完成；不同函数的总体矩、样本sigma和直接峰宽不能互换。
@@ -60,6 +62,13 @@ MR测量飞行将原生碰撞、超时、程序性拓扑拒绝和未知终态分
 不是独立绝对标定，也没有隐含电荷态。默认保留既有数值和结果字段；当前发布者显式用
 `include_result_metadata=True`记录`nominal_mean_relative_square_v1`、参考均值及实际名义质量。
 其旧`significant_kde_modes`仍来自质量域，不能与时间域峰数换名互用；冻结历史结果不改写。
+
+新活动名义质量边界使用`compute_nominal_mass_peak_metrics`：复用同一数值实现，输出
+`nominal_mass_resolution_fwhm=m0/direct_fwhm_mass_Da`并强制附带metadata2，不同时输出旧`mass_resolution`。
+方法身份仍为`common_gaussian_kde_nominal_mass_v1`，质量轴仍是未绝对标定的Da相对轴；
+metadata记录首个全局KDE峰、两侧最近半高交点和线性插值、设置、样本与等权策略。
+共同钟未证明时仍为`unspecified`，科学资格为`not_assessed`；新名字不提升测量资格。
+旧API默认字段与metadata1保持；项目writer按自己的结果协议显式选择，不能猜测新旧键。
 
 `population_moments`返回具名`PopulationMoments`：观测行数、权重和、有效数、按输入列顺序的均值及中心协方差。
 协方差分母为权重和；有效数为`(sum w)^2/sum(w^2)`，仅表示权重集中程度，不证明独立物理粒子数，

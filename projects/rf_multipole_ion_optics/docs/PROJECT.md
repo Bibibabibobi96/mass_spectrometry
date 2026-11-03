@@ -27,13 +27,21 @@ analysis-only/reextract 也沿同一库存校验，Python 观测使用公共导�
 
 ## 当前结论
 
-P2科学电极组由`core.electrode_topology.build_electrode_topology`唯一产生，引用真实rod、
-segment及壳/端盖成员和resolved驱动；分段科学ID取segment/group而不从native整数派生。
+P2科学电极组由`core.electrode_topology.build_electrode_topology`唯一产生，规范字段为`electrode_group_id`，
+引用真实rod、segment及壳/端盖成员和resolved驱动；分段科学ID取segment/group而不从native整数派生。
 `simion.electrode_mapping`负责SIMION本地编号与容量；旧physical_electrode_view只单向组合，
 保留旧表实际标签、原合法集合和具名消费者行为，不能把该兼容视图作为新科学身份权威。
 连续/分段/共地完整性、原标签内部置换及实际GEM/电压投影回归通过。
-超容量小元数据可验证中立组与后端拒绝的区别，但公开科学请求/axial合同的499限制尚未版本化迁移，
-不宣称真实500段设计已通过公开编译或新RF→OA链、原生场与轨迹已验收。
+公开request4/resolved4将分段物理定义与原生容量分离；request3/resolved3保留原499段协议。
+新请求的uniform/explicit 500和501段均有公开编译回归，后端按声明容量独立拒绝超限，不将它解释为物理错误。
+这些是软件合同证据，未验收新RF→OA完整执行链、原生场与轨迹。
+
+RF完整17列事件协议已迁至`analysis.rf_event_table_validation.validate_rf_event_table`，
+`core.component_port`直接消费该领域列合同；中立交接状态另归`msplatform.contracts.particle_state`。
+`simion.ion11_source_adapter`分开ION11解码与完整6D变换：WB位置映为RF的(z,−y,x+offset)，
+速度仅旋转为(vz,−vy,vx)，时间与能量保持；原角度算序和最终数值不改，不是已证物理错误的修正。
+协议与提供者联合补验12项通过（1.460秒，无skip）；独立非零位置/速度/平移oracle及旧CLI桥保持原协议。
+实际PS调用和冻结库存迁移仍在验收，旧`common.contracts.particle_state`仅单向适配，最迟P4退出活动消费。
 
 资源限制类型运输夹具沿用既有90秒总调用边界，避免非目标10秒阈值影响JSON／字典比较；生产观测与告警政策不变。
 三项既有回归通过（公开墙钟34.810秒），保留严格receipt／告警断言及健康进程越限不杀行为；原联合轮FAIL仍保留。

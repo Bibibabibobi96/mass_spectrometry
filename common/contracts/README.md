@@ -104,6 +104,11 @@ RF finite COMSOL 的[正常无碰撞入口](../../projects/rf_multipole_ion_opti
 不导入或继承承载故障方法的测试类而重复发现。
 迁移不减少全仓断言或改变生产恢复行为，也不把测试归属调整当作全仓提速证据。
 
+受控测试进程的唯一ACK／Job归属与超时证据实现位于
+[`test_support/fixture_process.py`](test_support/fixture_process.py)，由公共owner与oaTOF补偿测试复用。
+继承授权测试显式启用阶段时间线和小输入／状态保全，仍使用原90秒期限；普通fixture调用保持原行为。
+超时保留原始输出与主异常，仅清理已确认归属的合成进程树；这不是生产求解器的终止策略。
+
 owner从live公共`Resolve-HostResourceStatePath`取得实际控制面路径（保留既有显式覆盖），通过
 `MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH`传给prepared及其冻结worker，避免默认路径随code_root
 漂移。实际路径只记在执行context，不添加到科学输入，也不因此创建或申请第二资源账本。
@@ -752,14 +757,15 @@ manifest。旧manifest若记录绝对路径，只有仍位于原路径且全部�
 
 ## 粒子状态与坐标
 
-粒子状态分为两个不同边界。`particle_state.py`验证单个多极杆组件内部的17列
+粒子状态分为两个不同边界。RF的规范领域入口
+`projects.rf_multipole_ion_optics.analysis.rf_event_table_validation`验证单个多极杆组件内部的17列
 `source/rod_exit/handoff/terminal`事件账本，其轴向/横向字段仍表达该组件局部坐标。这四个值是事件
 角色而不是四个可互换平面：`source`记录从粒子源合同在源释放面产生的初始事件，`rod_exit`记录杆端
 事件，`handoff`记录跨组件交接事件，`terminal`记录求解器终止、撞壁、超时等最终分类。公共事件
 角色不定义任何器件表面；具体技术域必须在本域机器合同和README中定义事件绑定的物理对象。多极杆
 绑定只按[多极杆术语](../../projects/rf_multipole_ion_optics/docs/IMPLEMENTATION.md#统一术语)解释。
 组件内部终态允许 `unknown`：末窗或最后有限轨迹不足以证明原生损失时，保留观测原因，不默认成电极损失。`time_window_end`、`ended_without_loss_evidence`、`terminal_cause_unresolved` 描述证据边界；具体几何接受条件仍归项目，未知粒子保留在原母群分母。
-`component_particle_state.py`及
+中立状态的规范实现`msplatform.contracts.particle_state`及
 [`schemas/component_particle_state.schema.json`](../../src/msplatform/contracts/schemas/component_particle_state.schema.json)
 定义跨组件转移使用的version 1 canonical状态：每个粒子一行，严格按Schema中的
 `x-csv-column-order`保存identity、`species_id`、正的`particle_weight`、组件和事件、frame、clock
@@ -767,7 +773,7 @@ epoch、年龄/出生时刻、谱系、质量/电荷、三维位置/速度、派
 入口为：
 
 ```powershell
-python -m common.contracts.component_particle_state --state <canonical.csv>
+python -m msplatform.contracts.particle_state --state <canonical.csv>
 ```
 
 version 1不允许重排列、缺列或追加项目列。新的公共必需字段必须增加Schema版本并提供显式迁移；
@@ -776,9 +782,12 @@ clock epoch ID、species ID和phase reference ID是开放的受控标识，不�
 `phase_reference_id`与`phase_rad`必须同时为空或同时有值；因此无周期驱动器件不必伪造RF相位。
 所有新生产者统一调用`write_component_particle_state_csv`按Schema列序写出并立即校验；生产者仍负责
 事件选择、坐标变换和状态构造，不得在项目内复制canonical CSV序列化规则。
-需要消费状态的入口调用[`load_component_particle_state_csv`](component_particle_state.py)，一次读取、解析和校验后
+需要消费状态的入口调用[`load_component_particle_state_csv`](../../src/msplatform/contracts/particle_state.py)，一次读取、解析和校验后
 返回按原行序的typed `rows`及原有`report`；整数、实数与可空字段按Schema解析，标识字符串不转数值。
 `validate_component_particle_state_csv`复用同一入口并仅返回报告；读取不会重写输入字节。
+旧`common.contracts.component_particle_state`仅单向委托中立实现；旧`common.contracts.particle_state`
+仅适配RF事件协议及其具名源reader，两者不是同一合同。剩余RF/IP/MR和integration活动消费者、
+冻结CLI库存按对应工作流迁移，旧活动桥最迟P4退出；历史冻结资产不回填当前实现。
 IP接收已发布准备run时复用`verified_successful_run_reference`、`verify_record`及终态journal检查，
 验证manifest绑定的状态包、准备receipt和原生产者身份；IP冻结副本保留准备manifest及原包引用。
 历史未发布准备包仍沿原RF生产者验证路径，不把未绑定的JSON当作发布证据。

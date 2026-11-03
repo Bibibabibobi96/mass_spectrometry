@@ -18,7 +18,9 @@
 波形与同步职责见[驱动标准](../docs/COMPONENT_CONNECTION_ARCHITECTURE.md#电压波形器件驱动与同步)。
 
 配方格式为[assembly_recipe.schema.json](../src/msplatform/contracts/schemas/assembly_recipe.schema.json)，
-提供者接口为[component_geometry_interface.schema.json](../src/msplatform/contracts/schemas/component_geometry_interface.schema.json)。
+新科学组链的提供者接口为[component 3](../src/msplatform/contracts/schemas/component_geometry_interface_v3.schema.json)，
+原[component 1](../src/msplatform/contracts/schemas/component_geometry_interface.schema.json)与
+[component 2](../src/msplatform/contracts/schemas/component_geometry_interface_v2.schema.json)按明确版本读取。
 实例直接声明局部到唯一装配frame的刚体位姿；连接只校验真实端面、法向与间隙，不沿连接反算位姿或补偿偏移。
 
 从仓库根使用公共入口，先替换占位路径：
@@ -31,13 +33,19 @@
   --verify-plan "<run-inputs>/composition_plan.json"
 ```
 
-输出composition plan v3；可选`--local-scope "<local-scope.json>"`显式派生范围。
+component 3输入生成composition plan 5；显式旧component 1／2输入分别保留plan 3／4协议。
+可选`--local-scope "<local-scope.json>"`显式派生范围。
 `stage=layout_only`不代表任何求解器都能执行该装配；实际支持集、资格和拒绝边界见集成状态。
 
 ## 活动工作流
 
 以下为公开入口。商业执行须有明确科学输入、授权及相称预算；准备成功不代表求场、Fly或物理验收。
 跨项目新run归`instrument_assembly`，独立组件几何／场／CAD仍归其提供者项目。
+
+单反射新科学组入口采用[request 10](workflows/single_reflection_flight/schema_v10.json)、component 3、
+plan 5与backend binding 2；具名旧request 9／plan 3仍按原协议读取。
+实际准备、后端接线和隔离冻结已通过定向软件验证；原生与GUI验收及可选观测规格见
+[当前单反射状态](docs/INTEGRATION.md#单反射整机)。
 
 单反射、local和无碰撞cooled的科学request可写`"verify_saved_workbench_replay": true`，
 显式请求保存工作台默认Fly回放；省略或false时记`not_requested`，正常Fly不再默认执行第二轮全母群。
