@@ -134,8 +134,8 @@ request 的 `verify_saved_workbench_replay` 只能为布尔，默认 false。解
 该迁移复用既有完整批次 planner、公共 owner 及 HEAD 的兼容 frontend API；不包含全局原生路径投影、
 数值 Program／IOB core 的历史再生成或新的场精度资格。111659／121606／192206 等 N100 证据
 仅支持其各自冻结代码、粗网格、实际新飞／复用范围；当前代码的隔离冻结已有软件验证，
-新科学组候选的真实原生运行仍待验收，
-不凭旧证据声称当前代码已完成商业求解或完整 GUI 验收。
+新科学组链后继已有真实原生功能与有限GUI证据，具体范围及仍开放的动态数值出口只以
+[当前边界](#当前边界)为准；上述旧运行不替代当前源码验收。
 
 
 [公开owner](../workflows/single_reflection_flight/run.ps1)接收`-Request -ExecutionBudgetPath`，默认执行完整Fly；
