@@ -29,6 +29,16 @@ analysis-only/reextract 也沿同一库存校验，Python 观测使用公共导�
 
 ## 当前结论
 
+资源目录采样的纯软件回归在 `0466341a` 远端完整轮中，外层 PowerShell 在原15秒截止未返回；
+同源码在947本机／远端分别3.540／2.548秒通过。本次失败没有留下其临时usage、partial输出或具体调用阶段，
+尚不能归因CPU、CIM或进程启动。相邻测试现仅接入已有ACK／Job合成夹具归属和受限诊断：
+私有公共observer副本只插入可逐字节移除的flush checkpoint，原生产observer、Start-Sleep1、15秒、
+预算及两次目录测量／原usage断言保持。单次低争用原方法3.042秒通过，两个纯mock／源码投影反例0.049秒通过，
+真实合成PS父子hang和logger次错反例15.067秒通过（均无skip），确认仅清理归属Job且无关自有进程仍活。
+原完整轮FAIL不抵消；目标实跑后仅增加该hang负例，未把局部结果冒充完整模块或整库。这不是商业工具证据或历史根因裁决。
+最终测试源码四项合并定向复验18.714秒通过、无skip，包含原目录采样方法及三个取证／归属反例；
+公共GATE许可正常释放，仍不代表最终Repository范围通过。
+
 P2科学电极组由`core.electrode_topology.build_electrode_topology`唯一产生，规范字段为`electrode_group_id`，
 引用真实rod、segment及壳/端盖成员和resolved驱动；分段科学ID取segment/group而不从native整数派生。
 `simion.electrode_mapping`负责SIMION本地编号与容量；旧physical_electrode_view只单向组合，

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import os
 import json
 import shutil
 import subprocess
@@ -19,6 +21,95 @@ PROJECT_ID = "rf_multipole_ion_optics"
 
 # Process/memory fixtures isolate the host permit; facade tests exercise its ledger.
 HOST_PERMIT_FIXTURE = "function Assert-HostResourceHeavyStage {};"
+
+
+def _watchdog_observation_copy(root: Path) -> Path:
+    """Copy one real observer function, adding only removable flushed checkpoints."""
+    public = REPO_ROOT / 'common/resource_budget_support.ps1'
+    source = public.read_bytes()
+    begin = source.index(b'function Invoke-ResourceBudgetedProcess {')
+    end = source.index(b'\nfunction Assert-RepositoryProcessSpecification {', begin)
+    original = source[begin:end]
+    anchors = (
+        b'  $observation=New-RepositoryProcessObservation -Limits $Limits -RunDir $RunDir -UsagePath $UsagePath',
+        b'  $process=Start-Process @startArguments',
+        b'      $sample=Get-ManagedSolverProcessSample -RootProcessIds @([int]$process.Id) `\n        -TrackedProcessIds $trackedProcessIds -RootProcessStartedAtUtcTicks @{\n          ([string]$process.Id)=$rootProcessStartedAtUtcTicks\n        } -TrackedProcessStartedAtUtcTicks $trackedProcessStartedAtUtcTicks',
+        b'      $observed=Update-RepositoryProcessObservation -Observation $observation -Sample $sample',
+        b'    $process.WaitForExit();$rootExitConfirmed=$process.HasExited',
+        b'    $null=Update-RepositoryProcessObservation -Observation $observation -Sample $sample -Final',
+    )
+    observed = original
+    inserted = []
+    for index, anchor in enumerate(anchors):
+        count = 2 if index == 4 else 1
+        if original.count(anchor) != count:
+            raise AssertionError('Watchdog source checkpoint anchor changed')
+        before = f"Write-WatchdogCheckpoint '{index}:before'\n".encode()
+        extra = ' -OwnedProcess $process' if index == 1 else ''
+        after = f"\nWrite-WatchdogCheckpoint '{index}:after'{extra}".encode()
+        observed = observed.replace(anchor, before + anchor + after)
+        inserted.extend((before, after))
+    restored = observed
+    for marker in inserted:
+        restored = restored.replace(marker, b'')
+    if restored != original:
+        raise AssertionError('Watchdog private observer changed non-diagnostic bytes')
+    path = root / 'observed-watchdog.ps1'
+    path.write_bytes(observed)
+    identity = dict(public_source=str(public), public_sha256=hashlib.sha256(source).hexdigest(),
+                    original_function_sha256=hashlib.sha256(original).hexdigest(),
+                    observed_function_sha256=hashlib.sha256(observed).hexdigest(),
+                    removed_checkpoints_restore_exact_bytes=True, anchor_counts=[1, 1, 1, 1, 2, 1])
+    (root / 'result.json').write_text(json.dumps(identity, indent=2)+'\n', encoding='utf-8', newline='\n')
+    return path
+
+
+def _run_watchdog_fixture(root: Path, command: str, *, timeout=15):
+    """ACK-owned synthetic PowerShell only; never a vendor timeout policy."""
+    from common.contracts.test_support import fixture_process
+
+    script = root / 'watchdog.ps1'
+    script.write_text(
+        "if([Console]::In.ReadLine()-cne'"+fixture_process.ACK.decode('ascii').strip()+
+        "'){throw 'FIXTURE_OWNERSHIP_ACK_REQUIRED'}\n"+
+        "$ErrorActionPreference='Stop';$script:watchdogLogErrors=@()\n"+
+        "function Write-WatchdogCheckpoint {param($Name,$OwnedProcess=$null)\n"+
+        " try { $row=@{checkpoint=$Name;utc=[datetimeoffset]::UtcNow.ToString('o');"+
+        "ticks=[diagnostics.stopwatch]::GetTimestamp();pid=$PID};"+
+        "if($null-ne$OwnedProcess){$row.child_pid=$OwnedProcess.Id;"+
+        "$row.child_birth_ticks=$OwnedProcess.StartTime.ToUniversalTime().Ticks};"+
+        "$line=$row|ConvertTo-Json -Compress;[Console]::Out.WriteLine($line);[Console]::Out.Flush();"+
+        f"[IO.File]::AppendAllText('{root / 'timeline.jsonl'}',$line+[Environment]::NewLine)"+
+        "}catch{$script:watchdogLogErrors+=($_|Out-String)}}\n"+
+        "Write-WatchdogCheckpoint 'script.acknowledged'\n"+command+
+        "\nWrite-WatchdogCheckpoint 'script.completed'\n"+
+        "if($script:watchdogLogErrors.Count){throw ('WATCHDOG_DIAGNOSTIC_FAILURE='+($script:watchdogLogErrors-join';'))}\n",
+        encoding='utf-8', newline='\n')
+    environment = dict(os.environ, FIXTURE_PYTHON=sys.executable,
+                       FIXTURE_TEST_SOURCE=str(Path(__file__)),
+                       FIXTURE_TEST_METHOD='ResourceBudgetTests.test_watchdog_samples_run_directory_on_frozen_cadence_and_at_exit')
+    result = None
+    primary = None
+    try:
+        result = fixture_process.run_fixture_process(
+            ['pwsh', '-NoProfile', '-NonInteractive', '-File', str(script)], root=root,
+            environment=environment, mode='rf-watchdog-cadence', timeout=timeout, cwd=REPO_ROOT)
+        return result
+    except BaseException as error:
+        primary = error
+        raise
+    finally:
+        destination = getattr(primary if primary is not None else result, 'fixture_diagnostics', None)
+        if destination is not None:
+            for name in ('budget.json', 'usage.json', 'observed-watchdog.ps1', 'watchdog.ps1'):
+                source = root / name
+                try:
+                    if source.is_file() and source.stat().st_size <= 65536:
+                        (Path(destination) / name).write_bytes(source.read_bytes())
+                except Exception as error:
+                    if primary is None:
+                        raise
+                    primary.add_note(f'watchdog_input_diagnostic_secondary={error!r}')
 
 
 def dispatch_limits(**overrides: int | float) -> dict[str, int | float]:
@@ -3026,6 +3117,63 @@ if(-not(Update-RepositoryProcessObservation -Observation $metrics -Sample $sampl
             cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=15, check=False)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_watchdog_checkpoint_copy_restores_real_observer_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            observed = _watchdog_observation_copy(root)
+            identity = json.loads((root / 'result.json').read_text(encoding='utf-8'))
+            self.assertTrue(identity['removed_checkpoints_restore_exact_bytes'])
+            self.assertEqual(identity['anchor_counts'], [1, 1, 1, 1, 2, 1])
+            self.assertEqual(hashlib.sha256(observed.read_bytes()).hexdigest(),
+                             identity['observed_function_sha256'])
+            self.assertIn(b'Start-Process @startArguments', observed.read_bytes())
+
+    def test_watchdog_timeout_primary_survives_input_evidence_failure(self):
+        from common.contracts.test_support import fixture_process
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'budget.json').write_text('{}', encoding='utf-8')
+            primary = subprocess.TimeoutExpired(['owned-synthetic-pwsh'], 15,
+                                                output=b'LAST_CHECKPOINT', stderr=b'RAW_ERROR')
+            primary.fixture_diagnostics = str(root)
+            with mock.patch.object(fixture_process, 'run_fixture_process', side_effect=primary), \
+                    mock.patch.object(Path, 'write_bytes', side_effect=OSError('LOGGER_SECONDARY')):
+                with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                    _run_watchdog_fixture(root, "throw 'never executed'", timeout=15)
+            self.assertIs(caught.exception, primary)
+            self.assertEqual(caught.exception.timeout, 15)
+            self.assertEqual(caught.exception.output, b'LAST_CHECKPOINT')
+            self.assertEqual(caught.exception.stderr, b'RAW_ERROR')
+            self.assertIn('LOGGER_SECONDARY', str(caught.exception.__notes__))
+
+    def test_watchdog_owned_timeout_keeps_primary_and_spares_unrelated_process(self):
+        from common.contracts.test_support import fixture_process
+        unrelated = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(45)'], cwd=REPO_ROOT)
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                command = ("$child=Start-Process -FilePath (Get-Process -Id $PID).Path "
+                           "-ArgumentList @('-NoProfile','-Command','Start-Sleep -Seconds 60') "
+                           "-PassThru -WindowStyle Hidden;"
+                           "Write-WatchdogCheckpoint 'negative.child.started' -OwnedProcess $child;"
+                           "$child.WaitForExit()")
+                with mock.patch.object(fixture_process, '_save_evidence', side_effect=OSError('LOGGER_SECONDARY')):
+                    with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                        _run_watchdog_fixture(root, command, timeout=15)
+                error = caught.exception
+                self.assertEqual(error.timeout, 15)
+                self.assertEqual(error.fixture_metadata['primary_error']['type'], 'TimeoutExpired')
+                self.assertGreaterEqual(len(error.fixture_metadata['job_processes_at_failure']), 2)
+                self.assertEqual(error.fixture_metadata['remaining_job_processes'], [])
+                self.assertGreater(error.fixture_metadata['drained_stdout_bytes'], 0)
+                self.assertIn('negative.child.started', (root / 'timeline.jsonl').read_text(encoding='utf-8'))
+                self.assertIn('LOGGER_SECONDARY', str(error.__notes__))
+                self.assertIsNone(unrelated.poll())
+        finally:
+            if unrelated.poll() is None:
+                unrelated.terminate()
+            unrelated.wait(timeout=5)
+
     def test_watchdog_samples_run_directory_on_frozen_cadence_and_at_exit(
         self,
     ) -> None:
@@ -3064,16 +3212,10 @@ if(-not(Update-RepositoryProcessObservation -Observation $metrics -Sample $sampl
                 "$null-ne$r.limit_name-or"
                 "$script:directoryMeasurements-ne 2){exit 3}"
             )
-            completed = subprocess.run(
-                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-                cwd=REPO_ROOT,
-                check=False,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=15,
-            )
+            observed = _watchdog_observation_copy(root)
+            load = f"Write-WatchdogCheckpoint 'public.load.before';. '{support}';Write-WatchdogCheckpoint 'public.load.after';. '{observed}';"
+            command = command.replace(f". '{support}';", load, 1)
+            completed = _run_watchdog_fixture(root, command, timeout=15)
             self.assertEqual(completed.returncode, 0, completed.stderr)
             measured = json.loads(usage.read_text(encoding="utf-8-sig"))
             self.assertEqual(measured["status"], "running")
