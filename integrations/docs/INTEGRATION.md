@@ -1,7 +1,7 @@
 # 统一装配实施状态
 
 返回[集成入口](../README.md)。本页维护当前入口、有效证据、限制与开放动作，组件自身资格归各PROJECT。
-状态截至2026-11-03；原始输入和终态仍以各run的manifest为准。早期阶段见
+状态截至2026-11-04；原始输入和终态仍以各run的manifest为准。早期阶段见
 [迁移证据](history/20261026__assembly-migration-execution-evidence.md)，后续重试和门禁过程可从
 [收口前固定版本](https://github.com/Bibibabibobi96/mass_spectrometry/blob/09d7dec5a6802f47df791a3239ed75e5b73321fd/integrations/docs/INTEGRATION.md)追溯；不复制另一套全文快照。
 
@@ -147,7 +147,7 @@ request 的 `verify_saved_workbench_replay` 只能为布尔，默认 false。解
 该迁移复用既有完整批次 planner、公共 owner 及 HEAD 的兼容 frontend API；不包含全局原生路径投影、
 数值 Program／IOB core 的历史再生成或新的场精度资格。111659／121606／192206 等 N100 证据
 仅支持其各自冻结代码、粗网格、实际新飞／复用范围；当前代码的隔离冻结已有软件验证，
-新科学组链后继已有真实原生功能与有限GUI证据，具体范围及仍开放的动态数值出口只以
+新科学组链后继已有真实原生功能、有限GUI及独立非粒子场证据，其具体范围和保留限制只以
 [当前边界](#当前边界)为准；上述旧运行不替代当前源码验收。
 
 

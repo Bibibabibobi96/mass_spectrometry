@@ -4,6 +4,8 @@
 
 ## 公共机制与执行资源
 
+- [2026-11-04 P2提供者／后端解耦、命名语义与有限边界验收](history/20261104__phase02-provider-backend-migration.md)
+
 - [2026-11-03 P1科学核心迁移、安装隔离与有限边界验收](history/20261103__phase01-scientific-core-migration.md)
 
 - [2026-10-29 独立系统指南完整逐项审查、验收与收益成本](history/20261029__system-guide-complete-review.md)
