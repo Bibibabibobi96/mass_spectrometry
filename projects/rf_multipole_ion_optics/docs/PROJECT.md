@@ -18,6 +18,8 @@ interface 的真实 postprocess worker 从本次冻结源码导入规范核心�
 资源库存和两项 owner 恢复的 11 项精确补验通过（177.357 秒），包含缺核心拒绝及父 offset/CSV 断言。
 经用户明确批准恢复原有 10 处子进程 cwd/timeout 后，RF 恢复模块 13 项通过（378.341 秒），
 全量开发标准硬门禁通过。原失败轮次保留；这些软件结果不授予新的求解或接口资格。
+后继冻结子进程回归核对实际`msplatform.contracts.particle_physics`来源及其规范源码字节，
+保持原offset、粒子CSV和报告数值断言；两项定向5.726秒通过，不以旧桥模块名代替真实来源。
 
 两个有限输运运行器的独立复制清单与容量估算同步包含规范核心和完整 schema；
 analysis-only/reextract 也沿同一库存校验，Python 观测使用公共导入根。
@@ -34,7 +36,9 @@ P2科学电极组由`core.electrode_topology.build_electrode_topology`唯一产�
 连续/分段/共地完整性、原标签内部置换及实际GEM/电压投影回归通过。
 公开request4/resolved4将分段物理定义与原生容量分离；request3/resolved3保留原499段协议。
 新请求的uniform/explicit 500和501段均有公开编译回归，后端按声明容量独立拒绝超限，不将它解释为物理错误。
-这些是软件合同证据，未验收新RF→OA完整执行链、原生场与轨迹。
+上述回归本身是软件合同证据；新RF→OA链另已完成两种编号的真实N100及显式保存回放，
+实际范围、记录值等价、pulse结束覆盖缺口和GUI限制见[集成状态](../../../integrations/docs/INTEGRATION.md#当前边界)。
+不由该功能证据推定全场、收敛或Formal资格。
 
 RF完整17列事件协议已迁至`analysis.rf_event_table_validation.validate_rf_event_table`，
 `core.component_port`直接消费该领域列合同；中立交接状态另归`msplatform.contracts.particle_state`。

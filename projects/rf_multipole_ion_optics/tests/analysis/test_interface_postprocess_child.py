@@ -122,8 +122,10 @@ if($code.Count-ne1){throw 'actual project analysis Python body missing'}
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(json.loads((root / "report.json").read_text())["status"], "PASS")
             origins = json.loads((root / "origins.json").read_text())
-            self.assertTrue(Path(origins['common.contracts.particle_physics']).is_relative_to(
-                Path(execution['root']) / 'src/msplatform'))
+            physics_origin = Path(origins['msplatform.contracts.particle_physics'])
+            self.assertTrue(physics_origin.is_relative_to(Path(execution['root']) / 'src/msplatform'))
+            self.assertEqual(physics_origin.read_bytes(),
+                             (repo / 'src/msplatform/contracts/particle_physics.py').read_bytes())
             self.assertTrue(all(Path(path).is_relative_to(execution["root"]) for path in
                                 json.loads((root / "origins.json").read_text()).values()))
 
