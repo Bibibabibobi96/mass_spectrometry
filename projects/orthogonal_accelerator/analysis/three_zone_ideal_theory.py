@@ -3,7 +3,10 @@
 This module owns the signed affine source, three uniform accelerating regions,
 first time focus and accelerator-only derivatives. Reflectron fields, total
 instrument TOF, Gamma3 and system qualification remain with each instrument.
-The local coordinate x is not the x axis of a consuming instrument.
+The extraction position is zero at the repeller reference plane and increases
+toward the intermediate grids and exit. It is not an instrument-global axis.
+For sectioned_accelerator_cartesian geometry, it equals local z_mm minus
+repeller_front_z_mm; signed velocity is along that same extraction direction.
 """
 from __future__ import annotations
 
@@ -40,28 +43,28 @@ def _positive(value: float, name: str) -> float:
 class AffineSource:
     """Signed affine source in the canonical ``chi=sqrt(K/q)`` coordinate.
 
-    ``time_scale_s_per_mm_sqrt_v`` converts normalized time in mm/sqrt(V) to
+    ``time_scale_s_sqrt_v_per_mm`` converts normalized time in mm/sqrt(V) to
     seconds.  Keeping it in the frozen source makes both signed velocity and the SI
     conversion auditable without consulting campaign-global state.
     """
 
-    center_x_mm: float
+    center_extraction_position_mm: float
     chi_center_sqrt_v: float
     chi_slope_sqrt_v_per_mm: float
-    time_scale_s_per_mm_sqrt_v: float
+    time_scale_s_sqrt_v_per_mm: float
 
     def __post_init__(self) -> None:
-        _finite(self.center_x_mm, "center_x_mm")
+        _finite(self.center_extraction_position_mm, "center_extraction_position_mm")
         _finite(self.chi_center_sqrt_v, "chi_center_sqrt_v")
         _finite(self.chi_slope_sqrt_v_per_mm, "chi_slope_sqrt_v_per_mm")
-        _positive(self.time_scale_s_per_mm_sqrt_v, "time_scale_s_per_mm_sqrt_v")
+        _positive(self.time_scale_s_sqrt_v_per_mm, "time_scale_s_sqrt_v_per_mm")
 
     @classmethod
     def from_velocity(
         cls,
         *,
         mass_to_charge_th: float,
-        center_x_mm: float,
+        center_extraction_position_mm: float,
         center_velocity_m_per_s: float,
         velocity_slope_m_per_s_per_mm: float,
     ) -> AffineSource:
@@ -73,7 +76,7 @@ class AffineSource:
         )
         root_factor = math.sqrt(mass_per_charge_kg_per_c / 2.0)
         return cls(
-            center_x_mm=_finite(center_x_mm, "center_x_mm"),
+            center_extraction_position_mm=_finite(center_extraction_position_mm, "center_extraction_position_mm"),
             chi_center_sqrt_v=(
                 _finite(center_velocity_m_per_s, "center_velocity_m_per_s")
                 * root_factor
@@ -85,15 +88,15 @@ class AffineSource:
                 )
                 * root_factor
             ),
-            time_scale_s_per_mm_sqrt_v=1.0e-3 * root_factor,
+            time_scale_s_sqrt_v_per_mm=1.0e-3 * root_factor,
         )
 
-    def chi(self, x_mm: float | NDArray[np.float64]) -> float | NDArray[np.float64]:
-        """Return the signed kinetic-energy root at source coordinate ``x_mm``."""
+    def chi(self, extraction_position_mm: float | NDArray[np.float64]) -> float | NDArray[np.float64]:
+        """Return the signed kinetic-energy root at source coordinate ``extraction_position_mm``."""
 
-        values = np.asarray(x_mm, dtype=float)
+        values = np.asarray(extraction_position_mm, dtype=float)
         result = self.chi_center_sqrt_v + self.chi_slope_sqrt_v_per_mm * (
-            values - self.center_x_mm
+            values - self.center_extraction_position_mm
         )
         return float(result) if result.ndim == 0 else result
 
@@ -160,7 +163,7 @@ def derive_three_zone_state(
     d2 = split * outer.downstream_length_mm
     d3 = (1.0 - split) * outer.downstream_length_mm
     field1 = outer.zone1_voltage_drop_v / outer.zone1_length_mm
-    repeller = outer.nominal_energy_per_charge_v + field1 * source.center_x_mm
+    repeller = outer.nominal_energy_per_charge_v + field1 * source.center_extraction_position_mm
     grid1 = repeller - outer.zone1_voltage_drop_v
     if grid1 <= 0.0:
         raise TheoryDomainError("derived grid1_v must be > 0")
@@ -199,11 +202,11 @@ def derive_three_zone_state(
 def source_energy_per_charge(
     source: AffineSource,
     state: ThreeZoneState,
-    x_mm: float | NDArray[np.float64],
+    extraction_position_mm: float | NDArray[np.float64],
 ) -> float | NDArray[np.float64]:
     """Return exact final energy per charge along the frozen source line."""
 
-    x_values = np.asarray(x_mm, dtype=float)
+    x_values = np.asarray(extraction_position_mm, dtype=float)
     chi_values = np.asarray(source.chi(x_values), dtype=float)
     result = state.repeller_v - state.field1_v_per_mm * x_values + chi_values**2
     return float(result) if result.ndim == 0 else result
@@ -230,7 +233,7 @@ def source_coordinate_for_energy(
             raise TheoryDomainError("energy lies outside the local affine-source branch")
         denominator = p + math.copysign(1.0, p) * np.sqrt(discriminant)
         offset = 2.0 * delta / denominator
-    result = source.center_x_mm + offset
+    result = source.center_extraction_position_mm + offset
     return float(result) if result.ndim == 0 else result
 
 
@@ -300,12 +303,12 @@ def derive_first_order_focus_drift(
 def exact_accelerator_normalized_time(
     source: AffineSource,
     state: ThreeZoneState,
-    x_mm: float | NDArray[np.float64],
+    extraction_position_mm: float | NDArray[np.float64],
     focus_drift_mm: float,
 ) -> float | NDArray[np.float64]:
     """Return exact accelerator-plus-focus-drift time in mm/sqrt(V)."""
 
-    x_values = np.asarray(x_mm, dtype=float)
+    x_values = np.asarray(extraction_position_mm, dtype=float)
     chi = np.asarray(source.chi(x_values), dtype=float)
     return exact_accelerator_normalized_time_from_state(
         state, x_values, chi, focus_drift_mm
@@ -314,26 +317,26 @@ def exact_accelerator_normalized_time(
 
 def exact_accelerator_normalized_time_from_state(
     state: ThreeZoneState,
-    x_mm: float | NDArray[np.float64],
+    extraction_position_mm: float | NDArray[np.float64],
     chi_sqrt_v: float | NDArray[np.float64],
     focus_drift_mm: float,
 ) -> float | NDArray[np.float64]:
     """Return exact accelerator time for independently specified axial states.
 
-    ``x_mm`` is the local accelerator coordinate and ``chi_sqrt_v`` is the
-    signed axial velocity expressed as ``v_z*sqrt((m/q)/2)``.  This is the
+    ``extraction_position_mm`` is the local accelerator coordinate and ``chi_sqrt_v`` is the
+    signed extraction velocity expressed as ``v_extraction*sqrt((m/q)/2)``.  This is the
     same ideal-field formula used by :func:`exact_accelerator_normalized_time`,
     but keeps a conditional velocity residual independent of the fitted source
     manifold.  It is therefore the required exact oracle boundary for C2's
     axial residual test; it is not a three-dimensional trajectory model.
     """
 
-    x_values = np.asarray(x_mm, dtype=float)
+    x_values = np.asarray(extraction_position_mm, dtype=float)
     chi = np.asarray(chi_sqrt_v, dtype=float)
     try:
         x_values, chi = np.broadcast_arrays(x_values, chi)
     except ValueError as error:
-        raise TheoryDomainError("x_mm and chi_sqrt_v cannot be broadcast") from error
+        raise TheoryDomainError("extraction_position_mm and chi_sqrt_v cannot be broadcast") from error
     energy = state.repeller_v - state.field1_v_per_mm * x_values + chi**2
     if np.any(energy <= state.grid1_v):
         raise TheoryDomainError("source cohort cannot cross accelerator grid1")

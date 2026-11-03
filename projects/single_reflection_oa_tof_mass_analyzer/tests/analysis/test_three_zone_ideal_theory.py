@@ -45,7 +45,7 @@ class ThreeZoneIdealTheoryTests(unittest.TestCase):
     def source() -> AffineSource:
         return AffineSource.from_velocity(
             mass_to_charge_th=100.0,
-            center_x_mm=1.498375640839315,
+            center_extraction_position_mm=1.498375640839315,
             center_velocity_m_per_s=-2.9323518410018137,
             velocity_slope_m_per_s_per_mm=228.80604377795845,
         )
@@ -101,7 +101,7 @@ class ThreeZoneIdealTheoryTests(unittest.TestCase):
             100.0 * ATOMIC_MASS_CONSTANT_KG / ELEMENTARY_CHARGE_C / 2.0
         )
         self.assertAlmostEqual(
-            source.time_scale_s_per_mm_sqrt_v,
+            source.time_scale_s_sqrt_v_per_mm,
             1.0e-3 * root_factor,
             delta=1e-18,
         )
@@ -118,7 +118,7 @@ class ThreeZoneIdealTheoryTests(unittest.TestCase):
         inner = self.candidate()
         state = derive_three_zone_state(source, outer, inner.eta)
         derivatives = compute_time_derivatives(source, state, self.reflectron(), inner)
-        positions = np.linspace(source.center_x_mm - 0.2, source.center_x_mm + 0.2, 7)
+        positions = np.linspace(source.center_extraction_position_mm - 0.2, source.center_extraction_position_mm + 0.2, 7)
         chi = source.chi(positions)
         self.assertTrue(np.allclose(
             exact_accelerator_normalized_time(
@@ -146,9 +146,9 @@ class ThreeZoneIdealTheoryTests(unittest.TestCase):
             source, state, self.reflectron(), self.candidate()
         ).focus_drift_after_exit_mm
         actual = exact_accelerator_normalized_time(
-            source, state, source.center_x_mm, drift
+            source, state, source.center_extraction_position_mm, drift
         )
-        energy = source_energy_per_charge(source, state, source.center_x_mm)
+        energy = source_energy_per_charge(source, state, source.center_extraction_position_mm)
         chi = source.chi_center_sqrt_v
         signed_formula = (
             2.0 / state.field1_v_per_mm * (math.sqrt(energy - state.grid1_v) - chi)
@@ -180,7 +180,7 @@ class ThreeZoneIdealTheoryTests(unittest.TestCase):
         np.testing.assert_allclose(
             cohort.tof_us,
             cohort.normalized_time_mm_sqrt_v
-            * source.time_scale_s_per_mm_sqrt_v
+            * source.time_scale_s_sqrt_v_per_mm
             * 1.0e6,
             rtol=0.0,
             atol=1e-14,
@@ -200,7 +200,7 @@ class ThreeZoneIdealTheoryTests(unittest.TestCase):
         self.assertEqual(low_split.affine_g, 0.0)
         self.assertEqual(high_split.affine_g, 0.0)
 
-        xs = np.linspace(source.center_x_mm - 1.1, source.center_x_mm + 1.1, 1001)
+        xs = np.linspace(source.center_extraction_position_mm - 1.1, source.center_extraction_position_mm + 1.1, 1001)
         low_drift = compute_time_derivatives(
             source, low_split, self.reflectron(), inner
         ).focus_drift_after_exit_mm
@@ -368,7 +368,7 @@ class ThreeZoneIdealTheoryTests(unittest.TestCase):
 
         backward_source = AffineSource.from_velocity(
             mass_to_charge_th=100.0,
-            center_x_mm=1.498375640839315,
+            center_extraction_position_mm=1.498375640839315,
             center_velocity_m_per_s=-12000.0,
             velocity_slope_m_per_s_per_mm=228.80604377795845,
         )

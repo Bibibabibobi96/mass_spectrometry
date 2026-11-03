@@ -90,6 +90,25 @@ class ThreeZoneCampaignContractTests(unittest.TestCase):
         path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
         return path
 
+    def test_legacy_frozen_source_reader_maps_explicit_coordinate_without_mutation(self) -> None:
+        import math
+        from dataclasses import asdict
+        from projects.orthogonal_accelerator.analysis.accelerator_time_focus import (
+            ATOMIC_MASS_CONSTANT_KG, ELEMENTARY_CHARGE_C,
+        )
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_theory_experiment import _source
+
+        before = copy.deepcopy(self.campaign)
+        source = _source(json.loads(json.dumps(self.campaign)))
+        frozen = self.campaign["frozen_source"]
+        root = math.sqrt(frozen["mass_to_charge_th"] * ATOMIC_MASS_CONSTANT_KG / ELEMENTARY_CHARGE_C / 2)
+        self.assertEqual(source.center_extraction_position_mm, frozen["center_x_mm"])
+        self.assertEqual(source.time_scale_s_sqrt_v_per_mm, 1e-3 * root)
+        self.assertEqual(source.chi_center_sqrt_v, frozen["center_velocity_m_per_s"] * root)
+        self.assertEqual(source.chi_slope_sqrt_v_per_mm, frozen["velocity_slope_m_per_s_per_mm"] * root)
+        self.assertNotIn("center_x_mm", asdict(source))
+        self.assertEqual(self.campaign, before)
+
     def test_stage_graph_is_single_stage_only_and_t4c_is_manual_non_default(self) -> None:
         self.assertEqual(self.campaign["status"], "authorized")
         self.assertEqual(

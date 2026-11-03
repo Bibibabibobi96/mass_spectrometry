@@ -25,7 +25,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_t
 
 def source_at_point(spec: NumericalSourceSpec, point: IdealWorkingPoint) -> NumericalSourceSpec:
     """Move the field boundaries relative to an unchanged centered source law."""
-    return replace(spec, center_x_mm=point.design_source.center_x_mm)
+    return replace(spec, center_x_mm=point.design_source.center_extraction_position_mm)
 
 
 def _from_latent(spec: NumericalSourceSpec, position: np.ndarray, residual: np.ndarray) -> AxialParticleSource:
@@ -69,7 +69,7 @@ Gaussian tails outside the stated envelope are not guaranteed loss-free.
     if np.any(classes != "detector_arrival"):
         raise ValueError("quadrature includes non-arriving/model-unsupported particles")
     times = np.asarray(exact_total_normalized_time_from_state(point.state, point.reflectron, point.inner,
-                       source.source_x_mm, chi, point.focus_drift_mm))*point.design_source.time_scale_s_per_mm_sqrt_v*1e9
+                       source.source_x_mm, chi, point.focus_drift_mm))*point.design_source.time_scale_s_sqrt_v_per_mm*1e9
     weights = quadrature.weights
     mean = float(weights @ times)
     variance = float(weights @ (times-mean)**2)

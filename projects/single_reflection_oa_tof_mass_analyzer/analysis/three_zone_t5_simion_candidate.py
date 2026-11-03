@@ -232,7 +232,7 @@ def compile_t5_simion_candidate(
     source_record = campaign["frozen_source"]
     source = AffineSource.from_velocity(
         mass_to_charge_th=float(source_record["mass_to_charge_th"]),
-        center_x_mm=float(source_record["center_x_mm"]),
+        center_extraction_position_mm=float(source_record["center_x_mm"]),
         center_velocity_m_per_s=float(source_record["center_velocity_m_per_s"]),
         velocity_slope_m_per_s_per_mm=float(
             source_record["velocity_slope_m_per_s_per_mm"]

@@ -54,7 +54,7 @@ class NumericalSourceSpec:
 
         return AffineSource.from_velocity(
             mass_to_charge_th=self.mass_to_charge_th,
-            center_x_mm=self.center_x_mm,
+            center_extraction_position_mm=self.center_x_mm,
             center_velocity_m_per_s=self.center_velocity_m_per_s,
             velocity_slope_m_per_s_per_mm=(
                 self.velocity_slope_m_per_s_per_mm if slope is None else slope
@@ -222,7 +222,7 @@ def _classify_source(source: AxialParticleSource, point: IdealWorkingPoint) -> t
     """Classify mutually exclusive physical/model-domain outcomes before square roots."""
 
     state, inner = point.state, point.inner
-    chi = source.velocity_z_m_per_s * point.design_source.time_scale_s_per_mm_sqrt_v * 1.0e3
+    chi = source.velocity_z_m_per_s * point.design_source.time_scale_s_sqrt_v_per_mm * 1.0e3
     energy = state.repeller_v - state.field1_v_per_mm * source.source_x_mm + chi**2
     classes = np.full(source.particle_id.size, "detector_arrival", dtype="U64")
     conditions = (
@@ -273,10 +273,10 @@ losses. The returned fraction is axial model reachability, not 3D collection.
 """
 
     expected_scale = AffineSource.from_velocity(
-        mass_to_charge_th=source.mass_to_charge_th, center_x_mm=0.0,
+        mass_to_charge_th=source.mass_to_charge_th, center_extraction_position_mm=0.0,
         center_velocity_m_per_s=0.0, velocity_slope_m_per_s_per_mm=0.0,
-    ).time_scale_s_per_mm_sqrt_v
-    if expected_scale != working_point.design_source.time_scale_s_per_mm_sqrt_v:
+    ).time_scale_s_sqrt_v_per_mm
+    if expected_scale != working_point.design_source.time_scale_s_sqrt_v_per_mm:
         raise ValueError("source and working point mass-to-charge identities differ")
     classification, chi = _classify_source(source, working_point)
     hit = classification == "detector_arrival"

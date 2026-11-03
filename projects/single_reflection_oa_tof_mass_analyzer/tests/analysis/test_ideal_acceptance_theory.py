@@ -37,7 +37,7 @@ class IdealAcceptanceTheoryTests(unittest.TestCase):
         point = self.point if point is None else point
         velocity = (self.spec.center_velocity_m_per_s
                     + self.spec.velocity_slope_m_per_s_per_mm*np.asarray(offsets)+residual)
-        factor = point.design_source.time_scale_s_per_mm_sqrt_v
+        factor = point.design_source.time_scale_s_sqrt_v_per_mm
         return np.asarray(exact_total_normalized_time_from_state(
             point.state, point.reflectron, point.inner, self.spec.center_x_mm+offsets,
             velocity*factor*1e3, point.focus_drift_mm))*factor*1e9

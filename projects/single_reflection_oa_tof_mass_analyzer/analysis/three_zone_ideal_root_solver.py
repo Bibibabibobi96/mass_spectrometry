@@ -374,8 +374,8 @@ def _energy_half_span_v(
     state = derive_three_zone_state(source, outer, eta)
     endpoints = np.asarray(
         (
-            source.center_x_mm - width_mm / 2.0,
-            source.center_x_mm + width_mm / 2.0,
+            source.center_extraction_position_mm - width_mm / 2.0,
+            source.center_extraction_position_mm + width_mm / 2.0,
         )
     )
     energy = np.asarray(source_energy_per_charge(source, state, endpoints))

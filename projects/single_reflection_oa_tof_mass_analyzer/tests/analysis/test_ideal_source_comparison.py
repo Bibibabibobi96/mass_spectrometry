@@ -227,7 +227,7 @@ class IdealSourceComparisonTests(unittest.TestCase):
                 with run_comparison._legacy_source_protection(parent, artifact_root,
                         "20261031_151000__analysis__python__legacy-proof-checks") as protection:
                     identities = {name:file_sha256(path) for name,path in run_comparison._inputs(config_path).items()}
-                    for scenario in ("missing_source", "environment", "changed_generator", "unbound_input"):
+                    for scenario in ("missing_source", "environment", "changed_generator", "changed_execution", "unbound_input"):
                         with self.subTest(scenario=scenario):
                             original_config = json.loads((parent / "run_config.json").read_text(encoding="utf-8"))
                             if scenario == "missing_source":
@@ -235,11 +235,16 @@ class IdealSourceComparisonTests(unittest.TestCase):
                             elif scenario == "environment":
                                 original_config["numerical_identity"] = "unproven historical environment"
                                 (parent / "run_config.json").write_text(json.dumps(original_config), encoding="utf-8")
-                            elif scenario == "changed_generator":
+                            elif scenario in {"changed_generator", "changed_execution"}:
                                 path = Path(original_config["inputs"]["entrypoint"])
                                 content = path.read_text(encoding="utf-8")
-                                self.assertEqual(content.count('full_width_mm=case["full_width_mm"]'), 1)
-                                path.write_text(content.replace('full_width_mm=case["full_width_mm"]', 'full_width_mm=0.5'), encoding="utf-8")
+                                old, changed = (
+                                    ('full_width_mm=case["full_width_mm"]', 'full_width_mm=0.5')
+                                    if scenario == "changed_generator" else
+                                    ('plan = build_case_plan(config, seed)', 'plan = build_case_plan(config, seed + 1)')
+                                )
+                                self.assertEqual(content.count(old), 1)
+                                path.write_text(content.replace(old, changed), encoding="utf-8")
                                 original_config["input_sha256"]["entrypoint"] = file_sha256(path)
                                 original_config["numerical_identity"] = run_comparison._digest({"inputs":original_config["input_sha256"], "seed":73,
                                     "python":run_comparison.platform.python_version(), "numpy":np.__version__, "scipy":run_comparison.scipy.__version__})
@@ -514,7 +519,7 @@ class IdealSourceComparisonTests(unittest.TestCase):
     def test_zero_residual_matches_existing_affine_exact_total_time(self) -> None:
         source, point = self.sample(sigma=0.0), self.point()
         result = propagate_ideal_source(source, point, settings=self.settings)
-        expected = exact_total_normalized_time(point.design_source, point.state, point.reflectron, point.inner, source.source_x_mm, point.focus_drift_mm)*point.design_source.time_scale_s_per_mm_sqrt_v*1e6
+        expected = exact_total_normalized_time(point.design_source, point.state, point.reflectron, point.inner, source.source_x_mm, point.focus_drift_mm)*point.design_source.time_scale_s_sqrt_v_per_mm*1e6
         np.testing.assert_allclose(result.tof_us, expected, atol=2e-14, rtol=1e-14)
         self.assertEqual(result.summary["detector_arrival_count"], 31)
         self.assertEqual(result.summary["status"], "SUCCESS")

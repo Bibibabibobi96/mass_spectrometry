@@ -156,7 +156,14 @@ class IdealExperimentTests(unittest.TestCase):
             self.assertEqual(load_json(resumed / "run_manifest.json")["schema_version"], 2)
             self.assertFalse((resumed / "results/resolved_plan.json").exists())
             self.assertEqual(load_json(resumed / "results/working_points.json"),
-                             {name: point.to_dict() for name, point in runner._working_points(config).items()})
+                             {"schema_version": 2, "role": "ideal_source_working_points",
+                              "working_points": {name: point.to_dict() for name, point in runner._working_points(config).items()}})
+            working_points = load_json(resumed / "results/working_points.json")
+            for point in working_points["working_points"].values():
+                self.assertIn("center_extraction_position_mm", point["design_source"])
+                self.assertIn("time_scale_s_sqrt_v_per_mm", point["design_source"])
+                self.assertNotIn("center_x_mm", point["design_source"])
+                self.assertNotIn("time_scale_s_per_mm_sqrt_v", point["design_source"])
             with self.assertRaisesRegex(ValueError, "differs"):
                 runner.execute(config_path, seed=10, run_id="20260827_010002__test__python__ideal-source-mismatch", resume_from=failed, artifact_root=root)
             checkpoint = failed / "results/residual_scan__0001.json"

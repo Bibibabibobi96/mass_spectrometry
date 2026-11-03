@@ -324,7 +324,7 @@ class Paper1FocusabilityTest(unittest.TestCase):
                     writer.writerow({"particle_id": identifier, "event": "pre_pulse_time_series_state", "sample_index": 1, "instrument_time_us": 1.0, "x_mm": 0.0, "y_mm": 0.0, "z_mm": z, "vx_mm_per_us": 4.0, "vy_mm_per_us": 0.0, "vz_mm_per_us": 0.01 + 0.0001 * z + (identifier % 5) * 1e-5, "kinetic_energy_eV": 10.0, "survival_status": "alive"})
             assessment_path.write_text(json.dumps({"qualification": "DETECTOR_BLIND_SOURCE_ONLY", "source_id": "synthetic", "anchor": {"time_series_sample_index": 1}, "state_table": {"path": str(state_path)}, "selected_model": {"degree": 1}, "cohort": {"salt": "c2-test"}}), encoding="utf-8")
             source = load_c2_axial_source(assessment_path=assessment_path, mass_to_charge_th=100.0, release_position_mm=1.498375640839315)
-            design_source = AffineSource.from_velocity(mass_to_charge_th=100.0, center_x_mm=1.498375640839315, center_velocity_m_per_s=-2.9, velocity_slope_m_per_s_per_mm=228.0)
+            design_source = AffineSource.from_velocity(mass_to_charge_th=100.0, center_extraction_position_mm=1.498375640839315, center_velocity_m_per_s=-2.9, velocity_slope_m_per_s_per_mm=228.0)
             design = AxialC2Design(design_source, OuterGeometry(3.25, 17.0, 0.3, 250.0, 2000.0), ReflectronGeometry(120.0, 96.1563, 600.0, 600.0), InnerSolution(1701.7426470171715, 9.880402594968652, -1.0391326394747527), True, np.array([50.0, 1.0, 0.2]))
             result = run_axial_c2_screen(source, design)
             self.assertEqual(result["architecture"], "three_zone")

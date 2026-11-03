@@ -64,7 +64,7 @@ class LinearDesignTests(unittest.TestCase):
         exact = np.asarray(exact_total_normalized_time(
             point.design_source, point.state, point.reflectron, point.inner,
             self.spec.center_x_mm+y, point.focus_drift_mm
-        )) * point.design_source.time_scale_s_per_mm_sqrt_v * 1e9
+        )) * point.design_source.time_scale_s_sqrt_v_per_mm * 1e9
         polynomial = np.polynomial.polynomial.polyval(y, result.report["coefficients_ns_per_mm_power"])
         np.testing.assert_allclose(exact, polynomial, atol=2e-10, rtol=0)
         self.assertFalse(result.report["particle_peak_optimization_performed"])

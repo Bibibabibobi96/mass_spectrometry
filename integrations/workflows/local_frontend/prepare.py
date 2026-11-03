@@ -195,13 +195,13 @@ def _nominal_extraction_duration(frontend: dict, source_row: dict) -> float:
     intermediate = on[str(ids["accelerator_intermediate2_id"])]
     d2 = planes["grid1"]-planes["intermediate2"]
     d3 = planes["intermediate2"]-planes["exit"]
-    source = AffineSource.from_velocity(mass_to_charge_th=mass_to_charge, center_x_mm=release,
+    source = AffineSource.from_velocity(mass_to_charge_th=mass_to_charge, center_extraction_position_mm=release,
                                         center_velocity_m_per_s=0, velocity_slope_m_per_s_per_mm=0)
     outer = OuterGeometry(zone1_length_mm=d1, downstream_length_mm=d2+d3, split_fraction=d2/(d2+d3),
                           zone1_voltage_drop_v=repeller-grid1,
                           nominal_energy_per_charge_v=repeller-(repeller-grid1)*release/d1)
     state = derive_three_zone_state(source, outer, math.log(((grid1-intermediate)/d2)/(intermediate/d3)))
-    return 1e6*source.time_scale_s_per_mm_sqrt_v*exact_accelerator_normalized_time(source, state, release, 0)
+    return 1e6*source.time_scale_s_sqrt_v_per_mm*exact_accelerator_normalized_time(source, state, release, 0)
 
 
 def _pulse_plan(pulse: dict, global_rows: list[dict], guide: dict, component: dict, frontend: dict) -> dict:

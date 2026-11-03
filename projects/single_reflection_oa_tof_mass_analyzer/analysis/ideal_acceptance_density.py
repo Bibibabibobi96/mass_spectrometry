@@ -45,7 +45,7 @@ def _velocity(spec: NumericalSourceSpec, offset: NDArray[np.float64]) -> NDArray
 
 def _time(spec: NumericalSourceSpec, point: IdealWorkingPoint,
           offset: NDArray[np.float64], residual: NDArray[np.float64]) -> NDArray[np.float64]:
-    scale = point.design_source.time_scale_s_per_mm_sqrt_v
+    scale = point.design_source.time_scale_s_sqrt_v_per_mm
     chi = (_velocity(spec, offset) + residual) * scale * 1e3
     return np.asarray(exact_total_normalized_time_from_state(
         point.state, point.reflectron, point.inner, spec.center_x_mm + offset,
@@ -84,7 +84,7 @@ chi=1000*s*v. This derivative holds position and all fields fixed.
         raise ValueError("source specification and design source must match")
     if not np.all(np.isfinite(offset)) or not np.all(np.isfinite(residual)):
         raise ValueError("positions and residual velocities must be finite")
-    scale = point.design_source.time_scale_s_per_mm_sqrt_v
+    scale = point.design_source.time_scale_s_sqrt_v_per_mm
     chi = (_velocity(spec, offset) + residual) * scale * 1e3
     energy = point.state.repeller_v - point.state.field1_v_per_mm * (spec.center_x_mm + offset) + chi**2
     derivative = np.zeros_like(energy)
@@ -100,7 +100,7 @@ def _monotonic_direction(spec: NumericalSourceSpec, point: IdealWorkingPoint,
                          subdivisions: int) -> tuple[NDArray[np.float64], float]:
     """Bound the derivative on residual intervals; reject uncertified inversions."""
 
-    scale = point.design_source.time_scale_s_per_mm_sqrt_v
+    scale = point.design_source.time_scale_s_sqrt_v_per_mm
     edges = np.linspace(-limit, limit, subdivisions + 1)
     chi = (_velocity(spec, offset[:, None]) + edges[None, :]) * scale * 1e3
     lo, hi = chi[:, :-1], chi[:, 1:]

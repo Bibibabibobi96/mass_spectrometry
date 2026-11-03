@@ -131,7 +131,7 @@ def _source_manifold(source: AxialC2Source) -> tuple[AffineSource, Callable[[NDA
     center_velocity = float(mean(np.asarray([center_z]))[0])
     manifold = AffineSource.from_velocity(
         mass_to_charge_th=source.mass_to_charge_th,
-        center_x_mm=source.release_position_mm,
+        center_extraction_position_mm=source.release_position_mm,
         center_velocity_m_per_s=center_velocity,
         velocity_slope_m_per_s_per_mm=slope,
     )
@@ -179,13 +179,13 @@ def _time_gradient(
     """Differentiate exact time with respect to an independent axial velocity residual."""
 
     state, inner, drift = _design_state(design, controls)
-    root = design.source.time_scale_s_per_mm_sqrt_v / 1.0e-3
+    root = design.source.time_scale_s_sqrt_v_per_mm / 1.0e-3
     # ``time_scale`` stores 1e-3*sqrt((m/q)/2), so this recovers the chi factor.
     chi_step = root * 0.5
     chi = vz_m_per_s * root
     plus = exact_total_normalized_time_from_state(state, design.reflectron, inner, x_mm, chi + chi_step, drift)
     minus = exact_total_normalized_time_from_state(state, design.reflectron, inner, x_mm, chi - chi_step, drift)
-    return float((plus - minus) / 1.0) * design.source.time_scale_s_per_mm_sqrt_v * 1.0e6
+    return float((plus - minus) / 1.0) * design.source.time_scale_s_sqrt_v_per_mm * 1.0e6
 
 
 def analytic_time_gradient(
@@ -199,7 +199,7 @@ def analytic_time_gradient(
     """
 
     state, inner, drift = _design_state(design, controls)
-    root = design.source.time_scale_s_per_mm_sqrt_v / 1.0e-3
+    root = design.source.time_scale_s_sqrt_v_per_mm / 1.0e-3
     chi = vz_m_per_s * root
     energy = state.repeller_v - state.field1_v_per_mm * x_mm + chi**2
     if energy <= max(state.grid1_v, inner.stage1_voltage_drop_v):
@@ -224,7 +224,7 @@ def analytic_time_gradient(
     normalized_gradient = 2.0 * chi * (
         accelerator_energy_gradient + reflectron_energy_gradient
     ) - 2.0 / state.field1_v_per_mm
-    return normalized_gradient * root * design.source.time_scale_s_per_mm_sqrt_v * 1.0e6
+    return normalized_gradient * root * design.source.time_scale_s_sqrt_v_per_mm * 1.0e6
 
 
 def _constraint_values(design: AxialC2Design, controls: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -237,11 +237,11 @@ def _axial_time_us(
     design: AxialC2Design, controls: NDArray[np.float64], x_mm: NDArray[np.float64], vz_m_per_s: NDArray[np.float64]
 ) -> NDArray[np.float64]:
     state, inner, drift = _design_state(design, controls)
-    root = design.source.time_scale_s_per_mm_sqrt_v / 1.0e-3
+    root = design.source.time_scale_s_sqrt_v_per_mm / 1.0e-3
     normalized = exact_total_normalized_time_from_state(
         state, design.reflectron, inner, x_mm, vz_m_per_s * root, drift
     )
-    return np.asarray(normalized, dtype=float) * design.source.time_scale_s_per_mm_sqrt_v * 1.0e6
+    return np.asarray(normalized, dtype=float) * design.source.time_scale_s_sqrt_v_per_mm * 1.0e6
 
 
 def _build_problem(

@@ -150,7 +150,7 @@ def compile_c2_j3_physical_control_family(
     frozen = campaign["frozen_source"]
     source = AffineSource.from_velocity(
         mass_to_charge_th=float(frozen["mass_to_charge_th"]),
-        center_x_mm=float(frozen["center_x_mm"]),
+        center_extraction_position_mm=float(frozen["center_x_mm"]),
         center_velocity_m_per_s=float(frozen["center_velocity_m_per_s"]),
         velocity_slope_m_per_s_per_mm=float(frozen["velocity_slope_m_per_s_per_mm"]),
     )

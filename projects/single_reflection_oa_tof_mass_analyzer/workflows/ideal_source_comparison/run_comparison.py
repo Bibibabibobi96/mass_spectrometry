@@ -297,6 +297,18 @@ def _legacy_ideal_projection(previous: Path, identities: dict[str, str], seed: i
             return self.generic_visit(node)
         def visit_Call(self, node):
             node = self.generic_visit(node)
+            # The current v2 result envelope is a publication-only change;
+            # accept exactly its known old writer while comparing all execution AST.
+            current_writer = ast.parse(
+                '_write_json(run_dir / "results/working_points.json", '
+                '{"schema_version": 2, "role": "ideal_source_working_points", '
+                '"working_points": {k: v.to_dict() for k, v in points.items()}})', mode="eval",
+            ).body
+            if ast.dump(node, include_attributes=False) == ast.dump(current_writer, include_attributes=False):
+                return ast.parse(
+                    '_write_json(run_dir / "results/working_points.json", '
+                    '{k: v.to_dict() for k, v in points.items()})', mode="eval",
+                ).body
             if isinstance(node.func, ast.Name) and node.func.id == "_frozen_settings":
                 return ast.Call(func=ast.Name(id="_settings", ctx=ast.Load()), args=[], keywords=[])
             if isinstance(node.func, ast.Name) and node.func.id == "_prepare_run":
@@ -639,7 +651,8 @@ a new run. It never edits or finalizes a previous run, including crash leftovers
         status = "success"
         try:
             points, settings = _working_points(config), _frozen_settings(run_dir)
-            _write_json(run_dir / "results/working_points.json", {k: v.to_dict() for k, v in points.items()})
+            _write_json(run_dir / "results/working_points.json", {"schema_version": 2, "role": "ideal_source_working_points",
+                        "working_points": {k: v.to_dict() for k, v in points.items()}})
             for stage in ("residual_scan", "width_scan"):
                 print(f"IDEAL_COMPARISON STAGE={stage} EVENT=START", flush=True)
                 for case in (c for c in plan if c["stage"] == stage):

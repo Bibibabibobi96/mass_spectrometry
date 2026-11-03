@@ -83,7 +83,7 @@ def finite_source_envelope(spec: NumericalSourceSpec, point: IdealWorkingPoint,
     clearance = min(center-half, point.state.zone1_length_mm-center-half)
     if clearance <= 0:
         raise DesignDomainError("source interval touches or exits first acceleration zone")
-    root_factor = spec.affine().time_scale_s_per_mm_sqrt_v*1e3
+    root_factor = spec.affine().time_scale_s_sqrt_v_per_mm*1e3
     velocity = Polynomial([spec.center_velocity_m_per_s, spec.velocity_slope_m_per_s_per_mm,
                            spec.velocity_quadratic_m_per_s_per_mm2])
     potential = Polynomial([point.state.repeller_v-point.state.field1_v_per_mm*center,

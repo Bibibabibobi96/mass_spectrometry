@@ -527,7 +527,7 @@ def _source(campaign: Mapping[str, Any]) -> AffineSource:
         raise ValueError("v1 theory campaign requires positive unit charge")
     return AffineSource.from_velocity(
         mass_to_charge_th=frozen["mass_to_charge_th"],
-        center_x_mm=frozen["center_x_mm"],
+        center_extraction_position_mm=frozen["center_x_mm"],
         center_velocity_m_per_s=frozen["center_velocity_m_per_s"],
         velocity_slope_m_per_s_per_mm=frozen["velocity_slope_m_per_s_per_mm"],
     )
@@ -612,7 +612,7 @@ def _execute_t1(campaign: Mapping[str, Any]) -> tuple[bool, dict[str, Any]]:
     right_state = derive_three_zone_state(source, right_outer, 0.0)
     left_derivative = compute_time_derivatives(source, left_state, reflectron, eta_zero_inner)
     right_derivative = compute_time_derivatives(source, right_state, reflectron, eta_zero_inner)
-    positions = np.linspace(source.center_x_mm - 1.1, source.center_x_mm + 1.1, 101)
+    positions = np.linspace(source.center_extraction_position_mm - 1.1, source.center_extraction_position_mm + 1.1, 101)
     left_time = exact_total_normalized_time(
         source, left_state, reflectron, eta_zero_inner, positions,
         left_derivative.focus_drift_after_exit_mm,

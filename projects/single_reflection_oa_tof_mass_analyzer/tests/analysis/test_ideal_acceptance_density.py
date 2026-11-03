@@ -37,7 +37,7 @@ class IdealAcceptanceDensityTests(unittest.TestCase):
         cls.result = compute_population_density(cls.spec, cls.point, **cls.settings)
 
     def _times(self, offset: np.ndarray, residual: np.ndarray) -> np.ndarray:
-        scale = self.point.design_source.time_scale_s_per_mm_sqrt_v
+        scale = self.point.design_source.time_scale_s_sqrt_v_per_mm
         chi = (self.spec.center_velocity_m_per_s + self.spec.velocity_slope_m_per_s_per_mm * offset + residual) * scale * 1e3
         return np.asarray(exact_total_normalized_time_from_state(
             self.point.state, self.point.reflectron, self.point.inner,

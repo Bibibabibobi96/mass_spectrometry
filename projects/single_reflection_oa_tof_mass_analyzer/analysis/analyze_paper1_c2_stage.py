@@ -36,7 +36,7 @@ def _designs(campaign: dict[str, Any], phase: dict[str, Any]) -> tuple[AxialC2De
     phase_source = phase["frozen_phase_space_input"]
     source = AffineSource.from_velocity(
         mass_to_charge_th=float(phase_source["mass_to_charge_Th"]),
-        center_x_mm=float(phase_source["release_position_mm"]),
+        center_extraction_position_mm=float(phase_source["release_position_mm"]),
         center_velocity_m_per_s=float(frozen["center_velocity_m_per_s"]),
         velocity_slope_m_per_s_per_mm=float(frozen["velocity_slope_m_per_s_per_mm"]),
     )

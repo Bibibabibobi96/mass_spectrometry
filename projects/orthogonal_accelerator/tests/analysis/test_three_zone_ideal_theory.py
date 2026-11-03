@@ -28,7 +28,7 @@ class ThreeZoneIdealTheoryTest(unittest.TestCase):
     @staticmethod
     def source() -> AffineSource:
         return AffineSource.from_velocity(
-            mass_to_charge_th=100.0, center_x_mm=1.5,
+            mass_to_charge_th=100.0, center_extraction_position_mm=1.5,
             center_velocity_m_per_s=-3.0,
             velocity_slope_m_per_s_per_mm=200.0,
         )
@@ -46,7 +46,7 @@ class ThreeZoneIdealTheoryTest(unittest.TestCase):
         # energy is subtracted. Propagate eight energy ULPs through dW/dx;
         # a coordinate-only absolute tolerance would ignore cancellation.
         slopes = state.energy_position_first_v_per_mm + (
-            state.energy_position_second_v_per_mm2*(positions-source.center_x_mm)
+            state.energy_position_second_v_per_mm2*(positions-source.center_extraction_position_mm)
         )
         coordinate_roundoff_mm = (
             8*np.spacing(np.max(np.abs(energies)))/np.min(np.abs(slopes))
@@ -71,7 +71,7 @@ class ThreeZoneIdealTheoryTest(unittest.TestCase):
             ) for position in positions
         ]
         np.testing.assert_allclose(
-            normalized*source.time_scale_s_per_mm_sqrt_v, expected,
+            normalized*source.time_scale_s_sqrt_v_per_mm, expected,
             rtol=5e-15, atol=0.0,
         )
 
@@ -87,7 +87,7 @@ class ThreeZoneIdealTheoryTest(unittest.TestCase):
 
     def test_stationary_two_zone_and_three_zone_focus_agree(self) -> None:
         source = AffineSource.from_velocity(
-            mass_to_charge_th=100.0, center_x_mm=1.5,
+            mass_to_charge_th=100.0, center_extraction_position_mm=1.5,
             center_velocity_m_per_s=0.0, velocity_slope_m_per_s_per_mm=0.0,
         )
         state = derive_three_zone_state(source, self.outer(), 0.0)
@@ -108,7 +108,7 @@ class ThreeZoneIdealTheoryTest(unittest.TestCase):
         times = exact_accelerator_normalized_time(
             source, state, np.array([1.5-step, 1.5+step]), drift,
         )
-        residual_s_per_mm = (times[1]-times[0])/(2*step)*source.time_scale_s_per_mm_sqrt_v
+        residual_s_per_mm = (times[1]-times[0])/(2*step)*source.time_scale_s_sqrt_v_per_mm
         self.assertLess(abs(residual_s_per_mm), 1e-15)
 
     def test_independent_state_oracle_matches_affine_input(self) -> None:
@@ -135,3 +135,50 @@ class ThreeZoneIdealTheoryTest(unittest.TestCase):
         state = derive_three_zone_state(source, self.outer(), -2.0)
         with self.assertRaisesRegex(TheoryDomainError, "cannot cross"):
             exact_accelerator_normalized_time_from_state(state, 10.0, 0.0, 1.0)
+
+
+    def test_public_units_coordinate_and_independent_si_transit(self) -> None:
+        from dataclasses import asdict
+        from projects.orthogonal_accelerator.analysis.accelerator_time_focus import (
+            ATOMIC_MASS_CONSTANT_KG, ELEMENTARY_CHARGE_C,
+        )
+
+        mass_per_charge = 100.0 * ATOMIC_MASS_CONSTANT_KG / ELEMENTARY_CHARGE_C
+        scale = 1e-3 * math.sqrt(mass_per_charge / 2)
+        for velocity in (-3.0, 7.0):
+            with self.subTest(velocity=velocity):
+                source = AffineSource.from_velocity(
+                    mass_to_charge_th=100.0, center_extraction_position_mm=1.5,
+                    center_velocity_m_per_s=velocity, velocity_slope_m_per_s_per_mm=200.0,
+                )
+                self.assertEqual(source.time_scale_s_sqrt_v_per_mm, scale)
+                self.assertEqual(set(asdict(source)), {
+                    "center_extraction_position_mm", "chi_center_sqrt_v",
+                    "chi_slope_sqrt_v_per_mm", "time_scale_s_sqrt_v_per_mm",
+                })
+                state = derive_three_zone_state(source, self.outer(), -0.7)
+                speed, seconds = velocity, 0.0
+                for length_mm, field in (
+                    (state.zone1_length_mm - 1.5, state.field1_v_per_mm),
+                    (state.zone2_length_mm, state.field2_v_per_mm),
+                    (state.zone3_length_mm, state.field3_v_per_mm),
+                ):
+                    acceleration = field * 1e3 / mass_per_charge
+                    next_speed = math.sqrt(speed**2 + 2 * acceleration * length_mm * 1e-3)
+                    seconds += (next_speed - speed) / acceleration
+                    speed = next_speed
+                seconds += 0.01 / speed
+                normalized = exact_accelerator_normalized_time(
+                    source, state, extraction_position_mm=1.5, focus_drift_mm=10.0,
+                )
+                self.assertAlmostEqual(normalized * scale / seconds, 1.0, places=14)
+                self.assertAlmostEqual(normalized * scale * 1e6, seconds * 1e6, places=12)
+                self.assertAlmostEqual(normalized * scale * 1e9, seconds * 1e9, places=9)
+                self.assertAlmostEqual(state.grid2_v,
+                    state.field3_v_per_mm * state.zone3_length_mm, places=12)
+                self.assertNotEqual(state.grid2_v, state.exit_v)
+                # Nonzero mechanical origin: sectioned +z is measured from repeller.
+                self.assertEqual(source.chi(extraction_position_mm=8.5 - 7.0),
+                                 source.chi(extraction_position_mm=18.5 - 17.0))
+                self.assertNotEqual(source.chi(extraction_position_mm=8.5),
+                                    source.chi(extraction_position_mm=8.5 - 7.0))

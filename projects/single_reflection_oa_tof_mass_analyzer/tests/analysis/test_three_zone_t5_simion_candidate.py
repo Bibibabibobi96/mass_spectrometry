@@ -61,7 +61,7 @@ class ThreeZoneT5SimionCandidateTests(unittest.TestCase):
         source_record = self.campaign["frozen_source"]
         source = AffineSource.from_velocity(
             mass_to_charge_th=source_record["mass_to_charge_th"],
-            center_x_mm=source_record["center_x_mm"],
+            center_extraction_position_mm=source_record["center_x_mm"],
             center_velocity_m_per_s=source_record["center_velocity_m_per_s"],
             velocity_slope_m_per_s_per_mm=source_record[
                 "velocity_slope_m_per_s_per_mm"

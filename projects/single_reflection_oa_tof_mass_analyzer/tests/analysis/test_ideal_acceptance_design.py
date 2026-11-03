@@ -41,7 +41,7 @@ class IdealAcceptanceDesignTests(unittest.TestCase):
         y = np.linspace(-1.4, 1.4, 1001)[:, None]
         residual = np.linspace(-60., 60., 201)[None, :]
         velocity = self.spec.center_velocity_m_per_s+self.spec.velocity_slope_m_per_s_per_mm*y+residual
-        chi = velocity*self.spec.affine().time_scale_s_per_mm_sqrt_v*1e3
+        chi = velocity*self.spec.affine().time_scale_s_sqrt_v_per_mm*1e3
         state = self.point.state
         energy = state.repeller_v-state.field1_v_per_mm*(self.spec.center_x_mm+y)+chi**2
         self.assertAlmostEqual(result["energy_min_v"], float(energy.min()), places=10)

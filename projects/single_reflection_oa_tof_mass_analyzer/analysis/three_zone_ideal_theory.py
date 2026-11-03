@@ -348,7 +348,7 @@ def compute_time_derivatives(
             state,
             reflectron,
             inner,
-            source.center_x_mm,
+            source.center_extraction_position_mm,
             focus_drift,
         )
     )
@@ -426,8 +426,8 @@ def build_exact_cohort(
     if count != sample_count:
         raise TheoryDomainError("sample_count must be an integer >= 3")
     positions = np.linspace(
-        source.center_x_mm - width / 2.0,
-        source.center_x_mm + width / 2.0,
+        source.center_extraction_position_mm - width / 2.0,
+        source.center_extraction_position_mm + width / 2.0,
         count,
     )
     focus_drift = derive_first_order_focus_drift(source, state)
@@ -438,7 +438,7 @@ def build_exact_cohort(
             source, state, reflectron, inner, positions, focus_drift
         )
     )
-    tof_us = normalized_time * source.time_scale_s_per_mm_sqrt_v * 1.0e6
+    tof_us = normalized_time * source.time_scale_s_sqrt_v_per_mm * 1.0e6
     return ExactCohort(
         source_x_mm=positions,
         chi_sqrt_v=chi,

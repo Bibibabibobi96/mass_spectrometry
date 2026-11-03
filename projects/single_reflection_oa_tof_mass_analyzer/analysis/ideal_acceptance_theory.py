@@ -64,7 +64,7 @@ expansion remains defined when the energy-position slope passes through zero.
     result += drift * _quadratic_power(w, p, beta**2, -.5, order)
     result[0] -= 2 * source.chi_center_sqrt_v / state.field1_v_per_mm
     result[1] -= 2 * beta / state.field1_v_per_mm
-    return result * source.time_scale_s_per_mm_sqrt_v * 1e9
+    return result * source.time_scale_s_sqrt_v_per_mm * 1e9
 
 
 def residual_time_sensitivity(point: IdealWorkingPoint, offset_mm: np.ndarray) -> np.ndarray:
@@ -85,7 +85,7 @@ of the source covariance. It includes its variation across the entire width.
                   + (1/state.field3_v_per_mm + 2/field)/np.sqrt(energy)
                   + (2/inner.stage2_field_v_per_mm - 2/field)/np.sqrt(energy-inner.stage1_voltage_drop_v)
                   - .5*(point.focus_drift_mm+mirror.upstream_drift_mm+mirror.downstream_drift_mm)/energy**1.5)
-    return (2*chi*derivative - 2/state.field1_v_per_mm) * source.time_scale_s_per_mm_sqrt_v**2 * 1e12
+    return (2*chi*derivative - 2/state.field1_v_per_mm) * source.time_scale_s_sqrt_v_per_mm**2 * 1e12
 
 
 def uniform_polynomial_variance(coefficients: np.ndarray, full_width_mm: float) -> float:
