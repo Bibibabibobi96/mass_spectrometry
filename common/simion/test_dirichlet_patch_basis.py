@@ -19,6 +19,35 @@ BUILDER = Path(__file__).with_name("build_dirichlet_patch_basis.lua")
 GEM2PA = Path(__file__).with_name("run_gem2pa.ps1")
 
 
+# Installed SIMION documentation Issue468; this test run-control is explicit,
+# never a production/global default or a substitute for scientific assertions.
+_ASYNC_IO_PRELUDE = (
+    "local d=assert(simion.debug,'async IO debug interface unavailable'); "
+    "local before=d.allow_asynchronous_io; "
+    "assert(type(before)=='boolean','async IO flag getter unverified'); "
+    "print('ASYNC_IO_CONTROL before='..tostring(before)); io.stdout:flush(); "
+    "d.allow_asynchronous_io=false; "
+    "assert(d.allow_asynchronous_io==false,'async IO flag readback failed'); "
+    "print('ASYNC_IO_CONTROL applied=false'); io.stdout:flush()"
+)
+
+
+def _fixture_execution_command(command, *, disable_async_io):
+    """Prepare this tiny native Lua test's explicit, executable-scoped I/O mode."""
+    original = list(command)
+    if not isinstance(disable_async_io, bool):
+        raise TypeError('disable_async_io must be boolean')
+    if not disable_async_io:
+        return original
+    if not original or Path(original[0]).resolve() != SIMION.resolve():
+        raise ValueError('Explicit native I/O mode requires the configured SIMION executable')
+    if '--lua' in original:
+        raise ValueError('Explicit native I/O mode conflicts with an existing Lua prelude')
+    if original[1:4] != ['--nogui', '--noprompt', 'lua']:
+        raise ValueError('Explicit native I/O mode requires the tiny headless Lua fixture command')
+    return original[:3] + ['--lua', _ASYNC_IO_PRELUDE] + original[3:]
+
+
 def _instrument_builder(root):
     """Insert flushed observations only; removing them restores exact producer bytes."""
     original = BUILDER.read_bytes()
@@ -124,12 +153,16 @@ def _stop_timed_out_child(process, error, metadata, pending=None):
     return drained
 
 
-def run_native_fixture(command, *, root, timeout=120, observation=None):
+def run_native_fixture(command, *, root, timeout=120, observation=None, disable_async_io=False):
     """Original direct-child deadline with bounded evidence and primary preservation."""
+    original_command = list(command)
+    command = _fixture_execution_command(command, disable_async_io=disable_async_io)
     evidence_root = Path(tempfile.gettempdir()) / 'oatof_fixture_diagnostics'
     evidence_root.mkdir(parents=True, exist_ok=True)
     destination = Path(tempfile.mkdtemp(prefix='dirichlet-', dir=evidence_root))
-    metadata = dict(command=list(command), observation=observation, timeout_seconds=timeout,
+    metadata = dict(command=list(command), original_command=original_command, observation=observation,
+                    io_mode='explicit_async_disabled' if disable_async_io else 'installed_default_unmodified',
+                    control_lua_prelude=_ASYNC_IO_PRELUDE if disable_async_io else None, timeout_seconds=timeout,
                     cwd=str(ROOT), started_monotonic=time.monotonic(), secondary_errors=[],
                     scope='tiny_native_fixture', evidence_directory=str(destination))
     stdout = stderr = b''
@@ -226,9 +259,9 @@ class DirichletPatchBasisTest(unittest.TestCase):
                     command[4] = str(observed)
                     observation.update(identity)
                     return run_native_fixture(command, root=Path(directory), timeout=120,
-                                              observation=observation).stdout
+                                              observation=observation, disable_async_io=True).stdout
         return run_native_fixture(command, root=root if owned else None, timeout=120,
-                                  observation=observation).stdout
+                                  observation=observation, disable_async_io=True).stdout
 
     def test_native_10000_v_donor_is_not_rescaled(self) -> None:
         with tempfile.TemporaryDirectory(prefix="simion-dirichlet-patch-") as directory:

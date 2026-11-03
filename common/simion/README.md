@@ -21,7 +21,21 @@ Repository 与相关 Changed 选择保留相同六项，普通软件组不重复
 此修复不更改 Refine 公式、默认精度或把历史偶发超时宣称为已证明根因。
 本机经上述公共重型许可执行原六项后，两项成功、四项在原120秒截止超时：
 一项最后到达首次 `target:save`，另三项最后到达 `target:open`，不能统称Refine超时。
-四个子进程均确认退出并保留小现场；该负结果仍阻止完整软件验收，资源接线修复不抵消它。
+四个子进程均确认退出并保留小现场；该轮负结果保留，资源接线修复不抵消它。
+
+
+微型GATE的PA Lua执行现显式请求官方debug I/O模式 `simion.debug.allow_asynchronous_io=false`，
+CLI prelude核验原boolean值、false读回并flush记录；只允许配置的真实SIMION可执行路径，
+既有prelude冲突或能力未知均拒绝。此参数由原类helper显式传入，公共fixture helper默认不变，
+Python／PowerShell合成夹具及外层default-vs-false诊断不被自动改写。原六个科学方法正文、输入、
+120秒、Refine默认及生产builder不改；直接GEM2PA与parent-refine CLI也不改。
+依据为SIMION2020官方[Issue468](https://simion.com/issue/468)的异步PA I/O排错开关；
+当前8.2.0.11单baseline在该模式下完成196节点保存／关闭／重开严格对照，未新增Refine/Fly。
+原六项使用该模式实际复验通过（7.949秒、无skip）；同轮公共Owner `common/simion` 为
+6 PASS／34 NOT_APPLICABLE，公开167.947秒。普通软件组另有364项、其中6项原opt-in跳过，
+与原六项真实原生通过分别记录；先前四项负结果保留，完整Repository验收仍须另行完成。
+这只是具名微型测试执行模式，不是物理修复或全仓／生产异步I/O政策。未来更换或退出需按实际版本，
+在支持的替代／默认模式下保原六项断言和截止复验及196节点对照；getter读回不能代替资格，未知能力不得静默通过。
 
 ## 按任务导航
 

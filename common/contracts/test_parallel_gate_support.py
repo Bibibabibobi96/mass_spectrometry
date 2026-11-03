@@ -72,6 +72,37 @@ Invoke-ResolvedGateStage -RepoRoot {quote(ROOT)} -Stage native -RequestPath {quo
 """
             self.assertIn('NATIVE_WORKER_TRANSPORT=PASS', self.run_script(script).stdout)
 
+    def test_native_fixture_io_mode_is_explicit_and_executable_scoped(self):
+        from unittest.mock import Mock, patch
+        from common.simion import test_dirichlet_patch_basis as fixture
+        native = [str(fixture.SIMION), '--nogui', '--noprompt', 'lua', 'owned.lua', 'same-input']
+        self.assertEqual(fixture._fixture_execution_command(native, disable_async_io=False), native)
+        actual = fixture._fixture_execution_command(native, disable_async_io=True)
+        self.assertEqual(actual[:3] + actual[5:], native)
+        self.assertEqual(actual[3:5], ['--lua', fixture._ASYNC_IO_PRELUDE])
+        for command in ([sys.executable, '-c', 'pass'], ['pwsh', '-Command', 'exit 0'],
+                        [str(Path(tempfile.gettempdir()) / 'simion.exe'), 'lua', 'owned.lua']):
+            self.assertEqual(fixture._fixture_execution_command(command, disable_async_io=False), command)
+            with self.assertRaisesRegex(ValueError, 'configured SIMION'):
+                fixture._fixture_execution_command(command, disable_async_io=True)
+        with self.assertRaisesRegex(ValueError, 'conflicts'):
+            fixture._fixture_execution_command(actual, disable_async_io=True)
+        with tempfile.TemporaryDirectory() as directory:
+            process = Mock(pid=123, returncode=0)
+            process.poll.return_value = 0
+            process.communicate.return_value = (b'ASYNC_IO_CONTROL applied=false', b'')
+            process._handle = 123
+            with patch.object(fixture.subprocess, 'Popen', return_value=process) as launch, \
+                    patch.object(fixture.fixture_process, '_creation_filetime', return_value=123), \
+                    patch.object(fixture, '_save_native_evidence') as save:
+                fixture.run_native_fixture(native, root=Path(directory), disable_async_io=True)
+            self.assertEqual(launch.call_args.args[0], actual)
+            metadata = save.call_args.args[2]
+            self.assertEqual(metadata['original_command'], native)
+            self.assertEqual(metadata['command'], actual)
+            self.assertEqual(metadata['io_mode'], 'explicit_async_disabled')
+            self.assertEqual(metadata['control_lua_prelude'], fixture._ASYNC_IO_PRELUDE)
+
     def test_native_fixture_checkpoint_and_timeout_primary_evidence(self):
         from unittest.mock import Mock, patch
         from common.simion import test_dirichlet_patch_basis as fixture
