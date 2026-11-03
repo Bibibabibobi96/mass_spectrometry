@@ -340,7 +340,11 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         composition_plan = json.loads((
             PROJECT.parent.parent / "integrations/config/recipes/oa_mr_two_zone_gap30_plan.json"
         ).read_text(encoding="utf-8"))
-        origin = resolve_accelerator_iob_origin(contract, provider_plan, composition_plan)
+        from projects.orthogonal_accelerator.analysis.assembly_interface import resolve_assembly_interface
+        with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry.resolve_oa_assembly_interface",
+                   wraps=resolve_assembly_interface) as publisher:
+            origin = resolve_accelerator_iob_origin(contract, provider_plan, composition_plan)
+        self.assertEqual(publisher.call_args.kwargs["schema_version"], 1)
         self.assertEqual(origin, (0.0, -72.25, -6.0))
         resolved = resolve_geometry(contract)
         prism2 = next(item for item in resolved["prism_ground_shields"] if item["station"] == "central_ground_left")
@@ -348,6 +352,19 @@ class SimionCandidateReferenceTest(unittest.TestCase):
 
         frozen = json.dumps(composition_plan, sort_keys=True)
         direct = resolve_oa_mr_direct_pose(provider_plan, composition_plan)
+        current_oa = resolve_assembly_interface(provider_plan["requirements"],
+            geometry_profile_id=provider_plan["layout"]["geometry_profile_id"])
+        self.assertEqual(current_oa["schema_version"], 3)
+        self.assertEqual(composition_plan["schema_version"], 3)
+        self.assertEqual(composition_plan["components"][direct["oa_instance_id"]]["schema_version"], 1)
+        mixed_version = copy.deepcopy(composition_plan)
+        mixed_version["components"][direct["oa_instance_id"]] = current_oa
+        with self.assertRaisesRegex(ValueError, "one explicit supported component interface version"):
+            resolve_oa_mr_direct_pose(provider_plan, mixed_version)
+        unknown_version = copy.deepcopy(composition_plan)
+        unknown_version["components"][direct["oa_instance_id"]]["schema_version"] = 999
+        with self.assertRaisesRegex(ValueError, "unsupported component interface version"):
+            resolve_oa_mr_direct_pose(provider_plan, unknown_version)
         self.assertEqual(direct["oa_translation_mm"], (0., -55., -6.))
         self.assertEqual(direct["exit_project_mm"], (0., -55., 0.))
         legacy = copy.deepcopy(composition_plan)

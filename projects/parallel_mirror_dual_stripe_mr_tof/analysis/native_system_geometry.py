@@ -443,8 +443,10 @@ def resolve_accelerator_iob_origin(
     requirements = provider_plan.get("requirements")
     if not isinstance(requirements, dict):
         raise CandidateContractError("provider plan lacks compiled two-zone requirements")
+    # This deployed MR renderer consumes component1/plan3, not the OA
+    # publisher's current scientific-group default.
     actual_oa = resolve_oa_assembly_interface(
-        requirements, geometry_profile_id=layout.get("geometry_profile_id"),
+        requirements, geometry_profile_id=layout.get("geometry_profile_id"), schema_version=1,
     )
     declared_frame = direct_pose["resolved_plan"]["components"][direct_pose["oa_instance_id"]]["local_frame_id"]
     if declared_frame == "accelerator_centered_transverse_local_z_mm":

@@ -137,6 +137,11 @@ MR几何、网格、源和科学诊断保持提供者局部frame，父装配映�
 建立新campaign，保留原记录。完成／中断／重试、精确K的OA provider复用及原有工作点恢复规则继续生效。
 轻量回归运行真实默认condition至输入冻结边界，并在首个物理阶段前停止；这不新增原生飞行或Formal资格。
 
+OA→MR旧renderer的`native_system_geometry.resolve_accelerator_iob_origin`显式请求OA component1，
+校验已部署plan3中的原整数电极表；OA当前component3默认保持，混版与未知版本继续拒绝。
+该具名旧消费边界由MR所有者最迟P4随MR科学组／后端迁移退出，不转换或改写旧父plan。
+本次软件修复保留原端面、frame、相对旋转、间隙及输入字节检查，不新增原生或几何资格。
+
 当前OA renderer要求OA相对MR的旋转为identity；父装配共同平移／旋转的支持范围按实际冻结对照判定。
 IP路径保留native轴置换限制，不能据共同刚体回归声称任意相对角、任意多IP／MR拓扑可用。
 真实端面、截面及电极表来自提供者；MR完整组件视图包含镜、Stripe、Prism、屏蔽和detector的20个物理电极身份，
