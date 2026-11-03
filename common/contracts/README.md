@@ -105,8 +105,10 @@ RF finite COMSOL 的[正常无碰撞入口](../../projects/rf_multipole_ion_opti
 迁移不减少全仓断言或改变生产恢复行为，也不把测试归属调整当作全仓提速证据。
 
 受控测试进程的唯一ACK／Job归属与超时证据实现位于
-[`test_support/fixture_process.py`](test_support/fixture_process.py)，由公共owner与oaTOF补偿测试复用。
-继承授权测试显式启用阶段时间线和小输入／状态保全，仍使用原90秒期限；普通fixture调用保持原行为。
+[`test_support/fixture_process.py`](test_support/fixture_process.py)，由公共owner、oaTOF补偿、prepared-joint及RF冷提取测试复用。
+各调用保留自己的原期限（分别90、30、45、300秒），按需要保存阶段时间线和具名小输入／状态。
+成功返回后保留Job原始成员观测；只有原Popen句柄零等待已确认退出、PID和创建身份均匹配的根进程
+才可从剩余子进程判定中排除。其他子进程、不同创建身份及退出观测失败仍失败关闭，不按PID重新打开进程。
 超时保留原始输出与主异常，仅清理已确认归属的合成进程树；这不是生产求解器的终止策略。
 
 owner从live公共`Resolve-HostResourceStatePath`取得实际控制面路径（保留既有显式覆盖），通过

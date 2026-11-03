@@ -518,6 +518,93 @@ if($env:FIXTURE_MODE-eq'producer_failure'){throw 'PRODUCER_ORIGINAL_SENTINEL'}
         self.assertEqual(len(completed["facts"]["operations"]), 4)
         self.assertEqual(len(completed["facts"]["resource_releases"]), 1)
 
+    def test_exited_root_filter_keeps_children_and_unknown_identities(self):
+        root = dict(pid=4520, creation_filetime_100ns=123)
+        child = dict(pid=9000, creation_filetime_100ns=456)
+        cases = [
+            ([root], True, []),
+            ([root], False, [root]),
+            ([root, child], True, [child]),
+            ([dict(root, creation_filetime_100ns=124)], True,
+             [dict(root, creation_filetime_100ns=124)]),
+            ([dict(pid=4520)], True, [dict(pid=4520)]),
+        ]
+        for rows, exited, expected in cases:
+            with self.subTest(rows=rows, exited=exited):
+                self.assertEqual(fixture_process._exclude_exited_root(
+                    rows, root_pid=4520, root_creation=123, root_exited=exited), expected)
+
+    @unittest.skipUnless(os.name == "nt", "Windows Job ownership contract")
+    def test_retained_exited_root_does_not_replace_real_producer_assertions(self):
+        import win32event
+
+        original_wait = win32event.WaitForSingleObject
+        original_popen = subprocess.Popen
+        original_rows = fixture_process._job_processes
+        processes = []
+        observations = []
+
+        def capture_process(*args, **kwargs):
+            process = original_popen(*args, **kwargs)
+            processes.append(process)
+            return process
+
+        def include_retained_root(job):
+            rows = original_rows(job)
+            process = processes[-1]
+            self.assertIsNotNone(process.returncode)
+            self.assertEqual(original_wait(process._handle, 0), win32event.WAIT_OBJECT_0)
+            row = dict(pid=process.pid,
+                       creation_filetime_100ns=fixture_process._creation_filetime(int(process._handle)))
+            observations.append(row)
+            return [*rows, row] if row not in rows else rows
+
+        with patch.object(fixture_process.subprocess, "Popen", side_effect=capture_process), patch.object(
+                fixture_process, "_job_processes", side_effect=include_retained_root):
+            # Root classification wiring only; the original method covers all producer modes.
+            result, events, completed = self.run_fixture("producer_reuse")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(completed["status"], "success")
+            self.assertTrue(completed["writers_stopped"])
+            self.assertEqual(completed["facts"], dict(resource_releases=[], operations=[]))
+            self.assertNotIn("lease", events)
+            metadata = json.loads((Path(result.fixture_diagnostics) / "diagnostics.json").read_text())
+            self.assertTrue(metadata["root_exit_confirmed"])
+            self.assertEqual(metadata["observed_job_processes_after_return"], observations)
+            self.assertEqual(metadata["remaining_job_processes"], [])
+        self.assertEqual(len(observations), 1)
+        self.assertTrue(all(row["creation_filetime_100ns"] > 0 for row in observations))
+        for value, error in ((win32event.WAIT_TIMEOUT, None), (None, OSError("WAIT_OBSERVATION_FAILED"))):
+            with self.subTest(wait_result=value, error=repr(error)), patch.object(
+                    fixture_process.subprocess, "Popen", side_effect=capture_process), patch.object(
+                    fixture_process, "_job_processes", side_effect=include_retained_root), patch.object(
+                    win32event, "WaitForSingleObject", return_value=value, side_effect=error):
+                expected = OSError if error else RuntimeError
+                with self.assertRaises(expected):
+                    self.run_fixture("producer_reuse")
+        self.assertEqual(len(processes), 3, "One actual case and two exit-observation negatives")
+
+    @unittest.skipUnless(os.name == "nt", "Windows Job ownership contract")
+    def test_successful_root_with_actual_live_child_is_rejected_and_cleaned(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            program = ("import json,subprocess,sys;from pathlib import Path;"
+                       "assert sys.stdin.buffer.readline()==b'fixture-owned-start\\n';"
+                       "p=subprocess.Popen([sys.executable,'-c','import time;time.sleep(60)'],"
+                       "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);"
+                       "Path('child.json').write_text(json.dumps({'pid':p.pid}));")
+            with self.assertRaisesRegex(RuntimeError, "live descendant") as caught:
+                fixture_process.run_fixture_process([sys.executable, "-c", program], root=root,
+                    environment=dict(os.environ), mode="actual-live-child", timeout=30, diagnostics_root=root)
+            metadata = caught.exception.fixture_metadata
+            child = json.loads((Path(caught.exception.fixture_diagnostics) / "child.json").read_text())
+            self.assertEqual(metadata["returncode"], 0)
+            self.assertTrue(metadata["root_exit_confirmed"])
+            self.assertIn(child["pid"], [row["pid"] for row in metadata["job_processes_at_failure"]])
+            self.assertNotEqual(child["pid"], metadata["root_pid"])
+            self.assertEqual(metadata["remaining_job_processes"], [])
+            self.assertEqual(metadata["secondary_errors"], [])
+
     @unittest.skipUnless(os.name == "nt", "Windows Job ownership contract")
     def test_timeout_retains_raw_bytes_events_and_only_stops_its_fixture_tree(self):
         with tempfile.TemporaryDirectory() as directory:

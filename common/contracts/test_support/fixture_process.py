@@ -48,6 +48,16 @@ def _job_processes(job) -> list[dict]:
     return rows
 
 
+def _exclude_exited_root(rows: list[dict], *, root_pid: int,
+                         root_creation: int, root_exited: bool) -> list[dict]:
+    """Only the exact retained, confirmed-exited root is not a descendant."""
+    return [row for row in rows if not (
+        root_exited
+        and row.get("pid") == root_pid
+        and row.get("creation_filetime_100ns") == root_creation
+    )]
+
+
 def _save_evidence(destination: Path, root: Path, metadata: dict, stdout: bytes, stderr: bytes,
                    drained_stdout: bytes | None, drained_stderr: bytes | None) -> None:
     """Save small named fixture records before their TemporaryDirectory exits."""
@@ -116,7 +126,17 @@ def run_fixture_process(command: list[str], *, root: Path, environment: dict[str
         stdout, stderr = process.communicate(ACK, timeout=timeout)
         metadata["returncode"] = process.returncode
         if job is not None:
-            metadata["remaining_job_processes"] = _job_processes(job)
+            import win32event
+
+            observed = _job_processes(job)
+            metadata["observed_job_processes_after_return"] = observed
+            # Popen retains this original process handle; never reopen by PID.
+            root_exited = (process.returncode is not None and
+                           win32event.WaitForSingleObject(process._handle, 0) == win32event.WAIT_OBJECT_0)
+            metadata["root_exit_confirmed"] = root_exited
+            metadata["remaining_job_processes"] = _exclude_exited_root(
+                observed, root_pid=process.pid,
+                root_creation=metadata["root_creation_filetime_100ns"], root_exited=root_exited)
             if metadata["remaining_job_processes"]:
                 raise RuntimeError("Synthetic fixture returned with a live descendant")
     except BaseException as error:
