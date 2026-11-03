@@ -56,6 +56,9 @@ RF完整17列事件协议已迁至`analysis.rf_event_table_validation.validate_r
 当前公共observer的唯一函数正文增加采样、活跃判定、usage更新、等待前后及原句柄零等待退出观测；
 副本、差异与来源SHA随小诊断保存，watchdog记录最多4096行／1 MiB。StrictMode下实际自检日志、
 容量边界和诊断失败保全，不修改公共watchdog或启动真实COMSOL；本机PASS不作为旧超时根治或性能证明。
+`99f5a6b4`远端四路RF Owner完成13 PASS／30 NOT_APPLICABLE：843个父方法中840成功、3跳过，
+另577个subtest，公开墙钟612.462秒。冷提取方法18.922秒成功并保留110条watchdog记录，
+两次实际等待与最终usage更新均有前后记录，无实际诊断次错；该轮未复现原卡住，不据此确定根因。
 
 正常接口 V4 before `20261031_085000__test__comsol__rf-interface-hmin-before` 在网格配置阶段因冻结包缺少 typed Size reader 中止，外层72.637秒，未求场或粒子。interface 与 mass-filter 的正式冻结清单已加入原公共 reader；实际冻结包、移除活动源码和缺依赖拒绝回归2项7场景通过（当前工作树6.065秒）。原失败记录保留，后续新身份 V5 正常求解仍待验收；该软件闭包修复不是求解或科学通过。
 
