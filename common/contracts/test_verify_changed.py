@@ -574,6 +574,8 @@ exit 0
         for path in ("common/host_resource_python.py", "common/host_resource_python.ps1",
                      "common/test_host_resource_python.py"):
             expected = {stage}
+            if path in ("common/host_resource_python.py", "common/host_resource_python.ps1"):
+                expected.add("simion_dirichlet_native")
             if path == "common/host_resource_python.py":
                 expected.add("instrument_assembly_integration")
             self.assertEqual(set(self.routed_stages(path)), expected, path)

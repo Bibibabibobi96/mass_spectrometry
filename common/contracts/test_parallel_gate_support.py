@@ -1535,7 +1535,8 @@ try {{
         with tempfile.TemporaryDirectory(prefix="python_partition_contract_") as directory:
             root=Path(directory); common=root/"common"; (common/"contracts").mkdir(parents=True)
             (root/"projects").mkdir(); (root/"integrations").mkdir()
-            shutil.copyfile(ROOT/"common/gate_catalog_support.ps1",common/"gate_catalog_support.ps1")
+            for name in ("gate_catalog_support.ps1", "parallel_gate_support.ps1"):
+                shutil.copyfile(ROOT / "common" / name, common / name)
             route=dict(stage="fixture",owner="fixture",dependency_profile="locked",repository_integration_group="regression",
                 matches=[dict(prefix="common/contracts/",reason="fixture")],
                 command=dict(runner="python",arguments=["-m","unittest","discover","-s","common/contracts","-p","test_*.py"]),
