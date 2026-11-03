@@ -80,6 +80,10 @@ class SharedTimeDisplaySelectionTests(unittest.TestCase):
         frame = pd.DataFrame([dict(requested_time_us=1., z_mm=32., x_mm=0., y_mm=-50.)])
         for three_zone in (False, True):
             frontend = geometry_frontend(three_zone=three_zone)
+            if not three_zone:
+                self.assertEqual(frontend["accelerator_local_region"]["planes"], dict(repeller=0., grid1=-4., exit=-34.))
+                self.assertEqual(frontend["guide_exit_center_mm"], dict(x=0, y=-18, z=-2))
+                self.assertEqual(frontend["accelerator_local_region"]["port"]["center_mm"], [0., -16.5, -2.])
             before = copy.deepcopy(frontend)
             figure, axes = build_local_shared_time_figure(
                 frame, [self.counts(1)], frame_id="mrtof_global_cartesian", frontend_contract=frontend,
