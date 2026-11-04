@@ -69,6 +69,42 @@ class ComponentParticleStateTests(unittest.TestCase):
         direct.rows[0]["particle_weight"] = 2.
         self.assertEqual(typed["particle_weight"], 1.)
 
+    def test_all_typed_integer_fields_reject_float_bool_string_and_illegal_null(self) -> None:
+        for field in ("particle_id", "parent_particle_id", "generation", "charge_state"):
+            for value in (7.0, 7.5, True, False, "7", "", None):
+                if field == "parent_particle_id" and value is None:
+                    continue
+                with self.subTest(field=field, value=value, type=type(value).__name__):
+                    row = dict(valid_row(), parent_particle_id=None)
+                    row[field] = value
+                    with self.assertRaisesRegex(ValueError, field + " must be a typed integer"):
+                        validate_component_particle_state_rows([row])
+        row = dict(valid_row(), parent_particle_id=None)
+        del row["particle_id"]
+        with self.assertRaisesRegex(ValueError, "required property"):
+            validate_component_particle_state_rows([row])
+
+    def test_typed_sparse_large_and_descendant_integers_round_trip_exactly(self) -> None:
+        import copy
+
+        large = 2 ** 60 + 17
+        rows = [dict(valid_row(91), parent_particle_id=None),
+                dict(valid_row(large), parent_particle_id=91, generation=1)]
+        original = copy.deepcopy(rows)
+        validated = validate_component_particle_state_rows(rows)
+        write_component_particle_state_csv(self.path, validated.rows)
+        parsed = load_component_particle_state_csv(self.path)
+        self.assertEqual(validated, parsed)
+        self.assertEqual(rows, original)
+        self.assertEqual([row["particle_id"] for row in parsed.rows], [91, large])
+        for row in parsed.rows:
+            for field in ("particle_id", "generation", "charge_state"):
+                self.assertIs(type(row[field]), int)
+            if row["parent_particle_id"] is not None:
+                self.assertIs(type(row["parent_particle_id"]), int)
+        validated.rows[1]["generation"] = 3
+        self.assertEqual(rows[1]["generation"], 1)
+
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.path = Path(self.temporary_directory.name) / "state.csv"

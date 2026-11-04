@@ -212,6 +212,12 @@ def _validate_component_particle_state_rows(
     epochs: set[str] = set()
     for row_number, source in enumerate(input_rows, start=2):
         row = dict(source)
+        for field in INTEGER_FIELDS & row.keys():
+            value = row[field]
+            if field == "parent_particle_id" and value is None:
+                continue
+            if type(value) is not int:
+                raise ValueError(f"row {row_number} field {field} must be a typed integer")
         for field in NUMBER_FIELDS:
             value = row.get(field)
             if value is not None and (type(value) not in (int, float) or not math.isfinite(value)):
