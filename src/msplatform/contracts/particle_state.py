@@ -191,51 +191,53 @@ class ComponentParticleStateTable:
     report: dict[str, Any]
 
 
-def load_component_particle_state_csv(path: Path) -> ComponentParticleStateTable:
-    """Read and validate once, returning typed rows and a compact identity report.
+def validate_component_particle_state_rows(
+    rows: Iterable[Mapping[str, Any]],
+) -> ComponentParticleStateTable:
+    """Validate typed CSV1 rows without writing or reading a state file.
 
-    Version 1 is a transfer-state table: each particle ID appears exactly once.
-    Device-specific event details belong in separate tables joined by
-    ``particle_id`` and must not be appended to this exact CSV schema.
+    Bundled schema loading is read-only. Returned dictionaries are independent
+    copies; this remains a nonempty, one-transfer-per-particle table.
     """
-    schema = load_schema()
-    expected_columns = list(schema["x-csv-column-order"])
+    return _validate_component_particle_state_rows(rows, load_schema())
+
+
+def _validate_component_particle_state_rows(
+    input_rows: Iterable[Mapping[str, Any]], schema: dict[str, Any],
+) -> ComponentParticleStateTable:
     validator = Draft202012Validator(schema)
     rows: list[dict[str, Any]] = []
     particle_ids: set[int] = set()
     frames: set[str] = set()
     epochs: set[str] = set()
-    with path.open(encoding="utf-8-sig", newline="") as handle:
-        reader = csv.DictReader(handle)
-        if reader.fieldnames != expected_columns:
+    for row_number, source in enumerate(input_rows, start=2):
+        row = dict(source)
+        for field in NUMBER_FIELDS:
+            value = row.get(field)
+            if value is not None and (type(value) not in (int, float) or not math.isfinite(value)):
+                raise ValueError(f"row {row_number} field {field} must be finite")
+        errors = sorted(validator.iter_errors(row), key=lambda item: list(item.path))
+        if errors:
+            location = ".".join(str(item) for item in errors[0].path)
             raise ValueError(
-                f"component particle-state columns differ: {reader.fieldnames}; "
-                f"expected {expected_columns}"
+                f"row {row_number} field {location or '<row>'}: {errors[0].message}"
             )
-        for row_number, raw_row in enumerate(reader, start=2):
-            row = _parse_row(raw_row, row_number)
-            errors = sorted(validator.iter_errors(row), key=lambda item: list(item.path))
-            if errors:
-                location = ".".join(str(item) for item in errors[0].path)
-                raise ValueError(
-                    f"row {row_number} field {location or '<row>'}: {errors[0].message}"
-                )
-            particle_id = row["particle_id"]
-            if particle_id in particle_ids:
-                raise ValueError(f"duplicate particle_id: {particle_id}")
-            particle_ids.add(particle_id)
-            _validate_lineage(row, row_number)
-            _validate_clock(row, row_number)
-            _validate_derived_quantities(row, row_number)
-            PhaseSpaceState(
-                frame_id=row["frame_id"],
-                position_mm=tuple(row[f"position_{axis}_mm"] for axis in "xyz"),
-                velocity_m_s=tuple(row[f"velocity_{axis}_m_s"] for axis in "xyz"),
-                instrument_time_us=row["instrument_time_us"],
-            )
-            frames.add(row["frame_id"])
-            epochs.add(row["clock_epoch_id"])
-            rows.append(row)
+        particle_id = row["particle_id"]
+        if particle_id in particle_ids:
+            raise ValueError(f"duplicate particle_id: {particle_id}")
+        particle_ids.add(particle_id)
+        _validate_lineage(row, row_number)
+        _validate_clock(row, row_number)
+        _validate_derived_quantities(row, row_number)
+        PhaseSpaceState(
+            frame_id=row["frame_id"],
+            position_mm=tuple(row[f"position_{axis}_mm"] for axis in "xyz"),
+            velocity_m_s=tuple(row[f"velocity_{axis}_m_s"] for axis in "xyz"),
+            instrument_time_us=row["instrument_time_us"],
+        )
+        frames.add(row["frame_id"])
+        epochs.add(row["clock_epoch_id"])
+        rows.append(row)
     if not rows:
         raise ValueError("component particle-state CSV must contain at least one row")
 
@@ -249,6 +251,21 @@ def load_component_particle_state_csv(path: Path) -> ComponentParticleStateTable
         "clock_epoch_ids": sorted(epochs),
     }
     return ComponentParticleStateTable(rows=rows, report=report)
+
+
+def load_component_particle_state_csv(path: Path) -> ComponentParticleStateTable:
+    """Read CSV1 and use the same typed-row validator as in-memory handoffs."""
+    schema = load_schema()
+    expected_columns = list(schema["x-csv-column-order"])
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        if reader.fieldnames != expected_columns:
+            raise ValueError(
+                f"component particle-state columns differ: {reader.fieldnames}; "
+                f"expected {expected_columns}"
+            )
+        return _validate_component_particle_state_rows(
+            (_parse_row(row, number) for number, row in enumerate(reader, start=2)), schema)
 
 
 def validate_component_particle_state_csv(path: Path) -> dict[str, Any]:

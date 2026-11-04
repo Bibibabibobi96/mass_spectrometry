@@ -21,6 +21,7 @@ from common.contracts.file_identity import (
 )
 from common.contracts import write_formal_asset_manifest, write_run_manifest
 from common.contracts import file_identity
+from msplatform.execution import file_identity as execution_file_identity
 
 
 def legacy_sha256(path: Path) -> str:
@@ -71,7 +72,7 @@ class FileIdentityTest(unittest.TestCase):
             path.write_bytes(b"fixture")
             for stage in ("GetFileSizeEx", "GetFileInformationByHandleEx", "VirtualAlloc", "ReadFile", "short_read", "digest"):
                 with self.subTest(stage=stage):
-                    api = file_identity._windows_file_api()
+                    api = execution_file_identity._windows_file_api()
                     wrapped = mock.Mock(wraps=api)
                     if stage == "short_read":
                         wrapped.ReadFile.return_value = 1
@@ -80,9 +81,9 @@ class FileIdentityTest(unittest.TestCase):
                             ctypes.set_last_error(5)
                             return 0
                         getattr(wrapped, stage).side_effect = fail
-                    with mock.patch.object(file_identity, "_windows_file_api", return_value=wrapped):
+                    with mock.patch.object(execution_file_identity, "_windows_file_api", return_value=wrapped):
                         if stage == "digest":
-                            with mock.patch.object(file_identity.hashlib, "sha256", side_effect=RuntimeError("digest failure")):
+                            with mock.patch.object(execution_file_identity.hashlib, "sha256", side_effect=RuntimeError("digest failure")):
                                 with self.assertRaisesRegex(RuntimeError, "digest failure"):
                                     file_sha256_unbuffered(path)
                         else:
@@ -98,7 +99,7 @@ class FileIdentityTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "protected.bin"
             path.write_bytes(b"fixture")
-            api = file_identity._windows_file_api()
+            api = execution_file_identity._windows_file_api()
             wrapped = mock.Mock(wraps=api)
 
             def read(*args):
@@ -109,7 +110,7 @@ class FileIdentityTest(unittest.TestCase):
                 return api.ReadFile(*args)
 
             wrapped.ReadFile.side_effect = read
-            with mock.patch.object(file_identity, "_windows_file_api", return_value=wrapped):
+            with mock.patch.object(execution_file_identity, "_windows_file_api", return_value=wrapped):
                 self.assertEqual(file_sha256_unbuffered(path), hashlib.sha256(b"fixture").hexdigest().upper())
             with path.open("r+b"):
                 with self.assertRaises(OSError):
@@ -120,7 +121,7 @@ class FileIdentityTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "owned.bin"
             path.write_bytes(b"fresh-output")
-            with mock.patch.object(file_identity, "file_sha256", wraps=file_sha256) as establish:
+            with mock.patch.object(execution_file_identity, "file_sha256", wraps=file_sha256) as establish:
                 with file_identity.guarded_file_identity(path) as guard:
                     self.assertEqual(guard.bytes_count, len(b"fresh-output"))
                     self.assertEqual(guard.sha256, hashlib.sha256(b"fresh-output").hexdigest().upper())
@@ -135,7 +136,7 @@ class FileIdentityTest(unittest.TestCase):
 
     @unittest.skipUnless(os.name == "nt", "requires Windows write exclusion")
     def test_owned_producer_expected_identity_must_be_supplied_as_a_pair(self) -> None:
-        with mock.patch.object(file_identity, "_windows_file_api") as native:
+        with mock.patch.object(execution_file_identity, "_windows_file_api") as native:
             for arguments in ({"expected_bytes": 0}, {"expected_sha256": "0" * 64}):
                 with self.subTest(arguments=arguments), self.assertRaisesRegex(ValueError, "supplied together"):
                     with file_identity.guarded_file_identity("unused", **arguments):
@@ -150,7 +151,7 @@ class FileIdentityTest(unittest.TestCase):
             path.write_bytes(b"fixture")
             replacement.write_bytes(b"replace")
             digest = legacy_sha256(path)
-            with mock.patch.object(file_identity, "file_sha256", wraps=file_sha256) as hash_once:
+            with mock.patch.object(execution_file_identity, "file_sha256", wraps=file_sha256) as hash_once:
                 with file_identity.guarded_file_identity(path, expected_bytes=7, expected_sha256=digest) as guard:
                     self.assertEqual(path.read_bytes(), b"fixture")
                     with self.assertRaises(OSError):
@@ -183,7 +184,7 @@ class FileIdentityTest(unittest.TestCase):
                         with file_identity.guarded_file_identity(path, expected_bytes=size, expected_sha256=sha):
                             self.fail("invalid identity was yielded")
                     path.write_bytes(b"fixture")
-            with mock.patch.object(file_identity, "file_sha256", side_effect=RuntimeError("hash failed")):
+            with mock.patch.object(execution_file_identity, "file_sha256", side_effect=RuntimeError("hash failed")):
                 with self.assertRaisesRegex(RuntimeError, "hash failed"):
                     with file_identity.guarded_file_identity(path, expected_bytes=7, expected_sha256=digest):
                         self.fail("hash failure was yielded")
@@ -200,8 +201,8 @@ class FileIdentityTest(unittest.TestCase):
                         self.fail("existing writer must block guard")
 
     def test_guarded_identity_non_windows_fails_without_hashing(self) -> None:
-        with mock.patch.object(file_identity.os, "name", "posix"):
-            with mock.patch.object(file_identity, "file_sha256") as hash_file:
+        with mock.patch.object(execution_file_identity.os, "name", "posix"):
+            with mock.patch.object(execution_file_identity, "file_sha256") as hash_file:
                 with self.assertRaisesRegex(OSError, "Windows write exclusion"):
                     with file_identity.guarded_file_identity("unused", expected_bytes=0, expected_sha256="0" * 64):
                         self.fail("unsupported guard was yielded")

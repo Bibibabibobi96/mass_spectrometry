@@ -13,6 +13,7 @@ from msplatform.contracts.particle_state import (
     load_schema,
     load_component_particle_state_csv,
     validate_component_particle_state_csv,
+    validate_component_particle_state_rows,
     write_component_particle_state_csv,
 )
 from msplatform.contracts.particle_physics import kinetic_energy_ev
@@ -54,6 +55,20 @@ def valid_row(particle_id: int = 7) -> dict[str, object]:
 
 
 class ComponentParticleStateTests(unittest.TestCase):
+    def test_typed_row_validator_and_csv_share_one_contract_without_mutation(self) -> None:
+        import copy
+
+        row = valid_row(91)
+        self.write([row])
+        typed = dict(row, parent_particle_id=None)
+        before = copy.deepcopy(typed)
+        direct = validate_component_particle_state_rows([typed])
+        parsed = load_component_particle_state_csv(self.path)
+        self.assertEqual(direct, parsed)
+        self.assertEqual(typed, before)
+        direct.rows[0]["particle_weight"] = 2.
+        self.assertEqual(typed["particle_weight"], 1.)
+
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.path = Path(self.temporary_directory.name) / "state.csv"

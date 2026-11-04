@@ -22,90 +22,27 @@ from common.contracts.file_identity import (
     repository_text_sha256,
 )
 from msplatform.io.file_identity import file_sha256
+from msplatform.assembly.port_mating import (
+    _dot as _dot, _norm as _norm, _subtract as _subtract,
+    _matrix_vector as _matrix_vector, _determinant as _determinant,
+    _validate_rotation as _validate_rotation,
+    derive_direct_mating_translation as derive_direct_mating_translation,
+    derive_mating_translation_with_gap as derive_mating_translation_with_gap,
+)
 
 
-def _dot(left: list[float], right: list[float]) -> float:
-    return sum(a * b for a, b in zip(left, right, strict=True))
 
 
-def _norm(vector: list[float]) -> float:
-    return math.sqrt(_dot(vector, vector))
 
 
-def _subtract(left: list[float], right: list[float]) -> list[float]:
-    return [a - b for a, b in zip(left, right, strict=True)]
 
 
-def _matrix_vector(matrix: list[list[float]], vector: list[float]) -> list[float]:
-    return [_dot(row, vector) for row in matrix]
 
 
-def derive_direct_mating_translation(
-    rotation_upstream_to_downstream: list[list[float]],
-    upstream_center_mm: list[float],
-    downstream_center_mm: list[float],
-) -> list[float]:
-    """Return the rigid translation that makes two port centers coincide."""
-    if (
-        len(rotation_upstream_to_downstream) != 3
-        or any(len(row) != 3 for row in rotation_upstream_to_downstream)
-        or len(upstream_center_mm) != 3
-        or len(downstream_center_mm) != 3
-    ):
-        raise ContractError("direct-mating translation requires 3D rotation and centers")
-    values = [
-        float(value)
-        for row in rotation_upstream_to_downstream
-        for value in row
-    ] + [float(value) for value in upstream_center_mm + downstream_center_mm]
-    if not all(math.isfinite(value) for value in values):
-        raise ContractError("direct-mating translation inputs must be finite")
-    transformed = _matrix_vector(
-        rotation_upstream_to_downstream, list(map(float, upstream_center_mm))
-    )
-    return _subtract(list(map(float, downstream_center_mm)), transformed)
 
 
-def derive_mating_translation_with_gap(
-    rotation_upstream_to_downstream: list[list[float]],
-    upstream_center_mm: list[float],
-    upstream_outward_normal: list[float],
-    downstream_center_mm: list[float],
-    gap_mm: float,
-) -> list[float]:
-    """Return a rigid translation with a nonnegative normal gap in millimetres."""
-    direct_translation = derive_direct_mating_translation(
-        rotation_upstream_to_downstream,
-        upstream_center_mm,
-        downstream_center_mm,
-    )
-    if len(upstream_outward_normal) != 3:
-        raise ContractError("gap-mating translation requires a 3D upstream normal")
-    normal = list(map(float, upstream_outward_normal))
-    gap = float(gap_mm)
-    if not all(math.isfinite(value) for value in [*normal, gap]):
-        raise ContractError("gap-mating translation inputs must be finite")
-    if gap < 0.0:
-        raise ContractError("gap-mating translation gap must be nonnegative")
-    if not math.isclose(_norm(normal), 1.0, rel_tol=0.0, abs_tol=1e-12):
-        raise ContractError("gap-mating translation upstream normal must be a unit vector")
-    _validate_rotation(rotation_upstream_to_downstream, 1e-12)
-    transformed_normal = _matrix_vector(rotation_upstream_to_downstream, normal)
-    return [
-        value - gap * component
-        for value, component in zip(
-            direct_translation, transformed_normal, strict=True
-        )
-    ]
 
 
-def _determinant(matrix: list[list[float]]) -> float:
-    a, b, c = matrix
-    return (
-        a[0] * (b[1] * c[2] - b[2] * c[1])
-        - a[1] * (b[0] * c[2] - b[2] * c[0])
-        + a[2] * (b[0] * c[1] - b[1] * c[0])
-    )
 
 
 @dataclass(frozen=True)
@@ -220,16 +157,6 @@ def load_connection_profile_registry(path: str | Path) -> dict[str, Any]:
     return registry
 
 
-def _validate_rotation(matrix: list[list[float]], tolerance: float) -> None:
-    for row in matrix:
-        if abs(_norm(row) - 1.0) > tolerance:
-            raise ContractError("spatial registration rotation is not orthonormal")
-    for left in range(3):
-        for right in range(left + 1, 3):
-            if abs(_dot(matrix[left], matrix[right])) > tolerance:
-                raise ContractError("spatial registration rotation is not orthonormal")
-    if abs(_determinant(matrix) - 1.0) > tolerance:
-        raise ContractError("spatial registration rotation must be right-handed")
 
 
 def _validate_transition_aperture(
