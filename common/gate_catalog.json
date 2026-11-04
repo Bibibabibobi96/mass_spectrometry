@@ -936,6 +936,18 @@
               "common/contracts/test_frozen_inputs.py"
             ],
             "dependency_profile": "stdlib"
+          },
+          {
+            "matches": [
+              {
+                "regex": "^src/msplatform/(?:api\\.py|analysis/(?:trajectory|particle_census|peak_metrics)\\.py|contracts/clock\\.py)$",
+                "reason": "trajectory_analysis_contract_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_trajectory_analysis.py"
+            ],
+            "dependency_profile": "locked"
           }
         ],
         "scope": "common/contracts/"

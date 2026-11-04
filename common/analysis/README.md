@@ -22,6 +22,15 @@ print(metrics["mean_tof_us"], metrics["std_tof_ns"])
 
 均值约 10 μs、ddof=1 样本标准差约 65.574385243 ns；完整方法、权重和资格字段随 metadata 返回。
 
+`msplatform.analysis.trajectory.analyze_trajectory`将已核验观测接到同一母群计数与峰算法。
+调用者显式给出完整原母群ID、相对权重、逐ID分类、选择ID、绝对仪器时间观测和`ClockIdentity`；
+多次穿面另给`observation_id/direction/occurrence`，不会从幸存者反建母群或默认挑最后一次穿面。
+`method="census"`保留完整分母；`method="time_peak"`另须共同的`time_reference_instrument_us`，
+时间轴为观测时刻减该参考，不使用每粒子的出生或年龄。缺观测／少于三条／零时间方差明确返回
+`insufficient_observations`，非等权时间峰返回`unsupported_weight_policy`，这些情况仍保留完整加权计数。
+峰metadata与谱线来自唯一`compute_time_peak_metrics`；时间分布等效分辨率不代表质量标定或质量分辨率。
+该纯入口不读文件、不认证clock文件、不推断类别含义，也不授予收敛或科学资格；来源验证由外层负责。
+
 
 ## 按问题定位
 
