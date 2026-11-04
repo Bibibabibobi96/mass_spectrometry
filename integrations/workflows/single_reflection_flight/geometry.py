@@ -12,6 +12,7 @@ from typing import Any
 from common.contracts.rigid_transform import FramedPosition, RigidTransform, relative_transform
 from projects.rf_multipole_ion_optics.core.component_port import build_assembly_interface
 from projects.rf_multipole_ion_optics.core.electrode_topology import build_electrode_topology
+from projects.rf_multipole_ion_optics.core.face_sections import local_face_conductor_sections
 from projects.rf_multipole_ion_optics.simion.electrode_mapping import build_simion_electrode_map
 from projects.rf_multipole_ion_optics.simion.assembly_interface import build_legacy_assembly_interface
 from projects.rf_multipole_ion_optics.simion.simion_geometry import render_physical_gem
@@ -141,24 +142,12 @@ def render_frontend_domain(
 
 
 def _multipole_face_sections(resolved: dict, pose: RigidTransform, side: str) -> list[tuple]:
-    """Actual circular conductor sections at one mechanical face, in the OA frame."""
-    geometry = resolved['geometry_mm']
-    plane = geometry['enclosure_layout']['ports']['mechanical_' + side]['center_mm'][2]
-    segmented = resolved['segmentation']['segmented_rod_array']
-    rods = segmented['electrodes'] if segmented is not None else geometry['rod_array']['rods']
+    """Place provider-owned face sections in the validated OA frame, in mm."""
     sections = []
-    for rod in rods:
-        if rod['z_min_mm'] <= plane <= rod['z_max_mm']:
-            center = pose.transform_position(FramedPosition(pose.from_frame_id,
-                (rod['center_x_mm'], rod['center_y_mm'], plane))).coordinates_mm
-            electrode = rod['electrode_id'] if segmented is not None else rod['electrode_group']
-            sections.append((f'rod electrode {electrode}', center, 0., rod['radius_mm'], False))
-    ground_id = max(rod['electrode_id'] if segmented is not None else rod['electrode_group'] for rod in rods) + 1
-    for body in geometry['enclosure_layout']['bodies']:
-        if body['z_min_mm'] <= plane <= body['z_max_mm']:
-            center = pose.transform_position(FramedPosition(pose.from_frame_id, (0., 0., plane))).coordinates_mm
-            sections.append((f"{body['role']} electrode {ground_id}", center,
-                             body['inner_radius_mm'], body['outer_radius_mm'], True))
+    for section in local_face_conductor_sections(resolved, side=side):
+        center = pose.transform_position(FramedPosition(pose.from_frame_id, section.center_mm)).coordinates_mm
+        label = f'{section.role} group {section.electrode_group_id} member {section.member_ref}'
+        sections.append((label, center, section.inner_radius_mm, section.outer_radius_mm, section.is_grounded))
     return sections
 
 
@@ -179,11 +168,10 @@ def _oa_ground_face_rectangles(geometry: dict, opening: dict) -> list[tuple]:
 
 
 def _require_separate_face_conductors(upstream: str, sections: list[tuple], downstream: str,
-                                      target_sections: list[tuple] | None, oa: dict, opening: dict,
-                                      oa_ground_id: int) -> None:
+                                      target_sections: list[tuple] | None, oa: dict, opening: dict) -> None:
     """Reject actual coplanar contact of independent conductors, not a bare/gap label.
 
-    This native circular-section check is not a general collision or HV clearance certificate.
+    This circular-section check is not a general collision or HV clearance certificate.
     Grounded shells may join the grounded OA shield or another grounded shell.
     """
     for label, center, inner, outer, ground in sections:
@@ -200,7 +188,7 @@ def _require_separate_face_conductors(upstream: str, sections: list[tuple], down
                 nearest = math.hypot(max(left-y, 0., y-right), max(bottom-z, 0., z-top))
                 farthest = max(math.hypot(y-a, z-b) for a in (left,right) for b in (bottom,top))
                 if nearest <= outer and farthest >= inner:
-                    raise ValueError(f'{upstream} {label} contacts {downstream} grounded_shield electrode {oa_ground_id} at the mechanical face')
+                    raise ValueError(f'{upstream} {label} contacts {downstream} grounded shield at the mechanical face')
 
 
 def compile_frontend_geometry(
@@ -349,8 +337,7 @@ def compile_frontend_geometry(
             sections = _multipole_face_sections(multipoles_resolved[upstream], poses[upstream], 'exit')
             target_sections = (_multipole_face_sections(multipoles_resolved[target], poses[target], 'entrance')
                                if target in multipoles_resolved else None)
-            _require_separate_face_conductors(upstream, sections, target, target_sections, g, side_opening,
-                                             accelerator_electrodes['grounded_shield_id'])
+            _require_separate_face_conductors(upstream, sections, target, target_sections, g, side_opening)
     three_zone = accelerator_variant == 'three_zone_square'
     _electrodes(accelerator_electrodes, g['ring_count'], three_zone, multipole_electrodes)
     physical_multipoles = [(multipoles_resolved[instance_id], poses[instance_id].translation_mm)

@@ -43,6 +43,13 @@ P2科学电极组由`core.electrode_topology.build_electrode_topology`唯一产�
 引用真实rod、segment及壳/端盖成员和resolved驱动；分段科学ID取segment/group而不从native整数派生。
 `simion.electrode_mapping`负责SIMION本地编号与容量；旧physical_electrode_view只单向组合，
 保留旧表实际标签、原合法集合和具名消费者行为，不能把该兼容视图作为新科学身份权威。
+`core.face_sections.local_face_conductor_sections(resolved, side=...)`提供入口/出口机械面的实际圆杆及环形导体截面，
+返回不可变的本地mm坐标、半径、科学组、成员pointer、角色及已验证静态接地事实。
+成员归组只反查上述topology；RF驱动的瞬时零不代表接地，凹入杆不被补成机械端面导体。
+入口复用已有resolved3/4与axial/segment版本合同校验，只读规范schema，不采样、不写入或调用后端；
+旧格式中的native标签不参与截面身份。当前仅支持实际圆杆/圆柱壳及环形端盖，不扩展为任意截面能力。
+直接request4、旧格式置换、几何/ground反例及相邻topology/版本合同20项纯软件测试通过（2.387秒，无skip）；
+这只验证RF提供者边界，不表示组装接线、真实求场、接触工况或GUI验收已经完成。
 连续/分段/共地完整性、原标签内部置换及实际GEM/电压投影回归通过。
 公开request4/resolved4将分段物理定义与原生容量分离；request3/resolved3保留原499段协议。
 新请求的uniform/explicit 500和501段均有公开编译回归，后端按声明容量独立拒绝超限，不将它解释为物理错误。

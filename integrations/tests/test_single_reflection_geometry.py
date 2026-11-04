@@ -608,14 +608,14 @@ class SingleReflectionGeometryTests(unittest.TestCase):
         recipe['connections'][0]['gap_mm'] = 0.
         recipe['instances'][0]['transform']['translation_mm'][0] += 1.
         kw['composition_plan'] = compile_assembly_layout(recipe, kw['composition_plan']['components'])
-        with self.assertRaisesRegex(ValueError, r'multipole rod electrode \d+ contacts oatof grounded_shield electrode'):
+        with self.assertRaisesRegex(ValueError, r'multipole rod group \S+ member /\S+ contacts oatof grounded shield'):
             compile_frontend_geometry({'multipole': source}, self.oatof, **kw)
 
     def test_zero_gap_bare_rods_with_independent_drives_are_rejected(self):
         sources = [multipole_source('quadrupole'), multipole_source('quadrupole')]
         names = ['q1', 'q2']
         kw = multi_inputs(sources, self.oatof, names=names, multipole_gap_mm=0.)
-        with self.assertRaisesRegex(ValueError, r'q1 rod electrode \d+ contacts q2 rod electrode'):
+        with self.assertRaisesRegex(ValueError, r'q1 rod group \S+ member /\S+ contacts q2 rod group \S+ member /'):
             compile_frontend_geometry(dict(zip(names, sources, strict=True)), self.oatof, **kw)
 
     def test_zero_gap_distinct_size_rods_without_contact_are_allowed(self):
@@ -632,7 +632,7 @@ class SingleReflectionGeometryTests(unittest.TestCase):
             kw = multi_inputs(sources,self.oatof,names=names,multipole_gap_mm=0.)
             with self.subTest(aperture=aperture):
                 if aperture == 3.:
-                    with self.assertRaisesRegex(ValueError,r'bare rod electrode \d+ contacts housing entrance_endcap electrode'):
+                    with self.assertRaisesRegex(ValueError,r'bare rod group \S+ member /\S+ contacts housing entrance_endcap group grounded_shell member /'):
                         compile_frontend_geometry(dict(zip(names,sources,strict=True)),self.oatof,**kw)
                 else:
                     gems, _ = compile_frontend_geometry(dict(zip(names,sources,strict=True)),self.oatof,**kw)

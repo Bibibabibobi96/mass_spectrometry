@@ -7,6 +7,23 @@
 
 ## 当前边界
 
+V7有界纠正D01已完成软件验证：中立RF request4→axial3→segmented-array2没有旧native编号，原零间隙
+截面检查却在杆标签及无条件ground编号推导两处读取它；杆内缩、只有壳／端盖位于机械面也受影响。
+当前RF `core/face_sections.py::local_face_conductor_sections`从唯一科学拓扑反查真实成员所属组，
+并验证静态接地合同；SFI只做位姿变换，保留圆／环接触公式、原孔口与间隙。诊断采用实例、科学组和
+成员pointer，不向中立源补回SIMION编号。直接request4的新组件／装配链已执行实际公共prepare
+正例和真实碰撞负例，均保持原100粒子源及出生时钟。最终geometry／preparation／直接新格式三模块
+76父方法、217子测试全部success，无skip，执行66.381秒；包括双接地壳、内缩杆／端盖、非接地接触拒绝、
+native置换、实例顺序和支持的全局旋转／平移，以及原request9／plan3和连续杆路径。
+基线`cb39bc4`上的公共Changed按完整受影响owner职责执行，8路、summary墙钟956.946秒：
+13 PASS、1 FAIL、30 NOT_APPLICABLE；1300父方法中1298成功、1失败、1具名opt-in native跳过，
+1755子测试成功。四个集成分片全部PASS，实际冻结冷准备也通过；包枚举自动包含新RF模块，未手写库存。
+唯一失败为既有RF资源保护测试终止其自建测试子进程时sandbox拒绝`taskkill`；同源码方法在正常权限上下文
+4.160秒实际通过，公共许可正常释放。原失败整轮保留为FAIL，不把单项后继冒充另一轮全范围PASS；
+该轮未采集外层单调公开墙钟，956.946秒仅是summary区间，不是新的全仓性能基线。
+本纠正不改变GEM渲染、网格或驱动，不授予新的Refine／Fly、数值收敛、GUI或Formal资格。
+原P2历史及其原生结论保持下述固定范围；后续P3的安装API、几何独立输入、共同钟和分级恢复仍待实施。
+
 P2 V6单反射科学组链采用request10／component3／plan5／binding2，
 显式绑定提供者科学组到SIMION标签。具名旧request9／plan3及其原schema字节保持，
 按原协议读取，不把历史运行重释为新科学组链；软件接线与实际冻结库存已定向验证。
