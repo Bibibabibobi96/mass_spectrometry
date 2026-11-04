@@ -24,7 +24,9 @@ print(metrics["mean_tof_us"], metrics["std_tof_ns"])
 
 `msplatform.analysis.trajectory.analyze_trajectory`将已核验观测接到同一母群计数与峰算法。
 调用者显式给出完整原母群ID、相对权重、逐ID分类、选择ID、绝对仪器时间观测和`ClockIdentity`；
-多次穿面另给`observation_id/direction/occurrence`，不会从幸存者反建母群或默认挑最后一次穿面。
+观测若携带`observation_id/direction/occurrence`，即使每个ID只有一行也必须显式给出`observation_selection`，
+按同一面、方向和次数选择；不能混用事件行与已投影的ID/time行。简洁的ID/time投影入口不带selector。
+不会从幸存者反建母群或默认挑第一次／最后一次穿面；选定次数缺失仍保留原ID并报告不足，不拼入其他次数。
 `method="census"`保留完整分母；`method="time_peak"`另须共同的`time_reference_instrument_us`，
 时间轴为观测时刻减该参考，不使用每粒子的出生或年龄。缺观测／少于三条／零时间方差明确返回
 `insufficient_observations`，非等权时间峰返回`unsupported_weight_policy`，这些情况仍保留完整加权计数。

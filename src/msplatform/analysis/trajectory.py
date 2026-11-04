@@ -41,6 +41,10 @@ def _observation_rows(observations, mother, selection):
         present = event_keys & row.keys()
         if present and present != event_keys:
             raise ValueError("observation occurrence identity is incomplete")
+        if present and selection is None:
+            raise ValueError("event-bearing observations require an explicit occurrence selection")
+        if not present and selection is not None:
+            raise ValueError("explicit occurrence selection requires event identity on every observation")
         if present:
             if (not isinstance(row["observation_id"], str) or not row["observation_id"]
                     or row["direction"] not in {"outward", "inward"}
@@ -67,7 +71,9 @@ def analyze_trajectory(*, mother_particle_ids, relative_weights, classifications
     """Analyze explicit neutral observations without tools or accuracy verdicts.
 
     IDs and classifications cover the original complete mother; selected IDs
-    are caller declared, never inferred from detected survivors. Times are
+    are caller declared, never inferred from detected survivors. Event-bearing
+    rows require explicit observation_selection even with one row per ID;
+    projected ID/time rows use no selector and cannot mix with event rows. Times are
     absolute instrument microseconds under the supplied verified clock. A peak
     uses one common explicit reference, never particle-specific birth or age.
     Unknown/censored categories remain exactly caller classified. Missing

@@ -72,6 +72,48 @@ class TrajectoryAnalysisTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "explicit occurrence"):
             trajectory.analyze_trajectory(**args)
 
+    def test_event_identity_requires_selection_even_with_one_row_per_particle(self):
+        for field, value in (("observation_id", "another_plane"), ("direction", "inward"), ("occurrence", 2)):
+            with self.subTest(field=field):
+                args = self.arguments()
+                args["observations"] = [dict(row, observation_id="exit", direction="outward", occurrence=1)
+                                        for row in args["observations"]]
+                args["observations"][1][field] = value
+                with self.assertRaisesRegex(ValueError, "explicit occurrence selection"):
+                    trajectory.analyze_trajectory(**args)
+        args = self.arguments()
+        args["observations"] = [dict(row, observation_id="exit", direction="outward", occurrence=1)
+                                for row in args["observations"]]
+        with self.assertRaisesRegex(ValueError, "explicit occurrence selection"):
+            trajectory.analyze_trajectory(**args)
+
+    def test_explicit_first_occurrence_keeps_missing_ids_instead_of_mixed_peak(self):
+        args = self.arguments()
+        args["observations"] = [dict(particle_id=pid, instrument_time_us=time, observation_id="exit",
+                                     direction="outward", occurrence=occurrence)
+                                for pid, time, occurrence in ((41, 11., 1), (9, 112., 2), (88, 114., 2))]
+        args["observation_selection"] = dict(observation_id="exit", direction="outward", occurrence=1)
+        result = trajectory.analyze_trajectory(**args)
+        self.assertEqual(result["status"], "insufficient_observations")
+        self.assertEqual(result["observed_particle_ids"], [41])
+        self.assertEqual(result["missing_observation_particle_ids"], [9, 88])
+        self.assertIsNone(result["peak_metrics"])
+        self.assertEqual(result["selected_population"]["denominator_weight_sum"], 14.)
+        self.assertEqual(result["census"]["mother_count"], 5)
+
+    def test_partial_or_mixed_event_and_projected_rows_are_rejected(self):
+        for case in ("partial", "mixed_without_selector", "mixed_with_selector", "projected_with_selector"):
+            with self.subTest(case=case):
+                args = self.arguments()
+                if case == "partial":
+                    args["observations"][0]["observation_id"] = "exit"
+                elif case != "projected_with_selector":
+                    args["observations"][0].update(observation_id="exit", direction="outward", occurrence=1)
+                if case in {"mixed_with_selector", "projected_with_selector"}:
+                    args["observation_selection"] = dict(observation_id="exit", direction="outward", occurrence=1)
+                with self.assertRaisesRegex(ValueError, "(identity is incomplete|explicit occurrence selection|identity on every)"):
+                    trajectory.analyze_trajectory(**args)
+
     def test_missing_fewer_than_three_and_zero_variance_are_not_peaks(self):
         for case in ("missing", "small", "zero"):
             with self.subTest(case=case):
