@@ -82,7 +82,12 @@ full local attempt ended with a summary-publication AccessDenied (32 PASS / 18 B
 complete software acceptance remains open.
 SDK22 has now passed ordinary installation and fresh named STEP/cold-read checks after
 the narrow naming preflight fix. The summary writer's bounded Windows replacement
-handling passed focused tests and independent review; complete software acceptance is still required.
+handling passed focused tests and independent review. Clean `fcbc6388` subsequently
+passed the complete local eight-worker gate (50 PASS / 12 NOT_APPLICABLE, 2422.664 s),
+including all six native Dirichlet parent methods. The same commit's ordinary-install
+CI failed in integration shards 02 and 04; the collector origin test and frozen GEM
+resource selection require correction. Final installation and acceptance of those
+repairs remain open; the local result does not certify the subsequent changed tree.
 User clarification on 2026-11-05: correct 3D file generation and independent geometry checks are the
 current CAD acceptance scope. SolidWorks repair and refinement are deferred, without blocking this goal;
 historical native failures and Formal publication requirements remain unchanged.

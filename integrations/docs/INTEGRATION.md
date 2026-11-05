@@ -9,8 +9,24 @@
 
 P3 remains **NOT COMPLETE**. This is the current selected capability statement, not a
 chronology of every attempt. SDK22 ordinary installation and independent STEP checks
-have passed; the complete Repository result and final publication remain pending.
-The latest complete-scope attempt exited 1 after atomic summary replacement reported
+have passed. Clean commit `fcbc6388` subsequently passed the complete local Repository
+gate with eight workers: 50 PASS / 12 NOT_APPLICABLE, 6800 unique parent methods
+(6779 success / 21 skip), and 7696 successful subtests. All six native Dirichlet
+parent methods recorded success. Public wall time was 2422.664 seconds; the exact
+2792 source paths and bytes, HEAD and clean status matched before and after.
+The evidence wrapper then exited 1 because the successful public owner had already
+cleaned its temporary stage logs. The original public summary, outcomes and full
+replay log remain; missing raw temporary logs are an evidence limitation, not a
+test failure. The public gate itself exited 0.
+
+Ordinary-install CI at the same commit failed in integration shards 02 and 04
+([run 41961409012](https://github.com/Bibibabibobi96/mass_spectrometry/actions/runs/41961409012));
+the Repository job was skipped. A collector test assumes a source-layout path,
+and downstream planning mixes an explicit frozen root with installed GEM origins.
+Repairs and their ordinary-install acceptance are in progress; the local PASS does
+not close these CI defects or certify the subsequent changed tree.
+
+The preceding complete-scope attempt exited 1 after atomic summary replacement reported
 AccessDenied: 32 stages passed, 18 were blocked and 12 were not applicable. Its
 5041 recorded parent methods contain 5027 successes and 14 skips; all 6006 subtests
 recorded success, with no failed test record. The six native Dirichlet methods were
