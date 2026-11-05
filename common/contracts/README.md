@@ -9,8 +9,11 @@ SIMION-role fixture checks actual formal replanning, failure cancellation, input
 guards and lease release without assuming that resource policy permits overlap.
 The controlled two-lane fixture separately checks live-sibling draining against
 an actual owner-written failure receipt. Child completion is synchronized by
-publications rather than a fixed sleep; equal within-child wall-clock ticks are
-valid. Both fixtures retain available small receipts before temporary cleanup.
+publications rather than a fixed sleep. Wall-clock stamps are diagnostic: equal
+or backward stamps do not decide completion. Validated receipt consumption,
+a denied protected write and natural exit establish the causal order. Missing
+or malformed publications fail closed; the protocol wait uses a monotonic
+deadline. Both fixtures retain small receipts before temporary cleanup.
 These tests do not constitute native solver qualification.
 
 ## 按任务导航

@@ -23,70 +23,84 @@ class BatchProcessTests(unittest.TestCase):
         # Test-only publication rendezvous;600s expiry is failure, never readiness.
         return r'''import sys,time,json,os,hashlib
 from pathlib import Path
-started_monotonic=time.monotonic()
-data=Path(sys.argv[1]);target=Path(sys.argv[2])
-protocol=json.loads(sys.argv[5]);mode=protocol["mode"]
-facts=dict(pid=os.getpid(),actual_python_pid=os.getpid(),executable=sys.executable,started_ns=time.time_ns())
-try:
-    blocked=False
-    try:data.write_bytes(b"UNSAFE")
-    except PermissionError:blocked=True
-    facts["locked"]=blocked
-    target.write_text(json.dumps(facts),encoding="utf-8")
-    print("INERT_PYTHON_STARTED",flush=True)
-    if mode=="sleep":
-        time.sleep(float(sys.argv[3]))
-    elif mode in ("replan","peer_receipt"):
-        publication=Path(protocol["path"])
-        deadline=started_monotonic+600
-        while True:
-            if time.monotonic()>=deadline:
-                raise TimeoutError("INERT_"+mode.upper()+"_PUBLICATION_NOT_OBSERVED_WITHIN_600S")
-            if publication.is_file():
-                raw=publication.read_bytes()
-                record=json.loads(raw.decode("utf-8-sig"))
-                if mode=="replan":
-                    assert record["particle_count"]==3
-                    assert record["waves"][0]["batches"]==protocol["fixed_batches"]
-                    kind=record["estimation"]["kind"]
-                    if kind=="formal_first_batch_observation":
-                        time.sleep(.1)
-                        continue
-                    assert kind=="observed_formal_batch"
-                    assert record["estimation"]["recovered_missing_observation_completed"] is True
-                    assert record["estimation"]["observed_missing_batch_index"]==1
-                    capacity=record["limits"]["maximum_concurrency"]
-                    assert type(capacity) is int and capacity>=1
-                    assert record["limits"]["formal_observation_seconds"]==protocol["formal_observation_seconds"]
-                    assert record["limits"]["launch_stagger_seconds"]==protocol["launch_stagger_seconds"]
-                    facts["replan"]=record
-                    facts["replan_sha256"]=hashlib.sha256(raw).hexdigest()
-                    facts["replan_observed_ns"]=time.time_ns()
-                else:
-                    observation=record["observation"]
-                    assert record["operation_id"]=="failure" and record["host_release"] is None
-                    assert type(observation["exit_code"]) is int and observation["exit_code"]==7
-                    for key in ("root_process_id","root_process_started_at_utc_ticks"):
-                        assert type(observation[key]) is int and observation[key]>0
-                    facts["failure_receipt"]=record
-                    facts["failure_receipt_observed_ns"]=time.time_ns()
-                still_blocked=False
-                try:data.write_bytes(b"UNSAFE_AFTER_PUBLICATION")
-                except PermissionError:still_blocked=True
-                facts["locked_after_publication"]=still_blocked
-                assert still_blocked,"Immutable input guard ended before live payload"
-                break
-            time.sleep(.1)
-    else:
-        raise ValueError("Unknown inert fixture protocol")
-except BaseException as error:
-    facts["protocol_error"]=type(error).__name__+": "+str(error)
-    raise
-finally:
-    facts["ended_ns"]=time.time_ns()
-    target.write_text(json.dumps(facts),encoding="utf-8")
-print("INERT_PYTHON_FINISHED",flush=True)
-sys.exit(int(sys.argv[4]))
+def _wait_publication(protocol,facts,*,deadline,monotonic=time.monotonic,poll=lambda:time.sleep(.1),clock=time.time_ns):
+    mode=protocol["mode"];publication=Path(protocol["path"])
+    while True:
+        if monotonic()>=deadline:
+            raise TimeoutError("INERT_"+mode.upper()+"_PUBLICATION_NOT_OBSERVED_WITHIN_600S")
+        if publication.is_file():
+            raw=publication.read_bytes()
+            record=json.loads(raw.decode("utf-8-sig"))
+            if mode=="replan":
+                assert record["particle_count"]==3
+                assert record["waves"][0]["batches"]==protocol["fixed_batches"]
+                kind=record["estimation"]["kind"]
+                if kind=="formal_first_batch_observation":
+                    poll()
+                    continue
+                assert kind=="observed_formal_batch"
+                assert record["estimation"]["recovered_missing_observation_completed"] is True
+                assert record["estimation"]["observed_missing_batch_index"]==1
+                capacity=record["limits"]["maximum_concurrency"]
+                assert type(capacity) is int and capacity>=1
+                assert record["limits"]["formal_observation_seconds"]==protocol["formal_observation_seconds"]
+                assert record["limits"]["launch_stagger_seconds"]==protocol["launch_stagger_seconds"]
+                facts["replan"]=record
+                facts["replan_sha256"]=hashlib.sha256(raw).hexdigest()
+                facts["replan_observed_ns"]=clock()
+                facts["causal_events"].append("completed_replan_validated")
+            else:
+                observation=record["observation"]
+                assert record["operation_id"]=="failure" and record["host_release"] is None
+                assert type(observation["exit_code"]) is int and observation["exit_code"]==7
+                for key in ("root_process_id","root_process_started_at_utc_ticks"):
+                    assert type(observation[key]) is int and observation[key]>0
+                facts["failure_receipt"]=record
+                facts["failure_receipt_observed_ns"]=clock()
+                facts["failure_receipt_sha256"]=hashlib.sha256(raw).hexdigest()
+                facts["causal_events"].append("peer_exit_receipt_validated")
+            return record
+        poll()
+
+def _main():
+    started_monotonic=time.monotonic()
+    data=Path(sys.argv[1]);target=Path(sys.argv[2])
+    protocol=json.loads(sys.argv[5]);mode=protocol["mode"]
+    clock_mode=protocol.get("diagnostic_clock_mode","actual")
+    clock_values=iter(protocol.get("diagnostic_clock_values",[]))
+    clock=time.time_ns if clock_mode=="actual" else lambda:next(clock_values)
+    facts=dict(pid=os.getpid(),actual_python_pid=os.getpid(),executable=sys.executable,
+               diagnostic_clock_mode=clock_mode,started_ns=clock(),causal_events=[])
+    try:
+        blocked=False
+        try:data.write_bytes(b"UNSAFE")
+        except PermissionError:blocked=True
+        facts["locked"]=blocked
+        target.write_text(json.dumps(facts),encoding="utf-8")
+        print("INERT_PYTHON_STARTED",flush=True)
+        if mode=="sleep":
+            time.sleep(float(sys.argv[3]))
+            facts["causal_events"].append("sleep_completed")
+        elif mode in ("replan","peer_receipt"):
+            _wait_publication(protocol,facts,deadline=started_monotonic+600,clock=clock)
+            still_blocked=False
+            try:data.write_bytes(b"UNSAFE_AFTER_PUBLICATION")
+            except PermissionError:still_blocked=True
+            facts["locked_after_publication"]=still_blocked
+            assert still_blocked,"Immutable input guard ended before live payload"
+            facts["causal_events"].append("immutable_write_denied_after_"+("peer_receipt" if mode=="peer_receipt" else "replan"))
+        else:
+            raise ValueError("Unknown inert fixture protocol")
+    except BaseException as error:
+        facts["protocol_error"]=type(error).__name__+": "+str(error)
+        raise
+    finally:
+        facts["causal_events"].append("finally_entered")
+        facts["ended_ns"]=clock()
+        target.write_text(json.dumps(facts),encoding="utf-8")
+    print("INERT_PYTHON_FINISHED",flush=True)
+    sys.exit(int(sys.argv[4]))
+if __name__=="__main__":_main()
 '''
 
     def _publish_batch_fixture_facts(self,root,receipt,dispatch_name,prefix):
@@ -183,7 +197,8 @@ sys.exit(int(sys.argv[4]))
             child=json.loads((root/(name+'.json')).read_text(encoding='utf-8'))
             self.assertTrue(child['locked']);self.assertGreater(child['actual_python_pid'],0)
             self.assertEqual(Path(child['executable']).resolve(),Path(sys.executable).resolve())
-            self.assertGreater(child['ended_ns'],child['started_ns'])
+            self.assertNotIn('protocol_error',child)
+            self.assertEqual(child['causal_events'][-1],'finally_entered')
             self.assertGreater(observation['root_process_id'],0)
             self.assertGreater(observation['root_process_started_at_utc_ticks'],0)
             children[name]=child
@@ -202,8 +217,8 @@ sys.exit(int(sys.argv[4]))
             self.assertEqual(children['healthy']['replan'],actual)
             self.assertEqual(children['healthy']['replan_sha256'],hashlib.sha256((root/'actual.dispatch.json').read_bytes()).hexdigest())
             self.assertTrue(children['healthy']['locked_after_publication'])
-            # Replan consumption -> denied write -> finally is causal; wall-clock ticks can coincide.
-            self.assertGreaterEqual(children['healthy']['ended_ns'],children['healthy']['replan_observed_ns'])
+            self.assertEqual(children['healthy']['causal_events'],[
+                'completed_replan_validated','immutable_write_denied_after_replan','finally_entered'])
         else:
             self.assertEqual(set(receipt['observations']),{'healthy','failure','pending'})
             self.assertTrue(all(row['exit_code']==0 for row in receipt['observations'].values()))
@@ -225,7 +240,7 @@ sys.exit(int(sys.argv[4]))
         with tempfile.TemporaryDirectory() as directory:
             self._unmodified_simion_role(Path(directory),failure=True)
 
-    def fixture(self,root,*,fault=None):
+    def fixture(self,root,*,fault=None,clock_mode="actual"):
         self.assertTrue(os.environ.get('MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH'),'normal shared GATE required')
         context=ExecutionContext(workspace=root,python_executable=Path(sys.executable),powershell_executable=Path(shutil.which('pwsh')),
             tools={},host_state_path=Path(os.environ['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH']),policy_path=resource_path('host_resource_policy.json'))
@@ -252,13 +267,17 @@ sys.exit(int(sys.argv[4]))
             exit_code=7 if fault=='exit7' and name=='failure' else 0
             protocol=(dict(mode='peer_receipt',path=str(root/'failure.receipt.json'))
                       if fault=='exit7' and name=='healthy' else dict(mode='sleep'))
+            if fault=='exit7' and name=='healthy':
+                protocol['diagnostic_clock_mode']=clock_mode
+                if clock_mode!='actual':
+                    protocol['diagnostic_clock_values']=([100,100,100] if clock_mode=='equal' else [300,200,100])
             specs.append(dict(operation_id=name,executable=Path(sys.executable),arguments=['-I','-c',code,str(data),str(root/(name+'.json')),str(delay),str(exit_code),json.dumps(protocol)],
                 working_directory=root,stdout_path=root/(name+'.out'),stderr_path=root/(name+'.err'),receipt_path=root/(name+'.receipt.json'),
                 environment={},scheduler_batch=dict(index=index,count=1,particle_id_min=index,particle_id_max=index)))
         return context,data,owner,before,plan,specs
 
-    def run_fixture(self,root,*,fault=None):
-        context,data,folder,before,plan,specs=self.fixture(root,fault=fault)
+    def run_fixture(self,root,*,fault=None,clock_mode="actual"):
+        context,data,folder,before,plan,specs=self.fixture(root,fault=fault,clock_mode=clock_mode)
         real_resource=resource_path
         receipt=None
         try:
@@ -300,23 +319,68 @@ sys.exit(int(sys.argv[4]))
             self.assertEqual(len(receipt['attempts']),3)
 
     def test_failed_child_stops_pending_and_healthy_sibling_naturally_drains(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory);receipt=self.run_fixture(root,fault='exit7')
-            self.assertEqual(receipt['observations']['healthy']['exit_code'],0)
-            self.assertEqual(receipt['observations']['failure']['exit_code'],7)
-            self.assertEqual(receipt['not_started'],['pending'])
-            self.assertFalse((root/'pending.json').exists())
-            self.assertEqual(len(receipt['attempts']),2)
-            children={name:json.loads((root/(name+'.json')).read_text(encoding='utf-8'))
-                      for name in ('healthy','failure')}
-            observed=json.loads((root/'failure.receipt.json').read_text(encoding='utf-8'))
-            self.assertEqual(children['healthy']['failure_receipt'],observed)
-            self.assertEqual(observed['observation'],receipt['observations']['failure'])
-            self.assertTrue(children['healthy']['locked_after_publication'])
-            self.assertGreater(children['healthy']['failure_receipt_observed_ns'],children['failure']['ended_ns'])
-            # Receipt consumption -> denied write -> finally is causal; wall-clock ticks can coincide.
-            self.assertGreaterEqual(children['healthy']['ended_ns'],children['healthy']['failure_receipt_observed_ns'])
-            self.assertGreater(children['healthy']['ended_ns'],children['failure']['ended_ns'])
+        # Wall timestamps are diagnostic only; receipt/guard/finally establish order.
+        for clock_mode in ('actual','equal','backward'):
+            with self.subTest(diagnostic_clock_mode=clock_mode):
+                with tempfile.TemporaryDirectory() as directory:
+                    root=Path(directory);receipt=self.run_fixture(root,fault='exit7',clock_mode=clock_mode)
+                    self.assertEqual(receipt['observations']['healthy']['exit_code'],0)
+                    self.assertEqual(receipt['observations']['failure']['exit_code'],7)
+                    self.assertEqual(receipt['not_started'],['pending'])
+                    self.assertFalse((root/'pending.json').exists())
+                    self.assertEqual(len(receipt['attempts']),2)
+                    children={name:json.loads((root/(name+'.json')).read_text(encoding='utf-8'))
+                              for name in ('healthy','failure')}
+                    observed=json.loads((root/'failure.receipt.json').read_text(encoding='utf-8'))
+                    self.assertEqual(children['healthy']['failure_receipt'],observed)
+                    self.assertEqual(observed['observation'],receipt['observations']['failure'])
+                    self.assertTrue(children['healthy']['locked_after_publication'])
+                    self.assertEqual(children['healthy']['failure_receipt_sha256'],
+                        hashlib.sha256((root/'failure.receipt.json').read_bytes()).hexdigest())
+                    self.assertNotIn('protocol_error',children['healthy'])
+                    self.assertEqual(children['healthy']['diagnostic_clock_mode'],clock_mode)
+                    self.assertEqual(children['healthy']['causal_events'],[
+                        'peer_exit_receipt_validated','immutable_write_denied_after_peer_receipt','finally_entered'])
+                    if clock_mode!='actual':
+                        self.assertEqual([children['healthy'][key] for key in
+                            ('started_ns','failure_receipt_observed_ns','ended_ns')],
+                            [100,100,100] if clock_mode=='equal' else [300,200,100])
+
+    def test_shared_payload_publication_protocol_rejects_missing_and_malformed_receipts(self):
+        # Parser-only synthetic NON_NATIVE inputs; real process provenance is tested above.
+        from msplatform.execution.recorded_file_removal import write_json_atomic
+        namespace={'__name__':'inert_protocol_definitions'}
+        exec(compile(self._inert_payload_code(),'shared-inert-protocol','exec'),namespace)
+        wait=namespace['_wait_publication']
+        valid=dict(operation_id='failure',host_release=None,observation=dict(
+            exit_code=7,root_process_id=123,root_process_started_at_utc_ticks=456),
+            test_scope='SYNTHETIC_NON_NATIVE')
+        for case in ('missing','delayed','malformed','wrong_operation','bool_exit','zero_pid','missing_birth'):
+            with self.subTest(protocol_case=case),tempfile.TemporaryDirectory() as directory:
+                publication=Path(directory)/'synthetic.receipt.json'
+                record=json.loads(json.dumps(valid));facts={'causal_events':[]};ticks=[0];polls=[]
+                if case=='wrong_operation':record['operation_id']='other'
+                if case=='bool_exit':record['observation']['exit_code']=True
+                if case=='zero_pid':record['observation']['root_process_id']=0
+                if case=='missing_birth':del record['observation']['root_process_started_at_utc_ticks']
+                if case=='malformed':publication.write_text('{',encoding='utf-8')
+                elif case not in ('missing','delayed'):write_json_atomic(publication,record)
+                def poll():
+                    polls.append('publication_absent_observed')
+                    self.assertFalse(publication.exists())
+                    ticks[0]+=1
+                    if case=='delayed':write_json_atomic(publication,record)
+                kwargs=dict(deadline=2,monotonic=lambda:ticks[0],poll=poll,clock=lambda:0)
+                if case=='delayed':
+                    self.assertEqual(wait(dict(mode='peer_receipt',path=str(publication)),facts,**kwargs),record)
+                    self.assertEqual(polls,['publication_absent_observed'])
+                    self.assertEqual(facts['causal_events'],['peer_exit_receipt_validated'])
+                else:
+                    error=TimeoutError if case=='missing' else (json.JSONDecodeError if case=='malformed' else (KeyError if case=='missing_birth' else AssertionError))
+                    with self.assertRaises(error):
+                        wait(dict(mode='peer_receipt',path=str(publication)),facts,**kwargs)
+                    self.assertEqual(facts['causal_events'],[])
+                    if case=='missing':self.assertEqual(ticks[0],2)
 
     def test_invalid_metadata_and_wrong_hash_do_not_launch_inert_payload(self):
         with tempfile.TemporaryDirectory() as directory:
