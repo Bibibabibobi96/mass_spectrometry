@@ -8,7 +8,7 @@
 ## 当前边界
 
 P3 remains **NOT COMPLETE**. This is the current selected capability statement, not a
-chronology of every attempt. SDK21 ordinary installation and independent STEP checks
+chronology of every attempt. SDK22 ordinary installation and independent STEP checks
 have passed; the complete Repository result and final publication remain pending.
 The latest complete-scope attempt exited 1 after atomic summary replacement reported
 AccessDenied: 32 stages passed, 18 were blocked and 12 were not applicable. Its
@@ -16,8 +16,9 @@ AccessDenied: 32 stages passed, 18 were blocked and 12 were not applicable. Its
 recorded success, with no failed test record. The six native Dirichlet methods were
 blocked and receive no credit. Public wall time was 2294.102 seconds; all 2792 source
 files remained unchanged. The tested tree was code `abaaa03a` plus two frozen status
-documents, not a clean HEAD checkout. Summary-publication diagnosis and a successful
-full successor remain required; passing child partitions are not a complete PASS.
+documents, not a clean HEAD checkout. The bounded summary-publication fix has passed
+focused real-reader tests and independent review; the original actor remains unknown.
+A successful full successor remains required; passing child partitions are not a complete PASS.
 The work continues from D01 `bf19145c95925088002fc3f526b0e0394c99b50c`;
 P1/P2 evidence keeps its original commit and qualification boundaries.
 
@@ -66,12 +67,28 @@ original host lease released. Its wheel SHA is
 `6e93c62ad3fcda829f7d63620a090d69f01fe89b7e7447be3745da91e2daf9f7`.
 This is a new byte identity, not a relabeling of SDK20 or the native producers.
 
+SDK22 subsequently verified the explicit root/member-name preflight guard: 235 actual
+source/wheel/sdist/rebuilt/installed payload files, 54 locked distributions and 245
+unchanged source/control records. Only `exporters/step.py` changed from SDK21; all
+86 non-Python resources stayed byte-identical. The ordinary pipeline exited zero in
+197.372 seconds, with original resource release confirmed. Wheel SHA:
+`ba9bcd6796028361a8b0b91a7a016b1e0a560931bde707b1b8bd70acc9b85d75`.
+
 The installed independent U06 tutorial used a fresh study, public API/owner and a new
 `-I` integrity reader with System32-only PATH. It produced72 solids/5 exclusions with
 installed origins and confirmed writer/host/capacity closure. This controlled task is
 complete within its selected scope; P5 real-colleague/new-machine acceptance is separate.
 
 ### Actual geometry and native chain
+
+Latest SDK22 run `20261105_112005__build__cad__assembly-9f4c6bac1531` generated a
+fresh 1122132-byte STEP, SHA
+`141b511aa9fb94a78e3b0e078adfe05920d92c2956453f4020e0f71e1f58aac2`.
+Its independent cold read passed all 72 named solids, five exclusions and ten existing
+geometry probes, with unchanged input/output bytes and confirmed owner/capacity closure.
+Public export/cold-read walls were 15.384/6.918 seconds; source/Refine/Fly/GUI counts
+were zero. An explicit root name equal to a physical member label is rejected before
+CAD loading; choose another name. Defaults and scientific member identities are unchanged.
 
 SDK21 run `20261105_102020__build__cad__assembly-4120ed890691` independently
 exported and cold-read a fresh named STEP: 1122132 bytes, SHA

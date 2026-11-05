@@ -115,13 +115,74 @@ function Test-GateItemUnittestCommand {
 function Write-GateRunSummary {
     param([Parameter(Mandatory)]$Summary)
     $temporary = $Summary.Path + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
+    $failure = $null
     try {
         [IO.File]::WriteAllText($temporary,
             ($Summary.Document | ConvertTo-Json -Depth 16),
             [Text.UTF8Encoding]::new($false))
-        [IO.File]::Move($temporary, $Summary.Path, $true)
+        # Project workaround, matching recorded_file_removal.write_json_atomic:
+        # bounded Windows access/sharing retries, never a non-atomic overwrite.
+        $delays = @(50, 100, 200, 400)
+        $timer = [Diagnostics.Stopwatch]::StartNew()
+        $firstFailure = $null
+        $firstDetail = $null
+        $attempt = 0
+        while ($true) {
+            if ($attempt -gt 0 -and $timer.Elapsed.TotalMilliseconds -ge 750) {
+                $last = $firstFailure.Exception.Data['gate_summary_publication'].last
+                Write-Warning ("GATE_SUMMARY_PUBLISH_FAILED SOURCE=$temporary DESTINATION=$($Summary.Path) " +
+                    "ATTEMPT=$attempt HRESULT=$($last.hresult) WIN32=$($last.win32_code)") -WarningAction Continue
+                throw $firstFailure
+            }
+            $attempt++
+            $attemptStarted = $timer.Elapsed.TotalSeconds
+            try {
+                [IO.File]::Move($temporary, $Summary.Path, $true)
+                break
+            } catch {
+                $currentFailure = $_
+                $base = $_.Exception.GetBaseException()
+                $code = $base.HResult -band 65535
+                $detail = [ordered]@{
+                    source = $temporary; destination = [string]$Summary.Path
+                    attempt = $attempt; hresult = $base.HResult; win32_code = $code
+                    attempt_started_seconds = $attemptStarted
+                    elapsed_seconds = $timer.Elapsed.TotalSeconds
+                }
+                if ($null -eq $firstFailure) {
+                    $firstFailure = $currentFailure
+                    $firstDetail = $detail
+                }
+                $firstFailure.Exception.Data['gate_summary_publication'] = [pscustomobject]@{
+                    first = $firstDetail; last = $detail; retry_window_seconds = 0.75
+                }
+                $retryable = $IsWindows -and ($base.HResult -band -65536) -eq -2147024896 -and
+                    $code -in @(5, 32, 33)
+                $remaining = 750 - $timer.Elapsed.TotalMilliseconds
+                if (-not $retryable -or $attempt -gt $delays.Count -or $remaining -le 0) {
+                    Write-Warning ("GATE_SUMMARY_PUBLISH_FAILED SOURCE=$temporary DESTINATION=$($Summary.Path) " +
+                        "ATTEMPT=$attempt HRESULT=$($base.HResult) WIN32=$code") -WarningAction Continue
+                    throw $firstFailure
+                }
+                if ($attempt -eq 1) {
+                    Write-Warning ("GATE_SUMMARY_PUBLISH_RETRY SOURCE=$temporary DESTINATION=$($Summary.Path) " +
+                        "ATTEMPT=$attempt HRESULT=$($base.HResult) WIN32=$code") -WarningAction Continue
+                }
+                $remaining = 750 - $timer.Elapsed.TotalMilliseconds
+                if ($remaining -le 0) { throw $firstFailure }
+                Start-Sleep -Milliseconds ([Math]::Min($delays[$attempt - 1], [Math]::Floor($remaining)))
+            }
+        }
+    } catch {
+        $failure = $_
+        throw
     } finally {
-        if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary }
+        if ([IO.File]::Exists($temporary)) {
+            try { Remove-Item -LiteralPath $temporary -ErrorAction Stop } catch {
+                if ($null -eq $failure) { throw }
+                $failure.Exception.Data['gate_summary_temporary_cleanup_error'] = $_.Exception.Message
+            }
+        }
     }
 }
 

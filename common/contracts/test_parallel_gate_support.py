@@ -1030,6 +1030,122 @@ exit $code
                         record = json.loads(Path(str(log) + ".result.json").read_text(encoding="utf-8"))
                         self.assertEqual(record["status"], "FAIL" if exit_code else "PASS")
 
+    @unittest.skipUnless(os.name == "nt", "Windows sharing semantics are required")
+    def test_summary_atomic_publish_retries_after_owned_reader_release(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="gate_summary_sharing_") as directory:
+            path = Path(directory) / "summary.json"
+            path.write_text('{"generation":"old","valid":true}', encoding="utf-8")
+            completed = self.run_script(self.prelude() + f"""
+$path={quote(path)}
+$before=[IO.File]::ReadAllText($path)
+$script:reader=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
+$script:releasedReader=$false
+$script:serializeCalls=0
+$script:warnings=@()
+function ConvertTo-Json {{
+ param([Parameter(ValueFromPipeline)]$InputObject,[int]$Depth)
+ process {{$script:serializeCalls++;Microsoft.PowerShell.Utility\\ConvertTo-Json -InputObject $InputObject -Depth $Depth}}
+}}
+function Write-Warning {{
+ param($Message,$WarningAction)
+ $script:warnings+= [string]$Message
+ if(-not$script:releasedReader) {{
+  if([IO.File]::ReadAllText($path)-cne$before){{throw 'old JSON changed before reader release'}}
+  $script:reader.Dispose();$script:releasedReader=$true
+ }}
+}}
+try {{
+ Write-GateRunSummary -Summary @{{Path=$path;Document=@{{generation='new';valid=$true}}}}
+}} finally {{$script:reader.Dispose()}}
+if(-not$script:releasedReader-or$script:serializeCalls-ne1){{throw 'no actual transient retry or candidate reserialized'}}
+if($script:warnings.Count-ne1-or$script:warnings[0]-notmatch 'ATTEMPT=1 .*WIN32=5' -or
+   -not$script:warnings[0].Contains('DESTINATION='+$path)){{throw 'first retry diagnostic missing'}}
+$after=[IO.File]::ReadAllText($path)|ConvertFrom-Json
+if($after.generation-ne'new'-or-not$after.valid){{throw 'new JSON invalid'}}
+if(@(Get-ChildItem -LiteralPath {quote(path.parent)} -Filter 'summary.json.*.tmp').Count){{throw 'temporary leaked'}}
+Write-Output 'SUMMARY_TRANSIENT_READER_RELEASE=PASS'
+""")
+            self.assertIn("SUMMARY_TRANSIENT_READER_RELEASE=PASS", completed.stdout)
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")),
+                             {"generation": "new", "valid": True})
+
+    @unittest.skipUnless(os.name == "nt", "Windows sharing semantics are required")
+    def test_summary_atomic_publish_persistent_reader_preserves_primary_and_candidate(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="gate_summary_persistent_") as directory:
+            completed = self.run_script(self.prelude() + f"""
+$root={quote(directory)}
+$script:cleanupFailure=$false
+function Remove-Item {{
+ param($LiteralPath,$ErrorAction)
+ if($script:cleanupFailure){{throw 'OWNED_CLEANUP_SECONDARY'}}
+ Microsoft.PowerShell.Management\\Remove-Item -LiteralPath $LiteralPath -ErrorAction Stop
+}}
+foreach($failCleanup in @($false,$true)) {{
+ $path=Join-Path $root ('summary-'+$failCleanup+'.json')
+ $before='{{"generation":"old","valid":true}}'
+ [IO.File]::WriteAllText($path,$before)
+ $reader=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
+ $script:cleanupFailure=$failCleanup
+ $failure=$null
+ try {{
+  try {{Write-GateRunSummary -Summary @{{Path=$path;Document=@{{generation='new';valid=$true}}}}}}
+  catch {{$failure=$_}}
+  if($null-eq$failure-or$failure.Exception.GetBaseException().HResult-ne-2147024891){{throw 'original access error lost'}}
+  $detail=$failure.Exception.Data['gate_summary_publication']
+  if($detail.first.attempt-ne1-or$detail.first.win32_code-ne5-or
+     $detail.last.attempt-lt2-or$detail.last.attempt-gt5-or
+     $detail.last.attempt_started_seconds-ge0.75-or$detail.retry_window_seconds-ne0.75){{throw 'retry bound or first/last diagnostic invalid'}}
+  if($detail.first.source-cne$detail.last.source-or$detail.last.destination-cne$path){{throw 'candidate identity changed'}}
+  if([IO.File]::ReadAllText($path)-cne$before){{throw 'persistent denial altered old JSON'}}
+  $left=@(Get-ChildItem -LiteralPath $root -Filter ('summary-'+$failCleanup+'.json.*.tmp'))
+  if($failCleanup){{
+   if($failure.Exception.Data['gate_summary_temporary_cleanup_error']-notmatch'OWNED_CLEANUP_SECONDARY'-or$left.Count-ne1){{throw 'cleanup secondary missing'}}
+   $candidate=[IO.File]::ReadAllText($left[0].FullName)|ConvertFrom-Json
+   if($candidate.generation-ne'new'-or-not$candidate.valid){{throw 'failed candidate is not complete valid JSON'}}
+  }}elseif($left.Count){{throw 'candidate cleanup failed'}}
+ }} finally {{
+  $reader.Dispose();$script:cleanupFailure=$false
+  foreach($file in @(Get-ChildItem -LiteralPath $root -Filter '*.tmp')){{[IO.File]::Delete($file.FullName)}}
+ }}
+}}
+Write-Output 'SUMMARY_PERSISTENT_PRIMARY=PASS'
+""")
+            self.assertIn("SUMMARY_PERSISTENT_PRIMARY=PASS", completed.stdout)
+            self.assertIn("GATE_SUMMARY_PUBLISH_RETRY", completed.stdout)
+            self.assertIn("GATE_SUMMARY_PUBLISH_FAILED", completed.stdout)
+
+    @unittest.skipUnless(os.name == "nt", "Windows error codes are required")
+    def test_summary_atomic_publish_nonretryable_error_is_immediate(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="gate_summary_nonretry_") as directory:
+            completed = self.run_script(self.prelude() + f"""
+$script:path={quote(Path(directory) / 'summary.json')}
+$script:missing={quote(Path(directory) / 'absent' / 'summary.json')}
+$script:pathReads=0;$script:sleeps=0;$script:candidateBefore=$null
+$before='{{"generation":"old","valid":true}}'
+[IO.File]::WriteAllText($script:path,$before)
+$summary=[pscustomobject]@{{Document=@{{generation='new';valid=$true}}}}
+# Change only the fixture destination after the candidate is created. Move is real.
+$summary|Add-Member ScriptProperty Path {{
+ $script:pathReads++
+ if($script:pathReads-eq1){{return $script:path}}
+ $candidate=@(Get-ChildItem -LiteralPath {quote(directory)} -Filter 'summary.json.*.tmp')
+ if($candidate.Count-eq1){{$script:candidateBefore=[IO.File]::ReadAllText($candidate[0].FullName)}}
+ return $script:missing
+}}
+function Start-Sleep {{param($Milliseconds) $script:sleeps++;throw 'NONRETRYABLE_ERROR_SLEPT'}}
+$failure=$null
+try {{Write-GateRunSummary -Summary $summary}}catch{{$failure=$_}}
+if($null-eq$failure-or($failure.Exception.GetBaseException().HResult-band65535)-ne3){{throw 'real Move missing-directory error lost'}}
+$detail=$failure.Exception.Data['gate_summary_publication']
+if($script:sleeps-ne0-or$detail.first.attempt-ne1-or$detail.last.attempt-ne1){{throw 'nonretryable error retried'}}
+if([IO.File]::ReadAllText($script:path)-cne$before){{throw 'old source JSON changed'}}
+$candidate=$script:candidateBefore|ConvertFrom-Json
+if($candidate.generation-ne'new'-or-not$candidate.valid){{throw 'candidate missing before actual Move'}}
+if(@(Get-ChildItem -LiteralPath {quote(directory)} -Filter '*.tmp').Count){{throw 'nonretry candidate leaked'}}
+Write-Output 'SUMMARY_NONRETRYABLE=PASS'
+""")
+            self.assertIn("SUMMARY_NONRETRYABLE=PASS", completed.stdout)
+
     def test_summary_write_failure_does_not_replace_original_stage_error(self) -> None:
         with tempfile.TemporaryDirectory(prefix="parallel_gate_summary_") as directory:
             summary = Path(directory) / "summary.json"

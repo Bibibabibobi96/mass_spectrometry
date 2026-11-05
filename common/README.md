@@ -730,6 +730,21 @@ paired static retention／pulse publication五个原CLI代表场景，核对真�
 不存在的目标文件。摘要保留选中原因、实际命令、依赖、环境、阶段状态、耗时、退出码和日志保留情况，
 成功清理详细日志后仍保留摘要。计划先落盘，阶段完成即更新；可捕获的失败或中断按实际状态收尾，
 硬杀或断电后的`PENDING/RUNNING`只表示未完成，不能解释为通过。日志路径标为未保留时不可用。
+
+On Windows, summary publication keeps one complete candidate and retries the same
+atomic replacement only for native errors 5, 32 and 33. The project retry policy uses
+50/100/200/400 ms delays, at most five attempts, and a 750 ms deadline for starting
+another attempt. It does not preempt an OS call. Persistent denial still fails;
+diagnostics preserve the first error and exact paths, attempts and HResult, with
+temporary-cleanup errors attached separately. ACLs and atomicity are unchanged.
+This is a bounded project workaround, not proof of the actor behind an old failure.
+
+During live acceptance, use stdout and the process handle for progress. A Windows
+reader can prevent replacement while it holds the summary open. If a JSON snapshot
+is needed, read and close the file before parsing: assign
+`$text = [IO.File]::ReadAllText($summaryPath)`, then parse `$text | ConvertFrom-Json`.
+Do not keep a live `Get-Content` pipeline open through downstream parsing.
+
 CI使用[官方artifact action](https://github.com/actions/upload-artifact)在`always()`步骤上传摘要和本次保留的门禁诊断。
 两个CI公开调用步骤用现有Python环境的单调时钟包围实际`pwsh`根命令，继承stdout／stderr以保持首错即时可见；
 另上传`*_gate_command_timing.json`记录命令、环境、退出码、scope和完整命令墙钟，保留原summary文件及其计时口径。

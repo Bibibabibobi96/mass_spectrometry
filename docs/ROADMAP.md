@@ -78,7 +78,11 @@ SIMION纯编译及必要执行基础，公共API与普通wheel／sdist树外实�
 P3尚未完成：当前源码完整软件门禁及最终发行／文档／提交仍须闭合。
 SDK21 ordinary installation and independent named STEP checks have passed. The latest
 full local attempt ended with a summary-publication AccessDenied (32 PASS / 18 BLOCKED /
-12 NOT_APPLICABLE), without a recorded test failure; diagnosis and complete acceptance remain open.
+12 NOT_APPLICABLE), without a recorded test failure. The original actor remains unproven;
+complete software acceptance remains open.
+SDK22 has now passed ordinary installation and fresh named STEP/cold-read checks after
+the narrow naming preflight fix. The summary writer's bounded Windows replacement
+handling passed focused tests and independent review; complete software acceptance is still required.
 User clarification on 2026-11-05: correct 3D file generation and independent geometry checks are the
 current CAD acceptance scope. SolidWorks repair and refinement are deferred, without blocking this goal;
 historical native failures and Formal publication requirements remain unchanged.
