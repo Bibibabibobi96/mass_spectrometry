@@ -674,16 +674,17 @@ def inspect_cad(result: OpenedArtifact | Mapping[str, Any], *, checks: Mapping[s
     return inspection
 
 
-def _validate_step_export_options(assembly, format, options) -> None:
-    """One option boundary shared by STEP planning and actual export."""
+def _validate_step_export_options(assembly, format, options) -> str:
+    """One pure option boundary shared by STEP planning and actual export."""
+    from msplatform.exporters.step import step_export_filename
     if not isinstance(assembly, Assembly) or format != "step":
         raise ContractError("export_cad requires a complete Assembly and the supported step format")
-    if (not isinstance(options, Mapping)
-            or set(options) != {"representation", "write_pcurves", "precision_mode"}
-            or options["representation"] != "physical_solids"
-            or type(options["write_pcurves"]) is not bool
-            or type(options["precision_mode"]) is not int or options["precision_mode"] not in {-1, 0, 1}):
+    if not isinstance(options, Mapping) or options.get('representation') != 'physical_solids':
         raise ContractError("STEP options require physical_solids and explicit write_pcurves/precision_mode")
+    try:
+        return step_export_filename({key: value for key, value in options.items() if key != 'representation'})
+    except ValueError as error:
+        raise ContractError(str(error)) from error
 
 
 def export_cad(assembly: Assembly, *, format: str, options: Mapping[str, Any],
@@ -691,7 +692,9 @@ def export_cad(assembly: Assembly, *, format: str, options: Mapping[str, Any],
     """Publish an independent STEP without solver, source, field or GUI actions.
 
     The selected context Python must have this distribution and cad-step extra
-    installed. Engineering/retention policy is explicit, as for native geometry.
+    installed. Optional options["name"] is the file stem and STEP root display
+    name; omitted it preserves assembly.step. Engineering/retention policy is
+    explicit, as for native geometry.
     """
     from datetime import datetime
     from functools import partial
@@ -702,7 +705,7 @@ def export_cad(assembly: Assembly, *, format: str, options: Mapping[str, Any],
     from msplatform.execution.owner import run_managed_stage
     from msplatform.execution.stage_policy import read_stage_policy
 
-    _validate_step_export_options(assembly, format, options)
+    filename = _validate_step_export_options(assembly, format, options)
     snapshot = dict(composition_plan=assembly.composition_plan, components_resolved=assembly.components_resolved)
     assembly_geometry_members(snapshot)
     stage, authority = read_stage_policy(context, "export_cad", required_roles=("solver_native_binary",))
@@ -717,9 +720,9 @@ def export_cad(assembly: Assembly, *, format: str, options: Mapping[str, Any],
         retention=stage["artifact_retention"], expected_operation_ids=("export_step",),
         operation_dependencies={"export_step": ()},
         action=partial(execute_cad_export, snapshot=snapshot, representation=options["representation"],
-            options={name: options[name] for name in ("write_pcurves", "precision_mode")}, limits=stage["limits"]),
+            options={name: options[name] for name in ("write_pcurves", "precision_mode", "name") if name in options}, limits=stage["limits"]),
         action_record=source, completion_api=no_particle_batch_completion_api,
-        expected_relative_paths=("results/assembly.step", "results/cad_export_report.json"))
+        expected_relative_paths=("results/" + filename, "results/cad_export_report.json"))
     return open_artifact({"manifest": result["manifest"], "product_id": "cad_geometry"}, expected_kind="cad_geometry")
 
 

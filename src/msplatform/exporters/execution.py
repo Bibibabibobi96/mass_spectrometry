@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Mapping
 
 from msplatform.execution.manifest_records import file_record, verify_record
+from msplatform.exporters.step import step_export_filename
 
 WORKER_CODE = "from msplatform.exporters.execution import export_worker;import sys;export_worker(sys.argv[1])"
 _REQUEST_FIELDS = {"schema_version", "role", "snapshot_record", "options_record", "representation",
@@ -48,8 +49,6 @@ def export_worker(path: str | Path) -> None:
     if path != root / "inputs/cad_export_request.json":
         raise ValueError("CAD request does not belong to its original run inputs")
     step, report = (_inside(request[name], root) for name in ("step_path", "report_path"))
-    if step != root / "results/assembly.step" or report != root / "results/cad_export_report.json":
-        raise ValueError("CAD output differs from its owned destination")
     inputs = []
     for name in ("snapshot_record", "options_record"):
         record = request[name]
@@ -61,6 +60,8 @@ def export_worker(path: str | Path) -> None:
     if len({path, step, report, *inputs}) != 5 or step.exists() or report.exists():
         raise FileExistsError("CAD export refuses existing or overlapping destinations")
     snapshot, options = map(_read, inputs)
+    if step != root / 'results' / step_export_filename(options) or report != root / 'results/cad_export_report.json':
+        raise ValueError('CAD output differs from its owned destination')
     projection = export_assembly_step(snapshot, destination=step,
         representation=request["representation"], options=options)
     if not step.is_file() or step.stat().st_size == 0:
@@ -76,6 +77,7 @@ def execute_cad_export(session, *, snapshot: Mapping, representation: str,
     """Freeze one complete snapshot and delegate transport to the real RunSession."""
     if session.expected_operation_ids != ("export_step",):
         raise ValueError("CAD action requires exactly its admitted export_step operation")
+    filename = step_export_filename(options)
     root = session.artifact_run_dir.resolve()
 
     def owned(path: Path, role: str) -> Path:
@@ -87,7 +89,7 @@ def execute_cad_export(session, *, snapshot: Mapping, representation: str,
     assembly = owned(session.input_dir / "cad_assembly.json", "required_evidence")
     option_path = owned(session.input_dir / "cad_options.json", "required_evidence")
     request_path = owned(session.input_dir / "cad_export_request.json", "required_evidence")
-    step = owned(session.result_dir / "assembly.step", "solver_native_binary")
+    step = owned(session.result_dir / filename, "solver_native_binary")
     report = owned(session.result_dir / "cad_export_report.json", "required_evidence")
     if any(path.exists() for path in (assembly, option_path, request_path, step, report)):
         raise FileExistsError("CAD action refuses existing inputs or outputs")

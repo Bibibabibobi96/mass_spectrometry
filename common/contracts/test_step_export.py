@@ -5,6 +5,8 @@ import math
 import importlib.util
 from pathlib import Path
 import tempfile
+import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -13,6 +15,136 @@ from msplatform.exporters.step import export_assembly_step
 
 
 class StepExportTests(unittest.TestCase):
+    def test_export_name_is_one_legal_leaf_and_default_path_is_unchanged(self):
+        from msplatform.exporters.step import step_export_filename
+        options = dict(write_pcurves=True, precision_mode=0)
+        self.assertEqual(step_export_filename(options), 'assembly.step')
+        for name in ("RF to TOF", "RF_OA-v2", "O'Brien-v2"):
+            self.assertEqual(step_export_filename(dict(options, name=name)), name+'.step')
+        for name in ('质谱', 'café', 'name\x7f'):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'English/ASCII'):
+                step_export_filename(dict(options,name=name))
+        for name in ('', '.', '..', '../escape', 'x/y', 'x\\y', 'C:escape',
+                     'NUL', 'COM1', 'LPT¹', 'tail.', 'tail ', 'bad*', 'bad"', 'x\x00y'):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                step_export_filename(dict(options, name=name))
+
+    def test_member_labels_use_physical_rod_segment_and_instance_not_iteration(self):
+        from msplatform.exporters.step import assembly_geometry_members, step_member_names, _label_token
+        from msplatform.assembly.resolve_assembly import compile_assembly_layout
+        snapshot = real_snapshot()
+        recipe = copy.deepcopy(snapshot['composition_plan']['recipe'])
+        interfaces = copy.deepcopy(snapshot['composition_plan']['components'])
+        instance = copy.deepcopy(next(i for i in recipe['instances'] if i['instance_id'] == 'multipole'))
+        instance['instance_id'] = 'second_rf'
+        instance['transform']['translation_mm'][0] += 100
+        recipe['instances'].append(instance)
+        interfaces['second_rf'] = copy.deepcopy(interfaces['multipole'])
+        snapshot['components_resolved']['second_rf'] = copy.deepcopy(snapshot['components_resolved']['multipole'])
+        snapshot['composition_plan'] = compile_assembly_layout(recipe, interfaces)
+        before = copy.deepcopy(snapshot)
+        members = assembly_geometry_members(snapshot)
+        names = step_member_names(snapshot, members)
+        self.assertEqual(names, step_member_names(snapshot, reversed(members)))
+        recipe['instances'].reverse()
+        snapshot['composition_plan'] = compile_assembly_layout(recipe, interfaces)
+        self.assertEqual(names, step_member_names(snapshot, assembly_geometry_members(snapshot)))
+        self.assertEqual(snapshot['components_resolved'], before['components_resolved'])
+        self.assertEqual(len(names), len(set(names.values())))
+        rf = [m for m in members if m['instance_id'] == 'multipole']
+        self.assertEqual(len(rf), 32)
+        for member in rf:
+            row = before['components_resolved']['multipole']
+            for token in member['member_id'].split('/')[1:]:
+                row = row[int(token)] if isinstance(row, list) else row[token]
+            rod = row['parent_rod_id'] if 'parent_rod_id' in row else row['rod_id']
+            self.assertEqual(names[('multipole', member['member_id'])],
+                f"multipole.segment_{row['segment_id']:04d}.rod_{rod:04d}.rf_group_{row['electrode_group']}")
+            self.assertNotEqual(names[('multipole', member['member_id'])], names[('second_rf', member['member_id'])])
+        self.assertEqual(names[('oatof', 'accelerator/grounded_shield')], 'oatof.accelerator.grounded_shield')
+        self.assertEqual(names[('oatof', 'reflectron_stage1_ring_1')], 'oatof.reflectron_stage1_ring_1')
+        self.assertEqual(names[('oatof', 'reflectron_stage2_ring_1')], 'oatof.reflectron_stage2_ring_1')
+        escaped = [_label_token(value) for value in ('a.b', 'a%2Eb', 'a b', 'a_b', 'é')]
+        self.assertEqual(len(set(escaped)), len(escaped))
+        self.assertNotIn('.', _label_token('a.b'))
+        with self.assertRaisesRegex(ValueError, 'duplicate'):
+            step_member_names(snapshot, [members[0], members[0]])
+
+    def _cold_product_names(self, path):
+        # Official CadQuery2.8 importer uses STEPCAFControl_Reader with NameMode
+        # and XCAF labels. Plain importStep BRep cannot prove product names.
+        reader = """import json,sys
+import cadquery as cq
+from cadquery.occ_impl.importers.assembly import importStep
+model=cq.Assembly()
+importStep(model,sys.argv[1])
+rows=[dict(name=child.name,solids=len(child.obj.Solids()),valid=child.obj.isValid()) for child in model.children]
+compound=model.toCompound()
+print(json.dumps(dict(root=model.name,members=rows,volume_mm3=compound.Volume(),solid_count=len(compound.Solids())),ensure_ascii=True))
+"""
+        result = subprocess.run([sys.executable, '-I', '-c', reader, str(path)], cwd=path.parent,
+            capture_output=True, text=True, encoding='utf-8', errors='backslashreplace', timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+        return json.loads(result.stdout.splitlines()[-1])
+
+    @unittest.skipUnless(importlib.util.find_spec('cadquery'), 'optional CadQuery engine unavailable')
+    def test_actual_stepcaf_cold_names_and_compound_keep_all_solids(self):
+        from msplatform.exporters.step import assembly_geometry_members
+        snapshot = real_snapshot()
+        before = copy.deepcopy(snapshot)
+        name = "RF to TOF O'Brien-v2"
+        options = dict(write_pcurves=True, precision_mode=0, name=name)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)/'工作区 space'
+            root.mkdir()
+            path = root/(name+'.step')
+            report = export_assembly_step(snapshot, destination=path, representation='physical_solids', options=options)
+            cold = self._cold_product_names(path)
+            self.assertEqual(cold['root'], name)
+            self.assertEqual({row['name']:row['solids'] for row in cold['members']},
+                             {row['step_name']:row['solid_count'] for row in report['exported_members']})
+            self.assertTrue(all(row['valid'] for row in cold['members']))
+            self.assertEqual(sum(row['solids'] for row in cold['members']), 72)
+            self.assertEqual(cold['solid_count'], 72)
+            self.assertLessEqual(abs(cold['volume_mm3']-sum(row['volume_mm3'] for row in report['exported_members'])),
+                                 1e-6*sum(row['surface_area_mm2'] for row in report['exported_members']))
+            self.assertEqual(len(report['excluded_members']), 5)
+            self.assertEqual(snapshot, before)
+            # Explicit synthetic two-body compound is a transport/label fixture,
+            # not a second physical geometry or manufacturing qualification.
+            member = copy.deepcopy(next(m for m in assembly_geometry_members(snapshot) if m['member_id']=='detector'))
+            member['shape'] = dict(kind='union', parts=[dict(kind='box', center_mm=[x,0,0], size_mm=[1,1,1]) for x in (0,3)])
+            with patch('msplatform.exporters.step.assembly_geometry_members', return_value=(member,)):
+                compound = export_assembly_step(snapshot, destination=root/'compound.step', representation='physical_solids',
+                    options=dict(write_pcurves=True,precision_mode=0))
+            self.assertEqual(compound['exported_members'][0]['solid_count'], 2)
+            cold = self._cold_product_names(root/'compound.step')
+            self.assertEqual(cold['members'], [dict(name='oatof.detector',solids=2,valid=True)])
+            self.assertEqual(cold['root'], 'mass_spectrometry')
+            self.assertEqual(cold['solid_count'], 2)
+            self.assertAlmostEqual(cold['volume_mm3'], 2., places=12)
+            self.assertEqual(compound['exported_members'][0]['member_id'], 'detector')
+            self.assertEqual(compound['exported_members'][0]['transform'], member['transform'])
+
+    @unittest.skipUnless(importlib.util.find_spec('cadquery'), 'optional CadQuery engine unavailable')
+    def test_writer_failure_removes_partial_output_and_preserves_source(self):
+        from msplatform.exporters.step import assembly_geometry_members
+        snapshot = real_snapshot()
+        before = copy.deepcopy(snapshot)
+        detector = next(m for m in assembly_geometry_members(snapshot) if m['member_id']=='detector')
+        def failed_write(destination, *_args, **_options):
+            Path(destination).write_bytes(b'INERT_PARTIAL_STEP_FAILURE')
+            raise RuntimeError('ORIGINAL_CAF_WRITE_FAILURE')
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory)/'partial.step'
+            with patch('msplatform.exporters.step.assembly_geometry_members',return_value=(detector,)), \
+                 patch('cadquery.Assembly.export',side_effect=failed_write):
+                with self.assertRaisesRegex(RuntimeError,'ORIGINAL_CAF_WRITE_FAILURE'):
+                    export_assembly_step(snapshot,destination=destination,representation='physical_solids',
+                        options=dict(write_pcurves=True,precision_mode=0))
+            self.assertFalse(destination.exists())
+            self.assertEqual(snapshot,before)
+
     def test_unknown_representation_and_options_reject_before_engine_import(self):
         for representation,options in (('simulation_reference',{}),('physical_solids',{}),
             ('physical_solids',dict(write_pcurves=True,precision_mode=True))):

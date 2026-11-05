@@ -476,6 +476,17 @@ class PlatformApiTests(unittest.TestCase):
             self.assertEqual(call["action"].keywords["snapshot"]["components_resolved"], assembly.components_resolved)
             reader.assert_called_once_with({"manifest": {"fixture": True}, "product_id": "cad_geometry"}, expected_kind="cad_geometry")
             self.assertFalse(context.workspace.exists())
+            with patch("msplatform.execution.owner.run_managed_stage", return_value={"manifest": {"fixture": True}}) as named_owner, \
+                 patch("msplatform.api.open_artifact", return_value=sentinel):
+                api.export_cad(assembly, format="step", options=dict(options,name="RF O'Brien"),context=context)
+            named = named_owner.call_args.kwargs
+            self.assertEqual(named['expected_relative_paths'][0], "results/RF O'Brien.step")
+            self.assertEqual(named['action'].keywords['options'], {k:v for k,v in dict(options,name="RF O'Brien").items() if k!='representation'})
+            for name in ('../escape', 'CON', 'bad*', '质谱'):
+                with self.subTest(name=name), patch("msplatform.execution.owner.run_managed_stage") as launch:
+                    with self.assertRaises(ContractError):
+                        api.export_cad(assembly,format="step",options=dict(options,name=name),context=context)
+                    launch.assert_not_called()
             stage["artifact_retention"] = dict(policy_version=1, **{"class": "compact"}, reason=None)
             policy.write_text(json.dumps(dict(schema_version=1, role="execution_stage_policy", stages={"export_cad": stage})), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "cannot retain"), patch("msplatform.execution.owner.run_managed_stage") as launch:

@@ -96,6 +96,10 @@ print(json.dumps(options, indent=2))
 # 当前展开值：representation="physical_solids", write_pcurves=True, precision_mode=0。
 # 这是CAD表示／STEP写出选项，不是场网格或求解精度。
 
+# Optional English output stem and STEP assembly display name:
+# options = {**options, "name": "RF-OA-TOF assembly"}
+# Omitting name preserves results/assembly.step.
+
 policy_path = workspace / "export-stage-policy.json"
 stage_policy = {
     "schema_version": 1, "role": "execution_stage_policy",
@@ -136,6 +140,18 @@ print(cad.data_path("report"))
 不把科学尺寸放进context。owner在`my_study/artifacts/projects/instrument_assembly/runs/<新run_id>/`
 保存冻结装配、选项、STEP、报告、日志与manifest；不要移动单个STEP后仍使用原ref冒充完整闭包。
 教程本身不改库内文件，也无需Agent或商业软件操作。重复实践使用新study目录，原输入和产物保留。
+
+The optional `options["name"]` is a printable ASCII filename stem; the exporter appends
+`.step` and uses the same stem for the top assembly display name. Paths, separators,
+Windows reserved names, control characters, and trailing spaces/dots are rejected.
+English spaces, apostrophes, hyphens, and underscores are supported; workspace paths
+may still contain Chinese characters. This changes display/output naming, not scientific IDs.
+
+The export report records `step_name` for each physical member. Labels combine the
+actual instance and provider member semantics: RF rod/segment/group context and full
+TOF member roles. Repeated instances remain distinct; a member containing multiple
+solids retains all solids. Report member IDs, source references, transforms, and ideal
+item exclusions remain the identity authority; imported body order is not an identity key.
 
 导出进程退出后，新进程可独立做已发布数据的完整性检查：
 

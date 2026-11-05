@@ -4,7 +4,7 @@ import copy
 import math
 import re
 from importlib.metadata import version
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from collections.abc import Mapping
 
 from msplatform.contracts.rigid_transform import RigidTransform
@@ -154,6 +154,79 @@ def _member_location(cq, transform):
                                normal=(r[0][2],r[1][2],r[2][2])))
 
 
+def step_export_filename(options: Mapping) -> str:
+    """Validate the sole CAD option boundary and return its owned STEP leaf.
+
+    Optional name is a user file stem and root product display name. Win32
+    filename restrictions apply only here; export names are printable ASCII
+    per the caller display contract. Source/member display labels are not
+    filesystem paths. No case, Unicode normalization or lossy slugging is used.
+    """
+    if (not isinstance(options, Mapping)
+            or not {'write_pcurves', 'precision_mode'} <= set(options)
+            or set(options) - {'write_pcurves', 'precision_mode', 'name'}):
+        raise ValueError('explicit STEP write_pcurves and precision_mode required')
+    if (type(options['write_pcurves']) is not bool or type(options['precision_mode']) is not int
+            or options['precision_mode'] not in (-1, 0, 1)):
+        raise ValueError('invalid STEP export options')
+    if 'name' not in options:
+        return 'assembly.step'
+    name = options['name']
+    if isinstance(name, str) and any(not 32 <= ord(c) <= 126 for c in name):
+        raise ValueError('STEP name requires printable English/ASCII characters')
+    # Microsoft Win32 Naming Files, Paths and Namespaces. PureWindowsPath owns
+    # reserved DOS device recognition; the existing RunSession owns containment.
+    if (not isinstance(name, str) or not name or name in {'.', '..'}
+            or name[-1:] in {' ', '.'} or name[:1] == ' '
+            or any(ord(c) < 32 or c in '<>:"/\\|?*' for c in name)
+            or PureWindowsPath(name).is_reserved()):
+        raise ValueError('STEP name must be a legal single Windows filename stem')
+    return name + '.step'
+
+
+def _label_token(value: str) -> str:
+    """Injectively encode a source token; dot separates tokens, not identity."""
+    if not isinstance(value, str) or not value:
+        raise ValueError('STEP label requires a nonempty source identity token')
+    return ''.join(chr(byte) if (48 <= byte <= 57 or 65 <= byte <= 90
+                    or 97 <= byte <= 122 or byte in (45, 95)) else f'%{byte:02X}'
+                   for byte in value.encode('utf-8'))
+
+
+def step_member_names(assembly: Mapping, members) -> dict[tuple[str, str], str]:
+    """Name actual instance/member products, independently of iteration order.
+
+    RF references supply physical rod/segment identity; electrical groups only
+    qualify that label. TOF's complete source member role carries stage/ring.
+    A compound stays one named product and retains all its physical solids.
+    """
+    names, used = {}, set()
+    for member in members:
+        instance, identity = member['instance_id'], member['member_id']
+        key = (instance, identity)
+        project = assembly['composition_plan']['components'][instance]['project_id']
+        if project == 'rf_multipole_ion_optics':
+            row = assembly['components_resolved'][instance]
+            for part in identity.split('/')[1:]:
+                row = row[int(part)] if isinstance(row, list) else row[part]
+            if 'rod_id' in row or 'parent_rod_id' in row:
+                tokens = ([f"segment_{row['segment_id']:04d}"] if 'segment_id' in row else [])
+                rod = row['parent_rod_id'] if 'parent_rod_id' in row else row['rod_id']
+                tokens += [f'rod_{rod:04d}', f"rf_group_{row['electrode_group']}"]
+            else:
+                tokens = [row['role']]
+        elif project == 'single_reflection_oa_tof_mass_analyzer':
+            tokens = identity.split('/')
+        else:
+            raise ValueError('STEP naming provider is unsupported: ' + project)
+        label = '.'.join(_label_token(value) for value in [instance, *tokens])
+        if key in names or label.casefold() in used:
+            raise ValueError('duplicate STEP physical member display name')
+        names[key] = label
+        used.add(label.casefold())
+    return names
+
+
 def export_assembly_step(assembly: Mapping, *, destination: Path, representation: str, options: Mapping) -> dict:
     """Write explicit physical_solids STEP only; never open GUI or launch a solver.
 
@@ -163,26 +236,26 @@ def export_assembly_step(assembly: Mapping, *, destination: Path, representation
     is invented for ideal sheets. Export tolerance settings must be explicit.
     """
     if representation!='physical_solids': raise ValueError('only physical_solids STEP is implemented')
-    if not isinstance(options,Mapping) or set(options)!={'write_pcurves','precision_mode'}:
-        raise ValueError('explicit STEP write_pcurves and precision_mode required')
-    if type(options['write_pcurves']) is not bool or type(options['precision_mode']) is not int or options['precision_mode'] not in (-1,0,1):
-        raise ValueError('invalid STEP export options')
+    filename = step_export_filename(options)
     members=assembly_geometry_members(assembly)
+    names=step_member_names(assembly,members)
     destination=Path(destination)
+    if 'name' in options and destination.name != filename:
+        raise ValueError('STEP destination differs from the explicit export name')
     if destination.exists() or destination.suffix.lower() not in {'.step','.stp'}: raise ValueError('new STEP destination required')
     try: import cadquery as cq
     except ImportError as error: raise RuntimeError('STEP export requires the optional cad-step CadQuery dependency') from error
     profile = _cad_precision_profile()
-    model=cq.Assembly(name='mass_spectrometry')
+    model=cq.Assembly(name=options.get('name','mass_spectrometry'))
     exported,excluded=[],[]
-    for index,member in enumerate(members):
+    for member in members:
         if member['representation_role']=='ideal_surface':
             excluded.append(dict(instance_id=member['instance_id'],member_id=member['member_id'],source_refs=member['source_refs'],reason='ideal_zero_thickness_surface_not_mechanical_solid'))
             continue
         shape=_shape(cq,member['shape'])
         if not shape.isValid() or not shape.Solids() or shape.Volume()<=0: raise ValueError('invalid or empty physical member: '+member['member_id'])
         location = _member_location(cq, member['transform'])
-        name=f'member_{index:05d}'
+        name=names[(member['instance_id'],member['member_id'])]
         model.add(shape,name=name,loc=location)
         exported.append(dict(instance_id=member['instance_id'],member_id=member['member_id'],step_name=name,
             electrode_group_id=member['electrode_group_id'],representation_role='physical_solid',source_refs=member['source_refs'],transform=member['transform'],

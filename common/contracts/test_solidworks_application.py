@@ -297,6 +297,33 @@ class SolidWorksApplicationTests(unittest.TestCase):
             self.assertIs(type(session.receipt['original_import_preferences']['111']), bool)
             self.assertIs(type(session.receipt['original_import_preferences']['8']), str)
 
+    def test_selected_step_names_are_report_literals_with_exact_vendor_suffixes(self):
+        names = ('multipole.segment_0001.rod_0002.rf_group_2','oatof.accelerator.ring_0001','member_00008')
+        report = dict(schema_version=1,role='owned_assembly_step_export',projection=dict(schema_version=1,
+            role='assembly_step_projection',representation='physical_solids',length_unit='mm',
+            exported_members=[dict(step_name=name,member_id='unchanged-source-'+str(i)) for i,name in enumerate(names)]))
+        checks = dict(schema_version=1,kind='selected_solid_geometry_v1',selected_step_members=list(names))
+        self.assertEqual(set(sw.validate_geometry_checks(checks,report)),set(names))
+        for name in names:
+            for suffix in ('','.step','-1','.step-2'):
+                self.assertEqual(sw._imported_step_name('assembly.step-1/'+name+suffix,names),name)
+            self.assertIsNone(sw._imported_step_name(name+'foreign-1',names))
+        for leaf, expected in (('part-1',('part','part-1')),('part.step-1',('part','part.step'))):
+            with self.subTest(leaf=leaf),self.assertRaisesRegex(ValueError,'ambiguous'):
+                sw._imported_step_name(leaf,expected)
+        complete_report = dict(report,projection=dict(report['projection'],exported_members=[
+            dict(step_name='part',member_id='selected-physical-part'),
+            dict(step_name='part-1',member_id='unselected-physical-part')]))
+        subset = dict(checks,selected_step_members=['part'])
+        document = SimpleNamespace(GetComponents=lambda *_:[SimpleNamespace(Name2='assembly/part-1')])
+        with self.assertRaisesRegex(ValueError,'ambiguous'):
+            sw._inspect_selected_geometry(document,complete_report,subset)
+        with self.assertRaisesRegex(ValueError,'missing or ambiguous'):
+            sw.validate_geometry_checks(dict(checks,selected_step_members=['foreign']),report)
+        report['projection']['exported_members'].append(dict(step_name=names[0],member_id='other'))
+        with self.assertRaisesRegex(ValueError,'missing or ambiguous'):
+            sw.validate_geometry_checks(checks,report)
+
     def test_selected_native_property_dispatch_getters_do_not_invoke_default_members(self):
         from types import SimpleNamespace
         class DispatchValue:

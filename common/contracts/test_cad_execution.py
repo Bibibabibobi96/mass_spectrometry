@@ -114,6 +114,41 @@ class CadExecutionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "undeclared file"):
                 session.classify_file(undeclared)
 
+    def test_optional_export_name_is_frozen_and_worker_requires_exact_admitted_leaf(self):
+        options = dict(write_pcurves=False,precision_mode=0,name="O'Brien RF")
+        with tempfile.TemporaryDirectory() as directory:
+            session = InertSession(Path(directory))
+            with patch('msplatform.exporters.step.export_assembly_step', side_effect=inert_export):
+                result = execute_cad_export(session, snapshot={'transport':'inert'},representation='physical_solids',
+                    options=options,limits={'timeout_seconds':20})
+            step = session.result_dir/(options['name']+'.step')
+            self.assertIn(str(step), result['output_paths'])
+            self.assertFalse((session.result_dir/'assembly.step').exists())
+            request_path = session.input_dir/'cad_export_request.json'
+            request = json.loads(request_path.read_text())
+            self.assertEqual(request['step_path'], str(step))
+            self.assertEqual(json.loads((session.input_dir/'cad_options.json').read_text()),options)
+            step.unlink()
+            (session.result_dir/'cad_export_report.json').unlink()
+            request['step_path'] = str(session.result_dir/'wrong.step')
+            request_path.write_text(json.dumps(request),encoding='utf-8')
+            with patch('msplatform.exporters.step.export_assembly_step') as exporter:
+                with self.assertRaisesRegex(ValueError,'owned destination'):
+                    export_worker(request_path)
+                exporter.assert_not_called()
+        with tempfile.TemporaryDirectory() as directory:
+            session = InertSession(Path(directory))
+            with self.assertRaisesRegex(ValueError,'filename stem'):
+                execute_cad_export(session,snapshot={},representation='physical_solids',
+                    options=dict(options,name='../escape'),limits={})
+            self.assertFalse(session.input_dir.exists())
+            self.assertEqual(session.calls,[])
+            with self.assertRaisesRegex(ValueError,'English/ASCII'):
+                execute_cad_export(session,snapshot={},representation='physical_solids',
+                    options=dict(options,name='质谱'),limits={})
+            self.assertFalse(session.input_dir.exists())
+            self.assertEqual(session.calls,[])
+
     def test_partial_marker_missing_outputs_tampering_and_worker_boundary_fail_closed(self):
         for mode in ("missing_marker", "missing_step", "missing_report", "tampered_step", "tampered_input",
                      "bool_report_schema", "worker_escape", "worker_bool_schema", "process_failure"):

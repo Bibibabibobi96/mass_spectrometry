@@ -100,7 +100,8 @@ def validate_geometry_checks(checks, export_report=None):
         raise ValueError('unsupported selected geometry checks')
     selected = checks['selected_step_members']
     if (not isinstance(selected, list) or not 1 <= len(selected) <= 7
-            or any(not isinstance(name, str) or re.fullmatch(r'member_\d{5}', name) is None for name in selected)
+            or any(not isinstance(name, str) or not name or '/' in name or '\\' in name
+                   or any(ord(c) < 32 for c in name) for name in selected)
             or len(set(selected)) != len(selected)):
         raise ValueError('geometry checks require1..7 unique exact STEP member names')
     if export_report is None:
@@ -114,6 +115,11 @@ def validate_geometry_checks(checks, export_report=None):
             or not isinstance(projection.get('exported_members'), list)):
         raise ValueError('published physical STEP report required for geometry checks')
     rows = projection['exported_members']
+    labels = [row.get('step_name') if isinstance(row, dict) else None for row in rows]
+    if (any(not isinstance(name, str) or not name or '/' in name or '\\' in name
+            or any(ord(c) < 32 for c in name) for name in labels)
+            or len(set(labels)) != len(labels)):
+        raise ValueError('published STEP member names are missing or ambiguous')
     result = {}
     for name in selected:
         matching = [row for row in rows if row.get('step_name') == name]
@@ -139,10 +145,15 @@ def _native_mass_properties(values):
                 volume_mm3=raw[3]*1e9, area_mm2=raw[4]*1e6,
                 density_argument=1.0, material_density_claim=False)
 
-def _imported_step_name(name):
+def _imported_step_name(name, expected_names):
+    """Match only a bound report literal and the observed vendor suffix forms."""
     leaf = name.rsplit('/', 1)[-1]
-    match = re.fullmatch(r'(member_\d{5})(?:\.step)?(?:-\d+)?', leaf)
-    return match.group(1) if match else None
+    matches = [expected for expected in expected_names
+               if re.fullmatch(re.escape(expected) + r'(?:\.step)?(?:-\d+)?', leaf)]
+    if len(matches) > 1:
+        raise ValueError('imported STEP member name is ambiguous in published report')
+    return matches[0] if matches else None
+
 
 class _InspectionIncomplete(RuntimeError):
     pass
@@ -170,6 +181,7 @@ def _inspect_selected_geometry(doc, export_report, checks):
                   operations_requested=dict(open=0, save=0, close=0, preferences=0, rebuild=0))
     bounds = _InspectionBounds()
     expected = validate_geometry_checks(checks, export_report)
+    report_names = [row['step_name'] for row in export_report['projection']['exported_members']]
     groups = {key: [] for key in expected}
     try:
         components = list(doc.GetComponents(False) or ())
@@ -177,7 +189,7 @@ def _inspect_selected_geometry(doc, export_report, checks):
         return dict(status='incomplete', qualification='not_granted', members=[], errors=['GetComponents: '+str(error)[:1000]])
     for component in components:
         name = str(_value(component, 'Name2'))
-        key = _imported_step_name(name)
+        key = _imported_step_name(name, report_names)
         if key in groups:
             groups[key].append((name, component))
     try:
