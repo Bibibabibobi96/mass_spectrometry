@@ -724,6 +724,12 @@ CI两种范围上传独立的`*_gate_test_outcomes.json`，与原摘要、精确
 成功组清理临时目录；失败组保留阶段日志、请求JSON和`group_failure.log`，输出
 `GATE_DIAGNOSTICS=RETAINED`及精确清理命令。串行fallback也写入同一阶段日志，不能只有控制台错误。
 复核完成后沿[操作指南](../docs/OPERATIONS.md#软件验证与科学证据)清理，不按年龄自动删除失败证据。
+Group cleanup follows natural child exit and outcome publication. A cleanup
+failure is secondary to an existing group/finalization error; otherwise it
+fails the gate after log-retention metadata is reconciled. Summary outcomes
+and the original gate exit remain distinct from raw-log archival: terminal-only
+collection cannot recover normally deleted logs, and an archival failure must
+not overwrite the original execution result.
 改动选择器回归中的八个mini场景在同一PowerShell host内调用真实PlanOnly与InternalStage委托，
 逐例检查RED/GREEN；MR和RF两个真实owner仍各自通过独立CLI核对非零退出传播。
 保留原Core的owner遇到源码与测试混合改动时，仍合并明确修改的测试模块并去重；

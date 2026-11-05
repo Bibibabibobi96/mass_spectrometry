@@ -825,6 +825,20 @@ exit $LASTEXITCODE
                     shutil.copyfile(ROOT / 'common' / name, common / name)
                 (common / 'gate_catalog_support.ps1').write_text(
                     (ROOT / 'common/gate_catalog_support.ps1').read_text(encoding='utf-8') + r'''
+$script:fixtureOriginalSetGateStageResult = (Get-Command Set-GateStageResult).ScriptBlock
+function Set-GateStageResult {
+ param($Summary,[string]$Name,[Collections.IDictionary]$Result)
+ & $script:fixtureOriginalSetGateStageResult @PSBoundParameters
+ if($Name-eq'development_standards'-and$Result.Contains('status')-and$Result.status-eq'FAIL'){
+  $row=@($Summary.Document.stages|Where-Object name -eq $Name)[0]
+  $fact=[ordered]@{name=$Name;status=$row.status;exit_code=$row.exit_code;child_exit_code=$row.child_exit_code;error=$row.error;delegate_completed=$true}
+  $target=Join-Path $PSScriptRoot 'failure-collected.json'
+  if(-not(Test-Path -LiteralPath $target)){
+   [IO.File]::WriteAllText(($target+'.candidate'),($fact|ConvertTo-Json -Compress),[Text.UTF8Encoding]::new($false))
+   [IO.File]::Move(($target+'.candidate'),$target)
+  }
+ }
+}
 function Read-GateCatalog {param($RepoRoot)
  @(Get-Content -Raw (Join-Path $PSScriptRoot 'fixture_catalog.json')|ConvertFrom-Json)
 }
@@ -838,15 +852,28 @@ function Exit-HostResourceStage {param($Lease)}
                 (common / 'verify_repository_text_bytes.py').write_text("print('BYTES_OK')\n", encoding='utf-8')
                 (common / 'changed.ps1').write_text('# fixture\n', encoding='utf-8')
                 (common / 'verify_development_standards.py').write_text(
-                    "import json, pathlib, sys, time\n"
+                    "import json, pathlib, sys\n"
                     "assert sys.argv[1] == '--changed-paths-file'\n"
                     "assert json.loads(pathlib.Path(sys.argv[2]).read_text()) == ['common/changed.ps1']\n"
-                    "print('SCOPED_STANDARD_PATHS_OK')\ntime.sleep(.2)\nraise SystemExit(7)\n", encoding='utf-8')
+                    "print('SCOPED_STANDARD_PATHS_OK')\nraise SystemExit(7)\n", encoding='utf-8')
                 routes = []
                 for name in ('project_registry', 'rf_multipole_generated_publications', 'fixture_regression'):
-                    (common / (name + '.py')).write_text(
-                        "import time\ntime.sleep(1 if " + repr(name) + " == 'project_registry' else 0)\nprint('STAGE_DONE')\n",
-                        encoding='utf-8')
+                    program = "print('STAGE_DONE')\n"
+                    if name == 'project_registry':
+                        program = (
+                            "import json, pathlib, time\n"
+                            "signal = pathlib.Path(__file__).with_name('failure-collected.json')\n"
+                            "deadline = time.monotonic() + 30\n"
+                            "while not signal.is_file():\n"
+                            " if time.monotonic() >= deadline: raise RuntimeError('failure collection signal missing')\n"
+                            " time.sleep(.01)\n"
+                            "fact = json.loads(signal.read_text(encoding='utf-8'))\n"
+                            "assert fact['name'] == 'development_standards' and fact['status'] == 'FAIL'\n"
+                            "assert fact['delegate_completed'] is True and fact['child_exit_code'] == 1\n"
+                            "assert fact['exit_code'] != 0 and 'exit code 7' in fact['error']\n"
+                            "print('FAILURE_COLLECTION_OBSERVED')\nprint('STAGE_DONE')\n"
+                        )
+                    (common / (name + '.py')).write_text(program, encoding='utf-8')
                     routes.append(dict(stage=name, dependency_profile='stdlib', repository_integration_group='regression',
                                        matches=[dict(prefix='common/', reason='fixture')],
                                        command=dict(runner='python', arguments=['common/' + name + '.py'])))
@@ -866,8 +893,19 @@ function Exit-HostResourceStage {param($Lease)}
                 for name in ('rf_multipole_generated_publications', 'fixture_regression'):
                     self.assertEqual(records[name]['reason_code'], 'FAIL_FAST')
                     self.assertNotIn('START NAME=' + name, completed.stdout)
+                signal = json.loads((common / 'failure-collected.json').read_text(encoding='utf-8'))
+                self.assertTrue(signal['delegate_completed'])
+                self.assertEqual(signal['name'], 'development_standards')
+                self.assertEqual(signal['status'], 'FAIL')
+                # Multiple selected stages use worker transport even with one worker.
+                self.assertEqual(signal['child_exit_code'], 1)
+                self.assertNotEqual(signal['exit_code'], 0)
+                self.assertIn('exit code 7', signal['error'])
                 if concurrency == 2:
+                    self.assertIn('FAILURE_COLLECTION_OBSERVED', completed.stdout)
                     self.assertEqual(records['project_registry']['status'], 'PASS')
+                else:
+                    self.assertNotIn('START NAME=project_registry', completed.stdout)
 
     def test_failed_child_receipt_cannot_be_overridden_by_zero_process_exit(self) -> None:
         with tempfile.TemporaryDirectory(prefix="parallel_gate_receipt_") as directory:
@@ -1590,6 +1628,67 @@ if (Get-Process -Id $script:childId -ErrorAction SilentlyContinue) {{ throw 'chi
             self.assertEqual(records["second"]["reason_code"], "CHILD_START_FAILED")
             self.assertEqual(records["third"]["status"], "BLOCKED")
             self.assertEqual(records["third"]["reason_code"], "PREREQUISITE_NOT_PASSED")
+
+    def test_group_cleanup_failure_preserves_published_outcomes_and_primary(self):
+        for child_exit in (7, 0):
+            with self.subTest(child_exit=child_exit), tempfile.TemporaryDirectory(
+                prefix="gate_cleanup_primary_"
+            ) as directory:
+                root = Path(directory)
+                (root / "test_probe.py").write_text(
+                    "import unittest\nclass Probe(unittest.TestCase):\n"
+                    " def test_actual(self): self.assertTrue(True)\n", encoding="utf-8"
+                )
+                child = root / "child.ps1"
+                child.write_text(f"""
+param($InternalStage,$InternalLogPath)
+$env:PYTHONPATH={quote(ROOT)}
+Set-Location -LiteralPath {quote(root)}
+& {quote(sys.executable)} -m common.gate_unittest test_probe *> $InternalLogPath
+if($LASTEXITCODE-ne0){{exit $LASTEXITCODE}}
+if($InternalStage-eq'actual'){{exit {child_exit}}}
+exit 0
+""", encoding="utf-8")
+                summary = root / "summary.json"
+                completed = self.run_script(self.prelude() + f"""
+$env:TEMP={quote(root)};$env:TMP={quote(root)}
+$script:cleanupCalls=0
+function Remove-GateTemporaryDirectory {{
+ param($Path,$ExpectedNamePrefix)
+ $script:cleanupCalls++
+ $persisted=Get-Content -LiteralPath {quote(summary)} -Raw|ConvertFrom-Json
+ $row=$persisted.stages[0]
+ if($row.child_exit_code-ne{child_exit}-or$row.test_outcomes.Count-ne1-or$row.test_outcomes[0].outcome-ne'success'){{throw 'OUTCOMES_NOT_PUBLISHED_BEFORE_CLEANUP'}}
+ if({child_exit}-eq7-and[IO.Path]::GetFileName($Path)-ne'matplotlib'){{throw 'wrong failed-group cleanup target'}}
+ if({child_exit}-eq0-and[IO.Path]::GetFileName($Path)-notlike'gate_cleanup_test_*'){{throw 'wrong successful-group cleanup target'}}
+ throw 'INJECTED_CLEANUP_FAILURE'
+}}
+$items=@('actual','peer')|ForEach-Object{{[pscustomobject]@{{Name=$_;Run=$true;Reason='fixture'}}}}
+$summary=New-GateRunSummary -Items $items -GateName fixture -PythonExe {quote(sys.executable)} -RepoRoot {quote(ROOT)} -SummaryPath {quote(summary)}
+$failure=$null
+try{{
+ Invoke-IndependentGateStageGroup -Items $items -MaxConcurrency 2 -Summary $summary -GateScriptPath {quote(child)} -PythonExe {quote(sys.executable)} -ChildBaseArguments @() -TempNamePrefix gate_cleanup_test_ -FailureMessage 'original group failure' -InvokeSkipStage {{throw 'unexpected skip'}} -InvokeInlineStage {{throw 'unexpected fallback'}}
+}}catch{{$failure=$_}}finally{{Complete-GateRunSummary -Summary $summary -Failure $failure}}
+if($null-eq$failure){{throw 'cleanup failure was swallowed'}}
+if({child_exit}-eq7){{
+ if($failure.Exception.Message-ne'original group failure: actual=7'){{throw ('PRIMARY_REPLACED: '+$failure.Exception.Message)}}
+ if($failure.Exception.Data['gate_group_cleanup_error']-notmatch'INJECTED_CLEANUP_FAILURE'){{throw 'cleanup secondary not retained'}}
+}}elseif($failure.Exception.Message-ne'INJECTED_CLEANUP_FAILURE'){{throw 'success cleanup failure not propagated'}}
+if($script:cleanupCalls-ne1){{throw 'cleanup repeated'}}
+if($script:acquired-ne$script:released){{throw 'admission/release unbalanced'}}
+Write-Output 'CLEANUP_PRIMARY_BOUNDARY=PASS'
+""")
+                self.assertIn("CLEANUP_PRIMARY_BOUNDARY=PASS", completed.stdout)
+                document = json.loads(summary.read_text(encoding="utf-8-sig"))
+                self.assertEqual(document["status"], "FAIL")
+                row = document["stages"][0]
+                self.assertEqual(row["child_exit_code"], child_exit)
+                self.assertTrue(row["log_retained"])
+                self.assertEqual(row["status"], "FAIL" if child_exit else "PASS")
+                self.assertEqual([x["outcome"] for x in row["test_outcomes"]], ["success"])
+                started = re.search(r"GATE_PROCESS=START NAME=actual PID=(\d+) LOG_PATH=(.+)", completed.stdout)
+                self.assertIsNotNone(started, completed.stdout)
+                self.assertTrue(Path(started.group(2).strip()).is_file())
 
     def test_failed_group_keeps_reported_logs_until_explicit_cleanup(self) -> None:
         with tempfile.TemporaryDirectory(prefix="parallel_gate_fixture_") as directory:

@@ -967,22 +967,34 @@ function Invoke-IndependentGateStageGroup {
                 $env:MPLCONFIGDIR = $originalMatplotlibConfig
             }
         }
-        if ($groupSucceeded) {
-            Remove-GateTemporaryDirectory -Path $groupRoot `
-                -ExpectedNamePrefix $TempNamePrefix
-        }
-        if (-not (Test-Path -LiteralPath $groupRoot)) {
-            Write-Output "GATE_DIAGNOSTICS=CLEANED PATH=$groupRoot"
-        } else {
-            # Retain only this group's diagnostic files, not its generated cache.
-            Remove-GateTemporaryDirectory -Path (Join-Path $groupRoot 'matplotlib') `
-                -ExpectedNamePrefix 'matplotlib'
-            Write-Output "GATE_DIAGNOSTICS=RETAINED PATH=$groupRoot"
-            Write-Output (
-                'GATE_DIAGNOSTICS_CLEANUP=AFTER_REVIEW ' +
-                "COMMAND=Remove-GateTemporaryDirectory -Path '$($groupRoot.Replace("'", "''"))' " +
-                "-ExpectedNamePrefix '$($TempNamePrefix.Replace("'", "''"))'"
-            )
+        $cleanupFailure = $null
+        try {
+            if ($groupSucceeded) {
+                Remove-GateTemporaryDirectory -Path $groupRoot `
+                    -ExpectedNamePrefix $TempNamePrefix
+            }
+            if (-not (Test-Path -LiteralPath $groupRoot)) {
+                Write-Output "GATE_DIAGNOSTICS=CLEANED PATH=$groupRoot"
+            } else {
+                # Retain only this group's diagnostic files, not its generated cache.
+                Remove-GateTemporaryDirectory -Path (Join-Path $groupRoot 'matplotlib') `
+                    -ExpectedNamePrefix 'matplotlib'
+                Write-Output "GATE_DIAGNOSTICS=RETAINED PATH=$groupRoot"
+                Write-Output (
+                    'GATE_DIAGNOSTICS_CLEANUP=AFTER_REVIEW ' +
+                    "COMMAND=Remove-GateTemporaryDirectory -Path '$($groupRoot.Replace("'", "''"))' " +
+                    "-ExpectedNamePrefix '$($TempNamePrefix.Replace("'", "''"))'"
+                )
+            }
+        } catch {
+            $cleanupFailure = $_
+            $primaryFailure = if ($null -ne $groupFailure) { $groupFailure } else { $finalizationFailure }
+            if ($null -ne $primaryFailure) {
+                $primaryFailure.Exception.Data['gate_group_cleanup_error'] = $cleanupFailure.Exception.Message
+                Write-Warning "Gate cleanup failed; original group/finalization failure is retained: $cleanupFailure"
+            } else {
+                $groupSucceeded = $false
+            }
         }
         foreach ($recordName in @($records.Keys)) {
             try {
@@ -996,5 +1008,6 @@ function Invoke-IndependentGateStageGroup {
             }
         }
         if ($null -ne $finalizationFailure) { throw $finalizationFailure }
+        if ($null -eq $groupFailure -and $null -ne $cleanupFailure) { throw $cleanupFailure }
     }
 }
