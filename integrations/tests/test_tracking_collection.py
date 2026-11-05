@@ -74,8 +74,31 @@ class TrackingCollectionTests(unittest.TestCase):
     def test_legacy_census_is_same_canonical_module(self):
         from integrations.workflows.single_reflection_flight import census
         self.assertIs(census, collection)
-        self.assertEqual(Path(collection.__file__).resolve().parts[-5:],
-                         ("src", "msplatform", "backends", "simion", "tracking_collection.py"))
+        import sys
+        from types import ModuleType
+        from unittest.mock import patch
+        import msplatform
+
+        canonical_name = "msplatform.backends.simion.tracking_collection"
+        expected = Path(msplatform.__file__).resolve().parent / "backends/simion/tracking_collection.py"
+
+        def assert_canonical_origin(module):
+            self.assertIs(sys.modules[canonical_name], module)
+            self.assertEqual(module.__name__, canonical_name)
+            self.assertEqual(Path(module.__file__).resolve(), expected)
+            self.assertEqual(Path(module.__spec__.origin).resolve(), expected)
+            self.assertIs(module.collect_tracking_logs.__globals__, vars(module))
+
+        assert_canonical_origin(collection)
+        with tempfile.TemporaryDirectory() as directory:
+            foreign = Path(directory) / "msplatform/backends/simion/tracking_collection.py"
+            with self.subTest("same suffix outside canonical package"), \
+                 patch.object(collection, "__file__", str(foreign)), self.assertRaises(AssertionError):
+                assert_canonical_origin(collection)
+        duplicate = ModuleType(canonical_name)
+        duplicate.__dict__.update(vars(collection))
+        with self.subTest("copied module with identical origin metadata"), self.assertRaises(AssertionError):
+            assert_canonical_origin(duplicate)
 
     def test_serialization_boundary_is_unchanged_and_not_cross_run_tolerance(self):
         self.assertTrue(binary64_serialization_close(1., 1. + 32 * math.ulp(1.)))
