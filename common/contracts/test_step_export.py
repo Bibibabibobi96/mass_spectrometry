@@ -15,6 +15,35 @@ from msplatform.exporters.step import export_assembly_step
 
 
 class StepExportTests(unittest.TestCase):
+    def test_root_member_collision_rejects_before_engine_import_without_mutation(self):
+        from msplatform.exporters.step import assembly_geometry_members, step_member_names
+        snapshot = real_snapshot()
+        before = copy.deepcopy(snapshot)
+        members = assembly_geometry_members(snapshot)
+        names = step_member_names(snapshot, members)
+        detector = next(member for member in members if member['member_id'] == 'detector')
+        name = names[(detector['instance_id'], detector['member_id'])]
+        self.assertEqual(name, 'oatof.detector')
+        self.assertEqual(detector['representation_role'], 'physical_solid')
+        original_import = __import__
+        engine_imports = []
+
+        def blocked(module, *args, **kwargs):
+            if module == 'cadquery':
+                engine_imports.append(module)
+                raise AssertionError('CAD engine imported before collision rejection')
+            return original_import(module, *args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as directory, patch('builtins.__import__', side_effect=blocked):
+            destination = Path(directory) / (name + '.step')
+            with self.assertRaisesRegex(ValueError, 'physical member; choose another export name'):
+                export_assembly_step(snapshot, destination=destination, representation='physical_solids',
+                    options=dict(write_pcurves=True, precision_mode=0, name=name))
+            self.assertFalse(destination.exists())
+            self.assertEqual(list(Path(directory).iterdir()), [])
+        self.assertEqual(engine_imports, [])
+        self.assertEqual(snapshot, before)
+
     def test_export_name_is_one_legal_leaf_and_default_path_is_unchanged(self):
         from msplatform.exporters.step import step_export_filename
         options = dict(write_pcurves=True, precision_mode=0)

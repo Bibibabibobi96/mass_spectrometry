@@ -147,6 +147,11 @@ Windows reserved names, control characters, and trailing spaces/dots are rejecte
 English spaces, apostrophes, hyphens, and underscores are supported; workspace paths
 may still contain Chinese characters. This changes display/output naming, not scientific IDs.
 
+The root name must also differ from the exported physical members' `step_name` values.
+For example, `oatof.detector` is a legal filename stem but conflicts with the detector
+member in this example. The exporter rejects that conflict before loading the CAD
+engine and asks for another export name. Ideal surfaces are excluded from this check.
+
 The export report records `step_name` for each physical member. Labels combine the
 actual instance and provider member semantics: RF rod/segment/group context and full
 TOF member roles. Repeated instances remain distinct; a member containing multiple

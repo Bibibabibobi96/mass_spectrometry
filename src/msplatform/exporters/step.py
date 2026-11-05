@@ -239,6 +239,10 @@ def export_assembly_step(assembly: Mapping, *, destination: Path, representation
     filename = step_export_filename(options)
     members=assembly_geometry_members(assembly)
     names=step_member_names(assembly,members)
+    root_name = options.get('name', 'mass_spectrometry')
+    if any(root_name == names[(member['instance_id'], member['member_id'])]
+           for member in members if member['representation_role'] == 'physical_solid'):
+        raise ValueError('STEP root name matches an exported physical member; choose another export name')
     destination=Path(destination)
     if 'name' in options and destination.name != filename:
         raise ValueError('STEP destination differs from the explicit export name')
@@ -246,7 +250,7 @@ def export_assembly_step(assembly: Mapping, *, destination: Path, representation
     try: import cadquery as cq
     except ImportError as error: raise RuntimeError('STEP export requires the optional cad-step CadQuery dependency') from error
     profile = _cad_precision_profile()
-    model=cq.Assembly(name=options.get('name','mass_spectrometry'))
+    model=cq.Assembly(name=root_name)
     exported,excluded=[],[]
     for member in members:
         if member['representation_role']=='ideal_surface':
