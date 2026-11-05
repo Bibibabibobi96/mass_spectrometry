@@ -1,0 +1,41 @@
+{
+  "run_id": 41999562945,
+  "job_id": 127151063975,
+  "head": "f283b752a736dcfe703ffb2a6b56bef291c889b1",
+  "scope": "Changed",
+  "conclusion": "success",
+  "stages": {
+    "PASS": 9,
+    "NOT_APPLICABLE": 35
+  },
+  "entities": {
+    "subtest": {
+      "success": 523
+    },
+    "test": {
+      "success": 189
+    }
+  },
+  "workers": {
+    "logical_processors": 4,
+    "resolved_workers": 4,
+    "requested_workers": 4,
+    "wait_timeout_seconds": 1800,
+    "runner_environment": "github-hosted"
+  },
+  "elapsed_wall_seconds": 279.7351359,
+  "internal_elapsed_seconds": 278.854462,
+  "artifact_id": 13402780662,
+  "artifact_bytes": 174654,
+  "artifact_sha256": "0ef5a13579f96850141e1682435c9e59f30e7a10adf71b1d5aa8df8b944527a8",
+  "official_digest_match": true,
+  "zip_crc_pass": true,
+  "repository_job": "skipped",
+  "old_e22e_manual": {
+    "run_id": 41972885418,
+    "job_id": 127067060696,
+    "status": "in_progress",
+    "step": "Verify repository software scope"
+  },
+  "scope_limit": "Changed only; no full Repository or native qualification inferred."
+}

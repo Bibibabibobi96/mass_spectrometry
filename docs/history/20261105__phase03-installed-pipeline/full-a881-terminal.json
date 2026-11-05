@@ -1,0 +1,62 @@
+{
+  "status": "PASS",
+  "actual_session": 14842,
+  "source_commit": "a8815a81314b1bbe449e692638dc9230d8319e7f",
+  "audit": {
+    "public_status": "PASS",
+    "public_error": null,
+    "stage_counts": {
+      "NOT_APPLICABLE": 12,
+      "PASS": 50
+    },
+    "public_wall_seconds": 2445.9804041,
+    "internal_seconds": 2443.453264,
+    "gate_exit_code": 0,
+    "parent_count": 6804,
+    "unique_parent_keys": 6804,
+    "parent_outcomes": {
+      "success": 6783,
+      "skip": 21
+    },
+    "subtest_count": 7710,
+    "subtest_outcomes": {
+      "success": 7710
+    },
+    "other_records": [],
+    "native_dirichlet_count": 6,
+    "native_dirichlet_outcomes": {
+      "success": 6
+    },
+    "source": {
+      "source_before_head": "a8815a81314b1bbe449e692638dc9230d8319e7f",
+      "source_after_head": "a8815a81314b1bbe449e692638dc9230d8319e7f",
+      "source_paths_before": 2792,
+      "source_paths_after": 2792,
+      "changed_paths": [],
+      "head_unchanged": true,
+      "status_unchanged": true,
+      "status_before": "",
+      "status_after": ""
+    },
+    "original_summary": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\final-repository-sdk23-dot-batch\\summary.json",
+      "bytes": 20437691,
+      "sha256": "47db13484bcddf742e7170779b31ec6fb19b977f78745351608893720f6593e9"
+    },
+    "raw_group_files_retained": 0,
+    "raw_unavailable": [
+      {
+        "path": "C:\\Users\\Liao\\AppData\\Local\\Temp\\repository_integration_gate_6bfbef6b5e2a426ea0f84f6df8c20fad",
+        "status": "raw_unavailable_at_terminal",
+        "public_reported_cleaned": true,
+        "reason": "public_normal_cleanup"
+      }
+    ],
+    "raw_scope": "Only terminal files still present were copied. Missing raw is explicit, never synthesized; summary derivatives are labelled."
+  },
+  "current_skips": "skip-disposition.json",
+  "release": "release-terminal-review.json",
+  "retirement": "runner-retirement.json",
+  "scope": "Actual full a881 only. Subsequent reviewed fixture/WarningStop corrections, if applied, require separate focused successor evidence; never relabelled as included in this full run.",
+  "prior_evidence_untouched": true
+}

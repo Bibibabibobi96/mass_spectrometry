@@ -1,0 +1,70 @@
+{
+  "status": "frozen",
+  "sources": [
+    {
+      "path": "src/msplatform/execution/processes.py",
+      "bytes": 9112,
+      "cr": 0,
+      "sha256": "b7ef22705489f1c8f547ecf3eaededfeeea3014ea38b1f7a08d07f6a71df1600"
+    },
+    {
+      "path": "src/msplatform/execution/run_session.py",
+      "bytes": 11893,
+      "cr": 0,
+      "sha256": "de6679390ea472472c67fe60ab0dbc13353a554e8107b86114370ab007fcbfcc"
+    },
+    {
+      "path": "src/msplatform/execution/resources/process_owner.ps1",
+      "bytes": 3435,
+      "cr": 0,
+      "sha256": "5f0c744fda2137a14889b28c60866bcb93a3ef76c9119e953557459d4a7063f8"
+    },
+    {
+      "path": "src/msplatform/execution/resources/resource_process_support.ps1",
+      "bytes": 36324,
+      "cr": 0,
+      "sha256": "5616d5e0a8ea03660e1e3816de4956df251b579114409402d143141fabde2724"
+    },
+    {
+      "path": "common/contracts/test_immutable_input_process.py",
+      "bytes": 9971,
+      "cr": 0,
+      "sha256": "f25c02de0318be7d90ce7cb782c9594211169c49ab720c19ec47226359fa98e2"
+    }
+  ],
+  "optional_parameter": "immutable_input_records",
+  "epochs": [
+    {
+      "success_records": 14,
+      "skip": 0,
+      "session": 34932,
+      "parents": 8,
+      "seconds": 33.24,
+      "released": true,
+      "id": 1,
+      "gate_pid": 39688
+    },
+    {
+      "success_records": 9,
+      "skip": 0,
+      "session": 21362,
+      "parents": 5,
+      "seconds": 39.118,
+      "released": true,
+      "id": 2,
+      "gate_pid": 53424
+    }
+  ],
+  "native_runs": 0,
+  "active_sessions": 0,
+  "ledger_changes": 0,
+  "source_sha": null,
+  "standards_errors": 0,
+  "standards_reviews": 0,
+  "remaining": [
+    "installed_whole_closure",
+    "real_native_consumer_and_PA_fidelity",
+    "portable_workbench_reopen",
+    "original_F_hold_reconciliation_not_performed"
+  ]
+}

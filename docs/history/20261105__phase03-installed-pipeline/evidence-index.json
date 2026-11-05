@@ -1,0 +1,2587 @@
+{
+  "status": "SELECTED_P3_ACCEPTANCE_LEDGER",
+  "current": {
+    "HEAD": "f283b752a736dcfe703ffb2a6b56bef291c889b1",
+    "clean_pushed": true,
+    "full_repository": {
+      "source": "a8815a81314b1bbe449e692638dc9230d8319e7f",
+      "session": 14842,
+      "status": "PASS"
+    },
+    "focused_successor": {
+      "session": 86477,
+      "status": "PASS",
+      "parents": 49,
+      "subtests": 46,
+      "skip": 0,
+      "public_seconds": 220.5235436,
+      "reference": {
+        "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\dot-focused-batch\\addendum-parallel-green\\causal-terminal-audit.json",
+        "bytes": 8512,
+        "sha256": "495033083ecd2b860fdca35c65863c3981ba627f4d1fa14205321004dfbcc890"
+      }
+    },
+    "CLOC_F283": "ACTUAL_PASS",
+    "PACKAGE_F283": "ACTUAL_UNCHANGED_JOIN",
+    "DOCS_FINAL": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\final-publication-docs-check\\terminal-review.json",
+      "bytes": 3628,
+      "sha256": "1ff8cf0bb2360802e89910aa257c64e4cbce5dc2e27cf74a4ca3721f3555b6eb",
+      "scope": "Actual prepublication check 10177 of the preceding 25-path candidate; final-byte recheck is recorded in the containing documentation commit, without a self-hash cycle."
+    },
+    "publication": "Final bytes and doc-only publication are bound by the containing commit and its validation record.",
+    "clean_pushed_scope": "Code epoch f283b752; documentation is a separately validated containing commit.",
+    "deferred_secondary_warning_review": "Static concern in other completion/log-retention secondary diagnostics; not reproduced or established as a P3 functional blocker; deferred under the user fast-closure priority."
+  },
+  "goals": [
+    {
+      "goal": 1,
+      "original_bullet_sha256": "3a8ecbaf89009d44b54caf4e503fed66f1c87abbc0efdff739ecdbceaabb5b1d",
+      "C_refs": [
+        "C01",
+        "C02",
+        "C03"
+      ],
+      "status": "PROVEN_SELECTED_P3_SCOPE",
+      "proof_refs": [
+        "D01",
+        "FULLFCBC"
+      ],
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT_CLOSURE_PENDING"
+    },
+    {
+      "goal": 2,
+      "original_bullet_sha256": "65549ba96371d319f39cc86c7aad946194aecd99e6cd6d5a88bc533a7ccb97f2",
+      "C_refs": [
+        "C01",
+        "C03"
+      ],
+      "status": "PROVEN_SELECTED_P3_SCOPE",
+      "proof_refs": [
+        "FULLFCBC",
+        "COMMIT23",
+        "INSTALL23"
+      ],
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT_CLOSURE_PENDING"
+    },
+    {
+      "goal": 3,
+      "original_bullet_sha256": "721fdb567f03d7c61d57d218836bd78d37223bc6eaf9aa7899a37a3515cf899e",
+      "C_refs": [
+        "C04",
+        "C05",
+        "C06",
+        "C12"
+      ],
+      "status": "PROVEN_SELECTED_P3_SCOPE",
+      "proof_refs": [
+        "DAG",
+        "BIND",
+        "INSTALL23",
+        "ORIGINS23"
+      ],
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT_CLOSURE_PENDING"
+    },
+    {
+      "goal": 4,
+      "original_bullet_sha256": "a69206962833997cd2d63a223626da6338e8179e65e4f62a206e3b13942e09d8",
+      "C_refs": [
+        "C08",
+        "C11",
+        "C37"
+      ],
+      "status": "PROVEN_SELECTED_SCOPE",
+      "proof_refs": [
+        "DAG",
+        "BIND",
+        "FIELD"
+      ]
+    },
+    {
+      "goal": 5,
+      "original_bullet_sha256": "c12cce680e372425d2f3b4ebefd8584fb56e4520855cd03109f6b62298daaf18",
+      "C_refs": [
+        "C37",
+        "C42"
+      ],
+      "status": "PROVEN_SELECTED_SCOPE",
+      "proof_refs": [
+        "DAG",
+        "BIND",
+        "MODEL_F5",
+        "M_F5_JOIN"
+      ]
+    },
+    {
+      "goal": 6,
+      "original_bullet_sha256": "a3b2da3cdd2e09061c9970d546dbf4199689fd0fcda52f25e05b0599dad015fc",
+      "C_refs": [
+        "C42"
+      ],
+      "status": "PROVEN_SELECTED_SCOPE",
+      "proof_refs": [
+        "DAG",
+        "BIND"
+      ]
+    },
+    {
+      "goal": 7,
+      "original_bullet_sha256": "5c9127221d4774f292f7e3d7b448cf78dd4ac4818e6f3e772fd2692286ac224c",
+      "C_refs": [
+        "C09",
+        "C50"
+      ],
+      "status": "PROVEN_SELECTED_SCOPE",
+      "proof_refs": [
+        "COLDMODEL",
+        "MODEL_F5",
+        "M_F5_JOIN"
+      ]
+    },
+    {
+      "goal": 8,
+      "original_bullet_sha256": "64683561bf26c49a791f630f46a99d8e92bb77f651138ff42edfebc3d48aa445",
+      "C_refs": [
+        "C43",
+        "C44",
+        "C46"
+      ],
+      "status": "PROVEN_SELECTED_SCOPE",
+      "proof_refs": [
+        "CAD22"
+      ]
+    },
+    {
+      "goal": 9,
+      "original_bullet_sha256": "d35012f6d806fc6d4f1685c39c7f2d49a515e21d64a217c2f10c57fcb10fc2d7",
+      "C_refs": [
+        "C47",
+        "C48"
+      ],
+      "status": "PROVEN_SELECTED_SCOPE",
+      "proof_refs": [
+        "COLDMODEL",
+        "MODEL_F5",
+        "M_F5_JOIN"
+      ]
+    },
+    {
+      "goal": 10,
+      "original_bullet_sha256": "c1d58ef6f2607746d6cf424828ae04eb90db9104d470f32a2d526cddeb131b7c",
+      "C_refs": [
+        "C45",
+        "C48",
+        "C52"
+      ],
+      "status": "PROVEN_SELECTED_SCOPE",
+      "proof_refs": [
+        "CAD22",
+        "SIMIONGUI",
+        "MODEL_F5",
+        "M_F5_JOIN"
+      ]
+    },
+    {
+      "goal": 11,
+      "original_bullet_sha256": "ae4dcfe020948d1ec0d21b45c6e277310b07d1aba4311dab6b23535b48d11d8c",
+      "C_refs": [
+        "C38",
+        "C49"
+      ],
+      "status": "PROVEN_SELECTED_SCOPE",
+      "proof_refs": [
+        "COLDMODEL",
+        "FIELD",
+        "MODEL_F5",
+        "M_F5_JOIN"
+      ]
+    },
+    {
+      "goal": 12,
+      "original_bullet_sha256": "e97a2a05f43cacebed02ea711bae7fb8fd06d09ba441eaabe88146de59f0ec78",
+      "C_refs": [
+        "C14",
+        "C44"
+      ],
+      "status": "PROVEN_SELECTED_SCOPE",
+      "proof_refs": [
+        "W3",
+        "CAD22"
+      ]
+    },
+    {
+      "goal": 13,
+      "original_bullet_sha256": "a42f59e5064f655319929f44cf06a88445f9fdbb3e78267f9960ccad4ca7a10f",
+      "C_refs": [
+        "C31",
+        "C53"
+      ],
+      "status": "PROVEN_SELECTED_P3_SCOPE",
+      "proof_refs": [
+        "BOUNDARY",
+        "FULLFCBC",
+        "FULL_A881",
+        "FOCUSED_F283",
+        "CLOC_F283",
+        "PACKAGE_F283",
+        "DOCS_FINAL",
+        "REMOTE_F283"
+      ],
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT_CLOSURE_PENDING"
+    },
+    {
+      "goal": 14,
+      "original_bullet_sha256": "a2d63dfbaba0d87b8db114556b36000b9e175ca58582d40d5050af3bee8a8002",
+      "C_refs": [
+        "C05",
+        "C06",
+        "C39"
+      ],
+      "status": "PROVEN_SELECTED_P3_SCOPE",
+      "proof_refs": [
+        "INSTALL23",
+        "ORIGINS23",
+        "GEMFIX"
+      ],
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT_CLOSURE_PENDING"
+    },
+    {
+      "goal": 15,
+      "original_bullet_sha256": "0094f0fd16f0420daee54f605f7f5e668d79dbcee50a409ee254f895e269327a",
+      "C_refs": [
+        "C39"
+      ],
+      "status": "PROVEN_SELECTED_P3_SCOPE",
+      "proof_refs": [
+        "RESOURCE",
+        "INSTALL23",
+        "GEMFIX"
+      ],
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT_CLOSURE_PENDING"
+    },
+    {
+      "goal": 16,
+      "original_bullet_sha256": "5ade95a5a9fb79ecb9449ccc16f1c1dd92f7891dc7be10e6b4aa7147f207bac1",
+      "C_refs": [
+        "C26",
+        "C28",
+        "C38"
+      ],
+      "status": "PROVEN_SELECTED_SCOPE",
+      "proof_refs": [
+        "FIELD",
+        "CASES",
+        "ANALYSIS"
+      ]
+    },
+    {
+      "goal": 17,
+      "original_bullet_sha256": "2374d0dd47cb61b64a7ea17941514dc3fbd63b7e8abe20ced4c246015fa6f690",
+      "C_refs": [
+        "C07"
+      ],
+      "status": "PROVEN_SELECTED_P3_SCOPE",
+      "proof_refs": [
+        "BOUNDARY",
+        "FULLFCBC",
+        "FULL_A881",
+        "FOCUSED_F283",
+        "CLOC_F283",
+        "PACKAGE_F283",
+        "DOCS_FINAL",
+        "REMOTE_F283"
+      ],
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT_CLOSURE_PENDING"
+    },
+    {
+      "goal": 18,
+      "original_bullet_sha256": "343e144df621881799122fc6738e1e7a619fc22177a35ab1923867f764f53d7e",
+      "C_refs": [
+        "C13",
+        "C14",
+        "C15",
+        "C18",
+        "C41"
+      ],
+      "status": "PROVEN_SELECTED_SCOPE",
+      "proof_refs": [
+        "BIRTH",
+        "W3",
+        "CUT"
+      ]
+    },
+    {
+      "goal": 19,
+      "original_bullet_sha256": "3a4801a8319277db19f8c57f7fe102aa490a3f74d7d026601b7519fe51d0363f",
+      "C_refs": [
+        "C15",
+        "C16",
+        "C17",
+        "C18"
+      ],
+      "status": "PROVEN_SELECTED_SCOPE",
+      "proof_refs": [
+        "PROGRAM",
+        "BIRTH",
+        "CASES"
+      ]
+    },
+    {
+      "goal": 20,
+      "original_bullet_sha256": "ac61fb7b7a365274af46ace18fbc8cb799398fe12f14aba03f48448343596019",
+      "C_refs": [
+        "C13",
+        "C19",
+        "C20",
+        "C21"
+      ],
+      "status": "PROVEN_SELECTED_SCOPE",
+      "proof_refs": [
+        "BIRTH",
+        "UNITS",
+        "CASES"
+      ]
+    },
+    {
+      "goal": 21,
+      "original_bullet_sha256": "ee94471435e5b86be3a666313560659c186a2738545d8da852b66dff68e5a220",
+      "C_refs": [
+        "C22",
+        "C23",
+        "C24"
+      ],
+      "status": "PROVEN_SELECTED_SCOPE",
+      "proof_refs": [
+        "FIELD",
+        "CASES",
+        "ANALYSIS"
+      ]
+    },
+    {
+      "goal": 22,
+      "original_bullet_sha256": "79d26259da7706f88381ea08f4ca3b0106b54cafd3fccd13f5a76b907b79e7fa",
+      "C_refs": [
+        "C23",
+        "C40",
+        "C41"
+      ],
+      "status": "PROVEN_SELECTED_SCOPE",
+      "proof_refs": [
+        "CUT",
+        "CASES",
+        "ANALYSIS"
+      ]
+    },
+    {
+      "goal": 23,
+      "original_bullet_sha256": "1a01b4696a23d3956eea8b6af19100d9a92af22a0a791880baa814beb0beb248",
+      "C_refs": [
+        "C25",
+        "C26",
+        "C27",
+        "C29"
+      ],
+      "status": "PROVEN_SELECTED_RECOVERY_AND_CAUSAL_TRANSPORT",
+      "proof_refs": [
+        "UNITS",
+        "DISPATCH",
+        "GUARD",
+        "REPLAY",
+        "V2_WITNESS",
+        "V2_HANDOFF",
+        "DOT_BATCH_ORIGINAL",
+        "DOT_PARALLEL",
+        "FOCUSED_F283",
+        "RED_QUEUED",
+        "RED_WARNING"
+      ]
+    },
+    {
+      "goal": 24,
+      "original_bullet_sha256": "98b59506a0151d6f2557df4d0d764646958efa88c92c903bae460f56db17268a",
+      "C_refs": [
+        "C11",
+        "C28",
+        "C51"
+      ],
+      "status": "PROVEN_SELECTED_SCOPE",
+      "proof_refs": [
+        "CACHE",
+        "FIELD",
+        "MODEL_F5",
+        "M_F5_JOIN"
+      ]
+    },
+    {
+      "goal": 25,
+      "original_bullet_sha256": "17ea778f05901c2de1af11ecceeb2ded0f5033c153094413cec6b99d6aec89bd",
+      "C_refs": [
+        "C05",
+        "C10",
+        "C30",
+        "C39"
+      ],
+      "status": "PROVEN_SELECTED_P3_SCOPE",
+      "proof_refs": [
+        "INSTALL23",
+        "ORIGINS23",
+        "SIMIONGUI",
+        "MODEL_F5",
+        "M_F5_JOIN"
+      ],
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT_CLOSURE_PENDING"
+    },
+    {
+      "goal": 26,
+      "original_bullet_sha256": "aaae6baf5a4e6d8faef6c3550075f8ecb5706b363ddd5bb04e2b8253200874a1",
+      "C_refs": [
+        "C36",
+        "C54"
+      ],
+      "status": "PROVEN_SELECTED_P3_SCOPE",
+      "proof_refs": [
+        "TUTORIAL",
+        "CAD22"
+      ],
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT_CLOSURE_PENDING"
+    },
+    {
+      "goal": 27,
+      "original_bullet_sha256": "e85c33ab354c54b5e6018bf610c58f23a0d86520ad676cd9e601ab1ad0a55f33",
+      "C_refs": [
+        "C32",
+        "C34",
+        "C53"
+      ],
+      "status": "PROVEN_SELECTED_P3_SCOPE",
+      "proof_refs": [
+        "BRIDGES",
+        "GEMFIX",
+        "ORIGINFIX",
+        "FULLFCBC",
+        "FULL_A881",
+        "FOCUSED_F283",
+        "CLOC_F283",
+        "PACKAGE_F283",
+        "DOCS_FINAL",
+        "REMOTE_F283"
+      ],
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT_CLOSURE_PENDING"
+    },
+    {
+      "goal": 28,
+      "original_bullet_sha256": "04b3470e441ce7da9be47cbdc55f9ac8ea55ffb24a10a51ae3d4476cbab89fa0",
+      "C_refs": [
+        "C31",
+        "C32",
+        "C33",
+        "C35"
+      ],
+      "status": "PROVEN_SELECTED_P3_SCOPE",
+      "proof_refs": [
+        "FULLFCBC",
+        "SKIPS",
+        "CLOC8127",
+        "FULL_E22E",
+        "CLOC85",
+        "CHANGED85",
+        "FULL_A881",
+        "FOCUSED_F283",
+        "RED_QUEUED",
+        "RED_WARNING",
+        "CLOC_F283",
+        "PACKAGE_F283",
+        "GREEN_COMMIT_F283",
+        "DOCS_FINAL",
+        "REMOTE_F283"
+      ],
+      "prior_publication_status": "PROVEN_CURRENT_FULL_FINAL_PUBLICATION_PENDING"
+    },
+    {
+      "goal": 29,
+      "original_bullet_sha256": "888b3d2e74382949a59e7aa40484bf9d255f49bfb49d806ca82ac94953a9f821",
+      "C_refs": [
+        "C36",
+        "C42",
+        "C54"
+      ],
+      "status": "PROVEN_SELECTED_P3_SCOPE",
+      "proof_refs": [
+        "TUTORIAL",
+        "DAG",
+        "RESOURCE",
+        "INSTALL23",
+        "FULL_A881",
+        "FOCUSED_F283",
+        "RED_QUEUED",
+        "RED_WARNING",
+        "CLOC_F283",
+        "PACKAGE_F283",
+        "GREEN_COMMIT_F283",
+        "DOCS_FINAL",
+        "REMOTE_F283"
+      ],
+      "prior_publication_status": "PROVEN_CURRENT_FULL_FINAL_PUBLICATION_PENDING"
+    }
+  ],
+  "coverage": [
+    {
+      "id": "C01",
+      "original_minimum_sha256": "8d129d651985f0be9063fe2a3f1cbe335dcb3353a6f6e853d74a918d7438c277",
+      "status": "PROVEN_SELECTED_P3_SCOPE_AND_RECORDED_LATER_RESPONSIBILITY",
+      "source_groups": [
+        "api"
+      ],
+      "evidence_groups": [
+        "d01",
+        "install"
+      ],
+      "current_proof_refs": [
+        "D01",
+        "FULL_A881",
+        "PACKAGE_F283"
+      ],
+      "original_minimum_field": "original_minimum_evidence",
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT16447_PUBLICATION_PENDING",
+      "historical_proof_refs": [
+        "COMMIT23",
+        "D01",
+        "FULLFCBC",
+        "INSTALL23"
+      ]
+    },
+    {
+      "id": "C02",
+      "original_minimum_sha256": "b1b05895fbc36a46f39a14bcd73af28ee5ae4ec344dbaac9b483e7fd71063714",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "provider"
+      ],
+      "evidence_groups": [
+        "d01",
+        "provider"
+      ],
+      "current_proof_refs": [
+        "D01",
+        "FULLFCBC"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C03",
+      "original_minimum_sha256": "952936bbc4f26e2580ce1415b07da811a2a49be5f4eb60b2d3f52dd699b07ffa",
+      "status": "PROVEN_SELECTED_P3_SCOPE_AND_RECORDED_LATER_RESPONSIBILITY",
+      "source_groups": [
+        "safety"
+      ],
+      "evidence_groups": [
+        "d01",
+        "safety",
+        "sw"
+      ],
+      "current_proof_refs": [
+        "FULL_A881",
+        "DOCS_FINAL"
+      ],
+      "original_minimum_field": "original_minimum_evidence",
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT16447_PUBLICATION_PENDING",
+      "historical_proof_refs": [
+        "COMMIT23",
+        "D01",
+        "FULLFCBC",
+        "INSTALL23"
+      ]
+    },
+    {
+      "id": "C04",
+      "original_minimum_sha256": "b4fe54a71d8fdb1ef64306eddac3b35cce8a9edb485b64cdc72c72a40dace004",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "api"
+      ],
+      "evidence_groups": [
+        "api",
+        "install",
+        "field",
+        "case",
+        "publish"
+      ],
+      "current_proof_refs": [
+        "BIND",
+        "DAG",
+        "INSTALL23",
+        "ORIGINS23"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C05",
+      "original_minimum_sha256": "72f9b9dde5795cb18da13d9b3c99e434f6fa930c24d60a658811b9f8394518ce",
+      "status": "PASS_SELECTED_INSTALLED_SDK23_SCOPE",
+      "source_groups": [
+        "resource"
+      ],
+      "evidence_groups": [
+        "install"
+      ],
+      "current_proof_refs": [
+        "BIND",
+        "DAG",
+        "GEMFIX",
+        "INSTALL23",
+        "MODEL",
+        "ORIGINS23",
+        "SIMIONGUI"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C06",
+      "original_minimum_sha256": "e7139c9e05a19894830722a5fcc200abe023936a972bdf0718f06e10a0077467",
+      "status": "PASS_SELECTED_INSTALLED_SDK23_SCOPE",
+      "source_groups": [
+        "resource"
+      ],
+      "evidence_groups": [
+        "install",
+        "reader"
+      ],
+      "current_proof_refs": [
+        "BIND",
+        "DAG",
+        "GEMFIX",
+        "INSTALL23",
+        "ORIGINS23"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C07",
+      "original_minimum_sha256": "52c545fa215e97a9bb082f75733b43cb19d17a68748288c64b4a2140434cc454",
+      "status": "PROVEN_SELECTED_P3_SCOPE_AND_RECORDED_LATER_RESPONSIBILITY",
+      "source_groups": [
+        "provider"
+      ],
+      "evidence_groups": [
+        "boundary",
+        "install"
+      ],
+      "current_proof_refs": [
+        "BOUNDARY",
+        "FULL_A881"
+      ],
+      "original_minimum_field": "original_minimum_evidence",
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT16447_PUBLICATION_PENDING",
+      "historical_proof_refs": [
+        "BOUNDARY",
+        "FULLFCBC"
+      ]
+    },
+    {
+      "id": "C08",
+      "original_minimum_sha256": "8622d5e3528a9b17e0b0e068e630f71de5b280fc8e3a3eac7d8d27143de10a4b",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "assembly"
+      ],
+      "evidence_groups": [
+        "objects",
+        "d01",
+        "provider"
+      ],
+      "current_proof_refs": [
+        "BIND",
+        "DAG",
+        "FIELD"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C09",
+      "original_minimum_sha256": "77d2e6cd304c236ebb193ec89d7c8e09f2a09b20ab3416805fdfc99da900f629",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "model"
+      ],
+      "evidence_groups": [
+        "model",
+        "field"
+      ],
+      "current_proof_refs": [
+        "COLDMODEL",
+        "MODEL"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C10",
+      "original_minimum_sha256": "ec24f462ad1a3c15c4fbcf7bbed80a98a4ba125433ae881f44393675967dfc4d",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "model"
+      ],
+      "evidence_groups": [
+        "model",
+        "safety"
+      ],
+      "current_proof_refs": [
+        "INSTALL23",
+        "MODEL",
+        "ORIGINS23",
+        "SIMIONGUI"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C11",
+      "original_minimum_sha256": "26c583cae8add8645a71f32439159e42d3e984b080633450754abc55499eb847",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "tracking"
+      ],
+      "evidence_groups": [
+        "provider",
+        "cache",
+        "w4",
+        "field"
+      ],
+      "current_proof_refs": [
+        "BIND",
+        "CACHE",
+        "DAG",
+        "FIELD",
+        "MODEL"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C12",
+      "original_minimum_sha256": "5a8dd31ac1547f05810fba3c02acc52b64ebcc2a9c528c410c9bbc4bd70deba1",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "api"
+      ],
+      "evidence_groups": [
+        "provider",
+        "api",
+        "install"
+      ],
+      "current_proof_refs": [
+        "BIND",
+        "DAG",
+        "INSTALL23",
+        "ORIGINS23"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C13",
+      "original_minimum_sha256": "d2c6a6a0842cc64172ca8855dea9cbea9988e6d4a761f8673b633468f44cfdf5",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "birth",
+        "tracking"
+      ],
+      "evidence_groups": [
+        "w3",
+        "case"
+      ],
+      "current_proof_refs": [
+        "BIRTH",
+        "CASES",
+        "CUT",
+        "UNITS",
+        "W3"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C14",
+      "original_minimum_sha256": "58a5a8f911006aecb8ed830c2639a05b857056960f61f1c81c922cbde9f5d063",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "assembly"
+      ],
+      "evidence_groups": [
+        "w3",
+        "case"
+      ],
+      "current_proof_refs": [
+        "BIRTH",
+        "CAD22",
+        "CUT",
+        "W3"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C15",
+      "original_minimum_sha256": "b6f46a5fb07c21eef38f3c39795313a87edb586b47ff150dff24ce64f0b35190",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "birth",
+        "tracking"
+      ],
+      "evidence_groups": [
+        "w3",
+        "case"
+      ],
+      "current_proof_refs": [
+        "BIRTH",
+        "CASES",
+        "CUT",
+        "PROGRAM",
+        "W3"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C16",
+      "original_minimum_sha256": "5447533662c96a1a935f481185f8567db0e5e7788dd05897ebe7308b3bc62520",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "birth",
+        "tracking"
+      ],
+      "evidence_groups": [
+        "w3",
+        "field",
+        "case"
+      ],
+      "current_proof_refs": [
+        "BIRTH",
+        "CASES",
+        "PROGRAM"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C17",
+      "original_minimum_sha256": "e4219af91184a1f033940550f664fe707ccb18cd98264ce0706f0ee0a6e0b604",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "tracking"
+      ],
+      "evidence_groups": [
+        "w4",
+        "case"
+      ],
+      "current_proof_refs": [
+        "BIRTH",
+        "CASES",
+        "PROGRAM"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C18",
+      "original_minimum_sha256": "e5dd9e37b1e54a33464cc71f48c3235fe1826cbefd4404d4ba4fe9bf620baa39",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "tracking"
+      ],
+      "evidence_groups": [
+        "cut",
+        "case"
+      ],
+      "current_proof_refs": [
+        "BIRTH",
+        "CASES",
+        "CUT",
+        "PROGRAM",
+        "W3"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C19",
+      "original_minimum_sha256": "87287e80854511c45a6f68c40fcf634e81414d7941b8c0a5b9dc7ef61d67fd79",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "tracking",
+        "analysis"
+      ],
+      "evidence_groups": [
+        "analysis",
+        "case"
+      ],
+      "current_proof_refs": [
+        "BIRTH",
+        "CASES",
+        "UNITS"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C20",
+      "original_minimum_sha256": "1edcb5d9727bb4209dd090df3f1195ab8ba2cea0f5d4c3e98f672e9511628a0c",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "tracking"
+      ],
+      "evidence_groups": [
+        "w3",
+        "units",
+        "api"
+      ],
+      "current_proof_refs": [
+        "BIRTH",
+        "CASES",
+        "UNITS"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C21",
+      "original_minimum_sha256": "d7e7cec4d2a3dad2fb6487cc5af78de39040d1a9dd858d6a3b859e0c7d779ada",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "analysis"
+      ],
+      "evidence_groups": [
+        "reader",
+        "analysis",
+        "units"
+      ],
+      "current_proof_refs": [
+        "BIRTH",
+        "CASES",
+        "UNITS"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C22",
+      "original_minimum_sha256": "53419cee91268a5e897a480f321dc62e1f7de5de8e032d52aaaaa48253a56621",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "tracking"
+      ],
+      "evidence_groups": [
+        "case"
+      ],
+      "current_proof_refs": [
+        "ANALYSIS",
+        "CASES",
+        "FIELD"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C23",
+      "original_minimum_sha256": "b19d2422871e445ca526e8efd50741f7606a3c47b320c74c5d457d51fd42c287",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "tracking",
+        "analysis"
+      ],
+      "evidence_groups": [
+        "case",
+        "publish"
+      ],
+      "current_proof_refs": [
+        "ANALYSIS",
+        "CASES",
+        "CUT",
+        "FIELD"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C24",
+      "original_minimum_sha256": "7563a6c182734ee307f746241bf4d9fd6f1d609a21e3a874aed9c57bba1ea945",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "field"
+      ],
+      "evidence_groups": [
+        "provider",
+        "field",
+        "case"
+      ],
+      "current_proof_refs": [
+        "ANALYSIS",
+        "CASES",
+        "FIELD"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C25",
+      "original_minimum_sha256": "a43f8ff9a310b3149c5db569dd73423f0a88156e4d630e319a7ff39dc372fc6c",
+      "status": "PROVEN_SELECTED_RECOVERY_AND_CAUSAL_TRANSPORT",
+      "source_groups": [
+        "tracking"
+      ],
+      "evidence_groups": [
+        "units"
+      ],
+      "current_proof_refs": [
+        "DISPATCH",
+        "GUARD",
+        "REPLAY",
+        "UNITS",
+        "FOCUSED_F283",
+        "FULL_A881"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C26",
+      "original_minimum_sha256": "fde060761818715bbd6a7ae718807e07aab87e8abc88f3095a91d0d98ec4c919",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "api"
+      ],
+      "evidence_groups": [
+        "recovery",
+        "analysis",
+        "publish"
+      ],
+      "current_proof_refs": [
+        "ANALYSIS",
+        "CASES",
+        "DISPATCH",
+        "FIELD",
+        "GUARD",
+        "REPLAY",
+        "UNITS"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C27",
+      "original_minimum_sha256": "a2360ffcbaeca2c650e3eae2e36d1aba3dc8fa8cf4784903ab329a2f9e117498",
+      "status": "PROVEN_SELECTED_RECOVERY_AND_CAUSAL_TRANSPORT",
+      "source_groups": [
+        "safety"
+      ],
+      "evidence_groups": [
+        "safety",
+        "recovery"
+      ],
+      "current_proof_refs": [
+        "DISPATCH",
+        "GUARD",
+        "REPLAY",
+        "UNITS",
+        "FOCUSED_F283",
+        "FULL_A881"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C28",
+      "original_minimum_sha256": "a32adced91430eb3d6ec90df8b00ba4609714cf82088ee8740ed8370cd7f28e9",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "field",
+        "tracking"
+      ],
+      "evidence_groups": [
+        "cache",
+        "field",
+        "case"
+      ],
+      "current_proof_refs": [
+        "ANALYSIS",
+        "CACHE",
+        "CASES",
+        "FIELD",
+        "MODEL"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C29",
+      "original_minimum_sha256": "75ead6e5b5a4fd8c6b2351912ba612937c1d020f07bcea73a50e143c584e056b",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "tracking"
+      ],
+      "evidence_groups": [
+        "reader",
+        "units",
+        "install"
+      ],
+      "current_proof_refs": [
+        "DISPATCH",
+        "GUARD",
+        "REPLAY",
+        "UNITS"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C30",
+      "original_minimum_sha256": "6ed98e5f55b2efb69a2db4e6ff2c13db75c361436345d272d2215a26da50ed2c",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "tracking",
+        "model"
+      ],
+      "evidence_groups": [
+        "install",
+        "reader",
+        "case"
+      ],
+      "current_proof_refs": [
+        "INSTALL23",
+        "MODEL",
+        "ORIGINS23",
+        "SIMIONGUI"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C31",
+      "original_minimum_sha256": "83864f6e90c69b75c4396d446755aefb9a2c843232d06e954a4f4e1d726d1505",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "analysis"
+      ],
+      "evidence_groups": [
+        "analysis",
+        "case",
+        "publish"
+      ],
+      "current_proof_refs": [
+        "BOUNDARY",
+        "CLOC8127",
+        "FULLFCBC",
+        "SKIPS"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C32",
+      "original_minimum_sha256": "15f735a076dd220903fdf8f7577e1de8cca5edf2a7594b458c70577e715b20ba",
+      "status": "PROVEN_SELECTED_P3_SCOPE_AND_RECORDED_LATER_RESPONSIBILITY",
+      "source_groups": [
+        "api"
+      ],
+      "evidence_groups": [
+        "install",
+        "units",
+        "sw",
+        "analysis"
+      ],
+      "current_proof_refs": [
+        "BRIDGES",
+        "FULL_A881",
+        "FOCUSED_F283",
+        "GREEN_COMMIT_F283",
+        "DOCS_FINAL"
+      ],
+      "original_minimum_field": "original_minimum_evidence",
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT16447_PUBLICATION_PENDING",
+      "historical_proof_refs": [
+        "BRIDGES",
+        "CLOC8127",
+        "FULLFCBC",
+        "GEMFIX",
+        "ORIGINFIX",
+        "SKIPS"
+      ]
+    },
+    {
+      "id": "C33",
+      "original_minimum_sha256": "7f2680bf098d580f17d0c8b5fffe56c3feafe2f1380ad134e44464f72eb75808",
+      "status": "PROVEN_SELECTED_P3_SCOPE_AND_RECORDED_LATER_RESPONSIBILITY",
+      "source_groups": [
+        "api"
+      ],
+      "evidence_groups": [
+        "install"
+      ],
+      "current_proof_refs": [
+        "FULL_A881",
+        "FOCUSED_F283",
+        "REMOTE_F283",
+        "DOCS_FINAL"
+      ],
+      "original_minimum_field": "original_minimum_evidence",
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT16447_PUBLICATION_PENDING",
+      "historical_proof_refs": [
+        "CLOC8127",
+        "FULLFCBC",
+        "SKIPS"
+      ]
+    },
+    {
+      "id": "C34",
+      "original_minimum_sha256": "24aa394cf3d3f47bc0040537656b339d4e184512c05a57f9dec338a9ae09b98d",
+      "status": "PROVEN_SELECTED_P3_SCOPE_AND_RECORDED_LATER_RESPONSIBILITY",
+      "source_groups": [
+        "resource"
+      ],
+      "evidence_groups": [
+        "bridge",
+        "provider",
+        "w4"
+      ],
+      "current_proof_refs": [
+        "BRIDGES",
+        "CLOC_F283",
+        "PACKAGE_F283",
+        "FULL_A881"
+      ],
+      "original_minimum_field": "original_minimum_evidence",
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT16447_PUBLICATION_PENDING",
+      "historical_proof_refs": [
+        "BRIDGES",
+        "FULLFCBC",
+        "GEMFIX",
+        "ORIGINFIX"
+      ]
+    },
+    {
+      "id": "C35",
+      "original_minimum_sha256": "bceb04a730f9355a454352e98078ed04355dd6f77d5666a93f2ee9092fe117e0",
+      "status": "P3_COSTS_RECORDED_ORIGINAL_P4_TARGETS_RETAINED",
+      "source_groups": [
+        "api"
+      ],
+      "evidence_groups": [
+        "cost",
+        "install",
+        "field",
+        "case"
+      ],
+      "current_proof_refs": [
+        "FULL_A881",
+        "CLOC_F283",
+        "FOCUSED_F283"
+      ],
+      "original_minimum_field": "original_minimum_evidence",
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT16447_PUBLICATION_PENDING",
+      "historical_proof_refs": [
+        "CLOC8127",
+        "FULLFCBC",
+        "SKIPS"
+      ]
+    },
+    {
+      "id": "C36",
+      "original_minimum_sha256": "7664ce9282db15e49ed21b95cd66f2f35fa9a6ad1c4e9826fdd766c4ea985a96",
+      "status": "PROVEN_SELECTED_P3_SCOPE_AND_RECORDED_LATER_RESPONSIBILITY",
+      "source_groups": [
+        "api"
+      ],
+      "evidence_groups": [
+        "tutorial",
+        "bridge",
+        "case"
+      ],
+      "current_proof_refs": [
+        "TUTORIAL",
+        "CAD22",
+        "DOCS_FINAL"
+      ],
+      "original_minimum_field": "original_minimum_evidence",
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT16447_PUBLICATION_PENDING",
+      "historical_proof_refs": [
+        "CAD22",
+        "DAG",
+        "INSTALL23",
+        "RESOURCE",
+        "TUTORIAL"
+      ]
+    },
+    {
+      "id": "C37",
+      "original_minimum_sha256": "1b4ed64db87c6971cd9e0b0d3187bd3092f922f2c8ad825931f2b4610c5dafa6",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "api",
+        "provider"
+      ],
+      "evidence_groups": [
+        "objects",
+        "provider",
+        "install"
+      ],
+      "current_proof_refs": [
+        "BIND",
+        "DAG",
+        "FIELD",
+        "MODEL"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C38",
+      "original_minimum_sha256": "445b740d22fc7d494d1a47e5c4b6eea5b07b14759aaa62ecd18158268aa8e02b",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "api"
+      ],
+      "evidence_groups": [
+        "model",
+        "field",
+        "case",
+        "publish"
+      ],
+      "current_proof_refs": [
+        "ANALYSIS",
+        "CASES",
+        "COLDMODEL",
+        "FIELD",
+        "MODEL"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C39",
+      "original_minimum_sha256": "b8f38a9bec587814f4865865563ac1183f25d42d94701513eef97b56b74f3284",
+      "status": "PASS_SELECTED_INSTALLED_SDK23_SCOPE",
+      "source_groups": [
+        "resource"
+      ],
+      "evidence_groups": [
+        "resource",
+        "install",
+        "field"
+      ],
+      "current_proof_refs": [
+        "GEMFIX",
+        "INSTALL23",
+        "MODEL",
+        "ORIGINS23",
+        "RESOURCE",
+        "SIMIONGUI"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C40",
+      "original_minimum_sha256": "25a83e9a2cf0db0c9827baf671d7aa0570903b18683abd27cc935ced4f602ce0",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "tracking"
+      ],
+      "evidence_groups": [
+        "case",
+        "publish"
+      ],
+      "current_proof_refs": [
+        "ANALYSIS",
+        "CASES",
+        "CUT"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C41",
+      "original_minimum_sha256": "33cce9ff633fbf2f618922df4f55af0f23941139b3ea854531a0faecc154cf09",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "tracking"
+      ],
+      "evidence_groups": [
+        "cut",
+        "case"
+      ],
+      "current_proof_refs": [
+        "ANALYSIS",
+        "BIRTH",
+        "CASES",
+        "CUT",
+        "W3"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C42",
+      "original_minimum_sha256": "bcf547704c25a0dc407e2b61e8baf36fe04d91f374341a93cbd8e4e358c9ce4a",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "provider",
+        "api"
+      ],
+      "evidence_groups": [
+        "objects",
+        "provider"
+      ],
+      "current_proof_refs": [
+        "BIND",
+        "DAG",
+        "INSTALL23",
+        "MODEL",
+        "RESOURCE",
+        "TUTORIAL"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C43",
+      "original_minimum_sha256": "c56fa1bca042dcd6cc8dd1f9903fa102ca41600e7644af9ab556d921ef74be77",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "cad"
+      ],
+      "evidence_groups": [
+        "cad",
+        "tutorial"
+      ],
+      "current_proof_refs": [
+        "CAD22"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C44",
+      "original_minimum_sha256": "d370856042f27f16868d5ec1156ba17eb4e16550e2705b1e8e48f1c68436cf13",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "cad"
+      ],
+      "evidence_groups": [
+        "cad"
+      ],
+      "current_proof_refs": [
+        "CAD22",
+        "W3"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C45",
+      "original_minimum_sha256": "91de304e2c0c302c464ecf79c551d0faa5c048925de1e28b9b7a7a3312c23103",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "cad"
+      ],
+      "evidence_groups": [
+        "cad",
+        "tutorial",
+        "install"
+      ],
+      "current_proof_refs": [
+        "CAD22",
+        "MODEL",
+        "SIMIONGUI"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C46",
+      "original_minimum_sha256": "64494c5f92b561a030459decb81d99901174836caa4c91686a7fb19619103872",
+      "status": "USER_3D_SCOPE_PROVEN_SW_REPAIR_DEFERRED",
+      "source_groups": [
+        "sw"
+      ],
+      "evidence_groups": [
+        "sw"
+      ],
+      "current_proof_refs": [
+        "CAD22"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C47",
+      "original_minimum_sha256": "56a6891885c9c0db2d7e54db8c6a5ba21878118dc37b159e4b0ca06779cbfd02",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "model"
+      ],
+      "evidence_groups": [
+        "model",
+        "field"
+      ],
+      "current_proof_refs": [
+        "COLDMODEL",
+        "MODEL"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C48",
+      "original_minimum_sha256": "7fe08ff6adf34ed0064a886925ee95b7d0407fde3449ced5aaf4c3f8b5a785cb",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "model"
+      ],
+      "evidence_groups": [
+        "model"
+      ],
+      "current_proof_refs": [
+        "CAD22",
+        "COLDMODEL",
+        "MODEL",
+        "SIMIONGUI"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C49",
+      "original_minimum_sha256": "ac109ce3cb715ec46b4d7ec21ef7c9fc50f36e2c266460ce3b6fa527afe00e94",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "model",
+        "field"
+      ],
+      "evidence_groups": [
+        "model",
+        "field"
+      ],
+      "current_proof_refs": [
+        "COLDMODEL",
+        "FIELD",
+        "MODEL"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C50",
+      "original_minimum_sha256": "7f3c9d251e306d0c9faee17cf5dd3d6fcb1bae7b92bcfef3fbb390336a9b8dcf",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "model"
+      ],
+      "evidence_groups": [
+        "model",
+        "field",
+        "case"
+      ],
+      "current_proof_refs": [
+        "COLDMODEL",
+        "MODEL"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C51",
+      "original_minimum_sha256": "665709d6020af163ebf3316378a82b6f236a26116cf63f37ce1fad4706b38073",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [
+        "model",
+        "tracking"
+      ],
+      "evidence_groups": [
+        "cache",
+        "w4",
+        "model",
+        "field"
+      ],
+      "current_proof_refs": [
+        "CACHE",
+        "FIELD",
+        "MODEL"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C52",
+      "original_minimum_sha256": "e06dab81f11e6e2ee5fdb29f87dd47bde5593d86a85fa0d07cb0da806cd3bde1",
+      "status": "USER_3D_SCOPE_PROVEN_SW_REPAIR_DEFERRED",
+      "source_groups": [
+        "sw"
+      ],
+      "evidence_groups": [
+        "cad",
+        "sw",
+        "model"
+      ],
+      "current_proof_refs": [
+        "CAD22",
+        "MODEL",
+        "SIMIONGUI"
+      ],
+      "original_minimum_field": "original_minimum_evidence"
+    },
+    {
+      "id": "C53",
+      "original_minimum_sha256": "528fc2a690c0a7bbfb751585900a5fd7c3be46674e24ede0ce44f43509e82ecf",
+      "status": "PROVEN_SELECTED_P3_SCOPE_AND_RECORDED_LATER_RESPONSIBILITY",
+      "source_groups": [
+        "cad"
+      ],
+      "evidence_groups": [
+        "cad",
+        "bridge"
+      ],
+      "current_proof_refs": [
+        "BOUNDARY",
+        "FULL_A881",
+        "DOCS_FINAL"
+      ],
+      "original_minimum_field": "original_minimum_evidence",
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT16447_PUBLICATION_PENDING",
+      "historical_proof_refs": [
+        "BOUNDARY",
+        "BRIDGES",
+        "FULLFCBC",
+        "GEMFIX",
+        "ORIGINFIX"
+      ]
+    },
+    {
+      "id": "C54",
+      "original_minimum_sha256": "fecd3cb44cd5f287b3fb6b08f21a3ffe528e4d02db5a121a700b57ba45f555e9",
+      "status": "PROVEN_SELECTED_P3_SCOPE_AND_RECORDED_LATER_RESPONSIBILITY",
+      "source_groups": [
+        "api"
+      ],
+      "evidence_groups": [
+        "api",
+        "cad",
+        "model",
+        "bridge"
+      ],
+      "current_proof_refs": [
+        "CAD22",
+        "MODEL_F5",
+        "DOCS_FINAL"
+      ],
+      "original_minimum_field": "original_minimum_evidence",
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT16447_PUBLICATION_PENDING",
+      "historical_proof_refs": [
+        "CAD22",
+        "DAG",
+        "INSTALL23",
+        "RESOURCE",
+        "TUTORIAL"
+      ]
+    },
+    {
+      "id": "R01",
+      "original_minimum_sha256": "0bd0d3ebb9c2c4184adc66682957622ffd8a3a574e0580af4da15cb999e2e940",
+      "status": "P3_DELIVERY_RECORDED_P4_P5_RESPONSIBILITIES_RETAINED",
+      "source_groups": [],
+      "evidence_groups": [
+        "api",
+        "boundary",
+        "case",
+        "field",
+        "install",
+        "objects",
+        "provider",
+        "publish"
+      ],
+      "current_proof_refs": [
+        "DAG",
+        "BIND",
+        "BOUNDARY",
+        "INSTALL23",
+        "FULL_A881"
+      ],
+      "original_minimum_field": "original_phase_responsibility",
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT16447_PUBLICATION_PENDING",
+      "original_phase_responsibility": "安装分层+真实用户链；P4推广",
+      "historical_proof_refs": []
+    },
+    {
+      "id": "R02",
+      "original_minimum_sha256": "7806ee71d6bbbb5e9e8258f6ede339e20829d2f5fe04c245b80d028e2f26785f",
+      "status": "P3_DELIVERY_RECORDED_P4_P5_RESPONSIBILITIES_RETAINED",
+      "source_groups": [],
+      "evidence_groups": [
+        "cad",
+        "d01",
+        "field",
+        "model",
+        "provider"
+      ],
+      "current_proof_refs": [
+        "W3",
+        "CAD22",
+        "D01",
+        "M_F5_JOIN"
+      ],
+      "original_minimum_field": "original_phase_responsibility",
+      "original_phase_responsibility": "保留D01修复；Assembly完整设计闭包、geometry-only、同源STEP与真实backend build；P4其余设计",
+      "historical_proof_refs": []
+    },
+    {
+      "id": "R03",
+      "original_minimum_sha256": "7ae1509002baf066fb68f170c11e8cd65c7f78a0065856fb99289a3ff35bd55a",
+      "status": "P3_DELIVERY_RECORDED_P4_P5_RESPONSIBILITIES_RETAINED",
+      "source_groups": [],
+      "evidence_groups": [
+        "d01",
+        "install",
+        "objects",
+        "provider"
+      ],
+      "current_proof_refs": [
+        "DAG",
+        "BIND",
+        "W3"
+      ],
+      "original_minimum_field": "original_phase_responsibility",
+      "original_phase_responsibility": "父plan/显式pose/范围不丢，选定API可用；P4推广",
+      "historical_proof_refs": []
+    },
+    {
+      "id": "R04",
+      "original_minimum_sha256": "0bba7d1922b814b6bf187ae65ce24f82ee7aa8c624689c7c4c39b4c645f31bfa",
+      "status": "P3_DELIVERY_RECORDED_P4_P5_RESPONSIBILITIES_RETAINED",
+      "source_groups": [],
+      "evidence_groups": [
+        "analysis",
+        "api",
+        "case",
+        "install",
+        "provider",
+        "units",
+        "w3"
+      ],
+      "current_proof_refs": [
+        "BIRTH",
+        "CASES",
+        "UNITS"
+      ],
+      "original_minimum_field": "original_phase_responsibility",
+      "original_phase_responsibility": "单独采样、原ID/母群/物种；源包络和realization分开",
+      "historical_proof_refs": []
+    },
+    {
+      "id": "R05",
+      "original_minimum_sha256": "c2c0271ae5bab393f745d6e8646d9f127e599ae2e4b4ac65d7f8c8d9ef66334f",
+      "status": "P3_DELIVERY_RECORDED_P4_P5_RESPONSIBILITIES_RETAINED",
+      "source_groups": [],
+      "evidence_groups": [
+        "case",
+        "cut",
+        "field",
+        "w3"
+      ],
+      "current_proof_refs": [
+        "BIRTH",
+        "PROGRAM",
+        "CUT",
+        "CASES"
+      ],
+      "original_minimum_field": "original_phase_responsibility",
+      "original_phase_responsibility": "P3主项：birth/snapshot/crossing/实际checkpoint区分，不同dt共钟",
+      "historical_proof_refs": []
+    },
+    {
+      "id": "R06",
+      "original_minimum_sha256": "a3456d4bf8b481949ef2e0f7c9b459dc66665a29dce3e648581aa5abf99838c2",
+      "status": "P3_DELIVERY_RECORDED_P4_P5_RESPONSIBILITIES_RETAINED",
+      "source_groups": [],
+      "evidence_groups": [
+        "case",
+        "publish"
+      ],
+      "current_proof_refs": [
+        "FIELD",
+        "CASES",
+        "ANALYSIS"
+      ],
+      "original_minimum_field": "original_phase_responsibility",
+      "original_phase_responsibility": "P3同场同源实际切段/连续与真实范围；P4推广",
+      "historical_proof_refs": []
+    },
+    {
+      "id": "R07",
+      "original_minimum_sha256": "6b9b72b8c83b2545f30e291310ee150aa48edf4a893338e347b8623c89c0edb4",
+      "status": "P3_DELIVERY_RECORDED_P4_P5_RESPONSIBILITIES_RETAINED",
+      "source_groups": [],
+      "evidence_groups": [
+        "cache",
+        "case",
+        "field",
+        "model",
+        "provider",
+        "w4"
+      ],
+      "current_proof_refs": [
+        "PROGRAM",
+        "MODEL_F5",
+        "FIELD"
+      ],
+      "original_minimum_field": "original_phase_responsibility",
+      "original_phase_responsibility": "P3带驱动未求解模型独立出口；外场/basis/自洽限制及drive phase正确；新增自洽需求P5",
+      "historical_proof_refs": []
+    },
+    {
+      "id": "R08",
+      "original_minimum_sha256": "a546bae6f57c9c367e08a0daedf2c0398a8d1e40ab4a360790106d8cd719f8c8",
+      "status": "P3_DELIVERY_RECORDED_P4_P5_RESPONSIBILITIES_RETAINED",
+      "source_groups": [],
+      "evidence_groups": [
+        "field",
+        "model",
+        "safety"
+      ],
+      "current_proof_refs": [
+        "COLDMODEL",
+        "FIELD"
+      ],
+      "original_minimum_field": "original_phase_responsibility",
+      "original_phase_responsibility": "P3 selected SIMION配置未求解/计算/查询；P4 COMSOL及已承诺支持集；P5新需求",
+      "historical_proof_refs": []
+    },
+    {
+      "id": "R09",
+      "original_minimum_sha256": "7b9f9f5568248215f4aaf42deb057b75b658d644f0e8de9ae0d893b926c7b087",
+      "status": "P3_DELIVERY_RECORDED_P4_P5_RESPONSIBILITIES_RETAINED",
+      "source_groups": [],
+      "evidence_groups": [
+        "analysis",
+        "case",
+        "field",
+        "model",
+        "publish",
+        "reader",
+        "units"
+      ],
+      "current_proof_refs": [
+        "ANALYSIS",
+        "CASES"
+      ],
+      "original_minimum_field": "original_phase_responsibility",
+      "original_phase_responsibility": "独立分析、方法metadata/样本分母；必要plane/census规范消费",
+      "historical_proof_refs": []
+    },
+    {
+      "id": "R10",
+      "original_minimum_sha256": "4e2c4e3a6622646a56968a74e34d89d786f7149f862bc7772c0b7df68c568afa",
+      "status": "P3_DELIVERY_RECORDED_P4_P5_RESPONSIBILITIES_RETAINED",
+      "source_groups": [],
+      "evidence_groups": [
+        "analysis",
+        "api",
+        "case",
+        "field",
+        "install",
+        "provider",
+        "publish",
+        "reader",
+        "units"
+      ],
+      "current_proof_refs": [
+        "DAG",
+        "INSTALL23",
+        "CACHE",
+        "CAD22"
+      ],
+      "original_minimum_field": "original_phase_responsibility",
+      "original_phase_responsibility": "可覆盖参数、阶段单独执行、技术/物理/资格拒绝区分",
+      "historical_proof_refs": []
+    },
+    {
+      "id": "R11",
+      "original_minimum_sha256": "591d04c355a155732feb10e18fb382161072e4af381dac5b440287f025cb4df6",
+      "status": "PROVEN_SELECTED_RECOVERY_AND_CAUSAL_TRANSPORT",
+      "source_groups": [],
+      "evidence_groups": [
+        "analysis",
+        "install",
+        "publish",
+        "reader",
+        "recovery",
+        "safety",
+        "units"
+      ],
+      "current_proof_refs": [
+        "UNITS",
+        "DISPATCH",
+        "GUARD",
+        "REPLAY",
+        "FOCUSED_F283",
+        "FULL_A881"
+      ],
+      "original_minimum_field": "original_phase_responsibility",
+      "original_phase_responsibility": "P3 whole-unit、analysis、finalization、state_relaunch及writer安全",
+      "historical_proof_refs": []
+    },
+    {
+      "id": "R12",
+      "original_minimum_sha256": "50663bcc6b26afa8cbab218d10b7f34a996f2fc9e558618f9096cc3f3e5ab2cd",
+      "status": "P3_DELIVERY_RECORDED_P4_P5_RESPONSIBILITIES_RETAINED",
+      "source_groups": [],
+      "evidence_groups": [
+        "case",
+        "install",
+        "reader"
+      ],
+      "current_proof_refs": [
+        "INSTALL23",
+        "CAD22",
+        "FULL_A881"
+      ],
+      "original_minimum_field": "original_phase_responsibility",
+      "original_phase_responsibility": "installed cwd/Unicode/argv/别名/冻结来源，旧保证不退化",
+      "historical_proof_refs": []
+    },
+    {
+      "id": "R13",
+      "original_minimum_sha256": "191466ab9413dd4bb8d83f903f581f2a5bdcb1ef5781e6a0cd1eaf4feb3ed044",
+      "status": "P3_DELIVERY_RECORDED_P4_P5_RESPONSIBILITIES_RETAINED",
+      "source_groups": [],
+      "evidence_groups": [
+        "cache",
+        "case",
+        "field",
+        "model",
+        "provider",
+        "w4"
+      ],
+      "current_proof_refs": [
+        "CACHE",
+        "FIELD",
+        "GEMFIX",
+        "RESOURCE"
+      ],
+      "original_minimum_field": "original_phase_responsibility",
+      "original_phase_responsibility": "P3矩阵与故障实证，原生mapping及自洽例外；P4其余消费者",
+      "historical_proof_refs": []
+    },
+    {
+      "id": "R14",
+      "original_minimum_sha256": "5b534f077ead11cd1a7cbfa497cf613fb6b2aa98bc0ef21f329e9d379131f5d4",
+      "status": "P3_DELIVERY_RECORDED_P4_P5_RESPONSIBILITIES_RETAINED",
+      "source_groups": [],
+      "evidence_groups": [
+        "analysis",
+        "case",
+        "d01",
+        "publish",
+        "safety",
+        "sw"
+      ],
+      "current_proof_refs": [
+        "CASES",
+        "ANALYSIS",
+        "CAD22",
+        "FULL_A881"
+      ],
+      "original_minimum_field": "original_phase_responsibility",
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT16447_PUBLICATION_PENDING",
+      "original_phase_responsibility": "每批绑定实际范围；旧八桶INCONCLUSIVE不覆写，收敛/Formal单列",
+      "historical_proof_refs": []
+    },
+    {
+      "id": "R15",
+      "original_minimum_sha256": "f189985e28deddb418dce8e5aed6b7d8d8379905a336d97a61021ff107b012d0",
+      "status": "P3_DELIVERY_RECORDED_P4_P5_RESPONSIBILITIES_RETAINED",
+      "source_groups": [],
+      "evidence_groups": [
+        "api",
+        "cad",
+        "case",
+        "field",
+        "install",
+        "model",
+        "publish",
+        "resource",
+        "sw",
+        "tutorial"
+      ],
+      "current_proof_refs": [
+        "INSTALL23",
+        "ORIGINS23",
+        "PACKAGE_F283",
+        "MODEL_F5",
+        "CAD22",
+        "TUTORIAL"
+      ],
+      "original_minimum_field": "original_phase_responsibility",
+      "original_phase_responsibility": "P1科学核；P3第一次真实selected slice＋STEP/PreparedModel＋逐资源交付＋各出口跨进程重开；P4推广，P5用户检验。同步仓库ROADMAP原R15行",
+      "historical_proof_refs": []
+    },
+    {
+      "id": "R16",
+      "original_minimum_sha256": "fc44bb07f7130edc12e8e0779212ad13f982292b7bd1f6e0a70f61d30407c465",
+      "status": "P3_DELIVERY_RECORDED_P4_P5_RESPONSIBILITIES_RETAINED",
+      "source_groups": [],
+      "evidence_groups": [
+        "bridge",
+        "cad",
+        "case",
+        "d01",
+        "safety",
+        "sw",
+        "tutorial"
+      ],
+      "current_proof_refs": [
+        "DOCS_FINAL",
+        "BRIDGES"
+      ],
+      "original_minimum_field": "original_phase_responsibility",
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT16447_PUBLICATION_PENDING",
+      "original_phase_responsibility": "当前权威与实现/测试同步，短教程无需读全历史；P4全域收敛",
+      "historical_proof_refs": []
+    },
+    {
+      "id": "R17",
+      "original_minimum_sha256": "f9c01b47b23ee5d7b88e53b7553e49e1bb0ff4a968efd8bbf12eb070fce14620",
+      "status": "P3_DELIVERY_RECORDED_P4_P5_RESPONSIBILITIES_RETAINED",
+      "source_groups": [],
+      "evidence_groups": [
+        "analysis",
+        "case",
+        "cost",
+        "field",
+        "install",
+        "sw",
+        "units"
+      ],
+      "current_proof_refs": [
+        "FULL_A881",
+        "CLOC_F283",
+        "FOCUSED_F283"
+      ],
+      "original_minimum_field": "original_phase_responsibility",
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT16447_PUBLICATION_PENDING",
+      "original_phase_responsibility": "P3保覆盖并剖析触及成本；P4完成原15min/owner预算，不能下调",
+      "historical_proof_refs": []
+    },
+    {
+      "id": "R18",
+      "original_minimum_sha256": "774128ff9f77e837dee4467cfbf2f0951e3421912ccc055d2a7db9a3e714afce",
+      "status": "P3_DELIVERY_RECORDED_P4_P5_RESPONSIBILITIES_RETAINED",
+      "source_groups": [],
+      "evidence_groups": [
+        "api",
+        "install",
+        "objects",
+        "provider"
+      ],
+      "current_proof_refs": [
+        "DAG",
+        "FIELD",
+        "TUTORIAL"
+      ],
+      "original_minimum_field": "original_phase_responsibility",
+      "original_phase_responsibility": "P3提供者/场/源可组合实证；P5新真实器件/源/后端",
+      "historical_proof_refs": []
+    },
+    {
+      "id": "R19",
+      "original_minimum_sha256": "ae29c3495c10151f713459033a666c3ba72c114024c5a7d442215a81a676c637",
+      "status": "P3_DELIVERY_RECORDED_P4_P5_RESPONSIBILITIES_RETAINED",
+      "source_groups": [],
+      "evidence_groups": [
+        "bridge",
+        "provider",
+        "w4"
+      ],
+      "current_proof_refs": [
+        "BRIDGES",
+        "GEMFIX",
+        "ORIGINFIX",
+        "PACKAGE_F283"
+      ],
+      "original_minimum_field": "original_phase_responsibility",
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT16447_PUBLICATION_PENDING",
+      "original_phase_responsibility": "P3本批算法唯一、真consumer迁移；有限旧桥最迟P4，历史reader区别对待",
+      "historical_proof_refs": []
+    },
+    {
+      "id": "R20",
+      "original_minimum_sha256": "450e59000a8a25be90cff9941d115202d951ecc845d4a63cfe66f137599376ef",
+      "status": "P3_DELIVERY_RECORDED_P4_P5_RESPONSIBILITIES_RETAINED",
+      "source_groups": [],
+      "evidence_groups": [
+        "api",
+        "bridge",
+        "case",
+        "cost",
+        "field",
+        "install",
+        "provider",
+        "publish",
+        "tutorial",
+        "w4"
+      ],
+      "current_proof_refs": [
+        "DOCS_FINAL",
+        "DAG",
+        "RESOURCE",
+        "TUTORIAL"
+      ],
+      "original_minimum_field": "original_phase_responsibility",
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT16447_PUBLICATION_PENDING",
+      "original_phase_responsibility": "具名路径/API/命名/矩阵已预设计；按任务读取，工具不是主目标",
+      "historical_proof_refs": []
+    },
+    {
+      "id": "U01",
+      "original_minimum_sha256": "ea67656467bfb64621d2d1c8d008cb75857e87b650b8a67b893354121276e471",
+      "status": "PASS_SELECTED_INSTALLED_SDK23_SCOPE",
+      "source_groups": [],
+      "evidence_groups": [
+        "api",
+        "case",
+        "field",
+        "install",
+        "objects",
+        "provider",
+        "publish"
+      ],
+      "current_proof_refs": [],
+      "original_minimum_field": "original_P3"
+    },
+    {
+      "id": "U02",
+      "original_minimum_sha256": "7b0ec4ac56a18f1131e53d6a1c2801353c38d821e3322bc1e04df0044623e3c4",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [],
+      "evidence_groups": [
+        "field",
+        "model",
+        "safety"
+      ],
+      "current_proof_refs": [],
+      "original_minimum_field": "original_P3"
+    },
+    {
+      "id": "U03",
+      "original_minimum_sha256": "d27bd66ae55cb2baa1408cefc564ba77ebb22633dfb6e306a7bb666ef6a8ed36",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [],
+      "evidence_groups": [
+        "api",
+        "case",
+        "field",
+        "install",
+        "model",
+        "provider",
+        "w3"
+      ],
+      "current_proof_refs": [],
+      "original_minimum_field": "original_P3"
+    },
+    {
+      "id": "U04",
+      "original_minimum_sha256": "930ee0bc4834faed5fcacb51339d5cc10c730068bddacfb4903f1141f9ceddc6",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [],
+      "evidence_groups": [
+        "case",
+        "cut",
+        "publish"
+      ],
+      "current_proof_refs": [],
+      "original_minimum_field": "original_P3"
+    },
+    {
+      "id": "U05",
+      "original_minimum_sha256": "e394d786a20b4f2690961955dbb9071d0de59869f3925f6a72859c3d9b15327b",
+      "status": "PROVEN_SELECTED_RECOVERY_AND_CAUSAL_TRANSPORT",
+      "source_groups": [],
+      "evidence_groups": [
+        "analysis",
+        "case",
+        "field",
+        "model",
+        "publish",
+        "recovery",
+        "units"
+      ],
+      "current_proof_refs": [
+        "FOCUSED_F283",
+        "FULL_A881"
+      ],
+      "original_minimum_field": "original_P3"
+    },
+    {
+      "id": "U06",
+      "original_minimum_sha256": "2106f102f7ccfa6a62aafddaf22f56a23dfab17329c1caa8654106020ec5f99c",
+      "status": "PROVEN_SELECTED_P3_SCOPE_AND_RECORDED_LATER_RESPONSIBILITY",
+      "source_groups": [],
+      "evidence_groups": [
+        "bridge",
+        "case",
+        "tutorial"
+      ],
+      "current_proof_refs": [
+        "TUTORIAL",
+        "CAD22",
+        "DOCS_FINAL"
+      ],
+      "original_minimum_field": "original_P3",
+      "prior_publication_status": "SELECTED_PROOF_FINAL_CURRENT16447_PUBLICATION_PENDING",
+      "historical_proof_refs": []
+    },
+    {
+      "id": "U07",
+      "original_minimum_sha256": "8d4f8aa1c7bb2c569406b3c6239a416b65560b978c56db37d8dc7931a4507601",
+      "status": "USER_3D_SCOPE_PROVEN_SW_REPAIR_DEFERRED",
+      "source_groups": [],
+      "evidence_groups": [
+        "cad",
+        "install",
+        "model",
+        "sw",
+        "tutorial"
+      ],
+      "current_proof_refs": [],
+      "original_minimum_field": "original_P3"
+    },
+    {
+      "id": "U08",
+      "original_minimum_sha256": "27ee353db48c44052e3b6bf9a4e16bd6b7a8a86647e608d6b662f2a0f2f67c9e",
+      "status": "PASS_SELECTED_SCOPE_ORIGINAL_EVIDENCE_EPOCH",
+      "source_groups": [],
+      "evidence_groups": [
+        "case",
+        "field",
+        "model"
+      ],
+      "current_proof_refs": [],
+      "original_minimum_field": "original_P3"
+    }
+  ],
+  "proof_registry": {
+    "D01": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\d01-final-delta.json",
+      "bytes": 71599,
+      "sha256": "b8f9abd88bf15f516638d4fa67cc60d6c9df7d40971c9c0be232f2b12b8dae8a"
+    },
+    "DAG": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\v71-api-dag-final.json",
+      "bytes": 78085,
+      "sha256": "94e2f109a62ccf39a2102f6a629e130892c02dcb06fdb6a72f27a42c0141a416"
+    },
+    "BIND": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\v71-source-binding-final.json",
+      "bytes": 13318,
+      "sha256": "e7d4fe30c2b853dab120b835f07b7471ddf0a72c92c81dad8da2052931c557fa"
+    },
+    "INSTALL23": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\distribution-epoch23-preparation\\handoff23.json",
+      "bytes": 8624,
+      "sha256": "a0d93ff197224eedc7be556efa7582aecf99d93b4f8ca7d5fb68a6971a531dae"
+    },
+    "ORIGINS23": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\distribution-epoch23-preparation\\installed-focused-origins.json",
+      "bytes": 1959,
+      "sha256": "f91f8aadd13a69a247e2b4e36fd3c257279aec244862f3c6e14751a240a972bf"
+    },
+    "COMMIT23": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\distribution-epoch23-preparation\\postcommit-reconciliation\\receipt.json",
+      "bytes": 131217,
+      "sha256": "e58b85ba78c2120a00a750679ff50adc8adb2d33e42cef8fb2d5621ac85b94de"
+    },
+    "BOUNDARY": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\agent1-execution-boundary-fix\\final-proof.json",
+      "bytes": 3344,
+      "sha256": "d566dd773904eb19e8b911f051dcd674290be0982687fb9481a16e645e5f5fc8"
+    },
+    "BIRTH": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\w4\\release-authoring-handoff.json",
+      "bytes": 2696,
+      "sha256": "49bc8811fc60e169e6378106ff7d208fb350577e390da8e093258b98eb05660d"
+    },
+    "W3": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\handoff\\final-source.json",
+      "bytes": 3179,
+      "sha256": "98cd14552eb04e15d4abaed9894fa04f9eb617c918574ff4274ca2f4a083c352"
+    },
+    "PROGRAM": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\track-implementation-plan\\tracking-model-A-handoff.json",
+      "bytes": 736,
+      "sha256": "77af81bb9d25c90ff10e937884e31617cde013bb678ddd892d16b42c3f967f04"
+    },
+    "UNITS": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\track-implementation-plan\\B-multiunit-actual-inert-proof.json",
+      "bytes": 3552,
+      "sha256": "b7a90fe9389dae4605c180e13ec632ad1828630abc2d0d419b5e654e9f22fb8f"
+    },
+    "DISPATCH": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\track-implementation-plan\\dispatcher-migration\\real-simion-role-inert-proof.json",
+      "bytes": 9643,
+      "sha256": "bfaf138ba3f0ef276e3ae35cfa80f0b1d29b2c10abf1eed450952fecda3cecd0"
+    },
+    "GUARD": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\immutable-input-process-seam\\handoff.json",
+      "bytes": 1873,
+      "sha256": "e3507423bd6a4ca8c05850f86eb38e3ab1511bc3e7275d1693c182f980489d30"
+    },
+    "REPLAY": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\case-c-finalization-recovery-03\\independent-terminal-review.json",
+      "bytes": 11216,
+      "sha256": "d5402eb4b71997159ebd59282ab4167edb197cfdd71c6eb8a0936dabeaf5e7d2"
+    },
+    "CACHE": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\agent1-cache-migration\\response-identity\\independent-review.json",
+      "bytes": 1640,
+      "sha256": "bf45e19becb8ccb4f35359833d25d2e79fc30b8cbad7061f2511856bfe40abc3"
+    },
+    "ANALYSIS": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\case-c-comparison-publication-plan\\independent-publication-terminal-review.json",
+      "bytes": 50996,
+      "sha256": "0e20f127f8cf70def7ab286f5e457ea5d6d67637873110f1465626e68f1c7b50"
+    },
+    "CASES": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\case-c-execution-driver\\references-three-levels-complete-v8.json",
+      "bytes": 4101,
+      "sha256": "512919730a4b84a16868e7f1fb6965c75049e5d1d6511e935e5c783dbc609485"
+    },
+    "CUT": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\case-c-upstream-cut-stop-review\\review.json",
+      "bytes": 258187,
+      "sha256": "a55c6f6e6b797614297a4db8627eb022096f648132d3b64531c9961fc69c7e6e"
+    },
+    "CAD22": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\distribution-epoch22-preparation\\handoff22.json",
+      "bytes": 7866,
+      "sha256": "3fdf8af88a2cdf6dbc6b43806a4bbd7ecb3cbde6dd2d0d679ff6ee018cec2449"
+    },
+    "TUTORIAL": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\agent3-installed-cad-tutorial\\actual-review.json",
+      "bytes": 24452,
+      "sha256": "b1d211d3d39bebf10199eff35c9881190e5874b0af1e4c2c6f7bac5613a8cc29"
+    },
+    "MODEL": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\instrument_assembly\\runs\\20261104_154935__build__simion__model-30996748fbc4\\run_manifest.json",
+      "bytes": 30906,
+      "sha256": "f8dbde244af0515172e8ebc16377c2745f23084a7f1952ad07453cfe73f0d09f"
+    },
+    "COLDMODEL": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\instrument_assembly\\runs\\20261104_155321__test__simion__cold-model-f11575cd59d0\\run_manifest.json",
+      "bytes": 6067,
+      "sha256": "84e548293c1cd88cc3392a612dbb3e2ad1b324f4eb40f5ea554499e077f67fe7"
+    },
+    "SIMIONGUI": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\instrument_assembly\\runs\\20261104_224327__test__simion__view-10d5c24f4e57\\run_manifest.json",
+      "bytes": 22050,
+      "sha256": "8b93fd696172b2cbe9b870afbeee8652a7b6780857d302a86e7465978fdb804e"
+    },
+    "FIELD": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\instrument_assembly\\runs\\20261104_214825__sim__simion__fields-9070fe95d6aa\\run_manifest.json",
+      "bytes": 84569,
+      "sha256": "f0e42a382483cc1557af715206112d6b927c141f8a29d686998007e6f6d8e450"
+    },
+    "RESOURCE": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\phase03-final-resource-closure-sdk19\\review.json",
+      "bytes": 475491,
+      "sha256": "d38c7d11c620eb0fbd6e2e2ffd3afadfe3cfbd4f054d42f55c105e0fed1d5215"
+    },
+    "BRIDGES": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\phase03-bridge-exit-review.json",
+      "bytes": 790360,
+      "sha256": "91c5026f307f725697b0b4ea028edd97b0614fb692c25f52d4ce693fa51ffe1c"
+    },
+    "FULLFCBC": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\final-repository-sdk22\\terminal-audit.json",
+      "bytes": 1416,
+      "sha256": "1782f50f020fc3f44da7f74e444f55b2d8d00c175256a8778bda0955d2cb33a8"
+    },
+    "SKIPS": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\phase03-final-requirement-audit\\sdk22-terminal-skip-disposition.json",
+      "bytes": 15114,
+      "sha256": "d563a071b607ffbd8bdbb829d8c76e8847e41fc7d4906ed2f7f7dc86558990c4"
+    },
+    "GEMFIX": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\ci-downstream-resource-origin-review\\independent-eight-path-review.json",
+      "bytes": 4256,
+      "sha256": "68c8c33fa7402eca5588e537439eb15d6ba8f28a03df454e1d94e2398b00937e"
+    },
+    "ORIGINFIX": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\ci-tracking-origin-review\\handoff.json",
+      "bytes": 5909,
+      "sha256": "650b2be3f9d3d7be5a19fd3fdf513fcda3537fb6d7f1bcd90c062b7dabdf375b"
+    },
+    "CLOC8127": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\epochcloc-8127\\summary.json",
+      "bytes": 14883,
+      "sha256": "a1223c390c1ead945b74bbb4b3a515995c41bdeaa16e8e45ff8328b98a0cbdad"
+    },
+    "MODEL_F5": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\instrument_assembly\\runs\\20261104_174513__build__simion__model-d490a283b98f\\run_manifest.json",
+      "bytes": 31354,
+      "sha256": "9e91d7daf35ac9ec5ca1ac4fedf429fbc9b69dbbbdea055e6d6042af35ecb6e0"
+    },
+    "M_F5_JOIN": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\phase03-final-requirement-audit\\model-to-f5-explicit-reference-join-sdk23.json",
+      "bytes": 2602,
+      "sha256": "ccf5a774b7297137feadee90e8c0142589243f958e38d24536bb7a2713a19182"
+    },
+    "V2_WITNESS": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\batch-live-sibling-sync-review\\same-clock-v2\\witness-audit.json",
+      "bytes": 24550,
+      "sha256": "57ce8061538ace03816d611bc7584c196a9e393268766bebb7e1fe94a7e3734b"
+    },
+    "V2_HANDOFF": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\batch-live-sibling-sync-review\\same-clock-v2\\handoff.json",
+      "bytes": 10902,
+      "sha256": "bd6a5b9fb37a807923f69281225e7c9d7e54e431d764d2c01f459fc51b444b2c"
+    },
+    "FULL_E22E": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\final-repository-sdk23-oracle-correction\\terminal-audit.json",
+      "bytes": 1599,
+      "sha256": "1ea2480e32a2df9c92cade185aaa497c466bae2756020f71962cc0647ddd3145"
+    },
+    "CLOC85": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\epochcloc-85e53e-c-locale\\official-cloc.log",
+      "bytes": 14389,
+      "sha256": "f51d99363ca16073cf5fd27a3adf3b07074c167abe65ed3717f2cebb1b8dfe01"
+    },
+    "CHANGED85": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\remote-ci-85e53e\\push-41978654624\\audit.json",
+      "bytes": 9295,
+      "sha256": "9cbc764647a2776ff13b7b985f23cac00e3daba4963025f68b80be472d937ee7"
+    },
+    "PACKAGE85": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\epochcloc-85e53e\\package-unchanged-reconciliation.json",
+      "bytes": 65723,
+      "sha256": "6c8778121e9107c126d7d83c439819abed783161d288fa78c34ae5c6c1c1cc53"
+    },
+    "DOT_BATCH_ORIGINAL": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\dot-focused-batch\\causal-terminal-inspection.json",
+      "bytes": 76392,
+      "sha256": "1dcd55159ddc4bb76b7181b7c6d2045fb3eadd80d95baf08e0aee4f81d92594e"
+    },
+    "DOT_PARALLEL": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\dot-focused-batch\\parallel-oracle-correction\\causal-terminal-audit.json",
+      "bytes": 4951,
+      "sha256": "0760d135e9a55b2ba4313c0a2cd3dcd0f6c30aa9208dd33cc57f3a1cb8dd0940"
+    },
+    "DOT_PARALLEL_HANDOFF": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\dot-focused-batch\\parallel-oracle-correction\\handoff.md",
+      "bytes": 878,
+      "sha256": "c793f7e66c32973e40eb9f440bdb760c58bb453b09b4a663b6e4ea0e5d8372ea"
+    },
+    "FULL_A881": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\final-repository-sdk23-dot-batch\\handoff.json",
+      "bytes": 2239,
+      "sha256": "362f2f4616cbaadc6d336f1bbd97bf3df97a6b5268948f85626324d9a48efe0c"
+    },
+    "FOCUSED_F283": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\dot-focused-batch\\addendum-parallel-green\\causal-terminal-audit.json",
+      "bytes": 8512,
+      "sha256": "495033083ecd2b860fdca35c65863c3981ba627f4d1fa14205321004dfbcc890"
+    },
+    "FOCUSED_F283_HANDOFF": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\dot-focused-batch\\addendum-parallel-green\\handoff.md",
+      "bytes": 1448,
+      "sha256": "532953e3962274b8edb65bdac53a80eadb61c19b51ff54a67fdaeac4e3a69208"
+    },
+    "RED_QUEUED": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\dot-focused-batch\\addendum-controlled-red-v2\\terminal-review.json",
+      "bytes": 1146,
+      "sha256": "f5090591489842bff47c4fb160b57d33d07f2eec4aa607daf85d10945ee3be70"
+    },
+    "RED_WARNING": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\dot-focused-batch\\addendum-cleanup-red\\terminal-review.json",
+      "bytes": 1626,
+      "sha256": "74785950abd91343e95336065d00bb214c9d2428b68930990dd8a2080903bd00"
+    },
+    "CHANGED_A881": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\remote-ci-a8815a81\\push-41992493173\\audit.json",
+      "bytes": 223266,
+      "sha256": "8f3c88d3f67226de7139a4a0cd53126542134da421d3670337ff892a86133933"
+    },
+    "CLOC_F283": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\epochcloc-f283b752-c-locale\\official-cloc-tables.json",
+      "bytes": 21927,
+      "sha256": "3c62bc9b5534e14a340a1bb3fc62c09a152948925af4d64461ba2503ed0b11d9"
+    },
+    "PACKAGE_F283": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\epochcloc-f283b752-c-locale\\package-unchanged-postcommit.json",
+      "bytes": 148143,
+      "sha256": "925f9c62f7075c52df5856ac80bb45a01d530cba03742d3431aaa46ee033b93d"
+    },
+    "GREEN_COMMIT_F283": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\epochcloc-f283b752-c-locale\\green-loaded-to-commit.json",
+      "bytes": 3742,
+      "sha256": "d279ef848d4c10f902b415887cb792d13f0f2ae98aa5d9e356ec17c8e478b3a3"
+    },
+    "DOCS_FINAL": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\final-publication-docs-check\\terminal-review.json",
+      "bytes": 3628,
+      "sha256": "1ff8cf0bb2360802e89910aa257c64e4cbce5dc2e27cf74a4ca3721f3555b6eb",
+      "scope": "Actual prepublication check 10177 of the preceding 25-path candidate; final-byte recheck is recorded in the containing documentation commit, without a self-hash cycle."
+    },
+    "REMOTE_F283": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\remote-ci-f283b752\\push-41999562945\\audit.json",
+      "bytes": 1106,
+      "sha256": "2c7c07c0fca5ebcc41a07e27110ee881a73f52fd4fd8774f9b391dbf3e830d29"
+    }
+  },
+  "full14842_terminal": {
+    "reference": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\final-repository-sdk23-dot-batch\\handoff.json",
+      "bytes": 2239,
+      "sha256": "362f2f4616cbaadc6d336f1bbd97bf3df97a6b5268948f85626324d9a48efe0c"
+    },
+    "actual": {
+      "status": "PASS",
+      "actual_session": 14842,
+      "source_commit": "a8815a81314b1bbe449e692638dc9230d8319e7f",
+      "audit": {
+        "public_status": "PASS",
+        "public_error": null,
+        "stage_counts": {
+          "NOT_APPLICABLE": 12,
+          "PASS": 50
+        },
+        "public_wall_seconds": 2445.9804041,
+        "internal_seconds": 2443.453264,
+        "gate_exit_code": 0,
+        "parent_count": 6804,
+        "unique_parent_keys": 6804,
+        "parent_outcomes": {
+          "success": 6783,
+          "skip": 21
+        },
+        "subtest_count": 7710,
+        "subtest_outcomes": {
+          "success": 7710
+        },
+        "other_records": [],
+        "native_dirichlet_count": 6,
+        "native_dirichlet_outcomes": {
+          "success": 6
+        },
+        "source": {
+          "source_before_head": "a8815a81314b1bbe449e692638dc9230d8319e7f",
+          "source_after_head": "a8815a81314b1bbe449e692638dc9230d8319e7f",
+          "source_paths_before": 2792,
+          "source_paths_after": 2792,
+          "changed_paths": [],
+          "head_unchanged": true,
+          "status_unchanged": true,
+          "status_before": "",
+          "status_after": ""
+        },
+        "original_summary": {
+          "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\final-repository-sdk23-dot-batch\\summary.json",
+          "bytes": 20437691,
+          "sha256": "47db13484bcddf742e7170779b31ec6fb19b977f78745351608893720f6593e9"
+        },
+        "raw_group_files_retained": 0,
+        "raw_unavailable": [
+          {
+            "path": "C:\\Users\\Liao\\AppData\\Local\\Temp\\repository_integration_gate_6bfbef6b5e2a426ea0f84f6df8c20fad",
+            "status": "raw_unavailable_at_terminal",
+            "public_reported_cleaned": true,
+            "reason": "public_normal_cleanup"
+          }
+        ],
+        "raw_scope": "Only terminal files still present were copied. Missing raw is explicit, never synthesized; summary derivatives are labelled."
+      },
+      "current_skips": "skip-disposition.json",
+      "release": "release-terminal-review.json",
+      "retirement": "runner-retirement.json",
+      "scope": "Actual full a881 only. Subsequent reviewed fixture/WarningStop corrections, if applied, require separate focused successor evidence; never relabelled as included in this full run.",
+      "prior_evidence_untouched": true
+    }
+  },
+  "limits": [
+    "No accuracy/equality qualification",
+    "SW repair deferred",
+    "P4/P5 and Formal/open historicalunknowns retained"
+  ],
+  "focused_f283": "Current clean/pushed f283b752a736dcfe703ffb2a6b56bef291c889b1 (queued48a1786c/warningf283 themes). Prior complete Repository14842 remains actuala881:50PASS12NA/6804parents6783success21skip/7710subsuccess/native6success. Separate successor86477 completeparallel49parents46subs95success0skip,module215.092s/public220.5235436s;five sources/six SDK23resources exact,lease00adeac3f4634c2c95689604762beb1e released,primarynull/secondaryempty,runnerretired. No fullf283 result claimed.",
+  "remaining": [
+    "DOCS_FINAL actual prepublication check/receipt and Root final publication/commit/push remain to bind. No remaining product gap or new science/SDK/native/full gate required."
+  ],
+  "raw_limits": "Full normal Temp group raw unavailable explicitly; GREEN fixture child Temp markers were internally asserted by actual methods and source-bound outcomes, never reconstructed. No full20MBsummary/rawlog copies.",
+  "DOCS_FINAL": {
+    "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\final-publication-docs-check\\terminal-review.json",
+    "status": "PENDING_ACTUAL_CHECK",
+    "bytes": null,
+    "sha256": null,
+    "outcome": null,
+    "self_hash_cycle": "Final publication binds actual receipt after check; no predicted identity."
+  }
+}

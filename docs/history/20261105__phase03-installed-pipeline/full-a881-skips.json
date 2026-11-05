@@ -1,0 +1,128 @@
+[
+  {
+    "test_key": "common/contracts/test_reconcile_artifact_capacity.py::ArtifactCapacityPlanTest.test_directory_measurement_ignores_file_and_directory_symlinks",
+    "reason": "symlink creation is unavailable on this host",
+    "stage": "common_contracts__tests_02",
+    "source_file_sha256": "f12122e09fc2023dd90dc5450e020f8bd1ecb6ba881206cf5effa093c92bed93"
+  },
+  {
+    "test_key": "common/simion/test_export_detached_standalone_pa.py::DetachedStandaloneAuthorizedTest.test_real_detachment_reopens_without_siblings",
+    "reason": "real SIMION regression requires the public host lease and explicit authorization",
+    "stage": "simion_common",
+    "source_file_sha256": "d2cafeadb3d3dce0f172f3768397644e9c6b7c3b3136a83237dfdd8477aea57c"
+  },
+  {
+    "test_key": "common/simion/test_export_standalone_pa.py::StandalonePaExportTest.test_exported_responses_survive_short_copy_composition_without_source_writeback",
+    "reason": "real SIMION regression requires the public host lease and explicit authorization",
+    "stage": "simion_common",
+    "source_file_sha256": "afda283dab83a364bdcc9d3dcc03820d18d960157f6eda6c676a2934cebae592"
+  },
+  {
+    "test_key": "common/simion/test_export_standalone_pa.py::StandalonePaExportTest.test_exports_detached_surface_none_response",
+    "reason": "real SIMION regression requires the public host lease and explicit authorization",
+    "stage": "simion_common",
+    "source_file_sha256": "afda283dab83a364bdcc9d3dcc03820d18d960157f6eda6c676a2934cebae592"
+  },
+  {
+    "test_key": "common/simion/test_export_standalone_pa.py::StandalonePaExportTest.test_rejects_surface_enhanced_family_before_open",
+    "reason": "real SIMION regression requires the public host lease and explicit authorization",
+    "stage": "simion_common",
+    "source_file_sha256": "afda283dab83a364bdcc9d3dcc03820d18d960157f6eda6c676a2934cebae592"
+  },
+  {
+    "test_key": "common/simion/test_standalone_pa_composition_tools.py::StandalonePaToolAuthorizedSolverTest.test_complete_fast_adjust_export_and_standalone_composition",
+    "reason": "real SIMION regression requires the public host lease and explicit authorization",
+    "stage": "simion_common",
+    "source_file_sha256": "9d5c31a19d6dfd611ad3484562346e68d2c6c28d0317d0d7a88b768620689588"
+  },
+  {
+    "test_key": "common/simion/test_standalone_pa_composition_tools.py::StandalonePaToolAuthorizedSolverTest.test_incomplete_fast_adjust_table_is_rejected_without_output",
+    "reason": "real SIMION regression requires the public host lease and explicit authorization",
+    "stage": "simion_common",
+    "source_file_sha256": "9d5c31a19d6dfd611ad3484562346e68d2c6c28d0317d0d7a88b768620689588"
+  },
+  {
+    "test_key": "projects/rf_multipole_ion_optics/tests/domain/test_simion_field_checkpoint_native.py::NativeFieldCheckpointTests.test_fractional_field_survives_alias_cleanup_and_reuses_without_refine",
+    "reason": "opt-in Windows SIMION N1 software exploration; excluded from L1/L2",
+    "stage": "rf_multipole_domain_tests",
+    "source_file_sha256": "802b677570170cf06cbbfeceac9560f486efd8d31533023f3907cad67019038a"
+  },
+  {
+    "test_key": "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_candidate_chain_runner.py::NativeCandidateChainRunnerTests.test_native_center_storage_projection_accepts_actual_full_field_and_rejects_changes",
+    "reason": "historical centre PA publicly retired; synthetic storage projection coverage remains in test_downstream_fixed_grid_workpoint.test_center_storage_projection_preserves_original_problem_without_pa_reads",
+    "stage": "parallel_mirror_dual_stripe_mr_tof_static__tests_02",
+    "source_file_sha256": "df241c3f5718fc4be5fb20730f221145eb589cf9bd7b08a28e5954e1d1205946"
+  },
+  {
+    "test_key": "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_corridor_runtime_support.py::NativeCorridorRuntimeSupportTest.test_real_fast_adjust_reopens_guarded_family_without_writing",
+    "reason": "requires explicit SIMION_EXE",
+    "stage": "parallel_mirror_dual_stripe_mr_tof_static__tests_02",
+    "source_file_sha256": "485f880531d5e57c1815516849f7ef027e73eb0e8d067c7c61dd9c193be36048"
+  },
+  {
+    "test_key": "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_corridor_runtime_support.py::NativeCorridorRuntimeSupportTest.test_real_workbench_loader_preserves_refinable_collision_without_writing",
+    "reason": "requires explicit SIMION_EXE",
+    "stage": "parallel_mirror_dual_stripe_mr_tof_static__tests_02",
+    "source_file_sha256": "485f880531d5e57c1815516849f7ef027e73eb0e8d067c7c61dd9c193be36048"
+  },
+  {
+    "test_key": "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_static_field_provider.py::NativeStaticProviderTest.test_actual_a162200_compiles_frozen_prepare_and_binding_without_pa_io",
+    "reason": "external A parent payload retired; small evidence remains",
+    "stage": "parallel_mirror_dual_stripe_mr_tof_static__tests_03",
+    "source_file_sha256": "6d84a6ddaafc69b00a492813907c1d5eb5c4102834e1440ffecf185c66b01d70"
+  },
+  {
+    "test_key": "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_static_field_provider.py::NativeStaticProviderTest.test_actual_zero_voltage_bodies_and_all_unit_axis_geometry_are_retained",
+    "reason": "external A parent payload retired; small evidence remains",
+    "stage": "parallel_mirror_dual_stripe_mr_tof_static__tests_03",
+    "source_file_sha256": "6d84a6ddaafc69b00a492813907c1d5eb5c4102834e1440ffecf185c66b01d70"
+  },
+  {
+    "test_key": "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_event_lifecycle.py::NativeEventLifecycleTest.test_global_segments_preserve_terminal_ids_outside_pa",
+    "reason": "native SIMION executable not selected",
+    "stage": "parallel_mirror_dual_stripe_mr_tof_static__tests_04",
+    "source_file_sha256": "5639539d11d94c35e36fd632ab3cc0a4766798c8c8e75534f4cd24b5400eeeee"
+  },
+  {
+    "test_key": "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_gem_slots.py::NativeGemSlotTest.test_central_prism_shield_has_cross_slot_and_local_body_extensions",
+    "reason": "native SIMION executable not selected",
+    "stage": "parallel_mirror_dual_stripe_mr_tof_static__tests_04",
+    "source_file_sha256": "667e239dd668f7d519fade26ec917cf5b958982d065c65e47ff2717839b8dd54"
+  },
+  {
+    "test_key": "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_gem_slots.py::NativeGemSlotTest.test_curved_stripe_is_one_slotted_body_with_two_finite_end_lands",
+    "reason": "native SIMION executable not selected",
+    "stage": "parallel_mirror_dual_stripe_mr_tof_static__tests_04",
+    "source_file_sha256": "667e239dd668f7d519fade26ec917cf5b958982d065c65e47ff2717839b8dd54"
+  },
+  {
+    "test_key": "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_gem_slots.py::NativeGemSlotTest.test_detector_builder_retains_terminal_mask_with_zero_voltage_without_refine",
+    "reason": "native SIMION executable not selected",
+    "stage": "parallel_mirror_dual_stripe_mr_tof_static__tests_04",
+    "source_file_sha256": "667e239dd668f7d519fade26ec917cf5b958982d065c65e47ff2717839b8dd54"
+  },
+  {
+    "test_key": "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_gem_slots.py::NativeGemSlotTest.test_mirror_30mm_slot_does_not_remove_nodes_outside_cad_aperture",
+    "reason": "native SIMION executable not selected",
+    "stage": "parallel_mirror_dual_stripe_mr_tof_static__tests_04",
+    "source_file_sha256": "667e239dd668f7d519fade26ec917cf5b958982d065c65e47ff2717839b8dd54"
+  },
+  {
+    "test_key": "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_gem_slots.py::NativeGemSlotTest.test_short_prism_shield_retains_end_lands_and_open_reflection_channel",
+    "reason": "native SIMION executable not selected",
+    "stage": "parallel_mirror_dual_stripe_mr_tof_static__tests_04",
+    "source_file_sha256": "667e239dd668f7d519fade26ec917cf5b958982d065c65e47ff2717839b8dd54"
+  },
+  {
+    "test_key": "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_prepared_joint_diagnostics.py::PreparedJointDiagnosticsTests.test_retained_native_97_results_analyze_when_exact_pa_paths_are_unavailable",
+    "reason": "explicit retained native-97 post-hoc verification",
+    "stage": "parallel_mirror_dual_stripe_mr_tof_static__tests_04",
+    "source_file_sha256": "3430a4217223d423cd13a3299fa358739e268d7734a254a822aa729fcb4767cc"
+  },
+  {
+    "test_key": "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_three_zone_t5_simion_candidate.py::ThreeZoneT5SimionCandidateTests.test_optional_canonical_t5_artifact",
+    "reason": "OATOF_THREE_ZONE_T5_RECEIPT is not configured",
+    "stage": "single_reflection_oa_tof_mass_analyzer_static__tests_03",
+    "source_file_sha256": "63d095539064af86ca84901e6955e0b3d14f9f7fef31e96d58a60b24a81134de"
+  }
+]

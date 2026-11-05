@@ -1,0 +1,50 @@
+{
+  "status": "EXPLICIT_M174513_TO_F5_REFERENCE_AND_SMALL_BYTES_JOIN_PROVEN",
+  "model_run_id": "20261104_174513__build__simion__model-d490a283b98f",
+  "field_run_id": "20261104_214825__sim__simion__fields-9070fe95d6aa",
+  "actual_reference": [
+    {
+      "manifest_record": {
+        "path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\instrument_assembly\\runs\\20261104_174513__build__simion__model-d490a283b98f\\run_manifest.json",
+        "exists": true,
+        "bytes": 31354,
+        "sha256": "9E91D7DAF35AC9EC5CA1AC4FEDF429FBC9B69DBBBDEA055E6D6042AF35ECB6E0",
+        "retention_role": "required_evidence"
+      }
+    }
+  ],
+  "F5_frozen_source_model_manifest_record": {
+    "path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\instrument_assembly\\runs\\20261104_214825__sim__simion__fields-9070fe95d6aa\\inputs\\source_model_manifest.json",
+    "exists": true,
+    "bytes": 31354,
+    "sha256": "9E91D7DAF35AC9EC5CA1AC4FEDF429FBC9B69DBBBDEA055E6D6042AF35ECB6E0",
+    "retention_role": "required_evidence"
+  },
+  "source_manifest_copy_actual_byte_equal": true,
+  "original_model_manifest_actual_sha256": "9e91d7daf35ac9ec5ca1ac4fedf429fbc9b69dbbbdea055e6d6042af35ecb6e0",
+  "compiled_model_records_actual_verified": [
+    {
+      "record": {
+        "path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\instrument_assembly\\runs\\20261104_174513__build__simion__model-d490a283b98f\\inputs\\compiled_model.json",
+        "exists": true,
+        "bytes": 299034,
+        "sha256": "8F0AEC24D25FAF4D0A161B71602622207CE0266F431C510E4E6868C480F939EB",
+        "retention_role": "required_evidence"
+      },
+      "actual_sha256": "8f0aec24d25faf4d0a161b71602622207ce0266f431c510e4e6868c480f939eb"
+    },
+    {
+      "record": {
+        "path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\instrument_assembly\\runs\\20261104_214825__sim__simion__fields-9070fe95d6aa\\inputs\\compiled_model.json",
+        "exists": true,
+        "bytes": 299034,
+        "sha256": "8F0AEC24D25FAF4D0A161B71602622207CE0266F431C510E4E6868C480F939EB",
+        "retention_role": "required_evidence"
+      },
+      "actual_sha256": "8f0aec24d25faf4d0a161b71602622207ce0266f431c510e4e6868c480f939eb"
+    }
+  ],
+  "model_identity_sha256_both": "e69de2fc8081eb869a5bfaeef7d4ef84af6619b9b3f6dea3307bdeb129d518ae",
+  "original_MODEL154935_and_COLD155321": "Separate earlier producer/reopen evidence only; not claimed to be F5 directparent merely because same semantic modelidentity.",
+  "scope": "Onlymanifest/compiledsmallJSON checked; noPAhash/native/reexecution."
+}

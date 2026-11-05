@@ -1,0 +1,81 @@
+{
+  "current": "f283b752a736dcfe703ffb2a6b56bef291c889b1",
+  "green_directory": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\dot-focused-batch\\addendum-parallel-green",
+  "captured_rows": 11,
+  "five_source_rows": 5,
+  "source_before_after_identity_equal": true,
+  "loaded_to_committed": [
+    {
+      "path": "common/contracts/test_batch_processes.py",
+      "bytes": 32723,
+      "loaded_sha256": "421e18e92ad4d269959823f3b0fe4e4ecc4c9658599bb15a4ab237105f93fcbf",
+      "committed_sha256": "421e18e92ad4d269959823f3b0fe4e4ecc4c9658599bb15a4ab237105f93fcbf",
+      "git_blob_oid": "8860f543727430c32898f6a7af8eab9ff56fc326"
+    },
+    {
+      "path": "common/parallel_gate_support.ps1",
+      "bytes": 51741,
+      "loaded_sha256": "9e6d32aa573d85c36d5bb586dffa374d019c624e8f469afc39241a98c06a86d4",
+      "committed_sha256": "9e6d32aa573d85c36d5bb586dffa374d019c624e8f469afc39241a98c06a86d4",
+      "git_blob_oid": "115022c1c881de259d87d9aedab3c138fc48d755"
+    },
+    {
+      "path": "common/contracts/test_parallel_gate_support.py",
+      "bytes": 140897,
+      "loaded_sha256": "2d8dd1b01ac541c6aa55b9a33076642fae87012fc1ea1ce3a49127f07d123f2e",
+      "committed_sha256": "2d8dd1b01ac541c6aa55b9a33076642fae87012fc1ea1ce3a49127f07d123f2e",
+      "git_blob_oid": "344f6a1bd8715bf2d08263bdc18948659e579fa5"
+    },
+    {
+      "path": "common/README.md",
+      "bytes": 145643,
+      "loaded_sha256": "ec59d819be6bc09840cfe37117f12f86e5b3061b8cc456c5510e65061dd46316",
+      "committed_sha256": "ec59d819be6bc09840cfe37117f12f86e5b3061b8cc456c5510e65061dd46316",
+      "git_blob_oid": "e336c88b2e9ed794d1035ff43e838642481c6f19"
+    },
+    {
+      "path": "common/contracts/README.md",
+      "bytes": 103536,
+      "loaded_sha256": "cec0ad0e71e73fec7a616ed7ba7b9eb99892603739c3f783414bc90e7259608a",
+      "committed_sha256": "cec0ad0e71e73fec7a616ed7ba7b9eb99892603739c3f783414bc90e7259608a",
+      "git_blob_oid": "dc705e80c2d04a4efa47b630fb42ea92c2db2c70"
+    }
+  ],
+  "parent_count": 49,
+  "parent_outcomes": {
+    "success": 49
+  },
+  "subtest_count": 46,
+  "subtest_outcomes": {
+    "success": 46
+  },
+  "original_evidence_files": [
+    {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\dot-focused-batch\\addendum-parallel-green\\source-before.json",
+      "bytes": 10683,
+      "sha256": "30bbf0dc3f31afb346a840b2bef7b8b0889a85abfbce8f2e4c289fac9e355ed5"
+    },
+    {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\dot-focused-batch\\addendum-parallel-green\\source-after.json",
+      "bytes": 10705,
+      "sha256": "4ead8526ab6678f80c23f2fd7a9887e3cb19345e6adddc8fe6e7f89ce008f5d1"
+    },
+    {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\dot-focused-batch\\addendum-parallel-green\\source-freeze.json",
+      "bytes": 753,
+      "sha256": "a3d83e1e3b1f39a25b193c0df80afccdeb54f8c5e7bbcabd41227c9bf237d98d"
+    },
+    {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\dot-focused-batch\\addendum-parallel-green\\causal-terminal-audit.json",
+      "bytes": 8512,
+      "sha256": "495033083ecd2b860fdca35c65863c3981ba627f4d1fa14205321004dfbcc890"
+    },
+    {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\dot-focused-batch\\addendum-parallel-green\\outcomes.jsonl",
+      "bytes": 90613,
+      "sha256": "7d31cb4c1ef0cdce42904dc72351dc43e97da78e2a2e4847e134a8fad5813838"
+    }
+  ],
+  "qualification": "Actualparallelmodule GREEN49parents46subs only. Batch source captured unchanged but batch not rerun here. FullA881 originalwholegate remains separate; no new wholeRepository claim.",
+  "scope": "Parallel gate module only; batch source was captured but not rerun in this invocation."
+}

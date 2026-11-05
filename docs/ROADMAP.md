@@ -75,18 +75,19 @@ D01已固定并推送`bf19145c`；当前按V7.2 Goal继续P3。首个几何编�
 SIMION纯编译及必要执行基础，公共API与普通wheel／sdist树外实际调用已有证据，当前范围见
 [集成状态](../integrations/docs/INTEGRATION.md#当前边界)。后继已取得普通安装的无GUI STEP、未求解模型独立求场、
 同场同源三档连续／接续共九个轨迹产品、无商业工具重分析及独立审查者教程的有界证据。
-P3 remains incomplete pending final publication and reconciliation of Dot's
-specific findings. Clean commit `85e53efa` passed the complete ordinary-SDK23
-local Repository gate with eight workers: 50 PASS / 12 NOT_APPLICABLE, 6802
-parents (6781 success / 21 skip), 7698 successful subtests and six native
-Dirichlet successes. Public wall time was 2533.389 seconds; all 2792 source
-paths/bytes, HEAD and clean status stayed unchanged. Changed CI at the same
-commit passed all seven batch parents; it is not remote full/native acceptance.
-SDK23 ordinary installation and its 235-payload/54-lock/245-source joins remain
-accepted; the later changes affect only a test fixture and its documentation.
-The original failures and unproved historical causes retain their original
-identities. Current capabilities, qualification limits, skips and remaining
-publication work have one authority in the [integration status](../integrations/docs/INTEGRATION.md#当前边界).
+The selected P3 delivery is accepted at code `f283b752`, with its evidence and
+29 Goal / 54 C / 20 R / 8 U mapping in the
+[milestone](history/20261105__phase03-installed-pipeline.md).
+Complete ordinary-SDK23 Repository acceptance at `a8815a81` used eight workers:
+50 PASS / 12 NA, 6804 parents (6783 success / 21 skip), 7710 successful subtests
+and six native Dirichlet successes; public wall 2445.9804041 seconds, with all
+2792 source paths/bytes and clean HEAD/status unchanged. The small later gate
+repair separately passed the complete affected module at the final code bytes:
+49 parents / 46 subtests, all successful, zero skips. No full f283 result is claimed.
+SDK23's 235-payload/54-lock/245-source joins remain exact; no scientific package
+or 3D rebuild was needed for the gate-only successor. Original failures and
+unproved historical causes remain. Current capability, qualification and later
+responsibilities have one authority in the [integration status](../integrations/docs/INTEGRATION.md#当前边界).
 User clarification on 2026-11-05: correct 3D file generation and independent geometry checks are the
 current CAD acceptance scope. SolidWorks repair and refinement are deferred, without blocking this goal;
 historical native failures and Formal publication requirements remain unchanged.

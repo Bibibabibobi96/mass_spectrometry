@@ -1,0 +1,179 @@
+{
+  "status": "SUCCESS_DECLARED_SDK22_ORDINARY_AND_NAMED_STEP_SCOPE",
+  "actual_tool_terminals": {
+    "pipeline": {
+      "session_id": 32694,
+      "exit_code": 0,
+      "chunk": "cfcf08"
+    },
+    "export_and_separate_cold_read": {
+      "session_id": 63718,
+      "exit_code": 0,
+      "chunk": "8de154"
+    }
+  },
+  "execution": {
+    "release_error": null,
+    "release_observation": "Actual original release transaction result and HOST_RESOURCE=RELEASE stdout",
+    "failed_phase": null,
+    "release": {
+      "status": "released",
+      "token": "2eb7d9b9052e462ab8e12dc521c21f8c"
+    },
+    "source_drift": "none",
+    "outer_seconds": 197.3721705,
+    "primary": null,
+    "stages": [
+      {
+        "started": "2026-11-05T03:16:32.6676299Z",
+        "exit_code": 0,
+        "phase": "ordinary_distribution",
+        "completed": "2026-11-05T03:18:41.8387374Z"
+      },
+      {
+        "started": "2026-11-05T03:18:41.8488824Z",
+        "exit_code": 0,
+        "phase": "fresh_dependency_install",
+        "completed": "2026-11-05T03:19:38.9164985Z"
+      },
+      {
+        "started": "2026-11-05T03:19:38.9222931Z",
+        "exit_code": 0,
+        "phase": "fresh_core_install_and_verify",
+        "completed": "2026-11-05T03:19:45.585895Z"
+      }
+    ],
+    "status": "success"
+  },
+  "formal_outcomes": {
+    "schema_version": 1,
+    "invocation_id": "3879423ab4ad455d966cb33ca44274d8",
+    "source_sha": null,
+    "stage": null,
+    "repository_root": "C:\\Users\\Liao\\mass_spectrometry\\simulation_repo",
+    "event": "completed",
+    "completed": true,
+    "record_count": 1,
+    "tests_run": 1,
+    "outcome_counts": {
+      "success": 1
+    },
+    "status": "success"
+  },
+  "formal_seconds": 128.52683099999558,
+  "source_count": 245,
+  "source_before_after_export_exact": true,
+  "source_snapshot_sha256": "7d0ac753ee31305a0ba36658cea971669485cb62c618a92b344bc72b623c840b",
+  "actual_build_source_count": 245,
+  "actual_package_files": 235,
+  "python_files": 149,
+  "non_python_files": 86,
+  "SDK21_to22_payload_delta": [
+    {
+      "member": "msplatform/exporters/step.py",
+      "before": {
+        "member": "msplatform/exporters/step.py",
+        "bytes": 21717,
+        "sha256": "d99d1b8f1d09f7bfed933e150df7fe8daf180937202e9dc7bed66739b7aded9b"
+      },
+      "after": {
+        "member": "msplatform/exporters/step.py",
+        "bytes": 22015,
+        "sha256": "006aef1c7ddf1b5212391e4d4e7d9058df60b1eafa61149d5982fa8343a0700f"
+      }
+    }
+  ],
+  "all86_nonPython_resources_exact_SDK21": true,
+  "all54_locked_versions_exact_SDK21": true,
+  "environment_proof_sha256": "af4e46a966ce3057c29ed9239a5968c830aa24b871e66646791c75fd591988d3",
+  "member_join_sha256": "16eef61b7137cccbba1b02d4d69324fc891952ad2bdb54008f90eba2e3399faa",
+  "artifacts": [
+    {
+      "kind": "wheel",
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\distribution-epoch22-verified-cache\\wheel\\mass_spectrometry_analysis-0.4.0-py3-none-any.whl",
+      "bytes": 725407,
+      "sha256": "ba9bcd6796028361a8b0b91a7a016b1e0a560931bde707b1b8bd70acc9b85d75"
+    },
+    {
+      "kind": "sdist",
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\distribution-epoch22-verified-cache\\sdist\\mass-spectrometry-analysis-0.4.0.tar.gz",
+      "bytes": 593589,
+      "sha256": "152cb5d4ff36a4a7cb21c2ba175b770085745748717acb9a94be79c97b730a41"
+    },
+    {
+      "kind": "sdist-rebuilt-wheel",
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\distribution-epoch22-verified-cache\\sdist-rebuilt-wheel\\mass_spectrometry_analysis-0.4.0-py3-none-any.whl",
+      "bytes": 725407,
+      "sha256": "271c42fe7502c046e0c1f91f2d7a46df350443066ad7a4af6d5bfb4ce1b39ace"
+    }
+  ],
+  "export": {
+    "status": "PASS_INSTALLED_PUBLIC_NAMED_STEP_EXPORT",
+    "reference": {
+      "manifest": {
+        "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\distribution-epoch22-preparation\\English CAD workspace \u5de5\u4f5c\u533a\\artifacts\\projects\\instrument_assembly\\runs\\20261105_112005__build__cad__assembly-9f4c6bac1531\\run_manifest.json",
+        "exists": true,
+        "bytes": 11321,
+        "sha256": "74D31D56EA95F9A87A6BEECA3F7C67557C22490975D4602715C9FEC5DEC0B20E",
+        "retention_role": "required_evidence"
+      },
+      "product_id": "cad_geometry"
+    },
+    "metadata": {
+      "representation": "physical_solids",
+      "length_unit": "mm",
+      "source_status": "not_requested",
+      "field_status": "not_solved",
+      "refine_calls": 0,
+      "fly_calls": 0,
+      "gui_calls": 0,
+      "scientific_qualification": "not_granted"
+    },
+    "step": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\distribution-epoch22-preparation\\English CAD workspace \u5de5\u4f5c\u533a\\artifacts\\projects\\instrument_assembly\\runs\\20261105_112005__build__cad__assembly-9f4c6bac1531\\results\\RF to TOF Assembly.step",
+    "report": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\distribution-epoch22-preparation\\English CAD workspace \u5de5\u4f5c\u533a\\artifacts\\projects\\instrument_assembly\\runs\\20261105_112005__build__cad__assembly-9f4c6bac1531\\results\\cad_export_report.json",
+    "step_bytes": 1122132,
+    "step_sha256": "141b511aa9fb94a78e3b0e078adfe05920d92c2956453f4020e0f71e1f58aac2",
+    "exported_members": 72,
+    "excluded_members": 5,
+    "wall_seconds": 13.592402299982496,
+    "python": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\installed-runtime-epoch22\\venv\\Scripts\\python.exe",
+    "cwd": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\distribution-epoch22-preparation",
+    "qualification": "not_granted"
+  },
+  "export_timing": {
+    "python": "C:/Users/Liao/mass_spectrometry/.tools/phase03-v7-20261104/installed-runtime-epoch22/venv/Scripts/python.exe",
+    "public_wall_seconds": 15.3843086,
+    "cwd": "C:/Users/Liao/mass_spectrometry/.tools/phase03-v7-20261104/distribution-epoch22-preparation",
+    "inherited_token": false,
+    "exit_code": 0
+  },
+  "cold_read": {
+    "status": "PASS_INDEPENDENT_INSTALLED_COLD_STEPCAF_AND_CSG_READ",
+    "wall_seconds": 3.8459355999948457,
+    "public_timing": {
+      "python": "C:/Users/Liao/mass_spectrometry/.tools/phase03-v7-20261104/installed-runtime-epoch22/venv/Scripts/python.exe",
+      "public_wall_seconds": 6.9176426,
+      "cwd": "C:/Users/Liao/mass_spectrometry/.tools/phase03-v7-20261104/distribution-epoch22-preparation",
+      "inherited_token": false,
+      "exit_code": 0
+    },
+    "actual_solids": 72,
+    "actual_probes": 10,
+    "data_unchanged": true
+  },
+  "terminal_proof": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\distribution-epoch22-preparation\\export-terminal-review.json",
+  "limits": [
+    "Original SDK21 and final70919 failure identities preserved",
+    "No SW/GUI/solver/Fly or new native qualification",
+    "Source subsets only; parallel gate fixes outside captured245 are not validated by this installation",
+    "No final Repository PASS claim"
+  ],
+  "retirement": {
+    "reason": "SDK22 actual pipeline32694 terminal0/released; export+cold63718 terminal0; exact inactive source text retained, no SDK/run/output cleanup",
+    "bytes": 6521,
+    "sha256": "e2fadc704324c78341f2f2a80c1b17c016720050c3ac283d022f09d8180339cf",
+    "deleted_active_file": true,
+    "retired_path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\distribution-epoch22-preparation\\run-after-freeze.ps1.txt",
+    "old_path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\distribution-epoch22-preparation\\run-after-freeze.ps1"
+  }
+}

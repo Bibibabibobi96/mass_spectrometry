@@ -7,10 +7,13 @@
 
 ## 当前边界
 
-P3 remains **NOT COMPLETE**, pending final publication and reconciliation of
-Dot’s specific findings. Checkpoint 85e53e passed the complete local Repository:
-50 PASS / 12 NOT_APPLICABLE, with all 2792 clean source paths/bytes unchanged.
-Actual session 16447 exited 0; this is complete local evidence, not final publication.
+The selected P3 delivery is accepted under the user scope below. Code is fixed at
+`f283b752a736dcfe703ffb2a6b56bef291c889b1`; the
+[milestone](../../docs/history/20261105__phase03-installed-pipeline.md) binds all
+29 Goal items and 54 C / 20 R / 8 U items to their declared evidence and later owners.
+Complete Repository acceptance remains bound to `a8815a81`; the small later
+gate repair has its own complete affected-module validation. These are separate
+source epochs, not a full Repository result at f283b752.
 
 The user requires correct 3D files and independent geometry checks. SolidWorks
 repair, unattended startup, template repair and viewer refinement are **deferred
@@ -84,13 +87,23 @@ convergence, manufacturing or Formal PASS is inferred.
 
 ### Safety evidence and remaining responsibilities
 
-The final fixed-source local run recorded 6802 parent methods: 6781 successes
-and 21 skips; all 7698 subtests and six native Dirichlet parents succeeded.
-Public wall was 2533.3892523 seconds (internal 2530.617221); all 60 host releases
-were released and the runner retired. The batch-test split also passed its single
-seven-parent check: real-role admission/replan/cancellation/guards/release and
-separately controlled live-peer drain. Inert Python transport is not native
-solver evidence; these scopes remain distinct.
+Complete local Repository session 14842 at a8815a81 passed 50 stages / 12 NA:
+6804 parent methods (6783 successes / 21 explicit skips), 7710 successful
+subtests and six successful native Dirichlet parents. Public wall was
+2445.9804041 seconds (internal 2443.453264); all 2792 source paths/bytes, HEAD
+and clean status stayed unchanged, all 60 public host releases were released
+and the launcher retired. Original Temp logs removed by normal cleanup are
+unavailable; the original summary, outcomes, public log and source evidence remain.
+
+Subsequent controlled checks confirmed a sibling-start fixture race and a
+secondary cleanup warning masking the original failure under WarningPreference=Stop.
+The test rendezvous and one-diagnostic correction at f283b752 passed the complete
+parallel-support module: 49 parents / 46 subtests, all 95 successful, zero skips,
+220.5235436 seconds publicly. Partial deletion and combined finalization/cleanup
+checks retain honest log metadata; the latter is an exact-finally branch check,
+not a native or end-to-end claim. Sources/resources matched committed bytes.
+Receipt/guard/exit causality replaces wall-clock ordering. No duplicate full gate
+or additional scientific computation was run for this bounded successor.
 
 Whole-unit recovery retains actual fresh/resumed/all-reuse operation counts
 12/6/0, complete-output/direct-parent validation, sparse IDs/full mother/clock,
@@ -100,14 +113,13 @@ not a native checkpoint.
 
 Earlier full/CI, atomic-summary, stale-origin/oracle, remote sleep-order and local
 same-clock assertion failures remain original evidence. Detailed attempts belong
-to the [tested checkpoint](https://github.com/Bibibabibobi96/mass_spectrometry/blob/85e53efa2869f6d32a528c60924c4a5656152c32/integrations/docs/INTEGRATION.md); final history publication remains pending. P2 natural eight-bucket
+to the [milestone](../../docs/history/20261105__phase03-installed-pipeline.md). P2 natural eight-bucket
 results remain **INCONCLUSIVE**, and software success grants no scientific status.
 F2 obligation workflow-16a7aa13eed041db91b45f2fca6b96bf retains unknown-writer
 protection; goal closure does not release it.
 
-Still required: final publication, reconciliation of Dot’s specific findings,
-final documentation/CLOC/cost/retirement and clean committed/pushed identity.
-Dot owns the broad audit; no duplicate scan or new complete run is implied.
+The milestone retains the scoped review, official CLOC, costs, skips and
+retirement evidence. It does not claim every unknown defect is cleared.
 Remote results retain their actual scope/SHA separately. P4 owns finite bridge
 exit, broader backend promotion and the original 15-minute/owner performance
 obligations; no target or coverage is reduced. P5 owns real colleagues/new

@@ -1,0 +1,32 @@
+{
+  "session": 62925,
+  "status": "EXPECTED_WARNINGSTOP_RED_CONFIRMED",
+  "actual_exit_code": 1,
+  "subcases": [
+    {
+      "outcome": "success",
+      "id": "common.contracts.test_parallel_gate_support.ParallelGateSupportTests.test_group_cleanup_failure_preserves_published_outcomes_and_primary (child_exit=7, mode='normal')"
+    },
+    {
+      "outcome": "success",
+      "id": "common.contracts.test_parallel_gate_support.ParallelGateSupportTests.test_group_cleanup_failure_preserves_published_outcomes_and_primary (child_exit=0, mode='normal')"
+    },
+    {
+      "outcome": "failure",
+      "id": "common.contracts.test_parallel_gate_support.ParallelGateSupportTests.test_group_cleanup_failure_preserves_published_outcomes_and_primary (child_exit=7, mode='warning_stop')"
+    },
+    {
+      "outcome": "success",
+      "id": "common.contracts.test_parallel_gate_support.ParallelGateSupportTests.test_group_cleanup_failure_preserves_published_outcomes_and_primary (child_exit=0, mode='partial_delete')"
+    },
+    {
+      "outcome": "success",
+      "id": "common.contracts.test_parallel_gate_support.ParallelGateSupportTests.test_group_cleanup_failure_preserves_published_outcomes_and_primary (mode='finalization_and_cleanup')"
+    }
+  ],
+  "source_resources_unchanged": true,
+  "cause": "WarningPreference Stop turns cleanup diagnostic Write-Warning into terminating exception, masking original group error; actual PRIMARY_REPLACED marker retained.",
+  "release": "released",
+  "production": "ef1c3e6824b41f5aa344bc8a4c3649bac7886adfdb4587bc205e9fe3b18369cc",
+  "no_edit_or_retry": true
+}

@@ -1,0 +1,22 @@
+{
+  "python": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\installed-runtime-epoch23\\venv\\Scripts\\python.exe",
+  "site": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\installed-runtime-epoch23\\venv\\Lib\\site-packages",
+  "origins": {
+    "msplatform.api": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\installed-runtime-epoch23\\venv\\Lib\\site-packages\\msplatform\\api.py",
+    "msplatform.backends.simion.resources": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\installed-runtime-epoch23\\venv\\Lib\\site-packages\\msplatform\\backends\\simion\\resources.py",
+    "msplatform.backends.simion.compiler": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\installed-runtime-epoch23\\venv\\Lib\\site-packages\\msplatform\\backends\\simion\\compiler.py"
+  },
+  "sys_path": [
+    "",
+    "C:\\Users\\Liao\\AppData\\Local\\Programs\\Python\\Python311\\python311.zip",
+    "C:\\Users\\Liao\\AppData\\Local\\Programs\\Python\\Python311\\DLLs",
+    "C:\\Users\\Liao\\AppData\\Local\\Programs\\Python\\Python311\\Lib",
+    "C:\\Users\\Liao\\AppData\\Local\\Programs\\Python\\Python311",
+    "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\installed-runtime-epoch23\\venv",
+    "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\installed-runtime-epoch23\\venv\\Lib\\site-packages",
+    "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\installed-runtime-epoch23\\venv\\Lib\\site-packages\\win32",
+    "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\installed-runtime-epoch23\\venv\\Lib\\site-packages\\win32\\lib",
+    "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\installed-runtime-epoch23\\venv\\Lib\\site-packages\\pythonwin"
+  ],
+  "interpretation": "Ordinary installed scientific package with repository unittest transport only; no source insertion"
+}

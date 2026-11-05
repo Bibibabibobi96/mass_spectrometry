@@ -1,0 +1,74 @@
+{
+  "session": 10177,
+  "actual_exit_code": 0,
+  "status": "PASS",
+  "paths": 25,
+  "all_bytes_unchanged": true,
+  "head": "f283b752a736dcfe703ffb2a6b56bef291c889b1",
+  "execution": {
+    "exit_code": 0,
+    "python": "C:/Users/Liao/mass_spectrometry/.tools/phase03-v7-20261104/installed-runtime-epoch23/venv/Scripts/python.exe",
+    "wall_seconds": 24.684206,
+    "changed_paths": [
+      ".gitattributes",
+      "docs/AUDITS.md",
+      "docs/ROADMAP.md",
+      "integrations/docs/INTEGRATION.md",
+      "docs/history/20261105__phase03-installed-pipeline.md",
+      "docs/history/20261105__phase03-installed-pipeline/cad-headless.json",
+      "docs/history/20261105__phase03-installed-pipeline/case-c-references.json",
+      "docs/history/20261105__phase03-installed-pipeline/cloc-f283-tables.json",
+      "docs/history/20261105__phase03-installed-pipeline/dot-reconciliation.json",
+      "docs/history/20261105__phase03-installed-pipeline/evidence-index.json",
+      "docs/history/20261105__phase03-installed-pipeline/focused-f283.json",
+      "docs/history/20261105__phase03-installed-pipeline/full-a881-native-six.json",
+      "docs/history/20261105__phase03-installed-pipeline/full-a881-skips.json",
+      "docs/history/20261105__phase03-installed-pipeline/full-a881-terminal.json",
+      "docs/history/20261105__phase03-installed-pipeline/green-f283-commit-join.json",
+      "docs/history/20261105__phase03-installed-pipeline/immutable-input-safety.json",
+      "docs/history/20261105__phase03-installed-pipeline/model-f5-join.json",
+      "docs/history/20261105__phase03-installed-pipeline/package-f283-join.json",
+      "docs/history/20261105__phase03-installed-pipeline/queued-controlled-red.json",
+      "docs/history/20261105__phase03-installed-pipeline/remote-a881-changed.txt",
+      "docs/history/20261105__phase03-installed-pipeline/scope-clarification.json",
+      "docs/history/20261105__phase03-installed-pipeline/sdk23-consumer-origins.json",
+      "docs/history/20261105__phase03-installed-pipeline/sdk23-installation.json",
+      "docs/history/20261105__phase03-installed-pipeline/warning-controlled-red.json",
+      "docs/history/20261105__phase03-installed-pipeline/whole-unit-recovery.json"
+    ],
+    "outer_lease": false,
+    "secondary": [],
+    "primary": null
+  },
+  "stages": [
+    {
+      "name": "repository_hygiene",
+      "status": "PASS",
+      "elapsed_seconds": 5.991565
+    },
+    {
+      "name": "repository_text_bytes",
+      "status": "PASS",
+      "elapsed_seconds": 4.073302
+    },
+    {
+      "name": "documentation",
+      "status": "PASS",
+      "elapsed_seconds": 8.435077
+    },
+    {
+      "name": "development_standards",
+      "status": "PASS",
+      "elapsed_seconds": 3.554314
+    }
+  ],
+  "selection_boundary": "25documentation/text paths only. Public selector additionally chose development_standards for configuration/unknown path; no Python or scientific/native test route selected.",
+  "release_lines": [
+    "HOST_RESOURCE=RELEASE ROLE=GATE STAGE=repository_hygiene STATUS=released",
+    "HOST_RESOURCE=RELEASE ROLE=GATE STAGE=repository_text_bytes STATUS=released",
+    "HOST_RESOURCE=RELEASE ROLE=GATE STAGE=documentation STATUS=released",
+    "HOST_RESOURCE=RELEASE ROLE=GATE STAGE=development_standards STATUS=released"
+  ],
+  "cloc_delta": "N/A (docs validation only)",
+  "release_evidence_origin": "Observed actual session10177 tool transcript (Write-Host information stream not present in Tee success/error log); explicit transcript-derived receipt extract, not a separate ledger query."
+}

@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "role": "user_scope_clarification",
+  "recorded_at_utc": "2026-11-04T05:37:17.8229394Z",
+  "user_instruction": "当前重点不是二者的一致，而是仓库的改造，即功能链的顺利完成。不需要指定任何任务指标。只需要完成二者的比较和自动化代码实现。",
+  "active_scope": "functional_chain_and_automated_descriptive_comparison",
+  "numeric_equivalence_verdict_required": false,
+  "task_accuracy_budget_required": false,
+  "unchanged_requirements": [
+    "same fixed field and source binding",
+    "original IDs lineage clock and full mother",
+    "explicit cut and recross policy",
+    "actual native outputs and complete publication",
+    "report all paired deltas unpaired IDs fates unknown censored and insufficient observations"
+  ],
+  "no_qualification_granted": [
+    "trajectory accuracy",
+    "field grid accuracy",
+    "numerical convergence",
+    "Formal"
+  ],
+  "previous_draft": "decision-draft.json",
+  "previous_draft_interpretation": "Preserved as prior proposal; numeric threshold blockers are superseded by this explicit user instruction. Actual field/source/input/native closure blockers remain."
+}

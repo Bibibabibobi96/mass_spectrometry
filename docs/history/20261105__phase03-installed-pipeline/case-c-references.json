@@ -1,0 +1,98 @@
+{
+  "coarse": {
+    "continuous": {
+      "manifest": {
+        "path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\instrument_assembly\\runs\\20261104_232610__sim__simion__track-5a673fc9176e\\run_manifest.json",
+        "exists": true,
+        "bytes": 62250,
+        "sha256": "31CE03D05B4691AB1DBBEE40E03F681F56B370829251C32F993BC6C9AE96FE09",
+        "retention_role": "required_evidence"
+      },
+      "product_id": "trajectory"
+    },
+    "upstream": {
+      "manifest": {
+        "path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\instrument_assembly\\runs\\20261105_011214__sim__simion__track-b015422c6a8e\\run_manifest.json",
+        "exists": true,
+        "bytes": 62240,
+        "sha256": "EA27E64CA05DC805A41F4AE8D51CECCF22AA14E113CD8825B3DA427B59B6B3B1",
+        "retention_role": "required_evidence"
+      },
+      "product_id": "trajectory"
+    },
+    "relaunch": {
+      "manifest": {
+        "path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\instrument_assembly\\runs\\20261105_012027__sim__simion__track-02a438c09ca0\\run_manifest.json",
+        "exists": true,
+        "bytes": 63423,
+        "sha256": "22777E5603DD15457F6F3C09A3AEA0725E840ECCB519B2415EFFE75B85388C5F",
+        "retention_role": "required_evidence"
+      },
+      "product_id": "trajectory"
+    }
+  },
+  "medium": {
+    "continuous": {
+      "manifest": {
+        "path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\instrument_assembly\\runs\\20261105_001221__sim__simion__track-dc8c4eee6f99\\run_manifest.json",
+        "exists": true,
+        "bytes": 62250,
+        "sha256": "323DB9557C12DE65564C4D0FACA0B8247919092F5B46F0B45DA898BFAF1A6298",
+        "retention_role": "required_evidence"
+      },
+      "product_id": "trajectory"
+    },
+    "upstream": {
+      "manifest": {
+        "path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\instrument_assembly\\runs\\20261105_012959__sim__simion__track-21e1e2378925\\run_manifest.json",
+        "exists": true,
+        "bytes": 62240,
+        "sha256": "C262097299455C7539D09F0E64A0E4C9FEFFDF3501469700426544E3BDF180DC",
+        "retention_role": "required_evidence"
+      },
+      "product_id": "trajectory"
+    },
+    "relaunch": {
+      "manifest": {
+        "path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\instrument_assembly\\runs\\20261105_013944__sim__simion__track-0da387fe2f63\\run_manifest.json",
+        "exists": true,
+        "bytes": 63423,
+        "sha256": "326E066F715EAE21D0A0E10AE27002719AFF6C6E080A3D1156B14C47109EBB7A",
+        "retention_role": "required_evidence"
+      },
+      "product_id": "trajectory"
+    }
+  },
+  "fine": {
+    "continuous": {
+      "manifest": {
+        "path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\instrument_assembly\\runs\\20261105_002322__sim__simion__track-b2a4893a0213\\run_manifest.json",
+        "exists": true,
+        "bytes": 62250,
+        "sha256": "CAA5C23246B3921D33E3DAE38E5EE3B1D5DE9A211A3B58F6FB55A1C255A1954F",
+        "retention_role": "required_evidence"
+      },
+      "product_id": "trajectory"
+    },
+    "upstream": {
+      "manifest": {
+        "path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\instrument_assembly\\runs\\20261105_014715__sim__simion__track-09fea14a7f0c\\run_manifest.json",
+        "exists": true,
+        "bytes": 62240,
+        "sha256": "C818E05F29B0ACF8402607B78A109D113BEB73B81464F6A7E7D8E2953DD5BA92",
+        "retention_role": "required_evidence"
+      },
+      "product_id": "trajectory"
+    },
+    "relaunch": {
+      "manifest": {
+        "path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\instrument_assembly\\runs\\20261105_015548__sim__simion__track-04c7ab108e62\\run_manifest.json",
+        "exists": true,
+        "bytes": 63423,
+        "sha256": "1D89DFC254F72CE319E76FA86059256DFB0B01785D4073BAE163DB18BE9A0CE4",
+        "retention_role": "required_evidence"
+      },
+      "product_id": "trajectory"
+    }
+  }
+}

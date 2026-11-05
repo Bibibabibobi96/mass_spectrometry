@@ -1,0 +1,19 @@
+{
+  "status": "ACTUAL_UNCHANGED",
+  "source": {
+    "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\epochcloc-f283b752-c-locale\\package-unchanged-postcommit.json",
+    "bytes": 148143,
+    "sha256": "925f9c62f7075c52df5856ac80bb45a01d530cba03742d3431aaa46ee033b93d"
+  },
+  "base": "a8815a81314b1bbe449e692638dc9230d8319e7f",
+  "current": "f283b752a736dcfe703ffb2a6b56bef291c889b1",
+  "changed_paths": [
+    "common/README.md",
+    "common/contracts/test_parallel_gate_support.py",
+    "common/parallel_gate_support.ps1"
+  ],
+  "source245_intersection": [],
+  "payload235_intersection": [],
+  "source245_rows_exact": 245,
+  "scope": "Scalar projection of original complete committed-blob join; original full record retained externally, no copiedGittext."
+}

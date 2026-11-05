@@ -1,0 +1,35 @@
+{
+  "status": "EXPECTED_CONTROLLED_RED_CONFIRMED_NOT_HISTORICAL_CAUSE",
+  "session": 27191,
+  "actual_exit_code": 1,
+  "testsRun": 1,
+  "failures": 1,
+  "errors": 0,
+  "worker": {
+    "scope": "CONTROLLED_SCHEDULER_INTERPOSITION",
+    "pid": 58164,
+    "birth_ticks": 639294658310878850,
+    "exited": true,
+    "exit_code": 1
+  },
+  "genuine_failure_collected": {
+    "name": "development_standards",
+    "status": "FAIL",
+    "exit_code": 7,
+    "child_exit_code": 1,
+    "error": "Gate catalog command failed with exit code 7.",
+    "delegate_completed": true
+  },
+  "registry": {
+    "status": "BLOCKED",
+    "reason_code": "FAIL_FAST",
+    "child_exit_code": null,
+    "exit_code": null
+  },
+  "registry_start_present": false,
+  "source_resources_unchanged": true,
+  "release": "released",
+  "driver_sha256": "d04ce0e51616500eaeb2eecb1fb0ef245905c3fa46f6a16024adf78f0d65537f",
+  "prior_invalid_attempt_preserved": "../addendum-controlled-red",
+  "qualification": "One permitted scheduler ordering disproves original fixture assumption. No production defect/root cause or native qualification is inferred."
+}

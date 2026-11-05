@@ -1,0 +1,127 @@
+{
+  "status": "success",
+  "execution": {
+    "outer_seconds": 279.6770483,
+    "status": "success",
+    "release_observation": "Actual original release transaction result and HOST_RESOURCE=RELEASE stdout",
+    "source_drift": "none",
+    "release": {
+      "status": "released",
+      "token": "77fc48e2e69e450d881e61be844c9968"
+    },
+    "primary": null,
+    "release_error": null,
+    "failed_phase": null,
+    "stages": [
+      {
+        "completed": "2026-11-05T04:18:10.9858113Z",
+        "started": "2026-11-05T04:16:05.032313Z",
+        "phase": "ordinary_distribution",
+        "exit_code": 0
+      },
+      {
+        "completed": "2026-11-05T04:19:08.8770947Z",
+        "started": "2026-11-05T04:18:10.994299Z",
+        "phase": "fresh_dependency_install",
+        "exit_code": 0
+      },
+      {
+        "completed": "2026-11-05T04:19:15.9352034Z",
+        "started": "2026-11-05T04:19:08.8852773Z",
+        "phase": "fresh_core_install_and_verify",
+        "exit_code": 0
+      },
+      {
+        "completed": "2026-11-05T04:20:32.7284853Z",
+        "started": "2026-11-05T04:19:15.9352409Z",
+        "phase": "fresh_installed_focused_23",
+        "exit_code": 0
+      }
+    ]
+  },
+  "source_exact": true,
+  "source_file_count": 245,
+  "source_sha256": "5a928c68d2dfcab949c21bd8e1ad33779dffce85a68d0342dc861cddd79d4290",
+  "payload_count": 235,
+  "payload_path_set_equal": true,
+  "payload_changed": [
+    "msplatform/backends/simion/resources.py"
+  ],
+  "resource_count": 86,
+  "resource_all_bytes_unchanged": true,
+  "locked_distribution_count": 54,
+  "installed_focus_parent_count": 23,
+  "installed_focus_subtest_count": 68,
+  "installed_focus_counts": {
+    "success": 91
+  },
+  "installed_focus_keys": [
+    "integrations/tests/test_single_reflection_downstream_fields.py::DownstreamFieldsTests.test_declared_frontend_source_skips_private_field_preflight_and_reservation",
+    "integrations/tests/test_single_reflection_downstream_fields.py::DownstreamFieldsTests.test_declared_source_reuses_native_publication_without_staging",
+    "integrations/tests/test_single_reflection_downstream_fields.py::DownstreamFieldsTests.test_detector_half_cell_grid_and_budget_use_the_same_provider_dimensions",
+    "integrations/tests/test_single_reflection_downstream_fields.py::DownstreamFieldsTests.test_execution_junction_is_not_resolved_back_to_the_artifact_path",
+    "integrations/tests/test_single_reflection_downstream_fields.py::DownstreamFieldsTests.test_fixture_publication_binds_complete_members_once_and_refuses_overwrite",
+    "integrations/tests/test_single_reflection_downstream_fields.py::DownstreamFieldsTests.test_invalid_provider_numerics_fail_without_staging",
+    "integrations/tests/test_single_reflection_downstream_fields.py::DownstreamFieldsTests.test_missing_family_member_cannot_publish_success",
+    "integrations/tests/test_single_reflection_downstream_fields.py::DownstreamFieldsTests.test_plan_keeps_execution_junction_for_native_arguments_but_accepts_canonical_records",
+    "integrations/tests/test_single_reflection_downstream_fields.py::DownstreamFieldsTests.test_plan_uses_actual_provider_arguments_and_no_solver_execution",
+    "integrations/tests/test_single_reflection_downstream_fields.py::DownstreamFieldsTests.test_provider_array_limits_reject_before_staging_or_native",
+    "integrations/tests/test_single_reflection_downstream_fields.py::DownstreamFieldsTests.test_publication_rejects_failed_missing_or_wrong_native_evidence",
+    "integrations/tests/test_single_reflection_downstream_fields.py::DownstreamFieldsTests.test_run_payload_reservation_includes_frontend_and_future_downstream_before_staging",
+    "integrations/tests/test_single_reflection_execute_discovery.py::SingleReflectionExecuteTests.test_explicit_downstream_source_full_mother_and_default_replay",
+    "integrations/tests/test_single_reflection_preparation.py::SingleReflectionPreparationTests.test_continuation_freezes_a_managed_fly_parent_and_requires_published_fields",
+    "integrations/tests/test_single_reflection_preparation.py::SingleReflectionPreparationTests.test_downstream_source_freezes_published_small_records_with_duplicate_input_evidence",
+    "integrations/tests/test_single_reflection_preparation.py::SingleReflectionPreparationTests.test_downstream_source_rejects_nonterminal_unbound_changed_or_wrong_location",
+    "integrations/tests/test_single_reflection_preparation.py::SingleReflectionPreparationTests.test_field_continuation_freezes_explicit_records_without_changing_science",
+    "integrations/tests/test_single_reflection_preparation.py::SingleReflectionPreparationTests.test_first_field_continuation_needs_no_unpublished_frontend_receipt",
+    "integrations/tests/test_single_reflection_downstream_fields.py::DownstreamFieldsTests.test_explicit_frozen_resources_do_not_consult_installed_origin",
+    "integrations/tests/test_single_reflection_downstream_fields.py::DownstreamFieldsTests.test_frozen_gem_rejects_junction_escape_and_preserves_root_alias",
+    "integrations/tests/test_dependencies.py::DependencyTests.test_single_reflection_snapshot_plans_downstream_without_live_checkout",
+    "common/contracts/test_simion_geometry_compiler.py::SimionGeometryCompilerTests.test_geometry_only_complete_specs_and_old_frontend_exact_bytes",
+    "common/contracts/test_simion_geometry_compiler.py::SimionGeometryCompilerTests.test_template_migration_preserves_all_original_bytes"
+  ],
+  "origins": {
+    "python": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\installed-runtime-epoch23\\venv\\Scripts\\python.exe",
+    "site": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\installed-runtime-epoch23\\venv\\Lib\\site-packages",
+    "origins": {
+      "msplatform.api": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\installed-runtime-epoch23\\venv\\Lib\\site-packages\\msplatform\\api.py",
+      "msplatform.backends.simion.resources": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\installed-runtime-epoch23\\venv\\Lib\\site-packages\\msplatform\\backends\\simion\\resources.py",
+      "msplatform.backends.simion.compiler": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\installed-runtime-epoch23\\venv\\Lib\\site-packages\\msplatform\\backends\\simion\\compiler.py"
+    },
+    "sys_path": [
+      "",
+      "C:\\Users\\Liao\\AppData\\Local\\Programs\\Python\\Python311\\python311.zip",
+      "C:\\Users\\Liao\\AppData\\Local\\Programs\\Python\\Python311\\DLLs",
+      "C:\\Users\\Liao\\AppData\\Local\\Programs\\Python\\Python311\\Lib",
+      "C:\\Users\\Liao\\AppData\\Local\\Programs\\Python\\Python311",
+      "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\installed-runtime-epoch23\\venv",
+      "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\installed-runtime-epoch23\\venv\\Lib\\site-packages",
+      "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\installed-runtime-epoch23\\venv\\Lib\\site-packages\\win32",
+      "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\installed-runtime-epoch23\\venv\\Lib\\site-packages\\win32\\lib",
+      "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\installed-runtime-epoch23\\venv\\Lib\\site-packages\\pythonwin"
+    ],
+    "interpretation": "Ordinary installed scientific package with repository unittest transport only; no source insertion"
+  },
+  "acceptance_status": "success",
+  "artifacts": [
+    {
+      "kind": "wheel",
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\distribution-epoch23-verified-cache\\wheel\\mass_spectrometry_analysis-0.4.0-py3-none-any.whl",
+      "bytes": 725696,
+      "sha256": "01eb82d8d8282b9594e3da0500754bfcbcd1820d49c868e7ace14dd9eafaf883"
+    },
+    {
+      "kind": "sdist",
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\distribution-epoch23-verified-cache\\sdist\\mass-spectrometry-analysis-0.4.0.tar.gz",
+      "bytes": 593791,
+      "sha256": "31eb6fbefa13024773b207fd06f0268ca22db862ab1159922cabd15f88b0e7d7"
+    },
+    {
+      "kind": "sdist-rebuilt-wheel",
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\phase03-v7-20261104\\distribution-epoch23-verified-cache\\sdist-rebuilt-wheel\\mass_spectrometry_analysis-0.4.0-py3-none-any.whl",
+      "bytes": 725696,
+      "sha256": "cbfb22d1cead56a3367ef36a98140ffd2d98d1e9b208ad6bf10b9a2d59b20ae0"
+    }
+  ],
+  "pip_check": "No broken requirements found."
+}

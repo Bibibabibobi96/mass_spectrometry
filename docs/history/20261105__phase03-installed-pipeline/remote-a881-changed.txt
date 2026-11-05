@@ -1,0 +1,9 @@
+# A881 push Changed original success
+
+Officialconnector confirms run41992493173/job127127771101 completedsuccess at exacta8815a81314b1bbe449e692638dc9230d8319e7f. ChangedONLY6PASS34NOT_APPLICABLE; actual197uniqueparents allsuccess,530subtests allsuccess, no skip/error/loader/fixturefail. Workers4;publicwall779.244235s/internal778.003057s. Parent modules: test_verify_changed67, test_parallel_gate_support49, test_development_standards33, test_changed_test_selection32, test_batch_processes8, test_gate_unittest8.
+
+Artifact13399601766 actual182517B SHAe113cad6062e02f5c2770fc1155be6ca97174a5d34c6634b97abc008945dcc48 equals officialdigest;ZIPCRCpassed. Originalartifactfiles individuallyhashed and fullconnector-decodedjoblog retained. audit.json has actualsourcekeys/sourceSHA for197parents; all-original-outcomes.jsonl preserves actualparent/subrecords. No nativeDirichletparentrecords, no nativequalification. FullRepositoryjob intentionallyskipped in push.
+
+This proves a881Changed scope, not the new post-a881 queued-race/warning addendum WORKTREE and not another completeRepositoryrun. Root separately holds a881localfullPASS; originalremote/localFAILs remain unchanged. Olde22emanual41972885418/job127067060696 stillin_progress at lastprimaryGET, no cancellation/rerun/inference.
+
+No source/Git/index/liveLocalSummary/test/native/SDK/CLOC actions in this task. Intermediate decodedlogtransportparts combined thenremoved; originalZIP/artifacts unchanged.

@@ -1,0 +1,40 @@
+{
+  "original11635": "FAIL retained:8batch parents+10subtests success; new parallel cap1 null-child oracle failed, not a native/production failure",
+  "followup12173": {
+    "scope": "one complete parallel module; separate invocation",
+    "parents": 49,
+    "subtests": 43,
+    "success": 92,
+    "skip": 0,
+    "public_seconds": 222.8070145,
+    "unittest_seconds": 209.921,
+    "source_sha256": "751d9e4ca57fe3022d7b6b40e4ad19b5fad2d6bb47e403ef30e4eeb502555b6d",
+    "source_and_resource_identity": "captured5source+6installed SDK23 resources unchanged; loaded-parent hash matched",
+    "release": {
+      "status": "released",
+      "token": "e4c0d63c001a4c4ea59176d2fceafca8"
+    },
+    "primary": null,
+    "secondary": []
+  },
+  "scope": "Scoped Dot fixes only; no new full Repository/SDK/native evidence. Original85 full16447 remains bound to original code. Current changes require Root final disposition/publication; Goal not complete.",
+  "semantics": "Multiple selected stages spawn worker even at cap1; actual worker1 vs innercommand7. cap2 registry observes delegate-completed FAIL signal; cap1 registry not launched. Cleanup failed-stage primary preserved, success cleanup still fails, final retention reconciled.",
+  "user_override": "Correct3D files+independent checks sufficient; SW repair/improvement deferred, no further SW launch.",
+  "proof_refs": {
+    "DOT_BATCH_ORIGINAL": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\dot-focused-batch\\causal-terminal-inspection.json",
+      "bytes": 76392,
+      "sha256": "1dcd55159ddc4bb76b7181b7c6d2045fb3eadd80d95baf08e0aee4f81d92594e"
+    },
+    "DOT_PARALLEL": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\dot-focused-batch\\parallel-oracle-correction\\causal-terminal-audit.json",
+      "bytes": 4951,
+      "sha256": "0760d135e9a55b2ba4313c0a2cd3dcd0f6c30aa9208dd33cc57f3a1cb8dd0940"
+    },
+    "DOT_PARALLEL_HANDOFF": {
+      "path": "C:\\Users\\Liao\\mass_spectrometry\\.tools\\dot-focused-batch\\parallel-oracle-correction\\handoff.md",
+      "bytes": 878,
+      "sha256": "c793f7e66c32973e40eb9f440bdb760c58bb453b09b4a663b6e4ea0e5d8372ea"
+    }
+  }
+}

@@ -15,6 +15,7 @@
 # frozen SHA-256 lists remain valid after directory renames and clean checkout.
 # Root-history TXT uses the history bytes/SHA contract to verify original bytes.
 docs/history/*/*.txt -text -eol -whitespace
+docs/history/20261105__phase03-installed-pipeline/** -text -eol -whitespace
 projects/*/docs/history/** -text -eol
 integrations/*/docs/history/** -text -eol
 integrations/docs/history/** -text -eol
