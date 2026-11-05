@@ -605,12 +605,83 @@ function Update-RepositoryProcessObservation {
   return [pscustomobject]@{physical_danger=$danger;observation_known=$scopeKnown}
 }
 
+function Write-RepositoryLastProcessObservation {
+  <# Persist already computed facts only; no sampling, readiness or exit inference. #>
+  param([hashtable]$Observation,$Sample=$null,$SampledAt=$null,
+    [string]$Phase,[string]$Reason,[AllowNull()]$ManagedActive=$null,
+    [bool]$RootExitConfirmed=$false,[switch]$DeferWrite,[switch]$Force)
+  if($null-eq$Observation){return}
+  $target=$Observation.usage
+  if($null-eq$target-and$Observation.ContainsKey('start_receipt')){$target=$Observation.start_receipt}
+  if($null-eq$target){return}
+  try{
+    if($null-ne$Sample){
+      $facts=[ordered]@{}
+      foreach($name in @('active_process_ids','tracked_process_ids','tracked_process_started_at_utc_ticks',
+          'unknown_ancestry_process_ids','ancestry_complete','system_console_host_process_ids','process_parent_ids')){
+        $property=$Sample.PSObject.Properties[$name]
+        if($null-eq$property){$facts[$name]=$null}
+        elseif($name-eq'process_parent_ids'){
+          # The existing CIM sample may contain unrelated machine-wide edges.
+          # Persist only direct edges for the already observed owned candidates.
+          $ownedIds=@()
+          foreach($idsName in @('active_process_ids','tracked_process_ids','unknown_ancestry_process_ids')){
+            $idsProperty=$Sample.PSObject.Properties[$idsName]
+            if($null-ne$idsProperty){$ownedIds+=@($idsProperty.Value)}
+          }
+          $copy=[ordered]@{}
+          foreach($childId in @($ownedIds|Sort-Object -Unique)){
+            $key=$(if($property.Value.Contains([int]$childId)){[int]$childId}else{[string]$childId})
+            if($property.Value.Contains($key)){$copy[[string]$childId]=$property.Value[$key]}
+          }
+          $facts[$name]=$copy
+        }elseif($name-eq'tracked_process_started_at_utc_ticks'){
+          $copy=[ordered]@{};foreach($key in @($property.Value.Keys|Sort-Object)){$copy[[string]$key]=$property.Value[$key]}
+          $facts[$name]=$copy
+        }elseif($name-eq'ancestry_complete'){$facts[$name]=$property.Value}
+        else{$facts[$name]=@($property.Value)}
+      }
+      $Observation.last_process_sample=$facts
+      $Observation.last_process_sampled_at_utc=$SampledAt.ToString('o')
+    }
+    if($null-ne$ManagedActive){
+      $Observation.last_managed_active_decision=@{active=$ManagedActive;
+        branch=$(if($Observation.ContainsKey('process_decision_branch')){$Observation.process_decision_branch}else{$null});
+        sampled_at_utc=$(if($Observation.ContainsKey('last_process_sampled_at_utc')){$Observation.last_process_sampled_at_utc}else{$null})}
+    }
+    $recordedAt=Get-RepositoryUtcNow
+    $target.last_process_observation=[ordered]@{
+      sample=$(if($Observation.ContainsKey('last_process_sample')){$Observation.last_process_sample}else{$null})
+      sampled_at_utc=$(if($Observation.ContainsKey('last_process_sampled_at_utc')){$Observation.last_process_sampled_at_utc}else{$null})
+      recorded_at_utc=$recordedAt.ToString('o')
+      root_process_id=$Observation.root_process_id
+      root_process_started_at_utc_ticks=$Observation.root_process_started_at_utc_ticks
+      root_exit_confirmed=$RootExitConfirmed;managed_active=$ManagedActive
+      last_managed_active_decision=$(if($Observation.ContainsKey('last_managed_active_decision')){$Observation.last_managed_active_decision}else{$null})
+      wait_phase=$Phase;wait_reason=$Reason
+    }
+    $signature=[ordered]@{sample=$target.last_process_observation.sample;
+      root_exit_confirmed=$RootExitConfirmed;managed_active=$ManagedActive;phase=$Phase;reason=$Reason}|ConvertTo-Json -Depth 12 -Compress
+    $changed=-not$Observation.ContainsKey('last_fact_write_signature')-or$signature-cne$Observation.last_fact_write_signature
+    $due=-not$Observation.ContainsKey('last_fact_write_at')-or($recordedAt-$Observation.last_fact_write_at).TotalSeconds-ge30
+    if(-not$DeferWrite-and($Force-or$changed-or$due)){
+      $Observation.last_fact_write_signature=$signature;$Observation.last_fact_write_at=$recordedAt
+      Write-ResourceUsage -Usage $target -Path $Observation.usage_path
+    }
+  }catch{
+    # Diagnostic publication cannot replace the primary failure or release a guard.
+    $Observation.last_process_observation_error=$_.Exception.Message
+    Write-Warning "RESOURCE_OBSERVATION_WARNING=last_process_fact_failed ERROR=$($_.Exception.Message)" -WarningAction Continue
+  }
+}
+
 function Wait-RepositoryImmutableProcessDrain {
   <# Keep the caller's guards while the same real root/known family is unresolved. #>
   [CmdletBinding()]
   param([Parameter(Mandatory)]$Process,[Parameter(Mandatory)][int]$RootProcessId,
     $RootProcessStartedAtUtcTicks=$null,[bool]$RootExitConfirmed=$false,$RootReturnCode=$null,
-    [int[]]$TrackedProcessIds=@(),[hashtable]$TrackedProcessStartedAtUtcTicks=@{},$Failure=$null)
+    [int[]]$TrackedProcessIds=@(),[hashtable]$TrackedProcessStartedAtUtcTicks=@{},$Failure=$null,
+    [hashtable]$Observation=$null)
       # FileShare.Read guards belong to our caller. Do not unwind that caller
       # while the same launched handle or an unresolved owned family may live.
       # .NET WaitForExit waits only this associated process, not descendants.
@@ -618,23 +689,33 @@ function Wait-RepositoryImmutableProcessDrain {
       while($true){
         try{
           if(-not$rootExitConfirmed){
+            Write-RepositoryLastProcessObservation -Observation $Observation -Phase immutable_drain_root_wait `
+              -Reason await_original_handle_exit -RootExitConfirmed $false -Force
             $process.WaitForExit();$rootExitConfirmed=$process.HasExited
             $rootReturnCode=[int]$process.ExitCode
           }
           if($null-eq$rootProcessStartedAtUtcTicks){$rootProcessStartedAtUtcTicks=[int64]$process.StartTime.ToUniversalTime().Ticks}
+          if($null-ne$Observation){$Observation.root_process_started_at_utc_ticks=$rootProcessStartedAtUtcTicks}
           $drain=Get-ManagedSolverProcessSample -RootProcessIds @([int]$RootProcessId) `
             -TrackedProcessIds $trackedProcessIds -RootProcessStartedAtUtcTicks @{
               ([string]$RootProcessId)=$rootProcessStartedAtUtcTicks
             } -TrackedProcessStartedAtUtcTicks $trackedProcessStartedAtUtcTicks
+          $drainSampledAt=Get-RepositoryUtcNow
           $trackedProcessIds=@(@($trackedProcessIds)+@($drain.tracked_process_ids)|Sort-Object -Unique)
           foreach($key in $drain.tracked_process_started_at_utc_ticks.Keys){
             if(-not$trackedProcessStartedAtUtcTicks.ContainsKey($key)){$trackedProcessStartedAtUtcTicks[$key]=$drain.tracked_process_started_at_utc_ticks[$key]}
           }
-          if($rootExitConfirmed-and$drain.ancestry_complete-and@($drain.active_process_ids).Count-eq0){break}
-          $drainReason='owned_family_or_identity_unconfirmed'
+          $drainComplete=$rootExitConfirmed-and$drain.ancestry_complete-and@($drain.active_process_ids).Count-eq0
+          $drainReason=$(if($drainComplete){'confirmed_empty'}else{'owned_family_or_identity_unconfirmed'})
+          Write-RepositoryLastProcessObservation -Observation $Observation -Sample $drain -SampledAt $drainSampledAt `
+            -Phase $(if($drainComplete){'immutable_drain_confirmed_empty'}else{'immutable_drain_wait'}) `
+            -Reason $drainReason -RootExitConfirmed $rootExitConfirmed
+          if($drainComplete){break}
         }catch{
           $drainReason=$_.Exception.Message
           if($null-eq$failure){$failure=$_}else{$failure.Exception.Data['immutable_input_drain_error']=$_.Exception.Message}
+          Write-RepositoryLastProcessObservation -Observation $Observation -Phase immutable_drain_observation_unknown `
+            -Reason $drainReason -RootExitConfirmed $rootExitConfirmed
         }
         if(([datetime]::UtcNow-$lastDrainWarning).TotalSeconds-ge30){
           Write-Warning "IMMUTABLE_INPUT_DRAIN=waiting ROOT=$($RootProcessId) REASON=$drainReason" -WarningAction Continue
@@ -687,6 +768,7 @@ function Write-RepositoryProcessStartObservation {
   # explicitly requested start fact is written, never invented budget metrics.
   $usage=$Observation.usage
   if($null-eq$usage){$usage=@{schema_version=1;role='execution_process_start_observation';budget_observation='not_requested'}}
+  if($null-eq$Observation.usage){$Observation.start_receipt=$usage}
   $usage.process_start=$facts
   Write-ResourceUsage -Usage $usage -Path $Observation.usage_path
 }
@@ -724,6 +806,7 @@ function Invoke-ResourceBudgetedProcess {
   $process=Start-Process @startArguments
   $failure=$null;$rootExitConfirmed=$false;$rootReturnCode=$null;$rootProcessStartedAtUtcTicks=$null
   $trackedProcessIds=@([int]$process.Id);$trackedProcessStartedAtUtcTicks=@{}
+  $observation.root_process_id=[int]$process.Id;$observation.root_process_started_at_utc_ticks=$null
   try{
     try{$rootProcessStartedAtUtcTicks=[int64]$process.StartTime.ToUniversalTime().Ticks}
     catch{
@@ -733,6 +816,7 @@ function Invoke-ResourceBudgetedProcess {
       catch{$identityFailure.Exception.Data['process_start_snapshot_error']=$_.Exception.Message}
       throw $identityFailure
     }
+    $observation.root_process_started_at_utc_ticks=$rootProcessStartedAtUtcTicks
     Write-RepositoryProcessStartObservation -Observation $observation -Process $process `
       -RootProcessStartedAtUtcTicks $rootProcessStartedAtUtcTicks -FilePath $FilePath -WindowStyle $WindowStyle -Metadata $ProcessObservationMetadata
     $trackedProcessIds=@([int]$process.Id)
@@ -744,23 +828,40 @@ function Invoke-ResourceBudgetedProcess {
         -TrackedProcessIds $trackedProcessIds -RootProcessStartedAtUtcTicks @{
           ([string]$process.Id)=$rootProcessStartedAtUtcTicks
         } -TrackedProcessStartedAtUtcTicks $trackedProcessStartedAtUtcTicks
+      $sampledAt=Get-RepositoryUtcNow
       $trackedProcessIds=@($sample.tracked_process_ids)
       if($sample.PSObject.Properties.Name-contains'tracked_process_started_at_utc_ticks'){$trackedProcessStartedAtUtcTicks=$sample.tracked_process_started_at_utc_ticks}
+      $isSimion=Test-RepositorySimionProcessSpecification -Specification $processSpecification
+      $decisionBranch=$(if($isSimion){'simion_exact_root'}else{'non_simion_family'})
       $managedActive=Test-RepositoryManagedProcessIsActive -Specification $processSpecification `
         -RootProcessId ([int]$process.Id) -RootProcessStartedAtUtcTicks $rootProcessStartedAtUtcTicks -Sample $sample
-      if(-not$managedActive-and-not(Test-RepositorySimionProcessSpecification -Specification $processSpecification)){
+      if(-not$managedActive-and-not$isSimion){
+        $decisionBranch='non_simion_root_identity_fallback'
         $managedActive=Test-ManagedRootProcessIsLive -ProcessId ([int]$process.Id) -ExpectedStartedAtUtcTicks $rootProcessStartedAtUtcTicks
       }
+      $observation.process_decision_branch=$decisionBranch
+      Write-RepositoryLastProcessObservation -Observation $observation -Sample $sample -SampledAt $sampledAt `
+        -Phase process_observation -Reason ($decisionBranch+$(if($managedActive){'_active'}else{'_not_active'})) `
+        -ManagedActive $managedActive -RootExitConfirmed $rootExitConfirmed -DeferWrite
       $observed=Update-RepositoryProcessObservation -Observation $observation -Sample $sample
       if($observed.physical_danger-and$managedActive){
         $danger=$true
         Stop-ManagedSolverProcesses -ProcessIds $trackedProcessIds -ExpectedStartedAtUtcTicks $trackedProcessStartedAtUtcTicks
         break
       }
+      if($null-eq$observation.usage){
+        Write-RepositoryLastProcessObservation -Observation $observation -Phase process_observation `
+          -Reason ($decisionBranch+$(if($managedActive){'_active'}else{'_not_active'})) `
+          -ManagedActive $managedActive -RootExitConfirmed $rootExitConfirmed
+      }
       if($managedActive){Start-Sleep -Milliseconds 500}
     }
+    Write-RepositoryLastProcessObservation -Observation $observation -Phase root_handle_wait `
+      -Reason await_original_handle_exit -ManagedActive $managedActive -RootExitConfirmed $rootExitConfirmed -Force
     $process.WaitForExit();$rootExitConfirmed=$process.HasExited
     $rootReturnCode=[int]$process.ExitCode
+    Write-RepositoryLastProcessObservation -Observation $observation -Phase root_handle_exited `
+      -Reason original_handle_exit_confirmed -ManagedActive $managedActive -RootExitConfirmed $rootExitConfirmed
     $null=Update-RepositoryProcessObservation -Observation $observation -Sample $sample -Final
     $usage=$observation.usage
     if($null-ne$usage){
@@ -774,6 +875,8 @@ function Invoke-ResourceBudgetedProcess {
     # directly owned root still writes. This handle does not attest descendants.
     if(-not$rootExitConfirmed){
       try{
+        Write-RepositoryLastProcessObservation -Observation $observation -Phase failure_root_handle_wait `
+          -Reason await_original_handle_exit_after_failure -RootExitConfirmed $rootExitConfirmed -Force
         $process.WaitForExit();$rootExitConfirmed=$process.HasExited
         $rootReturnCode=[int]$process.ExitCode
       }catch{
@@ -785,7 +888,7 @@ function Invoke-ResourceBudgetedProcess {
       $drained=Wait-RepositoryImmutableProcessDrain -Process $process -RootProcessId ([int]$process.Id) `
         -RootProcessStartedAtUtcTicks $rootProcessStartedAtUtcTicks -RootExitConfirmed $rootExitConfirmed `
         -RootReturnCode $rootReturnCode -TrackedProcessIds $trackedProcessIds `
-        -TrackedProcessStartedAtUtcTicks $trackedProcessStartedAtUtcTicks -Failure $failure
+        -TrackedProcessStartedAtUtcTicks $trackedProcessStartedAtUtcTicks -Failure $failure -Observation $observation
       $rootExitConfirmed=$drained.root_exit_confirmed;$rootReturnCode=$drained.root_returncode
       $rootProcessStartedAtUtcTicks=$drained.root_started_at_utc_ticks;$failure=$drained.failure
     }
