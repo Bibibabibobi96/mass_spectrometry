@@ -588,24 +588,151 @@ if($env:FIXTURE_MODE-eq'producer_failure'){throw 'PRODUCER_ORIGINAL_SENTINEL'}
 
     @unittest.skipUnless(os.name == "nt", "Windows Job ownership contract")
     def test_successful_root_with_actual_live_child_is_rejected_and_cleaned(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            program = ("import json,subprocess,sys;from pathlib import Path;"
-                       "assert sys.stdin.buffer.readline()==b'fixture-owned-start\\n';"
-                       "p=subprocess.Popen([sys.executable,'-c','import time;time.sleep(60)'],"
-                       "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);"
-                       "Path('child.json').write_text(json.dumps({'pid':p.pid}));")
-            with self.assertRaisesRegex(RuntimeError, "live descendant") as caught:
-                fixture_process.run_fixture_process([sys.executable, "-c", program], root=root,
-                    environment=dict(os.environ), mode="actual-live-child", timeout=30, diagnostics_root=root)
-            metadata = caught.exception.fixture_metadata
-            child = json.loads((Path(caught.exception.fixture_diagnostics) / "child.json").read_text())
-            self.assertEqual(metadata["returncode"], 0)
-            self.assertTrue(metadata["root_exit_confirmed"])
-            self.assertIn(child["pid"], [row["pid"] for row in metadata["job_processes_at_failure"]])
-            self.assertNotEqual(child["pid"], metadata["root_pid"])
-            self.assertEqual(metadata["remaining_job_processes"], [])
-            self.assertEqual(metadata["secondary_errors"], [])
+        import win32api
+        import win32con
+        import win32event
+        import win32job
+        import win32process
+
+        real_create_job = win32job.CreateJobObject
+        real_terminate_job = win32job.TerminateJobObject
+        real_wait = win32event.WaitForSingleObject
+        real_rows = fixture_process._job_processes
+        for controlled in (False, True):
+            with self.subTest(controlled_empty_census=controlled), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                owned = dict(job=None, child=None, child_pid=None, child_birth=None,
+                             termination_requested=False, child_wait_observed=False,
+                             real_termination_sent=False, injected_empty_census=0)
+
+                def create_owned_job(*args, **kwargs):
+                    job = real_create_job(*args, **kwargs)
+                    # A duplicate is retained only by this test; no breakaway or
+                    # unowned process is authorized by the controlled interposition.
+                    current = win32api.GetCurrentProcess()
+                    owned["job"] = win32api.DuplicateHandle(
+                        current, job, current, 0, False, win32con.DUPLICATE_SAME_ACCESS
+                    )
+                    return job
+
+                def observe_owned_rows(job):
+                    if controlled and owned["termination_requested"]:
+                        owned["injected_empty_census"] += 1
+                        return []
+                    rows = real_rows(job)
+                    child_path = root / "child.json"
+                    if child_path.is_file() and owned["child"] is None:
+                        child_pid = json.loads(child_path.read_text())["pid"]
+                        child_row = next((row for row in rows if row["pid"] == child_pid), None)
+                        if child_row is not None:
+                            handle = win32api.OpenProcess(0x00100000 | 0x1000, False, child_pid)
+                            try:
+                                self.assertEqual(win32process.GetProcessId(handle), child_pid)
+                                birth = fixture_process._creation_filetime(int(handle))
+                                self.assertEqual(birth, child_row["creation_filetime_100ns"])
+                                self.assertTrue(win32job.IsProcessInJob(handle, job))
+                            except BaseException:
+                                handle.Close()
+                                raise
+                            owned.update(child=handle, child_pid=child_pid, child_birth=birth)
+                    return rows
+
+                def request_owned_termination(job, code):
+                    owned["termination_requested"] = True
+                    if controlled:
+                        # Explicit synthetic API interposition, not a claim about
+                        # the historical CI scheduler or Windows census timing.
+                        self.assertIsNotNone(owned["child"])
+                        self.assertEqual(real_wait(owned["child"], 0), win32event.WAIT_TIMEOUT)
+                        return None
+                    owned["real_termination_sent"] = True
+                    return real_terminate_job(job, code)
+
+                def observe_exact_child_wait(handle, milliseconds):
+                    if owned["child"] is not None and win32process.GetProcessId(handle) == owned["child_pid"]:
+                        self.assertEqual(fixture_process._creation_filetime(int(handle)), owned["child_birth"])
+                        owned["child_wait_observed"] = True
+                        if controlled and owned["termination_requested"] and not owned["real_termination_sent"]:
+                            real_terminate_job(owned["job"], 124)
+                            owned["real_termination_sent"] = True
+                    return real_wait(handle, milliseconds)
+
+                program = ("import json,subprocess,sys;from pathlib import Path;"
+                           "assert sys.stdin.buffer.readline()==b'fixture-owned-start\\n';"
+                           "p=subprocess.Popen([sys.executable,'-c','import time;time.sleep(60)'],"
+                           "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);"
+                           "Path('child.json').write_text(json.dumps({'pid':p.pid}));")
+                environment = dict(os.environ, FIXTURE_TEST_SOURCE=__file__,
+                                   FIXTURE_TEST_METHOD=self.id(), FIXTURE_PYTHON=sys.executable)
+                diagnostics_root = (Path(environment["OATOF_TEST_DIAGNOSTICS_ROOT"])
+                                    if environment.get("OATOF_TEST_DIAGNOSTICS_ROOT") else None)
+                try:
+                    with patch.object(win32job, "CreateJobObject", side_effect=create_owned_job), patch.object(
+                            fixture_process, "_job_processes", side_effect=observe_owned_rows), patch.object(
+                            win32job, "TerminateJobObject", side_effect=request_owned_termination), patch.object(
+                            win32event, "WaitForSingleObject", side_effect=observe_exact_child_wait):
+                        with self.assertRaisesRegex(RuntimeError, "live descendant") as caught:
+                            fixture_process.run_fixture_process(
+                                [sys.executable, "-c", program], root=root, environment=environment,
+                                mode="actual-live-child-controlled" if controlled else "actual-live-child",
+                                timeout=30, diagnostics_root=diagnostics_root)
+                    metadata = caught.exception.fixture_metadata
+                    child = json.loads((Path(caught.exception.fixture_diagnostics) / "child.json").read_text())
+                    self.assertEqual(metadata["returncode"], 0)
+                    self.assertTrue(metadata["root_exit_confirmed"])
+                    self.assertIn(child["pid"], [row["pid"] for row in metadata["job_processes_at_failure"]])
+                    self.assertNotEqual(child["pid"], metadata["root_pid"])
+                    self.assertEqual(metadata["remaining_job_processes"], [])
+                    self.assertEqual(metadata["secondary_errors"], [])
+                    self.assertIsNotNone(owned["child"])
+                    self.assertEqual(child["pid"], owned["child_pid"])
+                    observed_child_wait = real_wait(owned["child"], 0)
+                    if controlled and observed_child_wait == win32event.WAIT_TIMEOUT:
+                        saved = Path(caught.exception.fixture_diagnostics).resolve()
+                        self.assertFalse(saved.is_relative_to(root.resolve()))
+                        # Only this owned file is removed; its exact bytes were
+                        # already copied by the helper into durable diagnostics.
+                        self.assertEqual((root / "child.json").read_bytes(), (saved / "child.json").read_bytes())
+                        (root / "child.json").unlink()
+                        entries = [entry.name for entry in root.iterdir()]
+                        probe = dict(controlled_interposition=True, historical_locker_identified=False,
+                                     child_pid=owned["child_pid"], child_birth=owned["child_birth"],
+                                     child_wait_result=observed_child_wait, root=str(root),
+                                     remaining_entries=entries, empty_census=metadata["remaining_job_processes"],
+                                     termination_requested=owned["termination_requested"],
+                                     child_wait_observed=owned["child_wait_observed"], rmdir_winerror=None)
+                        if not entries:
+                            try:
+                                root.rmdir()
+                                probe["rmdir_result"] = "unexpected_success"
+                            except OSError as error:
+                                probe.update(rmdir_result="OSError", rmdir_winerror=error.winerror,
+                                             rmdir_error=repr(error))
+                        else:
+                            probe["rmdir_result"] = "not_attempted_unexpected_entries"
+                        (saved / "ownership-probe.json").write_text(json.dumps(probe, indent=2) + "\n", encoding="utf-8")
+                        self.assertEqual(entries, [], probe)
+                        self.assertEqual(probe["rmdir_winerror"], 32, probe)
+                    self.assertTrue(owned["child_wait_observed"], "owned child had no completion-handle wait")
+                    self.assertEqual(real_wait(owned["child"], 0), win32event.WAIT_OBJECT_0)
+                    if controlled:
+                        self.assertGreater(owned["injected_empty_census"], 0)
+                        self.assertTrue(owned["termination_requested"])
+                        self.assertTrue(owned["real_termination_sent"])
+                finally:
+                    # This test owns the duplicate Job and exact child handle.
+                    # Always drain them before TemporaryDirectory can remove cwd,
+                    # including the expected old-helper RED assertion path.
+                    try:
+                        if owned["job"] is not None:
+                            real_terminate_job(owned["job"], 124)
+                        if owned["child"] is not None:
+                            self.assertEqual(real_wait(owned["child"], 5000), win32event.WAIT_OBJECT_0)
+                    finally:
+                        if owned["child"] is not None:
+                            owned["child"].Close()
+                        if owned["job"] is not None:
+                            owned["job"].Close()
 
     @unittest.skipUnless(os.name == "nt", "Windows Job ownership contract")
     def test_timeout_retains_raw_bytes_events_and_only_stops_its_fixture_tree(self):

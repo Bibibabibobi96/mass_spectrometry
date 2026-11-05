@@ -120,7 +120,15 @@ RF finite COMSOL 的[正常无碰撞入口](../../projects/rf_multipole_ion_opti
 [`test_support/fixture_process.py`](test_support/fixture_process.py)，由公共owner、oaTOF补偿、prepared-joint及RF冷提取测试复用。
 各调用保留自己的原期限（分别90、30、45、300秒），按需要保存阶段时间线和具名小输入／状态。
 成功返回后保留Job原始成员观测；只有原Popen句柄零等待已确认退出、PID和创建身份均匹配的根进程
-才可从剩余子进程判定中排除。其他子进程、不同创建身份及退出观测失败仍失败关闭，不按PID重新打开进程。
+才可从剩余子进程判定中排除。根进程始终使用原Popen句柄。
+Failure cleanup retains handles for observed Job members before termination, validating
+each PID, creation identity and Job membership. Root pipe draining and same-handle
+member completion waits share the existing five-second cleanup budget. An empty Job
+census is not an exit barrier; only exact identities confirmed exited by retained
+handles may be excluded from the post-cleanup census. Handle, wait and cleanup
+failures remain secondary evidence attached to the original error.
+Snapshot or handle-acquisition failures do not establish complete descendant
+draining; retained secondary diagnostics must not be reported as confirmed cleanup.
 超时保留原始输出与主异常，仅清理已确认归属的合成进程树；这不是生产求解器的终止策略。
 
 owner从live公共`Resolve-HostResourceStatePath`取得实际控制面路径（保留既有显式覆盖），通过

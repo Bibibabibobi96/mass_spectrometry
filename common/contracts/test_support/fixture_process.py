@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import ctypes
 from ctypes import wintypes
+from contextlib import contextmanager
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import signal
@@ -56,6 +58,60 @@ def _exclude_exited_root(rows: list[dict], *, root_pid: int,
         and row.get("pid") == root_pid
         and row.get("creation_filetime_100ns") == root_creation
     )]
+
+
+@contextmanager
+def _job_completion_handles(job, rows: list[dict], metadata: dict):
+    """Pin observed members before termination; PID alone never authorizes a wait."""
+    handles = []
+    try:
+        if job is not None:
+            import win32api
+            import win32job
+
+            for row in rows:
+                handle = None
+                try:
+                    # SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION.
+                    handle = win32api.OpenProcess(0x00101000, False, row["pid"])
+                    if (_creation_filetime(int(handle)) != row["creation_filetime_100ns"]
+                            or not win32job.IsProcessInJob(handle, job)):
+                        raise RuntimeError("Fixture member identity changed before cleanup")
+                    handles.append((row, handle))
+                    handle = None
+                except BaseException as error:
+                    metadata["secondary_errors"].append(f"member_handle: {error!r}")
+                finally:
+                    if handle is not None:
+                        try:
+                            handle.Close()
+                        except BaseException as error:
+                            metadata["secondary_errors"].append(f"member_handle_close: {error!r}")
+        yield handles
+    finally:
+        for _, handle in handles:
+            try:
+                handle.Close()
+            except BaseException as error:
+                metadata["secondary_errors"].append(f"member_handle_close: {error!r}")
+
+
+def _wait_job_members(handles: list, deadline: float, metadata: dict) -> set[tuple[int, int]]:
+    """Wait on retained identities within the existing shared cleanup budget."""
+    import win32event
+
+    confirmed = set()
+    witnesses = metadata["member_completion_waits"] = []
+    for row, handle in handles:
+        witness = dict(row, exit_confirmed=False)
+        witnesses.append(witness)
+        result = win32event.WaitForSingleObject(handle, math.ceil(max(0, deadline - time.monotonic()) * 1000))
+        witness["wait_result"] = result
+        witness["exit_confirmed"] = result == win32event.WAIT_OBJECT_0
+        if not witness["exit_confirmed"]:
+            raise TimeoutError("Owned fixture member did not finish within cleanup budget")
+        confirmed.add((row["pid"], row["creation_filetime_100ns"]))
+    return confirmed
 
 
 def _save_evidence(destination: Path, root: Path, metadata: dict, stdout: bytes, stderr: bytes,
@@ -153,19 +209,27 @@ def run_fixture_process(command: list[str], *, root: Path, environment: dict[str
             except BaseException as diagnostic_error:
                 metadata["secondary_errors"].append(f"process_snapshot: {diagnostic_error!r}")
             try:
-                if job is not None and assigned:
-                    win32job.TerminateJobObject(job, 124)
-                elif os.name != "nt":
-                    os.killpg(process.pid, signal.SIGKILL)
-                elif process.poll() is None:
-                    # Assignment failed before ACK: this root cannot have children.
-                    process.kill()
-                drained_out, drained_err = process.communicate(timeout=5)
-                metadata["drained_stdout_bytes"] = len(drained_out or b"")
-                metadata["drained_stderr_bytes"] = len(drained_err or b"")
-                metadata["cleanup_returncode"] = process.returncode
-                if job is not None and assigned:
-                    metadata["remaining_job_processes"] = _job_processes(job)
+                deadline = time.monotonic() + 5
+                owned_job = job if assigned else None
+                with _job_completion_handles(owned_job, metadata.get("job_processes_at_failure", []), metadata) as handles:
+                    if owned_job is not None:
+                        win32job.TerminateJobObject(job, 124)
+                    elif os.name != "nt":
+                        os.killpg(process.pid, signal.SIGKILL)
+                    elif process.poll() is None:
+                        # Assignment failed before ACK: this root cannot have children.
+                        process.kill()
+                    drained_out, drained_err = process.communicate(timeout=max(0, deadline - time.monotonic()))
+                    metadata["drained_stdout_bytes"] = len(drained_out or b"")
+                    metadata["drained_stderr_bytes"] = len(drained_err or b"")
+                    metadata["cleanup_returncode"] = process.returncode
+                    if owned_job is not None:
+                        confirmed = _wait_job_members(handles, deadline, metadata)
+                        observed = _job_processes(job)
+                        metadata["observed_job_processes_after_cleanup"] = observed
+                        # Retained handles can keep exited members in the Job census.
+                        metadata["remaining_job_processes"] = [row for row in observed if (
+                            row["pid"], row["creation_filetime_100ns"]) not in confirmed]
             except BaseException as cleanup_error:
                 metadata["secondary_errors"].append(f"owned_tree_cleanup: {cleanup_error!r}")
         raise

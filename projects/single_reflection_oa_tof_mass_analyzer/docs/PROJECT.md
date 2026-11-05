@@ -55,6 +55,37 @@ metadata明确首个全局峰、最近半高交点及线性插值，质量轴仍
 CI两种范围均沿现有always工件上传具名诊断目录，不打包整个TEMP。
 全局R0/P2出口及旧证据限制由[路线图](../../../docs/ROADMAP.md#科学核心与平台边界迁移)跟踪。
 
+Master CI [42005089427](https://github.com/Bibibabibobi96/mass_spectrometry/actions/runs/42005089427)
+at `8855f52ffde79c24ba30f94a7bf7940a0a4a68b6` subsequently failed in the
+actual-live-child test's temporary-directory teardown (WinError 32, then 5),
+after its body assertions passed. The original directory-handle owner was not
+retained and remains unknown. This is distinct from the historical timeout.
+A controlled local test now reproduces WinError 32 on the empty owned directory
+while its verified child is not yet signaled, despite an empty interposed Job
+census. It establishes a missing completion barrier, not the old lock owner's identity.
+The shared test helper now pins identity- and membership-verified member handles
+before termination and waits on those handles within the existing cleanup budget;
+root EOF and an empty census alone cannot establish child completion. Diagnostics
+for this test are retained outside its disposable directory. The controlled regression
+passed both subcases (0.201 seconds); the complete adapter module passed 19 parent
+methods and 21 subtests, zero skips (83.157 seconds; sequential public run 88.0584038
+seconds). All four source identities remained unchanged and the resource lease was
+released. Required Changed validation then passed 25 stages (27 not applicable):
+3,254 unique parent methods, 3,252 successful and two skipped; all 4,387 subtests
+successful. Public wall time was 2,114.5653709 seconds, internal 2,113.106669 seconds,
+eight workers. All 2,815 captured source paths and the four-file dirty worktree
+remained exact. These successor results do not rewrite the original CI failure.
+If a snapshot or handle acquisition fails, its secondary diagnostics do not
+confirm complete descendant draining; this repair makes no such blanket claim.
+
+This uses Microsoft's Windows Job/Process APIs through installed pywin32:
+[TerminateJobObject](https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-terminatejobobject)
+terminates members as TerminateProcess does; external
+[TerminateProcess](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-terminateprocess)
+is asynchronous and requires a process-handle wait for completion (Windows 10,
+reviewed 2026-11-05). This is project test-support composition of official APIs,
+not a production solver policy or new native/scientific qualification.
+
 
 ### 2026-11-02 V4 科学核心与冻结消费者迁移
 
