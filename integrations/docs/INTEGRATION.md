@@ -1,111 +1,149 @@
 # 统一装配实施状态
 
 返回[集成入口](../README.md)。本页维护当前入口、有效证据、限制与开放动作，组件自身资格归各PROJECT。
-状态截至2026-11-04；原始输入和终态仍以各run的manifest为准。早期阶段见
+状态截至2026-11-05；原始输入和终态仍以各run的manifest为准。早期阶段见
 [迁移证据](history/20261026__assembly-migration-execution-evidence.md)，后续重试和门禁过程可从
 [收口前固定版本](https://github.com/Bibibabibobi96/mass_spectrometry/blob/09d7dec5a6802f47df791a3239ed75e5b73321fd/integrations/docs/INTEGRATION.md)追溯；不复制另一套全文快照。
 
 ## 当前边界
 
-V7有界纠正D01已完成软件验证：中立RF request4→axial3→segmented-array2没有旧native编号，原零间隙
-截面检查却在杆标签及无条件ground编号推导两处读取它；杆内缩、只有壳／端盖位于机械面也受影响。
-当前RF `core/face_sections.py::local_face_conductor_sections`从唯一科学拓扑反查真实成员所属组，
-并验证静态接地合同；SFI只做位姿变换，保留圆／环接触公式、原孔口与间隙。诊断采用实例、科学组和
-成员pointer，不向中立源补回SIMION编号。直接request4的新组件／装配链已执行实际公共prepare
-正例和真实碰撞负例，均保持原100粒子源及出生时钟。最终geometry／preparation／直接新格式三模块
-76父方法、217子测试全部success，无skip，执行66.381秒；包括双接地壳、内缩杆／端盖、非接地接触拒绝、
-native置换、实例顺序和支持的全局旋转／平移，以及原request9／plan3和连续杆路径。
-基线`cb39bc4`上的公共Changed按完整受影响owner职责执行，8路、summary墙钟956.946秒：
-13 PASS、1 FAIL、30 NOT_APPLICABLE；1300父方法中1298成功、1失败、1具名opt-in native跳过，
-1755子测试成功。四个集成分片全部PASS，实际冻结冷准备也通过；包枚举自动包含新RF模块，未手写库存。
-唯一失败为既有RF资源保护测试终止其自建测试子进程时sandbox拒绝`taskkill`；同源码方法在正常权限上下文
-4.160秒实际通过，公共许可正常释放。原失败整轮保留为FAIL，不把单项后继冒充另一轮全范围PASS；
-该轮未采集外层单调公开墙钟，956.946秒仅是summary区间，不是新的全仓性能基线。
-本纠正不改变GEM渲染、网格或驱动，不授予新的Refine／Fly、数值收敛、GUI或Formal资格。
-原P2历史及其原生结论保持下述固定范围；后续P3的安装API、几何独立输入、共同钟和分级恢复仍待实施。
+P3 remains **NOT COMPLETE**. This is the current selected capability statement, not a
+chronology of every attempt. SDK21 ordinary installation and independent STEP checks
+have passed; the complete Repository result and final publication remain pending.
+The latest complete-scope attempt exited 1 after atomic summary replacement reported
+AccessDenied: 32 stages passed, 18 were blocked and 12 were not applicable. Its
+5041 recorded parent methods contain 5027 successes and 14 skips; all 6006 subtests
+recorded success, with no failed test record. The six native Dirichlet methods were
+blocked and receive no credit. Public wall time was 2294.102 seconds; all 2792 source
+files remained unchanged. The tested tree was code `abaaa03a` plus two frozen status
+documents, not a clean HEAD checkout. Summary-publication diagnosis and a successful
+full successor remain required; passing child partitions are not a complete PASS.
+The work continues from D01 `bf19145c95925088002fc3f526b0e0394c99b50c`;
+P1/P2 evidence keeps its original commit and qualification boundaries.
 
-P2 V6单反射科学组链采用request10／component3／plan5／binding2，
-显式绑定提供者科学组到SIMION标签。具名旧request9／plan3及其原schema字节保持，
-按原协议读取，不把历史运行重释为新科学组链；软件接线与实际冻结库存已定向验证。
-local／cooled的既有request3仍显式消费component1／plan3，MP/IP旧协议使用具名RF后端适配；
-这些调用不沿新提供者默认版本猜读。活动桥由各工作流所有者最迟P4退出，
-不降低request10的新component3默认或放宽混版拒绝。其真实准备与MP/IP隔离冻结已有定向回归。
-本次真实三区输入的完整oaTOF component3保留42个科学组及四成员共地，前端场域由提供者独立发布25组，
-组数仍由各冻结提供者的实际环数和结构派生，不是接口固定上限；
-不裁掉下游部件以满足绑定覆盖。binding2的显式子范围须匹配调用方从冻结提供者得到的预期，不能由记录自批。
-request10现已有下述真实Refine/Fly与显式保存回放证据；数值覆盖和GUI资格仍分别判断。
+The user requires correct 3D file generation and independent geometry checks.
+SolidWorks repair, unattended startup, template repair and viewer refinement are
+**deferred and do not block this goal**. Previous crashes and unconfirmed original
+preferences remain historical failures; this does not weaken Formal CAD rules.
+The user also requests functional Case C comparison, **not accuracy/equality
+thresholds**. No new convergence, manufacturing or Formal qualification is granted.
 
-SFI原高4 mm侧口可在SIMION真实实体间保持不接触，但不满足独立OA组件的strict first-gap能力合同。
-两者不是同一资格：底层sectioned电极投影复用唯一构造逻辑，原高层严格检查保持，
-新路径不通过缩口或改科学输入制造等价。组件与整机后续验收继续分别记录。
+### Selected installed capabilities
 
-request10的实际准备、GEM、工作场设计、Program及缓存接线已有定向软件证据；
-五模块回归152项通过（256.130秒，无skip），随后仅lazy backend import调整补验3项通过。
-真实冷冻结另覆盖新10、旧9及删新backend／component3资源的四个冷执行场景，15.951秒通过；
-原缺失RF事件模块的FAIL保留，库存已补精确单模块，不借作者树或宿主安装补齐。
-这些结果不覆盖真实Fly动态场读数、GUI或最终整轮软件验收。
+One real RF plus full three-zone OA/single-reflection Assembly uses canonical physical
+providers, explicit ports/poses and component data. CAD and SIMION are parallel
+projections; neither requires a random source or a solved field to construct geometry.
+TOF reuses its internal OA through the component DAG rather than duplicating it as an
+external instance. Scientific groups and native labels remain separate authorities.
 
-本批真实三区RF→OA→单反射链的两种编号分别由
-`20261103_135900__sim__simion__phase02-v6-map-a`与
-`20261103_140100__sim__simion__phase02-v6-map-b`运行封存；两者保留相同N100出生源、
-几何、驱动和仪器钟，仅反序RF的8个native标签。各有14批实际Fly及14批显式保存工作台回放，
-原功能合同15项通过：100个原ID均有真实终态，36个探测、64个其他终态，无timeout或unknown，
-35个ID具有完整六事件顺序；不把全部探测粒子说成具有该完整顺序。
-按事前严格相等目标，已记录源、事件、状态、TOF与所捕获场值的37组比较、85231次数值比较无差异。
-两轮公开owner墙钟分别2692.745与2967.095秒；场准备占主要成本，不是普通软件门禁性能基线。
+| Public stage | Current supported behavior and side-effect boundary |
+|---|---|
+| Resolve / assemble / compile | Explicit versioned design and geometry; no solver, release or field solve |
+| Export CAD | Headless STEP from all physical members; ideal exclusions explicit; no default GUI |
+| Build geometry / prepare model | Governed native geometry/configuration and readback; no sampling, Refine or Fly |
+| Solve fields | Explicit governed field computation/reuse; no particle release or Fly |
+| Track | Actual native Fly from explicit source, mother, birth/clock and observations |
+| Compare / inspect | Read published data; no solver rerun or hidden resampling |
 
-实际应用场观测在两轮baseline／replay中各捕获12条查询，已捕获操作数的独立舍入核对一致；
-原锚定批次在pulse_end窗口前离开前端域，两结束窗口均没有合格记录，原覆盖判据保持
-`INCONCLUSIVE / coverage_incomplete`。静态审计未持久化逐点actual值，不能据此宣称全场严格相等、
-libm精度、收敛或Formal资格。
-另以`20261103_231500__analysis__simion__phase02-field-io-false`完成独立非粒子场对照：
-保持原三个物理间隙点、pulse结束前／恰好结束／结束后的三个相邻binary64时刻及两种映射，
-实际原生`wb:efield`进入未改的场回调，共18次查询；六段科学代码逐字节保留，
-仅用明确的非粒子时钟／观察上下文，不伪造粒子ID、出生或轨迹。每点的pulse状态均为true／false／false，
-开启时的纵向场分别约40.0000、26.4856、1.35851 V/mm，关闭时退至对应RF背景，非全零退化对照。
-A/B对应记录除map和路径外严格一致；从冻结驱动与实际basis独立重算的相位、系数和场叠加均精确一致。
-独立单位／坐标换算最大差为1 ULP，如实保留，不将它宣称为逐位相同或新设物理容差。
-该结果补充限定点集、时刻和原场算子的映射／pulse边界证据，不补写原N100自然八桶，也不证明全空间PA精度、
-所有粒子历史、收敛或Formal资格；原八桶仍为INCONCLUSIVE，原run的NOT_QUALIFIED保持。
-本轮各fresh构建／GUI进程显式使用并读回官方异步I/O排错开关false；四操作均退出0，52项保护和许可释放，
-公开528.114秒、内部521.506秒，未新增Fly／Refine。原默认I/O中断和诊断返回判据错误的失败证据保留，
-不据该工作模式推断唯一历史根因。manifest中的计划文件有两个同路径同哈希输入标签，
-两个场结果输出各唯一绑定；这项表示局限未影响本次结果消费，不声称所有manifest路径唯一。
-截图恢复后，A／B各用独立SIMION进程打开原首批保存IOB，实际检查四个PA实例及姿态／网格、
-检测面实体、Program电压与脉冲变量、十组原FLY2粒子定义和关联Program的GUI可见性。
-两进程均自然退出0，各十项原文件保护及gui_review许可已释放；未Fly、Refine或保存原文件。
-该检查只证明这两个原工作台可在GUI检查，不授予动态场、数值收敛或Formal资格。
-此前截图失败记录保留；当前软件完整验收状态仍从[路线图](../../docs/ROADMAP.md)引用。
+The ordinary-installed tutorial and full configuration are in [common usage](../../common/README.md).
+Optional CAD requires the separately locked CadQuery/OCCT dependencies. Core import,
+source generation and pure analysis do not probe commercial licenses. The supported
+slice is not a promise for arbitrary components, backends or self-consistent physics.
 
-同map另一次公开`FieldDesignOnly`验证沿用三份已封存PA身份，Refine／Fly／native启动均为0，
-N100输入保持且传播数为0。公开墙钟338.988秒，超过预置envelope的300秒整run预期；
-复用功能通过不表示该墙钟目标达标。该结果及两轮飞行均以各run manifest／completion为原始证据。
+### Installed delivery and resource provenance
 
-单反射场执行的软件回归保留15个真实 CLI 场景，包括母群、资源、原生失败、场与工作台保护。
-缺预算阶段的通用负例归现有 `test_engineering_budget`，移除两次重复完整准备，不新增源码布局抽取器。
-同环境单次顺序对照：原17场景169.963秒／公开170.821秒，现15场景147.186秒／公开148.024秒；
-公共预算测试另通过2.105秒／公开2.305秒。观察到主方法减少22.777秒，不将全部差值归因删重，
-也不据此宣称最终 CI 或完整软件验证已达15分钟目标；测量无商业求解，不改生产预算底线。
+SDK20 ordinary wheel/sdist/rebuild and fresh runtime passed with245 source/control
+records unchanged;235 installed payload members and54 locked distributions were
+verified. Its wheel SHA is
+`1d7e804e03e8330a443c1592634db4c4fffebe41785da35705b3272b7a45b591`.
+The resource join covers original42 declarations plus actual Python/non-Python and
+indirect consumers; it is not an all-resource native fault-test claim. Actual producer
+epochs remain distinct. SDK21 verified the corrected LF source through ordinary
+wheel/sdist installation and a fresh dual-lock runtime: 235 payload members, 54 locked
+distributions, raw metadata and site-packages origins passed; 245 source/control
+records stayed exact. The public pipeline exited zero in 210.754 seconds and its
+original host lease released. Its wheel SHA is
+`6e93c62ad3fcda829f7d63620a090d69f01fe89b7e7447be3745da91e2daf9f7`.
+This is a new byte identity, not a relabeling of SDK20 or the native producers.
 
-Fly／显式回放的软件回归另从10个减为7个真实 CLI 场景：两项通用缺阶段预算检查归公共测试，
-原生与控件组合故障原来走同一个首错分支且没有独有断言，分别保留两个实际故障路径。
-同环境单次对照150.132秒／公开150.853秒→109.239秒／公开110.086秒；保留资源门槛、
-回放失败、缺完成标记和逐ID母群不匹配检查。省略场景原耗28.957秒，整体差值还包含运行波动。
+The installed independent U06 tutorial used a fresh study, public API/owner and a new
+`-I` integrity reader with System32-only PATH. It produced72 solids/5 exclusions with
+installed origins and confirmed writer/host/capacity closure. This controlled task is
+complete within its selected scope; P5 real-colleague/new-machine acceptance is separate.
 
-跨项目工作流已迁到根`integrations/`，声明链路的执行、完整批次恢复和已保存模型导出已有实证。
-成功执行、数值等价、物理性能和Formal资格分别判断；负结果与原运行身份不因迁移而改写。
+### Actual geometry and native chain
 
-| 当前对象 | 已闭合范围 | 保留限制 |
-|---|---|---|
-| 同项目两个实例N2 | 独立场、工作台、N100 Fly及默认回放 | held-OFF下0检测，不授予正向物理性能 |
-| OA→MR及分段IP→MR | 原ID、完整母群、状态及唯一时钟交接 | 旧OA→MR manifest未完整登记父plan；IP原性能门限仍failed |
-| 共同静态场与有限脉冲 | strict PA、CPT原生解、完整输出诊断、分阶段恢复 | 跨后端数值等价未获得，缺失状态不补插值 |
-| 保存CPT重开导出 | 100粒子×16时刻，重导出差异0 | 不做Compute，不是中途积分checkpoint续算 |
-| 组件工程几何与STEP | N2／IP同源构建、孔槽检查、独立冷导入 | 4处原始电极实体交叠，制造／Formal资格未获 |
-| GUI运行状态接线 | MR loader与批处理共用碰撞PA预载；代码检查及微型原生验证 | 按本次获准范围不要求人工打开；不追认旧包已完成人工GUI验收 |
+SDK21 run `20261105_102020__build__cad__assembly-4120ed890691` independently
+exported and cold-read a fresh named STEP: 1122132 bytes, SHA
+`f8201284c57fd132fe6088ffdf64f7ca27d803035b1d85ba2b783ae89483253c`.
+All 72 named solids, five ideal exclusions and ten existing geometry probes passed.
+API export took 13.353 seconds; public export/cold-read walls were 15.008/6.554
+seconds. Both processes exited zero, the owner confirmed writers stopped and the
+host lease released; capacity was ready/pinned with no remaining protection lease.
+No source sampling, Refine, Fly, GUI or commercial application ran.
 
-三实例N3额外原生验收已取消，不再续接大场；仅保留已发布carrier、局部原生探针和轻量回归。
-未来增加实例、拓扑或物理域须按实际请求验收，不能从准备包、缓存命中或现有功能证据推定任意组合可运行。
+SDK20 run `20261105_084020__build__cad__assembly-5c9ce088a996` published
+`RF to TOF Assembly.step`:1122132 bytes, SHA
+`4ce951aa4d7feaa56ee814ef88aec133289497f17bbcd57d6453ed087dba2ba1`.
+A separate installed cold reader confirmed exact English root/member names,72 valid
+solids,5 exclusions and10 preregistered world-space CSG probes under the original
+OCCT representation budget. These finite checks do not prove every hole or dimension.
+Source generation/Refine/Fly/GUI were0. API export13.293s and cold read3.799s are
+observed costs, not controlled performance claims. Capacity was ready/pinned and the
+protection lease absent after confirmed worker exit and host release.
+
+Actual ordinary-installed PreparedModel construction and reopen retained geometry,
+scientific-to-native mapping, DC/RF/pulse consumers and original clock authority while
+Refine/Fly stayed0. New-process explicit field solve then published F5:
+`20261104_214825__sim__simion__fields-9070fe95d6aa`, manifest SHA
+`F0E42A382483CC1557AF715206112D6B927C141F8A29D686998007E6F6D8E450`.
+F5 performed five downstream native operations and reused frontend fields; it did not Fly.
+No missing input was manufactured and no failed cache generation was promoted.
+
+Case C completed nine actual continuous/upstream/relaunch runs across three levels,
+using this same F5, the frozen sparse-ID100 mother, weights, non-simultaneous births
+and absolute clock. There were99 handoffs and one physical loss; relaunch preserved
+that full mother without reviving the lost particle or shifting the initial boundary.
+Three canonical analysis runs published the original report bytes with0 native calls.
+`comparison_completed` means **descriptive computation completed only**; detector
+comparison has36 pairs/64 missing, cut comparison99 pairs/one missing, and statistical
+subresults remain `insufficient_observations`. Phase is unavailable. No accuracy,
+equality or convergence PASS is inferred. The scoped `not_propagated` downstream
+fate is not a new physical loss. Original birth, consumed-event occurrence and
+accepted-step bracket/native terminal facts remain distinct from a native checkpoint.
+
+### Recovery, safety and remaining closure
+
+Software evidence covers whole-unit12/6/0-operation paths, complete/partial/not-started
+units, source/clock/full-mother identity, hash rejection, analysis/finalization replay
+and unknown-writer protection. Primitive inert processes are not native SIMION proof.
+Actual Case C trajectory-cache cleanup and finalization used the existing public
+mechanisms without new Fly; original failures and completion/config bytes were retained.
+
+SDK17/18/20 complete Repository attempts remain FAIL. Latest SDK20 was46 PASS /
+4 FAIL /12 NOT_APPLICABLE with source-after unchanged; successor focused repairs are
+separate evidence and do not constitute the final complete PASS. Historical SW crashes,
+P2 natural eight-bucket INCONCLUSIVE and unproved unique observer causes remain visible.
+F2 obligation `workflow-16a7aa13eed041db91b45f2fca6b96bf` retains unknown-writer
+protection; no historical obligation is released merely to close P3.
+
+Remote push run `41954713607` on `abaaa03a` failed its Changed documentation stage
+because the committed status page still linked the old capacity-policy location.
+This page now links the canonical installed resource below. That remote failure
+remains recorded; its Repository job was skipped. A successor CI result must be
+reported at its actual scope and SHA, separately from the local full acceptance.
+
+Still required: successful fixed-source complete Repository with actual outcomes
+and skips, final documentation/CLOC/cost/retirement receipts, then scoped commits,
+ordinary push and clean tracking identity. No final gate, SDK21 or publication PASS is
+claimed here. The prospective history destination is
+`docs/history/20261105__phase03-installed-pipeline.md` (not yet published at proposal time);
+Root must create it and bind selected small evidence before replacing this note.
+
+P4 retains finite bridge removal, broader supported backend/workflow promotion and the
+original15-minute/owner performance responsibilities; no target is lowered. P5 retains
+real colleagues, new machines and new-device pressure. R01–R20 are not globally closed
+by this selected delivery. Subsequent sections retain their original non-P3 scope.
 
 ## 当前多极杆几何边界
 
@@ -136,7 +174,7 @@ RF相位和唯一仪器时钟；换范围不重新投影已记录状态或重新
 | 母群、事件与统计 | [公共释放](../../common/ion_release/README.md)、[分析函数](../../common/analysis/README.md)；科学分母与判据仍由项目定义 |
 | 碰撞生命周期 | IP与冷却入口共用HS1加载／冻结／复位；机制复用不授予碰撞物理资格 |
 
-容量目标和最低空闲保护只读[唯一机器政策](../../common/contracts/artifact_capacity_policy.json)。
+容量目标和最低空闲保护只读[唯一机器政策](../../src/msplatform/execution/resources/artifact_capacity_policy.json)。
 预算、实测峰值与数组下限分别记录，不用磁盘空闲代替准入，也不以改变网格或母群迁就旧预算。
 首场事务恢复允许上下游尚无发布收据；普通飞行批恢复仍要求两份发布来源。未发布事务不能冒充ready资产。
 

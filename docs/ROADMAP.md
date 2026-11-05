@@ -71,7 +71,21 @@ P1/P2任务分支尚未合入master。2026-11-03按V5进入P2，实施起点为�
 [当前集成状态](../integrations/docs/INTEGRATION.md#当前边界)。该纠正不改写P2冻结验收，也不重开P1/P2。
 后续P3除共同钟、接续和恢复外，还必须交付真实RF→OA／单反射链的普通安装公共API切片：
 geometry-only、求场、源、飞行、分析分别调用；不能依赖作者checkout或以假源满足几何输入。
-D01验证已完成，固定纠正提交后切换P3；P3依赖与真实示例来源只读核查已经展开，尚不是可用API。
+D01已固定并推送`bf19145c`；当前按V7.2 Goal继续P3。首个几何编译安装切片已实迁RF、OA／完整TOF、
+SIMION纯编译及必要执行基础，公共API与普通wheel／sdist树外实际调用已有证据，当前范围见
+[集成状态](../integrations/docs/INTEGRATION.md#当前边界)。后继已取得普通安装的无GUI STEP、未求解模型独立求场、
+同场同源三档连续／接续共九个轨迹产品、无商业工具重分析及独立审查者教程的有界证据。
+P3尚未完成：当前源码完整软件门禁及最终发行／文档／提交仍须闭合。
+SDK21 ordinary installation and independent named STEP checks have passed. The latest
+full local attempt ended with a summary-publication AccessDenied (32 PASS / 18 BLOCKED /
+12 NOT_APPLICABLE), without a recorded test failure; diagnosis and complete acceptance remain open.
+User clarification on 2026-11-05: correct 3D file generation and independent geometry checks are the
+current CAD acceptance scope. SolidWorks repair and refinement are deferred, without blocking this goal;
+historical native failures and Formal publication requirements remain unchanged.
+V7.2增加同一完整Assembly的独立STEP与PreparedModel首批出口（U07／U08）：CAD／后端并列生成，
+默认不开GUI且不求场／Fly，保存后分别冷打开和继续求场。所选SIMION模型、场及传播链已有普通安装原生证据；
+STEP的实际生成／独立几何校验、历史SolidWorks查看与本次延期范围，均由集成正文分别记录。
+P4按其余已支持设计及COMSOL具名推广，P5保留真实同事／新需求检验；不以当前能力不足删减目标。
 新电极组字段为`electrode_group_id`，component3／plan5／binding2与request10明确升版，旧格式原义保持；
 RF/OA真实消费者、必要状态／母群、三区理论量纲／坐标和新峰结果metadata已迁移。
 真实三区N100的映射A/B与显式回放、有限GUI及18次独立非粒子场查询已有相称证据；
@@ -97,7 +111,7 @@ P1–P5为平台改造批次，与下述组装M0–M4及项目科学资格分别
 |---|---|
 | P1 | 公共核心：冻结目标边界，实迁源、布局、峰形及必要科学基础；RF/OA、布局适配、MR直接消费规范实现，取得真实提供者布局、wheel/sdist、依赖/资源/冻结/路径证据，退出被替代算法。 |
 | P2 | 器件提供项目与integration：同源几何、驱动和后端编译，真实不同提供者/结构、多实例及位姿；本批公共命名、OA角色与显式版本闭合；必要状态、母群和方法元数据；相称原生与工程证据。 |
-| P3 | integration与运行机制所有者：分段接续和联合连续两种飞行、共同钟/母群、可解释复用及分级故障恢复；交付选定真实链的可安装分阶段公共API、geometry-only及独立教程验收；同场同源比较，不以拼接冒充连续积分。 |
+| P3 | integration与运行机制所有者：分段接续和联合连续两种飞行、共同钟/母群、可解释复用及分级故障恢复；交付选定真实链的可安装分阶段公共API、geometry-only、同一完整Assembly的独立STEP与带驱动PreparedModel出口及独立教程验收；同场同源比较，不以拼接冒充连续积分。 |
 | P4 | 各活动消费者及公共验证所有者：全域推广、有限兼容桥退出、导航/控制面及命名一致性收敛；发行身份有证据裁决，同机同范围完成原反馈时间目标验收。 |
 | P5 | 实际新增需求所属项目与integration：真实器件/源/后端压力测试，逐项回查全部需求；未实现、未验证或环境阻断不得作为满足。 |
 
@@ -120,7 +134,7 @@ P1–P5为平台改造批次，与下述组装M0–M4及项目科学资格分别
 | R12 Windows路径运输 | P1 → P1/P3 | 路径/执行边界：长、Unicode、空格、cwd、argv和别名清理。 |
 | R13 缓存及失效 | P1/P3 → P3/P4 | 冻结/缓存owner：分维身份、变更矩阵、篡改/缺失拒绝及自洽例外。 |
 | R14 科学与工程证据 | P1 → P1–P5 | 各资格所有者：如实区分软件、原生、数值、实验、GUI/CAD。 |
-| R15 API和可安装交付 | P1 → P1/P4 | 公共发行：标准wheel/sdist、直接依赖/资源、干净环境实际模块来源。 |
+| R15 API和可安装交付 | P1 → P1/P3/P4/P5 | 公共发行：P1科学核；P3首次真实安装执行、逐资源交付、STEP／PreparedModel及各出口跨进程重开；P4全域推广；P5同事与新需求验收。 |
 | R16 文档与规范适应 | P1 → P1/P4 | 各唯一权威：同步规范/检查器/代码/导航，冻结历史不追改。 |
 | R17 覆盖与反馈时间 | P1 → P4 | 验证owner：有效保证不减、固定环境范围计时，原预算不下调。 |
 | R18 真实扩展压力 | P2 → P2/P5 | 新需求提供者/适配：真实替换、局部修改及所需数值/功能证据。 |
